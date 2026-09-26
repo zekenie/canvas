@@ -1,0 +1,158 @@
+import Foundation
+
+/// Everything the installed plugins registered: built once from the plugin list, checked, then
+/// frozen and handed to each editor. Tests build their own.
+@MainActor
+public struct Registry {
+    /// Core first, then the plugin list's order.
+    let pluginIDs: [PluginID]
+    private let byPoint: [ObjectIdentifier: [RawContribution]]
+    private let all: [RawContribution]
+    private let definitions: [ShapeKind: any ShapeDefinition]
+
+    public init(plugins: [any CanvasPlugin]) throws(RegistryError) {
+        let plugins: [any CanvasPlugin] = [CorePlugin()] + plugins
+        var ids: [PluginID] = []
+        var contributions: [RawContribution] = []
+        for plugin in plugins {
+            guard !ids.contains(plugin.id) else { throw .duplicatePlugin(plugin.id) }
+            ids.append(plugin.id)
+            var registrar = PluginRegistrar(pluginID: plugin.id)
+            plugin.register(into: &registrar)
+            contributions += registrar.contributions
+        }
+        try Self.check(contributions, installed: ids)
+        pluginIDs = ids
+        // Stable: contributions keep plugin order within each point.
+        all = ids.flatMap { id in contributions.filter { $0.pluginID == id } }
+        byPoint = Dictionary(grouping: all, by: \.point)
+        definitions = Dictionary((byPoint[ObjectIdentifier(CorePoints.Shapes.self)] ?? []).map {
+            let shape = $0.value as! ShapeRegistration
+            return (shape.kind, shape.definition)
+        }, uniquingKeysWith: { first, _ in first })
+    }
+
+    private static func check(_ contributions: [RawContribution], installed: [PluginID]) throws(RegistryError) {
+        let kinds = Set(contributions.filter { $0.point == ObjectIdentifier(CorePoints.Shapes.self) }.map(\.target))
+        var claimed: [ObjectIdentifier: [AnyHashable: PluginID]] = [:]
+        for c in contributions {
+            guard installed.contains(c.owner) else {
+                throw .ownerNotInstalled(point: c.pointName, owner: c.owner, contributor: c.pluginID)
+            }
+            if case .kind(let kind) = c.target, !kinds.contains(c.target) {
+                throw .unknownKind(kind, point: c.pointName, contributor: c.pluginID)
+            }
+            for key in c.keys {
+                if let first = claimed[c.point]?[key] {
+                    throw .conflict(point: c.pointName, key: "\(key.base)", plugins: [first, c.pluginID])
+                }
+                claimed[c.point, default: [:]][key] = c.pluginID
+            }
+        }
+    }
+
+    // MARK: Extension points
+
+    /// Every contribution to a point, in plugin order.
+    public func contributions<P: ExtensionPoint>(to point: P.Type) -> [Contributed<P.Contribution>] {
+        (byPoint[ObjectIdentifier(P.self)] ?? []).map { Contributed(value: $0.value as! P.Contribution, target: $0.target, pluginID: $0.pluginID) }
+    }
+
+    /// The contributions that apply to a kind: those for that kind, then those for every kind,
+    /// each in plugin order.
+    public func contributions<P: ExtensionPoint>(to point: P.Type, for kind: ShapeKind) -> [P.Contribution] {
+        let all = contributions(to: P.self)
+        return all.filter { $0.target == .kind(kind) }.map(\.value) + all.filter { $0.target == .any }.map(\.value)
+    }
+
+    // MARK: The core's points
+
+    public var kinds: [ShapeKind] { contributions(to: CorePoints.Shapes.self).map(\.value.kind) }
+
+    public func definition(for kind: ShapeKind) -> (any ShapeDefinition)? { definitions[kind] }
+
+    /// The toolbar: core's select tool, then each plugin's tools in plugin order.
+    public var tools: [ToolDescriptor] { contributions(to: CorePoints.Tools.self).map(\.value.descriptor) }
+
+    public func tool(forShortcut key: Character) -> ToolID? {
+        let key = Character(key.lowercased())
+        return tools.first { $0.shortcut.map { Character($0.lowercased()) } == key }?.id
+    }
+
+    var toolFactories: [(ToolID, @MainActor (CanvasEditor) -> any Tool)] {
+        contributions(to: CorePoints.Tools.self).map { ($0.value.descriptor.id, $0.value.make) }
+    }
+    var services: [ServiceRegistration] { contributions(to: CorePoints.Services.self).map(\.value) }
+    var overlays: [any CanvasOverlay] { contributions(to: CorePoints.Overlays.self).map(\.value) }
+    var willDeleteHandlers: [@MainActor (Set<ShapeID>, inout Transaction) -> Void] {
+        contributions(to: CorePoints.WillDelete.self).map(\.value)
+    }
+    var doubleClickPlacement: Placement? { contributions(to: CorePoints.DoubleClickPlacement.self).first?.value }
+
+    /// Who contributes what, where: the runtime counterpart of Package.swift. A test pins it.
+    public var report: String {
+        let width = max(14, (pluginIDs.map(\.rawValue.count).max() ?? 0) + 2)
+        return pluginIDs.map { id in
+            let items = all.filter { $0.pluginID == id }.map(\.summary)
+            return "\(id.rawValue.padding(toLength: width, withPad: " ", startingAt: 0))\(items.joined(separator: " · "))"
+        }.joined(separator: "\n")
+    }
+}
+
+public enum RegistryError: Error, Equatable, CustomStringConvertible {
+    case duplicatePlugin(PluginID)
+    /// Contributing to a point whose owning plugin isn't in the list.
+    case ownerNotInstalled(point: String, owner: PluginID, contributor: PluginID)
+    /// A contribution for a shape kind no plugin registers.
+    case unknownKind(ShapeKind, point: String, contributor: PluginID)
+    /// Two contributions claim the same key (a kind, a tool id, a shortcut, ...).
+    case conflict(point: String, key: String, plugins: [PluginID])
+
+    public var description: String {
+        switch self {
+        case .duplicatePlugin(let id): "plugin \(id) is installed twice"
+        case .ownerNotInstalled(let point, let owner, let contributor):
+            "\(contributor) contributes to \(point), but \(owner), which owns it, isn't installed"
+        case .unknownKind(let kind, let point, let contributor):
+            "\(contributor) contributes to \(point) for kind \(kind), which no plugin registers"
+        case .conflict(let point, let key, let plugins):
+            "\(plugins.map(\.rawValue).joined(separator: " and ")) both claim \(key) in \(point)"
+        }
+    }
+}
+
+/// A contribution as stored: the value is opaque to the core.
+struct RawContribution {
+    let point: ObjectIdentifier
+    let pointName: String
+    let owner: PluginID
+    let pluginID: PluginID
+    let target: ShapeTarget
+    let value: Any
+    let keys: [AnyHashable]
+    let summary: String
+
+    @MainActor
+    init<P: ExtensionPoint>(_ value: P.Contribution, to _: P.Type, for target: ShapeTarget, from plugin: PluginID) {
+        point = ObjectIdentifier(P.self)
+        pointName = "\(P.self)"
+        owner = P.owner
+        pluginID = plugin
+        self.target = target
+        self.value = value
+        keys = (P.self as? any KeyedExtensionPoint.Type).map { Self.keys(of: value, for: target, claimedIn: $0) } ?? []
+        summary = switch value {
+        case let shape as ShapeRegistration: "shape \(shape.kind)"
+        case let tool as ToolRegistration: "tool \(tool.descriptor.id)" + (tool.descriptor.shortcut.map { " [\($0)]" } ?? "")
+        case let service as ServiceRegistration: "service \(service.name)"
+        case let overlay as any CanvasOverlay: "overlay \(type(of: overlay))"
+        case is Placement: "double-click \(target)"
+        default: P.self == CorePoints.WillDelete.self ? "willDelete" : "\(P.self)" + (target == .any ? "" : " → \(target)")
+        }
+    }
+
+    @MainActor
+    private static func keys<K: KeyedExtensionPoint>(of value: Any, for target: ShapeTarget, claimedIn _: K.Type) -> [AnyHashable] {
+        K.uniqueKeys(of: value as! K.Contribution, for: target)
+    }
+}

@@ -1,5 +1,7 @@
 import CoreGraphics
+import Canvas
 import Foundation
+import Geometry
 
 /// An arrow's drawable geometry, resolved against where its bound shapes currently are.
 ///
@@ -8,36 +10,36 @@ import Foundation
 /// handles, is clipped where it crosses a bound shape's outline, and backs off by a small gap
 /// wherever there's an arrowhead. This is a port of tldraw's `getStraightArrowInfo` and
 /// `getCurvedArrowInfo`, including how they handle overlapping and nested shapes.
-struct ArrowGeometry {
-    enum Path {
+public struct ArrowGeometry: Sendable {
+    public enum Path: Sendable {
         case straight
         /// `handleArc` runs through both terminal handles and the bend point. The visible body is
         /// the stretch of it between `startT` and `endT` (0 is the start handle, 1 the end handle).
         case curved(handleArc: Arc, startT: CGFloat, endT: CGFloat)
     }
 
-    var startHandle: CGPoint
-    var endHandle: CGPoint
+    public private(set) var startHandle: CGPoint
+    public private(set) var endHandle: CGPoint
     /// Where the visible arrow begins and ends.
-    var start: CGPoint
-    var end: CGPoint
+    public private(set) var start: CGPoint
+    public private(set) var end: CGPoint
     /// Where the bend handle sits: halfway along the visible body.
-    var middle: CGPoint
-    var path: Path
+    public private(set) var middle: CGPoint
+    public private(set) var path: Path
     /// Unit vector perpendicular to the line between the terminal handles; `bend` is measured along it.
-    var bendAxis: CGPoint
-    var startArrowhead: Bool
-    var endArrowhead: Bool
+    public private(set) var bendAxis: CGPoint
+    public private(set) var startArrowhead: Bool
+    public private(set) var endArrowhead: Bool
 
     /// Gap between a bound shape's outline and an arrowhead, on top of half the stroke width.
-    static let boundGap: CGFloat = 10
-    static let minLength: CGFloat = 10
+    public static let boundGap: CGFloat = 10
+    public static let minLength: CGFloat = 10
     /// Bends smaller than this draw as a straight line (the stored bend is kept).
-    static let minBend: CGFloat = 8
+    public static let minBend: CGFloat = 8
 
     /// `shape` looks up the shapes the arrow is bound to. An end bound to a shape it can't find is
     /// drawn at the origin.
-    init(arrow: Arrow, strokeWidth: CGFloat, shape: (ShapeID) -> (any Connectable)?) {
+    public init(arrow: Arrow, strokeWidth: CGFloat, shape: (ShapeID) -> ConnectableShape?) {
         var startShape = arrow.start.binding.flatMap { binding in
             shape(binding.shapeID).map { BoundShape($0, isExact: binding.isExact) }
         }
@@ -98,7 +100,7 @@ struct ArrowGeometry {
 
     // MARK: - Measuring
 
-    func point(for handle: ArrowHandle) -> CGPoint {
+    public func point(for handle: ArrowHandle) -> CGPoint {
         switch handle {
         case .terminal(.start): startHandle
         case .terminal(.end): endHandle
@@ -106,17 +108,17 @@ struct ArrowGeometry {
         }
     }
 
-    func handlePoint(at end: ArrowEnd) -> CGPoint { end == .start ? startHandle : endHandle }
-    func visiblePoint(at end: ArrowEnd) -> CGPoint { end == .start ? start : self.end }
+    public func handlePoint(at end: ArrowEnd) -> CGPoint { end == .start ? startHandle : endHandle }
+    public func visiblePoint(at end: ArrowEnd) -> CGPoint { end == .start ? start : self.end }
 
-    var bodyLength: CGFloat {
+    public var bodyLength: CGFloat {
         switch path {
         case .straight: start.distance(to: end)
         case .curved(let arc, let startT, let endT): arc.length * abs(endT - startT)
         }
     }
 
-    func distance(to point: CGPoint) -> CGFloat {
+    public func distance(to point: CGPoint) -> CGFloat {
         switch path {
         case .straight: distanceToSegment(from: point, start, end)
         case .curved(let arc, let startT, let endT): arc.trimmed(from: startT, to: endT).distance(to: point)
@@ -125,7 +127,7 @@ struct ArrowGeometry {
 
     /// The bend that keeps this exact curve if the terminal handles move to the visible ends
     /// named in `ends`, e.g. when the arrow is detached from its shapes.
-    func bendKeepingCurve(movingHandlesToVisibleEndsAt ends: Set<ArrowEnd>) -> CGFloat? {
+    public func bendKeepingCurve(movingHandlesToVisibleEndsAt ends: Set<ArrowEnd>) -> CGFloat? {
         guard case .curved(let arc, let startT, let endT) = path else { return nil }
         let t0 = ends.contains(.start) ? startT : 0
         let t1 = ends.contains(.end) ? endT : 1
@@ -136,7 +138,7 @@ struct ArrowGeometry {
 
     // MARK: - Drawing paths
 
-    var bodyPath: CGPath {
+    public var bodyPath: CGPath {
         switch path {
         case .straight:
             let path = CGMutablePath()
@@ -149,7 +151,7 @@ struct ArrowGeometry {
     }
 
     /// Open chevrons at whichever ends have arrowheads.
-    func arrowheadsPath(strokeWidth: CGFloat) -> CGPath {
+    public func arrowheadsPath(strokeWidth: CGFloat) -> CGPath {
         let path = CGMutablePath()
         for end in [ArrowEnd.start, .end] where end == .start ? startArrowhead : endArrowhead {
             let tip = visiblePoint(at: end)
@@ -178,7 +180,7 @@ struct ArrowGeometry {
 
     /// The hidden stretch of path between a terminal's handle and the visible arrow, shown as a
     /// dashed stub while the arrow is selected. `inset` keeps it clear of the handle's marker.
-    func bindingStub(at end: ArrowEnd, inset: CGFloat) -> CGPath? {
+    public func bindingStub(at end: ArrowEnd, inset: CGFloat) -> CGPath? {
         let handle = handlePoint(at: end)
         let visible = visiblePoint(at: end)
         switch path {
@@ -199,7 +201,7 @@ struct ArrowGeometry {
     }
 
     /// Direction of travel from a terminal's handle toward the arrow's body, for orienting markers.
-    func directionFromHandle(at end: ArrowEnd) -> CGPoint {
+    public func directionFromHandle(at end: ArrowEnd) -> CGPoint {
         switch path {
         case .straight:
             return (visiblePoint(at: end) - handlePoint(at: end)).normalized
@@ -219,7 +221,7 @@ private struct BoundShape {
     var isExact: Bool
     var didIntersect = false
 
-    init(_ shape: any Connectable, isExact: Bool) {
+    init(_ shape: ConnectableShape, isExact: Bool) {
         id = shape.id
         bounds = shape.bounds
         outline = shape.outline

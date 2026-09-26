@@ -1,0 +1,3 @@
+import TestKit
+
+runTests([validationTests])

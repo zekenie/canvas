@@ -1,36 +1,37 @@
+import CoreGraphics
 import Foundation
 
 // MARK: - Vector math
 
 extension CGPoint {
-    static func + (lhs: CGPoint, rhs: CGPoint) -> CGPoint { CGPoint(x: lhs.x + rhs.x, y: lhs.y + rhs.y) }
-    static func - (lhs: CGPoint, rhs: CGPoint) -> CGPoint { CGPoint(x: lhs.x - rhs.x, y: lhs.y - rhs.y) }
-    static func * (lhs: CGPoint, rhs: CGFloat) -> CGPoint { CGPoint(x: lhs.x * rhs, y: lhs.y * rhs) }
-    static func / (lhs: CGPoint, rhs: CGFloat) -> CGPoint { CGPoint(x: lhs.x / rhs, y: lhs.y / rhs) }
+    public static func + (lhs: CGPoint, rhs: CGPoint) -> CGPoint { CGPoint(x: lhs.x + rhs.x, y: lhs.y + rhs.y) }
+    public static func - (lhs: CGPoint, rhs: CGPoint) -> CGPoint { CGPoint(x: lhs.x - rhs.x, y: lhs.y - rhs.y) }
+    public static func * (lhs: CGPoint, rhs: CGFloat) -> CGPoint { CGPoint(x: lhs.x * rhs, y: lhs.y * rhs) }
+    public static func / (lhs: CGPoint, rhs: CGFloat) -> CGPoint { CGPoint(x: lhs.x / rhs, y: lhs.y / rhs) }
 
     /// A unit vector (or one of `length`) pointing at `angle` radians.
-    init(angle: CGFloat, length: CGFloat = 1) {
+    public init(angle: CGFloat, length: CGFloat = 1) {
         self.init(x: cos(angle) * length, y: sin(angle) * length)
     }
 
-    var length: CGFloat { hypot(x, y) }
-    var angle: CGFloat { atan2(y, x) }
-    var normalized: CGPoint {
+    public var length: CGFloat { hypot(x, y) }
+    public var angle: CGFloat { atan2(y, x) }
+    public var normalized: CGPoint {
         let length = length
         return length > 0 ? self / length : .zero
     }
     /// This vector rotated a quarter turn, toward +y from +x.
-    var perpendicular: CGPoint { CGPoint(x: -y, y: x) }
+    public var perpendicular: CGPoint { CGPoint(x: -y, y: x) }
 
-    func distance(to other: CGPoint) -> CGFloat { (self - other).length }
-    func dot(_ other: CGPoint) -> CGFloat { x * other.x + y * other.y }
-    func cross(_ other: CGPoint) -> CGFloat { x * other.y - y * other.x }
+    public func distance(to other: CGPoint) -> CGFloat { (self - other).length }
+    public func dot(_ other: CGPoint) -> CGFloat { x * other.x + y * other.y }
+    public func cross(_ other: CGPoint) -> CGFloat { x * other.y - y * other.x }
 
-    func moved(toward target: CGPoint, by distance: CGFloat) -> CGPoint {
+    public func moved(toward target: CGPoint, by distance: CGFloat) -> CGPoint {
         self + (target - self).normalized * distance
     }
 
-    func rotated(around center: CGPoint, by angle: CGFloat) -> CGPoint {
+    public func rotated(around center: CGPoint, by angle: CGFloat) -> CGPoint {
         let offset = self - center
         let (sine, cosine) = (sin(angle), cos(angle))
         return center + CGPoint(x: offset.x * cosine - offset.y * sine, y: offset.x * sine + offset.y * cosine)
@@ -39,7 +40,7 @@ extension CGPoint {
 
 extension CGRect {
     /// The smallest rectangle containing all of `points`.
-    init(enclosing points: [CGPoint]) {
+    public init(enclosing points: [CGPoint]) {
         guard let first = points.first else {
             self = .null
             return
@@ -54,25 +55,25 @@ extension CGRect {
         self.init(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
-    init(center: CGPoint, size: CGSize) {
+    public init(center: CGPoint, size: CGSize) {
         self.init(x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height)
     }
 
-    var center: CGPoint { CGPoint(x: midX, y: midY) }
+    public var center: CGPoint { CGPoint(x: midX, y: midY) }
 
     /// The corners in order, as a closed polygon.
-    var polygon: [CGPoint] {
+    public var polygon: [CGPoint] {
         [CGPoint(x: minX, y: minY), CGPoint(x: maxX, y: minY), CGPoint(x: maxX, y: maxY), CGPoint(x: minX, y: maxY)]
     }
 }
 
 /// `angle` wrapped into 0..<2π.
-func normalizedAngle(_ angle: CGFloat) -> CGFloat {
+public func normalizedAngle(_ angle: CGFloat) -> CGFloat {
     let wrapped = angle.truncatingRemainder(dividingBy: 2 * .pi)
     return wrapped < 0 ? wrapped + 2 * .pi : wrapped
 }
 
-func nearestPointOnSegment(to point: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGPoint {
+public func nearestPointOnSegment(to point: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGPoint {
     let ab = b - a
     let lengthSquared = ab.dot(ab)
     guard lengthSquared > 0 else { return a }
@@ -80,12 +81,12 @@ func nearestPointOnSegment(to point: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGP
     return a + ab * t
 }
 
-func distanceToSegment(from point: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
+public func distanceToSegment(from point: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
     point.distance(to: nearestPointOnSegment(to: point, a, b))
 }
 
 /// Whether `point` is inside the closed polygon, by the even-odd rule.
-func polygonContains(_ polygon: [CGPoint], _ point: CGPoint) -> Bool {
+public func polygonContains(_ polygon: [CGPoint], _ point: CGPoint) -> Bool {
     var inside = false
     for (a, b) in polygon.closedEdges where (a.y > point.y) != (b.y > point.y) {
         let crossingX = a.x + (point.y - a.y) / (b.y - a.y) * (b.x - a.x)
@@ -96,7 +97,7 @@ func polygonContains(_ polygon: [CGPoint], _ point: CGPoint) -> Bool {
     return inside
 }
 
-func nearestPointOnPolygon(_ polygon: [CGPoint], to point: CGPoint) -> CGPoint {
+public func nearestPointOnPolygon(_ polygon: [CGPoint], to point: CGPoint) -> CGPoint {
     polygon.closedEdges
         .map { nearestPointOnSegment(to: point, $0.0, $0.1) }
         .min { $0.distance(to: point) < $1.distance(to: point) } ?? point
@@ -104,7 +105,7 @@ func nearestPointOnPolygon(_ polygon: [CGPoint], to point: CGPoint) -> CGPoint {
 
 /// Rotates `point` around `center` so its angle snaps to the nearest of `steps` equal divisions
 /// of a full turn.
-func snapAngle(of point: CGPoint, around center: CGPoint, steps: Int) -> CGPoint {
+public func snapAngle(of point: CGPoint, around center: CGPoint, steps: Int) -> CGPoint {
     let angle = (point - center).angle
     let increment = 2 * .pi / CGFloat(steps)
     return point.rotated(around: center, by: (angle / increment).rounded() * increment - angle)
@@ -114,14 +115,14 @@ func snapAngle(of point: CGPoint, around center: CGPoint, steps: Int) -> CGPoint
 
 /// A circular arc starting at `startAngle` and turning through `sweep` radians. A positive sweep
 /// runs in the direction of increasing angle.
-struct Arc {
-    var center: CGPoint
-    var radius: CGFloat
-    var startAngle: CGFloat
-    var sweep: CGFloat
+public struct Arc: Sendable {
+    public var center: CGPoint
+    public var radius: CGFloat
+    public var startAngle: CGFloat
+    public var sweep: CGFloat
 
     /// The arc from `a` to `b` that passes through `c`, or nil if the points are (nearly) collinear.
-    init?(from a: CGPoint, through c: CGPoint, to b: CGPoint) {
+    public init?(from a: CGPoint, through c: CGPoint, to b: CGPoint) {
         let d = 2 * (a.x * (c.y - b.y) + c.x * (b.y - a.y) + b.x * (a.y - c.y))
         guard abs(d) > 1e-9 else { return nil }
         let (a2, b2, c2) = (a.dot(a), b.dot(b), c.dot(c))
@@ -139,20 +140,20 @@ struct Arc {
         self.sweep = toMiddle <= toEnd ? toEnd : toEnd - 2 * .pi
     }
 
-    var length: CGFloat { abs(sweep) * radius }
+    public var length: CGFloat { abs(sweep) * radius }
 
-    func point(at t: CGFloat) -> CGPoint {
+    public func point(at t: CGFloat) -> CGPoint {
         center + CGPoint(angle: startAngle + sweep * t, length: radius)
     }
 
     /// Unit tangent in the direction of travel.
-    func tangent(at t: CGFloat) -> CGPoint {
+    public func tangent(at t: CGFloat) -> CGPoint {
         CGPoint(angle: startAngle + sweep * t).perpendicular * (sweep >= 0 ? 1 : -1)
     }
 
     /// Where the ray from the center through `point` crosses the arc, as a parameter in 0...1, or
     /// nil if it misses.
-    func parameter(of point: CGPoint) -> CGFloat? {
+    public func parameter(of point: CGPoint) -> CGFloat? {
         let delta = normalizedAngle((point - center).angle - startAngle)
         let along = sweep >= 0 ? delta : normalizedAngle(-delta)
         let tolerance: CGFloat = 1e-9
@@ -163,7 +164,7 @@ struct Arc {
         return along >= 2 * .pi - tolerance ? 0 : nil
     }
 
-    func distance(to point: CGPoint) -> CGFloat {
+    public func distance(to point: CGPoint) -> CGFloat {
         if parameter(of: point) != nil {
             return abs(point.distance(to: center) - radius)
         }
@@ -171,7 +172,7 @@ struct Arc {
     }
 
     /// The part of this arc between parameters `t0` and `t1`, reparameterized to 0...1.
-    func trimmed(from t0: CGFloat, to t1: CGFloat) -> Arc {
+    public func trimmed(from t0: CGFloat, to t1: CGFloat) -> Arc {
         Arc(center: center, radius: radius, startAngle: startAngle + sweep * t0, sweep: sweep * (t1 - t0))
     }
 
@@ -186,7 +187,7 @@ struct Arc {
 // MARK: - Intersections
 
 /// Parameters in 0...1 along the segment `a`→`b` where it crosses the closed polygon's edges.
-func intersections(ofSegmentFrom a: CGPoint, to b: CGPoint, withPolygon polygon: [CGPoint]) -> [CGFloat] {
+public func intersections(ofSegmentFrom a: CGPoint, to b: CGPoint, withPolygon polygon: [CGPoint]) -> [CGFloat] {
     let r = b - a
     var result: [CGFloat] = []
     for (p, q) in polygon.closedEdges {
@@ -203,7 +204,7 @@ func intersections(ofSegmentFrom a: CGPoint, to b: CGPoint, withPolygon polygon:
 }
 
 /// Arc parameters in 0...1 where the arc crosses the closed polygon's edges.
-func intersections(of arc: Arc, withPolygon polygon: [CGPoint]) -> [CGFloat] {
+public func intersections(of arc: Arc, withPolygon polygon: [CGPoint]) -> [CGFloat] {
     var result: [CGFloat] = []
     for (p, q) in polygon.closedEdges {
         let d = q - p
@@ -225,7 +226,7 @@ func intersections(of arc: Arc, withPolygon polygon: [CGPoint]) -> [CGFloat] {
 
 extension Array where Element == CGPoint {
     /// Consecutive pairs of points, including the edge from the last point back to the first.
-    var closedEdges: [(CGPoint, CGPoint)] {
+    public var closedEdges: [(CGPoint, CGPoint)] {
         indices.map { (self[$0], self[($0 + 1) % count]) }
     }
 }
