@@ -1,6 +1,7 @@
 # Infinite Canvas
 
-A native macOS infinite canvas. Proof of concept: panning, zooming, sticky notes.
+A native macOS infinite canvas. Proof of concept: panning, zooming, sticky notes, and arrows that
+bind to notes (modeled on tldraw's arrows).
 
 ## Build and run
 
@@ -20,12 +21,23 @@ also open `Package.swift` and run from there.
 | New note | Double-click empty space |
 | Move note | Drag it |
 | Edit note | Double-click it, or select it and press Return; Escape to finish |
-| Delete note | Select it and press Delete |
+| Delete note or arrow | Select it and press Delete |
+| Arrow tool | A (V or Escape to go back to select), or the toolbar |
+| Draw an arrow | Drag from one note to another with the arrow tool. Arriving quickly aims at a note's center; arriving slowly, or pausing inside the note, aims at that exact spot |
+| Aim into a note | Hold ⌥ while drawing or dragging an end: the arrow runs all the way to the spot |
+| Don't attach | Hold ⌘ while drawing or dragging an end |
+| Snap angle | Hold ⇧ while dragging an end (15° steps) |
+| Re-aim an end | Select the arrow and drag its end handle |
+| Bend | Select the arrow and drag its middle handle |
+| Toggle an arrowhead | Double-click an end handle |
 
 ## Layout
 
-- `CanvasView.swift`: the AppKit view. Handles input and draws the grid and notes through the camera transform.
-- `Model.swift`: `StickyNote` and `Camera` (world ↔ view mapping, zoom around a point).
+- `CanvasView.swift`: the AppKit view. Handles input and draws the grid, notes, and selection through the camera transform.
+- `CanvasView+Arrows.swift`: arrow interaction (binding to notes, precise/exact aiming, bending, moving) and arrow overlays.
+- `ArrowGeometry.swift`: resolves an arrow against its notes: where it's clipped, the gap before arrowheads, arcs. A port of tldraw's arrow geometry.
+- `Geometry.swift`: vector math, arcs, and line/arc–polygon intersections.
+- `Model.swift`: `StickyNote`, `Arrow` and its bindings, and `Camera` (world ↔ view mapping, zoom around a point).
 - `NoteEditor.swift`: the `NSTextView` overlay used while editing a note.
 - `Style.swift`: colors and metrics.
 - `InfiniteCanvasApp.swift`: SwiftUI app shell and menu commands.

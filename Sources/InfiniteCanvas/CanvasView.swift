@@ -1,30 +1,99 @@
 import AppKit
 
+enum CanvasTool {
+    case select, arrow
+}
+
 /// The infinite canvas.
 ///
-/// Notes live in world coordinates and `camera` maps them onto the view. Everything is drawn by
-/// hand in `draw(_:)` through the camera transform, so content stays crisp at every zoom level.
-/// The only subview is a `NoteEditor`, shown over a note while its text is being edited.
+/// Notes and arrows live in world coordinates and `camera` maps them onto the view. Everything is
+/// drawn by hand in `draw(_:)` through the camera transform, so content stays crisp at every zoom
+/// level. The only subview is a `NoteEditor`, shown over a note while its text is being edited.
+///
+/// Arrow behavior (drawing, binding to notes, bending, and the overlays that go with it) lives in
+/// CanvasView+Arrows.swift and closely follows tldraw's.
 final class CanvasView: NSView {
-    private var camera = Camera() {
+    var tool = CanvasTool.select {
+        didSet {
+            guard tool != oldValue else { return }
+            resetArrowToolTargeting()
+            hovered = nil
+            hoveredHandle = nil
+            updateCursor()
+        }
+    }
+    /// Called when the canvas switches tools itself, e.g. from a keyboard shortcut.
+    var onToolChange: ((CanvasTool) -> Void)?
+
+    enum Selection: Equatable {
+        case note(StickyNote.ID)
+        case arrow(Arrow.ID)
+    }
+
+    /// A drawable item, by index into `notes` or `arrows`.
+    enum Item: Equatable {
+        case note(Int)
+        case arrow(Int)
+    }
+
+    enum Interaction {
+        case panning(last: CGPoint)
+        case movingNote(id: StickyNote.ID, grabOffset: CGSize)
+        /// Pressed on an arrow's body; moves it once the pointer passes the drag threshold.
+        case pointingArrow(id: Arrow.ID, origin: CGPoint)
+        case translatingArrow(ArrowTranslation)
+        /// Pressed with the arrow tool; draws an arrow once the pointer passes the drag threshold.
+        case pointingWithArrowTool(origin: CGPoint)
+        /// Pressed on a selected arrow's handle; drags it once the pointer passes the drag threshold.
+        case pointingHandle(arrowID: Arrow.ID, handle: ArrowHandle, origin: CGPoint)
+        case draggingHandle(HandleDrag)
+    }
+
+    var camera = Camera() {
         didSet {
             layoutEditor()
             needsDisplay = true
         }
     }
-    private var notes: [StickyNote] = []
-    private var selectedID: StickyNote.ID?
-    private var editor: NoteEditor?
-    private var drag: Drag?
-
-    private enum Drag {
-        case panning(last: CGPoint)
-        case movingNote(id: StickyNote.ID, grabOffset: CGSize)
+    var notes: [StickyNote] = []
+    var arrows: [Arrow] = []
+    var selection: Selection? { didSet { needsDisplay = true } }
+    /// What's under the pointer in the select tool, outlined as a hover hint.
+    var hovered: Selection? { didSet { if hovered != oldValue { needsDisplay = true } } }
+    var hoveredHandle: ArrowHandle? {
+        didSet {
+            guard hoveredHandle != oldValue else { return }
+            needsDisplay = true
+            updateCursor()
+        }
     }
+    /// The note an arrow end would bind to, outlined while aiming or dragging an arrow.
+    var targetNoteID: StickyNote.ID? { didSet { if targetNoteID != oldValue { needsDisplay = true } } }
+    var interaction: Interaction? { didSet { needsDisplay = true } }
+
+    /// Set by dwelling with the arrow tool (hovering one note, or holding still after pressing).
+    /// Makes a new arrow's start bind precisely where it was pressed.
+    var arrowToolIsPrecise = false
+    var preciseTimer: Task<Void, Never>?
+
+    /// Smoothed pointer speed in view points per millisecond.
+    private(set) var pointerSpeed: CGFloat = 0
+    /// The pointer's last known position in view coordinates.
+    private(set) var pointerLocation: CGPoint = .zero
+    private var lastPointerTime: TimeInterval?
+    private var heldModifiers: NSEvent.ModifierFlags = []
+    private var recentlyReleasedModifiers: NSEvent.ModifierFlags = []
+    private var modifierReleaseTask: Task<Void, Never>?
+    private var editor: NoteEditor?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        notes = Self.welcomeNotes()
+        (notes, arrows) = Self.welcomeBoard()
+        addTrackingArea(NSTrackingArea(
+            rect: .zero,
+            options: [.mouseMoved, .mouseEnteredAndExited, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+            owner: self
+        ))
     }
 
     @available(*, unavailable)
@@ -44,6 +113,11 @@ final class CanvasView: NSView {
         needsDisplay = true
     }
 
+    func switchTool(to newTool: CanvasTool) {
+        tool = newTool
+        onToolChange?(newTool)
+    }
+
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
@@ -53,15 +127,27 @@ final class CanvasView: NSView {
         dirtyRect.fill()
         drawGrid(in: context)
 
+        let frames = noteFrames()
         context.saveGState()
         context.scaleBy(x: camera.zoom, y: camera.zoom)
         context.translateBy(x: -camera.origin.x, y: -camera.origin.y)
         // Pad the visible area so shadows of notes just offscreen still get drawn.
         let visible = camera.toWorld(bounds).insetBy(dx: -40, dy: -40)
-        for note in notes where note.frame.intersects(visible) {
-            drawNote(note, in: context)
+        for item in paintOrder() {
+            switch item {
+            case .note(let index):
+                if notes[index].frame.intersects(visible) {
+                    drawNote(notes[index], in: context)
+                }
+            case .arrow(let index):
+                drawArrow(geometry(of: arrows[index], frames: frames), in: context)
+            }
         }
+        drawIndicators(in: context, frames: frames)
+        drawBindingHints(in: context, frames: frames)
         context.restoreGState()
+
+        drawArrowHandles(in: context, frames: frames)
     }
 
     private func drawGrid(in context: CGContext) {
@@ -91,29 +177,14 @@ final class CanvasView: NSView {
 
     /// Draws in world coordinates; the caller has already applied the camera transform.
     private func drawNote(_ note: StickyNote, in context: CGContext) {
-        let zoom = camera.zoom
-        let path = CGPath(
-            roundedRect: note.frame,
-            cornerWidth: Style.noteCornerRadius,
-            cornerHeight: Style.noteCornerRadius,
-            transform: nil
-        )
-
         // Shadows ignore the current transform, so scale the blur by hand. The offset is zero
         // because shadow offsets live in device space, whose y direction varies by context.
         context.saveGState()
-        context.setShadow(offset: .zero, blur: 6 * zoom, color: Style.noteShadow.cgColor)
-        context.addPath(path)
+        context.setShadow(offset: .zero, blur: 6 * camera.zoom, color: Style.noteShadow.cgColor)
+        context.addPath(notePath(note))
         context.setFillColor(Style.noteColor.cgColor)
         context.fillPath()
         context.restoreGState()
-
-        if note.id == selectedID {
-            context.addPath(path)
-            context.setStrokeColor(NSColor.controlAccentColor.cgColor)
-            context.setLineWidth(2 / zoom)
-            context.strokePath()
-        }
 
         // While editing, the editor's text view draws the text instead.
         if note.id != editor?.noteID {
@@ -124,57 +195,293 @@ final class CanvasView: NSView {
         }
     }
 
+    private func notePath(_ note: StickyNote) -> CGPath {
+        CGPath(roundedRect: note.frame, cornerWidth: Style.noteCornerRadius, cornerHeight: Style.noteCornerRadius, transform: nil)
+    }
+
+    /// Hover, selection, and binding-target outlines, in world coordinates at constant screen widths.
+    private func drawIndicators(in context: CGContext, frames: [StickyNote.ID: CGRect]) {
+        var outlined: [Selection] = []
+        if tool == .select, interaction == nil, let hovered, hovered != selection {
+            outlined.append(hovered)
+        }
+        // Like tldraw, the selection outline steps aside while the selection is being dragged.
+        if let selection, !isDraggingSelection {
+            outlined.append(selection)
+        }
+        if let targetNoteID {
+            outlined.append(.note(targetNoteID))
+        }
+        guard !outlined.isEmpty else { return }
+
+        context.saveGState()
+        for item in outlined {
+            switch item {
+            case .note(let id):
+                guard let note = notes.first(where: { $0.id == id }) else { continue }
+                context.addPath(notePath(note))
+            case .arrow(let id):
+                guard let arrow = arrows.first(where: { $0.id == id }) else { continue }
+                let geometry = geometry(of: arrow, frames: frames)
+                context.addPath(geometry.bodyPath)
+                context.addPath(geometry.arrowheadsPath(strokeWidth: Style.arrowStrokeWidth))
+            }
+        }
+        context.setStrokeColor(Style.accent.cgColor)
+        context.setLineWidth(Style.indicatorWidth / camera.zoom)
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+        context.strokePath()
+        context.restoreGState()
+    }
+
+    private var isDraggingSelection: Bool {
+        switch interaction {
+        case .movingNote, .translatingArrow, .draggingHandle: true
+        default: false
+        }
+    }
+
+    // MARK: - Items
+
+    func noteFrames() -> [StickyNote.ID: CGRect] {
+        Dictionary(uniqueKeysWithValues: notes.map { ($0.id, $0.frame) })
+    }
+
+    /// Back to front. Each arrow sits just above the highest note it's bound to, so it's never
+    /// hidden behind its own notes; unbound arrows sit on top.
+    func paintOrder() -> [Item] {
+        let noteIndices = Dictionary(uniqueKeysWithValues: notes.enumerated().map { ($1.id, $0) })
+        var arrowsAboveNote: [Int: [Int]] = [:]
+        var topArrows: [Int] = []
+        for (index, arrow) in arrows.enumerated() {
+            let boundNotes = [arrow.start, arrow.end].compactMap { $0.binding.flatMap { noteIndices[$0.noteID] } }
+            if let highest = boundNotes.max() {
+                arrowsAboveNote[highest, default: []].append(index)
+            } else {
+                topArrows.append(index)
+            }
+        }
+        var order: [Item] = []
+        for index in notes.indices {
+            order.append(.note(index))
+            order += (arrowsAboveNote[index] ?? []).map(Item.arrow)
+        }
+        return order + topArrows.map(Item.arrow)
+    }
+
+    /// The front-most item under a world point.
+    func item(at worldPoint: CGPoint) -> Item? {
+        let frames = noteFrames()
+        let arrowMargin = Style.arrowHitMargin / camera.zoom + Style.arrowStrokeWidth / 2
+        return paintOrder().reversed().first { item in
+            switch item {
+            case .note(let index): notes[index].frame.contains(worldPoint)
+            case .arrow(let index): geometry(of: arrows[index], frames: frames).distance(to: worldPoint) <= arrowMargin
+            }
+        }
+    }
+
+    func selection(for item: Item) -> Selection {
+        switch item {
+        case .note(let index): .note(notes[index].id)
+        case .arrow(let index): .arrow(arrows[index].id)
+        }
+    }
+
     // MARK: - Mouse
 
     override func mouseDown(with event: NSEvent) {
-        let viewPoint = convert(event.locationInWindow, from: nil)
+        samplePointer(event)
+        let viewPoint = pointerLocation
         let worldPoint = camera.toWorld(viewPoint)
         endEditing()
 
-        if let index = notes.lastIndex(where: { $0.frame.contains(worldPoint) }) {
+        if tool == .arrow {
+            pressWithArrowTool(at: viewPoint, modifiers: effectiveModifiers(event.modifierFlags))
+            return
+        }
+
+        if case .arrow(let id)? = selection, let handle = arrowHandle(of: id, at: viewPoint) {
+            pressHandle(handle, of: id, at: viewPoint, clickCount: event.clickCount)
+            return
+        }
+
+        switch item(at: worldPoint) {
+        case .arrow(let index)?:
+            let id = arrows[index].id
+            selection = .arrow(id)
+            interaction = .pointingArrow(id: id, origin: viewPoint)
+        case .note(let index)?:
             // Bring the note to the front.
             let note = notes.remove(at: index)
             notes.append(note)
-            selectedID = note.id
+            selection = .note(note.id)
             if event.clickCount == 2 {
                 beginEditing(note.id)
             } else {
                 let grabOffset = CGSize(width: worldPoint.x - note.frame.minX, height: worldPoint.y - note.frame.minY)
-                drag = .movingNote(id: note.id, grabOffset: grabOffset)
+                interaction = .movingNote(id: note.id, grabOffset: grabOffset)
             }
-        } else {
-            selectedID = nil
+        case nil:
+            selection = nil
             if event.clickCount == 2 {
                 addNote(centeredAt: worldPoint)
             } else {
-                drag = .panning(last: viewPoint)
-                NSCursor.closedHand.push()
+                interaction = .panning(last: viewPoint)
             }
         }
-        needsDisplay = true
+        hovered = nil
+        updateCursor()
     }
 
     override func mouseDragged(with event: NSEvent) {
-        let viewPoint = convert(event.locationInWindow, from: nil)
-        switch drag {
+        samplePointer(event)
+        let viewPoint = pointerLocation
+        let worldPoint = camera.toWorld(viewPoint)
+        let modifiers = effectiveModifiers(event.modifierFlags)
+
+        switch interaction {
         case .panning(let last):
-            drag = .panning(last: viewPoint)
+            interaction = .panning(last: viewPoint)
             camera.pan(by: CGSize(width: viewPoint.x - last.x, height: viewPoint.y - last.y))
         case .movingNote(let id, let grabOffset):
             guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
-            let worldPoint = camera.toWorld(viewPoint)
             notes[index].frame.origin = CGPoint(x: worldPoint.x - grabOffset.width, y: worldPoint.y - grabOffset.height)
             needsDisplay = true
+        case .pointingArrow(let id, let origin):
+            if viewPoint.distance(to: origin) > Style.dragThreshold {
+                beginTranslatingArrow(id, from: camera.toWorld(origin))
+                updateArrowTranslation(to: worldPoint)
+            }
+        case .translatingArrow:
+            updateArrowTranslation(to: worldPoint)
+        case .pointingWithArrowTool(let origin):
+            if viewPoint.distance(to: origin) > Style.dragThreshold {
+                createArrow(from: camera.toWorld(origin), to: worldPoint, modifiers: modifiers)
+            }
+        case .pointingHandle(let id, let handle, let origin):
+            if viewPoint.distance(to: origin) > Style.dragThreshold {
+                beginDraggingHandle(handle, of: id, from: camera.toWorld(origin))
+                updateHandleDrag(to: worldPoint, modifiers: modifiers)
+            }
+        case .draggingHandle:
+            updateHandleDrag(to: worldPoint, modifiers: modifiers)
         case nil:
             break
         }
     }
 
     override func mouseUp(with event: NSEvent) {
-        if case .panning = drag {
-            NSCursor.pop()
+        samplePointer(event)
+        switch interaction {
+        case .draggingHandle(let drag):
+            finishHandleDrag(drag)
+        case .pointingWithArrowTool:
+            // A click without a drag makes no arrow.
+            restartArrowToolTargeting()
+        default:
+            break
         }
-        drag = nil
+        interaction = nil
+        if tool == .select {
+            targetNoteID = nil
+        }
+        updateHover(modifiers: effectiveModifiers(event.modifierFlags))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        samplePointer(event)
+        updateHover(modifiers: effectiveModifiers(event.modifierFlags))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hovered = nil
+        hoveredHandle = nil
+        if interaction == nil {
+            resetArrowToolTargeting()
+        }
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        updateCursor()
+    }
+
+    private func updateHover(modifiers: NSEvent.ModifierFlags) {
+        guard interaction == nil else { return }
+        switch tool {
+        case .select:
+            if case .arrow(let id)? = selection, let handle = arrowHandle(of: id, at: pointerLocation) {
+                hoveredHandle = handle
+                hovered = nil
+            } else {
+                hoveredHandle = nil
+                hovered = item(at: camera.toWorld(pointerLocation)).map(selection(for:))
+            }
+        case .arrow:
+            updateArrowToolTarget(at: camera.toWorld(pointerLocation), modifiers: modifiers)
+        }
+        updateCursor()
+    }
+
+    func updateCursor() {
+        let cursor: NSCursor = switch interaction {
+        case .panning, .pointingHandle, .draggingHandle: .closedHand
+        default: tool == .arrow ? .crosshair : hoveredHandle != nil ? .openHand : .arrow
+        }
+        cursor.set()
+    }
+
+    private func samplePointer(_ event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        defer {
+            pointerLocation = point
+            lastPointerTime = event.timestamp
+        }
+        guard let lastPointerTime else { return }
+        let elapsedMilliseconds = max((event.timestamp - lastPointerTime) * 1000, 1)
+        let speed = point.distance(to: pointerLocation) / elapsedMilliseconds
+        // Smoothed like tldraw's: the old value's weight halves every 16 ms.
+        pointerSpeed += (speed - pointerSpeed) * (1 - pow(0.5, elapsedMilliseconds / 16))
+        if pointerSpeed < 0.01 {
+            pointerSpeed = 0
+        }
+    }
+
+    // MARK: - Modifier keys
+
+    /// Modifiers from an event, plus any released within `Style.modifierReleaseDelay`.
+    func effectiveModifiers(_ flags: NSEvent.ModifierFlags) -> NSEvent.ModifierFlags {
+        flags.intersection(.deviceIndependentFlagsMask).union(recentlyReleasedModifiers)
+    }
+
+    override func flagsChanged(with event: NSEvent) {
+        let held = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let released = heldModifiers.subtracting(held)
+        heldModifiers = held
+        if !released.isEmpty {
+            recentlyReleasedModifiers.formUnion(released)
+            modifierReleaseTask?.cancel()
+            modifierReleaseTask = Task { [weak self] in
+                try? await Task.sleep(for: Style.modifierReleaseDelay)
+                guard !Task.isCancelled, let self else { return }
+                self.recentlyReleasedModifiers = []
+                self.modifiersDidChange(self.heldModifiers)
+            }
+        }
+        modifiersDidChange(effectiveModifiers(held))
+    }
+
+    /// Modifiers change how arrow ends bind, so re-evaluate without waiting for the pointer to move.
+    private func modifiersDidChange(_ modifiers: NSEvent.ModifierFlags) {
+        switch interaction {
+        case .draggingHandle:
+            updateHandleDrag(to: camera.toWorld(pointerLocation), modifiers: modifiers)
+        case nil where tool == .arrow:
+            updateArrowToolTarget(at: camera.toWorld(pointerLocation), modifiers: modifiers)
+        default:
+            break
+        }
     }
 
     // MARK: - Trackpad and scroll wheel
@@ -204,23 +511,38 @@ final class CanvasView: NSView {
         interpretKeyEvents([event])
     }
 
+    override func insertText(_ insertString: Any) {
+        switch (insertString as? String)?.lowercased() {
+        case "a": switchTool(to: .arrow)
+        case "v": switchTool(to: .select)
+        default: super.insertText(insertString)
+        }
+    }
+
     override func deleteBackward(_ sender: Any?) {
-        deleteSelectedNote()
+        deleteSelection()
     }
 
     override func deleteForward(_ sender: Any?) {
-        deleteSelectedNote()
+        deleteSelection()
     }
 
     override func insertNewline(_ sender: Any?) {
-        if let selectedID {
-            beginEditing(selectedID)
+        if case .note(let id)? = selection {
+            beginEditing(id)
         }
     }
 
     override func cancelOperation(_ sender: Any?) {
-        selectedID = nil
-        needsDisplay = true
+        if case .draggingHandle(let drag) = interaction, drag.isCreating {
+            cancelArrowCreation(drag)
+        } else if interaction != nil {
+            return
+        } else if tool != .select {
+            switchTool(to: .select)
+        } else {
+            selection = nil
+        }
     }
 
     @objc func zoomIn(_ sender: Any?) {
@@ -237,6 +559,10 @@ final class CanvasView: NSView {
 
     // MARK: - Notes
 
+    func noteIndex(at worldPoint: CGPoint) -> Int? {
+        notes.lastIndex { $0.frame.contains(worldPoint) }
+    }
+
     private func addNote(centeredAt point: CGPoint) {
         let size = Style.noteSize
         let note = StickyNote(frame: CGRect(
@@ -246,29 +572,46 @@ final class CanvasView: NSView {
             height: size.height
         ))
         notes.append(note)
+        selection = .note(note.id)
         beginEditing(note.id)
     }
 
-    private func deleteSelectedNote() {
-        guard let selectedID else { return }
-        notes.removeAll { $0.id == selectedID }
-        self.selectedID = nil
-        needsDisplay = true
+    private func deleteSelection() {
+        switch selection {
+        case .note(let id):
+            releaseArrows(from: id)
+            notes.removeAll { $0.id == id }
+        case .arrow(let id):
+            arrows.removeAll { $0.id == id }
+        case nil:
+            return
+        }
+        selection = nil
+        hovered = nil
+        hoveredHandle = nil
     }
 
-    private static func welcomeNotes() -> [StickyNote] {
-        let texts = [
-            "Double-click empty space to add a note.",
-            "Drag a note to move it. Double-click it (or select it and press Return) to edit.",
-            "Pinch to zoom and scroll with two fingers to pan. Dragging the background pans too.",
-            "Select a note and press Delete to remove it.",
-        ]
-        return texts.enumerated().map { index, text in
-            StickyNote(
-                frame: CGRect(origin: CGPoint(x: 80 + CGFloat(index) * 240, y: 80), size: Style.noteSize),
-                text: text
-            )
+    private static func welcomeBoard() -> ([StickyNote], [Arrow]) {
+        func note(_ x: CGFloat, _ y: CGFloat, _ text: String) -> StickyNote {
+            StickyNote(frame: CGRect(origin: CGPoint(x: x, y: y), size: Style.noteSize), text: text)
         }
+        let notes = [
+            note(80, 80, "Double-click empty space to add a note. Drag a note to move it."),
+            note(460, 80, "Double-click a note (or select it and press Return) to edit it."),
+            note(840, 80, "Pinch to zoom, scroll with two fingers to pan. Dragging the background pans too."),
+            note(80, 420, "Press A for the arrow tool, then drag from one note to another."),
+            note(460, 420, "Pause inside a note while drawing to aim at that spot. Hold ⌥ to go all the way in, ⌘ to not attach."),
+            note(840, 420, "Select an arrow and drag its middle handle to bend it."),
+        ]
+        func bound(_ note: StickyNote) -> ArrowTerminal {
+            .bound(ArrowBinding(noteID: note.id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))
+        }
+        let arrows = [
+            Arrow(start: bound(notes[0]), end: bound(notes[1])),
+            Arrow(start: bound(notes[3]), end: bound(notes[4])),
+            Arrow(start: bound(notes[4]), end: bound(notes[5]), bend: 70),
+        ]
+        return (notes, arrows)
     }
 
     // MARK: - Editing
@@ -281,7 +624,7 @@ final class CanvasView: NSView {
         editor.textView.delegate = self
         addSubview(editor)
         self.editor = editor
-        selectedID = id
+        selection = .note(id)
         layoutEditor()
         window?.makeFirstResponder(editor.textView)
         needsDisplay = true
