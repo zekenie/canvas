@@ -18,7 +18,11 @@ enum Style {
     static let noteCornerRadius: CGFloat = 4
     static let notePadding: CGFloat = 16
     static let noteColor = NSColor(srgbRed: 1.0, green: 0.87, blue: 0.45, alpha: 1)
-    static let noteShadow = NSColor(white: 0, alpha: 0.25)
+
+    static let ellipseSize = CGSize(width: 200, height: 140)
+    static let ellipseColor = NSColor(srgbRed: 0.62, green: 0.81, blue: 1.0, alpha: 1)
+
+    static let shapeShadow = NSColor(white: 0, alpha: 0.25)
 
     // Arrows, in world units.
     static let arrowColor = NSColor(name: nil) {
@@ -41,12 +45,12 @@ enum Style {
     /// The bend handle hides when it's this close to an end handle.
     static let middleHandleMinDistance: CGFloat = 24
 
-    /// Hovering one note this long with the arrow tool makes the next arrow start precisely there.
+    /// Hovering one shape this long with the arrow tool makes the next arrow start precisely there.
     static let hoverPreciseDelay: Duration = .milliseconds(600)
-    /// Holding still this long after pressing, or while dragging an arrow end over a note, binds
-    /// precisely to the pointer instead of the note's center.
+    /// Holding still this long after pressing, or while dragging an arrow end over a shape, binds
+    /// precisely to the pointer instead of the shape's center.
     static let pressPreciseDelay: Duration = .milliseconds(320)
-    /// Entering a note slower than this (view points per millisecond) binds precisely right away.
+    /// Entering a shape slower than this (view points per millisecond) binds precisely right away.
     static let slowPointerSpeed: CGFloat = 0.5
     /// Releasing a modifier takes effect this much later, so letting go of ⌥ and the mouse
     /// together doesn't undo what ⌥ did.

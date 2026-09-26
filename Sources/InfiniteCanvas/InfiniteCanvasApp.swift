@@ -54,6 +54,7 @@ struct ContentView: View {
                     Picker("Tool", selection: $tool) {
                         Image(systemName: "cursorarrow").help("Select (V)").tag(CanvasTool.select)
                         Image(systemName: "arrow.up.right").help("Arrow (A)").tag(CanvasTool.arrow)
+                        Image(systemName: "circle").help("Ellipse (O)").tag(CanvasTool.ellipse)
                     }
                     .pickerStyle(.segmented)
                 }

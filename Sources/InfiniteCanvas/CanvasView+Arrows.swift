@@ -8,8 +8,9 @@ enum ArrowHandle: Equatable {
 
 /// Arrow behavior, modeled closely on tldraw's.
 ///
-/// An arrow end binds to the note under the pointer. How it binds depends on how the user got
-/// there: arriving quickly aims at the note's center ("imprecise"), while arriving slowly or
+/// An arrow end binds to the front-most `Connectable` shape under the pointer; arrows know
+/// nothing else about the shapes they connect. How an end binds depends on how the user got
+/// there: arriving quickly aims at the shape's center ("imprecise"), while arriving slowly or
 /// pausing aims at the exact spot under the pointer ("precise"). Holding ⌥ runs the arrow all
 /// the way to that spot ("exact"), and holding ⌘ keeps it from binding at all.
 extension CanvasView {
@@ -20,7 +21,7 @@ extension CanvasView {
         var isCreating: Bool
         /// The handle keeps its offset from the pointer, so grabbing it off-center doesn't make it jump.
         var handleOffset: CGPoint
-        /// Whether the dragged end aims precisely: after pausing on a note, or arriving slowly.
+        /// Whether the dragged end aims precisely: after pausing on a shape, or arriving slowly.
         var isPrecise: Bool
     }
 
@@ -34,26 +35,31 @@ extension CanvasView {
         var endBinding: ArrowBinding?
     }
 
-    func geometry(of arrow: Arrow, frames: [StickyNote.ID: CGRect]? = nil) -> ArrowGeometry {
-        let frames = frames ?? noteFrames()
-        return ArrowGeometry(arrow: arrow, strokeWidth: Style.arrowStrokeWidth) { frames[$0] }
+    /// Pass `connectables` (from `connectablesByID()`) when resolving several arrows at once.
+    func geometry(of arrow: Arrow, connectables: [ShapeID: any Connectable]? = nil) -> ArrowGeometry {
+        let connectables = connectables ?? connectablesByID()
+        return ArrowGeometry(arrow: arrow, strokeWidth: Style.arrowStrokeWidth) { connectables[$0] }
     }
 
     // MARK: - Targeting
 
-    /// The note an arrow end at `point` would bind to: the front-most note under it. Holding ⌘
-    /// (or ⌃) binds to nothing.
-    func arrowTarget(at point: CGPoint, modifiers: NSEvent.ModifierFlags) -> StickyNote? {
-        guard modifiers.isDisjoint(with: [.command, .control]) else { return nil }
-        return noteIndex(at: point).map { notes[$0] }
+    /// The front-most shape under `point` that arrows can bind to.
+    func connectable(at point: CGPoint) -> (any Connectable)? {
+        connectables.last { $0.contains(point) }
     }
 
-    /// Before pressing, the arrow tool outlines the note it would start from. Hovering one note
+    /// The shape an arrow end at `point` would bind to. Holding ⌘ (or ⌃) binds to nothing.
+    func arrowTarget(at point: CGPoint, modifiers: NSEvent.ModifierFlags) -> (any Connectable)? {
+        guard modifiers.isDisjoint(with: [.command, .control]) else { return nil }
+        return connectable(at: point)
+    }
+
+    /// Before pressing, the arrow tool outlines the shape it would start from. Hovering one shape
     /// long enough means the user is aiming, so the arrow will start precisely where they press.
     func updateArrowToolTarget(at point: CGPoint, modifiers: NSEvent.ModifierFlags) {
         let target = arrowTarget(at: point, modifiers: modifiers)?.id
-        guard target != targetNoteID else { return }
-        targetNoteID = target
+        guard target != targetShapeID else { return }
+        targetShapeID = target
         arrowToolIsPrecise = false
         if target != nil {
             startPreciseTimer(after: Style.hoverPreciseDelay) { $0.arrowToolIsPrecise = true }
@@ -65,7 +71,7 @@ extension CanvasView {
     func resetArrowToolTargeting() {
         cancelPreciseTimer()
         arrowToolIsPrecise = false
-        targetNoteID = nil
+        targetShapeID = nil
     }
 
     func restartArrowToolTargeting() {
@@ -73,24 +79,24 @@ extension CanvasView {
         updateArrowToolTarget(at: camera.toWorld(pointerLocation), modifiers: effectiveModifiers(NSEvent.modifierFlags))
     }
 
-    /// Binds one end of an arrow to the note at `point`, or frees it if there's none. This is
-    /// tldraw's `updateArrowTargetState` and `onTerminalHandleDrag`, for notes.
+    /// Binds one end of an arrow to the shape at `point`, or frees it if there's none. This is
+    /// tldraw's `updateArrowTargetState` and `onTerminalHandleDrag`.
     func bindTerminal(of index: Int, _ end: ArrowEnd, to point: CGPoint, isPrecise: Bool, modifiers: NSEvent.ModifierFlags) {
         let current = arrows[index][end].binding
         let opposite = arrows[index][end.opposite].binding
         needsDisplay = true
         guard let target = arrowTarget(at: point, modifiers: modifiers) else {
             arrows[index][end] = .free(point)
-            targetNoteID = nil
+            targetShapeID = nil
             return
         }
 
         var precise = isPrecise
-        if !precise, current?.noteID != target.id {
-            // Arriving at a note slowly means the user is aiming at a spot in it.
+        if !precise, current?.shapeID != target.id {
+            // Arriving at a shape slowly means the user is aiming at a spot in it.
             precise = pointerSpeed < Style.slowPointerSpeed
         }
-        if !isPrecise, let opposite, opposite.noteID == target.id, opposite.isPrecise {
+        if !isPrecise, let opposite, opposite.shapeID == target.id, opposite.isPrecise {
             // Otherwise both ends could land on the same point.
             precise = true
         }
@@ -99,31 +105,28 @@ extension CanvasView {
             precise = true
         }
 
-        let frame = target.frame
+        let bounds = target.bounds
         var anchor = point
         if !precise {
-            anchor = frame.center
+            anchor = bounds.center
         } else if !isExact {
             // Snap to the center when close to it.
-            let snapDistance = min(max(min(frame.width, frame.height) * 0.15, 4), 16) / camera.zoom
-            if point.distance(to: frame.center) < snapDistance {
-                anchor = frame.center
+            let snapDistance = min(max(min(bounds.width, bounds.height) * 0.15, 4), 16) / camera.zoom
+            if point.distance(to: bounds.center) < snapDistance {
+                anchor = bounds.center
             }
         }
-        var normalizedAnchor = CGPoint(
-            x: (anchor.x - frame.minX) / frame.width,
-            y: (anchor.y - frame.minY) / frame.height
-        )
-        if let opposite, opposite.noteID == target.id, opposite.normalizedAnchor == normalizedAnchor {
+        var normalizedAnchor = normalized(anchor, in: bounds)
+        if let opposite, opposite.shapeID == target.id, opposite.normalizedAnchor == normalizedAnchor {
             normalizedAnchor.x += 0.05
         }
         arrows[index][end] = .bound(ArrowBinding(
-            noteID: target.id,
+            shapeID: target.id,
             normalizedAnchor: normalizedAnchor,
             isPrecise: precise,
             isExact: isExact
         ))
-        targetNoteID = target.id
+        targetShapeID = target.id
     }
 
     func startPreciseTimer(after delay: Duration, _ fire: @escaping @MainActor (CanvasView) -> Void) {
@@ -156,8 +159,8 @@ extension CanvasView {
         let index = arrows.count - 1
         selection = .arrow(arrow.id)
 
-        // The start binds where the press happened: to the note's center, unless the user dwelt
-        // first. (Binding precisely first means the second pass keeps the same note without
+        // The start binds where the press happened: to the shape's center, unless the user dwelt
+        // first. (Binding precisely first means the second pass keeps the same shape without
         // re-checking pointer speed, as tldraw does.)
         bindTerminal(of: index, .start, to: origin, isPrecise: true, modifiers: modifiers)
         bindTerminal(of: index, .start, to: origin, isPrecise: arrowToolIsPrecise || modifiers.contains(.option), modifiers: modifiers)
@@ -178,7 +181,7 @@ extension CanvasView {
         cancelPreciseTimer()
         arrows.removeAll { $0.id == drag.arrowID }
         selection = nil
-        targetNoteID = nil
+        targetShapeID = nil
         interaction = nil
         // Stay in the arrow tool, ready for another try.
     }
@@ -212,9 +215,9 @@ extension CanvasView {
             return
         }
         interaction = .pointingHandle(arrowID: id, handle: handle, origin: viewPoint)
-        // Pressing a bound end outlines the note it's bound to.
+        // Pressing a bound end outlines the shape it's bound to.
         if case .terminal(let end) = handle, let binding = arrows[index][end].binding {
-            targetNoteID = binding.noteID
+            targetShapeID = binding.shapeID
         }
         updateCursor()
     }
@@ -261,9 +264,9 @@ extension CanvasView {
             let before = arrows[index][end].binding
             bindTerminal(of: index, end, to: point, isPrecise: drag.isPrecise || modifiers.contains(.option), modifiers: modifiers)
             let after = arrows[index][end].binding
-            // Each new note starts over: precise only if arrived at slowly or after a pause there.
+            // Each new shape starts over: precise only if arrived at slowly or after a pause there.
             if let after {
-                if before?.noteID != after.noteID {
+                if before?.shapeID != after.shapeID {
                     drag.isPrecise = pointerSpeed < Style.slowPointerSpeed || modifiers.contains(.option)
                     startDragPreciseTimer()
                 }
@@ -289,7 +292,7 @@ extension CanvasView {
 
     func finishHandleDrag(_ drag: HandleDrag) {
         cancelPreciseTimer()
-        targetNoteID = nil
+        targetShapeID = nil
         selection = .arrow(drag.arrowID)
         if drag.isCreating {
             switchTool(to: .select)
@@ -299,15 +302,16 @@ extension CanvasView {
     // MARK: - Moving arrows
 
     /// Moving an arrow on its own keeps each binding, made precise, for as long as that end's
-    /// anchor stays on its note. An end moved off its note lets go.
+    /// anchor stays on its shape. An end moved off its shape lets go.
     func beginTranslatingArrow(_ id: Arrow.ID, from origin: CGPoint) {
         guard let index = arrows.firstIndex(where: { $0.id == id }) else { return }
-        let geometry = geometry(of: arrows[index])
+        let connectables = connectablesByID()
+        let geometry = geometry(of: arrows[index], connectables: connectables)
         var bindings: [ArrowEnd: ArrowBinding] = [:]
         for end in [ArrowEnd.start, .end] {
             guard var binding = arrows[index][end].binding,
-                  let frame = notes.first(where: { $0.id == binding.noteID })?.frame else { continue }
-            binding.normalizedAnchor = normalized(geometry.handlePoint(at: end), in: frame)
+                  let bounds = connectables[binding.shapeID]?.bounds else { continue }
+            binding.normalizedAnchor = normalized(geometry.handlePoint(at: end), in: bounds)
             binding.isPrecise = true
             arrows[index][end] = .bound(binding)
             bindings[end] = binding
@@ -328,10 +332,8 @@ extension CanvasView {
         let delta = pointer - move.origin
         for (end, handle, binding) in [(ArrowEnd.start, move.startHandle, move.startBinding), (.end, move.endHandle, move.endBinding)] {
             let point = handle + delta
-            if var binding,
-               let noteIndex = noteIndex(at: point),
-               notes[noteIndex].id == binding.noteID {
-                binding.normalizedAnchor = normalized(point, in: notes[noteIndex].frame)
+            if var binding, let shape = connectable(at: point), shape.id == binding.shapeID {
+                binding.normalizedAnchor = normalized(point, in: shape.bounds)
                 arrows[index][end] = .bound(binding)
             } else {
                 arrows[index][end] = .free(point)
@@ -340,14 +342,14 @@ extension CanvasView {
         needsDisplay = true
     }
 
-    /// Lets go of a note that's about to be deleted: bound ends stay where they visibly are and
+    /// Lets go of a shape that's about to be deleted: bound ends stay where they visibly are and
     /// the arrow keeps its curve.
-    func releaseArrows(from noteID: StickyNote.ID) {
-        let frames = noteFrames()
+    func releaseArrows(from shapeID: ShapeID) {
+        let connectables = connectablesByID()
         for index in arrows.indices {
-            let ends = Set([ArrowEnd.start, .end].filter { arrows[index][$0].binding?.noteID == noteID })
+            let ends = Set([ArrowEnd.start, .end].filter { arrows[index][$0].binding?.shapeID == shapeID })
             guard !ends.isEmpty else { continue }
-            let geometry = geometry(of: arrows[index], frames: frames)
+            let geometry = geometry(of: arrows[index], connectables: connectables)
             if let bend = geometry.bendKeepingCurve(movingHandlesToVisibleEndsAt: ends) {
                 arrows[index].bend = bend
             }
@@ -357,8 +359,8 @@ extension CanvasView {
         }
     }
 
-    private func normalized(_ point: CGPoint, in frame: CGRect) -> CGPoint {
-        CGPoint(x: (point.x - frame.minX) / frame.width, y: (point.y - frame.minY) / frame.height)
+    private func normalized(_ point: CGPoint, in bounds: CGRect) -> CGPoint {
+        CGPoint(x: (point.x - bounds.minX) / bounds.width, y: (point.y - bounds.minY) / bounds.height)
     }
 
     // MARK: - Drawing
@@ -376,15 +378,15 @@ extension CanvasView {
         context.restoreGState()
     }
 
-    /// For a selected arrow bound to notes: a faint dashed stub from each anchor to where the
-    /// arrow visibly ends, with a dot at an imprecise anchor (the note's center) or a cross at a
+    /// For a selected arrow bound to shapes: a faint dashed stub from each anchor to where the
+    /// arrow visibly ends, with a dot at an imprecise anchor (the shape's center) or a cross at a
     /// precise one. Exact ends get neither, since the arrow runs right up to the anchor.
-    func drawBindingHints(in context: CGContext, frames: [StickyNote.ID: CGRect]) {
+    func drawBindingHints(in context: CGContext, connectables: [ShapeID: any Connectable]) {
         let isDraggingHandle = if case .draggingHandle = interaction { true } else { false }
         guard tool == .select || isDraggingHandle,
               case .arrow(let id)? = selection,
               let arrow = arrows.first(where: { $0.id == id }) else { return }
-        let geometry = geometry(of: arrow, frames: frames)
+        let geometry = geometry(of: arrow, connectables: connectables)
         let zoom = camera.zoom
         let lineWidth = Style.bindingHintWidth / zoom
 
@@ -432,7 +434,7 @@ extension CanvasView {
     }
 
     /// Handles for the selected arrow, in view coordinates. They hide while anything is dragged.
-    func drawArrowHandles(in context: CGContext, frames: [StickyNote.ID: CGRect]) {
+    func drawArrowHandles(in context: CGContext, connectables: [ShapeID: any Connectable]) {
         var pressedHandle: ArrowHandle?
         switch interaction {
         case nil: break
@@ -442,7 +444,7 @@ extension CanvasView {
         guard tool == .select,
               case .arrow(let id)? = selection,
               let arrow = arrows.first(where: { $0.id == id }) else { return }
-        let geometry = geometry(of: arrow, frames: frames)
+        let geometry = geometry(of: arrow, connectables: connectables)
         // Handles shrink once zoomed out past 25%.
         let radius = Style.handleRadius * min(1, camera.zoom / 0.25)
 

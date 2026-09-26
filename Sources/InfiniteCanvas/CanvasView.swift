@@ -1,17 +1,18 @@
 import AppKit
 
 enum CanvasTool {
-    case select, arrow
+    case select, arrow, ellipse
 }
 
 /// The infinite canvas.
 ///
-/// Notes and arrows live in world coordinates and `camera` maps them onto the view. Everything is
+/// Shapes and arrows live in world coordinates and `camera` maps them onto the view. Everything is
 /// drawn by hand in `draw(_:)` through the camera transform, so content stays crisp at every zoom
 /// level. The only subview is a `NoteEditor`, shown over a note while its text is being edited.
 ///
-/// Arrow behavior (drawing, binding to notes, bending, and the overlays that go with it) lives in
-/// CanvasView+Arrows.swift and closely follows tldraw's.
+/// Arrow behavior (drawing, binding to shapes, bending, and the overlays that go with it) lives
+/// in CanvasView+Arrows.swift and closely follows tldraw's. Arrows reach shapes only through
+/// `connectables`.
 final class CanvasView: NSView {
     var tool = CanvasTool.select {
         didSet {
@@ -26,19 +27,19 @@ final class CanvasView: NSView {
     var onToolChange: ((CanvasTool) -> Void)?
 
     enum Selection: Equatable {
-        case note(StickyNote.ID)
+        case shape(ShapeID)
         case arrow(Arrow.ID)
     }
 
-    /// A drawable item, by index into `notes` or `arrows`.
+    /// A drawable item, by index into `shapes` or `arrows`.
     enum Item: Equatable {
-        case note(Int)
+        case shape(Int)
         case arrow(Int)
     }
 
     enum Interaction {
         case panning(last: CGPoint)
-        case movingNote(id: StickyNote.ID, grabOffset: CGSize)
+        case movingShape(id: ShapeID, grabOffset: CGSize)
         /// Pressed on an arrow's body; moves it once the pointer passes the drag threshold.
         case pointingArrow(id: Arrow.ID, origin: CGPoint)
         case translatingArrow(ArrowTranslation)
@@ -55,7 +56,8 @@ final class CanvasView: NSView {
             needsDisplay = true
         }
     }
-    var notes: [StickyNote] = []
+    /// Back to front.
+    var shapes: [any CanvasShape] = []
     var arrows: [Arrow] = []
     var selection: Selection? { didSet { needsDisplay = true } }
     /// What's under the pointer in the select tool, outlined as a hover hint.
@@ -67,11 +69,11 @@ final class CanvasView: NSView {
             updateCursor()
         }
     }
-    /// The note an arrow end would bind to, outlined while aiming or dragging an arrow.
-    var targetNoteID: StickyNote.ID? { didSet { if targetNoteID != oldValue { needsDisplay = true } } }
+    /// The shape an arrow end would bind to, outlined while aiming or dragging an arrow.
+    var targetShapeID: ShapeID? { didSet { if targetShapeID != oldValue { needsDisplay = true } } }
     var interaction: Interaction? { didSet { needsDisplay = true } }
 
-    /// Set by dwelling with the arrow tool (hovering one note, or holding still after pressing).
+    /// Set by dwelling with the arrow tool (hovering one shape, or holding still after pressing).
     /// Makes a new arrow's start bind precisely where it was pressed.
     var arrowToolIsPrecise = false
     var preciseTimer: Task<Void, Never>?
@@ -88,7 +90,7 @@ final class CanvasView: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        (notes, arrows) = Self.welcomeBoard()
+        (shapes, arrows) = Self.welcomeBoard()
         addTrackingArea(NSTrackingArea(
             rect: .zero,
             options: [.mouseMoved, .mouseEnteredAndExited, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
@@ -127,27 +129,27 @@ final class CanvasView: NSView {
         dirtyRect.fill()
         drawGrid(in: context)
 
-        let frames = noteFrames()
+        let connectables = connectablesByID()
         context.saveGState()
         context.scaleBy(x: camera.zoom, y: camera.zoom)
         context.translateBy(x: -camera.origin.x, y: -camera.origin.y)
-        // Pad the visible area so shadows of notes just offscreen still get drawn.
+        // Pad the visible area so shadows of shapes just offscreen still get drawn.
         let visible = camera.toWorld(bounds).insetBy(dx: -40, dy: -40)
         for item in paintOrder() {
             switch item {
-            case .note(let index):
-                if notes[index].frame.intersects(visible) {
-                    drawNote(notes[index], in: context)
+            case .shape(let index):
+                if shapes[index].frame.intersects(visible) {
+                    drawShape(shapes[index], in: context)
                 }
             case .arrow(let index):
-                drawArrow(geometry(of: arrows[index], frames: frames), in: context)
+                drawArrow(geometry(of: arrows[index], connectables: connectables), in: context)
             }
         }
-        drawIndicators(in: context, frames: frames)
-        drawBindingHints(in: context, frames: frames)
+        drawIndicators(in: context, connectables: connectables)
+        drawBindingHints(in: context, connectables: connectables)
         context.restoreGState()
 
-        drawArrowHandles(in: context, frames: frames)
+        drawArrowHandles(in: context, connectables: connectables)
     }
 
     private func drawGrid(in context: CGContext) {
@@ -176,16 +178,30 @@ final class CanvasView: NSView {
     }
 
     /// Draws in world coordinates; the caller has already applied the camera transform.
-    private func drawNote(_ note: StickyNote, in context: CGContext) {
+    private func drawShape(_ shape: any CanvasShape, in context: CGContext) {
+        switch shape {
+        case let note as StickyNote:
+            fillWithShadow(notePath(note), Style.noteColor, in: context)
+            drawNoteText(note)
+        case let ellipse as Ellipse:
+            fillWithShadow(CGPath(ellipseIn: ellipse.frame, transform: nil), Style.ellipseColor, in: context)
+        default:
+            break
+        }
+    }
+
+    private func fillWithShadow(_ path: CGPath, _ color: NSColor, in context: CGContext) {
         // Shadows ignore the current transform, so scale the blur by hand. The offset is zero
         // because shadow offsets live in device space, whose y direction varies by context.
         context.saveGState()
-        context.setShadow(offset: .zero, blur: 6 * camera.zoom, color: Style.noteShadow.cgColor)
-        context.addPath(notePath(note))
-        context.setFillColor(Style.noteColor.cgColor)
+        context.setShadow(offset: .zero, blur: 6 * camera.zoom, color: Style.shapeShadow.cgColor)
+        context.addPath(path)
+        context.setFillColor(color.cgColor)
         context.fillPath()
         context.restoreGState()
+    }
 
+    private func drawNoteText(_ note: StickyNote) {
         // While editing, the editor's text view draws the text instead.
         if note.id != editor?.noteID {
             NSAttributedString(string: note.text, attributes: Style.noteTextAttributes).draw(
@@ -200,7 +216,7 @@ final class CanvasView: NSView {
     }
 
     /// Hover, selection, and binding-target outlines, in world coordinates at constant screen widths.
-    private func drawIndicators(in context: CGContext, frames: [StickyNote.ID: CGRect]) {
+    private func drawIndicators(in context: CGContext, connectables: [ShapeID: any Connectable]) {
         var outlined: [Selection] = []
         if tool == .select, interaction == nil, let hovered, hovered != selection {
             outlined.append(hovered)
@@ -209,23 +225,24 @@ final class CanvasView: NSView {
         if let selection, !isDraggingSelection {
             outlined.append(selection)
         }
-        if let targetNoteID {
-            outlined.append(.note(targetNoteID))
-        }
-        guard !outlined.isEmpty else { return }
+        guard !outlined.isEmpty || targetShapeID != nil else { return }
 
         context.saveGState()
         for item in outlined {
             switch item {
-            case .note(let id):
-                guard let note = notes.first(where: { $0.id == id }) else { continue }
-                context.addPath(notePath(note))
+            case .shape(let id):
+                if let path = indicatorPath(ofShape: id) {
+                    context.addPath(path)
+                }
             case .arrow(let id):
                 guard let arrow = arrows.first(where: { $0.id == id }) else { continue }
-                let geometry = geometry(of: arrow, frames: frames)
+                let geometry = geometry(of: arrow, connectables: connectables)
                 context.addPath(geometry.bodyPath)
                 context.addPath(geometry.arrowheadsPath(strokeWidth: Style.arrowStrokeWidth))
             }
+        }
+        if let targetShapeID, let path = indicatorPath(ofShape: targetShapeID) {
+            context.addPath(path)
         }
         context.setStrokeColor(Style.accent.cgColor)
         context.setLineWidth(Style.indicatorWidth / camera.zoom)
@@ -235,56 +252,70 @@ final class CanvasView: NSView {
         context.restoreGState()
     }
 
+    /// The outline drawn around a shape when it's hovered, selected, or targeted by an arrow.
+    private func indicatorPath(ofShape id: ShapeID) -> CGPath? {
+        switch shapes.first(where: { $0.id == id }) {
+        case let note as StickyNote: notePath(note)
+        case let ellipse as Ellipse: CGPath(ellipseIn: ellipse.frame, transform: nil)
+        default: nil
+        }
+    }
+
     private var isDraggingSelection: Bool {
         switch interaction {
-        case .movingNote, .translatingArrow, .draggingHandle: true
+        case .movingShape, .translatingArrow, .draggingHandle: true
         default: false
         }
     }
 
     // MARK: - Items
 
-    func noteFrames() -> [StickyNote.ID: CGRect] {
-        Dictionary(uniqueKeysWithValues: notes.map { ($0.id, $0.frame) })
+    /// The shapes arrows can bind to, back to front. Arrow code sees the canvas's shapes only
+    /// through this, so a new kind of shape becomes connectable by adopting `Connectable` and
+    /// being listed here.
+    var connectables: [any Connectable] { shapes.compactMap { $0 as? any Connectable } }
+
+    func connectablesByID() -> [ShapeID: any Connectable] {
+        Dictionary(uniqueKeysWithValues: connectables.map { ($0.id, $0) })
     }
 
-    /// Back to front. Each arrow sits just above the highest note it's bound to, so it's never
-    /// hidden behind its own notes; unbound arrows sit on top.
+    /// Back to front. Each arrow sits just above the highest shape it's bound to, so it's never
+    /// hidden behind its own shapes; unbound arrows sit on top.
     func paintOrder() -> [Item] {
-        let noteIndices = Dictionary(uniqueKeysWithValues: notes.enumerated().map { ($1.id, $0) })
-        var arrowsAboveNote: [Int: [Int]] = [:]
+        let shapeIndices = Dictionary(uniqueKeysWithValues: shapes.enumerated().map { ($1.id, $0) })
+        var arrowsAboveShape: [Int: [Int]] = [:]
         var topArrows: [Int] = []
         for (index, arrow) in arrows.enumerated() {
-            let boundNotes = [arrow.start, arrow.end].compactMap { $0.binding.flatMap { noteIndices[$0.noteID] } }
-            if let highest = boundNotes.max() {
-                arrowsAboveNote[highest, default: []].append(index)
+            let boundShapes = [arrow.start, arrow.end].compactMap { $0.binding.flatMap { shapeIndices[$0.shapeID] } }
+            if let highest = boundShapes.max() {
+                arrowsAboveShape[highest, default: []].append(index)
             } else {
                 topArrows.append(index)
             }
         }
         var order: [Item] = []
-        for index in notes.indices {
-            order.append(.note(index))
-            order += (arrowsAboveNote[index] ?? []).map(Item.arrow)
+        for index in shapes.indices {
+            order.append(.shape(index))
+            order += (arrowsAboveShape[index] ?? []).map(Item.arrow)
         }
         return order + topArrows.map(Item.arrow)
     }
 
     /// The front-most item under a world point.
     func item(at worldPoint: CGPoint) -> Item? {
-        let frames = noteFrames()
+        let connectables = connectablesByID()
         let arrowMargin = Style.arrowHitMargin / camera.zoom + Style.arrowStrokeWidth / 2
         return paintOrder().reversed().first { item in
             switch item {
-            case .note(let index): notes[index].frame.contains(worldPoint)
-            case .arrow(let index): geometry(of: arrows[index], frames: frames).distance(to: worldPoint) <= arrowMargin
+            case .shape(let index): shapes[index].contains(worldPoint)
+            case .arrow(let index): geometry(of: arrows[index], connectables: connectables).distance(to: worldPoint) <= arrowMargin
             }
         }
     }
 
     func selection(for item: Item) -> Selection {
         switch item {
-        case .note(let index): .note(notes[index].id)
+        case .shape(let index): .shape(shapes[index].id)
         case .arrow(let index): .arrow(arrows[index].id)
         }
     }
@@ -297,8 +328,14 @@ final class CanvasView: NSView {
         let worldPoint = camera.toWorld(viewPoint)
         endEditing()
 
-        if tool == .arrow {
+        switch tool {
+        case .select:
+            break
+        case .arrow:
             pressWithArrowTool(at: viewPoint, modifiers: effectiveModifiers(event.modifierFlags))
+            return
+        case .ellipse:
+            addEllipse(centeredAt: worldPoint)
             return
         }
 
@@ -312,16 +349,16 @@ final class CanvasView: NSView {
             let id = arrows[index].id
             selection = .arrow(id)
             interaction = .pointingArrow(id: id, origin: viewPoint)
-        case .note(let index)?:
-            // Bring the note to the front.
-            let note = notes.remove(at: index)
-            notes.append(note)
-            selection = .note(note.id)
-            if event.clickCount == 2 {
-                beginEditing(note.id)
+        case .shape(let index)?:
+            // Bring the shape to the front.
+            let shape = shapes.remove(at: index)
+            shapes.append(shape)
+            selection = .shape(shape.id)
+            if event.clickCount == 2, shape is StickyNote {
+                beginEditing(shape.id)
             } else {
-                let grabOffset = CGSize(width: worldPoint.x - note.frame.minX, height: worldPoint.y - note.frame.minY)
-                interaction = .movingNote(id: note.id, grabOffset: grabOffset)
+                let grabOffset = CGSize(width: worldPoint.x - shape.frame.minX, height: worldPoint.y - shape.frame.minY)
+                interaction = .movingShape(id: shape.id, grabOffset: grabOffset)
             }
         case nil:
             selection = nil
@@ -345,9 +382,9 @@ final class CanvasView: NSView {
         case .panning(let last):
             interaction = .panning(last: viewPoint)
             camera.pan(by: CGSize(width: viewPoint.x - last.x, height: viewPoint.y - last.y))
-        case .movingNote(let id, let grabOffset):
-            guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
-            notes[index].frame.origin = CGPoint(x: worldPoint.x - grabOffset.width, y: worldPoint.y - grabOffset.height)
+        case .movingShape(let id, let grabOffset):
+            guard let index = shapes.firstIndex(where: { $0.id == id }) else { return }
+            shapes[index].frame.origin = CGPoint(x: worldPoint.x - grabOffset.width, y: worldPoint.y - grabOffset.height)
             needsDisplay = true
         case .pointingArrow(let id, let origin):
             if viewPoint.distance(to: origin) > Style.dragThreshold {
@@ -385,7 +422,7 @@ final class CanvasView: NSView {
         }
         interaction = nil
         if tool == .select {
-            targetNoteID = nil
+            targetShapeID = nil
         }
         updateHover(modifiers: effectiveModifiers(event.modifierFlags))
     }
@@ -420,6 +457,8 @@ final class CanvasView: NSView {
             }
         case .arrow:
             updateArrowToolTarget(at: camera.toWorld(pointerLocation), modifiers: modifiers)
+        case .ellipse:
+            break
         }
         updateCursor()
     }
@@ -427,7 +466,7 @@ final class CanvasView: NSView {
     func updateCursor() {
         let cursor: NSCursor = switch interaction {
         case .panning, .pointingHandle, .draggingHandle: .closedHand
-        default: tool == .arrow ? .crosshair : hoveredHandle != nil ? .openHand : .arrow
+        default: tool != .select ? .crosshair : hoveredHandle != nil ? .openHand : .arrow
         }
         cursor.set()
     }
@@ -514,6 +553,7 @@ final class CanvasView: NSView {
     override func insertText(_ insertString: Any) {
         switch (insertString as? String)?.lowercased() {
         case "a": switchTool(to: .arrow)
+        case "o": switchTool(to: .ellipse)
         case "v": switchTool(to: .select)
         default: super.insertText(insertString)
         }
@@ -528,7 +568,7 @@ final class CanvasView: NSView {
     }
 
     override func insertNewline(_ sender: Any?) {
-        if case .note(let id)? = selection {
+        if case .shape(let id)? = selection {
             beginEditing(id)
         }
     }
@@ -557,30 +597,32 @@ final class CanvasView: NSView {
         camera.setZoom(1, around: CGPoint(x: bounds.midX, y: bounds.midY))
     }
 
-    // MARK: - Notes
-
-    func noteIndex(at worldPoint: CGPoint) -> Int? {
-        notes.lastIndex { $0.frame.contains(worldPoint) }
-    }
+    // MARK: - Shapes
 
     private func addNote(centeredAt point: CGPoint) {
-        let size = Style.noteSize
-        let note = StickyNote(frame: CGRect(
-            x: point.x - size.width / 2,
-            y: point.y - size.height / 2,
-            width: size.width,
-            height: size.height
-        ))
-        notes.append(note)
-        selection = .note(note.id)
+        let note = StickyNote(frame: CGRect(center: point, size: Style.noteSize))
+        shapes.append(note)
+        selection = .shape(note.id)
         beginEditing(note.id)
+    }
+
+    /// Places an ellipse under the pointer and keeps hold of it, so dragging moves it into place.
+    private func addEllipse(centeredAt point: CGPoint) {
+        let ellipse = Ellipse(frame: CGRect(center: point, size: Style.ellipseSize))
+        shapes.append(ellipse)
+        selection = .shape(ellipse.id)
+        switchTool(to: .select)
+        interaction = .movingShape(
+            id: ellipse.id,
+            grabOffset: CGSize(width: point.x - ellipse.frame.minX, height: point.y - ellipse.frame.minY)
+        )
     }
 
     private func deleteSelection() {
         switch selection {
-        case .note(let id):
+        case .shape(let id):
             releaseArrows(from: id)
-            notes.removeAll { $0.id == id }
+            shapes.removeAll { $0.id == id }
         case .arrow(let id):
             arrows.removeAll { $0.id == id }
         case nil:
@@ -591,7 +633,7 @@ final class CanvasView: NSView {
         hoveredHandle = nil
     }
 
-    private static func welcomeBoard() -> ([StickyNote], [Arrow]) {
+    private static func welcomeBoard() -> ([any CanvasShape], [Arrow]) {
         func note(_ x: CGFloat, _ y: CGFloat, _ text: String) -> StickyNote {
             StickyNote(frame: CGRect(origin: CGPoint(x: x, y: y), size: Style.noteSize), text: text)
         }
@@ -599,12 +641,12 @@ final class CanvasView: NSView {
             note(80, 80, "Double-click empty space to add a note. Drag a note to move it."),
             note(460, 80, "Double-click a note (or select it and press Return) to edit it."),
             note(840, 80, "Pinch to zoom, scroll with two fingers to pan. Dragging the background pans too."),
-            note(80, 420, "Press A for the arrow tool, then drag from one note to another."),
+            note(80, 420, "Press A for the arrow tool, then drag from one shape to another. Press O to place an ellipse."),
             note(460, 420, "Pause inside a note while drawing to aim at that spot. Hold ⌥ to go all the way in, ⌘ to not attach."),
             note(840, 420, "Select an arrow and drag its middle handle to bend it."),
         ]
         func bound(_ note: StickyNote) -> ArrowTerminal {
-            .bound(ArrowBinding(noteID: note.id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))
+            .bound(ArrowBinding(shapeID: note.id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))
         }
         let arrows = [
             Arrow(start: bound(notes[0]), end: bound(notes[1])),
@@ -616,15 +658,16 @@ final class CanvasView: NSView {
 
     // MARK: - Editing
 
-    private func beginEditing(_ id: StickyNote.ID) {
+    /// Only notes have text to edit.
+    private func beginEditing(_ id: ShapeID) {
         endEditing()
-        guard let note = notes.first(where: { $0.id == id }) else { return }
+        guard let note = shapes.first(where: { $0.id == id }) as? StickyNote else { return }
 
         let editor = NoteEditor(note: note)
         editor.textView.delegate = self
         addSubview(editor)
         self.editor = editor
-        selection = .note(id)
+        selection = .shape(id)
         layoutEditor()
         window?.makeFirstResponder(editor.textView)
         needsDisplay = true
@@ -640,7 +683,7 @@ final class CanvasView: NSView {
 
     /// Keeps the editor pinned over its note as the camera moves.
     private func layoutEditor() {
-        guard let editor, let note = notes.first(where: { $0.id == editor.noteID }) else { return }
+        guard let editor, let note = shapes.first(where: { $0.id == editor.noteID }) else { return }
         editor.frame = camera.toView(note.frame)
         editor.bounds = CGRect(origin: .zero, size: note.frame.size)
     }
@@ -648,8 +691,11 @@ final class CanvasView: NSView {
 
 extension CanvasView: NSTextViewDelegate {
     func textDidChange(_ notification: Notification) {
-        guard let editor, let index = notes.firstIndex(where: { $0.id == editor.noteID }) else { return }
-        notes[index].text = editor.textView.string
+        guard let editor,
+              let index = shapes.firstIndex(where: { $0.id == editor.noteID }),
+              var note = shapes[index] as? StickyNote else { return }
+        note.text = editor.textView.string
+        shapes[index] = note
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {

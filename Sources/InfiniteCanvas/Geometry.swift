@@ -38,6 +38,26 @@ extension CGPoint {
 }
 
 extension CGRect {
+    /// The smallest rectangle containing all of `points`.
+    init(enclosing points: [CGPoint]) {
+        guard let first = points.first else {
+            self = .null
+            return
+        }
+        var (minX, minY, maxX, maxY) = (first.x, first.y, first.x, first.y)
+        for point in points.dropFirst() {
+            minX = Swift.min(minX, point.x)
+            minY = Swift.min(minY, point.y)
+            maxX = Swift.max(maxX, point.x)
+            maxY = Swift.max(maxY, point.y)
+        }
+        self.init(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
+    init(center: CGPoint, size: CGSize) {
+        self.init(x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height)
+    }
+
     var center: CGPoint { CGPoint(x: midX, y: midY) }
 
     /// The corners in order, as a closed polygon.
@@ -62,6 +82,18 @@ func nearestPointOnSegment(to point: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGP
 
 func distanceToSegment(from point: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
     point.distance(to: nearestPointOnSegment(to: point, a, b))
+}
+
+/// Whether `point` is inside the closed polygon, by the even-odd rule.
+func polygonContains(_ polygon: [CGPoint], _ point: CGPoint) -> Bool {
+    var inside = false
+    for (a, b) in polygon.closedEdges where (a.y > point.y) != (b.y > point.y) {
+        let crossingX = a.x + (point.y - a.y) / (b.y - a.y) * (b.x - a.x)
+        if point.x < crossingX {
+            inside.toggle()
+        }
+    }
+    return inside
 }
 
 func nearestPointOnPolygon(_ polygon: [CGPoint], to point: CGPoint) -> CGPoint {

@@ -1,13 +1,13 @@
 import CoreGraphics
 import Foundation
 
-/// An arrow's drawable geometry, resolved against where its bound notes currently are.
+/// An arrow's drawable geometry, resolved against where its bound shapes currently are.
 ///
-/// Each terminal has a *handle*: a free point, or the anchor inside a bound note (the note's
-/// center unless the binding is precise). The arrow follows the line or arc through the handles,
-/// is clipped where it crosses a bound note's edge, and backs off by a small gap wherever there's
-/// an arrowhead. This is a port of tldraw's `getStraightArrowInfo` and `getCurvedArrowInfo`,
-/// including how they handle overlapping and nested shapes.
+/// Each terminal has a *handle*: a free point, or the anchor inside a bound shape (the center of
+/// its bounds unless the binding is precise). The arrow follows the line or arc through the
+/// handles, is clipped where it crosses a bound shape's outline, and backs off by a small gap
+/// wherever there's an arrowhead. This is a port of tldraw's `getStraightArrowInfo` and
+/// `getCurvedArrowInfo`, including how they handle overlapping and nested shapes.
 struct ArrowGeometry {
     enum Path {
         case straight
@@ -29,28 +29,30 @@ struct ArrowGeometry {
     var startArrowhead: Bool
     var endArrowhead: Bool
 
-    /// Gap between a bound note's edge and an arrowhead, on top of half the stroke width.
+    /// Gap between a bound shape's outline and an arrowhead, on top of half the stroke width.
     static let boundGap: CGFloat = 10
     static let minLength: CGFloat = 10
     /// Bends smaller than this draw as a straight line (the stored bend is kept).
     static let minBend: CGFloat = 8
 
-    init(arrow: Arrow, strokeWidth: CGFloat, noteFrame: (StickyNote.ID) -> CGRect?) {
-        var startNote = arrow.start.binding.flatMap { binding in
-            noteFrame(binding.noteID).map { BoundNote(id: binding.noteID, frame: $0, isExact: binding.isExact) }
+    /// `shape` looks up the shapes the arrow is bound to. An end bound to a shape it can't find is
+    /// drawn at the origin.
+    init(arrow: Arrow, strokeWidth: CGFloat, shape: (ShapeID) -> (any Connectable)?) {
+        var startShape = arrow.start.binding.flatMap { binding in
+            shape(binding.shapeID).map { BoundShape($0, isExact: binding.isExact) }
         }
-        var endNote = arrow.end.binding.flatMap { binding in
-            noteFrame(binding.noteID).map { BoundNote(id: binding.noteID, frame: $0, isExact: binding.isExact) }
+        var endShape = arrow.end.binding.flatMap { binding in
+            shape(binding.shapeID).map { BoundShape($0, isExact: binding.isExact) }
         }
-        let relationship = Relationship(start: startNote, end: endNote)
+        let relationship = Relationship(start: startShape, end: endShape)
 
         startHandle = Self.handle(
-            for: arrow.start, note: startNote,
-            forcePrecise: relationship == .sameNote || relationship == .startContainsEnd
+            for: arrow.start, shape: startShape,
+            forcePrecise: relationship == .sameShape || relationship == .startContainsEnd
         )
         endHandle = Self.handle(
-            for: arrow.end, note: endNote,
-            forcePrecise: relationship == .sameNote || relationship == .endContainsStart
+            for: arrow.end, shape: endShape,
+            forcePrecise: relationship == .sameShape || relationship == .endContainsStart
         )
         startArrowhead = arrow.startArrowhead
         endArrowhead = arrow.endArrowhead
@@ -68,29 +70,29 @@ struct ArrowGeometry {
         if abs(arrow.bend) >= Self.minBend,
            let handleArc = Arc(from: startHandle, through: bendPoint, to: endHandle),
            handleArc.length.isFinite, handleArc.length > 0 {
-            let (startT, endT, middle) = clipping.curved(handleArc, bendPoint: bendPoint, startNote: &startNote, endNote: &endNote)
+            let (startT, endT, middle) = clipping.curved(handleArc, bendPoint: bendPoint, startShape: &startShape, endShape: &endShape)
             path = .curved(handleArc: handleArc, startT: startT, endT: endT)
             start = handleArc.point(at: startT)
             end = handleArc.point(at: endT)
             self.middle = middle
         } else {
             path = .straight
-            (start, end, middle) = clipping.straight(from: startHandle, to: endHandle, startNote: &startNote, endNote: &endNote)
+            (start, end, middle) = clipping.straight(from: startHandle, to: endHandle, startShape: &startShape, endShape: &endShape)
         }
     }
 
-    private static func handle(for terminal: ArrowTerminal, note: BoundNote?, forcePrecise: Bool) -> CGPoint {
+    private static func handle(for terminal: ArrowTerminal, shape: BoundShape?, forcePrecise: Bool) -> CGPoint {
         switch terminal {
         case .free(let point):
             return point
         case .bound(let binding):
-            guard let frame = note?.frame else { return .zero }
+            guard let bounds = shape?.bounds else { return .zero }
             // Keep anchors off the exact edges so intersections stay well defined.
             let clamp = { (value: CGFloat) in min(max(value, 0.001), 0.999) }
             let anchor = binding.isPrecise || forcePrecise
                 ? CGPoint(x: clamp(binding.normalizedAnchor.x), y: clamp(binding.normalizedAnchor.y))
                 : CGPoint(x: 0.5, y: 0.5)
-            return CGPoint(x: frame.minX + anchor.x * frame.width, y: frame.minY + anchor.y * frame.height)
+            return CGPoint(x: bounds.minX + anchor.x * bounds.width, y: bounds.minY + anchor.y * bounds.height)
         }
     }
 
@@ -122,7 +124,7 @@ struct ArrowGeometry {
     }
 
     /// The bend that keeps this exact curve if the terminal handles move to the visible ends
-    /// named in `ends`, e.g. when the arrow is detached from its notes.
+    /// named in `ends`, e.g. when the arrow is detached from its shapes.
     func bendKeepingCurve(movingHandlesToVisibleEndsAt ends: Set<ArrowEnd>) -> CGFloat? {
         guard case .curved(let arc, let startT, let endT) = path else { return nil }
         let t0 = ends.contains(.start) ? startT : 0
@@ -209,28 +211,35 @@ struct ArrowGeometry {
 
 // MARK: - Clipping
 
-private struct BoundNote {
-    var id: StickyNote.ID
-    var frame: CGRect
+/// What clipping needs from a bound shape, read from it once.
+private struct BoundShape {
+    var id: ShapeID
+    var bounds: CGRect
+    var outline: [CGPoint]
     var isExact: Bool
     var didIntersect = false
 
-    var polygon: [CGPoint] { frame.polygon }
+    init(_ shape: any Connectable, isExact: Bool) {
+        id = shape.id
+        bounds = shape.bounds
+        outline = shape.outline
+        self.isExact = isExact
+    }
 }
 
 private enum Relationship {
-    case safe, sameNote, startContainsEnd, endContainsStart
+    case safe, sameShape, startContainsEnd, endContainsStart
 
-    init(start: BoundNote?, end: BoundNote?) {
+    init(start: BoundShape?, end: BoundShape?) {
         guard let start, let end else {
             self = .safe
             return
         }
         if start.id == end.id {
-            self = .sameNote
-        } else if start.frame.contains(end.frame) {
+            self = .sameShape
+        } else if start.bounds.contains(end.bounds) {
             self = .startContainsEnd
-        } else if end.frame.contains(start.frame) {
+        } else if end.bounds.contains(start.bounds) {
             self = .endContainsStart
         } else {
             self = .safe
@@ -246,32 +255,32 @@ private struct Clipping {
 
     private var minArrowLength: CGFloat { ArrowGeometry.minLength }
 
-    /// The gap between a note's edge and an arrowhead, or 0 where there's no gap.
-    private func gap(at end: ArrowEnd, note: BoundNote?) -> CGFloat {
-        guard let note, !note.isExact, end == .start ? startArrowhead : endArrowhead else { return 0 }
+    /// The gap between a shape's outline and an arrowhead, or 0 where there's no gap.
+    private func gap(at end: ArrowEnd, shape: BoundShape?) -> CGFloat {
+        guard let shape, !shape.isExact, end == .start ? startArrowhead : endArrowhead else { return 0 }
         switch (relationship, end) {
-        case (.sameNote, _), (.startContainsEnd, .start), (.endContainsStart, .end): return 0
+        case (.sameShape, _), (.startContainsEnd, .start), (.endContainsStart, .end): return 0
         default: return ArrowGeometry.boundGap + strokeWidth / 2
         }
     }
 
     // MARK: Straight
 
-    func straight(from a0: CGPoint, to b0: CGPoint, startNote: inout BoundNote?, endNote: inout BoundNote?) -> (CGPoint, CGPoint, CGPoint) {
+    func straight(from a0: CGPoint, to b0: CGPoint, startShape: inout BoundShape?, endShape: inout BoundShape?) -> (CGPoint, CGPoint, CGPoint) {
         guard a0 != b0 else { return (a0, b0, a0) }
         let uAB = (b0 - a0).normalized
         var a = a0
         var b = b0
 
-        // Each end stops where the line from the opposite handle first crosses its note's edge.
-        if let hit = clip(b0, from: a0, note: &endNote) { b = hit }
-        if let hit = clip(a0, from: b0, note: &startNote) { a = hit }
+        // Each end stops where the line from the opposite handle first crosses its shape's outline.
+        if let hit = clip(b0, from: a0, shape: &endShape) { b = hit }
+        if let hit = clip(a0, from: b0, shape: &startShape) { a = hit }
 
-        // Overlapping notes: if a crossing is missing, fall back to a short stub.
-        if relationship == .safe, let startNote, let endNote, !startNote.isExact, !endNote.isExact {
-            if endNote.didIntersect && !startNote.didIntersect {
+        // Overlapping shapes: if a crossing is missing, fall back to a short stub.
+        if relationship == .safe, let startShape, let endShape, !startShape.isExact, !endShape.isExact {
+            if endShape.didIntersect && !startShape.didIntersect {
                 a = b + uAB * minArrowLength
-            } else if !endNote.didIntersect {
+            } else if !endShape.didIntersect {
                 b = a - uAB * minArrowLength
             }
         }
@@ -281,13 +290,13 @@ private struct Clipping {
         let didFlip = abs(u.x - uAB.x) >= 1e-4 || abs(u.y - uAB.y) >= 1e-4
         let direction: CGFloat = didFlip ? -1 : 1
 
-        var offsetA = gap(at: .start, note: startNote)
-        var offsetB = gap(at: .end, note: endNote)
+        var offsetA = gap(at: .start, shape: startShape)
+        var offsetB = gap(at: .end, shape: endShape)
         var minLength = minArrowLength
         if offsetA != 0 { minLength += strokeWidth / 2 }
         if offsetB != 0 { minLength += strokeWidth / 2 }
 
-        // Too short to fit the gaps: flip them so the arrow pokes into the notes instead.
+        // Too short to fit the gaps: flip them so the arrow pokes into the shapes instead.
         let trialA = a + u * (offsetA * direction)
         let trialB = b - u * (offsetB * direction)
         if trialA.distance(to: trialB) < minLength {
@@ -305,7 +314,7 @@ private struct Clipping {
 
         let middle: CGPoint
         if didFlip {
-            if startNote != nil && endNote != nil {
+            if startShape != nil && endShape != nil {
                 b = a + u * -minArrowLength
             }
             middle = (a0 + b0) / 2
@@ -315,26 +324,26 @@ private struct Clipping {
         return (a, b, middle)
     }
 
-    /// Where the segment from `opposite` to `handle` crosses the note's edge, nearest `opposite`.
-    private func clip(_ handle: CGPoint, from opposite: CGPoint, note: inout BoundNote?) -> CGPoint? {
-        guard var bound = note, !bound.isExact else { return nil }
-        var hit = intersections(ofSegmentFrom: opposite, to: handle, withPolygon: bound.polygon)
+    /// Where the segment from `opposite` to `handle` crosses the shape's outline, nearest `opposite`.
+    private func clip(_ handle: CGPoint, from opposite: CGPoint, shape: inout BoundShape?) -> CGPoint? {
+        guard var bound = shape, !bound.isExact else { return nil }
+        var hit = intersections(ofSegmentFrom: opposite, to: handle, withPolygon: bound.outline)
             .min()
             .map { opposite + (handle - opposite) * $0 }
         if hit == nil {
             // If the handle is practically on the edge, treat that as the crossing.
-            let nearest = nearestPointOnPolygon(bound.polygon, to: handle)
+            let nearest = nearestPointOnPolygon(bound.outline, to: handle)
             if nearest.distance(to: handle) < 1 { hit = nearest }
         }
         guard let hit else { return nil }
         bound.didIntersect = true
-        note = bound
+        shape = bound
         return hit
     }
 
     // MARK: Curved
 
-    func curved(_ arc: Arc, bendPoint: CGPoint, startNote: inout BoundNote?, endNote: inout BoundNote?) -> (CGFloat, CGFloat, CGPoint) {
+    func curved(_ arc: Arc, bendPoint: CGPoint, startShape: inout BoundShape?, endShape: inout BoundShape?) -> (CGFloat, CGFloat, CGPoint) {
         let length = arc.length
         var clippedStart: CGFloat = 0
         var clippedEnd: CGFloat = 1
@@ -342,40 +351,40 @@ private struct Clipping {
         var offsetB: CGFloat = 0
         var minLength = minArrowLength
 
-        // A curve can cross a note's edge more than once. The start takes the crossing nearest a
-        // quarter of the way along, the end the one nearest three quarters of the way from the
-        // clipped start, which picks the crossings that read as leaving and entering the notes.
-        if var note = startNote, !note.isExact {
-            let hits = intersections(of: arc, withPolygon: note.polygon)
+        // A curve can cross a shape's outline more than once. The start takes the crossing nearest
+        // a quarter of the way along, the end the one nearest three quarters of the way from the
+        // clipped start, which picks the crossings that read as leaving and entering the shapes.
+        if var shape = startShape, !shape.isExact {
+            let hits = intersections(of: arc, withPolygon: shape.outline)
             var t = hits.min { abs($0 - 0.25) < abs($1 - 0.25) }
-            if t == nil, nearestPointOnPolygon(note.polygon, to: arc.point(at: 0)).distance(to: arc.point(at: 0)) < 1 {
+            if t == nil, nearestPointOnPolygon(shape.outline, to: arc.point(at: 0)).distance(to: arc.point(at: 0)) < 1 {
                 t = 0
             }
             if let t {
                 clippedStart = t
-                note.didIntersect = true
-                offsetA = gap(at: .start, note: note)
+                shape.didIntersect = true
+                offsetA = gap(at: .start, shape: shape)
                 if offsetA != 0 { minLength += strokeWidth / 2 }
             }
-            startNote = note
+            startShape = shape
         }
-        if var note = endNote, !note.isExact {
+        if var shape = endShape, !shape.isExact {
             let target = clippedStart + (1 - clippedStart) * 0.75
-            let hits = intersections(of: arc, withPolygon: note.polygon).filter { $0 >= clippedStart }
+            let hits = intersections(of: arc, withPolygon: shape.outline).filter { $0 >= clippedStart }
             var t = hits.min { abs($0 - target) < abs($1 - target) }
-            if t == nil, nearestPointOnPolygon(note.polygon, to: arc.point(at: 1)).distance(to: arc.point(at: 1)) < 1 {
+            if t == nil, nearestPointOnPolygon(shape.outline, to: arc.point(at: 1)).distance(to: arc.point(at: 1)) < 1 {
                 t = 1
             }
             if let t {
                 clippedEnd = t
-                note.didIntersect = true
-                offsetB = gap(at: .end, note: note)
+                shape.didIntersect = true
+                offsetB = gap(at: .end, shape: shape)
                 if offsetB != 0 { minLength += strokeWidth / 2 }
             }
-            endNote = note
+            endShape = shape
         }
 
-        // Too short to fit the gaps: flip them so the arrow pokes into the notes instead, but
+        // Too short to fit the gaps: flip them so the arrow pokes into the shapes instead, but
         // never past the handles.
         let trialA = arc.point(at: clippedStart + offsetA / length)
         let trialB = arc.point(at: clippedEnd - offsetB / length)
@@ -395,16 +404,16 @@ private struct Clipping {
         var endT = clippedEnd - offsetB / length
         var middle: CGPoint?
 
-        // Overlapping notes.
-        if let startNote, let endNote, !startNote.isExact, !endNote.isExact {
-            if relationship == .sameNote, (endT - startT) * length < 30 {
+        // Overlapping shapes.
+        if let startShape, let endShape, !startShape.isExact, !endShape.isExact {
+            if relationship == .sameShape, (endT - startT) * length < 30 {
                 (startT, endT) = (0, 1)
                 middle = bendPoint
             } else if relationship == .safe {
-                if !startNote.didIntersect {
+                if !startShape.didIntersect {
                     startT = 0
                 }
-                if !endNote.didIntersect || startT > endT {
+                if !endShape.didIntersect || startT > endT {
                     // A short stub heading off the start, at most 90% of the way to the end.
                     let forwardSpan = endT > startT ? endT - startT : 2 * .pi / abs(arc.sweep) - (startT - endT)
                     endT = startT + min(0.9 * forwardSpan, minArrowLength / length)

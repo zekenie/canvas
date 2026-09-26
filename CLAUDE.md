@@ -12,6 +12,8 @@ Native macOS infinite canvas (SwiftUI shell, AppKit canvas). Early prototype.
 
 - `CanvasView` draws everything itself in `draw(_:)` through `Camera` (world ↔ view coordinates). Model positions are world units; overlay sizes (handles, outlines, hit margins) are view points, divided by `camera.zoom` when drawn in world space.
 - The only subview is `NoteEditor`, a scaled `NSTextView` shown over a note while it's being edited.
+- Shapes are `CanvasShape` values in `CanvasView.shapes` (back to front); what else a shape can do comes from further protocols. Drawing and indicator outlines are a type switch in `CanvasView` for now.
+- Arrows know shapes only through the `Connectable` protocol (`Model.swift`), and find them via `CanvasView.connectables`. Keep specific shape types (`StickyNote`, `Ellipse`) out of arrow code (`Arrow`, `ArrowGeometry`, `CanvasView+Arrows.swift`).
 - UI constants live in `Style` (main-actor isolated). Pure geometry (`Geometry.swift`, `ArrowGeometry.swift`) is nonisolated, so its constants live on those types.
 
 ## Arrows follow tldraw
