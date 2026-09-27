@@ -51,22 +51,37 @@ extension Array where Element == ContentsEntry {
         editor.add(Gizmo())
         expectEqual(editor.contents.entries.marks, [["widget b", "a", "b"], ["a"]])
     },
-    test("a mark is made with its row, and again only when the row is: its shape changes, or a commit its contributor says may change it") {
+    test("a mark is made with its row; after a commit, marks are read again only for the shapes it changed and those its contributor says it may") {
         flag([])
         let editor = try contentsEditor([flags])
         let (a, b, c) = threeWidgets(editor)
         _ = editor.contents.entries
         marksMade = 0
+        let rowsMade = widgetRowsMade
         flag([a])
         expectEqual(editor.contents.entries.marks, [[], [], []], "until a commit")
         editor.transact { $0.update(c, as: Widget.self) { $0.props.count = 1 } }
         expectEqual(editor.contents.entries.marks, [["Flagged"], [], []])
         expectEqual(marksMade, 2, "A's, which the commit may change, and C's, which it changed; not B's")
+        expectEqual(widgetRowsMade, rowsMade + 1, "only C's row is made again; A's keeps its view, with its new mark")
         editor.transact { $0.update(b, as: Widget.self) { $0.props.count = 1 } }
         expectEqual(editor.contents.entries.marks, [["Flagged"], [], []])
         expectEqual(marksMade, 3, "B's")
     },
-    test("read by a service that hears of a commit first, a row whose mark the commit may change is made again all the same") {
+    test("a shape whose marks a commit may change, but doesn't, keeps its row: only its marks are read again") {
+        flag([])
+        let editor = try contentsEditor([flags])
+        let (_, b, c) = threeWidgets(editor)
+        _ = editor.contents.entries
+        marksMade = 0
+        let rowsMade = widgetRowsMade
+        reflagged = [b]                     // named as affected, still unflagged
+        editor.transact { $0.update(c, as: Widget.self) { $0.props.count = 1 } }
+        expectEqual(editor.contents.entries.marks, [[], [], []])
+        expectEqual(marksMade, 2, "B's read again, and C's made with its row")
+        expectEqual(widgetRowsMade, rowsMade + 1, "C's row alone")
+    },
+    test("read by a service that hears of a commit first, a row whose mark the commit may change is right all the same") {
         flag([])
         let editor = CanvasEditor(registry: try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), WidgetsPlugin(), flags,
                                                                    Contributor(id: "early-reader") { $0.service { _ in EarlyReader() } },
@@ -79,6 +94,7 @@ extension Array where Element == ContentsEntry {
         flag([a])
         editor.transact { $0.update(c, as: Widget.self) { $0.props.count = 1 } }
         expectEqual(reader.heard, ["A", "B", "C"])
+        expectEqual(reader.heardMarks, [["Flagged"], [], []], "as the reader read them, before the table of contents heard")
         expectEqual(editor.contents.entries.marks, [["Flagged"], [], []])
     },
     test("marks need the table of contents installed") {
@@ -99,9 +115,10 @@ extension Array where Element == ContentsEntry {
         }
         flag([])
         let plain = try window()
+        let before = snapshot(plain.hosting)
         flag([ids.0])
         let marked = try window()
-        let before = snapshot(plain.hosting), after = snapshot(marked.hosting)
+        let after = snapshot(marked.hosting)
         let rowA = try marked.rect(ofRow: 1)
         expectEqual(changedPixels(before, after, in: marked.hosting.bounds) - changedPixels(before, after, in: rowA), 0, "only A's row changes")
         let dot = try require(differingBounds(before, after, in: rowA))

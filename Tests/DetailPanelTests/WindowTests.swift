@@ -282,6 +282,20 @@ extension ListTab: DetailTab { static var title: String { "List" } }
         expect((25..<144).contains(redArea(image, in: panel, rows: 60..<120)), "the line's symbol")
         expectEqual(redArea(image, in: panel, rows: 660..<700), 0, "the footer")
     },
+    test("a tab's status lines come before its sections") {
+        let editor = try gadgetEditor([Contributor(id: "alerts") { r in
+            r.detailStatusForEveryShape(in: RemarksTab.self) { _, _ in [DetailStatus("Something is badly wrong with this gadget", tone: .error)] }
+        }], scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
+        try require(editor.detailPanel).choose(.of(RemarksTab.self), for: Gadget.kind)
+        editor.selection = editor.add(Gadget(gadgetFrame))
+        panel.window.spin { !panel.textViews.isEmpty }
+        let area = try require(panel.textViews.first)
+        let top = Int(area.convert(area.bounds, to: panel.hosting).minY)
+        let image = try panel.render()
+        expect((25..<144).contains(redArea(image, in: panel, rows: 44..<top)), "the line's symbol, above the remark's text area at \(top)")
+        expectEqual(redArea(image, in: panel, rows: top..<700), 0, "nothing red from the text area down")
+    },
     test("a draft commits to its own shape when the selection moves under it, and the canvas gets the keyboard") {
         let editor = try gadgetEditor(scheduler: TaskScheduler())
         let panel = PanelWindow(editor)

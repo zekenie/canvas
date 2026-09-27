@@ -130,6 +130,10 @@ struct Tiny: BoxShapeProps {
         expectEqual(engine.dependents(of: [box]), [tag])
         expectEqual(engine.dependents(of: [other, tag]), [])
         h.editor.transact { $0.update(tag, as: Tag.self) { $0.props.target = other } }
+        h.editor.transact { $0.update(box, as: Box.self) { $0.frame.size.width = 5 } }
+        // Unread since: the lookups are the ones the last check made, which is what a service asks
+        // about as it hears of a commit, before anything reads.
+        expectEqual(engine.dependents(of: [box]), [tag])
         _ = engine.results
         expectEqual(engine.dependents(of: [box]), [])
         expectEqual(engine.dependents(of: [box, other]), [tag])

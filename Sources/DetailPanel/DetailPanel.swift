@@ -25,7 +25,8 @@ public protocol DetailTab {
     /// Tabs sort by this, then by first appearance. The bands: 0 for a kind's own tabs (the
     /// default), 50 for a feature tab a horizontal adds to the kinds that opt into it, 100 for
     /// Style and 200 for Arrange, so the shared tabs trail, as in Keynote, and 300 for a tab of the
-    /// shape's state that comes and goes with it (Issues), last, so it never moves the others.
+    /// shape's state that comes and goes with it (Issues), last, so the others keep their order.
+    /// (The strip shares its width among the tabs, so a tab that comes narrows the rest.)
     static var order: Int { get }
 }
 
@@ -239,9 +240,16 @@ extension ShapeDetails: KeyedExtensionPoint {
             + (contribution.header == nil ? [] : [HeaderKey(target: target)])
     }
 
-    /// Two tabs with one title would show as two identical tabs, whether sections or status lines
-    /// name them. (It runs whenever the panel is installed: `DetailPanelPlugin` contributes here.)
+    /// Two tabs with one title would show as two identical tabs.
     public static func check(_ registry: Registry) throws(RegistryError) {
+        try DetailTabID.checkTitles(in: registry, point: "\(Self.self)")
+    }
+}
+
+extension DetailTabID {
+    /// Refuses two tab types with one title, whether sections or status lines name them. Both of
+    /// the panel's points run it, since either may name a tab the other doesn't.
+    @MainActor static func checkTitles(in registry: Registry, point: String) throws(RegistryError) {
         let sectionTabs = registry.contributions(to: ShapeDetails.self).flatMap { contribution in
             contribution.value.sections.map { (tab: $0.tab, plugin: contribution.pluginID) }
         }
@@ -255,7 +263,7 @@ extension ShapeDetails: KeyedExtensionPoint {
                 continue
             }
             guard seen.tab == tab else {
-                throw .invalid(point: "\(Self.self)", reason: "\(seen.tab.name) (from \(seen.plugin)) and \(tab.name) "
+                throw .invalid(point: point, reason: "\(seen.tab.name) (from \(seen.plugin)) and \(tab.name) "
                                + "(from \(plugin)) are both tabs titled \"\(tab.title)\"; share one, or retitle one")
             }
         }
@@ -267,9 +275,16 @@ extension ShapeDetails: KeyedExtensionPoint {
 /// shape's issues in an Issues tab). A list: the kind's contributions, then every kind's, each in
 /// plugin order. Re-read on every document change, so keep them cheap (read a cached service, like
 /// validation's engine).
-public enum DetailStatuses: ExtensionPoint {
+public enum DetailStatuses {}
+
+extension DetailStatuses: ExtensionPoint {
     public typealias Contribution = DetailStatusContribution
     public static var owner: PluginID { .detailPanel }
+
+    /// Two tabs with one title would show as two identical tabs.
+    public static func check(_ registry: Registry) throws(RegistryError) {
+        try DetailTabID.checkTitles(in: registry, point: "\(Self.self)")
+    }
 
     /// Lines for a tab name it: "DetailStatuses in Issues".
     public static func summary(of contribution: DetailStatusContribution, for target: ShapeTarget) -> String {

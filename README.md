@@ -61,8 +61,9 @@ A board remembers, on each Mac, where you left its view, and whether its minimap
 | Bend | Select the arrow and drag its middle handle |
 | Toggle an arrowhead | Double-click an end handle |
 
-An empty note (no text, no checklist) gets an orange outline (the validation plugin), and says why at the foot of the
-detail panel (the validation-details bridge). A note with a checklist shows a done/total chip.
+An empty note (no text, no checklist) gets an orange outline (the validation plugin: red for an error, orange for a
+warning), says why in an Issues tab of the detail panel (the validation-details bridge), and gets an orange dot on its
+row in the table of contents (the validation-contents bridge). A note with a checklist shows a done/total chip.
 A titled shape shows its title in a pill above its top-left corner, and in the table of contents (the titles plugin).
 Name a note in the detail panel's header; an ellipse is titled by its size (the ellipse-titles example).
 
@@ -88,7 +89,8 @@ Sources/
   Clipboard/            the clipboard horizontal: cut, copy and paste, which kinds may opt out of
   Titles/               a horizontal any kind opts into: a title, stored or derived, in a pill and the table
                         of contents, and a header that renames it
-  ValidationDetails/    a bridge between two horizontals: validation issues in the panel's footer
+  ValidationDetails/    a bridge between two horizontals: validation issues in the panel's Issues tab
+  ValidationContents/   a bridge between two horizontals: a dot on the row of each shape with issues
   Composition/          the shipped plugin list, and the welcome board
   InfiniteCanvas/       the SwiftUI app
 Examples/               the smallest plugin for each pattern

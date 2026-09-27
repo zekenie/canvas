@@ -1015,7 +1015,7 @@ it. Tabs sort by `order`, then by first appearance, in these bands:
 | 50 | Feature tabs a horizontal brings to the kinds that opt into it (Checklist) |
 | 100 | `StyleTab`: appearance, shared by every kind |
 | 200 | `ArrangeTab`: position and size, which the panel fills for every box shape |
-| 300 | A tab of the shape's state that comes and goes with it (ValidationDetails' `IssuesTab`): last, so it never moves the others |
+| 300 | A tab of the shape's state that comes and goes with it (ValidationDetails' `IssuesTab`): last, so the others keep their order |
 
 Use the shared `StyleTab` and `ArrangeTab` rather than near-duplicates. Two tab types with one title
 would show as two identical tabs, so they're a registry error (`invalid`, below), whether sections
@@ -1210,8 +1210,11 @@ extension IssuesTab: DetailTab {
 
 Issues come worst first (errors, then warnings, each in the rules' order), each line its
 severity's symbol, red or orange, then its message. The tab is at order 300, after Style and
-Arrange, so it appears and goes away without moving the tabs someone is using. A tab's lines lead
-it, above any sections another plugin puts there. A status contributor reads services through
+Arrange, so the other tabs keep their order as it comes and goes, though not their width: the
+strip shares its width among its tabs, and a kind with one tab (a rectangle's Arrange) gains a
+strip with it. The tab is remembered per kind, as any is: once someone chooses Issues, the next
+shape of that kind with issues opens on it, and one without opens on its first tab. A tab's lines
+lead it, above any sections another plugin puts there. A status contributor reads services through
 `DetailContext`, read-only. Status lines are re-read on every document change, so read a cached
 service, as this one reads validation's engine. Without Validation installed there's no engine,
 no lines, and no tab. So an empty sticky note has an Issues tab that says "This note is empty.",
@@ -1591,7 +1594,8 @@ note.contentsRow { note in
   contents keeps each shape's row, and where it's listed, from one commit to the next, and redoes
   only those of the shapes the commit's change set names (and the rows nested under a shape that
   came or went). So dragging a shape costs its own row, however big the board: well under a
-  millisecond at 10,000 shapes, every one listed.
+  millisecond at 10,000 shapes, every one listed. (Plus the marks of the shapes whose marks a
+  drag may change, when a mark reads other shapes: [marks](#marks-validationcontents).)
 - **`when`** lists only some of a kind's shapes: `contentsRow(when: { $0.props.isBound }) { ... }`.
 - **`nestedUnder`** names the shape a row goes under. It holds only while that shape is listed
   too, so a selection of just the child still shows it, at the top. Rows nest as deep as their
@@ -1644,16 +1648,20 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
 }
 ```
 
-- **A mark is part of its row**, made with it and again only when the row is: when a commit
-  changes the shape, or when the mark's contributor says the commit may change its mark. So a
-  commit still costs the rows it changed, and SwiftUI redraws only those. Reading marks in the
-  row's view instead would cost the whole board: the list makes every row's view whenever it
-  redraws, and a row view that read the document would be asked for again after every commit.
+- **A mark is part of its row**, made with it, and made again with it when a commit changes the
+  shape. So a commit still costs the rows it changed, and SwiftUI redraws only those. Reading
+  marks in the row's view instead would cost the whole board: the list makes every row's view
+  whenever it redraws, and a row view that read the document would be asked for again after
+  every commit.
 - **`affected`** is for a mark read from more than its shape. Given each commit's change set, it
-  names the shapes the commit doesn't change whose marks it may. Validation's rules may look at
-  other shapes (`context.shape(_:)`), and the engine knows whose did (`dependents(of:)`), so
-  deleting the shape a rule looked at marks the shape the rule is for. A mark read from its shape
-  alone leaves `affected` out.
+  names the shapes the commit doesn't change whose marks it may. Their marks are read again on
+  the next read, and a row is replaced (and redrawn) only if its marks changed, so a shape many
+  rules look at costs its dependents' marks when it's dragged, not their rows. Validation's rules
+  may look at other shapes (`context.shape(_:)`), and the engine knows whose did
+  (`dependents(of:)`): flattening the box a rule checks marks the shape the rule is for. A mark
+  read from its shape alone leaves `affected` out. A service that reads the table of contents as
+  it hears of a commit, before the table of contents does, gets every row's marks read again,
+  since only hearing of the commit says which it affects.
 - **Several marks** on one row stand side by side: the kind's, then every kind's, each in plugin
   order (`ContentsMarkContribution`, contributed for a kind, is a kind's own).
 - **Headless**, `entry.marks` is a row's marks.

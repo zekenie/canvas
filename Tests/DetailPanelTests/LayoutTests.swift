@@ -161,7 +161,7 @@ extension AlertsTab: DetailTab {
         editor.transact { $0.update(box, as: Box.self) { $0.frame.size.width = 10 } }
         expectEqual(try editor.layout(box).tabs.map(\.title), ["Arrange"])
     },
-    test("a tab can hold status lines and sections: the kind's lines, then every kind's, then its sections") {
+    test("a tab can hold status lines and sections: the kind's lines, then every kind's; its sections as they were") {
         let editor = try gadgetEditor([Contributor(id: "notes") { r in
             r.detailStatusForEveryShape(in: RemarksTab.self) { _, _ in [DetailStatus("Every kind.")] }
             r.contribute(DetailStatusContribution(in: RemarksTab.self) { _, _ in [DetailStatus("A gadget.", tone: .info)] },

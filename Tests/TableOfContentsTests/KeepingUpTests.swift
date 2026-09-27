@@ -35,11 +35,16 @@ extension Array where Element == ContentsEntry {
 final class EarlyReader {
     var reads = false
     private(set) var heard: [String] = []
+    /// Each row's marks' help, as `heard` has the rows' text.
+    private(set) var heardMarks: [[String]] = []
 }
 
 extension EarlyReader: EditorService {
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
-        if reads { heard = editor.contents.entries.outline }
+        guard reads else { return }
+        let entries = editor.contents.entries
+        heard = entries.outline
+        heardMarks = entries.marks
     }
 }
 

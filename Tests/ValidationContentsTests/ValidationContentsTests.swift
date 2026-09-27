@@ -7,14 +7,15 @@ import TestKit
 import Validation
 import ValidationContents
 
-/// A box with no height has an error, one with no width a warning; a tag pointing at nothing, an
-/// error, found by looking up another shape.
+/// A box with no height has an error, one with no width a warning. A tag's rule looks up the shape
+/// it points at: pointing at nothing is an error, and at a flat box a warning.
 let sizeRules = Contributor(id: "rules") { r in
     r.validate(Box.self) { box, _ in
         (box.frame.width == 0 ? [.warning("No width.")] : []) + (box.frame.height == 0 ? [.error("No height.")] : [])
     }
     r.validate(Tag.self) { tag, context in
-        tag.props.target.flatMap { context.shape($0) } == nil ? [.error("Points at nothing.")] : []
+        guard let target = tag.props.target.flatMap({ context.shape($0) }) else { return [.error("Points at nothing.")] }
+        return target.box?.height == 0 ? [.warning("Points at something flat.")] : []
     }
 }
 
@@ -48,17 +49,21 @@ extension CanvasEditor {
         let box = editor.add(Box(.zero))
         expectEqual(try editor.marks(box).map(\.help), ["No height.\nNo width."])
     },
-    test("marks follow the document, even for a shape that didn't change") {
+    test("marks follow the document, even for a shape that didn't change: a rule's look at another shape") {
         let editor = try shipped()
         let box = editor.add(Box(CGRect(x: 0, y: 0, width: 40, height: 40)))
         let tag = editor.add(Tag(target: box))
         _ = try require(editor.tableOfContents).entries
-        expectEqual(try editor.marks(box), [])
+        expectEqual(try editor.marks(tag), [])
+        let tagBefore = editor.document[tag]
         editor.transact { $0.update(box, as: Box.self) { $0.frame.size.height = 0 } }
+        expectEqual(editor.document[tag], tagBefore, "the tag didn't change")
         expectEqual(try editor.marks(box).map(\.help), ["No height."])
+        expectEqual(try editor.marks(tag).map(\.help), ["Points at something flat."], "its mark did")
+        editor.transact { $0.update(box, as: Box.self) { $0.frame.size.height = 40 } }
         expectEqual(try editor.marks(tag), [])
         editor.transact { $0.delete([box]) }
-        expectEqual(try editor.marks(tag).map(\.help), ["Points at nothing."], "the tag's row is as it was; its mark isn't")
+        expectEqual(try editor.marks(tag).map(\.help), ["Points at nothing."])
     },
     test("without validation installed, no row is marked") {
         let editor = try editor([TableOfContentsPlugin(), ValidationContentsPlugin()])

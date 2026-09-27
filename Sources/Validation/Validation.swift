@@ -33,8 +33,13 @@ public struct ValidationResult: Equatable, Sendable {
     /// Derived, never stored: valid means no error-severity issue.
     public var isValid: Bool { !issues.contains { $0.severity == .error } }
     public var worst: Severity? { issues.map(\.severity).max() }
-    /// The errors, then the warnings, each in the rules' order: how every list of them reads.
-    public var worstFirst: [ValidationIssue] { issues.filter { $0.severity == .error } + issues.filter { $0.severity == .warning } }
+    /// Worst first (the errors, then the warnings), each severity in the rules' order: how every list
+    /// of them reads.
+    public var worstFirst: [ValidationIssue] {
+        issues.enumerated()
+            .sorted { $0.element.severity != $1.element.severity ? $0.element.severity > $1.element.severity : $0.offset < $1.offset }
+            .map(\.element)
+    }
 }
 
 /// Rules' only way into the document. The engine notes the shapes a rule looks up, and checks the

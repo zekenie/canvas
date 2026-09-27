@@ -18,8 +18,8 @@ public struct ValidationDetailsPlugin: CanvasPlugin {
     }
 }
 
-/// A shape's validation issues. It comes and goes with them, so it trails every other tab and
-/// never moves one.
+/// A shape's validation issues. It comes and goes with them, so it trails every other tab, which
+/// keep their order as it does.
 public enum IssuesTab {}
 
 extension IssuesTab: DetailTab {

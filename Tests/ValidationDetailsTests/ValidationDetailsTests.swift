@@ -50,6 +50,20 @@ extension EditorHarness {
         h.editor.transact { $0.update(box, as: Box.self) { $0.frame.size.height = 40 } }
         expectEqual(try h.layout(box).tabs.map(\.title), ["Arrange"])
     },
+    test("the panel remembers Issues as the tab chosen for a kind: a shape with issues opens on it, one without on its first tab") {
+        let h = try harness([ValidationPlugin(), DetailPanelPlugin(), ValidationDetailsPlugin(), emptyBoxRules])
+        let state = try require(h.editor.detailPanel)
+        let flat = h.add(Box(CGRect(x: 0, y: 0, width: 40, height: 0)))
+        let fine = h.add(Box(CGRect(x: 0, y: 0, width: 40, height: 40)))
+        expectEqual(state.currentTab(in: try h.layout(flat), for: Box.kind), .of(ArrangeTab.self), "the first tab, until one's chosen")
+        state.choose(.of(IssuesTab.self), for: Box.kind)
+        expectEqual(state.currentTab(in: try h.layout(flat), for: Box.kind), .of(IssuesTab.self))
+        expectEqual(state.currentTab(in: try h.layout(fine), for: Box.kind), .of(ArrangeTab.self))
+        h.editor.transact { $0.update(flat, as: Box.self) { $0.frame.size.height = 40 } }
+        expectEqual(state.currentTab(in: try h.layout(flat), for: Box.kind), .of(ArrangeTab.self), "its issues fixed, the tab goes")
+        h.editor.transact { $0.update(fine, as: Box.self) { $0.frame.size.height = 0 } }
+        expectEqual(state.currentTab(in: try h.layout(fine), for: Box.kind), .of(IssuesTab.self), "and is back for the next shape with issues")
+    },
     test("a kind without other tabs gets just Issues; a valid shape none") {
         let h = try harness([ValidationPlugin(), DetailPanelPlugin(), ValidationDetailsPlugin(), Contributor(id: "rules") { r in
             r.validate(Tag.self) { tag, _ in tag.props.target == nil ? [.warning("Points at nothing.")] : [] }

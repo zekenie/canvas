@@ -50,10 +50,11 @@ extension ContentsTitles: KeyedExtensionPoint {
 /// Dots at the trailing end of a shape's row, from any plugin: a state worth seeing at a glance down
 /// the list (ValidationContents marks a shape with issues red or orange). A list: the kind's
 /// contributions, then every kind's, each in plugin order, and a row shows every mark it gets. A
-/// mark is part of the row, made with it and again only when it is: when a commit changes the
-/// shape, or when the mark's contributor says the commit may change its mark (`affected`), as a
-/// mark read from other shapes must (validation's rules may look at other shapes). So marks follow
-/// the document, and a commit costs the rows it changes.
+/// mark is part of the row, made with it, and made again with it when a commit changes the shape.
+/// A mark read from other shapes (validation's rules may look at other shapes) also names, with
+/// `affected`, the shapes a commit may change the marks of without changing them: their marks are
+/// read again, and their rows kept unless the marks changed. So marks follow the document, and a
+/// commit costs the rows it changes and the marks it may.
 public enum ContentsMarks: ExtensionPoint {
     public typealias Contribution = ContentsMarkContribution
     public static var owner: PluginID { .tableOfContents }
