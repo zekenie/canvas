@@ -2,6 +2,7 @@ import AppKit
 import Canvas
 import Geometry
 import Selection
+import TableOfContents
 
 /// Arrows as a shape kind: no box; handles; their own translation; painted just above the
 /// highest shape they're bound to. Each capability is its own extension.
@@ -244,7 +245,10 @@ public struct ArrowsPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .arrows }
     public func register(into registrar: inout PluginRegistrar) {
-        registrar.shape(ArrowDefinition())
+        registrar.shape(ArrowDefinition()) { arrow in
+            // In the table of contents, under the shape it starts from (as data-canvas's edges).
+            arrow.contentsRow(nestedUnder: { $0.props.start.binding?.shapeID })
+        }
         registrar.service { ArrowTargeting(editor: $0) }
         registrar.tool(ToolDescriptor(id: .arrow, label: "Arrow", systemImage: "arrow.up.right", shortcut: "a")) { editor in
             ArrowTool(targeting: editor.service(ArrowTargeting.self)!)

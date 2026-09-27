@@ -81,9 +81,25 @@ func describe(_ terminal: ArrowTerminal, _ ids: [ShapeID]) -> String {
     return lines.joined(separator: "\n") + "\n"
 }
 
+/// Where the app ends a scenario differently from the POC on purpose, line for line: the golden's
+/// line, and the app's. The fixture stays as the POC recorded it.
+///
+/// "move shape": the POC brought a pressed shape to the front, and the app doesn't (tldraw doesn't
+/// either), so the note dragged, #0, stays behind #1. Only the notes' order differs: every
+/// position, and every arrow, is the POC's.
+let intendedDeviations: [(golden: String, app: String)] = [
+    ("move shape: tool=select camera=(0.0, 0.0) shapes=[#1@(460.0, 80.0, 200.0, 200.0) #0@(130.0, 150.0, 200.0, 200.0)]",
+     "move shape: tool=select camera=(0.0, 0.0) shapes=[#0@(130.0, 150.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]"),
+]
+
 @MainActor let transcriptTests = Suite("Arrow transcript", [
-    test("every scenario, fed to the canvas view as NSEvents, ends exactly as it did in the POC") {
-        let golden = try String(contentsOfFile: "Tests/CompositionTests/Fixtures/arrow-transcript.txt", encoding: .utf8)
+    test("every scenario, fed to the canvas view as NSEvents, ends exactly as it did in the POC, less the intended deviations") {
+        var golden = try String(contentsOfFile: "Tests/CompositionTests/Fixtures/arrow-transcript.txt", encoding: .utf8)
+        for deviation in intendedDeviations {
+            let lines = golden.components(separatedBy: "\n")
+            expectEqual(lines.filter { $0 == deviation.golden }.count, 1, "a deviation names exactly one line of the POC's transcript")
+            golden = lines.map { $0 == deviation.golden ? deviation.app : $0 }.joined(separator: "\n")
+        }
         let actual = transcript()
         if actual != golden {
             try? actual.write(toFile: "build/arrow-transcript.actual.txt", atomically: true, encoding: .utf8)

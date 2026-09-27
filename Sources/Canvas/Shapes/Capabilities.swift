@@ -62,8 +62,7 @@ public struct ShapeTranslation<Props: ShapeProps> {
 }
 
 /// Painted relative to another shape instead of by document order, so bringing it to front means
-/// nothing (the select tool doesn't, when it's pressed). A connector stays just above the shapes
-/// it joins; a label, above its host.
+/// nothing. A connector stays just above the shapes it joins; a label, above its host.
 public protocol PaintOrderAnchored: ShapeDefinition {
     /// Paint just above this shape; nil (or a shape that isn't there) paints above everything.
     func paintAnchor(of shape: ShapeRecord<Props>, in document: CanvasDocument) -> ShapeID?

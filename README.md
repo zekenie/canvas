@@ -1,8 +1,8 @@
 # Infinite Canvas
 
 A native macOS infinite canvas: a small core, with everything on it (selecting, sticky notes,
-ellipses, arrows modeled on tldraw's, task cards, validation, checklists, a detail panel) added by
-plugins.
+ellipses, arrows modeled on tldraw's, task cards, validation, checklists, a detail panel, a table of
+contents) added by plugins.
 The plugin system is a port, in Swift, of the one in data-canvas. Start with
 [docs/plugin-system.md](docs/plugin-system.md).
 
@@ -44,6 +44,8 @@ A board remembers, on each Mac, where you left its view.
 | Edit a note | Double-click it, or select it and press Return; Escape to finish |
 | Edit a shape's details | Select it; the detail panel on the right edits it. Escape gives the keyboard back to the canvas |
 | Show or hide the detail panel | ⌃⌘I, or the Details button in the toolbar |
+| See what's on the board | With nothing selected, the detail panel lists every shape, each arrow under the shape it starts from; with several selected, just those (Show All lists every shape again) |
+| Find a shape from the list | Click its row: it's selected and the canvas zooms to it. Pointing at a row outlines its shape faintly, and pointing at a shape tints its row |
 | Add a checklist to a note or task | The panel's Checklist tab: + adds an item, − or Delete removes the selected one |
 | Delete shapes or arrows | Select them and press Delete |
 | Arrow tool | A (V or Escape to go back to select) |
@@ -75,6 +77,7 @@ Sources/
   Validation/           the validation horizontal: rules, engine, outline
   DetailPanel/          the detail panel horizontal: tabs, sections, bindings, the inspector view
   ContextMenus/         the context menu horizontal: right-click items, groups, the selection's menu
+  TableOfContents/      the table of contents horizontal: a row per shape, in the detail panel
   Checklists/           a horizontal any kind opts into: a checklist, its panel tab, menu items, a chip
   ValidationDetails/    a bridge between two horizontals: validation issues in the panel's footer
   Composition/          the shipped plugin list, and the welcome board

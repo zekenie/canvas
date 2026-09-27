@@ -7,7 +7,7 @@ extension PluginID {
 }
 
 /// Task cards: the Task tool (T), validation rules, a detail panel that is the card's only editor,
-/// and a Status submenu in its context menu. The card draws its own checklist, so it opts into
+/// a Status submenu in its context menu, and a row in the table of contents. The card draws its own checklist, so it opts into
 /// Checklists without the chip.
 public struct TaskCardsPlugin: CanvasPlugin {
     public init() {}
@@ -19,6 +19,7 @@ public struct TaskCardsPlugin: CanvasPlugin {
             task.validate { shape, _ in shape.props.issues }
             task.taskPanel()
             task.taskMenu()
+            task.taskRow()
             task.checklist(\.checklist, badge: false)
         }
     }

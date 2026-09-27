@@ -19,14 +19,19 @@ final class PanelWindow {
     /// How often the panel handed the keyboard back.
     private(set) var exits = 0
 
-    init(_ editor: CanvasEditor, panelWidth: CGFloat = DetailStyle.idealWidth, locale: Locale = Locale(identifier: "en_US")) {
+    /// `withOverview`: the panel's overview is a text field whose placeholder is "Overview".
+    init(_ editor: CanvasEditor, panelWidth: CGFloat = DetailStyle.idealWidth, locale: Locale = Locale(identifier: "en_US"),
+         withOverview: Bool = false) {
         self.editor = editor
         canvas = CanvasView(editor: editor)
         canvas.frame = CGRect(x: 0, y: 0, width: 1000 - panelWidth, height: 700)
-        let panel = DetailPanelView(editor: editor) { [unowned self] in
+        let exit: @MainActor () -> Void = { [unowned self] in
             exits += 1
             window.makeFirstResponder(canvas)
         }
+        let panel = withOverview
+            ? AnyView(DetailPanelView(editor: editor, onExit: exit) { TextField("Overview", text: .constant("")) })
+            : AnyView(DetailPanelView(editor: editor, onExit: exit))
         hosting = NSHostingView(rootView: panel.environment(\.locale, locale))
         hosting.frame = CGRect(x: 1000 - panelWidth, y: 0, width: panelWidth, height: 700)
         let root = NSView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
@@ -91,6 +96,16 @@ enum ListTab {}
 extension ListTab: DetailTab { static var title: String { "List" } }
 
 @MainActor let windowTests = Suite("Panel in a window", [
+    test("an overview stands in for No Selection and goes under the header of several; one shape shows its own panel") {
+        let editor = try gadgetEditor(scheduler: TaskScheduler())
+        let panel = PanelWindow(editor, withOverview: true)
+        let a = editor.add(Box(gadgetFrame)), b = editor.add(Box(gadgetFrame.offsetBy(dx: 300, dy: 0)))
+        panel.window.spin { panel.fields.map(\.placeholderString) == ["Overview"] }
+        editor.selection = a
+        panel.window.spin { panel.fields.map(\.stringValue) == ["240 pt", "160 pt", "80 pt", "40 pt"] }
+        editor.selectedShapeIDs = [a, b]
+        panel.window.spin { panel.fields.map(\.placeholderString) == ["Overview"] }
+    },
     test("nothing selected shows no fields; selecting a box shows its size and position") {
         let editor = try gadgetEditor(scheduler: TaskScheduler())
         let panel = PanelWindow(editor)

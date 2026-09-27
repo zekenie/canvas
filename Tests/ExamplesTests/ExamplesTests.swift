@@ -10,6 +10,7 @@ import Polylines
 import Rectangles
 import Reordering
 import Selection
+import TableOfContents
 import TestKit
 import Titles
 
@@ -101,7 +102,7 @@ struct MoreLabelTitles: CanvasPlugin {
         h.release()
     },
     test("Polylines: arrows don't bind to a line, since it's open") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), ArrowsPlugin(), PolylinesPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), PolylinesPlugin()])
         h.add(Polyline(points: [CGPoint(x: 100, y: 100), CGPoint(x: 300, y: 100)]))
         expect(h.key("a"))
         h.press(at: CGPoint(x: 200, y: 300))
@@ -111,7 +112,7 @@ struct MoreLabelTitles: CanvasPlugin {
         expect(arrow.props.end.binding == nil, "the end stays free")
     },
     test("Eraser: dragging across shapes deletes them, and an arrow lets go of what was erased") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), ArrowsPlugin(), RectanglesPlugin(), EraserPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), RectanglesPlugin(), EraserPlugin()])
         let a = h.add(Rectangle(frame: CGRect(x: 0, y: 0, width: 100, height: 100)))
         let b = h.add(Rectangle(frame: CGRect(x: 200, y: 0, width: 100, height: 100)))
         let c = h.add(Rectangle(frame: CGRect(x: 400, y: 0, width: 100, height: 100)))
@@ -129,7 +130,7 @@ struct MoreLabelTitles: CanvasPlugin {
         expectEqual(h.editor.currentToolID, .eraser)
     },
     test("Eraser: a quick stroke erases what it crosses between two events, even a thin arrow") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), ArrowsPlugin(), RectanglesPlugin(), EraserPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), RectanglesPlugin(), EraserPlugin()])
         let arrow = h.add(Arrow(start: .free(CGPoint(x: 100, y: 300)), end: .free(CGPoint(x: 300, y: 300))))
         let thin = h.add(Rectangle(frame: CGRect(x: 391, y: 0, width: 4, height: 100)))
         expect(h.key("e"))
@@ -195,7 +196,7 @@ struct MoreLabelTitles: CanvasPlugin {
         """)
     },
     test("Reordering: every kind but those painted by anchor gets Arrange; to front and to back keep the selection's order") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), ContextMenusPlugin(), ArrowsPlugin(), EllipsesPlugin(), RectanglesPlugin(),
+        let h = try EditorHarness(plugins: [SelectionPlugin(), ContextMenusPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), EllipsesPlugin(), RectanglesPlugin(),
                                             PolylinesPlugin(), ReorderingPlugin()])
         let a = h.add(Rectangle(frame: CGRect(x: 0, y: 0, width: 100, height: 100)))
         let b = h.add(Ellipse(frame: CGRect(x: 200, y: 0, width: 100, height: 100)))

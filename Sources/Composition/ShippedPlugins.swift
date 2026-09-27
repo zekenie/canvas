@@ -13,6 +13,7 @@ import Reordering
 import Selection
 import StickyNotes
 import SwiftUI
+import TableOfContents
 import TaskCards
 import Titles
 import Validation
@@ -27,7 +28,7 @@ public enum ShippedPlugins {
             // First: the others build on it, and its handles draw below their view overlays.
             SelectionPlugin(),
             ArrowsPlugin(), StickyNotesPlugin(), EllipsesPlugin(), TaskCardsPlugin(),
-            ValidationPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), ChecklistsPlugin(), ValidationDetailsPlugin(),
+            ValidationPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin(), ChecklistsPlugin(), ValidationDetailsPlugin(),
             // The examples (Examples/). Each is one line here; delete it to leave it out.
             RectanglesPlugin(), PolylinesPlugin(), EraserPlugin(), TitlesPlugin(), EllipseTitlesPlugin(), ReorderingPlugin(),
         ]
@@ -45,10 +46,14 @@ public enum ShippedPlugins {
         }
     }
 
-    /// The detail panel, for the app to place beside the canvas. It follows the editor's selection;
-    /// `onExit` must give the keyboard back to the canvas.
+    /// The detail panel, for the app to place beside the canvas. It follows the editor's selection:
+    /// one shape's details, or, with nothing or several selected, the table of contents (the whole
+    /// board, or the selection), as data-canvas's details panel does. `onExit` must give the
+    /// keyboard back to the canvas.
     public static func detailPanel(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void) -> some View {
-        DetailPanelView(editor: editor, onExit: onExit)
+        DetailPanelView(editor: editor, onExit: onExit) {
+            TableOfContentsView(editor: editor, onExit: onExit)
+        }
     }
 }
 

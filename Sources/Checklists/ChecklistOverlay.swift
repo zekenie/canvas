@@ -43,7 +43,7 @@ struct ChecklistOverlay: CanvasOverlay {
 
     private func drawChip(for items: [ChecklistItem], in cg: CGContext) {
         let done = items.doneCount
-        let text = NSAttributedString(string: "☑ \(done)/\(items.count)", attributes: ChecklistStyle.attributes)
+        let text = NSAttributedString(string: "☑ \(items.tally ?? "")", attributes: ChecklistStyle.attributes)
         let size = text.size(), height = ChecklistStyle.height
         let width = (size.width + ChecklistStyle.padding * 2).rounded(.up)
         let chip = CGRect(x: ChecklistStyle.overhang - width, y: -height / 2, width: width, height: height)

@@ -1,7 +1,8 @@
 # The plugin system
 
 Everything on the canvas comes from a plugin: sticky notes, ellipses, arrows, task cards,
-validation, checklists, the detail panel beside the canvas, selecting itself, even the examples.
+validation, checklists, the detail panel and the table of contents beside the canvas, selecting
+itself, even the examples.
 The core (`Sources/Canvas`) knows how to hold shapes, run tools, draw, and wire plugins together,
 and nothing about any particular shape or concern. Its one built-in tool is tldraw's Hand, which
 pans (a flung release slides on). Select, which selects (a click, ⇧-click, or a marquee dragged
@@ -23,6 +24,7 @@ maps one onto the other.
 - [Selection](#selection)
 - [The detail panel](#the-detail-panel)
 - [Context menus](#context-menus)
+- [The table of contents](#the-table-of-contents)
 - [Capabilities](#capabilities)
 - [The editor, the document, and drawing](#the-editor-the-document-and-drawing)
 - [Boards on disk](#boards-on-disk)
@@ -198,6 +200,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Edit a kind's properties beside the canvas | `x.details { DetailSection(...) }` | [TaskCards](#the-full-showcase-taskcards) |
 | Add items to a kind's right-click menu | `x.contextMenu { MenuItem(...) }` | [TaskCards](#contributing) |
 | Add a right-click item to every shape, or every kind with a capability | `registrar.contextMenuForEveryShape(where:)` | [Reordering](#every-shape-reordering) |
+| Say how a kind's shapes appear in the table of contents | `x.contentsRow { ContentsLabel(...) }` | [StickyNotes](#the-table-of-contents) |
 | Add a concern any kind can opt into | An `ExtensionPoint`, sugar on `ShapeRegistrar`, and whatever reads the point | [Titles](#a-horizontal-plugin), [Validation](../Sources/Validation/Validation.swift) |
 | Give that concern a tab on the kinds that opt in | A `DetailTab` at order 50, contributed from the same sugar | [Checklists](#a-horizontals-feature-tab-checklists) |
 | Give that concern menu items on the kinds that opt in | A `MenuGroup` at order 50, and `contextMenu` from the same sugar | [Checklists](#a-feature-that-comes-with-menu-items-checklists) |
@@ -272,7 +275,7 @@ Each target is one line, with its layer:
 |---|---|---|
 | foundation | foundation | Geometry, Canvas (the core) |
 | ui | foundation | CanvasUI (the AppKit view, the SwiftUI toolbar, and `CanvasFocus`) |
-| horizontal | foundation, horizontal | Selection, Validation, Titles, DetailPanel, ContextMenus, Checklists |
+| horizontal | foundation, horizontal | Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Checklists |
 | vertical | foundation, horizontal | Arrows, StickyNotes, Ellipses, TaskCards, Rectangles, Polylines, Eraser, Reordering |
 | bridge | foundation, horizontal, vertical | EllipseTitles, ValidationDetails |
 | composition | foundation, horizontal, vertical, bridge | Composition (the shipped plugin list) |
@@ -603,7 +606,7 @@ extension Registry {
     }
 }
 
-/// The hovered shape's title, just below it (`hovered` is the select tool's, from Selection).
+/// The hovered shape's title, just below it (`hovered` is Selection's: on the canvas, or its row).
 struct TitleOverlay: CanvasOverlay {
     var space: OverlaySpace { .view }       // drawn in view points
 
@@ -672,7 +675,7 @@ selection: Selection works through the same generic hooks any plugin can use.
 | Core hook | What Selection does with it |
 |---|---|
 | `registrar.defaultTool(.select)` | The editor starts in Select, Select leads the toolbar, and Escape and placing a shape come back to it. |
-| `registrar.outlines { ... }` | The hover outline, each selected shape's outline, and the box around several. The core strokes every plugin's outlines and the hint in one pass. |
+| `registrar.outlines { ... }` | Each selected shape's outline, the box around several, and the hover's faint outline. The core strokes every plugin's outlines and the hint in one pass, over the faint ones. |
 | `registrar.command(.delete)`, `.insertNewline`, `.selectAll` | Delete deletes the selection, Return edits the only selected shape, ⌘A selects everything. |
 | `Tool.cancel` | Escape in Select, with nothing under way, deselects. |
 | `EditorService.documentDidChange`, `didPlace` | Drops shapes that are gone (or no longer selectable) from the selection and the hover; selects a shape just placed. |
@@ -687,8 +690,18 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   exactly that shape. Handles, Return, editing and the arrows' binding hints follow `selection`, so
   they apply to a lone shape. Both only ever name selectable shapes that exist, and setting what's
   already selected changes nothing (no redraw, no Observation notification).
-- `hovered` (the select tool's), `hoveredHandle`, `brush` (the marquee), `selectionBounds`,
-  `isSelectable(_:)`, and the commands' `selectAll()`, `deleteSelection()` and `editSelection()`.
+- `selectionRevision` goes up by one on every change to the selection, as `editor.revision` does
+  for the document, so a plugin that selected something can tell whether its selection is still
+  the one in place, even after the same shapes were deselected and selected again (the table of
+  contents does).
+- `hovered` is the shape the pointer is over. The select tool sets it on the canvas and clears it
+  as the pointer leaves; any other plugin may set it where it shows shapes (the table of contents'
+  rows do), in any tool, and changing tools clears it. It's outlined faintly (not while a session
+  runs, nor on a selected shape): wider and lighter than the selection's (2.5 points, the accent at
+  60%), easy to see over a yellow note, but a hovered shape doesn't read as selected
+  as it would in tldraw, which strokes a hover like the selection.
+- `hoveredHandle`, `brush` (the marquee), `selectionBounds`, `isSelectable(_:)`, and the commands'
+  `selectAll()`, `deleteSelection()` and `editSelection()`.
 
 **Opting out.** Every kind is selectable unless it says otherwise, for all its shapes or for some:
 
@@ -720,7 +733,8 @@ kind, plus one for every kind, which a kind's own overrides.
 **The select tool** follows tldraw's states. Handles win, then the selectable shape under the
 pointer, then empty space inside a multi-selection's box, then the canvas.
 
-- A press on a shape selects just it (and brings it to the front); ⇧ adds it. With ⌘, or on a
+- A press on a shape selects just it, and leaves it where it is in the paint order (as tldraw
+  does; the POC brought it to the front); ⇧ adds it. With ⌘, or on a
   shape already selected, the press keeps the selection, so a drag past the 4-point threshold
   moves it all; released without a drag, it selects the shape under the release (⇧ or ⌘ toggles it
   instead). A lone box pressed without ⇧ or ⌘ follows the pointer from the press, with no
@@ -782,8 +796,10 @@ The panel owns all of the chrome, and plugins fill it in:
 | Fonts, control size, the label column and checkbox toggles, all through the environment | |
 | Focus: what gives the keyboard back to the canvas | |
 
-With nothing selected the panel says "No Selection", and with several, "N Shapes" over the kinds
-selected (details are per shape: editing several at once isn't built). A shape nothing contributes
+With nothing selected the panel shows its overview, a view the host may give it (the app's is
+[the table of contents](#the-table-of-contents)), else "No Selection". With several, it shows "N
+Shapes" over the kinds selected, then the overview (details are per shape: editing several at once
+isn't built). A shape nothing contributes
 to (an arrow, today) gets its header, then "No Options". Without `DetailPanelPlugin` installed, the panel says
 "No Details".
 
@@ -1282,6 +1298,123 @@ with no menu then reaches `mouseDown`, a press with `pointer.isControlClick` set
 take or ignore. ContextMenus keeps each kind's items, gathered once, in a service,
 `ContextMenuState`.
 
+## The table of contents
+
+The table of contents is an outline of the board, one row per shape, in the right-hand panel, as
+data-canvas has it: with nothing selected the detail panel shows it for the whole board; with
+several, just them, under their header; with one, that shape's details instead. It's a horizontal
+([`Sources/TableOfContents`](../Sources/TableOfContents)) with data-canvas's contract (its TOC
+card providers): each kind says how its shapes appear, and which shapes are listed and under what.
+It doesn't look like data-canvas's, though: it's a Mac source list, a SwiftUI `List` with the
+system's rows, selection, disclosure triangles and keyboard.
+
+```
+┌─ the panel, with nothing selected ──┐
+│ Board                               │ header: "Selection", with Show All, when filtered
+│ ▾ ▤ Double-click empty space to a…  │ a note: its text, on one line
+│     ↗ Arrow                         │   an arrow, under the shape it starts from
+│   ▤ Shopping list              1/2  │ a note's checklist tally
+│   ◐ Write the spec             1/3  │ a task: its status as a symbol, in the pill's color
+│   ○ Untitled Task                   │   a blank title shows the placeholder, dimmed
+│   ◯ Ellipse                         │ a kind with no row: its tool's label and symbol
+│   ↗ Arrow                           │ an arrow that starts on nothing, at the top
+└─────────────────────────────────────┘
+```
+
+### A kind's row
+
+StickyNotes' row, in full ([NoteRow.swift](../Sources/StickyNotes/NoteRow.swift)):
+
+```swift
+note.contentsRow { note in
+    ContentsLabel(note.props.text, placeholder: "Empty Note", color: .yellow, badge: note.props.checklist.tally)
+}
+```
+
+- **The row is a view the kind builds**, usually a `ContentsLabel`: a title on one line (each run of
+  whitespace folds into a space), a placeholder shown dimmed when the title is blank, an SF Symbol
+  (the placing tool's, unless the row gives one) with an optional color, and a badge of a few
+  characters at the trailing end ("2/5", "Sep 30"). The list owns everything around it: row
+  height, indentation, disclosure triangles, selection, the header. Any view works, but
+  `ContentsLabel` is what keeps rows from different plugins alike; use it unless a row really needs
+  something else.
+- **A row reads only its shape.** A shape's row is made again only when that shape changes, so
+  dragging another shape costs one comparison.
+- **`when`** lists only some of a kind's shapes: `contentsRow(when: { $0.props.isBound }) { ... }`.
+- **`nestedUnder`** names the shape a row goes under. It holds only while that shape is listed
+  too, so a selection of just the child still shows it, at the top. Rows nest as deep as their
+  shapes do, collapsed under a disclosure triangle; a loop keeps the later shape at the top. Arrows
+  nest under the shape they start from, as data-canvas's edges do under their start node. Once
+  shapes can contain shapes, a shape's container will be the default.
+- **Without a row**, a kind is listed by the label and symbol of the tool that places it ("Arrow",
+  "Ellipse"), else by its kind, the fallback the detail panel's header uses. A kind can keep that
+  row and still say where it's listed and what it nests under, as Arrows does:
+
+  ```swift
+  arrow.contentsRow(nestedUnder: { $0.props.start.binding?.shapeID })
+  ```
+
+  `registrar.contentsRow(OtherKind.self) { ... }` gives another plugin's kind a row (bridges). A
+  kind has at most one row: two are a `conflict`.
+
+| data-canvas's `TocCardProvider` | Here |
+|---|---|
+| `component` | The view `contentsRow` builds, usually a `ContentsLabel` |
+| `filter` | `when:` |
+| `getParentShapeId` | `nestedUnder:` |
+| `getZoomConfig` | The shape's geometry bounds, with 100 points of margin, for every kind |
+| `onClick`, `getGroupChildren` | Not built yet |
+| The "other" row (type and id) | The placing tool's label and symbol |
+
+### What's listed, and selecting
+
+- **Rows are in document order**, back to front, like data-canvas's z-ordered outline. Selecting a
+  shape doesn't restack it, so rows move only when shapes are restacked (Bring to Front).
+- **Selecting filters the list**, like data-canvas's multi-select summary: select several shapes
+  on the canvas and only they are listed, under their header ("2 Shapes") and "Selection"; select
+  nothing and the whole board is, under "Board"; select one and the panel shows its details. Show
+  All lists the board again without deselecting.
+- **Selecting rows** (a click, ⌘- and ⇧-clicks, the arrow keys) selects their shapes and brings
+  them into view: centered, zoomed to fit with 100 points of margin but no closer than 120%, over
+  200 ms (data-canvas's click-to-zoom, and tldraw's zoomToBounds). A click on one row selects one
+  shape, so its details replace the list, as in data-canvas. ⌘- and ⇧-clicks leave several
+  selected, and the list keeps listing what it listed, so rows can be added and taken out without
+  the rest going away. That holds until the selection next changes some other way, which
+  `editor.selectionRevision` tells apart from the same shapes selected again.
+- **Hovering links the two.** There's one hovered shape, Selection's `editor.hovered`, and both
+  sides set it and show it. The pointer on a row hovers its shape, as the pointer on the shape
+  would, and the canvas outlines it faintly. The pointer on a shape on the canvas tints its row:
+  a faint accent where the selection's highlight goes, in its shape. A selected shape shows neither,
+  only its selection. data-canvas marks a row when its shape is hovered on the canvas (a faint ring);
+  its rows don't hover the canvas.
+- **The keyboard.** A click gives the list the keyboard, as a source list does: the arrow keys move
+  through the rows, Delete deletes the selected shapes, and Escape gives the keyboard back to the
+  canvas (`onExit`). So does hiding the panel while the list has the keyboard.
+- **Headless**, `ContentsState` (`editor.tableOfContents`) is all of it: `entries` (the rows, a tree),
+  `scope`, `select(_:)`, `showAll()`, and the rows' hover: `hover(_:)` and `endHover(_:)` as the
+  pointer moves onto a row and off it, and `isHovered(_:)` for whether a row shows as hovered. Tests
+  read a row's text, symbol and badge through `entry.label`.
+
+### Hosting
+
+`DetailPanelView` takes an optional overview, a view it shows where it has no shape to show: in
+place of "No Selection", and under the header of several (data-canvas's details panel takes an
+`emptyView` and a `multiSelectView` the same way). Neither horizontal knows the other; Composition,
+which decides what ships, joins them, and the app places the result in its `.inspector` as before:
+
+```swift
+public static func detailPanel(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void) -> some View {
+    DetailPanelView(editor: editor, onExit: onExit) {
+        TableOfContentsView(editor: editor, onExit: onExit)
+    }
+}
+```
+
+Bringing shapes into view takes two generic things from the core: `editor.viewportSize`, which
+`CanvasView` reports as it's resized, and `editor.animateCamera(to:duration:)`, eased like
+tldraw's camera moves and stopped by any other camera change, as the hand tool's slide is.
+`Camera(fitting:in:inset:maxZoom:)` (Geometry) does the fit.
+
 ## Capabilities
 
 Some behavior belongs to a kind itself rather than to a concern others can join. That's a
@@ -1294,7 +1427,7 @@ it, the core or a horizontal.
 | `CustomTranslation` | Moving by its own rules instead of by its frame, when a `TranslatingSession` moves it (dragging the selection, a shape just placed). When a drag starts, `beginTranslation` gets the shape, every shape moving with it and the starting transaction (committed on its own, before the first move), and returns a `ShapeTranslation`: a closure run on every drag event with the pointer's delta, after the moving boxes have moved. A kind without a frame needs this to be movable at all. | Arrows (alone, bound ends slide on their shapes; with a shape they're bound to, they keep every binding); Polylines (every point by the delta) |
 | `HandleProviding` (Selection's) | Draggable handles on the only selected shape. The select tool finds, draws and hit-tests them; `pressHandle` returns `.drag` or `.consumed`, and `dragSession` does the dragging. | Arrows |
 | `BrushHitTesting` (Selection's) | Whether the marquee touches it, when the brush overlaps its bounds without containing them. Default: `ShapeGeometry.isHit(byBrush:)`. | Arrows (against the visible arc) |
-| `PaintOrderAnchored` | Painted just above another shape, and never raised when pressed. | Arrows (above the shapes they join) |
+| `PaintOrderAnchored` | Painted just above another shape, whatever its place in the document. | Arrows (above the shapes they join) |
 
 The rule of thumb: behavior intrinsic to a kind is a capability; behavior anyone can add, to any
 kind, from any plugin, is an extension point. What a kind shows in the detail panel is an extension
@@ -1320,13 +1453,18 @@ to it.
   changed the document, services hear `documentDidChange` and drop what's gone (the selection
   does). What's selected is [Selection's](#selection).
 - **Drawing**, back to front: background and grid; shapes in paint order (culled by frame); every
-  plugin's outlines (`registrar.outlines`: hover, selection, the box around several; none while the
-  session `hidesOutlines`) and the hint, in one stroke at a constant screen width; world overlays;
+  plugin's outlines (`registrar.outlines`: selection, the box around several; none while the
+  session `hidesOutlines`) and the hint, in one stroke at a constant screen width, over the faint
+  ones (`Outlines.faintShapes`: the hover), stroked first, wider and lighter; world overlays;
   the running session's `draw(in:)` (the marquee); view overlays (Selection's handles first). Each
   shape, overlay and session draws with a fresh graphics state. Sizes meant as view points are
   divided by `zoom` in world space.
-- **The view.** `CanvasView` (CanvasUI) is the only AppKit in the loop. It converts events, hosts
-  the editing view over its shape, hands AppKit the menu for a secondary click, and draws the editor, all through the editor's `@_spi(Host)`
+- **The camera** is `editor.camera`, which anyone may set; setting it stops any camera motion
+  running. `editor.animateCamera(to:duration:)` moves it there, eased (tldraw's cubic), a frame
+  every 16 ms, and `Camera(fitting:in:inset:maxZoom:)` (Geometry) makes one that shows a rect.
+  `editor.viewportSize` is the view's size in view points, zero until it has one.
+- **The view.** `CanvasView` (CanvasUI) is the only AppKit in the loop. It converts events, reports
+  its size, hosts the editing view over its shape, hands AppKit the menu for a secondary click, and draws the editor, all through the editor's `@_spi(Host)`
   API. Only the app and tests can import CanvasUI, and no plugin can see the host API, so no
   plugin can reach around the editor.
 
@@ -1439,13 +1577,14 @@ Once built, it's frozen and handed to the editor. The app's list is `ShippedPlug
 ```
 core                tool hand [h]
 selection           service SelectionState · tool select [v] · default tool select · outlines · overlay HandlesOverlay · command delete · command insertNewline · command selectAll
-arrows              shape arrow · service ArrowTargeting · tool arrow [a] · overlay BindingHintsOverlay · willDelete
-sticky-notes        shape sticky-note · tool sticky-note [n] · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note
+arrows              shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow [a] · overlay BindingHintsOverlay · willDelete
+sticky-notes        shape sticky-note · tool sticky-note [n] · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · ContentsRows → sticky-note
 ellipses            shape ellipse · tool ellipse [o]
-task-cards          shape task-card · tool task-card [t] · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card
+task-cards          shape task-card · tool task-card [t] · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card
 validation          service ValidationEngine · overlay ValidationOverlay
 detail-panel        service DetailPanelState · ShapeDetails
 context-menus       service ContextMenuState · secondary-click menu
+table-of-contents   service ContentsState
 checklists          overlay ChecklistOverlay
 validation-details  DetailStatuses
 rectangles          shape rectangle · tool rectangle [r]
@@ -1544,6 +1683,10 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   the "pan" scenario presses H and holds still 100 ms before the release (both do nothing in the
   POC, whose select tool panned), and the welcome renders use the POC's note text
   (`pocWelcomeTexts`), since the shipped board's third note describes the hand tool and the marquee.
+  Where a scenario ends differently on purpose, `intendedDeviations` in TranscriptTests replaces
+  the golden's line with the app's, and says why; the fixture stays as recorded. There's one: the
+  POC brought a pressed shape to the front and the app doesn't, so "move shape" lists its two notes
+  in the other order.
 
 ## Coming from data-canvas
 
@@ -1558,6 +1701,8 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
 | `"*"` validators, a validator for another plugin's type | `ShapeTarget.any`; `registrar.validate(OtherKind.self) { }` from any plugin. |
 | Keyed / list registries, last write wins | `KeyedExtensionPoint` / `ExtensionPoint`; every collision is an error. |
 | `ValidationIndicatorLayer` | `ValidationOverlay`, through the core's overlay point. |
+| `toc: { component, filter, getParentShapeId }` on `defineShape`, `TocRegistry` | `x.contentsRow(when:nestedUnder:) { ContentsLabel(...) }`, sugar from the TableOfContents horizontal ([the table of contents](#the-table-of-contents)). |
+| `DetailsPanel`'s `emptyView` and `multiSelectView` (the TOC, whole or filtered to the selection) | `DetailPanelView`'s overview, which Composition fills with `TableOfContentsView`. |
 | `ToolIdle` / `ToolPointing` click-to-create | `Placement` (follow the pointer, or edit), used by place tools and the double-click claim. |
 | `toolbarItems` with a decorative `kbd` | `ToolDescriptor` with a real, collision-checked shortcut. |
 | `install*Lifecycle(editor)` side effects | `registrar.willDelete` inside transactions; `EditorService` for per-editor state. |
@@ -1589,8 +1734,13 @@ Each of these adds to the design without changing what plugins are written again
   brushing or moving, hit-testing again as the camera moves (a scroll mid-brush waits for the next
   drag event today); the hand tool's double-, triple- and quadruple-click zoom; and a slide timed by
   the display rather than nominal 16 ms frames.
-- **More horizontals** from data-canvas: describe, search, table of contents, commands. Each is an
-  extension point in its own plugin.
+- **More horizontals** from data-canvas: describe, search, commands. Each is an extension point in
+  its own plugin.
+- **More of the table of contents**: nested shapes (a shape's container as the default
+  `nestedUnder`), with each row's disclosure remembered (every nested row starts collapsed today);
+  dragging rows to restack their shapes; per-kind zoom targets
+  and click actions (data-canvas's `getZoomConfig` and `onClick`); Return editing the selected
+  shape; and arrow rows that name the shapes they join.
 - **More of the context menu**: items for empty canvas (Paste, Select All), through a point of
   their own; key equivalents and symbols on items; and the items everyone expects, such as Delete
   and Duplicate, once a plugin owns them.

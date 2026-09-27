@@ -45,11 +45,8 @@ extension SelectTool: Tool {
         if !keepsSelection {
             editor.selectedShapeIDs = shift ? editor.selectedShapeIDs + [id] : [id]
         }
-        // A press that leaves the shape as the only selection brings it to the front, unless it's
-        // painted by anchor. A multi-selection is never reordered.
-        if editor.selection == id, !(definition is any PaintOrderAnchored) {
-            editor.transact { $0.bringToFront(id) }
-        }
+        // A press never restacks: the shape keeps its place in the paint order (as in tldraw; the
+        // POC brought it to the front).
         if isDoubleClick, definition is any Editable {
             editor.selection = id
             editor.beginEditing(id)

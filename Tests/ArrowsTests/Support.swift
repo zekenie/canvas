@@ -3,6 +3,7 @@ import Arrows
 import CanvasTesting
 import CoreGraphics
 import Selection
+import TableOfContents
 
 // Two boxes where the POC's first two welcome notes are. Fixture shapes only: nothing here can
 // import a real vertical, which is the proof that arrows don't know concrete kinds.
@@ -19,7 +20,7 @@ struct Board {
 
     /// Two boxes, optionally with an arrow between their centers.
     init(arrow bend: CGFloat? = nil, second: CGRect = boxB) throws {
-        h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), ArrowsPlugin()])
+        h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
         a = h.add(Box(boxA))
         b = h.add(Box(second))
         if let bend {

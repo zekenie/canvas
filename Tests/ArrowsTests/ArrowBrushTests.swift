@@ -4,6 +4,7 @@ import CanvasTesting
 import CoreGraphics
 import Geometry
 import Selection
+import TableOfContents
 import TestKit
 
 // Arrows answer the brush exactly, against their visible body.
@@ -80,7 +81,7 @@ import TestKit
             }
             shapes.append(AnyShapeRecord(ShapeRecord(Arrow(start: bound(box.id), end: bound(next.id)))))
         }
-        let registry = try Registry(plugins: [SelectionPlugin(), FixturesPlugin(), ArrowsPlugin()])
+        let registry = try Registry(plugins: [SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
         let h = EditorHarness { CanvasEditor(registry: registry, document: CanvasDocument(shapes: shapes), scheduler: $0) }
         h.press(at: CGPoint(x: 2500, y: 1600))
         let clock = ContinuousClock()

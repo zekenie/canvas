@@ -81,27 +81,37 @@ extension CanvasEditor {
     }
 
     /// Every plugin's outlines (unless the session hides them), then the hint, in one stroke at a
-    /// constant screen width.
+    /// constant screen width; under them, in a wider, lighter stroke of their own, the faint ones.
     private func drawOutlines(in context: CGContext, shapes: ShapeContext) {
         var outlined: [ShapeID] = []
+        var faint: [ShapeID] = []
         var rects: [CGRect] = []
         if session?.hidesOutlines != true {
             for source in registry.outlineSources {
                 let outlines = source(self)
                 outlined += outlines.shapes
+                faint += outlines.faintShapes
                 rects += outlines.rects
             }
         }
         if let hintedShapeID { outlined.append(hintedShapeID) }
-        guard !outlined.isEmpty || !rects.isEmpty else { return }
+        let full = Set(outlined)
+        strokeOutlines(of: faint.filter { !full.contains($0) }, rects: [], in: Style.accent.withAlphaComponent(Style.faintIndicatorOpacity),
+                       width: Style.faintIndicatorWidth, context: context, shapes: shapes)
+        strokeOutlines(of: outlined, rects: rects, in: Style.accent, width: Style.indicatorWidth, context: context, shapes: shapes)
+    }
+
+    /// `width` is in view points.
+    private func strokeOutlines(of ids: [ShapeID], rects: [CGRect], in color: NSColor, width: CGFloat, context: CGContext, shapes: ShapeContext) {
+        guard !ids.isEmpty || !rects.isEmpty else { return }
         context.saveGState()
-        for id in outlined {
+        for id in ids {
             guard let record = document[id], let path = registry.definition(for: record.kind)?.erasedIndicatorPath(of: record, in: shapes) else { continue }
             context.addPath(path)
         }
         for rect in rects { context.addRect(rect) }
-        context.setStrokeColor(Style.accent.cgColor)
-        context.setLineWidth(Style.indicatorWidth / camera.zoom)
+        context.setStrokeColor(color.cgColor)
+        context.setLineWidth(width / camera.zoom)
         context.setLineCap(.round)
         context.setLineJoin(.round)
         context.strokePath()

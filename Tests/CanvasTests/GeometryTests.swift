@@ -20,6 +20,20 @@ import TestKit
         camera.setZoom(100, around: anchor)
         expectEqual(camera.zoom, Camera.zoomRange.upperBound)
     },
+    test("a camera fitting bounds centers them, with the inset shared by both sides, within zoomRange and maxZoom") {
+        let view = CGSize(width: 1000, height: 700)
+        let wide = Camera(fitting: CGRect(x: 0, y: 0, width: 2000, height: 600), in: view, inset: 100)
+        expectClose(wide.zoom, 0.45)                                    // (1000 - 100) / 2000 across beats (700 - 100) / 600 down
+        expectClose(wide.toView(CGPoint(x: 1000, y: 300)), CGPoint(x: 500, y: 350))
+        expectClose(wide.toView(CGPoint(x: 0, y: 300)), CGPoint(x: 50, y: 350), within: 1e-9)
+        let small = CGRect(x: 10, y: 10, width: 20, height: 20)
+        expectEqual(Camera(fitting: small, in: view, inset: 100).zoom, Camera.zoomRange.upperBound)
+        expectEqual(Camera(fitting: small, in: view, inset: 100, maxZoom: 1.2).zoom, 1.2)
+        expectEqual(Camera(fitting: CGRect(x: 0, y: 0, width: 1_000_000, height: 10), in: view, inset: 100).zoom, Camera.zoomRange.lowerBound)
+        let line = Camera(fitting: CGRect(x: 0, y: 50, width: 900, height: 0), in: view, inset: 100)
+        expectClose(line.zoom, 1, within: 1e-9)                        // a flat side doesn't limit the zoom
+        expectClose(line.toView(CGPoint(x: 450, y: 50)), CGPoint(x: 500, y: 350), within: 1e-9)
+    },
     test("polygon containment and segment intersections") {
         let square = CGRect(x: 0, y: 0, width: 10, height: 10).polygon
         expect(polygonContains(square, CGPoint(x: 5, y: 5)))

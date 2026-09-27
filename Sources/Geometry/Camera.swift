@@ -13,6 +13,17 @@ public struct Camera: Equatable, Sendable {
         self.zoom = zoom
     }
 
+    /// Shows `bounds` (world units) centered in a view of `viewSize` points, zoomed to fit with
+    /// `inset` view points of margin in all (half on each side), within `zoomRange` and never past
+    /// `maxZoom` (tldraw's zoomToBounds, whose `targetZoom` is `maxZoom`). A side of zero size
+    /// doesn't limit the zoom.
+    public init(fitting bounds: CGRect, in viewSize: CGSize, inset: CGFloat, maxZoom: CGFloat = Camera.zoomRange.upperBound) {
+        let width = max(viewSize.width - inset, 1), height = max(viewSize.height - inset, 1)
+        let fit = min(bounds.width > 0 ? width / bounds.width : .infinity, bounds.height > 0 ? height / bounds.height : .infinity)
+        zoom = min(maxZoom, min(max(fit, Self.zoomRange.lowerBound), Self.zoomRange.upperBound))
+        origin = CGPoint(x: bounds.midX - viewSize.width / 2 / zoom, y: bounds.midY - viewSize.height / 2 / zoom)
+    }
+
     public func toView(_ point: CGPoint) -> CGPoint {
         CGPoint(x: (point.x - origin.x) * zoom, y: (point.y - origin.y) * zoom)
     }

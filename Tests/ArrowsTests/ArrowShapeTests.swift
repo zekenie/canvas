@@ -4,6 +4,7 @@ import CanvasTesting
 import CoreGraphics
 import Geometry
 import Selection
+import TableOfContents
 import TestKit
 
 @MainActor let arrowShapeTests = Suite("Arrows as shapes", [
@@ -14,7 +15,7 @@ import TestKit
         expectClose(geometry.end, CGPoint(x: 448.25, y: 180))
     },
     test("arrows bind to any closed shape, analytic hit tests included, and never to arrows") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), ArrowsPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
         let disc = h.add(Disc(CGRect(x: 460, y: 80, width: 200, height: 140)))
         h.add(Box(boxA))
         h.key("a"); h.move(to: boxA.center); h.press()
@@ -55,9 +56,22 @@ import TestKit
         board.drawArrow(from: CGPoint(x: 700, y: 700), to: CGPoint(x: 800, y: 800))   // unbound
         let loose = try require(board.arrowIDs.last)
         expectEqual(board.h.editor.paintOrder().map(\.id), [board.a, board.b, try require(board.arrow), c, loose])
-        board.h.key("v")
-        board.h.press(at: boxA.center); board.h.release()          // raising A carries nothing; B is still higher
+        board.h.editor.transact { $0.bringToFront(board.a) }       // raising A carries nothing; B is still higher
         expectEqual(board.h.editor.paintOrder().map(\.id), [board.b, c, board.a, try require(board.arrow), loose])
+    },
+    test("in the table of contents an arrow is listed under the shape it starts from, and at the top when that shape isn't listed") {
+        let board = try Board(arrow: 0)
+        let contents = try require(board.h.editor.tableOfContents)
+        board.drawArrow(from: CGPoint(x: 700, y: 700), to: CGPoint(x: 800, y: 800))   // starts free
+        let loose = try require(board.arrowIDs.last)
+        board.h.editor.selectedShapeIDs = []
+        let entries = contents.entries
+        expectEqual(entries.map(\.id), [board.a, board.b, loose])
+        expectEqual(entries.first?.children?.map(\.id), [try require(board.arrow)])
+        expectEqual(entries.first?.children?.first?.label?.text, "Arrow", "the arrow tool's label")
+        expectEqual(entries.first?.children?.first?.symbol, "arrow.up.right")
+        board.h.editor.selectedShapeIDs = [try require(board.arrow), board.b]
+        expectEqual(contents.entries.map(\.id), [board.b, try require(board.arrow)], "its start isn't selected, so it's at the top")
     },
     test("pressing an arrow selects it without reordering anything") {
         let board = try Board(arrow: 0)
@@ -82,7 +96,7 @@ import TestKit
             }
             shapes.append(AnyShapeRecord(ShapeRecord(Arrow(start: bound(box.id), end: bound(next.id)))))
         }
-        let registry = try Registry(plugins: [SelectionPlugin(), FixturesPlugin(), ArrowsPlugin()])
+        let registry = try Registry(plugins: [SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
         let h = EditorHarness { CanvasEditor(registry: registry, document: CanvasDocument(shapes: shapes), scheduler: $0) }
         let clock = ContinuousClock()
         let elapsed = clock.measure {

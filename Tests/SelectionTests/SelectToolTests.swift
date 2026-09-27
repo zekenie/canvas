@@ -1,3 +1,4 @@
+import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
@@ -22,16 +23,16 @@ import TestKit
         expectEqual(h.editor.selectedShapeIDs, [a])
     },
 
-    test("pressing an unselected shape selects only it and raises it; ⇧-pressing adds it without raising") {
+    test("pressing an unselected shape selects only it; ⇧-pressing adds it; neither restacks anything") {
         let (h, a, b, c) = try threeBoxes()
         h.editor.selection = c
         h.click(at: CGPoint(x: 50, y: 50))
         expectEqual(h.editor.selectedShapeIDs, [a])
-        expectEqual(h.editor.document.shapes.map(\.id), [b, c, a])
+        expectEqual(h.editor.document.shapes.map(\.id), [a, b, c])
         h.hold(.shift)
         h.click(at: CGPoint(x: 250, y: 50))
         expectEqual(h.editor.selectedShapeIDs, [a, b])
-        expectEqual(h.editor.document.shapes.map(\.id), [b, c, a])
+        expectEqual(h.editor.document.shapes.map(\.id), [a, b, c])
     },
     test("⇧-click on a selected shape removes it on release; ⇧-dragging it moves the whole selection and keeps it") {
         let (h, a, b, _) = try threeBoxes()
@@ -305,6 +306,39 @@ import TestKit
         h.press(at: CGPoint(x: 190, y: 110)); h.drag(to: CGPoint(x: 150, y: 110))
         expectEqual(h.editor.hovered, nil, "none while brushing")
         h.release()
+    },
+    test("the hover's outline is wider and lighter than the selection's, and gives way to it once the shape is selected") {
+        let (h, a, b, _) = try threeBoxes()
+        let size = CGSize(width: 520, height: 120)
+        let plain = renderBitmap(h.editor, size: size)
+        /// How far each pixel across a right edge is from the plain render's.
+        @MainActor func ink(_ rep: NSBitmapImageRep, across edge: Int) -> [Int] {
+            (edge - 6...edge + 6).map { x in
+                zip(pixel(rep, at: CGPoint(x: x, y: 50)), pixel(plain, at: CGPoint(x: x, y: 50))).map { abs($0 - $1) }.reduce(0, +)
+            }
+        }
+        h.editor.selection = a
+        h.move(to: CGPoint(x: 250, y: 50))
+        expectEqual(h.editor.hovered, b)
+        let hovering = renderBitmap(h.editor, size: size)
+        let selected = ink(hovering, across: 100), hovered = ink(hovering, across: 300)
+        expect(hovered.max()! > 0 && hovered.max()! < selected.max()!, "lighter: the hover's \(hovered), the selection's \(selected)")
+        expect(hovered.count { $0 > 0 } > selected.count { $0 > 0 }, "wider: the hover's \(hovered), the selection's \(selected)")
+        h.editor.selectedShapeIDs = [a, b]
+        expectEqual(h.editor.hovered, b)
+        expectEqual(ink(renderBitmap(h.editor, size: size), across: 300), selected, "selected and hovered: the selection's outline")
+    },
+    test("another plugin can hover a shape in any tool, as the table of contents' rows do; changing tools drops it") {
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), CardsPlugin()])
+        let box = h.add(Box(CGRect(x: 20, y: 20, width: 60, height: 60)))
+        let size = CGSize(width: 100, height: 100)
+        h.key("h")
+        let plain = renderBitmap(h.editor, size: size)
+        h.editor.hovered = box
+        expectEqual(h.editor.hovered, box)
+        expect(changedPixels(plain, renderBitmap(h.editor, size: size), in: CGRect(origin: .zero, size: size)) > 0, "outlined in the hand tool")
+        h.key("c")
+        expectEqual(h.editor.hovered, nil)
     },
 ])
 

@@ -5,6 +5,7 @@ import CanvasTesting
 import CoreGraphics
 import Geometry
 import Selection
+import TableOfContents
 import TestKit
 
 // Pins how a lone arrow moves: what its press and drags commit, when its handles and indicator
@@ -60,7 +61,7 @@ import TestKit
         // Past the threshold the arrow moves, still outlined, with no handles: between the ends it
         // draws as the same arrow selected would with its handles away.
         let moved = renderBitmap(board.h.editor, size: size)
-        let reference = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), ArrowsPlugin()], document: board.h.editor.document)
+        let reference = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()], document: board.h.editor.document)
         let between = CGRect(x: 290, y: 170, width: 150, height: 60)
         expect(changedPixels(moved, renderBitmap(reference.editor, size: size), in: between) > 0, "unselected, it wouldn't be outlined")
         reference.editor.selection = board.arrow

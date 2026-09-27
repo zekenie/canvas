@@ -6,6 +6,7 @@ import ContextMenus
 import DetailPanel
 import Foundation
 import Selection
+import TableOfContents
 import TaskCards
 import TestKit
 import Validation
@@ -29,14 +30,15 @@ import Validation
         expectEqual(registry.tool(forShortcut: "t"), tool.id)
         expect(!(registry.definition(for: TaskCard.kind) is any Editable))
         expectEqual(registry.report.split(separator: "\n").first { $0.hasPrefix("task-cards") }.map(String.init), """
-        task-cards     shape task-card · tool task-card [t] · ValidationRules → task-card · ShapeDetails → task-card · \
-        ShapeContextMenus → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card
+        task-cards         shape task-card · tool task-card [t] · ValidationRules → task-card · ShapeDetails → task-card · \
+        ShapeContextMenus → task-card · ContentsRows → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · \
+        ShapeContextMenus → task-card
         """)
     },
-    test("needs validation, checklists, the panel and context menus installed") {
+    test("needs validation, checklists, the panel, context menus and the table of contents installed") {
         let plugins = taskPlugins()
         for (point, owner) in [("ValidationRules", PluginID.validation), ("ShapeChecklists", .checklists), ("ShapeDetails", .detailPanel),
-                              ("ShapeContextMenus", .contextMenus)] {
+                              ("ShapeContextMenus", .contextMenus), ("ContentsRows", .tableOfContents)] {
             expectThrows(RegistryError.ownerNotInstalled(point: point, owner: owner, contributor: .taskCards)) {
                 _ = try Registry(plugins: plugins.filter { $0.id != owner })
             }
@@ -124,5 +126,15 @@ import Validation
         expectEqual(header, DetailHeader("Write the spec", subtitle: fullTask().summary, systemImage: "checklist"))
         expectEqual(try editor.layout(editor.add(TaskCard(frame: cardFrame))).header,
                     DetailHeader("Untitled Task", subtitle: "To Do", systemImage: "checklist"))
+    },
+    test("its row in the table of contents: the title or Untitled Task, the status as a symbol, the checklist's tally") {
+        let editor = try taskEditor()
+        editor.add(fullTask())
+        editor.add(TaskCard(frame: cardFrame, status: .done))
+        let labels = try require(editor.tableOfContents).entries.map(\.label)
+        expectEqual(labels.map { $0?.text }, ["Write the spec", "Untitled Task"])
+        expectEqual(labels.map { $0?.isPlaceholder }, [false, true])
+        expectEqual(labels.map { $0?.systemImage }, ["circle.lefthalf.filled", "checkmark.circle.fill"])
+        expectEqual(labels.map { $0?.badge }, ["1/3", nil])
     },
 ])

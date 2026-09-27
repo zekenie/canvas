@@ -10,11 +10,14 @@ import Geometry
 extension CanvasEditor {
     @_spi(Host) public var cursor: CanvasCursor { session?.cursor(in: self) ?? currentTool.cursor(in: self) }
 
+    /// The view's new size, in view points.
+    @_spi(Host) public func viewportDidResize(to size: CGSize) { viewportSize = size }
+
     @_spi(Host) public func pointerDown(_ event: PointerEvent) {
         var pointer = sample(event)
         pointer.isControlClick = event.modifiers.contains(.control)
         tracker.resetVelocity()
-        stopCameraSlide()
+        stopCameraMotion()
         endEditing()
         currentTool.pointerDown(pointer, in: self)
         refreshCursor()
@@ -73,7 +76,7 @@ extension CanvasEditor {
         let pointer = Pointer(view: event.location, world: camera.toWorld(event.location), modifiers: event.modifiers,
                               clickCount: event.clickCount, isControlClick: event.modifiers.contains(.control))
         guard let menu = make(self, pointer) else { return nil }
-        stopCameraSlide()
+        stopCameraMotion()
         return menu
     }
 

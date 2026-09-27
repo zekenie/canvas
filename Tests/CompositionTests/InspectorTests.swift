@@ -40,7 +40,8 @@ final class InspectorWindow {
 
     /// The panel's editable text fields, in view order.
     var fields: [NSTextField] { host.descendants(NSTextField.self).filter(\.isEditable) }
-    var tables: [NSTableView] { host.descendants(NSTableView.self) }
+    /// The panel's lists, less the table of contents.
+    var tables: [NSTableView] { host.descendants(NSTableView.self).filter { !$0.isTableOfContents } }
     var canvasHasKeyboard: Bool { window.firstResponder === canvas }
 
     /// The selected shape's footer lines, as the panel shows them.

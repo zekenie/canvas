@@ -36,6 +36,7 @@ public struct StickyNotesPlugin: CanvasPlugin {
                 shape.props.isEmpty ? [.warning("This note is empty.")] : []
             }
             note.checklist(\.checklist)                        // opts into the checklists horizontal
+            note.noteRow()                                     // and the table of contents
         }
     }
 }

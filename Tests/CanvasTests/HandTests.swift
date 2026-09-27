@@ -28,6 +28,54 @@ import TestKit
     return (h.editor.pointerVelocity, slideFrames(h))
 }
 
+@MainActor let cameraTests = Suite("Camera motion", [
+    test("animateCamera eases the origin and zoom to the target a frame every 16 ms, landing on it at the duration") {
+        let h = try EditorHarness(plugins: [])
+        let target = Camera(origin: CGPoint(x: 300, y: -200), zoom: 2)
+        h.editor.animateCamera(to: target, duration: .milliseconds(200))
+        expectEqual(h.editor.camera, Camera(), "nothing moves before the first frame")
+        var zooms: [CGFloat] = []
+        for _ in 0..<12 {
+            h.wait(16)
+            zooms.append(h.editor.camera.zoom)
+        }
+        expect(zip(zooms, zooms.dropFirst()).allSatisfy { $0 < $1 }, "zooms in every frame: \(zooms)")
+        expectClose(zooms[0], 1 + 4 * pow(16.0 / 200, 3), within: 1e-9)      // eases in: 0.2% of the way, not 8%
+        expectClose(h.editor.camera.origin.x / 300, h.editor.camera.zoom - 1, within: 1e-9)     // origin and zoom share the easing
+        h.wait(7)
+        expect(h.editor.camera != target, "192 ms: one short frame to go")
+        h.wait(1)
+        expectEqual(h.editor.camera, target)
+        expectEqual(h.scheduler.pendingCount, 0)
+    },
+    test("any camera change stops an animation where it is; a new animation or a press replaces it") {
+        let h = try EditorHarness(plugins: [])
+        h.editor.animateCamera(to: Camera(origin: CGPoint(x: 1000, y: 0)), duration: .milliseconds(200))
+        h.wait(48)
+        h.editor.camera.pan(by: CGSize(width: 10, height: 0))
+        let stopped = h.editor.camera
+        h.wait(300)
+        expectEqual(h.editor.camera, stopped)
+        h.editor.animateCamera(to: Camera(origin: CGPoint(x: 0, y: 500)), duration: .milliseconds(200))
+        h.editor.animateCamera(to: Camera(origin: CGPoint(x: 0, y: -500)), duration: .milliseconds(200))
+        h.wait(200)
+        expectEqual(h.editor.camera, Camera(origin: CGPoint(x: 0, y: -500)))
+        h.editor.animateCamera(to: Camera(origin: CGPoint(x: 500, y: 500)), duration: .milliseconds(200))
+        h.wait(48)
+        h.press(at: CGPoint(x: 10, y: 10), after: 0)
+        let pressed = h.editor.camera
+        h.wait(300)
+        expectEqual(h.editor.camera, pressed)
+    },
+    test("an animation of no duration, or to where the camera is, jumps and leaves nothing pending") {
+        let h = try EditorHarness(plugins: [])
+        h.editor.animateCamera(to: Camera(zoom: 3), duration: .zero)
+        expectEqual(h.editor.camera, Camera(zoom: 3))
+        h.editor.animateCamera(to: Camera(zoom: 3), duration: .milliseconds(200))
+        expectEqual(h.scheduler.pendingCount, 0)
+    },
+])
+
 @MainActor let handTests = Suite("Hand", [
     test("the core registers Hand H, ahead of every plugin's tools, and starts in it; a plugin claiming H conflicts") {
         let registry = try Registry(plugins: [CardsPlugin()])

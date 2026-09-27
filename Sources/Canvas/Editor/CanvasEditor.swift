@@ -31,13 +31,18 @@ public final class CanvasEditor {
     public private(set) var document: CanvasDocument
     /// +1 per transaction that changed something.
     public private(set) var revision = 0
-    /// Setting it stops the camera's slide (CanvasEditor+Camera.swift).
+    /// Setting it stops the camera's slide or animation (CanvasEditor+Camera.swift).
     public var camera = Camera() {
         didSet {
-            stopCameraSlide()
+            stopCameraMotion()
             setNeedsDisplay()
         }
     }
+
+    /// The hosting view's size, in view points: the part of the world the camera shows is
+    /// `camera.toWorld(CGRect(origin: .zero, size: viewportSize))`. Zero until the view has a size
+    /// (and in tests that don't give one).
+    @ObservationIgnored public internal(set) var viewportSize: CGSize = .zero
 
     /// A shape outlined as a target, whatever the tool (a connector tool sets it while aiming).
     /// Setting it to a shape that isn't there drops it.
@@ -76,8 +81,8 @@ public final class CanvasEditor {
     @ObservationIgnored var heldModifiers: Modifiers = []
     @ObservationIgnored var recentlyReleased: Modifiers = []
     @ObservationIgnored var releaseTimer: ScheduledTask?
-    // The camera's slide's next frame, used by CanvasEditor+Camera.swift.
-    @ObservationIgnored var cameraSlide: ScheduledTask?
+    // The camera motion's next frame (a slide or an animation), used by CanvasEditor+Camera.swift.
+    @ObservationIgnored var cameraMotion: ScheduledTask?
 
     public init(registry: Registry, document: CanvasDocument = CanvasDocument(), scheduler: any Scheduler = TaskScheduler(),
                 stackingKeys: StackingKeyGenerator = .jittered) {

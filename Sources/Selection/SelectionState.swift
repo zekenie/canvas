@@ -12,6 +12,8 @@ final class SelectionState {
     /// Each kind's rule (`ShapeSelectability`), found once: the registry is frozen.
     @ObservationIgnored private let rules: [ShapeKind: @MainActor (AnyShapeRecord) -> Bool]
     private(set) var selectedIDs: [ShapeID] = []
+    /// +1 each time `selectedIDs` changes.
+    private(set) var revision = 0
     private(set) var onlySelectedID: ShapeID?
     private(set) var hoveredID: ShapeID?
     var hoveredHandle: AnyHashable? {
@@ -43,6 +45,7 @@ final class SelectionState {
         let kept = ids.filter { isSelectable(id: $0) && seen.insert($0).inserted }
         guard kept != selectedIDs else { return }
         selectedIDs = kept
+        revision += 1
         let only = kept.count == 1 ? kept[0] : nil
         if only != onlySelectedID {
             onlySelectedID = only
@@ -95,6 +98,11 @@ extension CanvasEditor {
         set { selectedShapeIDs = newValue.map { [$0] } ?? [] }
     }
 
+    /// +1 each time the selection changes, as `revision` counts document changes. A plugin that
+    /// remembers a selection it made can tell whether it's still the one in place, even once the
+    /// same shapes have been deselected and selected again. Without the Selection plugin, 0.
+    public var selectionRevision: Int { selectionState?.revision ?? 0 }
+
     public func isSelected(_ id: ShapeID) -> Bool { selectedShapeIDs.contains(id) }
 
     /// Whether the shape is there and its kind's rule (`ShapeSelectability`) lets it be selected.
@@ -119,8 +127,12 @@ extension CanvasEditor {
         selectedShapeIDs.count > 1 && selectionBounds?.contains(point) == true
     }
 
-    /// Under the pointer in the select tool, outlined as a hover hint.
-    public internal(set) var hovered: ShapeID? {
+    /// The shape the pointer is over: on the canvas, where the select tool sets it as the pointer
+    /// moves and clears it as the pointer leaves, or wherever else a plugin shows shapes (their rows
+    /// in the table of contents). Outlined faintly unless it's selected, and not while a session
+    /// runs. Setting it drops a shape that isn't there or isn't selectable; changing tools clears
+    /// it. Without the Selection plugin, always nil.
+    public var hovered: ShapeID? {
         get { selectionState?.hoveredID }
         set { selectionState?.hover(newValue) }
     }
@@ -168,16 +180,13 @@ extension CanvasEditor {
 
     // MARK: Drawing
 
-    /// The hover outline (in the select tool, with nothing under way), the selection's outlines,
-    /// and the box around several selected shapes (tldraw's selection bounds). Unlike tldraw's,
-    /// they stay while the selection moves, and follow it.
+    /// The selection's outlines, the box around several selected shapes (tldraw's selection
+    /// bounds), and, with nothing under way, the hover's faint outline (the core leaves it out on
+    /// a selected shape). Unlike tldraw's, the selection's stay while it moves, and follow it, and
+    /// the hover's is fainter than theirs, so a hovered shape doesn't read as selected.
     var selectionOutlines: Outlines {
-        var shapes: [ShapeID] = []
-        if currentToolID == .select, session == nil, let hovered, !isSelected(hovered) {
-            shapes.append(hovered)
-        }
-        shapes += selectedShapeIDs
         let box = selectedShapeIDs.count > 1 ? selectionBounds : nil
-        return Outlines(shapes: shapes, rects: box.map { [$0] } ?? [])
+        let hover = session == nil ? hovered.map { [$0] } ?? [] : []
+        return Outlines(shapes: selectedShapeIDs, rects: box.map { [$0] } ?? [], faintShapes: hover)
     }
 }

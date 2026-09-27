@@ -21,15 +21,28 @@ public func renderBitmap(_ editor: CanvasEditor, size: CGSize, scale: CGFloat = 
     return rep
 }
 
-/// The color at a view point, as 0...255 RGBA.
+/// Draws a view as it is now, in its window (unshown will do), at the window's scale, with its
+/// top-left at the bitmap's origin as `pixel` expects. Row highlights and backgrounds draw; a
+/// source list's vibrant text and symbols may not.
 @MainActor
-public func pixel(_ rep: NSBitmapImageRep, at point: CGPoint, scale: CGFloat = 1) -> [Int] {
+public func snapshot(_ view: NSView) -> NSBitmapImageRep {
+    let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
+    view.cacheDisplay(in: view.bounds, to: rep)
+    return rep
+}
+
+/// The color at a view point, as 0...255 RGBA. `scale` is pixels per point; by default the
+/// bitmap's own: 1 for `renderBitmap`'s (sized in pixels), the window's for a `snapshot`.
+@MainActor
+public func pixel(_ rep: NSBitmapImageRep, at point: CGPoint, scale: CGFloat? = nil) -> [Int] {
+    let scale = scale ?? CGFloat(rep.pixelsWide) / rep.size.width
     var value = [Int](repeating: 0, count: 4)
     rep.getPixel(&value, atX: Int(point.x * scale), y: Int(point.y * scale))
     return value
 }
 
-/// How many pixels differ between two renders, within a rect of view points.
+/// How many points' pixels differ between two renders, within a rect of view points (at more than
+/// 1×, a point's first pixel stands for it).
 @MainActor
 public func changedPixels(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep, in rect: CGRect) -> Int {
     stride(from: rect.minY, to: rect.maxY, by: 1).reduce(0) { count, y in

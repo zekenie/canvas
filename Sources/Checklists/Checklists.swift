@@ -22,6 +22,8 @@ public struct ChecklistItem: Codable, Equatable, Hashable, Sendable, Identifiabl
 
 extension Array where Element == ChecklistItem {
     public var doneCount: Int { lazy.filter(\.isDone).count }
+    /// "2/5": done over total, as the chip shows it; nil when empty.
+    public var tally: String? { isEmpty ? nil : "\(doneCount)/\(count)" }
     /// Done over total; 0 when empty.
     public var progress: Double { isEmpty ? 0 : Double(doneCount) / Double(count) }
 

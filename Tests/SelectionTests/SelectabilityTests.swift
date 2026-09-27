@@ -18,7 +18,7 @@ import TestKit
         h.drag(to: CGPoint(x: 85, y: 50)); h.release()
         expectEqual(h.editor.document[box]?.box?.origin, CGPoint(x: 10, y: 0))
         expectEqual(h.editor.document[ghost]?.box?.origin, CGPoint(x: 50, y: 0))
-        expectEqual(h.editor.document.shapes.map(\.id), [ghost, box], "the box came to the front")
+        expectEqual(h.editor.document.shapes.map(\.id), [box, ghost], "the box stays beneath the ghost")
     },
     test("a press on an unselectable shape with nothing beneath is a press on the canvas: it deselects, and a drag is a marquee") {
         let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), GhostsPlugin()])

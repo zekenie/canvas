@@ -5,13 +5,14 @@ import Checklists
 import ContextMenus
 import DetailPanel
 import Selection
+import TableOfContents
 import StickyNotes
 import TestKit
 import Validation
 
 /// The note and every plugin it opts into.
 @MainActor var notePlugins: [any CanvasPlugin] {
-    [SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(), ContextMenusPlugin()]
+    [SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin()]
 }
 
 @MainActor let stickyNotesTests = Suite("Sticky notes", [
@@ -22,7 +23,7 @@ import Validation
         expect(registry.definition(for: StickyNote.kind) is any Editable)
         expectEqual(registry.contributions(to: DoubleClickPlacement.self).map(\.value.kind), [StickyNote.kind])
     },
-    test("can't be installed without the selection, validation and checklists plugins it opts into, the panel and context menus") {
+    test("can't be installed without the selection, validation and checklists plugins it opts into, the panel, context menus and the table of contents") {
         expectThrows(RegistryError.ownerNotInstalled(point: "DoubleClickPlacement", owner: .selection, contributor: .stickyNotes)) {
             _ = try Registry(plugins: [StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin()])
         }
@@ -38,6 +39,23 @@ import Validation
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeContextMenus", owner: .contextMenus, contributor: .stickyNotes)) {
             _ = try Registry(plugins: [SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin()])
         }
+        expectThrows(RegistryError.ownerNotInstalled(point: "ContentsRows", owner: .tableOfContents, contributor: .stickyNotes)) {
+            _ = try Registry(plugins: [SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
+                                       ContextMenusPlugin()])
+        }
+    },
+    test("its row in the table of contents: its text on one line, or Empty Note, and its checklist's tally") {
+        let editor = CanvasEditor(registry: try Registry(plugins: notePlugins), scheduler: ManualScheduler())
+        let frame = CGRect(x: 0, y: 0, width: 200, height: 200)
+        editor.transact {
+            $0.insert(ShapeRecord(StickyNote(frame: frame, text: "Shopping\nlist", checklist: [ChecklistItem(text: "milk", isDone: true),
+                                                                                                ChecklistItem(text: "eggs")])))
+            $0.insert(ShapeRecord(StickyNote(frame: frame)))
+        }
+        let entries = try require(editor.tableOfContents).entries
+        expectEqual(entries.map { $0.label?.text }, ["Shopping list", "Empty Note"])
+        expectEqual(entries.map { $0.label?.badge }, ["1/2", nil])
+        expectEqual(entries.map(\.symbol), ["note.text", "note.text"], "the Note tool's")
     },
     test("a note has a checklist: the registry reads it, and the panel shows it in a Checklist tab") {
         let editor = CanvasEditor(registry: try Registry(plugins: notePlugins), scheduler: ManualScheduler())

@@ -20,6 +20,11 @@ public enum Style {
     // Interaction and outlines. The values follow tldraw.
     static let accent = NSColor.controlAccentColor
     static let indicatorWidth: CGFloat = 1.5
+    /// A faint outline (`Outlines.faintShapes`: a hover) is wider and lighter than the others, so
+    /// it's easy to see (over a yellow note too) but doesn't read as selected. Not tldraw's, which
+    /// strokes a hover like the selection.
+    static let faintIndicatorWidth: CGFloat = 2.5
+    static let faintIndicatorOpacity: CGFloat = 0.6
     public static let dragThreshold: CGFloat = 4
 
     /// Releasing a modifier takes effect this much later, so letting go of it and the mouse

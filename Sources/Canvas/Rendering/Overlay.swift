@@ -10,14 +10,17 @@ public enum OverlaySpace: Sendable {
 
 /// What a plugin wants outlined, from `registrar.outlines`: shapes by their `indicatorPath`, and
 /// world rects. The core strokes every plugin's outlines and the hint in one pass, in the accent
-/// color at a constant screen width, just above the shapes.
+/// color at a constant screen width, just above the shapes. `faintShapes` are stroked first, wider
+/// and lighter (a hover beside a selection); a shape outlined in full too is stroked only in full.
 public struct Outlines {
     public var shapes: [ShapeID]
     /// World units.
     public var rects: [CGRect]
-    public init(shapes: [ShapeID] = [], rects: [CGRect] = []) {
+    public var faintShapes: [ShapeID]
+    public init(shapes: [ShapeID] = [], rects: [CGRect] = [], faintShapes: [ShapeID] = []) {
         self.shapes = shapes
         self.rects = rects
+        self.faintShapes = faintShapes
     }
 }
 

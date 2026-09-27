@@ -71,6 +71,25 @@ import TestKit
         let added = changes { h.editor.selectedShapeIDs = [a, b] }
         expect(added.selection && added.set)
     },
+    test("selectionRevision counts changes to the selection, and only those") {
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
+        let a = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10))), b = h.add(Box(CGRect(x: 20, y: 0, width: 10, height: 10)))
+        expectEqual(h.editor.selectionRevision, 0)
+        h.editor.selectedShapeIDs = [a]
+        h.editor.selectedShapeIDs = [a]
+        expectEqual(h.editor.selectionRevision, 1, "the same selection again isn't a change")
+        h.editor.selectedShapeIDs = [a, b]
+        h.editor.selectedShapeIDs = []
+        h.editor.selectedShapeIDs = [a]
+        expectEqual(h.editor.selectionRevision, 4, "back to [a] is a fourth change")
+        h.editor.transact { $0.update(b, as: Box.self) { $0.props.frame.origin.x += 5 } }
+        expectEqual(h.editor.selectionRevision, 4, "a document change leaving the selection alone")
+        h.editor.transact { $0.delete([a]) }
+        expectEqual(h.editor.selectionRevision, 5, "deleting the selected shape empties the selection")
+        let bare = try EditorHarness(plugins: [FixturesPlugin()])
+        bare.editor.selectedShapeIDs = [bare.add(Box(.zero))]
+        expectEqual(bare.editor.selectionRevision, 0, "without the Selection plugin")
+    },
     test("a transaction deleting one selected shape keeps the others selected") {
         let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
         let a = h.add(Box(.zero)), b = h.add(Box(.zero)), c = h.add(Box(.zero))

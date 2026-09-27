@@ -75,27 +75,41 @@ import TestKit
         expectEqual(black, 40 * 40, "the shape's AppKit fill lands in the context")
     },
     test("plugins' outlines and the hint are stroked in one pass: a shape outlined twice looks outlined once; a session can hide the plugins'") {
-        @MainActor func render(outlining shapes: @escaping @MainActor ([ShapeID]) -> Outlines, hint: Bool, hidingOutlines: Bool = false) throws -> NSBitmapImageRep {
-            let ids = IDBox()
-            let h = try EditorHarness(plugins: [FixturesPlugin(), Contributor(id: "outliner") { r in r.outlines { _ in shapes(ids.ids) } }])
-            ids.ids = [h.add(Box(CGRect(x: 20, y: 20, width: 40, height: 40))), h.add(Box(CGRect(x: 100, y: 20, width: 40, height: 40)))]
-            if hint { h.editor.hintedShapeID = ids.ids[0] }
-            if hidingOutlines { h.editor.session = OutlineHidingSession() }
-            return renderBitmap(h.editor, size: CGSize(width: 160, height: 80))
-        }
         let everywhere = CGRect(x: 0, y: 0, width: 160, height: 80)
-        let plain = try render(outlining: { _ in Outlines() }, hint: false)
-        let first = try render(outlining: { Outlines(shapes: [$0[0]]) }, hint: false)
+        let plain = try renderOutlined(outlining: { _ in Outlines() }, hint: false)
+        let first = try renderOutlined(outlining: { Outlines(shapes: [$0[0]]) }, hint: false)
         expect(pixel(first, at: CGPoint(x: 20, y: 40)) != pixel(plain, at: CGPoint(x: 20, y: 40)), "the first box is outlined")
         expectEqual(changedPixels(plain, first, in: CGRect(x: 90, y: 0, width: 70, height: 80)), 0, "the second isn't")
-        expectEqual(changedPixels(first, try render(outlining: { _ in Outlines() }, hint: true), in: everywhere), 0, "the hint alone looks the same")
-        expectEqual(changedPixels(first, try render(outlining: { Outlines(shapes: [$0[0], $0[0]]) }, hint: true), in: everywhere), 0,
+        expectEqual(changedPixels(first, try renderOutlined(outlining: { _ in Outlines() }, hint: true), in: everywhere), 0, "the hint alone looks the same")
+        expectEqual(changedPixels(first, try renderOutlined(outlining: { Outlines(shapes: [$0[0], $0[0]]) }, hint: true), in: everywhere), 0,
                     "outlined twice by the plugin and once as the hint: still one stroke")
-        let hidden = try render(outlining: { Outlines(shapes: [$0[1]]) }, hint: true, hidingOutlines: true)
+        let hidden = try renderOutlined(outlining: { Outlines(shapes: [$0[1]]) }, hint: true, hidingOutlines: true)
         expectEqual(changedPixels(first, hidden, in: everywhere), 0, "a session that hides outlines leaves only the hint")
-        let rect = try render(outlining: { _ in Outlines(rects: [CGRect(x: 10, y: 10, width: 140, height: 60)]) }, hint: false)
+        let rect = try renderOutlined(outlining: { _ in Outlines(rects: [CGRect(x: 10, y: 10, width: 140, height: 60)]) }, hint: false)
         expect(pixel(rect, at: CGPoint(x: 80, y: 10)) != pixel(plain, at: CGPoint(x: 80, y: 10)), "rects are stroked")
         expectEqual(pixel(rect, at: CGPoint(x: 80, y: 40)), pixel(plain, at: CGPoint(x: 80, y: 40)), "not filled")
+    },
+    test("faint outlines are stroked where full ones would be, wider and lighter; a shape outlined in full too gets only the full one") {
+        let everywhere = CGRect(x: 0, y: 0, width: 160, height: 80)
+        let plain = try renderOutlined(outlining: { _ in Outlines() }, hint: false)
+        let full = try renderOutlined(outlining: { Outlines(shapes: [$0[0]]) }, hint: false)
+        let faint = try renderOutlined(outlining: { Outlines(faintShapes: [$0[0]]) }, hint: false)
+        /// How far each pixel across the first box's left edge (x = 20) is from the plain render's.
+        @MainActor func ink(_ rep: NSBitmapImageRep) -> [Int] {
+            (14..<27).map { x in
+                zip(pixel(rep, at: CGPoint(x: x, y: 40)), pixel(plain, at: CGPoint(x: x, y: 40))).map { abs($0 - $1) }.reduce(0, +)
+            }
+        }
+        let faintInk = ink(faint), fullInk = ink(full)
+        expect(faintInk.max()! > 0 && faintInk.max()! < fullInk.max()!, "lighter: \(faintInk) vs \(fullInk)")
+        expect(faintInk.count { $0 > 0 } > fullInk.count { $0 > 0 }, "wider: \(faintInk) vs \(fullInk)")
+        expectEqual(changedPixels(plain, faint, in: CGRect(x: 90, y: 0, width: 70, height: 80)), 0, "the second box isn't outlined")
+        expectEqual(changedPixels(full, try renderOutlined(outlining: { Outlines(shapes: [$0[0]], faintShapes: [$0[0]]) }, hint: false), in: everywhere), 0,
+                    "faint and full: only full")
+        expectEqual(changedPixels(full, try renderOutlined(outlining: { Outlines(faintShapes: [$0[0]]) }, hint: true), in: everywhere), 0,
+                    "faint and hinted: only the hint")
+        expectEqual(changedPixels(plain, try renderOutlined(outlining: { Outlines(faintShapes: [$0[0]]) }, hint: false, hidingOutlines: true), in: everywhere), 0,
+                    "a session that hides outlines hides faint ones")
     },
     test("a running session draws above the world overlays, with the camera applied, and below the view overlays") {
         let log = OverlayLog()
@@ -112,6 +126,18 @@ import TestKit
         expectEqual(log.drawn.map(\.name), ["session", "view"])
     },
 ])
+
+/// Two boxes, at x = 20 and 100 (40 × 40), outlined by a plugin as `outlines` says (given their
+/// ids), the first maybe hinted, maybe under a session that hides outlines; rendered 160 × 80.
+@MainActor func renderOutlined(outlining outlines: @escaping @MainActor ([ShapeID]) -> Outlines, hint: Bool,
+                               hidingOutlines: Bool = false) throws -> NSBitmapImageRep {
+    let ids = IDBox()
+    let h = try EditorHarness(plugins: [FixturesPlugin(), Contributor(id: "outliner") { r in r.outlines { _ in outlines(ids.ids) } }])
+    ids.ids = [h.add(Box(CGRect(x: 20, y: 20, width: 40, height: 40))), h.add(Box(CGRect(x: 100, y: 20, width: 40, height: 40)))]
+    if hint { h.editor.hintedShapeID = ids.ids[0] }
+    if hidingOutlines { h.editor.session = OutlineHidingSession() }
+    return renderBitmap(h.editor, size: CGSize(width: 160, height: 80))
+}
 
 /// Draws nothing of its own, but leaves the context 90% transparent; or fills its frame black
 /// the AppKit way (`NSColor.set`, `NSRect.fill`), through the current NSGraphicsContext.

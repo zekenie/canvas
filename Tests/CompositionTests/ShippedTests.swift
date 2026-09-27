@@ -8,6 +8,7 @@ import DetailPanel
 import Geometry
 import Selection
 import StickyNotes
+import TableOfContents
 import TestKit
 import Validation
 
@@ -23,13 +24,14 @@ import Validation
         expectEqual(try ShippedPlugins.registry().report, """
         core                tool hand [h]
         selection           service SelectionState · tool select [v] · default tool select · outlines · overlay HandlesOverlay · command delete · command insertNewline · command selectAll
-        arrows              shape arrow · service ArrowTargeting · tool arrow [a] · overlay BindingHintsOverlay · willDelete
-        sticky-notes        shape sticky-note · tool sticky-note [n] · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note
+        arrows              shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow [a] · overlay BindingHintsOverlay · willDelete
+        sticky-notes        shape sticky-note · tool sticky-note [n] · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · ContentsRows → sticky-note
         ellipses            shape ellipse · tool ellipse [o]
-        task-cards          shape task-card · tool task-card [t] · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card
+        task-cards          shape task-card · tool task-card [t] · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card
         validation          service ValidationEngine · overlay ValidationOverlay
         detail-panel        service DetailPanelState · ShapeDetails
         context-menus       service ContextMenuState · secondary-click menu
+        table-of-contents   service ContentsState
         checklists          overlay ChecklistOverlay
         validation-details  DetailStatuses
         rectangles          shape rectangle · tool rectangle [r]
@@ -67,6 +69,14 @@ import Validation
         let layout = state.layout(for: try require(h.editor.selection.flatMap { h.editor.document[$0] }))
         expectEqual(layout.header.title, "Line")
         expectEqual(layout.tabs.count, 0)
+    },
+    test("the table of contents lists the welcome board: each note by its text, each arrow under the note it starts from") {
+        let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler())
+        let entries = try require(editor.tableOfContents).entries
+        expectEqual(entries.map { $0.label?.text }, WelcomeBoard.texts)
+        expectEqual(entries.map(\.symbol), Array(repeating: "note.text", count: 6))
+        expectEqual(entries.map { $0.children?.map { $0.label?.text } }, [["Arrow"], nil, nil, ["Arrow"], ["Arrow"], nil])
+        expectEqual(entries[0].children?.first?.symbol, "arrow.up.right")
     },
     test("the welcome board: six notes, three arrows, no warnings") {
         let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler())

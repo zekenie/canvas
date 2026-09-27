@@ -11,12 +11,23 @@ import SwiftUI
 public struct DetailPanelView: View {
     let editor: CanvasEditor
     let onExit: @MainActor () -> Void
+    let overview: AnyView?
     @State private var window = WindowBox()
     @State private var drafts = DraftTracker()
 
     public init(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void = {}) {
         self.editor = editor
         self.onExit = onExit
+        overview = nil
+    }
+
+    /// With `overview` where the panel has no shape to show: in place of "No Selection", and under
+    /// the header when several shapes are selected (as data-canvas's details panel shows its table
+    /// of contents). The panel doesn't know what it is; Composition decides.
+    public init<Overview: View>(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void, @ViewBuilder overview: () -> Overview) {
+        self.editor = editor
+        self.onExit = onExit
+        self.overview = AnyView(overview())
     }
 
     public var body: some View {
@@ -24,12 +35,14 @@ public struct DetailPanelView: View {
             if let state = editor.detailPanel {
                 let ids = editor.selectedShapeIDs
                 if ids.count > 1 {
-                    SelectionSummary(header: state.selectionSummary(of: ids.compactMap { editor.document[$0] }))
+                    SelectionSummary(header: state.selectionSummary(of: ids.compactMap { editor.document[$0] }), overview: overview)
                 } else if let id = editor.selection, let record = editor.document[id] {
                     ShapePanel(state: state, editor: editor, record: record, statuses: state.statuses(for: record),
                                contentChanged: reclaimSoon)
                         .equatable()
                         .id(id)
+                } else if let overview {
+                    overview
                 } else {
                     Placeholder(text: "No Selection")
                 }
@@ -102,14 +115,20 @@ struct Placeholder: View {
     }
 }
 
-/// Several shapes are selected. Details are per shape: editing several at once isn't built.
+/// Several shapes are selected: their header, then the overview if there is one. Details are per
+/// shape: editing several at once isn't built.
 struct SelectionSummary: View {
     let header: DetailHeader
+    let overview: AnyView?
     var body: some View {
         VStack(spacing: 0) {
             HeaderView(header: header)
             Divider()
-            Placeholder(text: "Select one shape to see its details")
+            if let overview {
+                overview
+            } else {
+                Placeholder(text: "Select one shape to see its details")
+            }
         }
     }
 }

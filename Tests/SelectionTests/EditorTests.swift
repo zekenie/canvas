@@ -9,12 +9,12 @@ import TestKit
 /// The Selection plugin inside an editor: pressing, placing, editing, Escape, and the state it
 /// keeps as the document changes.
 @MainActor let editorTests = Suite("Editor", [
-    test("pressing a shape brings it to front, selects it, and dragging moves it with no threshold") {
+    test("pressing a shape selects it without restacking it, and dragging moves it with no threshold") {
         let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
         let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let b = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
         h.press(at: CGPoint(x: 50, y: 50))
-        expectEqual(h.editor.document.shapes.map(\.id), [b, a])
+        expectEqual(h.editor.document.shapes.map(\.id), [a, b])
         expectEqual(h.editor.selection, a)
         h.drag(to: CGPoint(x: 52, y: 51))
         expectEqual(h.editor.document[a]?.box?.origin, CGPoint(x: 2, y: 1))
@@ -124,7 +124,7 @@ import TestKit
         expectEqual(h.editor.currentToolID, .select)
         expect(h.editor.selection != nil, "leaving another tool keeps the selection")
     },
-    test("hover outlines only in the select tool with no session") {
+    test("the select tool hovers only while it is the tool, with no session") {
         let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), CardsPlugin()])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         h.move(to: CGPoint(x: 50, y: 50))
@@ -151,14 +151,16 @@ import TestKit
         expect(h.editor.document.shapes.isEmpty)
         expectEqual(h.editor.selection, nil); expectEqual(h.editor.hovered, nil)
     },
-    test("pressing a shape raises it, and the shapes anchored to it come along") {
+    test("pressing a shape leaves the paint order alone; restacking it brings the shapes anchored to it along") {
         let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
         let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let tagA = h.add(Tag(target: a))
         let loose = h.add(Tag(target: nil))
         let b = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
         let tagB = h.add(Tag(target: b))
-        h.press(at: CGPoint(x: 50, y: 50)); h.release()       // bring a to front: its tag comes with it
+        h.press(at: CGPoint(x: 50, y: 50)); h.release()
+        expectEqual(h.editor.paintOrder().map(\.id), [a, tagA, b, tagB, loose])
+        h.editor.transact { $0.bringToFront(a) }               // as a Bring to Front does: its tag comes with it
         expectEqual(h.editor.paintOrder().map(\.id), [b, tagB, a, tagA, loose])
     },
     test("any transaction that deletes a shape lets go of it: selection and hover") {
