@@ -5,8 +5,9 @@ extension PluginID {
     public static let validation: PluginID = "validation"
 }
 
+/// Two channels, as ESLint's: an error makes a shape invalid, a warning only flags it.
 public enum Severity: Int, Comparable, Sendable {
-    case info, warning, error
+    case warning, error
     public static func < (a: Severity, b: Severity) -> Bool { a.rawValue < b.rawValue }
 }
 
@@ -22,8 +23,8 @@ public struct ValidationIssue: Hashable, Sendable {
     }
     /// Makes the shape invalid.
     public static func error(_ message: String, field: String? = nil) -> ValidationIssue { ValidationIssue(message, severity: .error, field: field) }
+    /// Flags the shape, which stays valid.
     public static func warning(_ message: String, field: String? = nil) -> ValidationIssue { ValidationIssue(message, severity: .warning, field: field) }
-    public static func info(_ message: String, field: String? = nil) -> ValidationIssue { ValidationIssue(message, severity: .info, field: field) }
 }
 
 public struct ValidationResult: Equatable, Sendable {
@@ -32,6 +33,8 @@ public struct ValidationResult: Equatable, Sendable {
     /// Derived, never stored: valid means no error-severity issue.
     public var isValid: Bool { !issues.contains { $0.severity == .error } }
     public var worst: Severity? { issues.map(\.severity).max() }
+    /// The errors, then the warnings, each in the rules' order: how every list of them reads.
+    public var worstFirst: [ValidationIssue] { issues.filter { $0.severity == .error } + issues.filter { $0.severity == .warning } }
 }
 
 /// Rules' only way into the document. The engine notes the shapes a rule looks up, and checks the
@@ -121,6 +124,13 @@ public final class ValidationEngine {
 
     public func result(for id: ShapeID) -> ValidationResult? { results[id] }
 
+    /// The shapes whose rules looked one of `ids` up when they were last checked: those a change to
+    /// it checks again, besides itself. For a plugin that keeps what it shows of each shape's issues
+    /// and redoes it for what each commit changed (ValidationContents' marks).
+    public func dependents(of ids: Set<ShapeID>) -> Set<ShapeID> {
+        ids.reduce(into: []) { found, id in found.formUnion(lookedUpBy[id] ?? []) }
+    }
+
     private func refreshIfNeeded() {
         let document = editor.document
         if heardRevision != editor.revision {
@@ -187,18 +197,28 @@ extension CanvasEditor {
     public var validation: ValidationEngine? { service(ValidationEngine.self) }
 }
 
+extension Severity {
+    /// What the outline is drawn in, for a bridge that shows the severity elsewhere to match.
+    @MainActor public var color: NSColor {
+        switch self {
+        case .error: ValidationStyle.error
+        case .warning: ValidationStyle.warning
+        }
+    }
+}
+
 @MainActor
 enum ValidationStyle {
     static let error = NSColor.systemRed
     static let warning = NSColor.systemOrange
-    static let info = NSColor.systemBlue
     // View points.
     static let padding: CGFloat = 3
     static let lineWidth: CGFloat = 2
     static let cornerRadius: CGFloat = 4
 }
 
-/// The horizontal draws its own decoration; shapes never know they're invalid.
+/// The horizontal draws its own decoration; shapes never know they're invalid. A shape is outlined
+/// in its worst issue's color: red with an error, orange with only warnings, not at all without.
 struct ValidationOverlay: CanvasOverlay {
     var space: OverlaySpace { .world }
     func draw(in context: OverlayContext) {
@@ -211,18 +231,17 @@ struct ValidationOverlay: CanvasOverlay {
         for record in context.editor.paintOrder(in: context.visibleRect.insetBy(dx: -reach, dy: -reach)) {
             guard let worst = results[record.id]?.worst, let bounds = context.shapes.geometry(of: record.id)?.bounds else { continue }
             context.cg.addPath(CGPath(roundedRect: bounds.insetBy(dx: -pad, dy: -pad), cornerWidth: radius, cornerHeight: radius, transform: nil))
-            let color = switch worst {
-            case .error: ValidationStyle.error
-            case .warning: ValidationStyle.warning
-            case .info: ValidationStyle.info
-            }
-            context.cg.setStrokeColor(color.cgColor)
+            context.cg.setStrokeColor(worst.color.cgColor)
             context.cg.setLineWidth(ValidationStyle.lineWidth / zoom)
             context.cg.strokePath()
         }
     }
 }
 
+/// Validation, as a plugin: any plugin gives any kind rules (`x.validate { ... }`), each finding
+/// errors or warnings on a shape; the engine keeps every shape's, and the overlay outlines the shapes
+/// that have any. Where else they show is for bridges: the detail panel's Issues tab
+/// (ValidationDetails), a dot on a shape's row in the table of contents (ValidationContents).
 public struct ValidationPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .validation }

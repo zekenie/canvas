@@ -262,19 +262,25 @@ extension ListTab: DetailTab { static var title: String { "List" } }
         let panel = PanelWindow(editor)
         editor.selection = editor.add(Box(gadgetFrame))
         panel.window.spin { !panel.fields.isEmpty }
-        let image = try panel.render()
         // The red area of the footer, the bottom 40 points: the symbol is about 11 points square,
         // the text much longer.
-        let scale = CGFloat(image.pixelsWide) / panel.hosting.bounds.width
-        var red = 0
-        for y in image.pixelsHigh - Int(40 * scale)..<image.pixelsHigh {
-            for x in 0..<image.pixelsWide {
-                guard let pixel = image.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
-                if pixel.redComponent - max(pixel.greenComponent, pixel.blueComponent) > 0.3 { red += 1 }
-            }
-        }
-        let area = CGFloat(red) / (scale * scale)
+        let area = redArea(try panel.render(), in: panel, rows: 660..<700)
         expect((25..<144).contains(area), "\(area) square points of red")
+    },
+    test("a tab's status lines lead it, each its tone's symbol, and none shows in the footer") {
+        let editor = try gadgetEditor([Contributor(id: "alerts") { r in
+            r.detailStatusForEveryShape(in: AlertsTab.self) { _, _ in [DetailStatus("Something is badly wrong with this box", tone: .error)] }
+        }], scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
+        editor.selection = editor.add(Box(gadgetFrame))
+        panel.window.spin { !panel.fields.isEmpty }
+        try require(editor.detailPanel).choose(.of(AlertsTab.self), for: Box.kind)
+        panel.window.spin { panel.fields.isEmpty }
+        let image = try panel.render()
+        // Under the header and the tab strip, the first line's symbol, about 11 points square; the
+        // footer, the bottom 40 points, has nothing red.
+        expect((25..<144).contains(redArea(image, in: panel, rows: 60..<120)), "the line's symbol")
+        expectEqual(redArea(image, in: panel, rows: 660..<700), 0, "the footer")
     },
     test("a draft commits to its own shape when the selection moves under it, and the canvas gets the keyboard") {
         let editor = try gadgetEditor(scheduler: TaskScheduler())
@@ -571,4 +577,17 @@ extension ListTab: DetailTab { static var title: String { "List" } }
         columns.filter { x in abs(gray(x, y) - gray(x, y - 2)) > 0.02 && abs(gray(x, y) - gray(x, y + 2)) > 0.02 }.count > columns.count * 9 / 10
     }
     return lines.indices.filter { $0 == 0 || lines[$0] > lines[$0 - 1] + 1 }.count
+}
+
+/// How many square points of `panel`'s render are red, across `rows` (points from its top).
+@MainActor func redArea(_ image: NSBitmapImageRep, in panel: PanelWindow, rows: Range<Int>) -> CGFloat {
+    let scale = CGFloat(image.pixelsWide) / panel.hosting.bounds.width
+    var red = 0
+    for y in Int(CGFloat(rows.lowerBound) * scale)..<min(image.pixelsHigh, Int(CGFloat(rows.upperBound) * scale)) {
+        for x in 0..<image.pixelsWide {
+            guard let pixel = image.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+            if pixel.redComponent - max(pixel.greenComponent, pixel.blueComponent) > 0.3 { red += 1 }
+        }
+    }
+    return CGFloat(red) / (scale * scale)
 }

@@ -47,6 +47,54 @@ extension ContentsTitles: KeyedExtensionPoint {
     public static func uniqueKeys(of _: Contribution, for target: ShapeTarget) -> [AnyHashable] { [target] }
 }
 
+/// Dots at the trailing end of a shape's row, from any plugin: a state worth seeing at a glance down
+/// the list (ValidationContents marks a shape with issues red or orange). A list: the kind's
+/// contributions, then every kind's, each in plugin order, and a row shows every mark it gets. A
+/// mark is part of the row, made with it and again only when it is: when a commit changes the
+/// shape, or when the mark's contributor says the commit may change its mark (`affected`), as a
+/// mark read from other shapes must (validation's rules may look at other shapes). So marks follow
+/// the document, and a commit costs the rows it changes.
+public enum ContentsMarks: ExtensionPoint {
+    public typealias Contribution = ContentsMarkContribution
+    public static var owner: PluginID { .tableOfContents }
+}
+
+/// What `ContentsMarks` stores: how to mark a shape's row, and, for a mark that reads more than the
+/// shape, which shapes' marks a commit may change besides the shapes it changes.
+@MainActor
+public struct ContentsMarkContribution {
+    let mark: @MainActor (AnyShapeRecord, ContentsContext) -> ContentsMark?
+    let affected: (@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>)?
+
+    /// `mark` gives the shape's mark, nil for none. `affected`, given each commit's change set,
+    /// names the shapes it doesn't change whose marks it may; leave it out for a mark that reads
+    /// only its shape.
+    public init(affected: (@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>)? = nil,
+                _ mark: @escaping @MainActor (AnyShapeRecord, ContentsContext) -> ContentsMark?) {
+        self.mark = mark
+        self.affected = affected
+    }
+}
+
+/// A small dot at a row's trailing end, in `color`. `help` says what it means, as its tooltip and
+/// to VoiceOver.
+public struct ContentsMark: Hashable, Sendable {
+    public var color: Color
+    public var help: String
+
+    public init(color: Color, help: String) {
+        self.color = color
+        self.help = help
+    }
+}
+
+/// What a mark contributor may read besides the shape: services, read-only.
+@MainActor
+public struct ContentsContext {
+    let editor: CanvasEditor
+    public func service<S: EditorService>(_ type: S.Type) -> S? { editor.service(S.self) }
+}
+
 /// A row as a kind drew it, and, when it's a plain `ContentsLabel`, that label, for tests to read.
 @MainActor
 struct ResolvedRow {
@@ -134,6 +182,21 @@ extension PluginRegistrar {
     /// What the rows of a kind another plugin registers are called (bridges), as above.
     public mutating func contentsTitle<P: ShapeProps>(_: P.Type, _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) {
         contribute({ $0.typed(as: P.self).flatMap(make) }, to: ContentsTitles.self, for: .kind(P.kind))
+    }
+
+    /// A mark on every shape's row, where `make` gives one (nil for none), from the shape and the
+    /// editor's services. A mark read from more than the shape (a horizontal's engine, which looks
+    /// at other shapes) names, with `affected`, the shapes whose marks a commit may change besides
+    /// those it changes:
+    ///
+    ///     registrar.contentsMarkForEveryShape(affected: { changes, context in
+    ///         context.service(ValidationEngine.self)?.dependents(of: changes.shapeIDs) ?? []
+    ///     }) { shape, context in ... }
+    public mutating func contentsMarkForEveryShape(
+        affected: (@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>)? = nil,
+        _ make: @escaping @MainActor (AnyShapeRecord, ContentsContext) -> ContentsMark?
+    ) {
+        contribute(ContentsMarkContribution(affected: affected, make), to: ContentsMarks.self, for: .any)
     }
 }
 
@@ -223,6 +286,9 @@ public struct TableOfContentsPlugin: CanvasPlugin {
 @MainActor
 enum ContentsStyle {
     static let badgeSpacing: CGFloat = 6
+    /// A mark's dot, and the square around it that its tooltip answers in.
+    static let markSize: CGFloat = 6
+    static let markTarget: CGFloat = 12
     /// A hovered row's tint, in the selection highlight's place: inset from the row's sides, with
     /// its corners.
     static let hoverOpacity: CGFloat = 0.14

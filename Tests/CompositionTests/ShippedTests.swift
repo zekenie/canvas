@@ -10,7 +10,9 @@ import DetailPanel
 import Geometry
 import Selection
 import StickyNotes
+import SwiftUI
 import TableOfContents
+import TaskCards
 import TestKit
 import Titles
 import Validation
@@ -25,29 +27,30 @@ import Validation
     },
     test("the registry report: who contributes what") {
         expectEqual(try ShippedPlugins.registry().report, """
-        core                tool hand
-        keyboard            service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
-        selection           service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
-        arrows              shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay
-        sticky-notes        shape sticky-note · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note
-        ellipses            shape ellipse · tool ellipse · shortcut O → tool ellipse
-        task-cards          shape task-card · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ShapeTitles → task-card · ContentsTitles → task-card
-        validation          service ValidationEngine · overlay ValidationOverlay
-        detail-panel        service DetailPanelState · ShapeDetails
-        context-menus       service ContextMenuState · secondary-click menu
-        table-of-contents   service ContentsState
-        checklists          overlay ChecklistOverlay
-        titles              service TitleState · overlay TitleOverlay
-        validation-details  DetailStatuses
-        clipboard           service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
-        rectangles          shape rectangle · tool rectangle · shortcut R → tool rectangle
-        polylines           shape polyline · tool polyline · shortcut L → tool polyline
-        eraser              tool eraser · shortcut E → tool eraser
-        ellipse-titles      ShapeTitles → ellipse · ContentsTitles → ellipse
-        reordering          ShapeContextMenus
+        core                 tool hand
+        keyboard             service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
+        selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
+        arrows               shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay
+        sticky-notes         shape sticky-note · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note
+        ellipses             shape ellipse · tool ellipse · shortcut O → tool ellipse
+        task-cards           shape task-card · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ShapeTitles → task-card · ContentsTitles → task-card
+        validation           service ValidationEngine · overlay ValidationOverlay
+        detail-panel         service DetailPanelState · ShapeDetails
+        context-menus        service ContextMenuState · secondary-click menu
+        table-of-contents    service ContentsState
+        checklists           overlay ChecklistOverlay
+        titles               service TitleState · overlay TitleOverlay
+        validation-details   DetailStatuses in Issues
+        validation-contents  ContentsMarks
+        clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
+        rectangles           shape rectangle · tool rectangle · shortcut R → tool rectangle
+        polylines            shape polyline · tool polyline · shortcut L → tool polyline
+        eraser               tool eraser · shortcut E → tool eraser
+        ellipse-titles       ShapeTitles → ellipse · ContentsTitles → ellipse
+        reordering           ShapeContextMenus
         """)
     },
-    test("every placed kind has a panel: a note its Checklist and Arrange, a task its own tabs too, other boxes Arrange, an arrow only its header") {
+    test("every placed kind has a panel: a note its Checklist and Arrange (and Issues, empty), a task its own tabs too, other boxes Arrange, an arrow only its header") {
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0) }
         let state = try require(h.editor.detailPanel)
         var panels: [String] = []
@@ -59,8 +62,9 @@ import Validation
             let layout = state.layout(for: try require(h.editor.selection.flatMap { h.editor.document[$0] }))
             panels.append("\(layout.headerText): \(layout.tabs.map(\.title).joined(separator: ", "))")
         }
-        // A note's and a task's headers rename them: an untitled note's shows the placeholder.
-        expectEqual(panels, ["Ellipse: Arrange", "Rectangle: Arrange", "Arrow: ", "(Note): Checklist, Arrange",
+        // A note's and a task's headers rename them: an untitled note's shows the placeholder. A
+        // note placed is empty, which is a warning, so it has Issues until it's written in.
+        expectEqual(panels, ["Ellipse: Arrange", "Rectangle: Arrange", "Arrow: ", "(Note): Checklist, Arrange, Issues",
                              "New Task: Task, Checklist, Style, Arrange"])
     },
     test("a long title's pill stays clear of the checklist chip, though neither plugin knows the other's size") {
@@ -107,6 +111,16 @@ import Validation
         expectEqual(entries.map(\.symbol), Array(repeating: "note.text", count: 6))
         expectEqual(entries.map { $0.children?.map { $0.label?.text } }, [["Arrow"], nil, nil, ["Arrow"], ["Arrow"], nil])
         expectEqual(entries[0].children?.first?.symbol, "arrow.up.right")
+    },
+    test("the table of contents marks each shape with issues in its outline's color: an empty note orange, an untitled task red") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
+        let empty = editor.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200)))
+        let untitled = editor.add(TaskCard(frame: CGRect(x: 300, y: 0, width: 240, height: 200), title: ""))
+        let written = editor.add(StickyNote(frame: CGRect(x: 600, y: 0, width: 200, height: 200), text: "Hi"))
+        let marks = Dictionary(uniqueKeysWithValues: try require(editor.tableOfContents).entries.map { ($0.id, $0.marks) })
+        expectEqual(marks[empty], [ContentsMark(color: Color(nsColor: Severity.warning.color), help: "This note is empty.")])
+        expectEqual(marks[untitled], [ContentsMark(color: Color(nsColor: Severity.error.color), help: "A task needs a title.")])
+        expectEqual(marks[written], [])
     },
     test("the welcome board: six notes, three arrows, no warnings") {
         let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler())

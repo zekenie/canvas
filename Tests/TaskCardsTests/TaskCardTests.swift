@@ -72,7 +72,7 @@ import Validation
         expectEqual(decoded, task)
         expectEqual(decoded.checklist.map(\.text), ["spec", "review", "ship"])
     },
-    test("rules: no title is an error on title; done with open items warns on checklist; blocked without notes is info on notes") {
+    test("rules: no title is an error on title; done with open items warns on checklist, and blocked without notes on notes") {
         let editor = try taskEditor()
         expectEqual(editor.issues(editor.add(fullTask())), [])
         expectEqual(editor.issues(editor.add(TaskCard(frame: cardFrame, title: " "))), [.error("A task needs a title.", field: "title")])
@@ -86,7 +86,7 @@ import Validation
         task.status = .blocked
         expectEqual(editor.issues(editor.add(task)), [])
         task.notes = "\n"
-        expectEqual(editor.issues(editor.add(task)), [.info("Blocked: say why in the notes.", field: "notes")])
+        expectEqual(editor.issues(editor.add(task)), [.warning("Blocked: say why in the notes.", field: "notes")])
     },
     test("hasDue on gives a date a week from today and keeps one already set; off clears it") {
         var task = TaskCard(frame: cardFrame)

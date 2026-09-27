@@ -10,7 +10,8 @@ extension PluginID {
 
 /// A tab of the panel. The type is the tab: every section that names it lands in it, so sharing a
 /// tab means importing the module that declares it, and a typo doesn't compile. Any plugin may
-/// declare one; it shows for a shape when a section that applies to the shape names it.
+/// declare one; it shows for a shape when a section that applies to the shape names it, or when the
+/// shape has status lines for it (`DetailStatuses`).
 ///
 ///     public enum ChecklistTab {}
 ///     extension ChecklistTab: DetailTab {
@@ -23,7 +24,8 @@ public protocol DetailTab {
     static var title: String { get }
     /// Tabs sort by this, then by first appearance. The bands: 0 for a kind's own tabs (the
     /// default), 50 for a feature tab a horizontal adds to the kinds that opt into it, 100 for
-    /// Style and 200 for Arrange, so the shared tabs trail, as in Keynote.
+    /// Style and 200 for Arrange, so the shared tabs trail, as in Keynote, and 300 for a tab of the
+    /// shape's state that comes and goes with it (Issues), last, so it never moves the others.
     static var order: Int { get }
 }
 
@@ -85,7 +87,8 @@ public struct DetailHeader: Equatable, Sendable {
     }
 }
 
-/// A line pinned at the panel's foot, on every tab: the shape's state, not a setting.
+/// A line of the shape's state, not a setting: pinned at the panel's foot, on every tab, or in a tab
+/// of its own (`DetailStatuses`).
 public struct DetailStatus: Hashable, Sendable {
     public enum Tone: Int, Comparable, Sendable {
         case neutral, info, warning, error
@@ -236,30 +239,63 @@ extension ShapeDetails: KeyedExtensionPoint {
             + (contribution.header == nil ? [] : [HeaderKey(target: target)])
     }
 
-    /// Two tabs with one title would show as two identical tabs.
+    /// Two tabs with one title would show as two identical tabs, whether sections or status lines
+    /// name them. (It runs whenever the panel is installed: `DetailPanelPlugin` contributes here.)
     public static func check(_ registry: Registry) throws(RegistryError) {
+        let sectionTabs = registry.contributions(to: ShapeDetails.self).flatMap { contribution in
+            contribution.value.sections.map { (tab: $0.tab, plugin: contribution.pluginID) }
+        }
+        let statusTabs = registry.contributions(to: DetailStatuses.self).compactMap { contribution in
+            contribution.value.tab.map { (tab: $0, plugin: contribution.pluginID) }
+        }
         var first: [String: (tab: DetailTabID, plugin: PluginID)] = [:]
-        for contribution in registry.contributions(to: ShapeDetails.self) {
-            for tab in contribution.value.sections.map(\.tab) {
-                guard let seen = first[tab.title] else {
-                    first[tab.title] = (tab, contribution.pluginID)
-                    continue
-                }
-                guard seen.tab == tab else {
-                    throw .invalid(point: "\(Self.self)", reason: "\(seen.tab.name) (from \(seen.plugin)) and \(tab.name) "
-                                   + "(from \(contribution.pluginID)) are both tabs titled \"\(tab.title)\"; share one, or retitle one")
-                }
+        for (tab, plugin) in sectionTabs + statusTabs {
+            guard let seen = first[tab.title] else {
+                first[tab.title] = (tab, plugin)
+                continue
+            }
+            guard seen.tab == tab else {
+                throw .invalid(point: "\(Self.self)", reason: "\(seen.tab.name) (from \(seen.plugin)) and \(tab.name) "
+                               + "(from \(plugin)) are both tabs titled \"\(tab.title)\"; share one, or retitle one")
             }
         }
     }
 }
 
-/// Lines pinned at the foot of the panel, on every tab. A list: the kind's contributions, then
-/// every kind's, each in plugin order. Re-read on every document change, so keep them cheap (read
-/// a cached service, like validation's engine).
+/// Lines of a shape's state, not its settings: pinned at the foot of the panel, on every tab, or in
+/// a tab of their own, which shows only while the shape has lines there (ValidationDetails lists a
+/// shape's issues in an Issues tab). A list: the kind's contributions, then every kind's, each in
+/// plugin order. Re-read on every document change, so keep them cheap (read a cached service, like
+/// validation's engine).
 public enum DetailStatuses: ExtensionPoint {
-    public typealias Contribution = @MainActor (AnyShapeRecord, DetailContext) -> [DetailStatus]
+    public typealias Contribution = DetailStatusContribution
     public static var owner: PluginID { .detailPanel }
+
+    /// Lines for a tab name it: "DetailStatuses in Issues".
+    public static func summary(of contribution: DetailStatusContribution, for target: ShapeTarget) -> String {
+        "\(Self.self)" + (contribution.tab.map { " in \($0.title)" } ?? "") + (target == .any ? "" : " → \(target)")
+    }
+}
+
+/// What `DetailStatuses` holds: where a contribution's lines go, and how to make a shape's.
+@MainActor
+public struct DetailStatusContribution {
+    /// Nil for the footer.
+    let tab: DetailTabID?
+    let make: @MainActor (AnyShapeRecord, DetailContext) -> [DetailStatus]
+
+    /// Lines for the foot of the panel: return [] when there's nothing to say.
+    public init(_ make: @escaping @MainActor (AnyShapeRecord, DetailContext) -> [DetailStatus]) {
+        tab = nil
+        self.make = make
+    }
+
+    /// Lines for `tab`, which shows while a shape has some there, above the tab's sections if it has
+    /// any: return [] when there's nothing to say.
+    public init<Tab: DetailTab>(in _: Tab.Type, _ make: @escaping @MainActor (AnyShapeRecord, DetailContext) -> [DetailStatus]) {
+        tab = DetailTabID(Tab.self)
+        self.make = make
+    }
 }
 
 /// What a status contributor may read besides the shape: services, read-only.
@@ -321,7 +357,17 @@ extension PluginRegistrar {
 
     /// Footer lines for every shape: return [] when there's nothing to say.
     public mutating func detailStatusForEveryShape(_ make: @escaping @MainActor (AnyShapeRecord, DetailContext) -> [DetailStatus]) {
-        contribute(make, to: DetailStatuses.self, for: .any)
+        contribute(DetailStatusContribution(make), to: DetailStatuses.self, for: .any)
+    }
+
+    /// Lines in a tab of their own for every shape, the tab showing only while a shape has some:
+    /// return [] when there's nothing to say.
+    ///
+    ///     registrar.detailStatusForEveryShape(in: IssuesTab.self) { shape, context in ... }
+    public mutating func detailStatusForEveryShape<Tab: DetailTab>(
+        in tab: Tab.Type, _ make: @escaping @MainActor (AnyShapeRecord, DetailContext) -> [DetailStatus]
+    ) {
+        contribute(DetailStatusContribution(in: tab, make), to: DetailStatuses.self, for: .any)
     }
 }
 

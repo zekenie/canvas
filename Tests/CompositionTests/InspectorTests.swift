@@ -12,6 +12,7 @@ import SwiftUI
 import TableOfContents
 import TaskCards
 import TestKit
+import ValidationDetails
 
 /// The app's window, unshown: the canvas (through `CanvasRepresentable`) with the shipped detail
 /// panel in an `.inspector`, wired by a `CanvasFocus` as the app wires them. The editor keeps real
@@ -51,10 +52,10 @@ final class InspectorWindow {
     var backButton: NSButton? { host.descendants(NSButton.self).first { $0.isInPanelHeader(of: host) } }
     var canvasHasKeyboard: Bool { window.firstResponder === canvas }
 
-    /// The selected shape's footer lines, as the panel shows them.
-    var footer: [String] {
+    /// The lines of the selected shape's Issues tab (ValidationDetails'), as the panel shows them.
+    var issues: [String] {
         guard let id = editor.selection, let record = editor.document[id], let state = editor.detailPanel else { return [] }
-        return state.statuses(for: record).map(\.text)
+        return state.layout(for: record).statuses(in: .of(IssuesTab.self)).map(\.text)
     }
 
     /// The task tool's shortcut on the canvas, then a click: places a task there, selected.
@@ -243,17 +244,21 @@ let chipPoint = CGPoint(x: 303, y: 100)
         w.editor.selection = nil
         expectEqual(w.editor.tableOfContents?.entries.map { $0.label?.text }, ["Groceries"])
     },
-    test("an empty note's footer says so, through the validation-details bridge") {
+    test("an empty note's Issues tab says so, through the validation-details bridge; a written note has no such tab") {
         let w = try InspectorWindow()
         let empty = note(), written = ShapeRecord(StickyNote(frame: CGRect(x: 400, y: 100, width: 200, height: 200), text: "Hi"))
         w.editor.transact { $0.insert(empty); $0.insert(written) }
         w.click(CGPoint(x: 200, y: 200))
         expectEqual(w.editor.selection, empty.id)
+        let state = try require(w.editor.detailPanel)
         let record = try require(w.editor.document[empty.id])
-        expectEqual(try require(w.editor.detailPanel).statuses(for: record), [DetailStatus("This note is empty.", tone: .warning)])
+        expectEqual(state.layout(for: record).tabs.map(\.title), ["Checklist", "Arrange", "Issues"])
+        expectEqual(state.layout(for: record).statuses(in: .of(IssuesTab.self)), [DetailStatus("This note is empty.", tone: .warning)])
+        expectEqual(state.statuses(for: record), [], "nothing in the footer")
         w.click(CGPoint(x: 500, y: 200))
         expectEqual(w.editor.selection, written.id)
-        expectEqual(w.footer, [])
+        expectEqual(state.layout(for: try require(w.editor.document[written.id])).tabs.map(\.title), ["Checklist", "Arrange"])
+        expectEqual(w.issues, [])
     },
     test("T places a task, which the panel shows with its tabs: Task, Checklist, Style, Arrange") {
         let w = try InspectorWindow()
@@ -265,20 +270,20 @@ let chipPoint = CGPoint(x: 303, y: 100)
         expectEqual(layout.tabs.map(\.title), ["Task", "Checklist", "Style", "Arrange"])
         expectEqual(w.titleField?.stringValue, "New Task", "the header renames it")
         expectEqual(w.fields.map(\.stringValue), ["0 h"], "the Task tab is showing: its Estimate")
-        expectEqual(w.footer, [])
+        expectEqual(w.issues, [])
     },
-    test("typing a task's title in the panel's header redraws the card, clears the footer's error, and keeps Select") {
+    test("typing a task's title in the panel's header redraws the card, clears its error, and keeps Select") {
         let w = try InspectorWindow()
         let task = try w.placeTask(at: CGPoint(x: 300, y: 300))
         w.window.focus(try require(w.titleField))
         w.window.pressDelete()
         expectEqual(w.editor.document[task.id]?.typed(as: TaskCard.self)?.props.title, "")
-        expectEqual(w.footer, ["A task needs a title."])
+        expectEqual(w.issues, ["A task needs a title."])
         let untitled = w.render()
 
         w.window.type("tea")     // t is the task tool's shortcut, on the canvas
         expectEqual(w.editor.document[task.id]?.typed(as: TaskCard.self)?.props.title, "tea")
-        expectEqual(w.footer, [])
+        expectEqual(w.issues, [])
         expectEqual(w.editor.currentToolID, .select)
         expectEqual(w.editor.selection, task.id)
         // The title's line, left of the status pill.

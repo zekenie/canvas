@@ -105,6 +105,22 @@ struct ContentsRow: View {
     }
 }
 
+/// A mark: a small dot, centered in a square wide enough to hover for its tooltip.
+struct ContentsMarkView: View {
+    let mark: ContentsMark
+
+    var body: some View {
+        Circle()
+            .fill(mark.color)
+            .frame(width: ContentsStyle.markSize, height: ContentsStyle.markSize)
+            .frame(width: ContentsStyle.markTarget, height: ContentsStyle.markTarget)
+            .contentShape(Rectangle())
+            .help(mark.help)
+            .accessibilityElement()
+            .accessibilityLabel(mark.help)
+    }
+}
+
 /// A hovered row's tint: the selection highlight's shape, in a faint accent, as the canvas's hover
 /// outline is the selection's, faint.
 struct ContentsHoverHighlight: View {
@@ -115,8 +131,9 @@ struct ContentsHoverHighlight: View {
     }
 }
 
-/// One row, as its kind drew it. Skipped (`.equatable()`) unless its shape changes, so dragging
-/// another shape costs one comparison: a row is the same object until its shape changes.
+/// One row, as its kind drew it, then its marks at the trailing end. Skipped (`.equatable()`)
+/// unless its shape changes, so dragging another shape costs one comparison: a row is the same
+/// object until its shape changes, or its marks might.
 struct ContentsRowView: View, Equatable {
     let entry: ContentsEntry
 
@@ -125,9 +142,16 @@ struct ContentsRowView: View, Equatable {
     }
 
     var body: some View {
-        entry.row.view
-            .environment(\.contentsSymbol, entry.symbol)
-            .lineLimit(1)
+        let marks = entry.marks
+        HStack(spacing: 0) {
+            entry.row.view
+                .environment(\.contentsSymbol, entry.symbol)
+                .frame(maxWidth: .infinity, alignment: .leading)    // so the marks line up at the end
+            ForEach(marks.indices, id: \.self) { i in
+                ContentsMarkView(mark: marks[i])
+            }
+        }
+        .lineLimit(1)
     }
 }
 

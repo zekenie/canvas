@@ -37,7 +37,7 @@ public struct DetailPanelView: View {
                 if ids.count > 1 {
                     SelectionSummary(header: state.selectionSummary(of: ids.compactMap { editor.document[$0] }), editor: editor, overview: overview)
                 } else if let id = editor.selection, let record = editor.document[id] {
-                    ShapePanel(state: state, editor: editor, record: record, statuses: state.statuses(for: record),
+                    ShapePanel(state: state, editor: editor, record: record, statuses: state.statuses(of: record),
                                contentChanged: reclaimSoon)
                         .equatable()
                         .id(id)
@@ -135,13 +135,13 @@ struct SelectionSummary: View {
     }
 }
 
-/// One shape's panel. Skipped (`.equatable()`) unless its record or statuses change, so dragging
-/// another shape costs one comparison.
+/// One shape's panel. Skipped (`.equatable()`) unless its record or status lines change, so
+/// dragging another shape costs one comparison.
 struct ShapePanel: View, Equatable {
     let state: DetailPanelState
     let editor: CanvasEditor
     let record: AnyShapeRecord
-    let statuses: [DetailStatus]
+    let statuses: ShapeStatuses
     let contentChanged: @MainActor () -> Void
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
@@ -149,9 +149,10 @@ struct ShapePanel: View, Equatable {
     }
 
     var body: some View {
-        let layout = state.layout(for: record)
+        let layout = state.layout(for: record, statuses: statuses.tabs)
         let current = state.currentTab(in: layout, for: record.kind)
         let sections = current.map { layout.resolved(in: $0) } ?? []
+        let lines = current.map { layout.statuses(in: $0) } ?? []
         VStack(spacing: 0) {
             HeaderView(editor: editor, kindName: layout.kindName, kindSymbol: layout.kindSymbol, content: layout.resolvedHeader.view)
             if let current {
@@ -161,6 +162,15 @@ struct ShapePanel: View, Equatable {
                 Divider()
                 ScrollView {
                     VStack(spacing: 0) {
+                        // The tab's status lines lead, as a headerless block.
+                        if !lines.isEmpty {
+                            StatusList(statuses: lines, spacing: DetailStyle.rowSpacing)
+                                .padding(.horizontal, DetailStyle.inset)
+                                .padding(.top, DetailStyle.sectionTop)
+                                .padding(.bottom, DetailStyle.sectionBottom)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            if !sections.isEmpty { Divider() }
+                        }
                         ForEach(sections, id: \.key) { resolved in
                             SectionView(resolved: resolved, editor: editor, record: record,
                                         isCollapsed: state.isCollapsed(resolved.key),
@@ -175,7 +185,7 @@ struct ShapePanel: View, Equatable {
                 Placeholder(text: "No Options")
             }
             Spacer(minLength: 0)
-            FooterView(statuses: statuses)
+            FooterView(statuses: statuses.footer)
         }
         // A tab switch, a collapse, or a section hidden by `when` may remove the control that had
         // the keyboard.
@@ -424,21 +434,30 @@ struct FooterView: View {
     let statuses: [DetailStatus]
     var body: some View {
         if !statuses.isEmpty {
-            VStack(alignment: .leading, spacing: DetailStyle.smallSpacing) {
-                ForEach(statuses.indices, id: \.self) { i in
-                    // Only the symbol takes the tone: orange or red text on the bar is hard to read.
-                    Label {
-                        Text(statuses[i].text).foregroundStyle(statuses[i].tone == .neutral ? .secondary : .primary)
-                    } icon: {
-                        Image(systemName: statuses[i].tone.symbol).foregroundStyle(statuses[i].tone.color)
-                    }
+            StatusList(statuses: statuses, spacing: DetailStyle.smallSpacing)
+                .padding(.horizontal, DetailStyle.inset)
+                .padding(.vertical, DetailStyle.footerPadding)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.bar)
+                .overlay(alignment: .top) { Divider() }
+        }
+    }
+}
+
+/// Status lines, in the footer or at the top of a tab: each its tone's symbol, then its text.
+struct StatusList: View {
+    let statuses: [DetailStatus]
+    let spacing: CGFloat
+    var body: some View {
+        VStack(alignment: .leading, spacing: spacing) {
+            ForEach(statuses.indices, id: \.self) { i in
+                // Only the symbol takes the tone: orange or red text is hard to read.
+                Label {
+                    Text(statuses[i].text).foregroundStyle(statuses[i].tone == .neutral ? .secondary : .primary)
+                } icon: {
+                    Image(systemName: statuses[i].tone.symbol).foregroundStyle(statuses[i].tone.color)
                 }
             }
-            .padding(.horizontal, DetailStyle.inset)
-            .padding(.vertical, DetailStyle.footerPadding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.bar)
-            .overlay(alignment: .top) { Divider() }
         }
     }
 }

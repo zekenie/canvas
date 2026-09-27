@@ -216,7 +216,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Add a concern any kind can opt into | An `ExtensionPoint`, sugar on `ShapeRegistrar`, and whatever reads the point | [Titles](#a-horizontal-plugin), [Validation](../Sources/Validation/Validation.swift) |
 | Give that concern a tab on the kinds that opt in | A `DetailTab` at order 50, contributed from the same sugar | [Checklists](#a-horizontals-feature-tab-checklists) |
 | Give that concern menu items on the kinds that opt in | A `MenuGroup` at order 50, and `contextMenu` from the same sugar | [Checklists](#a-feature-that-comes-with-menu-items-checklists) |
-| Opt another plugin's kind into a concern | A bridge, which imports both | [EllipseTitles](#a-horizontal-plugin), [ValidationDetails](#footer-lines-from-a-bridge-validationdetails) |
+| Opt another plugin's kind into a concern | A bridge, which imports both | [EllipseTitles](#a-horizontal-plugin), [ValidationDetails](#a-tab-of-status-lines-from-a-bridge-validationdetails) |
 | Keep state per editor: an engine, a cache, a timer | `registrar.service`, an `EditorService`; redo what's kept per shape for the shapes each commit's `ChangeSet` names | [Validation](../Sources/Validation/Validation.swift)'s `ValidationEngine`, [TableOfContents](../Sources/TableOfContents/ContentsState.swift)' `ContentsState` |
 | Draw above every shape, or beside the shapes in view | `registrar.overlay`, a `CanvasOverlay`; `editor.paintOrder(in: context.visibleRect)` | [Titles](#a-horizontal-plugin), [Checklists](../Sources/Checklists/ChecklistOverlay.swift) |
 | Act on shapes about to be deleted (delete what depends on them) | `registrar.willDelete` | [The document](#the-editor-the-document-and-drawing) |
@@ -226,7 +226,8 @@ Once one plugin works, the question is which piece the next feature needs.
 | Keep what a kind's props name right as shapes are deleted and copied (a connector) | `ShapeReferencing` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
 | Keep something about any shape beside its props (where it came from) | A `ShapeMetaKey`, and `record.meta[Key.self]` | [Metadata](#metadata) |
 | Add a right-click item that isn't one shape's, in every menu and on empty canvas | `registrar.contextMenuForCanvas { ... }` | [The clipboard](#the-clipboard) |
-| Show a shape's state at the foot of the panel | `registrar.detailStatusForEveryShape` | [ValidationDetails](#footer-lines-from-a-bridge-validationdetails) |
+| Show a shape's state in the panel: at its foot, or in a tab that shows while there's something to say | `registrar.detailStatusForEveryShape`, with `in: SomeTab.self` for a tab | [ValidationDetails](#a-tab-of-status-lines-from-a-bridge-validationdetails) |
+| Show a shape's state at a glance in the table of contents: a dot on its row | `registrar.contentsMarkForEveryShape` | [ValidationContents](#marks-validationcontents) |
 | Change a shipped kind's props | A migration in its `static let migrations`, and a fixture for the new version | [Boards on disk](#boards-on-disk) |
 
 The rule of thumb: behavior intrinsic to a kind is a [capability](#capabilities), a protocol its
@@ -263,8 +264,9 @@ Opting in goes in one of two directions:
   StickyNotes does this for Validation: `note.validate { ... }`.
 - **A bridge imports both**, and neither knows the other. `EllipseTitles` gives ellipses a title,
   though Ellipses has never heard of titles and Titles has never heard of ellipses. A bridge may
-  join two horizontals: `ValidationDetails` shows each shape's validation issues in the detail
-  panel's footer, though Validation has never heard of the panel, nor the panel of validity.
+  join two horizontals: `ValidationDetails` shows each shape's validation issues in an Issues tab
+  of the detail panel, and `ValidationContents` marks their rows in the table of contents, though
+  Validation has never heard of either, nor either of validity.
 
 Either way the edge is visible in `Package.swift`, and the dependency always points from the
 vertical (or bridge) to the horizontal, never back.
@@ -295,7 +297,7 @@ Each target is one line, with its layer:
 | ui | foundation | CanvasUI (the AppKit view, the SwiftUI toolbar, and `CanvasFocus`) |
 | horizontal | foundation, horizontal | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Checklists, Clipboard |
 | vertical | foundation, horizontal | Arrows, StickyNotes, Ellipses, TaskCards, Rectangles, Polylines, Eraser, Reordering |
-| bridge | foundation, horizontal, vertical | EllipseTitles, ValidationDetails |
+| bridge | foundation, horizontal, vertical | EllipseTitles, ValidationDetails, ValidationContents |
 | composition | foundation, horizontal, vertical, bridge | Composition (the shipped plugin list) |
 | app | foundation, ui, composition | InfiniteCanvas |
 | testsupport, test | (see Package.swift) | TestKit, CanvasTesting, `*Tests` |
@@ -724,6 +726,15 @@ The mechanics:
 
 [Validation](../Sources/Validation/Validation.swift) is the full-size version of the same pattern:
 per-kind rules, rules for another plugin's kind, rules for every kind, an engine, and an overlay.
+Its model is ESLint's: a rule finds issues on a shape, each an error or a warning, two channels of
+one thing (`.error("A task needs a title.")`, `.warning("This note is empty.")`). An error makes
+the shape invalid; a warning only flags it. The overlay outlines a shape with issues in its worst
+one's color, red for an error and orange for warnings alone, and a shape without issues not at
+all. Two bridges show the issues elsewhere, though Validation has never heard of either place: the
+detail panel lists a shape's issues in an Issues tab
+([ValidationDetails](#a-tab-of-status-lines-from-a-bridge-validationdetails)), and the table of
+contents puts a dot of the same color on the row of each shape with issues, so the board's are
+found at a glance and a click goes to one ([ValidationContents](#marks-validationcontents)).
 
 ## Selection
 
@@ -928,7 +939,7 @@ core has never heard of it.
 ┌─ inspector column: 248 to 340 pt, 260 ideal ────────┐
 │ ‹ ☑  Write the spec                                 │ header: back, symbol, title (here a
 │      Done · 2 of 5 · Due Sep 30                     │   field: the task is renamed there)
-│ ⟦ Task ⟧   Checklist   Style   Arrange              │ tab strip, hidden with one tab
+│ ⟦ Task ⟧  Checklist  Style  Arrange  Issues         │ tab strip, hidden with one tab
 ├─────────────────────────────────────────────────────┤
 │     Status  [ ● Done               ⌄ ]              │ a tab's first section: untitled,
 │   Priority  [ Low | Med | High ]                    │   never collapses; rows: label
@@ -942,8 +953,8 @@ core has never heard of it.
 │  Remaining  0 h                                     │ a read-only row
 │                        (scrolls)                    │
 ├─────────────────────────────────────────────────────┤
-│ ⚠ Done, with 3 unchecked items.                     │ footer: status lines, on every tab,
-└─────────────────────────────────────────────────────┘   hidden when empty
+│ (footer)                                            │ footer: status lines, on every tab,
+└─────────────────────────────────────────────────────┘   hidden when empty (none ship today)
 ```
 
 The panel owns all of the chrome, and plugins fill it in:
@@ -953,7 +964,7 @@ The panel owns all of the chrome, and plugins fill it in:
 | The header's frame, and its back button (Selection's `goBack`, shown while there's a step back) | The header: a `DetailHeader` (title, subtitle, symbol), or a view built on `DetailHeaderLabel` (Titles' `TitleHeader`) |
 | The tab strip, the tab order, and the tab remembered per kind | Which tab each section goes in |
 | Section chrome: the header, chevron, header-control slot, insets, dividers, collapsing, and remembered collapse | Section titles, ids and order, and at most one header control per section |
-| Scrolling, the footer, and the empty states | The rows in a section, and the footer's lines |
+| Scrolling, the footer, and the empty states | The rows in a section, and status lines: the footer's, or a tab's (the Issues tab above, while the task has any) |
 | Fonts, control size, the label column and checkbox toggles, all through the environment | |
 | Focus: what gives the keyboard back to the canvas | |
 
@@ -1004,16 +1015,18 @@ it. Tabs sort by `order`, then by first appearance, in these bands:
 | 50 | Feature tabs a horizontal brings to the kinds that opt into it (Checklist) |
 | 100 | `StyleTab`: appearance, shared by every kind |
 | 200 | `ArrangeTab`: position and size, which the panel fills for every box shape |
+| 300 | A tab of the shape's state that comes and goes with it (ValidationDetails' `IssuesTab`): last, so it never moves the others |
 
 Use the shared `StyleTab` and `ArrangeTab` rather than near-duplicates. Two tab types with one title
-would show as two identical tabs, so they're a registry error (`invalid`, below).
+would show as two identical tabs, so they're a registry error (`invalid`, below), whether sections
+or status lines name them.
 
 ### Contributing: two points and their sugar
 
 | Point | Kind | Holds |
 |---|---|---|
 | `ShapeDetails` | keyed | A header and sections, one contribution per `details` call. Each section claims (target, tab, id), and a header claims its target, so two plugins adding a Color section to a kind's Style tab, or two headers for one kind, are a `conflict`. A kind's own section and an every-box one may share an id; both show. |
-| `DetailStatuses` | list | Footer lines, as `@MainActor (AnyShapeRecord, DetailContext) -> [DetailStatus]`. |
+| `DetailStatuses` | list | Status lines, the shape's state rather than its settings, as a `DetailStatusContribution`: where they go (the footer, or a tab) and `@MainActor (AnyShapeRecord, DetailContext) -> [DetailStatus]`. |
 
 Plugins write the sugar, not the points:
 
@@ -1023,6 +1036,7 @@ Plugins write the sugar, not the points:
 | `registrar.details(P.self, header:) { sections }` | Another plugin's kind, typed as its own (bridges). |
 | `registrar.detailsForEveryBox { sections }` | Every shape with a frame, editing the frame. Arrows have none, so they don't get these. |
 | `registrar.detailStatusForEveryShape { shape, context in ... }` | Footer lines for every shape. Return `[]` when there's nothing to say. |
+| `registrar.detailStatusForEveryShape(in: SomeTab.self) { shape, context in ... }` | Lines in a tab for every shape. The tab shows while the shape has lines there, above its sections if it has any. |
 
 `details` always takes its trailing builder, so a header alone is `details(header: ...) {}`. A
 section is a `DetailSection` naming its tab, with an optional title, an `id` (the title by
@@ -1049,8 +1063,8 @@ How it resolves, per shape:
 | What | Order |
 |---|---|
 | Sections in a tab | The kind's own (from its vertical, a horizontal it opts into, or a bridge), in plugin order and builder order; then every-box sections, in plugin order. |
-| Tabs | By `order`, then first appearance over the same sequence. A tab with no shown section is dropped. |
-| Footer lines | The kind's, then every kind's, each in plugin order. |
+| Tabs | By `order`, then first appearance over the same sequence, then status lines'. A tab with no shown section and no status line is dropped. |
+| Status lines, the footer's and each tab's | The kind's, then every kind's, each in plugin order. |
 | Header | The kind's own; else the label and symbol of the tool that places the kind; else the kind's name. A header without a symbol takes the tool's. |
 
 `DetailPanelState` (`editor.detailPanel`) gathers each kind's contributions once, since the
@@ -1161,12 +1175,13 @@ accessor per kind, a tab type at order 50 (and a menu group, if it has actions),
 `WritableKeyPath` into the kind's props and contributes to its points, and whatever consumes the
 point (a lookup on `Registry`, an overlay).
 
-### Footer lines from a bridge: ValidationDetails
+### A tab of status lines, from a bridge: ValidationDetails
 
-The footer is for a shape's state, not its settings.
-[ValidationDetails](../Sources/ValidationDetails/ValidationDetails.swift) fills it with each
-shape's validation issues. It's a bridge between two horizontals, and its imports are the only
-edge between them:
+Status lines are a shape's state, not its settings: at the foot of the panel, on every tab, or in
+a tab of their own, which shows only while the shape has lines there.
+[ValidationDetails](../Sources/ValidationDetails/ValidationDetails.swift) lists each shape's
+validation issues in an Issues tab. It's a bridge between two horizontals, and its imports are
+the only edge between them:
 
 ```swift
 import Canvas
@@ -1178,20 +1193,29 @@ public struct ValidationDetailsPlugin: CanvasPlugin {
     public var id: PluginID { "validation-details" }
 
     public func register(into registrar: inout PluginRegistrar) {
-        registrar.detailStatusForEveryShape { shape, context in
-            (context.service(ValidationEngine.self)?.result(for: shape.id)?.issues ?? [])
-                .sorted { $0.severity > $1.severity }
+        registrar.detailStatusForEveryShape(in: IssuesTab.self) { shape, context in
+            (context.service(ValidationEngine.self)?.result(for: shape.id)?.worstFirst ?? [])
                 .map { DetailStatus($0.message, tone: DetailStatus.Tone($0.severity)) }
         }
     }
 }
+
+/// A shape's validation issues. It comes and goes with them, so it trails every other tab.
+public enum IssuesTab {}
+extension IssuesTab: DetailTab {
+    public static var title: String { "Issues" }
+    public static var order: Int { 300 }
+}
 ```
 
-Issues come worst first (ties keep the rules' order), each in its severity's tone. A status
-contributor reads services through `DetailContext`, read-only. Footer lines are re-read on every
-document change, so read a cached service, as this one reads validation's engine. Without
-Validation installed there's no engine, and no lines. So an empty sticky note says "This note is
-empty." in the footer, and StickyNotes didn't change.
+Issues come worst first (errors, then warnings, each in the rules' order), each line its
+severity's symbol, red or orange, then its message. The tab is at order 300, after Style and
+Arrange, so it appears and goes away without moving the tabs someone is using. A tab's lines lead
+it, above any sections another plugin puts there. A status contributor reads services through
+`DetailContext`, read-only. Status lines are re-read on every document change, so read a cached
+service, as this one reads validation's engine. Without Validation installed there's no engine,
+no lines, and no tab. So an empty sticky note has an Issues tab that says "This note is empty.",
+and StickyNotes didn't change.
 
 ### The full showcase: TaskCards
 
@@ -1249,7 +1273,7 @@ Five plugins fill one card's panel:
 | Checklist (50) | Items, and Progress once there are items | Checklists, through `task.checklist` |
 | Style (100) | Color, On the Card | TaskCards |
 | Arrange (200) | Size, Position | DetailPanel, for every box |
-| Footer | the task's issues, worst first ("A task needs a title.") | ValidationDetails |
+| Issues (300) | the task's issues, worst first ("A task needs a title."), while it has any | ValidationDetails |
 
 ### Reading and writing: `ShapeBinding`
 
@@ -1348,11 +1372,11 @@ CanvasRepresentable(editor: editor, focus: canvasFocus)
 ### Performance
 
 The document changes on every drag event, so the panel does little per change. It re-reads the
-selected shape and its footer lines, and rebuilds the shape's panel only if either changed;
+selected shape and its status lines, and rebuilds the shape's panel only if either changed;
 dragging another shape costs one comparison. A section is rebuilt only when its own shape changes.
 Only the current tab is built, a collapsed section's content isn't, and each kind's contributions
 are gathered once.
-For your part: sections read only their binding, `when` and footer lines stay cheap, and anything
+For your part: sections read only their binding, `when` and status lines stay cheap, and anything
 heavy goes in a service, kept per shape and redone for the shapes each commit's change set names
 (`documentDidChange`), as `ValidationEngine` does.
 
@@ -1539,7 +1563,7 @@ system's rows, selection, disclosure triangles and keyboard.
 │   ▤ Shopping list              1/2  │ a note's checklist tally
 │   ▤ Groceries                       │ a titled note: its title (Titles), not its text
 │   ◐ Write the spec             1/3  │ a task: its status as a symbol, in the pill's color
-│   ○ Untitled Task                   │   a blank title shows the placeholder, dimmed
+│   ○ Untitled Task                 ● │   a blank title shows the placeholder, dimmed; the dot, red: its error (ValidationContents)
 │   ▭ Rectangle                       │ a kind with no row: its tool's label and symbol
 │   ◯ Ellipse, 200 × 140              │   or its title, here EllipseTitles' derived one
 │   ↗ Arrow                           │ an arrow that starts on nothing, at the top
@@ -1601,6 +1625,39 @@ note.contentsRow { note in
 | `onClick`, `getGroupChildren` | Not built yet |
 | The "other" row (type and id) | The placing tool's label and symbol |
 
+### Marks: ValidationContents
+
+A mark is a small dot at the trailing end of a shape's row, from any plugin: a state worth seeing
+at a glance down the list. [ValidationContents](../Sources/ValidationContents/ValidationContents.swift),
+a bridge between Validation and the table of contents, marks each shape with issues in the color
+the canvas outlines it in, red with an error and orange with warnings alone, and the dot's tooltip
+lists them, worst first. So the table of contents is where a board's issues are found: look down
+the list for dots, and click a row to select its shape and bring it into view, where the panel
+shows its Issues tab.
+
+```swift
+registrar.contentsMarkForEveryShape(affected: { changes, context in
+    context.service(ValidationEngine.self)?.dependents(of: changes.shapeIDs) ?? []
+}) { shape, context in
+    guard let result = context.service(ValidationEngine.self)?.result(for: shape.id), let worst = result.worst else { return nil }
+    return ContentsMark(color: Color(nsColor: worst.color), help: result.worstFirst.map(\.message).joined(separator: "\n"))
+}
+```
+
+- **A mark is part of its row**, made with it and again only when the row is: when a commit
+  changes the shape, or when the mark's contributor says the commit may change its mark. So a
+  commit still costs the rows it changed, and SwiftUI redraws only those. Reading marks in the
+  row's view instead would cost the whole board: the list makes every row's view whenever it
+  redraws, and a row view that read the document would be asked for again after every commit.
+- **`affected`** is for a mark read from more than its shape. Given each commit's change set, it
+  names the shapes the commit doesn't change whose marks it may. Validation's rules may look at
+  other shapes (`context.shape(_:)`), and the engine knows whose did (`dependents(of:)`), so
+  deleting the shape a rule looked at marks the shape the rule is for. A mark read from its shape
+  alone leaves `affected` out.
+- **Several marks** on one row stand side by side: the kind's, then every kind's, each in plugin
+  order (`ContentsMarkContribution`, contributed for a kind, is a kind's own).
+- **Headless**, `entry.marks` is a row's marks.
+
 ### What's listed, and selecting
 
 - **Rows are in document order**, back to front, like data-canvas's z-ordered outline. Selecting a
@@ -1634,7 +1691,7 @@ note.contentsRow { note in
 - **Headless**, `ContentsState` (`editor.tableOfContents`) is all of it: `entries` (the rows, a tree),
   `scope`, `select(_:)`, `showAll()`, and the rows' hover: `hover(_:)` and `endHover(_:)` as the
   pointer moves onto a row and off it, and `isHovered(_:)` for whether a row shows as hovered. Tests
-  read a row's text, symbol and badge through `entry.label`.
+  read a row's text, symbol and badge through `entry.label`, and its marks through `entry.marks`.
 
 ### Hosting
 
@@ -1948,26 +2005,27 @@ Once built, it's frozen and handed to the editor. The app's list is `ShippedPlug
 `registry.report` prints who contributes what: the runtime half of the graph, pinned by a test.
 
 ```
-core                tool hand
-keyboard            service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
-selection           service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
-arrows              shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay
-sticky-notes        shape sticky-note · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note
-ellipses            shape ellipse · tool ellipse · shortcut O → tool ellipse
-task-cards          shape task-card · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ShapeTitles → task-card · ContentsTitles → task-card
-validation          service ValidationEngine · overlay ValidationOverlay
-detail-panel        service DetailPanelState · ShapeDetails
-context-menus       service ContextMenuState · secondary-click menu
-table-of-contents   service ContentsState
-checklists          overlay ChecklistOverlay
-titles              service TitleState · overlay TitleOverlay
-validation-details  DetailStatuses
-clipboard           service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
-rectangles          shape rectangle · tool rectangle · shortcut R → tool rectangle
-polylines           shape polyline · tool polyline · shortcut L → tool polyline
-eraser              tool eraser · shortcut E → tool eraser
-ellipse-titles      ShapeTitles → ellipse · ContentsTitles → ellipse
-reordering          ShapeContextMenus
+core                 tool hand
+keyboard             service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
+selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
+arrows               shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay
+sticky-notes         shape sticky-note · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note
+ellipses             shape ellipse · tool ellipse · shortcut O → tool ellipse
+task-cards           shape task-card · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ShapeTitles → task-card · ContentsTitles → task-card
+validation           service ValidationEngine · overlay ValidationOverlay
+detail-panel         service DetailPanelState · ShapeDetails
+context-menus        service ContextMenuState · secondary-click menu
+table-of-contents    service ContentsState
+checklists           overlay ChecklistOverlay
+titles               service TitleState · overlay TitleOverlay
+validation-details   DetailStatuses in Issues
+validation-contents  ContentsMarks
+clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
+rectangles           shape rectangle · tool rectangle · shortcut R → tool rectangle
+polylines            shape polyline · tool polyline · shortcut L → tool polyline
+eraser               tool eraser · shortcut E → tool eraser
+ellipse-titles       ShapeTitles → ellipse · ContentsTitles → ellipse
+reordering           ShapeContextMenus
 ```
 
 A horizontal's opt-in shows as what it contributes: `note.checklist(\.checklist)` is a
@@ -2013,7 +2071,7 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   tools have no keys (CanvasTesting can't import Keyboard): a test picks one with `h.editor.setTool`,
   or registers a key for it (`$0.shortcut("c", forTool: ToolID(placing: Card.kind))`).
   SelectionTests, ArrowsTests, ValidationTests, DetailPanelTests, ChecklistsTests, ClipboardTests,
-  TitlesTests and ValidationDetailsTests import no real vertical (only these fixtures, and local test kinds), which
+  TitlesTests, ValidationDetailsTests and ValidationContentsTests import no real vertical (only these fixtures, and local test kinds), which
   proves those plugins are shape-agnostic.
 - CanvasTests run the core with no plugin claiming the default tool, so it's the Hand there, and
   none claiming key strokes, so no key does anything; a test that presses, drags or selects shapes
@@ -2023,7 +2081,8 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
 - `Contributor(id:) { registrar in ... }` is a plugin written inline, and `editor.add(props)`
   inserts a shape in a transaction of its own.
 - **The detail panel.** `editor.detailPanel?.layout(for:)` resolves a shape's header, tabs and
-  sections without a view, and `statuses(for:)` its footer lines. `editor.shapeBinding(id, as:)`
+  sections without a view (a tab's status lines are `layout.statuses(in:)`), and `statuses(for:)`
+  its footer lines. `editor.shapeBinding(id, as:)`
   and `editor.frameBinding(id)` are the bindings a section gets: write through them and check the
   document. For the view, host `DetailPanelView` in an `NSHostingView` in an unshown `NSWindow`,
   beside a `CanvasView` when focus matters (DetailPanelTests; CompositionTests' InspectorTests use
@@ -2141,6 +2200,11 @@ Each of these adds to the design without changing what plugins are written again
   dragging rows to restack their shapes; per-kind zoom targets
   and click actions (data-canvas's `getZoomConfig` and `onClick`); Return editing the selected
   shape; and arrow rows that name the shapes they join.
+- **More of validation**: listing just the shapes with issues in the table of contents (a filter
+  beside Show All), and going to the next one from anywhere (Xcode's ⌘'), for a board too big to
+  look down for dots; an issue in the Issues tab going to the row it's about, which the panel would
+  mark (below); and rules that depend on the clock (a task overdue), which the engine, caching by
+  revision, can't keep up to date today.
 - **More of the clipboard**: pasting what other apps put on the pasteboard (text as a note, an
   image) and giving them a text or image version of copied shapes; pasting at the pointer
   (tldraw's preference, and ⌥); Duplicate (⌘D) and ⌥-dragging a copy, on the same copying; and

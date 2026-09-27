@@ -39,7 +39,7 @@ extension TaskCard {
             issues.append(.warning("Done, with \(open) unchecked \(open == 1 ? "item" : "items").", field: "checklist"))
         }
         if status == .blocked, notes.allSatisfy(\.isWhitespace) {
-            issues.append(.info("Blocked: say why in the notes.", field: "notes"))
+            issues.append(.warning("Blocked: say why in the notes.", field: "notes"))
         }
         return issues
     }

@@ -11,10 +11,12 @@ public struct DetailLayout {
     public let kindName: String
     /// The symbol of the tool that places the kind, which a header without its own shows.
     let kindSymbol: String?
-    /// Only tabs with at least one section shown for this shape, sorted by `order`, then by first
-    /// appearance (the kind's own contributions in plugin order, then every-box ones).
+    /// Only tabs with at least one section shown for this shape, or a status line, sorted by
+    /// `order`, then by first appearance (the kind's own contributions in plugin order, then
+    /// every-box ones, then status lines').
     public let tabs: [DetailTabID]
     let sectionsByTab: [DetailTabID: [ResolvedSection]]
+    let statusesByTab: [DetailTabID: [DetailStatus]]
 
     /// The header when it's a `DetailHeader` (the kind's own, or the tool's label a kind without
     /// one gets), as shown: without a symbol of its own, with its kind's. Nil for a header of
@@ -33,6 +35,22 @@ public struct DetailLayout {
     public func sections(in tab: DetailTabID) -> [DetailSectionKey] { resolved(in: tab).map(\.key) }
 
     func resolved(in tab: DetailTabID) -> [ResolvedSection] { sectionsByTab[tab] ?? [] }
+
+    /// The tab's status lines (`DetailStatuses`), shown above its sections: the kind's
+    /// contributions, then every kind's, each in plugin order.
+    public func statuses(in tab: DetailTabID) -> [DetailStatus] { statusesByTab[tab] ?? [] }
+}
+
+/// A shape's status lines, where they go: what the panel redraws for when they change.
+struct ShapeStatuses: Equatable {
+    struct TabLines: Equatable {
+        let tab: DetailTabID
+        var lines: [DetailStatus]
+    }
+
+    var footer: [DetailStatus] = []
+    /// Only tabs with lines, in the order of their first contribution.
+    var tabs: [TabLines] = []
 }
 
 struct ResolvedSection {
@@ -59,17 +77,23 @@ public final class DetailPanelState {
     init(editor: CanvasEditor) { self.editor = editor }
 
     public func layout(for record: AnyShapeRecord) -> DetailLayout {
+        layout(for: record, statuses: statuses(of: record).tabs)
+    }
+
+    /// With the shape's status lines for tabs, read already.
+    func layout(for record: AnyShapeRecord, statuses: [ShapeStatuses.TabLines]) -> DetailLayout {
         let all = candidates[record.kind] ?? resolve(record.kind)
         let shown = all.sections.filter { $0.section.isShown(record) }
         var firstSeen: [DetailTabID] = []
-        for section in shown where !firstSeen.contains(section.key.tab) { firstSeen.append(section.key.tab) }
+        for tab in shown.map(\.key.tab) + statuses.map(\.tab) where !firstSeen.contains(tab) { firstSeen.append(tab) }
         let tabs = firstSeen.enumerated().sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }.map(\.element)
         // The kind's header, else the label of the tool that places the kind, else the kind.
         let tool = placingTool(of: record.kind)
         let name = tool?.label ?? record.kind.rawValue
         let header = all.headers.lazy.compactMap { [editor] in $0(record, editor) }.first ?? ResolvedHeader(DetailHeader(name))
         return DetailLayout(resolvedHeader: header, kindName: name, kindSymbol: tool?.systemImage, tabs: tabs,
-                            sectionsByTab: Dictionary(grouping: shown, by: \.key.tab))
+                            sectionsByTab: Dictionary(grouping: shown, by: \.key.tab),
+                            statusesByTab: Dictionary(uniqueKeysWithValues: statuses.map { ($0.tab, $0.lines) }))
     }
 
     /// The kind's own contributions, then every kind's, each in plugin order. Once per kind: the
@@ -104,10 +128,29 @@ public final class DetailPanelState {
         editor.registry.tools.first { $0.id == ToolID(placing: kind) }
     }
 
-    /// The kind's contributions, then every kind's, each in plugin order.
-    public func statuses(for record: AnyShapeRecord) -> [DetailStatus] {
+    /// The footer's lines: the kind's contributions, then every kind's, each in plugin order. A
+    /// tab's are in the layout (`statuses(in:)`).
+    public func statuses(for record: AnyShapeRecord) -> [DetailStatus] { statuses(of: record).footer }
+
+    /// Every status line of the shape, footer and tabs: the kind's contributions, then every
+    /// kind's, each in plugin order.
+    func statuses(of record: AnyShapeRecord) -> ShapeStatuses {
         let context = DetailContext(editor: editor)
-        return editor.registry.contributions(to: DetailStatuses.self, for: record.kind).flatMap { $0(record, context) }
+        var statuses = ShapeStatuses()
+        for contribution in editor.registry.contributions(to: DetailStatuses.self, for: record.kind) {
+            let lines = contribution.make(record, context)
+            guard !lines.isEmpty else { continue }
+            guard let tab = contribution.tab else {
+                statuses.footer += lines
+                continue
+            }
+            if let i = statuses.tabs.firstIndex(where: { $0.tab == tab }) {
+                statuses.tabs[i].lines += lines
+            } else {
+                statuses.tabs.append(ShapeStatuses.TabLines(tab: tab, lines: lines))
+            }
+        }
+        return statuses
     }
 
     /// The tab last chosen for this kind if the layout has it, else the first. A shape that lacks

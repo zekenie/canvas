@@ -9,6 +9,13 @@ import TestKit
 enum LookalikeStyleTab {}
 extension LookalikeStyleTab: DetailTab { static var title: String { "Style" } }
 
+/// A tab of a shape's state, as validation's Issues is: status lines only, last.
+enum AlertsTab {}
+extension AlertsTab: DetailTab {
+    static var title: String { "Alerts" }
+    static var order: Int { 300 }
+}
+
 // What the panel shows for a shape, resolved headlessly from the registry.
 @MainActor let layoutTests = Suite("Detail layout", [
     test("a box nobody contributes to shows only Arrange: Size, then Position") {
@@ -127,7 +134,7 @@ extension LookalikeStyleTab: DetailTab { static var title: String { "Style" } }
                 r.detailStatusForEveryShape { _, context in [DetailStatus(context.service(DetailPanelState.self) == nil ? "a" : "a, with state")] }
             },
             Contributor(id: "b") { r in
-                r.contribute({ _, _ in [DetailStatus("gadget b", tone: .warning)] }, to: DetailStatuses.self, for: .kind(Gadget.kind))
+                r.contribute(DetailStatusContribution { _, _ in [DetailStatus("gadget b", tone: .warning)] }, to: DetailStatuses.self, for: .kind(Gadget.kind))
                 r.detailStatusForEveryShape { _, _ in [DetailStatus("b", tone: .error)] }
             },
         ])
@@ -136,6 +143,52 @@ extension LookalikeStyleTab: DetailTab { static var title: String { "Style" } }
         let gadget = try require(editor.document[gadgetID]), box = try require(editor.document[boxID])
         expectEqual(state.statuses(for: gadget).map(\.text), ["gadget b", "a, with state", "b"])
         expectEqual(state.statuses(for: box), [DetailStatus("a, with state"), DetailStatus("b", tone: .error)])
+    },
+    test("status lines for a tab bring it while the shape has some, in its place by order, and stay out of the footer") {
+        let editor = try gadgetEditor([Contributor(id: "alerts") { r in
+            r.detailStatusForEveryShape(in: AlertsTab.self) { shape, _ in shape.box?.width == 0 ? [DetailStatus("No width.", tone: .error)] : [] }
+            r.detailStatusForEveryShape { _, _ in [DetailStatus("Footer.")] }
+        }])
+        let state = try require(editor.detailPanel)
+        let box = editor.add(Box(gadgetFrame))
+        expectEqual(try editor.layout(box).tabs.map(\.title), ["Arrange"])
+        editor.transact { $0.update(box, as: Box.self) { $0.frame.size.width = 0 } }
+        let layout = try editor.layout(box)
+        expectEqual(layout.tabs.map(\.title), ["Arrange", "Alerts"])
+        expectEqual(layout.statuses(in: .of(AlertsTab.self)), [DetailStatus("No width.", tone: .error)])
+        expectEqual(layout.statuses(in: .of(ArrangeTab.self)), [])
+        expectEqual(state.statuses(for: try require(editor.document[box])), [DetailStatus("Footer.")])
+        editor.transact { $0.update(box, as: Box.self) { $0.frame.size.width = 10 } }
+        expectEqual(try editor.layout(box).tabs.map(\.title), ["Arrange"])
+    },
+    test("a tab can hold status lines and sections: the kind's lines, then every kind's, then its sections") {
+        let editor = try gadgetEditor([Contributor(id: "notes") { r in
+            r.detailStatusForEveryShape(in: RemarksTab.self) { _, _ in [DetailStatus("Every kind.")] }
+            r.contribute(DetailStatusContribution(in: RemarksTab.self) { _, _ in [DetailStatus("A gadget.", tone: .info)] },
+                         to: DetailStatuses.self, for: .kind(Gadget.kind))
+        }])
+        let layout = try editor.layout(editor.add(Gadget(gadgetFrame)))
+        expectEqual(layout.outline, ["Gadget: main, Count", "Remarks: main", "Style: Color", "Arrange: Size, Position"])
+        expectEqual(layout.statuses(in: .of(RemarksTab.self)).map(\.text), ["A gadget.", "Every kind."])
+        expectEqual(try editor.layout(editor.add(Box(gadgetFrame))).tabs.map(\.title), ["Remarks", "Arrange"], "lines alone bring the tab")
+    },
+    test("a status tab titled like another tab is refused, as a section's is") {
+        expectThrows(RegistryError.invalid(point: "ShapeDetails", reason: "DetailPanel.StyleTab (from gadgets) and "
+                                           + "DetailPanelTests.LookalikeStyleTab (from more) are both tabs titled \"Style\"; share one, or retitle one")) {
+            _ = try gadgetEditor([Contributor(id: "more") { r in r.detailStatusForEveryShape(in: LookalikeStyleTab.self) { _, _ in [] } }])
+        }
+    },
+    test("status lines for a tab name it in the report") {
+        let registry = try Registry(plugins: [FixturesPlugin(), DetailPanelPlugin(), Contributor(id: "p") { r in
+            r.detailStatusForEveryShape { _, _ in [] }
+            r.detailStatusForEveryShape(in: AlertsTab.self) { _, _ in [] }
+        }])
+        expectEqual(registry.report, """
+        core          tool hand
+        fixtures      shape box · shape disc · shape tag
+        detail-panel  service DetailPanelState · ShapeDetails
+        p             DetailStatuses · DetailStatuses in Alerts
+        """)
     },
     test("one details call is one line in the report") {
         let registry = try Registry(plugins: [FixturesPlugin(), DetailPanelPlugin(), Contributor(id: "p") { r in

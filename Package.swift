@@ -64,6 +64,7 @@ let package = Package(
         .target(name: "TaskCards", dependencies: ["Canvas", "Checklists", "ContextMenus", "DetailPanel", "Keyboard", "TableOfContents", "Titles", "Validation"]), // layer: vertical
 
         .target(name: "ValidationDetails", dependencies: ["Canvas", "DetailPanel", "Validation"]), // layer: bridge
+        .target(name: "ValidationContents", dependencies: ["Canvas", "TableOfContents", "Validation"]), // layer: bridge
 
         // Examples: the smallest plugin for each pattern (see docs/plugin-system.md).
         .target(name: "Rectangles", dependencies: ["Canvas", "Keyboard"], path: "Examples/Rectangles"),                 // layer: vertical
@@ -72,7 +73,7 @@ let package = Package(
         .target(name: "Reordering", dependencies: ["Canvas", "ContextMenus"], path: "Examples/Reordering"),             // layer: vertical
         .target(name: "EllipseTitles", dependencies: ["Canvas", "Ellipses", "Titles"], path: "Examples/EllipseTitles"), // layer: bridge
 
-        .target(name: "Composition", dependencies: ["Arrows", "Canvas", "Checklists", "Clipboard", "ContextMenus", "DetailPanel", "EllipseTitles", "Ellipses", "Eraser", "Keyboard", "Polylines", "Rectangles", "Reordering", "Selection", "StickyNotes", "TableOfContents", "TaskCards", "Titles", "Validation", "ValidationDetails"]), // layer: composition
+        .target(name: "Composition", dependencies: ["Arrows", "Canvas", "Checklists", "Clipboard", "ContextMenus", "DetailPanel", "EllipseTitles", "Ellipses", "Eraser", "Keyboard", "Polylines", "Rectangles", "Reordering", "Selection", "StickyNotes", "TableOfContents", "TaskCards", "Titles", "Validation", "ValidationContents", "ValidationDetails"]), // layer: composition
         .executableTarget(name: "InfiniteCanvas", dependencies: ["Canvas", "CanvasUI", "Composition"]),           // layer: app
 
         .target(name: "TestKit", dependencies: [], path: "Tests/TestKit"),                                        // layer: testsupport
@@ -87,6 +88,7 @@ let package = Package(
         .executableTarget(name: "ContextMenusTests", dependencies: ["Canvas", "CanvasTesting", "ContextMenus", "Keyboard", "Selection", "TestKit"], path: "Tests/ContextMenusTests"), // layer: test
         .executableTarget(name: "TableOfContentsTests", dependencies: ["Canvas", "CanvasTesting", "CanvasUI", "Geometry", "Keyboard", "Selection", "TableOfContents", "TestKit"], path: "Tests/TableOfContentsTests"), // layer: test
         .executableTarget(name: "ValidationDetailsTests", dependencies: ["Canvas", "CanvasTesting", "DetailPanel", "TestKit", "Validation", "ValidationDetails"], path: "Tests/ValidationDetailsTests"), // layer: test
+        .executableTarget(name: "ValidationContentsTests", dependencies: ["Canvas", "CanvasTesting", "TableOfContents", "TestKit", "Validation", "ValidationContents"], path: "Tests/ValidationContentsTests"), // layer: test
         .executableTarget(name: "ClipboardTests", dependencies: ["Canvas", "CanvasTesting", "Clipboard", "ContextMenus", "Geometry", "Keyboard", "Selection", "TestKit"], path: "Tests/ClipboardTests"), // layer: test
         .executableTarget(name: "ChecklistsTests", dependencies: ["Canvas", "CanvasTesting", "Checklists", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "Selection", "TestKit"], path: "Tests/ChecklistsTests"), // layer: test
         .executableTarget(name: "TaskCardsTests", dependencies: ["Canvas", "CanvasTesting", "Checklists", "ContextMenus", "DetailPanel", "Keyboard", "Selection", "TableOfContents", "TaskCards", "TestKit", "Titles", "Validation"], path: "Tests/TaskCardsTests"), // layer: test
@@ -94,7 +96,7 @@ let package = Package(
         .executableTarget(name: "TitlesTests", dependencies: ["Canvas", "CanvasTesting", "CanvasUI", "DetailPanel", "Geometry", "Keyboard", "Selection", "TableOfContents", "TestKit", "Titles"], path: "Tests/TitlesTests"), // layer: test
         .executableTarget(name: "RectanglesTests", dependencies: ["Canvas", "CanvasTesting", "Keyboard", "Rectangles", "TestKit"], path: "Tests/RectanglesTests"), // layer: test
         .executableTarget(name: "ExamplesTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "ContextMenus", "EllipseTitles", "Ellipses", "Eraser", "Keyboard", "Polylines", "Rectangles", "Reordering", "Selection", "TableOfContents", "TestKit", "Titles"], path: "Tests/ExamplesTests"), // layer: test
-        .executableTarget(name: "CompositionTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "CanvasUI", "Checklists", "Clipboard", "Composition", "DetailPanel", "Geometry", "Keyboard", "Selection", "StickyNotes", "TableOfContents", "TaskCards", "TestKit", "Titles", "Validation"], path: "Tests/CompositionTests"), // layer: test
+        .executableTarget(name: "CompositionTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "CanvasUI", "Checklists", "Clipboard", "Composition", "DetailPanel", "Geometry", "Keyboard", "Selection", "StickyNotes", "TableOfContents", "TaskCards", "TestKit", "Titles", "Validation", "ValidationDetails"], path: "Tests/CompositionTests"), // layer: test
         .executableTarget(name: "BenchmarkTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "CanvasUI", "Composition", "Ellipses", "Geometry", "StickyNotes", "TableOfContents", "TaskCards", "TestKit"], path: "Tests/BenchmarkTests"), // layer: test
     ],
     swiftLanguageModes: [.v6]

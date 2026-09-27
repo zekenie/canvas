@@ -14,11 +14,13 @@ public struct ContentsEntry: Identifiable {
     public var label: ContentsLabel? { row.label }
     /// The symbol of the tool that places the kind, which a `ContentsLabel` without its own shows.
     public var symbol: String { row.symbol }
+    /// The dots at the row's trailing end (`ContentsMarks`), in contribution order.
+    public var marks: [ContentsMark] { row.marks }
     /// The rows nested under this one, in document order; nil when there are none, so the list
     /// shows no disclosure triangle.
     public internal(set) var children: [ContentsEntry]?
-    /// The shape's row, as its kind made it for the shape as listed: the same object until the
-    /// shape changes.
+    /// The shape's row, as its kind made it for the shape as listed, with its marks: the same
+    /// object until the shape changes, or a mark might.
     var row: ShapeRow
 
     init(row: ShapeRow, children: [ContentsEntry]?) {
@@ -28,8 +30,9 @@ public struct ContentsEntry: Identifiable {
     }
 }
 
-/// A shape's row as its kind made it for one version of the shape, with what places it in the
-/// list. Made again only when the shape changes, and shared by every scope that lists it.
+/// A shape's row as its kind made it for one version of the shape, with its marks and what places
+/// it in the list. Made again only when the shape changes, or a mark might, and shared by every
+/// scope that lists it.
 @MainActor
 final class ShapeRow {
     let record: AnyShapeRecord
@@ -40,17 +43,19 @@ final class ShapeRow {
     let view: AnyView
     let label: ContentsLabel?
     let symbol: String
+    let marks: [ContentsMark]
     /// Where the shape is in the stack, which orders rows among their siblings. Every shape in a
     /// document has a key.
     let key: StackingKey
 
-    init(record: AnyShapeRecord, isListed: Bool, parent: ShapeID?, row: ResolvedRow, symbol: String) {
+    init(record: AnyShapeRecord, isListed: Bool, parent: ShapeID?, row: ResolvedRow, symbol: String, marks: [ContentsMark]) {
         self.record = record
         self.isListed = isListed
         self.parent = parent
         view = row.view
         label = row.label
         self.symbol = symbol
+        self.marks = marks
         key = record.stackingKey!
     }
 
@@ -58,8 +63,9 @@ final class ShapeRow {
 }
 
 /// Per editor (so per window): what the table of contents lists, and each shape's row, made again
-/// only when that shape changes. What a commit changed is all a read after it redoes: the rows of
-/// the shapes its change set names, and where those nest.
+/// only when that shape changes, or its marks might. What a commit changed is all a read after it
+/// redoes: the rows of the shapes its change set names (and of those whose marks it may change),
+/// and where those nest.
 @MainActor
 @Observable
 public final class ContentsState {
@@ -74,6 +80,8 @@ public final class ContentsState {
         let contribution: ContentsContribution?
         /// What its rows are called (`ContentsTitles`): the kind's own name for them, else every kind's.
         let title: ContentsTitles.Contribution?
+        /// What marks its rows (`ContentsMarks`): the kind's own, then every kind's.
+        let marks: [ContentsMarkContribution]
         /// The label and symbol of the tool that places the kind, else its name and a dashed square.
         let name: String
         let symbol: String
@@ -92,11 +100,14 @@ public final class ContentsState {
     /// a commit (by a service that hears first), it keeps the rows whose shapes are as they were
     /// and lists them again.
     @ObservationIgnored private var heardRevision: Int
+    /// What the marks' contributors say a commit affects besides the shapes it changes (`affected`).
+    @ObservationIgnored private let markAffected: [@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>]
     private var pin: Pin?
 
     init(editor: CanvasEditor) {
         self.editor = editor
         heardRevision = editor.revision
+        markAffected = editor.registry.contributions(to: ContentsMarks.self).compactMap(\.value.affected)
     }
 
     // MARK: What's listed
@@ -202,8 +213,9 @@ public final class ContentsState {
     // MARK: Rows
 
     /// The shape's row: its kind's, else its tool's label; called what `ContentsTitles` names it, if
-    /// it's a `ContentsLabel`. Made again only after the shape changes; nil once it's gone. A shape
-    /// the board keeps aside isn't listed, whatever its kind: nothing on the canvas sees it.
+    /// it's a `ContentsLabel`; with its marks. Made again only after the shape changes, or a commit
+    /// that may change its marks; nil once it's gone. A shape the board keeps aside isn't listed,
+    /// whatever its kind: nothing on the canvas sees it.
     private func row(of id: ShapeID) -> ShapeRow? {
         if let made = rows[id] { return made }
         guard let record = editor.document[id] else { return nil }
@@ -212,8 +224,10 @@ public final class ContentsState {
         if let label = row.label, let title = kind.title?(record), !title.allSatisfy(\.isWhitespace) {
             row = ResolvedRow(label.retitled(title))
         }
-        let made = ShapeRow(record: record, isListed: !record.isOpaque && (contribution?.isListed(record) ?? true),
-                            parent: contribution?.parent?(record), row: row, symbol: kind.symbol)
+        let isListed = !record.isOpaque && (contribution?.isListed(record) ?? true)
+        let context = ContentsContext(editor: editor)
+        let marks = isListed ? kind.marks.compactMap { $0.mark(record, context) } : []
+        let made = ShapeRow(record: record, isListed: isListed, parent: contribution?.parent?(record), row: row, symbol: kind.symbol, marks: marks)
         rows[id] = made
         return made
     }
@@ -224,6 +238,7 @@ public final class ContentsState {
         let tool = registry.tools.first { $0.id == ToolID(placing: kind) }
         let found = KindRows(contribution: registry.contributions(to: ContentsRows.self, for: kind).first,
                              title: registry.contributions(to: ContentsTitles.self, for: kind).first,
+                             marks: registry.contributions(to: ContentsMarks.self, for: kind),
                              name: tool?.label ?? kind.rawValue, symbol: tool?.systemImage ?? ContentsSymbolKey.defaultValue)
         kinds[kind] = found
         return found
@@ -231,15 +246,28 @@ public final class ContentsState {
 }
 
 extension ContentsState: EditorService {
-    /// Forgets the rows of the shapes the commit touched, for the next read to make again and
-    /// place: each scope's listing notes them.
+    /// Forgets the rows of the shapes the commit touched, and of those whose marks it may change
+    /// (as the marks' contributors say), for the next read to make again and place.
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
-        guard heardRevision != editor.revision else { return }         // read since, and caught up
+        let context = ContentsContext(editor: editor)
+        let remarked = markAffected.reduce(into: Set<ShapeID>()) { $0.formUnion($1(changes, context)) }
+        guard heardRevision != editor.revision else {
+            // Read since, and caught up, keeping the rows of the shapes that didn't change: but
+            // their marks may have.
+            forget(remarked)
+            return
+        }
         heardRevision = editor.revision
-        let touched = changes.shapeIDs
-        for id in touched { rows[id] = nil }
-        board?.pending.formUnion(touched)
-        filtered?.pending.formUnion(touched)
+        forget(changes.shapeIDs.union(remarked))
+    }
+
+    /// Forgets the shapes' rows, for the next read to make again and place: each scope's listing
+    /// notes them.
+    private func forget(_ ids: Set<ShapeID>) {
+        guard !ids.isEmpty else { return }
+        for id in ids { rows[id] = nil }
+        board?.pending.formUnion(ids)
+        filtered?.pending.formUnion(ids)
     }
 }
 

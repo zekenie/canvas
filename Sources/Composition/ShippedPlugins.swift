@@ -20,6 +20,7 @@ import TableOfContents
 import TaskCards
 import Titles
 import Validation
+import ValidationContents
 import ValidationDetails
 
 /// The static composition point: which plugins ship, in which order (the toolbar's order, and the
@@ -37,7 +38,7 @@ public enum ShippedPlugins {
             KeyboardPlugin(), SelectionPlugin(),
             ArrowsPlugin(), StickyNotesPlugin(), EllipsesPlugin(), TaskCardsPlugin(),
             ValidationPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin(), ChecklistsPlugin(), TitlesPlugin(),
-            ValidationDetailsPlugin(), ClipboardPlugin(pasteboard: pasteboard),
+            ValidationDetailsPlugin(), ValidationContentsPlugin(), ClipboardPlugin(pasteboard: pasteboard),
             // The examples (Examples/). Each is one line here; delete it to leave it out.
             RectanglesPlugin(), PolylinesPlugin(), EraserPlugin(), EllipseTitlesPlugin(), ReorderingPlugin(),
         ]

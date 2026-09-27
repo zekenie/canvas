@@ -6,9 +6,9 @@ import TestKit
 import Validation
 import ValidationDetails
 
-/// A box with no size has four issues, from two rules, in no particular order of severity.
+/// A box with no size has three issues, from two rules, in no particular order of severity.
 let emptyBoxRules = Contributor(id: "rules") { r in
-    r.validateEveryShape { shape, _ in shape.box?.width == 0 ? [.info("Empty."), .error("No width."), .warning("Odd.")] : [] }
+    r.validateEveryShape { shape, _ in shape.box?.width == 0 ? [.warning("Odd."), .error("No width.")] : [] }
     r.validate(Box.self) { box, _ in box.frame.height == 0 ? [.error("No height.")] : [] }
 }
 
@@ -17,34 +17,53 @@ let emptyBoxRules = Contributor(id: "rules") { r in
 }
 
 extension EditorHarness {
-    func statuses(_ id: ShapeID) throws -> [DetailStatus] {
+    func layout(_ id: ShapeID) throws -> DetailLayout {
+        try require(editor.detailPanel).layout(for: require(editor.document[id]))
+    }
+
+    /// The lines of the shape's Issues tab.
+    func issues(_ id: ShapeID) throws -> [DetailStatus] { try layout(id).statuses(in: .of(IssuesTab.self)) }
+
+    func footer(_ id: ShapeID) throws -> [DetailStatus] {
         try require(editor.detailPanel).statuses(for: require(editor.document[id]))
     }
 }
 
 @MainActor let validationDetailsTests = Suite("Validation details", [
-    test("a shape's issues become statuses, worst first, with matching tones; ties keep the rules' order") {
+    test("a shape's issues are the lines of its Issues tab, worst first, in their tones; ties keep the rules' order") {
         let h = try harness([ValidationPlugin(), DetailPanelPlugin(), ValidationDetailsPlugin(), emptyBoxRules])
         let box = h.add(Box(.zero))
-        expectEqual(try h.statuses(box), [
+        expectEqual(try h.issues(box), [
             DetailStatus("No height.", tone: .error),
             DetailStatus("No width.", tone: .error),
             DetailStatus("Odd.", tone: .warning),
-            DetailStatus("Empty.", tone: .info),
         ])
+        expectEqual(try h.footer(box), [], "nothing in the footer")
     },
-    test("a valid shape has none, and they follow the document") {
+    test("the Issues tab shows only while the shape has issues, after every other tab") {
         let h = try harness([ValidationPlugin(), DetailPanelPlugin(), ValidationDetailsPlugin(), emptyBoxRules])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 40, height: 40)))
-        let tag = h.add(Tag(target: box))
-        expectEqual(try h.statuses(box), [])
-        expectEqual(try h.statuses(tag), [])
+        expectEqual(try h.layout(box).tabs.map(\.title), ["Arrange"])
         h.editor.transact { $0.update(box, as: Box.self) { $0.frame.size.height = 0 } }
-        expectEqual(try h.statuses(box), [DetailStatus("No height.", tone: .error)])
+        expectEqual(try h.layout(box).tabs.map(\.title), ["Arrange", "Issues"])
+        expectEqual(try h.issues(box), [DetailStatus("No height.", tone: .error)])
+        h.editor.transact { $0.update(box, as: Box.self) { $0.frame.size.height = 40 } }
+        expectEqual(try h.layout(box).tabs.map(\.title), ["Arrange"])
     },
-    test("without validation installed, there are no statuses") {
+    test("a kind without other tabs gets just Issues; a valid shape none") {
+        let h = try harness([ValidationPlugin(), DetailPanelPlugin(), ValidationDetailsPlugin(), Contributor(id: "rules") { r in
+            r.validate(Tag.self) { tag, _ in tag.props.target == nil ? [.warning("Points at nothing.")] : [] }
+        }])
+        let box = h.add(Box(CGRect(x: 0, y: 0, width: 40, height: 40)))
+        let tag = h.add(Tag(target: nil))
+        expectEqual(try h.layout(tag).tabs.map(\.title), ["Issues"])
+        expectEqual(try h.issues(tag), [DetailStatus("Points at nothing.", tone: .warning)])
+        h.editor.transact { $0.update(tag, as: Tag.self) { $0.props.target = box } }
+        expectEqual(try h.layout(tag).tabs, [])
+    },
+    test("without validation installed, there's no Issues tab") {
         let h = try harness([DetailPanelPlugin(), ValidationDetailsPlugin()])
-        expectEqual(try h.statuses(h.add(Box(.zero))), [])
+        expectEqual(try h.layout(h.add(Box(.zero))).tabs.map(\.title), ["Arrange"])
     },
     test("without the panel installed, the bridge is refused") {
         expectThrows(RegistryError.ownerNotInstalled(point: "DetailStatuses", owner: .detailPanel, contributor: "validation-details")) {
@@ -57,7 +76,7 @@ extension EditorHarness {
         core                tool hand
         validation          service ValidationEngine · overlay ValidationOverlay
         detail-panel        service DetailPanelState · ShapeDetails
-        validation-details  DetailStatuses
+        validation-details  DetailStatuses in Issues
         """)
     },
 ])

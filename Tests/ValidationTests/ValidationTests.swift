@@ -42,7 +42,7 @@ struct Tiny: BoxShapeProps {
     },
     test("a plugin can add a rule for another plugin's kind, and one for every kind; kind rules run first") {
         let h = try EditorHarness(plugins: [FixturesPlugin(), ValidationPlugin(), Rules { r in
-            r.validateEveryShape { _, _ in [.info("every")] }
+            r.validateEveryShape { _, _ in [.warning("every")] }
             r.validate(Box.self) { box, _ in box.frame.isEmpty ? [.warning("empty box")] : [] }
         }])
         let box = h.add(Box(.zero))
@@ -51,10 +51,15 @@ struct Tiny: BoxShapeProps {
         expectEqual(results[box]?.issues.map(\.message), ["empty box", "every"])
         expectEqual(results[disc]?.issues.map(\.message), ["every"])
     },
-    test("validity is derived: an error makes a shape invalid; warnings and info don't") {
+    test("validity is derived: an error makes a shape invalid; warnings don't") {
         expectEqual(ValidationResult(issues: [.warning("w"), .error("e")]).isValid, false)
         expectEqual(ValidationResult(issues: [.warning("w"), .error("e")]).worst, .error)
-        expectEqual(ValidationResult(issues: [.warning("w"), .info("i")]).isValid, true)
+        expectEqual(ValidationResult(issues: [.warning("w"), .warning("v")]).isValid, true)
+        expectEqual(ValidationResult(issues: [.warning("w"), .warning("v")]).worst, .warning)
+    },
+    test("worst first: the errors, then the warnings, each in the rules' order") {
+        let result = ValidationResult(issues: [.warning("w1"), .error("e1"), .warning("w2"), .error("e2")])
+        expectEqual(result.worstFirst.map(\.message), ["e1", "e2", "w1", "w2"])
     },
     test("results recompute after a change, and only then") {
         calls = 0
@@ -112,6 +117,23 @@ struct Tiny: BoxShapeProps {
         _ = engine.results
         expectEqual(calls, 3, "the tag no longer looks at the first box")
     },
+    test("a shape's dependents are the shapes whose rules looked it up when they were last checked") {
+        let h = try EditorHarness(plugins: [FixturesPlugin(), ValidationPlugin(), Rules { r in
+            r.validate(Tag.self) { tag, context in
+                tag.props.target.flatMap { context.shape($0) } == nil ? [.error("dangling")] : []
+            }
+        }])
+        let box = h.add(Box(.zero)), other = h.add(Box(.zero))
+        let tag = h.add(Tag(target: box))
+        let engine = try require(h.editor.validation)
+        _ = engine.results
+        expectEqual(engine.dependents(of: [box]), [tag])
+        expectEqual(engine.dependents(of: [other, tag]), [])
+        h.editor.transact { $0.update(tag, as: Tag.self) { $0.props.target = other } }
+        _ = engine.results
+        expectEqual(engine.dependents(of: [box]), [])
+        expectEqual(engine.dependents(of: [box, other]), [tag])
+    },
     test("contributing a rule without the validation plugin installed is an error") {
         expectThrows(RegistryError.ownerNotInstalled(point: "ValidationRules", owner: .validation, contributor: "rules")) {
             _ = try Registry(plugins: [FixturesPlugin(), Rules { r in r.validate(Box.self) { _, _ in [] } }])
@@ -121,7 +143,7 @@ struct Tiny: BoxShapeProps {
         let h = try EditorHarness(plugins: [FixturesPlugin(), ValidationPlugin(), Rules { r in
             r.validate(Box.self) { box, _ in
                 switch box.frame.minX {
-                case ..<100: [.info("fyi"), .warning("left")]
+                case ..<100: [.warning("left"), .warning("again")]
                 case ..<200: [.warning("middle"), .error("right")]
                 default: []
                 }
