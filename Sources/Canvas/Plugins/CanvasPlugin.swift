@@ -55,9 +55,11 @@ public struct PluginRegistrar {
         contribute(outlines, to: CorePoints.OutlineSources.self)
     }
 
-    /// What a command does (`editor.perform`). At most one plugin may claim each.
-    public mutating func command(_ command: CanvasCommand, _ run: @escaping @MainActor (CanvasEditor) -> Void) {
-        contribute(CommandRegistration(command: command, run: run), to: CorePoints.Commands.self)
+    /// What a command does (`editor.perform`), and whether it can now (`editor.canPerform`, which
+    /// a menu asks to enable its item): by default, always. At most one plugin may claim each.
+    public mutating func command(_ command: CanvasCommand, isEnabled: @escaping @MainActor (CanvasEditor) -> Bool = { _ in true },
+                                 _ run: @escaping @MainActor (CanvasEditor) -> Void) {
+        contribute(CommandRegistration(command: command, isEnabled: isEnabled, run: run), to: CorePoints.Commands.self)
     }
 
     /// The tool the editor starts in, and returns to on Escape and after placing a shape (a

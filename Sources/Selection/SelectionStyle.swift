@@ -18,6 +18,8 @@ enum SelectionStyle {
     static let brushFill = NSColor(srgbRed: 0.56, green: 0.56, blue: 0.56, alpha: 0.102)
     static let brushStroke = NSColor(srgbRed: 0.56, green: 0.56, blue: 0.56, alpha: 0.251)
     static let brushStrokeWidth: CGFloat = 1
+    /// Going back moves the camera this long (data-canvas's).
+    static let goBackDuration: Duration = .milliseconds(200)
 }
 
 extension NSAppearance {

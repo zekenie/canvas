@@ -7,7 +7,7 @@ import SwiftUI
 ///
 /// It answers the menu commands that must reach the canvas whatever has the keyboard (the
 /// responder chain from a detail-panel field never passes through the canvas, but always reaches
-/// this controller): zooming, and showing or hiding the details.
+/// this controller): zooming, showing or hiding the details, and going back.
 @MainActor
 public final class BoardWindowController: NSWindowController {
     public init(board: BoardDocument) {
@@ -33,6 +33,9 @@ public final class BoardWindowController: NSWindowController {
 
     /// View › Show Inspector, or Hide Inspector.
     @objc public func toggleDetails(_ sender: Any?) { board?.viewState.showsDetails.toggle() }
+
+    /// Go › Back: the command a plugin claims (Selection's, back to the previous selection).
+    @objc public func goBack(_ sender: Any?) { board?.editor.perform(.goBack) }
 }
 
 extension BoardWindowController: NSMenuItemValidation {
@@ -40,6 +43,7 @@ extension BoardWindowController: NSMenuItemValidation {
         if item.action == #selector(toggleDetails(_:)) {
             item.title = board?.viewState.showsDetails == true ? "Hide Inspector" : "Show Inspector"
         }
+        if item.action == #selector(goBack(_:)) { return board?.editor.canPerform(.goBack) == true }
         return board != nil
     }
 }

@@ -36,8 +36,11 @@ final class TaskPanelWindow {
 
     var fields: [String] { hosting.descendants(NSTextField.self).filter(\.isEditable).map(\.stringValue) }
     var tables: [NSTableView] { hosting.descendants(NSTableView.self) }
-    /// The checkboxes' states (SwiftUI's toggles are untitled buttons).
-    var checkboxes: [NSControl.StateValue] { hosting.descendants(NSButton.self).filter { !($0 is NSPopUpButton) }.map(\.state) }
+    /// The checkboxes' states (SwiftUI's toggles are untitled buttons), under the header, whose back
+    /// button is in its top 44 points (`DetailStyle.headerHeight`).
+    var checkboxes: [NSControl.StateValue] {
+        hosting.descendants(NSButton.self).filter { !($0 is NSPopUpButton) && $0.convert($0.bounds, to: hosting).maxY > 44 }.map(\.state)
+    }
     /// The panel's own scroll view, the outermost.
     var scrollFrame: CGRect? { hosting.descendants(NSScrollView.self).first.map { $0.convert($0.bounds, to: hosting) } }
     var status: NSPopUpButton? { hosting.descendants(NSPopUpButton.self).first }

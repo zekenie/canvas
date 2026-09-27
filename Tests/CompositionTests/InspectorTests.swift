@@ -42,6 +42,10 @@ final class InspectorWindow {
     var fields: [NSTextField] { host.descendants(NSTextField.self).filter(\.isEditable) }
     /// The panel's lists, less the table of contents.
     var tables: [NSTableView] { host.descendants(NSTableView.self).filter { !$0.isTableOfContents } }
+    /// The panel's buttons under its header (whose back button is there once a shape is selected).
+    var buttons: [NSButton] { host.descendants(NSButton.self).filter { !$0.isInPanelHeader(of: host) } }
+    /// The header's back button.
+    var backButton: NSButton? { host.descendants(NSButton.self).first { $0.isInPanelHeader(of: host) } }
     var canvasHasKeyboard: Bool { window.firstResponder === canvas }
 
     /// The selected shape's footer lines, as the panel shows them.
@@ -127,7 +131,7 @@ let chipPoint = CGPoint(x: 303, y: 100)
         expect(pixel(bare, at: chipPoint)[0..<3].allSatisfy { $0 > 200 }, "no chip for an empty checklist: \(pixel(bare, at: chipPoint))")
 
         // The list's + and − buttons; − is off with no row selected.
-        let buttons = w.host.descendants(NSButton.self)
+        let buttons = w.buttons
         expectEqual(buttons.map(\.isEnabled), [true, false])
         try require(buttons.first).performClick(nil)
         w.window.spin { w.fields.contains { $0.placeholderString == "Item" } }
@@ -264,7 +268,7 @@ let chipPoint = CGPoint(x: 303, y: 100)
         let before = w.render()
         expect(pixel(before, at: corner)[0..<3].allSatisfy { $0 > 200 }, "nothing at the corner yet: \(pixel(before, at: corner))")
 
-        let buttons = w.host.descendants(NSButton.self)
+        let buttons = w.buttons
         expectEqual(buttons.map(\.isEnabled), [true, false], "the list's + and −")
         try require(buttons.first).performClick(nil)
         w.window.spin { w.fields.contains { $0.placeholderString == "Item" } }

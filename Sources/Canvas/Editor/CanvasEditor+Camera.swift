@@ -29,11 +29,17 @@ extension CanvasEditor {
         scheduleAnimationFrame(from: camera, to: target, elapsed: 0, total: total)
     }
 
+    /// Where the camera comes to rest: while an animation runs (`animateCamera`), its target;
+    /// otherwise the camera itself (a slide after a fling has no fixed end). What to remember a view
+    /// as, if it's remembered mid-motion.
+    public var cameraTarget: Camera { cameraAnimationTarget ?? camera }
+
     /// Any camera change (a scroll, a pinch, a zoom command, a hand drag, a test setting it) stops
     /// a slide or an animation, through `camera`'s didSet, as does the next press.
     func stopCameraMotion() {
         cameraMotion?.cancel()
         cameraMotion = nil
+        cameraAnimationTarget = nil
     }
 
     private func scheduleSlideFrame(direction: CGPoint, speed: CGFloat) {
@@ -66,6 +72,7 @@ extension CanvasEditor {
                             zoom: start.zoom + (target.zoom - start.zoom) * t)     // stops the animation…
             scheduleAnimationFrame(from: start, to: target, elapsed: now, total: total)     // …so it carries on
         }
+        cameraAnimationTarget = target
     }
 
     /// tldraw's EASINGS.easeInOutCubic.

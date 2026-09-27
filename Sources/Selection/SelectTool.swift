@@ -16,6 +16,9 @@ extension SelectTool: Tool {
         // A Control-click is the Mac's secondary click: whatever menu it has, AppKit already showed.
         // It doesn't press. (Tools that read ⌃ as a modifier, like the arrow tool's, still get it.)
         guard !pointer.isControlClick else { return }
+        // Whatever this press does to the selection, through the end of its drag, is one step back.
+        editor.selectionState?.pressBegan()
+        defer { editor.selectionState?.pressEnded() }
         if let handle = editor.handle(atViewPoint: pointer.view) {
             editor.pressHandle(handle, with: pointer)
             return

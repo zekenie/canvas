@@ -2,9 +2,9 @@ import Canvas
 import CoreGraphics
 import Observation
 
-/// The selection, the hovered shape and the hovered handle, one per editor. Plugins reach them
-/// through `CanvasEditor`'s members below. The selection and the hover only ever name selectable
-/// shapes in the document; the handle is one of the only selected shape's.
+/// The selection, the way back through it, the hovered shape and the hovered handle, one per
+/// editor. Plugins reach them through `CanvasEditor`'s members below. The selection and the hover
+/// only ever name selectable shapes in the document; the handle is one of the only selected shape's.
 @MainActor
 @Observable
 final class SelectionState {
@@ -15,6 +15,12 @@ final class SelectionState {
     /// +1 each time `selectedIDs` changes.
     private(set) var revision = 0
     private(set) var onlySelectedID: ShapeID?
+    /// The selections to go back to (`editor.goBack()`).
+    private(set) var history = SelectionHistory()
+    /// The select tool's press under way, from the press until the session it starts ends.
+    @ObservationIgnored private var press: Press?
+    /// Going back, which records nothing.
+    @ObservationIgnored private var isGoingBack = false
     private(set) var hoveredID: ShapeID?
     var hoveredHandle: AnyHashable? {
         didSet {
@@ -44,6 +50,7 @@ final class SelectionState {
         var seen = Set<ShapeID>()
         let kept = ids.filter { isSelectable(id: $0) && seen.insert($0).inserted }
         guard kept != selectedIDs else { return }
+        record(leaving: selectedIDs, for: kept)
         selectedIDs = kept
         revision += 1
         let only = kept.count == 1 ? kept[0] : nil
@@ -53,6 +60,60 @@ final class SelectionState {
         }
         editor.setNeedsDisplay()
     }
+
+    // MARK: Going back
+
+    /// A press of the select tool. Every selection change it makes, from the press through the
+    /// session it starts (the marquee's, a release that settles the selection), is one step back,
+    /// to the selection before the press. The press is over once its session is, which is noticed
+    /// at the next change.
+    private struct Press {
+        /// The select tool is still handling the press, before it starts any session.
+        var isPressing = true
+        var isRecorded = false
+    }
+
+    /// The select tool calls these around its handling of a press.
+    func pressBegan() { press = Press() }
+    func pressEnded() { press?.isPressing = false }
+
+    /// The selection is about to change from `previous` to `next`: `previous` goes on the stack,
+    /// with the camera as it is now (or, mid-animation, where it's headed), unless this is going
+    /// back, it isn't the press's first change, or it only reorders the shapes.
+    private func record(leaving previous: [ShapeID], for next: [ShapeID]) {
+        guard !isGoingBack else { return }
+        if let current = press, !current.isPressing, editor.session == nil { press = nil }
+        guard press?.isRecorded != true, Set(previous) != Set(next) else { return }
+        press?.isRecorded = true
+        history.push(SelectionHistory.Entry(selection: previous, camera: editor.cameraTarget))
+    }
+
+    /// What going back to `entry` selects: its shapes, less any that are gone or can no longer be
+    /// selected. Nil if it would change nothing: its shapes are all gone (unless it selected
+    /// nothing), or they're what's selected.
+    private func restoration(of entry: SelectionHistory.Entry) -> [ShapeID]? {
+        let kept = entry.selection.filter { isSelectable(id: $0) }
+        guard entry.selection.isEmpty || !kept.isEmpty, Set(kept) != Set(selectedIDs) else { return nil }
+        return kept
+    }
+
+    /// Whether `goBack` would change the selection: some step on the stack would be restored.
+    var canGoBack: Bool { history.entries.reversed().contains { restoration(of: $0) != nil } }
+
+    /// Takes steps off the stack until one would change the selection, and restores it and its
+    /// camera (animated).
+    func goBack() {
+        while let entry = history.pop() {
+            guard let kept = restoration(of: entry) else { continue }
+            isGoingBack = true
+            select(kept)
+            isGoingBack = false
+            editor.animateCamera(to: entry.camera, duration: SelectionStyle.goBackDuration)
+            return
+        }
+    }
+
+    // MARK: Hovering
 
     func hover(_ id: ShapeID?) {
         let kept = id.flatMap { isSelectable(id: $0) ? $0 : nil }
@@ -64,6 +125,7 @@ final class SelectionState {
 
 extension SelectionState: EditorService {
     func toolDidChange(from old: ToolID, to new: ToolID, in editor: CanvasEditor) {
+        press = nil
         hover(nil)
         hoveredHandle = nil
     }
@@ -104,6 +166,10 @@ extension CanvasEditor {
     public var selectionRevision: Int { selectionState?.revision ?? 0 }
 
     public func isSelected(_ id: ShapeID) -> Bool { selectedShapeIDs.contains(id) }
+
+    /// Whether going back (`goBack`) would change the selection: there's a step back whose shapes
+    /// aren't all gone, and aren't what's selected. Without the Selection plugin, false.
+    public var canGoBack: Bool { selectionState?.canGoBack ?? false }
 
     /// Whether the shape is there and its kind's rule (`ShapeSelectability`) lets it be selected.
     public func isSelectable(_ id: ShapeID) -> Bool {
@@ -176,6 +242,19 @@ extension CanvasEditor {
     /// Return: edits the only selected shape if its kind is editable.
     public func editSelection() {
         if let selection { beginEditing(selection) }
+    }
+
+    /// Go › Back (⌘[; data-canvas's goBack): selects what was selected before the selection last
+    /// changed, and moves the camera back to where it was when that selection was left (where it
+    /// was headed, if it was moving), animated.
+    /// Each change of the selection is a step back, however it came (a click, a row of the table of
+    /// contents, Escape, a deletion), except that a press of the select tool and its drag are one
+    /// step, and going back isn't one. The stack holds the last 50 steps, skips repeats, and skips
+    /// a selection whose shapes have all gone. Ends editing; does nothing mid-gesture.
+    public func goBack() {
+        guard session == nil, let state = selectionState else { return }
+        endEditing()
+        state.goBack()
     }
 
     // MARK: Drawing

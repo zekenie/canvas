@@ -86,6 +86,7 @@ struct ShapeRegistration {
 
 struct CommandRegistration {
     let command: CanvasCommand
+    let isEnabled: @MainActor (CanvasEditor) -> Bool
     let run: @MainActor (CanvasEditor) -> Void
 }
 

@@ -90,8 +90,10 @@ public final class CanvasEditor {
     @ObservationIgnored var heldModifiers: Modifiers = []
     @ObservationIgnored var recentlyReleased: Modifiers = []
     @ObservationIgnored var releaseTimer: ScheduledTask?
-    // The camera motion's next frame (a slide or an animation), used by CanvasEditor+Camera.swift.
+    // The camera motion's next frame (a slide or an animation), and an animation's target, used by
+    // CanvasEditor+Camera.swift.
     @ObservationIgnored var cameraMotion: ScheduledTask?
+    @ObservationIgnored var cameraAnimationTarget: Camera?
 
     public init(registry: Registry, document: CanvasDocument = CanvasDocument(), scheduler: any Scheduler = TaskScheduler(),
                 stackingKeys: StackingKeyGenerator = .jittered) {
@@ -223,13 +225,19 @@ public final class CanvasEditor {
         setTool(registry.defaultTool)
     }
 
-    /// Runs the command a plugin claimed (Delete, Return, ⌘A: the canvas view forwards them).
-    /// Returns false if no plugin claims it.
+    /// Runs the command a plugin claimed (Delete, Return, ⌘A: the canvas view forwards them; Back,
+    /// the board's window), if it can run now. Returns false if no plugin claims it, or it can't.
     @discardableResult
     public func perform(_ command: CanvasCommand) -> Bool {
-        guard let run = registry.command(command) else { return false }
-        run(self)
+        guard let registration = registry.command(command), registration.isEnabled(self) else { return false }
+        registration.run(self)
         return true
+    }
+
+    /// Whether `perform` would run the command: a plugin claims it, and says it can now. A menu
+    /// asks, to enable its item.
+    public func canPerform(_ command: CanvasCommand) -> Bool {
+        registry.command(command)?.isEnabled(self) ?? false
     }
 
     // MARK: Input, for tools and sessions

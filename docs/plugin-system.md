@@ -237,8 +237,9 @@ done with it; the kind only stores the items. One horizontal may build on anothe
 imports DetailPanel and ContextMenus.
 
 Selecting is a horizontal too, one that every kind is in unless it opts out
-(`backdrop.unselectable()`). [Selection](#selection) owns what's selected, the Select tool, and
-Delete, Return and ⌘A; the detail panel builds on it to show the selected shape.
+(`backdrop.unselectable()`). [Selection](#selection) owns what's selected and the way back
+through it, the Select tool, and Delete, Return, ⌘A and Back; the detail panel builds on it to
+show the selected shape.
 
 Opting in goes in one of two directions:
 
@@ -467,8 +468,10 @@ The details:
   as Selection does when the selection or hover changes; a tool whose cursor follows such state
   calls `editor.refreshCursor()`.
 - **Commands** (`CanvasCommand`: `.delete`, `.insertNewline`, `.selectAll`) are the standard
-  AppKit actions the canvas view forwards with `editor.perform`. A plugin claims each with
-  `registrar.command`; unclaimed, `perform` returns false.
+  AppKit actions the canvas view forwards with `editor.perform`; `.goBack` (Go › Back, ⌘[) comes
+  from the board's window, whatever has the keyboard. A plugin claims each with
+  `registrar.command`, and may say when it can run (`isEnabled:`), which `editor.canPerform` asks
+  for a menu item to enable it; unclaimed, or unable to run, `perform` returns false.
 - **The secondary click** (a right-click, or a Control-click) opens whatever menu the one plugin
   that claims it makes (`registrar.menuForSecondaryClick`), ContextMenus in the shipped app;
   unclaimed, or nil, the click does nothing. AppKit offers a Control-click to the menu first; with
@@ -683,15 +686,16 @@ per-kind rules, rules for another plugin's kind, rules for every kind, an engine
 ## Selection
 
 Selecting is a horizontal ([`Sources/Selection`](../Sources/Selection)), and the one most others
-build on. It owns what's selected, the hovered shape, the Select tool (V) and its marquee, the
-handles of the one selected shape, and what Delete, Return and ⌘A do. The core has never heard of a
-selection: Selection works through the same generic hooks any plugin can use.
+build on. It owns what's selected and the way back through it, the hovered shape, the Select
+tool (V) and its marquee, the handles of the one selected shape, and what Delete, Return, ⌘A and
+Back do. The core has never heard of a selection: Selection works through the same generic hooks
+any plugin can use.
 
 | Core hook | What Selection does with it |
 |---|---|
 | `registrar.defaultTool(.select)` | The editor starts in Select, Select leads the toolbar, and Escape and placing a shape come back to it. |
 | `registrar.outlines { ... }` | Each selected shape's outline, the box around several, and the hover's faint outline. The core strokes every plugin's outlines and the hint in one pass, over the faint ones. |
-| `registrar.command(.delete)`, `.insertNewline`, `.selectAll` | Delete deletes the selection, Return edits the only selected shape, ⌘A selects everything. |
+| `registrar.command(.delete)`, `.insertNewline`, `.selectAll`, `.goBack` | Delete deletes the selection, Return edits the only selected shape, ⌘A selects everything, and Back (enabled while there's a step back) goes back to the previous selection. |
 | `Tool.cancel` | Escape in Select, with nothing under way, deselects. |
 | `EditorService.documentDidChange`, `didPlace` | Drops shapes that are gone (or no longer selectable) from the selection and the hover; selects a shape just placed. |
 | `Session.draw(in:)` | The marquee draws itself. |
@@ -715,6 +719,21 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   runs, nor on a selected shape): wider and lighter than the selection's (2.5 points, the accent at
   60%), easy to see over a yellow note, but a hovered shape doesn't read as selected
   as it would in tldraw, which strokes a hover like the selection.
+- `goBack()` and `canGoBack` are data-canvas's selection history. Each change of the selection
+  puts the selection it leaves on a stack, with the camera as it is at that moment (or, while it
+  glides, `editor.cameraTarget`, where it's headed): a click, a row of the table of contents,
+  Escape, a deletion. Going back takes the last one off, selects its shapes (less any that are
+  gone) and animates the camera back over 200 ms, as data-canvas does. The detail panel's header
+  has the back button, and Go › Back (⌘[) works whatever has the keyboard, but not mid-gesture.
+  The stack holds 50 steps, skips a repeat of the step below, and going back skips a step that
+  would change nothing: its shapes are all gone (unless it selected nothing, the board's list), or
+  they're what's selected. `canGoBack` is true only when a step wouldn't be skipped, so after
+  deleting the only shape selected there's no Back. It's per editor, so per window, and isn't
+  saved. Two differences from data-canvas: a press of the select tool and its drag
+  are one step, so a marquee goes back to what was selected before the press, where data-canvas also
+  keeps the moment the press on empty canvas deselected; and a step keeps the camera as the
+  selection was left, not as it was made, so going back from a row's details returns to the list
+  as it was before the zoom. There's no forward.
 - `hoveredHandle`, `brush` (the marquee), `selectionBounds`, `isSelectable(_:)`, and the commands'
   `selectAll()`, `deleteSelection()` and `editSelection()`.
 
@@ -780,8 +799,8 @@ core has never heard of it.
 
 ```
 ┌─ inspector column: 248 to 340 pt, 260 ideal ────────┐
-│ ☑  Write the spec                                   │ header: symbol, title, subtitle
-│    Done · 2 of 5 · Due Sep 30                       │
+│ ‹ ☑  Write the spec                                 │ header: back, symbol, title, subtitle
+│      Done · 2 of 5 · Due Sep 30                     │
 │ ⟦ Task ⟧   Checklist   Style   Arrange              │ tab strip, hidden with one tab
 ├─────────────────────────────────────────────────────┤
 │      Title  [ Write the spec              ]         │ a tab's first section: untitled,
@@ -804,7 +823,7 @@ The panel owns all of the chrome, and plugins fill it in:
 
 | The panel decides | Plugins provide |
 |---|---|
-| The header's layout | The header's title, subtitle and symbol (a value, not a view) |
+| The header's layout, and its back button (Selection's `goBack`, shown while there's a step back) | The header's title, subtitle and symbol (a value, not a view) |
 | The tab strip, the tab order, and the tab remembered per kind | Which tab each section goes in |
 | Section chrome: the header, chevron, header-control slot, insets, dividers, collapsing, and remembered collapse | Section titles, ids and order, and at most one header control per section |
 | Scrolling, the footer, and the empty states | The rows in a section, and the footer's lines |
@@ -1121,7 +1140,8 @@ When each control commits:
   without Full Keyboard Access); a pop-up, segmented control or stepper that has it keeps tool
   shortcuts from the canvas until Escape.
 - **Zoom** (⌘=, ⌘- and ⌘0) works whatever has the keyboard: the app's menu commands reach the
-  window's canvas through `CanvasFocus`, not the responder chain.
+  window's canvas through `CanvasFocus`, not the responder chain. So does Go › Back (⌘[), which
+  the board's window controller answers.
 
 The panel can't give the keyboard to the canvas itself (it can't import CanvasUI), so the host
 passes `onExit`. `CanvasFocus` (CanvasUI) is the handle: `CanvasRepresentable(editor:focus:)` fills
@@ -1403,6 +1423,9 @@ note.contentsRow { note in
   a faint accent where the selection's highlight goes, in its shape. A selected shape shows neither,
   only its selection. data-canvas marks a row when its shape is hovered on the canvas (a faint ring);
   its rows don't hover the canvas.
+- **Going back.** A row's click is a step in Selection's history like any other change of the
+  selection, so the back button in the shape's header (or Go › Back, ⌘[) brings the list back,
+  with the view as it was before the zoom, as data-canvas's back button does.
 - **The keyboard.** A click gives the list the keyboard, as a source list does: the arrow keys move
   through the rows, Delete deletes the selected shapes, and Escape gives the keyboard back to the
   canvas (`onExit`). So does hiding the panel while the list has the keyboard.
@@ -1491,6 +1514,8 @@ to it.
 - **The camera** is `editor.camera`, which anyone may set; setting it stops any camera motion
   running. `editor.animateCamera(to:duration:)` moves it there, eased (tldraw's cubic), a frame
   every 16 ms, and `Camera(fitting:in:inset:maxZoom:)` (Geometry) makes one that shows a rect.
+  `editor.cameraTarget` is where an animation is headed while it runs, else the camera: what to
+  remember a view as mid-motion (Selection's steps back do).
   `editor.viewportSize` is the view's size in view points, zero until it has one.
 - **The view.** `CanvasView` (CanvasUI) is the only AppKit in the loop. It converts events, reports
   its size, hosts the editing view over its shape, hands AppKit the menu for a secondary click, and draws the editor, all through the editor's `@_spi(Host)`
@@ -1605,7 +1630,7 @@ Once built, it's frozen and handed to the editor. The app's list is `ShippedPlug
 
 ```
 core                tool hand [h]
-selection           service SelectionState · tool select [v] · default tool select · outlines · overlay HandlesOverlay · command delete · command insertNewline · command selectAll
+selection           service SelectionState · tool select [v] · default tool select · outlines · overlay HandlesOverlay · command delete · command insertNewline · command selectAll · command goBack
 arrows              shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow [a] · overlay BindingHintsOverlay · willDelete
 sticky-notes        shape sticky-note · tool sticky-note [n] · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · ContentsRows → sticky-note
 ellipses            shape ellipse · tool ellipse [o]
@@ -1766,6 +1791,8 @@ Each of these adds to the design without changing what plugins are written again
   the display rather than nominal 16 ms frames.
 - **More horizontals** from data-canvas: describe, search, commands. Each is an extension point in
   its own plugin.
+- **More of going back**: going forward again (⌘]), and a step keeping what the table of contents
+  listed, so Show All survives a trip back.
 - **More of the table of contents**: nested shapes (a shape's container as the default
   `nestedUnder`), with each row's disclosure remembered (every nested row starts collapsed today);
   dragging rows to restack their shapes; per-kind zoom targets

@@ -117,8 +117,8 @@ public struct Registry {
         contributions(to: CorePoints.WillDelete.self).map(\.value)
     }
     var outlineSources: [@MainActor (CanvasEditor) -> Outlines] { contributions(to: CorePoints.OutlineSources.self).map(\.value) }
-    func command(_ command: CanvasCommand) -> (@MainActor (CanvasEditor) -> Void)? {
-        contributions(to: CorePoints.Commands.self).first { $0.value.command == command }?.value.run
+    func command(_ command: CanvasCommand) -> CommandRegistration? {
+        contributions(to: CorePoints.Commands.self).first { $0.value.command == command }?.value
     }
     var secondaryClickMenu: (@MainActor (CanvasEditor, Pointer) -> NSMenu?)? {
         contributions(to: CorePoints.SecondaryClickMenu.self).first?.value

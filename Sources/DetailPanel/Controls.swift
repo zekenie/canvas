@@ -11,6 +11,7 @@ public enum DetailStyle {
     static let inset: CGFloat = 16
     static let headerHeight: CGFloat = 44
     static let headerSymbolWidth: CGFloat = 20
+    static let backWidth: CGFloat = 20
     static let stripInset: CGFloat = 10
     static let stripBottom: CGFloat = 6
     static let tabHeight: CGFloat = 22
@@ -49,6 +50,7 @@ public enum DetailStyle {
     static let sectionTitle = Font.system(size: 11, weight: .bold)
     static let headerTitle = Font.system(size: 12, weight: .semibold)
     static let headerSymbol = Font.system(size: 15)
+    static let backSymbol = Font.system(size: 13, weight: .semibold)
     static let disclosure = Font.system(size: 8, weight: .bold)
     static let placeholder = Font.system(size: 13)
 

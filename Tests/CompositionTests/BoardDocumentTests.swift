@@ -108,7 +108,7 @@ let boardType = "com.example.InfiniteCanvas.board"
         runLoop { false }
         expect(!board.isDocumentEdited)
     },
-    test("a board's window hosts its canvas, and the zoom and inspector commands reach it") {
+    test("a board's window hosts its canvas, and the zoom, inspector and back commands reach it") {
         try configureBoards()
         let board = BoardDocument()
         board.makeWindowControllers()
@@ -130,6 +130,14 @@ let boardType = "com.example.InfiniteCanvas.board"
         expect(!board.viewState.showsDetails)
         _ = controller.validateMenuItem(item)
         expectEqual(item.title, "Show Inspector")
+
+        let back = NSMenuItem(title: "Back", action: #selector(BoardWindowController.goBack(_:)), keyEquivalent: "[")
+        expect(!controller.validateMenuItem(back), "nothing to go back to")
+        board.editor.selection = board.editor.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "Here"))
+        expect(controller.validateMenuItem(back))
+        controller.goBack(nil)
+        expectEqual(board.editor.selectedShapeIDs, [])
+        expect(!controller.validateMenuItem(back))
     },
     test("each board's view is remembered by its file, most recent first, and restored when its window opens") {
         try configureBoards()
@@ -182,6 +190,8 @@ let boardType = "com.example.InfiniteCanvas.board"
         try check("View", "Zoom In", "zoomIn:", "=")
         try check("View", "Zoom Out", "zoomOut:", "-")
         try check("View", "Actual Size", "zoomToActualSize:", "0")
+        try check("Go", "Back", "goBack:", "[")
+        expectEqual(menus.main.items.map(\.title), ["Infinite Canvas", "File", "Edit", "View", "Go", "Window", "Help"])
         try check("Infinite Canvas", "Quit Infinite Canvas", "terminate:", "q")
         expectEqual(menus.windows.title, "Window")
     },

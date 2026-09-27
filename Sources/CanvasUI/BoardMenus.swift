@@ -66,6 +66,9 @@ public enum BoardMenus {
             .separator(),
             item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
         ])
+        let go = menu("Go", [
+            item("Back", #selector(BoardWindowController.goBack(_:)), "["),
+        ])
         let windows = menu("Window", [
             item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
             item("Zoom", #selector(NSWindow.performZoom(_:))),
@@ -74,7 +77,7 @@ public enum BoardMenus {
         ])
         let help = menu("Help", helpItems)
         let main = NSMenu(title: "Main Menu")
-        for menu in [app, file, edit, view, windows, help] { main.addItem(submenu(menu.title, menu)) }
+        for menu in [app, file, edit, view, go, windows, help] { main.addItem(submenu(menu.title, menu)) }
         return Menus(main: main, services: services, windows: windows, help: help)
     }
 

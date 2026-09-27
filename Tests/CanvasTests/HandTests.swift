@@ -67,6 +67,22 @@ import TestKit
         h.wait(300)
         expectEqual(h.editor.camera, pressed)
     },
+    test("cameraTarget is where an animation is headed while it runs, and the camera once it lands or stops") {
+        let h = try EditorHarness(plugins: [])
+        let target = Camera(origin: CGPoint(x: 300, y: -200), zoom: 2)
+        expectEqual(h.editor.cameraTarget, Camera())
+        h.editor.animateCamera(to: target, duration: .milliseconds(200))
+        expectEqual(h.editor.cameraTarget, target, "before the first frame")
+        h.wait(80)
+        expect(h.editor.camera != target)
+        expectEqual(h.editor.cameraTarget, target, "mid-way")
+        h.wait(120)
+        expectEqual(h.editor.cameraTarget, target, "landed")
+        h.editor.animateCamera(to: Camera(), duration: .milliseconds(200))
+        h.wait(48)
+        h.press(at: CGPoint(x: 10, y: 10), after: 0)          // stops it where it is
+        expectEqual(h.editor.cameraTarget, h.editor.camera)
+    },
     test("an animation of no duration, or to where the camera is, jumps and leaves nothing pending") {
         let h = try EditorHarness(plugins: [])
         h.editor.animateCamera(to: Camera(zoom: 3), duration: .zero)

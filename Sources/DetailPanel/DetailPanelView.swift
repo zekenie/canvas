@@ -35,7 +35,7 @@ public struct DetailPanelView: View {
             if let state = editor.detailPanel {
                 let ids = editor.selectedShapeIDs
                 if ids.count > 1 {
-                    SelectionSummary(header: state.selectionSummary(of: ids.compactMap { editor.document[$0] }), overview: overview)
+                    SelectionSummary(header: state.selectionSummary(of: ids.compactMap { editor.document[$0] }), editor: editor, overview: overview)
                 } else if let id = editor.selection, let record = editor.document[id] {
                     ShapePanel(state: state, editor: editor, record: record, statuses: state.statuses(for: record),
                                contentChanged: reclaimSoon)
@@ -119,10 +119,11 @@ struct Placeholder: View {
 /// shape: editing several at once isn't built.
 struct SelectionSummary: View {
     let header: DetailHeader
+    let editor: CanvasEditor
     let overview: AnyView?
     var body: some View {
         VStack(spacing: 0) {
-            HeaderView(header: header)
+            HeaderView(header: header, editor: editor)
             Divider()
             if let overview {
                 overview
@@ -151,7 +152,7 @@ struct ShapePanel: View, Equatable {
         let current = state.currentTab(in: layout, for: record.kind)
         let sections = current.map { layout.resolved(in: $0) } ?? []
         VStack(spacing: 0) {
-            HeaderView(header: layout.header)
+            HeaderView(header: layout.header, editor: editor)
             if let current {
                 if layout.tabs.count > 1 {
                     TabStrip(tabs: layout.tabs, selection: current) { state.choose($0, for: record.kind) }
@@ -183,10 +184,13 @@ struct ShapePanel: View, Equatable {
     }
 }
 
+/// The shape's symbol, title and subtitle, or the selection's, after a back button.
 struct HeaderView: View {
     let header: DetailHeader
+    let editor: CanvasEditor
     var body: some View {
         HStack(spacing: DetailStyle.pairSpacing) {
+            BackButton(editor: editor)
             if let symbol = header.systemImage {
                 Image(systemName: symbol)
                     .font(DetailStyle.headerSymbol)
@@ -203,6 +207,25 @@ struct HeaderView: View {
         }
         .padding(.horizontal, DetailStyle.inset)
         .frame(height: DetailStyle.headerHeight)
+    }
+}
+
+/// Back to the previous selection (Selection's `goBack`), as data-canvas's details panel has, while
+/// there is one. Its own view, so a new step back redraws only it, not the panel it's in.
+struct BackButton: View {
+    let editor: CanvasEditor
+    var body: some View {
+        if editor.canGoBack {
+            Button { editor.goBack() } label: {
+                Image(systemName: "chevron.backward")
+                    .font(DetailStyle.backSymbol)
+                    .frame(width: DetailStyle.backWidth, height: DetailStyle.backWidth)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .help("Back to the previous selection (⌘[)")
+            .accessibilityLabel("Back")
+        }
     }
 }
 

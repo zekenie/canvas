@@ -36,6 +36,14 @@ final class BoardWindow {
     var rows: Int { max(0, (contents?.numberOfRows ?? 0) - 1) }
     var canvasHasKeyboard: Bool { window.firstResponder === canvas }
     var notes: [ShapeID] { editor.document.shapes.filter { $0.kind == StickyNote.kind }.map(\.id) }
+    /// The panel header's back button, while there's a selection to go back to.
+    var backButton: NSButton? { host.descendants(NSButton.self).first { $0.isInPanelHeader(of: host) } }
+}
+
+extension NSView {
+    /// In the detail panel's header, the top 44 points (`DetailStyle.headerHeight`) of the window's
+    /// content, where the back button is.
+    func isInPanelHeader(of host: NSView) -> Bool { convert(bounds, to: host).maxY <= 44 }
 }
 
 extension NSTableView {
@@ -85,6 +93,33 @@ extension NSTableView {
                                                                       trackingNumber: 0, userData: nil)))
         expectEqual(w.editor.hovered, nil)
         w.window.spin { changedPixels(plain, snapshot(list), in: row) == 0 }
+    },
+    test("a row takes the panel to its note; the header's back button brings the list back, and the view as it was") {
+        let w = try BoardWindow()
+        w.window.spin { w.rows == 6 }
+        expect(w.backButton == nil, "no header with nothing selected")
+        let start = w.editor.camera
+        try require(w.editor.tableOfContents).select([w.notes[1]])
+        w.window.spin { w.contents == nil && w.backButton != nil }     // the note's own panel, and a way back
+        w.window.spin { w.editor.camera != start }                      // zooming to the note
+        try require(w.backButton).performClick(nil)
+        expectEqual(w.editor.selectedShapeIDs, [])
+        w.window.spin { w.rows == 6 }
+        w.window.spin { w.editor.camera == start }
+        expect(!w.editor.canGoBack, "nothing further back")
+    },
+    test("the back button in several shapes' header goes back to one of them, and from it to the board") {
+        let w = try BoardWindow()
+        w.window.spin { w.rows == 6 }
+        w.editor.selection = w.notes[0]
+        w.editor.selectedShapeIDs = [w.notes[1], w.notes[2]]
+        w.window.spin { w.rows == 2 && w.backButton != nil }
+        try require(w.backButton).performClick(nil)
+        expectEqual(w.editor.selectedShapeIDs, [w.notes[0]])
+        w.window.spin { w.contents == nil && w.backButton != nil }
+        try require(w.backButton).performClick(nil)
+        w.window.spin { w.rows == 6 }
+        expect(w.backButton == nil)
     },
     test("Escape in the list gives the keyboard back to the canvas, where tool shortcuts work again") {
         let w = try BoardWindow()

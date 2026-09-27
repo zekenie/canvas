@@ -46,8 +46,12 @@ final class PanelWindow {
     var tables: [NSTableView] { hosting.descendants(NSTableView.self) }
     var textViews: [NSTextView] { hosting.descendants(NSTextView.self) }
     var steppers: [NSStepper] { hosting.descendants(NSStepper.self) }
-    /// SwiftUI's toggles are untitled buttons.
-    var checkboxes: [NSButton] { hosting.descendants(NSButton.self).filter { !($0 is NSPopUpButton) } }
+    /// SwiftUI's toggles are untitled buttons, under the header (which has the back button).
+    var checkboxes: [NSButton] { hosting.descendants(NSButton.self).filter { !($0 is NSPopUpButton) && !isInHeader($0) } }
+    /// The header's back button, while there's a selection to go back to.
+    var backButton: NSButton? { hosting.descendants(NSButton.self).first(where: isInHeader) }
+    /// In the header, the panel's top 44 points (`DetailStyle.headerHeight`).
+    func isInHeader(_ view: NSView) -> Bool { view.convert(view.bounds, to: hosting).maxY <= 44 }
 
     func field(_ text: String) throws -> NSTextField {
         try require(fields.first { $0.stringValue == text || $0.placeholderString == text }, "no field showing \(text): \(fields.map(\.stringValue))")

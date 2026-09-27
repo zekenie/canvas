@@ -50,7 +50,8 @@ public struct ToolID: Hashable, Sendable, ExpressibleByStringLiteral, CustomStri
 }
 
 /// A command the canvas view forwards from the keyboard and the menus (AppKit's standard actions),
-/// for a plugin to claim with `registrar.command`. The core only routes it.
+/// or the board's window from its own menu items, for a plugin to claim with `registrar.command`.
+/// The core only routes it.
 public struct CanvasCommand: Hashable, Sendable, ExpressibleByStringLiteral, CustomStringConvertible {
     public let rawValue: String
     public init(_ rawValue: String) { self.rawValue = rawValue }
@@ -62,4 +63,6 @@ public struct CanvasCommand: Hashable, Sendable, ExpressibleByStringLiteral, Cus
     public static let insertNewline: CanvasCommand = "insertNewline"
     /// Edit › Select All (⌘A).
     public static let selectAll: CanvasCommand = "selectAll"
+    /// Go › Back (⌘[), whatever has the keyboard.
+    public static let goBack: CanvasCommand = "goBack"
 }

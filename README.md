@@ -46,6 +46,7 @@ A board remembers, on each Mac, where you left its view.
 | Show or hide the detail panel | ⌃⌘I, or the Details button in the toolbar |
 | See what's on the board | With nothing selected, the detail panel lists every shape, each arrow under the shape it starts from; with several selected, just those (Show All lists every shape again) |
 | Find a shape from the list | Click its row: it's selected and the canvas zooms to it. Pointing at a row outlines its shape faintly, and pointing at a shape tints its row |
+| Go back to the previous selection | The back button in the detail panel's header, or ⌘[ (Go › Back): what was selected before, and the view as it was then (from a row's details, the list) |
 | Add a checklist to a note or task | The panel's Checklist tab: + adds an item, − or Delete removes the selected one |
 | Delete shapes or arrows | Select them and press Delete |
 | Arrow tool | A (V or Escape to go back to select) |
