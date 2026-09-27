@@ -1,3 +1,4 @@
+import Adornments
 import Canvas
 import ContextMenus
 import DetailPanel
@@ -77,8 +78,8 @@ public enum ChecklistBulkAction: CaseIterable, Sendable {
     }
 }
 
-/// What `ShapeChecklists` stores for a kind: whether the canvas shows the chip. Only the sugar below
-/// makes one.
+/// What `ShapeChecklists` stores for a kind: whether its shapes show `ChecklistChip`. Only the sugar
+/// below makes one.
 @MainActor
 public struct ChecklistContribution {
     let showsBadge: Bool
@@ -101,7 +102,7 @@ extension ShapeRegistrar {
     /// Gives this kind's shapes a checklist (`ChecklistProperty`, in the kind's schema as
     /// `checklist`): a Checklist tab in the detail panel, the bulk actions that apply in its context
     /// menu, and (unless `badge` is false, for kinds that draw their own) a small done/total chip on
-    /// the canvas. `note.checklist()`.
+    /// the canvas (`ChecklistChip`). `note.checklist()`.
     public mutating func checklist(badge: Bool = true) {
         optIn(to: ChecklistProperty.self)
         contribute(ChecklistContribution(showsBadge: badge), to: ShapeChecklists.self)
@@ -129,16 +130,38 @@ extension Registry {
     public func checklist(of shape: AnyShapeRecord) -> [ChecklistItem]? { shape[ChecklistProperty.self] }
 }
 
+/// A checklist's tally, "☑ 2/5", on the top-right corner of every shape with items whose kind shows
+/// it (`badge: true`, the default); green once every item is done. Checklists places it, though it
+/// defines no shape; Adornments lays it out and draws it, where the shape is drawn.
+public enum ChecklistChip {}
+
+extension ChecklistChip: Adornment {
+    public static var placement: AdornmentPlacement { .onTopRightCorner }
+    public static var order: Int { 50 }
+}
+
+extension Registry {
+    /// Whether a kind's shapes show their checklist's chip: it opted in without `badge: false`.
+    func showsChecklistChip(_ kind: ShapeKind) -> Bool {
+        contributions(to: ShapeChecklists.self, for: kind).first?.showsBadge == true
+    }
+}
+
 /// A horizontal any kind can opt into: a checklist on each of its shapes, as a property this plugin
 /// adds (`ChecklistProperty`), so the kind declares nothing. Opting in is one line, and brings a
 /// Checklist tab in the detail panel, its bulk actions in the context menu, and a done/total chip
-/// on the canvas. This plugin owns the items, their type and everything done with them.
+/// on the canvas (`ChecklistChip`, an adornment). This plugin owns the items, their type and
+/// everything done with them.
 public struct ChecklistsPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .checklists }
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.declare(ChecklistProperty.self)
-        registrar.overlay(ChecklistOverlay())
+        // The tally, on every shape with items whose kind shows it: Checklists places it, and defines no kind.
+        registrar.adornmentForEveryShape(ChecklistChip.self, where: { $0.registry.showsChecklistChip($0.kind) }) { shape, _ in
+            guard let items = shape[ChecklistProperty.self], let tally = items.tally else { return nil }
+            return AdornmentLabel("☑ \(tally)", tone: items.doneCount == items.count ? .success : .neutral)
+        }
     }
 }

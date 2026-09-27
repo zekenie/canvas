@@ -1,18 +1,37 @@
+import Adornments
 import Canvas
 import CoreGraphics
 import Foundation
-import Geometry
 import Selection
 
-/// Per editor: which shapes are locked, kept as commits change shapes (what the chip overlay draws
-/// for, so a board with none costs it nothing), the chips showing their lock open a moment after
-/// their shape was unlocked, and the shakes under way.
+@MainActor
+enum LockStyle {
+    // Once a shape is unlocked (its chip clicked, or from the menu), its lock shows open this long, so
+    // that a click by mistake can be taken back by another; longer while the pointer's on it; then it
+    // fades.
+    static let openLinger: Duration = .milliseconds(1500)
+    static let openFade: Duration = .milliseconds(300)
+    /// While the pointer's on an open lock that's had its time, how often to see if it's gone.
+    static let openHoverRecheck: Duration = .milliseconds(500)
+
+    // The shake a locked shape gives when something tries to change it, like a password field's.
+    /// The farthest it goes to either side, in view points.
+    static let shakeAmplitude: CGFloat = 5
+    /// How many times it goes right and left.
+    static let shakeCycles: Double = 3
+    static let shakeDuration: Duration = .milliseconds(360)
+    /// A frame of a shake or a fade.
+    static let frame: Duration = .milliseconds(16)
+}
+
+/// Per editor: which shapes are locked, kept as commits change shapes, the chips showing their
+/// lock open a moment after their shape was unlocked, and the shakes under way.
 @MainActor
 final class LockState {
     private unowned let editor: CanvasEditor
-    private(set) var lockedIDs: Set<ShapeID>
+    private var lockedIDs: Set<ShapeID>
     /// Shapes just unlocked, whose chip shows its lock open, where a click locks the shape again.
-    private(set) var opened: [ShapeID: OpenLock] = [:]
+    private var opened: [ShapeID: OpenLock] = [:]
     /// Each shaking shape, and how many frames of its shake have played.
     private var shakes: [ShapeID: Int] = [:]
     private var nextFrame: ScheduledTask?
@@ -31,55 +50,40 @@ final class LockState {
         lockedIDs = Set(editor.document.shapes.lazy.filter(\.isLocked).map(\.id))
     }
 
-    var hasChips: Bool { !lockedIDs.isEmpty || !opened.isEmpty }
-
-    /// How opaque a shape's chip is: fully, but for an open lock fading away.
-    func opacity(of id: ShapeID) -> CGFloat {
-        guard case .fading(let frames) = opened[id] else { return 1 }
-        return max(0, 1 - CGFloat((LockStyle.frame * frames) / LockStyle.openFade))
-    }
-
-    // MARK: The chip, as a button
-
-    /// The chip under a view point, a locked shape's or a just-unlocked one's, the front-most if
-    /// several: what the select tool clicks there (`CanvasButtons`).
-    func chip(atViewPoint point: CGPoint) -> LockChip? {
-        guard hasChips else { return nil }
-        let camera = editor.camera, scale = LockStyle.scale(zoom: camera.zoom)
-        let world = camera.toWorld(point), margin = LockStyle.hitMargin * scale
-        let size = LockStyle.size * scale, gap = LockStyle.gap * scale
-        // A chip ends at its shape's right edge, above its top: a shape whose top-right corner is
-        // within a chip (and the margin) below and right of the point may have one here.
-        let area = CGRect(x: world.x - margin, y: world.y + gap - margin, width: size + 2 * margin, height: size + 2 * margin)
-        let shapes = editor.shapeContext
-        for record in editor.paintOrder(in: area).reversed() where lockedIDs.contains(record.id) || opened[record.id] != nil {
-            guard let bounds = shapes.geometry(of: record.id)?.bounds, !bounds.isNull else { continue }
-            let chip = LockStyle.chip(above: bounds, scale: scale)
-            if hypot(world.x - chip.midX, world.y - chip.midY) <= chip.width / 2 + margin { return LockChip(shape: record.id) }
+    /// How opaque a just-unlocked shape's open lock is: fully until it starts to fade, then less
+    /// each frame. Nil for any other shape.
+    func openLockOpacity(of id: ShapeID) -> CGFloat? {
+        switch opened[id] {
+        case nil: nil
+        case .waiting: 1
+        case .fading(let frames): max(0, 1 - CGFloat((LockStyle.frame * frames) / LockStyle.openFade))
         }
-        return nil
     }
 
-    /// A click on a chip: a locked shape's unlocks it, and a just-unlocked one's locks it again.
-    func click(_ chip: LockChip) {
-        if lockedIDs.contains(chip.shape) {
-            editor.unlock([chip.shape])
-        } else if opened[chip.shape] != nil {
-            editor.lock([chip.shape])
+    /// A click on a shape's chip: a locked shape's unlocks it, and a just-unlocked one's locks it again.
+    func click(_ id: ShapeID) {
+        if lockedIDs.contains(id) {
+            editor.unlock([id])
+        } else if opened[id] != nil {
+            editor.lock([id])
         }
     }
 
     // MARK: A lock opening
 
     /// A shape was just unlocked: its chip shows the lock open for a moment, so a click by mistake
-    /// can be taken back by another.
+    /// can be taken back by another. The caller tells Adornments, once for all the chips it changes.
     private func open(_ id: ShapeID) {
-        close(id)
+        if case .waiting(let task) = opened[id] { task.cancel() }
         opened[id] = .waiting(waitToFade(id, after: LockStyle.openLinger))
     }
 
-    private func close(_ id: ShapeID) {
-        if case .waiting(let task) = opened.removeValue(forKey: id) { task.cancel() }
+    /// The open lock goes, if the shape has one: whether it had one. The caller tells Adornments,
+    /// once for all the chips it changes.
+    private func close(_ id: ShapeID) -> Bool {
+        guard let lock = opened.removeValue(forKey: id) else { return false }
+        if case .waiting(let task) = lock { task.cancel() }
+        return true
     }
 
     private func waitToFade(_ id: ShapeID, after delay: Duration) -> ScheduledTask {
@@ -89,7 +93,7 @@ final class LockState {
     /// Starts the chip's fade, unless the pointer's on it: it may be about to click it.
     private func fade(_ id: ShapeID) {
         guard opened[id] != nil else { return }
-        guard editor.hoveredButton != AnyHashable(LockChip(shape: id)) else {
+        guard editor.hoveredButton != AnyHashable(AdornmentButton(LockChip.self, on: id)) else {
             opened[id] = .waiting(waitToFade(id, after: LockStyle.openHoverRecheck))
             return
         }
@@ -145,43 +149,40 @@ final class LockState {
                 editor.setDrawingOffset(CGPoint(x: Self.shakeOffset(at: elapsed), y: 0), for: id)
             }
         }
-        var faded = false
+        // The open locks fading, and those faded away.
+        var fading = Set<ShapeID>()
         for (id, lock) in opened {
             guard case .fading(let frames) = lock else { continue }
-            if LockStyle.frame * (frames + 1) >= LockStyle.openFade {
-                opened[id] = nil
-                faded = true
-            } else {
-                opened[id] = .fading(frames + 1)
-            }
+            fading.insert(id)
+            opened[id] = LockStyle.frame * (frames + 1) >= LockStyle.openFade ? nil : .fading(frames + 1)
         }
-        if faded || isFading { editor.setNeedsDisplay() }
-        if faded { editor.canvasButtonsDidChange() }
+        if !fading.isEmpty { editor.adornmentsDidChange(for: fading) }
         if !shakes.isEmpty || isFading { scheduleFrame() }
     }
 }
 
 extension LockState: EditorService {
+    /// Keeps which shapes are locked, and opens the lock of each shape the commit unlocks. The locks
+    /// it opens or closes are told to Adornments once, at the end, since each tell has the select
+    /// tool look again for a button under the pointer: unlocking many shapes costs one look, not one
+    /// a shape.
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
-        // Whether a chip came or went: a shape locked, or one with a chip gone. (A shape unlocked
-        // keeps its chip, open.)
-        var chipsChanged = false
+        var chipsChanged = Set<ShapeID>()
         for id in changes.removed {
             shakes[id] = nil
-            if lockedIDs.remove(id) != nil || opened[id] != nil { chipsChanged = true }
-            close(id)
+            lockedIDs.remove(id)
+            if close(id) { chipsChanged.insert(id) }
         }
         for id in changes.added.union(changes.changed) {
             if editor.document[id]?.isLocked == true {
-                if lockedIDs.insert(id).inserted { chipsChanged = true }
-                close(id)
+                lockedIDs.insert(id)
+                if close(id) { chipsChanged.insert(id) }
             } else if lockedIDs.remove(id) != nil {
                 open(id)
+                chipsChanged.insert(id)
             }
         }
-        // Selection heard of the commit first, and looked under the pointer for a button before
-        // these chips followed it.
-        if chipsChanged { editor.canvasButtonsDidChange() }
+        if !chipsChanged.isEmpty { editor.adornmentsDidChange(for: chipsChanged) }
     }
 
     /// A try to change locked shapes: they shake.

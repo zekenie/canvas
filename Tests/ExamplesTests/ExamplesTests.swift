@@ -1,3 +1,4 @@
+import Adornments
 import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
@@ -122,7 +123,8 @@ import Titles
         expectEqual(h.editor.document[thin], nil)
     },
     test("EllipseTitles: a bridge titles ellipses by their size, though Ellipses and Titles don't know each other") {
-        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), EllipsesPlugin(), TitlesPlugin(), TableOfContentsPlugin(), EllipseTitlesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), EllipsesPlugin(), AdornmentsPlugin(), TitlesPlugin(), TableOfContentsPlugin(),
+                                            EllipseTitlesPlugin()])
         let empty = renderBitmap(h.editor, size: CGSize(width: 300, height: 240))
         let ellipse = h.add(Ellipse(frame: CGRect(x: 40, y: 60, width: 200, height: 140)))
         expectEqual(h.editor.registry.title(of: try require(h.editor.document[ellipse])), "Ellipse, 200 × 140")
@@ -138,23 +140,25 @@ import Titles
             _ = try Registry(plugins: [KeyboardPlugin(), EllipsesPlugin(), TableOfContentsPlugin(), EllipseTitlesPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ContentsTitles", owner: .tableOfContents, contributor: "ellipse-titles")) {
-            _ = try Registry(plugins: [KeyboardPlugin(), EllipsesPlugin(), TitlesPlugin(), EllipseTitlesPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), EllipsesPlugin(), AdornmentsPlugin(), TitlesPlugin(), EllipseTitlesPlugin()])
         }
         expectThrows(RegistryError.unknownKind("ellipse", point: "ShapeTitles", contributor: "ellipse-titles")) {
-            _ = try Registry(plugins: [TitlesPlugin(), TableOfContentsPlugin(), EllipseTitlesPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), AdornmentsPlugin(), TitlesPlugin(), TableOfContentsPlugin(), EllipseTitlesPlugin()])
         }
     },
     test("the examples' report: who contributes what") {
-        let registry = try Registry(plugins: [KeyboardPlugin(), RectanglesPlugin(), EraserPlugin(), PolylinesPlugin(), EllipsesPlugin(), TitlesPlugin(),
-                                              TableOfContentsPlugin(), EllipseTitlesPlugin()])
+        let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), RectanglesPlugin(), EraserPlugin(), PolylinesPlugin(), EllipsesPlugin(),
+                                              AdornmentsPlugin(), TitlesPlugin(), TableOfContentsPlugin(), EllipseTitlesPlugin()])
         expectEqual(registry.report, """
         core               tool hand
         keyboard           service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
+        selection          service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
         rectangles         shape rectangle · tool rectangle · shortcut R → tool rectangle
         eraser             tool eraser · shortcut E → tool eraser
         polylines          shape polyline · tool polyline · shortcut L → tool polyline
         ellipses           shape ellipse · tool ellipse · shortcut O → tool ellipse
-        titles             property title · service TitleState · overlay TitleOverlay
+        adornments         service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
+        titles             property title · adornment TitlePill → every shape
         table-of-contents  service ContentsState
         ellipse-titles     ShapeTitles → ellipse · ContentsTitles → ellipse
         """)

@@ -111,6 +111,8 @@ Sources/
   DetailPanel/          the detail panel horizontal: tabs, sections, bindings, the inspector view
   ContextMenus/         the context menu horizontal: right-click items, groups, the selection's menu
   TableOfContents/      the table of contents horizontal: a row per shape, in the detail panel
+  Adornments/           a horizontal: what's shown on a shape (a title's pill, a checklist's tally, a
+                        lock chip), placed by any plugin, laid out so none overlap, drawn in one overlay
   Checklists/           a horizontal any kind opts into: a checklist, its panel tab, menu items, a chip
   Clipboard/            the clipboard horizontal: cut, copy and paste, which kinds may opt out of
   Titles/               a horizontal any kind opts into: a title, a property it adds (or derived), in a pill

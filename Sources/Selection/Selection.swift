@@ -1,4 +1,5 @@
 import Canvas
+import CoreGraphics
 import Keyboard
 
 /// Selecting shapes, as a plugin: the selection itself (`editor.selection`,
@@ -31,6 +32,18 @@ public enum DoubleClickPlacement: KeyedExtensionPoint {
     public static func uniqueKeys(of _: Placement, for _: ShapeTarget) -> [AnyHashable] { ["double-click on empty canvas"] }
 }
 
+/// Something a plugin draws for a shape outside it (Adornments' pills and chips) that counts as the
+/// shape: `selectableShape(at:)`, and so the select tool's press, hover and release and the context
+/// menu, take a point on it as a point on its shape. Asked before shapes, since such drawing is
+/// above every shape, the last plugin's first. Each finds the front-most shape, of those `include`
+/// accepts, with its drawing under a world point. A canvas button is still asked first.
+public enum DecorationHits {}
+
+extension DecorationHits: ExtensionPoint {
+    public typealias Contribution = @MainActor (CanvasEditor, CGPoint, (AnyShapeRecord) -> Bool) -> ShapeID?
+    public static var owner: PluginID { .selection }
+}
+
 // Sugar, so opting in or out is one line.
 extension ShapeRegistrar {
     /// The select tool sees through this kind's shapes: a press lands on what's beneath them (or
@@ -52,6 +65,15 @@ extension ShapeRegistrar {
     public mutating func createOnDoubleClick(_ placement: Placement) {
         precondition(placement.kind == kind, "\(kind) can't claim double-click for \(placement.kind)")
         contribute(placement, to: DoubleClickPlacement.self)
+    }
+}
+
+extension PluginRegistrar {
+    /// What this plugin draws for shapes outside them, as those shapes (see `DecorationHits`): `find`
+    /// returns the front-most shape `include` accepts whose drawing is under a world point, or nil.
+    /// The select tool asks it as the pointer moves, so keep it cheap.
+    public mutating func decorationHits(_ find: @escaping @MainActor (CanvasEditor, CGPoint, (AnyShapeRecord) -> Bool) -> ShapeID?) {
+        contribute(find, to: DecorationHits.self)
     }
 }
 

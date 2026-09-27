@@ -2,9 +2,9 @@ import Canvas
 import CoreGraphics
 import Geometry
 
-/// Buttons a plugin draws on the canvas, in an overlay (Locking's lock chip, a port's dot), which the
-/// select tool presses before anything else under the pointer: handles, shapes, the box around
-/// several. Most are clicked: a press on one and a release on it clicks it, as an NSButton's does; a
+/// Buttons a plugin draws on the canvas, in an overlay (Adornments' clickable ones, the lock chip; a
+/// port's dot), which the select tool presses before anything else under the pointer: handles,
+/// shapes, the box around several. Most are clicked: a press on one and a release on it clicks it, as an NSButton's does; a
 /// press dragged off it does nothing, and the pointing hand shows over one. Some are dragged instead
 /// (a port's dot): past the drag threshold, a press on one starts what its plugin says a drag from it
 /// does, and released without a drag it does nothing; the open hand shows over one. Either way,

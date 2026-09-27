@@ -1,3 +1,4 @@
+import Adornments
 import AppKit
 import Canvas
 import CanvasTesting
@@ -5,6 +6,7 @@ import Checklists
 import ContextMenus
 import DetailPanel
 import Geometry
+import Keyboard
 import Selection
 import SwiftUI
 import TestKit
@@ -94,18 +96,22 @@ extension LookalikeChecklistTab: DetailTab { static var title: String { "Checkli
         expectEqual(editor.revision, revision + 2)
     },
     test("opting in is one line: the kind's checklist, its panel and its menu items, in the report") {
-        let registry = try Registry(plugins: [ChecklistsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), Contributor(id: "p") { r in
+        let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), AdornmentsPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
+                                              ContextMenusPlugin(), Contributor(id: "p") { r in
             r.shape(ChoreDefinition()) { $0.checklist() }
         }])
         expectEqual(registry.report, """
         core           tool hand
-        checklists     property checklist · overlay ChecklistOverlay
+        keyboard       service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
+        selection      service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
+        adornments     service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
+        checklists     property checklist · adornment ChecklistChip → every shape
         detail-panel   service DetailPanelState · ShapeDetails
         context-menus  service ContextMenuState · secondary-click menu
         p              shape chore · property checklist → chore · ShapeChecklists → chore · ShapeDetails → chore · ShapeContextMenus → chore
         """)
     },
-    test("the opt-in needs Checklists installed, the panel and context menus") {
+    test("the opt-in needs Checklists installed, the panel and context menus; Checklists needs Adornments, which lays out its chip") {
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeChecklists", owner: .checklists, contributor: "chores")) {
             _ = try Registry(plugins: [ChoresPlugin(), DetailPanelPlugin()])
         }
@@ -114,6 +120,9 @@ extension LookalikeChecklistTab: DetailTab { static var title: String { "Checkli
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeContextMenus", owner: .contextMenus, contributor: "chores")) {
             _ = try Registry(plugins: [ChoresPlugin(), ChecklistsPlugin(), DetailPanelPlugin()])
+        }
+        expectThrows(RegistryError.ownerNotInstalled(point: "ShapeAdornments", owner: .adornments, contributor: .checklists)) {
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), ChoresPlugin(), ChecklistsPlugin(), DetailPanelPlugin(), ContextMenusPlugin()])
         }
     },
     test("another tab titled Checklist is invalid") {

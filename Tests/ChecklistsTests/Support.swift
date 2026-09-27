@@ -1,3 +1,4 @@
+import Adornments
 import AppKit
 import Canvas
 import CanvasTesting
@@ -73,10 +74,10 @@ struct ChoresPlugin: CanvasPlugin {
     }
 }
 
-/// Every plugin a chore needs, then `more`.
+/// Every plugin a chore needs (Adornments lays out and draws its chip), then `more`.
 @MainActor func choreEditor(_ more: [any CanvasPlugin] = [], scheduler: any Scheduler = ManualScheduler()) throws -> CanvasEditor {
-    CanvasEditor(registry: try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ChoresPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
-                                                         ContextMenusPlugin()] + more),
+    CanvasEditor(registry: try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ChoresPlugin(), AdornmentsPlugin(), ChecklistsPlugin(),
+                                                         DetailPanelPlugin(), ContextMenusPlugin()] + more),
                  scheduler: scheduler)
 }
 

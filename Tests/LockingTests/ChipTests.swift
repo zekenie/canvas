@@ -1,3 +1,4 @@
+import Adornments
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
@@ -61,6 +62,19 @@ let elsewhere = CGPoint(x: 380, y: 280)
         }
     },
 ])
+
+/// How often the select tool has looked for a button under the pointer: a plugin whose buttons are
+/// never there, asked first (it's last), counting.
+@MainActor final class ButtonSearches { var count = 0 }
+
+@MainActor func countingSearches(_ searches: ButtonSearches) -> Contributor {
+    Contributor(id: "button-searches") { r in
+        r.canvasButtons(at: { _, _ -> String? in
+            searches.count += 1
+            return nil
+        }, click: { _, _ in })
+    }
+}
 
 // Clicking the chip. A click on a locked shape's unlocks it, and the chip shows the lock open for
 // 1.5 s (longer while the pointer's on it), then fades over 0.3 s, a frame every 16 ms: gone 1.8 s
@@ -149,10 +163,10 @@ let elsewhere = CGPoint(x: 380, y: 280)
         let normal = pixel(render(h), at: point)[0]
         h.move(to: chipCenter)
         expectEqual(h.editor.cursor, .pointingHand)
-        expectEqual(h.editor.hoveredButton, AnyHashable(LockChip(shape: box)))
+        expectEqual(h.editor.hoveredButton, AnyHashable(AdornmentButton(LockChip.self, on: box)))
         let hovered = pixel(render(h), at: point)[0]
         h.press(at: chipCenter)
-        expectEqual(h.editor.pressedButton, AnyHashable(LockChip(shape: box)))
+        expectEqual(h.editor.pressedButton, AnyHashable(AdornmentButton(LockChip.self, on: box)))
         let pressed = pixel(render(h), at: point)[0]
         expect(pressed < normal && normal < hovered, "\(pressed) < \(normal) < \(hovered)")
         h.drag(to: elsewhere)
@@ -179,13 +193,33 @@ let elsewhere = CGPoint(x: 380, y: 280)
         h.move(to: chipCenter)
         expectEqual(h.editor.hoveredButton, nil)
         h.editor.lock([box])
-        expectEqual(h.editor.hoveredButton, AnyHashable(LockChip(shape: box)))
+        expectEqual(h.editor.hoveredButton, AnyHashable(AdornmentButton(LockChip.self, on: box)))
         expectEqual(h.editor.cursor, .pointingHand)
         h.editor.transact { $0.delete([box]) }         // refused: it's locked
         h.editor.unlock([box])
         h.editor.transact { $0.delete([box]) }
         expectEqual(h.editor.hoveredButton, nil)
         expectEqual(h.editor.cursor, .standard)
+    },
+    test("unlocking many shapes at once, locking them again or deleting them looks under the pointer once a commit, not once a shape") {
+        let searches = ButtonSearches()
+        let h = try lockingHarness([countingSearches(searches)])
+        let boxes = (0..<20).map { i in h.add(Box(CGRect(x: 50 * CGFloat(i), y: 150, width: 40, height: 40))) }
+        h.editor.lock(boxes)
+        h.move(to: CGPoint(x: 31, y: 132))                                          // on the first box's chip
+        searches.count = 0
+        h.editor.unlock(boxes)
+        expectEqual(searches.count, 2, "Selection's look after the commit, and Locking's one for all the locks it opened")
+        expect(boxes.allSatisfy { h.editor.adornmentFrames(of: $0).count == 1 }, "every lock shows open")
+        expectEqual(h.editor.hoveredButton, AnyHashable(AdornmentButton(LockChip.self, on: boxes[0])), "the open lock under the pointer, hovered")
+        searches.count = 0
+        h.editor.lock(boxes)                                                         // while their locks show open
+        expectEqual(searches.count, 2, "locked again")
+        h.editor.unlock(boxes)
+        searches.count = 0
+        h.editor.transact { $0.delete(Set(boxes)) }
+        expectEqual(searches.count, 2, "deleted with their locks open")
+        expectEqual(h.editor.hoveredButton, nil)
     },
     test("in other tools a chip is only drawn: the hand tool pans where it is") {
         let h = try lockingHarness()
@@ -199,8 +233,8 @@ let elsewhere = CGPoint(x: 380, y: 280)
         let h = try lockingHarness()
         let box = h.add(Box(chipBox))
         h.editor.lock([box])
-        expectEqual(h.editor.button(atViewPoint: chipCenter), AnyHashable(LockChip(shape: box)))
-        expectEqual(h.editor.button(atViewPoint: CGPoint(x: 252, y: 82)), AnyHashable(LockChip(shape: box)), "a little past its edge")
+        expectEqual(h.editor.button(atViewPoint: chipCenter), AnyHashable(AdornmentButton(LockChip.self, on: box)))
+        expectEqual(h.editor.button(atViewPoint: CGPoint(x: 252, y: 82)), AnyHashable(AdornmentButton(LockChip.self, on: box)), "a little past its edge")
         expectEqual(h.editor.button(atViewPoint: CGPoint(x: 230, y: 71)), nil, "its box's corner, outside the disc")
         expectEqual(h.editor.button(atViewPoint: CGPoint(x: 241, y: 110)), nil, "on the shape")
     },

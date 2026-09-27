@@ -19,9 +19,9 @@ import Titles
 }
 
 @MainActor let lockedShapeTests = Suite("Locked shapes, as shipped", [
-    test("the lock chip stays clear of a long title's pill and of the checklist chip, though none of the three knows the others' sizes") {
-        // A note with the lock, its checklist (the chip, on its top-right corner) or its long title
-        // (the pill, above its top-left corner, up to the corner the lock takes), or none of them.
+    test("a locked note's chip, its long title's pill and its checklist chip stay clear of each other: the pill stops 4 points short of the lock") {
+        // A note with any of the lock, its checklist (the chip, on its top-right corner) and its long
+        // title (the pill, above its top-left corner, as long as the row leaves it).
         @MainActor func render(locked: Bool = false, checklist: Bool = false, title: Bool = false) -> NSBitmapImageRep {
             var note = AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Buy milk")))
             note[TitleProperty.self] = title ? "A title much longer than the note is wide" : nil
@@ -30,20 +30,16 @@ import Titles
             let editor = ShippedPlugins.makeEditor(document: CanvasDocument(shapes: [note]), scheduler: ManualScheduler())
             return renderBitmap(editor, size: CGSize(width: 400, height: 340))
         }
-        let plain = render(), lock = render(locked: true)
-        let chip = render(checklist: true), pill = render(title: true)
-        expect(changedPixels(plain, lock, in: CGRect(x: 286, y: 77, width: 10, height: 10)) > 90, "the lock, above the top-right corner")
-        expect(changedPixels(plain, pill, in: CGRect(x: 100, y: 75, width: 170, height: 12)) > 1000, "the pill, nearly to the corner")
-        for (name, other) in [("the pill", pill), ("the checklist chip", chip)] {
-            var both = 0
-            for y in 60..<130 {
-                for x in 90..<330 {
-                    let point = CGPoint(x: x, y: y), under = pixel(plain, at: point)
-                    if pixel(lock, at: point) != under && pixel(other, at: point) != under { both += 1 }
-                }
-            }
-            expectEqual(both, 0, "no pixel is both the lock chip's and \(name)'s")
-        }
+        let plain = render(), lock = render(locked: true), chip = render(checklist: true)
+        let lockAndChip = render(locked: true, checklist: true), all = render(locked: true, checklist: true, title: true)
+        // The lock takes the row's right end, 282 to 300; the checklist chip the corner, 8 points either side of the top edge.
+        let lockMiddle = CGRect(x: 286, y: 77, width: 10, height: 10), tally = CGRect(x: 240, y: 93, width: 70, height: 14)
+        expect(changedPixels(plain, lock, in: lockMiddle) > 90, "the lock, above the top-right corner")
+        expect(changedPixels(plain, chip, in: tally) > 100, "the checklist chip")
+        expectEqual(changedPixels(lock, all, in: lockMiddle), 0, "the lock, as it is alone")
+        expectEqual(changedPixels(chip, all, in: tally), 0, "the checklist chip, as it is alone")
+        expect(changedPixels(lockAndChip, all, in: CGRect(x: 100, y: 75, width: 170, height: 12)) > 1000, "the pill, nearly to the lock")
+        expectEqual(changedPixels(lockAndChip, all, in: CGRect(x: 279, y: 70, width: 30, height: 22)), 0, "the pill ends at 278, 4 points before it")
     },
     test("a locked note's copy is locked; cutting a locked note copies it and leaves it, shaking") {
         let pasteboard = NSPasteboard.withUniqueName()

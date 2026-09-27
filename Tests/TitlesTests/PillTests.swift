@@ -1,3 +1,4 @@
+import Adornments
 import Canvas
 import CanvasTesting
 import CoreGraphics
@@ -8,6 +9,13 @@ import Titles
 // The pill is 18 points tall and 9 above its shape's top edge, so from 27 to 9 points above it.
 // A shape's shadow reaches 6 points out, and the pill's edges are antialiased, so the pill is
 // checked in its band 25 to 13 points above the edge.
+
+/// Something at the right end of the pill's row from a plugin Titles doesn't know, as a lock is.
+enum CornerDisc {}
+
+extension CornerDisc: Adornment {
+    static var placement: AdornmentPlacement { .aboveTopRight }
+}
 
 @MainActor let pillTests = Suite("Title pills", [
     test("a titled shape shows its title in a pill just above its top-left corner, outside it") {
@@ -21,7 +29,7 @@ import Titles
         expectEqual(changedPixels(untitled, titled, in: CGRect(x: 0, y: 60, width: 60, height: 60)), 0, "nothing left of it")
         expectEqual(changedPixels(untitled, titled, in: CGRect(x: 60, y: 55, width: 200, height: 17)), 0, "nothing higher")
     },
-    test("the pill fits its title, and stops short of the shape's top-right corner (a lock chip's), where a longer title ends in an ellipsis") {
+    test("the pill fits its title, up to the shape's right edge with nothing at the row's other end, where a longer title ends in an ellipsis") {
         let editor = try titleEditor()
         let id = editor.add(Plaque(CGRect(x: 60, y: 100, width: 120, height: 80)))   // its right edge at 180
         let untitled = render(editor)
@@ -31,9 +39,21 @@ import Titles
         expectEqual(changedPixels(untitled, short, in: CGRect(x: 100, y: 73, width: 100, height: 18)), 0, "only as long as its title")
         editor.rename(id, "A name much longer than the plaque is wide")
         let long = render(editor)
-        // The corner's 22 points (an 18-point chip, and 4 before it) are left out: the pill ends at 158.
-        expect(changedPixels(untitled, long, in: CGRect(x: 140, y: 75, width: 17, height: 12)) > 100, "up to the corner")
-        expectEqual(changedPixels(untitled, long, in: CGRect(x: 160, y: 65, width: 120, height: 30)), 0, "and no further")
+        expect(changedPixels(untitled, long, in: CGRect(x: 160, y: 75, width: 19, height: 12)) > 100, "up to the right edge")
+        expectEqual(changedPixels(untitled, long, in: CGRect(x: 181, y: 65, width: 100, height: 30)), 0, "and no further")
+    },
+    test("a long title's pill stops 4 points short of what the row's right end holds, whoever put it there") {
+        let discs = Contributor(id: "corner-discs") { $0.adornmentForEveryShape(CornerDisc.self) { _, _ in AdornmentLabel(systemImage: "circle.fill") } }
+        let editor = try titleEditor([discs])
+        let empty = render(editor)
+        let id = editor.add(Plaque(CGRect(x: 60, y: 100, width: 120, height: 80)))   // its right edge at 180, the disc from 162
+        let untitled = render(editor)
+        expect(changedPixels(empty, untitled, in: CGRect(x: 165, y: 76, width: 12, height: 12)) > 50, "the disc, titled or not")
+        editor.rename(id, "A name much longer than the plaque is wide")
+        let long = render(editor)
+        // The disc's 18 points, and 4 before it, are left out: the pill ends at 158.
+        expect(changedPixels(untitled, long, in: CGRect(x: 140, y: 75, width: 17, height: 12)) > 100, "up to the disc")
+        expectEqual(changedPixels(untitled, long, in: CGRect(x: 159, y: 65, width: 121, height: 30)), 0, "and no further")
     },
     test("a title of several lines shows on one") {
         let editor = try titleEditor()

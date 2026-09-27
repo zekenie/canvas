@@ -37,6 +37,9 @@ final class SelectionState {
     }
     /// Every plugin's canvas buttons (`CanvasButtons`), found once.
     @ObservationIgnored let buttonSources: [CanvasButtonSource]
+    /// What plugins draw for shapes outside them (`DecorationHits`), found once: the last plugin's
+    /// first, as its drawing is over the others'.
+    @ObservationIgnored let decorationHits: [DecorationHits.Contribution]
     /// The button under the pointer, with its plugin's buttons, which say what the cursor is.
     @ObservationIgnored var hoveredButton: ButtonHit? {
         didSet {
@@ -59,6 +62,7 @@ final class SelectionState {
         self.editor = editor
         rules = editor.registry.contributionByKind(to: ShapeSelectability.self)
         buttonSources = editor.registry.contributions(to: CanvasButtons.self).map(\.value)
+        decorationHits = editor.registry.contributions(to: DecorationHits.self).map(\.value).reversed()
     }
 
     /// The button under the pointer, looked for again: in the select tool, with nothing under way. A
@@ -272,10 +276,14 @@ extension CanvasEditor {
     /// The marquee being dragged in the select tool, in world units; nil otherwise.
     public var brush: CGRect? { (session as? BrushingSession)?.brush }
 
-    /// The front-most selectable shape under a world point: what the select tool presses and
-    /// hovers. Nil without the Selection plugin.
+    /// The front-most selectable shape under a world point, counting what's drawn for a shape outside
+    /// it (`DecorationHits`: above every shape, so asked first): what the select tool presses and
+    /// hovers, and what a right-click's menu is for. Nil without the Selection plugin.
     public func selectableShape(at point: CGPoint) -> ShapeID? {
         guard let state = selectionState else { return nil }
+        for hits in state.decorationHits {
+            if let id = hits(self, point, { state.isSelectable($0) }) { return id }
+        }
         return shape(at: point) { state.isSelectable($0) }
     }
 

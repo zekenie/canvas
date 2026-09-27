@@ -40,8 +40,8 @@ public struct OverlayContext {
     public let editor: CanvasEditor
     public let shapes: ShapeContext
     /// What the view shows, in world units. An overlay that draws for some shapes goes through
-    /// `editor.paintOrder(in:)` with this, grown by however far past its shapes it draws, rather
-    /// than through every shape.
+    /// `editor.paintOrder(in:)` with this, grown by however far past its shapes it draws (and by
+    /// `worldDrawingReach` if it follows drawing offsets), rather than through every shape.
     public let visibleRect: CGRect
     public var zoom: CGFloat { shapes.zoom }
 
@@ -50,5 +50,14 @@ public struct OverlayContext {
     public func worldDrawingOffset(of id: ShapeID) -> CGPoint {
         let offset = editor.drawingOffset(of: id)
         return offset == .zero ? .zero : CGPoint(x: offset.x / zoom, y: offset.y / zoom)
+    }
+
+    /// The farthest any shape is drawn from where it is now, along either axis, in world units:
+    /// zero unless a drawing offset is set. An overlay that culls with `visibleRect` and moves its
+    /// decorations by `worldDrawingOffset(of:)` grows the rect by this too, so a shape shaken into
+    /// view from just outside it is decorated there. It looks at only the shapes drawn away from
+    /// where they are.
+    public var worldDrawingReach: CGFloat {
+        editor.drawingOffsets.values.reduce(0) { max($0, abs($1.x), abs($1.y)) } / zoom
     }
 }

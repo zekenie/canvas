@@ -433,7 +433,8 @@ extension EditorHarness {
         expectEqual([h.editor.document[a.id], h.editor.document[b.id]], [locked[a.id], locked[b.id]], "connecting doesn't change them")
         h.wait(16)
         expectEqual([h.editor.drawingOffset(of: a.id), h.editor.drawingOffset(of: b.id)], [.zero, .zero], "nor shakes them")
-        // The chip, above the top-right corner, is Locking's button, which a dot never covers.
+        // The lock chip, above the top-right corner, is a clickable adornment (Adornments' canvas
+        // button), which a dot never covers.
         h.move(to: center(aFrame))
         h.move(to: CGPoint(x: aFrame.maxX - 9, y: aFrame.minY - 18))
         h.click()

@@ -1,3 +1,4 @@
+import Adornments
 import AppKit
 import Arrows
 @_spi(Host) import Canvas
@@ -10,6 +11,7 @@ import Ellipses
 import Foundation
 import Geometry
 import Locking
+import Selection
 import StickyNotes
 import TableOfContents
 import TaskCards
@@ -20,9 +22,9 @@ import Validation
 // The persistence plan's budgets, for boards of generated shapes: saving and opening, validation's
 // first read (every shape checked, against its kind's schema too) and its read after moving them
 // all, and one hover and one drag frame (the input, then drawing the whole canvas, and the minimap
-// with it), on a note and from a note's port, at 60 fps. `./build.sh bench` runs these in a release
-// build and holds them to the budgets; `./test.sh` runs them debug and small, so they keep working,
-// and only reports.
+// with it), on a note, from a note's port and onto a title's pill, at 60 fps. `./build.sh bench`
+// runs these in a release build and holds them to the budgets; `./test.sh` runs them debug and
+// small, so they keep working, and only reports.
 #if DEBUG
 let sizes = [300]
 let holdsToBudgets = false
@@ -49,8 +51,9 @@ enum Budget {
 }
 
 /// Notes, tasks and ellipses in a grid, with an arrow from every fourth note to the note after it.
-/// Every other note has a title, so frames draw pills, every task a checklist of three, so boards
-/// save and open added values, and every ellipse is locked, so frames draw lock chips.
+/// Every other note has a title, so frames draw pills, and every fourth a checklist of two, so they
+/// draw checklist chips (a task shows none); every task has a checklist of three, so boards save and
+/// open added values; and every ellipse is locked, so frames draw lock chips.
 @MainActor func generatedBoard(shapes count: Int) -> CanvasDocument {
     var shapes: [AnyShapeRecord] = []
     let columns = Int(Double(count).squareRoot().rounded(.up))
@@ -71,6 +74,7 @@ enum Budget {
         default:
             var note = ShapeRecord(StickyNote(frame: CGRect(origin: origin, size: StickyNote.defaultSize), text: "Note \(i): something to do"))
             note[TitleProperty.self] = i % 2 == 0 ? "Title \(i)" : nil
+            note[ChecklistProperty.self] = i % 4 == 3 ? [ChecklistItem(text: "Draft", isDone: true), ChecklistItem(text: "Send")] : []
             shapes.append(AnyShapeRecord(note))
             if let previousNote, i % 4 == 0, shapes.count < count {
                 let bound = { (id: ShapeID) in ArrowTerminal.bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)) }
@@ -83,14 +87,17 @@ enum Budget {
     return CanvasDocument(shapes: shapes)
 }
 
+extension Duration {
+    var milliseconds: Double { Double(components.seconds) * 1000 + Double(components.attoseconds) / 1e15 }
+}
+
 /// The median of `runs` timings of `body`, in milliseconds, each after an untimed `prepare`.
 @MainActor func median(runs: Int, prepare: () -> Void = {}, _ body: () throws -> Void) rethrows -> Double {
     let clock = ContinuousClock()
     var times: [Double] = []
     for _ in 0..<runs {
         prepare()
-        let elapsed = try clock.measure(body)
-        times.append(Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15)
+        times.append(try clock.measure(body).milliseconds)
     }
     return times.sorted()[times.count / 2]
 }
@@ -183,7 +190,7 @@ enum Budget {
             }
         }
     },
-    test("a hover and a drag, each with the whole canvas redrawn, fit in a frame") {
+    test("a hover, a drag and a hover onto a title's pill, each with the whole canvas redrawn, fit in a frame") {
         let viewport = CGSize(width: 1200, height: 800)
         let context = try require(CGContext(data: nil, width: Int(viewport.width), height: Int(viewport.height), bitsPerComponent: 8,
                                             bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
@@ -225,6 +232,35 @@ enum Budget {
             if holdsToBudgets {
                 expect(hover < Budget.frame, "a hover over \(size) shapes took \(hover) ms")
                 expect(drag < Budget.frame, "a drag over \(size) shapes took \(drag) ms")
+            }
+            // A hover onto a titled note's pill, which is its note's (Selection's `DecorationHits`): the
+            // first note whose pill is in view (the first row's are above it).
+            @MainActor func pill(of record: AnyShapeRecord) -> CGRect? {
+                h.editor.adornmentFrames(of: record.id).first { $0.adornment == .of(TitlePill.self) }?.rect
+            }
+            let inView = CGRect(origin: .zero, size: viewport)
+            // Notes only: an ellipse's derived title shows a pill too, and comes first at 1,000 and
+            // 10,000 shapes.
+            let titled = try require(h.editor.document.shapes.first {
+                $0.kind == StickyNote.kind && (pill(of: $0).map { inView.contains(h.editor.camera.toView($0)) } ?? false)
+            }, "a titled note's pill in view")
+            let titledPill = try require(pill(of: titled))
+            let onPill = median(runs: 21) {
+                step += 1
+                h.move(to: h.view(CGPoint(x: titledPill.minX + 10 + CGFloat(step % 7), y: titledPill.midY)))
+                draw(h.editor, into: context, size: viewport)
+            }
+            expectEqual(h.editor.hovered, titled.id, "the pill is its note's")
+            // Zoomed out to fit the board (as far as the zoom goes), the first frame makes the labels of
+            // every adorned shape in view, and the next draws what's kept. Reported, with no budget.
+            h.editor.camera = Camera(fitting: h.editor.shapeBounds, in: viewport, inset: 0)
+            let clock = ContinuousClock()
+            let zoomedOut = clock.measure { draw(h.editor, into: context, size: viewport) }.milliseconds
+            let zoomedOutAgain = clock.measure { draw(h.editor, into: context, size: viewport) }.milliseconds
+            report(String(format: "%6d shapes: a hover onto a titled note's pill %5.1f ms (budget %.0f); zoomed out to fit the board (%.0f%%), the first frame %.1f, the next %.1f",
+                          size, onPill, Budget.frame, h.editor.camera.zoom * 100, zoomedOut, zoomedOutAgain))
+            if holdsToBudgets {
+                expect(onPill < Budget.frame, "a hover onto a titled note's pill over \(size) shapes took \(onPill) ms")
             }
         }
     },
@@ -348,8 +384,7 @@ enum Budget {
             let clock = ContinuousClock()
             var frames = 0, longest = 0.0, total = 0.0
             while true {
-                let took = clock.measure { display(minimap, into: minimapContext) }
-                let ms = Double(took.components.seconds) * 1000 + Double(took.components.attoseconds) / 1e15
+                let ms = clock.measure { display(minimap, into: minimapContext) }.milliseconds
                 frames += 1
                 longest = max(longest, ms)
                 total += ms

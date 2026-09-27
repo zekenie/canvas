@@ -1,3 +1,4 @@
+import Adornments
 import Canvas
 import CanvasTesting
 import CoreGraphics
@@ -35,14 +36,18 @@ import Titles
             _ = try titleEditor([Contributor(id: "more") { $0.title(Plaque.self) { _ in "Another" } }])
         }
     },
-    test("opting in needs Titles, and the table of contents, unless the kind's rows keep their own names") {
+    test("opting in needs Titles, and the table of contents, unless the kind's rows keep their own names; Titles needs Adornments, which lays out its pill") {
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeTitles", owner: .titles, contributor: "plaques")) {
             _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), PlaquesPlugin(), TableOfContentsPlugin(), DetailPanelPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ContentsTitles", owner: .tableOfContents, contributor: "plaques")) {
             _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), PlaquesPlugin(), TitlesPlugin(), DetailPanelPlugin()])
         }
-        _ = try Registry(plugins: [FixturesPlugin(), TitlesPlugin(), Contributor(id: "box-titles") { $0.title(Box.self, contents: false) { _ in "Box" } }])
+        expectThrows(RegistryError.ownerNotInstalled(point: "ShapeAdornments", owner: .adornments, contributor: .titles)) {
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), TitlesPlugin()])
+        }
+        _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), AdornmentsPlugin(), TitlesPlugin(),
+                                   Contributor(id: "box-titles") { $0.title(Box.self, contents: false) { _ in "Box" } }])
     },
     test("a title Titles keeps is its property: in the kind's schema with its bounds and owner, and in the report") {
         let registry = try titleEditor().registry
@@ -88,14 +93,18 @@ import Titles
         }
     },
     test("a title is two lines in the report, its own and its row's name; without the row's, one") {
-        let registry = try Registry(plugins: [FixturesPlugin(), TitlesPlugin(), TableOfContentsPlugin(), Contributor(id: "fixture-titles") { r in
+        let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), AdornmentsPlugin(), TitlesPlugin(),
+                                              TableOfContentsPlugin(), Contributor(id: "fixture-titles") { r in
             r.title(Box.self) { _ in "Box" }
             r.title(Disc.self, pill: false, contents: false) { _ in "Disc" }
         }])
         expectEqual(registry.report, """
         core               tool hand
+        keyboard           service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
+        selection          service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
         fixtures           shape box · shape disc · shape tag
-        titles             property title · service TitleState · overlay TitleOverlay
+        adornments         service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
+        titles             property title · adornment TitlePill → every shape
         table-of-contents  service ContentsState
         fixture-titles     ShapeTitles → box · ContentsTitles → box · ShapeTitles → disc
         """)

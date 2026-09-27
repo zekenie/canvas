@@ -18,12 +18,12 @@ final class ContextMenuState {
 
     /// A secondary click: the context menu for what it's on, as the select tool sees it. That's the
     /// selection, on a selected shape or on empty space inside a multi-selection's box; otherwise
-    /// the selectable shape there, alone (the select tool's hit rule, so unselectable shapes are
-    /// seen through); otherwise the canvas, whose menu is only its own items. With a menu to show,
-    /// editing ends and a shape that wasn't selected becomes the selection, as in Keynote and
-    /// tldraw. Without one (nothing applies), nothing changes. A Control-click counts only in the
-    /// select tool: other tools read ⌃ as a modifier (the arrow tool's binds nothing), so it's a
-    /// press there.
+    /// the selectable shape there, alone (the select tool's hit rule: unselectable shapes are seen
+    /// through, and what's drawn for a shape outside it is the shape); otherwise the canvas, whose
+    /// menu is only its own items. With a menu to show, editing ends and a shape that wasn't
+    /// selected becomes the selection, as in Keynote and tldraw. Without one (nothing applies),
+    /// nothing changes. A Control-click counts only in the select tool: other tools read ⌃ as a
+    /// modifier (the arrow tool's binds nothing), so it's a press there.
     func menu(for pointer: Pointer) -> NSMenu? {
         if pointer.isControlClick, editor.currentToolID != .select { return nil }
         let hit = editor.selectableShape(at: pointer.world)

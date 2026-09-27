@@ -1,9 +1,9 @@
 # The plugin system
 
 Everything on the canvas comes from a plugin: sticky notes, ellipses, arrows, task cards,
-validation, checklists, titles, the detail panel and the table of contents beside the canvas,
-selecting itself, copying and pasting, locking, the ports arrows are dragged from, what each key
-does, what the command line can do, even the examples.
+validation, checklists, titles, the pills and chips shown on shapes (adornments), the detail panel
+and the table of contents beside the canvas, selecting itself, copying and pasting, locking, the
+ports arrows are dragged from, what each key does, what the command line can do, even the examples.
 The core (`Sources/Canvas`) knows how to hold shapes, run tools, draw, and wire plugins together,
 and nothing about any particular shape or concern. Its one built-in tool is tldraw's Hand, which
 pans (a flung release slides on). Select, which selects (a click, ⇧-click, or a marquee dragged
@@ -28,6 +28,7 @@ maps one onto the other.
 - [The detail panel](#the-detail-panel)
 - [Context menus](#context-menus)
 - [The table of contents](#the-table-of-contents)
+- [Adornments](#adornments)
 - [The clipboard](#the-clipboard)
 - [Locking](#locking)
 - [Ports](#ports)
@@ -233,19 +234,22 @@ Once one plugin works, the question is which piece the next feature needs.
 | Edit an added property in the panel, or from the menu | `details(of: P.self) { DetailSection ... }`, `contextMenu(of: P.self) { MenuItem ... }` | [Checklists](#a-horizontals-feature-tab-checklists) |
 | Opt another plugin's kind into a concern | A bridge, which imports both; `registrar.optIn(Kind.self, to:)` for an added property | [EllipseTitles](#a-horizontal-plugin), [ValidationDetails](#a-tab-of-status-lines-from-a-bridge-validationdetails) |
 | Keep state per editor: an engine, a cache, a timer | `registrar.service`, an `EditorService`; redo what's kept per shape for the shapes each commit's `ChangeSet` names | [Validation](../Sources/Validation/Validation.swift)'s `ValidationEngine`, [TableOfContents](../Sources/TableOfContents/ContentsState.swift)' `ContentsState` |
-| Draw above every shape, or beside the shapes in view | `registrar.overlay`, a `CanvasOverlay`; `editor.paintOrder(in: context.visibleRect)` | [Titles](#a-horizontal-plugin), [Checklists](../Sources/Checklists/ChecklistOverlay.swift) |
+| Show something small on shapes, just outside them or on a corner (a pill, a tally, a lock), on kinds you define or not | An `Adornment` type; `x.adornment`, `registrar.adornment(_:on:)` or `registrar.adornmentForEveryShape(_:where:)`, returning an `AdornmentLabel` | [Adornments](#adornments), [Titles](#a-horizontal-plugin) |
+| Let the user put a flag on a shape, and show it | An added property, a menu item that sets it, and an adornment whose label reads it | [Something the user turns on](#something-the-user-turns-on) |
+| Draw above every shape something that isn't one shape's adornment (a status outline, hints) | `registrar.overlay`, a `CanvasOverlay`; `editor.paintOrder(in: context.visibleRect)` | [Validation](../Sources/Validation/Validation.swift), [Arrows](../Sources/Arrows/ArrowDefinition.swift)' binding hints |
 | Act on shapes about to be deleted (delete what depends on them) | `registrar.willDelete` | [The document](#the-editor-the-document-and-drawing) |
 | Create a kind with a double-click on empty canvas | `x.createOnDoubleClick(place)` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
 | Keep a kind from being selected | `x.unselectable()`, or `x.selectable { ... }` | [Selection](#selection) |
 | Keep a kind from being copied | `x.uncopyable()`, or `x.copyable { ... }` | [The clipboard](#the-clipboard) |
 | Keep some shapes from changing (a lock), and say why when something tries | `registrar.readOnlyShapes { ... }`; `EditorService.didRefuseChanges` | [Locking](#locking) |
-| Put a button on the canvas that a click does something with (a chip), or a drag starts something from (a port's dot) | Selection's `registrar.canvasButtons(at:click:)` or `canvasButtons(at:drag:)`, drawn in an overlay with `editor.hoveredButton` and `editor.pressedButton` | [Canvas buttons](#canvas-buttons), [Locking](#locking), [Ports](#ports) |
+| Put a button on the canvas that a click does something with (a chip), or a drag starts something from (a port's dot) | Selection's `registrar.canvasButtons(at:click:)` or `canvasButtons(at:drag:)`, drawn in an overlay with `editor.hoveredButton` and `editor.pressedButton`; or make an adornment a `ClickableAdornment` | [Canvas buttons](#canvas-buttons), [Locking](#locking), [Ports](#ports) |
+| Make what you draw for a shape outside it count as the shape (a press, a hover, a right-click) | Selection's `registrar.decorationHits`; adornments already do | [DecorationHits](#drawn-for-a-shape-decorationhits) |
 | Connect shapes with arrows: dots beside a kind's sides, dragged to another shape | `x.ports(C.self, sides:role:)`, on a channel; ArrowPorts draws the arrow | [Ports](#a-kinds-ports), [ArrowPorts](#the-connector-arrowports) |
 | Declare a channel: a kind of connection, and which kinds take it | A `Channel` type, `registrar.channel(C.self)`; `ports` on each kind that takes it | [Channels](#channels) |
 | Say what an arrow's end may bind to (tldraw's canBind) | Arrows' `registrar.arrowBindingRule { query in ... }` | [ArrowPorts](#the-connector-arrowports) |
 | Let agents (or scripts) do something to a board from outside the app | `registrar.automationCommand("name", "…", params: P.self) { params, context in … }`: a `canvas` command | [The command line](#the-command-line) |
 | Make a shape without the pointer: what a kind's tool places, or a shape from its JSON | `registry.placement(for:)`, `placement.shape(at:)`; `registry.shape(_:properties:)` | [The command line](#the-command-line) |
-| Draw a shape away from where it is, for an animation (a shake) | `editor.setDrawingOffset(_:for:)`; an overlay follows with `context.worldDrawingOffset(of:)` | [Locking](#locking) |
+| Draw a shape away from where it is, for an animation (a shake) | `editor.setDrawingOffset(_:for:)`; adornments follow by themselves, and an overlay with `context.worldDrawingOffset(of:)` | [Locking](#locking) |
 | Keep what a kind's props name right as shapes are deleted and copied (a connector) | `ShapeReferencing` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
 | Keep something about any shape beside its props (where it came from) | A `ShapeMetaKey`, and `record.meta[Key.self]` | [Metadata](#metadata) |
 | Add a right-click item that isn't one shape's, in every menu and on empty canvas | `registrar.contextMenuForCanvas { ... }` | [The clipboard](#the-clipboard) |
@@ -274,19 +278,21 @@ A horizontal can also be a feature that individual shapes opt into, and that sho
 Checklists is the example: one line, `note.checklist()`, gives every sticky note a checklist, a
 property Checklists adds to the kinds that opt in ([added properties](#added-properties)), with a
 Checklist tab in the panel, its bulk actions in the context menu, and a done/total chip on the
-canvas. Checklists owns the property, the item type and everything done with them; the kind
-declares nothing. One horizontal may build on another: Checklists imports DetailPanel and
-ContextMenus.
+canvas (an [adornment](#adornments)). Checklists owns the property, the item type and everything
+done with them; the kind declares nothing. One horizontal may build on another: Checklists imports
+Adornments, DetailPanel and ContextMenus.
 
 Selecting is a horizontal too, one that every kind is in unless it opts out
 (`backdrop.unselectable()`). [Selection](#selection) owns what's selected and the way back
 through it, the Select tool, and Delete, Return, ⌘A and Back; the detail panel builds on it to
 show the selected shape. So are the keys: [Keyboard](#keyboard-shortcuts) holds every shortcut,
 and a plugin whose tool or command has a key registers it there. So is [locking](#locking): any
-shape can be locked, and Locking owns the lock, its chip and its shake, while the core only
-refuses to change the shapes a plugin says are read-only. So are [ports](#ports): any kind can
-have them, on the channels it takes, and Ports owns the dots and what a drag from one may end on,
-while the plugin that owns a channel's meaning declares it.
+shape can be locked, and Locking owns the lock, its chip (an adornment) and its shake, while the
+core only refuses to change the shapes a plugin says are read-only. So are [ports](#ports): any
+kind can have them, on the channels it takes, and Ports owns the dots and what a drag from one may
+end on, while the plugin that owns a channel's meaning declares it. So is what's shown on shapes:
+[Adornments](#adornments) lays out and draws what any plugin puts on them, a title's pill beside a
+lock, so none overlaps another.
 
 Opting in goes in one of two directions:
 
@@ -327,7 +333,7 @@ Each target is one line, with its layer:
 | wire | wire | CanvasRPC (what the app and its [command line](#the-command-line) say to each other) |
 | foundation | foundation | Geometry, Canvas (the core) |
 | ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
-| horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Checklists, Clipboard, Locking, Ports, Automation |
+| horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Adornments, Checklists, Clipboard, Locking, Ports, Automation |
 | vertical | foundation, horizontal | Arrows, StickyNotes, Ellipses, TaskCards, Rectangles, Polylines, Eraser, Reordering |
 | bridge | foundation, horizontal, vertical | EllipseTitles, ValidationDetails, ValidationContents, ArrowPorts |
 | composition | foundation, horizontal, vertical, bridge, wire | Composition (the shipped plugin list) |
@@ -719,9 +725,15 @@ extension PluginRegistrar {     // for a kind another plugin registers (bridges 
                                               _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) { ... }
 }
 
-/// ④ The consumers: a lookup, and an overlay that draws every titled shape's pill.
+/// ④ The consumers: a lookup, and the pill, an adornment Titles places on every titled shape.
 extension Registry {
     public func title(of shape: AnyShapeRecord) -> String? { ... }     // on one line; nil if there's none, or it's blank
+}
+
+public enum TitlePill {}
+extension TitlePill: Adornment {
+    public static var placement: AdornmentPlacement { .aboveTopLeft }   // the left end of the row above the shape
+    public static var order: Int { 50 }                                // a horizontal's feature
 }
 
 public struct TitlesPlugin: CanvasPlugin {
@@ -729,8 +741,10 @@ public struct TitlesPlugin: CanvasPlugin {
     public var id: PluginID { .titles }
     public func register(into registrar: inout PluginRegistrar) {
         registrar.declare(TitleProperty.self)
-        registrar.service { TitleState(editor: $0) }     // the kinds that show pills, found once
-        registrar.overlay(TitleOverlay())
+        // On every shape whose kind's title shows a pill (not `pill: false`): its title, or none.
+        registrar.adornmentForEveryShape(TitlePill.self, where: { $0.registry.showsTitlePill($0.kind) }) { shape, context in
+            context.registry.title(of: shape).map { AdornmentLabel($0) }
+        }
     }
 }
 ```
@@ -758,16 +772,18 @@ Either way, a shape may have none: nil or blank is no title. However it's writte
 on one line wherever it shows (each run of whitespace folds into a space), so the lookup, the pill
 and the row agree. What a title brings:
 
-- **A pill** just outside the shape's top-left corner, 9 points above it, clear of a badge on the
-  edge like the checklist chip: one line, no wider than the shape less the row's last 22 points,
-  above the top-right corner, which are the [lock chip's](#locking), where a longer title ends in
-  "…". It keeps its size on screen, shrinking with the shapes below 25% zoom, as the chip does,
-  and goes where its shape is drawn, so it shakes with a locked shape.
-  `TitleOverlay` goes through `editor.paintOrder(in:)` with the visible rect grown by the pill's
-  reach, since a shape just below the view has its pill in it, and finds each kind's title in a
-  service (`TitleState`) that gathers them once, as the registry is frozen. A kind that draws its
-  title itself leaves it out: `task.title(pill: false)`. Titles can't see either
-  chip; CompositionTests, which ships all three, holds a long title's pill clear of both.
+- **A pill** at the left end of the row just above the shape (18 points tall, 9 above the top edge,
+  clear of a checklist's tally on the corner): one line, as long as the title and no longer than
+  the row leaves it, where a longer title ends in "…". The row is the shape's width, less what's
+  at its right end (a [lock](#locking)) and 4 points before it, so locking a note with a long
+  title shortens its pill by 22 points, until the lock has gone; with under 30 points left, there's
+  no pill. The pill is `TitlePill`, an [adornment](#adornments): Titles places it on every shape
+  whose kind's title shows one, though it defines no kind, and Adornments lays it out with
+  whatever else the shape shows, so it never meets the lock or the tally. It keeps its size on
+  screen, shrinking with the shapes below 25% zoom, goes where its shape is drawn (it shakes with a
+  locked shape), and is its shape's for the pointer: a click on it selects the shape, a drag moves
+  it, and a double-click edits a note. A kind that draws its title itself leaves it out:
+  `task.title(pill: false)`.
 - **Its row's name** in [the table of contents](#the-table-of-contents), through TableOfContents'
   `ContentsTitles`, which names a kind's rows without replacing them: a titled note is listed by
   its title, with its checklist's tally; an untitled one by its text, as before. `contents: false`
@@ -775,8 +791,9 @@ and the row agree. What a title brings:
 - **A rename in the detail panel**, for a kind that wants one: [`TitleHeader`](#renaming-in-the-header-titleheader),
   which the kind puts in its header.
 
-So Titles builds on two horizontals, as Checklists does: it imports TableOfContents and DetailPanel,
-and a plugin list with a titled kind needs `TitlesPlugin` and `TableOfContentsPlugin` (without one,
+So Titles builds on three horizontals, as Checklists does: it imports Adornments, TableOfContents
+and DetailPanel, and a plugin list with a titled kind needs `TitlesPlugin`, `AdornmentsPlugin`
+(with Keyboard and Selection, which it builds on) and `TableOfContentsPlugin` (without one,
 `ownerNotInstalled` names it).
 
 The mechanics:
@@ -804,8 +821,10 @@ The mechanics:
   `EditorService`, made per editor, with `registrar.service { ValidationEngine(editor: $0) }`, and
   anyone finds it with `editor.service(ValidationEngine.self)`. Validation's engine recomputes when
   `editor.revision` changes and is cached otherwise.
-- **Horizontals draw their own decoration** through `registrar.overlay`, above every shape. World
-  overlays draw with the camera transform; view overlays draw in view points.
+- **Something small shown on a shape is an [adornment](#adornments)**, laid out with the rest so
+  none overlaps another, as Titles' pill is. Anything else a horizontal draws (an outline around
+  the shape, as Validation's) is an overlay, `registrar.overlay`, above every shape. World overlays
+  draw with the camera transform; view overlays draw in view points.
 - **Data on the shape is an added property.** A concern that gives each shape something to hold
   (Checklists' items) declares a `ShapeProperty`, and its sugar opts the kind in
   ([Properties](#added-properties)). Its extension point then holds only how the kind takes part:
@@ -1205,10 +1224,12 @@ shakes them).
   marquee touches it. The default is `ShapeGeometry.isHit(byBrush:)`, from its geometry.
 - Arrows (to select the arrow it draws, and for its handles), DetailPanel (to follow the selection),
   ContextMenus (the menu is for the selection), TableOfContents (to list and select shapes) and
-  Ports (its dots are [canvas buttons](#canvas-buttons)) import Selection too.
+  Ports (its dots are [canvas buttons](#canvas-buttons)) and Adornments (a clickable adornment is a
+  canvas button, and every adornment is its shape's through `DecorationHits`) import Selection too.
 
 **The select tool** follows tldraw's states. A plugin's [canvas buttons](#canvas-buttons) win,
-then handles, then the selectable shape under the pointer, then empty space inside a
+then handles, then the selectable shape under the pointer, or [something drawn for it outside
+it](#drawn-for-a-shape-decorationhits) (a title's pill), then empty space inside a
 multi-selection's box, then the canvas.
 
 - A press on a shape selects just it, and leaves it where it is in the paint order (as tldraw
@@ -1237,11 +1258,13 @@ multi-selection's box, then the canvas.
 A plugin can put a button on the canvas: something it draws in an overlay that a click does
 something with, as the lock chip unlocks its shape ([Locking](#locking)), or that a drag starts
 something from, as a port's dot draws an arrow ([Ports](#ports)). It says where its buttons are,
-and what a click on one, or a drag from one, does; the select tool does the rest.
+and what a click on one, or a drag from one, does; the select tool does the rest. Adornments does
+it for every [clickable adornment](#pointing), the lock chip among them, so a button shown on a
+shape is a `ClickableAdornment`, and needs no call of its own:
 
 ```swift
-registrar.canvasButtons(at: { editor, viewPoint in state.chip(atViewPoint: viewPoint) },   // any Hashable, or nil
-                        click: { chip, editor in state.click(chip) })
+registrar.canvasButtons(at: { editor, viewPoint in editor.adornmentState?.button(atViewPoint: viewPoint) },   // any Hashable, or nil
+                        click: { button, editor in editor.adornmentState?.click(button) })
 registrar.canvasButtons(at: { editor, viewPoint in state.dot(atViewPoint: viewPoint) },
                         drag: { dot, origin, editor in state.connect(from: dot, at: origin) })     // a Session, or nil
 ```
@@ -1270,11 +1293,39 @@ registrar.canvasButtons(at: { editor, viewPoint in state.dot(atViewPoint: viewPo
   tool's: the hand pans over a lock chip, and the eraser erases under it.
 - **Buttons that come and go** with the document are looked for again under a still pointer after
   each commit. One that comes or goes some other way (a chip fading out) calls
-  `editor.canvasButtonsDidChange()`.
-- **Keep `at` cheap**: the select tool asks it as the pointer moves. Locking's looks only where a
-  chip could be, through `editor.paintOrder(in:)`, and at nothing on a board with no lock; Ports'
-  at the dots of the few shapes near the pointer, and at what covers them only for a dot within
-  reach.
+  `editor.canvasButtonsDidChange()`, as `editor.adornmentsDidChange(for:)` does for an adornment.
+- **Keep `at` cheap**: the select tool asks it as the pointer moves. Adornments' looks only where
+  an adornment could be, through `editor.paintOrder(in:)`, and at nothing when no plugin places a
+  clickable one; Ports' at the dots of the few shapes near the pointer, and at what covers them
+  only for a dot within reach.
+
+### Drawn for a shape: DecorationHits
+
+What a plugin draws for a shape outside it can count as the shape: a title's pill above a note is
+the note's. `DecorationHits` is Selection's point for that. A plugin says which shape, if any, has
+its drawing under a world point, of those `include` accepts, the front-most; Adornments does it for
+every adornment:
+
+```swift
+registrar.decorationHits { editor, point, include in editor.adornmentState?.shape(at: point, where: include) }   // a ShapeID, or nil
+```
+
+- **A point on it is a point on its shape.** `editor.selectableShape(at:)` asks every plugin's
+  first, the last plugin's first (such drawing is above every shape), then the shapes. So a press
+  there selects the shape (⇧ and ⌘ as on the shape), a drag from it moves the shape (a lone box
+  follows from the press), a release is hit again, hover hovers the shape (and tints its row in
+  the table of contents), a double-click edits an `Editable` shape (and never places a note there,
+  as a double-click on empty canvas would), and a right-click opens the shape's menu.
+- **`include`** is the select tool's rule, `isSelectable`: an unselectable shape's drawing is seen
+  through, as the shape is.
+- **Buttons still come first.** A [canvas button](#canvas-buttons) under the pointer takes the
+  press and the hover, so a clickable adornment (the lock) is clicked, and anything else drawn for
+  a shape is the shape. A right-click asks no button, so on the lock it opens its shape's menu.
+- **Only what the select tool and the menu see.** The core's `editor.shape(at:)` is as it was, so
+  the marquee and ⌘A (which go by geometry), the eraser and the arrow tool (an arrow never binds
+  through a pill) go by the shapes alone, and the hand tool pans over it.
+- **Keep it cheap**: the select tool asks it as the pointer moves. Adornments looks in a thin strip
+  around the point, through `editor.paintOrder(in:)`.
 
 ## Keyboard shortcuts
 
@@ -1567,10 +1618,11 @@ tab comes with it, on exactly the kinds that opt in.
 [Checklists](../Sources/Checklists/Checklists.swift) gives any kind a checklist, an
 [added property](#added-properties) of each of its shapes. Checklists owns the property
 (`ChecklistProperty`), the item type, its helpers (`doneCount`, `progress`, `setAllDone`,
-`removeDone`), the bulk actions (`ChecklistBulkAction`), the tab, and the chip it draws on the
-canvas. `ChecklistsPlugin` declares the property (`registrar.declare(ChecklistProperty.self)`), and
-its sugar opts the kind in, then contributes to its own point and to the panel's, from the same
-`ShapeRegistrar`, fully typed:
+`removeDone`), the bulk actions (`ChecklistBulkAction`), the tab, and the chip it places on the
+canvas (`ChecklistChip`, an [adornment](#adornments)). `ChecklistsPlugin` declares the property
+(`registrar.declare(ChecklistProperty.self)`) and places the chip on every shape whose kind shows
+it, and its sugar opts the kind in, then contributes to its own point and to the panel's, from the
+same `ShapeRegistrar`, fully typed:
 
 ```swift
 /// The extension point: which kinds have a checklist, and how they show it. At most one per kind.
@@ -1584,7 +1636,7 @@ extension ShapeRegistrar {
     /// Gives this kind's shapes a checklist (`ChecklistProperty`, in the kind's schema as
     /// `checklist`): a Checklist tab in the detail panel, the bulk actions that apply in its context
     /// menu, and (unless `badge` is false, for kinds that draw their own) a small done/total chip on
-    /// the canvas. `note.checklist()`.
+    /// the canvas (`ChecklistChip`). `note.checklist()`.
     public mutating func checklist(badge: Bool = true) {
         optIn(to: ChecklistProperty.self)
         contribute(ChecklistContribution(showsBadge: badge), to: ShapeChecklists.self)
@@ -1607,9 +1659,20 @@ extension ShapeRegistrar {
   since a card draws its own list. Neither kind declares anything: every note and every task has a
   checklist, empty until someone adds an item, and reads it as `shape[ChecklistProperty.self]`
   where it shows it (a note's row, a task's summary).
+- **The chip** is Checklists' to place, not the kind's: `ChecklistsPlugin` puts it on every shape
+  of the kinds that opted in without `badge: false` (its `where` reads `ShapeChecklists`), and it
+  shows only on a shape with items, "☑ 2/5" on the top-right corner, green once every item is done:
+
+  ```swift
+  registrar.adornmentForEveryShape(ChecklistChip.self, where: { $0.registry.showsChecklistChip($0.kind) }) { shape, _ in
+      guard let items = shape[ChecklistProperty.self], let tally = items.tally else { return nil }
+      return AdornmentLabel("☑ \(tally)", tone: items.doneCount == items.count ? .success : .neutral)
+  }
+  ```
 - **The graph.** StickyNotes imports Checklists and never ContextMenus, yet gets menu items. The
   requirement shows up at startup instead: a list with StickyNotes but without `ChecklistsPlugin`,
-  `DetailPanelPlugin` or `ContextMenusPlugin` is `ownerNotInstalled`, naming the missing one.
+  `DetailPanelPlugin` or `ContextMenusPlugin` is `ownerNotInstalled`, naming the missing one, and
+  so is a list with `ChecklistsPlugin` but without `AdornmentsPlugin`, which lays out its chip.
 - **The property is the contract.** The sections are over the property's value, not the kind's
   props: each gets a `ShapeBinding<[ChecklistItem]>`, and `$items[dynamicMember: \.self]` is a
   `Binding` to the list that writes only that value, on that shape. The Items header's menu is a
@@ -1621,7 +1684,7 @@ Another feature in this pattern has the same parts: its data type, an added prop
 declared by the horizontal; a keyed point for whatever else it needs per kind (Checklists' chip
 flag); a tab type at order 50 (and a menu group, if it has actions); sugar that opts the kind into
 the property and contributes sections and items over its value; and whatever consumes it (a lookup
-on `Registry`, an overlay).
+on `Registry`, an adornment).
 
 ### A tab of status lines, from a bridge: ValidationDetails
 
@@ -2207,6 +2270,308 @@ Bringing shapes into view takes two generic things from the core: `editor.viewpo
 tldraw's camera moves and stopped by any other camera change, as the hand tool's slide is.
 `Camera(fitting:in:inset:maxZoom:)` (Geometry) does the fit.
 
+## Adornments
+
+An adornment is something small shown on a shape, just outside it or on its corner: a title's
+pill, a checklist's tally, a lock. It's a horizontal ([`Sources/Adornments`](../Sources/Adornments))
+through which any plugin puts one on any kind, its own, another plugin's, or every shape. Adornments
+lays out each shape's, so none overlaps another, draws them, and makes each its shape's for the
+pointer. The core has never heard of one.
+
+```
+╭─────────────────────────╮ ╭────╮
+│ Groceries for the week… │ │lock│    the row, 9 points above the top edge, 18 tall: a title's
+╰─────────────────────────╯ ╰────╯      pill at its left end, a lock at its right end, 4 apart
+                           ╭───────╮
+┌──────────────────────────│ ☑ 1/3 │  the corner, 16 tall, centered on the top edge: a
+│ Buy milk                 ╰───────╯    checklist's tally, reaching 6 points past the right edge
+│                                │
+└────────────────────────────────┘
+```
+
+An adornment is never a shape or a record. What it shows is made from its shape's data (its
+props, an added property, what the registry says of its kind), so it moves, copies, deletes and
+saves with the shape, and there's nothing to attach, keep in step or clean up. None of the three
+shipped is placed by the plugin that defines the note: Titles places the pill, Checklists the
+tally and Locking the lock, on every shape of the kinds that take part.
+
+### An adornment is a type
+
+An adornment is a type, as a tab or a menu group is: every contribution that names it puts the
+same thing in the same place, and a typo doesn't compile. The type says where it goes on its shape
+(`placement`) and where among the others there (`order`); what it shows on each shape is a label
+the plugin that places it makes from the shape. Locking's chip, whole
+([Locking.swift](../Sources/Locking/Locking.swift)):
+
+```swift
+public enum LockChip {}
+
+extension LockChip: Adornment {
+    public static var placement: AdornmentPlacement { .aboveTopRight }   // the right end of the row above the shape
+    public static var order: Int { 300 }                                 // a state that comes and goes: farthest out
+}
+
+extension LockChip: ClickableAdornment {
+    /// A locked shape's chip unlocks it; a just-unlocked one's locks it again.
+    public static func click(on shape: ShapeID, in editor: CanvasEditor) { editor.service(LockState.self)?.click(shape) }
+}
+
+// In LockingPlugin.register: on the kinds that can be locked, a lock while a shape is locked, and
+// for a moment after, the lock open, fading; on the rest, nothing.
+registrar.adornmentForEveryShape(LockChip.self, where: { $0.holds(LockedProperty.self) }) { shape, context in
+    if shape.isLocked { return AdornmentLabel(systemImage: "lock.fill") }
+    return context.service(LockState.self)?.openLockOpacity(of: shape.id).map { AdornmentLabel(systemImage: "lock.open.fill").opacity($0) }
+}
+```
+
+- **Conform in an extension**, as for a tab: `order` has a default (0), and only there does the
+  compiler flag a near miss.
+- **The label says what's shown on one shape**, or nil for nothing there, so a lock shows only on
+  a locked shape. Locking a shape shows its chip because the label now says so; nothing is added.
+- **A `ClickableAdornment`** is one a click does something with: a [canvas button](#canvas-buttons)
+  whose `click(on:in:)` gets the shape it's on ([pointing](#pointing)).
+
+### Placing one
+
+| Sugar | For |
+|---|---|
+| `x.adornment(A.self) { shape in ... }` | This kind's shapes, inside `registrar.shape { x in ... }`, typed as its own (`ShapeRecord<Props>`). A horizontal's opt-in sugar may call it, so opting in brings its adornment. |
+| `registrar.adornment(A.self, on: Kind.self) { shape in ... }` | Another plugin's kind, typed as its own (bridges). |
+| `registrar.adornmentForEveryShape(A.self, where:) { shape, context in ... }` | Every shape of the kinds `where` picks (every kind by default), over `AnyShapeRecord`: what a horizontal places on shapes it doesn't define. |
+
+`where` sees each kind once, as an `AdornableKind`: the `kind`, its `definition` (so its
+capabilities: `{ $0.definition is any Editable }`), the `registry` (so what else it takes part
+in), and `holds(P.self)`, whether its shapes hold an added property, so an adornment that shows
+one goes where the property does (Locking's lock: `{ $0.holds(LockedProperty.self) }`, the kinds
+that can be locked). Titles and Checklists place theirs this way, on the kinds that opted into their own points:
+Titles on those whose title shows a pill (`$0.registry.showsTitlePill($0.kind)`,
+[Titles](#a-horizontal-plugin)), Checklists on those that show a chip
+([Checklists](#a-horizontals-feature-tab-checklists)). So `note.title()` and `note.checklist()`
+bring the pill and the tally, a kind that draws its own says `pill: false` or `badge: false`, and
+the report says Titles, which defines no kind, places the pill (`adornment TitlePill → every
+shape`). A bridge puts one on a kind it doesn't define, typed:
+
+```swift
+public enum SizeBadge {}
+extension SizeBadge: Adornment {
+    public static var placement: AdornmentPlacement { .onTopRightCorner }
+}
+
+registrar.adornment(SizeBadge.self, on: Ellipse.self) { ellipse in AdornmentLabel("\(Int(ellipse.frame.width)) pt") }
+```
+
+### Places
+
+Three places, each from the shape's bounds (its geometry's, axis-aligned, so a kind without a frame
+has them too), in view points:
+
+| `AdornmentPlacement` | Where | Shipped |
+|---|---|---|
+| `.aboveTopLeft` | The row just above the top edge, 18 points tall and 9 above it, from its left end rightward, in the room its right end leaves. Text gives way, ending in "…", and needs 30 points: with less, it's left out, and so is what comes after it. | A title's pill |
+| `.aboveTopRight` | The same row, from its right end (the shape's right edge) leftward, whole: on a shape too narrow for it, past the shape's left edge. | A lock |
+| `.onTopRightCorner` | The top-right corner: 16 points tall, centered on the top edge, from 6 points past the right edge leftward. | A checklist's tally |
+
+In a place, adornments sit 4 points apart. They keep their size on screen down to 25% zoom, and
+shrink with the shapes below it (0.4× at 10%). A shape without an outline (nothing drawn) shows
+none, and neither does one its board keeps aside. On a 200-point note, in points from its top-left
+corner, y down:
+
+| The note | Laid out |
+|---|---|
+| Unlocked, with a long title | pill (0, −27, 200, 18) |
+| Locked, with a long title | lock (182, −27, 18, 18); pill (0, −27, 178, 18) |
+| With a checklist | tally (206 − w, −8, w, 16), `w` its text's width and 10 |
+| 40 wide, locked and titled | lock (22, −27, 18, 18); 18 points left in the row, so no pill |
+
+So locking a note with a long title shortens its pill by 22 points, the lock's 18 and the 4
+between, and unlocking it gives them back once the open lock has faded.
+
+### What's guaranteed
+
+On one shape, by construction (`AdornmentLayout`, pure geometry, which drawing and hit testing both
+go by):
+
+- **Nothing in a place overlaps anything else there**: each place is a run, packed 4 points apart.
+- **The row's two ends never meet**: its left end runs in the shape's width, less what its right
+  end holds and 4 points.
+- **The row never meets the corner**: the row ends 9 points above the top edge and the corner
+  starts 8 above it (the row's gap is half the corner's height, and a point), so no two plugins
+  have to agree on a number.
+- **Text at the row's left end is never wider than its room**: it gives way, ending in "…", or,
+  with under 30 points, isn't shown.
+- **Nothing reaches far**: the row's right end and the corner go no more than 200 points from
+  where they start (what would is left out, with what comes after it), and the row's left end stays
+  within the shape's width, so every adornment is within x `min(0, width − 200)` … `width + 6` and
+  y −27 … 8 of the shape's top-left corner, which culling and hit testing go by.
+
+Not guaranteed: two shapes' adornments may overlap, and stack as their shapes do; an adornment and
+another shape may overlap too, and the adornment is drawn over it (and takes presses there). On a
+shape narrower than them, the row's right end and the corner run past its
+left edge, whole: a lock on a vertical line spans −18 … 0.
+
+### Order
+
+In a place, adornments sort by their type's `order`, then by first appearance: the kind's own,
+then every kind's, each in plugin order. The first is nearest where the place starts: the row's
+left end, its right end, the corner's outer end. The bands are the tabs' and the menu groups':
+
+| Order | Adornments |
+|---|---|
+| 0 (the default) | A kind's own |
+| 50 | One a horizontal's feature brings to the kinds that opt in (`TitlePill`, `ChecklistChip`) |
+| 300 | A state of the shape that comes and goes (`LockChip`): farthest out, so the others keep their places |
+
+So a flag a kind shows of its own keeps its place at the row's right end whether a lock is beside it
+or not. Equal orders fall back to plugin order, so unrelated plugins needn't agree on numbers.
+
+### The label
+
+`AdornmentLabel` is what an adornment shows on one shape. Adornments draws every one, so every
+plugin's look alike, as `ContentsLabel` keeps rows alike:
+
+- **Text**, `AdornmentLabel("Groceries")`: one line (each run of whitespace, newlines included,
+  folds into a space; blank shows nothing), white, in a capsule. In the row it's 11-point medium,
+  7 points in from the capsule's ends; on the corner, 10-point semibold figures that line up, 5 in.
+- **A symbol**, `AdornmentLabel(systemImage: "lock.fill")`: an SF Symbol, bold and white, in a
+  disc as tall as its place, half as tall as the disc.
+- **`tone`**: `.neutral` (the default), a title pill's dark gray; or `.success`, green, for
+  something done (a checklist with every item checked).
+- **`opacity(_:)`**: the same label drawn lighter, 0 to 1 (Locking's open lock, fading).
+
+A clickable one draws lighter hovered and darker pressed. A label can't draw itself (a sparkline):
+that's [not built yet](#not-built-yet).
+
+### One of each on a shape
+
+`ShapeAdornments` is keyed: a contribution claims its target and its type, so an adornment is
+placed on a kind at most once, and on every shape at most once. Two plugins putting one adornment
+on a kind (a kind's own and a bridge's), or two putting one on every shape, are a `conflict`, and
+a contribution without Adornments is `ownerNotInstalled`:
+
+```
+titles and captions both claim * Titles.TitlePill in ShapeAdornments
+titles contributes to ShapeAdornments, but adornments, which owns it, isn't installed
+```
+
+A kind's own takes the place of an every-shape one of the same type, as a kind's own menu item
+does. So a shape shows each adornment once at most, by construction: a contribution names a type,
+never an instance, and there's no second one to attach. There's no `check`: places are a closed
+set, and orders needn't be unique. Adornments builds on Selection (a clickable adornment is its
+canvas button), so a list with `AdornmentsPlugin` needs `SelectionPlugin` and `KeyboardPlugin` too.
+The report shows each on its placer's line: `adornment TitlePill → every shape`, or `adornment Flag
+→ box` for one kind.
+
+### What a label reads
+
+A kind's own label, and a bridge's, reads only its shape. One for every shape also gets an
+`AdornmentContext`, with what else it may read: the registry (`context.registry`), which never
+changes, and a service's state (`context.service(S.self)`), but only a service that tells
+Adornments when what it keeps changes: `editor.adornmentsDidChange(for: ids)`. `LockState` keeps
+how far each just-unlocked shape's open lock has faded, and says so each frame of the fade.
+
+Adornments makes a shape's labels once, measures them, and keeps them until a commit names the
+shape (its `ChangeSet`) or `adornmentsDidChange` does. So a label read from anything else (another
+shape, the clock, a service that doesn't say) goes stale. `adornmentsDidChange` also redraws the
+canvas, and has the select tool look again for a button under a still pointer
+(`canvasButtonsDidChange`), so a lock that comes or goes under it is hovered, or no longer is. A
+shape's labels read before Adornments has heard of a commit (by a service that hears first, as
+Selection looking for a button under a still pointer) are made afresh and not kept, so they're
+never stale, and nothing else is thrown away.
+
+### Drawing and cost
+
+- **One overlay**, `AdornmentOverlay`, draws every shape's adornments, at Adornments' place in the
+  plugin list: the shipped app puts `AdornmentsPlugin` after Validation, so they're over its
+  outline, and under the marquee and Selection's handles. It goes back to front, a shape at a time,
+  so a front shape's adornments are over a back shape's, and all of them are above every shape: a
+  back shape's pill shows over a shape in front of it (and takes presses there).
+- **Where the shape is drawn.** Adornments follow a [drawing offset](#the-cores-part-drawing-offsets)
+  (a locked shape's shake moves its lock and its pill), keep drawing while a session runs (a drag),
+  and stay out of the minimap and damage.
+- **Only what's in view.** The overlay goes through `editor.paintOrder(in:)` with the visible rect
+  grown by as far as adornments reach from their shapes (`AdornmentLayout.area(showing:scale:)`):
+  a shape just below the view has its row in it, and a shape up to 200 points to its right can
+  have a run reaching back into it. It's grown first by the farthest any shape is drawn from where
+  it is (`context.worldDrawingReach`, zero unless one is), so a shape just outside the view that a
+  shake draws toward it shows what of its adornments reaches in.
+- **Kept, not remade.** `AdornmentState`, a service, finds each kind's adornments once (the
+  registry is frozen), and keeps each shape's labels, made and measured, dropping those of the
+  shapes each commit's change set names. Where they go is worked out when it's asked, from what's
+  kept, since it follows the zoom and geometry that follows other shapes: a few additions per
+  adorned shape in view. So a frame costs a lookup and the drawing per adorned shape in view, and a
+  drag the labels of what moves. `./build.sh bench` holds a hover and a drag at 10,000 shapes,
+  with pills, tallies and locks in view, and a hover onto a pill, to a frame (16 ms).
+
+### Pointing
+
+| Adornment | What the pointer does |
+|---|---|
+| A `ClickableAdornment` (the lock) | It's a [canvas button](#canvas-buttons), through Adornments' own source: in the select tool, a press and a release on it click it (its type's `click(on:in:)`), before handles and shapes; dragged off, nothing, and Escape lets go. The pointing hand shows over it, and it draws lighter hovered and darker pressed. In other tools it's only drawn. |
+| Any other adornment (a pill, a tally) | It's its shape's ([DecorationHits](#drawn-for-a-shape-decorationhits)): hover hovers the shape, a press selects it and a drag moves it, a double-click edits it, and a right-click opens its menu. A clickable one (the lock) is its shape's only for the right-click, which offers Unlock; everything else on it is the button's (a double-click is two clicks). |
+
+- **A hit** is within 3 points of the adornment's capsule, so a disc's is a circle, 12 points from
+  its middle, and not its box's corner. Of one shape's adornments the nearest takes it; of several
+  shapes', the front-most shape's, as they're drawn, so a front shape's pill over a back shape's
+  lock takes the press. Hits go by where a shape is, not where a shake draws it. An unselectable
+  shape's adornments are seen through, as it is, but a button isn't: a lock is clicked whatever
+  its shape.
+- **`editor.hoveredButton`** and `editor.pressedButton` hold an `AdornmentButton` on a clickable
+  one: `AdornmentButton(LockChip.self, on: id)`, the type and the shape.
+- **`editor.adornmentFrames(of: id)`** is where each of a shape's adornments is now: an
+  `AdornmentFrame` each (`adornment`, as `.of(TitlePill.self)`; its `label`; and its `rect`, in
+  world units at the current zoom, where the shape is), in the order they're claimed, leaving out
+  those without room. It's empty for a shape with none.
+
+### Something the user turns on
+
+data-canvas's sticker put a record beside a shape to say it was public. Here, what the user turns
+on is something the shape knows, an [added property](#added-properties), and the adornment only
+shows it. A flag, as a horizontal any kind opts into:
+
+```swift
+/// Whether a shape is flagged.
+public enum FlagProperty {}
+extension FlagProperty: ShapeProperty {
+    public static let key: PropertyKey = "flagged"
+    public static var defaultValue: Bool? { false }       // every flaggable shape has one, for the menu's item to be over
+}
+
+/// A flag at the right end of the row above a flagged shape.
+public enum FlagChip {}
+extension FlagChip: Adornment {
+    public static var placement: AdornmentPlacement { .aboveTopRight }
+    public static var order: Int { 50 }                   // a horizontal's feature: nearer the row's end than a lock
+}
+
+public enum FlagMenuGroup {}
+extension FlagMenuGroup: MenuGroup {
+    public static var order: Int { 50 }
+}
+
+extension ShapeRegistrar {
+    /// Lets this kind's shapes be flagged: Flagged in their context menu, and a flag above each that is.
+    public mutating func flaggable() {
+        optIn(to: FlagProperty.self)
+        contextMenu(of: FlagProperty.self) {
+            MenuItem("Flagged", in: FlagMenuGroup.self, isChecked: { $0 }) { $0.toggle() }
+        }
+        adornment(FlagChip.self) { $0[FlagProperty.self] == true ? AdornmentLabel(systemImage: "flag.fill") : nil }
+    }
+}
+```
+
+The plugin declares the property (`registrar.declare(FlagProperty.self)`), and a kind opts in with
+one line, `note.flaggable()`, as `note.checklist()` does. What that gives:
+
+- **The fact is the shape's.** It's in the kind's schema, saved with the shape, copied with it (a
+  flagged note's copy is flagged) and gone with it; the flag has nothing of its own to keep in
+  step, and a board opened without the plugin keeps the value aside and saves it back.
+- **One flag per shape**, by construction: the label says whether there is one.
+- **The default is `false`, not nil**, so every flaggable shape has a value, which the menu's item
+  is over. With a nil default only flagged shapes would carry it, as locked ones carry `locked`,
+  but an item over the value shows only once it's set ([not built yet](#not-built-yet)), so the
+  item would be one for the canvas, as Locking's Lock and Unlock are.
+
 ## The clipboard
 
 Cut, copy and paste are a horizontal ([`Sources/Clipboard`](../Sources/Clipboard)) built on three
@@ -2302,9 +2667,10 @@ A locked shape can't be changed: not moved, restacked, resized, edited or delete
 until it's unlocked. Each try shakes it a little, and a lock chip sits just above its top-right
 corner. Shapes are locked from the context menu, and unlocked there or with a click on the chip,
 which shows the lock open for a moment, where a click locks the shape again. It's a horizontal
-([`Sources/Locking`](../Sources/Locking)) that every kind is in, built on ContextMenus and
-Selection; the core has never heard of a lock. It lends two generic things, read-only shapes and
-drawing offsets, Selection lends [canvas buttons](#canvas-buttons), and Locking does the rest
+([`Sources/Locking`](../Sources/Locking)) that every kind is in, built on Adornments, ContextMenus
+and Selection; the core has never heard of a lock. It lends two generic things, read-only shapes
+and drawing offsets, [Adornments](#adornments) lays out, draws and points the chip (a clickable
+adornment, so a [canvas button](#canvas-buttons)), and Locking does the rest
 ([Locking.swift](../Sources/Locking/Locking.swift)):
 
 ```swift
@@ -2312,12 +2678,17 @@ registrar.declare(LockedProperty.self)                  // `locked: true` on a l
 registrar.optInEveryShape(to: LockedProperty.self)
 registrar.readOnlyShapes { $0.isLocked }                // the core refuses changes to them
 registrar.service { LockState(editor: $0) }             // which shapes are locked, open locks, the shakes and fades under way
-registrar.overlay(LockOverlay())                        // the chip
-registrar.canvasButtons(at: { editor, point in editor.service(LockState.self)?.chip(atViewPoint: point) },
-                        click: { chip, editor in editor.service(LockState.self)?.click(chip) })
+registrar.adornmentForEveryShape(LockChip.self, where: { $0.holds(LockedProperty.self) }) { shape, context in  // the chip, where a shape can be locked: closed while locked, open a moment after
+    if shape.isLocked { return AdornmentLabel(systemImage: "lock.fill") }
+    return context.service(LockState.self)?.openLockOpacity(of: shape.id).map { AdornmentLabel(systemImage: "lock.open.fill").opacity($0) }
+}
 registrar.contextMenuForCanvas {
     MenuItem("Lock", in: LockMenuGroup.self, when: { !$0.shapes.isEmpty && !$0.allLocked }) { ids, editor in editor.lock(ids) }
     MenuItem("Unlock", in: LockMenuGroup.self, when: { !$0.shapes.isEmpty && $0.allLocked }) { ids, editor in editor.unlock(ids) }
+}
+
+extension LockChip: ClickableAdornment {                // a click on the chip
+    public static func click(on shape: ShapeID, in editor: CanvasEditor) { editor.service(LockState.self)?.click(shape) }
 }
 ```
 
@@ -2330,12 +2701,13 @@ registrar.contextMenuForCanvas {
   tldraw's toggle: Unlock when every shape the menu is for is locked, and otherwise Lock, which locks
   the rest. They're items for the canvas, so a mix of locked and unlocked shapes gets one; on empty
   canvas, neither. There's no key: the menu is the only way to lock a shape.
-- **The chip is a button** (`LockChip`, a [canvas button](#canvas-buttons)): in the select tool, a
-  click on a locked shape's chip unlocks it. Then the chip shows the lock open for 1.5 s, however the
-  shape was unlocked (the menu too), so a click by mistake can be taken back: a click on the open
-  lock locks the shape again. It stays while the pointer's on it (looking again every 0.5 s), then
-  fades over 0.3 s and is gone, since an unlocked shape has no chip. The pointing hand shows over a
-  chip, which draws lighter hovered and darker pressed, and a click on one selects nothing.
+- **The chip is a button** (`LockChip`, a [clickable adornment](#pointing), so a canvas button): in
+  the select tool, a click on a locked shape's chip unlocks it. Then the chip shows the lock open
+  for 1.5 s, however the shape was unlocked (the menu too), so a click by mistake can be taken back:
+  a click on the open lock locks the shape again. It stays while the pointer's on it (looking again
+  every 0.5 s), then fades over 0.3 s and is gone, since an unlocked shape has no chip. The pointing
+  hand shows over a chip, which draws lighter hovered and darker pressed, and a click on one selects
+  nothing. A right-click on it is on its shape, as on any adornment: the menu offers Unlock.
 - **Everything refuses a locked shape**, since everything changes shapes through a transaction.
   A drag leaves it where it is and moves the rest of the selection (a click, even one that jitters
   under the drag threshold, doesn't count as a try); Delete, Cut and the eraser leave it and take
@@ -2350,13 +2722,16 @@ registrar.contextMenuForCanvas {
   away, a frame every 16 ms on `editor.scheduler`. A try while it plays (the eraser dragged across)
   doesn't start it over. `LockState` hears the tries (`didRefuseChanges`), and moves how the shape
   is drawn, never the shape: `editor.setDrawingOffset(_:for:)`.
-- **The chip** is an 18-point disc with a lock, the dark of a title's pill, 9 points above the
-  top-right corner, ending at the shape's right edge: in the row a title's pill starts at the other
-  end of, clear of the checklist chip below it. It keeps its size on screen down to 25%, and shakes
-  with its shape. A click within 3 points of its edge still clicks it. `LockOverlay` goes through
-  `editor.paintOrder(in:)` for the shapes `LockState` keeps as locked or open (redone for what each
-  commit's change set names: a shape that stops being locked opens), so a board with no lock costs
-  it nothing, and one with some costs what's in view; so does finding the chip under the pointer.
+- **The chip** is an 18-point disc with a lock, the dark of a title's pill, at the right end of the
+  row just above the shape, ending at its right edge. Its order is 300, a state that comes and
+  goes, so it's farthest out of what's at that end, and a title's pill at the other end stops 4
+  points short of it. Adornments lays it out with the rest, keeps its size on screen down to 25%,
+  and draws it where its shape is drawn, so it shakes with it. A click within 3 points of its edge
+  still clicks it. The open lock, fading, is a label from what `LockState` keeps
+  (`openLockOpacity(of:)`: nil but for a shape just unlocked), and `LockState` tells Adornments
+  each time it changes (`editor.adornmentsDidChange(for:)`: the lock opening, each frame of its
+  fade, and its going), so the chip's label is made again only then, or when a commit changes the
+  shape.
 
 ### The core's part: read-only shapes
 
@@ -2391,10 +2766,13 @@ added value.
 `editor.setDrawingOffset(offset, for: id)` draws a shape `offset` view points from where it is, until
 it's set back to zero: an animation that moves how a shape looks without changing it. The core
 draws the shape and its outlines there; an overlay that decorates a shape moves its decoration by
-`context.worldDrawingOffset(of:)` (the same offset, in world units), as the title pill, the checklist
-chip, the validation outline and the lock chip do. Everything else goes by where the shape is: hit
-testing, handles, arrows bound to it, and pictures of the board (the minimap). Deleting a shape
-drops its offset.
+`context.worldDrawingOffset(of:)` (the same offset, in world units), as Adornments does for every
+[adornment](#adornments) (a title's pill, a checklist's tally, the lock chip) and Validation for its
+outline. One that culls by the view can grow the rect by `context.worldDrawingReach`, the farthest
+any shape is drawn from where it is (world units, zero unless one is), so a shape drawn into view
+from just outside it is decorated there, as Adornments does. Everything else goes by where the
+shape is: hit testing, handles, arrows bound to it, and pictures of the board (the minimap).
+Deleting a shape drops its offset.
 
 ## Ports
 
@@ -2531,8 +2909,9 @@ one shape at a time, the host, as data-canvas's show on the hovered shape:
   whatever is under it. Where the select tool hasn't seen the pointer move (just after a tool
   change, or a first click into the window) no dot shows, so none takes the press: it's the
   canvas's, or the shape's. Past the drag threshold, the connector draws a connection from it;
-  released without a drag, nothing happens; Escape lets go. Ports comes after Locking in the
-  shipped list, so a dot is found before a lock chip it overlaps, and draws above it.
+  released without a drag, nothing happens; Escape lets go. Ports comes after Adornments in the
+  shipped list, so a dot is found before an adornment it overlaps (a lock chip, a clickable
+  adornment, among them), and draws above it.
 - **While a connection is drawn** the dots are gone, and each shape in view it could end on is
   outlined faintly, as a hovered shape is (2.5 points, the accent at 60%); the shape it would end
   on now gets the full outline, the hint.
@@ -2932,7 +3311,7 @@ hand tool). It then checks everything and throws on:
 | `duplicatePlugin` | The same plugin id twice. |
 | `ownerNotInstalled` | A contribution to a point whose owner isn't in the list. |
 | `unknownKind` | A contribution for a kind no plugin registers. |
-| `conflict` | Two claims to the same key: a kind, a tool id, a service type, a command, the default tool, the secondary click, key strokes, an added property's key (two declarations), one kind's opt-in to a property (from two plugins, or twice from one), or a key in any `KeyedExtensionPoint` (a keyboard shortcut's chord, one kind's double-click claim). |
+| `conflict` | Two claims to the same key: a kind, a tool id, a service type, a command, the default tool, the secondary click, key strokes, an added property's key (two declarations), one kind's opt-in to a property (from two plugins, or twice from one), or a key in any `KeyedExtensionPoint` (a keyboard shortcut's chord, one kind's double-click claim, one adornment on a kind). |
 | `invalid` | A property list that doesn't hold up, two types under one definition name, or a struct that holds itself with no name ([Properties](#a-kinds-own-properties)); an opt-in to a property no installed plugin declares, a plugin opting a kind into one both by itself and through `optInEveryShape`, or a kind opting into a property named like one of its own ([added properties](#added-properties)); or a point's own `check` refused the list (the default tool must be a registered one). |
 
 Some rules span contributions in a way keys can't express. For those, a point implements `check`,
@@ -2984,15 +3363,16 @@ sticky-notes         shape sticky-note v2 · tool sticky-note · shortcut N → 
 ellipses             shape ellipse · tool ellipse · shortcut O → tool ellipse
 task-cards           shape task-card v3 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · property title → task-card · ShapeTitles → task-card · ContentsTitles → task-card · ports task-link → task-card · channel task-link
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
+adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
 detail-panel         service DetailPanelState · ShapeDetails
 context-menus        service ContextMenuState · secondary-click menu
 table-of-contents    service ContentsState
-checklists           property checklist · overlay ChecklistOverlay
-titles               property title · service TitleState · overlay TitleOverlay
+checklists           property checklist · adornment ChecklistChip → every shape
+titles               property title · adornment TitlePill → every shape
 validation-details   DetailStatuses in Issues
 validation-contents  ContentsMarks
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
-locking              property locked · property locked → every shape · read-only shapes · service LockState · overlay LockOverlay · CanvasButtons · CanvasContextMenu
+locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · CanvasContextMenu
 ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
 arrow-ports          property channel → arrow · connector → arrow · ArrowBindingRules
 automation           command line create · command line kinds
@@ -3016,7 +3396,10 @@ every kind, is its schema rule ([Checking shapes](#checking-shapes-against-their
 every kind in itself (`property locked → every shape`), and `read-only shapes` is its rule for the
 core. `ports note-link → sticky-note` is a note's ports and `channel note-link` the channel
 StickyNotes declares for them; arrow-ports' `connector → arrow` makes arrows what ports draw, and
-brings the opt-in before it (`property channel → arrow`).
+brings the opt-in before it (`property channel → arrow`). Titles places its pill on every shape
+whose kind's title shows one (`adornment TitlePill → every shape`), Checklists its chip likewise,
+and Locking its lock; `adornments` lends them their layout and drawing, a canvas button
+(`CanvasButtons`) and their hits (`DecorationHits`), and places none of its own.
 
 ## Testing plugins
 
@@ -3054,11 +3437,11 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   cards into more, like Selection's double-click), so they never depend on a real vertical. Their
   tools have no keys (CanvasTesting can't import Keyboard): a test picks one with `h.editor.setTool`,
   or registers a key for it (`$0.shortcut("c", forTool: ToolID(placing: Card.kind))`).
-  SelectionTests, ArrowsTests, ValidationTests, DetailPanelTests, ChecklistsTests, ClipboardTests,
-  TitlesTests, ValidationDetailsTests, ValidationContentsTests, LockingTests and PortsTests import
-  no real vertical (only these fixtures, and local test kinds), which proves those plugins are
-  shape-agnostic. ArrowPortsTests import one real vertical, Arrows, and join fixtures with its
-  arrows.
+  SelectionTests, ArrowsTests, ValidationTests, DetailPanelTests, AdornmentsTests,
+  ChecklistsTests, ClipboardTests, TitlesTests, ValidationDetailsTests, ValidationContentsTests,
+  LockingTests and PortsTests import no real vertical (only these fixtures, and local test kinds),
+  which proves those plugins are shape-agnostic. ArrowPortsTests import one real vertical, Arrows,
+  and join fixtures with its arrows.
 - **Read-only shapes** without Locking: `FreezingPlugin(log:)` (CanvasTesting) declares `Frozen`, a
   flag every kind opts into, makes frozen shapes read-only, and logs the refusals services hear in
   its `RefusalLog`; `editor.freeze(ids)` sets it. CanvasTests, SelectionTests and DetailPanelTests
@@ -3091,6 +3474,16 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   `menu.choose("Level", "2")` runs an item as a click would, failing the test if it's dimmed. No
   menu goes on screen. `h.hold(.control)` first makes it a Control-click. ContextMenusTests import no
   real vertical.
+- **Adornments.** `AdornmentLayout.frames(of:width:)` is pure, so AdornmentsTests hold the layout
+  to its numbers and to its guarantees (a seeded property check, over widths from 0 to 400 and
+  random adornments). Headless, `editor.adornmentFrames(of:)` is where a shape's adornments are, in
+  world units; `renderBitmap` and `changedPixels` check what's drawn (a pill that stops 4 points
+  short of a lock changes no pixel beside it); and `editor.hoveredButton` on a clickable one is
+  `AdornmentButton(A.self, on: id)`. A test's own adornment types are internal, not private, so a
+  conflict key names one as `Module.Name`. A plugin list with Titles, Checklists or Locking needs
+  `KeyboardPlugin()`, `SelectionPlugin()` and `AdornmentsPlugin()`, which goes before the plugins
+  that place adornments, as the shipped list has it. In debug builds, `editor.adornmentsKept`
+  counts the shapes whose labels are kept, so a test holds a deleted shape to being forgotten.
 - **The clipboard.** A test that copies gives the clipboard a pasteboard of its own, so it never
   touches the user's: `ClipboardPlugin(pasteboard: NSPasteboard.withUniqueName())`, or
   `ShippedPlugins.makeEditor(pasteboard:)` (and `releaseGlobally()` it after). Two editors on one
@@ -3141,10 +3534,12 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   `registry.fillingDefaults(document)`. CanvasTests read broken and scrambled boards (a seeded fuzz test), and CompositionTests'
   BoardDocumentTests open, save, revert and host boards with `BoardDocument.configuration` set as
   the app sets it. `./build.sh bench` builds BenchmarkTests in release and holds saving, opening,
-  a hover and a drag frame, a hover on a note's port dot and a drag from it, reading the table of
-  contents' rows after a drag event, an insert, a
-  delete and a restack, and the minimap's first picture (a frame at a time) and a drag frame with
-  it, to their budgets on generated boards of 1,000 and 10,000 shapes; `./test.sh` runs it small,
+  a hover and a drag frame (titles' pills, checklists' tallies and locks in view), a hover on a
+  note's port dot and a drag from it, a hover onto a title's pill, reading the table of contents'
+  rows after a drag event, an insert, a delete and a restack, and the minimap's first picture (a
+  frame at a time) and a drag frame with it, to their budgets on generated boards of 1,000 and
+  10,000 shapes, and reports the first frame and the next zoomed out to fit the board (at 10,000,
+  as far as the 10% zoom goes); `./test.sh` runs it small,
   in debug, and only reports.
 - **The minimap.** CanvasUITests put a `CanvasView` with `showsMinimap` in an unshown window, drive
   `canvas.minimap` with mouse events, and hold its picture, kept through every kind of edit, to a
@@ -3182,6 +3577,7 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
 | `ValidationIndicatorLayer` | `ValidationOverlay`, through the core's overlay point. |
 | `toc: { component, filter, getParentShapeId }` on `defineShape`, `TocRegistry` | `x.contentsRow(when:nestedUnder:) { ContentsLabel(...) }`, sugar from the TableOfContents horizontal ([the table of contents](#the-table-of-contents)). |
 | `DetailsPanel`'s `emptyView` and `multiSelectView` (the TOC, whole or filtered to the selection) | `DetailPanelView`'s overview, which Composition fills with `TableOfContentsView`. |
+| `adornments:` on `definePlugin` (`AdornmentShapeUtil`, the `adornment-attachment` binding with its anchor, offset, gap and slot; `singletonPerHost`, `isEligibleHost`; `attachAdornment` and `toggleAdornment`) | An `Adornment` type (its place and its order band) and a label made from the shape's data, placed with `x.adornment`, `registrar.adornment(_:on:)` or `registrar.adornmentForEveryShape(_:where:)`, whose `where` can read another plugin's point (as the sticker read its referenceable registry). Never a record: nothing to attach, sync, cascade on delete, copy or migrate; one per type per shape by construction; laid out by [Adornments](#adornments), so none overlap. A fact one shows (locked, public) is an [added property](#something-the-user-turns-on) of the shape. |
 | `ToolIdle` / `ToolPointing` click-to-create | `Placement` (follow the pointer, or edit), used by place tools and the double-click claim. |
 | `toolbarItems` with a decorative `kbd` | A key registered with the Keyboard horizontal (`shortcut:`), collision-checked, that the canvas answers and the tooltip names. |
 | `defineChannel({ id, color, ... })`, `registerHostChannel(type, channel)` | A `Channel` type (`id`, `color`) declared by the plugin that owns its meaning, `registrar.channel(C.self)`, and `x.ports(C.self, sides:role:)` on each kind that takes it (`role:` is a port's `end`), collision-checked; an arrow keeps its channel as an added property, `ChannelProperty` ([Ports](#ports)). |
@@ -3224,9 +3620,17 @@ Each of these adds to the design without changing what plugins are written again
   the display rather than nominal 16 ms frames.
 - **More horizontals** from data-canvas: describe, search, commands. Each is an extension point in
   its own plugin.
-- **More of titles**: a click on a pill selecting its shape, and a double-click renaming it (a
-  [canvas button](#canvas-buttons) would take the click, as the lock chip does); a Rename item in
-  the context menu; and titles on kinds without a frame, such as arrows (tldraw's labels) and lines.
+- **More of titles**: a double-click on a pill renaming it (an adornment's own double-click: a
+  double-click there is its shape's today, which edits a note); a Rename item in the context menu;
+  and titles on kinds without a frame, such as arrows (tldraw's labels, along the arrow) and lines.
+- **More of adornments**: more places (the other corners and edges, below a shape, and along a
+  shape without a frame, as an arrow's label); an adornment's own double-click and menu items;
+  labels read from other shapes (with an `affected:`, as the table of contents' marks have);
+  adornments that draw themselves (data-canvas's 22-point sparkline, which needs a taller row);
+  adornments painted with their shape, so a shape in front covers a back shape's, and a press
+  there is the front shape's (a per-shape drawing hook in the core); a tooltip on each (the lock's
+  among them); telling agents what a shape shows; and, zoomed far out over a big board, leaving
+  out text too small to read (the first frame there makes every adorned shape's labels).
 - **More of going back**: going forward again (⌘]), and a step keeping what the table of contents
   listed, so Show All survives a trip back.
 - **More of the keyboard**: a window listing every shortcut; menu items that take their key
@@ -3254,7 +3658,8 @@ Each of these adds to the design without changing what plugins are written again
   and Duplicate, once a plugin owns them.
 - **More of locking**: Unlock All (tldraw has it); a lock on a shape's row in the table of
   contents; the menu's other items for a locked shape dimmed, rather than shaking it once chosen;
-  a line in the detail panel saying why it's disabled; and a tooltip on the chip.
+  a line in the detail panel saying why it's disabled; and a tooltip on the chip (an adornment's,
+  above).
 - **More of ports**, most of which data-canvas has: a channel's cardinality (at most one
   connection at an end, and a dot that stops taking more); wildcard channels (a port on every
   channel); directional reversal (a drag from a port that only takes connections, drawn the other

@@ -3,10 +3,11 @@ import Canvas
 import Geometry
 
 /// The select tool (tldraw's). A plugin's canvas buttons win (a lock chip); then handles; then the
-/// shape under the pointer; then empty space inside a multi-selection's box; then the canvas, where
-/// a drag brushes. ⇧ adds to the selection or takes away from it, and ⌘ (tldraw's accel) does too,
-/// without selecting on the press. A lone box pressed without ⇧ or ⌘ follows the pointer from the
-/// press, with no drag threshold.
+/// shape under the pointer, or something drawn for it outside it (`DecorationHits`: a title's pill);
+/// then empty space inside a multi-selection's box; then the canvas, where a drag brushes. ⇧ adds to
+/// the selection or takes away from it, and ⌘ (tldraw's accel) does too, without selecting on the
+/// press. A lone box pressed without ⇧ or ⌘ follows the pointer from the press, with no drag
+/// threshold.
 final class SelectTool {}
 
 extension SelectTool: Tool {

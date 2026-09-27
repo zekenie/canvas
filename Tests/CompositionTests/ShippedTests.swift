@@ -36,15 +36,16 @@ import ValidationDetails
         ellipses             shape ellipse · tool ellipse · shortcut O → tool ellipse
         task-cards           shape task-card v3 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · property title → task-card · ShapeTitles → task-card · ContentsTitles → task-card · ports task-link → task-card · channel task-link
         validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
+        adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
         detail-panel         service DetailPanelState · ShapeDetails
         context-menus        service ContextMenuState · secondary-click menu
         table-of-contents    service ContentsState
-        checklists           property checklist · overlay ChecklistOverlay
-        titles               property title · service TitleState · overlay TitleOverlay
+        checklists           property checklist · adornment ChecklistChip → every shape
+        titles               property title · adornment TitlePill → every shape
         validation-details   DetailStatuses in Issues
         validation-contents  ContentsMarks
         clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
-        locking              property locked · property locked → every shape · read-only shapes · service LockState · overlay LockOverlay · CanvasButtons · CanvasContextMenu
+        locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · CanvasContextMenu
         ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
         arrow-ports          property channel → arrow · connector → arrow · ArrowBindingRules
         automation           command line create · command line kinds
@@ -72,7 +73,7 @@ import ValidationDetails
         expectEqual(panels, ["Ellipse: Arrange", "Rectangle: Arrange", "Arrow: ", "(Note): Checklist, Arrange, Issues",
                              "New Task: Task, Checklist, Style, Arrange"])
     },
-    test("a long title's pill stays clear of the checklist chip, though neither plugin knows the other's size") {
+    test("a long title's pill stays clear of the checklist chip: Adornments lays out both") {
         // A note with its checklist (the chip, on its top-right corner), its long title (the pill,
         // above its top-left corner and as wide as the note), or neither; its text keeps it from
         // being empty, and outlined.

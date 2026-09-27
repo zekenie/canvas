@@ -1,6 +1,6 @@
+import Adornments
 import Canvas
 import ContextMenus
-import Selection
 
 /// Locking, as a plugin: a shape can be locked, and then nothing changes it (not a drag, Delete,
 /// the eraser, editing, the panel or a menu item) until it's unlocked. Every try shakes it, and a
@@ -54,11 +54,19 @@ extension LockMenuGroup: MenuGroup {
     public static var order: Int { 300 }
 }
 
-/// A shape's lock chip, as a button the select tool clicks (`CanvasButtons`): what
-/// `editor.hoveredButton` and `editor.pressedButton` are while the pointer's on it.
-public struct LockChip: Hashable, Sendable {
-    public let shape: ShapeID
-    public init(shape: ShapeID) { self.shape = shape }
+/// A shape's lock chip: a lock in a disc at the right end of the row just above a locked shape,
+/// where a title's pill starts at the other end, farthest out of what's there, as a state that
+/// comes and goes. For a moment after a shape is unlocked it shows the lock open, fading.
+public enum LockChip {}
+
+extension LockChip: Adornment {
+    public static var placement: AdornmentPlacement { .aboveTopRight }
+    public static var order: Int { 300 }
+}
+
+extension LockChip: ClickableAdornment {
+    /// A locked shape's chip unlocks it; a just-unlocked one's locks it again.
+    public static func click(on shape: ShapeID, in editor: CanvasEditor) { editor.service(LockState.self)?.click(shape) }
 }
 
 public struct LockingPlugin: CanvasPlugin {
@@ -70,11 +78,12 @@ public struct LockingPlugin: CanvasPlugin {
         registrar.optInEveryShape(to: LockedProperty.self)
         registrar.readOnlyShapes { $0.isLocked }
         registrar.service { LockState(editor: $0) }
-        registrar.overlay(LockOverlay())
-        // A click on a locked shape's chip unlocks it; on the open lock it shows for a moment
-        // after, locks it again.
-        registrar.canvasButtons(at: { editor, point in editor.service(LockState.self)?.chip(atViewPoint: point) },
-                                click: { chip, editor in editor.service(LockState.self)?.click(chip) })
+        // The chip, on the kinds that can be locked: on every locked shape, and for a moment on one
+        // just unlocked (LockState's open lock).
+        registrar.adornmentForEveryShape(LockChip.self, where: { $0.holds(LockedProperty.self) }) { shape, context in
+            if shape.isLocked { return AdornmentLabel(systemImage: "lock.fill") }
+            return context.service(LockState.self)?.openLockOpacity(of: shape.id).map { AdornmentLabel(systemImage: "lock.open.fill").opacity($0) }
+        }
         // One item for the menu's shapes, as tldraw's toggleLock: Unlock when every one is locked,
         // otherwise Lock, which locks the rest. Items for the canvas, so a mix of locked and
         // unlocked shapes still gets one; with no shapes (empty canvas), neither.

@@ -1,3 +1,4 @@
+import Adornments
 import AppKit
 import ArrowPorts
 import Arrows
@@ -42,12 +43,12 @@ public enum ShippedPlugins {
             // handles draw below their view overlays.
             KeyboardPlugin(), SelectionPlugin(),
             ArrowsPlugin(), StickyNotesPlugin(), EllipsesPlugin(), TaskCardsPlugin(),
-            ValidationPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin(), ChecklistsPlugin(), TitlesPlugin(),
+            // After Validation: what's shown on shapes draws over its outline.
+            ValidationPlugin(), AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin(), ChecklistsPlugin(), TitlesPlugin(),
             ValidationDetailsPlugin(), ValidationContentsPlugin(), ClipboardPlugin(pasteboard: pasteboard),
-            // After Titles and Checklists: its chip draws above their pill and chip.
             LockingPlugin(),
-            // Ports, whose arrows the bridge draws. After Locking: a shape's dots draw above its chips,
-            // and are found first.
+            // Ports, whose arrows the bridge draws. After Adornments: a shape's dots draw above its
+            // adornments (the lock chip among them), and are found before them.
             PortsPlugin(), ArrowPortsPlugin(),
             // The command line's commands.
             AutomationPlugin(),

@@ -1,3 +1,4 @@
+import Adornments
 import Canvas
 import TableOfContents
 
@@ -5,8 +6,9 @@ import TableOfContents
 /// kept by Titles, in the `title` property it adds to the kinds that opt in (`TitleProperty`), where
 /// someone names the shape (a note, a task); or derived from what the kind keeps itself (an
 /// ellipse's size). Any shape of a titled kind may have none. A titled shape shows its title in a
-/// pill just outside its top-left corner, and its row in the table of contents is called by it;
-/// `TitleHeader` renames it in the detail panel. The core never learns what a title is.
+/// pill just outside its top-left corner (`TitlePill`, an adornment), and its row in the table of
+/// contents is called by it; `TitleHeader` renames it in the detail panel. The core never learns
+/// what a title is.
 extension PluginID {
     public static let titles: PluginID = "titles"
 }
@@ -41,7 +43,7 @@ extension ShapeTitles: KeyedExtensionPoint {
 }
 
 /// What `ShapeTitles` stores for a kind: its shapes' titles, as they read (`oneLine`), and whether
-/// the canvas shows them in a pill. Only the sugar below makes one.
+/// its shapes show `TitlePill`. Only the sugar below makes one.
 @MainActor
 public struct TitleContribution {
     let title: @MainActor (AnyShapeRecord) -> String?
@@ -109,34 +111,36 @@ extension Registry {
     }
 }
 
-/// Per editor: the kinds whose titles show in a pill, found once (the registry is frozen), so the
-/// overlay doesn't ask the registry for every kind on every frame.
-@MainActor
-final class TitleState {
-    let pills: [ShapeKind: TitleContribution]
+/// A title's pill: the shape's title at the left end of the row just above it, on every titled
+/// shape whose kind shows one (`pill: true`, the default). Titles places it, though it defines no
+/// shape; Adornments lays it out: as long as the title, no longer than the row leaves it (the
+/// shape's width, less whatever is at the row's right end, a lock, and 4 points), ending in "…".
+public enum TitlePill {}
 
-    init(editor: CanvasEditor) {
-        let registry = editor.registry
-        var pills: [ShapeKind: TitleContribution] = [:]
-        for kind in registry.kinds {
-            if let title = registry.contributions(to: ShapeTitles.self, for: kind).first, title.showsPill { pills[kind] = title }
-        }
-        self.pills = pills
+extension TitlePill: Adornment {
+    public static var placement: AdornmentPlacement { .aboveTopLeft }
+    public static var order: Int { 50 }
+}
+
+extension Registry {
+    /// Whether a kind's shapes show their title in a pill: it's titled, and not with `pill: false`.
+    func showsTitlePill(_ kind: ShapeKind) -> Bool {
+        contributions(to: ShapeTitles.self, for: kind).first?.showsPill == true
     }
 }
 
-extension TitleState: EditorService {}
-
 /// A horizontal any kind can opt into: a title, kept in the property this plugin adds to the kind or
 /// derived from the kind's own, in a pill on the canvas and naming the shape's row in the table of
-/// contents. This plugin shows it, and `TitleHeader` renames it.
+/// contents. This plugin places the pill, and `TitleHeader` renames it.
 public struct TitlesPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .titles }
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.declare(TitleProperty.self)
-        registrar.service { TitleState(editor: $0) }
-        registrar.overlay(TitleOverlay())
+        // The pill, on every shape whose kind's title shows one: Titles places it, and defines no kind.
+        registrar.adornmentForEveryShape(TitlePill.self, where: { $0.registry.showsTitlePill($0.kind) }) { shape, context in
+            context.registry.title(of: shape).map { AdornmentLabel($0) }
+        }
     }
 }

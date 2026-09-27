@@ -1,3 +1,4 @@
+import Adornments
 import AppKit
 import Canvas
 import CanvasTesting
@@ -14,10 +15,11 @@ import Titles
 import Validation
 
 /// Every plugin a task card needs (it contributes to validation, checklists, the panel, the context
-/// menu, the table of contents, titles and ports), and the selection, to select one.
+/// menu, the table of contents, titles and ports), the selection, to select one, and Adornments,
+/// which Titles places its pill with.
 @MainActor func taskPlugins() -> [any CanvasPlugin] {
-    [KeyboardPlugin(), SelectionPlugin(), TaskCardsPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
-     TableOfContentsPlugin(), TitlesPlugin(), PortsPlugin()]
+    [KeyboardPlugin(), SelectionPlugin(), TaskCardsPlugin(), ValidationPlugin(), AdornmentsPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
+     ContextMenusPlugin(), TableOfContentsPlugin(), TitlesPlugin(), PortsPlugin()]
 }
 
 @MainActor func taskEditor(scheduler: any Scheduler = ManualScheduler()) throws -> CanvasEditor {

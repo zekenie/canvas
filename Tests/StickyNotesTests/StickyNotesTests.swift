@@ -1,3 +1,4 @@
+import Adornments
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
@@ -13,10 +14,10 @@ import TestKit
 import Titles
 import Validation
 
-/// The note and every plugin it opts into.
+/// The note, every plugin it opts into, and Adornments, which lays out what Titles shows on it.
 @MainActor var notePlugins: [any CanvasPlugin] {
-    [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
-     TableOfContentsPlugin(), TitlesPlugin(), PortsPlugin()]
+    [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), AdornmentsPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
+     ContextMenusPlugin(), TableOfContentsPlugin(), TitlesPlugin(), PortsPlugin()]
 }
 
 extension ShapeRecord where Props == StickyNote {
