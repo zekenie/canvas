@@ -2,6 +2,7 @@ import AppKit
 import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
+import CanvasUI
 import Composition
 import CoreGraphics
 import Ellipses
@@ -13,9 +14,9 @@ import TaskCards
 import TestKit
 
 // The persistence plan's budgets, for boards of generated shapes: saving and opening, and one hover
-// and one drag frame (the input, then drawing the whole canvas) at 60 fps. `./build.sh bench` runs
-// these in a release build and holds them to the budgets; `./test.sh` runs them debug and small, so
-// they keep working, and only reports.
+// and one drag frame (the input, then drawing the whole canvas, and the minimap with it) at 60
+// fps. `./build.sh bench` runs these in a release build and holds them to the budgets; `./test.sh`
+// runs them debug and small, so they keep working, and only reports.
 #if DEBUG
 let sizes = [300]
 let holdsToBudgets = false
@@ -82,6 +83,22 @@ enum Budget {
 }
 
 @MainActor func report(_ line: String) { print("  \(line)") }
+
+/// Draws a view as its window would, into `context` (sized to it, y down).
+@MainActor func display(_ view: NSView, into context: CGContext) {
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+    view.draw(view.bounds)
+    NSGraphicsContext.restoreGraphicsState()
+}
+
+@MainActor func bitmapContext(_ size: CGSize, scale: CGFloat = 1) throws -> CGContext {
+    let context = try require(CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale), bitsPerComponent: 8,
+                                        bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.translateBy(x: 0, y: size.height * scale)
+    context.scaleBy(x: scale, y: -scale)
+    return context
+}
 
 @MainActor let benchmarks = Suite("Benchmarks", [
     test("saving and opening a board stay within budget") {
@@ -192,6 +209,57 @@ enum Budget {
                                      ("a delete", delete), ("a restack", restack)] {
                     expect(time < Budget.contentsRows, "reading the rows after \(what) on \(size) shapes took \(time) ms")
                 }
+            }
+        }
+    },
+    test("the minimap draws a board a frame's worth at a time, and a drag redraws only what moved") {
+        let viewport = CGSize(width: 1200, height: 800)
+        let context = try bitmapContext(viewport)
+        for size in sizes {
+            let document = generatedBoard(shapes: size)
+            let registry = try ShippedPlugins.registry()
+            let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
+            let window = NSWindow(contentRect: CGRect(origin: .zero, size: viewport), styleMask: [.titled], backing: .buffered, defer: false)
+            let canvas = CanvasView(editor: h.editor)
+            window.contentView = canvas
+            canvas.showsMinimap = true
+            let minimap = try require(canvas.minimap)
+            let minimapContext = try bitmapContext(minimap.bounds.size, scale: window.backingScaleFactor)
+            draw(h.editor, into: context, size: viewport)     // the canvas's first frame works out every shape's geometry
+            // The first picture of the board, drawn as frames come: how many, and the longest.
+            let clock = ContinuousClock()
+            var frames = 0, longest = 0.0, total = 0.0
+            while true {
+                let took = clock.measure { display(minimap, into: minimapContext) }
+                let ms = Double(took.components.seconds) * 1000 + Double(took.components.attoseconds) / 1e15
+                frames += 1
+                longest = max(longest, ms)
+                total += ms
+                guard h.scheduler.pendingCount > 0, frames < 1000 else { break }
+                h.wait(0)                                   // the next frame the minimap asked for
+            }
+            expectEqual(h.scheduler.pendingCount, 0, "the first picture is all drawn")
+            let note = try require(document.shapes.first { $0.kind == StickyNote.kind })
+            let center = CGPoint(x: try require(note.box).midX, y: try require(note.box).midY)
+            h.press(at: center)
+            var step = 0
+            let drag = median(runs: 21) {
+                step += 1
+                h.drag(to: center + CGPoint(x: CGFloat(step), y: CGFloat(step) / 2))
+                draw(h.editor, into: context, size: viewport)
+                display(minimap, into: minimapContext)
+            }
+            let minimapAlone = median(runs: 21) {
+                step += 1
+                h.drag(to: center + CGPoint(x: CGFloat(step), y: CGFloat(step) / 2))
+                display(minimap, into: minimapContext)
+            }
+            h.release()
+            report(String(format: "%6d shapes: minimap's first picture %.1f ms in %d frames (longest %.1f); drag with the minimap %5.1f ms (budget %.0f), its part %.1f",
+                          size, total, frames, longest, drag, Budget.frame, minimapAlone))
+            if holdsToBudgets {
+                expect(longest < Budget.frame, "a frame of the minimap's first picture of \(size) shapes took \(longest) ms")
+                expect(drag < Budget.frame, "a drag over \(size) shapes, with the minimap, took \(drag) ms")
             }
         }
     },

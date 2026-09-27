@@ -87,9 +87,10 @@ struct InspectorHost: View {
     let editor: CanvasEditor
     let focus: CanvasFocus
     let showsDetails: Bool
+    var showsMinimap = false
 
     var body: some View {
-        CanvasRepresentable(editor: editor, focus: focus)
+        CanvasRepresentable(editor: editor, focus: focus, showsMinimap: showsMinimap)
             .inspector(isPresented: .constant(showsDetails)) {
                 ShippedPlugins.detailPanel(editor: editor, onExit: focus.take)
             }

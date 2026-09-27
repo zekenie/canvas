@@ -29,12 +29,13 @@ public struct BoardWindowContent {
     public let view: BoardViewState
 }
 
-/// A board window's own state, beside the board: whether the details show. Remembered per file on
-/// this Mac, with the camera (`BoardViewMemory`).
+/// A board window's own state, beside the board: whether the details and the minimap show.
+/// Remembered per file on this Mac, with the camera (`BoardViewMemory`).
 @MainActor
 @Observable
 public final class BoardViewState {
     public var showsDetails = true
+    public var showsMinimap = true
     public init() {}
 }
 
@@ -137,6 +138,7 @@ public final class BoardDocument: NSDocument {
         if let url = fileURL, let saved = viewMemory.recall(for: url) {
             editor.camera = Camera(origin: CGPoint(x: saved.x, y: saved.y), zoom: saved.zoom)
             viewState.showsDetails = saved.showsDetails
+            viewState.showsMinimap = saved.showsMinimap
         }
     }
 
@@ -150,12 +152,13 @@ public final class BoardDocument: NSDocument {
         super.close()
     }
 
-    /// Remembers where this board's camera is and whether its details show, for the next time it opens.
+    /// Remembers where this board's camera is and whether its details and minimap show, for the
+    /// next time it opens.
     public func rememberView() {
         guard let url = fileURL else { return }
         let camera = editor.camera
         viewMemory.remember(BoardViewMemory.View(x: camera.origin.x, y: camera.origin.y, zoom: camera.zoom,
-                                                 showsDetails: viewState.showsDetails), for: url)
+                                                 showsDetails: viewState.showsDetails, showsMinimap: viewState.showsMinimap), for: url)
     }
 
     private func showLoadReportIfNeeded() {
@@ -220,19 +223,33 @@ extension String {
 }
 
 /// Each board's view, remembered on this Mac by its file's path, most recent first: the camera and
-/// whether the details show. Not in the board, so panning never marks it edited, and a board
-/// opens where this Mac left it. A renamed or moved board opens with the default view.
+/// whether the details and the minimap show. Not in the board, so panning never marks it edited,
+/// and a board opens where this Mac left it. A renamed or moved board opens with the default view.
 public struct BoardViewMemory {
     public struct View: Codable, Equatable, Sendable {
         public var x: Double
         public var y: Double
         public var zoom: Double
         public var showsDetails: Bool
-        public init(x: Double, y: Double, zoom: Double, showsDetails: Bool) {
+        public var showsMinimap: Bool
+        public init(x: Double, y: Double, zoom: Double, showsDetails: Bool, showsMinimap: Bool = true) {
             self.x = x
             self.y = y
             self.zoom = zoom
             self.showsDetails = showsDetails
+            self.showsMinimap = showsMinimap
+        }
+
+        private enum CodingKeys: String, CodingKey { case x, y, zoom, showsDetails, showsMinimap }
+
+        /// A view remembered before there was a minimap shows it, as a new board does.
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            x = try container.decode(Double.self, forKey: .x)
+            y = try container.decode(Double.self, forKey: .y)
+            zoom = try container.decode(Double.self, forKey: .zoom)
+            showsDetails = try container.decode(Bool.self, forKey: .showsDetails)
+            showsMinimap = try container.decodeIfPresent(Bool.self, forKey: .showsMinimap) ?? true
         }
     }
 

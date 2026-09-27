@@ -7,9 +7,9 @@ import SwiftUI
 ///
 /// It answers the menu commands that must reach the canvas whatever has the keyboard (the
 /// responder chain from a detail-panel field never passes through the canvas, but always reaches
-/// this controller): zooming, showing or hiding the details, and going back. And Edit › Cut, Copy
-/// and Paste, wherever the keyboard is (the canvas, the table of contents' list, a control in the
-/// panel), except in text, which takes them first: a note being edited, a field.
+/// this controller): zooming, showing or hiding the details and the minimap, and going back. And
+/// Edit › Cut, Copy and Paste, wherever the keyboard is (the canvas, the table of contents' list, a
+/// control in the panel), except in text, which takes them first: a note being edited, a field.
 @MainActor
 public final class BoardWindowController: NSWindowController {
     public init(board: BoardDocument) {
@@ -36,6 +36,9 @@ public final class BoardWindowController: NSWindowController {
     /// View › Show Inspector, or Hide Inspector.
     @objc public func toggleDetails(_ sender: Any?) { board?.viewState.showsDetails.toggle() }
 
+    /// View › Show Minimap, or Hide Minimap.
+    @objc public func toggleMinimap(_ sender: Any?) { board?.viewState.showsMinimap.toggle() }
+
     /// Go › Back: the command a plugin claims (Selection's, back to the previous selection).
     @objc public func goBack(_ sender: Any?) { board?.editor.perform(.goBack) }
 
@@ -54,6 +57,9 @@ extension BoardWindowController: NSMenuItemValidation {
     public func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(toggleDetails(_:)) {
             item.title = board?.viewState.showsDetails == true ? "Hide Inspector" : "Show Inspector"
+        }
+        if item.action == #selector(toggleMinimap(_:)) {
+            item.title = board?.viewState.showsMinimap == true ? "Hide Minimap" : "Show Minimap"
         }
         if let command = item.action.flatMap({ Self.commands[$0] }) { return board?.editor.canPerform(command) == true }
         return board != nil

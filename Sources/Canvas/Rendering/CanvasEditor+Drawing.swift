@@ -45,6 +45,48 @@ extension CanvasEditor {
         }
     }
 
+    // MARK: Pictures of the board
+    //
+    // What a view that shows the board away from the canvas (the minimap) goes by. Such a picture is
+    // kept from frame to frame and redrawn only where shapes moved or changed shape: `damage(since:)`
+    // says where. It shows where shapes are, not which is on top: the paint order isn't damage.
+
+    /// What the canvas outlines now: every plugin's outlines (none while the session hides them),
+    /// with the hint among the shapes; a shape outlined in full isn't among the faint ones too. A
+    /// picture of the board marks the same shapes.
+    @_spi(Host) public var outlines: Outlines {
+        var outlines = Outlines()
+        if session?.hidesOutlines != true {
+            for source in registry.outlineSources {
+                let more = source(self)
+                outlines.shapes += more.shapes
+                outlines.faintShapes += more.faintShapes
+                outlines.rects += more.rects
+            }
+        }
+        if let hintedShapeID { outlines.shapes.append(hintedShapeID) }
+        let full = Set(outlines.shapes)
+        outlines.faintShapes.removeAll { full.contains($0) }
+        return outlines
+    }
+
+    /// The bounds of every shape on the board, in world units: what a picture of all of it shows.
+    /// Shapes that could be anywhere (no outline, and no box) and shapes kept aside don't count;
+    /// null with none. Kept as shapes change, so asking costs what changed.
+    @_spi(Host) public var shapeBounds: CGRect { shapeIndex.bounds(in: shapeContext) }
+
+    /// Now, for `damage(since:)`: a picture brought up to date keeps it.
+    @_spi(Host) public var damageMark: Int { shapeIndex.mark(in: shapeContext) }
+
+    /// Where shapes may be other than they were at `mark`, in world units: every shape a commit
+    /// since then changed, added or removed, where it was and where it is, with every shape whose
+    /// geometry follows one of them (an arrow, its ends' shapes) or the camera. A picture drawn at
+    /// `mark` is up to date once it draws there again, grown by however far past its shapes it draws.
+    /// Not the paint order: a restack names the shapes it moved in the stack, but not one it carried
+    /// along above its anchor. Null when nothing moved; infinite when the editor no longer knows (too
+    /// long ago), or a shape that could be anywhere changed.
+    @_spi(Host) public func damage(since mark: Int) -> CGRect { shapeIndex.damage(since: mark, in: shapeContext) }
+
     /// A fresh graphics state and an empty path (the current path isn't part of the graphics
     /// state), so nothing one plugin leaves behind reaches the next.
     private func drawIsolated(_ context: CGContext, _ draw: () -> Void) {
@@ -81,22 +123,10 @@ extension CanvasEditor {
     /// Every plugin's outlines (unless the session hides them), then the hint, in one stroke at a
     /// constant screen width; under them, in a wider, lighter stroke of their own, the faint ones.
     private func drawOutlines(in context: CGContext, shapes: ShapeContext) {
-        var outlined: [ShapeID] = []
-        var faint: [ShapeID] = []
-        var rects: [CGRect] = []
-        if session?.hidesOutlines != true {
-            for source in registry.outlineSources {
-                let outlines = source(self)
-                outlined += outlines.shapes
-                faint += outlines.faintShapes
-                rects += outlines.rects
-            }
-        }
-        if let hintedShapeID { outlined.append(hintedShapeID) }
-        let full = Set(outlined)
-        strokeOutlines(of: faint.filter { !full.contains($0) }, rects: [], in: Style.accent.withAlphaComponent(Style.faintIndicatorOpacity),
+        let outlines = self.outlines
+        strokeOutlines(of: outlines.faintShapes, rects: [], in: Style.accent.withAlphaComponent(Style.faintIndicatorOpacity),
                        width: Style.faintIndicatorWidth, context: context, shapes: shapes)
-        strokeOutlines(of: outlined, rects: rects, in: Style.accent, width: Style.indicatorWidth, context: context, shapes: shapes)
+        strokeOutlines(of: outlines.shapes, rects: outlines.rects, in: Style.accent, width: Style.indicatorWidth, context: context, shapes: shapes)
     }
 
     /// `width` is in view points.

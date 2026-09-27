@@ -14,7 +14,18 @@ import TestKit
 /// on `pasteboard` (a test that copies passes its own).
 @MainActor func configureBoards(pasteboard: NSPasteboard = .general) throws {
     BoardDocument.configuration = BoardConfiguration(registry: try ShippedPlugins.registry(pasteboard: pasteboard)) { board in
-        AnyView(InspectorHost(editor: board.editor, focus: board.focus, showsDetails: board.view.showsDetails))
+        AnyView(InspectorHost(editor: board.editor, focus: board.focus, showsDetails: board.view.showsDetails, showsMinimap: board.view.showsMinimap))
+    }
+}
+
+/// A board's canvas as the app shows it, with the minimap as the board's view says.
+struct MinimapHost: View {
+    let editor: CanvasEditor
+    let focus: CanvasFocus
+    let view: BoardViewState
+
+    var body: some View {
+        CanvasRepresentable(editor: editor, focus: focus, showsMinimap: view.showsMinimap)
     }
 }
 
@@ -140,6 +151,28 @@ let boardType = "com.example.InfiniteCanvas.board"
         expectEqual(board.editor.selectedShapeIDs, [])
         expect(!controller.validateMenuItem(back))
     },
+    test("View › Hide Minimap takes the minimap off the board's canvas, and Show Minimap puts it back") {
+        BoardDocument.configuration = BoardConfiguration(registry: try ShippedPlugins.registry()) { board in
+            AnyView(MinimapHost(editor: board.editor, focus: board.focus, view: board.view))
+        }
+        let board = BoardDocument()
+        board.makeWindowControllers()
+        defer { board.close() }
+        let controller = try require(board.windowControllers.first as? BoardWindowController)
+        let window = try require(controller.window)
+        window.settle()
+        let canvas = try require(board.focus.canvas)
+        expect(canvas.minimap != nil, "a new board shows it")
+        let item = NSMenuItem(title: "", action: #selector(BoardWindowController.toggleMinimap(_:)), keyEquivalent: "")
+        _ = controller.validateMenuItem(item)
+        expectEqual(item.title, "Hide Minimap")
+        controller.toggleMinimap(nil)
+        window.spin { canvas.minimap == nil }
+        _ = controller.validateMenuItem(item)
+        expectEqual(item.title, "Show Minimap")
+        controller.toggleMinimap(nil)
+        window.spin { canvas.minimap != nil }
+    },
     test("each board's view is remembered by its file, most recent first, and restored when its window opens") {
         try configureBoards()
         let suite = "BoardDocumentTests-\(UUID().uuidString)"
@@ -154,7 +187,7 @@ let boardType = "com.example.InfiniteCanvas.board"
         for i in 0..<BoardViewMemory.limit { memory.remember(.init(x: 0, y: 0, zoom: 1, showsDetails: true), for: URL(fileURLWithPath: "/tmp/\(i).canvasboard")) }
         expectEqual(memory.recall(for: a), nil, "the oldest are forgotten")
 
-        memory.remember(.init(x: 100, y: 50, zoom: 0.5, showsDetails: false), for: a)
+        memory.remember(.init(x: 100, y: 50, zoom: 0.5, showsDetails: false, showsMinimap: false), for: a)
         let board = BoardDocument()
         board.viewMemory = memory
         board.fileURL = a
@@ -162,9 +195,21 @@ let boardType = "com.example.InfiniteCanvas.board"
         expectEqual(board.editor.camera.origin, CGPoint(x: 100, y: 50))
         expectEqual(board.editor.camera.zoom, 0.5)
         expect(!board.viewState.showsDetails)
+        expect(!board.viewState.showsMinimap)
         board.editor.camera = Camera(origin: CGPoint(x: 7, y: 8), zoom: 2)
+        board.viewState.showsMinimap = true
         board.close()
-        expectEqual(memory.recall(for: a), .init(x: 7, y: 8, zoom: 2, showsDetails: false), "closing remembers it")
+        expectEqual(memory.recall(for: a), .init(x: 7, y: 8, zoom: 2, showsDetails: false, showsMinimap: true), "closing remembers it")
+    },
+    test("a view remembered before boards had a minimap still reads, with the minimap showing") {
+        let suite = "BoardDocumentTests-\(UUID().uuidString)"
+        let defaults = try require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let old = #"[{ "path" : "/tmp/old.canvasboard", "view" : { "x" : 1, "y" : 2, "zoom" : 3, "showsDetails" : false } }]"#
+        defaults.set(Data(old.utf8), forKey: "BoardViews")
+        let memory = BoardViewMemory(defaults: defaults)
+        expectEqual(memory.recall(for: URL(fileURLWithPath: "/tmp/old.canvasboard")), .init(x: 1, y: 2, zoom: 3, showsDetails: false, showsMinimap: true))
+        expect(BoardViewState().showsMinimap, "a new board shows it")
     },
     test("the menus send a document app's standard actions, with their shortcuts") {
         let menus = BoardMenus.make(appName: "Infinite Canvas")
@@ -188,6 +233,7 @@ let boardType = "com.example.InfiniteCanvas.board"
         try check("Edit", "Delete", "delete:")
         try check("Edit", "Select All", "selectAll:", "a")
         try check("View", "Show Inspector", "toggleDetails:", "i", [.command, .control])
+        try check("View", "Show Minimap", "toggleMinimap:", "m", [.command, .control])
         try check("View", "Zoom In", "zoomIn:", "=")
         try check("View", "Zoom Out", "zoomOut:", "-")
         try check("View", "Actual Size", "zoomToActualSize:", "0")

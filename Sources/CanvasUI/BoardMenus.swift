@@ -59,6 +59,7 @@ public enum BoardMenus {
         let view = menu("View", [
             item("Show Toolbar", #selector(NSWindow.toggleToolbarShown(_:)), "t", [.command, .option]),
             item("Show Inspector", #selector(BoardWindowController.toggleDetails(_:)), "i", [.command, .control]),
+            item("Show Minimap", #selector(BoardWindowController.toggleMinimap(_:)), "m", [.command, .control]),
             .separator(),
             item("Zoom In", NSSelectorFromString("zoomIn:"), "="),
             item("Zoom Out", NSSelectorFromString("zoomOut:"), "-"),

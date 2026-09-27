@@ -140,6 +140,16 @@ final class ActionLog: NSView {
         expect(!window.performKeyEquivalent(with: commandA), "the menu's, to select the field's text")
         expectEqual(editor.selectedShapeIDs, [])
     },
+    test("⌃⌘M isn't the canvas's while it has the keyboard: it goes on to the menu bar, where it's View › Show Minimap") {
+        let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler())
+        let (window, canvas) = windowed(editor)
+        window.makeFirstResponder(canvas)
+        expect(!window.performKeyEquivalent(with: window.keyEvent("m", modifiers: [.command, .control])))
+        let view = try require(BoardMenus.make(appName: "Infinite Canvas").main.item(withTitle: "View")?.submenu)
+        let item = try require(view.item(withTitle: "Show Minimap"))
+        expectEqual(item.keyEquivalent, "m")
+        expectEqual(item.keyEquivalentModifierMask, [.command, .control])
+    },
     test("the standard actions AppKit's key bindings send come back to the shortcuts as their keys: ⌃H is Delete, cancelOperation: Escape") {
         let editor = CanvasEditor(registry: try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), CardsPlugin()]), scheduler: ManualScheduler())
         let (window, canvas) = windowed(editor)

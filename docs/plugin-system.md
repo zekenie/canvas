@@ -345,9 +345,10 @@ is compiled by `./test.sh`, even before anything depends on it.
   | `hitMargin` | none: how far past its geometry's bounds `hitTest` can still say yes |
   | `indicatorPath(of:in:)` | the geometry's outline (the target hint, and hover and selection outlines) |
 
-  `geometry` is the one source of truth. Override it and hit testing, the outline, the marquee and
-  arrows all follow. Override `hitTest` or `indicatorPath` only when you can do better; Ellipses
-  does both (an exact hit test, a smooth outline). A `hitTest` that reaches past the outline (a
+  `geometry` is the one source of truth. Override it and hit testing, the outline, the marquee,
+  arrows and the minimap (which draws each shape as a silhouette of its outline) all follow.
+  Override `hitTest` or `indicatorPath` only when you can do better; Ellipses does both (an
+  exact hit test, a smooth outline). A `hitTest` that reaches past the outline (a
   stroke, a few points of slop) says how far in `hitMargin`: the editor asks it only about points
   that near. A kind that knows better than its geometry whether the marquee touches it (Arrows,
   against its arc) adopts Selection's `BrushHitTesting`.
@@ -1777,8 +1778,15 @@ to it.
   about points within its extent grown by its `hitMargin`, and `editor.paintOrder(in:)` is the
   paint order of just the shapes that may show in a world rect: what drawing goes through, and
   overlays too, with `context.visibleRect`. Code that runs per frame doesn't go through every
-  shape; `./build.sh bench` holds a hover and a drag at 10,000 shapes to a frame (16 ms), and the
-  table of contents' rows after a commit to a millisecond.
+  shape; `./build.sh bench` holds a hover and a drag at 10,000 shapes to a frame (16 ms), with the
+  minimap drawn too, and the table of contents' rows after a commit to a millisecond. The editor
+  also keeps the bounds of every shape, and where each commit moved or reshaped shapes (its
+  damage: where the shapes it touched were and are, with every shape whose geometry followed
+  them), for a picture of the whole board kept from frame to frame, the minimap's, which redraws
+  only that. Damage says where shapes are, not which is on top: a restack names the shapes it
+  moved in the stack, not one it carried along above its anchor. It's host API (`shapeBounds`,
+  `damageMark`, `damage(since:)`, and `outlines`, what the canvas outlines), as the minimap is
+  the host's.
 - **Drawing**, back to front: background and grid; shapes in paint order (culled by extent: those
   more than 40 world units out of view don't draw, and a shape with no outline always does); every
   plugin's outlines (`registrar.outlines`: selection, the box around several; none while the
@@ -1795,8 +1803,11 @@ to it.
   `editor.viewportSize` is the view's size in view points, zero until it has one.
 - **The view.** `CanvasView` (CanvasUI) is the only AppKit in the loop. It converts events, reports
   its size, hosts the editing view over its shape, hands AppKit the menu for a secondary click, and draws the editor, all through the editor's `@_spi(Host)`
-  API. Only the app and tests can import CanvasUI, and no plugin can see the host API, so no
-  plugin can reach around the editor.
+  API. It also hosts the minimap, in its bottom-left corner (`showsMinimap`; View › Show Minimap):
+  every shape as a silhouette of its geometry, the part of the board the canvas shows outlined,
+  and the selection in the accent color. It moves the camera as tldraw's minimap does, and knows
+  no shape or plugin. Only the app and tests can import CanvasUI, and no plugin can see the host
+  API, so no plugin can reach around the editor.
 
 ## Boards on disk
 
@@ -1818,8 +1829,8 @@ pretty-printed, so a board diffs cleanly.
 `format` versions the envelope, and `schema` each kind's props. A shape with
 [metadata](#metadata) has it in `meta`, and one without has none, so boards from before it read
 as they did (an app from before it reads such a board, and drops `meta` when it saves). The camera, the selection and
-whether the details show aren't in it: they're remembered per file on this Mac, so panning never
-marks a board edited.
+whether the details and the minimap show aren't in it: they're remembered per file on this Mac,
+so panning never marks a board edited.
 
 **A kind versions its own props.** Its migrations sit beside `static let kind`, and their count
 is the version boards record. A migration rewrites one shape's props as JSON (`JSONObject`), since
@@ -2020,9 +2031,14 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   kind. CanvasTests read broken and scrambled boards (a seeded fuzz test), and CompositionTests'
   BoardDocumentTests open, save, revert and host boards with `BoardDocument.configuration` set as
   the app sets it. `./build.sh bench` builds BenchmarkTests in release and holds saving, opening,
-  a hover and a drag frame, and reading the table of contents' rows after a drag event, an insert,
-  a delete and a restack, to their budgets on generated boards of 1,000 and 10,000 shapes;
-  `./test.sh` runs it small, in debug, and only reports.
+  a hover and a drag frame, reading the table of contents' rows after a drag event, an insert, a
+  delete and a restack, and the minimap's first picture (a frame at a time) and a drag frame with
+  it, to their budgets on generated boards of 1,000 and 10,000 shapes; `./test.sh` runs it small,
+  in debug, and only reports.
+- **The minimap.** CanvasUITests put a `CanvasView` with `showsMinimap` in an unshown window, drive
+  `canvas.minimap` with mouse events, and hold its picture, kept through every kind of edit, to a
+  new `MinimapView`'s, every pixel. A test that needs a board drawn in one frame lengthens the
+  minimap's `frameBudget`, and one that watches it fill in shortens it to a tile a frame.
 - **Arrow behavior is pinned to the proof of concept.** CompositionTests replays 30 arrow
   scenarios through `CanvasView` with real events and compares where every arrow ends up, byte for
   byte, with a transcript recorded from the POC. It also compares nine renders pixel for pixel:

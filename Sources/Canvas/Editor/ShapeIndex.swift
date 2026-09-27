@@ -10,6 +10,10 @@ import Geometry
 /// `geometry(of:)`, `hitTest(_:shape:)`), which tells the index as they do; reading the context's
 /// whole `document`, or its camera, ties the geometry to every change of them. The paint order is
 /// kept until the stack changes or an anchored shape's anchor does (`PaintOrderAnchored`).
+///
+/// It also keeps what a picture of the board kept from one frame to the next (the minimap's) needs
+/// in order to redraw only what changed: the bounds of every shape, and where each commit moved or
+/// reshaped shapes (`damage(since:in:)`).
 @MainActor
 final class ShapeIndex {
     struct Entry {
@@ -55,6 +59,30 @@ final class ShapeIndex {
     private var paintList: PaintList?
     /// Shapes whose extent in `paintList` is out of date.
     private var staleExtents: Set<ShapeID> = []
+    /// The union of `paintList`'s extents, but the null and infinite ones; nil when it has to be
+    /// worked out again (an extent that held an edge moved in, or the list was rebuilt).
+    private var knownBounds: CGRect?
+
+    /// Where a commit (or a camera change) moved or reshaped shapes: one record for each that did,
+    /// oldest first.
+    private struct Damage {
+        let generation: Int
+        /// Where the shapes it touched were: the extents they had before it.
+        let before: CGRect
+        /// The shapes it touched, which are wherever their extents are now as well.
+        let ids: Set<ShapeID>
+    }
+    /// A slice, so forgetting the oldest record doesn't move the rest.
+    private var damageLog: ArraySlice<Damage> = []
+    /// How many shapes the log's records name, in all.
+    private var damageLogNamed = 0
+    /// The log answers for any generation from this one on; for an earlier one it no longer
+    /// knows, so the damage since then is everywhere.
+    private var damageFloor = 0
+    /// How many records the log keeps, and how many shapes they may name in all, before it forgets
+    /// its oldest. A picture on screen catches up every frame, which takes a record or two.
+    static let damageLogLength = 512
+    static let damageLogCapacity = 50_000
 
     // MARK: Lookups, as definitions make them
 
@@ -121,11 +149,47 @@ final class ShapeIndex {
             for id in stale {
                 guard let index = context.storedDocument.index(of: id) else { continue }
                 let extent = entry(for: id, in: context)?.extent ?? .null
-                paintList!.extents[paintList!.positions[index]] = extent
+                let position = paintList!.positions[index]
+                keepBounds(from: paintList!.extents[position], to: extent)
+                paintList!.extents[position] = extent
             }
         }
         return paintList!
     }
+
+    // MARK: Bounds
+
+    /// The union of every shape's extent, in world units: where all of the board is. Shapes that
+    /// could be anywhere (no outline, and no box) and shapes kept aside don't count; null when that's
+    /// all there is.
+    func bounds(in context: ShapeContext) -> CGRect {
+        let list = paintList(in: context)
+        if let knownBounds { return knownBounds }
+        var bounds = CGRect.null
+        for extent in list.extents where Self.isBounded(extent) { bounds = bounds.union(extent) }
+        knownBounds = bounds
+        return bounds
+    }
+
+    /// Keeps `knownBounds` as one extent changes: they take in the new extent, unless the old one
+    /// held one of their edges and the new one no longer reaches it, when they may shrink, and are
+    /// worked out again when next asked. (So dragging a shape out past the edge costs nothing.)
+    private func keepBounds(from old: CGRect, to new: CGRect) {
+        guard let bounds = knownBounds else { return }
+        if Self.isBounded(old) {
+            let reaches = Self.isBounded(new)
+            if (old.minX <= bounds.minX && !(reaches && new.minX <= old.minX))
+                || (old.minY <= bounds.minY && !(reaches && new.minY <= old.minY))
+                || (old.maxX >= bounds.maxX && !(reaches && new.maxX >= old.maxX))
+                || (old.maxY >= bounds.maxY && !(reaches && new.maxY >= old.maxY)) {
+                knownBounds = nil
+                return
+            }
+        }
+        if Self.isBounded(new) { knownBounds = bounds.union(new) }
+    }
+
+    private static func isBounded(_ extent: CGRect) -> Bool { !extent.isNull && !extent.isInfinite }
 
     /// Document order, with each anchored shape just above its anchor (anchored shapes whose
     /// anchor is missing, or anchored itself, go on top).
@@ -181,16 +245,18 @@ final class ShapeIndex {
             hitMargins.append(entry?.hitMargin ?? HitMargin())
         }
         staleExtents = []
+        knownBounds = nil
         return PaintList(order: order, positions: positions, extents: extents, hitMargins: hitMargins, anchors: anchors)
     }
 
     // MARK: Keeping up
 
     /// After a commit (`document` is the new one): forgets what `changes` touched, and everything
-    /// worked out from it.
+    /// worked out from it, and notes where those shapes were.
     func documentDidChange(_ changes: ChangeSet, in document: CanvasDocument, registry: Registry) {
         generation += 1
-        forget(changes.shapeIDs.union(documentReaders))
+        let (touched, before) = forget(changes.shapeIDs.union(documentReaders))
+        noteDamage(before: before, ids: touched)
         guard let list = paintList else { return }
         if changes.reordered || anchorsMoved(changes.changed, from: list, in: document, registry: registry) {
             paintList = nil
@@ -200,7 +266,48 @@ final class ShapeIndex {
 
     func cameraDidChange() {
         generation += 1
-        if !cameraReaders.isEmpty { forget(cameraReaders) }
+        guard !cameraReaders.isEmpty else { return }
+        let (touched, before) = forget(cameraReaders)
+        noteDamage(before: before, ids: touched)
+    }
+
+    // MARK: Damage
+
+    /// Now, for `damage(since:in:)`. Works out every extent that's out of date first, so that what a
+    /// commit after this forgets, it knows where it was.
+    func mark(in context: ShapeContext) -> Int {
+        _ = paintList(in: context)
+        return generation
+    }
+
+    /// Where shapes may be other than they were at `mark`, in world units: wherever the shapes a
+    /// commit since then touched were before it, and wherever they are now, with those of every
+    /// shape whose geometry followed theirs (an arrow, its ends' shapes) or the camera. Not the paint
+    /// order: a restack names the shapes it moved in the stack, but not a shape it carried along
+    /// with its anchor. Null when nothing moved; infinite when anything may have, since the log
+    /// doesn't reach back that far, or a shape that could be anywhere changed.
+    func damage(since mark: Int, in context: ShapeContext) -> CGRect {
+        guard mark >= damageFloor, mark <= generation else { return .infinite }
+        var damage = CGRect.null
+        var ids: Set<ShapeID> = []
+        for record in damageLog.reversed() {
+            guard record.generation > mark else { break }
+            damage = damage.union(record.before)
+            ids.formUnion(record.ids)
+        }
+        for id in ids { damage = damage.union(entry(for: id, in: context)?.extent ?? .null) }
+        return damage
+    }
+
+    private func noteDamage(before: CGRect, ids: Set<ShapeID>) {
+        guard !ids.isEmpty || !before.isNull else { return }
+        damageLog.append(Damage(generation: generation, before: before, ids: ids))
+        damageLogNamed += ids.count
+        while damageLog.count > Self.damageLogLength || damageLogNamed > Self.damageLogCapacity {
+            let oldest = damageLog.removeFirst()
+            damageLogNamed -= oldest.ids.count
+            damageFloor = oldest.generation
+        }
     }
 
     /// Whether a changed shape's anchor isn't the one the paint order has. (An anchor follows from
@@ -214,13 +321,15 @@ final class ShapeIndex {
     }
 
     /// Drops the entries of `ids` and of every shape whose geometry looked one of them up, however
-    /// indirectly.
-    private func forget(_ ids: Set<ShapeID>) {
+    /// indirectly. Returns those shapes, and the union of the extents they had.
+    private func forget(_ ids: Set<ShapeID>) -> (ids: Set<ShapeID>, extents: CGRect) {
         var queue = Array(ids)
         var forgotten: Set<ShapeID> = []
+        var extents = CGRect.null
         while let id = queue.popLast() {
             guard forgotten.insert(id).inserted else { continue }
             if let entry = entries.removeValue(forKey: id) {
+                extents = extents.union(entry.extent)
                 for read in entry.reads where read != id {
                     readers[read]?.remove(id)
                     if readers[read]?.isEmpty == true { readers[read] = nil }
@@ -231,5 +340,6 @@ final class ShapeIndex {
             if let dependents = readers.removeValue(forKey: id) { queue += dependents }
         }
         if paintList != nil { staleExtents.formUnion(forgotten) }
+        return (forgotten, extents)
     }
 }

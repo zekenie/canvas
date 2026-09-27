@@ -3,10 +3,32 @@ import AppKit
 import Geometry
 
 /// The AppKit view around a `CanvasEditor`: turns NSEvents into editor calls, draws it, and hosts
-/// the one subview, a shape's editing view. Plugins can't import this module.
+/// its subviews: a shape's editing view, and the minimap when it shows. Plugins can't import this
+/// module.
 public final class CanvasView: NSView {
     public let editor: CanvasEditor
     private var editingView: EditingView?
+    /// The minimap, in the bottom-left corner, over everything else; nil while it's hidden.
+    public private(set) var minimap: MinimapView?
+    /// The pointer is over the minimap: the tool has been told it left the canvas.
+    private var pointerIsOnMinimap = false
+
+    /// Whether the minimap shows. Off unless the host turns it on (the app does, per board).
+    public var showsMinimap = false {
+        didSet {
+            guard showsMinimap != (minimap != nil) else { return }
+            if showsMinimap {
+                let minimap = MinimapView(editor: editor)
+                addSubview(minimap)
+                self.minimap = minimap
+                layoutMinimap()
+            } else {
+                minimap?.removeFromSuperview()
+                minimap = nil
+                pointerIsOnMinimap = false
+            }
+        }
+    }
 
     public init(editor: CanvasEditor) {
         self.editor = editor
@@ -30,7 +52,17 @@ public final class CanvasView: NSView {
     public override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         editor.viewportDidResize(to: newSize)
+        layoutMinimap()
     }
+
+    private func layoutMinimap() {
+        guard let minimap else { return }
+        let size = MinimapStyle.size(in: bounds.size)
+        minimap.frame = CGRect(x: MinimapStyle.margin, y: bounds.height - MinimapStyle.margin - size.height, width: size.width, height: size.height)
+    }
+
+    /// Whether a point (view points) is on the minimap, which takes its own clicks.
+    private func isOnMinimap(_ point: CGPoint) -> Bool { minimap?.frame.contains(point) ?? false }
 
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -73,11 +105,30 @@ public final class CanvasView: NSView {
 
     /// A Control-click comes here only when `menu(for:)` had nothing for it; the tool decides
     /// whether it's a click (`Pointer.isControlClick`).
-    public override func mouseDown(with event: NSEvent) { editor.pointerDown(pointerEvent(event)) }
+    public override func mouseDown(with event: NSEvent) {
+        pointerIsOnMinimap = false
+        editor.pointerDown(pointerEvent(event))
+    }
     public override func mouseDragged(with event: NSEvent) { editor.pointerDragged(pointerEvent(event)) }
     public override func mouseUp(with event: NSEvent) { editor.pointerUp(pointerEvent(event)) }
-    public override func mouseMoved(with event: NSEvent) { editor.pointerMoved(pointerEvent(event)) }
-    public override func mouseExited(with event: NSEvent) { editor.pointerExited() }
+    /// Over the minimap the pointer isn't over the canvas, though AppKit still tells the canvas: the
+    /// tool hears that it left, so it doesn't hover a shape under the minimap.
+    public override func mouseMoved(with event: NSEvent) {
+        let pointer = pointerEvent(event)
+        guard !isOnMinimap(pointer.location) else {
+            if !pointerIsOnMinimap {
+                pointerIsOnMinimap = true
+                editor.pointerExited()
+            }
+            return
+        }
+        pointerIsOnMinimap = false
+        editor.pointerMoved(pointer)
+    }
+    public override func mouseExited(with event: NSEvent) {
+        pointerIsOnMinimap = false
+        editor.pointerExited()
+    }
     public override func cursorUpdate(with event: NSEvent) { cursor(editor.cursor).set() }
     public override func flagsChanged(with event: NSEvent) { editor.modifiersChanged(held: Modifiers(event.modifierFlags)) }
 
@@ -87,7 +138,9 @@ public final class CanvasView: NSView {
     /// location or click count to give: then there's no menu.
     public override func menu(for event: NSEvent) -> NSMenu? {
         guard [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event.type) else { return nil }
-        return editor.menu(for: pointerEvent(event))
+        let pointer = pointerEvent(event)
+        guard !isOnMinimap(pointer.location) else { return nil }
+        return editor.menu(for: pointer)
     }
 
     // MARK: Trackpad and scroll wheel
@@ -171,10 +224,14 @@ public final class CanvasView: NSView {
 @_spi(Host) extension CanvasView: CanvasEditorDelegate {
     public func editorNeedsDisplay(_ editor: CanvasEditor) {
         needsDisplay = true
+        minimap?.needsDisplay = true
         layoutEditingView()
     }
 
-    public func editorCursorDidChange(_ editor: CanvasEditor) { cursor(editor.cursor).set() }
+    public func editorCursorDidChange(_ editor: CanvasEditor) {
+        guard !pointerIsOnMinimap else { return }
+        cursor(editor.cursor).set()
+    }
 
     public func editorEditingDidChange(_ editor: CanvasEditor) {
         if let old = editingView {
@@ -183,7 +240,7 @@ public final class CanvasView: NSView {
             editingView = nil
         }
         guard let new = editor.makeEditingView() else { return }
-        addSubview(new.view)
+        addSubview(new.view, positioned: .below, relativeTo: minimap)
         editingView = new
         layoutEditingView()
         window?.makeFirstResponder(new.firstResponder)

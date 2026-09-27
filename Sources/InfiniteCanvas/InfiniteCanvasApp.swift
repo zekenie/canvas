@@ -75,7 +75,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// A board window's content: the canvas, the tools in the toolbar, and the details in an inspector.
+/// A board window's content: the canvas (with the minimap in its corner), the tools in the toolbar,
+/// and the details in an inspector.
 struct ContentView: View {
     let editor: CanvasEditor
     let focus: CanvasFocus
@@ -88,7 +89,7 @@ struct ContentView: View {
     }
 
     var body: some View {
-        CanvasRepresentable(editor: editor, focus: focus)
+        CanvasRepresentable(editor: editor, focus: focus, showsMinimap: view.showsMinimap)
             .frame(minWidth: 480, minHeight: 320)
             .toolbar {
                 ToolbarItem(placement: .principal) { ToolPicker(editor: editor, help: { ShippedPlugins.help(for: $0, in: editor.registry) }) }

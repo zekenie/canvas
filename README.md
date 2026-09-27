@@ -23,7 +23,7 @@ and `./build.sh audit` checks it without compiling.
 Each board is a file (`.canvasboard`, JSON) in its own window: File › New, Open, Open Recent, and Save,
 as in any Mac document app. Boards save themselves as you work, and File › Revert To goes back to
 earlier versions. The first launch opens the welcome board; Help › Welcome Board opens it again.
-A board remembers, on each Mac, where you left its view.
+A board remembers, on each Mac, where you left its view, and whether its minimap and details show.
 
 ## Controls
 
@@ -31,6 +31,7 @@ A board remembers, on each Mac, where you left its view.
 | --- | --- |
 | Pan | Two-finger scroll, or H (the hand tool) and drag; a fling slides on. V or Escape goes back to select |
 | Zoom | Pinch, ⌘-scroll, or ⌘= / ⌘- / ⌘0 |
+| See where you are | The minimap, in the canvas's bottom-left corner: every shape in miniature, and the part the canvas shows outlined. Click beside that part to move there, drag it to move it, double-click to center on a spot. ⌃⌘M shows or hides it |
 | New note | Double-click empty space, or N (the note tool) and click |
 | New ellipse | O, then click; keep dragging to place it |
 | New task | T, then click; edit it in the detail panel |

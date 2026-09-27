@@ -17,19 +17,24 @@ public final class CanvasFocus {
 public struct CanvasRepresentable: NSViewRepresentable {
     let editor: CanvasEditor
     let focus: CanvasFocus?
+    let showsMinimap: Bool
 
-    public init(editor: CanvasEditor, focus: CanvasFocus? = nil) {
+    public init(editor: CanvasEditor, focus: CanvasFocus? = nil, showsMinimap: Bool = false) {
         self.editor = editor
         self.focus = focus
+        self.showsMinimap = showsMinimap
     }
 
     public func makeNSView(context: Context) -> CanvasView {
         let canvas = CanvasView(editor: editor)
         focus?.canvas = canvas
+        canvas.showsMinimap = showsMinimap
         return canvas
     }
 
-    public func updateNSView(_ canvas: CanvasView, context: Context) {}
+    public func updateNSView(_ canvas: CanvasView, context: Context) {
+        canvas.showsMinimap = showsMinimap
+    }
 }
 
 /// The toolbar, built from the registry. The editor is observable, so this follows tool switches
