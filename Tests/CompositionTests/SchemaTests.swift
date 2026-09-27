@@ -136,6 +136,10 @@ private let stickyNoteSchema = """
     "frame" : {
       "$ref" : "#/$defs/core.rect"
     },
+    "locked" : {
+      "type" : "boolean",
+      "x-canvas-owner" : "locking"
+    },
     "text" : {
       "default" : "",
       "description" : "What the note says.",

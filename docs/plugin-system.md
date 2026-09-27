@@ -2,7 +2,7 @@
 
 Everything on the canvas comes from a plugin: sticky notes, ellipses, arrows, task cards,
 validation, checklists, titles, the detail panel and the table of contents beside the canvas,
-selecting itself, copying and pasting, what each key does, even the examples.
+selecting itself, copying and pasting, locking, what each key does, even the examples.
 The core (`Sources/Canvas`) knows how to hold shapes, run tools, draw, and wire plugins together,
 and nothing about any particular shape or concern. Its one built-in tool is tldraw's Hand, which
 pans (a flung release slides on). Select, which selects (a click, ⇧-click, or a marquee dragged
@@ -28,6 +28,7 @@ maps one onto the other.
 - [Context menus](#context-menus)
 - [The table of contents](#the-table-of-contents)
 - [The clipboard](#the-clipboard)
+- [Locking](#locking)
 - [Capabilities](#capabilities)
 - [The editor, the document, and drawing](#the-editor-the-document-and-drawing)
 - [Boards on disk](#boards-on-disk)
@@ -233,6 +234,9 @@ Once one plugin works, the question is which piece the next feature needs.
 | Create a kind with a double-click on empty canvas | `x.createOnDoubleClick(place)` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
 | Keep a kind from being selected | `x.unselectable()`, or `x.selectable { ... }` | [Selection](#selection) |
 | Keep a kind from being copied | `x.uncopyable()`, or `x.copyable { ... }` | [The clipboard](#the-clipboard) |
+| Keep some shapes from changing (a lock), and say why when something tries | `registrar.readOnlyShapes { ... }`; `EditorService.didRefuseChanges` | [Locking](#locking) |
+| Put a button on the canvas that a click does something with (a chip) | Selection's `registrar.canvasButtons(at:click:)`, drawn in an overlay with `editor.hoveredButton` and `editor.pressedButton` | [Canvas buttons](#canvas-buttons), [Locking](#locking) |
+| Draw a shape away from where it is, for an animation (a shake) | `editor.setDrawingOffset(_:for:)`; an overlay follows with `context.worldDrawingOffset(of:)` | [Locking](#locking) |
 | Keep what a kind's props name right as shapes are deleted and copied (a connector) | `ShapeReferencing` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
 | Keep something about any shape beside its props (where it came from) | A `ShapeMetaKey`, and `record.meta[Key.self]` | [Metadata](#metadata) |
 | Add a right-click item that isn't one shape's, in every menu and on empty canvas | `registrar.contextMenuForCanvas { ... }` | [The clipboard](#the-clipboard) |
@@ -269,7 +273,9 @@ Selecting is a horizontal too, one that every kind is in unless it opts out
 (`backdrop.unselectable()`). [Selection](#selection) owns what's selected and the way back
 through it, the Select tool, and Delete, Return, ⌘A and Back; the detail panel builds on it to
 show the selected shape. So are the keys: [Keyboard](#keyboard-shortcuts) holds every shortcut,
-and a plugin whose tool or command has a key registers it there.
+and a plugin whose tool or command has a key registers it there. So is [locking](#locking): any
+shape can be locked, and Locking owns the lock, its chip and its shake, while the core only
+refuses to change the shapes a plugin says are read-only.
 
 Opting in goes in one of two directions:
 
@@ -308,7 +314,7 @@ Each target is one line, with its layer:
 |---|---|---|
 | foundation | foundation | Geometry, Canvas (the core) |
 | ui | foundation | CanvasUI (the AppKit view, the SwiftUI toolbar, and `CanvasFocus`) |
-| horizontal | foundation, horizontal | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Checklists, Clipboard |
+| horizontal | foundation, horizontal | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Checklists, Clipboard, Locking |
 | vertical | foundation, horizontal | Arrows, StickyNotes, Ellipses, TaskCards, Rectangles, Polylines, Eraser, Reordering |
 | bridge | foundation, horizontal, vertical | EllipseTitles, ValidationDetails, ValidationContents |
 | composition | foundation, horizontal, vertical, bridge | Composition (the shipped plugin list) |
@@ -696,13 +702,15 @@ on one line wherever it shows (each run of whitespace folds into a space), so th
 and the row agree. What a title brings:
 
 - **A pill** just outside the shape's top-left corner, 9 points above it, clear of a badge on the
-  edge like the checklist chip: one line, no wider than the shape, where a longer title ends in
-  "…". It keeps its size on screen, shrinking with the shapes below 25% zoom, as the chip does.
+  edge like the checklist chip: one line, no wider than the shape less the row's last 22 points,
+  above the top-right corner, which are the [lock chip's](#locking), where a longer title ends in
+  "…". It keeps its size on screen, shrinking with the shapes below 25% zoom, as the chip does,
+  and goes where its shape is drawn, so it shakes with a locked shape.
   `TitleOverlay` goes through `editor.paintOrder(in:)` with the visible rect grown by the pill's
   reach, since a shape just below the view has its pill in it, and finds each kind's title in a
   service (`TitleState`) that gathers them once, as the registry is frozen. A kind that draws its
-  title itself leaves it out: `task.title(pill: false) { $0.props.title }`. Titles can't see the
-  chip; CompositionTests, which ships both, holds a long title's pill clear of it.
+  title itself leaves it out: `task.title(pill: false) { $0.props.title }`. Titles can't see either
+  chip; CompositionTests, which ships all three, holds a long title's pill clear of both.
 - **Its row's name** in [the table of contents](#the-table-of-contents), through TableOfContents'
   `ContentsTitles`, which names a kind's rows without replacing them: a titled note is listed by
   its title, with its checklist's tally; an untitled one by its text, as before. `contents: false`
@@ -1041,7 +1049,7 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
 
 ```swift
 registrar.shape(BackdropDefinition()) { backdrop in backdrop.unselectable() }
-registrar.shape(LockableDefinition()) { lockable in lockable.selectable { !$0.props.isLocked } }
+registrar.shape(GhostDefinition()) { ghost in ghost.selectable { $0.props.isShown } }
 ```
 
 The select tool sees through such a shape: a press lands on whatever is beneath it (or on the
@@ -1052,6 +1060,13 @@ one down and drags it, with nothing selected; a double-click on it goes to what'
 unselectable `Editable` kind is edited only as it's placed. A shape that stops being selectable
 leaves the selection with the change that did it. The rule is `ShapeSelectability`: at most one per
 kind, plus one for every kind, which a kind's own overrides.
+
+**Read-only shapes** (a locked one: [Locking](#locking)) are another matter: they're pressed,
+hovered, selected and outlined as any other, and only what would change them is refused. A drag
+leaves them where they are and moves the rest of the selection, Delete deletes the rest, Return
+and a double-click don't edit them, and they show no handles, so a press where one would be
+presses the shape. Each try reaches the plugin that made them read-only, which says why (Locking
+shakes them).
 
 **Opting in** to the rest:
 
@@ -1065,8 +1080,9 @@ kind, plus one for every kind, which a kind's own overrides.
   ContextMenus (the menu is for the selection) and TableOfContents (to list and select shapes)
   import Selection too.
 
-**The select tool** follows tldraw's states. Handles win, then the selectable shape under the
-pointer, then empty space inside a multi-selection's box, then the canvas.
+**The select tool** follows tldraw's states. A plugin's [canvas buttons](#canvas-buttons) win,
+then handles, then the selectable shape under the pointer, then empty space inside a
+multi-selection's box, then the canvas.
 
 - A press on a shape selects just it, and leaves it where it is in the paint order (as tldraw
   does; the POC brought it to the front); ⇧ adds it. With ⌘, or on a
@@ -1088,6 +1104,33 @@ pointer, then empty space inside a multi-selection's box, then the canvas.
 - Escape while a shape is pressed, before the drag threshold, ends the press; mid-marquee it puts
   back the selection from before. A press on empty canvas ignores Escape until the release, as in
   tldraw.
+
+### Canvas buttons
+
+A plugin can put a button on the canvas: something it draws in an overlay that a click does
+something with, as the lock chip unlocks its shape ([Locking](#locking)). It says where its buttons
+are, and what a click on one does; the select tool does the rest.
+
+```swift
+registrar.canvasButtons(at: { editor, viewPoint in state.chip(atViewPoint: viewPoint) },   // any Hashable, or nil
+                        click: { chip, editor in state.click(chip) })
+```
+
+- **Buttons come first.** A press on one, in the select tool, is the button's, whatever is under
+  it: a handle, a shape, the selection's box. A release on it clicks it, as an NSButton's does;
+  dragged off, the press does nothing (and Escape lets go of it). Where two plugins' buttons
+  overlap, the later plugin's wins, as its overlay draws on top. A click neither selects nor moves
+  anything by itself.
+- **Hover and press.** The pointing hand (`CanvasCursor.pointingHand`) shows over a button, and
+  `editor.hoveredButton` and `editor.pressedButton` say which the plugin should draw hovered and
+  pressed; the canvas redraws as they change.
+- **Only in the select tool.** In any other tool a button is only drawn, and a press there is the
+  tool's: the hand pans over a lock chip, and the eraser erases under it.
+- **Buttons that come and go** with the document are looked for again under a still pointer after
+  each commit. One that comes or goes some other way (a chip fading out) calls
+  `editor.canvasButtonsDidChange()`.
+- **Keep `at` cheap**: the select tool asks it as the pointer moves. Locking's looks only where a
+  chip could be, through `editor.paintOrder(in:)`, and at nothing on a board with no lock.
 
 ## Keyboard shortcuts
 
@@ -1220,7 +1263,10 @@ With nothing selected the panel shows its overview, a view the host may give it 
 Shapes" over the kinds selected, then the overview (details are per shape: editing several at once
 isn't built). A shape nothing contributes
 to (an arrow, today) gets its header, then "No Options". Without `DetailPanelPlugin` installed, the panel says
-"No Details".
+"No Details". A read-only shape (a [locked](#locking) one) shows its whole panel, but nothing in it
+edits the shape: the panel disables its sections' content and header controls, and its header (a
+title field), and leaves going back, the tabs and collapsing as they were. It asks the registry
+(`registry.isReadOnly(record)`), not the editor, so the panel doesn't read the document.
 
 Sections are stock SwiftUI plus a few primitives, and get the look by following these conventions:
 
@@ -1665,13 +1711,16 @@ right-click on a task card with one of its three items checked:
 │ Paste                   │
 ├─────────────────────────┤
 │ Arrange               ▸ │  every shape's (Reordering): Bring to Front, Bring Forward,
-└─────────────────────────┘    Send Backward, Send to Back
+├─────────────────────────┤    Send Backward, Send to Back
+│ Lock                    │  the canvas's (Locking): Unlock once every shape it's for is locked
+└─────────────────────────┘
 ```
 
 A shape nothing offers anything has no menu: the right-click does nothing. As shipped, every
-copyable shape has Cut and Copy, the clipboard's items for the canvas, which are in every menu; an
-arrow's menu is those alone, since Arrange leaves it out. On empty canvas the menu is the canvas's
-items alone: Paste, once there's something to paste.
+shape has Lock (or Unlock), and every copyable shape Cut and Copy, items for the canvas, which are
+in every menu with shapes; an arrow's menu is those alone, since Arrange leaves it out. On empty
+canvas the menu is the canvas's items that apply there alone: Paste, once there's something to
+paste.
 
 ### Contributing
 
@@ -1712,7 +1761,7 @@ task.contextMenu {
   |---|---|
   | 0 (the default) | A kind's own items (`ShapeMenuGroup`) |
   | 50 | A horizontal's feature, on the kinds that opt in (`ChecklistMenuGroup`) |
-  | 100 and up | Shared by every kind (`ClipboardMenuGroup`, 100; `ReorderMenuGroup`, 200) |
+  | 100 and up | Shared by every kind (`ClipboardMenuGroup`, 100; `ReorderMenuGroup`, 200; `LockMenuGroup`, 300) |
 
 - **Keyed.** Each item claims its target, group and `id` (the title by default), and an item in a
   submenu its path, so two plugins adding one item to a kind are a `conflict`
@@ -2008,7 +2057,7 @@ Paste send), shape [metadata](#metadata), and the `ShapeReferencing` [capability
 | | Does |
 |---|---|
 | ⌘C, Edit › Copy, Copy | Puts copies of the selection's copyable shapes on the pasteboard, back to front. The board doesn't change. |
-| ⌘X, Edit › Cut, Cut | Copies, then deletes what it copied, in one transaction. What can't be copied stays. |
+| ⌘X, Edit › Cut, Cut | Copies, then deletes what it copied, in one transaction. What can't be copied stays, and so does a [locked](#locking) shape, copied all the same (it shakes, as with Delete). |
 | ⌘V, Edit › Paste, Paste | Puts the copies on top of the board, with new ids, and selects them. |
 
 - **Copies get new ids, and remember their originals.** Each pasted shape's metadata names the
@@ -2016,7 +2065,9 @@ Paste send), shape [metadata](#metadata), and the `ShapeReferencing` [capability
   board keeps it. That's the shape the copy was made from: a copy, if a copy was copied; in
   whichever board it was copied from, this one or another; and maybe gone since (a cut shape always
   is). Pasting twice makes two copies of the same shapes. The rest of a shape's metadata comes
-  with it, and so do its [added properties](#added-properties)' values.
+  with it, and so do its [added properties](#added-properties)' values: a locked shape's copy is
+  locked, as tldraw's is. A paste moves its copies (`translate`) in the transaction that puts them
+  in, which a lock doesn't stop.
 - **Where a paste lands** is tldraw's: where the originals were, if any of them would be in view
   there; otherwise centered in the view, the shapes keeping their places among themselves. A paste
   in place lies exactly over its originals, as in tldraw and Figma. Moving them is
@@ -2084,6 +2135,106 @@ object for each plugin, and says so (`LoadReport.Repair.droppedMeta`). Unlike pr
 aren't versioned: add only optional fields to a value, since one that no longer decodes reads as
 nil.
 
+## Locking
+
+A locked shape can't be changed: not moved, restacked, resized, edited or deleted, whatever tries,
+until it's unlocked. Each try shakes it a little, and a lock chip sits just above its top-right
+corner. Shapes are locked from the context menu, and unlocked there or with a click on the chip,
+which shows the lock open for a moment, where a click locks the shape again. It's a horizontal
+([`Sources/Locking`](../Sources/Locking)) that every kind is in, built on ContextMenus and
+Selection; the core has never heard of a lock. It lends two generic things, read-only shapes and
+drawing offsets, Selection lends [canvas buttons](#canvas-buttons), and Locking does the rest
+([Locking.swift](../Sources/Locking/Locking.swift)):
+
+```swift
+registrar.declare(LockedProperty.self)                  // `locked: true` on a locked shape; nothing on the rest
+registrar.optInEveryShape(to: LockedProperty.self)
+registrar.readOnlyShapes { $0.isLocked }                // the core refuses changes to them
+registrar.service { LockState(editor: $0) }             // which shapes are locked, open locks, the shakes and fades under way
+registrar.overlay(LockOverlay())                        // the chip
+registrar.canvasButtons(at: { editor, point in editor.service(LockState.self)?.chip(atViewPoint: point) },
+                        click: { chip, editor in editor.service(LockState.self)?.click(chip) })
+registrar.contextMenuForCanvas {
+    MenuItem("Lock", in: LockMenuGroup.self, when: { !$0.shapes.isEmpty && !$0.allLocked }) { ids, editor in editor.lock(ids) }
+    MenuItem("Unlock", in: LockMenuGroup.self, when: { !$0.shapes.isEmpty && $0.allLocked }) { ids, editor in editor.unlock(ids) }
+}
+```
+
+- **A lock is something the shape knows**, as tldraw's `isLocked` is: an [added
+  property](#added-properties), `locked`, that every kind opts into, so it's in every kind's schema
+  and saved with the shape (`"added" : { "locked" : true }`). Its default is nil, so only locked
+  shapes carry it, and unlocking takes it away. Read it with `record.isLocked`, and change it with
+  `editor.lock(ids)` and `editor.unlock(ids)`, each one transaction.
+- **The menu** has one of two items, in `LockMenuGroup` (order 300, after every other group), as
+  tldraw's toggle: Unlock when every shape the menu is for is locked, and otherwise Lock, which locks
+  the rest. They're items for the canvas, so a mix of locked and unlocked shapes gets one; on empty
+  canvas, neither. There's no key: the menu is the only way to lock a shape.
+- **The chip is a button** (`LockChip`, a [canvas button](#canvas-buttons)): in the select tool, a
+  click on a locked shape's chip unlocks it. Then the chip shows the lock open for 1.5 s, however the
+  shape was unlocked (the menu too), so a click by mistake can be taken back: a click on the open
+  lock locks the shape again. It stays while the pointer's on it (looking again every 0.5 s), then
+  fades over 0.3 s and is gone, since an unlocked shape has no chip. The pointing hand shows over a
+  chip, which draws lighter hovered and darker pressed, and a click on one selects nothing.
+- **Everything refuses a locked shape**, since everything changes shapes through a transaction.
+  A drag leaves it where it is and moves the rest of the selection (a click, even one that jitters
+  under the drag threshold, doesn't count as a try); Delete, Cut and the eraser leave it and take
+  the rest; Return and a double-click don't edit it; it shows no handles; Arrange doesn't restack it;
+  a menu item that edits it changes nothing. Each of those shakes it.
+- **What isn't a change still works.** It's selected, hovered, outlined, copied, listed and bound
+  to (an arrow may start or end on it) as any other shape. An arrow bound to a shape that moves
+  follows it, locked or not, since its props don't change; and a locked arrow still lets go of a
+  shape that's deleted (`ShapeReferencing`), which keeps it where it's drawn. The detail panel shows
+  a locked shape's details, disabled.
+- **The shake** is a password field's: side to side, 5 points at most, 3 times over 360 ms, dying
+  away, a frame every 16 ms on `editor.scheduler`. A try while it plays (the eraser dragged across)
+  doesn't start it over. `LockState` hears the tries (`didRefuseChanges`), and moves how the shape
+  is drawn, never the shape: `editor.setDrawingOffset(_:for:)`.
+- **The chip** is an 18-point disc with a lock, the dark of a title's pill, 9 points above the
+  top-right corner, ending at the shape's right edge: in the row a title's pill starts at the other
+  end of, clear of the checklist chip below it. It keeps its size on screen down to 25%, and shakes
+  with its shape. A click within 3 points of its edge still clicks it. `LockOverlay` goes through
+  `editor.paintOrder(in:)` for the shapes `LockState` keeps as locked or open (redone for what each
+  commit's change set names: a shape that stops being locked opens), so a board with no lock costs
+  it nothing, and one with some costs what's in view; so does finding the chip under the pointer.
+
+### The core's part: read-only shapes
+
+`registrar.readOnlyShapes { record in ... }` says which shapes can't change; a shape is read-only
+when any plugin's rule says so, and `editor.isReadOnly(id)` (or `registry.isReadOnly(record)`,
+which doesn't read the document) asks. The core holds them where every change goes through it:
+
+- **Transactions.** A read-only shape that was in the document before the transaction isn't
+  changed (`update`), restacked (`bringToFront`, `move(_:above:)`, ...), moved (`translate`) or
+  deleted by it. The change is dropped, the rest of the transaction stands, and once it's done
+  services hear every shape it refused: `EditorService.didRefuseChanges(to:in:)`. A change that
+  leaves the shape no longer read-only goes through, whatever else it changes (unlocking, tldraw's
+  rule too), and so does one that makes it read-only. A shape the transaction put in isn't held
+  (a paste moves its locked copies into place). Nor is what a deletion does to keep the board
+  whole: its `willDelete` handlers' changes (a read-only dependent goes with the shape it depends
+  on, as a locked shape in tldraw goes with its deleted parent), and shapes letting go of what's
+  deleted (`ShapeReferencing`).
+- **Drags.** A `TranslatingSession` leaves read-only shapes out of what it moves (so a
+  `CustomTranslation` knows what moves with it), and tells services once the pointer passes the drag
+  threshold, once.
+- **Editing.** `beginEditing` refuses a read-only shape, and services hear it; a shape that becomes
+  read-only while it's edited stops being edited.
+
+Selection shows no handles on a read-only shape, and the detail panel disables its controls; both
+ask the core, not Locking. A rule reads only the record it's given, since a transaction asks it of a
+shape before and after a change, and the panel of the record it shows (and redraws only when that
+changes). It's asked about every shape a transaction changes, so keep it cheap: Locking's reads one
+added value.
+
+### The core's part: drawing offsets
+
+`editor.setDrawingOffset(offset, for: id)` draws a shape `offset` view points from where it is, until
+it's set back to zero: an animation that moves how a shape looks without changing it. The core
+draws the shape and its outlines there; an overlay that decorates a shape moves its decoration by
+`context.worldDrawingOffset(of:)` (the same offset, in world units), as the title pill, the checklist
+chip, the validation outline and the lock chip do. Everything else goes by where the shape is: hit
+testing, handles, arrows bound to it, and pictures of the board (the minimap). Deleting a shape
+drops its offset.
+
 ## Capabilities
 
 Some behavior belongs to a kind itself rather than to a concern others can join. That's a
@@ -2118,13 +2269,16 @@ to it.
   with it, record by record: its `ChangeSet` names the shapes it added, changed and removed, and
   says whether the stack changed. Transactions don't nest. A frame that isn't finite never gets in: such an insert or update is dropped, since a board
   must always save. An added value the shape's kind can't hold is dropped too, and an insert fills
-  in the defaults of what its kind opts into. Undo (not built yet) will group commits: everything
+  in the defaults of what its kind opts into. A read-only shape (a locked one,
+  `registrar.readOnlyShapes`) keeps whatever a transaction does to it, unless the change leaves it
+  no longer read-only, and services hear it was refused ([read-only
+  shapes](#the-cores-part-read-only-shapes)). Undo (not built yet) will group commits: everything
   from a press to its release, and everything while a shape is being edited, will be one step.
 - **`willDelete`** handlers run inside the deleting transaction, before anything is removed, and
   see every shape as it was, so a plugin can act on shapes about to disappear (delete what depends
-  on them). They may delete more; each shape's handlers run once. Then every shape that names one
-  of them, and stays, lets go of it, as its kind's `ShapeReferencing` says (arrows bake their curve
-  there).
+  on them). They may delete more, and change what they must, read-only shapes included; each
+  shape's handlers run once. Then every shape that names one of them, and stays, lets go of it, as
+  its kind's `ShapeReferencing` says (arrows bake their curve there).
 - **Lookups.** `editor.shapeContext` looks up the editor's shapes (and keeps their geometry from
   frame to frame), `transaction.shapes` a transaction's as it is so far, and
   `ShapeContext(document:registry:)` a document of your own (what's on the pasteboard).
@@ -2154,7 +2308,9 @@ to it.
   `damageMark`, `damage(since:)`, and `outlines`, what the canvas outlines), as the minimap is
   the host's.
 - **Drawing**, back to front: background and grid; shapes in paint order (culled by extent: those
-  more than 40 world units out of view don't draw, and a shape with no outline always does); every
+  more than 40 world units out of view don't draw, and a shape with no outline always does), each
+  where it's drawn ([`setDrawingOffset`](#the-cores-part-drawing-offsets): a shaking shape, away
+  from where it is, with its outline); every
   plugin's outlines (`registrar.outlines`: selection, the box around several; none while the
   session `hidesOutlines`) and the hint, in one stroke at a constant screen width, over the faint
   ones (`Outlines.faintShapes`: the hover), stroked first, wider and lighter; world overlays;
@@ -2350,6 +2506,7 @@ titles               service TitleState · overlay TitleOverlay
 validation-details   DetailStatuses in Issues
 validation-contents  ContentsMarks
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
+locking              property locked · property locked → every shape · read-only shapes · service LockState · overlay LockOverlay · CanvasButtons · CanvasContextMenu
 rectangles           shape rectangle · tool rectangle · shortcut R → tool rectangle
 polylines            shape polyline · tool polyline · shortcut L → tool polyline
 eraser               tool eraser · shortcut E → tool eraser
@@ -2363,7 +2520,9 @@ checklists declares (`property checklist → sticky-note`), then a `ShapeCheckli
 last two (its own panel and menu, then the checklist's). `v1` on sticky-note and task-card is the
 version of their props, since each handed its checklist over.
 `note.title { ... }` is a `ShapeTitles` entry and a `ContentsTitles` entry (the title naming the
-row); the `ShapeDetails` entry after them is the note's header, where it's renamed.
+row); the `ShapeDetails` entry after them is the note's header, where it's renamed. Locking opts
+every kind in itself (`property locked → every shape`), and `read-only shapes` is its rule for the
+core.
 
 ## Testing plugins
 
@@ -2402,8 +2561,12 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   tools have no keys (CanvasTesting can't import Keyboard): a test picks one with `h.editor.setTool`,
   or registers a key for it (`$0.shortcut("c", forTool: ToolID(placing: Card.kind))`).
   SelectionTests, ArrowsTests, ValidationTests, DetailPanelTests, ChecklistsTests, ClipboardTests,
-  TitlesTests, ValidationDetailsTests and ValidationContentsTests import no real vertical (only these fixtures, and local test kinds), which
+  TitlesTests, ValidationDetailsTests, ValidationContentsTests and LockingTests import no real vertical (only these fixtures, and local test kinds), which
   proves those plugins are shape-agnostic.
+- **Read-only shapes** without Locking: `FreezingPlugin(log:)` (CanvasTesting) declares `Frozen`, a
+  flag every kind opts into, makes frozen shapes read-only, and logs the refusals services hear in
+  its `RefusalLog`; `editor.freeze(ids)` sets it. CanvasTests, SelectionTests and DetailPanelTests
+  hold the core, the selection and the panel to read-only shapes with it, never with a lock.
 - CanvasTests run the core with no plugin claiming the default tool, so it's the Hand there, and
   none claiming key strokes, so no key does anything; a test that presses, drags or selects shapes
   the way a user does installs `KeyboardPlugin()` and `SelectionPlugin()` first, as the app does.
@@ -2535,9 +2698,9 @@ Each of these adds to the design without changing what plugins are written again
   the display rather than nominal 16 ms frames.
 - **More horizontals** from data-canvas: describe, search, commands. Each is an extension point in
   its own plugin.
-- **More of titles**: a click on a pill selecting its shape, and a double-click renaming it (an
-  overlay can't take presses today); a Rename item in the context menu; and titles on kinds
-  without a frame, such as arrows (tldraw's labels) and lines.
+- **More of titles**: a click on a pill selecting its shape, and a double-click renaming it (a
+  [canvas button](#canvas-buttons) would take the click, as the lock chip does); a Rename item in
+  the context menu; and titles on kinds without a frame, such as arrows (tldraw's labels) and lines.
 - **More of going back**: going forward again (⌘]), and a step keeping what the table of contents
   listed, so Show All survives a trip back.
 - **More of the keyboard**: a window listing every shortcut; menu items that take their key
@@ -2563,6 +2726,9 @@ Each of these adds to the design without changing what plugins are written again
 - **More of the context menu**: more items for the canvas (Select All, on empty canvas); key
   equivalents and symbols on items; and the items everyone expects, such as Delete
   and Duplicate, once a plugin owns them.
+- **More of locking**: Unlock All (tldraw has it); a lock on a shape's row in the table of
+  contents; the menu's other items for a locked shape dimmed, rather than shaking it once chosen;
+  a line in the detail panel saying why it's disabled; and a tooltip on the chip.
 - **More of properties**: checking shapes against their kinds' schemas (as a board opens, as an
   agent writes); the agents' CLI handing schemas out; a projection of a schema for LLM tool
   calling, whose strict modes reject `prefixItems` and `oneOf` (a rect, a task's status); panel

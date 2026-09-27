@@ -2,15 +2,18 @@ import AppKit
 import Canvas
 import Geometry
 
-/// The select tool (tldraw's). Handles win; then the shape under the pointer; then empty
-/// space inside a multi-selection's box; then the canvas, where a drag brushes. ⇧ adds to the
-/// selection or takes away from it, and ⌘ (tldraw's accel) does too, without selecting on the
-/// press. A lone box pressed without ⇧ or ⌘ follows the pointer from the press, with no drag
-/// threshold.
+/// The select tool (tldraw's). A plugin's canvas buttons win (a lock chip); then handles; then the
+/// shape under the pointer; then empty space inside a multi-selection's box; then the canvas, where
+/// a drag brushes. ⇧ adds to the selection or takes away from it, and ⌘ (tldraw's accel) does too,
+/// without selecting on the press. A lone box pressed without ⇧ or ⌘ follows the pointer from the
+/// press, with no drag threshold.
 final class SelectTool {}
 
 extension SelectTool: Tool {
-    func cursor(in editor: CanvasEditor) -> CanvasCursor { editor.hoveredHandle != nil ? .openHand : .standard }
+    func cursor(in editor: CanvasEditor) -> CanvasCursor {
+        if editor.hoveredButton != nil { return .pointingHand }
+        return editor.hoveredHandle != nil ? .openHand : .standard
+    }
 
     func pointerDown(_ pointer: Pointer, in editor: CanvasEditor) {
         // A Control-click is the Mac's secondary click: whatever menu it has, AppKit already showed.
@@ -19,6 +22,11 @@ extension SelectTool: Tool {
         // Whatever this press does to the selection, through the end of its drag, is one step back.
         editor.selectionState?.pressBegan()
         defer { editor.selectionState?.pressEnded() }
+        if let hit = editor.buttonHit(atViewPoint: pointer.view) {
+            editor.pressedButton = hit.button
+            editor.session = PressingButtonSession(source: hit.source, button: hit.button)
+            return
+        }
         if let handle = editor.handle(atViewPoint: pointer.view) {
             editor.pressHandle(handle, with: pointer)
             return
@@ -65,18 +73,27 @@ extension SelectTool: Tool {
     }
 
     func pointerMoved(_ pointer: Pointer, in editor: CanvasEditor) {
-        if let handle = editor.handle(atViewPoint: pointer.view) {
+        editor.selectionState?.lastPointer = pointer.view
+        if let button = editor.button(atViewPoint: pointer.view) {
+            editor.hoveredButton = button
+            editor.hoveredHandle = nil
+            editor.hovered = nil
+        } else if let handle = editor.handle(atViewPoint: pointer.view) {
+            editor.hoveredButton = nil
             editor.hoveredHandle = handle
             editor.hovered = nil
         } else {
+            editor.hoveredButton = nil
             editor.hoveredHandle = nil
             editor.hovered = editor.selectableShape(at: pointer.world)
         }
     }
 
     func pointerExited(in editor: CanvasEditor) {
+        editor.selectionState?.lastPointer = nil
         editor.hovered = nil
         editor.hoveredHandle = nil
+        editor.hoveredButton = nil
     }
 
     /// Escape with nothing under way deselects all.

@@ -22,7 +22,8 @@ enum ChecklistStyle {
 }
 
 /// A "☑ 2/5" chip on the top-right corner of every shape whose kind opted in with the badge on.
-/// Shapes never know about it, and an empty checklist draws nothing.
+/// Shapes never know about it, and an empty checklist draws nothing. It goes where its shape is
+/// drawn (`editor.setDrawingOffset`).
 struct ChecklistOverlay: CanvasOverlay {
     var space: OverlaySpace { .world }
 
@@ -41,8 +42,10 @@ struct ChecklistOverlay: CanvasOverlay {
         for record in context.editor.paintOrder(in: context.visibleRect.insetBy(dx: -reach, dy: -reach)) {
             guard badged.contains(record.kind), let items = record[ChecklistProperty.self], !items.isEmpty,
                   let bounds = context.shapes.geometry(of: record.id)?.bounds else { continue }
+            // Where the shape is drawn, so the chip moves with a shaking shape.
+            let offset = context.worldDrawingOffset(of: record.id)
             context.cg.saveGState()
-            context.cg.translateBy(x: bounds.maxX, y: bounds.minY)
+            context.cg.translateBy(x: bounds.maxX + offset.x, y: bounds.minY + offset.y)
             context.cg.scaleBy(x: scale, y: scale)
             drawChip(for: items, in: context.cg)
             context.cg.restoreGState()

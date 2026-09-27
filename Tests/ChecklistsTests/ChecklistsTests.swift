@@ -209,4 +209,16 @@ let chipPoint = CGPoint(x: 323, y: 40)
         // As the selection's handles do: at 10%, 0.4 of full size.
         expectClose(try height(zoom: 0.1), full * 0.4, within: 0.5)
     },
+    test("the chip goes where its shape is drawn (a shake)") {
+        let editor = try choreEditor()
+        let id = editor.add(Chore(choreFrame), items: laundry(done: 1))
+        let still = renderBitmap(editor, size: CGSize(width: 400, height: 300))
+        editor.setDrawingOffset(CGPoint(x: 7, y: 0), for: id)
+        let moved = renderBitmap(editor, size: CGSize(width: 400, height: 300))
+        for x in stride(from: 300, through: 324, by: 3) {
+            for y in stride(from: 34, through: 46, by: 3) {
+                expectEqual(pixel(moved, at: CGPoint(x: x + 7, y: y)), pixel(still, at: CGPoint(x: x, y: y)), "(\(x), \(y))")
+            }
+        }
+    },
 ])

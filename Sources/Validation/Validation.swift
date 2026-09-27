@@ -235,7 +235,10 @@ struct ValidationOverlay: CanvasOverlay {
         let reach = pad + ValidationStyle.lineWidth / zoom
         for record in context.editor.paintOrder(in: context.visibleRect.insetBy(dx: -reach, dy: -reach)) {
             guard let worst = results[record.id]?.worst, let bounds = context.shapes.geometry(of: record.id)?.bounds else { continue }
-            context.cg.addPath(CGPath(roundedRect: bounds.insetBy(dx: -pad, dy: -pad), cornerWidth: radius, cornerHeight: radius, transform: nil))
+            // Where the shape is drawn, so the outline moves with a shaking shape.
+            let offset = context.worldDrawingOffset(of: record.id)
+            let outline = bounds.offsetBy(dx: offset.x, dy: offset.y).insetBy(dx: -pad, dy: -pad)
+            context.cg.addPath(CGPath(roundedRect: outline, cornerWidth: radius, cornerHeight: radius, transform: nil))
             context.cg.setStrokeColor(worst.color.cgColor)
             context.cg.setLineWidth(ValidationStyle.lineWidth / zoom)
             context.cg.strokePath()

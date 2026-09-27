@@ -93,6 +93,7 @@ public final class CanvasView: NSView {
         case .crosshair: .crosshair
         case .openHand: .openHand
         case .closedHand: .closedHand
+        case .pointingHand: .pointingHand
         }
     }
 

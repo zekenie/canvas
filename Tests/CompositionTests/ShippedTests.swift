@@ -43,6 +43,7 @@ import Validation
         validation-details   DetailStatuses in Issues
         validation-contents  ContentsMarks
         clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
+        locking              property locked · property locked → every shape · read-only shapes · service LockState · overlay LockOverlay · CanvasButtons · CanvasContextMenu
         rectangles           shape rectangle · tool rectangle · shortcut R → tool rectangle
         polylines            shape polyline · tool polyline · shortcut L → tool polyline
         eraser               tool eraser · shortcut E → tool eraser

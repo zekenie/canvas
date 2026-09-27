@@ -44,4 +44,11 @@ public struct OverlayContext {
     /// than through every shape.
     public let visibleRect: CGRect
     public var zoom: CGFloat { shapes.zoom }
+
+    /// How far from where it is a shape is drawn (`editor.setDrawingOffset`), in world units: an
+    /// overlay that decorates a shape moves its decoration by this, so it stays with the shape.
+    public func worldDrawingOffset(of id: ShapeID) -> CGPoint {
+        let offset = editor.drawingOffset(of: id)
+        return offset == .zero ? .zero : CGPoint(x: offset.x / zoom, y: offset.y / zoom)
+    }
 }

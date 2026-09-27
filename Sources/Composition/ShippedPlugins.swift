@@ -10,6 +10,7 @@ import EllipseTitles
 import Ellipses
 import Eraser
 import Keyboard
+import Locking
 import Polylines
 import Rectangles
 import Reordering
@@ -39,6 +40,8 @@ public enum ShippedPlugins {
             ArrowsPlugin(), StickyNotesPlugin(), EllipsesPlugin(), TaskCardsPlugin(),
             ValidationPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin(), ChecklistsPlugin(), TitlesPlugin(),
             ValidationDetailsPlugin(), ValidationContentsPlugin(), ClipboardPlugin(pasteboard: pasteboard),
+            // After Titles and Checklists: its chip draws above their pill and chip.
+            LockingPlugin(),
             // The examples (Examples/). Each is one line here; delete it to leave it out.
             RectanglesPlugin(), PolylinesPlugin(), EraserPlugin(), EllipseTitlesPlugin(), ReorderingPlugin(),
         ]

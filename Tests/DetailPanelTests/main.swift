@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([layoutTests, bindingTests, propertySectionTests, stateTests, windowTests])
+runTests([layoutTests, bindingTests, propertySectionTests, stateTests, windowTests, readOnlyPanelTests])

@@ -2,9 +2,10 @@ import Canvas
 import CoreGraphics
 import Observation
 
-/// The selection, the way back through it, the hovered shape and the hovered handle, one per
-/// editor. Plugins reach them through `CanvasEditor`'s members below. The selection and the hover
-/// only ever name selectable shapes in the document; the handle is one of the only selected shape's.
+/// The selection, the way back through it, the hovered shape, the hovered handle, and the canvas
+/// button hovered and pressed, one per editor. Plugins reach them through `CanvasEditor`'s members
+/// below. The selection and the hover only ever name selectable shapes in the document; the handle
+/// is one of the only selected shape's.
 @MainActor
 @Observable
 final class SelectionState {
@@ -34,10 +35,38 @@ final class SelectionState {
             editor.refreshCursor()
         }
     }
+    /// Every plugin's canvas buttons (`CanvasButtons`), found once.
+    @ObservationIgnored let buttonSources: [CanvasButtonSource]
+    @ObservationIgnored var hoveredButton: AnyHashable? {
+        didSet {
+            guard hoveredButton != oldValue else { return }
+            editor.setNeedsDisplay()
+            editor.refreshCursor()
+        }
+    }
+    @ObservationIgnored var pressedButton: AnyHashable? {
+        didSet { if pressedButton != oldValue { editor.setNeedsDisplay() } }
+    }
+    /// Where the pointer was last seen over the canvas in the select tool, in view points: where to
+    /// look for a button again when buttons change under a pointer that's still.
+    @ObservationIgnored var lastPointer: CGPoint?
 
     init(editor: CanvasEditor) {
         self.editor = editor
         rules = editor.registry.contributionByKind(to: ShapeSelectability.self)
+        buttonSources = editor.registry.contributions(to: CanvasButtons.self).map(\.value)
+    }
+
+    /// The button under the pointer, looked for again: in the select tool, with nothing under way. A
+    /// button found takes the hover, as the pointer moving onto it would.
+    func findHoveredButton() {
+        guard !buttonSources.isEmpty, editor.currentToolID == .select, editor.session == nil else { return }
+        let button = lastPointer.flatMap { editor.button(atViewPoint: $0) }
+        hoveredButton = button
+        if button != nil {
+            hoveredHandle = nil
+            hover(nil)
+        }
     }
 
     /// Never a shape the board keeps aside; otherwise the kind's own rule, else one for every
@@ -149,11 +178,18 @@ extension SelectionState: EditorService {
         press = nil
         hover(nil)
         hoveredHandle = nil
+        hoveredButton = nil
+        pressedButton = nil
+        lastPointer = nil
     }
 
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         select(selectedIDs)
         hover(hoveredID)
+        // A shape that became read-only has no handles.
+        if hoveredHandle != nil, let id = onlySelectedID, editor.isReadOnly(id) { hoveredHandle = nil }
+        // Buttons go with their shapes: one may have come or gone under the pointer.
+        findHoveredButton()
     }
 
     /// A placed shape is the only one selected.

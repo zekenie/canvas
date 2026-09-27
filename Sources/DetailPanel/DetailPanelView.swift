@@ -153,8 +153,12 @@ struct ShapePanel: View, Equatable {
         let current = state.currentTab(in: layout, for: record.kind)
         let sections = current.map { layout.resolved(in: $0) } ?? []
         let lines = current.map { layout.statuses(in: $0) } ?? []
+        // A shape that can't change (a locked one) shows its details, but none of them edits it.
+        // Asked of the record, not the editor, so the panel doesn't read the document.
+        let isReadOnly = editor.registry.isReadOnly(record)
         VStack(spacing: 0) {
-            HeaderView(editor: editor, kindName: layout.kindName, kindSymbol: layout.kindSymbol, content: layout.resolvedHeader.view)
+            HeaderView(editor: editor, kindName: layout.kindName, kindSymbol: layout.kindSymbol, content: layout.resolvedHeader.view,
+                       isReadOnly: isReadOnly)
             if let current {
                 if layout.tabs.count > 1 {
                     TabStrip(tabs: layout.tabs, selection: current) { state.choose($0, for: record.kind) }
@@ -172,7 +176,7 @@ struct ShapePanel: View, Equatable {
                             if !sections.isEmpty { Divider() }
                         }
                         ForEach(sections, id: \.key) { resolved in
-                            SectionView(resolved: resolved, editor: editor, record: record,
+                            SectionView(resolved: resolved, editor: editor, record: record, isReadOnly: isReadOnly,
                                         isCollapsed: state.isCollapsed(resolved.key),
                                         toggle: { state.setCollapsed(resolved.key, !state.isCollapsed(resolved.key)) })
                                 .equatable()
@@ -196,18 +200,21 @@ struct ShapePanel: View, Equatable {
 }
 
 /// A back button, then the shape's header (or the selection's), told what the panel calls the
-/// shape's kind and its symbol, for a placeholder and a header without a symbol.
+/// shape's kind and its symbol, for a placeholder and a header without a symbol. A read-only
+/// shape's header renames nothing; going back still works.
 struct HeaderView<Content: View>: View {
     let editor: CanvasEditor
     var kindName = ""
     var kindSymbol: String?
     let content: Content
+    var isReadOnly = false
     var body: some View {
         HStack(spacing: DetailStyle.pairSpacing) {
             BackButton(editor: editor)
             content
                 .environment(\.detailKindName, kindName)
                 .environment(\.detailKindSymbol, kindSymbol)
+                .disabled(isReadOnly)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, DetailStyle.inset)
@@ -387,10 +394,14 @@ struct TabStripLayout: Layout {
     private func gaps(_ subviews: Subviews) -> CGFloat { spacing * CGFloat(max(subviews.count - 1, 0)) }
 }
 
+/// A section: its header (which collapses it, read-only shape or not), then its content. A
+/// read-only shape's content and header control are there to read, not to use.
 struct SectionView: View, Equatable {
     let resolved: ResolvedSection
     let editor: CanvasEditor
     let record: AnyShapeRecord
+    /// Follows from `record`, so comparing records covers it.
+    let isReadOnly: Bool
     let isCollapsed: Bool
     let toggle: @MainActor () -> Void
 
@@ -414,13 +425,13 @@ struct SectionView: View, Equatable {
                     .buttonStyle(.plain)
                     .accessibilityLabel(title)
                     Spacer(minLength: DetailStyle.pairSpacing)
-                    resolved.section.accessory?(record, editor)
+                    resolved.section.accessory?(record, editor).disabled(isReadOnly)
                 }
                 .frame(height: DetailStyle.sectionHeaderHeight)
             }
             // A collapsed section's content isn't built.
             if !isCollapsed || resolved.section.title == nil {
-                resolved.section.content(record, editor)
+                resolved.section.content(record, editor).disabled(isReadOnly)
             }
         }
         .padding(.horizontal, DetailStyle.inset)

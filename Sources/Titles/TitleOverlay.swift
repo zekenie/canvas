@@ -10,7 +10,12 @@ enum TitleStyle {
     /// checklist chip is on the top-right corner, reaching 8 points above it. Titles can't see the
     /// chip, so CompositionTests, which ships both, holds a long title's pill clear of it.
     static let gap: CGFloat = 9
-    /// A shape narrower than this on screen has no pill: there'd be no room for its title.
+    /// The end of the pill's row, above the shape's top-right corner, is left to a round chip as
+    /// tall as the pill (Locking's lock), and a little room before it. Titles can't see that chip
+    /// either; CompositionTests holds a long title's pill clear of it too.
+    static let cornerReserve: CGFloat = height + 4
+    /// A pill narrower than this, with the corner left out, isn't drawn: there'd be no room for its
+    /// title.
     static let minWidth: CGFloat = 30
     /// Below this zoom the pill shrinks with the shapes, as the checklist chip does.
     static let fullSizeZoom: CGFloat = 0.25
@@ -27,8 +32,9 @@ enum TitleStyle {
 }
 
 /// A pill with the shape's title, just outside its top-left corner, on every titled shape whose
-/// kind shows it. On one line, and no wider than the shape: a longer title ends in "…". Shapes never
-/// know about it, and an untitled one draws nothing.
+/// kind shows it. On one line, and no wider than the shape, less the row's corner: a longer title
+/// ends in "…". Shapes never know about it, and an untitled one draws nothing. It goes where its
+/// shape is drawn (`editor.setDrawingOffset`), so it moves with a shaking shape.
 struct TitleOverlay: CanvasOverlay {
     var space: OverlaySpace { .world }
 
@@ -43,12 +49,14 @@ struct TitleOverlay: CanvasOverlay {
         // In paint order, so overlapping pills stack as their shapes do.
         for record in context.editor.paintOrder(in: area) {
             guard let title = pills[record.kind]?.title(record),
-                  let bounds = context.shapes.geometry(of: record.id)?.bounds, !bounds.isNull,
-                  bounds.width / scale >= TitleStyle.minWidth else { continue }
+                  let bounds = context.shapes.geometry(of: record.id)?.bounds, !bounds.isNull else { continue }
+            let maxWidth = bounds.width / scale - TitleStyle.cornerReserve
+            guard maxWidth >= TitleStyle.minWidth else { continue }
+            let offset = context.worldDrawingOffset(of: record.id)
             context.cg.saveGState()
-            context.cg.translateBy(x: bounds.minX, y: bounds.minY)
+            context.cg.translateBy(x: bounds.minX + offset.x, y: bounds.minY + offset.y)
             context.cg.scaleBy(x: scale, y: scale)
-            drawPill(title, maxWidth: bounds.width / scale, in: context.cg)
+            drawPill(title, maxWidth: maxWidth, in: context.cg)
             context.cg.restoreGState()
         }
     }

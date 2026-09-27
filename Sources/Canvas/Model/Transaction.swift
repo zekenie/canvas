@@ -7,6 +7,14 @@ import Geometry
 ///
 /// A board must always save, so a shape's frame stays finite: a shape inserted with a frame that
 /// isn't (a NaN, an infinity) isn't inserted, and a change that would make one so is dropped.
+///
+/// A read-only shape (`registrar.readOnlyShapes`: a locked one) that was in the document before the
+/// transaction isn't changed, restacked, moved or deleted by it, unless the change leaves it no
+/// longer read-only (unlocking it). Whatever the transaction was asked to do to it is dropped, the
+/// rest of the transaction stands, and once it's done services hear which shapes it refused
+/// (`EditorService.didRefuseChanges`). What a deletion does to keep the board whole goes through,
+/// read-only or not: its `willDelete` handlers' changes (a shape's dependents going with it), and
+/// shapes letting go of what's deleted (`ShapeReferencing`).
 @MainActor
 public struct Transaction {
     public private(set) var document: CanvasDocument
@@ -16,9 +24,13 @@ public struct Transaction {
     private(set) var didChange = false
     /// What it did so far, record by record: what the commit hands services.
     private(set) var changes = ChangeSet()
+    /// Read-only shapes it was asked to change, restack or delete, and didn't.
+    private(set) var refused: Set<ShapeID> = []
     /// Shapes whose willDelete handlers have run in this transaction; removed together at the end
     /// of the outermost `delete`.
     private var deleting: Set<ShapeID> = []
+    /// A deletion is keeping the board whole (its handlers, and letting go): nothing is refused.
+    private var isCascading = false
 
     init(document: CanvasDocument, registry: Registry, camera: Camera, keys: StackingKeyGenerator) {
         self.document = document
@@ -46,7 +58,8 @@ public struct Transaction {
         didChange = true
     }
 
-    /// Changes one shape. Its id and stacking key stay as they were, whatever `body` does.
+    /// Changes one shape. Its id and stacking key stay as they were, whatever `body` does. A
+    /// read-only shape keeps the change only if it leaves the shape no longer read-only.
     public mutating func update(_ id: ShapeID, _ body: (inout AnyShapeRecord) -> Void) {
         guard let index = document.index(of: id) else { return }
         let old = document.shapes[index]
@@ -56,7 +69,7 @@ public struct Transaction {
         record.stackingKey = old.stackingKey
         // Values only for what its kind opts into.
         if record.added != old.added { record = registry.propertyTable.normalized(record) }
-        guard record != old, record.box?.isFinite ?? true else { return }
+        guard record != old, record.box?.isFinite ?? true, !refuses(old, becoming: record) else { return }
         document.replace(at: index, with: record)
         noteChanged(id)
     }
@@ -65,11 +78,25 @@ public struct Transaction {
         update(id) { $0.modify(as: P.self, body) }
     }
 
+    /// Whether this transaction keeps `old` as it is, and notes that it did: the shape was in the
+    /// document before the transaction, is read-only, and would still be as `new` (nil: deleted,
+    /// or moved in the stack, which leaves it as read-only as it was), and no deletion is keeping
+    /// the board whole.
+    private mutating func refuses(_ old: AnyShapeRecord, becoming new: AnyShapeRecord? = nil) -> Bool {
+        guard !isCascading, registry.hasReadOnlyRules, !changes.added.contains(old.id), registry.isReadOnly(old),
+              new.map(registry.isReadOnly) ?? true else { return false }
+        refused.insert(old.id)
+        return true
+    }
+
     /// Moves shapes by `delta`, in world units, as dragging them that far would: a box by its
     /// frame, a `CustomTranslation` kind by its own rules (every `beginTranslation` first, then the
-    /// boxes, then the rest, as a drag event does), anything else not at all.
+    /// boxes, then the rest, as a drag event does), anything else not at all. Read-only shapes
+    /// stay, and the others move without them.
     public mutating func translate(_ ids: Set<ShapeID>, by delta: CGPoint) {
-        let records = ids.compactMap { document.index(of: $0) }.sorted().map { document.shapes[$0] }
+        var records = ids.compactMap { document.index(of: $0) }.sorted().map { document.shapes[$0] }
+        records.removeAll { refuses($0) }
+        let ids = Set(records.map(\.id))
         var boxes: [ShapeID] = []
         var moves: [@MainActor (CGPoint, inout Transaction) -> Void] = []
         for record in records {
@@ -87,33 +114,35 @@ public struct Transaction {
         for move in moves { move(delta, &self) }
     }
 
-    /// Paints the shape above every other. Does nothing if it's already on top.
+    /// Paints the shape above every other. Does nothing if it's already on top, or read-only.
     public mutating func bringToFront(_ id: ShapeID) {
-        guard let index = document.index(of: id), index != document.shapes.count - 1 else { return }
+        guard let index = document.index(of: id), index != document.shapes.count - 1, !refuses(document.shapes[index]) else { return }
         document.moveToEnd(from: index, key: keys.key(between: document.shapes.last?.stackingKey, and: nil))
         noteChanged(id, reordering: true)
     }
 
-    /// Paints the shape below every other. Does nothing if it's already at the bottom.
+    /// Paints the shape below every other. Does nothing if it's already at the bottom, or read-only.
     public mutating func sendToBack(_ id: ShapeID) {
-        guard let index = document.index(of: id), index != 0 else { return }
+        guard let index = document.index(of: id), index != 0, !refuses(document.shapes[index]) else { return }
         document.moveToStart(from: index, key: keys.key(between: nil, and: document.shapes.first?.stackingKey))
         noteChanged(id, reordering: true)
     }
 
     /// Puts a shape just above another in document order (a step forward, past `other`): a key
-    /// between `other`'s and the next shape's. Does nothing if it's there already.
+    /// between `other`'s and the next shape's. Does nothing if it's there already, or read-only.
     public mutating func move(_ id: ShapeID, above other: ShapeID) {
-        guard id != other, let from = document.index(of: id), let target = document.index(of: other), from != target + 1 else { return }
+        guard id != other, let from = document.index(of: id), let target = document.index(of: other), from != target + 1,
+              !refuses(document.shapes[from]) else { return }
         let shapes = document.shapes
         let next = target + 1 < shapes.count ? shapes[target + 1].stackingKey : nil
         move(id, from: from, to: from < target ? target : target + 1, key: keys.key(between: shapes[target].stackingKey, and: next))
     }
 
     /// Puts a shape just below another in document order (a step back, past `other`): a key
-    /// between the previous shape's and `other`'s. Does nothing if it's there already.
+    /// between the previous shape's and `other`'s. Does nothing if it's there already, or read-only.
     public mutating func move(_ id: ShapeID, below other: ShapeID) {
-        guard id != other, let from = document.index(of: id), let target = document.index(of: other), from != target - 1 else { return }
+        guard id != other, let from = document.index(of: id), let target = document.index(of: other), from != target - 1,
+              !refuses(document.shapes[from]) else { return }
         let shapes = document.shapes
         let previous = target > 0 ? shapes[target - 1].stackingKey : nil
         move(id, from: from, to: from < target ? target - 1 : target, key: keys.key(between: previous, and: shapes[target].stackingKey))
@@ -136,13 +165,19 @@ public struct Transaction {
     /// stays, lets go of it, as its kind says (`ShapeReferencing`: an arrow's end stays where it's
     /// drawn). Handlers may delete more shapes (a shape's dependents): each shape's handlers run and
     /// it's let go of once, and everything is removed together when the outermost `delete` returns.
+    /// Read-only shapes asked for stay, and the others go without them; but what the handlers and
+    /// letting go do, to keep the board whole, goes through, read-only or not: a read-only dependent
+    /// goes with the shape it depends on, as a locked shape in tldraw goes with its deleted parent.
     public mutating func delete(_ ids: Set<ShapeID>) {
-        let ids = ids.filter { document[$0] != nil }.subtracting(deleting)
+        let ids = ids.filter { id in document[id].map { !refuses($0) } ?? false }.subtracting(deleting)
         guard !ids.isEmpty else { return }
         let isOutermost = deleting.isEmpty
         deleting.formUnion(ids)
+        let wasCascading = isCascading
+        isCascading = true
         for handler in registry.willDeleteHandlers { handler(ids, &self) }
         letGo(of: ids)
+        isCascading = wasCascading
         guard isOutermost else { return }
         document.remove(deleting)
         for id in deleting where changes.added.remove(id) == nil {       // added and removed here: never seen
@@ -154,8 +189,10 @@ public struct Transaction {
         didChange = true
     }
 
-    /// Every shape that names one of `ids`, and isn't being deleted too, lets go of it. One whose
-    /// kind can't (it names a shape it can't find) is left as it was.
+    /// Every shape that names one of `ids`, and isn't being deleted too, lets go of it, read-only
+    /// or not (`delete` runs this cascading): letting go keeps it as it's drawn, and a shape can't go
+    /// on naming one that's gone. One whose kind can't (it names a shape it can't find) is left as it
+    /// was.
     private mutating func letGo(of ids: Set<ShapeID>) {
         let kinds = registry.referencingKinds
         guard !kinds.isEmpty else { return }

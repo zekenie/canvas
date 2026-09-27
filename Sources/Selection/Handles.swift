@@ -10,9 +10,9 @@ public enum HandlePress: Sendable {
     case consumed
 }
 
-/// Draggable handles on the only selected shape. The select tool finds, draws and hit-tests them
-/// (in view points, `SelectionStyle.handleRadius` / `handleHitRadius`) and applies the drag
-/// threshold; the definition decides what they do.
+/// Draggable handles on the only selected shape, unless it's read-only. The select tool finds,
+/// draws and hit-tests them (in view points, `SelectionStyle.handleRadius` / `handleHitRadius`)
+/// and applies the drag threshold; the definition decides what they do.
 public protocol HandleProviding: ShapeDefinition {
     associatedtype Handle: Hashable & Sendable
     /// Visible handles, front to back, in world coordinates.
@@ -48,9 +48,10 @@ extension HandleProviding {
 }
 
 extension CanvasEditor {
-    /// The only selected shape's handles, in view space, front to back.
+    /// The only selected shape's handles, in view space, front to back. A read-only shape
+    /// (`registrar.readOnlyShapes`) has none: a press there is a press on the shape.
     func visibleHandles() -> [(handle: AnyHashable, point: CGPoint)] {
-        guard let id = selection, let record = document[id],
+        guard let id = selection, let record = document[id], !registry.isReadOnly(record),
               let definition = registry.definition(for: record.kind) as? any HandleProviding else { return [] }
         return definition.erasedHandles(of: record, in: shapeContext).map { ($0.handle, camera.toView($0.point)) }
     }
@@ -108,7 +109,7 @@ extension PointingHandleSession: Session {
 }
 
 /// The only selected shape's handles, in view points. They show in the select tool, and hide while
-/// anything but a handle press is under way.
+/// anything but a handle's or a canvas button's press is under way.
 struct HandlesOverlay: CanvasOverlay {
     var space: OverlaySpace { .view }
 
@@ -116,7 +117,7 @@ struct HandlesOverlay: CanvasOverlay {
         let editor = overlay.editor, context = overlay.cg
         var pressed: AnyHashable?
         switch editor.session {
-        case nil: break
+        case nil, is PressingButtonSession: break
         case let pointing as PointingHandleSession: pressed = pointing.handle
         default: return
         }

@@ -58,6 +58,9 @@ public struct KeyStroke: Hashable, Sendable {
 
 public enum CanvasCursor: Sendable {
     case standard, crosshair, openHand, closedHand
+    /// Over something a click does something with, as a link's or a button's (Selection's canvas
+    /// buttons).
+    case pointingHand
 }
 
 /// Pointer position, smoothed speed and smoothed velocity, from event locations and timestamps.

@@ -86,10 +86,25 @@ public struct PluginRegistrar {
     }
 
     /// Runs inside the deleting transaction, before the shapes are removed. It may change other
-    /// shapes, and delete more (their handlers run too). Each shape's handlers run once per
+    /// shapes, and delete more (their handlers run too), read-only ones included: what it does keeps
+    /// the board whole, which a lock doesn't stand in the way of. Each shape's handlers run once per
     /// transaction, and every shape being deleted still exists while any handler runs.
     public mutating func willDelete(_ handler: @escaping @MainActor (Set<ShapeID>, inout Transaction) -> Void) {
         contribute(handler, to: CorePoints.WillDelete.self)
+    }
+
+    /// Shapes that can't change while `isReadOnly` says so of them (Locking's locked shapes): no
+    /// transaction changes, restacks or deletes one, a drag leaves it where it is, and it isn't
+    /// edited. Each such try is refused, and services hear which shapes it was
+    /// (`EditorService.didRefuseChanges`). The change that leaves a shape no longer read-only (the
+    /// one that unlocks it) goes through, and so does what a deletion does to keep the board whole:
+    /// its `willDelete` handlers' changes (a read-only dependent goes with its shape), and a
+    /// read-only shape letting go of one that's deleted (`ShapeReferencing`), which keeps it as it's
+    /// drawn. The rule reads only the record it's given: a transaction asks it of a shape before and
+    /// after a change, and the detail panel of the record it shows. A transaction asks about every
+    /// shape it changes, so keep it cheap.
+    public mutating func readOnlyShapes(where isReadOnly: @escaping @MainActor (AnyShapeRecord) -> Bool) {
+        contribute(isReadOnly, to: CorePoints.ReadOnlyRules.self)
     }
 }
 

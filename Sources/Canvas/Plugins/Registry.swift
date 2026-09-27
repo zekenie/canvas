@@ -17,6 +17,9 @@ public struct Registry {
     private let definitions: [ShapeKind: any ShapeDefinition]
     /// Kinds whose props name other shapes (`ShapeReferencing`): what a deletion asks to let go.
     let referencingKinds: Set<ShapeKind>
+    /// Every plugin's rule for which shapes can't change (`registrar.readOnlyShapes`), found once:
+    /// a transaction asks them about every shape it changes.
+    private let readOnlyRules: [@MainActor (AnyShapeRecord) -> Bool]
     /// Added properties: who declares each, and which kinds opt in.
     let propertyTable: PropertyTable
 
@@ -49,6 +52,7 @@ public struct Registry {
             return (shape.kind, shape.definition)
         }, uniquingKeysWith: { first, _ in first })
         referencingKinds = Set(definitions.filter { $0.value is any ShapeReferencing }.keys)
+        readOnlyRules = (byPoint[ObjectIdentifier(CorePoints.ReadOnlyRules.self)] ?? []).map { $0.value as! CorePoints.ReadOnlyRules.Contribution }
         let declarations = byPoint[ObjectIdentifier(CorePoints.PropertyDeclarations.self)] ?? []
         propertyTable = try PropertyTable(declarations: declarations,
                                           optIns: byPoint[ObjectIdentifier(CorePoints.PropertyOptIns.self)] ?? [],
@@ -132,6 +136,15 @@ public struct Registry {
     public var kinds: [ShapeKind] { contributions(to: CorePoints.Shapes.self).map(\.value.kind) }
 
     public func definition(for kind: ShapeKind) -> (any ShapeDefinition)? { definitions[kind] }
+
+    /// Whether a plugin's rule says the shape can't change (`registrar.readOnlyShapes`). A view
+    /// that has the shape asks this rather than the editor, so it doesn't read the document.
+    public func isReadOnly(_ shape: AnyShapeRecord) -> Bool {
+        readOnlyRules.contains { $0(shape) }
+    }
+
+    /// Whether any installed plugin says some shapes can't change: without one, nothing need ask.
+    var hasReadOnlyRules: Bool { !readOnlyRules.isEmpty }
 
     /// A kind's properties as one JSON Schema (draft 2020-12): an object with each of its own
     /// properties, then each added property it opts into (marked with its owner, `x-canvas-owner`),
@@ -295,6 +308,7 @@ struct RawContribution {
         default:
             switch P.self {
             case is CorePoints.WillDelete.Type: "willDelete"
+            case is CorePoints.ReadOnlyRules.Type: "read-only shapes"
             case is CorePoints.OutlineSources.Type: "outlines"
             case is CorePoints.DefaultTool.Type: "default tool \(value)"
             case is CorePoints.SecondaryClickMenu.Type: "secondary-click menu"

@@ -24,9 +24,13 @@ extension CanvasEditor {
         context.translateBy(x: -camera.origin.x, y: -camera.origin.y)
         // Pad the visible area so shadows of shapes just offscreen still get drawn.
         let world = camera.toWorld(bounds)
+        let offsets = drawingOffsets
         for record in paintOrder(in: world.insetBy(dx: -40, dy: -40)) {
             guard let definition = registry.definition(for: record.kind) else { continue }
             drawIsolated(context) {
+                if !offsets.isEmpty, let offset = offsets[record.id] {
+                    context.translateBy(x: offset.x / camera.zoom, y: offset.y / camera.zoom)
+                }
                 definition.erasedRender(record, in: RenderContext(cg: context, shapes: shapes, isEditing: record.id == editingShapeID))
             }
         }
@@ -44,6 +48,25 @@ extension CanvasEditor {
             drawIsolated(context) { overlay.draw(in: overlayContext) }
         }
     }
+
+    // MARK: Drawing a shape away from where it is
+
+    /// Draws a shape `offset` view points away from where it is, until it's set back to zero: for
+    /// an animation that moves how a shape looks without changing it (Locking's shake). Its outline
+    /// goes with it, and so do the overlays that decorate it (a title's pill, a checklist's chip),
+    /// through `OverlayContext.worldDrawingOffset(of:)`. Everything else goes by where it is: hit
+    /// testing, handles, arrows bound to it, pictures of the board. A shape that's deleted loses its
+    /// offset.
+    public func setDrawingOffset(_ offset: CGPoint, for id: ShapeID) {
+        let kept: CGPoint? = offset == .zero || document[id] == nil ? nil : offset
+        guard drawingOffsets[id] != kept else { return }
+        drawingOffsets[id] = kept
+        setNeedsDisplay()
+    }
+
+    /// How far from where it is the shape is drawn, in view points (`setDrawingOffset`): zero for
+    /// most shapes.
+    public func drawingOffset(of id: ShapeID) -> CGPoint { drawingOffsets[id] ?? .zero }
 
     // MARK: Pictures of the board
     //
@@ -129,13 +152,18 @@ extension CanvasEditor {
         strokeOutlines(of: outlines.shapes, rects: outlines.rects, in: Style.accent, width: Style.indicatorWidth, context: context, shapes: shapes)
     }
 
-    /// `width` is in view points.
+    /// `width` is in view points. A shape drawn away from where it is has its outline there too.
     private func strokeOutlines(of ids: [ShapeID], rects: [CGRect], in color: NSColor, width: CGFloat, context: CGContext, shapes: ShapeContext) {
         guard !ids.isEmpty || !rects.isEmpty else { return }
         context.saveGState()
         for id in ids {
             guard let record = document[id], let path = registry.definition(for: record.kind)?.erasedIndicatorPath(of: record, in: shapes) else { continue }
-            context.addPath(path)
+            if let offset = drawingOffsets[id] {
+                var shift = CGAffineTransform(translationX: offset.x / camera.zoom, y: offset.y / camera.zoom)
+                context.addPath(path.copy(using: &shift) ?? path)
+            } else {
+                context.addPath(path)
+            }
         }
         for rect in rects { context.addRect(rect) }
         context.setStrokeColor(color.cgColor)

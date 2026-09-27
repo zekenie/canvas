@@ -85,6 +85,8 @@ public final class CanvasEditor {
     @ObservationIgnored private var isTransacting = false
     /// Each shape's geometry and extent, and the paint order, kept from frame to frame.
     @ObservationIgnored let shapeIndex = ShapeIndex()
+    /// Shapes drawn away from where they are, in view points (`setDrawingOffset`).
+    @ObservationIgnored var drawingOffsets: [ShapeID: CGPoint] = [:]
     // Input state, used by CanvasEditor+Host.swift.
     @ObservationIgnored var tracker = PointerTracker()
     @ObservationIgnored var heldModifiers: Modifiers = []
@@ -157,7 +159,20 @@ public final class CanvasEditor {
             commit(transaction.document, changes: transaction.changes)
             didCommitTransaction?(self)
         }
+        if !transaction.refused.isEmpty { refuseChanges(to: transaction.refused) }
         return result
+    }
+
+    /// Whether a plugin's rule says the shape can't change (`registrar.readOnlyShapes`): no
+    /// transaction changes, restacks or deletes it, a drag leaves it where it is, and it isn't
+    /// edited. False for a shape that isn't there.
+    public func isReadOnly(_ id: ShapeID) -> Bool {
+        document[id].map(registry.isReadOnly) ?? false
+    }
+
+    /// Something tried to change these read-only shapes, and didn't: services hear which.
+    func refuseChanges(to ids: Set<ShapeID>) {
+        for service in serviceOrder { service.didRefuseChanges(to: ids, in: self) }
     }
 
     /// Puts a whole other document in place: opening a board, reverting it, reloading it after it
@@ -179,10 +194,12 @@ public final class CanvasEditor {
         withMutation(keyPath: \.document) { storedDocument = newDocument }
         revision += 1
         shapeIndex.documentDidChange(changes, in: newDocument, registry: registry)
+        for id in changes.removed where drawingOffsets[id] != nil { drawingOffsets[id] = nil }
         // Services drop what no longer names a shape, as the hint's setter does.
         for service in serviceOrder { service.documentDidChange(changes, in: self) }
         hintedShapeID = hintedID
-        if let editing = editingShapeID, document[editing] == nil { endEditing() }
+        // A shape that's gone, or can no longer change, isn't edited.
+        if let editing = editingShapeID, document[editing].map(registry.isReadOnly) ?? true { endEditing() }
         setNeedsDisplay()
     }
 
@@ -256,11 +273,16 @@ public final class CanvasEditor {
 
     // MARK: Editing
 
-    /// Edits a shape of an `Editable` kind in place. Returns false for any other shape.
+    /// Edits a shape of an `Editable` kind in place. Returns false for any other shape, and for a
+    /// read-only one, which is refused (services hear it, `didRefuseChanges`).
     @discardableResult
     public func beginEditing(_ id: ShapeID) -> Bool {
         endEditing()
         guard let record = document[id], !record.isOpaque, registry.definition(for: record.kind) is any Editable else { return false }
+        guard !registry.isReadOnly(record) else {
+            refuseChanges(to: [id])
+            return false
+        }
         editingShapeID = id
         delegate?.editorEditingDidChange(self)
         setNeedsDisplay()

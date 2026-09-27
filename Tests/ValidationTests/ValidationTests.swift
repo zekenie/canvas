@@ -172,4 +172,17 @@ extension Tiny {
         expect(error[0] > 200 && error[1] < 100 && error[2] < 100, "red outline: \(error)")
         expect(clean[0] < 250 && abs(clean[0] - clean[2]) < 10, "no outline: \(clean)")
     },
+    test("the outline goes where its shape is drawn (a shake)") {
+        let h = try EditorHarness(plugins: [FixturesPlugin(), ValidationPlugin(), Rules { r in
+            r.validate(Box.self) { _, _ in [.error("always")] }
+        }])
+        let box = h.add(Box(CGRect(x: 40, y: 40, width: 40, height: 40)))
+        let still = renderBitmap(h.editor, size: CGSize(width: 200, height: 200))
+        h.editor.setDrawingOffset(CGPoint(x: 10, y: 0), for: box)
+        let moved = renderBitmap(h.editor, size: CGSize(width: 200, height: 200))
+        // The top edge's outline, 3 points out, and the left one.
+        for point in [CGPoint(x: 60, y: 37), CGPoint(x: 37, y: 60)] {
+            expectEqual(pixel(moved, at: CGPoint(x: point.x + 10, y: point.y)), pixel(still, at: point), "\(point)")
+        }
+    },
 ])

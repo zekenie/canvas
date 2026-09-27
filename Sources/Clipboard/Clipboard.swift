@@ -36,7 +36,7 @@ extension ShapeRegistrar {
         contribute({ _ in false }, to: ShapeCopyability.self)
     }
 
-    /// Copyable only while `isCopyable` says so (a lock, say).
+    /// Copyable only while `isCopyable` says so (a stamp that's sealed, say).
     public mutating func copyable(when isCopyable: @escaping @MainActor (ShapeRecord<Definition.Props>) -> Bool) {
         contribute({ $0.typed(as: Definition.Props.self).map(isCopyable) ?? false }, to: ShapeCopyability.self)
     }

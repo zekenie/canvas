@@ -9,6 +9,7 @@ import CoreGraphics
 import Ellipses
 import Foundation
 import Geometry
+import Locking
 import StickyNotes
 import TableOfContents
 import TaskCards
@@ -35,8 +36,8 @@ enum Budget {
 }
 
 /// Notes, tasks and ellipses in a grid, with an arrow from every fourth note to the note after it.
-/// Every other note has a title, so frames draw pills, and every task a checklist of three, so boards
-/// save and open added values.
+/// Every other note has a title, so frames draw pills, every task a checklist of three, so boards
+/// save and open added values, and every ellipse is locked, so frames draw lock chips.
 @MainActor func generatedBoard(shapes count: Int) -> CanvasDocument {
     var shapes: [AnyShapeRecord] = []
     let columns = Int(Double(count).squareRoot().rounded(.up))
@@ -51,7 +52,9 @@ enum Budget {
             task[ChecklistProperty.self] = [ChecklistItem(text: "Spec", isDone: true), ChecklistItem(text: "Build"), ChecklistItem(text: "Ship")]
             shapes.append(task)
         case 2:
-            shapes.append(AnyShapeRecord(ShapeRecord(Ellipse(frame: CGRect(origin: origin, size: CGSize(width: 160, height: 120))))))
+            var ellipse = AnyShapeRecord(ShapeRecord(Ellipse(frame: CGRect(origin: origin, size: CGSize(width: 160, height: 120)))))
+            ellipse[LockedProperty.self] = true
+            shapes.append(ellipse)
         default:
             let note = ShapeRecord(StickyNote(frame: CGRect(origin: origin, size: StickyNote.defaultSize), text: "Note \(i): something to do",
                                               title: i % 2 == 0 ? "Title \(i)" : nil))
@@ -199,9 +202,11 @@ enum Budget {
                 h.editor.transact { $0.delete([id]) }
             }) { rows = contents.entries }
             var restacked = 0
+            // Unlocked shapes only: a locked one's restack is refused, and would time nothing.
+            let restackable = document.shapes.filter { !$0.isLocked }
             let restack = median(runs: 21, prepare: {
                 restacked += 1
-                let id = document.shapes[restacked * size / 22].id
+                let id = restackable[restacked * restackable.count / 22].id
                 h.editor.transact { $0.bringToFront(id) }
             }) { rows = contents.entries }
             expect(contents.scope == nil, "every shape is listed")

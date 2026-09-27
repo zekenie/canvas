@@ -41,8 +41,9 @@ extension ShapeRegistrar {
         contribute({ _ in false }, to: ShapeSelectability.self)
     }
 
-    /// Selectable only while `isSelectable` says so (a lock, say). A shape that stops being
-    /// selectable leaves the selection with the change that did it.
+    /// Selectable only while `isSelectable` says so (a shape that's hidden, say; a locked one is
+    /// selectable, and only refuses changes). A shape that stops being selectable leaves the
+    /// selection with the change that did it.
     public mutating func selectable(when isSelectable: @escaping @MainActor (ShapeRecord<Definition.Props>) -> Bool) {
         contribute({ $0.typed(as: Definition.Props.self).map(isSelectable) ?? false }, to: ShapeSelectability.self)
     }

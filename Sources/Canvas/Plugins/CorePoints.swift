@@ -36,6 +36,13 @@ enum CorePoints {
         static var owner: PluginID { .core }
     }
 
+    /// Which shapes can't change (`registrar.readOnlyShapes`): a shape is read-only when any rule
+    /// says so.
+    enum ReadOnlyRules: ExtensionPoint {
+        typealias Contribution = @MainActor (AnyShapeRecord) -> Bool
+        static var owner: PluginID { .core }
+    }
+
     enum Commands: KeyedExtensionPoint {
         typealias Contribution = CommandRegistration
         static var owner: PluginID { .core }

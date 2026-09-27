@@ -21,9 +21,9 @@ import Titles
         expectEqual(changedPixels(untitled, titled, in: CGRect(x: 0, y: 60, width: 60, height: 60)), 0, "nothing left of it")
         expectEqual(changedPixels(untitled, titled, in: CGRect(x: 60, y: 55, width: 200, height: 17)), 0, "nothing higher")
     },
-    test("the pill fits its title, and stops at the shape's right edge, where a longer title ends in an ellipsis") {
+    test("the pill fits its title, and stops short of the shape's top-right corner (a lock chip's), where a longer title ends in an ellipsis") {
         let editor = try titleEditor()
-        let id = editor.add(Plaque(CGRect(x: 60, y: 100, width: 120, height: 80)))
+        let id = editor.add(Plaque(CGRect(x: 60, y: 100, width: 120, height: 80)))   // its right edge at 180
         let untitled = render(editor)
         editor.rename(id, "Hi")
         let short = render(editor)
@@ -31,8 +31,9 @@ import Titles
         expectEqual(changedPixels(untitled, short, in: CGRect(x: 100, y: 73, width: 100, height: 18)), 0, "only as long as its title")
         editor.rename(id, "A name much longer than the plaque is wide")
         let long = render(editor)
-        expect(changedPixels(untitled, long, in: CGRect(x: 160, y: 75, width: 19, height: 12)) > 100, "up to the right edge")
-        expectEqual(changedPixels(untitled, long, in: CGRect(x: 181, y: 65, width: 100, height: 30)), 0, "and no further")
+        // The corner's 22 points (an 18-point chip, and 4 before it) are left out: the pill ends at 158.
+        expect(changedPixels(untitled, long, in: CGRect(x: 140, y: 75, width: 17, height: 12)) > 100, "up to the corner")
+        expectEqual(changedPixels(untitled, long, in: CGRect(x: 160, y: 65, width: 120, height: 30)), 0, "and no further")
     },
     test("a title of several lines shows on one") {
         let editor = try titleEditor()
@@ -80,5 +81,18 @@ import Titles
         let untitled = render(editor)
         editor.rename(id, "Lobby")
         expect(changedPixels(untitled, render(editor), in: CGRect(x: 60, y: 285, width: 36, height: 12)) > 300)
+    },
+    test("the pill goes where its shape is drawn (a shake), in view points") {
+        let editor = try titleEditor()
+        let id = editor.add(Plaque(CGRect(x: 30, y: 50, width: 100, height: 60), name: "Lobby"))
+        editor.camera = Camera(origin: .zero, zoom: 2)      // the plaque's top-left corner at (60, 100)
+        let still = render(editor)
+        editor.setDrawingOffset(CGPoint(x: 12, y: 0), for: id)
+        let moved = render(editor)
+        for y in stride(from: 76, through: 86, by: 2) {
+            for x in stride(from: 60, through: 90, by: 3) {
+                expectEqual(pixel(moved, at: CGPoint(x: x + 12, y: y)), pixel(still, at: CGPoint(x: x, y: y)), "(\(x), \(y))")
+            }
+        }
     },
 ])
