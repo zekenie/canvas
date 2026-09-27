@@ -7,7 +7,8 @@ enum TitleStyle {
     static let height: CGFloat = 18
     static let padding: CGFloat = 7
     /// Between the pill and the shape's top edge: clear of a badge centered on the edge, as the
-    /// checklist chip is on the top-right corner, reaching 8 points above it.
+    /// checklist chip is on the top-right corner, reaching 8 points above it. Titles can't see the
+    /// chip, so CompositionTests, which ships both, holds a long title's pill clear of it.
     static let gap: CGFloat = 9
     /// A shape narrower than this on screen has no pill: there'd be no room for its title.
     static let minWidth: CGFloat = 30
@@ -32,13 +33,7 @@ struct TitleOverlay: CanvasOverlay {
     var space: OverlaySpace { .world }
 
     func draw(in context: OverlayContext) {
-        let registry = context.editor.registry
-        // Each kind's title that shows a pill, found once per kind rather than per shape.
-        var pills: [ShapeKind: TitleContribution] = [:]
-        for kind in registry.kinds {
-            if let title = registry.contributions(to: ShapeTitles.self, for: kind).first, title.showsPill { pills[kind] = title }
-        }
-        guard !pills.isEmpty else { return }
+        guard let pills = context.editor.service(TitleState.self)?.pills, !pills.isEmpty else { return }
         // World units per view point, from the shape's top-left corner up (more when zoomed far out).
         let scale = min(1, context.zoom / TitleStyle.fullSizeZoom) / context.zoom
         // A pill is above its shape, so a shape just below the view may have its pill in it.
@@ -47,7 +42,7 @@ struct TitleOverlay: CanvasOverlay {
         let area = CGRect(x: visible.minX, y: visible.minY, width: visible.width, height: visible.height + reach)
         // In paint order, so overlapping pills stack as their shapes do.
         for record in context.editor.paintOrder(in: area) {
-            guard let title = pills[record.kind]?.title(record).map(Self.oneLine), !title.isEmpty,
+            guard let title = pills[record.kind]?.title(record),
                   let bounds = context.shapes.geometry(of: record.id)?.bounds, !bounds.isNull,
                   bounds.width / scale >= TitleStyle.minWidth else { continue }
             context.cg.saveGState()
@@ -57,9 +52,6 @@ struct TitleOverlay: CanvasOverlay {
             context.cg.restoreGState()
         }
     }
-
-    /// The title on one line: each run of whitespace, newlines included, folds into a space.
-    static func oneLine(_ title: String) -> String { title.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
 
     /// In view points, with the shape's top-left corner at the origin.
     private func drawPill(_ title: String, maxWidth: CGFloat, in cg: CGContext) {

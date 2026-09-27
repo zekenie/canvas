@@ -644,13 +644,14 @@ extension PluginRegistrar {     // for a kind another plugin registers (bridges 
 
 /// ③ The consumers: a lookup, and an overlay that draws every titled shape's pill.
 extension Registry {
-    public func title(of shape: AnyShapeRecord) -> String? { ... }     // nil if there's none, or it's blank
+    public func title(of shape: AnyShapeRecord) -> String? { ... }     // on one line; nil if there's none, or it's blank
 }
 
 public struct TitlesPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .titles }
     public func register(into registrar: inout PluginRegistrar) {
+        registrar.service { TitleState(editor: $0) }     // the kinds that show pills, found once
         registrar.overlay(TitleOverlay())
     }
 }
@@ -665,14 +666,18 @@ ellipse's size, though Ellipses has never heard of titles:
 registrar.title(Ellipse.self) { ellipse in "Ellipse, \(Int(ellipse.frame.width)) × \(Int(ellipse.frame.height))" }
 ```
 
-Either way, a shape may have none: nil or blank is no title. What a title brings:
+Either way, a shape may have none: nil or blank is no title. However it's written, a title reads
+on one line wherever it shows (each run of whitespace folds into a space), so the lookup, the pill
+and the row agree. What a title brings:
 
 - **A pill** just outside the shape's top-left corner, 9 points above it, clear of a badge on the
   edge like the checklist chip: one line, no wider than the shape, where a longer title ends in
   "…". It keeps its size on screen, shrinking with the shapes below 25% zoom, as the chip does.
   `TitleOverlay` goes through `editor.paintOrder(in:)` with the visible rect grown by the pill's
-  reach, since a shape just below the view has its pill in it. A kind that draws its title itself
-  leaves it out: `task.title(pill: false) { $0.props.title }`.
+  reach, since a shape just below the view has its pill in it, and finds each kind's title in a
+  service (`TitleState`) that gathers them once, as the registry is frozen. A kind that draws its
+  title itself leaves it out: `task.title(pill: false) { $0.props.title }`. Titles can't see the
+  chip; CompositionTests, which ships both, holds a long title's pill clear of it.
 - **Its row's name** in [the table of contents](#the-table-of-contents), through TableOfContents'
   `ContentsTitles`, which names a kind's rows without replacing them: a titled note is listed by
   its title, with its checklist's tally; an untitled one by its text, as before. `contents: false`
@@ -1082,8 +1087,9 @@ task.details(header: { $task in TitleHeader($task.title, placeholder: "Untitled 
 
 It's a `DetailHeaderLabel` whose title is a `DetailHeaderField`. Each keystroke renames the shape
 (one transaction), so its pill and its row in the table of contents follow as you type. It takes
-a title stored as a `String?` (a note's: clearing the field, or leaving only spaces, sets nil) or
-as a `String` (a task's, blank while untitled). While there's no title it shows its placeholder,
+a title stored as a `String?` (a note's: clearing the field sets nil, and anything else is kept
+as typed, so a title of only spaces is stored but reads as none) or as a `String` (a task's,
+blank while untitled). While there's no title it shows its placeholder,
 dimmed: the kind's name ("Note"), unless the kind gives one ("Untitled Task"). A derived title (an
 ellipse's size) isn't renamed; a kind with one keeps a `DetailHeader`, if it has a header at all.
 
@@ -1248,14 +1254,17 @@ A section's content closure gets a `ShapeBinding`. Take it as a `$` parameter, a
   `editor.document`, so a section isn't rebuilt when other shapes change.
 - **`$task.title` is a `Binding`.** Each set writes that one key path into the *live* shape, in its
   own `editor.transact`. A move made after the snapshot survives a rename, two writes in one action
-  both land, and setting the value the shape already has commits nothing.
+  both land, and setting the value the shape already has commits nothing. After a write, the
+  binding reads what it made of the shape, before the panel draws again, as SwiftUI expects of a
+  binding: a text field that takes Return (or Escape) straight after a keystroke would otherwise
+  put the text from before back.
 - **Writes go to the shape the binding was made for**, never to whatever is selected by the time
   they happen. A write to a shape that's gone does nothing.
 - **Read-modify-write goes in `update`**: `$task.update { $0.checklist.removeDone() }` applies the
   change to the live value, in one transaction.
 - **Bind the narrowest key path.** A collection's binding (`$task.checklist`, and the row bindings
-  `ForEach` derives from it) writes the whole collection, rebuilt from the snapshot. Use `update`
-  for list operations.
+  `ForEach` derives from it) writes the whole collection, rebuilt from what the binding read (the
+  snapshot, or its last write). Use `update` for list operations.
 - **Every-box sections get a `ShapeBinding<CGRect>`**, the frame, whatever the kind. Typed props
   come only from contributing for the kind: from its own plugin, a horizontal it opts into, or a
   bridge.
@@ -1917,7 +1926,7 @@ detail-panel        service DetailPanelState · ShapeDetails
 context-menus       service ContextMenuState · secondary-click menu
 table-of-contents   service ContentsState
 checklists          overlay ChecklistOverlay
-titles              overlay TitleOverlay
+titles              service TitleState · overlay TitleOverlay
 validation-details  DetailStatuses
 clipboard           service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · ShapeContextMenus
 rectangles          shape rectangle · tool rectangle · shortcut R → tool rectangle

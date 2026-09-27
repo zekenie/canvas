@@ -512,13 +512,24 @@ extension ListTab: DetailTab { static var title: String { "List" } }
         expectEqual(field.placeholderString, "Card")
         panel.window.focus(field)
         panel.window.type("cog")                   // g is the gadget tool's shortcut, on the canvas
-        panel.window.settle()
         expectEqual(editor.props(card, as: Card.self)?.text, "cog")
         expectEqual(editor.currentToolID, .select)
-        panel.window.pressReturn()
+        panel.window.pressReturn()                 // at once, before the panel draws "cog"
         panel.window.spin { panel.canvasHasKeyboard }
         expectEqual(panel.exits, 1)
-        expectEqual(editor.props(card, as: Card.self)?.text, "cog")
+        expectEqual(editor.props(card, as: Card.self)?.text, "cog", "Return keeps what was typed")
+    },
+    test("Escape in a section's text field right after typing keeps what was typed") {
+        let editor = try gadgetEditor(scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
+        let id = editor.add(Gadget(gadgetFrame, name: "Old"))
+        editor.selection = id
+        panel.window.spin { (try? panel.field("Old")) != nil }
+        panel.window.focus(try panel.field("Old"))
+        panel.window.type("New")
+        panel.window.pressEscape()                 // at once, before the panel draws "New"
+        panel.window.spin { panel.canvasHasKeyboard }
+        expectEqual(editor.props(id, as: Gadget.self)?.name, "New")
     },
 ])
 

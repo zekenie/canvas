@@ -6,7 +6,8 @@ import Selection
 import SwiftUI
 import TestKit
 
-// The panel's one write path: snapshot reads, key-path writes onto the live shape.
+// The panel's one write path: snapshot reads (and, after a write, what it made of the shape),
+// key-path writes onto the live shape.
 @MainActor let bindingTests = Suite("Shape bindings", [
     test("a field write is one transaction and changes only that field") {
         let editor = try gadgetEditor()
@@ -49,6 +50,25 @@ import TestKit
         expectEqual(editor.revision, revision + 1)
         expectEqual(editor.props(id, as: Gadget.self)?.count, 6)
         expectEqual(editor.props(id, as: Gadget.self)?.parts.map(\.text), ["wheel"])
+    },
+    test("a binding reads back what its writes made of the shape, before the panel draws again; the snapshot stays as drawn") {
+        let editor = try gadgetEditor()
+        let id = editor.add(Gadget(gadgetFrame, name: "Old"))
+        let gadget = try require(editor.shapeBinding(id, as: Gadget.self))
+        let name = gadget.name
+        name.wrappedValue = "New"
+        expectEqual(name.wrappedValue, "New", "not the snapshot's Old")
+        expectEqual(gadget.name.wrappedValue, "New")
+        // Changed elsewhere meanwhile: an update reads back the live shape, not the snapshot plus its change.
+        editor.transact { $0.update(id, as: Gadget.self) { $0.props.count = 5 } }
+        gadget.update { $0.count += 1 }
+        expectEqual(gadget.count.wrappedValue, 6)
+        expectEqual(gadget.wrappedValue.name, "Old", "the snapshot the panel drew with")
+
+        let frame = try require(editor.frameBinding(id))
+        frame.origin.x.wrappedValue = 10
+        expectEqual(frame.origin.x.wrappedValue, 10)
+        expectEqual(frame.wrappedValue.origin.x, gadgetFrame.origin.x)
     },
     test("writing the value the shape already has commits nothing") {
         let editor = try gadgetEditor()

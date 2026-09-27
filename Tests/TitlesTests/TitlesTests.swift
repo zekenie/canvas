@@ -17,6 +17,12 @@ import Titles
         let box = editor.add(Box(plaqueFrame))
         expectEqual([named, unnamed, blank, box].map(editor.title), ["Lobby", nil, nil, nil])
     },
+    test("a title reads on one line wherever it shows: the lookup, the row, the pill") {
+        let editor = try titleEditor()
+        let id = editor.add(Plaque(plaqueFrame, name: "  Front\n\ndesk\t"))
+        expectEqual(editor.title(id), "Front desk")
+        expectEqual(try require(editor.tableOfContents).entries.map { $0.label?.text }, ["Front desk"])
+    },
     test("a title may be derived: a bridge titles another plugin's kind from its props, and it follows them") {
         let editor = try titleEditor([CardsPlugin(), CardTitlesPlugin()])
         let card = editor.add(Card(plaqueFrame, text: "Hello"))
@@ -46,7 +52,7 @@ import Titles
         expectEqual(registry.report, """
         core               tool hand
         fixtures           shape box · shape disc · shape tag
-        titles             overlay TitleOverlay
+        titles             service TitleState · overlay TitleOverlay
         table-of-contents  service ContentsState
         fixture-titles     ShapeTitles → box · ContentsTitles → box · ShapeTitles → disc
         """)

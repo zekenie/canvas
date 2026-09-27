@@ -154,7 +154,7 @@ import Titles
         eraser             tool eraser · shortcut E → tool eraser
         polylines          shape polyline · tool polyline · shortcut L → tool polyline
         ellipses           shape ellipse · tool ellipse · shortcut O → tool ellipse
-        titles             overlay TitleOverlay
+        titles             service TitleState · overlay TitleOverlay
         table-of-contents  service ContentsState
         ellipse-titles     ShapeTitles → ellipse · ContentsTitles → ellipse
         """)

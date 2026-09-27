@@ -40,19 +40,23 @@ import Titles
 
         w.window.focus(field)                 // selects the text
         w.window.pressDelete()
-        expectEqual(editor.plaque(id)?.name, nil, "untitled, not an empty title")
+        expectEqual(editor.plaque(id)?.name, nil, "cleared, it's untitled, not an empty title")
         w.window.type(" ")
-        expectEqual(editor.plaque(id)?.name, nil, "a blank title is none")
+        expectEqual(editor.plaque(id)?.name, " ", "kept as typed")
+        expectEqual(editor.title(id), nil, "a blank title is none")
+        w.window.type("a")
+        expectEqual(editor.plaque(id)?.name, " a")
+        expectEqual(editor.title(id), "a", "on one line, as the pill and the row show it")
     },
-    test("Return, like Escape, gives the keyboard back to the canvas, keeping the title as typed") {
+    test("Return, like Escape, gives the keyboard back to the canvas, keeping the title as typed, even before the panel redraws") {
         let editor = try titleEditor(scheduler: TaskScheduler())
         editor.selection = editor.add(Plaque(plaqueFrame, name: "Lobby"))
         let w = HeaderWindow(editor)
         w.window.spin { w.titleField != nil }
-        // Settled after typing, as between a person's keys: the panel draws the shape as renamed.
+        // Each key at once after the last, so the panel hasn't drawn the rename when Return comes:
+        // the field reads back what it wrote, not the name the panel last drew.
         w.window.focus(try require(w.titleField))
         w.window.type("Hall")
-        w.window.settle()
         expect(!w.canvasHasKeyboard)
         w.window.pressReturn()
         w.window.spin { w.canvasHasKeyboard }
@@ -60,7 +64,6 @@ import Titles
 
         w.window.focus(try require(w.titleField))
         w.window.type("Stairs")
-        w.window.settle()
         w.window.pressEscape()
         w.window.spin { w.canvasHasKeyboard }
         expectEqual(editor.selection.flatMap(editor.plaque)?.name, "Stairs")

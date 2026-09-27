@@ -20,9 +20,11 @@ public struct TitleHeader: View {
     public let systemImage: String?
     private let text: Binding<String>
 
-    /// A title that's nil while untitled: clearing the field (or leaving only whitespace) sets nil.
+    /// A title that's nil while untitled: clearing the field sets nil. Anything else is kept as
+    /// typed, so what the field shows is what's stored; a title of only spaces reads as none
+    /// (`Registry.title(of:)`, the pill, the row).
     public init(_ title: Binding<String?>, placeholder: String? = nil, subtitle: String? = nil, systemImage: String? = nil) {
-        self.init(Binding(get: { title.wrappedValue ?? "" }, set: { title.wrappedValue = $0.allSatisfy(\.isWhitespace) ? nil : $0 }),
+        self.init(Binding(get: { title.wrappedValue ?? "" }, set: { title.wrappedValue = $0.isEmpty ? nil : $0 }),
                   placeholder: placeholder, subtitle: subtitle, systemImage: systemImage)
     }
 

@@ -1,7 +1,9 @@
+import AppKit
 import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
+import Checklists
 import Composition
 import CoreGraphics
 import DetailPanel
@@ -35,7 +37,7 @@ import Validation
         context-menus       service ContextMenuState · secondary-click menu
         table-of-contents   service ContentsState
         checklists          overlay ChecklistOverlay
-        titles              overlay TitleOverlay
+        titles              service TitleState · overlay TitleOverlay
         validation-details  DetailStatuses
         clipboard           service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · ShapeContextMenus
         rectangles          shape rectangle · tool rectangle · shortcut R → tool rectangle
@@ -60,6 +62,30 @@ import Validation
         // A note's and a task's headers rename them: an untitled note's shows the placeholder.
         expectEqual(panels, ["Ellipse: Arrange", "Rectangle: Arrange", "Arrow: ", "(Note): Checklist, Arrange",
                              "New Task: Task, Checklist, Style, Arrange"])
+    },
+    test("a long title's pill stays clear of the checklist chip, though neither plugin knows the other's size") {
+        // A note with its checklist (the chip, on its top-right corner), its long title (the pill,
+        // above its top-left corner and as wide as the note), or neither; its text keeps it from
+        // being empty, and outlined.
+        @MainActor func render(checklist: Bool, title: Bool) -> NSBitmapImageRep {
+            let note = StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Buy milk",
+                                  checklist: checklist ? [ChecklistItem(text: "oat milk")] : [],
+                                  title: title ? "A title much longer than the note is wide" : nil)
+            let editor = ShippedPlugins.makeEditor(document: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(note))]), scheduler: ManualScheduler())
+            return renderBitmap(editor, size: CGSize(width: 400, height: 340))
+        }
+        let plain = render(checklist: false, title: false)
+        let chip = render(checklist: true, title: false), pill = render(checklist: false, title: true)
+        expect(changedPixels(plain, chip, in: CGRect(x: 250, y: 90, width: 70, height: 20)) > 100, "the chip")
+        expect(changedPixels(plain, pill, in: CGRect(x: 100, y: 75, width: 190, height: 12)) > 1000, "the pill, to the note's right edge")
+        var both = 0
+        for y in 60..<130 {
+            for x in 90..<330 {
+                let point = CGPoint(x: x, y: y), under = pixel(plain, at: point)
+                if pixel(chip, at: point) != under && pixel(pill, at: point) != under { both += 1 }
+            }
+        }
+        expectEqual(both, 0, "no pixel is both the pill's and the chip's")
     },
     test("a line drawn with L is a Line in the panel, with nothing but its header") {
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0) }
