@@ -1,8 +1,9 @@
 # The plugin system
 
-Everything on the canvas comes from a plugin: sticky notes, ellipses, arrows, validation, even the
-examples. The core (`Sources/Canvas`) knows how to hold shapes, run tools, draw, and wire plugins
-together, and nothing about any particular shape or concern. Its one built-in tool is Select, which
+Everything on the canvas comes from a plugin: sticky notes, ellipses, arrows, task cards,
+validation, checklists, the detail panel beside the canvas, even the examples. The core
+(`Sources/Canvas`) knows how to hold shapes, run tools, draw, and wire plugins together, and
+nothing about any particular shape or concern. Its one built-in tool is Select, which
 also pans, moves shapes, and drives handles and editing for whatever kinds offer them.
 
 This is the same system as data-canvas's `definePlugin`, in Swift. [The last section](#coming-from-data-canvas)
@@ -14,6 +15,7 @@ maps one onto the other.
 - [A vertical plugin](#a-vertical-plugin)
 - [Tools and sessions](#tools-and-sessions)
 - [A horizontal plugin](#a-horizontal-plugin)
+- [The detail panel](#the-detail-panel)
 - [Capabilities](#capabilities)
 - [The editor, the document, and drawing](#the-editor-the-document-and-drawing)
 - [The registry](#the-registry)
@@ -25,7 +27,7 @@ maps one onto the other.
 
 | | What it is | Example |
 |---|---|---|
-| **Kind** | A plain value type holding a shape's data. It names itself once, with `static let kind`. | `struct StickyNote: BoxShapeProps { frame, text }` |
+| **Kind** | A plain value type holding a shape's data. It names itself once, with `static let kind`. | `struct StickyNote: BoxShapeProps { frame, text, checklist }` |
 | **Definition** | Stateless behavior for a kind: how it draws, where it is, how it's hit, what else it can do. | `StickyNoteDefinition`, conforming to `ShapeDefinition` and `Editable` |
 | **Plugin** | A value that says what it adds, in `register(into:)`. | `struct StickyNotesPlugin: CanvasPlugin` |
 | **Extension point** | A typed slot some plugin declares and other plugins fill. The type is the key. | `enum ValidationRules: ExtensionPoint` |
@@ -41,7 +43,7 @@ Two more things hold them together:
 ## Horizontal and vertical
 
 A **vertical** plugin is a feature: a shape kind and the tool that places it, or a tool on its own.
-Sticky notes, ellipses, arrows, rectangles and the eraser are verticals.
+Sticky notes, ellipses, arrows, task cards, rectangles and the eraser are verticals.
 
 A **horizontal** plugin is a concern that cuts across kinds. It declares an extension point, and any
 kind can take part by contributing to it. Validity is the canonical example: *a shape can be valid
@@ -49,12 +51,21 @@ or invalid* is horizontal; *an empty sticky note is invalid* is one vertical opt
 another. The horizontal owns the contract, the engine, and whatever it draws. Shapes never know
 they're invalid; the validation plugin outlines them.
 
+A horizontal can also be a feature that individual shapes opt into, and that shows up in the
+[detail panel](#the-detail-panel) as a tab of its own. Checklists is the example: one line,
+`note.checklist(\.checklist)`, gives sticky notes a checklist stored in their own props, a Checklist
+tab in the panel, and a done/total chip on the canvas. Checklists owns the item type and everything
+done with it; the kind only stores the items. One horizontal may build on another: Checklists
+imports DetailPanel.
+
 Opting in goes in one of two directions:
 
 - **The vertical imports the horizontal** and contributes from inside its own `register`.
   StickyNotes does this for Validation: `note.validate { ... }`.
 - **A bridge imports both**, and neither knows the other. `EllipseTitles` gives ellipses a title,
-  though Ellipses has never heard of titles and Titles has never heard of ellipses.
+  though Ellipses has never heard of titles and Titles has never heard of ellipses. A bridge may
+  join two horizontals: `ValidationDetails` shows each shape's validation issues in the detail
+  panel's footer, though Validation has never heard of the panel, nor the panel of validity.
 
 Either way the edge is visible in `Package.swift`, and the dependency always points from the
 vertical (or bridge) to the horizontal, never back.
@@ -75,17 +86,17 @@ compiles each module on its own, with only its dependency closure on the include
 Each target is one line, with its layer:
 
 ```swift
-.target(name: "StickyNotes", dependencies: ["Canvas", "Validation"]),                  // layer: vertical
+.target(name: "StickyNotes", dependencies: ["Canvas", "Checklists", "Validation"]),   // layer: vertical
 .target(name: "EllipseTitles", dependencies: ["Canvas", "Ellipses", "Titles"], path: "Examples/EllipseTitles"), // layer: bridge
 ```
 
 | Layer | May depend on | Modules |
 |---|---|---|
 | foundation | foundation | Geometry, Canvas (the core) |
-| ui | foundation | CanvasUI (the AppKit view and the SwiftUI toolbar) |
-| horizontal | foundation, horizontal | Validation, Titles |
-| vertical | foundation, horizontal | Arrows, StickyNotes, Ellipses, Rectangles, Eraser |
-| bridge | foundation, horizontal, vertical | EllipseTitles |
+| ui | foundation | CanvasUI (the AppKit view, the SwiftUI toolbar, and `CanvasFocus`) |
+| horizontal | foundation, horizontal | Validation, Titles, DetailPanel, Checklists |
+| vertical | foundation, horizontal | Arrows, StickyNotes, Ellipses, TaskCards, Rectangles, Eraser |
+| bridge | foundation, horizontal, vertical | EllipseTitles, ValidationDetails |
 | composition | foundation, horizontal, vertical, bridge | Composition (the shipped plugin list) |
 | app | foundation, ui, composition | InfiniteCanvas |
 | testsupport, test | (see Package.swift) | TestKit, CanvasTesting, `*Tests` |
@@ -106,6 +117,8 @@ What `./build.sh audit` enforces:
 - **The host API is fenced off.** What `CanvasView` calls on the editor (input, the cursor,
   drawing, the delegate) is `@_spi(Host)`. Only modules that `@_spi(Host) import Canvas` see it,
   and only the ui, testsupport and test layers may; a plugin that calls it doesn't compile.
+- **No shadowing names.** A public type named like a module fails, and so does a public `Task`,
+  which would shadow Swift's `Task` in every module that imports it.
 - **Package.swift is real SwiftPM.** The audit evaluates it with SwiftPM's own `PackageDescription`
   and fails if SwiftPM would see a different graph, so Xcode opens the same project.
 
@@ -170,7 +183,7 @@ public struct RectanglesPlugin: CanvasPlugin {
   follow. Override `hitTest` or `indicatorPath` only when you can do better; Ellipses does both (an
   exact hit test, a smooth outline).
 - **Conform in an extension**, as above, for `ShapeDefinition` and its capabilities, `Tool`,
-  `Session` and `EditorService`. Swift flags a member that *nearly* matches a defaulted requirement
+  `Session`, `EditorService`, and an extension point that implements `check`. Swift flags a member that *nearly* matches a defaulted requirement
   (a wrong label, a missing return type) only in the extension that declares the conformance, and
   the build fails on it. Declared on the type, a near miss compiles and the default silently runs.
 - **The kind is stated once.** Everything registered inside `registrar.shape(...) { rectangle in ... }`
@@ -189,8 +202,9 @@ registrar.shape(StickyNoteDefinition()) { note in
     note.tool(label: "Note", systemImage: "note.text", shortcut: "n", placing: place)
     note.createOnDoubleClick(place)          // double-clicking empty canvas places a note
     note.validate { shape, _ in              // opts into the Validation horizontal
-        shape.props.text.allSatisfy(\.isWhitespace) ? [.warning("This note is empty.")] : []
+        shape.props.isEmpty ? [.warning("This note is empty.")] : []    // no text and no checklist
     }
+    note.checklist(\.checklist)              // opts into Checklists: a panel tab and a chip
 }
 ```
 
@@ -363,6 +377,8 @@ The mechanics:
 - **List or keyed.** A plain `ExtensionPoint` collects a list: validation rules, overlays. A
   `KeyedExtensionPoint` says which keys each contribution claims. Two claims to the same key are
   `RegistryError.conflict`, so plugin order never picks a winner. `[target]` means one per kind.
+  A rule that spans contributions in a way keys can't say goes in the point's `check`
+  ([the registry](#the-registry) runs it).
 - **Engines are services.** A horizontal with state (a cache, an index) registers an
   `EditorService`, made per editor, with `registrar.service { ValidationEngine(editor: $0) }`, and
   anyone finds it with `editor.service(ValidationEngine.self)`. Validation's engine recomputes when
@@ -375,6 +391,393 @@ The mechanics:
 
 [Validation](../Sources/Validation/Validation.swift) is the full-size version of the same pattern:
 per-kind rules, rules for another plugin's kind, rules for every kind, an engine, and an overlay.
+
+## The detail panel
+
+The detail panel is the inspector beside the canvas, after Keynote's: it shows the selected shape
+and edits its properties. It's a horizontal ([`Sources/DetailPanel`](../Sources/DetailPanel)) like
+any other. It declares two extension points, kinds and other plugins contribute to them, and the
+core has never heard of it.
+
+### Anatomy and conventions
+
+```
+┌─ inspector column: 248 to 340 pt, 260 ideal ────────┐
+│ ☑  Write the spec                                   │ header: symbol, title, subtitle
+│    Done · 2 of 5 · Due Sep 30                       │
+│ ⟦ Task ⟧   Checklist   Style   Arrange              │ tab strip, hidden with one tab
+├─────────────────────────────────────────────────────┤
+│      Title  [ Write the spec              ]         │ a tab's first section: untitled,
+│     Status  [ ● Done               ⌄ ]              │   never collapses
+│   Priority  [ Low | Med | High ]                    │ rows: label column, then control
+├─────────────────────────────────────────────────────┤
+│ › Notes                                             │ a titled section collapses,
+├─────────────────────────────────────────────────────┤
+│ ⌄ Schedule                                          │   and may have one header control
+│        Due  ☑ [ 9/30/2026 ]⇅                        │
+│   Estimate  [   4 h ]⇅                              │
+│  Remaining  0 h                                     │ a read-only row
+│                        (scrolls)                    │
+├─────────────────────────────────────────────────────┤
+│ ⚠ Done, with 3 unchecked items.                     │ footer: status lines, on every tab,
+└─────────────────────────────────────────────────────┘   hidden when empty
+```
+
+The panel owns all of the chrome, and plugins fill it in:
+
+| The panel decides | Plugins provide |
+|---|---|
+| The header's layout | The header's title, subtitle and symbol (a value, not a view) |
+| The tab strip, the tab order, and the tab remembered per kind | Which tab each section goes in |
+| Section chrome: the header, chevron, header-control slot, insets, dividers, collapsing, and remembered collapse | Section titles, ids and order, and at most one header control per section |
+| Scrolling, the footer, and the empty states | The rows in a section, and the footer's lines |
+| Fonts, control size, the label column and checkbox toggles, all through the environment | |
+| Focus: what gives the keyboard back to the canvas | |
+
+With nothing selected the panel says "No Selection". A shape nothing contributes to (an arrow,
+today) gets its header, then "No Options". Without `DetailPanelPlugin` installed, the panel says
+"No Details".
+
+Sections are stock SwiftUI plus a few primitives, and get the look by following these conventions:
+
+- **Rows.** A labeled control is `LabeledContent("Due") { control }`; the panel lines every label
+  up in one 72 pt column and hides the control's own label (its placeholder stays). A read-only
+  value is `LabeledContent("Remaining", value: ...)`. A toggle stands alone, drawn as a checkbox
+  with its label after it; in a row, it's a bare box.
+- **Primitives.** A number is a `DetailNumberField`, and a pair of them (Width and Height) goes in
+  `DetailFields`. Multiline text is a `DetailTextArea`, a list a `DetailList` (empty, it says No
+  Items), a color `DetailSwatches` (named presets, the chosen one marked, then the color well; it
+  spans the row, so it goes in a section of its own, not in a `LabeledContent`). `DetailNumberText` formats and parses numbers with units
+  ("240 pt"), in the user's locale ("2,5 h" in German), as the number field does.
+- **Sections.** A tab's first section may be untitled; use it for the main properties. Every
+  titled section collapses. Titles are one or two nouns in Title Case.
+- **Header control.** At most one small control, acting on the whole section (Checklists' menu). A
+  switch for one row goes in that row, beside what it governs (the task's Due checkbox).
+- **No styling of your own.** No fonts, sizes, padding or backgrounds.
+- **Writes** go only through the section's `ShapeBinding`. Sections never see the editor.
+
+### Tabs are types; any plugin adds one
+
+A tab is a type conforming to `DetailTab`. Any module may declare one, and there's no registration
+call: a tab shows for a shape when a shown section that applies to the shape names it.
+
+```swift
+public enum ChecklistTab {}
+extension ChecklistTab: DetailTab {
+    public static var title: String { "Checklist" }
+    public static var order: Int { 50 }
+}
+```
+
+Being a type, a tab can't be misspelled, and sharing one means importing the module that declares
+it. Tabs sort by `order`, then by first appearance, in these bands:
+
+| Order | Tabs |
+|---|---|
+| 0 (the default) | A kind's own tabs (Task) |
+| 50 | Feature tabs a horizontal brings to the kinds that opt into it (Checklist) |
+| 100 | `StyleTab`: appearance, shared by every kind |
+| 200 | `ArrangeTab`: position and size, which the panel fills for every box shape |
+
+Use the shared `StyleTab` and `ArrangeTab` rather than near-duplicates. Two tab types with one title
+would show as two identical tabs, so they're a registry error (`invalid`, below).
+
+### Contributing: two points and their sugar
+
+| Point | Kind | Holds |
+|---|---|---|
+| `ShapeDetails` | keyed | A header and sections, one contribution per `details` call. Each section claims (target, tab, id), and a header claims its target, so two plugins adding a Color section to a kind's Style tab, or two headers for one kind, are a `conflict`. A kind's own section and an every-box one may share an id; both show. |
+| `DetailStatuses` | list | Footer lines, as `@MainActor (AnyShapeRecord, DetailContext) -> [DetailStatus]`. |
+
+Plugins write the sugar, not the points:
+
+| Sugar | For |
+|---|---|
+| `x.details(header:) { sections }` | This kind's header and sections, inside `registrar.shape { x in ... }`. |
+| `registrar.details(P.self, header:) { sections }` | Another plugin's kind, typed as its own (bridges). |
+| `registrar.detailsForEveryBox { sections }` | Every shape with a frame, editing the frame. Arrows have none, so they don't get these. |
+| `registrar.detailStatusForEveryShape { shape, context in ... }` | Footer lines for every shape. Return `[]` when there's nothing to say. |
+
+`details` always takes its trailing builder, so a header alone is `details(header: ...) {}`. A
+section is a `DetailSection` naming its tab, with an optional title, an `id` (the title by
+default, or "main"), an optional `when` that hides it (and a tab it leaves empty) for some values,
+its content, and an optional header control (`accessory:`). `when` runs on every render, so keep it
+cheap. The panel's own contribution is Arrange, for every box
+([`DetailPanelPlugin`](../Sources/DetailPanel/DetailPanelPlugin.swift)):
+
+```swift
+registrar.service { DetailPanelState(editor: $0) }
+registrar.detailsForEveryBox {
+    DetailSection("Size", in: ArrangeTab.self) { $frame in
+        DetailFields {
+            DetailNumberField("Width", value: $frame.size.width, unit: "pt", in: 1...100_000)
+            DetailNumberField("Height", value: $frame.size.height, unit: "pt", in: 1...100_000)
+        }
+    }
+    DetailSection("Position", in: ArrangeTab.self) { $frame in ... }
+}
+```
+
+How it resolves, per shape:
+
+| What | Order |
+|---|---|
+| Sections in a tab | The kind's own (from its vertical, a horizontal it opts into, or a bridge), in plugin order and builder order; then every-box sections, in plugin order. |
+| Tabs | By `order`, then first appearance over the same sequence. A tab with no shown section is dropped. |
+| Footer lines | The kind's, then every kind's, each in plugin order. |
+| Header | The kind's own; else the label and symbol of the tool that places the kind; else the kind's name. A header without a symbol takes the tool's. |
+
+`DetailPanelState` (`editor.detailPanel`) gathers each kind's contributions once, since the
+registry is frozen, and resolves the selected shape's layout (running `when` and the headers) as
+it's shown. It also remembers, per editor and in memory, the tab last chosen for each kind and the
+collapsed sections. A collapsed every-box section collapses for every kind; a kind's own, for
+that kind only.
+
+### A horizontal's feature tab: Checklists
+
+The pattern the panel is built for: a horizontal exposes a way for individual shapes to opt into a
+feature, and the feature shows up as a tab in the panel. Opting in is one line on the kind, and the
+tab comes with it, on exactly the kinds that opt in.
+
+[Checklists](../Sources/Checklists/Checklists.swift) gives any kind a checklist, stored in the
+kind's props. Checklists owns the item type, its helpers (`doneCount`, `progress`, `setAllDone`,
+`removeDone`), the bulk actions (`ChecklistBulkAction`), the tab, and the chip it draws on the
+canvas. Its sugar contributes to its own point
+and to the panel's, from the same `ShapeRegistrar`, fully typed:
+
+```swift
+/// The extension point: which kinds have a checklist. At most one per kind.
+public enum ShapeChecklists: KeyedExtensionPoint {
+    public typealias Contribution = ChecklistContribution    // how to read the items, and the badge flag
+    public static var owner: PluginID { .checklists }
+    public static func uniqueKeys(of _: ChecklistContribution, for target: ShapeTarget) -> [AnyHashable] { [target] }
+}
+
+extension ShapeRegistrar {
+    /// Gives this kind a checklist, stored at `items` in its props: a Checklist tab in the detail
+    /// panel, and (unless `badge` is false, for kinds that draw their own) a small done/total chip
+    /// on the canvas. `note.checklist(\.checklist)`.
+    public mutating func checklist(_ items: WritableKeyPath<Definition.Props, [ChecklistItem]>, badge: Bool = true) {
+        contribute(ChecklistContribution(items: { $0.typed(as: Definition.Props.self)?.props[keyPath: items] }, showsBadge: badge),
+                   to: ShapeChecklists.self)
+        details {
+            DetailSection("Items", in: ChecklistTab.self) { $shape in
+                ChecklistRows(items: $shape[dynamicMember: items])
+            } accessory: { $shape in
+                ChecklistMenu(shape: $shape, items: items)
+            }
+            DetailSection("Progress", in: ChecklistTab.self, when: { !$0[keyPath: items].isEmpty }) { shape in
+                ChecklistProgress(items: shape.wrappedValue[keyPath: items])
+            }
+        }
+    }
+}
+```
+
+- **Opting in.** Sticky notes write `note.checklist(\.checklist)`, task cards
+  `task.checklist(\.checklist, badge: false)`, since a card draws its own list.
+- **The graph.** StickyNotes imports Checklists and never DetailPanel, yet gets a panel tab. The
+  requirement shows up at startup instead: a list with StickyNotes but without `ChecklistsPlugin`
+  or `DetailPanelPlugin` is `ownerNotInstalled`, naming the missing one.
+- **The key path is the contract.** `$shape[dynamicMember: items]` turns the key path into a
+  binding that writes only that field. The Items header's menu is a `ForEach` over
+  `ChecklistBulkAction` (Check All, Uncheck All, Remove Checked), each disabled unless
+  `isEnabled(for:)` and applied in one `update`:
+  `$shape.update { action.apply(to: &$0[keyPath: items]) }`. The rules live on the enum, so tests
+  check them without opening the menu.
+
+Another feature in this pattern has the same parts: its data type, a keyed point holding an erased
+accessor per kind, a tab type at order 50, sugar that takes a `WritableKeyPath` into the kind's
+props and contributes to both points, and whatever consumes the point (a lookup on `Registry`, an
+overlay).
+
+### Footer lines from a bridge: ValidationDetails
+
+The footer is for a shape's state, not its settings.
+[ValidationDetails](../Sources/ValidationDetails/ValidationDetails.swift) fills it with each
+shape's validation issues. It's a bridge between two horizontals, and its imports are the only
+edge between them:
+
+```swift
+import Canvas
+import DetailPanel
+import Validation
+
+public struct ValidationDetailsPlugin: CanvasPlugin {
+    public init() {}
+    public var id: PluginID { "validation-details" }
+
+    public func register(into registrar: inout PluginRegistrar) {
+        registrar.detailStatusForEveryShape { shape, context in
+            (context.service(ValidationEngine.self)?.result(for: shape.id)?.issues ?? [])
+                .sorted { $0.severity > $1.severity }
+                .map { DetailStatus($0.message, tone: DetailStatus.Tone($0.severity)) }
+        }
+    }
+}
+```
+
+Issues come worst first (ties keep the rules' order), each in its severity's tone. A status
+contributor reads services through `DetailContext`, read-only. Footer lines are re-read on every
+document change, so read a cached service, as this one reads validation's engine. Without
+Validation installed there's no engine, and no lines. So an empty sticky note says "This note is
+empty." in the footer, and StickyNotes didn't change.
+
+### The full showcase: TaskCards
+
+[TaskCards](../Sources/TaskCards) is a vertical whose panel is its only editor: task cards aren't
+`Editable`. Press T to place one. Every field in the panel changes how the card draws.
+
+```swift
+registrar.shape(TaskCardDefinition()) { task in
+    let place = task.placement(size: TaskStyle.size) { TaskCard(title: "New Task") }
+    task.tool(label: "Task", systemImage: "checklist", shortcut: "t", placing: place)
+    task.validate { shape, _ in shape.props.issues }
+    task.taskPanel()                                  // below
+    task.checklist(\.checklist, badge: false)         // the Checklist tab, without the chip
+}
+```
+
+`taskPanel()` (in [TaskCardPanel.swift](../Sources/TaskCards/TaskCardPanel.swift)) is one
+`details` call, here abbreviated:
+
+```swift
+details(header: { DetailHeader($0.props.isUntitled ? "Untitled Task" : $0.props.title, subtitle: $0.props.summary) }) {
+    DetailSection(in: TaskTab.self) { $task in
+        LabeledContent("Title") { TextField("Title", text: $task.title) }
+        LabeledContent("Status") { StatusPicker(status: $task.status) }
+        LabeledContent("Priority") { ... }
+    }
+    DetailSection("Notes", in: TaskTab.self) { $task in
+        DetailTextArea($task.notes)
+    }
+    DetailSection("Schedule", in: TaskTab.self) { $task in
+        LabeledContent("Due") {
+            HStack {
+                Toggle("Has due date", isOn: $task.hasDue)
+                if task.hasDue {
+                    DatePicker("Due", selection: $task.dueDate, displayedComponents: .date).datePickerStyle(.stepperField)
+                } else {
+                    Text("None").foregroundStyle(.secondary)
+                }
+            }
+        }
+        LabeledContent("Estimate") { DetailNumberField(value: $task.estimate, unit: "h", in: 0...999, step: 0.5) }
+        LabeledContent("Remaining", value: DetailNumberText.format(task.remaining, unit: "h"))
+    }
+    DetailSection("Color", in: StyleTab.self) { $task in ... }
+    DetailSection("On the Card", in: StyleTab.self) { $task in ... }
+}
+```
+
+Four plugins fill one card's panel:
+
+| Part | Holds | From |
+|---|---|---|
+| Header | the title (or "Untitled Task"), and a summary: "Done · 2 of 5 · Due Sep 30" | TaskCards |
+| Task (0) | an untitled section (Title, Status, Priority), Notes, Schedule | TaskCards |
+| Checklist (50) | Items, and Progress once there are items | Checklists, through `task.checklist` |
+| Style (100) | Color, On the Card | TaskCards |
+| Arrange (200) | Size, Position | DetailPanel, for every box |
+| Footer | the task's issues, worst first ("A task needs a title.") | ValidationDetails |
+
+### Reading and writing: `ShapeBinding`
+
+A section's content closure gets a `ShapeBinding`. Take it as a `$` parameter, as with
+`ForEach($items) { $item in }`:
+
+- **`task.title` reads the snapshot** the panel drew with. Nothing in a section reads
+  `editor.document`, so a section isn't rebuilt when other shapes change.
+- **`$task.title` is a `Binding`.** Each set writes that one key path into the *live* shape, in its
+  own `editor.transact`. A move made after the snapshot survives a rename, two writes in one action
+  both land, and setting the value the shape already has commits nothing.
+- **Writes go to the shape the binding was made for**, never to whatever is selected by the time
+  they happen. A write to a shape that's gone does nothing.
+- **Read-modify-write goes in `update`**: `$task.update { $0.checklist.removeDone() }` applies the
+  change to the live value, in one transaction.
+- **Bind the narrowest key path.** A collection's binding (`$task.checklist`, and the row bindings
+  `ForEach` derives from it) writes the whole collection, rebuilt from the snapshot. Use `update`
+  for list operations.
+- **Every-box sections get a `ShapeBinding<CGRect>`**, the frame, whatever the kind. Typed props
+  come only from contributing for the kind: from its own plugin, a horizontal it opts into, or a
+  bridge.
+- **Other forms.** A plain parameter works too (`shape.wrappedValue` is the snapshot, as in
+  Checklists' Progress), and a larger section can be a View declaring
+  `@ShapeBinding var shape: Props`, passed `$shape` (Checklists' `ChecklistMenu`).
+
+Tests and tools reach the same bindings with `editor.shapeBinding(id, as: TaskCard.self)` and
+`editor.frameBinding(id)`.
+
+Two compiler rules come with this:
+
+- **Keep the sugar's closure types unannotated.** Annotated `@MainActor`, Swift 6.3 compiles a
+  `$`-parameter body as nonisolated, and every view initializer in it fails.
+- **Never name `Transaction` in a file that imports SwiftUI.** SwiftUI has its own `Transaction`,
+  and its `Canvas` view shadows the core module, so `Canvas.Transaction` doesn't resolve either.
+  Let closure inference type `$0`.
+
+When each control commits:
+
+| Control | Commits |
+|---|---|
+| Text fields, `DetailTextArea` | On every keystroke, so the canvas follows as you type |
+| Pickers, toggles, steppers, dates, swatches, the color well, list add, remove, move and edit | On change |
+| `DetailNumberField` | A draft: on Return, Tab, leaving the field, or the field going away, in one transaction, clamped to its range. Escape drops the draft. Stepping writes at once. A draft lands on its own shape even if the selection moves first. |
+
+### Focus and hosting
+
+- **Typing in the panel never triggers a tool.** Tool shortcuts live only in the canvas view, so
+  "n" typed into a title is text, and Delete and Return in a panel field never delete or edit the
+  selected shape.
+- **The keyboard goes back to the canvas** on a click on the canvas; on Escape in the panel, which
+  drops any number draft first; and on its own when the panel removes the control that had the
+  keyboard (switching tabs, collapsing its section, a `when` hiding it, or a new selection), or is
+  hidden with it (View › Hide Inspector, which hides the panel without removing it).
+  Otherwise the keyboard would land on the window, and tool shortcuts would stop. Collapsing an
+  unrelated section leaves the field focused.
+- **Inside the panel**, Tab moves between text fields (a `DetailTextArea` takes Tab as text), and
+  Return commits a number and keeps the field. Checkboxes don't take the keyboard (the macOS default
+  without Full Keyboard Access); a pop-up, segmented control or stepper that has it keeps tool
+  shortcuts from the canvas until Escape.
+- **Zoom** (⌘=, ⌘- and ⌘0) works whatever has the keyboard: the app's menu commands reach the
+  window's canvas through `CanvasFocus`, not the responder chain.
+
+The panel can't give the keyboard to the canvas itself (it can't import CanvasUI), so the host
+passes `onExit`. `CanvasFocus` (CanvasUI) is the handle: `CanvasRepresentable(editor:focus:)` fills
+it, and `take()` makes the canvas its window's first responder.
+
+The app places the panel; the core and CanvasUI know nothing of it. Composition, which decides what
+ships, hands the app the view:
+
+```swift
+/// The detail panel, for the app to place beside the canvas. It follows the editor's selection;
+/// `onExit` must give the keyboard back to the canvas.
+public static func detailPanel(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void) -> some View {
+    DetailPanelView(editor: editor, onExit: onExit)
+}
+```
+
+and [the app](../Sources/InfiniteCanvas/InfiniteCanvasApp.swift) puts it in an `.inspector`, which
+brings resizing, collapsing in narrow windows, and View › Show Inspector (⌃⌘I) with
+`InspectorCommands`:
+
+```swift
+CanvasRepresentable(editor: editor, focus: canvasFocus)
+    .focusedSceneValue(\.canvasFocus, canvasFocus)
+    .inspector(isPresented: $showsDetails) {
+        ShippedPlugins.detailPanel(editor: editor, onExit: canvasFocus.take)
+    }
+```
+
+### Performance
+
+The document changes on every drag event, so the panel does little per change. It re-reads the
+selected shape and its footer lines, and rebuilds the shape's panel only if either changed;
+dragging another shape costs one comparison. A section is rebuilt only when its own shape changes.
+Only the current tab is built, a collapsed section's content isn't, and each kind's contributions
+are gathered once.
+For your part: sections read only their binding, `when` and footer lines stay cheap, and anything
+heavy goes in a service cached by `editor.revision`.
 
 ## Capabilities
 
@@ -389,7 +792,9 @@ Some behavior belongs to a kind itself rather than to a concern others can join.
 | `PaintOrderAnchored` | Painted just above another shape, and never raised when pressed. | Arrows (above the shapes they join) |
 
 The rule of thumb: behavior intrinsic to a kind is a capability; behavior anyone can add, to any
-kind, from any plugin, is an extension point.
+kind, from any plugin, is an extension point. What a kind shows in the detail panel is an extension
+point, not a capability: the kind's own plugin, a horizontal it opts into, and a bridge can all add
+to it.
 
 ## The editor, the document, and drawing
 
@@ -423,25 +828,69 @@ select tool). It then checks everything and throws on:
 | `ownerNotInstalled` | A contribution to a point whose owner isn't in the list. |
 | `unknownKind` | A contribution for a kind no plugin registers. |
 | `conflict` | Two claims to the same key: a kind, a tool id, a shortcut, a service type, the double-click claim, or a key in any `KeyedExtensionPoint`. |
+| `invalid` | A point's own `check` refused the list. |
+
+Some rules span contributions in a way keys can't express. For those, a point implements `check`,
+which the registry calls once it's built, after the checks above, so a point may assume its owner
+is installed and its keys are unique:
+
+```swift
+public protocol ExtensionPoint {
+    associatedtype Contribution
+    static var owner: PluginID { get }
+    /// Rules that span contributions: runs once the registry is built, for each point that has
+    /// at least one contribution. Throwing refuses the plugin list.
+    static func check(_ registry: Registry) throws      // default: checks nothing
+}
+```
+
+Throw `RegistryError.invalid(point:reason:)`, which reaches the caller as it is, or any other error,
+which the registry reports as `invalid` for your point. The requirement is untyped, so `throws` and
+`throws(RegistryError)` both implement it. Declare the point's conformance in an extension
+(`public enum ShapeDetails {}`, then `extension ShapeDetails: KeyedExtensionPoint { ... }`), so a
+misspelled `check` fails the build instead of leaving the default in place.
+
+It runs once per point that has contributions, in the order of each point's first contribution,
+and may read any point's contributions. `ShapeDetails` uses it to refuse two tab types with one
+title, which would show as two identical tabs. Had TaskCards kept a Checklist tab of its own next to
+the one Checklists brings:
+
+```
+ShapeDetails: Checklists.ChecklistTab (from sticky-notes) and TaskCards.ChecklistTab (from task-cards) are both tabs titled "Checklist"; share one, or retitle one
+```
+
+The hook is generic: the core runs it without knowing what any point checks.
 
 Once built, it's frozen and handed to the editor. The app's list is `ShippedPlugins.all` in
 [Composition](../Sources/Composition/ShippedPlugins.swift), and a test checks it registers.
 `registry.report` prints who contributes what: the runtime half of the graph, pinned by a test.
 
 ```
-core            tool select [v]
-arrows          shape arrow · service ArrowTargeting · tool arrow [a] · overlay BindingHintsOverlay · willDelete
-sticky-notes    shape sticky-note · tool sticky-note [n] · double-click sticky-note · ValidationRules → sticky-note
-ellipses        shape ellipse · tool ellipse [o]
-validation      service ValidationEngine · overlay ValidationOverlay
-...
+core                tool select [v]
+arrows              shape arrow · service ArrowTargeting · tool arrow [a] · overlay BindingHintsOverlay · willDelete
+sticky-notes        shape sticky-note · tool sticky-note [n] · double-click sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note
+ellipses            shape ellipse · tool ellipse [o]
+task-cards          shape task-card · tool task-card [t] · ValidationRules → task-card · ShapeDetails → task-card · ShapeChecklists → task-card · ShapeDetails → task-card
+validation          service ValidationEngine · overlay ValidationOverlay
+detail-panel        service DetailPanelState · ShapeDetails
+checklists          overlay ChecklistOverlay
+validation-details  DetailStatuses
+rectangles          shape rectangle · tool rectangle [r]
+eraser              tool eraser [e]
+titles              overlay TitleOverlay
+ellipse-titles      ShapeTitles → ellipse
 ```
+
+A horizontal's opt-in shows as what it contributes: `note.checklist(\.checklist)` is a
+`ShapeChecklists` entry and a `ShapeDetails` entry, which is why task-cards has two `ShapeDetails`
+entries (its own panel, then the Checklist tab).
 
 ## Testing plugins
 
 Tests are plain executables built on a small macro-free kit (swift-testing's macros don't work
 with this toolchain, and there's no XCTest). `./test.sh` builds and runs them all.
-`TEST_FILTER=substring ./test.sh` runs the matching tests.
+`TEST_FILTER=substring ./test.sh` runs the matching tests. A test that would open a real menu
+(which shows on screen, even from an unshown window) is opt-in: `TEST_UI_MENUS=1 ./test.sh`.
 
 ```swift
 @MainActor let rectangleTests = Suite("Rectangles", [
@@ -461,10 +910,27 @@ with this toolchain, and there's no XCTest). `./test.sh` builds and runs them al
   drives both event timestamps and the `ManualScheduler`, so pointer speed and timers agree.
 - `FixturesPlugin` and `CardsPlugin` (CanvasTesting) give core and horizontal tests shapes to work
   with (`Box`, `Disc`, `Tag`, and the editable `Card`), so they never depend on a real vertical.
-  ArrowsTests and ValidationTests import no real vertical (only these fixtures, and a local test
-  kind), which proves those plugins are shape-agnostic.
+  ArrowsTests, ValidationTests, DetailPanelTests, ChecklistsTests and ValidationDetailsTests
+  import no real vertical (only these fixtures, and local test kinds), which proves those plugins
+  are shape-agnostic.
 - Tests drive the editor's host API, so they `@_spi(Host) import Canvas`.
-- `renderBitmap(editor, size:)` and `pixel(_:at:)` check what's drawn.
+- `renderBitmap(editor, size:)`, `pixel(_:at:)` and `changedPixels(_:_:in:)` check what's drawn.
+- `Contributor(id:) { registrar in ... }` is a plugin written inline, and `editor.add(props)`
+  inserts a shape in a transaction of its own.
+- **The detail panel.** `editor.detailPanel?.layout(for:)` resolves a shape's header, tabs and
+  sections without a view, and `statuses(for:)` its footer lines. `editor.shapeBinding(id, as:)`
+  and `editor.frameBinding(id)` are the bindings a section gets: write through them and check the
+  document. For the view, host `DetailPanelView` in an `NSHostingView` in an unshown `NSWindow`,
+  beside a `CanvasView` when focus matters (DetailPanelTests; CompositionTests' InspectorTests use
+  the app's wiring, `CanvasRepresentable` and `ShippedPlugins.detailPanel`). Give the editor the
+  real `TaskScheduler`. SwiftUI's updates land on the main run loop, so wait for the state you
+  expect with `window.spin { condition }` (CanvasTesting; it fails the test after 2 s), and use
+  `window.settle()`, a few turns of the loop, where there's nothing to wait for or the point is
+  that nothing more happens. Find controls by AppKit class (`view.descendants(NSTextField.self)`)
+  and `stringValue` or `placeholderString`, give a field the keyboard with `window.focus(field)`,
+  send keys with `window.type` and `window.press`, and press the canvas with
+  `canvas.mouseDown(with: window.mouse(...))`: `sendEvent` mouse-downs don't reach views in an
+  unshown window.
 - A test target is `Tests/<Name>Tests` with a `main.swift` that calls `runTests([...])`. Every
   `Suite` must be listed there (`test.sh` checks). `<M>Tests` may depend only on M, what M
   depends on, and the test-support and ui modules.
@@ -507,12 +973,18 @@ Each of these adds to the design without changing what plugins are written again
   no definition.
 - **Undo.** `transact` is already the one mutation path. The editor will open an undo group on
   each press and when editing begins, close it on release and when editing ends, and register each
-  group's before and after with `UndoManager`.
+  group's before and after with `UndoManager`. Panel edits are one transaction per keystroke or
+  step today; grouping them (per focused field, per stepper or color drag) hooks into
+  `ShapeBinding`'s two write paths.
 - **More document hooks** (before/after create and change), and **document-scoped services** for
   several windows on one board.
 - **An editing view hearing about outside changes** to its shape (needed once undo exists).
 - **Canvas features**: multi-select (a set of selected shapes, keeping `selection` as "the only
   selected shape", as tldraw does, so plugins keep working), resize, marquee, snapping, and
   hierarchical tool states once the select tool has more than a handful of sessions.
-- **More horizontals** from data-canvas: describe, search, table of contents, inspectors,
-  commands. Each is an extension point in its own plugin.
+- **More horizontals** from data-canvas: describe, search, table of contents, commands. Each is an
+  extension point in its own plugin.
+- **More of the detail panel**: several selected shapes at once; every-shape sections over the
+  record (not only every-box ones over the frame), and every-box overrides such as an aspect lock;
+  remembering the chosen tab and collapsed sections across launches (`DetailTabID.name` is stable
+  for that); and marking the row a validation issue is about (`ValidationIssue.field`).

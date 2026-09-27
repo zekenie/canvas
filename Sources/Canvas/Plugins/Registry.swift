@@ -30,6 +30,13 @@ public struct Registry {
             let shape = $0.value as! ShapeRegistration
             return (shape.kind, shape.definition)
         }, uniquingKeysWith: { first, _ in first })
+        // Owners are installed and keys unique by now, so a point's own rules can rely on both.
+        var checked: Set<ObjectIdentifier> = []
+        for c in all where checked.insert(c.point).inserted {
+            do { try c.pointType.check(self) }
+            catch let error as RegistryError { throw error }
+            catch { throw .invalid(point: c.pointName, reason: "\(error)") }
+        }
     }
 
     private static func check(_ contributions: [RawContribution], installed: [PluginID]) throws(RegistryError) {
@@ -107,6 +114,8 @@ public enum RegistryError: Error, Equatable, CustomStringConvertible {
     case unknownKind(ShapeKind, point: String, contributor: PluginID)
     /// Two contributions claim the same key (a kind, a tool id, a shortcut, ...).
     case conflict(point: String, key: String, plugins: [PluginID])
+    /// A point's own `check` refused the plugin list.
+    case invalid(point: String, reason: String)
 
     public var description: String {
         switch self {
@@ -117,26 +126,27 @@ public enum RegistryError: Error, Equatable, CustomStringConvertible {
             "\(contributor) contributes to \(point) for kind \(kind), which no plugin registers"
         case .conflict(let point, let key, let plugins):
             "\(plugins.map(\.rawValue).joined(separator: " and ")) both claim \(key) in \(point)"
+        case .invalid(let point, let reason): "\(point): \(reason)"
         }
     }
 }
 
 /// A contribution as stored: the value is opaque to the core.
+@MainActor
 struct RawContribution {
-    let point: ObjectIdentifier
-    let pointName: String
-    let owner: PluginID
+    let pointType: any ExtensionPoint.Type
     let pluginID: PluginID
     let target: ShapeTarget
     let value: Any
     let keys: [AnyHashable]
     let summary: String
 
-    @MainActor
+    var point: ObjectIdentifier { ObjectIdentifier(pointType) }
+    var pointName: String { "\(pointType)" }
+    var owner: PluginID { pointType.owner }
+
     init<P: ExtensionPoint>(_ value: P.Contribution, to _: P.Type, for target: ShapeTarget, from plugin: PluginID) {
-        point = ObjectIdentifier(P.self)
-        pointName = "\(P.self)"
-        owner = P.owner
+        pointType = P.self
         pluginID = plugin
         self.target = target
         self.value = value
@@ -151,7 +161,6 @@ struct RawContribution {
         }
     }
 
-    @MainActor
     private static func keys<K: KeyedExtensionPoint>(of value: Any, for target: ShapeTarget, claimedIn _: K.Type) -> [AnyHashable] {
         K.uniqueKeys(of: value as! K.Contribution, for: target)
     }

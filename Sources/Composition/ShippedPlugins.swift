@@ -1,13 +1,18 @@
 import Arrows
 import Canvas
+import Checklists
 import CoreGraphics
+import DetailPanel
 import EllipseTitles
 import Ellipses
 import Eraser
 import Rectangles
 import StickyNotes
+import SwiftUI
+import TaskCards
 import Titles
 import Validation
+import ValidationDetails
 
 /// The static composition point: which plugins ship, in which order (the toolbar's order, and the
 /// order overlays draw in). Tests import this, so they check exactly what ships.
@@ -15,7 +20,8 @@ import Validation
 public enum ShippedPlugins {
     public static var all: [any CanvasPlugin] {
         [
-            ArrowsPlugin(), StickyNotesPlugin(), EllipsesPlugin(), ValidationPlugin(),
+            ArrowsPlugin(), StickyNotesPlugin(), EllipsesPlugin(), TaskCardsPlugin(),
+            ValidationPlugin(), DetailPanelPlugin(), ChecklistsPlugin(), ValidationDetailsPlugin(),
             // The examples (Examples/). Each is one line here; delete it to leave it out.
             RectanglesPlugin(), EraserPlugin(), TitlesPlugin(), EllipseTitlesPlugin(),
         ]
@@ -31,6 +37,12 @@ public enum ShippedPlugins {
         } catch {
             fatalError("The shipped plugins don't register: \(error)")   // CompositionTests catches this first
         }
+    }
+
+    /// The detail panel, for the app to place beside the canvas. It follows the editor's selection;
+    /// `onExit` must give the keyboard back to the canvas.
+    public static func detailPanel(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void) -> some View {
+        DetailPanelView(editor: editor, onExit: onExit)
     }
 }
 

@@ -30,8 +30,9 @@ typeset -A MAY_USE=(
     test        "foundation ui horizontal vertical bridge composition testsupport"
 )
 typeset -A EXECUTABLE_LAYER=(app 1 test 1)
-# Public types that would shadow a module (`Observation` breaks @Observable's expansion).
-RESERVED_TYPE_NAMES=(Observation Foundation AppKit SwiftUI CoreGraphics Swift)
+# Public types that would shadow a module (`Observation` breaks @Observable's expansion), or
+# Swift's `Task`: a public `Task` would shadow it in every module that imports the declaring one.
+RESERVED_TYPE_NAMES=(Observation Foundation AppKit SwiftUI CoreGraphics Swift Task)
 
 # An SDK the compiler accepts: SDKROOT if set, else the newest installed one that type-checks
 # (`xcrun --show-sdk-path` picks MacOSX27.0.sdk here, which swiftc 6.3 rejects). The choice is
@@ -275,7 +276,8 @@ done
 SHADOWING="${(j:|:)NAMES}|${(j:|:)RESERVED_TYPE_NAMES}"
 for hit in ${(f)"$(matching "^[^:]+:[0-9]+:[[:space:]]*(@[A-Za-z]+[[:space:]]+)*(public|open)[[:space:]]+(final[[:space:]]+)?(struct|class|enum|protocol|actor|typealias)[[:space:]]+($SHADOWING)([^A-Za-z0-9_]|\$)")"}; do
     [[ $hit =~ "(struct|class|enum|protocol|actor|typealias)[[:space:]]+($SHADOWING)" ]] || continue
-    problems+="$(at $hit): a public type named $match[2] shadows the module $match[2]"
+    [[ $match[2] == Task ]] && what="Swift's Task" || what="the module $match[2]"
+    problems+="$(at $hit): a public type named $match[2] shadows $what"
 done
 
 # Ids: a module may write another module's ShapeKind, PluginID or ToolID as a string only if it

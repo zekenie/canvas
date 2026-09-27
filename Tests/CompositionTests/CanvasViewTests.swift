@@ -7,6 +7,7 @@ import Composition
 import CoreGraphics
 import Geometry
 import StickyNotes
+import SwiftUI
 import TestKit
 import Validation
 
@@ -19,23 +20,13 @@ import Validation
     return (window, canvas)
 }
 
-@MainActor func mouse(_ type: NSEvent.EventType, _ point: CGPoint, in window: NSWindow, clicks: Int = 1, time: TimeInterval) -> NSEvent {
-    NSEvent.mouseEvent(with: type, location: CGPoint(x: point.x, y: 600 - point.y), modifierFlags: [], timestamp: time,
-                       windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clicks, pressure: 1)!
-}
-
-@MainActor func key(_ characters: String, in window: NSWindow) -> NSEvent {
-    NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 1, windowNumber: window.windowNumber, context: nil,
-                     characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: 0)!
-}
-
 // The AppKit shell, in an unshown window: NSEvents in, the editing view's life cycle out.
 @MainActor let canvasViewTests = Suite("Canvas view", [
     test("double-click makes a note whose editor takes focus, follows the camera, and hands focus back") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
         let (window, canvas) = windowed(editor)
-        canvas.mouseDown(with: mouse(.leftMouseDown, CGPoint(x: 300, y: 300), in: window, clicks: 2, time: 1))
-        canvas.mouseUp(with: mouse(.leftMouseUp, CGPoint(x: 300, y: 300), in: window, clicks: 2, time: 1.05))
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: CGPoint(x: 300, y: 300), clicks: 2, time: 1))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: CGPoint(x: 300, y: 300), clicks: 2, time: 1.05))
         let id = try require(editor.editingShapeID)
         let textView = try require(window.firstResponder as? NSTextView)
         let host = try require(canvas.subviews.first)
@@ -54,20 +45,42 @@ import Validation
     test("a key typed on the canvas switches tools; typed in a note, it goes into the note") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
         let (window, canvas) = windowed(editor)
-        window.sendEvent(key("o", in: window))
+        window.press("o")
         expectEqual(editor.currentToolID, ToolID(placing: "ellipse"))
-        window.sendEvent(key("v", in: window))
+        window.press("v")
         expectEqual(editor.currentToolID, .select)
-        canvas.mouseDown(with: mouse(.leftMouseDown, CGPoint(x: 300, y: 300), in: window, clicks: 2, time: 1))
-        canvas.mouseUp(with: mouse(.leftMouseUp, CGPoint(x: 300, y: 300), in: window, clicks: 2, time: 1.05))
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: CGPoint(x: 300, y: 300), clicks: 2, time: 1))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: CGPoint(x: 300, y: 300), clicks: 2, time: 1.05))
         let note = try require(editor.editingShapeID)
         expect(window.firstResponder is NSTextView)
-        window.sendEvent(key("a", in: window))
+        window.press("a")
         expectEqual(editor.document[note]?.typed(as: StickyNote.self)?.props.text, "a")
         expectEqual(editor.currentToolID, .select)
         window.makeFirstResponder(canvas)
-        window.sendEvent(key("a", in: window))
+        window.press("a")
         expectEqual(editor.currentToolID, .arrow)
+    },
+    test("CanvasFocus.take makes the canvas first responder again, after a panel's field took it") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
+        let focus = CanvasFocus()
+        focus.take()      // no canvas yet: nothing to do
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
+        let host = NSHostingView(rootView: CanvasRepresentable(editor: editor, focus: focus))
+        host.frame = CGRect(x: 0, y: 0, width: 540, height: 600)
+        let field = NSTextField(frame: CGRect(x: 540, y: 560, width: 260, height: 22))
+        let root = NSView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+        root.addSubview(host)
+        root.addSubview(field)
+        window.contentView = root
+        host.layoutSubtreeIfNeeded()
+        let canvas = try require(focus.canvas, "the representable hands its canvas view to the focus")
+        window.makeFirstResponder(field)
+        expect(window.firstResponder is NSTextView, "the field is editing")
+        focus.take()
+        expect(window.firstResponder === canvas)
+        window.press("a")
+        expectEqual(editor.currentToolID, .arrow)
+        expectEqual(field.stringValue, "")
     },
     test("an editing view that saves as editing ends: pressing the canvas saves; deleting its shape doesn't trap") {
         let editor = CanvasEditor(registry: try Registry(plugins: [CardsPlugin()]), scheduler: ManualScheduler())
@@ -79,8 +92,8 @@ import Validation
         let field = try require(canvas.subviews.first as? CardField)
         let fieldEditor = try require(field.currentEditor() as? NSTextView, "editing for real, in the window's field editor")
         fieldEditor.insertText("new", replacementRange: NSRange(location: 0, length: fieldEditor.string.count))
-        canvas.mouseDown(with: mouse(.leftMouseDown, CGPoint(x: 500, y: 500), in: window, time: 1))
-        canvas.mouseUp(with: mouse(.leftMouseUp, CGPoint(x: 500, y: 500), in: window, time: 1.05))
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: CGPoint(x: 500, y: 500), time: 1))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: CGPoint(x: 500, y: 500), time: 1.05))
         expectEqual(field.saves, 1)
         expectEqual(editor.document[card.id]?.typed(as: Card.self)?.props.text, "new")
         expectEqual(editor.editingShapeID, nil)

@@ -27,10 +27,7 @@ public final class EditorHarness {
     }
 
     @discardableResult
-    public func add<P: ShapeProps>(_ props: P, id: ShapeID = ShapeID()) -> ShapeID {
-        editor.transact { $0.insert(ShapeRecord(id: id, props)) }
-        return id
-    }
+    public func add<P: ShapeProps>(_ props: P, id: ShapeID = ShapeID()) -> ShapeID { editor.add(props, id: id) }
 
     /// Advances event time and fires due timers. Every event waits first, so a timer due at the
     /// same instant as an event fires before that event (the 599/600 ms boundary tests rely on it).
@@ -89,4 +86,13 @@ public final class EditorHarness {
 
     /// A world point in view points, through the current camera.
     public func view(_ world: CGPoint) -> CGPoint { editor.camera.toView(world) }
+}
+
+extension CanvasEditor {
+    /// Inserts a shape, in a transaction of its own.
+    @discardableResult
+    public func add<P: ShapeProps>(_ props: P, id: ShapeID = ShapeID()) -> ShapeID {
+        transact { $0.insert(ShapeRecord(id: id, props)) }
+        return id
+    }
 }

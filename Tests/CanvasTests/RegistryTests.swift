@@ -16,15 +16,34 @@ enum Titles: KeyedExtensionPoint {
     static func uniqueKeys(of _: String, for target: ShapeTarget) -> [AnyHashable] { [target] }
 }
 
+/// A point with a rule that spans contributions: it logs each check, and refuses "refuse".
+enum Checked {}
+
+extension Checked: ExtensionPoint {
+    typealias Contribution = String
+    static var owner: PluginID { "stamps" }
+    @MainActor static var log: [String] = []
+    static func check(_ registry: Registry) throws(RegistryError) {
+        let mine = registry.contributions(to: Checked.self).map(\.value)
+        let stamps = registry.contributions(to: Stamps.self).map(\.value)
+        log.append("\(mine.joined(separator: ",")) with stamps \(stamps.joined(separator: ","))")
+        if mine.contains("refuse") { throw .invalid(point: "Checked", reason: "a contribution refused") }
+    }
+}
+
+/// A check spelled with plain `throws`, throwing its own error: the registry still runs it.
+enum Untyped {}
+
+extension Untyped: ExtensionPoint {
+    typealias Contribution = String
+    static var owner: PluginID { "stamps" }
+    struct Refusal: Error, CustomStringConvertible { var description: String { "refused" } }
+    static func check(_ registry: Registry) throws { throw Refusal() }
+}
+
 struct StampsPlugin: CanvasPlugin {
     var id: PluginID { "stamps" }
     func register(into registrar: inout PluginRegistrar) {}
-}
-
-struct Contributor: CanvasPlugin {
-    let id: PluginID
-    let body: @MainActor (inout PluginRegistrar) -> Void
-    func register(into registrar: inout PluginRegistrar) { body(&registrar) }
 }
 
 extension ShapeRegistrar {
@@ -142,6 +161,44 @@ extension ShapeRegistrar {
         ]), scheduler: ManualScheduler())
         let late = try require(editor.service(Late.self))
         expect(editor.service(Early.self)?.late === late)
+    },
+    test("a point's check refuses the plugin list by throwing invalid") {
+        expectThrows(RegistryError.invalid(point: "Checked", reason: "a contribution refused")) {
+            _ = try Registry(plugins: [StampsPlugin(), Contributor(id: "p") { $0.contribute("refuse", to: Checked.self) }])
+        }
+        expectEqual(RegistryError.invalid(point: "Checked", reason: "a contribution refused").description, "Checked: a contribution refused")
+    },
+    test("a check spelled with plain throws runs, and its error is invalid for its point") {
+        expectThrows(RegistryError.invalid(point: "Untyped", reason: "refused")) {
+            _ = try Registry(plugins: [StampsPlugin(), Contributor(id: "p") { $0.contribute("x", to: Untyped.self) }])
+        }
+    },
+    test("a point's check runs once, on the built registry, and can read other points") {
+        Checked.log = []
+        _ = try Registry(plugins: [StampsPlugin(),
+                                   Contributor(id: "a") { $0.contribute("one", to: Checked.self); $0.contribute("s", to: Stamps.self) },
+                                   Contributor(id: "b") { $0.contribute("two", to: Checked.self) }])
+        expectEqual(Checked.log, ["one,two with stamps s"])
+    },
+    test("a point nobody contributes to is never checked") {
+        Checked.log = []
+        _ = try Registry(plugins: [StampsPlugin(), Contributor(id: "a") { $0.contribute("s", to: Stamps.self) }])
+        expectEqual(Checked.log, [])
+    },
+    test("a point's check runs after the owner, kind and key checks") {
+        Checked.log = []
+        expectThrows(RegistryError.ownerNotInstalled(point: "Checked", owner: "stamps", contributor: "p")) {
+            _ = try Registry(plugins: [Contributor(id: "p") { $0.contribute("refuse", to: Checked.self) }])
+        }
+        expectThrows(RegistryError.unknownKind("nope", point: "Checked", contributor: "p")) {
+            _ = try Registry(plugins: [StampsPlugin(), Contributor(id: "p") { $0.contribute("refuse", to: Checked.self, for: .kind("nope")) }])
+        }
+        expectThrows(RegistryError.conflict(point: "Titles", key: "box", plugins: ["a", "b"])) {
+            _ = try Registry(plugins: [FixturesPlugin(), StampsPlugin(),
+                                       Contributor(id: "a") { $0.contribute("refuse", to: Checked.self); $0.contribute("A", to: Titles.self, for: .kind(Box.kind)) },
+                                       Contributor(id: "b") { $0.contribute("B", to: Titles.self, for: .kind(Box.kind)) }])
+        }
+        expectEqual(Checked.log, [])
     },
     test("a capability conformance declared in a file nothing names survives static linking") {
         let registry = try Registry(plugins: [LinkerGuardPlugin()])

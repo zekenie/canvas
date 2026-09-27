@@ -65,3 +65,14 @@ public struct FixturesPlugin: CanvasPlugin {
         registrar.shape(TagDefinition())
     }
 }
+
+/// A plugin written inline.
+public struct Contributor: CanvasPlugin, Sendable {
+    public let id: PluginID
+    let body: @MainActor (inout PluginRegistrar) -> Void
+    public nonisolated init(id: PluginID, _ body: @escaping @MainActor (inout PluginRegistrar) -> Void) {
+        self.id = id
+        self.body = body
+    }
+    public func register(into registrar: inout PluginRegistrar) { body(&registrar) }
+}

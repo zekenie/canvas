@@ -11,6 +11,18 @@ public protocol ExtensionPoint {
     /// installed is `RegistryError.ownerNotInstalled`: the runtime requirement follows from the
     /// compile-time import, so plugins never list their dependencies a second time.
     static var owner: PluginID { get }
+    /// Rules that span contributions, beyond what keys express: runs once the registry is built,
+    /// for each point that has at least one contribution. Throwing refuses the plugin list: a
+    /// `RegistryError` as it is, any other error as `RegistryError.invalid` for this point. The
+    /// default checks nothing.
+    ///
+    /// Untyped, so both `throws` and `throws(RegistryError)` implement it: a typed requirement
+    /// would let a plain `throws` spelling silently fall back to the default.
+    static func check(_ registry: Registry) throws
+}
+
+extension ExtensionPoint {
+    public static func check(_ registry: Registry) throws {}
 }
 
 /// A point whose contributions claim keys. Two contributions claiming the same key make the

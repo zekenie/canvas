@@ -1,8 +1,9 @@
 # Infinite Canvas
 
 A native macOS infinite canvas: a small core, with everything on it (sticky notes, ellipses,
-arrows modeled on tldraw's, validation) added by plugins. The plugin system is a port, in Swift, of
-the one in data-canvas. Start with [docs/plugin-system.md](docs/plugin-system.md).
+arrows modeled on tldraw's, task cards, validation, checklists, a detail panel) added by plugins.
+The plugin system is a port, in Swift, of the one in data-canvas. Start with
+[docs/plugin-system.md](docs/plugin-system.md).
 
 ## Build, test, run
 
@@ -24,10 +25,14 @@ and `./build.sh audit` checks it without compiling.
 | Zoom | Pinch, ⌘-scroll, or ⌘= / ⌘- / ⌘0 |
 | New note | Double-click empty space, or N (the note tool) and click |
 | New ellipse | O, then click; keep dragging to place it |
+| New task | T, then click; edit it in the detail panel |
 | New rectangle | R, then click (an example plugin) |
 | Erase | E, then click or drag across shapes (an example plugin) |
 | Move a shape | Drag it |
 | Edit a note | Double-click it, or select it and press Return; Escape to finish |
+| Edit a shape's details | Select it; the detail panel on the right edits it. Escape gives the keyboard back to the canvas |
+| Show or hide the detail panel | ⌃⌘I, or the Details button in the toolbar |
+| Add a checklist to a note or task | The panel's Checklist tab: + adds an item, − or Delete removes the selected one |
 | Delete a shape or arrow | Select it and press Delete |
 | Arrow tool | A (V or Escape to go back to select) |
 | Draw an arrow | Drag from one shape to another with the arrow tool. Arriving quickly aims at a shape's center; arriving slowly, or pausing inside the shape, aims at that exact spot |
@@ -38,8 +43,9 @@ and `./build.sh audit` checks it without compiling.
 | Bend | Select the arrow and drag its middle handle |
 | Toggle an arrowhead | Double-click an end handle |
 
-An empty note gets an orange outline (the validation plugin). Hovering an ellipse shows its title
-(the titles example).
+An empty note (no text, no checklist) gets an orange outline (the validation plugin), and says why at the foot of the
+detail panel (the validation-details bridge). A note with a checklist shows a done/total chip.
+Hovering an ellipse shows its title (the titles example).
 
 ## Layout
 
@@ -48,11 +54,15 @@ Package.swift           the module graph: one line per module, with its layer
 Sources/
   Geometry/             vector math, arcs, Camera
   Canvas/               the core: model, plugin registry, editor, tools, drawing
-  CanvasUI/             the AppKit view and the SwiftUI toolbar
+  CanvasUI/             the AppKit view, the SwiftUI toolbar, and CanvasFocus
   Arrows/               arrows (a port of tldraw's arrow geometry and binding)
   StickyNotes/          sticky notes, with in-place editing
   Ellipses/             ellipses
+  TaskCards/            task cards, edited only in the detail panel
   Validation/           the validation horizontal: rules, engine, outline
+  DetailPanel/          the detail panel horizontal: tabs, sections, bindings, the inspector view
+  Checklists/           a horizontal any kind opts into: a checklist, its panel tab, a chip
+  ValidationDetails/    a bridge between two horizontals: validation issues in the panel's footer
   Composition/          the shipped plugin list, and the welcome board
   InfiniteCanvas/       the SwiftUI app
 Examples/               the smallest plugin for each pattern

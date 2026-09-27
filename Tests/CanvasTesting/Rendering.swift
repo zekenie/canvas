@@ -28,3 +28,11 @@ public func pixel(_ rep: NSBitmapImageRep, at point: CGPoint, scale: CGFloat = 1
     rep.getPixel(&value, atX: Int(point.x * scale), y: Int(point.y * scale))
     return value
 }
+
+/// How many pixels differ between two renders, within a rect of view points.
+@MainActor
+public func changedPixels(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep, in rect: CGRect) -> Int {
+    stride(from: rect.minY, to: rect.maxY, by: 1).reduce(0) { count, y in
+        count + stride(from: rect.minX, to: rect.maxX, by: 1).count { x in pixel(a, at: CGPoint(x: x, y: y)) != pixel(b, at: CGPoint(x: x, y: y)) }
+    }
+}

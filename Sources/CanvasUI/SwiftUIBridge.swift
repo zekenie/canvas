@@ -1,10 +1,34 @@
 import Canvas
 import SwiftUI
 
+/// A window's canvas view, for chrome beside it: a panel hands the keyboard back with `take()`, and
+/// menu commands reach the canvas through `canvas`, whatever has the keyboard.
+@MainActor
+public final class CanvasFocus {
+    public internal(set) weak var canvas: CanvasView?
+    public init() {}
+
+    /// Makes the canvas its window's first responder.
+    public func take() {
+        if let canvas { canvas.window?.makeFirstResponder(canvas) }
+    }
+}
+
 public struct CanvasRepresentable: NSViewRepresentable {
     let editor: CanvasEditor
-    public init(editor: CanvasEditor) { self.editor = editor }
-    public func makeNSView(context: Context) -> CanvasView { CanvasView(editor: editor) }
+    let focus: CanvasFocus?
+
+    public init(editor: CanvasEditor, focus: CanvasFocus? = nil) {
+        self.editor = editor
+        self.focus = focus
+    }
+
+    public func makeNSView(context: Context) -> CanvasView {
+        let canvas = CanvasView(editor: editor)
+        focus?.canvas = canvas
+        return canvas
+    }
+
     public func updateNSView(_ canvas: CanvasView, context: Context) {}
 }
 

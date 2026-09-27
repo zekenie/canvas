@@ -1,16 +1,22 @@
 import AppKit
 import Canvas
+import Checklists
 import Validation
 
 public struct StickyNote: BoxShapeProps {
     public static let kind: ShapeKind = "sticky-note"
     public var frame: CGRect
     public var text: String
-    public init(frame: CGRect = .zero, text: String = "") {
+    /// Edited in the detail panel's Checklist tab; the canvas shows it as a chip, not in the note.
+    public var checklist: [ChecklistItem]
+    public init(frame: CGRect = .zero, text: String = "", checklist: [ChecklistItem] = []) {
         self.frame = frame
         self.text = text
+        self.checklist = checklist
     }
     public static let defaultSize = CGSize(width: 200, height: 200)
+    /// No text and no checklist.
+    var isEmpty: Bool { text.allSatisfy(\.isWhitespace) && checklist.isEmpty }
 }
 
 extension PluginID {
@@ -26,8 +32,9 @@ public struct StickyNotesPlugin: CanvasPlugin {
             note.tool(label: "Note", systemImage: "note.text", shortcut: "n", placing: place)
             note.createOnDoubleClick(place)
             note.validate { shape, _ in                        // opts into the validation horizontal
-                shape.props.text.allSatisfy(\.isWhitespace) ? [.warning("This note is empty.")] : []
+                shape.props.isEmpty ? [.warning("This note is empty.")] : []
             }
+            note.checklist(\.checklist)                        // opts into the checklists horizontal
         }
     }
 }
