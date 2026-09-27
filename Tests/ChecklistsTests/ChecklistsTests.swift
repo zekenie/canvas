@@ -98,7 +98,7 @@ extension LookalikeChecklistTab: DetailTab { static var title: String { "Checkli
             r.shape(ChoreDefinition()) { $0.checklist(\.items) }
         }])
         expectEqual(registry.report, """
-        core           tool hand [h]
+        core           tool hand
         checklists     overlay ChecklistOverlay
         detail-panel   service DetailPanelState · ShapeDetails
         context-menus  service ContextMenuState · secondary-click menu

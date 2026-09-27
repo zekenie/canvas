@@ -2,22 +2,23 @@
 import CanvasTesting
 import CoreGraphics
 import Geometry
+import Keyboard
 import Selection
 import TestKit
 
 /// The hand beside the select tool: it leaves the selection alone and shows none of its chrome.
 @MainActor let handTests = Suite("Hand", [
     test("Select V leads the toolbar, before the core's Hand H; the editor starts in select, and Escape in the hand returns to it") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), CardsPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), CardsPlugin()])
         expectEqual(h.editor.registry.tools.map(\.id), [.select, .hand, ToolID(placing: Card.kind)])
-        expectEqual(h.editor.registry.tools.map(\.shortcut), ["v", "h", "c"])
+        expectEqual(h.editor.registry.tools.map { h.editor.registry.help(for: $0) }, ["Select (V)", "Hand (H)", "Card"])
         expectEqual(h.editor.registry.tools[0].label, "Select")
         expectEqual(h.editor.currentToolID, .select)
         h.key("h"); h.escape()
         expectEqual(h.editor.currentToolID, .select)
     },
     test("H selects the hand: open hand; closed while pressed and dragging; no hover outlines or handles") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), KnobsPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), KnobsPlugin()])
         let knob = h.add(Knob(CGRect(x: 0, y: 0, width: 100, height: 100)))   // its handle is at (50, 50)
         h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
         h.editor.selection = knob
@@ -45,7 +46,7 @@ import TestKit
         expectEqual(h.editor.selection, knob)
     },
     test("a hand click selects, deselects and moves nothing; a press on a shape pans instead") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
         let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let b = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
         h.editor.selection = a

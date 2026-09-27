@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import Geometry
+import Keyboard
 import Selection
 import TableOfContents
 
@@ -253,7 +254,7 @@ public struct ArrowsPlugin: CanvasPlugin {
             arrow.contentsRow(nestedUnder: { $0.props.start.binding?.shapeID })
         }
         registrar.service { ArrowTargeting(editor: $0) }
-        registrar.tool(ToolDescriptor(id: .arrow, label: "Arrow", systemImage: "arrow.up.right", shortcut: "a")) { editor in
+        registrar.tool(ToolDescriptor(id: .arrow, label: "Arrow", systemImage: "arrow.up.right"), shortcut: "a") { editor in
             ArrowTool(targeting: editor.service(ArrowTargeting.self)!)
         }
         registrar.overlay(BindingHintsOverlay())

@@ -2,6 +2,7 @@
 import CanvasTesting
 import CoreGraphics
 import Geometry
+import Keyboard
 import Observation
 import Selection
 import TestKit
@@ -10,7 +11,7 @@ import TestKit
 /// keeps as the document changes.
 @MainActor let editorTests = Suite("Editor", [
     test("pressing a shape selects it without restacking it, and dragging moves it with no threshold") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
         let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let b = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
         h.press(at: CGPoint(x: 50, y: 50))
@@ -21,7 +22,7 @@ import TestKit
         h.release()
     },
     test("pressing empty canvas deselects on press; a drag brushes and never pans") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
         h.editor.selection = box
         h.press(at: CGPoint(x: 500, y: 500))
@@ -37,7 +38,7 @@ import TestKit
         expectEqual(h.editor.brush, nil)
     },
     test("double-clicking empty canvas places the claimed kind and starts editing it") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), doubleClickCards()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), doubleClickCards()])
         h.press(at: CGPoint(x: 300, y: 200), clickCount: 2)
         let card = try require(h.editor.document.shapes.first)
         expectEqual(card.kind, Card.kind)
@@ -46,7 +47,7 @@ import TestKit
         expectEqual(h.editor.selection, card.id)
     },
     test("with no claim, double-clicking empty canvas deselects; a drag brushes") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
         h.editor.selection = box
         h.press(at: CGPoint(x: 300, y: 200), clickCount: 2)
@@ -60,13 +61,13 @@ import TestKit
     },
     test("only one kind may claim double-clicking empty canvas") {
         expectThrows(RegistryError.conflict(point: "DoubleClickPlacement", key: "double-click on empty canvas", plugins: ["cards", "more-cards"])) {
-            _ = try Registry(plugins: [SelectionPlugin(), doubleClickCards(), Contributor(id: "more-cards") { r in
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), doubleClickCards(), Contributor(id: "more-cards") { r in
                 r.shape(BoxDefinitionForTests()) { box in box.createOnDoubleClick(box.placement(size: .zero) { Box(.zero) }) }
             }])
         }
     },
     test("double-clicking a shape edits it only if its kind is editable; Return does the same") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), CardsPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), CardsPlugin()])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let card = h.add(Card(CGRect(x: 200, y: 0, width: 100, height: 100)))
         h.press(at: CGPoint(x: 50, y: 50), clickCount: 2); h.release()
@@ -80,7 +81,7 @@ import TestKit
         expectEqual(h.editor.editingShapeID, card)
     },
     test("a double-click press straight onto a member of a multi-selection edits it, selected alone: what's edited is selected") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), CardsPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), CardsPlugin()])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let card = h.add(Card(CGRect(x: 200, y: 0, width: 100, height: 100)))
         h.editor.selectedShapeIDs = [box, card]
@@ -89,8 +90,8 @@ import TestKit
         expectEqual(h.editor.selectedShapeIDs, [card])
     },
     test("a place tool that edits: centered, selected, editing, and back to select") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), CardsPlugin()])
-        expect(h.key("c"))
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), CardsPlugin()])
+        h.editor.setTool(ToolID(placing: Card.kind))
         expectEqual(h.editor.currentToolID, ToolID(placing: Card.kind))
         expectEqual(h.editor.cursor, .crosshair)
         h.press(at: CGPoint(x: 100, y: 100))
@@ -101,8 +102,8 @@ import TestKit
         expectEqual(h.editor.currentToolID, .select)
     },
     test("a place tool that translates keeps dragging the new shape, selected, after switching to select") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), discTools()])
-        h.key("d")
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), discTools()])
+        h.editor.setTool(ToolID(placing: Disc.kind))
         h.press(at: CGPoint(x: 100, y: 100))
         expectEqual(h.editor.currentToolID, .select)
         expectEqual(h.editor.selection, h.editor.document.shapes.first?.id)
@@ -112,30 +113,30 @@ import TestKit
         expectEqual(h.editor.selection, h.editor.document.shapes.first?.id)
     },
     test("Escape leaves a non-select tool; in select it deselects") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), CardsPlugin()])
-        h.key("c"); h.escape()
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), CardsPlugin()])
+        h.editor.setTool(ToolID(placing: Card.kind)); h.escape()
         expectEqual(h.editor.currentToolID, .select)
         h.editor.selection = h.add(Card(.zero))
         h.escape()
         expectEqual(h.editor.selection, nil)
-        h.key("c")
+        h.editor.setTool(ToolID(placing: Card.kind))
         h.editor.selection = h.add(Card(.zero))
         h.escape()
         expectEqual(h.editor.currentToolID, .select)
         expect(h.editor.selection != nil, "leaving another tool keeps the selection")
     },
     test("the select tool hovers only while it is the tool, with no session") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), CardsPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), CardsPlugin()])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         h.move(to: CGPoint(x: 50, y: 50))
         expectEqual(h.editor.hovered, box)
-        h.key("c")
+        h.editor.setTool(ToolID(placing: Card.kind))
         expectEqual(h.editor.hovered, nil)
         h.move(to: CGPoint(x: 60, y: 60))
         expectEqual(h.editor.hovered, nil)
     },
     test("the pointer leaving the canvas drops the hover") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         h.move(to: CGPoint(x: 50, y: 50))
         expectEqual(h.editor.hovered, box)
@@ -143,7 +144,7 @@ import TestKit
         expectEqual(h.editor.hovered, nil)
     },
     test("deleting the selection clears selection and hover") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         h.move(to: CGPoint(x: 50, y: 50))
         h.editor.selection = box
@@ -152,7 +153,7 @@ import TestKit
         expectEqual(h.editor.selection, nil); expectEqual(h.editor.hovered, nil)
     },
     test("pressing a shape leaves the paint order alone; restacking it brings the shapes anchored to it along") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
         let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let tagA = h.add(Tag(target: a))
         let loose = h.add(Tag(target: nil))
@@ -164,7 +165,7 @@ import TestKit
         expectEqual(h.editor.paintOrder().map(\.id), [b, tagB, a, tagA, loose])
     },
     test("any transaction that deletes a shape lets go of it: selection and hover") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), CardsPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), CardsPlugin()])
         let card = h.add(Card(CGRect(x: 0, y: 0, width: 100, height: 60)))
         h.move(to: CGPoint(x: 50, y: 30))
         h.editor.selection = card
@@ -174,14 +175,14 @@ import TestKit
         expectEqual(h.editor.hovered, nil)
     },
     test("the selection only ever names a shape that exists") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
         h.editor.selection = box
         h.editor.selection = ShapeID()
         expectEqual(h.editor.selection, nil)
     },
     test("changing the selection drops the hovered handle") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), KnobsPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), KnobsPlugin()])
         let knob = h.add(Knob(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let box = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
         h.editor.selection = knob
@@ -191,7 +192,7 @@ import TestKit
         expectEqual(h.editor.hoveredHandle, nil)
     },
     test("setting the selection to a shape that isn't there, when unset, changes nothing: no redraw, no notification") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
         let host = DisplayCounter()
         h.editor.delegate = host
         let changed = Flag()
@@ -201,7 +202,7 @@ import TestKit
         expect(!changed.isSet)
     },
     test("selecting redraws and is observable") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
         let host = DisplayCounter()
         h.editor.delegate = host

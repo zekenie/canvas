@@ -46,9 +46,9 @@ final class ModifierLog: Tool {
     test("a released modifier stays held for 150 ms, then the release is dispatched") {
         var log: ModifierLog?
         let h = try EditorHarness(plugins: [Contributor(id: "log") {
-            $0.tool(ToolDescriptor(id: "log", label: "Log", systemImage: "list.bullet", shortcut: "l")) { _ in let t = ModifierLog(); log = t; return t }
+            $0.tool(ToolDescriptor(id: "log", label: "Log", systemImage: "list.bullet")) { _ in let t = ModifierLog(); log = t; return t }
         }])
-        h.key("l")
+        h.editor.setTool("log")
         h.hold(.option)
         h.hold([])
         expectEqual(h.editor.effectiveModifiers, .option)

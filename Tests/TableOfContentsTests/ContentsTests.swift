@@ -1,6 +1,7 @@
 import Canvas
 import CanvasTesting
 import CoreGraphics
+import Keyboard
 import Selection
 import SwiftUI
 import TableOfContents
@@ -122,14 +123,14 @@ import TestKit
     test("two rows for one kind conflict, and a row needs the table of contents installed") {
         let twice = Contributor(id: "twice") { $0.contentsRow(Widget.self) { _ in ContentsLabel("again") } }
         expectThrows(RegistryError.conflict(point: "ContentsRows", key: "widget", plugins: ["widgets", "twice"])) {
-            _ = try Registry(plugins: [SelectionPlugin(), WidgetsPlugin(), TableOfContentsPlugin(), twice])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), WidgetsPlugin(), TableOfContentsPlugin(), twice])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ContentsRows", owner: .tableOfContents, contributor: "widgets")) {
-            _ = try Registry(plugins: [SelectionPlugin(), WidgetsPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), WidgetsPlugin()])
         }
     },
     test("without the plugin there's no table of contents") {
-        let editor = CanvasEditor(registry: try Registry(plugins: [SelectionPlugin(), FixturesPlugin()]), scheduler: ManualScheduler())
+        let editor = CanvasEditor(registry: try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()]), scheduler: ManualScheduler())
         expect(editor.tableOfContents == nil)
     },
 ])

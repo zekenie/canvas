@@ -74,11 +74,11 @@ extension DiscDefinitionForTests: ShapeDefinition {
     public func render(_ shape: ShapeRecord<Disc>, in context: RenderContext) {}
 }
 
-/// A "disc" place tool, D, placing 40 × 40 discs that follow the pointer.
+/// A "disc" place tool, placing 40 × 40 discs that follow the pointer.
 @MainActor public func discTools() -> Contributor {
     Contributor(id: "discs") { r in
         r.shape(DiscDefinitionForTests()) { disc in
-            disc.tool(label: "Disc", systemImage: "circle", shortcut: "d", placing: disc.placement(size: CGSize(width: 40, height: 40)) { Disc(.zero) })
+            disc.tool(label: "Disc", systemImage: "circle", placing: disc.placement(size: CGSize(width: 40, height: 40)) { Disc(.zero) })
         }
     }
 }

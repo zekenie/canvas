@@ -17,26 +17,27 @@ import Validation
         _ = try ShippedPlugins.registry()
     },
     test("the toolbar is Select V, Hand H, Arrow A, Note N, Ellipse O, Task T, Rectangle R, Line L, Eraser E") {
-        let tools = try ShippedPlugins.registry().tools
-        expectEqual(tools.map(\.help), ["Select (V)", "Hand (H)", "Arrow (A)", "Note (N)", "Ellipse (O)", "Task (T)", "Rectangle (R)", "Line (L)", "Eraser (E)"])
+        let registry = try ShippedPlugins.registry()
+        expectEqual(registry.tools.map { ShippedPlugins.help(for: $0, in: registry) }, ["Select (V)", "Hand (H)", "Arrow (A)", "Note (N)", "Ellipse (O)", "Task (T)", "Rectangle (R)", "Line (L)", "Eraser (E)"])
     },
     test("the registry report: who contributes what") {
         expectEqual(try ShippedPlugins.registry().report, """
-        core                tool hand [h]
-        selection           service SelectionState · tool select [v] · default tool select · outlines · overlay HandlesOverlay · command delete · command insertNewline · command selectAll · command goBack
-        arrows              shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow [a] · overlay BindingHintsOverlay · willDelete
-        sticky-notes        shape sticky-note · tool sticky-note [n] · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · ContentsRows → sticky-note
-        ellipses            shape ellipse · tool ellipse [o]
-        task-cards          shape task-card · tool task-card [t] · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card
+        core                tool hand
+        keyboard            service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
+        selection           service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
+        arrows              shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay · willDelete
+        sticky-notes        shape sticky-note · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · ContentsRows → sticky-note
+        ellipses            shape ellipse · tool ellipse · shortcut O → tool ellipse
+        task-cards          shape task-card · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card
         validation          service ValidationEngine · overlay ValidationOverlay
         detail-panel        service DetailPanelState · ShapeDetails
         context-menus       service ContextMenuState · secondary-click menu
         table-of-contents   service ContentsState
         checklists          overlay ChecklistOverlay
         validation-details  DetailStatuses
-        rectangles          shape rectangle · tool rectangle [r]
-        polylines           shape polyline · tool polyline [l]
-        eraser              tool eraser [e]
+        rectangles          shape rectangle · tool rectangle · shortcut R → tool rectangle
+        polylines           shape polyline · tool polyline · shortcut L → tool polyline
+        eraser              tool eraser · shortcut E → tool eraser
         titles              overlay TitleOverlay
         ellipse-titles      ShapeTitles → ellipse
         reordering          ShapeContextMenus

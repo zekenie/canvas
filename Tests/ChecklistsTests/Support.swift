@@ -4,6 +4,7 @@ import CanvasTesting
 import Checklists
 import ContextMenus
 import DetailPanel
+import Keyboard
 import Selection
 import SwiftUI
 import TestKit
@@ -62,7 +63,7 @@ struct ChoresPlugin: CanvasPlugin {
 
 /// Every plugin a chore needs, then `more`.
 @MainActor func choreEditor(_ more: [any CanvasPlugin] = [], scheduler: any Scheduler = ManualScheduler()) throws -> CanvasEditor {
-    CanvasEditor(registry: try Registry(plugins: [SelectionPlugin(), FixturesPlugin(), ChoresPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
+    CanvasEditor(registry: try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ChoresPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
                                                          ContextMenusPlugin()] + more),
                  scheduler: scheduler)
 }

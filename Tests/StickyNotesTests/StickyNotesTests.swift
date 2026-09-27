@@ -4,6 +4,7 @@ import CanvasTesting
 import Checklists
 import ContextMenus
 import DetailPanel
+import Keyboard
 import Selection
 import TableOfContents
 import StickyNotes
@@ -12,35 +13,38 @@ import Validation
 
 /// The note and every plugin it opts into.
 @MainActor var notePlugins: [any CanvasPlugin] {
-    [SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin()]
+    [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin()]
 }
 
 @MainActor let stickyNotesTests = Suite("Sticky notes", [
     test("registers its kind, the N tool and the double-click claim") {
         let registry = try Registry(plugins: notePlugins)
         expectEqual(registry.kinds, [StickyNote.kind])
-        expectEqual(registry.tool(forShortcut: "n"), ToolID(placing: StickyNote.kind))
+        expectEqual(registry.shortcut(forTool: ToolID(placing: StickyNote.kind))?.chord, "n")
         expect(registry.definition(for: StickyNote.kind) is any Editable)
         expectEqual(registry.contributions(to: DoubleClickPlacement.self).map(\.value.kind), [StickyNote.kind])
     },
-    test("can't be installed without the selection, validation and checklists plugins it opts into, the panel, context menus and the table of contents") {
-        expectThrows(RegistryError.ownerNotInstalled(point: "DoubleClickPlacement", owner: .selection, contributor: .stickyNotes)) {
+    test("can't be installed without the keyboard, selection, validation and checklists plugins it opts into, the panel, context menus and the table of contents") {
+        expectThrows(RegistryError.ownerNotInstalled(point: "KeyboardShortcuts", owner: .keyboard, contributor: .stickyNotes)) {
             _ = try Registry(plugins: [StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin()])
         }
+        expectThrows(RegistryError.ownerNotInstalled(point: "DoubleClickPlacement", owner: .selection, contributor: .stickyNotes)) {
+            _ = try Registry(plugins: [KeyboardPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin()])
+        }
         expectThrows(RegistryError.ownerNotInstalled(point: "ValidationRules", owner: .validation, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [SelectionPlugin(), StickyNotesPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeChecklists", owner: .checklists, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), DetailPanelPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), DetailPanelPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeDetails", owner: .detailPanel, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeContextMenus", owner: .contextMenus, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ContentsRows", owner: .tableOfContents, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
                                        ContextMenusPlugin()])
         }
     },

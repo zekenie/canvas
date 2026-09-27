@@ -40,6 +40,22 @@ public struct Pointer: Sendable {
     public var isControlClick = false
 }
 
+/// A key pressed on the canvas, as the plugin that claims key strokes (`registrar.keyStrokes`)
+/// gets it: the key's characters as the keyboard's layout types them with no modifier applied but
+/// ⇧ (`NSEvent.charactersIgnoringModifiers`: "v", "V" with ⇧, "\u{1b}" for Escape), the modifiers
+/// held with it (the event's own), and whether it's a held key repeating.
+public struct KeyStroke: Hashable, Sendable {
+    public var characters: String
+    public var modifiers: Modifiers
+    public var isRepeat: Bool
+
+    public init(_ characters: String, modifiers: Modifiers = [], isRepeat: Bool = false) {
+        self.characters = characters
+        self.modifiers = modifiers
+        self.isRepeat = isRepeat
+    }
+}
+
 public enum CanvasCursor: Sendable {
     case standard, crosshair, openHand, closedHand
 }

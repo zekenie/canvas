@@ -2,6 +2,7 @@ import Canvas
 import CanvasTesting
 import ContextMenus
 import CoreGraphics
+import Keyboard
 import Selection
 import TestKit
 
@@ -83,7 +84,7 @@ struct AppliancesPlugin: CanvasPlugin {
 
 /// Selection, context menus, the CanvasTesting kinds and the appliances, then `more`.
 @MainActor func harness(_ more: [any CanvasPlugin] = []) throws -> EditorHarness {
-    try EditorHarness(plugins: [SelectionPlugin(), ContextMenusPlugin(), FixturesPlugin(), AppliancesPlugin()] + more)
+    try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), FixturesPlugin(), AppliancesPlugin()] + more)
 }
 
 /// Four slots in a row, 100 points square, 100 apart: shapes go in them, and clicks at their middles.

@@ -7,6 +7,7 @@ import DetailPanel
 import EllipseTitles
 import Ellipses
 import Eraser
+import Keyboard
 import Polylines
 import Rectangles
 import Reordering
@@ -25,8 +26,9 @@ import ValidationDetails
 public enum ShippedPlugins {
     public static var all: [any CanvasPlugin] {
         [
-            // First: the others build on it, and its handles draw below their view overlays.
-            SelectionPlugin(),
+            // First: every key is registered with Keyboard; the others build on Selection, and its
+            // handles draw below their view overlays.
+            KeyboardPlugin(), SelectionPlugin(),
             ArrowsPlugin(), StickyNotesPlugin(), EllipsesPlugin(), TaskCardsPlugin(),
             ValidationPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin(), ChecklistsPlugin(), ValidationDetailsPlugin(),
             // The examples (Examples/). Each is one line here; delete it to leave it out.
@@ -54,6 +56,12 @@ public enum ShippedPlugins {
         DetailPanelView(editor: editor, onExit: onExit) {
             TableOfContentsView(editor: editor, onExit: onExit)
         }
+    }
+
+    /// A toolbar tool's tooltip, for the app's tool picker: its label, and the key that switches to
+    /// it ("Note (N)").
+    public static func help(for tool: ToolDescriptor, in registry: Registry) -> String {
+        registry.help(for: tool)
     }
 }
 

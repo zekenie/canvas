@@ -103,11 +103,6 @@ public struct Registry {
     /// plugin claimed (`registrar.defaultTool`), else the Hand.
     public var defaultTool: ToolID { contributions(to: CorePoints.DefaultTool.self).first?.value ?? .hand }
 
-    public func tool(forShortcut key: Character) -> ToolID? {
-        let key = Character(key.lowercased())
-        return tools.first { $0.shortcut.map { Character($0.lowercased()) } == key }?.id
-    }
-
     var toolFactories: [(ToolID, @MainActor (CanvasEditor) -> any Tool)] {
         contributions(to: CorePoints.Tools.self).map { ($0.value.descriptor.id, $0.value.make) }
     }
@@ -122,6 +117,9 @@ public struct Registry {
     }
     var secondaryClickMenu: (@MainActor (CanvasEditor, Pointer) -> NSMenu?)? {
         contributions(to: CorePoints.SecondaryClickMenu.self).first?.value
+    }
+    var keyStrokeHandler: (@MainActor (CanvasEditor, KeyStroke) -> Bool)? {
+        contributions(to: CorePoints.KeyStrokes.self).first?.value
     }
 
     /// Who contributes what, where: the runtime counterpart of Package.swift. A test pins it.
@@ -140,7 +138,7 @@ public enum RegistryError: Error, Equatable, CustomStringConvertible {
     case ownerNotInstalled(point: String, owner: PluginID, contributor: PluginID)
     /// A contribution for a shape kind no plugin registers.
     case unknownKind(ShapeKind, point: String, contributor: PluginID)
-    /// Two contributions claim the same key (a kind, a tool id, a shortcut, ...).
+    /// Two contributions claim the same key (a kind, a tool id, a keyboard shortcut, ...).
     case conflict(point: String, key: String, plugins: [PluginID])
     /// A point's own `check` refused the plugin list.
     case invalid(point: String, reason: String)
@@ -183,7 +181,7 @@ struct RawContribution {
         case let shape as ShapeRegistration:
             // A kind's version shows once it has one, so the pinned report shows every bump.
             "shape \(shape.kind)" + (shape.definition.kindCodec.version > 0 ? " v\(shape.definition.kindCodec.version)" : "")
-        case let tool as ToolRegistration: "tool \(tool.descriptor.id)" + (tool.descriptor.shortcut.map { " [\($0)]" } ?? "")
+        case let tool as ToolRegistration: "tool \(tool.descriptor.id)"
         case let service as ServiceRegistration: "service \(service.name)"
         case let overlay as any CanvasOverlay: "overlay \(type(of: overlay))"
         case let command as CommandRegistration: "command \(command.command)"
@@ -193,7 +191,8 @@ struct RawContribution {
             case is CorePoints.OutlineSources.Type: "outlines"
             case is CorePoints.DefaultTool.Type: "default tool \(value)"
             case is CorePoints.SecondaryClickMenu.Type: "secondary-click menu"
-            default: "\(P.self)" + (target == .any ? "" : " → \(target)")
+            case is CorePoints.KeyStrokes.Type: "key strokes"
+            default: P.summary(of: value, for: target)
             }
         }
     }

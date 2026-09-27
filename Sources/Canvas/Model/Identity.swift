@@ -49,19 +49,17 @@ public struct ToolID: Hashable, Sendable, ExpressibleByStringLiteral, CustomStri
     public static let hand: ToolID = "hand"
 }
 
-/// A command the canvas view forwards from the keyboard and the menus (AppKit's standard actions),
-/// or the board's window from its own menu items, for a plugin to claim with `registrar.command`.
-/// The core only routes it.
+/// Something to do, by name, for a plugin to claim with `registrar.command`: what a menu item sends
+/// (the canvas view forwards AppKit's standard actions as these, and the board's window its own
+/// menu items), and what a key or any plugin can run with `editor.perform`. The core only routes it.
 public struct CanvasCommand: Hashable, Sendable, ExpressibleByStringLiteral, CustomStringConvertible {
     public let rawValue: String
     public init(_ rawValue: String) { self.rawValue = rawValue }
     public init(stringLiteral value: String) { rawValue = value }
     public var description: String { rawValue }
-    /// Delete and Forward Delete.
+    /// Edit › Delete.
     public static let delete: CanvasCommand = "delete"
-    /// Return.
-    public static let insertNewline: CanvasCommand = "insertNewline"
-    /// Edit › Select All (⌘A).
+    /// Edit › Select All.
     public static let selectAll: CanvasCommand = "selectAll"
     /// Go › Back (⌘[), whatever has the keyboard.
     public static let goBack: CanvasCommand = "goBack"

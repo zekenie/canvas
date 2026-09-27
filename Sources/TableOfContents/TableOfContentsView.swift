@@ -6,8 +6,9 @@ import SwiftUI
 /// The table of contents: a Mac source list of the board's shapes. The app shows it in the detail
 /// panel when nothing or several shapes are selected (through Composition); it follows the editor
 /// by itself. Clicking a row gives it the keyboard, as a source list does: the arrow keys move
-/// through the rows, Delete deletes what's selected, and Escape calls `onExit`, which gives the
-/// keyboard back to the canvas. So does hiding the list while a row has the keyboard.
+/// through the rows, Delete runs the `.delete` command (what Delete on the canvas and Edit › Delete
+/// run: deleting the selection), and Escape calls `onExit`, which gives the keyboard back to the
+/// canvas. So does hiding the list while a row has the keyboard.
 public struct TableOfContentsView: View {
     let editor: CanvasEditor
     let onExit: @MainActor () -> Void
@@ -61,7 +62,7 @@ struct ContentsList: View {
             }
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)         // on the panel's background, not a sidebar's
-            .onDeleteCommand { editor.deleteSelection() }
+            .onDeleteCommand { editor.perform(.delete) }
         }
     }
 }

@@ -6,6 +6,7 @@ import CanvasUI
 import Composition
 import CoreGraphics
 import Geometry
+import Keyboard
 import Selection
 import StickyNotes
 import SwiftUI
@@ -20,6 +21,12 @@ import Validation
     let canvas = CanvasView(editor: editor)
     window.contentView = canvas
     return (window, canvas)
+}
+
+/// Records the standard actions that reach it up the responder chain.
+final class ActionLog: NSView {
+    var actions: [String] = []
+    override func moveRight(_ sender: Any?) { actions.append("moveRight:") }
 }
 
 // The AppKit shell, in an unshown window: NSEvents in, the editing view's life cycle out.
@@ -84,14 +91,18 @@ import Validation
         expectEqual(editor.currentToolID, .arrow)
         expectEqual(field.stringValue, "")
     },
-    test("Return, Delete and ⌘A reach the selection's commands through the canvas view") {
-        let editor = CanvasEditor(registry: try Registry(plugins: [SelectionPlugin(), FixturesPlugin(), CardsPlugin()]), scheduler: ManualScheduler())
+    test("⌘A, Return, Delete and Escape typed on the canvas are Keyboard's shortcuts; Edit › Select All and Edit › Delete run the same commands") {
+        let editor = CanvasEditor(registry: try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), CardsPlugin()]), scheduler: ManualScheduler())
         let (window, canvas) = windowed(editor)
         let box = editor.add(Box(CGRect(x: 300, y: 100, width: 100, height: 100)))
         let card = editor.add(Card(CGRect(x: 100, y: 100, width: 100, height: 60)))
+        let other = editor.add(Box(CGRect(x: 500, y: 100, width: 100, height: 100)))
         window.makeFirstResponder(canvas)
+        window.press("a", modifiers: .command)
+        expectEqual(editor.selectedShapeIDs, [box, card, other])
+        editor.selection = nil
         canvas.selectAll(nil)
-        expectEqual(editor.selectedShapeIDs, [box, card])
+        expectEqual(editor.selectedShapeIDs, [box, card, other])
         editor.selection = card
         window.pressReturn()
         expectEqual(editor.editingShapeID, card)
@@ -99,10 +110,74 @@ import Validation
         expect(window.firstResponder === canvas)
         editor.selection = box
         window.pressDelete()
+        editor.selection = other
+        canvas.delete(nil)
         expectEqual(editor.document.shapes.map(\.id), [card])
+        editor.setTool(ToolID(placing: Card.kind))
+        window.pressEscape()
+        expectEqual(editor.currentToolID, .select)
+    },
+    test("a ⌘ key a menu item also has is the canvas's shortcut while it has the keyboard, in the app's SwiftUI hosting too; with a field focused, the canvas passes it on") {
+        let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler())
+        let focus = CanvasFocus()
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
+        let host = NSHostingView(rootView: CanvasRepresentable(editor: editor, focus: focus))
+        host.frame = CGRect(x: 0, y: 0, width: 540, height: 600)
+        let field = NSTextField(frame: CGRect(x: 540, y: 560, width: 260, height: 22))
+        let root = NSView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+        root.addSubview(host)
+        root.addSubview(field)
+        window.contentView = root
+        host.layoutSubtreeIfNeeded()
+        let canvas = try require(focus.canvas)
+        window.makeFirstResponder(canvas)
+        // AppKit asks the key window's views for a key equivalent before the menu bar (Edit › Select All has ⌘A).
+        let commandA = window.keyEvent("a", modifiers: .command)
+        expect(window.performKeyEquivalent(with: commandA))
+        expectEqual(editor.selectedShapeIDs, editor.document.shapes.map(\.id))
+        editor.selection = nil
+        window.makeFirstResponder(field)
+        expect(!window.performKeyEquivalent(with: commandA), "the menu's, to select the field's text")
+        expectEqual(editor.selectedShapeIDs, [])
+    },
+    test("the standard actions AppKit's key bindings send come back to the shortcuts as their keys: ⌃H is Delete, cancelOperation: Escape") {
+        let editor = CanvasEditor(registry: try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), CardsPlugin()]), scheduler: ManualScheduler())
+        let (window, canvas) = windowed(editor)
+        let box = editor.add(Box(CGRect(x: 300, y: 100, width: 100, height: 100)))
+        let card = editor.add(Card(CGRect(x: 100, y: 100, width: 100, height: 60)))
+        let other = editor.add(Box(CGRect(x: 500, y: 100, width: 100, height: 100)))
+        window.makeFirstResponder(canvas)
+        editor.selection = box
+        window.sendEvent(window.keyEvent("\u{8}", ignoringModifiers: "h", code: 4, modifiers: .control))     // deleteBackward:, as an emacs binding
+        expectEqual(editor.document.shapes.map(\.id), [card, other])
+        editor.selection = other
+        canvas.deleteForward(nil)
+        expectEqual(editor.document.shapes.map(\.id), [card])
+        editor.selection = card
+        canvas.insertNewline(nil)
+        expectEqual(editor.editingShapeID, card)
+        editor.endEditing()
+        editor.setTool(ToolID(placing: Card.kind))
+        canvas.cancelOperation(nil)
+        expectEqual(editor.currentToolID, .select)
+    },
+    test("a key no shortcut takes goes on to AppKit's key bindings, and their action up the responder chain, as from any view") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
+        let parent = ActionLog(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+        let canvas = CanvasView(editor: editor)
+        canvas.frame = parent.bounds
+        parent.addSubview(canvas)
+        window.contentView = parent
+        window.makeFirstResponder(canvas)
+        window.press("\u{F703}", code: 124, modifiers: [.numericPad, .function])       // →, which nothing claims
+        window.press("q", code: 12)
+        expectEqual(parent.actions, ["moveRight:"])
+        expectEqual(editor.currentToolID, .select)
+        expect(window.firstResponder === canvas)
     },
     test("an editing view that saves as editing ends: pressing the canvas saves; deleting its shape doesn't trap") {
-        let editor = CanvasEditor(registry: try Registry(plugins: [SelectionPlugin(), CardsPlugin()]), scheduler: ManualScheduler())
+        let editor = CanvasEditor(registry: try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), CardsPlugin()]), scheduler: ManualScheduler())
         let (window, canvas) = windowed(editor)
         let card = ShapeRecord(Card(CGRect(x: 100, y: 100, width: 100, height: 60), text: "old"))
         editor.transact { $0.insert(card) }

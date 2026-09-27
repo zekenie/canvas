@@ -2,6 +2,7 @@ import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
+import Keyboard
 import Selection
 import TableOfContents
 
@@ -20,7 +21,7 @@ struct Board {
 
     /// Two boxes, optionally with an arrow between their centers.
     init(arrow bend: CGFloat? = nil, second: CGRect = boxB) throws {
-        h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
+        h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
         a = h.add(Box(boxA))
         b = h.add(Box(second))
         if let bend {

@@ -32,20 +32,23 @@ public struct CanvasRepresentable: NSViewRepresentable {
     public func updateNSView(_ canvas: CanvasView, context: Context) {}
 }
 
-extension ToolDescriptor {
-    /// The toolbar tooltip: "Note (N)".
-    public var help: String { shortcut.map { "\(label) (\($0.uppercased()))" } ?? label }
-}
-
 /// The toolbar, built from the registry. The editor is observable, so this follows tool switches
-/// made on the canvas (shortcuts, finishing an arrow) with no callback.
+/// made on the canvas (shortcuts, finishing an arrow) with no callback. `help` is each tool's
+/// tooltip: the host passes one that names the tool's key ("Note (N)"), which only the plugin that
+/// keeps the keys knows; the label alone otherwise.
 public struct ToolPicker: View {
     let editor: CanvasEditor
-    public init(editor: CanvasEditor) { self.editor = editor }
+    let help: @MainActor (ToolDescriptor) -> String
+
+    public init(editor: CanvasEditor, help: @escaping @MainActor (ToolDescriptor) -> String = { $0.label }) {
+        self.editor = editor
+        self.help = help
+    }
+
     public var body: some View {
         Picker("Tool", selection: Binding(get: { editor.currentToolID }, set: { editor.setTool($0) })) {
             ForEach(editor.registry.tools) { tool in
-                Image(systemName: tool.systemImage).help(tool.help).tag(tool.id)
+                Image(systemName: tool.systemImage).help(help(tool)).tag(tool.id)
             }
         }
         .pickerStyle(.segmented)

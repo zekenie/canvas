@@ -91,7 +91,7 @@ struct ContentView: View {
         CanvasRepresentable(editor: editor, focus: focus)
             .frame(minWidth: 480, minHeight: 320)
             .toolbar {
-                ToolbarItem(placement: .principal) { ToolPicker(editor: editor) }
+                ToolbarItem(placement: .principal) { ToolPicker(editor: editor, help: { ShippedPlugins.help(for: $0, in: editor.registry) }) }
             }
             .inspector(isPresented: $view.showsDetails) {
                 ShippedPlugins.detailPanel(editor: editor, onExit: focus.take)

@@ -19,10 +19,17 @@ public protocol ExtensionPoint {
     /// Untyped, so both `throws` and `throws(RegistryError)` implement it: a typed requirement
     /// would let a plain `throws` spelling silently fall back to the default.
     static func check(_ registry: Registry) throws
+    /// How the registry's report (`registry.report`) shows a contribution. The default is the
+    /// point's name, and the kind it's for, if one: `ValidationRules → sticky-note`.
+    static func summary(of contribution: Contribution, for target: ShapeTarget) -> String
 }
 
 extension ExtensionPoint {
     public static func check(_ registry: Registry) throws {}
+
+    public static func summary(of contribution: Contribution, for target: ShapeTarget) -> String {
+        "\(Self.self)" + (target == .any ? "" : " → \(target)")
+    }
 }
 
 /// A point whose contributions claim keys. Two contributions claiming the same key make the

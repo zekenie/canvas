@@ -2,6 +2,7 @@
 import CanvasTesting
 import CoreGraphics
 import Geometry
+import Keyboard
 import Selection
 import TestKit
 
@@ -47,7 +48,7 @@ import TestKit
         let selected = renderBitmap(h.editor, size: selectablesCanvas)
         // Empty space in the selection box: past the threshold and back, so nothing has moved.
         h.press(at: CGPoint(x: 80, y: 60)); h.drag(to: CGPoint(x: 90, y: 60))
-        let reference = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()], document: h.editor.document)
+        let reference = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()], document: h.editor.document)
         reference.editor.selectedShapeIDs = [disc, box]
         expectEqual(changedPixels(renderBitmap(reference.editor, size: selectablesCanvas), renderBitmap(h.editor, size: selectablesCanvas), in: everywhere), 0,
                     "moved, outlines and all")
@@ -63,7 +64,7 @@ import TestKit
     },
     test("the brush fills tldraw's gray at 0.102 and strokes it at 0.251, 1 view point wide at zoom 1 and 2") {
         for zoom: CGFloat in [1, 2] {
-            let h = try EditorHarness(plugins: [SelectionPlugin()])
+            let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin()])
             h.editor.camera = Camera(origin: .zero, zoom: zoom)
             let size = CGSize(width: 100, height: 100)
             let background = renderBitmap(h.editor, size: size, scale: 2)
@@ -91,7 +92,7 @@ let selectablesCanvas = CGSize(width: 200, height: 120)
 
 /// A disc in (20, 20, 40, 40), a box at (100, 60, 40, 40), and a small box at (160, 10, 20, 20).
 @MainActor func selectables() throws -> (EditorHarness, ShapeID, ShapeID, ShapeID) {
-    let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
+    let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
     let disc = h.add(Disc(CGRect(x: 20, y: 20, width: 40, height: 40)))
     let box = h.add(Box(CGRect(x: 100, y: 60, width: 40, height: 40)))
     let small = h.add(Box(CGRect(x: 160, y: 10, width: 20, height: 20)))

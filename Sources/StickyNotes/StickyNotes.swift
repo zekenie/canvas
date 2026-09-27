@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import Checklists
+import Keyboard
 import Selection
 import Validation
 

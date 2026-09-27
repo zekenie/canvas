@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import CanvasTesting
+import Keyboard
 import Selection
 import SwiftUI
 import TableOfContents
@@ -107,7 +108,7 @@ let widgetFrame = CGRect(x: 1000, y: 1000, width: 100, height: 60)
 
 /// The selection, the fixtures, widgets, and the table of contents, then `more`.
 @MainActor func contentsEditor(_ more: [any CanvasPlugin] = [], scheduler: any Scheduler = ManualScheduler()) throws -> CanvasEditor {
-    CanvasEditor(registry: try Registry(plugins: [SelectionPlugin(), FixturesPlugin(), WidgetsPlugin(), TableOfContentsPlugin()] + more),
+    CanvasEditor(registry: try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), WidgetsPlugin(), TableOfContentsPlugin()] + more),
                  scheduler: scheduler)
 }
 

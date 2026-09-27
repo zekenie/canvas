@@ -85,9 +85,16 @@ public final class EditorHarness {
         editor.modifiersChanged(held: modifiers)
     }
 
+    /// A key pressed on the canvas, with the keys held now (`hold`): its characters as
+    /// `NSEvent.charactersIgnoringModifiers` reports them ("\u{1b}" for Escape). Returns whether
+    /// the plugin that claims key strokes did something with it (Keyboard's shortcuts), as the view
+    /// asks; false without one. `isRepeat`: the key is held, repeating.
     @discardableResult
-    public func key(_ text: String) -> Bool { editor.handleShortcut(text) }
+    public func key(_ characters: String, isRepeat: Bool = false) -> Bool {
+        editor.keyDown(KeyStroke(characters, modifiers: held, isRepeat: isRepeat))
+    }
 
+    /// What Escape does (`editor.cancel()`), with or without a plugin that gives it its key.
     public func escape() { editor.cancel() }
 
     /// A world point in view points, through the current camera.

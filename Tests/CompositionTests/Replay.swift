@@ -6,7 +6,7 @@ import AppKit
 // captures. Keep it to AppKit: it can't name either canvas's types.
 
 enum Step {
-    case tool(Character)             // shortcut key
+    case tool(Character)             // a tool's key
     case move(CGFloat, CGFloat)
     case down(CGFloat, CGFloat, clicks: Int)
     case drag(CGFloat, CGFloat)
@@ -14,12 +14,12 @@ enum Step {
     case up
     case wait(Int)                   // ms
     case flags(NSEvent.ModifierFlags)
+    case delete                      // the Delete key
+    case escape                      // the Escape key
     // Not events: each canvas does these itself.
     case selectArrow(Int)
     case selectShape(Int)
     case zoom(CGFloat, around: CGPoint)
-    case delete
-    case escape
 }
 
 let A = CGRect(x: 80, y: 80, width: 200, height: 200)
@@ -134,6 +134,13 @@ final class Player {
                            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clicks, pressure: 1)!
     }
 
+    /// A key pressed, with the modifiers held: the POC's canvas hands it to AppKit's key bindings,
+    /// today's to its shortcuts.
+    private func key(_ characters: String, code: UInt16 = 0) -> NSEvent {
+        NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: time, windowNumber: window.windowNumber, context: nil,
+                         characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code)!
+    }
+
     private func drag(to point: CGPoint) {
         sleep(16)
         pointer = point
@@ -142,7 +149,7 @@ final class Player {
 
     func play(_ step: Step) {
         switch step {
-        case .tool(let key): view.insertText(String(key))
+        case .tool(let character): view.keyDown(with: key(String(character)))
         case .move(let x, let y): sleep(16); pointer = CGPoint(x: x, y: y); view.mouseMoved(with: mouse(.mouseMoved, clicks: 0))
         case .down(let x, let y, let clicks): sleep(16); pointer = CGPoint(x: x, y: y); view.mouseDown(with: mouse(.leftMouseDown, clicks: clicks))
         case .drag(let x, let y): drag(to: CGPoint(x: x, y: y))
@@ -160,8 +167,8 @@ final class Player {
             flags = new
             view.flagsChanged(with: NSEvent.keyEvent(with: .flagsChanged, location: .zero, modifierFlags: new, timestamp: time, windowNumber: window.windowNumber,
                                                      context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 58)!)
-        case .delete: view.deleteBackward(nil)
-        case .escape: view.cancelOperation(nil)
+        case .delete: view.keyDown(with: key("\u{7f}", code: 51))
+        case .escape: view.keyDown(with: key("\u{1b}", code: 53))
         case .selectArrow, .selectShape, .zoom: direct(step)
         }
     }

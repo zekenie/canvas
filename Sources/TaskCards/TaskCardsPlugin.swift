@@ -1,5 +1,6 @@
 import Canvas
 import Checklists
+import Keyboard
 import Validation
 
 extension PluginID {

@@ -48,47 +48,49 @@ let package = Package(
         .target(name: "Canvas", dependencies: ["Geometry"]),                                  // layer: foundation
         .target(name: "CanvasUI", dependencies: ["Canvas", "Geometry"]),                      // layer: ui
 
-        .target(name: "Selection", dependencies: ["Canvas", "Geometry"]),                     // layer: horizontal
+        .target(name: "Keyboard", dependencies: ["Canvas"]),                                  // layer: horizontal
+        .target(name: "Selection", dependencies: ["Canvas", "Geometry", "Keyboard"]),         // layer: horizontal
         .target(name: "Validation", dependencies: ["Canvas"]),                                // layer: horizontal
         .target(name: "DetailPanel", dependencies: ["Canvas", "Selection"]),                  // layer: horizontal
         .target(name: "ContextMenus", dependencies: ["Canvas", "Selection"]),                 // layer: horizontal
         .target(name: "TableOfContents", dependencies: ["Canvas", "Geometry", "Selection"]),  // layer: horizontal
         .target(name: "Checklists", dependencies: ["Canvas", "ContextMenus", "DetailPanel"]), // layer: horizontal
 
-        .target(name: "Arrows", dependencies: ["Canvas", "Geometry", "Selection", "TableOfContents"]), // layer: vertical
-        .target(name: "StickyNotes", dependencies: ["Canvas", "Checklists", "Selection", "TableOfContents", "Validation"]), // layer: vertical
-        .target(name: "Ellipses", dependencies: ["Canvas"]),                                  // layer: vertical
-        .target(name: "TaskCards", dependencies: ["Canvas", "Checklists", "ContextMenus", "DetailPanel", "TableOfContents", "Validation"]), // layer: vertical
+        .target(name: "Arrows", dependencies: ["Canvas", "Geometry", "Keyboard", "Selection", "TableOfContents"]), // layer: vertical
+        .target(name: "StickyNotes", dependencies: ["Canvas", "Checklists", "Keyboard", "Selection", "TableOfContents", "Validation"]), // layer: vertical
+        .target(name: "Ellipses", dependencies: ["Canvas", "Keyboard"]),                      // layer: vertical
+        .target(name: "TaskCards", dependencies: ["Canvas", "Checklists", "ContextMenus", "DetailPanel", "Keyboard", "TableOfContents", "Validation"]), // layer: vertical
 
         .target(name: "ValidationDetails", dependencies: ["Canvas", "DetailPanel", "Validation"]), // layer: bridge
 
         // Examples: the smallest plugin for each pattern (see docs/plugin-system.md).
         .target(name: "Titles", dependencies: ["Canvas", "Geometry", "Selection"], path: "Examples/Titles"),            // layer: horizontal
-        .target(name: "Rectangles", dependencies: ["Canvas"], path: "Examples/Rectangles"),                             // layer: vertical
-        .target(name: "Eraser", dependencies: ["Canvas"], path: "Examples/Eraser"),                                     // layer: vertical
-        .target(name: "Polylines", dependencies: ["Canvas", "Geometry"], path: "Examples/Polylines"),                   // layer: vertical
+        .target(name: "Rectangles", dependencies: ["Canvas", "Keyboard"], path: "Examples/Rectangles"),                 // layer: vertical
+        .target(name: "Eraser", dependencies: ["Canvas", "Keyboard"], path: "Examples/Eraser"),                         // layer: vertical
+        .target(name: "Polylines", dependencies: ["Canvas", "Geometry", "Keyboard"], path: "Examples/Polylines"),       // layer: vertical
         .target(name: "Reordering", dependencies: ["Canvas", "ContextMenus"], path: "Examples/Reordering"),             // layer: vertical
         .target(name: "EllipseTitles", dependencies: ["Canvas", "Ellipses", "Titles"], path: "Examples/EllipseTitles"), // layer: bridge
 
-        .target(name: "Composition", dependencies: ["Arrows", "Canvas", "Checklists", "ContextMenus", "DetailPanel", "EllipseTitles", "Ellipses", "Eraser", "Polylines", "Rectangles", "Reordering", "Selection", "StickyNotes", "TableOfContents", "TaskCards", "Titles", "Validation", "ValidationDetails"]), // layer: composition
+        .target(name: "Composition", dependencies: ["Arrows", "Canvas", "Checklists", "ContextMenus", "DetailPanel", "EllipseTitles", "Ellipses", "Eraser", "Keyboard", "Polylines", "Rectangles", "Reordering", "Selection", "StickyNotes", "TableOfContents", "TaskCards", "Titles", "Validation", "ValidationDetails"]), // layer: composition
         .executableTarget(name: "InfiniteCanvas", dependencies: ["Canvas", "CanvasUI", "Composition"]),           // layer: app
 
         .target(name: "TestKit", dependencies: [], path: "Tests/TestKit"),                                        // layer: testsupport
         .target(name: "CanvasTesting", dependencies: ["Canvas", "Geometry", "TestKit"], path: "Tests/CanvasTesting"), // layer: testsupport
         .executableTarget(name: "CanvasTests", dependencies: ["Canvas", "CanvasTesting", "Geometry", "TestKit"], path: "Tests/CanvasTests"), // layer: test
-        .executableTarget(name: "SelectionTests", dependencies: ["Canvas", "CanvasTesting", "Geometry", "Selection", "TestKit"], path: "Tests/SelectionTests"), // layer: test
-        .executableTarget(name: "ArrowsTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "Geometry", "Selection", "TableOfContents", "TestKit"], path: "Tests/ArrowsTests"), // layer: test
+        .executableTarget(name: "KeyboardTests", dependencies: ["Canvas", "CanvasTesting", "Keyboard", "TestKit"], path: "Tests/KeyboardTests"), // layer: test
+        .executableTarget(name: "SelectionTests", dependencies: ["Canvas", "CanvasTesting", "Geometry", "Keyboard", "Selection", "TestKit"], path: "Tests/SelectionTests"), // layer: test
+        .executableTarget(name: "ArrowsTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "Geometry", "Keyboard", "Selection", "TableOfContents", "TestKit"], path: "Tests/ArrowsTests"), // layer: test
         .executableTarget(name: "ValidationTests", dependencies: ["Canvas", "CanvasTesting", "Geometry", "TestKit", "Validation"], path: "Tests/ValidationTests"), // layer: test
-        .executableTarget(name: "DetailPanelTests", dependencies: ["Canvas", "CanvasTesting", "CanvasUI", "DetailPanel", "Selection", "TestKit"], path: "Tests/DetailPanelTests"), // layer: test
-        .executableTarget(name: "ContextMenusTests", dependencies: ["Canvas", "CanvasTesting", "ContextMenus", "Selection", "TestKit"], path: "Tests/ContextMenusTests"), // layer: test
-        .executableTarget(name: "TableOfContentsTests", dependencies: ["Canvas", "CanvasTesting", "CanvasUI", "Geometry", "Selection", "TableOfContents", "TestKit"], path: "Tests/TableOfContentsTests"), // layer: test
+        .executableTarget(name: "DetailPanelTests", dependencies: ["Canvas", "CanvasTesting", "CanvasUI", "DetailPanel", "Keyboard", "Selection", "TestKit"], path: "Tests/DetailPanelTests"), // layer: test
+        .executableTarget(name: "ContextMenusTests", dependencies: ["Canvas", "CanvasTesting", "ContextMenus", "Keyboard", "Selection", "TestKit"], path: "Tests/ContextMenusTests"), // layer: test
+        .executableTarget(name: "TableOfContentsTests", dependencies: ["Canvas", "CanvasTesting", "CanvasUI", "Geometry", "Keyboard", "Selection", "TableOfContents", "TestKit"], path: "Tests/TableOfContentsTests"), // layer: test
         .executableTarget(name: "ValidationDetailsTests", dependencies: ["Canvas", "CanvasTesting", "DetailPanel", "TestKit", "Validation", "ValidationDetails"], path: "Tests/ValidationDetailsTests"), // layer: test
-        .executableTarget(name: "ChecklistsTests", dependencies: ["Canvas", "CanvasTesting", "Checklists", "ContextMenus", "DetailPanel", "Geometry", "Selection", "TestKit"], path: "Tests/ChecklistsTests"), // layer: test
-        .executableTarget(name: "TaskCardsTests", dependencies: ["Canvas", "CanvasTesting", "Checklists", "ContextMenus", "DetailPanel", "Selection", "TableOfContents", "TaskCards", "TestKit", "Validation"], path: "Tests/TaskCardsTests"), // layer: test
-        .executableTarget(name: "StickyNotesTests", dependencies: ["Canvas", "CanvasTesting", "Checklists", "ContextMenus", "DetailPanel", "Selection", "StickyNotes", "TableOfContents", "TestKit", "Validation"], path: "Tests/StickyNotesTests"), // layer: test
-        .executableTarget(name: "RectanglesTests", dependencies: ["Canvas", "CanvasTesting", "Rectangles", "TestKit"], path: "Tests/RectanglesTests"), // layer: test
-        .executableTarget(name: "ExamplesTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "ContextMenus", "EllipseTitles", "Ellipses", "Eraser", "Polylines", "Rectangles", "Reordering", "Selection", "TableOfContents", "TestKit", "Titles"], path: "Tests/ExamplesTests"), // layer: test
-        .executableTarget(name: "CompositionTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "CanvasUI", "Checklists", "Composition", "DetailPanel", "Geometry", "Selection", "StickyNotes", "TableOfContents", "TaskCards", "TestKit", "Validation"], path: "Tests/CompositionTests"), // layer: test
+        .executableTarget(name: "ChecklistsTests", dependencies: ["Canvas", "CanvasTesting", "Checklists", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "Selection", "TestKit"], path: "Tests/ChecklistsTests"), // layer: test
+        .executableTarget(name: "TaskCardsTests", dependencies: ["Canvas", "CanvasTesting", "Checklists", "ContextMenus", "DetailPanel", "Keyboard", "Selection", "TableOfContents", "TaskCards", "TestKit", "Validation"], path: "Tests/TaskCardsTests"), // layer: test
+        .executableTarget(name: "StickyNotesTests", dependencies: ["Canvas", "CanvasTesting", "Checklists", "ContextMenus", "DetailPanel", "Keyboard", "Selection", "StickyNotes", "TableOfContents", "TestKit", "Validation"], path: "Tests/StickyNotesTests"), // layer: test
+        .executableTarget(name: "RectanglesTests", dependencies: ["Canvas", "CanvasTesting", "Keyboard", "Rectangles", "TestKit"], path: "Tests/RectanglesTests"), // layer: test
+        .executableTarget(name: "ExamplesTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "ContextMenus", "EllipseTitles", "Ellipses", "Eraser", "Keyboard", "Polylines", "Rectangles", "Reordering", "Selection", "TableOfContents", "TestKit", "Titles"], path: "Tests/ExamplesTests"), // layer: test
+        .executableTarget(name: "CompositionTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "CanvasUI", "Checklists", "Composition", "DetailPanel", "Geometry", "Keyboard", "Selection", "StickyNotes", "TableOfContents", "TaskCards", "TestKit", "Validation"], path: "Tests/CompositionTests"), // layer: test
         .executableTarget(name: "BenchmarkTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "Composition", "Ellipses", "Geometry", "StickyNotes", "TaskCards", "TestKit"], path: "Tests/BenchmarkTests"), // layer: test
     ],
     swiftLanguageModes: [.v6]

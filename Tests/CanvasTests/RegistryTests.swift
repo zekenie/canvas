@@ -33,6 +33,15 @@ extension Checked: ExtensionPoint {
     }
 }
 
+/// A point that says how the report shows its contributions.
+enum Described {}
+
+extension Described: ExtensionPoint {
+    typealias Contribution = String
+    static var owner: PluginID { "stamps" }
+    static func summary(of contribution: String, for _: ShapeTarget) -> String { "described \(contribution)" }
+}
+
 /// A check spelled with plain `throws`, throwing its own error: the registry still runs it.
 enum Untyped {}
 
@@ -91,13 +100,6 @@ extension ShapeRegistrar {
             _ = try Registry(plugins: [FixturesPlugin(), FixturesPlugin(id: "more")])
         }
     },
-    test("a shortcut that's taken conflicts, whatever its case, including the core's H") {
-        expectThrows(RegistryError.conflict(point: "Tools", key: "shortcut h", plugins: ["core", "clash"])) {
-            _ = try Registry(plugins: [Contributor(id: "clash") {
-                $0.tool(ToolDescriptor(id: "other", label: "Other", systemImage: "circle", shortcut: "H")) { _ in NoTool() }
-            }])
-        }
-    },
     test("a tool id that's taken conflicts") {
         expectThrows(RegistryError.conflict(point: "Tools", key: "tool hand", plugins: ["core", "clash"])) {
             _ = try Registry(plugins: [Contributor(id: "clash") {
@@ -114,16 +116,14 @@ extension ShapeRegistrar {
     },
     test("the toolbar is the core's Hand tool, then each plugin's tools in plugin order") {
         let registry = try Registry(plugins: [CardsPlugin(), Contributor(id: "x") {
-            $0.tool(ToolDescriptor(id: "zap", label: "Zap", systemImage: "bolt", shortcut: "z")) { _ in NoTool() }
+            $0.tool(ToolDescriptor(id: "zap", label: "Zap", systemImage: "bolt")) { _ in NoTool() }
         }])
         expectEqual(registry.tools.map(\.id), [.hand, ToolID(placing: Card.kind), "zap"])
-        expectEqual(registry.tool(forShortcut: "C"), ToolID(placing: Card.kind))
         expectEqual(registry.tools.map(\.label), ["Hand", "Card", "Zap"])
-        expectEqual(registry.tools.map(\.shortcut), ["h", "c", "z"])
     },
     test("a claimed default tool leads the toolbar, and the editor starts in it") {
         let registry = try Registry(plugins: [CardsPlugin(), Contributor(id: "x") {
-            $0.tool(ToolDescriptor(id: "zap", label: "Zap", systemImage: "bolt", shortcut: "z")) { _ in NoTool() }
+            $0.tool(ToolDescriptor(id: "zap", label: "Zap", systemImage: "bolt")) { _ in NoTool() }
             $0.defaultTool("zap")
         }])
         expectEqual(registry.defaultTool, "zap")
@@ -167,6 +167,24 @@ extension ShapeRegistrar {
                                        Contributor(id: "y") { $0.menuForSecondaryClick { _, _ in nil } }])
         }
     },
+    test("a key stroke goes to the one plugin that claims key strokes, as it came; unclaimed, no key does anything; two claims conflict") {
+        let seen = RunLog()
+        let h = try EditorHarness(plugins: [Contributor(id: "x") { r in
+            r.keyStrokes { _, stroke in
+                seen.commands.append("\(stroke.characters) \(stroke.modifiers == .command ? "⌘" : "") \(stroke.isRepeat)")
+                return stroke.characters == "k"
+            }
+        }])
+        h.hold(.command)
+        expect(h.key("k"))
+        h.hold([])
+        expect(!h.key("q", isRepeat: true))
+        expectEqual(seen.commands, ["k ⌘ false", "q  true"])
+        expect(!(try EditorHarness(plugins: []).key("h")), "the core gives no key a meaning, the Hand's H included")
+        expectThrows(RegistryError.conflict(point: "KeyStrokes", key: "key strokes", plugins: ["x", "y"])) {
+            _ = try Registry(plugins: [Contributor(id: "x") { $0.keyStrokes { _, _ in false } }, Contributor(id: "y") { $0.keyStrokes { _, _ in true } }])
+        }
+    },
     test("a secondary click isn't asked while a press is under way (the hand's, here)") {
         let asked = RunLog()
         let h = try EditorHarness(plugins: [Contributor(id: "x") { r in
@@ -186,13 +204,15 @@ extension ShapeRegistrar {
                                                   r.command(.delete) { _ in }
                                                   r.defaultTool(ToolID(placing: Card.kind))
                                                   r.menuForSecondaryClick { _, _ in nil }
+                                                  r.keyStrokes { _, _ in false }
+                                                  r.contribute("x", to: Described.self)
                                               }])
         expectEqual(registry.report, """
-        core          tool hand [h]
+        core          tool hand
         fixtures      shape box · shape disc · shape tag
-        cards         shape card · tool card [c]
+        cards         shape card · tool card
         stamps        \("")
-        p             Stamps → card · outlines · command delete · default tool card · secondary-click menu
+        p             Stamps → card · outlines · command delete · default tool card · secondary-click menu · key strokes · described x
         """)
     },
     test("a plain point takes any number of contributions for one target, as a list") {

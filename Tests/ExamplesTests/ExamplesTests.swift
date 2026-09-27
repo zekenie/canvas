@@ -6,6 +6,7 @@ import CoreGraphics
 import EllipseTitles
 import Ellipses
 import Eraser
+import Keyboard
 import Polylines
 import Rectangles
 import Reordering
@@ -42,7 +43,7 @@ struct MoreLabelTitles: CanvasPlugin {
 /// Rectangles' own tests are in RectanglesTests; these use it as a shape to work with.
 @MainActor let examplesTests = Suite("Examples", [
     test("Rectangles: placed with Selection installed, a new rectangle is selected") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), RectanglesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), RectanglesPlugin()])
         expect(h.key("r"))
         h.click(at: CGPoint(x: 300, y: 200))
         let rectangle = try require(h.editor.document.shapes.first)
@@ -50,7 +51,7 @@ struct MoreLabelTitles: CanvasPlugin {
         expectEqual(h.editor.currentToolID, .select)
     },
     test("Polylines: L and a drag draw a line through every point dragged; a click draws nothing") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), PolylinesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), PolylinesPlugin()])
         expect(h.key("l"))
         h.click(at: CGPoint(x: 50, y: 50))
         expect(h.editor.document.shapes.isEmpty, "a click draws nothing")
@@ -63,7 +64,7 @@ struct MoreLabelTitles: CanvasPlugin {
         expectEqual(h.editor.currentToolID, ToolID(placing: Polyline.kind), "the tool stays current")
     },
     test("Polylines: Escape takes back the line being drawn") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), PolylinesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), PolylinesPlugin()])
         expect(h.key("l"))
         h.press(at: CGPoint(x: 100, y: 100))
         h.drag(to: CGPoint(x: 150, y: 120))
@@ -72,7 +73,7 @@ struct MoreLabelTitles: CanvasPlugin {
         expect(h.editor.document.shapes.isEmpty)
     },
     test("Polylines: a line is hit near its stroke only, never inside the loop it draws") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), PolylinesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), PolylinesPlugin()])
         let triangle = [CGPoint(x: 0, y: 0), CGPoint(x: 200, y: 0), CGPoint(x: 200, y: 200), CGPoint(x: 0, y: 0)]
         let id = h.add(Polyline(points: triangle))
         expectEqual(h.editor.shape(at: CGPoint(x: 100, y: 4)), id, "within 3 pt of the 3 pt stroke")
@@ -82,7 +83,7 @@ struct MoreLabelTitles: CanvasPlugin {
         expectEqual(h.editor.shape(at: CGPoint(x: -4, y: -1)), id, "past its end")
     },
     test("Polylines: the select tool moves a line by its own translation, and Escape puts it back") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), PolylinesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), PolylinesPlugin()])
         let points = [CGPoint(x: 100, y: 100), CGPoint(x: 200, y: 100)]
         let id = h.add(Polyline(points: points))
         h.press(at: CGPoint(x: 150, y: 101))
@@ -93,7 +94,7 @@ struct MoreLabelTitles: CanvasPlugin {
         expectEqual(h.editor.document[id]?.typed(as: Polyline.self)?.props.points, points)
     },
     test("Polylines: the marquee selects a line it crosses, but not from inside the loop") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), PolylinesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), PolylinesPlugin()])
         let triangle = [CGPoint(x: 0, y: 0), CGPoint(x: 200, y: 0), CGPoint(x: 200, y: 200), CGPoint(x: 0, y: 0)]
         let id = h.add(Polyline(points: triangle))
         h.press(at: CGPoint(x: 120, y: 20))
@@ -104,7 +105,7 @@ struct MoreLabelTitles: CanvasPlugin {
         h.release()
     },
     test("Polylines: arrows don't bind to a line, since it's open") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), PolylinesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), PolylinesPlugin()])
         h.add(Polyline(points: [CGPoint(x: 100, y: 100), CGPoint(x: 300, y: 100)]))
         expect(h.key("a"))
         h.press(at: CGPoint(x: 200, y: 300))
@@ -114,7 +115,7 @@ struct MoreLabelTitles: CanvasPlugin {
         expect(arrow.props.end.binding == nil, "the end stays free")
     },
     test("Eraser: dragging across shapes deletes them, and an arrow lets go of what was erased") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), RectanglesPlugin(), EraserPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), RectanglesPlugin(), EraserPlugin()])
         let a = h.add(Rectangle(frame: CGRect(x: 0, y: 0, width: 100, height: 100)))
         let b = h.add(Rectangle(frame: CGRect(x: 200, y: 0, width: 100, height: 100)))
         let c = h.add(Rectangle(frame: CGRect(x: 400, y: 0, width: 100, height: 100)))
@@ -132,7 +133,7 @@ struct MoreLabelTitles: CanvasPlugin {
         expectEqual(h.editor.currentToolID, .eraser)
     },
     test("Eraser: a quick stroke erases what it crosses between two events, even a thin arrow") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), RectanglesPlugin(), EraserPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), RectanglesPlugin(), EraserPlugin()])
         let arrow = h.add(Arrow(start: .free(CGPoint(x: 100, y: 300)), end: .free(CGPoint(x: 300, y: 300))))
         let thin = h.add(Rectangle(frame: CGRect(x: 391, y: 0, width: 4, height: 100)))
         expect(h.key("e"))
@@ -146,7 +147,7 @@ struct MoreLabelTitles: CanvasPlugin {
         expectEqual(h.editor.document[thin], nil)
     },
     test("Titles: a kind opts in with one line; kinds that don't have no title") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), TitlesPlugin(), LabelsPlugin(), RectanglesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TitlesPlugin(), LabelsPlugin(), RectanglesPlugin()])
         let label = h.add(Label(frame: CGRect(x: 0, y: 0, width: 100, height: 40), text: "Hello"))
         let rectangle = h.add(Rectangle(frame: CGRect(x: 200, y: 0, width: 100, height: 40)))
         expectEqual(h.editor.registry.title(of: try require(h.editor.document[label])), "Hello")
@@ -158,7 +159,7 @@ struct MoreLabelTitles: CanvasPlugin {
         }
     },
     test("Titles: hovering a titled shape draws its title below it") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), TitlesPlugin(), LabelsPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TitlesPlugin(), LabelsPlugin()])
         h.add(Label(frame: CGRect(x: 20, y: 20, width: 100, height: 40), text: "Hello"))
         h.move(to: CGPoint(x: 300, y: 300))
         let before = renderBitmap(h.editor, size: CGSize(width: 200, height: 120))
@@ -173,32 +174,34 @@ struct MoreLabelTitles: CanvasPlugin {
         expect(changed > 20, "title pixels below the label: \(changed)")
     },
     test("EllipseTitles: a bridge titles ellipses, though Ellipses and Titles don't know each other") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), EllipsesPlugin(), TitlesPlugin(), EllipseTitlesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), EllipsesPlugin(), TitlesPlugin(), EllipseTitlesPlugin()])
         let ellipse = h.add(Ellipse(frame: CGRect(x: 0, y: 0, width: 200, height: 140)))
         expectEqual(h.editor.registry.title(of: try require(h.editor.document[ellipse])), "Ellipse, 200 × 140")
     },
     test("EllipseTitles: needs both plugins it connects") {
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeTitles", owner: .titles, contributor: "ellipse-titles")) {
-            _ = try Registry(plugins: [EllipsesPlugin(), EllipseTitlesPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), EllipsesPlugin(), EllipseTitlesPlugin()])
         }
         expectThrows(RegistryError.unknownKind("ellipse", point: "ShapeTitles", contributor: "ellipse-titles")) {
             _ = try Registry(plugins: [TitlesPlugin(), EllipseTitlesPlugin()])
         }
     },
     test("the examples' report: who contributes what") {
-        let registry = try Registry(plugins: [RectanglesPlugin(), EraserPlugin(), PolylinesPlugin(), EllipsesPlugin(), TitlesPlugin(), EllipseTitlesPlugin()])
+        let registry = try Registry(plugins: [KeyboardPlugin(), RectanglesPlugin(), EraserPlugin(), PolylinesPlugin(), EllipsesPlugin(), TitlesPlugin(),
+                                              EllipseTitlesPlugin()])
         expectEqual(registry.report, """
-        core            tool hand [h]
-        rectangles      shape rectangle · tool rectangle [r]
-        eraser          tool eraser [e]
-        polylines       shape polyline · tool polyline [l]
-        ellipses        shape ellipse · tool ellipse [o]
+        core            tool hand
+        keyboard        service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
+        rectangles      shape rectangle · tool rectangle · shortcut R → tool rectangle
+        eraser          tool eraser · shortcut E → tool eraser
+        polylines       shape polyline · tool polyline · shortcut L → tool polyline
+        ellipses        shape ellipse · tool ellipse · shortcut O → tool ellipse
         titles          overlay TitleOverlay
         ellipse-titles  ShapeTitles → ellipse
         """)
     },
     test("Reordering: every kind but those painted by anchor gets Arrange; to front and to back keep the selection's order") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), ContextMenusPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), EllipsesPlugin(), RectanglesPlugin(),
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), EllipsesPlugin(), RectanglesPlugin(),
                                             PolylinesPlugin(), ReorderingPlugin()])
         let a = h.add(Rectangle(frame: CGRect(x: 0, y: 0, width: 100, height: 100)))
         let b = h.add(Ellipse(frame: CGRect(x: 200, y: 0, width: 100, height: 100)))
@@ -218,7 +221,7 @@ struct MoreLabelTitles: CanvasPlugin {
         expect(h.secondaryClick(at: CGPoint(x: 200, y: 500)) == nil)
     },
     test("Reordering: Bring Forward and Send Backward step past the next shape each overlaps, keeping the selection's order") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), ContextMenusPlugin(), RectanglesPlugin(), ReorderingPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), RectanglesPlugin(), ReorderingPlugin()])
         let a = h.add(Rectangle(frame: CGRect(x: 0, y: 0, width: 100, height: 100)))
         let b = h.add(Rectangle(frame: CGRect(x: 50, y: 0, width: 100, height: 100)))      // overlaps a
         let c = h.add(Rectangle(frame: CGRect(x: 500, y: 0, width: 100, height: 100)))     // overlaps nothing

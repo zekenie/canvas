@@ -42,7 +42,8 @@ public final class CardField: NSTextField, NSTextFieldDelegate {
     }
 }
 
-/// A "card" kind that's editable, with a place tool ("c"). `optIn` adds what a test needs
+/// A "card" kind that's editable, with a place tool (no key: CanvasTesting can't import Keyboard, so
+/// a test that types one registers it). `optIn` adds what a test needs
 /// (`CardsPlugin { card, place in card.createOnDoubleClick(place) }`), given the place tool's
 /// placement.
 public struct CardsPlugin: CanvasPlugin {
@@ -54,7 +55,7 @@ public struct CardsPlugin: CanvasPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         registrar.shape(CardDefinition()) { card in
             let place = card.editingPlacement(size: CGSize(width: 100, height: 60)) { Card(.zero) }
-            card.tool(label: "Card", systemImage: "rectangle", shortcut: "c", placing: place)
+            card.tool(label: "Card", systemImage: "rectangle", placing: place)
             optIn(&card, place)
         }
     }

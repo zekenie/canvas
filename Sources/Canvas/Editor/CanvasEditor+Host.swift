@@ -80,11 +80,10 @@ extension CanvasEditor {
         return menu
     }
 
-    /// An unmodified key typed on the canvas. Returns false if no tool claims it.
-    @_spi(Host) public func handleShortcut(_ text: String) -> Bool {
-        guard text.count == 1, let key = text.lowercased().first, let id = registry.tool(forShortcut: key) else { return false }
-        setTool(id)
-        return true
+    /// A key pressed on the canvas: the plugin that claims key strokes (`registrar.keyStrokes`) says
+    /// what it does. False if none does anything with it; the view then gives it to AppKit.
+    @_spi(Host) public func keyDown(_ stroke: KeyStroke) -> Bool {
+        registry.keyStrokeHandler?(self, stroke) ?? false
     }
 
     /// The editing view for the shape being edited (the view asks when `editingShapeID` changes).

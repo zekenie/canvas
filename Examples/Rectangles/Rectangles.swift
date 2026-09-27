@@ -1,9 +1,11 @@
 import AppKit
 import Canvas
+import Keyboard
 
-/// The smallest vertical plugin: a kind, how to draw it, and a tool that places it. The rest comes
-/// from the core's defaults for shapes with a frame: hit testing, the selection outline, moving,
-/// being culled offscreen, and arrows attaching to it.
+/// The smallest vertical plugin: a kind, how to draw it, and a tool that places it, whose key (R) is
+/// registered with the Keyboard horizontal. The rest comes from the core's defaults for shapes with
+/// a frame: hit testing, the selection outline, moving, being culled offscreen, and arrows
+/// attaching to it.
 
 /// The kind: plain data, named once.
 public struct Rectangle: BoxShapeProps {

@@ -3,6 +3,7 @@ import Arrows
 import CanvasTesting
 import CoreGraphics
 import Geometry
+import Keyboard
 import Selection
 import TableOfContents
 import TestKit
@@ -15,7 +16,7 @@ import TestKit
         expectClose(geometry.end, CGPoint(x: 448.25, y: 180))
     },
     test("arrows bind to any closed shape, analytic hit tests included, and never to arrows") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
         let disc = h.add(Disc(CGRect(x: 460, y: 80, width: 200, height: 140)))
         h.add(Box(boxA))
         h.key("a"); h.move(to: boxA.center); h.press()
@@ -111,7 +112,7 @@ import TestKit
             }
             shapes.append(AnyShapeRecord(ShapeRecord(Arrow(start: bound(box.id), end: bound(next.id)))))
         }
-        let registry = try Registry(plugins: [SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
+        let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
         let h = EditorHarness { CanvasEditor(registry: registry, document: CanvasDocument(shapes: shapes), scheduler: $0) }
         let clock = ContinuousClock()
         let elapsed = clock.measure {

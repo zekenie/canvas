@@ -2,6 +2,7 @@ import Canvas
 import CanvasTesting
 import ContextMenus
 import CoreGraphics
+import Keyboard
 import Selection
 import TestKit
 
@@ -64,11 +65,11 @@ import TestKit
         expectEqual(h.editor.selectedShapeIDs, [])
     },
     test("without the plugin nothing claims the click; contributing needs it installed") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
         h.add(Box(slot(0)))
         expect(h.secondaryClick(at: middle(0)) == nil)
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeContextMenus", owner: .contextMenus, contributor: "appliances")) {
-            _ = try Registry(plugins: [SelectionPlugin(), AppliancesPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), AppliancesPlugin()])
         }
     },
     test("unselectable shapes are seen through: the click lands on what's beneath") {
@@ -266,7 +267,7 @@ import TestKit
         }])
     },
     test("the report: the plugin claims the secondary click, and each kind's items are one line") {
-        let report = try Registry(plugins: [SelectionPlugin(), ContextMenusPlugin(), AppliancesPlugin()]).report
+        let report = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), AppliancesPlugin()]).report
         expectEqual(report.split(separator: "\n").filter { $0.hasPrefix("context-menus") || $0.hasPrefix("appliances") }, [
             "context-menus  service ContextMenuState · secondary-click menu",
             "appliances     shape lamp · ShapeContextMenus → lamp · shape fan · ShapeContextMenus → fan",

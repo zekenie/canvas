@@ -9,7 +9,7 @@ import TestKit
 @MainActor let editorTests = Suite("Editor", [
     test("a place tool that edits: centered, editing, and back to the default tool") {
         let h = try EditorHarness(plugins: [CardsPlugin()])
-        expect(h.key("c"))
+        h.editor.setTool(ToolID(placing: Card.kind))
         expectEqual(h.editor.currentToolID, ToolID(placing: Card.kind))
         expectEqual(h.editor.cursor, .crosshair)
         h.press(at: CGPoint(x: 100, y: 100))
@@ -20,7 +20,7 @@ import TestKit
     },
     test("a place tool that translates keeps dragging the new shape after switching to the default tool") {
         let h = try EditorHarness(plugins: [discTools()])
-        h.key("d")
+        h.editor.setTool(ToolID(placing: Disc.kind))
         h.press(at: CGPoint(x: 100, y: 100))
         expectEqual(h.editor.currentToolID, .hand)
         h.drag(to: CGPoint(x: 130, y: 110))
@@ -31,13 +31,13 @@ import TestKit
     test("services hear of a placed shape once the default tool is back, before it's edited or starts following the pointer") {
         let log = ServiceLog()
         let h = try EditorHarness(plugins: [CardsPlugin(), discTools(), Contributor(id: "log") { r in r.service { _ in LoggingService(log: log) } }])
-        h.key("c")
+        h.editor.setTool(ToolID(placing: Card.kind))
         log.events = []
         h.press(at: CGPoint(x: 100, y: 100)); h.release()
         let card = try require(h.editor.document.shapes.first?.id)
         expectEqual(log.events, ["document", "tool card → hand", "placed \(card) in hand, editing nil, session none"])
         expectEqual(h.editor.editingShapeID, card)
-        h.key("d")
+        h.editor.setTool(ToolID(placing: Disc.kind))
         log.events = []
         h.press(at: CGPoint(x: 300, y: 300))
         let disc = try require(h.editor.document.shapes.last?.id)
@@ -53,31 +53,25 @@ import TestKit
         h.editor.transact { $0.delete([box]) }
         expectEqual(log.events, ["document", "document"])
     },
-    test("tool switches made on the canvas are observable, so the toolbar needs no callback") {
+    test("tool switches are observable, so the toolbar follows ones made on the canvas with no callback") {
         let h = try EditorHarness(plugins: [CardsPlugin()])
         let changed = Flag()
         withObservationTracking { _ = h.editor.currentToolID } onChange: { changed.set() }
-        h.key("c")
+        h.editor.setTool(ToolID(placing: Card.kind))
         expect(changed.isSet)
     },
     test("Escape: the session's, else the tool's own, else back to the default tool") {
         let log = ServiceLog()
         let h = try EditorHarness(plugins: [CardsPlugin(), Contributor(id: "escapes") {
-            $0.tool(ToolDescriptor(id: "keeper", label: "Keeper", systemImage: "circle", shortcut: "k")) { _ in EscapeKeeper(log: log) }
+            $0.tool(ToolDescriptor(id: "keeper", label: "Keeper", systemImage: "circle")) { _ in EscapeKeeper(log: log) }
         }])
-        h.key("c"); h.escape()
+        h.editor.setTool(ToolID(placing: Card.kind)); h.escape()
         expectEqual(h.editor.currentToolID, .hand)
-        h.key("k"); h.escape()
+        h.editor.setTool("keeper"); h.escape()
         expectEqual(h.editor.currentToolID, "keeper", "the tool handled it")
         expectEqual(log.events, ["keeper cancelled"])
         h.escape()
         expectEqual(h.editor.currentToolID, "keeper")
-    },
-    test("shortcuts are case-insensitive; other keys fall through") {
-        let h = try EditorHarness(plugins: [CardsPlugin()])
-        expect(h.key("C")); expectEqual(h.editor.currentToolID, ToolID(placing: Card.kind))
-        expect(h.key("h")); expectEqual(h.editor.currentToolID, .hand)
-        expect(!h.key("q")); expect(!h.key("ch"))
     },
     test("an anchored shape paints just above its anchor, or on top without one") {
         let h = try EditorHarness(plugins: [FixturesPlugin()])
@@ -154,7 +148,7 @@ import TestKit
         let h = try EditorHarness(plugins: [CardsPlugin()])
         let host = DisplayCounter()
         h.editor.delegate = host
-        h.key("c")
+        h.editor.setTool(ToolID(placing: Card.kind))
         let afterSwitch = host.redraws
         expect(afterSwitch >= 1)
         h.escape()
@@ -170,14 +164,14 @@ import TestKit
     test("a kind can have two place tools, each with its own id") {
         let h = try EditorHarness(plugins: [Contributor(id: "discs") { r in
             r.shape(DiscDefinitionForTests()) { disc in
-                disc.tool(label: "Disc", systemImage: "circle", shortcut: "d", placing: disc.placement(size: CGSize(width: 40, height: 40)) { Disc(.zero) })
-                disc.tool("small-disc", label: "Small disc", systemImage: "circle.fill", shortcut: "s",
+                disc.tool(label: "Disc", systemImage: "circle", placing: disc.placement(size: CGSize(width: 40, height: 40)) { Disc(.zero) })
+                disc.tool("small-disc", label: "Small disc", systemImage: "circle.fill",
                           placing: disc.placement(size: CGSize(width: 10, height: 10)) { Disc(.zero) })
             }
         }])
         expectEqual(h.editor.registry.tools.map(\.id), [.hand, ToolID(placing: Disc.kind), "small-disc"])
-        h.key("s"); h.press(at: CGPoint(x: 100, y: 100)); h.release()
-        h.key("d"); h.press(at: CGPoint(x: 300, y: 300)); h.release()
+        h.editor.setTool("small-disc"); h.press(at: CGPoint(x: 100, y: 100)); h.release()
+        h.editor.setTool(ToolID(placing: Disc.kind)); h.press(at: CGPoint(x: 300, y: 300)); h.release()
         expectEqual(h.editor.document.shapes.map(\.box), [CGRect(x: 95, y: 95, width: 10, height: 10), CGRect(x: 280, y: 280, width: 40, height: 40)])
     },
 ])

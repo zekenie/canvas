@@ -1,6 +1,7 @@
 import Canvas
 import CanvasTesting
 import DetailPanel
+import Keyboard
 import SwiftUI
 import TestKit
 
@@ -36,10 +37,10 @@ extension LookalikeStyleTab: DetailTab { static var title: String { "Style" } }
     },
     test("the opt-in needs its horizontal installed, and the panel") {
         expectThrows(RegistryError.ownerNotInstalled(point: "Remarks", owner: "remarks", contributor: "gadgets")) {
-            _ = try Registry(plugins: [GadgetsPlugin(), DetailPanelPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), GadgetsPlugin(), DetailPanelPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeDetails", owner: .detailPanel, contributor: "gadgets")) {
-            _ = try Registry(plugins: [GadgetsPlugin(), RemarksPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), GadgetsPlugin(), RemarksPlugin()])
         }
     },
     test("within a tab: the kind's sections, then a bridge's, then every-box ones, each in plugin order") {
@@ -138,7 +139,7 @@ extension LookalikeStyleTab: DetailTab { static var title: String { "Style" } }
             }
         }])
         expectEqual(registry.report, """
-        core          tool hand [h]
+        core          tool hand
         fixtures      shape box · shape disc · shape tag
         detail-panel  service DetailPanelState · ShapeDetails
         p             ShapeDetails → box

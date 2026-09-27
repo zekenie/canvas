@@ -214,8 +214,9 @@ public final class CanvasEditor {
 
     // MARK: Commands
 
-    /// Escape: cancels a session that can be cancelled (and does nothing during any other);
-    /// otherwise the tool's own Escape; otherwise leaves a tool that isn't the default one.
+    /// What Escape does (the plugin that keeps the keys calls it): cancels a session that can be
+    /// cancelled (and does nothing during any other); otherwise the tool's own Escape; otherwise
+    /// leaves a tool that isn't the default one.
     public func cancel() {
         if let running = session {
             if running.cancel(in: self), session === running { session = nil }
@@ -225,8 +226,9 @@ public final class CanvasEditor {
         setTool(registry.defaultTool)
     }
 
-    /// Runs the command a plugin claimed (Delete, Return, ⌘A: the canvas view forwards them; Back,
-    /// the board's window), if it can run now. Returns false if no plugin claims it, or it can't.
+    /// Runs the command a plugin claimed, if it can run now: from a menu item (the canvas view
+    /// forwards Edit › Delete and Edit › Select All, the board's window Go › Back), a key, or any
+    /// plugin. Returns false if no plugin claims it, or it can't.
     @discardableResult
     public func perform(_ command: CanvasCommand) -> Bool {
         guard let registration = registry.command(command), registration.isEnabled(self) else { return false }

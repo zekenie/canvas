@@ -55,11 +55,21 @@ public struct PluginRegistrar {
         contribute(outlines, to: CorePoints.OutlineSources.self)
     }
 
-    /// What a command does (`editor.perform`), and whether it can now (`editor.canPerform`, which
-    /// a menu asks to enable its item): by default, always. At most one plugin may claim each.
+    /// What a command does (`editor.perform`): what a menu item runs (Edit › Delete, Go › Back), and
+    /// what any key or plugin may run by name; and whether it can now (`editor.canPerform`, which a
+    /// menu asks to enable its item): by default, always. At most one plugin may claim each.
     public mutating func command(_ command: CanvasCommand, isEnabled: @escaping @MainActor (CanvasEditor) -> Bool = { _ in true },
                                  _ run: @escaping @MainActor (CanvasEditor) -> Void) {
         contribute(CommandRegistration(command: command, isEnabled: isEnabled, run: run), to: CorePoints.Commands.self)
+    }
+
+    /// What a key pressed on the canvas does: return true if it did something with it (or keeps
+    /// it); false, and it goes on to AppKit's key bindings, as any view's key would. At most one
+    /// plugin may claim it (Keyboard, in the shipped app, whose shortcuts say what every key does);
+    /// otherwise no key does anything on the canvas. Keys typed where something else has the
+    /// keyboard (a note being edited, a panel's field) never come here.
+    public mutating func keyStrokes(_ handle: @escaping @MainActor (CanvasEditor, KeyStroke) -> Bool) {
+        contribute(handle, to: CorePoints.KeyStrokes.self)
     }
 
     /// The tool the editor starts in, and returns to on Escape and after placing a shape (a
@@ -102,9 +112,9 @@ public struct ShapeRegistrar<Definition: ShapeDefinition> {
 
     /// A toolbar tool that places this shape where the canvas is pressed. Its id is the kind's,
     /// unless you give one (a kind with two place tools needs to).
-    public mutating func tool(_ id: ToolID? = nil, label: String, systemImage: String, shortcut: Character? = nil, placing placement: Placement) {
+    public mutating func tool(_ id: ToolID? = nil, label: String, systemImage: String, placing placement: Placement) {
         precondition(placement.kind == kind, "\(kind)'s tool must place \(kind), not \(placement.kind)")
-        let descriptor = ToolDescriptor(id: id ?? ToolID(placing: kind), label: label, systemImage: systemImage, shortcut: shortcut)
+        let descriptor = ToolDescriptor(id: id ?? ToolID(placing: kind), label: label, systemImage: systemImage)
         contributions.append(RawContribution(ToolRegistration(descriptor: descriptor) { _ in PlaceShapeTool(placement) },
                                              to: CorePoints.Tools.self, for: .any, from: pluginID))
     }
@@ -126,18 +136,17 @@ extension ShapeRegistrar where Definition: Editable {
     }
 }
 
+/// A toolbar tool. Its key, if it has one, is a keyboard shortcut, which the plugin that claims key
+/// strokes keeps (Keyboard, in the shipped app).
 public struct ToolDescriptor: Identifiable, Sendable {
     public var id: ToolID
     public var label: String
     public var systemImage: String
-    /// An unmodified key, handled by the canvas (typing into a note never switches tools).
-    public var shortcut: Character?
 
-    public init(id: ToolID, label: String, systemImage: String, shortcut: Character? = nil) {
+    public init(id: ToolID, label: String, systemImage: String) {
         self.id = id
         self.label = label
         self.systemImage = systemImage
-        self.shortcut = shortcut
     }
 }
 

@@ -1,6 +1,7 @@
 import Canvas
 import CanvasTesting
 import DetailPanel
+import Keyboard
 import SwiftUI
 import TestKit
 
@@ -49,7 +50,7 @@ import TestKit
         expectEqual(state.selectionSummary(of: ids.reversed().prefix(2).compactMap { editor.document[$0] }).subtitle, "tag, Gadget")
     },
     test("each editor has its own state, and none without the panel's plugin") {
-        let registry = try Registry(plugins: [FixturesPlugin(), GadgetsPlugin(), RemarksPlugin(), DetailPanelPlugin()])
+        let registry = try Registry(plugins: [KeyboardPlugin(), FixturesPlugin(), GadgetsPlugin(), RemarksPlugin(), DetailPanelPlugin()])
         let one = CanvasEditor(registry: registry, scheduler: ManualScheduler())
         let two = CanvasEditor(registry: registry, scheduler: ManualScheduler())
         let id = ShapeID()

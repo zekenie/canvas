@@ -32,9 +32,15 @@ extension NSWindow {
     }
 
     /// A key typed: `sendEvent` routes it to the first responder, as AppKit does.
-    public func press(_ characters: String, code: UInt16 = 0) {
-        sendEvent(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 1, windowNumber: windowNumber, context: nil,
-                                   characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code)!)
+    public func press(_ characters: String, code: UInt16 = 0, modifiers: NSEvent.ModifierFlags = []) {
+        sendEvent(keyEvent(characters, code: code, modifiers: modifiers))
+    }
+
+    /// A key-down event for this window. `ignoringModifiers` is what the key types without them, when
+    /// that differs (⌃H types "\u{8}", ignoring ⌃ "h").
+    public func keyEvent(_ characters: String, ignoringModifiers: String? = nil, code: UInt16 = 0, modifiers: NSEvent.ModifierFlags = []) -> NSEvent {
+        NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 1, windowNumber: windowNumber, context: nil,
+                         characters: characters, charactersIgnoringModifiers: ignoringModifiers ?? characters, isARepeat: false, keyCode: code)!
     }
 
     public func type(_ text: String) {

@@ -11,9 +11,7 @@ enum CorePoints {
     enum Tools: KeyedExtensionPoint {
         typealias Contribution = ToolRegistration
         static var owner: PluginID { .core }
-        static func uniqueKeys(of c: ToolRegistration, for _: ShapeTarget) -> [AnyHashable] {
-            [ToolKey.id(c.descriptor.id)] + (c.descriptor.shortcut.map { [ToolKey.shortcut(Character($0.lowercased()))] } ?? [])
-        }
+        static func uniqueKeys(of c: ToolRegistration, for _: ShapeTarget) -> [AnyHashable] { [ToolKey(id: c.descriptor.id)] }
     }
 
     enum Services: KeyedExtensionPoint {
@@ -54,6 +52,14 @@ enum CorePoints {
         static var owner: PluginID { .core }
         static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["the secondary-click menu"] }
     }
+
+    /// What a key pressed on the canvas does. One plugin may claim it; otherwise no key does
+    /// anything there.
+    enum KeyStrokes: KeyedExtensionPoint {
+        typealias Contribution = @MainActor (CanvasEditor, KeyStroke) -> Bool
+        static var owner: PluginID { .core }
+        static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["key strokes"] }
+    }
 }
 
 extension CorePoints.DefaultTool: KeyedExtensionPoint {
@@ -69,14 +75,9 @@ extension CorePoints.DefaultTool: KeyedExtensionPoint {
     }
 }
 
-enum ToolKey: Hashable, CustomStringConvertible {
-    case id(ToolID), shortcut(Character)
-    var description: String {
-        switch self {
-        case .id(let id): "tool \(id)"
-        case .shortcut(let key): "shortcut \(key)"
-        }
-    }
+struct ToolKey: Hashable, CustomStringConvertible {
+    let id: ToolID
+    var description: String { "tool \(id)" }
 }
 
 struct ShapeRegistration {
@@ -114,6 +115,6 @@ struct ServiceRegistration {
 struct CorePlugin: CanvasPlugin {
     var id: PluginID { .core }
     func register(into registrar: inout PluginRegistrar) {
-        registrar.tool(ToolDescriptor(id: .hand, label: "Hand", systemImage: "hand.raised", shortcut: "h")) { _ in HandTool() }
+        registrar.tool(ToolDescriptor(id: .hand, label: "Hand", systemImage: "hand.raised")) { _ in HandTool() }
     }
 }

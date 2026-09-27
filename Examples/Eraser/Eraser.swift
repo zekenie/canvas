@@ -1,5 +1,6 @@
 import Canvas
 import CoreGraphics
+import Keyboard
 
 extension ToolID {
     public static let eraser: ToolID = "eraser"
@@ -13,7 +14,7 @@ public struct EraserPlugin: CanvasPlugin {
     public var id: PluginID { "eraser" }
 
     public func register(into registrar: inout PluginRegistrar) {
-        registrar.tool(ToolDescriptor(id: .eraser, label: "Eraser", systemImage: "eraser", shortcut: "e")) { _ in EraserTool() }
+        registrar.tool(ToolDescriptor(id: .eraser, label: "Eraser", systemImage: "eraser"), shortcut: "e") { _ in EraserTool() }
     }
 }
 

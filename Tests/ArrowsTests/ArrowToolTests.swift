@@ -3,6 +3,7 @@ import Arrows
 import CanvasTesting
 import CoreGraphics
 import Geometry
+import Keyboard
 import Selection
 import TableOfContents
 import TestKit
@@ -19,7 +20,7 @@ import TestKit
         expectEqual(board.h.editor.hintedShapeID, nil)
     },
     test("without the selection installed, drawing an arrow still works and returns to the default tool") {
-        let h = try EditorHarness(plugins: [FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
         h.add(Box(CGRect(x: 80, y: 80, width: 200, height: 200)))
         h.key("a")
         h.press(at: CGPoint(x: 180, y: 180))

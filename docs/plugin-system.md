@@ -2,7 +2,7 @@
 
 Everything on the canvas comes from a plugin: sticky notes, ellipses, arrows, task cards,
 validation, checklists, the detail panel and the table of contents beside the canvas, selecting
-itself, even the examples.
+itself, what each key does, even the examples.
 The core (`Sources/Canvas`) knows how to hold shapes, run tools, draw, and wire plugins together,
 and nothing about any particular shape or concern. Its one built-in tool is tldraw's Hand, which
 pans (a flung release slides on). Select, which selects (a click, ⇧-click, or a marquee dragged
@@ -22,6 +22,7 @@ maps one onto the other.
 - [A shape without a frame](#a-shape-without-a-frame)
 - [A horizontal plugin](#a-horizontal-plugin)
 - [Selection](#selection)
+- [Keyboard shortcuts](#keyboard-shortcuts)
 - [The detail panel](#the-detail-panel)
 - [Context menus](#context-menus)
 - [The table of contents](#the-table-of-contents)
@@ -53,7 +54,7 @@ Two more things hold them together:
 ## Your first plugin
 
 [Rectangles](../Examples/Rectangles/Rectangles.swift) is the smallest plugin you can see on the
-canvas: a kind, how it draws, and a tool (R) that places it. These are all the steps it took, from
+canvas: a kind, how it draws, and a tool that places it, with its key (R). These are all the steps it took, from
 an empty directory to a tool in the app's toolbar. A plugin of your own takes the same ones.
 
 **1. Write the module.** Every plugin is a Swift module with a directory of its own:
@@ -63,6 +64,7 @@ an empty directory to a tool in the app's toolbar. A plugin of your own takes th
 ```swift
 import AppKit
 import Canvas
+import Keyboard
 
 public struct Rectangle: BoxShapeProps {
     public static let kind: ShapeKind = "rectangle"
@@ -93,14 +95,17 @@ public struct RectanglesPlugin: CanvasPlugin {
 
 `Rectangle` is the kind: its data, named once. `RectangleDefinition` says how it looks, and a kind
 with a frame needs to say nothing else. `RectanglesPlugin` registers both, with a tool that puts a
-160 × 100 rectangle where the canvas is pressed. [A vertical plugin](#a-vertical-plugin) goes
-through it part by part.
+160 × 100 rectangle where the canvas is pressed, and R, the key that switches to it: `shortcut:` is
+the Keyboard horizontal's, which every key is registered with ([Keyboard
+shortcuts](#keyboard-shortcuts)). [A vertical plugin](#a-vertical-plugin) goes through it part by
+part.
 
 **2. Declare it in `Package.swift`**, on one line, with its layer. Rectangles is a vertical (a
-feature: a kind and its tool), and the only module of this project it imports is the core:
+feature: a kind and its tool), and the modules of this project it imports are the core and
+Keyboard, for its key:
 
 ```swift
-.target(name: "Rectangles", dependencies: ["Canvas"], path: "Examples/Rectangles"), // layer: vertical
+.target(name: "Rectangles", dependencies: ["Canvas", "Keyboard"], path: "Examples/Rectangles"), // layer: vertical
 ```
 
 `path:` is only for a module outside `Sources`. The dependencies must be exactly the modules the
@@ -121,7 +126,7 @@ everything it checks.
 `Package.swift`:
 
 ```swift
-.executableTarget(name: "RectanglesTests", dependencies: ["Canvas", "CanvasTesting", "Rectangles", "TestKit"], path: "Tests/RectanglesTests"), // layer: test
+.executableTarget(name: "RectanglesTests", dependencies: ["Canvas", "CanvasTesting", "Keyboard", "Rectangles", "TestKit"], path: "Tests/RectanglesTests"), // layer: test
 ```
 
 Its `main.swift` runs its suites:
@@ -138,7 +143,7 @@ and the tests drive a headless editor as a user would
 ```swift
 @MainActor let rectanglesTests = Suite("Rectangles", [
     test("R and a press place a 160 × 100 rectangle that follows the pointer") {
-        let h = try EditorHarness(plugins: [RectanglesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), RectanglesPlugin()])
         expect(h.key("r"))
         h.press(at: CGPoint(x: 300, y: 200))
         h.drag(to: CGPoint(x: 310, y: 205))
@@ -152,9 +157,9 @@ and the tests drive a headless editor as a user would
 ```
 
 A test may use only its module, what that module depends on, and the test kits (`CanvasTesting`,
-`TestKit`). So this editor has no Selection, and its default tool, which placing returns to, is the
-Hand. A plugin that depends on Selection installs `SelectionPlugin()` first in its tests, as the app
-does. Run them with:
+`TestKit`). So this editor has Keyboard, which R needs, and no Selection: its default tool, which
+placing returns to, is the Hand. A plugin that depends on Selection installs `KeyboardPlugin()` and
+`SelectionPlugin()` first in its tests, as the app does. Run them with:
 
 ```
 TEST_FILTER=Rectangles ./test.sh
@@ -172,15 +177,15 @@ plugins](#testing-plugins) has the rest of the kit.
   overlays draw in.
 - [`ShippedTests.swift`](../Tests/CompositionTests/ShippedTests.swift) pins the toolbar and
   [the registry report](#the-registry): add the new tool, `"Rectangle (R)"`, and the plugin's line,
-  `rectangles          shape rectangle · tool rectangle [r]`.
+  `rectangles          shape rectangle · tool rectangle · shortcut R → tool rectangle`.
 
 Then `./build.sh && open build/InfiniteCanvas.app`, and press R.
 
 A plugin list that doesn't register stops the app at launch, and CompositionTests fails before
-that. The error says who clashed over what; the usual one is a shortcut some other tool has:
+that. The error says who clashed over what; the usual one is a key some other plugin has:
 
 ```
-rectangles and stars both claim shortcut r in Tools
+rectangles and stars both claim shortcut R in KeyboardShortcuts
 ```
 
 [The registry](#the-registry) lists every error.
@@ -197,6 +202,8 @@ Once one plugin works, the question is which piece the next feature needs.
 | Hit or outline a shape more exactly than its frame | Override `geometry`, `hitTest` or `indicatorPath` | [Ellipses](../Sources/Ellipses/Ellipses.swift) |
 | Edit a shape in place, as text | `Editable`, and an `editingPlacement` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
 | Add a tool that makes no shape | `registrar.tool`, a `Tool` and a `Session` | [Eraser](#tools-and-sessions) |
+| Give a tool its key | `shortcut:` on the call that registers the tool (Keyboard's) | [Rectangles](#your-first-plugin) |
+| Make a key do something, or give a menu's command its key | `registrar.shortcut(chord, "Title") { ... }`, `registrar.command(_:shortcuts:)` | [Keyboard shortcuts](#keyboard-shortcuts) |
 | Give a shape handles to drag | Selection's `HandleProviding` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
 | Edit a kind's properties beside the canvas | `x.details { DetailSection(...) }` | [TaskCards](#the-full-showcase-taskcards) |
 | Add items to a kind's right-click menu | `x.contextMenu { MenuItem(...) }` | [TaskCards](#contributing) |
@@ -239,7 +246,8 @@ imports DetailPanel and ContextMenus.
 Selecting is a horizontal too, one that every kind is in unless it opts out
 (`backdrop.unselectable()`). [Selection](#selection) owns what's selected and the way back
 through it, the Select tool, and Delete, Return, ⌘A and Back; the detail panel builds on it to
-show the selected shape.
+show the selected shape. So are the keys: [Keyboard](#keyboard-shortcuts) holds every shortcut,
+and a plugin whose tool or command has a key registers it there.
 
 Opting in goes in one of two directions:
 
@@ -277,7 +285,7 @@ Each target is one line, with its layer:
 |---|---|---|
 | foundation | foundation | Geometry, Canvas (the core) |
 | ui | foundation | CanvasUI (the AppKit view, the SwiftUI toolbar, and `CanvasFocus`) |
-| horizontal | foundation, horizontal | Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Checklists |
+| horizontal | foundation, horizontal | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Checklists |
 | vertical | foundation, horizontal | Arrows, StickyNotes, Ellipses, TaskCards, Rectangles, Polylines, Eraser, Reordering |
 | bridge | foundation, horizontal, vertical | EllipseTitles, ValidationDetails |
 | composition | foundation, horizontal, vertical, bridge | Composition (the shipped plugin list) |
@@ -360,7 +368,7 @@ What a real vertical adds on top ([StickyNotes](../Sources/StickyNotes/StickyNot
 ```swift
 registrar.shape(StickyNoteDefinition()) { note in
     let place = note.editingPlacement(size: NoteStyle.size) { StickyNote() }
-    note.tool(label: "Note", systemImage: "note.text", shortcut: "n", placing: place)
+    note.tool(label: "Note", systemImage: "note.text", shortcut: "n", placing: place)   // and N, with Keyboard
     note.createOnDoubleClick(place)          // opts into Selection: double-clicking empty canvas places a note
     note.validate { shape, _ in              // opts into the Validation horizontal
         shape.props.isEmpty ? [.warning("This note is empty.")] : []    // no text and no checklist
@@ -382,6 +390,7 @@ switches after.
 ```swift
 import Canvas
 import CoreGraphics
+import Keyboard
 
 extension ToolID {
     public static let eraser: ToolID = "eraser"
@@ -392,7 +401,7 @@ public struct EraserPlugin: CanvasPlugin {
     public var id: PluginID { "eraser" }
 
     public func register(into registrar: inout PluginRegistrar) {
-        registrar.tool(ToolDescriptor(id: .eraser, label: "Eraser", systemImage: "eraser", shortcut: "e")) { _ in EraserTool() }
+        registrar.tool(ToolDescriptor(id: .eraser, label: "Eraser", systemImage: "eraser"), shortcut: "e") { _ in EraserTool() }
     }
 }
 
@@ -448,10 +457,10 @@ The details:
 - **The default tool** is where the editor starts, and where Escape and placing a shape return. One
   plugin may claim it (`registrar.defaultTool(.select)`, as Selection does); without a claim it's
   the Hand. Claiming a tool nobody registers is `RegistryError.invalid`.
-- **Escape** goes to the running session (`cancel`), else to the tool (`cancel`), else back to the
-  default tool. Escape while shapes move with the pointer (`TranslatingSession`) puts every one back
-  where it was when the drag began (tldraw's behavior): a lone box, a selection, an arrow (its
-  precise ends included) or a shape just placed.
+- **Escape** (Keyboard's key for `editor.cancel()`) goes to the running session (`cancel`), else to
+  the tool (`cancel`), else back to the default tool. Escape while shapes move with the pointer
+  (`TranslatingSession`) puts every one back where it was when the drag began (tldraw's behavior):
+  a lone box, a selection, an arrow (its precise ends included) or a shape just placed.
 - **Input**: tools see `Pointer` values, never `NSEvent`s. A `Pointer` has `view` (view points)
   and `world` (world units) locations, `modifiers` and `clickCount`. `editor.pointerSpeed` is
   smoothed like tldraw's. `editor.effectiveModifiers` counts a key released in the last 150 ms as
@@ -459,19 +468,21 @@ The details:
 - **Time**: timers go through `editor.scheduler`. Tests swap in a `ManualScheduler` and run time by
   hand, which is how the arrows' 600/320/150 ms timers are pinned to the millisecond, and how the
   hand tool's slide plays frame by frame.
-- **Shortcuts** are single unmodified keys, handled by the canvas (so typing in a note never
-  switches tools). A shortcut or tool id used twice is a registry error, including the core's `H`.
+- **Keys** are [Keyboard's](#keyboard-shortcuts): a tool's is `shortcut:` on the call that registers
+  it (the eraser's E, above). A tool id used twice is a registry error, and so is a key.
 - **The toolbar** is the default tool, then the rest in plugin-list order, the core's Hand first. It
   follows `editor.currentToolID`, which is observable.
 - **Redrawing**: the core redraws whenever the document, camera, tool or session changes. A plugin
   whose drawn state changes some other way (its own state, a timer) calls `editor.setNeedsDisplay()`,
   as Selection does when the selection or hover changes; a tool whose cursor follows such state
   calls `editor.refreshCursor()`.
-- **Commands** (`CanvasCommand`: `.delete`, `.insertNewline`, `.selectAll`) are the standard
-  AppKit actions the canvas view forwards with `editor.perform`; `.goBack` (Go › Back, ⌘[) comes
-  from the board's window, whatever has the keyboard. A plugin claims each with
-  `registrar.command`, and may say when it can run (`isEnabled:`), which `editor.canPerform` asks
-  for a menu item to enable it; unclaimed, or unable to run, `perform` returns false.
+- **Commands** (`CanvasCommand`: `.delete`, `.selectAll`, `.goBack`) are what menu items run: the
+  canvas view forwards Edit › Delete and Edit › Select All (AppKit's standard actions) with
+  `editor.perform`, the board's window Go › Back (⌘[), whatever has the keyboard, and a key or any
+  plugin may run one. A plugin claims each with `registrar.command`, or with Keyboard's
+  `registrar.command(_:shortcuts:)`, which gives it its keys too, and may say when it can run
+  (`isEnabled:`), which `editor.canPerform` asks for a menu item to enable it, and a key to take
+  the stroke; unclaimed, or unable to run, `perform` returns false.
 - **The secondary click** (a right-click, or a Control-click) opens whatever menu the one plugin
   that claims it makes (`registrar.menuForSecondaryClick`), ContextMenus in the shipped app;
   unclaimed, or nil, the click does nothing. AppKit offers a Control-click to the menu first; with
@@ -695,7 +706,7 @@ any plugin can use.
 |---|---|
 | `registrar.defaultTool(.select)` | The editor starts in Select, Select leads the toolbar, and Escape and placing a shape come back to it. |
 | `registrar.outlines { ... }` | Each selected shape's outline, the box around several, and the hover's faint outline. The core strokes every plugin's outlines and the hint in one pass, over the faint ones. |
-| `registrar.command(.delete)`, `.insertNewline`, `.selectAll`, `.goBack` | Delete deletes the selection, Return edits the only selected shape, ⌘A selects everything, and Back (enabled while there's a step back) goes back to the previous selection. |
+| `registrar.command(.delete)`, `.selectAll` and `.goBack` (with their keys, through Keyboard) | Delete, and Edit › Delete, deletes the selection; ⌘A, and Edit › Select All, selects everything; ⌘[, and Go › Back (enabled while there's a step back), goes back to the previous selection. Return (a shortcut of its own) edits the only selected shape. |
 | `Tool.cancel` | Escape in Select, with nothing under way, deselects. |
 | `EditorService.documentDidChange`, `didPlace` | Drops shapes that are gone (or no longer selectable) from the selection and the hover; selects a shape just placed. |
 | `Session.draw(in:)` | The marquee draws itself. |
@@ -787,6 +798,89 @@ pointer, then empty space inside a multi-selection's box, then the canvas.
 - Escape while a shape is pressed, before the drag threshold, ends the press; mid-marquee it puts
   back the selection from before. A press on empty canvas ignores Escape until the release, as in
   tldraw.
+
+## Keyboard shortcuts
+
+What each key does on the canvas is a horizontal too ([`Sources/Keyboard`](../Sources/Keyboard)).
+Every key is registered with it, one shortcut per chord, by the plugin that gives the key its
+meaning: a tool's letter, Delete, Return, Escape, ⌘A. The core has never heard of a shortcut: it
+hands each key pressed on the canvas to the one plugin that claims key strokes, and Keyboard does.
+
+```swift
+rectangle.tool(label: "Rectangle", systemImage: "rectangle", shortcut: "r", placing: place)            // Rectangles
+registrar.tool(ToolDescriptor(id: .select, label: "Select", systemImage: "cursorarrow"), shortcut: "v") { _ in SelectTool() }
+registrar.command(.delete, shortcuts: [.delete, .deleteForward]) { $0.deleteSelection() }                // Selection
+registrar.shortcut(.return, "Edit Selection") { $0.editSelection() }
+registrar.shortcut("h", forTool: .hand)                                                                 // Keyboard itself
+registrar.shortcut(.escape, "Cancel") { $0.cancel() }
+```
+
+| Sugar | For |
+|---|---|
+| `x.tool(label:systemImage:shortcut:placing:)` | A place tool, and the key that switches to it. |
+| `registrar.tool(descriptor, shortcut:) { ... }` | Any tool, and its key. |
+| `registrar.shortcut(chord, forTool:)` | A key for a tool registered elsewhere: Keyboard gives the core's Hand its H this way. |
+| `registrar.command(command, shortcuts: [...]) { ... }` | A command (what a menu item runs) and the keys that run it, so the menu and the keys do one thing. |
+| `registrar.shortcut(chord, "Title", when:, repeats:) { editor in ... }` | A key that does something of its own. |
+
+What the shipped app's keys do:
+
+| Key | Does | Registered by |
+|---|---|---|
+| V, H, A, N, O, T, R, L, E | Switches to that tool | The tool's plugin; H by Keyboard, for the core's Hand |
+| ⎋ (and ⌘.) | Cancels: the drag under way, else the tool's own Escape, else back to Select (`editor.cancel()`) | Keyboard |
+| ⌫ and ⌦ | Deletes the selection, as Edit › Delete does | Selection |
+| ↩ (and ⌤) | Edits the only selected shape | Selection |
+| ⌘A | Selects everything, as Edit › Select All does | Selection |
+| ⌘[ | Goes back to what was selected before, as Go › Back does (while there's somewhere to go) | Selection |
+
+- **A chord** (`KeyChord`) is a key and the modifiers held with it. A character literal is a key
+  alone (`"v"`), and a letter's case doesn't count; `KeyChord("a", .command)` is ⌘A, and the keys
+  that type no character have names (`.escape`, `.return`, `.enter`, `.delete`, `.deleteForward`,
+  `.tab`, `.space`, the arrows). It describes itself as menus do: `⇧⌘G`, `⌫`.
+- **One shortcut per chord.** Two plugins wanting one key are `RegistryError.conflict`
+  (`keyboard and clash both claim shortcut H in KeyboardShortcuts`), and a key for a tool no plugin
+  registers is `invalid`. A plugin with a key imports Keyboard, so a plugin list with Selection or
+  any shipped tool needs `KeyboardPlugin()` too (`ownerNotInstalled` otherwise).
+- **⇧ counts when a chord asks for it.** A key held with ⇧ answers its ⇧ chord if one is
+  registered, and else, where ⇧ may be only what typed it, the chord without ⇧: with ⇧ alone, since
+  ⇧ there makes a letter a capital or types a character (V is V with caps lock on, and `"?"` is the
+  key that types a question mark), and with ⌘, ⌥ or ⌃ too, for punctuation, a symbol or a digit
+  (⌘? is ⇧⌘/ on a US keyboard, and ⌘. is ⇧⌘; on a French one). For a letter, or a key that types
+  no character, ⇧ counts: ⇧⌘Z isn't ⌘Z, nor ⇧⌘→ ⌘→.
+- **`when`** lets a key pass: it goes on to the next chord it answers, or out of the canvas. **A
+  held key** does its thing once; its repeats are the shortcut's all the same (so AppKit doesn't
+  beep), and run it again only with `repeats: true`, for a key meant to be held.
+- **Commands and menus.** A command (`CanvasCommand`) is what a menu item runs: the canvas forwards
+  Edit › Delete and Edit › Select All with `editor.perform`. `registrar.command(.selectAll,
+  shortcuts: [KeyChord("a", .command)]) { ... }` claims the command and gives it its key in one
+  call, so ⌘A and the menu item do one thing. While a command can't run (its `isEnabled:`, which
+  dims its menu item), its keys go on as if there were no shortcut: ⌘[ with nowhere to go back to.
+- **A ⌘ key a menu item also has** is the shortcut's while the canvas has the keyboard. AppKit asks
+  the key window's views for a key equivalent before the menu bar, and the canvas asks the
+  shortcuts (`CanvasView.performKeyEquivalent`), so ⌘A goes through Keyboard like any other key, and
+  a plugin that gives a menu's key a meaning on the canvas gets it there. With a field focused, the
+  canvas passes, and the menu has it: Edit › Select All selects the field's text.
+- **Only on the canvas.** A key reaches the shortcuts while the canvas has the keyboard: typed in a
+  note or a panel field, it's text, and a control in the panel that has the keyboard answers its own
+  keys. What they do is still the same registered thing: Delete in the table of contents' list runs
+  the `.delete` command, as Delete on the canvas and Edit › Delete do, and Escape anywhere in the
+  panel gives the keyboard back to the canvas. The menu bar's other key equivalents (⌘S, ⌘Z, the
+  View menu's zoom) belong to their items and work wherever the keyboard is.
+- **A key no shortcut takes** goes on to AppKit's key bindings, as any view's would. The standard
+  actions they send that have a key of their own come back to the shortcuts as that key:
+  `deleteBackward:` as ⌫, `deleteForward:` as ⌦, `insertNewline:` as ↩ and `cancelOperation:` as ⎋.
+  So ⌃H (an emacs binding for `deleteBackward:`) does what Delete does, and so does a user's own
+  key binding for it, or accessibility's cancel. The canvas answers no other action, which goes on
+  up the responder chain.
+- **Tooltips.** `registry.help(for: tool)` is a tool's label and its key, "Note (N)". The toolbar
+  (CanvasUI) can't see Keyboard, so the app hands it `ShippedPlugins.help(for:in:)`.
+- **The core's part** is one hook, like the secondary click's: at most one plugin claims key strokes
+  (`registrar.keyStrokes { editor, stroke in ... }`, returning whether it took the key). `CanvasView`
+  hands every key it gets to the editor (`editor.keyDown`, host API), as a `KeyStroke`: its
+  characters as the keyboard's layout types them with no modifier but ⇧, the modifiers held, and
+  whether it's a repeat. Without a claim, no key does anything on the canvas. Keyboard gathers each
+  editor's shortcuts by chord once, in a service (`KeyboardState`), since the registry is frozen.
 
 ## The detail panel
 
@@ -1126,18 +1220,18 @@ When each control commits:
 
 ### Focus and hosting
 
-- **Typing in the panel never triggers a tool.** Tool shortcuts live only in the canvas view, so
-  "n" typed into a title is text, and Delete and Return in a panel field never delete or edit the
-  selected shape.
+- **Typing in the panel never triggers a shortcut.** Keyboard answers only keys typed on the
+  canvas, so "n" typed into a title is text, and Delete and Return in a panel field never delete or
+  edit the selected shape.
 - **The keyboard goes back to the canvas** on a click on the canvas; on Escape in the panel, which
   drops any number draft first; and on its own when the panel removes the control that had the
   keyboard (switching tabs, collapsing its section, a `when` hiding it, or a new selection), or is
   hidden with it (View › Hide Inspector, which hides the panel without removing it).
-  Otherwise the keyboard would land on the window, and tool shortcuts would stop. Collapsing an
+  Otherwise the keyboard would land on the window, and shortcuts would stop. Collapsing an
   unrelated section leaves the field focused.
 - **Inside the panel**, Tab moves between text fields (a `DetailTextArea` takes Tab as text), and
   Return commits a number and keeps the field. Checkboxes don't take the keyboard (the macOS default
-  without Full Keyboard Access); a pop-up, segmented control or stepper that has it keeps tool
+  without Full Keyboard Access); a pop-up, segmented control or stepper that has it keeps
   shortcuts from the canvas until Escape.
 - **Zoom** (⌘=, ⌘- and ⌘0) works whatever has the keyboard: the app's menu commands reach the
   window's canvas through `CanvasFocus`, not the responder chain. So does Go › Back (⌘[), which
@@ -1427,8 +1521,8 @@ note.contentsRow { note in
   selection, so the back button in the shape's header (or Go › Back, ⌘[) brings the list back,
   with the view as it was before the zoom, as data-canvas's back button does.
 - **The keyboard.** A click gives the list the keyboard, as a source list does: the arrow keys move
-  through the rows, Delete deletes the selected shapes, and Escape gives the keyboard back to the
-  canvas (`onExit`). So does hiding the panel while the list has the keyboard.
+  through the rows, Delete runs the `.delete` command (deleting the selected shapes, as Delete on
+  the canvas does), and Escape gives the keyboard back to the canvas (`onExit`). So does hiding the panel while the list has the keyboard.
 - **Headless**, `ContentsState` (`editor.tableOfContents`) is all of it: `entries` (the rows, a tree),
   `scope`, `select(_:)`, `showAll()`, and the rows' hover: `hover(_:)` and `endHover(_:)` as the
   pointer moves onto a row and off it, and `isHovered(_:)` for whether a row shows as hovered. Tests
@@ -1590,7 +1684,7 @@ hand tool). It then checks everything and throws on:
 | `duplicatePlugin` | The same plugin id twice. |
 | `ownerNotInstalled` | A contribution to a point whose owner isn't in the list. |
 | `unknownKind` | A contribution for a kind no plugin registers. |
-| `conflict` | Two claims to the same key: a kind, a tool id, a shortcut, a service type, a command, the default tool, the secondary click, or a key in any `KeyedExtensionPoint` (one kind's double-click claim, say). |
+| `conflict` | Two claims to the same key: a kind, a tool id, a service type, a command, the default tool, the secondary click, key strokes, or a key in any `KeyedExtensionPoint` (a keyboard shortcut's chord, one kind's double-click claim). |
 | `invalid` | A point's own `check` refused the list (the default tool must be a registered one). |
 
 Some rules span contributions in a way keys can't express. For those, a point implements `check`,
@@ -1604,6 +1698,8 @@ public protocol ExtensionPoint {
     /// Rules that span contributions: runs once the registry is built, for each point that has
     /// at least one contribution. Throwing refuses the plugin list.
     static func check(_ registry: Registry) throws      // default: checks nothing
+    /// How the registry's report shows a contribution.
+    static func summary(of contribution: Contribution, for target: ShapeTarget) -> String   // default: the point, and its kind
 }
 ```
 
@@ -1611,7 +1707,10 @@ Throw `RegistryError.invalid(point:reason:)`, which reaches the caller as it is,
 which the registry reports as `invalid` for your point. The requirement is untyped, so `throws` and
 `throws(RegistryError)` both implement it. Declare the point's conformance in an extension
 (`public enum ShapeDetails {}`, then `extension ShapeDetails: KeyedExtensionPoint { ... }`), so a
-misspelled `check` fails the build instead of leaving the default in place.
+misspelled `check` fails the build instead of leaving the default in place. The same goes for
+`summary`, which says how [the report](#the-registry) shows a contribution: by default the point's
+name and the kind it's for (`ValidationRules → sticky-note`); Keyboard's shows the key and what it
+does (`shortcut V → tool select`).
 
 It runs once per point that has contributions, in the order of each point's first contribution,
 and may read any point's contributions. `ShapeDetails` uses it to refuse two tab types with one
@@ -1629,21 +1728,22 @@ Once built, it's frozen and handed to the editor. The app's list is `ShippedPlug
 `registry.report` prints who contributes what: the runtime half of the graph, pinned by a test.
 
 ```
-core                tool hand [h]
-selection           service SelectionState · tool select [v] · default tool select · outlines · overlay HandlesOverlay · command delete · command insertNewline · command selectAll · command goBack
-arrows              shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow [a] · overlay BindingHintsOverlay · willDelete
-sticky-notes        shape sticky-note · tool sticky-note [n] · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · ContentsRows → sticky-note
-ellipses            shape ellipse · tool ellipse [o]
-task-cards          shape task-card · tool task-card [t] · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card
+core                tool hand
+keyboard            service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
+selection           service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
+arrows              shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay · willDelete
+sticky-notes        shape sticky-note · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · ContentsRows → sticky-note
+ellipses            shape ellipse · tool ellipse · shortcut O → tool ellipse
+task-cards          shape task-card · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card
 validation          service ValidationEngine · overlay ValidationOverlay
 detail-panel        service DetailPanelState · ShapeDetails
 context-menus       service ContextMenuState · secondary-click menu
 table-of-contents   service ContentsState
 checklists          overlay ChecklistOverlay
 validation-details  DetailStatuses
-rectangles          shape rectangle · tool rectangle [r]
-polylines           shape polyline · tool polyline [l]
-eraser              tool eraser [e]
+rectangles          shape rectangle · tool rectangle · shortcut R → tool rectangle
+polylines           shape polyline · tool polyline · shortcut L → tool polyline
+eraser              tool eraser · shortcut E → tool eraser
 titles              overlay TitleOverlay
 ellipse-titles      ShapeTitles → ellipse
 reordering          ShapeContextMenus
@@ -1661,12 +1761,12 @@ with this toolchain, and there's no XCTest). `./test.sh` builds and runs them al
 (which shows on screen, even from an unshown window) is opt-in: `TEST_UI_MENUS=1 ./test.sh`. There
 are two: Checklists' Items menu, and CompositionTests' check that AppKit gives a Control-click to
 the context menu before `mouseDown`. [Your first plugin](#your-first-plugin) sets up a test target.
-A test that selects and drags as a user does installs Selection first
+A test that selects and drags as a user does installs Keyboard and Selection first
 ([ExamplesTests](../Tests/ExamplesTests/ExamplesTests.swift)):
 
 ```swift
 test("Polylines: the select tool moves a line by its own translation, and Escape puts it back") {
-    let h = try EditorHarness(plugins: [SelectionPlugin(), PolylinesPlugin()])
+    let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), PolylinesPlugin()])
     let points = [CGPoint(x: 100, y: 100), CGPoint(x: 200, y: 100)]
     let id = h.add(Polyline(points: points))
     h.press(at: CGPoint(x: 150, y: 101))
@@ -1681,16 +1781,20 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
 - `EditorHarness` (CanvasTesting) drives a headless editor like a user: `move`, `press`, `drag`
   (optionally at a speed), `release`, `click`, `hold(modifiers)`, `key`, `escape`, `wait(ms)`. One
   clock drives both event timestamps and the `ManualScheduler`, so pointer speed, timers and the
-  hand tool's slide agree.
+  hand tool's slide agree. `key("v")` presses a key on the canvas with what `hold` holds
+  (`key("\u{1b}")` is Escape, and `isRepeat:` a held key), and says whether a shortcut took it;
+  `escape()` runs `editor.cancel()` directly, with or without Keyboard.
 - `FixturesPlugin` and `CardsPlugin` (CanvasTesting) give core and horizontal tests shapes to work
   with (`Box`, `Disc`, `Tag`, and the editable `Card`; `CardsPlugin { card, place in ... }` opts
-  cards into more, like Selection's double-click), so they never depend on a real vertical.
+  cards into more, like Selection's double-click), so they never depend on a real vertical. Their
+  tools have no keys (CanvasTesting can't import Keyboard): a test picks one with `h.editor.setTool`,
+  or registers a key for it (`$0.shortcut("c", forTool: ToolID(placing: Card.kind))`).
   SelectionTests, ArrowsTests, ValidationTests, DetailPanelTests, ChecklistsTests and
   ValidationDetailsTests import no real vertical (only these fixtures, and local test kinds), which
   proves those plugins are shape-agnostic.
-- CanvasTests run the core with no plugin claiming the default tool, so it's the Hand there; a
-  test that presses, drags or selects shapes the way a user does installs `SelectionPlugin()`
-  first, as the app does.
+- CanvasTests run the core with no plugin claiming the default tool, so it's the Hand there, and
+  none claiming key strokes, so no key does anything; a test that presses, drags or selects shapes
+  the way a user does installs `KeyboardPlugin()` and `SelectionPlugin()` first, as the app does.
 - Tests drive the editor's host API, so they `@_spi(Host) import Canvas`.
 - `renderBitmap(editor, size:)`, `pixel(_:at:)` and `changedPixels(_:_:in:)` check what's drawn.
 - `Contributor(id:) { registrar in ... }` is a plugin written inline, and `editor.add(props)`
@@ -1706,7 +1810,7 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   `window.settle()`, a few turns of the loop, where there's nothing to wait for or the point is
   that nothing more happens. Find controls by AppKit class (`view.descendants(NSTextField.self)`)
   and `stringValue` or `placeholderString`, give a field the keyboard with `window.focus(field)`,
-  send keys with `window.type` and `window.press`, and press the canvas with
+  send keys with `window.type` and `window.press` (`modifiers:` for ⌘A), and press the canvas with
   `canvas.mouseDown(with: window.mouse(...))`: `sendEvent` mouse-downs don't reach views in an
   unshown window.
 - **Context menus.** `h.secondaryClick(at:)` (CanvasTesting) right-clicks through the host API and
@@ -1758,7 +1862,7 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
 | `toc: { component, filter, getParentShapeId }` on `defineShape`, `TocRegistry` | `x.contentsRow(when:nestedUnder:) { ContentsLabel(...) }`, sugar from the TableOfContents horizontal ([the table of contents](#the-table-of-contents)). |
 | `DetailsPanel`'s `emptyView` and `multiSelectView` (the TOC, whole or filtered to the selection) | `DetailPanelView`'s overview, which Composition fills with `TableOfContentsView`. |
 | `ToolIdle` / `ToolPointing` click-to-create | `Placement` (follow the pointer, or edit), used by place tools and the double-click claim. |
-| `toolbarItems` with a decorative `kbd` | `ToolDescriptor` with a real, collision-checked shortcut. |
+| `toolbarItems` with a decorative `kbd` | A key registered with the Keyboard horizontal (`shortcut:`), collision-checked, that the canvas answers and the tooltip names. |
 | `install*Lifecycle(editor)` side effects | `registrar.willDelete` inside transactions; `EditorService` for per-editor state. |
 | `module.json` + ESLint DAG + barrel `index.ts` | `Package.swift` with layers + `build.sh audit` + the compiler; `public` is the barrel. |
 | `plugins.config.ts` | `ShippedPlugins.all` in Composition. |
@@ -1793,6 +1897,9 @@ Each of these adds to the design without changing what plugins are written again
   its own plugin.
 - **More of going back**: going forward again (⌘]), and a step keeping what the table of contents
   listed, so Show All survives a trip back.
+- **More of the keyboard**: a window listing every shortcut; menu items that take their key
+  equivalents from Keyboard, so the View menu's zoom keys and Edit › Select All's ⌘A are declared
+  once; and keys the user remaps.
 - **More of the table of contents**: nested shapes (a shape's container as the default
   `nestedUnder`), with each row's disclosure remembered (every nested row starts collapsed today);
   dragging rows to restack their shapes; per-kind zoom targets

@@ -2,6 +2,7 @@ import Canvas
 import CanvasTesting
 import CoreGraphics
 import Foundation
+import Keyboard
 import Selection
 import TestKit
 
@@ -20,7 +21,7 @@ import TestKit
 
 @MainActor let keptAsideTests = Suite("Kept-aside shapes", [
     test("a shape the board keeps aside is never selected: not by a click, the marquee, select all, or code") {
-        let registry = try Registry(plugins: [SelectionPlugin(), FixturesPlugin()])
+        let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
         let (document, box, kept) = try boardWithKeptAsideShape(registry)
         let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
         h.editor.selectAll()

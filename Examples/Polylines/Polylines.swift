@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import Geometry
+import Keyboard
 
 /// A shape without a frame: a freehand line, the points the pointer was dragged through. A box
 /// kind gets three things from its frame that this one has to say itself: where it is
@@ -22,8 +23,8 @@ public struct PolylinesPlugin: CanvasPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         registrar.shape(PolylineDefinition())
         // Named after the kind, as place tools are, so the detail panel calls a line a "Line".
-        let line = ToolDescriptor(id: ToolID(placing: Polyline.kind), label: "Line", systemImage: "scribble", shortcut: "l")
-        registrar.tool(line) { _ in LineTool() }
+        let line = ToolDescriptor(id: ToolID(placing: Polyline.kind), label: "Line", systemImage: "scribble")
+        registrar.tool(line, shortcut: "l") { _ in LineTool() }
     }
 }
 

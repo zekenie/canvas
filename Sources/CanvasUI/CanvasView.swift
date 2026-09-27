@@ -111,28 +111,48 @@ public final class CanvasView: NSView {
 
     // MARK: Keyboard and menu commands
 
+    /// Every key goes to the plugin that claims key strokes: Keyboard, in the shipped app, whose
+    /// shortcuts say what each key does (a tool's letter, Delete, Return, Escape, ⌘A). A key it
+    /// passes on goes to AppKit's key bindings, as any view's would (see the standard actions below).
     public override func keyDown(with event: NSEvent) {
-        // Routes keys to the standard action methods below (Delete, Return, Escape, ...).
+        guard !editor.keyDown(KeyStroke(event)) else { return }
         interpretKeyEvents([event])
     }
 
-    public override func insertText(_ insertString: Any) {
-        guard let text = insertString as? String, editor.handleShortcut(text) else {
-            super.insertText(insertString)
-            return
+    /// A key held with ⌘ comes here before the menu bar has it: AppKit asks the key window's views
+    /// for a key equivalent before the menus. While the canvas has the keyboard, the shortcuts get
+    /// it first, so a ⌘ key a menu item also has (⌘A) does what its shortcut says; with a field
+    /// focused, the canvas passes, and the menu has it (Edit › Select All selects the field's text).
+    public override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.type == .keyDown, event.modifierFlags.contains(.command), window?.firstResponder === self,
+           editor.keyDown(KeyStroke(event)) {
+            return true
         }
+        return super.performKeyEquivalent(with: event)
     }
 
-    // The editor hands these to whichever plugin claims them (the selection, in the shipped app);
-    // unclaimed, they do nothing.
-    public override func deleteBackward(_ sender: Any?) { editor.perform(.delete) }
-    public override func deleteForward(_ sender: Any?) { editor.perform(.delete) }
-    public override func insertNewline(_ sender: Any?) { editor.perform(.insertNewline) }
-    public override func cancelOperation(_ sender: Any?) { editor.cancel() }
-    /// Edit › Select All (⌘A), sent to the first responder when the canvas has the keyboard. Text
-    /// being edited (a note, a panel field) selects its own text instead.
+    // AppKit's key bindings turn a key the shortcuts passed on into a standard action (⌃H is
+    // deleteBackward:, and a user's own bindings may send any of these), and accessibility sends
+    // some too. The ones with a key of their own go back to the shortcuts as that key, so they do
+    // what it does. The canvas answers no other, and those go on up the responder chain.
+    public override func deleteBackward(_ sender: Any?) { standardAction(asKey: "\u{7f}") }
+    public override func deleteForward(_ sender: Any?) { standardAction(asKey: "\u{F728}") }
+    public override func insertNewline(_ sender: Any?) { standardAction(asKey: "\r") }
+    public override func cancelOperation(_ sender: Any?) { standardAction(asKey: "\u{1b}") }
+
+    /// `key` as `NSEvent.charactersIgnoringModifiers` reports it: Delete, Forward Delete, Return,
+    /// Escape.
+    private func standardAction(asKey key: String) {
+        let event = NSApp.currentEvent.flatMap { $0.type == .keyDown ? $0 : nil }
+        _ = editor.keyDown(KeyStroke(key, isRepeat: event?.isARepeat ?? false))
+    }
+
+    // Menu items send these to the first responder, which is the canvas when it has the keyboard;
+    // the editor runs the command a plugin claims (the selection's, in the shipped app), the same
+    // one the keys for it run. Unclaimed, they do nothing.
+    /// Edit › Select All. Text being edited (a note, a panel field) selects its own text instead.
     public override func selectAll(_ sender: Any?) { editor.perform(.selectAll) }
-    /// Edit › Delete, as the Delete key.
+    /// Edit › Delete.
     @objc public func delete(_ sender: Any?) { editor.perform(.delete) }
 
     @objc public func zoomIn(_ sender: Any?) {
@@ -177,5 +197,11 @@ extension Modifiers {
         if flags.contains(.option) { insert(.option) }
         if flags.contains(.command) { insert(.command) }
         if flags.contains(.control) { insert(.control) }
+    }
+}
+
+extension KeyStroke {
+    init(_ event: NSEvent) {
+        self.init(event.charactersIgnoringModifiers ?? "", modifiers: Modifiers(event.modifierFlags), isRepeat: event.isARepeat)
     }
 }

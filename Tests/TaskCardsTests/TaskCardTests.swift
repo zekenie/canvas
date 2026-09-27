@@ -5,6 +5,7 @@ import Checklists
 import ContextMenus
 import DetailPanel
 import Foundation
+import Keyboard
 import Selection
 import TableOfContents
 import TaskCards
@@ -27,10 +28,10 @@ import Validation
         let registry = try Registry(plugins: taskPlugins())
         let tool = try require(registry.tools.first { $0.id == ToolID(placing: TaskCard.kind) })
         expectEqual([tool.label, tool.systemImage], ["Task", "checklist"])
-        expectEqual(registry.tool(forShortcut: "t"), tool.id)
+        expectEqual(registry.shortcut(forTool: tool.id)?.chord, "t")
         expect(!(registry.definition(for: TaskCard.kind) is any Editable))
         expectEqual(registry.report.split(separator: "\n").first { $0.hasPrefix("task-cards") }.map(String.init), """
-        task-cards         shape task-card · tool task-card [t] · ValidationRules → task-card · ShapeDetails → task-card · \
+        task-cards         shape task-card · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · \
         ShapeContextMenus → task-card · ContentsRows → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · \
         ShapeContextMenus → task-card
         """)

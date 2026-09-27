@@ -3,6 +3,7 @@ import AppKit
 import CanvasTesting
 import CoreGraphics
 import Geometry
+import Keyboard
 import Selection
 import TestKit
 
@@ -10,7 +11,7 @@ import TestKit
 /// claims, and an editor without the plugin.
 @MainActor let selectabilityTests = Suite("Selectability", [
     test("a press on an unselectable shape lands on the shape beneath it, and a drag moves that one") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), GhostsPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), GhostsPlugin()])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let ghost = h.add(Ghost(CGRect(x: 50, y: 0, width: 100, height: 100)))
         h.press(at: CGPoint(x: 75, y: 50))
@@ -21,7 +22,7 @@ import TestKit
         expectEqual(h.editor.document.shapes.map(\.id), [box, ghost], "the box stays beneath the ghost")
     },
     test("a press on an unselectable shape with nothing beneath is a press on the canvas: it deselects, and a drag is a marquee") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), GhostsPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), GhostsPlugin()])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 40, height: 40)))
         h.add(Ghost(CGRect(x: 100, y: 0, width: 200, height: 200)))
         h.editor.selection = box
@@ -35,7 +36,7 @@ import TestKit
         expectEqual(h.editor.selection, nil, "a click on it selects nothing")
     },
     test("the marquee, ⌘A, and setting the selection all pass an unselectable shape by; hover ignores it") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), GhostsPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), GhostsPlugin()])
         let ghost = h.add(Ghost(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let box = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
         expect(!h.editor.isSelectable(ghost)); expect(h.editor.isSelectable(box))
@@ -52,7 +53,7 @@ import TestKit
         expectEqual(h.editor.hovered, nil)
     },
     test("an unselectable shape still draws, and the core still hits it (for arrows, the eraser)") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), GhostsPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), GhostsPlugin()])
         let size = CGSize(width: 100, height: 100)
         let empty = renderBitmap(h.editor, size: size)
         let ghost = h.add(Ghost(CGRect(x: 20, y: 20, width: 60, height: 60)))
@@ -60,7 +61,7 @@ import TestKit
         expectEqual(h.editor.shape(at: CGPoint(x: 50, y: 50)), ghost)
     },
     test("selectable(when:) follows the shape: one that stops being selectable leaves the selection with the change") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), LockablesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), LockablesPlugin()])
         let lockable = h.add(Lockable(CGRect(x: 0, y: 0, width: 100, height: 100)))
         h.move(to: CGPoint(x: 50, y: 50))
         h.editor.selection = lockable
@@ -75,7 +76,7 @@ import TestKit
         expectEqual(h.editor.selection, lockable)
     },
     test("a rule for every kind applies where a kind has none of its own") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), LockablesPlugin(), Contributor(id: "frozen") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), LockablesPlugin(), Contributor(id: "frozen") {
             $0.contribute({ _ in false }, to: ShapeSelectability.self)
         }])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
@@ -85,7 +86,7 @@ import TestKit
         expect(!h.editor.isSelectable(box))
     },
     test("a place tool puts an unselectable shape down and drags it; what was selected is let go, as with any placement") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), Contributor(id: "ghosts") { r in
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), Contributor(id: "ghosts") { r in
             r.shape(GhostDefinition()) { ghost in
                 ghost.tool(label: "Ghost", systemImage: "square.dashed", shortcut: "g", placing: ghost.placement(size: CGSize(width: 40, height: 40)) { Ghost(.zero) })
                 ghost.unselectable()
@@ -101,24 +102,38 @@ import TestKit
     },
     test("a kind has at most one selectability rule") {
         expectThrows(RegistryError.conflict(point: "ShapeSelectability", key: "ghost", plugins: ["ghosts", "haunted"])) {
-            _ = try Registry(plugins: [SelectionPlugin(), GhostsPlugin(), Contributor(id: "haunted") {
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), GhostsPlugin(), Contributor(id: "haunted") {
                 $0.contribute({ _ in true }, to: ShapeSelectability.self, for: .kind(Ghost.kind))
             }])
         }
     },
-    test("Delete, Return and ⌘A are the selection's commands") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), CardsPlugin()])
+    test("Delete, Return and ⌘A are the selection's keys, and Delete and Select All its commands, which the menus send") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), CardsPlugin()])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let card = h.add(Card(CGRect(x: 200, y: 0, width: 100, height: 100)))
+        let other = h.add(Box(CGRect(x: 400, y: 0, width: 100, height: 100)))
+        h.hold(.command)
+        expect(h.key("a"))
+        h.hold([])
+        expectEqual(h.editor.selectedShapeIDs, [box, card, other])
+        h.editor.selection = nil
         expect(h.editor.perform(.selectAll))
-        expectEqual(h.editor.selectedShapeIDs, [box, card])
+        expectEqual(h.editor.selectedShapeIDs, [box, card, other])
         h.editor.selection = card
-        expect(h.editor.perform(.insertNewline))
+        expect(h.key("\r"))
+        expectEqual(h.editor.editingShapeID, card)
+        h.editor.endEditing()
+        expect(h.key("\u{3}"), "Enter too")
         expectEqual(h.editor.editingShapeID, card)
         h.editor.endEditing()
         h.editor.selection = box
+        expect(h.key("\u{7f}"))
+        h.editor.selection = other
         expect(h.editor.perform(.delete))
         expectEqual(h.editor.document.shapes.map(\.id), [card])
+        h.editor.selection = card
+        expect(h.key("\u{F728}"), "Forward Delete too")
+        expectEqual(h.editor.document.shapes.map(\.id), [])
     },
     test("without the Selection plugin, nothing is selected, selecting does nothing, and no one claims the commands") {
         let h = try EditorHarness(plugins: [FixturesPlugin()])
@@ -127,7 +142,7 @@ import TestKit
         expectEqual(h.editor.selection, nil)
         expectEqual(h.editor.selectedShapeIDs, [])
         expect(!h.editor.isSelectable(box))
-        for command in [CanvasCommand.delete, .insertNewline, .selectAll] { expect(!h.editor.perform(command), "\(command)") }
+        for command in [CanvasCommand.delete, .selectAll] { expect(!h.editor.perform(command), "\(command)") }
         expectEqual(h.editor.currentToolID, .hand)
         expectEqual(h.editor.registry.tools.map(\.id), [.hand])
     },

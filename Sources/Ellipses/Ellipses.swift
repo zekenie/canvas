@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Keyboard
 
 public struct Ellipse: BoxShapeProps {
     public static let kind: ShapeKind = "ellipse"

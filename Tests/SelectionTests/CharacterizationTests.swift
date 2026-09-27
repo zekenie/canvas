@@ -2,6 +2,7 @@
 import CanvasTesting
 import CoreGraphics
 import Geometry
+import Keyboard
 import Selection
 import TestKit
 
@@ -10,7 +11,7 @@ import TestKit
 // deliberate change: the POC hid the outline while the box moved, as tldraw does; it now stays.)
 @MainActor let characterizationTests = Suite("Characterization", [
     test("a lone box press commits nothing and keeps its outline; each drag event commits once, with no threshold") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
         let box = h.add(Box(CGRect(x: 20, y: 20, width: 60, height: 60)))
         let size = CGSize(width: 100, height: 100)
         let plain = renderBitmap(h.editor, size: size)
@@ -33,7 +34,7 @@ import TestKit
         expectEqual(h.editor.selection, box)
     },
     test("a fractional, zoomed lone-box move lands bitwise on pointer.world − grab offset") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
         let origin = CGPoint(x: 100, y: 100)
         let box = h.add(Box(CGRect(origin: origin, size: CGSize(width: 200, height: 200))))
         h.editor.camera = Camera(origin: .zero, zoom: 0.6)
@@ -48,7 +49,7 @@ import TestKit
         h.release()
     },
     test("the cursor stays standard while moving a box") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
         h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         h.move(to: CGPoint(x: 50, y: 50))
         expectEqual(h.editor.cursor, .standard)
