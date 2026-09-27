@@ -50,7 +50,8 @@ extension PaintOrderAnchored {
 }
 
 extension ShapeReferencing {
-    func erasedRemappingReferences(of record: AnyShapeRecord, _ map: (ShapeID) -> ShapeID?, in context: ShapeContext) -> (any ShapeProps)? {
+    /// Nil if the kind can't let go of a shape it names; the record's own props, typed, otherwise.
+    func erasedRemappingReferences(of record: AnyShapeRecord, _ map: (ShapeID) -> ShapeID?, in context: ShapeContext) -> (any ShapeProps)?? {
         record.typed(as: Props.self).map { remappingReferences(of: $0, map, in: context) }
     }
 }
@@ -58,13 +59,15 @@ extension ShapeReferencing {
 extension AnyShapeRecord {
     /// This shape with every shape its props name passed through `map` (see `ShapeReferencing`):
     /// what a copy of it should be, once `map` gives each copied shape its copy's id and nil for the
-    /// rest. Itself for a kind whose props name no shape, or one no installed plugin defines.
+    /// rest. Itself for a kind whose props name no shape, or one no installed plugin defines. Nil
+    /// if its kind can't let go of a shape `map` drops, one `context` doesn't have.
     @MainActor
-    public func remappingReferences(_ map: (ShapeID) -> ShapeID?, in context: ShapeContext) -> AnyShapeRecord {
+    public func remappingReferences(_ map: (ShapeID) -> ShapeID?, in context: ShapeContext) -> AnyShapeRecord? {
         guard let definition = context.registry.definition(for: kind) as? any ShapeReferencing,
-              let props = definition.erasedRemappingReferences(of: self, map, in: context) else { return self }
-        var remapped = self
-        remapped.props = props
-        return remapped
+              let remapped = definition.erasedRemappingReferences(of: self, map, in: context) else { return self }
+        guard let props = remapped else { return nil }
+        var record = self
+        record.props = props
+        return record
     }
 }

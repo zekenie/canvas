@@ -29,8 +29,34 @@ extension LinkDefinition: ShapeDefinition {
 
 extension LinkDefinition: ShapeReferencing {
     /// A shape left out is let go of: that end links nothing.
-    func remappingReferences(of shape: ShapeRecord<Link>, _ map: (ShapeID) -> ShapeID?, in context: ShapeContext) -> Link {
+    func remappingReferences(of shape: ShapeRecord<Link>, _ map: (ShapeID) -> ShapeID?, in context: ShapeContext) -> Link? {
         Link(from: shape.props.from.flatMap(map), to: shape.props.to.flatMap(map))
+    }
+}
+
+/// A tether to a shape, which, let go of it, ends in the middle of where it was drawn: like an
+/// arrow, it can't let go of a shape it can't find, or one with no outline.
+struct Tether: ShapeProps {
+    static let kind: ShapeKind = "tether"
+    var to: ShapeID?
+    var end: CGPoint?
+}
+
+struct TetherDefinition {}
+
+extension TetherDefinition: ShapeDefinition {
+    func render(_ shape: ShapeRecord<Tether>, in context: RenderContext) {}
+    func geometry(of shape: ShapeRecord<Tether>, in context: ShapeContext) -> ShapeGeometry {
+        ShapeGeometry(outline: [], bounds: .zero, isClosed: false)
+    }
+}
+
+extension TetherDefinition: ShapeReferencing {
+    func remappingReferences(of shape: ShapeRecord<Tether>, _ map: (ShapeID) -> ShapeID?, in context: ShapeContext) -> Tether? {
+        guard let to = shape.props.to else { return shape.props }
+        if let renamed = map(to) { return Tether(to: renamed, end: nil) }
+        guard let geometry = context.geometry(of: to), !geometry.outline.isEmpty else { return nil }
+        return Tether(to: nil, end: CGPoint(x: geometry.bounds.midX, y: geometry.bounds.midY))
     }
 }
 
@@ -59,12 +85,13 @@ extension TicketDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<Ticket>, in context: RenderContext) {}
 }
 
-/// Links; stamps, copyable unless sealed; and tickets, never copyable.
+/// Links and tethers; stamps, copyable unless sealed; and tickets, never copyable.
 struct KindsPlugin: CanvasPlugin {
     var id: PluginID { "clipboard-kinds" }
 
     func register(into registrar: inout PluginRegistrar) {
         registrar.shape(LinkDefinition())
+        registrar.shape(TetherDefinition())
         registrar.shape(StampDefinition()) { stamp in stamp.copyable(when: { !$0.props.isSealed }) }
         registrar.shape(TicketDefinition()) { ticket in ticket.uncopyable() }
     }

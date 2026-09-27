@@ -44,7 +44,13 @@ public struct ShapeContext {
     private let index: ShapeIndex?
     private let generation: Int
 
-    init(document: CanvasDocument, registry: Registry, camera: Camera, index: ShapeIndex? = nil) {
+    /// Lookups in a document of your own (shapes copied, say), whose geometry is worked out as it's
+    /// asked for. The editor's is `editor.shapeContext`, and a transaction's `transaction.shapes`.
+    public init(document: CanvasDocument, registry: Registry, camera: Camera = Camera()) {
+        self.init(document: document, registry: registry, camera: camera, index: nil)
+    }
+
+    init(document: CanvasDocument, registry: Registry, camera: Camera, index: ShapeIndex?) {
         storedDocument = document
         self.registry = registry
         storedCamera = camera
@@ -67,6 +73,17 @@ public struct ShapeContext {
         if let index = currentIndex { return index.entry(for: id, in: self)?.geometry }
         guard let record = storedDocument[id], let definition = registry.definition(for: record.kind) else { return nil }
         return definition.erasedGeometry(of: record, in: self)
+    }
+
+    /// The union of the shapes' geometry bounds, in world units: what boxes a selection, or brings
+    /// shapes into view. Shapes with no outline (nothing drawn) don't count; nil if none is left.
+    public func bounds(of ids: some Sequence<ShapeID>) -> CGRect? {
+        var union: CGRect?
+        for id in ids {
+            guard let geometry = geometry(of: id), !geometry.outline.isEmpty, !geometry.bounds.isNull else { continue }
+            union = union?.union(geometry.bounds) ?? geometry.bounds
+        }
+        return union
     }
 
     /// Whether a world point hits the shape, by its definition's own test.

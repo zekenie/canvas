@@ -177,10 +177,7 @@ public final class ContentsState {
     /// animated (data-canvas's click-to-zoom). Does nothing before the view has a size.
     func reveal(_ ids: [ShapeID]) {
         let size = editor.viewportSize
-        let context = editor.shapeContext
-        let rects = ids.compactMap { context.geometry(of: $0) }.filter { !$0.outline.isEmpty && !$0.bounds.isNull }.map(\.bounds)
-        guard let first = rects.first, size.width > 0, size.height > 0 else { return }
-        let bounds = rects.dropFirst().reduce(first) { $0.union($1) }
+        guard let bounds = editor.shapeContext.bounds(of: ids), size.width > 0, size.height > 0 else { return }
         editor.animateCamera(to: Camera(fitting: bounds, in: size, inset: ContentsStyle.zoomInset, maxZoom: ContentsStyle.maxZoom),
                              duration: ContentsStyle.zoomDuration)
     }

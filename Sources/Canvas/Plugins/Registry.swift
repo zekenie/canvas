@@ -15,6 +15,8 @@ public struct Registry {
     private let forAnyKind: [ObjectIdentifier: [RawContribution]]
     private let all: [RawContribution]
     private let definitions: [ShapeKind: any ShapeDefinition]
+    /// Kinds whose props name other shapes (`ShapeReferencing`): what a deletion asks to let go.
+    let referencingKinds: Set<ShapeKind>
 
     public init(plugins: [any CanvasPlugin]) throws(RegistryError) {
         let plugins: [any CanvasPlugin] = [CorePlugin()] + plugins
@@ -43,6 +45,7 @@ public struct Registry {
             let shape = $0.value as! ShapeRegistration
             return (shape.kind, shape.definition)
         }, uniquingKeysWith: { first, _ in first })
+        referencingKinds = Set(definitions.filter { $0.value is any ShapeReferencing }.keys)
         // Owners are installed and keys unique by now, so a point's own rules can rely on both.
         var checked: Set<ObjectIdentifier> = []
         for c in all where checked.insert(c.point).inserted {
@@ -84,6 +87,13 @@ public struct Registry {
         let point = ObjectIdentifier(P.self)
         // A closure, not `\.value`: a key path in a generic function is built again on every call.
         return (forKind[point]?[kind] ?? forAnyKind[point] ?? []).map { $0.value as! P.Contribution }
+    }
+
+    /// For a point that takes one contribution per kind, plus one for every kind (keyed by
+    /// `[target]`, as a rule is): each installed kind's own, else every kind's. A kind with neither
+    /// isn't in it. Worked out on each call: keep what it returns, as the registry never changes.
+    public func contributionByKind<P: ExtensionPoint>(to point: P.Type) -> [ShapeKind: P.Contribution] {
+        kinds.reduce(into: [:]) { byKind, kind in byKind[kind] = contributions(to: P.self, for: kind).first }
     }
 
     // MARK: The core's points

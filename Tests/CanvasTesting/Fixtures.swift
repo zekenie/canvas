@@ -54,6 +54,13 @@ struct TagDefinition: ShapeDefinition, PaintOrderAnchored {
     func paintAnchor(of shape: ShapeRecord<Tag>, in document: CanvasDocument) -> ShapeID? { shape.props.target }
 }
 
+extension TagDefinition: ShapeReferencing {
+    /// A tag whose shape goes (or is left out of a copy) is shown above nothing.
+    func remappingReferences(of shape: ShapeRecord<Tag>, _ map: (ShapeID) -> ShapeID?, in _: ShapeContext) -> Tag? {
+        Tag(target: shape.props.target.flatMap(map))
+    }
+}
+
 /// "box", "disc" and "tag" kinds, no tools. What core and horizontal tests draw with, so they
 /// never depend on a real vertical.
 public struct FixturesPlugin: CanvasPlugin {

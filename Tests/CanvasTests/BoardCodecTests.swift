@@ -221,7 +221,7 @@ private struct Mutations: RandomNumberGenerator {
         expectEqual(loaded.report.repairs, [.newStackingKey(uuid(5)), .newStackingKey(uuid(3)), .newStackingKey(uuid(2))])
     },
     test("a file that isn't a board, or is from a newer app, won't open, and says why") {
-        expectEqual(readError(board([box(1)], format: 2)), .newerFormat(2))
+        expectEqual(readError(board([box(1)], format: BoardCodec.format + 1)), .newerFormat(BoardCodec.format + 1))
         for json in ["", "not json", "[1, 2]", #"{ "shapes" : [] }"#, #"{ "format" : 1 }"#, #"{ "format" : 0, "shapes" : [] }"#, #"{ "format" : "1", "shapes" : [] }"#] {
             guard case .unreadable(let why)? = readError(json) else { expect(false, "\(json) is unreadable"); continue }
             expect(!why.isEmpty, json)

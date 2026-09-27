@@ -32,10 +32,7 @@ final class SelectionState {
 
     init(editor: CanvasEditor) {
         self.editor = editor
-        let registry = editor.registry
-        rules = registry.kinds.reduce(into: [:]) { rules, kind in
-            rules[kind] = registry.contributions(to: ShapeSelectability.self, for: kind).first
-        }
+        rules = editor.registry.contributionByKind(to: ShapeSelectability.self)
     }
 
     /// Never a shape the board keeps aside; otherwise the kind's own rule, else one for every
@@ -179,13 +176,7 @@ extension CanvasEditor {
 
     /// The union of the selected shapes' geometry bounds, in world units; nil with nothing
     /// selected. Shapes with no outline (nothing drawn) don't count.
-    public var selectionBounds: CGRect? {
-        let context = shapeContext
-        let rects = selectedShapeIDs.compactMap { context.geometry(of: $0) }
-            .filter { !$0.outline.isEmpty && !$0.bounds.isNull }.map(\.bounds)
-        guard let first = rects.first else { return nil }
-        return rects.dropFirst().reduce(first) { $0.union($1) }
-    }
+    public var selectionBounds: CGRect? { shapeContext.bounds(of: selectedShapeIDs) }
 
     /// Whether a world point is inside the box around several selected shapes, where a press on
     /// empty space acts on the selection (tldraw's selection bounds). False with one or none.

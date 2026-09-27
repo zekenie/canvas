@@ -291,8 +291,9 @@ final class ActionLog: NSView {
         canvas.mouseUp(with: window.mouse(.leftMouseUp, at: empty, modifiers: .control, time: 3.05))
         expectEqual(editor.selectedShapeIDs, [task])
         expect(canvas.menu(for: window.mouse(.leftMouseDown, at: card, modifiers: .control, time: 4)) != nil)
-        // An arrow's menu is just the clipboard's: Arrange leaves out what's painted by anchor.
-        expectEqual(try require(canvas.menu(for: window.mouse(.rightMouseDown, at: arrow, time: 5))).outline, ["Cut", "Copy", "(Paste)"])
+        // An arrow's menu is just the clipboard's (nothing to paste yet): Arrange leaves out what's
+        // painted by anchor.
+        expectEqual(try require(canvas.menu(for: window.mouse(.rightMouseDown, at: arrow, time: 5))).outline, ["Cut", "Copy"])
         // Asked with some other event (the accessibility Show Menu action), there's no click to go by.
         let key = try require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 5, windowNumber: window.windowNumber,
                                                context: nil, characters: "m", charactersIgnoringModifiers: "m", isARepeat: false, keyCode: 46))

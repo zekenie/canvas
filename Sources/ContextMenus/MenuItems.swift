@@ -47,7 +47,7 @@ struct MenuGroupID: Hashable {
 /// checkmark by it. `id` (the title, by default) is what makes it the same item on two kinds and
 /// what two plugins can't both claim, within its group.
 public struct MenuItem<Value> {
-    var entry: MenuEntry<Value>
+    let entry: MenuEntry<Value>
 
     /// Edits the shapes it's for: `edit` runs on each one's live value, all of them in one
     /// transaction. Setting what a shape already has commits nothing.
@@ -56,8 +56,8 @@ public struct MenuItem<Value> {
                 isEnabled: @escaping @MainActor (Value) -> Bool = { _ in true },
                 isChecked: (@MainActor (Value) -> Bool)? = nil,
                 edit: @escaping @MainActor (inout Value) -> Void) {
-        entry = MenuEntry(title: title, group: MenuGroupID(group), id: id ?? title, isShown: { value, _ in isShown(value) },
-                          content: .item(isEnabled: { value, _ in isEnabled(value) }, isChecked: isChecked, action: .edit(edit)))
+        entry = MenuEntry(title: title, group: MenuGroupID(group), id: id ?? title, isShown: isShown,
+                          content: .item(isEnabled: isEnabled, isChecked: isChecked, action: .edit(edit)))
     }
 
     /// For what editing each shape can't do (reordering, deleting, selecting): `perform` gets the
@@ -68,45 +68,20 @@ public struct MenuItem<Value> {
                 isEnabled: @escaping @MainActor (Value) -> Bool = { _ in true },
                 isChecked: (@MainActor (Value) -> Bool)? = nil,
                 perform: @escaping @MainActor ([ShapeID], CanvasEditor) -> Void) {
-        entry = MenuEntry(title: title, group: MenuGroupID(group), id: id ?? title, isShown: { value, _ in isShown(value) },
-                          content: .item(isEnabled: { value, _ in isEnabled(value) }, isChecked: isChecked, action: .perform(perform)))
-    }
-
-    /// Shown only where `condition` holds too, asked with the editor: for an item that depends on
-    /// more than its shape (a horizontal's rules, a service, the pasteboard).
-    public func shown(when condition: @escaping @MainActor (Value, CanvasEditor) -> Bool) -> MenuItem {
-        var item = self
-        item.entry = entry.shown(when: condition)
-        return item
-    }
-
-    /// Dimmed where `condition` doesn't hold, too, asked with the editor: for an item that depends
-    /// on more than its shape (Clipboard's Paste, on the pasteboard's contents).
-    public func enabled(when condition: @escaping @MainActor (Value, CanvasEditor) -> Bool) -> MenuItem {
-        guard case .item(let isEnabled, let isChecked, let action) = entry.content else { return self }
-        var item = self
-        item.entry.content = .item(isEnabled: { isEnabled($0, $1) && condition($0, $1) }, isChecked: isChecked, action: action)
-        return item
+        entry = MenuEntry(title: title, group: MenuGroupID(group), id: id ?? title, isShown: isShown,
+                          content: .item(isEnabled: isEnabled, isChecked: isChecked, action: .perform(perform)))
     }
 }
 
 /// A titled submenu. Its items group, and show, as the menu's own do; a submenu none of whose items
 /// shows is left out.
 public struct Submenu<Value> {
-    var entry: MenuEntry<Value>
+    let entry: MenuEntry<Value>
 
     public init(_ title: String, in group: any MenuGroup.Type = ShapeMenuGroup.self, id: String? = nil,
                 when isShown: @escaping @MainActor (Value) -> Bool = { _ in true },
                 @MenuBuilder<Value> items: () -> [MenuEntry<Value>]) {
-        entry = MenuEntry(title: title, group: MenuGroupID(group), id: id ?? title, isShown: { value, _ in isShown(value) },
-                          content: .submenu(items()))
-    }
-
-    /// Shown only where `condition` holds too, asked with the editor (`MenuItem.shown(when:)`).
-    public func shown(when condition: @escaping @MainActor (Value, CanvasEditor) -> Bool) -> Submenu {
-        var submenu = self
-        submenu.entry = entry.shown(when: condition)
-        return submenu
+        entry = MenuEntry(title: title, group: MenuGroupID(group), id: id ?? title, isShown: isShown, content: .submenu(items()))
     }
 }
 
@@ -115,11 +90,11 @@ public struct MenuEntry<Value> {
     let title: String
     let group: MenuGroupID
     let id: String
-    var isShown: @MainActor (Value, CanvasEditor) -> Bool
-    var content: Content
+    let isShown: @MainActor (Value) -> Bool
+    let content: Content
 
     enum Content {
-        case item(isEnabled: @MainActor (Value, CanvasEditor) -> Bool, isChecked: (@MainActor (Value) -> Bool)?, action: Action)
+        case item(isEnabled: @MainActor (Value) -> Bool, isChecked: (@MainActor (Value) -> Bool)?, action: Action)
         case submenu([MenuEntry<Value>])
     }
 
@@ -128,11 +103,11 @@ public struct MenuEntry<Value> {
         case perform(@MainActor ([ShapeID], CanvasEditor) -> Void)
     }
 
-    func shown(when condition: @escaping @MainActor (Value, CanvasEditor) -> Bool) -> MenuEntry {
-        var entry = self
-        let isShown = self.isShown
-        entry.isShown = { isShown($0, $1) && condition($0, $1) }
-        return entry
+    /// Its key, and its items' under it, each as the path from the top.
+    func paths(under parent: [EntryKey]) -> [[EntryKey]] {
+        let path = parent + [EntryKey(group: group, id: id)]
+        guard case .submenu(let entries) = content else { return [path] }
+        return [path] + entries.flatMap { $0.paths(under: path) }
     }
 }
 

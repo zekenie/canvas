@@ -64,25 +64,44 @@ import TestKit
         expect(h.secondaryClick(at: middle(0)) == nil)
         expectEqual(h.editor.selectedShapeIDs, [])
     },
-    test("shown(when:) and enabled(when:) ask with the editor too, for what depends on more than the shape") {
-        final class Switch { var isOn = false }
-        let power = Switch()
-        let h = try harness([Contributor(id: "editor-aware") { r in
-            r.contextMenuForEveryShape {
-                MenuItem("Only Selected Alone") { _, _ in }
-                    .shown { record, editor in editor.selection == record.id }
-                MenuItem("Powered", isEnabled: { $0.box != nil }) { _, _ in }
-                    .enabled { _, _ in power.isOn }
-                Submenu("More") { MenuItem("Inside") { _, _ in } }
-                    .shown { _, editor in editor.selectedShapeIDs.count > 1 }
+    test("items for the canvas: after a shape's own in their group's order, alone on empty canvas, each asked once with the menu's shapes") {
+        let log = PerformLog()
+        let h = try harness([Contributor(id: "canvas") { r in
+            r.contextMenuForCanvas {
+                MenuItem("Shapes", in: LateMenuGroup.self, when: { subject in
+                    log.runs.append("asked \(subject.shapes.count)")
+                    return !subject.shapes.isEmpty
+                }) { ids, _ in log.runs.append("ran \(ids.count)") }
+                MenuItem("Anywhere", in: PowerMenuGroup.self, isEnabled: { $0.editor.selectedShapeIDs.count < 3 }) { _, _ in }
             }
         }])
-        let a = h.add(Box(slot(0)))
-        let b = h.add(Box(slot(1)))
-        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Only Selected Alone", "(Powered)"])
-        power.isOn = true
+        let a = h.add(Lamp(slot(0)))
+        let b = h.add(Lamp(slot(1)))
         h.editor.selectedShapeIDs = [a, b]
-        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Powered", "More ▸", "  Inside"])
+        let menu = try require(h.secondaryClick(at: middle(0)))
+        expectEqual(menu.outline, ["Turn On", "Brighter", "Level ▸", "  ✓ 1", "  2", "  3", "—", "Anywhere", "—", "Shapes"])
+        expectEqual(log.runs, ["asked 2"], "once for the menu, not once per shape")
+        try menu.choose("Shapes")
+        expectEqual(log.runs, ["asked 2", "ran 2"])
+        expectEqual(try require(h.secondaryClick(at: CGPoint(x: 150, y: 400))).outline, ["Anywhere"])
+        expectEqual(h.editor.selectedShapeIDs, [a, b], "a menu on empty canvas leaves the selection")
+    },
+    test("a kind's own item with a canvas item's group and id takes its place, shown or not; two plugins adding one canvas item conflict") {
+        let h = try harness([Contributor(id: "canvas") { r in
+            r.contextMenuForCanvas { MenuItem("Turn On", in: ShapeMenuGroup.self) { _, _ in } }
+        }])
+        let lamp = h.add(Lamp(slot(0)))
+        h.add(Box(slot(1)))
+        expectEqual(try require(h.secondaryClick(at: middle(0))).outline.filter { $0 == "Turn On" }.count, 1)
+        h.editor.transact { $0.update(lamp, as: Lamp.self) { $0.props.isOn = true } }
+        expectEqual(try require(h.secondaryClick(at: middle(0))).outline.first, "Turn Off")
+        expect(try require(h.secondaryClick(at: middle(0))).outline.contains("Turn On") == false, "the lamp's own, hidden, still takes its place")
+        expectEqual(try require(h.secondaryClick(at: middle(1))).outline, ["Turn On"])
+        expectThrows(RegistryError.conflict(point: "CanvasContextMenu", key: "* Paste", plugins: ["one", "two"])) {
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(),
+                                       Contributor(id: "one") { $0.contextMenuForCanvas { MenuItem("Paste") { _, _ in } } },
+                                       Contributor(id: "two") { $0.contextMenuForCanvas { MenuItem("Paste") { _, _ in } } }])
+        }
     },
     test("without the plugin nothing claims the click; contributing needs it installed") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])

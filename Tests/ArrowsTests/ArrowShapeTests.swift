@@ -70,7 +70,7 @@ import TestKit
         let board = try Board(arrow: 70)
         let record = try require(board.arrow.flatMap { board.h.editor.document[$0] })
         let a2 = ShapeID(), b2 = ShapeID()
-        let copy = try require(record.remappingReferences({ [board.a: a2, board.b: b2][$0] }, in: board.h.editor.shapeContext).typed(as: Arrow.self)?.props)
+        let copy = try require(record.remappingReferences({ [board.a: a2, board.b: b2][$0] }, in: board.h.editor.shapeContext)?.typed(as: Arrow.self)?.props)
         let arrow = try require(record.typed(as: Arrow.self)?.props)
         expectEqual(copy.start.binding?.shapeID, a2)
         expectEqual(copy.end.binding?.shapeID, b2)
@@ -82,12 +82,20 @@ import TestKit
         let id = try require(board.arrow)
         let record = try require(board.h.editor.document[id])
         let a2 = ShapeID()
-        let copy = try require(record.remappingReferences({ $0 == board.a ? a2 : nil }, in: board.h.editor.shapeContext).typed(as: Arrow.self)?.props)
+        let copy = try require(record.remappingReferences({ $0 == board.a ? a2 : nil }, in: board.h.editor.shapeContext)?.typed(as: Arrow.self)?.props)
         board.h.editor.transact { $0.delete([board.b]) }
         var released = try require(board.arrows.first)
         expectEqual(released.start.binding?.shapeID, board.a)
         released.start = .bound(ArrowBinding(shapeID: a2, normalizedAnchor: released.start.binding!.normalizedAnchor, isPrecise: false, isExact: false))
         expectEqual(copy, released)
+    },
+    test("an arrow can't let go of a shape it can't find, since it can't tell where that end is drawn") {
+        let board = try Board(arrow: 70)
+        let record = try require(board.arrow.flatMap { board.h.editor.document[$0] })
+        let without = CanvasDocument(shapes: board.h.editor.document.shapes.filter { $0.id != board.b })
+        let context = ShapeContext(document: without, registry: board.h.editor.registry)
+        expect(record.remappingReferences({ $0 == board.a ? $0 : nil }, in: context) == nil)
+        expect(record.remappingReferences({ $0 }, in: context) != nil, "renamed, it needn't find it")
     },
     test("an arrow paints just above the highest shape it's bound to; unbound arrows paint on top") {
         let board = try Board(arrow: 0)

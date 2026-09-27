@@ -193,7 +193,7 @@ extension LoadReport {
             lines.append("\(count(keptAside.count).capitalizedFirst) \(keptAside.count == 1 ? "is" : "are") kept as \(keptAside.count == 1 ? "it was" : "they were") but hidden: \(parts.joined(separator: "; ")). Saving keeps \(keptAside.count == 1 ? "it" : "them").")
         }
         if !repairs.isEmpty {
-            lines.append("\(repairs.count) \(repairs.count == 1 ? "repair was" : "repairs were") made to shapes’ ids or stacking order. Saving keeps \(repairs.count == 1 ? "it" : "them").")
+            lines.append("\(repairs.count) \(repairs.count == 1 ? "repair was" : "repairs were") made to shapes’ ids, stacking order or metadata. Saving keeps \(repairs.count == 1 ? "it" : "them").")
         }
         let message = keptAside.isEmpty ? "This board was repaired as it opened." : "Some of this board can’t be shown."
         return (message, lines.joined(separator: "\n\n"))

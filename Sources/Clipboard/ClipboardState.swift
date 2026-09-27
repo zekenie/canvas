@@ -20,15 +20,14 @@ final class ClipboardState {
     /// Each kind's rule (`ShapeCopyability`), found once.
     private let rules: [ShapeKind: @MainActor (AnyShapeRecord) -> Bool]
     private let codec: BoardCodec
+    /// What would paste, as of the pasteboard's change count when it was last read.
+    private var content: (changeCount: Int, shapes: [AnyShapeRecord])?
 
     init(editor: CanvasEditor, pasteboard: NSPasteboard) {
         self.editor = editor
         self.pasteboard = pasteboard
-        let registry = editor.registry
-        rules = registry.kinds.reduce(into: [:]) { rules, kind in
-            rules[kind] = registry.contributions(to: ShapeCopyability.self, for: kind).first
-        }
-        codec = BoardCodec(registry: registry)
+        rules = editor.registry.contributionByKind(to: ShapeCopyability.self)
+        codec = BoardCodec(registry: editor.registry)
     }
 
     /// Never a shape the board keeps aside; otherwise the kind's own rule, else one for every kind,
@@ -45,24 +44,42 @@ final class ClipboardState {
         ids.contains { id in editor.document[id].map(isCopyable) ?? false }
     }
 
+    /// `records`, each shape they name renamed by `rename` if it's one of them, and let go of
+    /// otherwise (`ShapeReferencing`). A record whose kind can't let go of a shape it names (one
+    /// `context` doesn't have) is left out, and then so may be those that name it.
+    private func carry(_ records: [AnyShapeRecord], renaming rename: (ShapeID) -> ShapeID,
+                       in context: ShapeContext) -> [AnyShapeRecord] {
+        var kept = Set(records.map(\.id))
+        restart: while true {
+            var carried: [AnyShapeRecord] = []
+            for record in records where kept.contains(record.id) {
+                guard let remapped = record.remappingReferences({ kept.contains($0) ? rename($0) : nil }, in: context) else {
+                    kept.remove(record.id)
+                    continue restart          // those carried already may name it
+                }
+                carried.append(remapped)
+            }
+            return carried
+        }
+    }
+
     /// Puts copies of the copyable shapes of `ids` on the pasteboard, in place of what was there.
     /// Returns the shapes copied, back to front; with none, the pasteboard is left as it was.
     @discardableResult
     func copy(_ ids: [ShapeID]) -> [ShapeID] {
-        let records = copyable(ids)
-        guard !records.isEmpty else { return [] }
-        let copied = Set(records.map(\.id)), context = editor.shapeContext
-        let content = records.map { $0.remappingReferences({ copied.contains($0) ? $0 : nil }, in: context) }
+        let copied = carry(copyable(ids), renaming: { $0 }, in: editor.shapeContext)
+        guard !copied.isEmpty else { return [] }
         let data: Data
         do {
-            data = try codec.encode(CanvasDocument(shapes: content))
+            data = try codec.encode(CanvasDocument(shapes: copied))
         } catch {
             assertionFailure("copied shapes don't encode: \(error)")
             return []
         }
         pasteboard.clearContents()
         pasteboard.setData(data, forType: Self.shapesType)
-        return records.map(\.id)
+        content = (pasteboard.changeCount, copied)
+        return copied.map(\.id)
     }
 
     /// Copies, then deletes what it copied, in one transaction: what can't be copied stays.
@@ -73,45 +90,55 @@ final class ClipboardState {
         editor.hovered = nil
     }
 
-    /// Whether the pasteboard holds shapes to paste.
-    var hasShapes: Bool { pasteboard.availableType(from: [Self.shapesType]) != nil }
+    /// The shapes a paste would put down, as they're on the pasteboard: this app's shapes (anything
+    /// else there is left alone), less those this app can't read (a kind it doesn't install, a
+    /// newer version of one, a board format it doesn't know) and those that can't do without them.
+    /// Read again only when the pasteboard has changed.
+    private func pasteable() -> [AnyShapeRecord] {
+        let changeCount = pasteboard.changeCount
+        if let content, content.changeCount == changeCount { return content.shapes }
+        var shapes: [AnyShapeRecord] = []
+        if let data = pasteboard.data(forType: Self.shapesType), let board = try? codec.decode(data) {
+            let readable = board.document.shapes.filter { !$0.isOpaque }
+            shapes = carry(readable, renaming: { $0 }, in: ShapeContext(document: board.document, registry: editor.registry))
+        }
+        content = (changeCount, shapes)
+        return shapes
+    }
+
+    /// Whether a paste would put anything down.
+    var hasShapes: Bool { !pasteable().isEmpty }
 
     /// Copies of the shapes on the pasteboard, on top of the board with new ids, then selected
     /// (tldraw's paste). They land where their originals were if any of them would be in view
-    /// there, and otherwise centered in the view. Each one's `CopiedFrom` names its original. What
-    /// this app can't read (a kind it doesn't install, a newer version of one) is left out.
+    /// there, and otherwise centered in the view. Each one's `CopiedFrom` names its original.
     func paste() {
-        guard let data = pasteboard.data(forType: Self.shapesType), let board = try? codec.decode(data) else { return }
-        let records = board.document.shapes.filter { !$0.isOpaque }
-        guard !records.isEmpty else { return }
+        let shapes = pasteable()
+        guard !shapes.isEmpty else { return }
         editor.endEditing()
-        let copies = Dictionary(uniqueKeysWithValues: records.map { ($0.id, ShapeID()) })
+        let copies = Dictionary(uniqueKeysWithValues: shapes.map { ($0.id, ShapeID()) })
         let pasted = editor.transact { transaction -> [ShapeID] in
-            let context = transaction.shapes
-            for record in records {
-                var copy = record.copy(as: copies[record.id]!).remappingReferences({ copies[$0] }, in: context)
+            for record in carry(shapes, renaming: { copies[$0]! }, in: transaction.shapes) {
+                var copy = record.copy(as: copies[record.id]!)
                 copy.meta[CopiedFrom.self] = CopySource(shape: record.id)
                 transaction.insert(copy)
             }
-            let ids = records.compactMap { copies[$0.id] }.filter { transaction.document[$0] != nil }
+            let ids = shapes.compactMap { copies[$0.id] }.filter { transaction.document[$0] != nil }
             if let offset = offset(placing: ids, in: transaction.shapes) { transaction.translate(Set(ids), by: offset) }
             return ids
         }
         editor.selectedShapeIDs = pasted
     }
 
-    /// How far to move just-pasted shapes: nowhere if any of them is in view (or the view has no
-    /// size to tell), else so they're centered in it.
+    /// How far to move just-pasted shapes: nowhere if any of them is in view (touching counts, as
+    /// tldraw's does; a straight line's bounds have no height), or the view has no size to tell;
+    /// else so they're centered in it.
     private func offset(placing ids: [ShapeID], in shapes: ShapeContext) -> CGPoint? {
         let size = editor.viewportSize
-        guard size.width > 0, size.height > 0 else { return nil }
+        guard size.width > 0, size.height > 0, let bounds = shapes.bounds(of: ids) else { return nil }
         let view = editor.camera.toWorld(CGRect(origin: .zero, size: size))
-        let rects = ids.compactMap { shapes.geometry(of: $0) }.filter { !$0.outline.isEmpty && !$0.bounds.isNull }.map(\.bounds)
-        guard let first = rects.first else { return nil }
-        // Touching counts: a straight line's bounds have no height.
-        guard !rects.contains(where: { $0.minX <= view.maxX && $0.maxX >= view.minX && $0.minY <= view.maxY && $0.maxY >= view.minY })
-        else { return nil }
-        return view.center - rects.dropFirst().reduce(first) { $0.union($1) }.center
+        guard !ids.contains(where: { shapes.bounds(of: [$0])?.touches(view) == true }) else { return nil }
+        return view.center - bounds.center
     }
 }
 
@@ -133,7 +160,8 @@ extension CanvasEditor {
     /// Whether ⌘X would cut anything: as `canCopy`, but not mid-gesture.
     public var canCut: Bool { session == nil && canCopy }
 
-    /// Whether ⌘V would paste: the pasteboard holds this app's shapes, and nothing is under way.
+    /// Whether ⌘V would paste anything: the pasteboard holds this app's shapes, some of which it
+    /// can read, and nothing is under way.
     public var canPaste: Bool { session == nil && clipboard?.hasShapes == true }
 
     /// ⌘C: puts copies of the selected shapes that can be copied on the pasteboard.
@@ -144,7 +172,7 @@ extension CanvasEditor {
 
     /// Copies the shapes of `ids` that can be copied, and returns them, back to front. Shapes they
     /// name that aren't copied with them are let go of in the copy (an arrow's end stays where it
-    /// is drawn).
+    /// is drawn); a shape that can't let go of one (it can't find it) isn't copied.
     @discardableResult
     public func copy(_ ids: [ShapeID]) -> [ShapeID] { clipboard?.copy(ids) ?? [] }
 
@@ -156,7 +184,7 @@ extension CanvasEditor {
     }
 
     /// ⌘V: copies of what was copied, selected, with new ids (see `CopiedFrom`). Ends editing;
-    /// does nothing mid-gesture, or with no shapes on the pasteboard.
+    /// does nothing mid-gesture, or with nothing on the pasteboard it can paste.
     public func paste() {
         guard canPaste else { return }
         clipboard?.paste()

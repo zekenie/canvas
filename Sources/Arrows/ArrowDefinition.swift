@@ -163,20 +163,6 @@ extension ArrowDefinition: PaintOrderAnchored {
     }
 }
 
-/// Lets go of shapes that are about to be deleted: bound ends stay where they visibly are and the
-/// arrow keeps its curve. Runs inside the deleting transaction, while the shapes still exist.
-@MainActor
-func releaseArrows(boundTo ids: Set<ShapeID>, in transaction: inout Transaction) {
-    let connectables = Connectables(shapes: transaction.shapes)
-    for record in transaction.document.shapes {
-        guard let arrow = record.typed(as: Arrow.self)?.props else { continue }
-        let ends = Set([ArrowEnd.start, .end].filter { arrow[$0].binding.map { ids.contains($0.shapeID) } ?? false })
-        guard !ends.isEmpty else { continue }
-        let released = arrow.releasing(ends, connectables: connectables)
-        transaction.update(record.id, as: Arrow.self) { $0.props = released }
-    }
-}
-
 extension Arrow {
     /// The arrow with `ends` let go of the shapes they're bound to: each end stays where it
     /// visibly is, and the arrow keeps its curve.
@@ -195,17 +181,27 @@ extension Arrow {
 }
 
 extension ArrowDefinition: ShapeReferencing {
-    /// A copy of an arrow stays bound to the copies of its shapes, and lets go of the rest as a
-    /// deletion would (tldraw's copy: bindings to shapes left out are dropped, the end staying
-    /// where it was drawn).
-    func remappingReferences(of shape: ShapeRecord<Arrow>, _ map: (ShapeID) -> ShapeID?, in context: ShapeContext) -> Arrow {
+    /// An end bound to a shape `map` renames stays bound, to that one: a copy of an arrow is bound
+    /// to the copies of its shapes. An end bound to a shape `map` drops lets go of it where it's
+    /// drawn, and the arrow keeps its curve: deleting the shape does this (inside the deleting
+    /// transaction, while the shape still exists), and so does copying the arrow without it, as
+    /// tldraw's copy does. Nil when such a shape isn't in `context`, so where its end is drawn
+    /// can't be told.
+    func remappingReferences(of shape: ShapeRecord<Arrow>, _ map: (ShapeID) -> ShapeID?, in context: ShapeContext) -> Arrow? {
+        let connectables = Connectables(shapes: context)
         var released: Set<ArrowEnd> = []
         var remapped: [ArrowEnd: ShapeID] = [:]
         for end in [ArrowEnd.start, .end] {
             guard let binding = shape.props[end].binding else { continue }
-            if let id = map(binding.shapeID) { remapped[end] = id } else { released.insert(end) }
+            if let id = map(binding.shapeID) {
+                remapped[end] = id
+            } else if connectables[binding.shapeID] != nil {
+                released.insert(end)
+            } else {
+                return nil
+            }
         }
-        var arrow = released.isEmpty ? shape.props : shape.props.releasing(released, connectables: Connectables(shapes: context))
+        var arrow = released.isEmpty ? shape.props : shape.props.releasing(released, connectables: connectables)
         for (end, id) in remapped {
             guard var binding = arrow[end].binding else { continue }
             binding.shapeID = id
@@ -289,7 +285,7 @@ public struct ArrowsPlugin: CanvasPlugin {
             ArrowTool(targeting: editor.service(ArrowTargeting.self)!)
         }
         registrar.overlay(BindingHintsOverlay())
-        registrar.willDelete { ids, transaction in releaseArrows(boundTo: ids, in: &transaction) }
+        // Arrows let go of shapes as they're deleted through `ShapeReferencing`, which the core asks.
     }
 }
 

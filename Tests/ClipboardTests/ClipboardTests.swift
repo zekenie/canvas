@@ -244,6 +244,50 @@ import TestKit
         h.editor.paste()
         expectEqual(h.editor.shapes(since: before).first?.typed(as: Link.self)?.props, Link(from: nil, to: nil))
     },
+    test("copied without its shape, a tether ends where that shape was") {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let h = try harness(pasteboard)
+        let a = h.add(Box(slot(1)))
+        h.editor.selection = h.add(Tether(to: a))
+        h.editor.copySelection()
+        let before = h.editor.document
+        h.editor.paste()
+        expectEqual(h.editor.shapes(since: before).first?.typed(as: Tether.self)?.props, Tether(to: nil, end: middle(1)))
+    },
+    test("a shape that can't do without one this board can't read is left out of a paste, and what can't do without it in turn") {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let source = try harness(pasteboard, [CardsPlugin()])
+        let target = try harness(pasteboard)
+        let card = source.add(Card(slot(0)))
+        let tether = source.add(Tether(to: card))
+        let onTether = source.add(Tether(to: tether))
+        let box = source.add(Box(slot(1)))
+        source.editor.selectedShapeIDs = [card, tether, onTether, box]
+        expectEqual(source.editor.copy(source.editor.selectedShapeIDs), [card, tether, onTether, box])
+        expect(target.editor.canPaste)
+        target.editor.paste()
+        expectEqual(target.editor.document.shapes.map(\.kind), [Box.kind], "no tether ending at the origin")
+    },
+    test("a shape that can't do without one it can't find (kept aside by its board) isn't copied, and stays when cut") {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let comet = ShapeID()
+        let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), ClipboardPlugin(pasteboard: pasteboard),
+                                              FixturesPlugin(), KindsPlugin()])
+        let json = #"{ "format" : 1, "schema" : {}, "shapes" : [ { "id" : "\#(comet)", "index" : "a0", "kind" : "comet", "props" : {} } ] }"#
+        var shapes = try BoardCodec(registry: registry).decode(Data(json.utf8)).document.shapes
+        let tether = AnyShapeRecord(ShapeRecord(Tether(to: comet)))
+        let box = AnyShapeRecord(ShapeRecord(Box(slot(1))))
+        shapes += [tether, box]
+        let h = EditorHarness { CanvasEditor(registry: registry, document: CanvasDocument(shapes: shapes), scheduler: $0) }
+        h.editor.selectedShapeIDs = [tether.id, box.id]
+        h.editor.cutSelection()
+        expectEqual(h.editor.document.shapes.map(\.id), [comet, tether.id])
+        h.editor.paste()
+        expectEqual(h.editor.document.shapes.last?.copiedFrom, box.id)
+    },
 ])
 
 @MainActor let placementTests = Suite("Where a paste lands", [
@@ -304,6 +348,20 @@ import TestKit
         expect(!h.command("v"))
         expectEqual(h.editor.document.shapes.count, 0)
     },
+    test("this app's type holding nothing it can read (not a board, a newer format, only unknown kinds) is nothing to paste: ⌘V passes") {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let h = try harness(pasteboard)
+        let type = NSPasteboard.PasteboardType("com.example.InfiniteCanvas.shapes")
+        for json in ["not json", #"{ "format" : 99, "schema" : {}, "shapes" : [] }"#,
+                     #"{ "format" : 1, "schema" : {}, "shapes" : [ { "id" : "\#(ShapeID())", "kind" : "comet", "props" : {} } ] }"#] {
+            pasteboard.clearContents()
+            pasteboard.setData(Data(json.utf8), forType: type)
+            expect(!h.editor.canPaste, json)
+            expect(!h.command("v"), json)
+        }
+        expectEqual(h.editor.document.shapes.count, 0)
+    },
     test("copying puts shapes in place of what the pasteboard held") {
         let pasteboard = privatePasteboard()
         defer { pasteboard.releaseGlobally() }
@@ -344,24 +402,41 @@ import TestKit
         defer { pasteboard.releaseGlobally() }
         let h = try harness(pasteboard)
         let box = h.add(Box(slot(0)))
-        h.editor.transact { $0.update(box) { $0.meta = ShapeMeta(json: ["other.note": "kept"]) } }
+        h.editor.transact { $0.update(box) { $0.meta = ShapeMeta(json: ["other": ["note": "kept"]]) } }
         h.editor.selection = box
         h.editor.copySelection()
         let before = h.editor.document
         h.editor.paste()
         let copy = try require(h.editor.shapes(since: before).first)
-        expectEqual(copy.meta.json["other.note"], "kept")
+        expectEqual(copy.meta.json["other"]?["note"], "kept")
         expectEqual(copy.copiedFrom, box)
     },
 ])
 
 @MainActor let menuTests = Suite("Cut, Copy and Paste in the context menu", [
-    test("every shape's menu has Cut, Copy and Paste, after its own items; Paste is dimmed with nothing to paste") {
+    test("every shape's menu has Cut and Copy after its own items, and Paste once there's something to paste") {
         let pasteboard = privatePasteboard()
         defer { pasteboard.releaseGlobally() }
         let h = try harness(pasteboard, [Contributor(id: "own") { r in r.contextMenu(Box.self) { MenuItem("Own") { _ in } } }])
-        h.add(Box(slot(0)))
-        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Own", "—", "Cut", "Copy", "(Paste)"])
+        let box = h.add(Box(slot(0)))
+        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Own", "—", "Cut", "Copy"])
+        h.editor.copy([box])
+        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Own", "—", "Cut", "Copy", "Paste"])
+    },
+    test("on empty canvas, the menu is Paste alone, once there's something to paste; the selection stays") {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let h = try harness(pasteboard)
+        let box = h.add(Box(slot(0)))
+        h.editor.selection = box
+        expect(h.secondaryClick(at: middle(1)) == nil, "nothing to paste: no menu")
+        h.editor.copySelection()
+        let before = h.editor.document
+        let menu = try require(h.secondaryClick(at: middle(1)))
+        expectEqual(menu.outline, ["Paste"])
+        expectEqual(h.editor.selectedShapeIDs, [box])
+        try menu.choose("Paste")
+        expectEqual(h.editor.shapes(since: before).map(\.copiedFrom), [box])
     },
     test("Copy then Paste from the menu copy the right-clicked shape and paste it") {
         let pasteboard = privatePasteboard()
@@ -391,18 +466,20 @@ import TestKit
         h.editor.paste()
         expectEqual(h.editor.document.shapes.suffix(2).map(\.copiedFrom), [a, b])
     },
-    test("on an uncopyable shape, Cut and Copy are dimmed; with a copyable one too, they cut and copy that one") {
+    test("an uncopyable shape alone has no Cut or Copy, and nothing else, no menu; with a copyable one too, they cut and copy that one") {
         let pasteboard = privatePasteboard()
         defer { pasteboard.releaseGlobally() }
         let h = try harness(pasteboard)
         let ticket = h.add(Ticket(frame: slot(0)))
         let box = h.add(Box(slot(1)))
-        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["(Cut)", "(Copy)", "(Paste)"])
+        expect(h.secondaryClick(at: middle(0)) == nil)
+        expectEqual(h.editor.selectedShapeIDs, [], "a right-click with no menu selects nothing")
         h.editor.selectedShapeIDs = [ticket, box]
         let menu = try require(h.secondaryClick(at: middle(0)))
-        expectEqual(menu.outline, ["Cut", "Copy", "(Paste)"])
+        expectEqual(menu.outline, ["Cut", "Copy"])
         try menu.choose("Cut")
         expectEqual(h.editor.document.shapes.map(\.id), [ticket])
+        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Paste"])
         h.editor.paste()
         expectEqual(h.editor.document.shapes.last?.copiedFrom, box)
     },
@@ -410,8 +487,10 @@ import TestKit
 
 @MainActor let registryTests = Suite("Clipboard's registration", [
     test("two copyability rules for one kind conflict") {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
         expectThrows(RegistryError.conflict(point: "ShapeCopyability", key: "ticket", plugins: ["clipboard-kinds", "again"])) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), ClipboardPlugin(pasteboard: privatePasteboard()),
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), ClipboardPlugin(pasteboard: pasteboard),
                                        FixturesPlugin(), KindsPlugin(),
                                        Contributor(id: "again") { $0.contribute({ _ in true }, to: ShapeCopyability.self, for: .kind(Ticket.kind)) }])
         }

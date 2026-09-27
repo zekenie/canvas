@@ -12,14 +12,17 @@ import Geometry
 ///     }
 ///
 /// `format` versions the envelope and each record's own members; `schema` gives each kind's props
-/// version (`ShapeProps.migrations`). A record with metadata (`AnyShapeRecord.meta`) has it in
-/// `meta`, an object by `owner.name`; one without has none, so a board without any reads as
-/// before. A shape the app can't use is kept as it was, with its own version in `v`: its kind
-/// isn't installed, it's from a newer version of its kind, or it didn't load. Reading never drops a shape and never stops at one: it refuses only a file that isn't a
-/// board, or one in a newer format. What it had to fix, and what it kept aside, is in the report.
+/// version (`ShapeProps.migrations`). Format 2 added a record's metadata (`AnyShapeRecord.meta`),
+/// in `meta`: an object for each plugin that keeps some, by its id. A shape the app can't use is
+/// kept as it was, with its own version in `v`: its kind isn't installed, it's from a newer version
+/// of its kind, or it didn't load. Reading never drops a shape and never stops at one: it refuses
+/// only a file that isn't a board, or one in a newer format. What it had to fix, and what it kept
+/// aside, is in the report.
 public struct BoardCodec: Sendable {
-    /// The envelope's version.
-    public static let format = 1
+    /// The newest envelope this app reads. It writes the oldest that holds the board: 1, unless a
+    /// shape has metadata, which needs 2. So an app from before metadata still opens a board it
+    /// would save back whole, and refuses one it would save without its metadata.
+    public static let format = 2
 
     private let kinds: [ShapeKind: KindCodec]
 
@@ -43,7 +46,8 @@ public struct BoardCodec: Sendable {
         for record in document.shapes where !record.isOpaque {
             schema[record.kind.rawValue] = type(of: record.props).migrations.count
         }
-        return try Self.makeEncoder().encode(Envelope(format: Self.format, schema: schema, shapes: document.shapes.map(Record.init)))
+        let format = document.shapes.contains { !$0.meta.isEmpty } ? 2 : 1
+        return try Self.makeEncoder().encode(Envelope(format: format, schema: schema, shapes: document.shapes.map(Record.init)))
     }
 
     /// One shape's props, as a board writes them: for fixtures, and tools that edit props as JSON.
@@ -93,17 +97,20 @@ public struct BoardCodec: Sendable {
         guard let container = try? decoder.container(keyedBy: RecordKeys.self) else {
             let json = (try? JSONValue(from: decoder)) ?? .null
             return ReadRecord(id: nil, kind: ShapeKind(rawValue: ""), key: nil, props: OpaqueProps(json: json, version: 0),
-                              meta: ShapeMeta(), keptAside: .unreadable("it isn't a JSON object"))
+                              meta: ShapeMeta(), droppedMeta: false, keptAside: .unreadable("it isn't a JSON object"))
         }
         let id = try? container.decode(ShapeID.self, forKey: .id)
         let kind = ShapeKind(rawValue: (try? container.decode(String.self, forKey: .kind)) ?? "")
         let key = (try? container.decode(String.self, forKey: .index)).flatMap(StackingKey.init)
         let version = (try? container.decodeIfPresent(Int.self, forKey: .v)) ?? schema[kind.rawValue] ?? 0
-        // Metadata that isn't an object can't be any plugin's: it's left out.
-        let meta = ShapeMeta(json: (try? container.decodeIfPresent(JSONValue.self, forKey: .meta))?.objectValue ?? [:])
+        // Not a ternary: JSONValue is ExpressibleByNilLiteral, so `nil` there would be `.null`.
+        var metaJSON: JSONValue?
+        if container.contains(.meta) { metaJSON = (try? container.decode(JSONValue.self, forKey: .meta)) ?? .null }
+        let (meta, droppedMeta) = Self.meta(metaJSON)
         func keptAside(_ reason: LoadReport.KeptShape.Reason) -> ReadRecord {
             let json = (try? container.decode(JSONValue.self, forKey: .props)) ?? .null
-            return ReadRecord(id: id, kind: kind, key: key, props: OpaqueProps(json: json, version: version), meta: meta, keptAside: reason)
+            return ReadRecord(id: id, kind: kind, key: key, props: OpaqueProps(json: json, version: version), meta: meta,
+                              droppedMeta: droppedMeta, keptAside: reason)
         }
         guard let codec = kinds[kind] else { return keptAside(.unknownKind) }
         guard version <= codec.version else { return keptAside(.newerVersion(file: version, app: codec.version)) }
@@ -117,7 +124,16 @@ public struct BoardCodec: Sendable {
         if let frame = (props as? any BoxShapeProps)?.frame, !frame.isFinite {
             return keptAside(.unreadable("its frame isn't finite"))
         }
-        return ReadRecord(id: id, kind: kind, key: key, props: props, meta: meta, keptAside: nil)
+        return ReadRecord(id: id, kind: kind, key: key, props: props, meta: meta, droppedMeta: droppedMeta, keptAside: nil)
+    }
+
+    /// A record's metadata: an object with an object for each plugin. What isn't can't be any
+    /// plugin's, so it's left out, and the second value says so.
+    private static func meta(_ json: JSONValue?) -> (ShapeMeta, dropped: Bool) {
+        guard let json else { return (ShapeMeta(), false) }
+        guard let members = json.objectValue else { return (ShapeMeta(), true) }
+        let kept = members.filter { $0.value.objectValue != nil }
+        return (ShapeMeta(json: kept), kept.count != members.count)
     }
 
     /// The document, after the repairs a board may need: an id for each shape that has none or
@@ -138,6 +154,7 @@ public struct BoardCodec: Sendable {
                 report.repairs.append(.newID(old: item.id, new: id))
             }
             if let reason = item.keptAside { report.keptAside.append(LoadReport.KeptShape(id: id, kind: item.kind, reason: reason)) }
+            if item.droppedMeta { report.repairs.append(.droppedMeta(id)) }
             records.append(AnyShapeRecord(id: id, kind: item.kind, props: item.props, stackingKey: item.key, meta: item.meta))
         }
         if !CanvasDocument.keysRise(records) {
@@ -250,6 +267,8 @@ public struct LoadReport: Equatable, Sendable {
         case newID(old: ShapeID?, new: ShapeID)
         /// Its stacking key was missing, malformed, or not above the shape below it.
         case newStackingKey(ShapeID)
+        /// Some of its metadata wasn't an object for a plugin, so no plugin's: it was left out.
+        case droppedMeta(ShapeID)
     }
 }
 
@@ -293,6 +312,8 @@ private struct ReadRecord {
     let key: StackingKey?
     let props: any ShapeProps
     let meta: ShapeMeta
+    /// Some of its metadata was left out (`LoadReport.Repair.droppedMeta`).
+    let droppedMeta: Bool
     /// Nil when the props are the kind's own type.
     let keptAside: LoadReport.KeptShape.Reason?
 }

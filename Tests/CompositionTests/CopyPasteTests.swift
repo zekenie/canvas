@@ -71,7 +71,11 @@ import TestKit
         let copy = try require(h.editor.selection)
         let codec = BoardCodec(registry: h.editor.registry)
         let data = try codec.encode(h.editor.document)
-        expect(String(decoding: data, as: UTF8.self).contains("\"clipboard.copiedFrom\""))
+        let json = try require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        expectEqual(json["format"] as? Int, 2, "a board with metadata, which an app from before it would drop")
+        let shapes = try require(json["shapes"] as? [[String: Any]])
+        let meta = try require(shapes.last?["meta"] as? [String: [String: Any]])
+        expectEqual((meta["clipboard"]?["copiedFrom"] as? [String: Any])?["shape"] as? String, note.description)
         let read = try codec.decode(data)
         expectEqual(read.report, LoadReport())
         expectEqual(read.document[copy]?.copiedFrom, note)
@@ -100,6 +104,36 @@ import TestKit
         expectEqual(board.editor.document[pasted]?.copiedFrom, note)
         controller.cut(nil)
         expectEqual(board.editor.document.shapes.map(\.id), [note])
+    },
+    test("with the table of contents' list focused, Edit › Cut, Copy and Paste go through the responder chain to the board's editor") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        defer { try? configureBoards() }
+        let board = BoardDocument()
+        board.start(with: WelcomeBoard.document())
+        board.makeWindowControllers()
+        defer { board.close() }
+        let window = try require(board.windowControllers.first?.window)
+        window.settle()
+        let notes = board.editor.document.shapes.filter { $0.kind == StickyNote.kind }.map(\.id)
+        board.editor.selectedShapeIDs = [notes[0], notes[1]]          // the panel lists just these
+        // The list is made again for the new selection: find the one in the window, once it's there.
+        @MainActor func contents() -> NSTableView? {
+            window.contentView?.descendants(NSTableView.self).first { $0.isTableOfContents && $0.window === window && $0.numberOfRows == 3 }
+        }
+        window.spin { contents() != nil }
+        let list = try require(contents())
+        expect(window.makeFirstResponder(list))
+        expect(window.firstResponder === list)
+        // Edit › Copy goes to the first responder's chain: through the panel's views to the window and its controller.
+        expect(list.tryToPerform(#selector(BoardWindowController.copy(_:)), with: nil), "something in the chain answers copy:")
+        expect(board.editor.canPaste, "and it was the board's: the notes are on the pasteboard")
+        let before = board.editor.document
+        expect(list.tryToPerform(#selector(BoardWindowController.paste(_:)), with: nil))
+        expectEqual(Set(board.editor.shapes(since: before).compactMap(\.copiedFrom)), Set(notes.prefix(2)))
+        expect(list.tryToPerform(#selector(BoardWindowController.cut(_:)), with: nil))
+        expectEqual(board.editor.document.shapes.filter { before[$0.id] == nil }, [], "the pasted copies, selected, are cut")
     },
     test("the menus send cut:, copy: and paste: with ⌘X, ⌘C and ⌘V") {
         let edit = try require(BoardMenus.make(appName: "Infinite Canvas").main.item(withTitle: "Edit")?.submenu)

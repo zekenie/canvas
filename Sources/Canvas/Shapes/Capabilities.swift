@@ -71,12 +71,18 @@ public protocol PaintOrderAnchored: ShapeDefinition {
     func paintAnchor(of shape: ShapeRecord<Props>, in document: CanvasDocument) -> ShapeID?
 }
 
-/// Props that name other shapes (a connector's ends). Whatever makes copies of shapes (pasting)
-/// asks it, so that a copy names the copies of the shapes its original named, and lets go of the
-/// rest. A kind whose props name no shape needs nothing: its copy's props are its own.
+/// Props that name other shapes (a connector's ends, a label's host). Every kind whose props name
+/// a shape adopts it, since the core and plugins keep those names right through it: deleting a
+/// shape lets go of it in every shape that names it, and a copy names the copies of the shapes its
+/// original named and lets go of the rest (pasting). A kind that names shapes without it keeps
+/// naming a shape once it's gone, and a copy keeps naming the original. A kind whose props name no
+/// shape needs nothing.
 public protocol ShapeReferencing: ShapeDefinition {
     /// The props, with every shape they name passed through `map`: named as the shape `map`
     /// returns instead, or, where it returns nil, let go of as though that shape were being deleted
-    /// (an arrow's end stays where it visibly is in `context`, which still has the shape).
-    func remappingReferences(of shape: ShapeRecord<Props>, _ map: (ShapeID) -> ShapeID?, in context: ShapeContext) -> Props
+    /// (an arrow's end stays where it's drawn: where it is in `context`, which still has the shape).
+    /// Nil when it can't let go of one: a shape `context` doesn't have, which it can't tell how to
+    /// do without (an arrow can't tell where that end is drawn). A deletion then leaves the props
+    /// as they were, and a copy leaves the shape out.
+    func remappingReferences(of shape: ShapeRecord<Props>, _ map: (ShapeID) -> ShapeID?, in context: ShapeContext) -> Props?
 }

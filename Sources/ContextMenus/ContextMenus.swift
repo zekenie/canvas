@@ -53,11 +53,11 @@ public struct ContextMenuContribution {
 final class ErasedEntry {
     let title: String
     let key: EntryKey
-    let isShown: @MainActor (AnyShapeRecord, CanvasEditor) -> Bool
+    let isShown: @MainActor (AnyShapeRecord) -> Bool
     let content: Content
 
     enum Content {
-        case item(isEnabled: @MainActor (AnyShapeRecord, CanvasEditor) -> Bool, isChecked: (@MainActor (AnyShapeRecord) -> Bool)?, action: Action)
+        case item(isEnabled: @MainActor (AnyShapeRecord) -> Bool, isChecked: (@MainActor (AnyShapeRecord) -> Bool)?, action: Action)
         case submenu([ErasedEntry])
     }
 
@@ -73,7 +73,7 @@ final class ErasedEntry {
         title = entry.title
         key = EntryKey(group: entry.group, id: entry.id)
         let shown = entry.isShown
-        isShown = { record, editor in read(record).map { shown($0, editor) } ?? false }
+        isShown = { read($0).map(shown) ?? false }
         switch entry.content {
         case .item(let isEnabled, let isChecked, let action):
             var checked: (@MainActor (AnyShapeRecord) -> Bool)?
@@ -82,8 +82,7 @@ final class ErasedEntry {
             case .edit(let edit): .edit { id, transaction in write(id, &transaction, edit) }
             case .perform(let perform): .perform(perform)
             }
-            content = .item(isEnabled: { record, editor in read(record).map { isEnabled($0, editor) } ?? false },
-                            isChecked: checked, action: erased)
+            content = .item(isEnabled: { read($0).map(isEnabled) ?? false }, isChecked: checked, action: erased)
         case .submenu(let entries):
             content = .submenu(entries.map { ErasedEntry($0, read: read, write: write) })
         }
@@ -147,6 +146,50 @@ extension PluginRegistrar {
     public mutating func contextMenuForEveryShape(where appliesTo: @escaping @MainActor (any ShapeDefinition) -> Bool = { _ in true },
                                                   @MenuBuilder<AnyShapeRecord> _ items: () -> [MenuEntry<AnyShapeRecord>]) {
         contribute(ContextMenuContribution(everyShape: items(), where: appliesTo), to: ShapeContextMenus.self, for: .any)
+    }
+}
+
+// MARK: Items for the canvas
+
+/// Items that aren't any one shape's (Cut, Copy and Paste). They're in every context menu: on
+/// shapes, after the shapes' own items in their groups' order, and on empty canvas, where they're
+/// the menu. Keyed by group and id, as a shape's are: two plugins adding one item are a
+/// `conflict`, and a shape's own item with the same group and id takes its place, shown or not.
+public enum CanvasContextMenu {}
+
+extension CanvasContextMenu: KeyedExtensionPoint {
+    public typealias Contribution = CanvasMenuContribution
+    public static var owner: PluginID { .contextMenus }
+
+    public static func uniqueKeys(of contribution: CanvasMenuContribution, for target: ShapeTarget) -> [AnyHashable] {
+        contribution.entries.flatMap { $0.paths(under: []) }.map { MenuItemKey(target: target, path: $0) }
+    }
+}
+
+/// What a context menu is for, as its items for the canvas see it: asked once per menu.
+@MainActor
+public struct MenuSubject {
+    /// The selection, on a selected shape; the shape right-clicked, which becomes the selection,
+    /// on one that wasn't; none on empty canvas.
+    public let shapes: [ShapeID]
+    public let editor: CanvasEditor
+}
+
+/// What `CanvasContextMenu` stores: one plugin's items for the canvas. Only the sugar makes one.
+@MainActor
+public struct CanvasMenuContribution {
+    let entries: [MenuEntry<MenuSubject>]
+}
+
+extension PluginRegistrar {
+    /// Items for the canvas, in every context menu (see `CanvasContextMenu`), over the menu's
+    /// `MenuSubject`. They take `MenuItem`'s `perform` form, which gets the subject's shapes:
+    ///
+    ///     registrar.contextMenuForCanvas {
+    ///         MenuItem("Paste", when: { $0.editor.canPaste }) { _, editor in editor.paste() }
+    ///     }
+    public mutating func contextMenuForCanvas(@MenuBuilder<MenuSubject> _ items: () -> [MenuEntry<MenuSubject>]) {
+        contribute(CanvasMenuContribution(entries: items()), to: CanvasContextMenu.self)
     }
 }
 

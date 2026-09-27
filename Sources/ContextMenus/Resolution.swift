@@ -8,16 +8,22 @@ import Selection
 final class ContextMenuState {
     private unowned let editor: CanvasEditor
     private var candidates: [ShapeKind: [ErasedEntry]] = [:]
+    /// The items for the canvas (`CanvasContextMenu`), in plugin and builder order.
+    private let canvasEntries: [MenuEntry<MenuSubject>]
 
-    init(editor: CanvasEditor) { self.editor = editor }
+    init(editor: CanvasEditor) {
+        self.editor = editor
+        canvasEntries = editor.registry.contributions(to: CanvasContextMenu.self).flatMap(\.value.entries)
+    }
 
     /// A secondary click: the context menu for what it's on, as the select tool sees it. That's the
     /// selection, on a selected shape or on empty space inside a multi-selection's box; otherwise
     /// the selectable shape there, alone (the select tool's hit rule, so unselectable shapes are
-    /// seen through). With a menu to show, editing ends and a shape that wasn't selected becomes
-    /// the selection, as in Keynote and tldraw. Without one (empty canvas, or nothing that
-    /// applies), nothing changes. A Control-click counts only in the select tool: other tools read
-    /// ⌃ as a modifier (the arrow tool's binds nothing), so it's a press there.
+    /// seen through); otherwise the canvas, whose menu is only its own items. With a menu to show,
+    /// editing ends and a shape that wasn't selected becomes the selection, as in Keynote and
+    /// tldraw. Without one (nothing applies), nothing changes. A Control-click counts only in the
+    /// select tool: other tools read ⌃ as a modifier (the arrow tool's binds nothing), so it's a
+    /// press there.
     func menu(for pointer: Pointer) -> NSMenu? {
         if pointer.isControlClick, editor.currentToolID != .select { return nil }
         let hit = editor.selectableShape(at: pointer.world)
@@ -29,23 +35,27 @@ final class ContextMenuState {
         } else if hit != nil || editor.isInSelectionBox(pointer.world) {
             ids = editor.selectedShapeIDs
         } else {
-            return nil
+            ids = []
         }
         var entries = entries(for: ids)
         guard !entries.isEmpty else { return nil }
         let revision = editor.revision
         editor.endEditing()
         if let selects { editor.selection = selects }
-        // Ending editing may have saved the editing view: resolve against what it saved, and against
-        // the selection the menu is for (items that ask the editor may read it).
-        if editor.revision != revision || selects != nil { entries = self.entries(for: ids) }
+        // Ending editing may have saved the editing view: resolve against what it saved.
+        if editor.revision != revision { entries = self.entries(for: ids) }
         return entries.isEmpty ? nil : ContextMenuItems.menu(entries)
     }
 
-    /// What the menu holds for these shapes: the items that apply to every one of them.
+    /// What the menu holds for these shapes: the items that apply to every one of them, then the
+    /// canvas's items, less any whose place a shape's own item takes (shown or not, as a kind's own
+    /// item takes an every-shape one's).
     func entries(for ids: [ShapeID]) -> [ResolvedEntry] {
         let records = ids.compactMap { editor.document[$0] }
-        return ContextMenuItems.resolve(records.map { ($0, ContextMenuItems.shown(candidates(for: $0.kind), for: $0, in: editor)) }, in: editor)
+        let own = ContextMenuItems.resolve(records.map { ($0, ContextMenuItems.shown(candidates(for: $0.kind), for: $0)) }, in: editor)
+        let taken = Set(Set(records.map(\.kind)).flatMap { candidates(for: $0).map(\.key) })
+        let canvas = ContextMenuItems.resolve(canvasEntries, for: MenuSubject(shapes: records.map(\.id), editor: editor))
+        return own + canvas.filter { !taken.contains($0.key) }
     }
 
     /// The kind's own entries, then every shape's that apply to it, each in plugin and builder order.
@@ -65,8 +75,9 @@ extension ContextMenuState: EditorService {}
 @MainActor
 struct ResolvedEntry {
     let title: String
-    let group: MenuGroupID
+    let key: EntryKey
     let content: Content
+    var group: MenuGroupID { key.group }
 
     enum Content {
         case item(isEnabled: Bool, state: NSControl.StateValue?, perform: @MainActor () -> Void)
@@ -78,9 +89,9 @@ struct ResolvedEntry {
 enum ContextMenuItems {
     /// What shows for one shape at one level: the first entry with each key (a kind's own before
     /// every shape's), then only those whose `when` holds.
-    static func shown(_ entries: [ErasedEntry], for record: AnyShapeRecord, in editor: CanvasEditor) -> [ErasedEntry] {
+    static func shown(_ entries: [ErasedEntry], for record: AnyShapeRecord) -> [ErasedEntry] {
         var seen = Set<EntryKey>()
-        return entries.filter { seen.insert($0.key).inserted }.filter { $0.isShown(record, editor) }
+        return entries.filter { seen.insert($0.key).inserted }.filter { $0.isShown(record) }
     }
 
     /// The entries every shape shows, in the first shape's order. An item is enabled if it is for
@@ -99,10 +110,10 @@ enum ContextMenuItems {
                 var levels: [(record: AnyShapeRecord, entries: [ErasedEntry])] = []
                 for (record, match) in matches {
                     guard case .submenu(let entries) = match.content else { return nil }
-                    levels.append((record, shown(entries, for: record, in: editor)))
+                    levels.append((record, shown(entries, for: record)))
                 }
                 let items = resolve(levels, in: editor)
-                return items.isEmpty ? nil : ResolvedEntry(title: entry.title, group: entry.key.group, content: .submenu(items))
+                return items.isEmpty ? nil : ResolvedEntry(title: entry.title, key: entry.key, content: .submenu(items))
             }
         }
     }
@@ -112,14 +123,38 @@ enum ContextMenuItems {
         var checks: [Bool?] = []
         for (record, match) in matches {
             guard case .item(let isEnabled, let isChecked, let action) = match.content else { return nil }
-            if isEnabled(record, editor) { enabled.append((record.id, action, match)) }
+            if isEnabled(record) { enabled.append((record.id, action, match)) }
             checks.append(isChecked.map { $0(record) })
         }
         let state: NSControl.StateValue? = checks.allSatisfy { $0 == nil } ? nil
             : checks.allSatisfy { $0 == true } ? .on : checks.contains(true) ? .mixed : .off
-        return ResolvedEntry(title: entry.title, group: entry.key.group, content: .item(isEnabled: !enabled.isEmpty, state: state) {
+        return ResolvedEntry(title: entry.title, key: entry.key, content: .item(isEnabled: !enabled.isEmpty, state: state) {
             perform(enabled, in: editor)
         })
+    }
+
+    /// The canvas's items for a menu's subject, each asked once: those shown, in order, and
+    /// submenus with something in them.
+    static func resolve(_ entries: [MenuEntry<MenuSubject>], for subject: MenuSubject) -> [ResolvedEntry] {
+        entries.compactMap { entry in
+            guard entry.isShown(subject) else { return nil }
+            let key = EntryKey(group: entry.group, id: entry.id)
+            switch entry.content {
+            case .item(let isEnabled, let isChecked, let action):
+                let run: @MainActor () -> Void = switch action {
+                case .perform(let perform): { perform(subject.shapes, subject.editor) }
+                case .edit(let edit): {                       // a subject has nothing to edit: run as asked
+                    var subject = subject
+                    edit(&subject)
+                }
+                }
+                let state: NSControl.StateValue? = isChecked.map { $0(subject) ? .on : .off }
+                return ResolvedEntry(title: entry.title, key: key, content: .item(isEnabled: isEnabled(subject), state: state, perform: run))
+            case .submenu(let entries):
+                let items = resolve(entries, for: subject)
+                return items.isEmpty ? nil : ResolvedEntry(title: entry.title, key: key, content: .submenu(items))
+            }
+        }
     }
 
     /// Every edit in one transaction, then each contribution's `perform` once, with its shapes.

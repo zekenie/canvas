@@ -5,8 +5,8 @@ import Keyboard
 import Selection
 
 /// Cut, copy and paste, as a plugin: ⌘X, ⌘C and ⌘V (registered with Keyboard), Edit › Cut, Copy
-/// and Paste (the commands the board's window runs), and Cut, Copy and Paste in every shape's
-/// context menu. Copying puts the selection's copyable shapes on the pasteboard; pasting puts
+/// and Paste (the commands the board's window runs), and Cut, Copy and Paste in every context
+/// menu, on shapes and on empty canvas. Copying puts the selection's copyable shapes on the pasteboard; pasting puts
 /// copies of them on the board, with new ids, each remembering the shape it was copied from
 /// (`CopiedFrom`, kept in its board). Every kind is copyable unless it opts out
 /// (`shape.uncopyable()`). Only this app's shapes paste: anything else on the pasteboard (text, an
@@ -30,7 +30,8 @@ extension ShapeCopyability: KeyedExtensionPoint {
 // Sugar, so opting out is one line.
 extension ShapeRegistrar {
     /// This kind's shapes are never copied: copying (or cutting) a selection leaves them out, and on
-    /// their own, Cut and Copy are dimmed. They're still selected, moved and deleted as usual.
+    /// their own, the context menu has no Cut or Copy. They're still selected, moved and deleted as
+    /// usual.
     public mutating func uncopyable() {
         contribute({ _ in false }, to: ShapeCopyability.self)
     }
@@ -68,7 +69,7 @@ extension AnyShapeRecord {
 
 // MARK: The context menu
 
-/// Cut, Copy and Paste, shared by every kind: after a kind's own items and a feature's, before
+/// Cut, Copy and Paste, items for the canvas: after a kind's own items and a feature's, before
 /// Arrange.
 public enum ClipboardMenuGroup {}
 extension ClipboardMenuGroup: MenuGroup {
@@ -93,15 +94,17 @@ public struct ClipboardPlugin: CanvasPlugin {
         registrar.command(.cut, shortcuts: [KeyChord("x", .command)], isEnabled: { $0.canCut }) { $0.cutSelection() }
         registrar.command(.copy, shortcuts: [KeyChord("c", .command)], isEnabled: { $0.canCopy }) { $0.copySelection() }
         registrar.command(.paste, shortcuts: [KeyChord("v", .command)], isEnabled: { $0.canPaste }) { $0.paste() }
-        // The menu is for the selection (a right-click on a shape selects it), so it cuts and copies
-        // the shapes it's for, those that can be; with none that can, the items are dimmed.
-        registrar.contextMenuForEveryShape {
-            MenuItem("Cut", in: ClipboardMenuGroup.self) { ids, editor in editor.cut(ids) }
-                .enabled { record, editor in editor.isCopyable(record.id) }
-            MenuItem("Copy", in: ClipboardMenuGroup.self) { ids, editor in editor.copy(ids) }
-                .enabled { record, editor in editor.isCopyable(record.id) }
-            MenuItem("Paste", in: ClipboardMenuGroup.self) { _, editor in editor.paste() }
-                .enabled { _, editor in editor.canPaste }
+        // In every context menu, on shapes and on empty canvas. Cut and Copy show when some of the
+        // shapes the menu is for can be copied, and act on those; Paste, when there's something
+        // to paste.
+        registrar.contextMenuForCanvas {
+            MenuItem("Cut", in: ClipboardMenuGroup.self, when: { $0.shapes.contains(where: $0.editor.isCopyable) }) { ids, editor in
+                editor.cut(ids)
+            }
+            MenuItem("Copy", in: ClipboardMenuGroup.self, when: { $0.shapes.contains(where: $0.editor.isCopyable) }) { ids, editor in
+                editor.copy(ids)
+            }
+            MenuItem("Paste", in: ClipboardMenuGroup.self, when: { $0.editor.canPaste }) { _, editor in editor.paste() }
         }
     }
 }

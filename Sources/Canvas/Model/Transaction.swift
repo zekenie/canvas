@@ -129,15 +129,18 @@ public struct Transaction {
         didChange = true
     }
 
-    /// Runs every plugin's `willDelete` handlers first, in this transaction, while the shapes still
-    /// exist. Handlers may delete more shapes: each shape's handlers run once, and everything is
-    /// removed together when the outermost `delete` returns.
+    /// First, while the shapes still exist, every plugin's `willDelete` handlers run, in this
+    /// transaction, seeing every shape as it was; then every shape that names one of them, and
+    /// stays, lets go of it, as its kind says (`ShapeReferencing`: an arrow's end stays where it's
+    /// drawn). Handlers may delete more shapes (a shape's dependents): each shape's handlers run and
+    /// it's let go of once, and everything is removed together when the outermost `delete` returns.
     public mutating func delete(_ ids: Set<ShapeID>) {
         let ids = ids.filter { document[$0] != nil }.subtracting(deleting)
         guard !ids.isEmpty else { return }
         let isOutermost = deleting.isEmpty
         deleting.formUnion(ids)
         for handler in registry.willDeleteHandlers { handler(ids, &self) }
+        letGo(of: ids)
         guard isOutermost else { return }
         document.remove(deleting)
         for id in deleting where changes.added.remove(id) == nil {       // added and removed here: never seen
@@ -147,5 +150,17 @@ public struct Transaction {
         changes.reordered = true
         deleting = []
         didChange = true
+    }
+
+    /// Every shape that names one of `ids`, and isn't being deleted too, lets go of it. One whose
+    /// kind can't (it names a shape it can't find) is left as it was.
+    private mutating func letGo(of ids: Set<ShapeID>) {
+        let kinds = registry.referencingKinds
+        guard !kinds.isEmpty else { return }
+        let context = shapes
+        for record in document.shapes where kinds.contains(record.kind) && !deleting.contains(record.id) {
+            guard let released = record.remappingReferences({ ids.contains($0) ? nil : $0 }, in: context), released != record else { continue }
+            update(record.id) { $0 = released }
+        }
     }
 }
