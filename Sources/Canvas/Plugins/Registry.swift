@@ -167,7 +167,9 @@ struct RawContribution {
         self.value = value
         keys = (P.self as? any KeyedExtensionPoint.Type).map { Self.keys(of: value, for: target, claimedIn: $0) } ?? []
         summary = switch value {
-        case let shape as ShapeRegistration: "shape \(shape.kind)"
+        case let shape as ShapeRegistration:
+            // A kind's version shows once it has one, so the pinned report shows every bump.
+            "shape \(shape.kind)" + (shape.definition.kindCodec.version > 0 ? " v\(shape.definition.kindCodec.version)" : "")
         case let tool as ToolRegistration: "tool \(tool.descriptor.id)" + (tool.descriptor.shortcut.map { " [\($0)]" } ?? "")
         case let service as ServiceRegistration: "service \(service.name)"
         case let overlay as any CanvasOverlay: "overlay \(type(of: overlay))"

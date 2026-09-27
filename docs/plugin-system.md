@@ -25,6 +25,7 @@ maps one onto the other.
 - [Context menus](#context-menus)
 - [Capabilities](#capabilities)
 - [The editor, the document, and drawing](#the-editor-the-document-and-drawing)
+- [Boards on disk](#boards-on-disk)
 - [The registry](#the-registry)
 - [Testing plugins](#testing-plugins)
 - [Coming from data-canvas](#coming-from-data-canvas)
@@ -207,6 +208,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Create a kind with a double-click on empty canvas | `x.createOnDoubleClick(place)` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
 | Keep a kind from being selected | `x.unselectable()`, or `x.selectable { ... }` | [Selection](#selection) |
 | Show a shape's state at the foot of the panel | `registrar.detailStatusForEveryShape` | [ValidationDetails](#footer-lines-from-a-bridge-validationdetails) |
+| Change a shipped kind's props | A migration in its `static let migrations`, and a fixture for the new version | [Boards on disk](#boards-on-disk) |
 
 The rule of thumb: behavior intrinsic to a kind is a [capability](#capabilities), a protocol its
 definition adopts; behavior any plugin can add to any kind is an extension point.
@@ -1301,11 +1303,15 @@ to it.
 
 ## The editor, the document, and drawing
 
-- **The document is a value.** `CanvasDocument` holds every shape, back to front. The only way to
-  change it is `editor.transact { tx in ... }`: `insert`, `update` (typed with `as:`),
-  `bringToFront`, `sendToBack`, `move(_:above:)`, `move(_:below:)`, `delete`. A transaction commits once, if anything changed, and bumps
-  `editor.revision`. Transactions don't nest. Undo (not built yet) will group commits: everything
-  from a press to its release, and everything while a shape is being edited, will be one step.
+- **The document is a value.** `CanvasDocument` holds every shape, back to front, in the order of
+  their stacking keys: each record carries its own (`stackingKey`, a fractional index as in
+  tldraw), so moving a shape in the stack changes that shape alone. The only way to change it is
+  `editor.transact { tx in ... }`: `insert` (on top), `update` (typed with `as:`; it can't change a
+  shape's id or key), `bringToFront`, `sendToBack`, `move(_:above:)`, `move(_:below:)`, `delete`.
+  A transaction commits once, if anything changed, and bumps `editor.revision`. Transactions don't
+  nest. A frame that isn't finite never gets in: such an insert or update is dropped, since a board
+  must always save. Undo (not built yet) will group commits: everything from a press to its
+  release, and everything while a shape is being edited, will be one step.
 - **`willDelete`** handlers run inside the deleting transaction, before anything is removed, so a
   plugin can let go of shapes that are about to disappear (arrows bake their curve there). They may
   delete more; each shape's handlers run once.
@@ -1323,6 +1329,64 @@ to it.
   the editing view over its shape, hands AppKit the menu for a secondary click, and draws the editor, all through the editor's `@_spi(Host)`
   API. Only the app and tests can import CanvasUI, and no plugin can see the host API, so no
   plugin can reach around the editor.
+
+## Boards on disk
+
+A board is a file (`.canvasboard`; `.board` is Freeform's), one per board, opened and autosaved in place by `BoardDocument`
+(CanvasUI, an `NSDocument`). `BoardCodec` (Canvas) reads and writes it: JSON, sorted and
+pretty-printed, so a board diffs cleanly.
+
+```json
+{
+  "format" : 1,
+  "schema" : { "arrow" : 0, "sticky-note" : 1 },
+  "shapes" : [
+    { "id" : "…", "index" : "a0", "kind" : "sticky-note", "props" : { "frame" : [[80, 80], [200, 200]], "text" : "…" } }
+  ]
+}
+```
+
+`format` versions the envelope, and `schema` each kind's props. The camera, the selection and
+whether the details show aren't in it: they're remembered per file on this Mac, so panning never
+marks a board edited.
+
+**A kind versions its own props.** Its migrations sit beside `static let kind`, and their count
+is the version boards record. A migration rewrites one shape's props as JSON (`JSONObject`), since
+old props may no longer decode:
+
+```swift
+public struct StickyNote: BoxShapeProps {
+    public static let kind: ShapeKind = "sticky-note"
+    /// Append only. The count is the version boards record.
+    public static let migrations = [
+        PropsMigration("notes get a color") { props in props["color"] = "yellow" },
+    ]
+    ...
+}
+```
+
+- Any change to how a kind's props encode needs a migration: a member renamed, removed or
+  retyped, a changed unit or meaning, a new member that isn't optional. (Swift's synthesized
+  `Codable` ignores defaults when a member is missing; a new optional member needs none.)
+- Migrations are append only, pure (only that shape's props: no registry, no other shapes, no
+  clock, no randomness) and up only.
+- A kind's string never changes once shipped.
+- A value several kinds store (Checklists' `ChecklistItem`) is versioned by each kind that stores
+  it: its owner publishes the step, and each kind appends it.
+- Each shipped kind has a fixture per version, `Tests/CompositionTests/Fixtures/kinds/<kind>.v<N>.json`,
+  one shape's props as boards of that version wrote them. `expectKindFixtures` (CanvasTesting)
+  checks that every fixture migrates and reads, and that today's writes back byte for byte, so a
+  props change without a migration fails. Add a fixture for each new version; never edit one.
+  The registry's report shows each kind's version once it has one (`shape sticky-note v1`).
+
+**Opening never drops a shape.** What the app can't use is kept aside (`AnyShapeRecord.isOpaque`),
+in its place in the stack, and saved back as it was, with its own version (`v`): a kind no plugin
+installs, a newer version of a kind, or props that don't read (or don't migrate, or have a frame
+that isn't finite). Nothing draws, hits, selects or edits a kept-aside shape; a horizontal that goes
+through every shape skips `isOpaque` records, as Validation does. Opening also repairs ids that
+repeat or are missing, and stacking keys that don't rise. `LoadedBoard.report` says what was kept
+aside and repaired; the window shows it, and repairs mark the board edited, so saving keeps them.
+Only a file that isn't a board, or comes from a newer app, refuses to open (`BoardReadError`).
 
 ## The registry
 
@@ -1461,6 +1525,13 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
 - A test target is `Tests/<Name>Tests` with a `main.swift` that calls `runTests([...])`. Every
   `Suite` must be listed there (`test.sh` checks). `<M>Tests` may depend only on M, what M
   depends on, and the test-support and ui modules.
+- **Boards.** `expectKindFixtures(kinds, in: registry, directory:)` (CanvasTesting) holds kinds to
+  their fixtures ([Boards on disk](#boards-on-disk)); CompositionTests runs it for every shipped
+  kind. CanvasTests read broken and scrambled boards (a seeded fuzz test), and CompositionTests'
+  BoardDocumentTests open, save, revert and host boards with `BoardDocument.configuration` set as
+  the app sets it. `./build.sh bench` builds BenchmarkTests in release and holds saving, opening,
+  and a hover and a drag frame to their budgets on generated boards of 1,000 and 10,000 shapes;
+  `./test.sh` runs it small, in debug, and only reports.
 - **Arrow behavior is pinned to the proof of concept.** CompositionTests replays 30 arrow
   scenarios through `CanvasView` with real events and compares where every arrow ends up, byte for
   byte, with a transcript recorded from the POC. It also compares nine renders pixel for pixel:
@@ -1497,11 +1568,10 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
 
 Each of these adds to the design without changing what plugins are written against.
 
-- **Persistence.** Props are already `Codable`, so a document codec is an addition. Keeping shapes
-  whose plugin isn't installed needs two small core changes: an `AnyShapeRecord` initializer for
-  opaque props that carries its own kind, and relaxing the installed-kind checks in
-  `CanvasEditor.init` and `Transaction.insert`. Drawing and hit testing already skip kinds with
-  no definition.
+- **Change sets:** each transaction saying what it added, changed and removed, and who made it (the
+  user, an agent). Undo, an agents' CLI and sync build on them.
+- **An arrow end bound to a shape that isn't there** (deleted outside a transaction, or kept aside)
+  is drawn at the origin; a binding should keep a point to fall back on.
 - **Undo.** `transact` is already the one mutation path. The editor will open an undo group on
   each press and when editing begins, close it on release and when editing ends, and register each
   group's before and after with `UndoManager`. Panel edits are one transaction per keystroke or

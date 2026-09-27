@@ -100,7 +100,8 @@ public final class ValidationEngine {
         guard checkedRevision != editor.revision else { return }
         let context = ValidationContext(document: editor.document)
         var fresh: [ShapeID: ValidationResult] = [:]
-        for shape in editor.document.shapes {
+        // Shapes the board keeps aside aren't the app's to judge.
+        for shape in editor.document.shapes where !shape.isOpaque {
             let issues = editor.registry.contributions(to: ValidationRules.self, for: shape.kind).flatMap { $0.check(shape, context) }
             if !issues.isEmpty { fresh[shape.id] = ValidationResult(issues: issues) }
         }

@@ -1,9 +1,12 @@
 import CoreGraphics
 import Foundation
 
-/// A shape kind's own data: a plain value. The kind is stated here, once.
+/// A shape kind's own data: a plain value. The kind is stated here, once, and so is its history:
+/// how older boards' props become today's (`migrations`, none by default).
 public protocol ShapeProps: Codable, Equatable, Sendable {
     static var kind: ShapeKind { get }
+    /// Append only; see `PropsMigration`.
+    static var migrations: [PropsMigration] { get }
 }
 
 /// Props of shapes that occupy a rectangle. The core's defaults (geometry, hit testing, culling,
@@ -33,10 +36,13 @@ extension ShapeRecord where Props: BoxShapeProps {
 /// A shape of any kind, as the document stores it.
 public struct AnyShapeRecord: Identifiable, Equatable, Sendable {
     public let id: ShapeID
-    /// Stored alongside `props` rather than read off them, so that persistence can one day keep a
-    /// record whose plugin isn't installed (which will also need an initializer for opaque props).
+    /// Stored alongside `props` rather than read off them, so a board can keep a shape whose kind
+    /// isn't installed (`isOpaque`).
     public let kind: ShapeKind
-    public private(set) var props: any ShapeProps
+    public internal(set) var props: any ShapeProps
+    /// Where it sits in the stack. Nil until the shape is in a document, which gives it one; only
+    /// the document's order changes it (`bringToFront`, `sendToBack`).
+    public internal(set) var stackingKey: StackingKey?
 
     public init<P: ShapeProps>(_ shape: ShapeRecord<P>) {
         id = shape.id
@@ -65,7 +71,7 @@ public struct AnyShapeRecord: Identifiable, Equatable, Sendable {
     }
 
     public static func == (a: Self, b: Self) -> Bool {
-        a.id == b.id && a.kind == b.kind && a.props.isEqual(to: b.props)
+        a.id == b.id && a.kind == b.kind && a.stackingKey == b.stackingKey && a.props.isEqual(to: b.props)
     }
 }
 

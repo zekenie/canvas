@@ -5,6 +5,7 @@ import AppKit
 // it (`erasedAccepts`), so the casts below only fail for records that bypassed that.
 extension ShapeDefinition {
     var kind: ShapeKind { Props.kind }
+    var kindCodec: KindCodec { KindCodec(Props.self) }
 
     func erasedAccepts(_ record: AnyShapeRecord) -> Bool {
         record.kind == Props.kind && record.props is Props

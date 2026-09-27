@@ -22,6 +22,8 @@ public protocol CanvasEditorDelegate: AnyObject {
 public final class CanvasEditor {
     public let registry: Registry
     @ObservationIgnored public let scheduler: any Scheduler
+    /// How transactions make stacking keys for shapes they add or reorder.
+    @ObservationIgnored public let stackingKeys: StackingKeyGenerator
     /// Set by the hosting view.
     @_spi(Host) @ObservationIgnored public weak var delegate: (any CanvasEditorDelegate)?
 
@@ -59,6 +61,9 @@ public final class CanvasEditor {
     /// The keyboard's modifiers right now. Set by the hosting view (`NSEvent.modifierFlags`) and
     /// by test harnesses; plugins read `effectiveModifiers`.
     @_spi(Host) @ObservationIgnored public var liveModifiers: @MainActor () -> Modifiers = { [] }
+    /// Called after every transaction that changed the document, once everything has heard of it:
+    /// the board it belongs to has been edited. (Not for `replaceDocument`.)
+    @_spi(Host) @ObservationIgnored public var didCommitTransaction: (@MainActor (CanvasEditor) -> Void)?
 
     @ObservationIgnored private var tools: [ToolID: any Tool] = [:]
     @ObservationIgnored private let serviceRegistrations: [ObjectIdentifier: ServiceRegistration]
@@ -74,14 +79,16 @@ public final class CanvasEditor {
     // The camera's slide's next frame, used by CanvasEditor+Camera.swift.
     @ObservationIgnored var cameraSlide: ScheduledTask?
 
-    public init(registry: Registry, document: CanvasDocument = CanvasDocument(), scheduler: any Scheduler = TaskScheduler()) {
+    public init(registry: Registry, document: CanvasDocument = CanvasDocument(), scheduler: any Scheduler = TaskScheduler(),
+                stackingKeys: StackingKeyGenerator = .jittered) {
         for record in document.shapes {
-            precondition(registry.definition(for: record.kind)?.erasedAccepts(record) == true,
+            precondition(record.isOpaque || registry.definition(for: record.kind)?.erasedAccepts(record) == true,
                          "no installed plugin defines \(record.kind) shapes with these props")
         }
         self.registry = registry
         self.document = document
         self.scheduler = scheduler
+        self.stackingKeys = stackingKeys
         currentToolID = registry.defaultTool
         serviceRegistrations = Dictionary(registry.services.map { ($0.type, $0) }, uniquingKeysWith: { first, _ in first })
         // Services first, so tools can look them up; each resolves the services it asks for.
@@ -122,7 +129,7 @@ public final class CanvasEditor {
     public func transact<T>(_ body: (inout Transaction) throws -> T) rethrows -> T {
         precondition(!isTransacting, "transactions don't nest; use the one you were given")
         isTransacting = true
-        var transaction = Transaction(document: document, registry: registry, camera: camera)
+        var transaction = Transaction(document: document, registry: registry, camera: camera, keys: stackingKeys)
         let result: T
         do {
             defer { isTransacting = false }
@@ -130,8 +137,25 @@ public final class CanvasEditor {
         }
         // Committing can end editing, and an editing view may save as it closes: outside the
         // transaction, so it can.
-        if transaction.didChange { commit(transaction.document) }
+        if transaction.didChange {
+            commit(transaction.document)
+            didCommitTransaction?(self)
+        }
         return result
+    }
+
+    /// Puts a whole other document in place: opening a board, reverting it, reloading it after it
+    /// changed on disk. Ends any press and any editing, then commits as a transaction does, except
+    /// that the board isn't edited by it (`didCommitTransaction` isn't called).
+    @_spi(Host) public func replaceDocument(with newDocument: CanvasDocument) {
+        precondition(!isTransacting, "a document can't be replaced inside a transaction")
+        for record in newDocument.shapes {
+            precondition(record.isOpaque || registry.definition(for: record.kind)?.erasedAccepts(record) == true,
+                         "no installed plugin defines \(record.kind) shapes with these props")
+        }
+        session = nil
+        endEditing()
+        commit(newDocument)
     }
 
     private func commit(_ newDocument: CanvasDocument) {
@@ -210,7 +234,7 @@ public final class CanvasEditor {
     @discardableResult
     public func beginEditing(_ id: ShapeID) -> Bool {
         endEditing()
-        guard let record = document[id], registry.definition(for: record.kind) is any Editable else { return false }
+        guard let record = document[id], !record.isOpaque, registry.definition(for: record.kind) is any Editable else { return false }
         editingShapeID = id
         delegate?.editorEditingDidChange(self)
         setNeedsDisplay()

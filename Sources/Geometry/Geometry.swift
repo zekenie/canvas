@@ -61,6 +61,9 @@ extension CGRect {
 
     public var center: CGPoint { CGPoint(x: midX, y: midY) }
 
+    /// Whether its origin and size are all finite: no NaN, no infinity.
+    public var isFinite: Bool { origin.x.isFinite && origin.y.isFinite && size.width.isFinite && size.height.isFinite }
+
     /// Whether `rect` is strictly inside this one, on every side (tldraw's Box.Contains).
     public func containsStrictly(_ rect: CGRect) -> Bool {
         minX < rect.minX && minY < rect.minY && maxX > rect.maxX && maxY > rect.maxY

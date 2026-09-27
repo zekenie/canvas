@@ -18,6 +18,13 @@ includes from 15 on). It builds each module separately, in the order `Package.sw
 refuses to build if the code and the manifest disagree. `./build.sh graph` prints the module graph,
 and `./build.sh audit` checks it without compiling.
 
+## Boards
+
+Each board is a file (`.canvasboard`, JSON) in its own window: File › New, Open, Open Recent, and Save,
+as in any Mac document app. Boards save themselves as you work, and File › Revert To goes back to
+earlier versions. The first launch opens the welcome board; Help › Welcome Board opens it again.
+A board remembers, on each Mac, where you left its view.
+
 ## Controls
 
 | Action | How |

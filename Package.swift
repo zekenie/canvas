@@ -87,6 +87,7 @@ let package = Package(
         .executableTarget(name: "RectanglesTests", dependencies: ["Canvas", "CanvasTesting", "Rectangles", "TestKit"], path: "Tests/RectanglesTests"), // layer: test
         .executableTarget(name: "ExamplesTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "ContextMenus", "EllipseTitles", "Ellipses", "Eraser", "Polylines", "Rectangles", "Reordering", "Selection", "TestKit", "Titles"], path: "Tests/ExamplesTests"), // layer: test
         .executableTarget(name: "CompositionTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "CanvasUI", "Checklists", "Composition", "DetailPanel", "Geometry", "Selection", "StickyNotes", "TaskCards", "TestKit", "Validation"], path: "Tests/CompositionTests"), // layer: test
+        .executableTarget(name: "BenchmarkTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "Composition", "Ellipses", "Geometry", "StickyNotes", "TaskCards", "TestKit"], path: "Tests/BenchmarkTests"), // layer: test
     ],
     swiftLanguageModes: [.v6]
 )

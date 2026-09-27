@@ -127,6 +127,8 @@ public final class CanvasView: NSView {
     /// Edit › Select All (⌘A), sent to the first responder when the canvas has the keyboard. Text
     /// being edited (a note, a panel field) selects its own text instead.
     public override func selectAll(_ sender: Any?) { editor.perform(.selectAll) }
+    /// Edit › Delete, as the Delete key.
+    @objc public func delete(_ sender: Any?) { editor.perform(.delete) }
 
     @objc public func zoomIn(_ sender: Any?) {
         editor.camera.zoom(by: 1.25, around: CGPoint(x: bounds.midX, y: bounds.midY))

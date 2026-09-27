@@ -9,10 +9,22 @@ public struct ShapeKind: RawRepresentable, Hashable, Codable, Sendable, Expressi
 }
 
 /// A shape's identity. Pass one in to build a shape with a known id (decoding, tests).
-public struct ShapeID: Hashable, Codable, Sendable, CustomStringConvertible {
+public struct ShapeID: Hashable, Sendable, CustomStringConvertible {
     public let rawValue: UUID
     public init(_ rawValue: UUID = UUID()) { self.rawValue = rawValue }
     public var description: String { rawValue.uuidString }
+}
+
+/// As the UUID's string, wherever an id is written: in a board, and in props that name a shape.
+extension ShapeID: Codable {
+    public init(from decoder: any Decoder) throws {
+        rawValue = try decoder.singleValueContainer().decode(UUID.self)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 /// A plugin's identity, unique in the plugin list. A plugin that owns an extension point publishes

@@ -30,8 +30,9 @@ final class SelectionState {
         }
     }
 
-    /// The kind's own rule, else one for every kind, else selectable.
-    func isSelectable(_ record: AnyShapeRecord) -> Bool { rules[record.kind]?(record) ?? true }
+    /// Never a shape the board keeps aside; otherwise the kind's own rule, else one for every
+    /// kind, else selectable.
+    func isSelectable(_ record: AnyShapeRecord) -> Bool { !record.isOpaque && (rules[record.kind]?(record) ?? true) }
 
     private func isSelectable(id: ShapeID) -> Bool { editor.document[id].map(isSelectable) ?? false }
 

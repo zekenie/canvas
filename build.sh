@@ -6,6 +6,7 @@
 #
 #   ./build.sh              build build/InfiniteCanvas.app (release)
 #   ./build.sh tests        build every module but the app, test executables included (debug)
+#   ./build.sh bench        build BenchmarkTests (release) and run it: the performance budgets
 #   ./build.sh audit        check the graph and every import, compile nothing
 #   ./build.sh graph        print each module's layer, dependencies and dependents
 #   ./build.sh dot          print the graph for Graphviz
@@ -345,7 +346,7 @@ dot)
     print "}"; exit 0 ;;
 list)
     for name in $ORDER; do [[ $LAYER[$name] == ${2:-test} ]] && print $name; done; exit 0 ;;
-app|tests|api) ;;
+app|tests|api|bench) ;;
 *) die "unknown mode '$MODE'" ;;
 esac
 
@@ -367,6 +368,7 @@ typeset -aU WANTED=()
 case $MODE in
 app)   WANTED=(InfiniteCanvas ${=CLOSURE[InfiniteCanvas]}) ;;
 tests) for name in $NAMES; do [[ $LAYER[$name] == app ]] || WANTED+=$name; done ;;
+bench) WANTED=(BenchmarkTests ${=CLOSURE[BenchmarkTests]}) ;;
 api)   target=${2:?usage: build.sh api MODULE}; (( ${+DEPS[$target]} )) || die "no module $target"
        WANTED=($target ${=CLOSURE[$target]}) ;;
 esac
@@ -406,6 +408,9 @@ done
 print -u2 "built ${${(j:, :)REBUILT}:-nothing (up to date)}"
 
 case $MODE in
+bench)
+    $OUT/BenchmarkTests/BenchmarkTests
+    ;;
 api)
     xcrun swift-synthesize-interface -sdk $SDK -target $ARCH-apple-macosx14.0 -module-name $target \
         -I$OUT/$target ${(@)${=CLOSURE[$target]}/#/-I$OUT/}
@@ -435,6 +440,43 @@ app)
     <true/>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Infinite Canvas Board</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Owner</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.example.InfiniteCanvas.board</string>
+            </array>
+            <key>NSDocumentClass</key>
+            <string>BoardDocument</string>
+        </dict>
+    </array>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.example.InfiniteCanvas.board</string>
+            <key>UTTypeDescription</key>
+            <string>Infinite Canvas Board</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.json</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>canvasboard</string>
+                </array>
+            </dict>
+        </dict>
+    </array>
 </dict>
 </plist>
 PLIST

@@ -48,6 +48,27 @@ public enum ArrowTerminal: Equatable, Codable, Sendable {
     public var binding: ArrowBinding? {
         if case .bound(let binding) = self { binding } else { nil }
     }
+
+    private enum CodingKeys: String, CodingKey { case free, bound }
+
+    /// In a board: `{"free": [x, y]}` or `{"bound": {…}}`. (Synthesized, each would nest its
+    /// value under an extra `_0`.)
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let point = try container.decodeIfPresent(CGPoint.self, forKey: .free) {
+            self = .free(point)
+        } else {
+            self = .bound(try container.decode(ArrowBinding.self, forKey: .bound))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .free(let point): try container.encode(point, forKey: .free)
+        case .bound(let binding): try container.encode(binding, forKey: .bound)
+        }
+    }
 }
 
 public struct ArrowBinding: Equatable, Codable, Sendable {

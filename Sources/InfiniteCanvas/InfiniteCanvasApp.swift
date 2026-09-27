@@ -4,23 +4,34 @@ import CanvasUI
 import Composition
 import SwiftUI
 
+/// A document app: each board is a file (`BoardDocument`), in its own window, with the shipped
+/// plugins. AppKit runs it, so the menus and Open Recent are AppKit's; each window's content is
+/// SwiftUI.
 @main
-struct InfiniteCanvasApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+@MainActor
+enum InfiniteCanvasApp {
+    static let delegate = AppDelegate()
 
-    var body: some Scene {
-        WindowGroup("Infinite Canvas") {
-            ContentView()
+    static func main() {
+        do {
+            let registry = try ShippedPlugins.registry()
+            BoardDocument.configuration = BoardConfiguration(registry: registry) { AnyView(ContentView(board: $0)) }
+        } catch {
+            fatalError("The shipped plugins don't register: \(error)")   // CompositionTests catches this first
         }
-        .defaultSize(width: 1200, height: 800)
-        .commands {
-            InspectorCommands()     // View › Show/Hide Inspector
-            ZoomCommands()
-        }
+        let app = NSApplication.shared
+        app.delegate = delegate
+        BoardMenus.install(appName: "Infinite Canvas", helpItems: [
+            NSMenuItem(title: "Welcome Board", action: #selector(AppDelegate.showWelcomeBoard(_:)), keyEquivalent: ""),
+        ])
+        app.run()
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private static let hasShownWelcomeBoard = "hasShownWelcomeBoard"
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate()
@@ -29,58 +40,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
     }
-}
 
-struct CanvasFocusKey: FocusedValueKey {
-    typealias Value = CanvasFocus
-}
-
-extension FocusedValues {
-    /// The focused window's canvas.
-    var canvasFocus: CanvasFocus? {
-        get { self[CanvasFocusKey.self] }
-        set { self[CanvasFocusKey.self] = newValue }
+    /// Launched with nothing to open: the welcome board the first time, an empty board after that.
+    func applicationOpenUntitledFile(_ sender: NSApplication) -> Bool {
+        let defaults = UserDefaults.standard
+        let firstTime = !defaults.bool(forKey: Self.hasShownWelcomeBoard)
+        defaults.set(true, forKey: Self.hasShownWelcomeBoard)
+        return openNewBoard(with: firstTime ? WelcomeBoard.document() : CanvasDocument())
     }
-}
 
-/// Zoom goes straight to the focused window's canvas, so it works whatever has the keyboard: the
-/// responder chain from a detail panel field never reaches the canvas.
-struct ZoomCommands: Commands {
-    @FocusedValue(\.canvasFocus) private var focus
+    func applicationWillTerminate(_ notification: Notification) {
+        for case let board as BoardDocument in NSDocumentController.shared.documents { board.rememberView() }
+    }
 
-    var body: some Commands {
-        CommandGroup(after: .toolbar) {
-            Divider()
-            Button("Zoom In") { focus?.canvas?.zoomIn(nil) }
-                .keyboardShortcut("=", modifiers: .command)
-                .disabled(focus == nil)
-            Button("Zoom Out") { focus?.canvas?.zoomOut(nil) }
-                .keyboardShortcut("-", modifiers: .command)
-                .disabled(focus == nil)
-            Button("Actual Size") { focus?.canvas?.zoomToActualSize(nil) }
-                .keyboardShortcut("0", modifiers: .command)
-                .disabled(focus == nil)
+    /// Help › Welcome Board: a new board with the welcome notes on it.
+    @objc func showWelcomeBoard(_ sender: Any?) {
+        openNewBoard(with: WelcomeBoard.document())
+    }
+
+    @discardableResult
+    private func openNewBoard(with shapes: CanvasDocument) -> Bool {
+        let controller = NSDocumentController.shared
+        do {
+            guard let board = try controller.makeUntitledDocument(ofType: BoardConfiguration.typeIdentifier) as? BoardDocument else { return false }
+            board.start(with: shapes)
+            controller.addDocument(board)
+            board.makeWindowControllers()
+            board.showWindows()
+            return true
+        } catch {
+            NSApp.presentError(error)
+            return false
         }
     }
 }
 
+/// A board window's content: the canvas, the tools in the toolbar, and the details in an inspector.
 struct ContentView: View {
-    @State private var editor: CanvasEditor = ShippedPlugins.makeEditor()
-    @State private var canvasFocus = CanvasFocus()
-    @SceneStorage("showsDetails") private var showsDetails = true
+    let editor: CanvasEditor
+    let focus: CanvasFocus
+    @Bindable var view: BoardViewState
+
+    init(board: BoardWindowContent) {
+        editor = board.editor
+        focus = board.focus
+        view = board.view
+    }
 
     var body: some View {
-        CanvasRepresentable(editor: editor, focus: canvasFocus)
+        CanvasRepresentable(editor: editor, focus: focus)
             .frame(minWidth: 480, minHeight: 320)
-            .focusedSceneValue(\.canvasFocus, canvasFocus)
             .toolbar {
                 ToolbarItem(placement: .principal) { ToolPicker(editor: editor) }
             }
-            .inspector(isPresented: $showsDetails) {
-                ShippedPlugins.detailPanel(editor: editor, onExit: canvasFocus.take)
+            .inspector(isPresented: $view.showsDetails) {
+                ShippedPlugins.detailPanel(editor: editor, onExit: focus.take)
                     .toolbar {
                         ToolbarItem {
-                            Button { showsDetails.toggle() } label: { Label("Details", systemImage: "sidebar.trailing") }
+                            Button { view.showsDetails.toggle() } label: { Label("Details", systemImage: "sidebar.trailing") }
                                 .help("Show or hide details")
                         }
                     }

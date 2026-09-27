@@ -1,0 +1,45 @@
+import AppKit
+import Canvas
+import SwiftUI
+
+/// A board's window: the app's content for it (`BoardConfiguration.content`), hosted with its
+/// SwiftUI toolbar. The window's title and edited dot follow the document.
+///
+/// It answers the menu commands that must reach the canvas whatever has the keyboard (the
+/// responder chain from a detail-panel field never passes through the canvas, but always reaches
+/// this controller): zooming, and showing or hiding the details.
+@MainActor
+public final class BoardWindowController: NSWindowController {
+    public init(board: BoardDocument) {
+        guard let configuration = BoardDocument.configuration else { preconditionFailure("set BoardDocument.configuration before any board opens") }
+        let host = NSHostingController(rootView: configuration.content(BoardWindowContent(editor: board.editor, focus: board.focus, view: board.viewState)))
+        host.sceneBridgingOptions = [.toolbars]
+        let window = NSWindow(contentViewController: host)
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.toolbarStyle = .unified
+        window.setContentSize(NSSize(width: 1200, height: 800))
+        super.init(window: window)
+        shouldCascadeWindows = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("board windows aren't archived") }
+
+    private var board: BoardDocument? { document as? BoardDocument }
+
+    @objc public func zoomIn(_ sender: Any?) { board?.focus.canvas?.zoomIn(sender) }
+    @objc public func zoomOut(_ sender: Any?) { board?.focus.canvas?.zoomOut(sender) }
+    @objc public func zoomToActualSize(_ sender: Any?) { board?.focus.canvas?.zoomToActualSize(sender) }
+
+    /// View › Show Inspector, or Hide Inspector.
+    @objc public func toggleDetails(_ sender: Any?) { board?.viewState.showsDetails.toggle() }
+}
+
+extension BoardWindowController: NSMenuItemValidation {
+    public func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(toggleDetails(_:)) {
+            item.title = board?.viewState.showsDetails == true ? "Hide Inspector" : "Show Inspector"
+        }
+        return board != nil
+    }
+}

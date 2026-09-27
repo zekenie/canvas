@@ -1,0 +1,22 @@
+{
+  "bend" : 24,
+  "end" : {
+    "free" : [
+      300,
+      -40.5
+    ]
+  },
+  "endArrowhead" : true,
+  "start" : {
+    "bound" : {
+      "isExact" : false,
+      "isPrecise" : true,
+      "normalizedAnchor" : [
+        0.25,
+        0.75
+      ],
+      "shapeID" : "22222222-2222-2222-2222-222222222222"
+    }
+  },
+  "startArrowhead" : false
+}
