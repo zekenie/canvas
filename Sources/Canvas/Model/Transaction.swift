@@ -59,6 +59,24 @@ public struct Transaction {
         didChange = true
     }
 
+    /// Puts a shape just above another in document order (a step forward, past `other`).
+    public mutating func move(_ id: ShapeID, above other: ShapeID) {
+        guard id != other, let from = document.index(of: id), let target = document.index(of: other) else { return }
+        move(from: from, to: from < target ? target : target + 1)
+    }
+
+    /// Puts a shape just below another in document order (a step back, past `other`).
+    public mutating func move(_ id: ShapeID, below other: ShapeID) {
+        guard id != other, let from = document.index(of: id), let target = document.index(of: other) else { return }
+        move(from: from, to: from < target ? target - 1 : target)
+    }
+
+    private mutating func move(from: Int, to: Int) {
+        guard from != to else { return }
+        document.move(from: from, to: to)
+        didChange = true
+    }
+
     /// Runs every plugin's `willDelete` handlers first, in this transaction, while the shapes still
     /// exist. Handlers may delete more shapes: each shape's handlers run once, and everything is
     /// removed together when the outermost `delete` returns.

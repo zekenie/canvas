@@ -194,21 +194,52 @@ struct MoreLabelTitles: CanvasPlugin {
         ellipse-titles  ShapeTitles → ellipse
         """)
     },
-    test("Reordering: every box's menu brings the selection to front or sends it back, in its own order; an arrow gets none") {
+    test("Reordering: every kind but those painted by anchor gets Arrange; to front and to back keep the selection's order") {
         let h = try EditorHarness(plugins: [SelectionPlugin(), ContextMenusPlugin(), ArrowsPlugin(), EllipsesPlugin(), RectanglesPlugin(),
-                                            ReorderingPlugin()])
+                                            PolylinesPlugin(), ReorderingPlugin()])
         let a = h.add(Rectangle(frame: CGRect(x: 0, y: 0, width: 100, height: 100)))
         let b = h.add(Ellipse(frame: CGRect(x: 200, y: 0, width: 100, height: 100)))
         let c = h.add(Rectangle(frame: CGRect(x: 400, y: 0, width: 100, height: 100)))
         h.editor.selectedShapeIDs = [c, a]
         let menu = try require(h.secondaryClick(at: CGPoint(x: 50, y: 50)))
-        expectEqual(menu.outline, ["Bring to Front", "Send to Back"])
-        try menu.choose("Send to Back")
+        expectEqual(menu.outline, ["Arrange ▸", "  Bring to Front", "  Bring Forward", "  Send Backward", "  Send to Back"])
+        try menu.choose("Arrange", "Send to Back")
         expectEqual(h.editor.document.shapes.map(\.id), [a, c, b])
-        try require(h.secondaryClick()).choose("Bring to Front")
+        try require(h.secondaryClick()).choose("Arrange", "Bring to Front")
         expectEqual(h.editor.document.shapes.map(\.id), [b, a, c])
-        h.add(Arrow(start: .free(CGPoint(x: 0, y: 300)), end: .free(CGPoint(x: 400, y: 300))))
-        expect(h.secondaryClick(at: CGPoint(x: 200, y: 300)) == nil)
-        expectEqual(h.editor.selectedShapeIDs, [c, a])
+        // A line has no frame, and gets it too; an arrow, drawn just above what it joins, doesn't.
+        let line = h.add(Polyline(points: [CGPoint(x: 0, y: 300), CGPoint(x: 400, y: 300)]))
+        expectEqual(try require(h.secondaryClick(at: CGPoint(x: 200, y: 301))).outline.first, "Arrange ▸")
+        expectEqual(h.editor.selectedShapeIDs, [line])
+        h.add(Arrow(start: .free(CGPoint(x: 0, y: 500)), end: .free(CGPoint(x: 400, y: 500))))
+        expect(h.secondaryClick(at: CGPoint(x: 200, y: 500)) == nil)
+    },
+    test("Reordering: Bring Forward and Send Backward step past the next shape each overlaps, keeping the selection's order") {
+        let h = try EditorHarness(plugins: [SelectionPlugin(), ContextMenusPlugin(), RectanglesPlugin(), ReorderingPlugin()])
+        let a = h.add(Rectangle(frame: CGRect(x: 0, y: 0, width: 100, height: 100)))
+        let b = h.add(Rectangle(frame: CGRect(x: 50, y: 0, width: 100, height: 100)))      // overlaps a
+        let c = h.add(Rectangle(frame: CGRect(x: 500, y: 0, width: 100, height: 100)))     // overlaps nothing
+        let d = h.add(Rectangle(frame: CGRect(x: 60, y: 0, width: 100, height: 100)))      // overlaps a and b
+        @MainActor func order() -> [ShapeID] { h.editor.document.shapes.map(\.id) }
+        @MainActor func choose(_ title: String, on point: CGPoint = CGPoint(x: 10, y: 50)) throws {
+            try require(h.secondaryClick(at: point)).choose("Arrange", title)
+        }
+        try choose("Bring Forward")
+        expectEqual(order(), [b, a, c, d])
+        try choose("Bring Forward")
+        expectEqual(order(), [b, c, d, a], "past c, which it doesn't overlap, to above d")
+        let revision = h.editor.revision
+        try choose("Bring Forward")
+        expectEqual(h.editor.revision, revision, "nothing above it: nothing to do")
+        try choose("Send Backward")
+        expectEqual(order(), [b, c, a, d])
+        try choose("Send Backward")
+        expectEqual(order(), [a, b, c, d], "past c again, to below b")
+
+        h.editor.selectedShapeIDs = [b, a]
+        try choose("Bring Forward")
+        expectEqual(order(), [c, d, a, b], "each past d, the next it overlaps, a still below b")
+        try choose("Send Backward")
+        expectEqual(order(), [c, a, b, d])
     },
 ])

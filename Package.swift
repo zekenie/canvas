@@ -69,7 +69,7 @@ let package = Package(
         .target(name: "Reordering", dependencies: ["Canvas", "ContextMenus"], path: "Examples/Reordering"),             // layer: vertical
         .target(name: "EllipseTitles", dependencies: ["Canvas", "Ellipses", "Titles"], path: "Examples/EllipseTitles"), // layer: bridge
 
-        .target(name: "Composition", dependencies: ["Arrows", "Canvas", "Checklists", "ContextMenus", "DetailPanel", "EllipseTitles", "Ellipses", "Eraser", "Polylines", "Rectangles", "Selection", "StickyNotes", "TaskCards", "Titles", "Validation", "ValidationDetails"]), // layer: composition
+        .target(name: "Composition", dependencies: ["Arrows", "Canvas", "Checklists", "ContextMenus", "DetailPanel", "EllipseTitles", "Ellipses", "Eraser", "Polylines", "Rectangles", "Reordering", "Selection", "StickyNotes", "TaskCards", "Titles", "Validation", "ValidationDetails"]), // layer: composition
         .executableTarget(name: "InfiniteCanvas", dependencies: ["Canvas", "CanvasUI", "Composition"]),           // layer: app
 
         .target(name: "TestKit", dependencies: [], path: "Tests/TestKit"),                                        // layer: testsupport

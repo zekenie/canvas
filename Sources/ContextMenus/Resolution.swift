@@ -47,10 +47,12 @@ final class ContextMenuState {
         return ContextMenuItems.resolve(records.map { ($0, ContextMenuItems.shown(candidates(for: $0.kind), for: $0)) }, in: editor)
     }
 
-    /// The kind's own entries, then every shape's, each in plugin and builder order.
+    /// The kind's own entries, then every shape's that apply to it, each in plugin and builder order.
     private func candidates(for kind: ShapeKind) -> [ErasedEntry] {
         if let known = candidates[kind] { return known }
-        let found = editor.registry.contributions(to: ShapeContextMenus.self, for: kind).flatMap(\.entries)
+        guard let definition = editor.registry.definition(for: kind) else { return [] }
+        let found = editor.registry.contributions(to: ShapeContextMenus.self, for: kind)
+            .filter { $0.appliesTo(definition) }.flatMap(\.entries)
         candidates[kind] = found
         return found
     }

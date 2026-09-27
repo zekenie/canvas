@@ -67,15 +67,18 @@ Sources/
   TaskCards/            task cards, edited only in the detail panel
   Validation/           the validation horizontal: rules, engine, outline
   DetailPanel/          the detail panel horizontal: tabs, sections, bindings, the inspector view
-  Checklists/           a horizontal any kind opts into: a checklist, its panel tab, a chip
+  ContextMenus/         the context menu horizontal: right-click items, groups, the selection's menu
+  Checklists/           a horizontal any kind opts into: a checklist, its panel tab, menu items, a chip
   ValidationDetails/    a bridge between two horizontals: validation issues in the panel's footer
   Composition/          the shipped plugin list, and the welcome board
   InfiniteCanvas/       the SwiftUI app
 Examples/               the smallest plugin for each pattern
   Rectangles/           a vertical: a kind, how it draws, a tool
+  Polylines/            a shape without a frame: its own geometry, hit test and translation
   Eraser/               a tool with no shape, and a session
   Titles/               a horizontal: an extension point, sugar, an overlay
   EllipseTitles/        a bridge: opts ellipses into titles without either knowing
+  Reordering/           menu items for every kind with a capability: the Arrange submenu
 Tests/                  test executables (the core, each plugin with logic of its own, the examples,
                         the shipped app) and their support libraries, on a small macro-free kit
 scripts/                re-records the proof of concept's behavior, which the tests hold the app to

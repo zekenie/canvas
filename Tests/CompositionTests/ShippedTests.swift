@@ -37,6 +37,7 @@ import Validation
         eraser              tool eraser [e]
         titles              overlay TitleOverlay
         ellipse-titles      ShapeTitles → ellipse
+        reordering          ShapeContextMenus
         """)
     },
     test("every placed kind has a panel: a note its Checklist and Arrange, a task its own tabs too, other boxes Arrange, an arrow only its header") {

@@ -1,4 +1,5 @@
 import AppKit
+import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
@@ -28,7 +29,7 @@ import TestKit
         window.contentView = canvas
         window.orderFrontRegardless()
         defer { window.orderOut(nil) }
-        editor.add(StickyNote(frame: CGRect(x: 40, y: 40, width: 200, height: 200), text: "No checklist"))
+        editor.add(Arrow(start: .free(CGPoint(x: 40, y: 300)), end: .free(CGPoint(x: 340, y: 300))))
         let task = editor.add(TaskCard(frame: CGRect(x: 400, y: 40, width: 240, height: 200), title: "Ship"))
 
         let opened = OpenedMenus()
@@ -53,8 +54,8 @@ import TestKit
         expectEqual(editor.selectedShapeIDs, [task])
         expect(editor.session == nil)
 
-        click(.leftMouseDown, .leftMouseUp, at: CGPoint(x: 140, y: 140), .control)
-        expectEqual(opened.outlines.count, 1, "the note has nothing to offer")
+        click(.leftMouseDown, .leftMouseUp, at: CGPoint(x: 190, y: 300), .control)
+        expectEqual(opened.outlines.count, 1, "the arrow has nothing to offer")
         expectEqual(editor.selectedShapeIDs, [task], "and the Control-click that reached mouseDown didn't select it")
 
         click(.rightMouseDown, .rightMouseUp, at: CGPoint(x: 520, y: 140), [])

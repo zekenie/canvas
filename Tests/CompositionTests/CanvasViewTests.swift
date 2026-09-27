@@ -190,13 +190,14 @@ import Validation
     test("a right-click opens a shape's context menu through the view; where there's nothing to offer, it and a Control-click do nothing") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
         let (window, canvas) = windowed(editor)
-        editor.add(StickyNote(frame: CGRect(x: 40, y: 40, width: 200, height: 200), text: "No checklist"))
+        // An arrow is the shipped kind with nothing to offer: Arrange leaves out what's painted by anchor.
+        editor.add(Arrow(start: .free(CGPoint(x: 40, y: 300)), end: .free(CGPoint(x: 340, y: 300))))
         let task = editor.add(TaskCard(frame: CGRect(x: 400, y: 40, width: 240, height: 200), title: "Ship"))
-        let note = CGPoint(x: 140, y: 140), card = CGPoint(x: 520, y: 140)
-        expect(canvas.menu(for: window.mouse(.rightMouseDown, at: note, time: 1)) == nil)
+        let arrow = CGPoint(x: 190, y: 300), card = CGPoint(x: 520, y: 140)
+        expect(canvas.menu(for: window.mouse(.rightMouseDown, at: arrow, time: 1)) == nil)
         // AppKit sends a Control-click to mouseDown only when menu(for:) has nothing: it isn't a press.
-        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: note, modifiers: .control, time: 2))
-        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: note, modifiers: .control, time: 2.05))
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: arrow, modifiers: .control, time: 2))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: arrow, modifiers: .control, time: 2.05))
         expectEqual(editor.selectedShapeIDs, [])
         let menu = try require(canvas.menu(for: window.mouse(.rightMouseDown, at: card, time: 3)))
         expectEqual(menu.outline.first, "Status ▸")

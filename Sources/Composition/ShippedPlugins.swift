@@ -9,6 +9,7 @@ import Ellipses
 import Eraser
 import Polylines
 import Rectangles
+import Reordering
 import Selection
 import StickyNotes
 import SwiftUI
@@ -28,7 +29,7 @@ public enum ShippedPlugins {
             ArrowsPlugin(), StickyNotesPlugin(), EllipsesPlugin(), TaskCardsPlugin(),
             ValidationPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), ChecklistsPlugin(), ValidationDetailsPlugin(),
             // The examples (Examples/). Each is one line here; delete it to leave it out.
-            RectanglesPlugin(), PolylinesPlugin(), EraserPlugin(), TitlesPlugin(), EllipseTitlesPlugin(),
+            RectanglesPlugin(), PolylinesPlugin(), EraserPlugin(), TitlesPlugin(), EllipseTitlesPlugin(), ReorderingPlugin(),
         ]
     }
 

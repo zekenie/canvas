@@ -196,7 +196,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Give a shape handles to drag | Selection's `HandleProviding` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
 | Edit a kind's properties beside the canvas | `x.details { DetailSection(...) }` | [TaskCards](#the-full-showcase-taskcards) |
 | Add items to a kind's right-click menu | `x.contextMenu { MenuItem(...) }` | [TaskCards](#contributing) |
-| Add a right-click item to every shape | `registrar.contextMenuForEveryShape` | [Reordering](#every-shape-reordering) |
+| Add a right-click item to every shape, or every kind with a capability | `registrar.contextMenuForEveryShape(where:)` | [Reordering](#every-shape-reordering) |
 | Add a concern any kind can opt into | An `ExtensionPoint`, sugar on `ShapeRegistrar`, and whatever reads the point | [Titles](#a-horizontal-plugin), [Validation](../Sources/Validation/Validation.swift) |
 | Give that concern a tab on the kinds that opt in | A `DetailTab` at order 50, contributed from the same sugar | [Checklists](#a-horizontals-feature-tab-checklists) |
 | Give that concern menu items on the kinds that opt in | A `MenuGroup` at order 50, and `contextMenu` from the same sugar | [Checklists](#a-feature-that-comes-with-menu-items-checklists) |
@@ -1141,11 +1141,13 @@ right-click on a task card with one of its three items checked:
 │ Check All               │  a feature's (Checklists, through task.checklist): only the
 │ Uncheck All             │    actions with something to do
 │ Remove Checked          │
-└─────────────────────────┘
+├─────────────────────────┤
+│ Arrange               ▸ │  every shape's (Reordering): Bring to Front, Bring Forward,
+└─────────────────────────┘    Send Backward, Send to Back
 ```
 
-A shape nothing offers anything (an ellipse, a rectangle or an arrow, as shipped, or a note with no
-checklist items) has no menu: the right-click does nothing.
+A shape nothing offers anything has no menu: the right-click does nothing. As shipped, that's an
+arrow, the one kind Arrange leaves out.
 
 ### Contributing
 
@@ -1153,7 +1155,7 @@ checklist items) has no menu: the right-click does nothing.
 |---|---|
 | `x.contextMenu { items }` | This kind's items, inside `registrar.shape { x in ... }`. A horizontal's opt-in sugar calls it too. |
 | `registrar.contextMenu(P.self) { items }` | Another plugin's kind, typed as its own (bridges). |
-| `registrar.contextMenuForEveryShape { items }` | Every shape, over `AnyShapeRecord` (`when: { $0.box != nil }` for those with a frame). |
+| `registrar.contextMenuForEveryShape(where:) { items }` | Every shape, over `AnyShapeRecord`. `where:` picks kinds by their definition, and so by capability (`{ !($0 is any PaintOrderAnchored) }`); `when:` picks shapes (`{ $0.box != nil }` for those with a frame). |
 
 TaskCards' own, in [TaskCardMenu.swift](../Sources/TaskCards/TaskCardMenu.swift):
 
@@ -1218,22 +1220,31 @@ instead.
 
 ### Every shape: Reordering
 
-[`Examples/Reordering`](../Examples/Reordering/Reordering.swift) adds Bring to Front and Send to Back
-for every shape with a frame, in a group of its own after the rest. It isn't in
-`ShippedPlugins.all`, so a right-click on a shape with no items of its own still does nothing; one
-line there gives every box a menu.
+[`Examples/Reordering`](../Examples/Reordering/Reordering.swift) gives every shape an Arrange
+submenu, as in Keynote and tldraw, in a group of its own after the rest. It picks kinds by
+capability: one painted by anchor (an arrow, drawn just above the shapes it joins) is left out,
+since document order doesn't decide where it's drawn. A line, which has no frame, is in.
 
 ```swift
-registrar.contextMenuForEveryShape {
-    MenuItem("Bring to Front", in: ReorderMenuGroup.self, when: { $0.box != nil }) { ids, editor in
-        let ordered = backToFront(ids, in: editor.document)
-        editor.transact { transaction in
-            for id in ordered { transaction.bringToFront(id) }
+registrar.contextMenuForEveryShape(where: { !($0 is any PaintOrderAnchored) }) {
+    Submenu("Arrange", in: ReorderMenuGroup.self) {
+        MenuItem("Bring to Front") { ids, editor in
+            let ordered = backToFront(ids, in: editor.document)
+            editor.transact { transaction in
+                for id in ordered { transaction.bringToFront(id) }
+            }
         }
+        MenuItem("Bring Forward") { ids, editor in step(ids, forward: true, in: editor) }
+        MenuItem("Send Backward") { ids, editor in step(ids, forward: false, in: editor) }
+        MenuItem("Send to Back") { ...  }
     }
-    MenuItem("Send to Back", ...)
 }
 ```
+
+Bring Forward and Send Backward are tldraw's: each shape moves just past the nearest shape that
+overlaps it, in that direction (`transaction.move(id, above: next)`), since moving past one it
+doesn't overlap would change nothing to see. With several selected, they keep their order among
+themselves, and one with nothing to pass stays.
 
 ### What a right-click does
 
@@ -1292,7 +1303,7 @@ to it.
 
 - **The document is a value.** `CanvasDocument` holds every shape, back to front. The only way to
   change it is `editor.transact { tx in ... }`: `insert`, `update` (typed with `as:`),
-  `bringToFront`, `sendToBack`, `delete`. A transaction commits once, if anything changed, and bumps
+  `bringToFront`, `sendToBack`, `move(_:above:)`, `move(_:below:)`, `delete`. A transaction commits once, if anything changed, and bumps
   `editor.revision`. Transactions don't nest. Undo (not built yet) will group commits: everything
   from a press to its release, and everything while a shape is being edited, will be one step.
 - **`willDelete`** handlers run inside the deleting transaction, before anything is removed, so a
@@ -1378,6 +1389,7 @@ polylines           shape polyline · tool polyline [l]
 eraser              tool eraser [e]
 titles              overlay TitleOverlay
 ellipse-titles      ShapeTitles → ellipse
+reordering          ShapeContextMenus
 ```
 
 A horizontal's opt-in shows as what it contributes: `note.checklist(\.checklist)` is a

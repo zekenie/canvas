@@ -217,6 +217,15 @@ import TestKit
                     ["Turn Off", "Brighter", "Level ▸", "  ✓ 1", "  2", "  3", "Inspect", "—", "Timer", "—", "Late"])
         expectEqual(try require(h.secondaryClick(at: middle(1))).outline, ["Inspect", "—", "Late"])
     },
+    test("every shape's items can pick kinds by their definition, and so by capability") {
+        let h = try harness([Contributor(id: "lamps-only") { r in
+            r.contextMenuForEveryShape(where: { $0 is LampDefinition }) { MenuItem("Dim") { _ in } }
+        }])
+        h.add(Lamp(slot(0)))
+        h.add(Box(slot(1)))
+        expect(try require(h.secondaryClick(at: middle(0))).outline.contains("Dim"))
+        expect(h.secondaryClick(at: middle(1)) == nil)
+    },
     test("a perform gets the shapes it's for, in selection order, once per contribution; a kind's own item replaces every shape's") {
         let log = PerformLog()
         let h = try harness([

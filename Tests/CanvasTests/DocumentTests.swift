@@ -70,6 +70,23 @@ struct Cascade: CanvasPlugin {
         h.editor.transact { $0.sendToBack(ids[2]) }
         expectEqual(h.editor.revision, revision)
     },
+    test("moving a shape just above or below another, either way; where it already is changes nothing") {
+        let h = try EditorHarness(plugins: [FixturesPlugin()])
+        let ids = [h.add(Box(.zero)), h.add(Box(.zero)), h.add(Box(.zero)), h.add(Box(.zero))]
+        @MainActor func order() -> [ShapeID] { h.editor.document.shapes.map(\.id) }
+        h.editor.transact { $0.move(ids[0], above: ids[2]) }
+        expectEqual(order(), [ids[1], ids[2], ids[0], ids[3]])
+        h.editor.transact { $0.move(ids[3], below: ids[1]) }
+        expectEqual(order(), [ids[3], ids[1], ids[2], ids[0]])
+        h.editor.transact { $0.move(ids[1], above: ids[0]) }
+        expectEqual(order(), [ids[3], ids[2], ids[0], ids[1]])
+        h.editor.transact { $0.move(ids[1], below: ids[2]) }
+        expectEqual(order(), [ids[3], ids[1], ids[2], ids[0]])
+        expectEqual(h.editor.document.index(of: ids[0]), 3)
+        let revision = h.editor.revision
+        h.editor.transact { $0.move(ids[2], above: ids[1]); $0.move(ids[1], below: ids[2]); $0.move(ids[2], above: ids[2]) }
+        expectEqual(h.editor.revision, revision)
+    },
     test("willDelete handlers see the shapes and can change others in the same transaction") {
         let log = DeleteLog()
         let h = try EditorHarness(plugins: [FixturesPlugin(), Cleaner(log: log)])

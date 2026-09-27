@@ -43,6 +43,8 @@ struct EntryKey: Hashable {
 @MainActor
 public struct ContextMenuContribution {
     let entries: [ErasedEntry]
+    /// Which kinds, by their definition: every shape's items may leave some out.
+    var appliesTo: @MainActor (any ShapeDefinition) -> Bool = { _ in true }
 }
 
 /// An item or submenu over any record: hidden for a record it can't read. A class, so the items one
@@ -105,10 +107,11 @@ extension ContextMenuContribution {
     }
 
     /// Every shape's items, over the record.
-    init(everyShape entries: [MenuEntry<AnyShapeRecord>]) {
+    init(everyShape entries: [MenuEntry<AnyShapeRecord>], where appliesTo: @escaping @MainActor (any ShapeDefinition) -> Bool) {
         self.entries = entries.map {
             ErasedEntry($0, read: { $0 }, write: { id, transaction, edit in transaction.update(id) { edit(&$0) } })
         }
+        self.appliesTo = appliesTo
     }
 }
 
@@ -137,10 +140,12 @@ extension PluginRegistrar {
         contribute(ContextMenuContribution(P.self, items()), to: ShapeContextMenus.self, for: .kind(P.kind))
     }
 
-    /// Items for every shape, over the record: `when` picks the shapes (`{ $0.box != nil }` for
-    /// those with a frame). They come after a kind's own in their group.
-    public mutating func contextMenuForEveryShape(@MenuBuilder<AnyShapeRecord> _ items: () -> [MenuEntry<AnyShapeRecord>]) {
-        contribute(ContextMenuContribution(everyShape: items()), to: ShapeContextMenus.self, for: .any)
+    /// Items for every shape, over the record. `where` picks kinds by their definition, and so by
+    /// capability (`where: { !($0 is any PaintOrderAnchored) }`); `when` picks shapes
+    /// (`{ $0.box != nil }` for those with a frame). They come after a kind's own in their group.
+    public mutating func contextMenuForEveryShape(where appliesTo: @escaping @MainActor (any ShapeDefinition) -> Bool = { _ in true },
+                                                  @MenuBuilder<AnyShapeRecord> _ items: () -> [MenuEntry<AnyShapeRecord>]) {
+        contribute(ContextMenuContribution(everyShape: items(), where: appliesTo), to: ShapeContextMenus.self, for: .any)
     }
 }
 
