@@ -220,7 +220,7 @@ public final class CanvasEditor {
     /// follows the pointer or is edited. (Other tools create shapes with
     /// `transact { $0.insert(...) }`, as the arrow tool does.)
     public func place(_ placement: Placement, at point: CGPoint) {
-        let record = placement.make(CGRect(center: point, size: placement.size))
+        let record = placement.shape(at: point)
         transact { $0.insert(record) }
         setTool(registry.defaultTool)
         for service in serviceOrder { service.didPlace(record.id, in: self) }

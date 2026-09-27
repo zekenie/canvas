@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import Geometry
 
 /// A plugin: a value that says what it adds. Plugins are compiled in, and the app's plugin list is
 /// the single place that decides which ship.
@@ -130,7 +131,7 @@ public struct ShapeRegistrar<Definition: ShapeDefinition> {
     public mutating func tool(_ id: ToolID? = nil, label: String, systemImage: String, placing placement: Placement) {
         precondition(placement.kind == kind, "\(kind)'s tool must place \(kind), not \(placement.kind)")
         let descriptor = ToolDescriptor(id: id ?? ToolID(placing: kind), label: label, systemImage: systemImage)
-        contributions.append(RawContribution(ToolRegistration(descriptor: descriptor) { _ in PlaceShapeTool(placement) },
+        contributions.append(RawContribution(ToolRegistration(descriptor: descriptor, placement: placement) { _ in PlaceShapeTool(placement) },
                                              to: CorePoints.Tools.self, for: .any, from: pluginID))
     }
 }
@@ -166,10 +167,12 @@ public struct ToolDescriptor: Identifiable, Sendable {
 }
 
 /// "Put one of these here", with `editor.place`: used by place tools, and by any plugin that
-/// creates shapes the same way (the select tool's double-click).
+/// creates shapes the same way (the select tool's double-click). What a kind's tool places is
+/// `registry.placement(for:)`.
 public struct Placement {
     public let kind: ShapeKind
-    let size: CGSize
+    /// The size of what it places.
+    public let size: CGSize
     let completion: Completion
     let make: @MainActor (CGRect) -> AnyShapeRecord
 
@@ -188,6 +191,14 @@ public struct Placement {
         self.size = size
         self.completion = completion
         self.make = make
+    }
+
+    /// The shape it puts down centered on `point` (what `editor.place` inserts there), in no
+    /// document yet: for a plugin that creates shapes some other way than with the pointer (the
+    /// command line's `create`).
+    @MainActor
+    public func shape(at point: CGPoint) -> AnyShapeRecord {
+        make(CGRect(center: point, size: size))
     }
 
     /// The same placement, with an added property set on every shape it places:

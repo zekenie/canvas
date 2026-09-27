@@ -53,6 +53,10 @@ public final class BoardDocument: NSDocument {
     public static var configuration: BoardConfiguration?
 
     public let editor: CanvasEditor
+    /// This board's number while the app runs, from 1: how the command line names it (`canvas
+    /// boards`, `--board 2`).
+    public let number: Int
+    private static var numbered = 0
     public let focus = CanvasFocus()
     public let viewState = BoardViewState()
     /// What opening this board kept aside and repaired; empty for a new board.
@@ -66,6 +70,8 @@ public final class BoardDocument: NSDocument {
         guard let configuration = Self.configuration else { preconditionFailure("set BoardDocument.configuration before any board opens") }
         editor = CanvasEditor(registry: configuration.registry)
         codec = BoardCodec(registry: configuration.registry)
+        Self.numbered += 1
+        number = Self.numbered
         super.init()
         editor.didCommitTransaction = { [weak self] _ in self?.updateChangeCount(.changeDone) }
     }

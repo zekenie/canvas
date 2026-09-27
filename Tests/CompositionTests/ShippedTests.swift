@@ -47,6 +47,7 @@ import ValidationDetails
         locking              property locked · property locked → every shape · read-only shapes · service LockState · overlay LockOverlay · CanvasButtons · CanvasContextMenu
         ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
         arrow-ports          property channel → arrow · connector → arrow · ArrowBindingRules
+        automation           command line create · command line kinds
         rectangles           shape rectangle · tool rectangle · shortcut R → tool rectangle
         polylines            shape polyline · tool polyline · shortcut L → tool polyline
         eraser               tool eraser · shortcut E → tool eraser

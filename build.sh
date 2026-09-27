@@ -4,7 +4,8 @@
 # dependency order with only its own dependency closure on the include path. Every mode first
 # audits Package.swift and the sources, and stops if the real graph differs from the declared one.
 #
-#   ./build.sh              build build/InfiniteCanvas.app (release)
+#   ./build.sh              build build/InfiniteCanvas.app (release), with the command line in it
+#                           (build/canvas links to it)
 #   ./build.sh tests        build every module but the app, test executables included (debug)
 #   ./build.sh bench        build BenchmarkTests (release) and run it: the performance budgets
 #   ./build.sh audit        check the graph and every import, compile nothing
@@ -20,17 +21,22 @@ die() { print -u2 "build.sh: $*"; exit 1 }
 
 # Which layers each layer may depend on (Package.swift's header says the same in prose).
 typeset -A MAY_USE=(
+    wire        "wire"
     foundation  "foundation"
-    ui          "foundation"
-    horizontal  "foundation horizontal"
+    ui          "foundation wire"
+    horizontal  "foundation horizontal wire"
     vertical    "foundation horizontal"
     bridge      "foundation horizontal vertical"
-    composition "foundation horizontal vertical bridge"
-    app         "foundation ui composition"
+    composition "foundation horizontal vertical bridge wire"
+    app         "foundation ui composition wire"
+    cli         "wire"
     testsupport "foundation testsupport"
-    test        "foundation ui horizontal vertical bridge composition testsupport"
+    test        "wire foundation ui horizontal vertical bridge composition testsupport"
 )
-typeset -A EXECUTABLE_LAYER=(app 1 test 1)
+typeset -A EXECUTABLE_LAYER=(app 1 test 1 cli 1)
+# What the command line's executable (the cli layer's) is called once it's built: in the app's
+# bundle, at Contents/Helpers/canvas, and build/canvas, a link to it.
+CLI_NAME=canvas
 # Public types that would shadow a module (`Observation` breaks @Observable's expansion), or
 # Swift's `Task`: a public `Task` would shadow it in every module that imports the declaring one.
 RESERVED_TYPE_NAMES=(Observation Foundation AppKit SwiftUI CoreGraphics Swift Task)
@@ -376,7 +382,10 @@ mkdir -p $OUT
 
 typeset -aU WANTED=()
 case $MODE in
-app)   WANTED=(InfiniteCanvas ${=CLOSURE[InfiniteCanvas]}) ;;
+app)   WANTED=(InfiniteCanvas ${=CLOSURE[InfiniteCanvas]})
+       for name in $NAMES; do
+           if [[ $LAYER[$name] == cli && $KIND[$name] == executableTarget ]]; then WANTED+=($name ${=CLOSURE[$name]}); fi
+       done ;;
 tests) for name in $NAMES; do [[ $LAYER[$name] == app ]] || WANTED+=$name; done ;;
 bench) WANTED=(BenchmarkTests ${=CLOSURE[BenchmarkTests]}) ;;
 api)   target=${2:?usage: build.sh api MODULE}; (( ${+DEPS[$target]} )) || die "no module $target"
@@ -427,8 +436,16 @@ api)
     ;;
 app)
     APP=build/InfiniteCanvas.app
-    rm -rf -- "${APP:?}"; mkdir -p $APP/Contents/MacOS
+    rm -rf -- "${APP:?}"; mkdir -p $APP/Contents/MacOS $APP/Contents/Helpers
     cp $OUT/InfiniteCanvas/InfiniteCanvas $APP/Contents/MacOS/InfiniteCanvas
+    # The command line goes with the app, so the two always speak the same protocol.
+    typeset -a clis=()
+    for name in $NAMES; do
+        if [[ $LAYER[$name] == cli && $KIND[$name] == executableTarget ]]; then clis+=$name; fi
+    done
+    (( ${#clis} == 1 )) || die "the cli layer should have one executable, the command line; it has ${#clis}"
+    cp $OUT/$clis[1]/$clis[1] $APP/Contents/Helpers/$CLI_NAME
+    ln -sf InfiniteCanvas.app/Contents/Helpers/$CLI_NAME build/$CLI_NAME
     cat > $APP/Contents/Info.plist <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -490,6 +507,6 @@ app)
 </dict>
 </plist>
 PLIST
-    print "Built $APP"
+    print "Built $APP, and build/$CLI_NAME (its command line)"
     ;;
 esac

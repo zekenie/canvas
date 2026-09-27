@@ -11,13 +11,25 @@ import SwiftUI
 @MainActor
 enum InfiniteCanvasApp {
     static let delegate = AppDelegate()
+    /// Where the command line (`canvas`) reaches the app.
+    static var commandServer: CommandServer?
 
     static func main() {
+        let registry: Registry
         do {
-            let registry = try ShippedPlugins.registry()
+            registry = try ShippedPlugins.registry()
             BoardDocument.configuration = BoardConfiguration(registry: registry) { AnyView(ContentView(board: $0)) }
         } catch {
             fatalError("The shipped plugins don't register: \(error)")   // CompositionTests catches this first
+        }
+        let commands = ShippedPlugins.commands(in: registry)
+        let server = CommandServer(commands: CommandServer.Commands(specs: commands.specs, run: commands.run))
+        do {
+            try server.start()
+            commandServer = server
+        } catch {
+            // The app works without it; only `canvas` can't reach it.
+            NSLog("The command line can't reach this app: %@", "\(error)")
         }
         let app = NSApplication.shared
         app.delegate = delegate
@@ -51,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         for case let board as BoardDocument in NSDocumentController.shared.documents { board.rememberView() }
+        InfiniteCanvasApp.commandServer?.stop()
     }
 
     /// Help › Welcome Board: a new board with the welcome notes on it.

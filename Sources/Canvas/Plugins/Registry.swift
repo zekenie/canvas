@@ -222,6 +222,12 @@ public struct Registry {
     /// plugin claimed (`registrar.defaultTool`), else the Hand.
     public var defaultTool: ToolID { contributions(to: CorePoints.DefaultTool.self).first?.value ?? .hand }
 
+    /// What the kind's tool places (the first tool's, if several place it): its size and its
+    /// props. Nil for a kind no tool places, one a tool draws instead (an arrow, a line).
+    public func placement(for kind: ShapeKind) -> Placement? {
+        contributions(to: CorePoints.Tools.self).lazy.compactMap(\.value.placement).first { $0.kind == kind }
+    }
+
     var toolFactories: [(ToolID, @MainActor (CanvasEditor) -> any Tool)] {
         contributions(to: CorePoints.Tools.self).map { ($0.value.descriptor.id, $0.value.make) }
     }

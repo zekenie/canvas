@@ -1,7 +1,9 @@
 import AppKit
 import ArrowPorts
 import Arrows
+import Automation
 import Canvas
+import CanvasRPC
 import Checklists
 import Clipboard
 import ContextMenus
@@ -47,6 +49,8 @@ public enum ShippedPlugins {
             // Ports, whose arrows the bridge draws. After Locking: a shape's dots draw above its chips,
             // and are found first.
             PortsPlugin(), ArrowPortsPlugin(),
+            // The command line's commands.
+            AutomationPlugin(),
             // The examples (Examples/). Each is one line here; delete it to leave it out.
             RectanglesPlugin(), PolylinesPlugin(), EraserPlugin(), EllipseTitlesPlugin(), ReorderingPlugin(),
         ]
@@ -79,6 +83,16 @@ public enum ShippedPlugins {
     /// it ("Note (N)").
     public static func help(for tool: ToolDescriptor, in registry: Registry) -> String {
         registry.help(for: tool)
+    }
+
+    /// The commands the plugins give the command line (Automation's), for the app's command server:
+    /// what `canvas` shows of each, and how to run one, by name, on a board's editor (nil for a
+    /// command about the app as a whole).
+    public static func commands(in registry: Registry)
+        -> (specs: [CommandSpec], run: @MainActor (_ name: String, _ params: JSON, _ editor: CanvasEditor?) throws(RPCError) -> JSON) {
+        (registry.automationCommands, { name, params, editor throws(RPCError) in
+            try registry.runAutomationCommand(name, params: params, editor: editor)
+        })
     }
 }
 

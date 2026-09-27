@@ -1,7 +1,8 @@
 import Foundation
+import Geometry
 
-// Checking shapes against their kinds' schemas: what a shape is, as one JSON object, and where it
-// breaks the schema that describes it.
+// Checking shapes against their kinds' schemas: what a shape is, as one JSON object, where it
+// breaks the schema that describes it, and a shape made from one.
 
 extension AnyShapeRecord {
     /// Its properties, own and added, side by side in one object, each as a board writes it: what
@@ -38,6 +39,67 @@ extension Registry {
     public func schemaViolations(of shape: AnyShapeRecord) -> [SchemaViolation] {
         guard let validator = schemaValidators.validator(for: shape.kind, in: self), let json = shape.propertiesJSON else { return [] }
         return validator.violations(of: .object(json))
+    }
+
+    /// A shape from its properties, own and added, side by side in one object: what its kind's
+    /// schema describes (`schema(for:)`), as `AnyShapeRecord.propertiesJSON` writes it, at today's
+    /// versions. For what writes shapes as JSON (the command line). A property the object leaves
+    /// out, or gives as null, is as the kind has it (its `init()`, or an added property's default),
+    /// unless it's required. It throws for a kind no plugin registers, a property the kind doesn't
+    /// have, and a value that doesn't read as its property's type; one that breaks only its schema's
+    /// bounds reads (`schemaViolations(of:)` finds it). The shape is in no document yet.
+    public func shape(_ kind: ShapeKind, properties: JSONObject, id: ShapeID = ShapeID()) throws(ShapePropertiesError) -> AnyShapeRecord {
+        guard let definition = definition(for: kind) else { throw .unknownKind(kind) }
+        let own = Set(definition.ownPropertyNames), added = Set(self.properties(for: kind))
+        var ownJSON: JSONObject = [:]
+        var addedJSON: [PropertyKey: JSONValue] = [:]
+        for (name, value) in properties {
+            if own.contains(name) {
+                ownJSON[name] = value
+            } else if added.contains(PropertyKey(rawValue: name)) {
+                if value != .null { addedJSON[PropertyKey(rawValue: name)] = value }
+            } else {
+                throw .unknownProperty(name, kind: kind)
+            }
+        }
+        let encoder = BoardCodec.makeEncoder()
+        var record: AnyShapeRecord
+        do {
+            record = AnyShapeRecord(id: id, kind: kind, props: try definition.kindCodec.decodeData(encoder.encode(JSONValue.object(ownJSON))),
+                                    stackingKey: nil)
+        } catch {
+            throw .unreadable(BoardCodec.describe(error))
+        }
+        // As a board's: a shape whose frame isn't finite could never be saved, so it never gets in.
+        guard record.box?.isFinite ?? true else { throw .unreadable("its frame isn't finite") }
+        for (key, value) in addedJSON {
+            guard let codec = propertyTable.codecs[key] else { continue }
+            do {
+                record.added[key] = try codec.decodeData(encoder.encode(value))
+            } catch {
+                let why = BoardCodec.describe(error)
+                throw .unreadable(why.isEmpty ? key.rawValue : "\(key): \(why)")
+            }
+        }
+        return propertyTable.normalized(record)
+    }
+}
+
+/// Why `Registry.shape(_:properties:)` made no shape.
+public enum ShapePropertiesError: Error, Equatable, CustomStringConvertible {
+    /// No installed plugin registers the kind.
+    case unknownKind(ShapeKind)
+    /// The kind has no such property of its own, and doesn't opt into one of that name.
+    case unknownProperty(String, kind: ShapeKind)
+    /// A value doesn't read as its property's type, or a required one is missing: where, and why.
+    case unreadable(String)
+
+    public var description: String {
+        switch self {
+        case .unknownKind(let kind): "no installed plugin defines \(kind) shapes"
+        case .unknownProperty(let name, let kind): "\(kind) shapes have no property \(name)"
+        case .unreadable(let why): why
+        }
     }
 }
 

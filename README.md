@@ -25,6 +25,25 @@ as in any Mac document app. Boards save themselves as you work, and File › Rev
 earlier versions. The first launch opens the welcome board; Help › Welcome Board opens it again.
 A board remembers, on each Mac, where you left its view, and whether its minimap and details show.
 
+## Command line
+
+`canvas` works on the boards open in the app, for agents and for people: each change shows in the
+board's window as it's made. It comes with the app (`Contents/Helpers/canvas`, and `build/canvas`
+links to it), and asks the running app what it can do, so `canvas help` lists the app's commands.
+
+```sh
+build/canvas status                                          # is the app running?
+build/canvas boards                                          # the open boards, and which is in front
+build/canvas kinds --schema                                  # the kinds of shape, and every property's JSON Schema
+build/canvas create sticky-note --set text='Buy milk'        # a note in the middle of the board in front
+build/canvas create ellipse --at 400,300 --size 240,120 --board 2
+```
+
+Output is JSON when it's piped (as agents run it) and text in a terminal (`--format` picks), errors
+come with a hint, and the exit status says what happened: 0 done, 1 the app couldn't do it, 2 the
+command line is wrong, 3 the app isn't running. To run it as just `canvas`, put the link on your
+PATH: `ln -s "$PWD/build/canvas" ~/.local/bin/canvas`.
+
 ## Controls
 
 | Action | How |
@@ -79,7 +98,9 @@ Package.swift           the module graph: one line per module, with its layer
 Sources/
   Geometry/             vector math, arcs, Camera
   Canvas/               the core: model, plugin registry, editor, the hand tool, drawing
-  CanvasUI/             the AppKit view, the SwiftUI toolbar, and CanvasFocus
+  CanvasRPC/            what the app and its command line say to each other: JSON-RPC over a socket
+  CanvasUI/             the AppKit view, the SwiftUI toolbar, CanvasFocus, and the command line's server
+  CanvasCLI/            canvas, the command line
   Keyboard/             the keyboard horizontal: every shortcut, registered by the plugin whose key it is
   Selection/            the selection horizontal: the select tool, marquee, handles, Delete and ⌘A
   Arrows/               arrows (a port of tldraw's arrow geometry and binding)
@@ -97,6 +118,7 @@ Sources/
   Locking/              a horizontal every kind is in: a lock from the context menu, its chip and its shake
   Ports/                a horizontal any kind opts into: dots beside its sides that a drag connects from,
                         on channels that say what may connect to what
+  Automation/           the command line's horizontal: every command canvas runs, create and kinds its own
   ValidationDetails/    a bridge between two horizontals: validation issues in the panel's Issues tab
   ValidationContents/   a bridge between two horizontals: a dot on the row of each shape with issues
   ArrowPorts/           a bridge: arrows are what a drag from a port draws, bound only where its channel goes

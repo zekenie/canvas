@@ -3,7 +3,7 @@
 Everything on the canvas comes from a plugin: sticky notes, ellipses, arrows, task cards,
 validation, checklists, titles, the detail panel and the table of contents beside the canvas,
 selecting itself, copying and pasting, locking, the ports arrows are dragged from, what each key
-does, even the examples.
+does, what the command line can do, even the examples.
 The core (`Sources/Canvas`) knows how to hold shapes, run tools, draw, and wire plugins together,
 and nothing about any particular shape or concern. Its one built-in tool is tldraw's Hand, which
 pans (a flung release slides on). Select, which selects (a click, ⇧-click, or a marquee dragged
@@ -31,6 +31,7 @@ maps one onto the other.
 - [The clipboard](#the-clipboard)
 - [Locking](#locking)
 - [Ports](#ports)
+- [The command line](#the-command-line)
 - [Capabilities](#capabilities)
 - [The editor, the document, and drawing](#the-editor-the-document-and-drawing)
 - [Boards on disk](#boards-on-disk)
@@ -242,6 +243,8 @@ Once one plugin works, the question is which piece the next feature needs.
 | Connect shapes with arrows: dots beside a kind's sides, dragged to another shape | `x.ports(C.self, sides:role:)`, on a channel; ArrowPorts draws the arrow | [Ports](#a-kinds-ports), [ArrowPorts](#the-connector-arrowports) |
 | Declare a channel: a kind of connection, and which kinds take it | A `Channel` type, `registrar.channel(C.self)`; `ports` on each kind that takes it | [Channels](#channels) |
 | Say what an arrow's end may bind to (tldraw's canBind) | Arrows' `registrar.arrowBindingRule { query in ... }` | [ArrowPorts](#the-connector-arrowports) |
+| Let agents (or scripts) do something to a board from outside the app | `registrar.automationCommand("name", "…", params: P.self) { params, context in … }`: a `canvas` command | [The command line](#the-command-line) |
+| Make a shape without the pointer: what a kind's tool places, or a shape from its JSON | `registry.placement(for:)`, `placement.shape(at:)`; `registry.shape(_:properties:)` | [The command line](#the-command-line) |
 | Draw a shape away from where it is, for an animation (a shake) | `editor.setDrawingOffset(_:for:)`; an overlay follows with `context.worldDrawingOffset(of:)` | [Locking](#locking) |
 | Keep what a kind's props name right as shapes are deleted and copied (a connector) | `ShapeReferencing` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
 | Keep something about any shape beside its props (where it came from) | A `ShapeMetaKey`, and `record.meta[Key.self]` | [Metadata](#metadata) |
@@ -321,13 +324,15 @@ Each target is one line, with its layer:
 
 | Layer | May depend on | Modules |
 |---|---|---|
+| wire | wire | CanvasRPC (what the app and its [command line](#the-command-line) say to each other) |
 | foundation | foundation | Geometry, Canvas (the core) |
-| ui | foundation | CanvasUI (the AppKit view, the SwiftUI toolbar, and `CanvasFocus`) |
-| horizontal | foundation, horizontal | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Checklists, Clipboard, Locking, Ports |
+| ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
+| horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Checklists, Clipboard, Locking, Ports, Automation |
 | vertical | foundation, horizontal | Arrows, StickyNotes, Ellipses, TaskCards, Rectangles, Polylines, Eraser, Reordering |
 | bridge | foundation, horizontal, vertical | EllipseTitles, ValidationDetails, ValidationContents, ArrowPorts |
-| composition | foundation, horizontal, vertical, bridge | Composition (the shipped plugin list) |
-| app | foundation, ui, composition | InfiniteCanvas |
+| composition | foundation, horizontal, vertical, bridge, wire | Composition (the shipped plugin list) |
+| app | foundation, ui, composition, wire | InfiniteCanvas |
+| cli | wire | CanvasCLI (`canvas`, an executable: it knows the wire, never the app) |
 | testsupport, test | (see Package.swift) | TestKit, CanvasTesting, `*Tests` |
 
 What `./build.sh audit` enforces:
@@ -2580,6 +2585,106 @@ What Arrows lends, it lends any plugin, and it knows no channel
 Ports are the part of data-canvas's that notes and tasks need to prove the API; the rest is in
 [Not built yet](#not-built-yet).
 
+## The command line
+
+`canvas` is the app's command line, for agents first and people too: it runs commands on the
+boards open in the app, which must be running, and each change shows in the board's window as it's
+made. Agents never read or write a board's file; they go through `canvas`, so the file stays the
+app's to change.
+
+```
+canvas status                           whether the app is running: its version, protocol and boards
+canvas boards                           the open boards: each one's id, name, file, and which is in front
+canvas kinds [<kind>] [--schema]        the kinds of shape, what places each, and its properties
+canvas create <kind> [--at <x,y>] [--size <width,height>] [--set <name=value>]... [--props <json>] [--board <board>]
+canvas help [<command>]                 what a command takes (--format json: what the app says, schemas too)
+```
+
+Four modules, one job each:
+
+| Module | Layer | What it does |
+|---|---|---|
+| CanvasRPC | wire | What the app and `canvas` say to each other: JSON-RPC 2.0, a message a line, over a Unix-domain socket (`~/Library/Application Support/InfiniteCanvas/canvas.sock`, or `CANVAS_SOCKET`) only this user can reach; what a command is (`CommandSpec`, its params a JSON Schema) and how its params are spelled as arguments; the client, and the listener. Knows no canvas, plugin or AppKit. |
+| CanvasCLI | cli | `canvas`: reads its own options, asks the app what it runs (`describe`), reads the rest as one of those commands, runs it, and prints what comes back. Knows only the wire. |
+| CanvasUI's `CommandServer` | ui | The app's end: it listens, describes the app, and answers each request on the main actor. `status` and `boards` are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front. |
+| Automation | horizontal | The commands plugins give the command line (`AutomationCommands`), and its own two, `create` and `kinds`. The app hands them to its server through Composition (`ShippedPlugins.commands(in:)`). |
+
+**The commands are the app's, so `canvas` never changes for one.** It knows no command but `help`:
+each run asks the app to describe itself, and makes its commands, their arguments and their help
+from what comes back. A plugin that adds a command adds it to `canvas`, help and all, and the two
+can't disagree about what a command takes. The app carries the `canvas` it was built with
+(`Contents/Helpers/canvas`; `build/canvas` links to it), and `canvas` refuses an app that speaks
+another version of the protocol (`RPC.protocolVersion`).
+
+**A command is a name, its params, and what it does**, registered with Automation, as `create` is
+([Commands.swift](../Sources/Automation/Commands.swift)):
+
+```swift
+struct CreateShape: SchemaDefined {
+    static let properties = Properties<CreateShape>(title: "create") {
+        Property("kind", \.kind).required().description("The kind of shape: one that `canvas kinds` lists.")
+        Property("at", \.at).description("Where the shape's middle goes, in world units. Default: the middle of the board's view.")
+        Property("set", \.set).keywords(["x-value-name": "name=value"])
+            .description("A property to set: text for a property that's text (text=Hello), JSON for any other (estimate=3).")
+        // size, props
+    }
+    var kind = ""
+    var at: CGPoint?
+    var set: [String] = []
+}
+
+registrar.automationCommand("create", "Put a shape on a board.", params: CreateShape.self, positionals: ["kind"],
+                            examples: [CommandExample("canvas create <kind> --at 400,300", "…")]) { params, context throws(AutomationError) in
+    let editor = try context.board()           // the board --board names, or the one in front
+    // … the shape, from what the kind's tool places and what it's told …
+    editor.transact { $0.insert(record) }      // as any change is made: it shows, and the board is edited
+    return Created(id: record.id.description, kind: params.kind, …)     // anything Encodable, as JSON
+}
+```
+
+- **Params are a list of properties** ([Properties](#properties)), whose JSON Schema is what
+  `canvas` reads the arguments by: a string as it's typed, a number or an integer read as one, a
+  boolean a flag (`--schema`, `--no-schema`), a fixed number of numbers (the core's point and size)
+  as `x,y`, an array of any of those by giving the option again (`--set a=1 --set b=2`), and
+  anything else as JSON (`-` reads it from standard input). Each property is an option (`fooBar`
+  is `--foo-bar`), those in `positionals` also take their places in order, and help shows each
+  one's `description`, its default, and what `x-value-name` calls its value. The app checks what
+  comes against the schema and decodes it, so `run` gets its params typed.
+- **A board command** (the default scope) runs on a board: `context.board()` is its editor. An app
+  command (`scope: .app`, as `kinds` is) runs with the registry. `board` is the server's param, and
+  `canvas`'s own options (`socket`, `format`, `timeout`, `help`, `version`) are `canvas`'s, so the
+  registry refuses a command that declares one; a name the command line can't type (words of
+  lowercase letters, digits and hyphens: `create`, `board list`) or one that's kept
+  (`RPC.reservedCommandNames`: the protocol's `describe`, the server's `status` and `boards`,
+  `canvas`'s `help`); a positional
+  that isn't a param; and two commands of one name.
+- **An error says why, and what to do**: `AutomationError(message, reason:, hint:)`, where `reason`
+  is a word an agent can branch on (`unknown_kind`) and `hint` is often the command to run instead;
+  a name that's nearly one gets a "Did you mean". `canvas` prints a result on standard output (JSON
+  when that isn't a terminal, which is how agents run it, or text; `--format` says which), an error
+  on standard error, and exits 0 when it's done, 1 when the app couldn't do it, 2 when the command
+  line is wrong, and 3 when the app couldn't be reached.
+- **A command changes a board as anything does**: through `editor.transact`, on the main actor, so
+  the window shows each change, the board is edited and saves itself, read-only shapes refuse, and
+  services hear the change set. Who made a change isn't recorded yet.
+
+`create` uses two things the core lends a plugin that makes shapes without the pointer:
+`registry.placement(for: kind)`, what the kind's tool places (`placement.size`, and
+`placement.shape(at:)`, the shape it puts down with its middle on a point, in no document yet), and
+`registry.shape(kind, properties:)`, a shape from its properties as one JSON object, own and added
+side by side as its kind's schema describes them: the inverse of `record.propertiesJSON`. So it
+starts from what the kind's tool would place (a task's "New Task" title with it), sets what it's
+told over that (`--props`, then each `--set`: as typed for a property that's text, as JSON for any
+other), and inserts it. A shape past its schema's bounds is made, with a warning, as the app makes
+any; a kind no tool places (an arrow, a line) starts from the properties it's given. What a shape's
+props name (an arrow's ends, through `ShapeReferencing`) must be on its board: a shape that named one
+that isn't would keep naming it, and nothing would let go, so `create` refuses it and says which.
+
+The app that holds the socket's lock (`canvas.sock.lock`, beside it) is the one listening: a second
+copy of the app gives up and runs without the command line, and a socket that one that crashed left
+behind is taken over. A command's options may also come before its name (`canvas --board 2 create
+ellipse`), as agents often write them.
+
 ## Capabilities
 
 Some behavior belongs to a kind itself rather than to a concern others can join. That's a
@@ -2862,6 +2967,7 @@ clipboard            service ClipboardState · command cut · shortcut ⌘X → 
 locking              property locked · property locked → every shape · read-only shapes · service LockState · overlay LockOverlay · CanvasButtons · CanvasContextMenu
 ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
 arrow-ports          property channel → arrow · connector → arrow · ArrowBindingRules
+automation           command line create · command line kinds
 rectangles           shape rectangle · tool rectangle · shortcut R → tool rectangle
 polylines            shape polyline · tool polyline · shortcut L → tool polyline
 eraser               tool eraser · shortcut E → tool eraser
@@ -2973,6 +3079,15 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   `Wire`, and a disc C below B taking `Pipe`; `board.connect(to:speed:release:)` hovers A and drags
   from its right dot (`aRightDot`), `fast` or `slow`, and `board.arrows` are the arrows drawn, with
   their bindings and `ChannelProperty`.
+- **The command line.** A test listens on a socket of its own (`temporarySocketPath()`, TestKit),
+  never the app's. The app answers on the main actor, so a test that's also the client makes its
+  request off the main thread while the main run loop turns (`offMain`), or runs `canvas` as it's
+  built (`run(builtExecutable("CanvasCLI"), arguments)`, which turns the loop until it's done).
+  CanvasRPCTests hold the wire to its messages, arguments and sockets; CanvasCLITests run `canvas`
+  against an app of their own (a listener with a few commands) for its output, errors and exit
+  statuses; AutomationTests run the commands on a headless editor, spelled as `canvas` spells them
+  (`spec.params(from:)`); and CompositionTests' CommandLineTests run `canvas` against the app's
+  `CommandServer` on boards configured as the app configures them.
 - **What AppKit logs.** Some of AppKit's complaints go only to standard error (NSLog), and the test
   passes anyway. `standardError(during:)` (CanvasTesting) returns what was written there while a
   closure ran, and writes it on after, so a test can check: TableOfContentsTests and CompositionTests'
@@ -3053,7 +3168,13 @@ Each of these adds to the design without changing what plugins are written again
 
 - **More of change sets:** each commit already says what it added, changed and removed
   (`ChangeSet`, which services get with `documentDidChange`); what's left is who made it (the user,
-  an agent) and the records before and after. Undo, an agents' CLI and sync build on them.
+  an agent through the command line) and the records before and after. Undo and sync build on them.
+- **More of the command line**: reading a board (its shapes, in a form for agents), and changing
+  and deleting shapes; who each change is from (an agent's name on its commits, and its cursor on
+  the canvas); commands contributed by the plugins that own a concern (a title, a checklist, a
+  lock); opening a board that isn't open; putting `canvas` on the PATH from the app (as editors
+  install theirs); and other clients of the same socket (an MCP server, say, from the same
+  command descriptions).
 - **An arrow end bound to a shape that isn't there** (deleted outside a transaction, or kept aside)
   is drawn at the origin; a binding should keep a point to fall back on.
 - **Undo.** `transact` is already the one mutation path. The editor will open an undo group on
@@ -3117,9 +3238,9 @@ Each of these adds to the design without changing what plugins are written again
   channel; reading connections as data (what a note links to, for rules and agents); and, once
   ports draw every arrow a board needs, removing the arrow tool (the POC's transcript drives it
   today).
-- **More of properties**: checking what an agent writes against its kind's schema before it lands
-  (the check is there: `registry.schemaViolations(of:)`, and `SchemaValidator` for any JSON), and
-  a board's shapes as it opens, in its report; the agents' CLI handing schemas out; a projection of
+- **More of properties**: a board's shapes checked against their schemas as it opens, in its report
+  (the command line's `create` warns about what it makes, and `canvas kinds --schema` hands the
+  schemas out); a projection of
   a schema for LLM tool calling, whose strict modes reject `prefixItems` and `oneOf` (a rect, a
   task's status); panel controls made from a schema, a title's field counting down to its
   `maxLength`; bounds a kind sets on an added property (Titles' 80 characters are every kind's);

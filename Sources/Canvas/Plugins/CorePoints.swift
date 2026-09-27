@@ -100,7 +100,15 @@ struct CommandRegistration {
 
 struct ToolRegistration {
     let descriptor: ToolDescriptor
+    /// What it places, for a tool that places a shape (`ShapeRegistrar.tool(placing:)`).
+    var placement: Placement?
     let make: @MainActor (CanvasEditor) -> any Tool
+
+    init(descriptor: ToolDescriptor, placement: Placement? = nil, make: @escaping @MainActor (CanvasEditor) -> any Tool) {
+        self.descriptor = descriptor
+        self.placement = placement
+        self.make = make
+    }
 }
 
 struct ServiceRegistration {

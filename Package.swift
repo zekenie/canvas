@@ -9,19 +9,24 @@ import PackageDescription
 // Modules live in Sources/X or Examples/X; test and testsupport modules in Tests/X.
 //
 // Layers, and what each may depend on:
+//     wire         -> wire                               what the app and its command line say to
+//                                                        each other; knows no canvas, plugin or AppKit
 //     foundation   -> foundation                         the core: knows no plugin
-//     ui           -> foundation                         the AppKit/SwiftUI shell around the core
-//     horizontal   -> foundation, horizontal             declares extension points that other
+//     ui           -> foundation, wire                   the AppKit/SwiftUI shell around the core, and
+//                                                        the app's end of the command line
+//     horizontal   -> foundation, horizontal, wire       declares extension points that other
 //                                                        plugins opt into; knows no vertical
 //     vertical     -> foundation, horizontal             a feature (shape kinds, tools); knows no
 //                                                        other vertical
 //     bridge       -> foundation, horizontal, vertical   glue that connects a vertical to a
 //                                                        horizontal, or two horizontals, without
 //                                                        either knowing the other
-//     composition  -> foundation, horizontal, vertical, bridge     the shipped plugin list
-//     app          -> foundation, ui, composition
+//     composition  -> foundation, horizontal, vertical, bridge, wire   the shipped plugin list
+//     app          -> foundation, ui, composition, wire
+//     cli          -> wire                               the command line (`canvas`), an executable:
+//                                                        knows only the wire, never the app
 //     testsupport  -> foundation, testsupport
-//     test         -> anything but app and test; a test named <M>Tests may use only M, M's
+//     test         -> anything but app, cli and test; a test named <M>Tests may use only M, M's
 //                     dependencies, and testsupport and ui modules
 //
 // build.sh refuses to build when:
@@ -46,7 +51,8 @@ let package = Package(
     targets: [
         .target(name: "Geometry", dependencies: []),                                          // layer: foundation
         .target(name: "Canvas", dependencies: ["Geometry"]),                                  // layer: foundation
-        .target(name: "CanvasUI", dependencies: ["Canvas", "Geometry"]),                      // layer: ui
+        .target(name: "CanvasRPC", dependencies: []),                                         // layer: wire
+        .target(name: "CanvasUI", dependencies: ["Canvas", "CanvasRPC", "Geometry"]),         // layer: ui
 
         .target(name: "Keyboard", dependencies: ["Canvas"]),                                  // layer: horizontal
         .target(name: "Selection", dependencies: ["Canvas", "Geometry", "Keyboard"]),         // layer: horizontal
@@ -59,6 +65,7 @@ let package = Package(
         .target(name: "Titles", dependencies: ["Canvas", "DetailPanel", "TableOfContents"]),  // layer: horizontal
         .target(name: "Locking", dependencies: ["Canvas", "ContextMenus", "Geometry", "Selection"]), // layer: horizontal
         .target(name: "Ports", dependencies: ["Canvas", "Geometry", "Selection"]),            // layer: horizontal
+        .target(name: "Automation", dependencies: ["Canvas", "CanvasRPC", "Geometry"]),       // layer: horizontal
 
         .target(name: "Arrows", dependencies: ["Canvas", "Geometry", "Keyboard", "Selection", "TableOfContents"]), // layer: vertical
         .target(name: "StickyNotes", dependencies: ["Canvas", "Checklists", "DetailPanel", "Keyboard", "Ports", "Selection", "TableOfContents", "Titles", "Validation"]), // layer: vertical
@@ -76,12 +83,15 @@ let package = Package(
         .target(name: "Reordering", dependencies: ["Canvas", "ContextMenus"], path: "Examples/Reordering"),             // layer: vertical
         .target(name: "EllipseTitles", dependencies: ["Canvas", "Ellipses", "Titles"], path: "Examples/EllipseTitles"), // layer: bridge
 
-        .target(name: "Composition", dependencies: ["ArrowPorts", "Arrows", "Canvas", "Checklists", "Clipboard", "ContextMenus", "DetailPanel", "EllipseTitles", "Ellipses", "Eraser", "Keyboard", "Locking", "Polylines", "Ports", "Rectangles", "Reordering", "Selection", "StickyNotes", "TableOfContents", "TaskCards", "Titles", "Validation", "ValidationContents", "ValidationDetails"]), // layer: composition
+        .target(name: "Composition", dependencies: ["ArrowPorts", "Arrows", "Automation", "Canvas", "CanvasRPC", "Checklists", "Clipboard", "ContextMenus", "DetailPanel", "EllipseTitles", "Ellipses", "Eraser", "Keyboard", "Locking", "Polylines", "Ports", "Rectangles", "Reordering", "Selection", "StickyNotes", "TableOfContents", "TaskCards", "Titles", "Validation", "ValidationContents", "ValidationDetails"]), // layer: composition
         .executableTarget(name: "InfiniteCanvas", dependencies: ["Canvas", "CanvasUI", "Composition"]),           // layer: app
+        .executableTarget(name: "CanvasCLI", dependencies: ["CanvasRPC"]),                                        // layer: cli
 
         .target(name: "TestKit", dependencies: [], path: "Tests/TestKit"),                                        // layer: testsupport
         .target(name: "CanvasTesting", dependencies: ["Canvas", "Geometry", "TestKit"], path: "Tests/CanvasTesting"), // layer: testsupport
         .executableTarget(name: "CanvasTests", dependencies: ["Canvas", "CanvasTesting", "Geometry", "TestKit"], path: "Tests/CanvasTests"), // layer: test
+        .executableTarget(name: "CanvasRPCTests", dependencies: ["CanvasRPC", "TestKit"], path: "Tests/CanvasRPCTests"), // layer: test
+        .executableTarget(name: "CanvasCLITests", dependencies: ["CanvasRPC", "TestKit"], path: "Tests/CanvasCLITests"), // layer: test
         .executableTarget(name: "KeyboardTests", dependencies: ["Canvas", "CanvasTesting", "Keyboard", "TestKit"], path: "Tests/KeyboardTests"), // layer: test
         .executableTarget(name: "CanvasUITests", dependencies: ["Canvas", "CanvasTesting", "CanvasUI", "Geometry", "TestKit"], path: "Tests/CanvasUITests"), // layer: test
         .executableTarget(name: "SelectionTests", dependencies: ["Canvas", "CanvasTesting", "Geometry", "Keyboard", "Selection", "TestKit"], path: "Tests/SelectionTests"), // layer: test
@@ -100,9 +110,10 @@ let package = Package(
         .executableTarget(name: "TitlesTests", dependencies: ["Canvas", "CanvasTesting", "CanvasUI", "DetailPanel", "Geometry", "Keyboard", "Selection", "TableOfContents", "TestKit", "Titles"], path: "Tests/TitlesTests"), // layer: test
         .executableTarget(name: "PortsTests", dependencies: ["Canvas", "CanvasTesting", "Geometry", "Keyboard", "Ports", "Selection", "TestKit"], path: "Tests/PortsTests"), // layer: test
         .executableTarget(name: "ArrowPortsTests", dependencies: ["ArrowPorts", "Arrows", "Canvas", "CanvasTesting", "Geometry", "Keyboard", "Ports", "Selection", "TableOfContents", "TestKit"], path: "Tests/ArrowPortsTests"), // layer: test
+        .executableTarget(name: "AutomationTests", dependencies: ["Automation", "Canvas", "CanvasRPC", "CanvasTesting", "Geometry", "TestKit"], path: "Tests/AutomationTests"), // layer: test
         .executableTarget(name: "RectanglesTests", dependencies: ["Canvas", "CanvasTesting", "Keyboard", "Rectangles", "TestKit"], path: "Tests/RectanglesTests"), // layer: test
         .executableTarget(name: "ExamplesTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "ContextMenus", "EllipseTitles", "Ellipses", "Eraser", "Keyboard", "Polylines", "Rectangles", "Reordering", "Selection", "TableOfContents", "TestKit", "Titles"], path: "Tests/ExamplesTests"), // layer: test
-        .executableTarget(name: "CompositionTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "CanvasUI", "Checklists", "Clipboard", "Composition", "DetailPanel", "Geometry", "Keyboard", "Locking", "Selection", "StickyNotes", "TableOfContents", "TaskCards", "TestKit", "Titles", "Validation", "ValidationDetails"], path: "Tests/CompositionTests"), // layer: test
+        .executableTarget(name: "CompositionTests", dependencies: ["Arrows", "Canvas", "CanvasRPC", "CanvasTesting", "CanvasUI", "Checklists", "Clipboard", "Composition", "DetailPanel", "Geometry", "Keyboard", "Locking", "Selection", "StickyNotes", "TableOfContents", "TaskCards", "TestKit", "Titles", "Validation", "ValidationDetails"], path: "Tests/CompositionTests"), // layer: test
         .executableTarget(name: "BenchmarkTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "CanvasUI", "Checklists", "Composition", "Ellipses", "Geometry", "Locking", "StickyNotes", "TableOfContents", "TaskCards", "TestKit", "Titles", "Validation"], path: "Tests/BenchmarkTests"), // layer: test
     ],
     swiftLanguageModes: [.v6]
