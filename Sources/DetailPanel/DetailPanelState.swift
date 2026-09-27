@@ -5,11 +5,29 @@ import Observation
 /// tests read it.
 @MainActor
 public struct DetailLayout {
-    public let header: DetailHeader
+    let resolvedHeader: ResolvedHeader
+    /// What the panel calls the shape's kind: the label of the tool that places it, else the kind.
+    /// A header field's placeholder, by default (`DetailHeaderField`).
+    public let kindName: String
+    /// The symbol of the tool that places the kind, which a header without its own shows.
+    let kindSymbol: String?
     /// Only tabs with at least one section shown for this shape, sorted by `order`, then by first
     /// appearance (the kind's own contributions in plugin order, then every-box ones).
     public let tabs: [DetailTabID]
     let sectionsByTab: [DetailTabID: [ResolvedSection]]
+
+    /// The header when it's a `DetailHeader` (the kind's own, or the tool's label a kind without
+    /// one gets), as shown: without a symbol of its own, with its kind's. Nil for a header of
+    /// another type, which `header(as:)` reads.
+    public var header: DetailHeader? {
+        guard var header = header(as: DetailHeader.self) else { return nil }
+        if header.systemImage == nil { header.systemImage = kindSymbol }
+        return header
+    }
+
+    /// The header as the view the kind built (`header(as: TitleHeader.self)`); nil if it's of
+    /// another type.
+    public func header<Header>(as _: Header.Type) -> Header? { resolvedHeader.value as? Header }
 
     /// The tab's shown sections, in order: the kind's own, then every-box ones, each in plugin order.
     public func sections(in tab: DetailTabID) -> [DetailSectionKey] { resolved(in: tab).map(\.key) }
@@ -29,7 +47,7 @@ struct ResolvedSection {
 public final class DetailPanelState {
     /// A kind's headers and sections, before `when` and sorting.
     private struct Candidates {
-        let headers: [@MainActor (AnyShapeRecord) -> DetailHeader?]
+        let headers: [@MainActor (AnyShapeRecord, CanvasEditor) -> ResolvedHeader?]
         let sections: [ResolvedSection]
     }
 
@@ -46,7 +64,11 @@ public final class DetailPanelState {
         var firstSeen: [DetailTabID] = []
         for section in shown where !firstSeen.contains(section.key.tab) { firstSeen.append(section.key.tab) }
         let tabs = firstSeen.enumerated().sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }.map(\.element)
-        return DetailLayout(header: header(for: record, from: all.headers), tabs: tabs,
+        // The kind's header, else the label of the tool that places the kind, else the kind.
+        let tool = placingTool(of: record.kind)
+        let name = tool?.label ?? record.kind.rawValue
+        let header = all.headers.lazy.compactMap { [editor] in $0(record, editor) }.first ?? ResolvedHeader(DetailHeader(name))
+        return DetailLayout(resolvedHeader: header, kindName: name, kindSymbol: tool?.systemImage, tabs: tabs,
                             sectionsByTab: Dictionary(grouping: shown, by: \.key.tab))
     }
 
@@ -64,15 +86,6 @@ public final class DetailPanelState {
             })
         candidates[kind] = resolved
         return resolved
-    }
-
-    /// The kind's header, else the label and symbol of the tool that places the kind, else the
-    /// kind. A header without a symbol takes the tool's.
-    private func header(for record: AnyShapeRecord, from headers: [@MainActor (AnyShapeRecord) -> DetailHeader?]) -> DetailHeader {
-        let tool = placingTool(of: record.kind)
-        var header = headers.lazy.compactMap { $0(record) }.first ?? DetailHeader(tool?.label ?? record.kind.rawValue)
-        if header.systemImage == nil { header.systemImage = tool?.systemImage }
-        return header
     }
 
     /// The header shown when several shapes are selected: "N Shapes", with each kind's name once,

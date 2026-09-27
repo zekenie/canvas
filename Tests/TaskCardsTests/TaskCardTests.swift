@@ -10,6 +10,7 @@ import Selection
 import TableOfContents
 import TaskCards
 import TestKit
+import Titles
 import Validation
 
 @MainActor let taskCardTests = Suite("Task cards", [
@@ -33,7 +34,7 @@ import Validation
         expectEqual(registry.report.split(separator: "\n").first { $0.hasPrefix("task-cards") }.map(String.init), """
         task-cards         shape task-card · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · \
         ShapeContextMenus → task-card · ContentsRows → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · \
-        ShapeContextMenus → task-card
+        ShapeContextMenus → task-card · ShapeTitles → task-card · ContentsTitles → task-card
         """)
     },
     test("needs validation, checklists, the panel, context menus and the table of contents installed") {
@@ -121,12 +122,27 @@ import Validation
         let editor = try taskEditor()
         expectEqual(try editor.layout(editor.add(fullTask())).outline[1], "Checklist: Items, Progress")
     },
-    test("the header: the title, or Untitled Task, over the summary, with the tool's symbol") {
+    test("the header renames the task: its title, or Untitled Task while it has none, over the summary, with the tool's symbol") {
         let editor = try taskEditor()
-        let header = try editor.layout(editor.add(fullTask())).header
-        expectEqual(header, DetailHeader("Write the spec", subtitle: fullTask().summary, systemImage: "checklist"))
-        expectEqual(try editor.layout(editor.add(TaskCard(frame: cardFrame))).header,
-                    DetailHeader("Untitled Task", subtitle: "To Do", systemImage: "checklist"))
+        let header = try require(try editor.layout(editor.add(fullTask())).header(as: TitleHeader.self))
+        expectEqual(header.title, "Write the spec")
+        expectEqual(header.placeholder, "Untitled Task")
+        expectEqual(header.subtitle, fullTask().summary)
+        expectEqual(header.systemImage, nil, "the Task tool's")
+        let untitled = try require(try editor.layout(editor.add(TaskCard(frame: cardFrame))).header(as: TitleHeader.self))
+        expectEqual(untitled.title, "")
+        expectEqual(untitled.subtitle, "To Do")
+    },
+    test("a task's title is its title, which the card draws: no pill above it") {
+        let editor = try taskEditor()
+        let id = editor.add(TaskCard(frame: cardFrame.offsetBy(dx: 0, dy: 40)))
+        expectEqual(editor.registry.title(of: try require(editor.document[id])), nil, "untitled")
+        editor.transact { $0.update(id, as: TaskCard.self) { $0.props.title = "Write the spec" } }
+        expectEqual(editor.registry.title(of: try require(editor.document[id])), "Write the spec")
+        // Renamed, it's valid either way: validation's outline doesn't change.
+        let before = renderBitmap(editor, size: CGSize(width: 320, height: 300))
+        editor.transact { $0.update(id, as: TaskCard.self) { $0.props.title = "Plant tomatoes, in rows along the fence" } }
+        expectEqual(changedPixels(before, renderBitmap(editor, size: CGSize(width: 320, height: 300)), in: CGRect(x: 0, y: 0, width: 320, height: 78)), 0)
     },
     test("its row in the table of contents: the title or Untitled Task, the status as a symbol, the checklist's tally") {
         let editor = try taskEditor()

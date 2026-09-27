@@ -30,6 +30,7 @@ enum Budget {
 }
 
 /// Notes, tasks and ellipses in a grid, with an arrow from every fourth note to the note after it.
+/// Every other note has a title, so frames draw pills.
 @MainActor func generatedBoard(shapes count: Int) -> CanvasDocument {
     var shapes: [AnyShapeRecord] = []
     let columns = Int(Double(count).squareRoot().rounded(.up))
@@ -44,7 +45,8 @@ enum Budget {
         case 2:
             shapes.append(AnyShapeRecord(ShapeRecord(Ellipse(frame: CGRect(origin: origin, size: CGSize(width: 160, height: 120))))))
         default:
-            let note = ShapeRecord(StickyNote(frame: CGRect(origin: origin, size: StickyNote.defaultSize), text: "Note \(i): something to do"))
+            let note = ShapeRecord(StickyNote(frame: CGRect(origin: origin, size: StickyNote.defaultSize), text: "Note \(i): something to do",
+                                              title: i % 2 == 0 ? "Title \(i)" : nil))
             shapes.append(AnyShapeRecord(note))
             if let previousNote, i % 4 == 0, shapes.count < count {
                 let bound = { (id: ShapeID) in ArrowTerminal.bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)) }

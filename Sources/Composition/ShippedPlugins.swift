@@ -36,10 +36,10 @@ public enum ShippedPlugins {
             // handles draw below their view overlays.
             KeyboardPlugin(), SelectionPlugin(),
             ArrowsPlugin(), StickyNotesPlugin(), EllipsesPlugin(), TaskCardsPlugin(),
-            ValidationPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin(), ChecklistsPlugin(), ValidationDetailsPlugin(),
-            ClipboardPlugin(pasteboard: pasteboard),
+            ValidationPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin(), ChecklistsPlugin(), TitlesPlugin(),
+            ValidationDetailsPlugin(), ClipboardPlugin(pasteboard: pasteboard),
             // The examples (Examples/). Each is one line here; delete it to leave it out.
-            RectanglesPlugin(), PolylinesPlugin(), EraserPlugin(), TitlesPlugin(), EllipseTitlesPlugin(), ReorderingPlugin(),
+            RectanglesPlugin(), PolylinesPlugin(), EraserPlugin(), EllipseTitlesPlugin(), ReorderingPlugin(),
         ]
     }
 

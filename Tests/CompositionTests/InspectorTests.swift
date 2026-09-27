@@ -9,6 +9,7 @@ import DetailPanel
 import Selection
 import StickyNotes
 import SwiftUI
+import TableOfContents
 import TaskCards
 import TestKit
 
@@ -38,8 +39,10 @@ final class InspectorWindow {
         window.settle()
     }
 
-    /// The panel's editable text fields, in view order.
-    var fields: [NSTextField] { host.descendants(NSTextField.self).filter(\.isEditable) }
+    /// The panel's editable text fields under its header, in view order.
+    var fields: [NSTextField] { host.descendants(NSTextField.self).filter { $0.isEditable && !$0.isInPanelHeader(of: host) } }
+    /// The header's title field (Titles' `TitleHeader`), for a shape renamed there.
+    var titleField: NSTextField? { host.descendants(NSTextField.self).first { $0.isEditable && $0.isInPanelHeader(of: host) } }
     /// The panel's lists, less the table of contents.
     var tables: [NSTableView] { host.descendants(NSTableView.self).filter { !$0.isTableOfContents } }
     /// The panel's buttons under its header (whose back button is there once a shape is selected).
@@ -59,7 +62,7 @@ final class InspectorWindow {
         window.makeFirstResponder(canvas)
         window.press("t")
         click(point)
-        window.spin { fields.contains { $0.placeholderString == "Title" } }
+        window.spin { titleField?.placeholderString == "Untitled Task" }
         return try require(editor.selection.flatMap { editor.document[$0]?.typed(as: TaskCard.self) }, "T, then a click, places a task")
     }
 
@@ -186,7 +189,7 @@ let chipPoint = CGPoint(x: 303, y: 100)
     test("a selection change that removes the focused field hands the keyboard to the canvas") {
         let w = try InspectorWindow()
         _ = try w.placeTask(at: CGPoint(x: 300, y: 300))
-        w.window.focus(try require(w.fields.first { $0.placeholderString == "Title" }))
+        w.window.focus(try require(w.titleField))
         w.editor.selection = nil
         w.window.spin { w.canvasHasKeyboard }
         expect(w.canvasHasKeyboard, "not the window: \(String(describing: w.window.firstResponder))")
@@ -218,6 +221,27 @@ let chipPoint = CGPoint(x: 303, y: 100)
         expectEqual(w.fields.count, 0)
         expectEqual(w.tables.count, 0)
     },
+    test("naming a note in its header puts a pill over it and names its row; Return hands the keyboard to the canvas") {
+        let w = try InspectorWindow()
+        let shape = note("Buy milk")
+        w.editor.transact { $0.insert(shape) }
+        w.click(CGPoint(x: 200, y: 200))
+        w.window.spin { w.titleField != nil }
+        let untitled = w.render()
+        let field = try require(w.titleField)
+        expectEqual(field.placeholderString, "Note")
+        w.window.focus(field)
+        w.window.type("Groceries")      // e is the eraser's shortcut, on the canvas
+        w.window.settle()
+        expectEqual(w.editor.document[shape.id]?.typed(as: StickyNote.self)?.props.title, "Groceries")
+        expectEqual(w.editor.currentToolID, .select)
+        // The pill, 9 to 27 points above the note's top-left corner at (100, 100).
+        expect(changedPixels(untitled, w.render(), in: CGRect(x: 100, y: 75, width: 60, height: 12)) > 300, "the pill")
+        w.window.pressReturn()
+        w.window.spin { w.canvasHasKeyboard }
+        w.editor.selection = nil
+        expectEqual(w.editor.tableOfContents?.entries.map { $0.label?.text }, ["Groceries"])
+    },
     test("an empty note's footer says so, through the validation-details bridge") {
         let w = try InspectorWindow()
         let empty = note(), written = ShapeRecord(StickyNote(frame: CGRect(x: 400, y: 100, width: 200, height: 200), text: "Hi"))
@@ -236,15 +260,16 @@ let chipPoint = CGPoint(x: 303, y: 100)
         expectEqual(task.props.title, "New Task")
         expectEqual(w.editor.currentToolID, .select)
         let layout = try require(w.editor.detailPanel).layout(for: AnyShapeRecord(task))
-        expectEqual(layout.header.title, "New Task")
+        expectEqual(layout.headerText, "New Task")
         expectEqual(layout.tabs.map(\.title), ["Task", "Checklist", "Style", "Arrange"])
-        expectEqual(w.fields.first { $0.placeholderString == "Title" }?.stringValue, "New Task", "the Task tab is showing")
+        expectEqual(w.titleField?.stringValue, "New Task", "the header renames it")
+        expectEqual(w.fields.map(\.stringValue), ["0 h"], "the Task tab is showing: its Estimate")
         expectEqual(w.footer, [])
     },
-    test("typing a task's title in the panel redraws the card, clears the footer's error, and keeps Select") {
+    test("typing a task's title in the panel's header redraws the card, clears the footer's error, and keeps Select") {
         let w = try InspectorWindow()
         let task = try w.placeTask(at: CGPoint(x: 300, y: 300))
-        w.window.focus(try require(w.fields.first { $0.placeholderString == "Title" }))
+        w.window.focus(try require(w.titleField))
         w.window.pressDelete()
         expectEqual(w.editor.document[task.id]?.typed(as: TaskCard.self)?.props.title, "")
         expectEqual(w.footer, ["A task needs a title."])

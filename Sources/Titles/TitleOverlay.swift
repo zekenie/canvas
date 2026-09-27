@@ -1,0 +1,75 @@
+import AppKit
+import Canvas
+
+@MainActor
+enum TitleStyle {
+    // View points.
+    static let height: CGFloat = 18
+    static let padding: CGFloat = 7
+    /// Between the pill and the shape's top edge: clear of a badge centered on the edge, as the
+    /// checklist chip is on the top-right corner, reaching 8 points above it.
+    static let gap: CGFloat = 9
+    /// A shape narrower than this on screen has no pill: there'd be no room for its title.
+    static let minWidth: CGFloat = 30
+    /// Below this zoom the pill shrinks with the shapes, as the checklist chip does.
+    static let fullSizeZoom: CGFloat = 0.25
+    static let fill = NSColor(white: 0.25, alpha: 0.9)
+    static let attributes: [NSAttributedString.Key: Any] = {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        return [
+            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
+            .foregroundColor: NSColor.white,
+            .paragraphStyle: paragraph,
+        ]
+    }()
+}
+
+/// A pill with the shape's title, just outside its top-left corner, on every titled shape whose
+/// kind shows it. On one line, and no wider than the shape: a longer title ends in "…". Shapes never
+/// know about it, and an untitled one draws nothing.
+struct TitleOverlay: CanvasOverlay {
+    var space: OverlaySpace { .world }
+
+    func draw(in context: OverlayContext) {
+        let registry = context.editor.registry
+        // Each kind's title that shows a pill, found once per kind rather than per shape.
+        var pills: [ShapeKind: TitleContribution] = [:]
+        for kind in registry.kinds {
+            if let title = registry.contributions(to: ShapeTitles.self, for: kind).first, title.showsPill { pills[kind] = title }
+        }
+        guard !pills.isEmpty else { return }
+        // World units per view point, from the shape's top-left corner up (more when zoomed far out).
+        let scale = min(1, context.zoom / TitleStyle.fullSizeZoom) / context.zoom
+        // A pill is above its shape, so a shape just below the view may have its pill in it.
+        let visible = context.visibleRect
+        let reach = (TitleStyle.gap + TitleStyle.height) * scale
+        let area = CGRect(x: visible.minX, y: visible.minY, width: visible.width, height: visible.height + reach)
+        // In paint order, so overlapping pills stack as their shapes do.
+        for record in context.editor.paintOrder(in: area) {
+            guard let title = pills[record.kind]?.title(record).map(Self.oneLine), !title.isEmpty,
+                  let bounds = context.shapes.geometry(of: record.id)?.bounds, !bounds.isNull,
+                  bounds.width / scale >= TitleStyle.minWidth else { continue }
+            context.cg.saveGState()
+            context.cg.translateBy(x: bounds.minX, y: bounds.minY)
+            context.cg.scaleBy(x: scale, y: scale)
+            drawPill(title, maxWidth: bounds.width / scale, in: context.cg)
+            context.cg.restoreGState()
+        }
+    }
+
+    /// The title on one line: each run of whitespace, newlines included, folds into a space.
+    static func oneLine(_ title: String) -> String { title.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+
+    /// In view points, with the shape's top-left corner at the origin.
+    private func drawPill(_ title: String, maxWidth: CGFloat, in cg: CGContext) {
+        let text = NSAttributedString(string: title, attributes: TitleStyle.attributes)
+        let size = text.size(), height = TitleStyle.height, padding = TitleStyle.padding
+        let pill = CGRect(x: 0, y: -TitleStyle.gap - height, width: min((size.width + padding * 2).rounded(.up), maxWidth), height: height)
+        cg.addPath(CGPath(roundedRect: pill, cornerWidth: height / 2, cornerHeight: height / 2, transform: nil))
+        cg.setFillColor(TitleStyle.fill.cgColor)
+        cg.fillPath()
+        text.draw(with: CGRect(x: pill.minX + padding, y: pill.midY - size.height / 2, width: pill.width - padding * 2, height: size.height),
+                  options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+    }
+}

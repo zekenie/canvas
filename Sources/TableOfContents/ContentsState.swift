@@ -41,8 +41,9 @@ public final class ContentsState {
     }
 
     @ObservationIgnored private unowned let editor: CanvasEditor
-    /// Each kind's contribution, found once: the registry is frozen.
+    /// Each kind's contributions, found once: the registry is frozen.
     @ObservationIgnored private var contributions: [ShapeKind: ContentsContribution?] = [:]
+    @ObservationIgnored private var titles: [ShapeKind: ContentsTitles.Contribution?] = [:]
     @ObservationIgnored private var cache: [ShapeID: Cached] = [:]
     private var pin: Pin?
 
@@ -149,12 +150,16 @@ public final class ContentsState {
 
     // MARK: Rows
 
-    /// The shape's row: its kind's, else its tool's label. Made again only when the shape changes.
+    /// The shape's row: its kind's, else its tool's label; called what `ContentsTitles` names it, if
+    /// it's a `ContentsLabel`. Made again only when the shape changes.
     private func resolve(_ record: AnyShapeRecord) -> Cached {
         if let cached = cache[record.id], cached.record == record { return cached }
         let contribution = contribution(for: record.kind)
-        let cached = Cached(record: record, isListed: contribution?.isListed(record) ?? true, parent: contribution?.parent?(record),
-                            row: contribution?.row?(record) ?? ResolvedRow(ContentsLabel(name(of: record.kind))))
+        var row = contribution?.row?(record) ?? ResolvedRow(ContentsLabel(name(of: record.kind)))
+        if let label = row.label, let title = title(for: record.kind)?(record), !title.allSatisfy(\.isWhitespace) {
+            row = ResolvedRow(label.retitled(title))
+        }
+        let cached = Cached(record: record, isListed: contribution?.isListed(record) ?? true, parent: contribution?.parent?(record), row: row)
         cache[record.id] = cached
         return cached
     }
@@ -163,6 +168,14 @@ public final class ContentsState {
         if let found = contributions[kind] { return found }
         let found = editor.registry.contributions(to: ContentsRows.self, for: kind).first
         contributions[kind] = found
+        return found
+    }
+
+    /// The kind's own name for its rows, else every kind's.
+    private func title(for kind: ShapeKind) -> ContentsTitles.Contribution? {
+        if let found = titles[kind] { return found }
+        let found = editor.registry.contributions(to: ContentsTitles.self, for: kind).first
+        titles[kind] = found
         return found
     }
 

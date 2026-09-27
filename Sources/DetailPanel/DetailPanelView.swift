@@ -57,6 +57,7 @@ public struct DetailPanelView: View {
         .labeledContentStyle(DetailRowStyle())
         .toggleStyle(DetailCheckboxStyle())
         .environment(\.detailDrafts, drafts)
+        .environment(\.detailExit, onExit)
         .onKeyPress(.escape) {
             // Leaves the panel, dropping a number being typed rather than committing it.
             drafts.revert()
@@ -123,7 +124,7 @@ struct SelectionSummary: View {
     let overview: AnyView?
     var body: some View {
         VStack(spacing: 0) {
-            HeaderView(header: header, editor: editor)
+            HeaderView(editor: editor, content: header)
             Divider()
             if let overview {
                 overview
@@ -152,7 +153,7 @@ struct ShapePanel: View, Equatable {
         let current = state.currentTab(in: layout, for: record.kind)
         let sections = current.map { layout.resolved(in: $0) } ?? []
         VStack(spacing: 0) {
-            HeaderView(header: layout.header, editor: editor)
+            HeaderView(editor: editor, kindName: layout.kindName, kindSymbol: layout.kindSymbol, content: layout.resolvedHeader.view)
             if let current {
                 if layout.tabs.count > 1 {
                     TabStrip(tabs: layout.tabs, selection: current) { state.choose($0, for: record.kind) }
@@ -184,29 +185,116 @@ struct ShapePanel: View, Equatable {
     }
 }
 
-/// The shape's symbol, title and subtitle, or the selection's, after a back button.
-struct HeaderView: View {
-    let header: DetailHeader
+/// A back button, then the shape's header (or the selection's), told what the panel calls the
+/// shape's kind and its symbol, for a placeholder and a header without a symbol.
+struct HeaderView<Content: View>: View {
     let editor: CanvasEditor
+    var kindName = ""
+    var kindSymbol: String?
+    let content: Content
     var body: some View {
         HStack(spacing: DetailStyle.pairSpacing) {
             BackButton(editor: editor)
-            if let symbol = header.systemImage {
+            content
+                .environment(\.detailKindName, kindName)
+                .environment(\.detailKindSymbol, kindSymbol)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, DetailStyle.inset)
+        .frame(height: DetailStyle.headerHeight)
+    }
+}
+
+extension DetailHeader: View {
+    public var body: some View {
+        DetailHeaderLabel(subtitle: subtitle, systemImage: systemImage) { Text(title) }
+    }
+}
+
+/// The header's layout, for a header view a kind builds itself: the shape's symbol (this one, else
+/// its kind's), then its title on one line in the header's font, over an optional subtitle. The
+/// title is any view: `DetailHeader` makes it text, and a header that renames its shape a
+/// `DetailHeaderField` (Titles' `TitleHeader`).
+public struct DetailHeaderLabel<Title: View>: View {
+    let subtitle: String?
+    let systemImage: String?
+    let title: Title
+    @Environment(\.detailKindSymbol) private var kindSymbol
+
+    public init(subtitle: String? = nil, systemImage: String? = nil, @ViewBuilder title: () -> Title) {
+        self.subtitle = subtitle
+        self.systemImage = systemImage
+        self.title = title()
+    }
+
+    public var body: some View {
+        HStack(spacing: DetailStyle.pairSpacing) {
+            if let symbol = systemImage ?? kindSymbol {
                 Image(systemName: symbol)
                     .font(DetailStyle.headerSymbol)
                     .foregroundStyle(.secondary)
                     .frame(width: DetailStyle.headerSymbolWidth)
             }
             VStack(alignment: .leading, spacing: 1) {
-                Text(header.title).font(DetailStyle.headerTitle).lineLimit(1)
-                if let subtitle = header.subtitle {
+                title.font(DetailStyle.headerTitle).lineLimit(1)
+                if let subtitle {
                     Text(subtitle).font(DetailStyle.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, DetailStyle.inset)
-        .frame(height: DetailStyle.headerHeight)
+    }
+}
+
+/// The header's title as a field, for a header that renames its shape in place (Titles'
+/// `TitleHeader`): borderless, so it reads as the title until it's clicked. It writes as you type,
+/// as the panel's other text fields do; Return, like Escape anywhere in the panel, gives the
+/// keyboard back to the canvas. While it's empty it shows `placeholder`, dimmed: by default what
+/// the panel calls the shape's kind ("Note").
+public struct DetailHeaderField: View {
+    @Binding var text: String
+    let placeholder: String?
+    @Environment(\.detailKindName) private var kindName
+    @Environment(\.detailExit) private var exit
+
+    public init(_ text: Binding<String>, placeholder: String? = nil) {
+        _text = text
+        self.placeholder = placeholder
+    }
+
+    public var body: some View {
+        TextField(placeholder ?? kindName, text: $text)
+            .textFieldStyle(.plain)
+            .onSubmit { exit() }
+    }
+}
+
+struct DetailKindNameKey: EnvironmentKey {
+    static let defaultValue = ""
+}
+
+struct DetailKindSymbolKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+
+/// The panel's `onExit`, for a control that gives the keyboard back to the canvas by itself.
+struct DetailExitKey: EnvironmentKey {
+    static var defaultValue: @MainActor () -> Void { {} }
+}
+
+extension EnvironmentValues {
+    var detailKindName: String {
+        get { self[DetailKindNameKey.self] }
+        set { self[DetailKindNameKey.self] = newValue }
+    }
+
+    var detailKindSymbol: String? {
+        get { self[DetailKindSymbolKey.self] }
+        set { self[DetailKindSymbolKey.self] = newValue }
+    }
+
+    var detailExit: @MainActor () -> Void {
+        get { self[DetailExitKey.self] }
+        set { self[DetailExitKey.self] = newValue }
     }
 }
 

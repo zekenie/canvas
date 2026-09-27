@@ -1,7 +1,9 @@
 import Canvas
 import CanvasTesting
 import Composition
+import CoreGraphics
 import Foundation
+import StickyNotes
 import TestKit
 
 @MainActor private func record<P: ShapeProps>(_ props: P) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(props)) }
@@ -26,5 +28,15 @@ import TestKit
             expectEqual(loaded.document, document)
             expect(loaded.report.isEmpty, "\(loaded.report)")
         }
+    },
+    // A note's title is optional, so it came without a migration: an untitled note writes none,
+    // as its fixture shows, and boards from before titles read as untitled notes.
+    test("a note's title reads back as it was written") {
+        let codec = BoardCodec(registry: try ShippedPlugins.registry())
+        let frame = CGRect(x: 0, y: 0, width: 200, height: 200)
+        let document = CanvasDocument(shapes: [record(StickyNote(frame: frame, text: "Milk", title: "Groceries")), record(StickyNote(frame: frame))])
+        let data = try codec.encode(document)
+        expectEqual(try codec.decode(data).document, document)
+        expectEqual(String(decoding: data, as: UTF8.self).components(separatedBy: "\"title\"").count, 2, "the titled note's, alone")
     },
 ])

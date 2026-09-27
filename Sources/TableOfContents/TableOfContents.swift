@@ -33,6 +33,20 @@ public struct ContentsContribution {
     let row: (@MainActor (AnyShapeRecord) -> ResolvedRow)?
 }
 
+/// What a shape's row is called, when a plugin other than the one that draws the row says: a
+/// horizontal that names shapes (Titles) names them here, and the kind keeps its row. At most one
+/// per kind, plus one for every kind: two are `RegistryError.conflict` at startup. A name that
+/// isn't blank takes the place of a `ContentsLabel` row's title (the kind's own row, or the tool's
+/// label a kind without one gets), which keeps its symbol, color and badge; nil or blank leaves the
+/// row as it is. A row that isn't a plain `ContentsLabel` is its kind's own view, and stays so.
+public enum ContentsTitles {}
+
+extension ContentsTitles: KeyedExtensionPoint {
+    public typealias Contribution = @MainActor (AnyShapeRecord) -> String?
+    public static var owner: PluginID { .tableOfContents }
+    public static func uniqueKeys(of _: Contribution, for target: ShapeTarget) -> [AnyHashable] { [target] }
+}
+
 /// A row as a kind drew it, and, when it's a plain `ContentsLabel`, that label, for tests to read.
 @MainActor
 struct ResolvedRow {
@@ -96,6 +110,14 @@ extension ShapeRegistrar {
     ) {
         contribute(ContentsContribution(Definition.Props.self, isListed: isListed, parent: parent), to: ContentsRows.self)
     }
+
+    /// What this kind's rows are called, whoever draws them: a name that isn't blank replaces the
+    /// row's title, and keeps its symbol, color and badge; nil keeps the title. A horizontal that
+    /// names shapes calls this from its own opt-in (Titles' `title` does), so the kind's row and its
+    /// name can come from different plugins.
+    public mutating func contentsTitle(_ make: @escaping @MainActor (ShapeRecord<Definition.Props>) -> String?) {
+        contribute({ $0.typed(as: Definition.Props.self).flatMap(make) }, to: ContentsTitles.self)
+    }
 }
 
 extension PluginRegistrar {
@@ -107,6 +129,11 @@ extension PluginRegistrar {
         @ViewBuilder _ row: @escaping (ShapeRecord<P>) -> Row
     ) {
         contribute(ContentsContribution(P.self, isListed: isListed, parent: parent, row: row), to: ContentsRows.self, for: .kind(P.kind))
+    }
+
+    /// What the rows of a kind another plugin registers are called (bridges), as above.
+    public mutating func contentsTitle<P: ShapeProps>(_: P.Type, _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) {
+        contribute({ $0.typed(as: P.self).flatMap(make) }, to: ContentsTitles.self, for: .kind(P.kind))
     }
 }
 
@@ -142,6 +169,11 @@ public struct ContentsLabel: View {
     }
 
     public var isPlaceholder: Bool { title.allSatisfy(\.isWhitespace) && placeholder != nil }
+
+    /// The same label, called `title` (`ContentsTitles`).
+    func retitled(_ title: String) -> ContentsLabel {
+        ContentsLabel(title, placeholder: placeholder, systemImage: systemImage, color: color, badge: badge)
+    }
 
     public var body: some View {
         HStack(spacing: ContentsStyle.badgeSpacing) {

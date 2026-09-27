@@ -54,7 +54,7 @@ struct GadgetsPlugin: CanvasPlugin {
             let place = gadget.placement(size: CGSize(width: 240, height: 160)) { Gadget(.zero) }
             gadget.tool(label: "Gadget", systemImage: "gearshape", shortcut: "g", placing: place)
             gadget.remarks(\.remark)
-            gadget.details(header: { DetailHeader($0.props.name.isEmpty ? "Unnamed" : $0.props.name, subtitle: $0.props.mode.rawValue) }) {
+            gadget.details(header: { $gadget in DetailHeader(gadget.name.isEmpty ? "Unnamed" : gadget.name, subtitle: gadget.mode.rawValue) }) {
                 DetailSection(in: GadgetTab.self) { $gadget in
                     LabeledContent("Name") { TextField("Name", text: $gadget.name) }
                     LabeledContent("Mode") {
@@ -104,6 +104,21 @@ extension ShapeRegistrar {
 struct RemarksPlugin: CanvasPlugin {
     var id: PluginID { "remarks" }
     func register(into registrar: inout PluginRegistrar) {}
+}
+
+/// A header of a kind's own, which renames the shape in place: the panel's layout, with its
+/// header field for a title.
+struct RenamingHeader: View {
+    @Binding var text: String
+    var body: some View { DetailHeaderLabel(subtitle: "Renamed here") { DetailHeaderField($text) } }
+}
+
+/// Cards (CanvasTesting's) with a `RenamingHeader` over their text.
+struct RenamingCards: CanvasPlugin {
+    var id: PluginID { "renaming" }
+    func register(into registrar: inout PluginRegistrar) {
+        registrar.details(Card.self, header: { $card in RenamingHeader(text: $card.text) }) {}
+    }
 }
 
 /// Every plugin the gadget needs, then `more`.

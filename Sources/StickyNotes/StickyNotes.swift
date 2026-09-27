@@ -3,6 +3,7 @@ import Canvas
 import Checklists
 import Keyboard
 import Selection
+import Titles
 import Validation
 
 public struct StickyNote: BoxShapeProps {
@@ -11,14 +12,18 @@ public struct StickyNote: BoxShapeProps {
     public var text: String
     /// Edited in the detail panel's Checklist tab; the canvas shows it as a chip, not in the note.
     public var checklist: [ChecklistItem]
-    public init(frame: CGRect = .zero, text: String = "", checklist: [ChecklistItem] = []) {
+    /// What the note is called, once someone names it (in the detail panel's header); nil until
+    /// then. The canvas shows it in a pill above the note, not in it.
+    public var title: String?
+    public init(frame: CGRect = .zero, text: String = "", checklist: [ChecklistItem] = [], title: String? = nil) {
         self.frame = frame
         self.text = text
         self.checklist = checklist
+        self.title = title
     }
     public static let defaultSize = CGSize(width: 200, height: 200)
-    /// No text and no checklist.
-    var isEmpty: Bool { text.allSatisfy(\.isWhitespace) && checklist.isEmpty }
+    /// No text, no checklist and no title.
+    var isEmpty: Bool { text.allSatisfy(\.isWhitespace) && checklist.isEmpty && (title ?? "").allSatisfy(\.isWhitespace) }
 }
 
 extension PluginID {
@@ -37,6 +42,8 @@ public struct StickyNotesPlugin: CanvasPlugin {
                 shape.props.isEmpty ? [.warning("This note is empty.")] : []
             }
             note.checklist(\.checklist)                        // opts into the checklists horizontal
+            note.title { $0.props.title }                      // and titles: a pill, and its row's name
+            note.noteHeader()                                  // renamed in the detail panel's header
             note.noteRow()                                     // and the table of contents
         }
     }

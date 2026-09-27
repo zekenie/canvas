@@ -9,12 +9,14 @@ import Selection
 import TableOfContents
 import TaskCards
 import TestKit
+import Titles
 import Validation
 
-/// Every plugin a task card needs (it contributes to validation, checklists, the panel and the
-/// context menu), and the selection, to select one.
+/// Every plugin a task card needs (it contributes to validation, checklists, the panel, the context
+/// menu, the table of contents and titles), and the selection, to select one.
 @MainActor func taskPlugins() -> [any CanvasPlugin] {
-    [KeyboardPlugin(), SelectionPlugin(), TaskCardsPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin()]
+    [KeyboardPlugin(), SelectionPlugin(), TaskCardsPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
+     TableOfContentsPlugin(), TitlesPlugin()]
 }
 
 @MainActor func taskEditor(scheduler: any Scheduler = ManualScheduler()) throws -> CanvasEditor {

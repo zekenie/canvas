@@ -15,31 +15,6 @@ import TableOfContents
 import TestKit
 import Titles
 
-/// A vertical that opts into titles itself, as a feature plugin would.
-struct Label: BoxShapeProps {
-    static let kind: ShapeKind = "label"
-    var frame: CGRect
-    var text: String
-}
-
-struct LabelDefinition: ShapeDefinition {
-    func render(_ shape: ShapeRecord<Label>, in context: RenderContext) {}
-}
-
-struct LabelsPlugin: CanvasPlugin {
-    var id: PluginID = "labels"
-    func register(into registrar: inout PluginRegistrar) {
-        registrar.shape(LabelDefinition()) { label in label.title { $0.props.text } }
-    }
-}
-
-struct MoreLabelTitles: CanvasPlugin {
-    var id: PluginID { "more" }
-    func register(into registrar: inout PluginRegistrar) {
-        registrar.title(Label.self) { _ in "another" }
-    }
-}
-
 /// Rectangles' own tests are in RectanglesTests; these use it as a shape to work with.
 @MainActor let examplesTests = Suite("Examples", [
     test("Rectangles: placed with Selection installed, a new rectangle is selected") {
@@ -146,58 +121,42 @@ struct MoreLabelTitles: CanvasPlugin {
         h.release()
         expectEqual(h.editor.document[thin], nil)
     },
-    test("Titles: a kind opts in with one line; kinds that don't have no title") {
-        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TitlesPlugin(), LabelsPlugin(), RectanglesPlugin()])
-        let label = h.add(Label(frame: CGRect(x: 0, y: 0, width: 100, height: 40), text: "Hello"))
-        let rectangle = h.add(Rectangle(frame: CGRect(x: 200, y: 0, width: 100, height: 40)))
-        expectEqual(h.editor.registry.title(of: try require(h.editor.document[label])), "Hello")
-        expectEqual(h.editor.registry.title(of: try require(h.editor.document[rectangle])), nil)
-    },
-    test("Titles: one title per kind; a second plugin titling the same kind is an error") {
-        expectThrows(RegistryError.conflict(point: "ShapeTitles", key: "label", plugins: ["labels", "more"])) {
-            _ = try Registry(plugins: [TitlesPlugin(), LabelsPlugin(), MoreLabelTitles()])
-        }
-    },
-    test("Titles: hovering a titled shape draws its title below it") {
-        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TitlesPlugin(), LabelsPlugin()])
-        h.add(Label(frame: CGRect(x: 20, y: 20, width: 100, height: 40), text: "Hello"))
-        h.move(to: CGPoint(x: 300, y: 300))
-        let before = renderBitmap(h.editor, size: CGSize(width: 200, height: 120))
-        h.move(to: CGPoint(x: 50, y: 40))
-        let after = renderBitmap(h.editor, size: CGSize(width: 200, height: 120))
-        var changed = 0
-        for y in stride(from: 62, to: 84, by: 1) {
-            for x in stride(from: 20, to: 60, by: 1) where pixel(before, at: CGPoint(x: x, y: y)) != pixel(after, at: CGPoint(x: x, y: y)) {
-                changed += 1
-            }
-        }
-        expect(changed > 20, "title pixels below the label: \(changed)")
-    },
-    test("EllipseTitles: a bridge titles ellipses, though Ellipses and Titles don't know each other") {
-        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), EllipsesPlugin(), TitlesPlugin(), EllipseTitlesPlugin()])
-        let ellipse = h.add(Ellipse(frame: CGRect(x: 0, y: 0, width: 200, height: 140)))
+    test("EllipseTitles: a bridge titles ellipses by their size, though Ellipses and Titles don't know each other") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), EllipsesPlugin(), TitlesPlugin(), TableOfContentsPlugin(), EllipseTitlesPlugin()])
+        let empty = renderBitmap(h.editor, size: CGSize(width: 300, height: 240))
+        let ellipse = h.add(Ellipse(frame: CGRect(x: 40, y: 60, width: 200, height: 140)))
         expectEqual(h.editor.registry.title(of: try require(h.editor.document[ellipse])), "Ellipse, 200 × 140")
+        let row = try require(h.editor.tableOfContents?.entries.first)
+        expectEqual(row.label?.text, "Ellipse, 200 × 140", "the row's name, in place of the tool's label")
+        expectEqual(row.symbol, "circle")
+        // A derived title shows as any title does: in a pill above the ellipse's top-left corner.
+        let titled = renderBitmap(h.editor, size: CGSize(width: 300, height: 240))
+        expect(changedPixels(empty, titled, in: CGRect(x: 40, y: 35, width: 100, height: 12)) > 300, "the pill")
     },
-    test("EllipseTitles: needs both plugins it connects") {
+    test("EllipseTitles: needs both plugins it connects, and the table of contents, which titles name rows in") {
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeTitles", owner: .titles, contributor: "ellipse-titles")) {
-            _ = try Registry(plugins: [KeyboardPlugin(), EllipsesPlugin(), EllipseTitlesPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), EllipsesPlugin(), TableOfContentsPlugin(), EllipseTitlesPlugin()])
+        }
+        expectThrows(RegistryError.ownerNotInstalled(point: "ContentsTitles", owner: .tableOfContents, contributor: "ellipse-titles")) {
+            _ = try Registry(plugins: [KeyboardPlugin(), EllipsesPlugin(), TitlesPlugin(), EllipseTitlesPlugin()])
         }
         expectThrows(RegistryError.unknownKind("ellipse", point: "ShapeTitles", contributor: "ellipse-titles")) {
-            _ = try Registry(plugins: [TitlesPlugin(), EllipseTitlesPlugin()])
+            _ = try Registry(plugins: [TitlesPlugin(), TableOfContentsPlugin(), EllipseTitlesPlugin()])
         }
     },
     test("the examples' report: who contributes what") {
         let registry = try Registry(plugins: [KeyboardPlugin(), RectanglesPlugin(), EraserPlugin(), PolylinesPlugin(), EllipsesPlugin(), TitlesPlugin(),
-                                              EllipseTitlesPlugin()])
+                                              TableOfContentsPlugin(), EllipseTitlesPlugin()])
         expectEqual(registry.report, """
-        core            tool hand
-        keyboard        service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
-        rectangles      shape rectangle · tool rectangle · shortcut R → tool rectangle
-        eraser          tool eraser · shortcut E → tool eraser
-        polylines       shape polyline · tool polyline · shortcut L → tool polyline
-        ellipses        shape ellipse · tool ellipse · shortcut O → tool ellipse
-        titles          overlay TitleOverlay
-        ellipse-titles  ShapeTitles → ellipse
+        core               tool hand
+        keyboard           service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
+        rectangles         shape rectangle · tool rectangle · shortcut R → tool rectangle
+        eraser             tool eraser · shortcut E → tool eraser
+        polylines          shape polyline · tool polyline · shortcut L → tool polyline
+        ellipses           shape ellipse · tool ellipse · shortcut O → tool ellipse
+        titles             overlay TitleOverlay
+        table-of-contents  service ContentsState
+        ellipse-titles     ShapeTitles → ellipse · ContentsTitles → ellipse
         """)
     },
     test("Reordering: every kind but those painted by anchor gets Arrange; to front and to back keep the selection's order") {

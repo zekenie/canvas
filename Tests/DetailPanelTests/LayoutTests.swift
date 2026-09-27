@@ -104,7 +104,7 @@ extension LookalikeStyleTab: DetailTab { static var title: String { "Style" } }
     },
     test("the header: the kind's own, else the place tool's label and symbol, else the kind") {
         let editor = try gadgetEditor([CardsPlugin(), Contributor(id: "p") { r in
-            r.details(Card.self, header: { DetailHeader($0.props.text, systemImage: "star") }) {}
+            r.details(Card.self, header: { $card in DetailHeader(card.text, systemImage: "star") }) {}
         }])
         // The kind's own header, with the tool's symbol, since it names none.
         expectEqual(try editor.layout(editor.add(Gadget(gadgetFrame))).header, DetailHeader("Unnamed", subtitle: "plain", systemImage: "gearshape"))
@@ -113,6 +113,13 @@ extension LookalikeStyleTab: DetailTab { static var title: String { "Style" } }
 
         let plain = try gadgetEditor([CardsPlugin()])
         expectEqual(try plain.layout(plain.add(Card(gadgetFrame))).header, DetailHeader("Card", systemImage: "rectangle"))
+    },
+    test("a header can be a view of the kind's own, made from the shape's binding and read back as its type") {
+        let editor = try gadgetEditor([CardsPlugin(), RenamingCards()])
+        let layout = try editor.layout(editor.add(Card(gadgetFrame, text: "Hi")))
+        expectEqual(layout.header, nil, "it isn't a DetailHeader")
+        expectEqual(layout.header(as: RenamingHeader.self)?.text, "Hi")
+        expectEqual(layout.kindName, "Card", "for its placeholder")
     },
     test("statuses: the kind's, then every kind's, each in plugin order; they may read services") {
         let editor = try gadgetEditor([

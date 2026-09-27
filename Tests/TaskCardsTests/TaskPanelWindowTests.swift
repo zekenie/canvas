@@ -48,9 +48,14 @@ final class TaskPanelWindow {
     var due: NSDatePicker? { hosting.descendants(NSDatePicker.self).first }
     var colorWells: Int { hosting.descendants(NSColorWell.self).count }
 
-    /// Gives the Title field the keyboard, with its text selected, and types.
+    /// The header's title field (Titles' `TitleHeader`), in its top 44 points (`DetailStyle.headerHeight`).
+    var titleField: NSTextField? {
+        hosting.descendants(NSTextField.self).first { $0.isEditable && $0.convert($0.bounds, to: hosting).maxY <= 44 }
+    }
+
+    /// Gives the header's title field the keyboard, with its text selected, and types.
     func typeTitle(_ text: String) throws {
-        window.focus(try require(hosting.descendants(NSTextField.self).first { $0.placeholderString == "Title" }))
+        window.focus(try require(titleField))
         window.type(text)
         window.settle()
     }
@@ -76,7 +81,8 @@ final class TaskPanelWindow {
 @MainActor let taskPanelWindowTests = Suite("Task panel in a window", [
     test("every tab builds: Task's fields, Checklist's rows, Style's checkboxes and well, Arrange's four pt fields") {
         let panel = try TaskPanelWindow(TaskCard(frame: cardFrame, title: "New Task", checklist: steps(done: 1)))
-        expectEqual(panel.fields, ["New Task", "0 h"])
+        expectEqual(panel.titleField?.placeholderString, "Untitled Task")
+        expectEqual(panel.fields, ["New Task", "0 h"], "the header's title, then Estimate")
         expectEqual(panel.status?.titleOfSelectedItem, "To Do")
         expectEqual(panel.priority?.selectedSegment, 1)
         expect(panel.due == nil)
@@ -89,7 +95,7 @@ final class TaskPanelWindow {
         expectEqual(panel.colorWells, 1)
 
         try panel.show(ArrangeTab.self)
-        expectEqual(panel.fields, ["240 pt", "200 pt", "40 pt", "40 pt"])
+        expectEqual(panel.fields, ["New Task", "240 pt", "200 pt", "40 pt", "40 pt"])
     },
     test("the Status pop-up and Priority segments write the task, each in one transaction") {
         let panel = try TaskPanelWindow(fullTask())
@@ -105,7 +111,7 @@ final class TaskPanelWindow {
         expectEqual(panel.task?.priority, .high)
         expectEqual(panel.editor.revision, revision + 1)
     },
-    test("typing a title retitles the task and clears its error, and never switches tools") {
+    test("typing a title in the header retitles the task and clears its error, and never switches tools") {
         let panel = try TaskPanelWindow(TaskCard(frame: cardFrame))
         expectEqual(panel.editor.validation?.result(for: panel.id)?.isValid, false)
         try panel.typeTitle("Plant tomatoes")     // T, the task tool's shortcut, on the canvas

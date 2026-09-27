@@ -10,6 +10,7 @@ import Selection
 import StickyNotes
 import TableOfContents
 import TestKit
+import Titles
 import Validation
 
 @MainActor let shippedTests = Suite("Shipped plugins", [
@@ -26,21 +27,21 @@ import Validation
         keyboard            service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
         selection           service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
         arrows              shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay · willDelete
-        sticky-notes        shape sticky-note · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · ContentsRows → sticky-note
+        sticky-notes        shape sticky-note · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note
         ellipses            shape ellipse · tool ellipse · shortcut O → tool ellipse
-        task-cards          shape task-card · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card
+        task-cards          shape task-card · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ShapeTitles → task-card · ContentsTitles → task-card
         validation          service ValidationEngine · overlay ValidationOverlay
         detail-panel        service DetailPanelState · ShapeDetails
         context-menus       service ContextMenuState · secondary-click menu
         table-of-contents   service ContentsState
         checklists          overlay ChecklistOverlay
+        titles              overlay TitleOverlay
         validation-details  DetailStatuses
         clipboard           service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · ShapeContextMenus
         rectangles          shape rectangle · tool rectangle · shortcut R → tool rectangle
         polylines           shape polyline · tool polyline · shortcut L → tool polyline
         eraser              tool eraser · shortcut E → tool eraser
-        titles              overlay TitleOverlay
-        ellipse-titles      ShapeTitles → ellipse
+        ellipse-titles      ShapeTitles → ellipse · ContentsTitles → ellipse
         reordering          ShapeContextMenus
         """)
     },
@@ -54,9 +55,10 @@ import Validation
             h.drag(to: CGPoint(x: x + 150, y: 300))
             h.release()
             let layout = state.layout(for: try require(h.editor.selection.flatMap { h.editor.document[$0] }))
-            panels.append("\(layout.header.title): \(layout.tabs.map(\.title).joined(separator: ", "))")
+            panels.append("\(layout.headerText): \(layout.tabs.map(\.title).joined(separator: ", "))")
         }
-        expectEqual(panels, ["Ellipse: Arrange", "Rectangle: Arrange", "Arrow: ", "Note: Checklist, Arrange",
+        // A note's and a task's headers rename them: an untitled note's shows the placeholder.
+        expectEqual(panels, ["Ellipse: Arrange", "Rectangle: Arrange", "Arrow: ", "(Note): Checklist, Arrange",
                              "New Task: Task, Checklist, Style, Arrange"])
     },
     test("a line drawn with L is a Line in the panel, with nothing but its header") {
@@ -69,7 +71,7 @@ import Validation
         h.key("v")
         h.click(at: CGPoint(x: 300, y: 100))
         let layout = state.layout(for: try require(h.editor.selection.flatMap { h.editor.document[$0] }))
-        expectEqual(layout.header.title, "Line")
+        expectEqual(layout.header?.title, "Line")
         expectEqual(layout.tabs.count, 0)
     },
     test("the table of contents lists the welcome board: each note by its text, each arrow under the note it starts from") {
@@ -105,3 +107,13 @@ import Validation
         expectEqual(h.editor.currentToolID, .select)
     },
 ])
+
+extension DetailLayout {
+    /// What the header reads: a `DetailHeader`'s title, a `TitleHeader`'s, or, while a title field
+    /// is empty, its placeholder in parentheses.
+    var headerText: String {
+        if let header { return header.title }
+        guard let titled = header(as: TitleHeader.self) else { return "?" }
+        return titled.title.isEmpty ? "(\(titled.placeholder ?? kindName))" : titled.title
+    }
+}

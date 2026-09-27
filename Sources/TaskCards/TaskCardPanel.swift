@@ -2,6 +2,7 @@ import AppKit
 import Canvas
 import DetailPanel
 import SwiftUI
+import Titles
 
 /// The task's own tab: what the task is and when it's due.
 public enum TaskTab {}
@@ -10,12 +11,12 @@ extension TaskTab: DetailTab {
 }
 
 extension ShapeRegistrar where Definition == TaskCardDefinition {
-    /// The task's panel, which is its only editor: the header, the Task tab, and its part of Style.
-    /// The Checklist tab comes from opting into Checklists, and Arrange from the panel itself.
+    /// The task's panel, which is its only editor: the header, where the task is renamed, the Task
+    /// tab, and its part of Style. The Checklist tab comes from opting into Checklists, and Arrange
+    /// from the panel itself.
     mutating func taskPanel() {
-        details(header: { DetailHeader($0.props.isUntitled ? "Untitled Task" : $0.props.title, subtitle: $0.props.summary) }) {
+        details(header: { $task in TitleHeader($task.title, placeholder: "Untitled Task", subtitle: task.summary) }) {
             DetailSection(in: TaskTab.self) { $task in
-                LabeledContent("Title") { TextField("Title", text: $task.title) }
                 LabeledContent("Status") { StatusPicker(status: $task.status) }
                 LabeledContent("Priority") {
                     Picker("Priority", selection: $task.priority) {

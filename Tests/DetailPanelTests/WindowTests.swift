@@ -50,6 +50,8 @@ final class PanelWindow {
     var checkboxes: [NSButton] { hosting.descendants(NSButton.self).filter { !($0 is NSPopUpButton) && !isInHeader($0) } }
     /// The header's back button, while there's a selection to go back to.
     var backButton: NSButton? { hosting.descendants(NSButton.self).first(where: isInHeader) }
+    /// A header field (`DetailHeaderField`), in a header that renames its shape.
+    var headerField: NSTextField? { hosting.descendants(NSTextField.self).first { $0.isEditable && isInHeader($0) } }
     /// In the header, the panel's top 44 points (`DetailStyle.headerHeight`).
     func isInHeader(_ view: NSView) -> Bool { view.convert(view.bounds, to: hosting).maxY <= 44 }
 
@@ -499,6 +501,24 @@ extension ListTab: DetailTab { static var title: String { "List" } }
         let roomy = try titleWidths(panelWidth: 600)
         expectEqual(roomy.count, 5)
         expectEqual(try titleWidths(panelWidth: DetailStyle.idealWidth), roomy)
+    },
+    test("a header field renames its shape as you type, shows the kind's name while empty, and Return hands the keyboard to the canvas") {
+        let editor = try gadgetEditor([CardsPlugin(), RenamingCards()], scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
+        let card = editor.add(Card(gadgetFrame))
+        editor.selection = card
+        panel.window.spin { panel.headerField != nil }
+        let field = try require(panel.headerField)
+        expectEqual(field.placeholderString, "Card")
+        panel.window.focus(field)
+        panel.window.type("cog")                   // g is the gadget tool's shortcut, on the canvas
+        panel.window.settle()
+        expectEqual(editor.props(card, as: Card.self)?.text, "cog")
+        expectEqual(editor.currentToolID, .select)
+        panel.window.pressReturn()
+        panel.window.spin { panel.canvasHasKeyboard }
+        expectEqual(panel.exits, 1)
+        expectEqual(editor.props(card, as: Card.self)?.text, "cog")
     },
 ])
 

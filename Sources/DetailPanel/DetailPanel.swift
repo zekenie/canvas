@@ -68,7 +68,10 @@ public struct DetailTabID: Hashable, Sendable, CustomStringConvertible {
 
 // MARK: Values contributors hand the panel
 
-/// The panel's top line: what is selected. A value, not a view, so every header looks alike.
+/// The panel's top line: what is selected, as the panel lays it out (`DetailHeaderLabel`): a symbol,
+/// a title and a subtitle. The header most kinds give, and the one a kind without its own gets. A
+/// header can be another view (Titles' `TitleHeader` renames the shape in place); built from
+/// `DetailHeaderLabel`, it looks like this one.
 public struct DetailHeader: Equatable, Sendable {
     public var title: String
     public var subtitle: String?
@@ -174,8 +177,20 @@ struct HeaderKey: Hashable, CustomStringConvertible {
 /// sugar below makes one.
 @MainActor
 public struct DetailContribution {
-    let header: (@MainActor (AnyShapeRecord) -> DetailHeader?)?
+    let header: (@MainActor (AnyShapeRecord, CanvasEditor) -> ResolvedHeader?)?
     let sections: [ErasedSection]
+}
+
+/// A header as a kind built it: the view, and the value it was, for `DetailLayout.header(as:)`.
+@MainActor
+struct ResolvedHeader {
+    let view: AnyView
+    let value: Any
+
+    init<Header: View>(_ header: Header) {
+        view = AnyView(header)
+        value = header
+    }
 }
 
 /// A section over any record: hidden, and empty, for a record it can't bind.
@@ -257,30 +272,44 @@ public struct DetailContext {
 // MARK: Sugar (what verticals, horizontals and bridges write)
 
 extension ShapeRegistrar {
-    /// This kind's panel, in one call (one contribution, one report line):
+    /// This kind's sections, in one call (one contribution, one report line). A horizontal's opt-in
+    /// sugar calls this too, so opting into its feature brings its tab.
+    public mutating func details(@DetailSectionsBuilder<Definition.Props> _ sections: () -> [DetailSection<Definition.Props>]) {
+        contribute(DetailContribution(Definition.Props.self, sections: sections()), to: ShapeDetails.self)
+    }
+
+    /// This kind's header and sections, in one call:
     ///
-    ///     task.details(header: { DetailHeader($0.props.title) }) {
-    ///         DetailSection(in: TaskTab.self) { $task in LabeledContent("Title") { TextField("Title", text: $task.title) } }
+    ///     task.details(header: { $task in DetailHeader(task.title, subtitle: task.summary) }) {
+    ///         DetailSection(in: TaskTab.self) { $task in LabeledContent("Notes") { TextField("Notes", text: $task.notes) } }
     ///         DetailSection("Color", in: StyleTab.self) { $task in ... }
     ///     }
     ///
-    /// A header alone is `details(header: ...) {}`. A horizontal's opt-in sugar calls this too, so
-    /// opting into its feature brings its tab.
-    public mutating func details(
-        header: (@MainActor (ShapeRecord<Definition.Props>) -> DetailHeader)? = nil,
+    /// The header is a view made from the shape's binding, as a section's content is: a
+    /// `DetailHeader`, or a header that edits the shape, built on `DetailHeaderLabel` (Titles'
+    /// `TitleHeader($note.title)` renames it). A header alone is `details(header: ...) {}`.
+    public mutating func details<Header: View>(
+        @ViewBuilder header: @escaping (ShapeBinding<Definition.Props>) -> Header,
         @DetailSectionsBuilder<Definition.Props> _ sections: () -> [DetailSection<Definition.Props>]
     ) {
-        contribute(DetailContribution(Definition.Props.self, header: header, sections: sections()), to: ShapeDetails.self)
+        contribute(DetailContribution(Definition.Props.self, header: DetailContribution.makeHeader(Definition.Props.self, header), sections: sections()),
+                   to: ShapeDetails.self)
     }
 }
 
 extension PluginRegistrar {
-    /// Header and sections for a kind another plugin registers (bridges). Typed as the kind's own.
-    public mutating func details<P: ShapeProps>(
-        _: P.Type, header: (@MainActor (ShapeRecord<P>) -> DetailHeader)? = nil,
+    /// Sections for a kind another plugin registers (bridges). Typed as the kind's own.
+    public mutating func details<P: ShapeProps>(_: P.Type, @DetailSectionsBuilder<P> _ sections: () -> [DetailSection<P>]) {
+        contribute(DetailContribution(P.self, sections: sections()), to: ShapeDetails.self, for: .kind(P.kind))
+    }
+
+    /// Header and sections for a kind another plugin registers (bridges), as `details(header:)` on
+    /// a kind's own registrar.
+    public mutating func details<P: ShapeProps, Header: View>(
+        _: P.Type, @ViewBuilder header: @escaping (ShapeBinding<P>) -> Header,
         @DetailSectionsBuilder<P> _ sections: () -> [DetailSection<P>]
     ) {
-        contribute(DetailContribution(P.self, header: header, sections: sections()), to: ShapeDetails.self, for: .kind(P.kind))
+        contribute(DetailContribution(P.self, header: DetailContribution.makeHeader(P.self, header), sections: sections()), to: ShapeDetails.self, for: .kind(P.kind))
     }
 
     /// Sections for every shape with a frame, editing the frame. Shapes without one (arrows)
@@ -297,12 +326,14 @@ extension PluginRegistrar {
 }
 
 extension DetailContribution {
-    init<P: ShapeProps>(_: P.Type, header: (@MainActor (ShapeRecord<P>) -> DetailHeader)?, sections: [DetailSection<P>]) {
-        if let header {
-            self.header = { $0.typed(as: P.self).map(header) }
-        } else {
-            self.header = nil
-        }
-        self.sections = sections.map { ErasedSection($0, value: { $0.typed(as: P.self)?.props }, binding: ShapeBinding<P>.props) }
+    init<P: ShapeProps>(_: P.Type, header: (@MainActor (AnyShapeRecord, CanvasEditor) -> ResolvedHeader?)? = nil, sections: [DetailSection<P>]) {
+        self.init(header: header, sections: sections.map { ErasedSection($0, value: { $0.typed(as: P.self)?.props }, binding: ShapeBinding<P>.props) })
+    }
+
+    /// A header made from the shape's binding, as a section's content is; none for a record it
+    /// can't bind.
+    static func makeHeader<P: ShapeProps, Header: View>(_: P.Type, _ make: @escaping (ShapeBinding<P>) -> Header)
+        -> @MainActor (AnyShapeRecord, CanvasEditor) -> ResolvedHeader? {
+        { record, editor in ShapeBinding<P>.props(of: record, in: editor).map { ResolvedHeader(make($0)) } }
     }
 }

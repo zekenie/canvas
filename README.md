@@ -48,6 +48,7 @@ A board remembers, on each Mac, where you left its view.
 | Find a shape from the list | Click its row: it's selected and the canvas zooms to it. Pointing at a row outlines its shape faintly, and pointing at a shape tints its row |
 | Go back to the previous selection | The back button in the detail panel's header, or ⌘[ (Go › Back): what was selected before, and the view as it was then (from a row's details, the list) |
 | Add a checklist to a note or task | The panel's Checklist tab: + adds an item, − or Delete removes the selected one |
+| Name a note, or rename a task | Select it and click its title in the detail panel's header; Return or Escape goes back to the canvas |
 | Delete shapes or arrows | Select them and press Delete |
 | Cut, copy and paste shapes | ⌘X, ⌘C and ⌘V (Edit menu, or right-click a shape). A paste lands where the originals were if they're in view, else in the middle of the view; arrows copied with their shapes stay attached to the copies |
 | Arrow tool | A (V or Escape to go back to select) |
@@ -61,7 +62,8 @@ A board remembers, on each Mac, where you left its view.
 
 An empty note (no text, no checklist) gets an orange outline (the validation plugin), and says why at the foot of the
 detail panel (the validation-details bridge). A note with a checklist shows a done/total chip.
-Hovering an ellipse shows its title (the titles example).
+A titled shape shows its title in a pill above its top-left corner, and in the table of contents (the titles plugin).
+Name a note in the detail panel's header; an ellipse is titled by its size (the ellipse-titles example).
 
 ## Layout
 
@@ -83,6 +85,8 @@ Sources/
   TableOfContents/      the table of contents horizontal: a row per shape, in the detail panel
   Checklists/           a horizontal any kind opts into: a checklist, its panel tab, menu items, a chip
   Clipboard/            the clipboard horizontal: cut, copy and paste, which kinds may opt out of
+  Titles/               a horizontal any kind opts into: a title, stored or derived, in a pill and the table
+                        of contents, and a header that renames it
   ValidationDetails/    a bridge between two horizontals: validation issues in the panel's footer
   Composition/          the shipped plugin list, and the welcome board
   InfiniteCanvas/       the SwiftUI app
@@ -90,8 +94,7 @@ Examples/               the smallest plugin for each pattern
   Rectangles/           a vertical: a kind, how it draws, a tool
   Polylines/            a shape without a frame: its own geometry, hit test and translation
   Eraser/               a tool with no shape, and a session
-  Titles/               a horizontal: an extension point, sugar, an overlay
-  EllipseTitles/        a bridge: opts ellipses into titles without either knowing
+  EllipseTitles/        a bridge: titles ellipses by their size, without Ellipses or Titles knowing
   Reordering/           menu items for every kind with a capability: the Arrange submenu
 Tests/                  test executables (the core, each plugin with logic of its own, the examples,
                         the shipped app) and their support libraries, on a small macro-free kit

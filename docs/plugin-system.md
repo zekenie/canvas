@@ -1,8 +1,8 @@
 # The plugin system
 
 Everything on the canvas comes from a plugin: sticky notes, ellipses, arrows, task cards,
-validation, checklists, the detail panel and the table of contents beside the canvas, selecting
-itself, copying and pasting, what each key does, even the examples.
+validation, checklists, titles, the detail panel and the table of contents beside the canvas,
+selecting itself, copying and pasting, what each key does, even the examples.
 The core (`Sources/Canvas`) knows how to hold shapes, run tools, draw, and wire plugins together,
 and nothing about any particular shape or concern. Its one built-in tool is tldraw's Hand, which
 pans (a flung release slides on). Select, which selects (a click, ⇧-click, or a marquee dragged
@@ -210,6 +210,9 @@ Once one plugin works, the question is which piece the next feature needs.
 | Add items to a kind's right-click menu | `x.contextMenu { MenuItem(...) }` | [TaskCards](#contributing) |
 | Add a right-click item to every shape, or every kind with a capability | `registrar.contextMenuForEveryShape(where:)` | [Reordering](#every-shape-reordering) |
 | Say how a kind's shapes appear in the table of contents | `x.contentsRow { ContentsLabel(...) }` | [StickyNotes](#the-table-of-contents) |
+| Give a kind a title: a pill on the canvas, and its row's name | `x.title { $0.props.title }`, stored or derived | [Titles](#a-horizontal-plugin), [EllipseTitles](#a-horizontal-plugin) |
+| Rename a shape in the detail panel's header | `x.details(header: { $x in TitleHeader($x.title) }) {}` | [StickyNotes](#renaming-in-the-header-titleheader) |
+| Name a kind's rows in the table of contents from another plugin | `x.contentsTitle { ... }` | [Titles](#a-horizontal-plugin) |
 | Add a concern any kind can opt into | An `ExtensionPoint`, sugar on `ShapeRegistrar`, and whatever reads the point | [Titles](#a-horizontal-plugin), [Validation](../Sources/Validation/Validation.swift) |
 | Give that concern a tab on the kinds that opt in | A `DetailTab` at order 50, contributed from the same sugar | [Checklists](#a-horizontals-feature-tab-checklists) |
 | Give that concern menu items on the kinds that opt in | A `MenuGroup` at order 50, and `contextMenu` from the same sugar | [Checklists](#a-feature-that-comes-with-menu-items-checklists) |
@@ -282,7 +285,7 @@ compiles each module on its own, with only its dependency closure on the include
 Each target is one line, with its layer:
 
 ```swift
-.target(name: "StickyNotes", dependencies: ["Canvas", "Checklists", "Selection", "Validation"]), // layer: vertical
+.target(name: "StickyNotes", dependencies: ["Canvas", "Checklists", "DetailPanel", "Selection", "TableOfContents", "Titles", "Validation"]), // layer: vertical
 .target(name: "EllipseTitles", dependencies: ["Canvas", "Ellipses", "Titles"], path: "Examples/EllipseTitles"), // layer: bridge
 ```
 
@@ -376,9 +379,11 @@ registrar.shape(StickyNoteDefinition()) { note in
     note.tool(label: "Note", systemImage: "note.text", shortcut: "n", placing: place)   // and N, with Keyboard
     note.createOnDoubleClick(place)          // opts into Selection: double-clicking empty canvas places a note
     note.validate { shape, _ in              // opts into the Validation horizontal
-        shape.props.isEmpty ? [.warning("This note is empty.")] : []    // no text and no checklist
+        shape.props.isEmpty ? [.warning("This note is empty.")] : []    // no text, checklist or title
     }
     note.checklist(\.checklist)              // opts into Checklists: a panel tab and a chip
+    note.title { $0.props.title }            // opts into Titles: a pill, and its row's name
+    note.details(header: { $note in TitleHeader($note.title) }) {}      // renamed in the panel's header
 }
 ```
 
@@ -606,53 +611,40 @@ of its own (`PaintOrderAnchored`), and a translation that keeps its bindings.
 ## A horizontal plugin
 
 A horizontal declares an extension point, gives other plugins a pleasant way to contribute, and
-consumes what they contribute. [`Examples/Titles`](../Examples/Titles/Titles.swift) is the smallest
-one:
+consumes what they contribute. [Titles](../Sources/Titles/Titles.swift) is a small one: what a
+shape is called, a trait any kind can opt into.
 
 ```swift
 extension PluginID {
     public static let titles: PluginID = "titles"
 }
 
-/// ① The extension point: declared and read by this plugin, filled by others.
-public enum ShapeTitles: KeyedExtensionPoint {
-    public typealias Contribution = @MainActor (AnyShapeRecord) -> String?
+/// ① The extension point: declared and read by this plugin, filled by others. One title per kind.
+public enum ShapeTitles {}
+
+extension ShapeTitles: KeyedExtensionPoint {
+    public typealias Contribution = TitleContribution       // a shape's title, and whether it shows a pill
     public static var owner: PluginID { .titles }
-    public static func uniqueKeys(of _: Contribution, for target: ShapeTarget) -> [AnyHashable] { [target] }
+    public static func uniqueKeys(of _: TitleContribution, for target: ShapeTarget) -> [AnyHashable] { [target] }
 }
 
-/// ② Sugar, so opting in is one line: `note.title { $0.props.text }`.
+/// ② Sugar, so opting in is one line: `note.title { $0.props.title }`.
 extension ShapeRegistrar {
-    public mutating func title(_ make: @escaping @MainActor (ShapeRecord<Definition.Props>) -> String?) {
-        contribute({ $0.typed(as: Definition.Props.self).flatMap(make) }, to: ShapeTitles.self)
+    public mutating func title(pill: Bool = true, contents: Bool = true,
+                               _ make: @escaping @MainActor (ShapeRecord<Definition.Props>) -> String?) {
+        contribute(TitleContribution(title: { $0.typed(as: Definition.Props.self).flatMap(make) }, showsPill: pill), to: ShapeTitles.self)
+        if contents { contentsTitle(make) }     // TableOfContents' point: the title names the shape's row
     }
 }
 
 extension PluginRegistrar {     // for a kind another plugin registers (bridges use this)
-    public mutating func title<P: ShapeProps>(_: P.Type, _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) {
-        contribute({ $0.typed(as: P.self).flatMap(make) }, to: ShapeTitles.self, for: .kind(P.kind))
-    }
+    public mutating func title<P: ShapeProps>(_: P.Type, pill: Bool = true, contents: Bool = true,
+                                              _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) { ... }
 }
 
-/// ③ The consumer: a lookup, and an overlay that shows the hovered shape's title.
+/// ③ The consumers: a lookup, and an overlay that draws every titled shape's pill.
 extension Registry {
-    public func title(of shape: AnyShapeRecord) -> String? {
-        contributions(to: ShapeTitles.self, for: shape.kind).first?(shape) ?? nil
-    }
-}
-
-/// The hovered shape's title, just below it (`hovered` is Selection's: on the canvas, or its row).
-struct TitleOverlay: CanvasOverlay {
-    var space: OverlaySpace { .view }       // drawn in view points
-
-    func draw(in context: OverlayContext) {
-        let editor = context.editor
-        guard let id = editor.hovered, let shape = editor.document[id], let title = editor.registry.title(of: shape),
-              let bounds = context.shapes.geometry(of: id)?.bounds else { return }
-        let corner = editor.camera.toView(CGPoint(x: bounds.minX, y: bounds.maxY))
-        NSAttributedString(string: title, attributes: TitleStyle.attributes)
-            .draw(at: CGPoint(x: corner.x, y: corner.y + TitleStyle.gap))
-    }
+    public func title(of shape: AnyShapeRecord) -> String? { ... }     // nil if there's none, or it's blank
 }
 
 public struct TitlesPlugin: CanvasPlugin {
@@ -664,11 +656,33 @@ public struct TitlesPlugin: CanvasPlugin {
 }
 ```
 
-And the bridge that opts ellipses in, [`Examples/EllipseTitles`](../Examples/EllipseTitles/EllipseTitles.swift):
+Where a title comes from is the kind's business, and Titles never asks. A sticky note stores one,
+nil until someone names it (`note.title { $0.props.title }`). The bridge that opts ellipses in,
+[`Examples/EllipseTitles`](../Examples/EllipseTitles/EllipseTitles.swift), derives one from the
+ellipse's size, though Ellipses has never heard of titles:
 
 ```swift
 registrar.title(Ellipse.self) { ellipse in "Ellipse, \(Int(ellipse.frame.width)) × \(Int(ellipse.frame.height))" }
 ```
+
+Either way, a shape may have none: nil or blank is no title. What a title brings:
+
+- **A pill** just outside the shape's top-left corner, 9 points above it, clear of a badge on the
+  edge like the checklist chip: one line, no wider than the shape, where a longer title ends in
+  "…". It keeps its size on screen, shrinking with the shapes below 25% zoom, as the chip does.
+  `TitleOverlay` goes through `editor.paintOrder(in:)` with the visible rect grown by the pill's
+  reach, since a shape just below the view has its pill in it. A kind that draws its title itself
+  leaves it out: `task.title(pill: false) { $0.props.title }`.
+- **Its row's name** in [the table of contents](#the-table-of-contents), through TableOfContents'
+  `ContentsTitles`, which names a kind's rows without replacing them: a titled note is listed by
+  its title, with its checklist's tally; an untitled one by its text, as before. `contents: false`
+  leaves the kind's row as it is.
+- **A rename in the detail panel**, for a kind that wants one: [`TitleHeader`](#renaming-in-the-header-titleheader),
+  which the kind puts in its header.
+
+So Titles builds on two horizontals, as Checklists does: it imports TableOfContents and DetailPanel,
+and a plugin list with a titled kind needs `TitlesPlugin` and `TableOfContentsPlugin` (without one,
+`ownerNotInstalled` names it).
 
 The mechanics:
 
@@ -778,8 +792,9 @@ kind, plus one for every kind, which a kind's own overrides.
   finds, draws and hit-tests them; the definition says what a press and a drag do.
 - `BrushHitTesting` is Selection's capability for a kind that decides for itself whether the
   marquee touches it. The default is `ShapeGeometry.isHit(byBrush:)`, from its geometry.
-- Arrows (to select the arrow it draws, and for its handles), DetailPanel (to follow the selection)
-  and Titles (for the hovered shape) import Selection too.
+- Arrows (to select the arrow it draws, and for its handles), DetailPanel (to follow the selection),
+  ContextMenus (the menu is for the selection) and TableOfContents (to list and select shapes)
+  import Selection too.
 
 **The select tool** follows tldraw's states. Handles win, then the selectable shape under the
 pointer, then empty space inside a multi-selection's box, then the canvas.
@@ -900,13 +915,13 @@ core has never heard of it.
 
 ```
 ┌─ inspector column: 248 to 340 pt, 260 ideal ────────┐
-│ ‹ ☑  Write the spec                                 │ header: back, symbol, title, subtitle
-│      Done · 2 of 5 · Due Sep 30                     │
+│ ‹ ☑  Write the spec                                 │ header: back, symbol, title (here a
+│      Done · 2 of 5 · Due Sep 30                     │   field: the task is renamed there)
 │ ⟦ Task ⟧   Checklist   Style   Arrange              │ tab strip, hidden with one tab
 ├─────────────────────────────────────────────────────┤
-│      Title  [ Write the spec              ]         │ a tab's first section: untitled,
-│     Status  [ ● Done               ⌄ ]              │   never collapses
-│   Priority  [ Low | Med | High ]                    │ rows: label column, then control
+│     Status  [ ● Done               ⌄ ]              │ a tab's first section: untitled,
+│   Priority  [ Low | Med | High ]                    │   never collapses; rows: label
+│                                                     │   column, then control
 ├─────────────────────────────────────────────────────┤
 │ › Notes                                             │ a titled section collapses,
 ├─────────────────────────────────────────────────────┤
@@ -924,7 +939,7 @@ The panel owns all of the chrome, and plugins fill it in:
 
 | The panel decides | Plugins provide |
 |---|---|
-| The header's layout, and its back button (Selection's `goBack`, shown while there's a step back) | The header's title, subtitle and symbol (a value, not a view) |
+| The header's frame, and its back button (Selection's `goBack`, shown while there's a step back) | The header: a `DetailHeader` (title, subtitle, symbol), or a view built on `DetailHeaderLabel` (Titles' `TitleHeader`) |
 | The tab strip, the tab order, and the tab remembered per kind | Which tab each section goes in |
 | Section chrome: the header, chevron, header-control slot, insets, dividers, collapsing, and remembered collapse | Section titles, ids and order, and at most one header control per section |
 | Scrolling, the footer, and the empty states | The rows in a section, and the footer's lines |
@@ -993,7 +1008,7 @@ Plugins write the sugar, not the points:
 
 | Sugar | For |
 |---|---|
-| `x.details(header:) { sections }` | This kind's header and sections, inside `registrar.shape { x in ... }`. |
+| `x.details(header:) { sections }` | This kind's header and sections, inside `registrar.shape { x in ... }`. The header is a view made from the shape's binding ([the header](#the-header)). |
 | `registrar.details(P.self, header:) { sections }` | Another plugin's kind, typed as its own (bridges). |
 | `registrar.detailsForEveryBox { sections }` | Every shape with a frame, editing the frame. Arrows have none, so they don't get these. |
 | `registrar.detailStatusForEveryShape { shape, context in ... }` | Footer lines for every shape. Return `[]` when there's nothing to say. |
@@ -1032,6 +1047,48 @@ registry is frozen, and resolves the selected shape's layout (running `when` and
 it's shown. It also remembers, per editor and in memory, the tab last chosen for each kind and the
 collapsed sections. A collapsed every-box section collapses for every kind; a kind's own, for
 that kind only.
+
+### The header
+
+A kind's header is a view it makes from its shape's binding, as a section's content is:
+
+```swift
+gadget.details(header: { $gadget in DetailHeader(gadget.name, subtitle: gadget.mode.rawValue) }) { ... }
+```
+
+- **`DetailHeader`** is the stock header: a symbol, then a title on one line over a subtitle, as the
+  panel lays them out. A kind without a header of its own gets one with its tool's label.
+- **A header of the kind's own** builds on `DetailHeaderLabel(subtitle:systemImage:) { title }`,
+  that layout with any view as its title, so it looks like every other header.
+  `DetailHeaderField(text, placeholder:)` is the title as a field, for a header that renames its
+  shape in place: borderless, in the header's font, writing as you type (as the panel's text
+  fields do), with the kind's name as its placeholder by default. Return, like Escape anywhere in
+  the panel, gives the keyboard back to the canvas.
+- **A header without a symbol** shows its kind's: the panel hands a header view its kind's name
+  and symbol through the environment, as the table of contents hands a row its symbol.
+- **Headless**, `layout.header` is the header when it's a `DetailHeader` (with its kind's symbol
+  if it has none), and `layout.header(as: TitleHeader.self)` reads back a header of another type,
+  as the table of contents reads rows back as `ContentsLabel`s.
+
+### Renaming in the header: TitleHeader
+
+Titles publishes the header for a kind whose shapes are renamed in the panel, so no kind writes
+its own ([TitleHeader.swift](../Sources/Titles/TitleHeader.swift)). The kind puts it in its slot:
+
+```swift
+note.details(header: { $note in TitleHeader($note.title) }) {}
+task.details(header: { $task in TitleHeader($task.title, placeholder: "Untitled Task", subtitle: task.summary) }) { ... }
+```
+
+It's a `DetailHeaderLabel` whose title is a `DetailHeaderField`. Each keystroke renames the shape
+(one transaction), so its pill and its row in the table of contents follow as you type. It takes
+a title stored as a `String?` (a note's: clearing the field, or leaving only spaces, sets nil) or
+as a `String` (a task's, blank while untitled). While there's no title it shows its placeholder,
+dimmed: the kind's name ("Note"), unless the kind gives one ("Untitled Task"). A derived title (an
+ellipse's size) isn't renamed; a kind with one keeps a `DetailHeader`, if it has a header at all.
+
+Opting into titles doesn't place it: the header is the kind's, which may want its own subtitle,
+placeholder or symbol, or no rename in the panel at all.
 
 ### A horizontal's feature tab: Checklists
 
@@ -1136,6 +1193,7 @@ registrar.shape(TaskCardDefinition()) { task in
     task.validate { shape, _ in shape.props.issues }
     task.taskPanel()                                  // below
     task.checklist(\.checklist, badge: false)         // the Checklist tab, without the chip
+    task.title(pill: false) { $0.props.title }        // a title (its row's name), without the pill
 }
 ```
 
@@ -1143,9 +1201,8 @@ registrar.shape(TaskCardDefinition()) { task in
 `details` call, here abbreviated:
 
 ```swift
-details(header: { DetailHeader($0.props.isUntitled ? "Untitled Task" : $0.props.title, subtitle: $0.props.summary) }) {
+details(header: { $task in TitleHeader($task.title, placeholder: "Untitled Task", subtitle: task.summary) }) {
     DetailSection(in: TaskTab.self) { $task in
-        LabeledContent("Title") { TextField("Title", text: $task.title) }
         LabeledContent("Status") { StatusPicker(status: $task.status) }
         LabeledContent("Priority") { ... }
     }
@@ -1171,12 +1228,12 @@ details(header: { DetailHeader($0.props.isUntitled ? "Untitled Task" : $0.props.
 }
 ```
 
-Four plugins fill one card's panel:
+Five plugins fill one card's panel:
 
 | Part | Holds | From |
 |---|---|---|
-| Header | the title (or "Untitled Task"), and a summary: "Done · 2 of 5 · Due Sep 30" | TaskCards |
-| Task (0) | an untitled section (Title, Status, Priority), Notes, Schedule | TaskCards |
+| Header | the title, renamed in place ("Untitled Task", dimmed, while blank), over a summary: "Done · 2 of 5 · Due Sep 30" | TaskCards, with Titles' `TitleHeader` |
+| Task (0) | an untitled section (Status, Priority), Notes, Schedule | TaskCards |
 | Checklist (50) | Items, and Progress once there are items | Checklists, through `task.checklist` |
 | Style (100) | Color, On the Card | TaskCards |
 | Arrange (200) | Size, Position | DetailPanel, for every box |
@@ -1221,7 +1278,7 @@ When each control commits:
 
 | Control | Commits |
 |---|---|
-| Text fields, `DetailTextArea` | On every keystroke, so the canvas follows as you type |
+| Text fields, `DetailTextArea`, `DetailHeaderField` | On every keystroke, so the canvas follows as you type |
 | Pickers, toggles, steppers, dates, swatches, the color well, list add, remove, move and edit | On change |
 | `DetailNumberField` | A draft: on Return, Tab, leaving the field, or the field going away, in one transaction, clamped to its range. Escape drops the draft. Stepping writes at once. A draft lands on its own shape even if the selection moves first. |
 
@@ -1237,8 +1294,10 @@ When each control commits:
   Otherwise the keyboard would land on the window, and shortcuts would stop. Collapsing an
   unrelated section leaves the field focused.
 - **Inside the panel**, Tab moves between text fields (a `DetailTextArea` takes Tab as text), and
-  Return commits a number and keeps the field. Checkboxes don't take the keyboard (the macOS default
-  without Full Keyboard Access); a pop-up, segmented control or stepper that has it keeps
+  Return commits a number and keeps the field; in the header's title field (`DetailHeaderField`),
+  Return is done renaming, and gives the keyboard back to the canvas. Checkboxes don't take the
+  keyboard (the macOS default without Full Keyboard Access); a pop-up, segmented control or stepper
+  that has it keeps
   shortcuts from the canvas until Escape.
 - **Zoom** (⌘=, ⌘- and ⌘0) works whatever has the keyboard: the app's menu commands reach the
   window's canvas through `CanvasFocus`, not the responder chain. So does Go › Back (⌘[), which
@@ -1460,9 +1519,11 @@ system's rows, selection, disclosure triangles and keyboard.
 │ ▾ ▤ Double-click empty space to a…  │ a note: its text, on one line
 │     ↗ Arrow                         │   an arrow, under the shape it starts from
 │   ▤ Shopping list              1/2  │ a note's checklist tally
+│   ▤ Groceries                       │ a titled note: its title (Titles), not its text
 │   ◐ Write the spec             1/3  │ a task: its status as a symbol, in the pill's color
 │   ○ Untitled Task                   │   a blank title shows the placeholder, dimmed
-│   ◯ Ellipse                         │ a kind with no row: its tool's label and symbol
+│   ▭ Rectangle                       │ a kind with no row: its tool's label and symbol
+│   ◯ Ellipse, 200 × 140              │   or its title, here EllipseTitles' derived one
 │   ↗ Arrow                           │ an arrow that starts on nothing, at the top
 └─────────────────────────────────────┘
 ```
@@ -1502,6 +1563,13 @@ note.contentsRow { note in
 
   `registrar.contentsRow(OtherKind.self) { ... }` gives another plugin's kind a row (bridges). A
   kind has at most one row: two are a `conflict`.
+- **A name from another plugin.** `x.contentsTitle { ... }` (the `ContentsTitles` point, or
+  `registrar.contentsTitle(OtherKind.self)`) names a kind's rows without replacing them: a name
+  that isn't blank takes the place of a `ContentsLabel`'s title, which keeps its symbol, color and
+  badge, and nil leaves the row alone. The row a kind without one gets is a `ContentsLabel` too, so
+  it takes the name; a row of some other view stays as the kind drew it. Titles names rows this
+  way: a note's row is its text until the note has a title. At most one name per kind: two are a
+  `conflict`.
 
 | data-canvas's `TocCardProvider` | Here |
 |---|---|
@@ -1754,7 +1822,8 @@ public struct StickyNote: BoxShapeProps {
 
 - Any change to how a kind's props encode needs a migration: a member renamed, removed or
   retyped, a changed unit or meaning, a new member that isn't optional. (Swift's synthesized
-  `Codable` ignores defaults when a member is missing; a new optional member needs none.)
+  `Codable` ignores defaults when a member is missing; a new optional member needs none, as a
+  note's `title` needed none: nil isn't written, so an untitled note writes what it did before.)
 - Migrations are append only, pure (only that shape's props: no registry, no other shapes, no
   clock, no randomness) and up only.
 - A kind's string never changes once shipped.
@@ -1833,27 +1902,29 @@ core                tool hand
 keyboard            service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
 selection           service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
 arrows              shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay · willDelete
-sticky-notes        shape sticky-note · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · ContentsRows → sticky-note
+sticky-notes        shape sticky-note · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note
 ellipses            shape ellipse · tool ellipse · shortcut O → tool ellipse
-task-cards          shape task-card · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card
+task-cards          shape task-card · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ShapeTitles → task-card · ContentsTitles → task-card
 validation          service ValidationEngine · overlay ValidationOverlay
 detail-panel        service DetailPanelState · ShapeDetails
 context-menus       service ContextMenuState · secondary-click menu
 table-of-contents   service ContentsState
 checklists          overlay ChecklistOverlay
+titles              overlay TitleOverlay
 validation-details  DetailStatuses
 clipboard           service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · ShapeContextMenus
 rectangles          shape rectangle · tool rectangle · shortcut R → tool rectangle
 polylines           shape polyline · tool polyline · shortcut L → tool polyline
 eraser              tool eraser · shortcut E → tool eraser
-titles              overlay TitleOverlay
-ellipse-titles      ShapeTitles → ellipse
+ellipse-titles      ShapeTitles → ellipse · ContentsTitles → ellipse
 reordering          ShapeContextMenus
 ```
 
 A horizontal's opt-in shows as what it contributes: `note.checklist(\.checklist)` is a
 `ShapeChecklists` entry, a `ShapeDetails` entry and a `ShapeContextMenus` entry, which is why
 task-cards has two of each of the last two (its own panel and menu, then the checklist's).
+`note.title { ... }` is a `ShapeTitles` entry and a `ContentsTitles` entry (the title naming the
+row); the `ShapeDetails` entry after them is the note's header, where it's renamed.
 
 ## Testing plugins
 
@@ -1891,8 +1962,8 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   cards into more, like Selection's double-click), so they never depend on a real vertical. Their
   tools have no keys (CanvasTesting can't import Keyboard): a test picks one with `h.editor.setTool`,
   or registers a key for it (`$0.shortcut("c", forTool: ToolID(placing: Card.kind))`).
-  SelectionTests, ArrowsTests, ValidationTests, DetailPanelTests, ChecklistsTests, ClipboardTests
-  and ValidationDetailsTests import no real vertical (only these fixtures, and local test kinds), which
+  SelectionTests, ArrowsTests, ValidationTests, DetailPanelTests, ChecklistsTests, ClipboardTests,
+  TitlesTests and ValidationDetailsTests import no real vertical (only these fixtures, and local test kinds), which
   proves those plugins are shape-agnostic.
 - CanvasTests run the core with no plugin claiming the default tool, so it's the Hand there, and
   none claiming key strokes, so no key does anything; a test that presses, drags or selects shapes
@@ -2001,6 +2072,9 @@ Each of these adds to the design without changing what plugins are written again
   the display rather than nominal 16 ms frames.
 - **More horizontals** from data-canvas: describe, search, commands. Each is an extension point in
   its own plugin.
+- **More of titles**: a click on a pill selecting its shape, and a double-click renaming it (an
+  overlay can't take presses today); a Rename item in the context menu; and titles on kinds
+  without a frame, such as arrows (tldraw's labels) and lines.
 - **More of going back**: going forward again (⌘]), and a step keeping what the table of contents
   listed, so Show All survives a trip back.
 - **More of the keyboard**: a window listing every shortcut; menu items that take their key
