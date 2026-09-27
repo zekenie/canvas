@@ -25,6 +25,8 @@ public struct ShapeBinding<Value> {
     private let write: @MainActor (_ change: (inout Value) -> Void) -> Value?
     /// The same, for the whole record: what an added property's binding writes through.
     private let edit: @MainActor (_ change: (inout AnyShapeRecord) -> Void) -> AnyShapeRecord?
+    /// For `service`.
+    private weak var editor: CanvasEditor?
 
     private final class Latest {
         var value: Value
@@ -48,6 +50,7 @@ public struct ShapeBinding<Value> {
         latest = Latest(value, record)
         properties = editor.registry.properties(for: record.kind)
         self.write = write
+        self.editor = editor
         let id = record.id
         edit = { [weak editor] change in
             guard let editor else { return nil }
@@ -89,6 +92,11 @@ public struct ShapeBinding<Value> {
             if let live = edit({ $0[P.self] = new }) { latest.record = live }
         })
     }
+
+    /// A service of the editor the panel shows (a plugin's own state for this shape, such as a
+    /// sync in progress), as `DetailContext.service` is for status lines; nil if it isn't
+    /// installed. A view that reads observable state from it redraws on its own when that changes.
+    public func service<S: EditorService>(_: S.Type) -> S? { editor?.service(S.self) }
 }
 
 extension ShapeBinding where Value: ShapeProps {

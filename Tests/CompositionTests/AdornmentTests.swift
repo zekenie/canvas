@@ -6,6 +6,7 @@ import Checklists
 import Composition
 import CoreGraphics
 import Geometry
+import LanguageModels
 import Locking
 import Selection
 import StickyNotes
@@ -21,7 +22,7 @@ import Titles
 /// clipboard on a pasteboard of the test's own. At 100% the pill is at the row above the note, from
 /// (100, 73), 18 tall.
 @MainActor private func titledNote(_ pasteboard: NSPasteboard, title: String = "Groceries") -> (EditorHarness, ShapeID) {
-    let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, pasteboard: pasteboard) }
+    let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, pasteboard: pasteboard, model: ScriptedLanguageModel()) }
     let note = h.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Buy milk"))
     h.editor.transact { $0.update(note) { $0[TitleProperty.self] = title } }
     return (h, note)

@@ -14,11 +14,13 @@ import EllipseTitles
 import Ellipses
 import Eraser
 import Keyboard
+import LanguageModels
 import Locking
 import Polylines
 import Ports
 import Rectangles
 import Reordering
+import Schemas
 import Selection
 import StickyNotes
 import SwiftUI
@@ -33,16 +35,20 @@ import ValidationDetails
 /// order overlays draw in). Tests import this, so they check exactly what ships.
 @MainActor
 public enum ShippedPlugins {
-    public static var all: [any CanvasPlugin] { plugins() }
+    /// The model the app ships: Claude Haiku 4.5, over the network, with the key saved in Settings
+    /// (`AnthropicKeyStore.standard`). Only the app passes it; tests pass a `ScriptedLanguageModel`.
+    public static var anthropicModel: any LanguageModel { AnthropicModel(keys: .standard) }
 
-    /// The shipped list, its clipboard on `pasteboard`: the system's, but for tests, which pass one of
-    /// their own so they never touch the user's.
-    public static func plugins(pasteboard: NSPasteboard = .general) -> [any CanvasPlugin] {
+    /// The shipped list, its clipboard on `pasteboard` and its language model `model`. The app passes
+    /// the system's pasteboard and `anthropicModel`; tests pass a pasteboard of their own, so they
+    /// never touch the user's, and a `ScriptedLanguageModel`, so they never reach the network (which
+    /// is why `model` has no default).
+    public static func plugins(pasteboard: NSPasteboard = .general, model: any LanguageModel) -> [any CanvasPlugin] {
         [
             // First: every key is registered with Keyboard; the others build on Selection, and its
             // handles draw below their view overlays.
             KeyboardPlugin(), SelectionPlugin(),
-            ArrowsPlugin(), StickyNotesPlugin(), EllipsesPlugin(), TaskCardsPlugin(),
+            ArrowsPlugin(), StickyNotesPlugin(), EllipsesPlugin(), TaskCardsPlugin(), SchemasPlugin(),
             // After Validation: what's shown on shapes draws over its outline.
             ValidationPlugin(), AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin(), ChecklistsPlugin(), TitlesPlugin(),
             ValidationDetailsPlugin(), ValidationContentsPlugin(), ClipboardPlugin(pasteboard: pasteboard),
@@ -50,6 +56,7 @@ public enum ShippedPlugins {
             // Ports, whose arrows the bridge draws. After Adornments: a shape's dots draw above its
             // adornments (the lock chip among them), and are found before them.
             PortsPlugin(), ArrowPortsPlugin(),
+            LanguageModelsPlugin(model: model),
             // The command line's commands.
             AutomationPlugin(),
             // The examples (Examples/). Each is one line here; delete it to leave it out.
@@ -57,17 +64,23 @@ public enum ShippedPlugins {
         ]
     }
 
-    public static func registry(pasteboard: NSPasteboard = .general) throws(RegistryError) -> Registry {
-        try Registry(plugins: plugins(pasteboard: pasteboard))
+    public static func registry(pasteboard: NSPasteboard = .general, model: any LanguageModel) throws(RegistryError) -> Registry {
+        try Registry(plugins: plugins(pasteboard: pasteboard, model: model))
     }
 
     public static func makeEditor(document: CanvasDocument = WelcomeBoard.document(), scheduler: any Scheduler = TaskScheduler(),
-                                  pasteboard: NSPasteboard = .general) -> CanvasEditor {
+                                  pasteboard: NSPasteboard = .general, model: any LanguageModel) -> CanvasEditor {
         do {
-            return CanvasEditor(registry: try registry(pasteboard: pasteboard), document: document, scheduler: scheduler)
+            return CanvasEditor(registry: try registry(pasteboard: pasteboard, model: model), document: document, scheduler: scheduler)
         } catch {
             fatalError("The shipped plugins don't register: \(error)")   // CompositionTests catches this first
         }
+    }
+
+    /// The Settings window's content, for the app to host (Infinite Canvas › Settings…, ⌘,): the
+    /// Anthropic API key, saved where `anthropicModel` reads it.
+    public static func settings() -> some View {
+        AnthropicSettingsView(keys: .standard)
     }
 
     /// The detail panel, for the app to place beside the canvas. It follows the editor's selection:

@@ -17,7 +17,7 @@ enum InfiniteCanvasApp {
     static func main() {
         let registry: Registry
         do {
-            registry = try ShippedPlugins.registry()
+            registry = try ShippedPlugins.registry(model: ShippedPlugins.anthropicModel)
             BoardDocument.configuration = BoardConfiguration(registry: registry) { AnyView(ContentView(board: $0)) }
         } catch {
             fatalError("The shipped plugins don't register: \(error)")   // CompositionTests catches this first
@@ -43,6 +43,7 @@ enum InfiniteCanvasApp {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let hasShownWelcomeBoard = "hasShownWelcomeBoard"
+    private let settings = SettingsWindow()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -64,6 +65,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         for case let board as BoardDocument in NSDocumentController.shared.documents { board.rememberView() }
         InfiniteCanvasApp.commandServer?.stop()
+    }
+
+    /// Infinite Canvas › Settings… (⌘,; `BoardMenus.showSettings`): the one Settings window, made the
+    /// first time and brought back after.
+    @objc func showSettings(_ sender: Any?) {
+        settings.show()
     }
 
     /// Help › Welcome Board: a new board with the welcome notes on it.
@@ -116,5 +123,28 @@ struct ContentView: View {
                         }
                     }
             }
+    }
+}
+
+/// The Settings window: one for the app, hosting `ShippedPlugins.settings()`. Closing it only hides
+/// it, so it comes back as it was left.
+@MainActor
+final class SettingsWindow {
+    private var window: NSWindow?
+
+    func show() {
+        let window = self.window ?? make()
+        self.window = window
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    private func make() -> NSWindow {
+        let window = NSWindow(contentViewController: NSHostingController(rootView: ShippedPlugins.settings()))
+        window.title = "Settings"
+        window.styleMask = [.titled, .closable]
+        window.isReleasedWhenClosed = false
+        window.center()
+        window.setFrameAutosaveName("Settings")
+        return window
     }
 }

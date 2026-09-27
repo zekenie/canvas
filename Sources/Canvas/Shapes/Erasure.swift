@@ -50,6 +50,14 @@ extension CustomTranslation {
     }
 }
 
+extension DerivedProps {
+    func erasedDerive(_ record: inout AnyShapeRecord) {
+        guard var shape = record.typed(as: Props.self) else { return }
+        derive(&shape.props)
+        record.props = shape.props
+    }
+}
+
 extension PaintOrderAnchored {
     func erasedPaintAnchor(of record: AnyShapeRecord, in document: CanvasDocument) -> ShapeID? {
         record.typed(as: Props.self).flatMap { paintAnchor(of: $0, in: document) }

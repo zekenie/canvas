@@ -4,6 +4,8 @@ import CanvasRPC
 import CanvasUI
 import Composition
 import Foundation
+import LanguageModels
+import Schemas
 import StickyNotes
 import TestKit
 import Titles
@@ -52,6 +54,22 @@ import Titles
         expect(try JSON(text: unknown.error)["error"]?["hint"]?.stringValue?.hasPrefix("Did you mean sticky-note?") == true, unknown.error)
         expectEqual(board.editor.document.shapes.count, 1)
     },
+    test("canvas create schema-card is as tall as the schema it's given, as the panel makes it; a --size is as asked") {
+        try configureBoards()
+        let board = newBoard()
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let schema = #"{"type": "object", "properties": {"a": {}, "b": {}, "c": {}, "d": {}, "e": {}, "f": {}}}"#
+        for (arguments, size) in [([String](), CGSize(width: 240, height: try require(SchemaCard.height(for: schema)))),
+                                  (["--size", "300,100"], CGSize(width: 300, height: 100))] {
+            let result = try canvas(server, ["create", "schema-card", "--at", "0,0", "--set", "schema=\(schema)"] + arguments)
+            expectEqual(result.status, 0, result.error)
+            let id = try require(try JSON(text: result.output)["id"]?.stringValue.flatMap(UUID.init(uuidString:)))
+            let card = try require(board.editor.document[ShapeID(id)]?.typed(as: SchemaCard.self)?.props)
+            expectEqual(card.schema, schema)
+            expectEqual(card.frame.size, size, "six rows: 177 high, where the placed card is 89")
+        }
+    },
     test("canvas boards lists the open boards; --board picks one by its id, its file or its name") {
         try configureBoards()
         let first = newBoard(), second = newBoard()
@@ -83,7 +101,7 @@ import Titles
         expectEqual(status["boards"], 1)
         expectEqual(status["frontmost"], .number(Double(board.number)))
         let kinds = try JSON(text: canvas(server, ["kinds"]).output).arrayValue?.compactMap { $0["kind"]?.stringValue } ?? []
-        expectEqual(kinds, try ShippedPlugins.registry().kinds.map(\.rawValue).sorted())
+        expectEqual(kinds, try ShippedPlugins.registry(model: ScriptedLanguageModel()).kinds.map(\.rawValue).sorted())
         let note = try JSON(text: canvas(server, ["kinds", "sticky-note", "--schema"]).output).arrayValue?.first
         expectEqual(note?["schema"]?["properties"]?["title"]?["maxLength"], 80)
         let help = try canvas(server, ["help"]).output

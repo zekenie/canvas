@@ -7,6 +7,7 @@ import Clipboard
 import Composition
 import CoreGraphics
 import Foundation
+import LanguageModels
 import Locking
 import Selection
 import StickyNotes
@@ -15,7 +16,7 @@ import Titles
 
 /// A board of the shipped plugins with nothing on it, its clipboard on a pasteboard of the test's own.
 @MainActor private func emptyBoard(_ pasteboard: NSPasteboard = .withUniqueName()) -> EditorHarness {
-    EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, pasteboard: pasteboard) }
+    EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, pasteboard: pasteboard, model: ScriptedLanguageModel()) }
 }
 
 @MainActor let lockedShapeTests = Suite("Locked shapes, as shipped", [
@@ -27,7 +28,7 @@ import Titles
             note[TitleProperty.self] = title ? "A title much longer than the note is wide" : nil
             note[ChecklistProperty.self] = checklist ? [ChecklistItem(text: "oat milk")] : []
             if locked { note[LockedProperty.self] = true }
-            let editor = ShippedPlugins.makeEditor(document: CanvasDocument(shapes: [note]), scheduler: ManualScheduler())
+            let editor = ShippedPlugins.makeEditor(document: CanvasDocument(shapes: [note]), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
             return renderBitmap(editor, size: CGSize(width: 400, height: 340))
         }
         let plain = render(), lock = render(locked: true), chip = render(checklist: true)
@@ -65,7 +66,7 @@ import Titles
         expectEqual(h.editor.shapes(since: beforeSecond).count, 1, "it was copied all the same")
     },
     test("deleting a note a locked arrow is bound to lets the arrow go where it's drawn, and doesn't shake it") {
-        let h = EditorHarness { ShippedPlugins.makeEditor(scheduler: $0) }
+        let h = EditorHarness { ShippedPlugins.makeEditor(scheduler: $0, model: ScriptedLanguageModel()) }
         let notes = h.editor.document.shapes.filter { $0.kind == StickyNote.kind }.map(\.id)
         let arrow = try require(h.editor.document.shapes.first { $0.typed(as: Arrow.self)?.props.end.binding?.shapeID == notes[1] }?.id)
         let drawn = try require(h.editor.arrowGeometry(of: arrow)).bodyPath.boundingBoxOfPath
@@ -117,7 +118,7 @@ import Titles
         expect(h.editor.drawingOffset(of: back) != .zero)
     },
     test("a locked note saves as locked, and opens locked") {
-        let registry = try ShippedPlugins.registry()
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         var note = AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "Hi")))
         note[LockedProperty.self] = true
         let codec = BoardCodec(registry: registry)

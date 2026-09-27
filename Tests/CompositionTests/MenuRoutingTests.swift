@@ -4,6 +4,7 @@ import CanvasTesting
 import CanvasUI
 import Composition
 import CoreGraphics
+import LanguageModels
 import Selection
 import StickyNotes
 import TaskCards
@@ -23,7 +24,7 @@ import TestKit
         NSApplication.shared.setActivationPolicy(.accessory)
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
-        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard)
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
         let window = NSWindow(contentRect: CGRect(x: -6000, y: -6000, width: 800, height: 600), styleMask: [.borderless],
                               backing: .buffered, defer: false)
         let canvas = CanvasView(editor: editor)

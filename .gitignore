@@ -2,3 +2,6 @@ build/
 .build/
 .swiftpm/
 .DS_Store
+scripts/schema-prompts/results.jsonl
+scripts/schema-prompts/_pylib/
+__pycache__/

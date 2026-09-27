@@ -4,6 +4,7 @@ import Checklists
 import Composition
 import CoreGraphics
 import Foundation
+import LanguageModels
 import StickyNotes
 import TaskCards
 import TestKit
@@ -15,17 +16,17 @@ import Titles
     // Fixtures/kinds holds one shape's props per shipped kind and version, written once, never
     // edited: how boards of that version were written.
     test("every shipped kind reads its fixture at every version, and writes today's back byte for byte") {
-        let registry = try ShippedPlugins.registry()
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         expectKindFixtures(registry.kinds, in: registry, directory: "Tests/CompositionTests/Fixtures/kinds")
     },
     // Fixtures/added holds one shape's value per shipped added property and version, the same way.
     test("every shipped added property reads its fixture at every version, and writes today's back byte for byte") {
-        let registry = try ShippedPlugins.registry()
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         expectPropertyFixtures(registry.declaredProperties, in: registry, directory: "Tests/CompositionTests/Fixtures/added")
     },
     // Before Checklists added the checklist to the kinds that opt in, each kind kept its own.
     test("a note or a task from before hands its checklist over to Checklists' property") {
-        let registry = try ShippedPlugins.registry()
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let codec = BoardCodec(registry: registry)
         for kind: ShapeKind in ["sticky-note", "task-card"] {
             let data = try Data(contentsOf: URL(fileURLWithPath: "Tests/CompositionTests/Fixtures/kinds/\(kind.rawValue).v0.json"))
@@ -37,7 +38,7 @@ import Titles
         }
     },
     test("the welcome board, and a board of every shipped kind, read back as they were") {
-        let registry = try ShippedPlugins.registry()
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let codec = BoardCodec(registry: registry)
         var shapes: [AnyShapeRecord] = []
         for kind in registry.kinds {
@@ -54,7 +55,7 @@ import Titles
     // A note's title is the property Titles adds, with no default: an untitled note writes none, and
     // boards from before titles read as untitled notes.
     test("a note's title reads back as it was written, among its added values; an untitled note writes none") {
-        let registry = try ShippedPlugins.registry()
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let codec = BoardCodec(registry: registry)
         let frame = CGRect(x: 0, y: 0, width: 200, height: 200)
         var titled = ShapeRecord(StickyNote(frame: frame, text: "Milk"))
@@ -70,7 +71,7 @@ import Titles
     // over (`PropsMigration.handOver`), and a task's blank title, how an untitled task was written,
     // is none.
     test("boards from before Titles kept titles read them as Titles' property, and a task's blank title as none") {
-        let registry = try ShippedPlugins.registry()
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let codec = BoardCodec(registry: registry)
         let board = """
             { "format" : 3, "versions" : { "added" : { "checklist" : 0 }, "kinds" : { "sticky-note" : 1, "task-card" : 1 } }, "shapes" : [
@@ -91,7 +92,7 @@ import Titles
     // so it hands nothing over; and a blank title, however it comes, is none. Neither is kept
     // aside, so the shape is renamed like any other.
     test("a title or checklist of null, or a blank title, in a board from before or among added values, is none, and the shape renames") {
-        let registry = try ShippedPlugins.registry()
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let codec = BoardCodec(registry: registry)
         let board = """
             { "format" : 3, "versions" : { "added" : { "checklist" : 0, "title" : 0 }, "kinds" : { "sticky-note" : 0, "task-card" : 0 } }, "shapes" : [

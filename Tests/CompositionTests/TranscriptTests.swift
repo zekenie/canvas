@@ -7,6 +7,7 @@ import Composition
 import CoreGraphics
 import Foundation
 import Geometry
+import LanguageModels
 import Selection
 import StickyNotes
 import TestKit
@@ -34,7 +35,7 @@ struct Board {
         var shapes = [AnyShapeRecord(a), AnyShapeRecord(b)]
         if let bend { shapes.append(AnyShapeRecord(ShapeRecord(Arrow(start: bound(a), end: bound(b), bend: bend)))) }
         let scheduler = ManualScheduler()
-        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(shapes: shapes), scheduler: scheduler)
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(shapes: shapes), scheduler: scheduler, model: ScriptedLanguageModel())
         let canvas = CanvasView(editor: editor)
         // CanvasView.init points this at NSEvent.modifierFlags, the real keyboard. The POC read that
         // in its timers too, and nobody held a key while it was recorded.

@@ -17,6 +17,11 @@ public struct ChangeSet: Equatable, Sendable {
     public internal(set) var removed: Set<ShapeID> = []
     /// Whether the stack changed: a shape came, went, or moved in it.
     public internal(set) var reordered = false
+    /// Whether the whole document was replaced (`replaceDocument`: a board read again, a revert, a
+    /// reload after the file changed on disk) rather than edited: its shapes are as they were saved,
+    /// not as anyone changed them, so a service that acts on edits (a sync) takes them as it takes
+    /// shapes it sees for the first time.
+    public internal(set) var replacedDocument = false
 
     /// Every shape the commit touched.
     public var shapeIDs: Set<ShapeID> { added.union(changed).union(removed) }
@@ -32,6 +37,7 @@ public struct ChangeSet: Equatable, Sendable {
         }
         for record in old.shapes where new[record.id] == nil { removed.insert(record.id) }
         reordered = old.shapes.map(\.id) != new.shapes.map(\.id)
+        replacedDocument = true
     }
 
     init() {}

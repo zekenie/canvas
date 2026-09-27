@@ -1,0 +1,14 @@
+{
+  "frame" : [
+    [
+      400,
+      320
+    ],
+    [
+      240,
+      111
+    ]
+  ],
+  "prompt" : "email required, phone required, description",
+  "schema" : "{\n  \"title\": \"Contact\",\n  \"type\": \"object\",\n  \"properties\": {\n    \"email\": { \"type\": \"string\", \"format\": \"email\" },\n    \"phone\": { \"type\": \"string\" },\n    \"description\": { \"type\": \"string\" }\n  },\n  \"required\": [\"email\", \"phone\"]\n}"
+}

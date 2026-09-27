@@ -28,6 +28,19 @@ import TestKit
         expectEqual(h.editor.camera.origin, .zero, "the drag moves the shape; the hand doesn't pan")
         h.release()
     },
+    test("Escape on a drag puts back where the shape was, and only that: what else changed while it moved stays") {
+        let h = try EditorHarness(plugins: [discTools()])
+        h.editor.setTool(ToolID(placing: Disc.kind))
+        h.press(at: CGPoint(x: 100, y: 100))
+        let disc = try require(h.editor.document.shapes.first)
+        let placed = try require(disc.box)
+        h.drag(to: CGPoint(x: 130, y: 110))
+        // Something other than the drag writes the shape while it moves (a model's answer landing).
+        h.editor.transact { $0.update(disc.id) { $0.box?.size.width += 40 } }
+        h.editor.cancel()
+        expectEqual(h.editor.document[disc.id]?.box, CGRect(origin: placed.origin, size: CGSize(width: placed.width + 40, height: placed.height)))
+        expect(h.editor.session == nil)
+    },
     test("services hear of a placed shape once the default tool is back, before it's edited or starts following the pointer") {
         let log = ServiceLog()
         let h = try EditorHarness(plugins: [CardsPlugin(), discTools(), Contributor(id: "log") { r in r.service { _ in LoggingService(log: log) } }])

@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import SwiftUI
@@ -32,7 +33,18 @@ public enum DetailStyle {
     static let fieldSpacing: CGFloat = 2
     static let numberWidth: CGFloat = 60
     public static let textAreaHeight: CGFloat = 76
+    /// A code editor's least height: a dozen lines. It grows with its lines.
+    public static let codeEditorHeight: CGFloat = 280
+    /// What a code editor leaves of the panel's height when it's as tall as it gets: room for its
+    /// section's title and a line under it.
+    static let codeEditorMargin: CGFloat = 64
+    /// Lines a code editor counts, at most, to know how tall to be (more than any panel shows).
+    static let codeEditorMaxLines = 500
+    /// A line of `codeFont`.
+    static let codeLineHeight = NSLayoutManager().defaultLineHeight(for: codeFont)
     static let fieldCorner: CGFloat = 4
+    /// Where a text view's text starts, from its edge (its line fragment padding).
+    static let textInset: CGFloat = 5
     static let listRowHeight: CGFloat = 22
     /// A bordered list's height beyond its rows: its border and inset.
     static let listChrome: CGFloat = 6
@@ -53,10 +65,25 @@ public enum DetailStyle {
     static let backSymbol = Font.system(size: 13, weight: .semibold)
     static let disclosure = Font.system(size: 8, weight: .bold)
     static let placeholder = Font.system(size: 13)
+    /// `body` and a monospaced one, for text views AppKit draws.
+    static let bodyFont = NSFont.systemFont(ofSize: 11)
+    static let codeFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
 
     static let info = Color.blue
     static let warning = Color.orange
     static let error = Color.red
+
+    /// A code editor's colors, a role at a time (`DetailCodeSpan`): an editor's, adapting to the
+    /// appearance.
+    static func codeColor(_ role: DetailCodeSpan.Role) -> NSColor {
+        switch role {
+        case .name: .systemBlue
+        case .string: .systemRed
+        case .number: .systemGreen
+        case .keyword: .systemPurple
+        case .invalid: .systemRed
+        }
+    }
 }
 
 /// What every `LabeledContent` in the panel looks like: the label in a fixed column, so all rows'
@@ -237,29 +264,50 @@ public enum DetailNumberText {
     }
 }
 
-/// Multiline text in a bordered box, `height` tall, writing on every keystroke.
+/// Multiline text in a bordered box, `height` tall, writing on every keystroke. `placeholder` shows,
+/// dimmed, while it's empty. With `onCommit`, Return calls it (the text is done: a plugin may act
+/// on it), ⇧↩ is a new line, and the keyboard leaving the box calls it too; without, Return is a
+/// new line and nothing else happens.
 public struct DetailTextArea: View {
     @Binding var text: String
     let height: CGFloat
+    let placeholder: String?
+    let onCommit: (@MainActor () -> Void)?
     /// What was typed, until the bound value changes. A panel binding reads the snapshot the panel
     /// drew with, and a TextEditor (unlike a TextField) pushes its binding back into the text view
     /// mid-edit, so without this a keystroke typed before the panel redraws would lose the last one.
     @State private var typed: String?
 
-    public init(_ text: Binding<String>, height: CGFloat = DetailStyle.textAreaHeight) {
+    public init(_ text: Binding<String>, height: CGFloat = DetailStyle.textAreaHeight, placeholder: String? = nil,
+                onCommit: (@MainActor () -> Void)? = nil) {
         _text = text
         self.height = height
+        self.placeholder = placeholder
+        self.onCommit = onCommit
     }
 
     public var body: some View {
-        TextEditor(text: Binding(get: { typed ?? text }, set: { typed = $0; text = $0 }))
-            .onChange(of: text) { typed = nil }
-            .font(DetailStyle.body)
-            .scrollContentBackground(.hidden)
-            .padding(DetailStyle.fieldCorner)
-            .frame(height: height)
-            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: DetailStyle.fieldCorner))
-            .overlay(RoundedRectangle(cornerRadius: DetailStyle.fieldCorner).strokeBorder(.separator))
+        if let onCommit {
+            // Return has to be told from ⇧↩ before the text view takes it: an AppKit text view of
+            // the panel's own, which draws the placeholder itself.
+            PanelTextView(text: $text, kind: .prose, placeholder: placeholder, isEditable: true, onCommit: onCommit)
+                .detailTextBox(height: height)
+        } else {
+            TextEditor(text: Binding(get: { typed ?? text }, set: { typed = $0; text = $0 }))
+                .onChange(of: text) { typed = nil }
+                .font(DetailStyle.body)
+                .scrollContentBackground(.hidden)
+                .overlay(alignment: .topLeading) {
+                    if let placeholder, (typed ?? text).isEmpty {
+                        Text(placeholder)
+                            .font(DetailStyle.body)
+                            .foregroundStyle(.tertiary)
+                            .padding(.leading, DetailStyle.textInset)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .detailTextBox(height: height)
+        }
     }
 }
 

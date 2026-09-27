@@ -6,6 +6,7 @@ import CanvasUI
 import Checklists
 import Composition
 import DetailPanel
+import LanguageModels
 import Selection
 import StickyNotes
 import SwiftUI
@@ -21,7 +22,7 @@ import ValidationDetails
 /// (`window.spin`, from CanvasTesting).
 @MainActor
 final class InspectorWindow {
-    let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: TaskScheduler())
+    let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: TaskScheduler(), model: ScriptedLanguageModel())
     let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1000, height: 700), styleMask: [.titled], backing: .buffered, defer: false)
     let focus = CanvasFocus()
     let host: NSHostingView<InspectorHost>

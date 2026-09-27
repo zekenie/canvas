@@ -10,7 +10,9 @@ import CoreGraphics
 import Ellipses
 import Foundation
 import Geometry
+import LanguageModels
 import Locking
+import Schemas
 import Selection
 import StickyNotes
 import TableOfContents
@@ -50,10 +52,12 @@ enum Budget {
     static let validationAfterMovingAll10k = 16.0
 }
 
-/// Notes, tasks and ellipses in a grid, with an arrow from every fourth note to the note after it.
-/// Every other note has a title, so frames draw pills, and every fourth a checklist of two, so they
-/// draw checklist chips (a task shows none); every task has a checklist of three, so boards save and
-/// open added values; and every ellipse is locked, so frames draw lock chips.
+/// Notes, tasks, ellipses and schema cards in a grid, with an arrow from every fourth note to the
+/// note after it. Every other note has a title, so frames draw pills, and every fourth a checklist of
+/// two, so they draw checklist chips (a task shows none); every task has a checklist of three, so
+/// boards save and open added values; every ellipse is locked, so frames draw lock chips; and every
+/// schema card has a schema of its own, so frames read no card's schema again however many
+/// different ones there are.
 @MainActor func generatedBoard(shapes count: Int) -> CanvasDocument {
     var shapes: [AnyShapeRecord] = []
     let columns = Int(Double(count).squareRoot().rounded(.up))
@@ -71,6 +75,10 @@ enum Budget {
             var ellipse = AnyShapeRecord(ShapeRecord(Ellipse(frame: CGRect(origin: origin, size: CGSize(width: 160, height: 120)))))
             ellipse[LockedProperty.self] = true
             shapes.append(ellipse)
+        case 9:
+            var schema = SchemaCard(frame: CGRect(origin: origin, size: SchemaCard.defaultSize))
+            schema.setSchema(#"{"title": "Record \#(i)", "type": "object", "properties": {"name": {"type": "string"}, "count\#(i)": {"type": "integer"}, "tags": {"type": "array", "items": {"type": "string"}}}, "required": ["name"]}"#)
+            shapes.append(AnyShapeRecord(ShapeRecord(schema)))
         default:
             var note = ShapeRecord(StickyNote(frame: CGRect(origin: origin, size: StickyNote.defaultSize), text: "Note \(i): something to do"))
             note[TitleProperty.self] = i % 2 == 0 ? "Title \(i)" : nil
@@ -129,7 +137,7 @@ extension Duration {
 
 @MainActor let benchmarks = Suite("Benchmarks", [
     test("saving and opening a board stay within budget") {
-        let registry = try ShippedPlugins.registry()
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let codec = BoardCodec(registry: registry)
         for size in sizes {
             let document = generatedBoard(shapes: size)
@@ -147,7 +155,7 @@ extension Duration {
     test("validation's first read checks every shape, against its kind's schema too; a drag checks the dragged shapes again, but not their schemas") {
         for size in sizes {
             let document = generatedBoard(shapes: size)
-            let registry = try ShippedPlugins.registry()
+            let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
             var editor = CanvasEditor(registry: registry, document: document, scheduler: ManualScheduler())
             let first = median(runs: 5, prepare: { editor = CanvasEditor(registry: registry, document: document, scheduler: ManualScheduler()) }) {
                 _ = editor.validation?.results
@@ -199,7 +207,7 @@ extension Duration {
         context.scaleBy(x: 1, y: -1)
         for size in sizes {
             let document = generatedBoard(shapes: size)
-            let registry = try ShippedPlugins.registry()
+            let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
             let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
             // The top-left of the board, where the first note is.
             let note = try require(document.shapes.first { $0.kind == StickyNote.kind })
@@ -269,7 +277,7 @@ extension Duration {
         let context = try bitmapContext(viewport)
         for size in sizes {
             let document = generatedBoard(shapes: size)
-            let registry = try ShippedPlugins.registry()
+            let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
             let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
             // The first note's bottom dot, 12 points below it in the gap between the rows, where no
             // arrow leaves it.
@@ -317,7 +325,7 @@ extension Duration {
     test("the table of contents' rows cost what a commit changed, not what's on the board") {
         for size in sizes {
             let document = generatedBoard(shapes: size)
-            let registry = try ShippedPlugins.registry()
+            let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
             let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
             let contents = try require(h.editor.tableOfContents)
             let note = try require(document.shapes.first { $0.kind == StickyNote.kind })
@@ -371,7 +379,7 @@ extension Duration {
         let context = try bitmapContext(viewport)
         for size in sizes {
             let document = generatedBoard(shapes: size)
-            let registry = try ShippedPlugins.registry()
+            let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
             let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
             let window = NSWindow(contentRect: CGRect(origin: .zero, size: viewport), styleMask: [.titled], backing: .buffered, defer: false)
             let canvas = CanvasView(editor: h.editor)

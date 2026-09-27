@@ -7,6 +7,7 @@ import Checklists
 import Clipboard
 import Composition
 import CoreGraphics
+import LanguageModels
 import Selection
 import StickyNotes
 import TableOfContents
@@ -14,7 +15,7 @@ import TestKit
 
 /// The welcome board, its clipboard on a pasteboard of the test's own.
 @MainActor func welcomeBoard(_ pasteboard: NSPasteboard) -> EditorHarness {
-    EditorHarness { ShippedPlugins.makeEditor(scheduler: $0, pasteboard: pasteboard) }
+    EditorHarness { ShippedPlugins.makeEditor(scheduler: $0, pasteboard: pasteboard, model: ScriptedLanguageModel()) }
 }
 
 @MainActor let copyPasteTests = Suite("Copy and paste, as shipped", [

@@ -5,6 +5,7 @@ import CanvasUI
 import Composition
 import Foundation
 import Geometry
+import LanguageModels
 import Selection
 import StickyNotes
 import SwiftUI
@@ -13,7 +14,7 @@ import TestKit
 /// Boards as the app configures them, with the app's content less its toolbar, and their clipboard
 /// on `pasteboard` (a test that copies passes its own).
 @MainActor func configureBoards(pasteboard: NSPasteboard = .general) throws {
-    BoardDocument.configuration = BoardConfiguration(registry: try ShippedPlugins.registry(pasteboard: pasteboard)) { board in
+    BoardDocument.configuration = BoardConfiguration(registry: try ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel())) { board in
         AnyView(InspectorHost(editor: board.editor, focus: board.focus, showsDetails: board.view.showsDetails, showsMinimap: board.view.showsMinimap))
     }
 }
@@ -171,7 +172,7 @@ let boardType = "com.example.InfiniteCanvas.board"
         expect(!controller.validateMenuItem(back))
     },
     test("View › Hide Minimap takes the minimap off the board's canvas, and Show Minimap puts it back") {
-        BoardDocument.configuration = BoardConfiguration(registry: try ShippedPlugins.registry()) { board in
+        BoardDocument.configuration = BoardConfiguration(registry: try ShippedPlugins.registry(model: ScriptedLanguageModel())) { board in
             AnyView(MinimapHost(editor: board.editor, focus: board.focus, view: board.view))
         }
         let board = BoardDocument()
@@ -258,11 +259,14 @@ let boardType = "com.example.InfiniteCanvas.board"
         try check("View", "Actual Size", "zoomToActualSize:", "0")
         try check("Go", "Back", "goBack:", "[")
         expectEqual(menus.main.items.map(\.title), ["Infinite Canvas", "File", "Edit", "View", "Go", "Window", "Help"])
+        try check("Infinite Canvas", "Settings…", "showSettings:", ",")
+        let app = try require(menus.main.item(withTitle: "Infinite Canvas")?.submenu)
+        expectEqual(app.items.prefix(4).map(\.title), ["About Infinite Canvas", "", "Settings…", ""], "Settings… follows About")
         try check("Infinite Canvas", "Quit Infinite Canvas", "terminate:", "q")
         expectEqual(menus.windows.title, "Window")
     },
     test("Edit › Delete deletes the selection, as the Delete key does") {
-        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let canvas = CanvasView(editor: editor)
         let id = editor.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "Doomed"))
         editor.selection = id

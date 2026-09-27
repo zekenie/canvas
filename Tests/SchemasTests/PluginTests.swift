@@ -1,0 +1,123 @@
+import Adornments
+import AppKit
+import Canvas
+import CanvasTesting
+import DetailPanel
+import Foundation
+import Keyboard
+import Ports
+import Schemas
+import Selection
+import TableOfContents
+import TestKit
+import Titles
+import Validation
+
+@MainActor let pluginTests = Suite("Schemas plugin", [
+    test("S and a press place an empty schema card, 240 × 89, selected, in Select") {
+        let h = try EditorHarness(plugins: schemaPlugins())
+        expect(h.key("s"))
+        h.press(at: CGPoint(x: 300, y: 300)); h.release()
+        let record = try require(h.editor.document.shapes.first)
+        expectEqual(record.box, CGRect(x: 180, y: 255.5, width: 240, height: 89))
+        expectEqual(record.typed(as: SchemaCard.self)?.props, SchemaCard(frame: CGRect(x: 180, y: 255.5, width: 240, height: 89)))
+        expectEqual(h.editor.selection, record.id)
+        expectEqual(h.editor.currentToolID, .select)
+        expectEqual(h.editor.issues(record.id), [], "an empty schema is a schema")
+    },
+    test("registers the kind and the Schema tool, with its key; its contributions") {
+        let registry = try Registry(plugins: schemaPlugins())
+        let tool = try require(registry.tools.first { $0.id == ToolID(placing: SchemaCard.kind) })
+        expectEqual([tool.label, tool.systemImage], ["Schema", "curlybraces"])
+        expectEqual(registry.shortcut(forTool: tool.id)?.chord, "s")
+        expectEqual(registry.report.split(separator: "\n").first { $0.hasPrefix("schemas") }.map(String.init), """
+        schemas            service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · \
+        ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · \
+        ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link
+        """)
+    },
+    test("needs validation, titles, the table of contents, the detail panel and ports installed") {
+        let plugins = schemaPlugins()
+        for (point, owner) in [("ValidationRules", PluginID.validation), ("ShapeTitles", .titles), ("ContentsTitles", .tableOfContents),
+                               ("ShapeDetails", .detailPanel), ("ShapePorts", .ports)] {
+            expectThrows(RegistryError.ownerNotInstalled(point: point, owner: owner, contributor: .schemas)) {
+                _ = try Registry(plugins: plugins.filter { $0.id != owner })
+            }
+        }
+    },
+    test("its name is the schema's title, even half typed; blank is none, and draws as Untitled Schema") {
+        let editor = try schemaEditor()
+        let order = editor.add(card(fixture(6)))
+        let blank = editor.add(card(#"{"title": "  ", "properties": {}}"#))
+        let invalid = editor.add(card(fixture(10)))
+        expectEqual(editor.registry.title(of: try require(editor.document[order])), "Order")
+        expectEqual(editor.registry.title(of: try require(editor.document[blank])), nil)
+        expectEqual(editor.registry.title(of: try require(editor.document[invalid])), "Invoice")
+        editor.transact { $0.update(order, as: SchemaCard.self) { $0.props.setTitle("Purchase") } }
+        expectEqual(editor.registry.title(of: try require(editor.document[order])), "Purchase")
+    },
+    test("the card draws its name itself, so it shows no pill above it, as a task card doesn't") {
+        let editor = try schemaEditor()
+        let order = editor.add(card(fixture(6)))
+        expectEqual(editor.registry.title(of: try require(editor.document[order])), "Order")
+        expectEqual(editor.adornmentFrames(of: order).map(\.adornment), [], "Titles places its pill only where the title shows one")
+    },
+    test("its row in the table of contents: the name or Untitled Schema, curly braces, and how many top-level fields") {
+        let editor = try schemaEditor()
+        for text in [fixture(6), fixture(5), SchemaCard.starter, fixture(10), fixture(7)] { editor.add(card(text)) }
+        let labels = try require(editor.tableOfContents).entries.map(\.label)
+        expectEqual(labels.map { $0?.text }, ["Order", "Customer", "Untitled Schema", "Invoice", "Organization"])
+        expectEqual(labels.map { $0?.isPlaceholder }, [false, false, true, false, false])
+        expectEqual(labels.map { $0?.systemImage }, Array(repeating: "curlybraces", count: 5))
+        expectEqual(labels.map { $0?.badge }, ["6", "20", nil, nil, "4"])
+    },
+    test("rules: not JSON is an error at its line and column; a root that isn't an object is an error; required naming no property warns") {
+        let editor = try schemaEditor()
+        expectEqual(editor.issues(editor.add(card(fixture(6)))), [])
+        expectEqual(editor.issues(editor.add(card(fixture(9)))), [], "then's required names a property of the root: fine")
+        expectEqual(editor.issues(editor.add(card(fixture(10)))),
+                    [.error("Invalid JSON at line 6, column 35: expected a property name.", field: "schema")])
+        expectEqual(editor.issues(editor.add(card(""))), [.error("Invalid JSON at line 1, column 1: expected a value.", field: "schema")])
+        expectEqual(editor.issues(editor.add(card("[1, 2]"))), [.error("A schema must be a JSON object.", field: "schema")])
+        let missing = #"""
+        { "properties": { "a": {}, "b": { "properties": { "c": {} }, "required": ["c", "d"] },
+                          "list": { "type": "array", "items": { "properties": { "x": {} }, "required": ["y"] } } },
+          "required": ["a", "zip", "zip"],
+          "$defs": { "money": { "properties": { "amount": {} }, "required": ["currency"] } },
+          "allOf": [ { "required": ["a"] } ] }
+        """#
+        expectEqual(editor.issues(editor.add(card(missing))), [
+            .warning("“zip” is required, but isn't a property.", field: "schema"),
+            .warning("“d” is required, but isn't a property of b.", field: "schema"),
+            .warning("“y” is required, but isn't a property of list[].", field: "schema"),
+            .warning("“currency” is required, but isn't a property of $defs/money.", field: "schema"),
+        ])
+        // A pattern may be what's required: no warning where there are patterns.
+        expectEqual(editor.issues(editor.add(card(#"{"properties": {}, "patternProperties": {"^x": {}}, "required": ["xy"]}"#))), [])
+        let many = "{ \"properties\": {}, \"required\": [\((0..<500).map { "\"n\($0)\"" }.joined(separator: ","))] }"
+        expectEqual(editor.issues(editor.add(card(many))).count, 20)
+    },
+    test("an edit to the schema is checked again: fixing the JSON clears its error") {
+        let editor = try schemaEditor()
+        let id = editor.add(card(fixture(10)))
+        expectEqual(editor.issues(id).count, 1)
+        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.setSchema(fixture(6)) } }
+        expectEqual(editor.issues(id), [])
+        expectEqual(editor.schemaCard(id)?.frame.height, 177)
+    },
+    test("props round-trip through JSON, the schema's text exactly as typed") {
+        let props = SchemaCard(frame: CGRect(x: 1, y: 2, width: 300, height: 177), schema: fixture(10) + "\n\t// é", prompt: "an order")
+        expectEqual(try JSONDecoder().decode(SchemaCard.self, from: JSONEncoder().encode(props)), props)
+        expectEqual(try JSONDecoder().decode(SchemaCard.self, from: Data(#"{"frame": [[0, 0], [240, 89]]}"#.utf8)).schema, SchemaCard.starter)
+    },
+    test("the kind's schema: its text is JSON Schema by media type, and no title of its own (the name is the schema's)") {
+        let registry = try Registry(plugins: schemaPlugins())
+        let json = try require(registry.schema(for: SchemaCard.kind)).json
+        expectEqual(json["properties"]?["schema"]?["contentMediaType"], .string("application/schema+json"))
+        expectEqual(json["properties"]?["prompt"]?["type"], .string("string"))
+        expectEqual(json["required"], .array([.string("frame")]))
+        expect(json["properties"]?["title"] == nil, "a derived title: not the property Titles keeps for a named shape")
+        let card = AnyShapeRecord(ShapeRecord(SchemaCard(frame: CGRect(x: 0, y: 0, width: 240, height: 177), schema: fixture(6))))
+        expectEqual(registry.schemaViolations(of: card), [], "a card keeps to its kind's schema")
+    },
+])

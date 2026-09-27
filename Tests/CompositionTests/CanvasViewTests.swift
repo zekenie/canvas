@@ -7,6 +7,7 @@ import Composition
 import CoreGraphics
 import Geometry
 import Keyboard
+import LanguageModels
 import Selection
 import StickyNotes
 import SwiftUI
@@ -44,7 +45,7 @@ final class ActionLog: NSView {
 // The AppKit shell, in an unshown window: NSEvents in, the editing view's life cycle out.
 @MainActor let canvasViewTests = Suite("Canvas view", [
     test("double-click makes a note whose editor takes focus, follows the camera, and hands focus back") {
-        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let (window, canvas) = windowed(editor)
         canvas.mouseDown(with: window.mouse(.leftMouseDown, at: CGPoint(x: 300, y: 300), clicks: 2, time: 1))
         canvas.mouseUp(with: window.mouse(.leftMouseUp, at: CGPoint(x: 300, y: 300), clicks: 2, time: 1.05))
@@ -64,7 +65,7 @@ final class ActionLog: NSView {
         expect(canvas.subviews.isEmpty)
     },
     test("a key typed on the canvas switches tools; typed in a note, it goes into the note") {
-        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let (window, canvas) = windowed(editor)
         window.press("o")
         expectEqual(editor.currentToolID, ToolID(placing: "ellipse"))
@@ -82,7 +83,7 @@ final class ActionLog: NSView {
         expectEqual(editor.currentToolID, .arrow)
     },
     test("CanvasFocus.take makes the canvas first responder again, after a panel's field took it") {
-        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let focus = CanvasFocus()
         focus.take()      // no canvas yet: nothing to do
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
@@ -130,7 +131,7 @@ final class ActionLog: NSView {
         expectEqual(editor.currentToolID, .select)
     },
     test("a ⌘ key a menu item also has is the canvas's shortcut while it has the keyboard, in the app's SwiftUI hosting too; with a field focused, the canvas passes it on") {
-        let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler())
+        let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let focus = CanvasFocus()
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
         let host = NSHostingView(rootView: CanvasRepresentable(editor: editor, focus: focus))
@@ -153,7 +154,7 @@ final class ActionLog: NSView {
         expectEqual(editor.selectedShapeIDs, [])
     },
     test("⌃⌘M isn't the canvas's while it has the keyboard: it goes on to the menu bar, where it's View › Show Minimap") {
-        let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler())
+        let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let (window, canvas) = windowed(editor)
         window.makeFirstResponder(canvas)
         expect(!window.performKeyEquivalent(with: window.keyEvent("m", modifiers: [.command, .control])))
@@ -184,7 +185,7 @@ final class ActionLog: NSView {
         expectEqual(editor.currentToolID, .select)
     },
     test("a key no shortcut takes goes on to AppKit's key bindings, and their action up the responder chain, as from any view") {
-        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
         let parent = ActionLog(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
         let canvas = CanvasView(editor: editor)
@@ -228,7 +229,7 @@ final class ActionLog: NSView {
         expect(window.firstResponder === canvas)
     },
     test("V, then a mouse drag on the background, brushes: it selects the note it crosses and never pans") {
-        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let (window, canvas) = windowed(editor)
         let note = editor.add(StickyNote(frame: CGRect(x: 320, y: 320, width: 200, height: 200)))
         window.press("h")
@@ -244,7 +245,7 @@ final class ActionLog: NSView {
         expectEqual(editor.camera, Camera())
     },
     test("Select All (the standard selectAll: action) selects every shape on the canvas; in a note being edited, its text") {
-        let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler())
+        let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let (window, canvas) = windowed(editor)
         canvas.selectAll(nil)
         expectEqual(editor.selectedShapeIDs, editor.document.shapes.map(\.id))
@@ -265,7 +266,7 @@ final class ActionLog: NSView {
     },
     test("H, then a mouse drag, pans the camera; a flung release slides on, and a scrollWheel event stops it") {
         let scheduler = ManualScheduler()
-        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: scheduler)
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: scheduler, model: ScriptedLanguageModel())
         let (window, canvas) = windowed(editor)
         window.press("h")
         expectEqual(editor.currentToolID, .hand)
@@ -287,7 +288,7 @@ final class ActionLog: NSView {
     test("a right-click opens a shape's context menu through the view; where there's nothing to offer, it and a Control-click do nothing") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
-        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard)
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
         let (window, canvas) = windowed(editor)
         editor.add(Arrow(start: .free(CGPoint(x: 40, y: 300)), end: .free(CGPoint(x: 340, y: 300))))
         let task = editor.add(TaskCard(frame: CGRect(x: 400, y: 40, width: 240, height: 200)), title: "Ship")
@@ -312,7 +313,7 @@ final class ActionLog: NSView {
         expect(canvas.menu(for: key) == nil)
     },
     test("in the arrow tool, a Control-press is a press with ⌃: no menu, and the arrow it draws binds nothing") {
-        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let (window, canvas) = windowed(editor)
         editor.add(TaskCard(frame: CGRect(x: 400, y: 40, width: 240, height: 200)), title: "Ship")
         window.press("a")

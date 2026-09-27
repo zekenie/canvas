@@ -61,6 +61,16 @@ public struct ShapeTranslation<Props: ShapeProps> {
     }
 }
 
+/// Props that hold something following from the rest, which the kind's own setters keep in step
+/// (a schema card's height, which `setSchema` fits to its schema). A shape made from properties
+/// written somewhere else, `Registry.shape(_:properties:)` (the command line's `create`), goes
+/// through `derive` before anything else is done with it, so it's in step as the setters would have
+/// left it. A board read doesn't (a shape is as it was saved), nor does a paste, nor anything a
+/// person does.
+public protocol DerivedProps: ShapeDefinition {
+    func derive(_ props: inout Props)
+}
+
 /// Painted relative to another shape instead of by document order, so bringing it to front means
 /// nothing. A connector stays just above the shapes it joins; a label, above its host.
 public protocol PaintOrderAnchored: ShapeDefinition {

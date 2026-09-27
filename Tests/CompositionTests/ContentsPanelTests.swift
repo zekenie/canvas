@@ -5,6 +5,7 @@ import CanvasUI
 import Composition
 import DetailPanel
 import Geometry
+import LanguageModels
 import Selection
 import StickyNotes
 import SwiftUI
@@ -15,7 +16,7 @@ import TestKit
 /// an `.inspector`, wired by a `CanvasFocus` as the app wires them (InspectorHost).
 @MainActor
 final class BoardWindow {
-    let editor = ShippedPlugins.makeEditor(scheduler: TaskScheduler())
+    let editor = ShippedPlugins.makeEditor(scheduler: TaskScheduler(), model: ScriptedLanguageModel())
     let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1200, height: 800), styleMask: [.titled], backing: .buffered, defer: false)
     let focus = CanvasFocus()
     let host: NSHostingView<InspectorHost>

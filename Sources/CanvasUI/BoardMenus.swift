@@ -14,6 +14,10 @@ public enum BoardMenus {
         public let help: NSMenu
     }
 
+    /// What Infinite Canvas › Settings… (⌘,) sends up the responder chain: the app's delegate answers
+    /// it, showing its Settings window (AppKit has no standard action for it).
+    public static let showSettings = NSSelectorFromString("showSettings:")
+
     /// Installs the menus as the app's.
     public static func install(appName: String, helpItems: [NSMenuItem] = []) {
         let menus = make(appName: appName, helpItems: helpItems)
@@ -27,6 +31,8 @@ public enum BoardMenus {
         let services = NSMenu(title: "Services")
         let app = menu(appName, [
             item("About \(appName)", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+            .separator(),
+            item("Settings…", showSettings, ","),
             .separator(),
             submenu("Services", services),
             .separator(),

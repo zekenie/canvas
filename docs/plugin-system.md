@@ -3,7 +3,7 @@
 Everything on the canvas comes from a plugin: sticky notes, ellipses, arrows, task cards,
 validation, checklists, titles, the pills and chips shown on shapes (adornments), the detail panel
 and the table of contents beside the canvas, selecting itself, copying and pasting, locking, the
-ports arrows are dragged from, what each key does, what the command line can do, even the examples.
+ports arrows are dragged from, what each key does, what the command line can do, the language model plugins ask, even the examples.
 The core (`Sources/Canvas`) knows how to hold shapes, run tools, draw, and wire plugins together,
 and nothing about any particular shape or concern. Its one built-in tool is tldraw's Hand, which
 pans (a flung release slides on). Select, which selects (a click, ⇧-click, or a marquee dragged
@@ -33,6 +33,8 @@ maps one onto the other.
 - [Locking](#locking)
 - [Ports](#ports)
 - [The command line](#the-command-line)
+- [Schema cards](#schema-cards)
+- [Language models](#language-models)
 - [Capabilities](#capabilities)
 - [The editor, the document, and drawing](#the-editor-the-document-and-drawing)
 - [Boards on disk](#boards-on-disk)
@@ -186,8 +188,8 @@ plugins](#testing-plugins) has the rest of the kit.
 
 - `Package.swift`: add it to Composition's dependencies.
 - [`ShippedPlugins.swift`](../Sources/Composition/ShippedPlugins.swift): import it, and add
-  `RectanglesPlugin()` to `ShippedPlugins.all`. The list's order is the toolbar's, and the order
-  overlays draw in.
+  `RectanglesPlugin()` to the list in `ShippedPlugins.plugins(pasteboard:model:)`. The list's order
+  is the toolbar's, and the order overlays draw in.
 - [`ShippedTests.swift`](../Tests/CompositionTests/ShippedTests.swift) pins the toolbar and
   [the registry report](#the-registry): add the new tool, `"Rectangle (R)"`, and the plugin's line,
   `rectangles          shape rectangle · tool rectangle · shortcut R → tool rectangle`.
@@ -250,6 +252,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Let agents (or scripts) do something to a board from outside the app | `registrar.automationCommand("name", "…", params: P.self) { params, context in … }`: a `canvas` command | [The command line](#the-command-line) |
 | Make a shape without the pointer: what a kind's tool places, or a shape from its JSON | `registry.placement(for:)`, `placement.shape(at:)`; `registry.shape(_:properties:)` | [The command line](#the-command-line) |
 | Draw a shape away from where it is, for an animation (a shake) | `editor.setDrawingOffset(_:for:)`; adornments follow by themselves, and an overlay with `context.worldDrawingOffset(of:)` | [Locking](#locking) |
+| Ask Claude something (and test it without the network) | `editor.languageModel?.respond(to: ModelRequest(...))`; `ScriptedLanguageModel` in tests | [Language models](#language-models) |
 | Keep what a kind's props name right as shapes are deleted and copied (a connector) | `ShapeReferencing` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
 | Keep something about any shape beside its props (where it came from) | A `ShapeMetaKey`, and `record.meta[Key.self]` | [Metadata](#metadata) |
 | Add a right-click item that isn't one shape's, in every menu and on empty canvas | `registrar.contextMenuForCanvas { ... }` | [The clipboard](#the-clipboard) |
@@ -265,7 +268,8 @@ definition adopts; behavior any plugin can add to any kind is an extension point
 ## Horizontal and vertical
 
 A **vertical** plugin is a feature: a shape kind and the tool that places it, or a tool on its own.
-Sticky notes, ellipses, arrows, task cards, rectangles, polylines and the eraser are verticals.
+Sticky notes, ellipses, arrows, task cards, schema cards, rectangles, polylines and the eraser are
+verticals.
 
 A **horizontal** plugin is a concern that cuts across kinds. It declares an extension point, and any
 kind can take part by contributing to it. Validity is the canonical example: *a shape can be valid
@@ -292,7 +296,8 @@ core only refuses to change the shapes a plugin says are read-only. So are [port
 kind can have them, on the channels it takes, and Ports owns the dots and what a drag from one may
 end on, while the plugin that owns a channel's meaning declares it. So is what's shown on shapes:
 [Adornments](#adornments) lays out and draws what any plugin puts on them, a title's pill beside a
-lock, so none overlaps another.
+lock, so none overlaps another. And a horizontal may declare no point at all and only lend
+something: [LanguageModels](#language-models) lends every editor the model plugins ask.
 
 Opting in goes in one of two directions:
 
@@ -333,8 +338,8 @@ Each target is one line, with its layer:
 | wire | wire | CanvasRPC (what the app and its [command line](#the-command-line) say to each other) |
 | foundation | foundation | Geometry, Canvas (the core) |
 | ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
-| horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Adornments, Checklists, Clipboard, Locking, Ports, Automation |
-| vertical | foundation, horizontal | Arrows, StickyNotes, Ellipses, TaskCards, Rectangles, Polylines, Eraser, Reordering |
+| horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Adornments, Checklists, Clipboard, Locking, Ports, Automation, LanguageModels |
+| vertical | foundation, horizontal | Arrows, StickyNotes, Ellipses, TaskCards, Schemas, Rectangles, Polylines, Eraser, Reordering |
 | bridge | foundation, horizontal, vertical | EllipseTitles, ValidationDetails, ValidationContents, ArrowPorts |
 | composition | foundation, horizontal, vertical, bridge, wire | Composition (the shipped plugin list) |
 | app | foundation, ui, composition, wire | InfiniteCanvas |
@@ -633,7 +638,9 @@ extension PolylineDefinition: CustomTranslation {
 - **`CustomTranslation` moves it.** The core moves a shape with a frame by its frame; any other kind
   stays put when the selection is dragged, unless it moves itself. `beginTranslation` runs once, as
   the drag starts: capture what you move from. The closure it returns runs on every drag event,
-  with the pointer's offset from the press. Escape puts the shape back without your help.
+  with the pointer's offset from the press. Escape puts the shape back without your help: its
+  whole record as it was before `beginTranslation` (a box kind moved by its frame gets its origin
+  back, and keeps anything else written to it while it moved).
 
 **The tool inserts the shape itself.** Placements make box shapes, so the Line tool starts a
 session, which puts the line in on the first drag (a click draws nothing, as with arrows) and adds
@@ -1470,16 +1477,35 @@ Sections are stock SwiftUI plus a few primitives, and get the look by following 
   value is `LabeledContent("Remaining", value: ...)`. A toggle stands alone, drawn as a checkbox
   with its label after it; in a row, it's a bare box.
 - **Primitives.** A number is a `DetailNumberField`, and a pair of them (Width and Height) goes in
-  `DetailFields`. Multiline text is a `DetailTextArea`, a list a `DetailList` (empty, it says No
-  Items), a color `DetailSwatches` (named presets, the chosen one marked, then the color well; it
-  spans the row, so it goes in a section of its own, not in a `LabeledContent`). `DetailNumberText` formats and parses numbers with units
-  ("240 pt"), in the user's locale ("2,5 h" in German), as the number field does.
+  `DetailFields`. Multiline text is a `DetailTextArea` (with a `placeholder:` shown while it's
+  empty, and an `onCommit:` for text that's acted on once it's done: then Return commits, ⇧↩ is a
+  new line, and the keyboard leaving commits too, a turn later if the text view left its window
+  with the keyboard, so capture a service in `onCommit` weakly: the board may have gone), code a
+  `DetailCodeEditor` (monospaced, typed exactly as keyed: smart quotes and dashes, text
+  replacement, autocorrect, spelling, completion, inline predictions, math results and Writing
+  Tools off; lines never wrap, so a line's indentation says where it is and line N of an error is
+  the Nth on screen, and a long one scrolls sideways; as tall as its lines, from
+  `DetailStyle.codeEditorHeight` to what the panel shows, less room for its section's title; Tab
+  two spaces, Return a new line as indented as the last, one step more after `{` or `[`; ⌘↩ and the
+  keyboard leaving call its `onCommit`; `isEditable: false` makes it read-only), a list a
+  `DetailList` (empty, it says No Items), a color `DetailSwatches` (named presets, the chosen one
+  marked, then the color well; it spans the row, so it goes in a section of its own, not in a
+  `LabeledContent`). `.detailUpdating(isUpdating)` marks a text box something else is writing just
+  now (a model): read-only, and so dimmed; nothing is drawn over its text. What's writing it says
+  so in words where the person is: a status line of a section's own, a `DetailStatusLine`, drawn
+  as the footer's, with a spinner while `isBusy`, and link buttons under it
+  (`DetailStatusAction("Retry") { … }`). Put it where it can't be collapsed away from the person
+  (the schema card's sync puts it under the side they edited).
+  `DetailNumberText` formats and parses numbers with units ("240 pt"), in the user's locale ("2,5 h"
+  in German), as the number field does.
 - **Sections.** A tab's first section may be untitled; use it for the main properties. Every
   titled section collapses. Titles are one or two nouns in Title Case.
 - **Header control.** At most one small control, acting on the whole section (Checklists' menu). A
   switch for one row goes in that row, beside what it governs (the task's Due checkbox).
 - **No styling of your own.** No fonts, sizes, padding or backgrounds.
-- **Writes** go only through the section's `ShapeBinding`. Sections never see the editor.
+- **Writes** go only through the section's `ShapeBinding`. Sections never see the editor; one that
+  shows a plugin's own state about its shape reads that plugin's service, `$x.service(S.self)` (the
+  schema card's sync), from a view of its own, so observing it redraws only that view.
 
 ### Tabs are types; any plugin adds one
 
@@ -1852,7 +1878,7 @@ When each control commits:
 
 | Control | Commits |
 |---|---|
-| Text fields, `DetailTextArea`, `DetailHeaderField` | On every keystroke, so the canvas follows as you type |
+| Text fields, `DetailTextArea`, `DetailCodeEditor`, `DetailHeaderField` | On every keystroke, so the canvas follows as you type. With `onCommit:`, a text area also says when it's done (Return, the keyboard leaving), and a code editor too (⌘↩, the keyboard leaving) |
 | Pickers, toggles, steppers, dates, swatches, the color well, list add, remove, move and edit | On change |
 | `DetailNumberField` | A draft: on Return, Tab, leaving the field, or the field going away, in one transaction, clamped to its range. Escape drops the draft. Stepping writes at once. A draft lands on its own shape even if the selection moves first. |
 
@@ -1867,8 +1893,8 @@ When each control commits:
   hidden with it (View › Hide Inspector, which hides the panel without removing it).
   Otherwise the keyboard would land on the window, and shortcuts would stop. Collapsing an
   unrelated section leaves the field focused.
-- **Inside the panel**, Tab moves between text fields (a `DetailTextArea` takes Tab as text), and
-  Return commits a number and keeps the field; in the header's title field (`DetailHeaderField`),
+- **Inside the panel**, Tab moves between text fields (a `DetailTextArea` takes Tab as text, a
+  `DetailCodeEditor` as two spaces), and Return commits a number and keeps the field; in the header's title field (`DetailHeaderField`),
   Return is done renaming, and gives the keyboard back to the canvas. Checkboxes don't take the
   keyboard (the macOS default without Full Keyboard Access); a pop-up, segmented control or stepper
   that has it keeps
@@ -2821,9 +2847,9 @@ registrar.channel(NoteLink.self)                       // which this plugin decl
 ```
 
 Task cards do the same with `TaskLink` (`task-link`, purple), on all four sides, since a card draws
-its title inside and nothing sits above it ([TaskCardLinks.swift](../Sources/TaskCards/TaskCardLinks.swift)).
-Both channels say nothing more yet: a channel is where a connection's meaning would go (one task
-blocking another, say).
+its title inside and nothing sits above it ([TaskCardLinks.swift](../Sources/TaskCards/TaskCardLinks.swift)),
+and so do [schema cards](#schema-cards), with `SchemaLink`. The channels say nothing more yet: a
+channel is where a connection's meaning would go (one task blocking another, say).
 
 ### Channels
 
@@ -2832,8 +2858,8 @@ blocking another, say).
   default). The plugin that owns what a connection on it means declares it,
   `registrar.channel(C.self)` (the `Channels` point: a channel declared twice is a `conflict`), and
   kinds have ports on it by its type, so a plugin that gives a kind ports on another's channel
-  imports that plugin's module. StickyNotes declares `NoteLink` for its notes, and TaskCards
-  `TaskLink` for its tasks; a channel that joins kinds of several plugins would be declared by the
+  imports that plugin's module. StickyNotes declares `NoteLink` for its notes, TaskCards
+  `TaskLink` for its tasks, and Schemas `SchemaLink` for its cards; a channel that joins kinds of several plugins would be declared by the
   horizontal whose meaning it is (data-canvas's `registerHostChannel` calls come from such a
   feature), and given to their kinds by bridges.
 - **The id never changes once shipped**, since connections keep it. The id audit holds a
@@ -3077,7 +3103,9 @@ registrar.automationCommand("create", "Put a shape on a board.", params: CreateS
 `registry.placement(for: kind)`, what the kind's tool places (`placement.size`, and
 `placement.shape(at:)`, the shape it puts down with its middle on a point, in no document yet), and
 `registry.shape(kind, properties:)`, a shape from its properties as one JSON object, own and added
-side by side as its kind's schema describes them: the inverse of `record.propertiesJSON`. So it
+side by side as its kind's schema describes them: the inverse of `record.propertiesJSON`, but for
+what a kind derives from the rest (`DerivedProps`: a schema card is as tall as its schema, as its
+panel would make it). So it
 starts from what the kind's tool would place (a task's "New Task" title with it), sets what it's
 told over that (`--props`, then each `--set`: as typed for a property that's text, as JSON for any
 other), and inserts it. A shape past its schema's bounds is made, with a warning, as the app makes
@@ -3089,6 +3117,182 @@ The app that holds the socket's lock (`canvas.sock.lock`, beside it) is the one 
 copy of the app gives up and runs without the command line, and a socket that one that crashed left
 behind is taken over. A command's options may also come before its name (`canvas --board 2 create
 ellipse`), as agents often write them.
+
+## Schema cards
+
+Schemas ([`Sources/Schemas`](../Sources/Schemas)) is a vertical whose shape is a JSON Schema: a
+`SchemaCard` (kind `schema-card`; `frame`, `schema`, `prompt`), placed empty with the Schema tool
+(S). The schema is kept as **text**, not a parsed value: a dictionary would lose the order its
+properties were written in, which the card shows, and a schema being typed isn't JSON for a while.
+Nothing restricts what it says; the card reads the keywords most schemas use, and the rest stays in
+the text. Its name is its own root `"title"`, so there's one place to say it: a title Titles
+derives (`schema.title(pill: false) { … }`), never the `TitleProperty` Titles keeps for notes and
+tasks, so the kind's schema has no `title` of its own; `setTitle` rewrites just that member. The
+card draws its name inside, as a task card does, so Titles places no pill ([adornment](#adornments))
+on it; what other plugins show on shapes still shows on it (a locked card's lock, at the right end
+of the row above).
+
+```swift
+registrar.service { SchemaSync(editor: $0) }                                           // below
+registrar.shape(SchemaCardDefinition()) { schema in
+    let place = schema.placement(size: SchemaCard.defaultSize) { SchemaCard() }        // 240 × 89, empty
+    schema.tool(label: "Schema", systemImage: "curlybraces", shortcut: "s", placing: place)
+    schema.validate { shape, _ in SchemaReadings.reading(of: shape).issues }
+    schema.title(pill: false) { SchemaReadings.reading(of: $0).document.title }
+    schema.contentsRow { shape in ContentsLabel(…, systemImage: "curlybraces", badge: "6") }  // top-level fields
+    schema.schemaPanel()                                                               // the header and the Schema tab
+    schema.schemaLinks()                                                               // ports: a schema to a schema
+}
+registrar.channel(SchemaLink.self)
+```
+
+- **Reading.** `JSONReader` is an order-preserving JSON reader: every object's members in order,
+  every value and key with its range (UTF-8 offsets), errors with a line and column a person counts,
+  tokens for coloring, and no text that crashes it (it refuses nesting past 256). `SchemaDocument`
+  reads a schema from it: its title (even from a half-typed text, if the root's `"title"` came
+  first), its top-level fields (`properties`, then `patternProperties`), and the rules at its root
+  (`if/then`, `allOf`, …). A `SchemaField` reads its type (`SchemaFieldType`: `format` in place of
+  `string`, `enum`, `const`, `$ref`, `oneOf`/`anyOf`/`allOf`, type lists, boolean schemas, arrays of
+  anything) and its own fields a level at a time, following `$ref`s within the document, each step
+  bounded, so a `$ref` in a circle ends.
+- **The card** is the schema's overview: a row per top-level field, at most 7, its name in a chip
+  (`*` if required), then what's in it (an object's fields in braces, an array of objects' in
+  brackets, anything deeper `{…}`; an enum's values between bars), and its type at the end. Nested
+  fields never take a row, so they never count toward the cap: 8 fields or more show 6 and
+  `+N more`. `SchemaCardLayout` decides all that for a size (tests read it); the definition draws it.
+  The height is the content's, set in the same transaction as the schema: `setSchema` sets the text
+  and `SchemaCard.height(for:)`, 45 and 22 a row (89 empty), arithmetic with no fonts; a text that
+  isn't JSON leaves the frame alone. The width is the person's.
+- **Cost.** A card's text is read once: `SchemaReadings` keeps a reading per card (and its
+  layouts), compared with the card's text by identity (the record's own string) before anything,
+  and read again only when that text changes, so typing replaces one reading and a frame parses
+  and measures nothing, however many different schemas are in view. Readings of deleted cards are
+  dropped (the sync hears it), and past 4,096 the quarter used longest ago; debug builds count
+  reads (`SchemasPlugin.schemasRead`). Far out, rows are bars (below 35%), then the title (below
+  20%). A card made from properties (`canvas create`) is as tall as its schema (`DerivedProps`).
+- **Rules.** A text that isn't JSON is an error at its line and column, as is a root that isn't an
+  object; `required` naming a property its object doesn't have is a warning.
+  Validation's own rule checks a card against its kind's schema, as it does every shape: `schema`
+  and `prompt` are strings without bounds, so no text breaks it.
+- **Ports.** As notes and tasks do, a card has ports on a channel of its own: `SchemaLink`
+  (`schema-link`, the card's accent), on all four sides, since the card draws its name inside
+  ([SchemaLinks.swift](../Sources/Schemas/SchemaLinks.swift)). A schema links only to a schema,
+  and the link says nothing more yet.
+- **The panel** is the card's only editor. Its header is a `TitleHeader` over the root `"title"`,
+  with the field count under it (renaming rewrites that member alone, so it's off while the text
+  isn't a JSON object, and while the model writes the schema); its Schema tab has the
+  **description** (the `prompt`, a `DetailTextArea` that commits, its placeholder saying what to
+  write: "a pet in my household") over the **JSON Schema** (a `DetailCodeEditor`, colored by
+  `JSONReader.tokens`, the token where it stops being JSON underlined, with the line and column
+  under it). The sync's status shows under the side the person edited (`SchemaSyncStatus.source`),
+  where they are and in view whichever section is collapsed: "Updating schema…" under the
+  description, "Updating description…" under the JSON Schema, with a spinner, or why it failed,
+  with what to do (`SchemaSyncFailure.remedy`): Retry; Open Settings… and Retry, for want of a key
+  (Open Settings… sends `AnthropicSettingsView.showSettingsAction`, `BoardMenus.showSettings`'s
+  selector, up the responder chain for the app to answer); nothing (`editByHand`), for a schema too
+  long to write whole, or one cut off. The side being written is read-only and dimmed. The sections' commits hold the sync
+  weakly: a box that loses the keyboard as its window closes commits after the board has gone.
+
+### Keeping the description and the schema in step: `SchemaSync`
+
+Edit the description and Claude rewrites the schema; edit the schema by hand and Claude rewrites the
+description to say what it now holds. `SchemaSync`, the plugin's service, does it per card, through
+`editor.languageModel`:
+
+- **When.** Only the person's edits to the two sides start a sync: never its own write, a board
+  read again from disk (a revert, a reload; `ChangeSet.replacedDocument`, whose cards are seen for
+  the first time, with their calls and timers dropped), or a change to anything else about the
+  card (a move, a lock, a restack). A commit (Return in the
+  description, ⌘↩ in the schema, the keyboard leaving either) syncs at once; otherwise it's
+  `SchemaSync.idleDelay` (3 s) after the last keystroke, on `editor.scheduler`.
+- **Which way.** The description changed (and isn't empty): the schema is written from it, the
+  model told the description at the last sync, so what was deleted from it is removed. Else the
+  schema changed in meaning (a reformat or a reorder doesn't count): the description is written from
+  it, told the schema at the last sync. Both: the schema, from the one edited by hand. The schema is
+  written whole however small the edit, so one past `SchemaPrompts.toSchemaMaxLength` (34 KB, which
+  might not fit the answer's 16,000 tokens) is never sent: the status says to edit it by hand, and
+  once the person has, the description is written from that edit.
+- **Never** while the schema isn't a JSON object (someone's halfway through it, or it's blank), for
+  a read-only (locked) card, for a new card with no fields and no description, for a description
+  cleared (it says nothing about the schema) or only respaced, or without a model. A card seen for
+  the first time (on a board opened or read again, pasted, placed) is taken as in step: that pair
+  is its last sync, which the model is told as it would be one made this session (so a field taken
+  out of an opened card's description is taken out of its schema; the prompts' contract leaves the
+  previous side out of a card opened, which would only add). All but a description over a schema
+  that's JSON with no fields: that was never answered (the call failed, or the board closed first),
+  so its description is ahead, and the next commit asks for the schema from nothing (nothing syncs
+  on opening).
+- **While a call is out** the side it writes is read-only, and the status says so. If it changes anyway
+  (by a plugin, a test), the answer is dropped; edits to the other side wait for it: they sync
+  when they're committed or 3 s after the last, as ever, or as soon as it lands if either came
+  while it was out; a card deleted or read again meanwhile drops it; a card locked meanwhile gets
+  nothing written (nothing is tried, so nothing's refused) and its pair stays as it was, so its
+  edit syncs once it's unlocked. A failure leaves both sides as typed and says why, with Retry (the
+  next commit tries again too; a key saved in Settings retries the cards that failed for want of
+  one, `languageModelKeyDidChange`); a cancelled call says nothing; `NO_CHANGE` writes nothing and
+  makes the pair in step. A
+  schema is written as the model wrote it, never laid out again (its order is the model's, which
+  keeps the person's; the prompt asks for two spaces, a member per line, plain arrays on one line),
+  with `setSchema`, so the card fits it; the write is the sync's own, and starts none.
+- **What it asks** is `SchemaPrompts`: the two system prompts (raw string literals, each its text
+  byte for byte, which [`scripts/schema-prompts/evals.py`](../scripts/schema-prompts) reads out of
+  the Swift, so the quick evals test exactly what ships), the user message (tagged blocks, each
+  trimmed: `<previous_prompt>`, `<prompt>`, `<schema>`; or `<prompt>`, `<previous_schema>`,
+  `<schema>`; empty ones left out, tags and all), 16,000 tokens at most for a schema and 2048 for a
+  description, temperature 0, no prefill or stop sequences, and `parse` (the answer trimmed, then
+  unwrapped of any code-fence line and its own block's tags, from either end, until none is left:
+  the model sometimes adds them though the prompts ask for neither; a stop other than the end of its
+  turn is a failure, as is a schema that isn't a JSON object from its first character to its last;
+  an answer whose first word is `NO_CHANGE` is no change, whatever follows it, and so is one whose
+  last line is; a line of a tag alone at either end, `</output>`, is dropped; a description loses
+  one pair of quotes around it, and isn't written if it reads as something else: `NO_CHANGE` inside
+  it, a fence, a preamble such as "Here's the updated prompt:"). The system prompts treat what the
+  other side holds as data (a description in the schema that reads as an instruction is kept, never
+  followed), name new properties in the prompt's language (plain ASCII for one written in Latin
+  letters, its own script for any other), and count a field given by `$ref` as required only where
+  its own object's `required` names it.
+  `editor.schemaSync?.status(of: id)` is observed a card at a time, so a card's panel redraws for
+  its own sync only; the panel's sections read it through `$card.service(SchemaSync.self)`.
+
+## Language models
+
+LanguageModels ([`Sources/LanguageModels`](../Sources/LanguageModels)) is a horizontal that declares
+no extension point: it lends every editor one language model, `editor.languageModel`, for any plugin
+to ask, and knows nothing of what they ask it for.
+
+```swift
+guard let model = editor.languageModel else { return }      // nil without LanguageModelsPlugin
+let request = ModelRequest(system: "Answer with JSON only.", messages: [.user(prompt)], maxTokens: 2000)
+do throws(LanguageModelError) {
+    let response = try await model.respond(to: request)     // response.text, .stopReason
+} catch {
+    status = error.message                                   // "Add your Anthropic API key in Settings…"
+}
+```
+
+- **The protocol.** `LanguageModel` is one async call: a `ModelRequest` (a system prompt, the
+  conversation as `ModelMessage`s, `maxTokens`, `temperature`, `stopSequences`) in, a
+  `ModelResponse` (its text, `stopReason`, token counts) out, or a `LanguageModelError` (no key,
+  unauthorized, rate limited, overloaded, another status with the service's message, the network, a
+  malformed answer, no answer in time, cancelled), each with a short `message` for a person and
+  `isTransient` for whether trying again later may work. Cancelling the task asking throws
+  `.cancelled`.
+- **The app's model.** `AnthropicModel` calls Anthropic's Messages API from the app, with
+  URLSession (no SDK, no streaming, no retries), Claude Haiku 4.5 by default. Nothing streams, so
+  the answer comes whole, all at once: it waits a minute, and a second more for every 100 tokens
+  the request may write (`timeout(for:)`: 16,000 wait 220 s; Haiku writes some 150 a second), and
+  throws `.timedOut` past that. It reads the key at every call, so a key saved in Settings works at
+  once; Save and Remove in Settings post `Notification.Name.languageModelKeyDidChange`, so a plugin
+  whose call failed for want of a key can try again by itself.
+- **The key.** `AnthropicKeyStore.standard` is
+  `~/Library/Application Support/InfiniteCanvas/anthropic-api-key`: the key and nothing else, mode
+  0600, written whole and renamed into place; a missing file is no key. Not the Keychain: the app
+  isn't signed, so each build would be a new app to it. Infinite Canvas › Settings… (⌘,) shows
+  `AnthropicSettingsView` (a secure field, Save, Remove, and Test, a five-token call), which
+  Composition hands the app as `ShippedPlugins.settings()`. A plugin that finds no key offers to
+  open it: `AnthropicSettingsView.showSettings()` sends `showSettings:` up the responder chain,
+  which the app's delegate answers (the same selector as `BoardMenus.showSettings`).
+- **Tests** pass a `ScriptedLanguageModel` ([Testing plugins](#testing-plugins)), never the network.
 
 ## Capabilities
 
@@ -3102,6 +3306,7 @@ it, the core or a horizontal.
 | `CustomTranslation` | Moving by its own rules instead of by its frame, when a `TranslatingSession` moves it (dragging the selection, a shape just placed). When a drag starts, `beginTranslation` gets the shape, every shape moving with it and the starting transaction (committed on its own, before the first move), and returns a `ShapeTranslation`: a closure run on every drag event with the pointer's delta, after the moving boxes have moved. A kind without a frame needs this to be movable at all. | Arrows (alone, bound ends slide on their shapes; with a shape they're bound to, they keep every binding); Polylines (every point by the delta) |
 | `HandleProviding` (Selection's) | Draggable handles on the only selected shape. The select tool finds, draws and hit-tests them; `pressHandle` returns `.drag` or `.consumed`, and `dragSession` does the dragging. | Arrows |
 | `BrushHitTesting` (Selection's) | Whether the marquee touches it, when the brush overlaps its bounds without containing them. Default: `ShapeGeometry.isHit(byBrush:)`. | Arrows (against the visible arc) |
+| `DerivedProps` | Props that hold something following from the rest, which the kind's setters keep in step. A shape made from properties written somewhere else, `registry.shape(_:properties:)` (the command line's `create`), goes through `derive(_:)` first, so it's as its setters would have left it; a board read (a shape is as saved), a paste, and what a person does don't. | Schemas (a card's height, from its schema; `--size` still wins) |
 | `PaintOrderAnchored` | Painted just above another shape, whatever its place in the document. The anchor follows from the shape's own props and the document's order, since the paint order is kept until one of those changes. | Arrows (above the shapes they join) |
 | `ShapeReferencing` | Props that name other shapes: every kind whose props do adopts it, or it keeps naming a shape once it's gone. `remappingReferences(of:_:in:)` passes each through a map: named as the shape it gives, or, for nil, let go of where it's drawn. Deleting a shape asks it of every shape that names it (after `willDelete` handlers, before anything's removed), and copying asks it of each copy (`record.remappingReferences(_:in:)`). It returns nil when it can't let go of a shape it can't find: a deletion leaves it as it was, and a copy leaves it out. | Arrows (an end lets go where it's drawn, keeping the curve; a copy stays bound to the copies of its shapes); CanvasTesting's `Tag` |
 
@@ -3145,6 +3350,9 @@ to it.
   exists, and so does `editingShapeID`, the shape being edited. After every transaction that
   changed the document, services hear `documentDidChange` with its change set: they drop what's
   gone (the selection does), and redo what they keep per shape for just those shapes (validation
+  does). `replaceDocument` (a board read again: a revert, a reload after the file changed on disk)
+  sends one too, marked `replacedDocument`: its shapes are as saved, not as anyone changed them, so
+  a service that acts on edits takes them as shapes seen for the first time (the schema card's sync
   does). What's selected is [Selection's](#selection).
 - **What the editor keeps.** Each shape's geometry and extent (its geometry's bounds, with its
   box), and the paint order, from one frame to the next, so a frame costs what's in view and what
@@ -3350,8 +3558,9 @@ ShapeDetails: Checklists.ChecklistTab (from sticky-notes) and TaskCards.Checklis
 
 The hook is generic: the core runs it without knowing what any point checks.
 
-Once built, it's frozen and handed to the editor. The app's list is `ShippedPlugins.all` in
-[Composition](../Sources/Composition/ShippedPlugins.swift), and a test checks it registers.
+Once built, it's frozen and handed to the editor. The app's list is
+`ShippedPlugins.plugins(pasteboard:model:)` in [Composition](../Sources/Composition/ShippedPlugins.swift),
+and a test checks it registers.
 `registry.report` prints who contributes what: the runtime half of the graph, pinned by a test.
 
 ```
@@ -3362,6 +3571,7 @@ arrows               shape arrow · ContentsRows → arrow · service ArrowTarge
 sticky-notes         shape sticky-note v2 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · channel note-link
 ellipses             shape ellipse · tool ellipse · shortcut O → tool ellipse
 task-cards           shape task-card v3 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · property title → task-card · ShapeTitles → task-card · ContentsTitles → task-card · ports task-link → task-card · channel task-link
+schemas              service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
 adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
 detail-panel         service DetailPanelState · ShapeDetails
@@ -3375,6 +3585,7 @@ clipboard            service ClipboardState · command cut · shortcut ⌘X → 
 locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · CanvasContextMenu
 ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
 arrow-ports          property channel → arrow · connector → arrow · ArrowBindingRules
+language-models      service LanguageModelState
 automation           command line create · command line kinds
 rectangles           shape rectangle · tool rectangle · shortcut R → tool rectangle
 polylines            shape polyline · tool polyline · shortcut L → tool polyline
@@ -3486,8 +3697,14 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   counts the shapes whose labels are kept, so a test holds a deleted shape to being forgotten.
 - **The clipboard.** A test that copies gives the clipboard a pasteboard of its own, so it never
   touches the user's: `ClipboardPlugin(pasteboard: NSPasteboard.withUniqueName())`, or
-  `ShippedPlugins.makeEditor(pasteboard:)` (and `releaseGlobally()` it after). Two editors on one
+  `ShippedPlugins.makeEditor(pasteboard:model:)` (and `releaseGlobally()` it after). Two editors on one
   pasteboard are two boards copying and pasting between them.
+- **The language model.** No test reaches the network: every shipped list a test builds gets a
+  `ScriptedLanguageModel` (`ShippedPlugins.makeEditor(model:)`, whose `model:` has no default so
+  none can be forgotten), which keeps each request, answers from its queue, and holds its answers
+  while `holdsAnswers` until `release()`. A call lands on the main actor, so a test turns the main
+  run loop until it has (TestKit's `spinRunLoop(until:)`, `awaitResult { … }`). LanguageModelsTests
+  stub the network itself with a `URLProtocol`.
 - **Ports.** PortsTests hold the horizontal without an arrow: `portsHarness` installs Keyboard,
   Selection, the fixtures, Ports, `channelsPlugin` (boxes have ports on its `Wire` channel, with the
   `sides:` and `role:` a test asks for, and discs on `Pipe`) and a connector over CanvasTesting's
@@ -3584,7 +3801,7 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
 | `EdgeMidpointDots`, the port drag, and `canBind` refusing what a channel doesn't take | Ports' dots, Selection's canvas buttons, whose drag goes to the one connector (ArrowPorts: `editor.beginArrow`), and `registrar.arrowBindingRule`, Arrows' canBind, for arrows already drawn. Released on nothing, nothing is drawn. |
 | `install*Lifecycle(editor)` side effects | `registrar.willDelete` inside transactions; `EditorService` for per-editor state. |
 | `module.json` + ESLint DAG + barrel `index.ts` | `Package.swift` with layers + `build.sh audit` + the compiler; `public` is the barrel. |
-| `plugins.config.ts` | `ShippedPlugins.all` in Composition. |
+| `plugins.config.ts` | `ShippedPlugins.plugins(pasteboard:model:)` in Composition. |
 
 ## Not built yet
 
@@ -3608,6 +3825,11 @@ Each of these adds to the design without changing what plugins are written again
   `ShapeBinding`'s three write paths.
 - **More document hooks** (before/after create and change), and **document-scoped services** for
   several windows on one board.
+- **More of schema cards**: keeping the last sync in the card's metadata, so any card saved out of
+  step (a failed sync, a call cut off by closing) opens knowing it, not only one whose schema has
+  no fields; a patch in place of the whole schema, so a big schema can be edited from its
+  description (and a long one answered sooner); streaming, for answers longer than a request that
+  doesn't stream should wait for; and schemas that type or check other shapes.
 - **An editing view hearing about outside changes** to its shape (needed once undo exists).
 - **Canvas features**: resize and rotate handles on the selection box; snapping; ⇧ locking a move
   to an axis; ⌥-drag to clone; the scribble brush; arrow-key nudging; a long press starting a drag;

@@ -34,6 +34,7 @@ extension ChangeRecorder: EditorService {
         expectEqual(log.changes.map(\.changed), [[], [a.id], [a.id], []])
         expectEqual(log.changes.map(\.removed), [[], [], [], [b.id]])
         expectEqual(log.changes.map(\.reordered), [true, false, true, true])
+        expectEqual(log.changes.map(\.replacedDocument), [false, false, false, false], "edits, not a replacement")
     },
     test("in one transaction, a shape added stays added however it changes, and one added and deleted isn't named") {
         let log = ChangeLog()
@@ -127,5 +128,6 @@ extension ChangeRecorder: EditorService {
         expectEqual(log.changes.last?.removed, [c])
         expectEqual(log.changes.last?.reordered, true)
         expectEqual(log.changes.last?.shapeIDs.contains(a), false)
+        expectEqual(log.changes.suffix(2).map(\.replacedDocument), [true, true], "a replacement says so, so a sync can tell it from an edit")
     },
 ])

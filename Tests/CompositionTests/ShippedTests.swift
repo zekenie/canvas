@@ -8,6 +8,7 @@ import Composition
 import CoreGraphics
 import DetailPanel
 import Geometry
+import LanguageModels
 import Selection
 import StickyNotes
 import SwiftUI
@@ -20,14 +21,25 @@ import ValidationDetails
 
 @MainActor let shippedTests = Suite("Shipped plugins", [
     test("the shipped plugin list registers without conflicts") {
-        _ = try ShippedPlugins.registry()
+        _ = try ShippedPlugins.registry(model: ScriptedLanguageModel())
     },
-    test("the toolbar is Select V, Hand H, Arrow A, Note N, Ellipse O, Task T, Rectangle R, Line L, Eraser E") {
-        let registry = try ShippedPlugins.registry()
-        expectEqual(registry.tools.map { ShippedPlugins.help(for: $0, in: registry) }, ["Select (V)", "Hand (H)", "Arrow (A)", "Note (N)", "Ellipse (O)", "Task (T)", "Rectangle (R)", "Line (L)", "Eraser (E)"])
+    test("the toolbar is Select V, Hand H, Arrow A, Note N, Ellipse O, Task T, Schema S, Rectangle R, Line L, Eraser E") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        expectEqual(registry.tools.map { ShippedPlugins.help(for: $0, in: registry) }, ["Select (V)", "Hand (H)", "Arrow (A)", "Note (N)", "Ellipse (O)", "Task (T)", "Schema (S)", "Rectangle (R)", "Line (L)", "Eraser (E)"])
+    },
+    test("a plugin that needs the key asks for Settings with the action the app's menu item sends") {
+        expectEqual(AnthropicSettingsView.showSettingsAction, BoardMenus.showSettings)
+    },
+    test("the editor's language model is the one passed: the app's is Claude Haiku with the key from Settings") {
+        let model = ScriptedLanguageModel()
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: model)
+        expect(editor.languageModel as? ScriptedLanguageModel === model)
+        let shipped = try require(ShippedPlugins.anthropicModel as? AnthropicModel)
+        expectEqual(shipped.model, AnthropicModel.haiku)
+        expectEqual(shipped.keys, .standard)
     },
     test("the registry report: who contributes what") {
-        expectEqual(try ShippedPlugins.registry().report, """
+        expectEqual(try ShippedPlugins.registry(model: ScriptedLanguageModel()).report, """
         core                 tool hand
         keyboard             service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
         selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
@@ -35,6 +47,7 @@ import ValidationDetails
         sticky-notes         shape sticky-note v2 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · channel note-link
         ellipses             shape ellipse · tool ellipse · shortcut O → tool ellipse
         task-cards           shape task-card v3 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · property title → task-card · ShapeTitles → task-card · ContentsTitles → task-card · ports task-link → task-card · channel task-link
+        schemas              service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link
         validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
         adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
         detail-panel         service DetailPanelState · ShapeDetails
@@ -48,6 +61,7 @@ import ValidationDetails
         locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · CanvasContextMenu
         ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
         arrow-ports          property channel → arrow · connector → arrow · ArrowBindingRules
+        language-models      service LanguageModelState
         automation           command line create · command line kinds
         rectangles           shape rectangle · tool rectangle · shortcut R → tool rectangle
         polylines            shape polyline · tool polyline · shortcut L → tool polyline
@@ -56,11 +70,11 @@ import ValidationDetails
         reordering           ShapeContextMenus
         """)
     },
-    test("every placed kind has a panel: a note its Checklist and Arrange (and Issues, empty), a task its own tabs too, other boxes Arrange, an arrow only its header") {
-        let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0) }
+    test("every placed kind has a panel: a note its Checklist and Arrange (and Issues, empty), a task and a schema their own tabs too, other boxes Arrange, an arrow only its header") {
+        let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
         let state = try require(h.editor.detailPanel)
         var panels: [String] = []
-        for (shortcut, x) in [("o", 100.0), ("r", 400), ("a", 700), ("n", 1000), ("t", 1400)] {
+        for (shortcut, x) in [("o", 100.0), ("r", 400), ("a", 700), ("n", 1000), ("t", 1400), ("s", 1800)] {
             h.key(shortcut)
             h.press(at: CGPoint(x: x, y: 100))
             h.drag(to: CGPoint(x: x + 150, y: 300))
@@ -71,7 +85,7 @@ import ValidationDetails
         // A note's and a task's headers rename them: an untitled note's shows the placeholder. A
         // note placed is empty, which is a warning, so it has Issues until it's written in.
         expectEqual(panels, ["Ellipse: Arrange", "Rectangle: Arrange", "Arrow: ", "(Note): Checklist, Arrange, Issues",
-                             "New Task: Task, Checklist, Style, Arrange"])
+                             "New Task: Task, Checklist, Style, Arrange", "(Untitled Schema): Schema, Arrange"])
     },
     test("a long title's pill stays clear of the checklist chip: Adornments lays out both") {
         // A note with its checklist (the chip, on its top-right corner), its long title (the pill,
@@ -81,7 +95,7 @@ import ValidationDetails
             var note = AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Buy milk")))
             note[TitleProperty.self] = title ? "A title much longer than the note is wide" : nil
             note[ChecklistProperty.self] = checklist ? [ChecklistItem(text: "oat milk")] : []
-            let editor = ShippedPlugins.makeEditor(document: CanvasDocument(shapes: [note]), scheduler: ManualScheduler())
+            let editor = ShippedPlugins.makeEditor(document: CanvasDocument(shapes: [note]), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
             return renderBitmap(editor, size: CGSize(width: 400, height: 340))
         }
         let plain = render(checklist: false, title: false)
@@ -98,7 +112,7 @@ import ValidationDetails
         expectEqual(both, 0, "no pixel is both the pill's and the chip's")
     },
     test("a line drawn with L is a Line in the panel, with nothing but its header") {
-        let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0) }
+        let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
         let state = try require(h.editor.detailPanel)
         h.key("l")
         h.press(at: CGPoint(x: 100, y: 100))
@@ -111,7 +125,7 @@ import ValidationDetails
         expectEqual(layout.tabs.count, 0)
     },
     test("the table of contents lists the welcome board: each note by its text, each arrow under the note it starts from") {
-        let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler())
+        let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let entries = try require(editor.tableOfContents).entries
         expectEqual(entries.map { $0.label?.text }, WelcomeBoard.texts)
         expectEqual(entries.map(\.symbol), Array(repeating: "note.text", count: 6))
@@ -119,7 +133,7 @@ import ValidationDetails
         expectEqual(entries[0].children?.first?.symbol, "arrow.up.right")
     },
     test("the table of contents marks each shape with issues in its outline's color: an empty note orange, an untitled task red") {
-        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let empty = editor.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200)))
         let untitled = editor.add(TaskCard(frame: CGRect(x: 300, y: 0, width: 240, height: 200)))
         let written = editor.add(StickyNote(frame: CGRect(x: 600, y: 0, width: 200, height: 200), text: "Hi"))
@@ -129,7 +143,7 @@ import ValidationDetails
         expectEqual(marks[written], [])
     },
     test("a title past 80 characters breaks its schema, which is a warning: an orange outline, a line in Issues, an orange dot") {
-        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let long = String(repeating: "Groceries ", count: 9)       // 90 characters
         let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Milk"), title: long)
         let task = editor.add(TaskCard(frame: CGRect(x: 400, y: 100, width: 240, height: 200)), title: long)
@@ -150,7 +164,7 @@ import ValidationDetails
         expectEqual(editor.validation?.result(for: note), nil)
     },
     test("the welcome board: six notes, three arrows, no warnings") {
-        let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler())
+        let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         expectEqual(editor.document.shapes.filter { $0.kind == StickyNote.kind }.count, 6)
         expectEqual(editor.document.shapes.filter { $0.kind == Arrow.kind }.count, 3)
         expectEqual(editor.validation?.results.count, 0)
@@ -165,7 +179,7 @@ import ValidationDetails
         expectEqual(notes, shipped)
     },
     test("O then a drag places an ellipse and moves it into place") {
-        let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0) }
+        let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
         h.key("o")
         h.press(at: CGPoint(x: 300, y: 300))
         h.drag(to: CGPoint(x: 340, y: 320))

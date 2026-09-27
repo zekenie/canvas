@@ -7,7 +7,9 @@ import Clipboard
 import Composition
 import CoreGraphics
 import Foundation
+import LanguageModels
 import Locking
+import Schemas
 import Selection
 import StickyNotes
 import TaskCards
@@ -15,10 +17,10 @@ import TestKit
 import Titles
 import Validation
 
-// Ports as shipped, on real notes and task cards: a note links to a note, a task to a task. This
-// target doesn't import Ports, so it reads an arrow's channel where the board keeps it (its added
-// values, as BoardCodec writes them), and finds the dots by where they're drawn: 12 points out from
-// the middle of a side, at zoom 1.
+// Ports as shipped, on real notes, task cards and schema cards: a note links to a note, a task to a
+// task, a schema to a schema. This target doesn't import Ports, so it reads an arrow's channel where
+// the board keeps it (its added values, as BoardCodec writes them), and finds the dots by where
+// they're drawn: 12 points out from the middle of a side, at zoom 1.
 
 /// A side of a shape, and where its dot would be.
 private enum Side: CaseIterable {
@@ -52,9 +54,17 @@ private func around(_ point: CGPoint, _ radius: CGFloat = 6) -> CGRect {
     return task
 }
 
+/// Named, so it's clear which is which; as tall as an empty card.
+@MainActor private func schemaCard(_ frame: CGRect, title: String) -> AnyShapeRecord {
+    var card = SchemaCard(frame: frame)
+    card.setTitle(title)
+    card.frame = frame
+    return AnyShapeRecord(ShapeRecord(card))
+}
+
 /// The shipped plugins on a board of `shapes`, their clipboard on `pasteboard`.
 @MainActor private func shipped(_ shapes: [AnyShapeRecord], _ pasteboard: NSPasteboard) -> EditorHarness {
-    EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(shapes: shapes), scheduler: $0, pasteboard: pasteboard) }
+    EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(shapes: shapes), scheduler: $0, pasteboard: pasteboard, model: ScriptedLanguageModel()) }
 }
 
 /// The arrows on the board.
@@ -72,6 +82,7 @@ private func around(_ point: CGPoint, _ radius: CGFloat = 6) -> CGRect {
 /// What the stickies' and the tasks' channels are called on a board.
 private let noteLink = JSONValue.string(String(describing: NoteLink.id))
 private let taskLink = JSONValue.string(String(describing: TaskLink.id))
+private let schemaLink = JSONValue.string(String(describing: SchemaLink.id))
 
 /// A resting dot's middle: its channel's color at 60% over what's under it, in the renders' device RGB.
 @MainActor private func restingDot(_ color: NSColor, over under: [Int]) -> [Int] {
@@ -198,6 +209,32 @@ extension EditorHarness {
         expectEqual(arrow.props.start.binding?.shapeID, a.id)
         expectEqual(arrow.props.end.binding?.shapeID, b.id)
         expectEqual(try channel(of: arrow.id, in: h.editor), taskLink)
+    },
+    test("a schema card's dots are on all four sides, in its accent; a drag from one to another card draws an arrow on the schema-link channel, bound to both, and to a task nothing") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let aFrame = CGRect(x: 100, y: 100, width: 240, height: 89), bFrame = CGRect(x: 100, y: 400, width: 240, height: 89)
+        let taskFrame = CGRect(x: 500, y: 100, width: 240, height: 200)
+        let a = schemaCard(aFrame, title: "Customer"), b = schemaCard(bFrame, title: "Order")
+        let h = shipped([a, b, task(taskFrame)], pasteboard)
+        let size = CGSize(width: 800, height: 560)
+        let rest = renderBitmap(h.editor, size: size)
+        h.move(to: center(aFrame))
+        let hovered = renderBitmap(h.editor, size: size)
+        for side in Side.allCases {
+            let dot = side.dot(of: aFrame)
+            expect(changedPixels(rest, hovered, in: around(dot)) > 40, "the card's \(side) dot shows")
+            expectNear(pixel(hovered, at: dot), restingDot(SchemaLink.color, over: pixel(rest, at: dot)), "the card's \(side) dot")
+        }
+        let before = h.editor.document
+        h.connect(from: .right, of: aFrame, to: center(taskFrame))
+        expectEqual(h.editor.document, before, "a card links to no task")
+        h.connect(from: .bottom, of: aFrame, to: center(bFrame))
+        let arrow = try require(arrows(h).first)
+        expectEqual(arrows(h).count, 1)
+        expectEqual(arrow.props.start.binding?.shapeID, a.id)
+        expectEqual(arrow.props.end.binding?.shapeID, b.id)
+        expectEqual(try channel(of: arrow.id, in: h.editor), schemaLink)
     },
     test("a titled, locked note with a checklist shows its dots whole: no pixel is both a dot's and the pill's, the lock chip's or the checklist chip's") {
         let pasteboard = NSPasteboard.withUniqueName()
@@ -360,12 +397,12 @@ extension EditorHarness {
         let json = try JSONDecoder().decode(JSONValue.self, from: data)
         expectEqual(json["format"], 1)
         expectEqual(try require(json["shapes"]?.arrayValue).map { $0["added"] }, [nil, nil, nil])
-        let withoutArrowPorts = try Registry(plugins: ShippedPlugins.plugins(pasteboard: pasteboard).filter { $0.id != "arrow-ports" })
+        let withoutArrowPorts = try Registry(plugins: ShippedPlugins.plugins(pasteboard: pasteboard, model: ScriptedLanguageModel()).filter { $0.id != "arrow-ports" })
         expectEqual(try BoardCodec(registry: withoutArrowPorts).encode(h.editor.document), data)
         // On a board of notes, which has added values (their checklists), the welcome board's arrows
         // add none.
         let welcome = try JSONDecoder().decode(JSONValue.self, from: BoardCodec(registry: h.editor.registry).encode(
-            ShippedPlugins.makeEditor(scheduler: ManualScheduler(), pasteboard: pasteboard).document))
+            ShippedPlugins.makeEditor(scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel()).document))
         expectEqual(welcome["versions"]?["added"], .object(["checklist": 0]))
         let welcomeArrows = try require(welcome["shapes"]?.arrayValue).filter { $0["kind"]?.stringValue == Arrow.kind.rawValue }
         expectEqual(welcomeArrows.map { $0["added"] }, [nil, nil, nil])

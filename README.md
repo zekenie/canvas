@@ -107,6 +107,8 @@ Sources/
   StickyNotes/          sticky notes, with in-place editing
   Ellipses/             ellipses
   TaskCards/            task cards, edited only in the detail panel
+  Schemas/              schema cards: a JSON Schema on the canvas, as a card that lists its fields, written in its
+                        panel in words or as JSON, the two kept in step by Claude
   Validation/           the validation horizontal: rules, engine, outline
   DetailPanel/          the detail panel horizontal: tabs, sections, bindings, the inspector view
   ContextMenus/         the context menu horizontal: right-click items, groups, the selection's menu
@@ -121,6 +123,7 @@ Sources/
   Ports/                a horizontal any kind opts into: dots beside its sides that a drag connects from,
                         on channels that say what may connect to what
   Automation/           the command line's horizontal: every command canvas runs, create and kinds its own
+  LanguageModels/       a horizontal that lends every editor a language model (Claude Haiku), its key in Settings
   ValidationDetails/    a bridge between two horizontals: validation issues in the panel's Issues tab
   ValidationContents/   a bridge between two horizontals: a dot on the row of each shape with issues
   ArrowPorts/           a bridge: arrows are what a drag from a port draws, bound only where its channel goes
@@ -134,5 +137,6 @@ Examples/               the smallest plugin for each pattern
   Reordering/           menu items for every kind with a capability: the Arrange submenu
 Tests/                  test executables (the core, each plugin with logic of its own, the examples,
                         the shipped app) and their support libraries, on a small macro-free kit
-scripts/                re-records the proof of concept's behavior, which the tests hold the app to
+scripts/                re-records the proof of concept's behavior, which the tests hold the app to; schema-prompts/
+                        has the quick evals of what schema cards ask Claude
 ```

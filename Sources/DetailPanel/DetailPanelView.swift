@@ -461,14 +461,7 @@ struct StatusList: View {
     let spacing: CGFloat
     var body: some View {
         VStack(alignment: .leading, spacing: spacing) {
-            ForEach(statuses.indices, id: \.self) { i in
-                // Only the symbol takes the tone: orange or red text is hard to read.
-                Label {
-                    Text(statuses[i].text).foregroundStyle(statuses[i].tone == .neutral ? .secondary : .primary)
-                } icon: {
-                    Image(systemName: statuses[i].tone.symbol).foregroundStyle(statuses[i].tone.color)
-                }
-            }
+            ForEach(statuses.indices, id: \.self) { i in DetailStatusLine(statuses[i]) }
         }
     }
 }

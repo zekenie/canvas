@@ -6,6 +6,7 @@ import CanvasUI
 import Composition
 import CoreGraphics
 import Geometry
+import LanguageModels
 import Selection
 import StickyNotes
 import TestKit
@@ -56,7 +57,7 @@ let pocWelcomeTexts = [
 
 @MainActor let parityTests = Suite("Pixel parity", [
     test("the welcome board, a selected bent arrow, and a zoomed selection render identically") {
-        let editor = ShippedPlugins.makeEditor(document: WelcomeBoard.document(texts: pocWelcomeTexts), scheduler: ManualScheduler())
+        let editor = ShippedPlugins.makeEditor(document: WelcomeBoard.document(texts: pocWelcomeTexts), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let canvas = CanvasView(editor: editor)
         canvas.frame = CGRect(x: 0, y: 0, width: 1200, height: 800)
         let arrows = editor.document.shapes.filter { $0.kind == Arrow.kind }.map(\.id)

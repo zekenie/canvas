@@ -58,6 +58,44 @@ public func expectThrows<E: Error & Equatable>(_ expected: E, file: StaticString
 
 public struct RequireFailed: Error { public init() {} }
 
+// Async work in a synchronous test. Tasks on the main actor, and what they wait for (a URLSession's
+// answer, a continuation resumed), land while the main run loop runs, so a test runs it.
+
+/// Runs the main run loop, a turn at a time, until `done` holds; fails the test if it doesn't within
+/// `timeout` seconds, and returns whether it did. Always runs at least one turn.
+@MainActor @discardableResult
+public func spinRunLoop(until done: () -> Bool, timeout: TimeInterval = 2, file: StaticString = #fileID, line: UInt = #line) -> Bool {
+    let deadline = Date(timeIntervalSinceNow: timeout)
+    repeat {
+        guard Date() < deadline else {
+            failures.append("\(file):\(line): timed out after \(timeout) s")
+            return false
+        }
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.002))
+    } while !done()
+    return true
+}
+
+/// Runs `body` to its end, turning the main run loop meanwhile, and returns what it returns, or
+/// throws what it throws; fails the test (and stops it) if it takes longer than `timeout` seconds.
+@MainActor
+public func awaitResult<T>(timeout: TimeInterval = 5, file: StaticString = #fileID, line: UInt = #line,
+                           _ body: @escaping @MainActor () async throws -> T) throws -> T {
+    let outcome = Outcome<T>()
+    let task = Task { @MainActor in
+        do { outcome.result = .success(try await body()) } catch { outcome.result = .failure(error) }
+    }
+    guard spinRunLoop(until: { outcome.result != nil }, timeout: timeout, file: file, line: line), let result = outcome.result else {
+        task.cancel()
+        throw RequireFailed()
+    }
+    return try result.get()
+}
+
+@MainActor private final class Outcome<T> {
+    var result: Result<T, any Error>?
+}
+
 /// Unwraps, or fails the test and stops it.
 @MainActor
 public func require<T>(_ value: T?, _ message: @autoclosure () -> String = "", file: StaticString = #fileID, line: UInt = #line) throws -> T {

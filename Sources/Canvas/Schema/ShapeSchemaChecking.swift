@@ -48,7 +48,9 @@ extension Registry {
     /// unless it's required; and so is an added property given a value that's none (a blank title,
     /// `ShapeProperty.isNone`). It throws for a kind no plugin registers, a property the kind doesn't
     /// have, and a value that doesn't read as its property's type; one that breaks only its schema's
-    /// bounds reads (`schemaViolations(of:)` finds it). The shape is in no document yet.
+    /// bounds reads (`schemaViolations(of:)` finds it). A kind whose props hold something that
+    /// follows from the rest puts it in step (`DerivedProps`: a schema card's height), so the shape
+    /// may differ there from what the object says. The shape is in no document yet.
     public func shape(_ kind: ShapeKind, properties: JSONObject, id: ShapeID = ShapeID()) throws(ShapePropertiesError) -> AnyShapeRecord {
         guard let definition = definition(for: kind) else { throw .unknownKind(kind) }
         let own = Set(definition.ownPropertyNames), added = Set(self.properties(for: kind))
@@ -71,6 +73,7 @@ extension Registry {
         } catch {
             throw .unreadable(BoardCodec.describe(error))
         }
+        if let derived = definition as? any DerivedProps { derived.erasedDerive(&record) }
         // As a board's: a shape whose frame isn't finite could never be saved, so it never gets in.
         guard record.box?.isFinite ?? true else { throw .unreadable("its frame isn't finite") }
         for (key, value) in addedJSON {
