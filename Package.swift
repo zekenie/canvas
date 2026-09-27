@@ -64,9 +64,10 @@ let package = Package(
         .target(name: "Titles", dependencies: ["Canvas", "Geometry", "Selection"], path: "Examples/Titles"),            // layer: horizontal
         .target(name: "Rectangles", dependencies: ["Canvas"], path: "Examples/Rectangles"),                             // layer: vertical
         .target(name: "Eraser", dependencies: ["Canvas"], path: "Examples/Eraser"),                                     // layer: vertical
+        .target(name: "Polylines", dependencies: ["Canvas", "Geometry"], path: "Examples/Polylines"),                   // layer: vertical
         .target(name: "EllipseTitles", dependencies: ["Canvas", "Ellipses", "Titles"], path: "Examples/EllipseTitles"), // layer: bridge
 
-        .target(name: "Composition", dependencies: ["Arrows", "Canvas", "Checklists", "DetailPanel", "EllipseTitles", "Ellipses", "Eraser", "Rectangles", "Selection", "StickyNotes", "TaskCards", "Titles", "Validation", "ValidationDetails"]), // layer: composition
+        .target(name: "Composition", dependencies: ["Arrows", "Canvas", "Checklists", "DetailPanel", "EllipseTitles", "Ellipses", "Eraser", "Polylines", "Rectangles", "Selection", "StickyNotes", "TaskCards", "Titles", "Validation", "ValidationDetails"]), // layer: composition
         .executableTarget(name: "InfiniteCanvas", dependencies: ["Canvas", "CanvasUI", "Composition"]),           // layer: app
 
         .target(name: "TestKit", dependencies: [], path: "Tests/TestKit"),                                        // layer: testsupport
@@ -80,7 +81,8 @@ let package = Package(
         .executableTarget(name: "ChecklistsTests", dependencies: ["Canvas", "CanvasTesting", "Checklists", "DetailPanel", "Geometry", "Selection", "TestKit"], path: "Tests/ChecklistsTests"), // layer: test
         .executableTarget(name: "TaskCardsTests", dependencies: ["Canvas", "CanvasTesting", "Checklists", "DetailPanel", "Selection", "TaskCards", "TestKit", "Validation"], path: "Tests/TaskCardsTests"), // layer: test
         .executableTarget(name: "StickyNotesTests", dependencies: ["Canvas", "CanvasTesting", "Checklists", "DetailPanel", "Selection", "StickyNotes", "TestKit", "Validation"], path: "Tests/StickyNotesTests"), // layer: test
-        .executableTarget(name: "ExamplesTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "EllipseTitles", "Ellipses", "Eraser", "Rectangles", "Selection", "TestKit", "Titles"], path: "Tests/ExamplesTests"), // layer: test
+        .executableTarget(name: "RectanglesTests", dependencies: ["Canvas", "CanvasTesting", "Rectangles", "TestKit"], path: "Tests/RectanglesTests"), // layer: test
+        .executableTarget(name: "ExamplesTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "EllipseTitles", "Ellipses", "Eraser", "Polylines", "Rectangles", "Selection", "TestKit", "Titles"], path: "Tests/ExamplesTests"), // layer: test
         .executableTarget(name: "CompositionTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "CanvasUI", "Checklists", "Composition", "DetailPanel", "Geometry", "Selection", "StickyNotes", "TaskCards", "TestKit", "Validation"], path: "Tests/CompositionTests"), // layer: test
     ],
     swiftLanguageModes: [.v6]

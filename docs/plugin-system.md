@@ -12,10 +12,13 @@ This is the same system as data-canvas's `definePlugin`, in Swift. [The last sec
 maps one onto the other.
 
 - [Four nouns](#four-nouns)
+- [Your first plugin](#your-first-plugin)
+- [I want to…](#i-want-to)
 - [Horizontal and vertical](#horizontal-and-vertical)
 - [The module graph](#the-module-graph)
 - [A vertical plugin](#a-vertical-plugin)
 - [Tools and sessions](#tools-and-sessions)
+- [A shape without a frame](#a-shape-without-a-frame)
 - [A horizontal plugin](#a-horizontal-plugin)
 - [Selection](#selection)
 - [The detail panel](#the-detail-panel)
@@ -43,10 +46,171 @@ Two more things hold them together:
   sessions, input and drawing. `CanvasView` only turns `NSEvent`s into editor calls, through a host
   API that plugins can't see.
 
+## Your first plugin
+
+[Rectangles](../Examples/Rectangles/Rectangles.swift) is the smallest plugin you can see on the
+canvas: a kind, how it draws, and a tool (R) that places it. These are all the steps it took, from
+an empty directory to a tool in the app's toolbar. A plugin of your own takes the same ones.
+
+**1. Write the module.** Every plugin is a Swift module with a directory of its own:
+`Sources/<Name>`, or `Examples/<Name>` for an example. This is the whole of
+`Examples/Rectangles/Rectangles.swift`:
+
+```swift
+import AppKit
+import Canvas
+
+public struct Rectangle: BoxShapeProps {
+    public static let kind: ShapeKind = "rectangle"
+    public var frame: CGRect
+    public init(frame: CGRect = .zero) { self.frame = frame }
+}
+
+struct RectangleDefinition {}
+
+extension RectangleDefinition: ShapeDefinition {
+    func render(_ shape: ShapeRecord<Rectangle>, in context: RenderContext) {
+        context.fillWithShadow(CGPath(rect: shape.frame, transform: nil), .systemTeal)
+    }
+}
+
+public struct RectanglesPlugin: CanvasPlugin {
+    public init() {}
+    public var id: PluginID { "rectangles" }
+
+    public func register(into registrar: inout PluginRegistrar) {
+        registrar.shape(RectangleDefinition()) { rectangle in
+            let place = rectangle.placement(size: CGSize(width: 160, height: 100)) { Rectangle() }
+            rectangle.tool(label: "Rectangle", systemImage: "rectangle", shortcut: "r", placing: place)
+        }
+    }
+}
+```
+
+`Rectangle` is the kind: its data, named once. `RectangleDefinition` says how it looks, and a kind
+with a frame needs to say nothing else. `RectanglesPlugin` registers both, with a tool that puts a
+160 × 100 rectangle where the canvas is pressed. [A vertical plugin](#a-vertical-plugin) goes
+through it part by part.
+
+**2. Declare it in `Package.swift`**, on one line, with its layer. Rectangles is a vertical (a
+feature: a kind and its tool), and the only module of this project it imports is the core:
+
+```swift
+.target(name: "Rectangles", dependencies: ["Canvas"], path: "Examples/Rectangles"), // layer: vertical
+```
+
+`path:` is only for a module outside `Sources`. The dependencies must be exactly the modules the
+code imports, apart from Apple's. `./build.sh audit` checks that in about a second, without
+compiling, and says what's wrong in a line:
+
+```
+Examples/Rectangles/Rectangles.swift:3: Rectangles imports Geometry, but Package.swift doesn't list it as a dependency of Rectangles
+Rectangles lists Geometry in Package.swift but never imports it
+build.sh: Rectangles (vertical) may not depend on Ellipses (vertical); vertical may use: foundation horizontal
+build.sh: Examples/Stars isn't a target in Package.swift
+```
+
+Every `./build.sh` and `./test.sh` runs it first. [The module graph](#the-module-graph) lists
+everything it checks.
+
+**3. Test it.** A module's tests are an executable, `Tests/<Name>Tests`, with its own line in
+`Package.swift`:
+
+```swift
+.executableTarget(name: "RectanglesTests", dependencies: ["Canvas", "CanvasTesting", "Rectangles", "TestKit"], path: "Tests/RectanglesTests"), // layer: test
+```
+
+Its `main.swift` runs its suites:
+
+```swift
+import TestKit
+
+runTests([rectanglesTests])
+```
+
+and the tests drive a headless editor as a user would
+([RectanglesTests.swift](../Tests/RectanglesTests/RectanglesTests.swift)):
+
+```swift
+@MainActor let rectanglesTests = Suite("Rectangles", [
+    test("R and a press place a 160 × 100 rectangle that follows the pointer") {
+        let h = try EditorHarness(plugins: [RectanglesPlugin()])
+        expect(h.key("r"))
+        h.press(at: CGPoint(x: 300, y: 200))
+        h.drag(to: CGPoint(x: 310, y: 205))
+        h.release()
+        let rectangle = try require(h.editor.document.shapes.first)
+        expectEqual(rectangle.kind, Rectangle.kind)
+        expectEqual(rectangle.box, CGRect(x: 230, y: 155, width: 160, height: 100))
+        expectEqual(h.editor.currentToolID, .hand)
+    },
+])
+```
+
+A test may use only its module, what that module depends on, and the test kits (`CanvasTesting`,
+`TestKit`). So this editor has no Selection, and its default tool, which placing returns to, is the
+Hand. A plugin that depends on Selection installs `SelectionPlugin()` first in its tests, as the app
+does. Run them with:
+
+```
+TEST_FILTER=Rectangles ./test.sh
+```
+
+`./test.sh` builds every module and runs every test executable. It also fails on a `Suite` that
+`main.swift` doesn't pass to `runTests`, which would otherwise never run without a word. [Testing
+plugins](#testing-plugins) has the rest of the kit.
+
+**4. Ship it.** Three edits put it in the app:
+
+- `Package.swift`: add it to Composition's dependencies.
+- [`ShippedPlugins.swift`](../Sources/Composition/ShippedPlugins.swift): import it, and add
+  `RectanglesPlugin()` to `ShippedPlugins.all`. The list's order is the toolbar's, and the order
+  overlays draw in.
+- [`ShippedTests.swift`](../Tests/CompositionTests/ShippedTests.swift) pins the toolbar and
+  [the registry report](#the-registry): add the new tool, `"Rectangle (R)"`, and the plugin's line,
+  `rectangles          shape rectangle · tool rectangle [r]`.
+
+Then `./build.sh && open build/InfiniteCanvas.app`, and press R.
+
+A plugin list that doesn't register stops the app at launch, and CompositionTests fails before
+that. The error says who clashed over what; the usual one is a shortcut some other tool has:
+
+```
+rectangles and stars both claim shortcut r in Tools
+```
+
+[The registry](#the-registry) lists every error.
+
+## I want to…
+
+Once one plugin works, the question is which piece the next feature needs.
+
+| I want to… | Use | Example |
+|---|---|---|
+| Add a shape with a frame | `BoxShapeProps`; a `ShapeDefinition` with `render`; a place tool | [Rectangles](#your-first-plugin) |
+| Add a shape without a frame (a line, a path) | `ShapeProps`; `geometry`, `hitTest` and `CustomTranslation`; a tool that inserts it | [Polylines](#a-shape-without-a-frame) |
+| Hit or outline a shape more exactly than its frame | Override `geometry`, `hitTest` or `indicatorPath` | [Ellipses](../Sources/Ellipses/Ellipses.swift) |
+| Edit a shape in place, as text | `Editable`, and an `editingPlacement` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
+| Add a tool that makes no shape | `registrar.tool`, a `Tool` and a `Session` | [Eraser](#tools-and-sessions) |
+| Give a shape handles to drag | Selection's `HandleProviding` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
+| Edit a kind's properties beside the canvas | `x.details { DetailSection(...) }` | [TaskCards](#the-full-showcase-taskcards) |
+| Add a concern any kind can opt into | An `ExtensionPoint`, sugar on `ShapeRegistrar`, and whatever reads the point | [Titles](#a-horizontal-plugin), [Validation](../Sources/Validation/Validation.swift) |
+| Give that concern a tab on the kinds that opt in | A `DetailTab` at order 50, contributed from the same sugar | [Checklists](#a-horizontals-feature-tab-checklists) |
+| Opt another plugin's kind into a concern | A bridge, which imports both | [EllipseTitles](#a-horizontal-plugin), [ValidationDetails](#footer-lines-from-a-bridge-validationdetails) |
+| Keep state per editor: an engine, a cache, a timer | `registrar.service`, an `EditorService` | [Validation](../Sources/Validation/Validation.swift)'s `ValidationEngine` |
+| Draw above every shape | `registrar.overlay`, a `CanvasOverlay` | [Titles](#a-horizontal-plugin) |
+| Let go of shapes as they're deleted | `registrar.willDelete` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
+| Create a kind with a double-click on empty canvas | `x.createOnDoubleClick(place)` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
+| Keep a kind from being selected | `x.unselectable()`, or `x.selectable { ... }` | [Selection](#selection) |
+| Show a shape's state at the foot of the panel | `registrar.detailStatusForEveryShape` | [ValidationDetails](#footer-lines-from-a-bridge-validationdetails) |
+
+The rule of thumb: behavior intrinsic to a kind is a [capability](#capabilities), a protocol its
+definition adopts; behavior any plugin can add to any kind is an extension point.
+
 ## Horizontal and vertical
 
 A **vertical** plugin is a feature: a shape kind and the tool that places it, or a tool on its own.
-Sticky notes, ellipses, arrows, task cards, rectangles and the eraser are verticals.
+Sticky notes, ellipses, arrows, task cards, rectangles, polylines and the eraser are verticals.
 
 A **horizontal** plugin is a concern that cuts across kinds. It declares an extension point, and any
 kind can take part by contributing to it. Validity is the canonical example: *a shape can be valid
@@ -102,7 +266,7 @@ Each target is one line, with its layer:
 | foundation | foundation | Geometry, Canvas (the core) |
 | ui | foundation | CanvasUI (the AppKit view, the SwiftUI toolbar, and `CanvasFocus`) |
 | horizontal | foundation, horizontal | Selection, Validation, Titles, DetailPanel, Checklists |
-| vertical | foundation, horizontal | Arrows, StickyNotes, Ellipses, TaskCards, Rectangles, Eraser |
+| vertical | foundation, horizontal | Arrows, StickyNotes, Ellipses, TaskCards, Rectangles, Polylines, Eraser |
 | bridge | foundation, horizontal, vertical | EllipseTitles, ValidationDetails |
 | composition | foundation, horizontal, vertical, bridge | Composition (the shipped plugin list) |
 | app | foundation, ui, composition | InfiniteCanvas |
@@ -134,46 +298,12 @@ it can be named at all, and every module compiles with `MemberImportVisibility`,
 from a module you didn't import is an error rather than a silent transitive edge. (Importing a
 transitive dependency without declaring it is what the import check above catches.)
 
-**Adding a module:** make its directory (`Sources/X`, or `Examples/X` with `path:`), add its line to
-`Package.swift` with a layer, and add its tests. Every non-app module is compiled by `./test.sh`,
-even before anything depends on it. **Shipping it:** add it to Composition's dependencies in
-`Package.swift`, import it in `Sources/Composition/ShippedPlugins.swift`, and add its plugin to
-`ShippedPlugins.all`, whose order is the toolbar's.
+**Adding a module** is [Your first plugin](#your-first-plugin), steps 2 to 4. Every non-app module
+is compiled by `./test.sh`, even before anything depends on it.
 
 ## A vertical plugin
 
-This is the whole of the smallest one, [`Examples/Rectangles`](../Examples/Rectangles/Rectangles.swift):
-
-```swift
-import AppKit
-import Canvas
-
-public struct Rectangle: BoxShapeProps {
-    public static let kind: ShapeKind = "rectangle"
-    public var frame: CGRect
-    public init(frame: CGRect = .zero) { self.frame = frame }
-}
-
-struct RectangleDefinition {}
-
-extension RectangleDefinition: ShapeDefinition {
-    func render(_ shape: ShapeRecord<Rectangle>, in context: RenderContext) {
-        context.fillWithShadow(CGPath(rect: shape.frame, transform: nil), .systemTeal)
-    }
-}
-
-public struct RectanglesPlugin: CanvasPlugin {
-    public init() {}
-    public var id: PluginID { "rectangles" }
-
-    public func register(into registrar: inout PluginRegistrar) {
-        registrar.shape(RectangleDefinition()) { rectangle in
-            let place = rectangle.placement(size: CGSize(width: 160, height: 100)) { Rectangle() }
-            rectangle.tool(label: "Rectangle", systemImage: "rectangle", shortcut: "r", placing: place)
-        }
-    }
-}
-```
+[Rectangles](#your-first-plugin) is a whole vertical. What each part of it does:
 
 - **The kind is its props.** `ShapeProps` values are `Codable`, `Equatable` and `Sendable`.
   `BoxShapeProps` adds a `frame`, and with it most behavior for free. The document stores each
@@ -182,7 +312,7 @@ public struct RectanglesPlugin: CanvasPlugin {
 
   | Requirement | Default |
   |---|---|
-  | `geometry(of:in:)` | the frame (box kinds); every other kind must say |
+  | `geometry(of:in:)` | the frame (box kinds); every other kind must say ([a shape without a frame](#a-shape-without-a-frame)) |
   | `hitTest(_:on:in:)` | inside the geometry's closed outline |
   | `indicatorPath(of:in:)` | the geometry's outline (the target hint, and hover and selection outlines) |
 
@@ -190,10 +320,11 @@ public struct RectanglesPlugin: CanvasPlugin {
   arrows all follow. Override `hitTest` or `indicatorPath` only when you can do better; Ellipses
   does both (an exact hit test, a smooth outline). A kind that knows better than its geometry
   whether the marquee touches it (Arrows, against its arc) adopts Selection's `BrushHitTesting`.
-- **Conform in an extension**, as above, for `ShapeDefinition` and its capabilities, `Tool`,
-  `Session`, `EditorService`, and an extension point that implements `check`. Swift flags a member that *nearly* matches a defaulted requirement
-  (a wrong label, a missing return type) only in the extension that declares the conformance, and
-  the build fails on it. Declared on the type, a near miss compiles and the default silently runs.
+- **Conform in an extension**, as Rectangles does, for `ShapeDefinition` and its capabilities,
+  `Tool`, `Session`, `EditorService`, and an extension point that implements `check`. Swift flags a
+  member that *nearly* matches a defaulted requirement (a wrong label, a missing return type) only
+  in the extension that declares the conformance, and the build fails on it. Declared on the type,
+  a near miss compiles and the default silently runs.
 - **The kind is stated once.** Everything registered inside `registrar.shape(...) { rectangle in ... }`
   is stamped with `"rectangle"`: the tool's id, its report line, and any horizontal contributions.
 - **Placements create box shapes** for place tools and Selection's double-click claim.
@@ -318,6 +449,107 @@ The details:
 - **Commands** (`CanvasCommand`: `.delete`, `.insertNewline`, `.selectAll`) are the standard
   AppKit actions the canvas view forwards with `editor.perform`. A plugin claims each with
   `registrar.command`; unclaimed, `perform` returns false.
+
+## A shape without a frame
+
+A kind with a frame gets three things from it: where the shape is, what hits it, and how it moves.
+A kind without one (a line, a path, a connector) says each itself.
+[`Examples/Polylines`](../Examples/Polylines/Polylines.swift) is a freehand line: the points the
+pointer passes through while it's dragged with the Line tool (L).
+
+```swift
+public struct Polyline: ShapeProps {
+    public static let kind: ShapeKind = "polyline"
+    public var points: [CGPoint]
+    public init(points: [CGPoint] = []) { self.points = points }
+}
+
+extension PolylineDefinition: ShapeDefinition {
+    func render(_ shape: ShapeRecord<Polyline>, in context: RenderContext) {
+        let cg = context.cg
+        cg.addLines(between: shape.props.points)
+        cg.setStrokeColor(PolylineStyle.color.cgColor)
+        cg.setLineWidth(PolylineStyle.strokeWidth)
+        cg.setLineCap(.round)
+        cg.setLineJoin(.round)
+        cg.strokePath()
+    }
+
+    /// Required: only box kinds have a default. Open, so nothing is inside it.
+    func geometry(of shape: ShapeRecord<Polyline>, in context: ShapeContext) -> ShapeGeometry {
+        ShapeGeometry(outline: shape.props.points, isClosed: false)
+    }
+
+    /// The default hits only inside a closed outline, so an open kind says what hits it: here,
+    /// anything within a few view points of the stroke.
+    func hitTest(_ point: CGPoint, on shape: ShapeRecord<Polyline>, in context: ShapeContext) -> Bool {
+        let margin = PolylineStyle.hitMargin / context.zoom + PolylineStyle.strokeWidth / 2
+        let points = shape.props.points
+        return zip(points, points.dropFirst()).contains { distanceToSegment(from: point, $0, $1) <= margin }
+    }
+}
+
+extension PolylineDefinition: CustomTranslation {
+    func beginTranslation(of shape: ShapeRecord<Polyline>, movingWith _: Set<ShapeID>,
+                          in _: inout Transaction) -> ShapeTranslation<Polyline> {
+        let start = shape.props.points
+        return ShapeTranslation { delta, shape, _ in
+            shape.props.points = start.map { $0 + delta }
+        }
+    }
+}
+```
+
+- **`ShapeProps`, not `BoxShapeProps`.** Nothing that works from a frame applies: no default
+  geometry, no placements, no Arrange tab in the detail panel, and no culling (the core draws a
+  shape without a frame whether or not it's on screen).
+- **`render` draws in world units**, into `context.cg`, with the camera already applied and a fresh
+  graphics state each time; AppKit drawing (`NSAttributedString.draw`) lands there too.
+  `context.zoom` turns view points into world units, `context.isEditing` says the shape's editing
+  view is up, and `fillWithShadow` fills a path the way the canvas's other shapes are filled.
+- **`geometry` is required**, and the rest of the canvas reads it. Hover and selection stroke the
+  outline, left open. The marquee selects a line when it crosses one of its segments: for an open
+  outline, Selection's default `isHit(byBrush:)` never considers an inside. And `isClosed: false`
+  keeps arrows off it, since they bind only to closed shapes.
+- **`hitTest` is required in practice.** The default hits only inside a closed outline, so an open
+  kind that doesn't say can't be pressed, hovered or erased. Hit margins are view points, divided
+  by `zoom`.
+- **`CustomTranslation` moves it.** The core moves a shape with a frame by its frame; any other kind
+  stays put when the selection is dragged, unless it moves itself. `beginTranslation` runs once, as
+  the drag starts: capture what you move from. The closure it returns runs on every drag event,
+  with the pointer's offset from the press. Escape puts the shape back without your help.
+
+**The tool inserts the shape itself.** Placements make box shapes, so the Line tool starts a
+session, which puts the line in on the first drag (a click draws nothing, as with arrows) and adds
+a point on every drag after that:
+
+```swift
+extension DrawingSession: Session {
+    func drag(_ pointer: Pointer, in editor: CanvasEditor) {
+        if let id {
+            editor.transact { $0.update(id, as: Polyline.self) { $0.props.points.append(pointer.world) } }
+        } else {
+            let line = ShapeRecord(Polyline(points: [start, pointer.world]))
+            editor.transact { $0.insert(line) }
+            id = line.id
+        }
+    }
+
+    /// Escape takes back the line being drawn.
+    func cancel(in editor: CanvasEditor) -> Bool {
+        if let id { editor.transact { $0.delete([id]) } }
+        return true
+    }
+}
+```
+
+The tool stays current after a line, as the eraser does. Its id is the kind's,
+`ToolID(placing: Polyline.kind)`, as a place tool's is, so the detail panel names a selected line
+after the tool: "Line", with the tool's symbol.
+
+[Arrows](../Sources/Arrows/ArrowDefinition.swift) is the full-size version: a kind without a frame
+that also has handles (`HandleProviding`), an exact marquee test (`BrushHitTesting`), a paint order
+of its own (`PaintOrderAnchored`), and a translation that keeps its bindings.
 
 ## A horizontal plugin
 
@@ -890,7 +1122,7 @@ it, the core or a horizontal.
 | Capability | For | Used by |
 |---|---|---|
 | `Editable` | Edited in place: an editing placement, or Selection's double-click and Return. Supplies an `NSView` laid over the shape; writes go through `EditContext.update`. | StickyNotes |
-| `CustomTranslation` | Moving by its own rules instead of by its frame, when a `TranslatingSession` moves it (dragging the selection, a shape just placed). When a drag starts, `beginTranslation` gets the shape, every shape moving with it and the starting transaction (committed on its own, before the first move), and returns a `ShapeTranslation`: a closure run on every drag event with the pointer's delta, after the moving boxes have moved. A kind without a frame needs this to be movable at all. | Arrows (alone, bound ends slide on their shapes; with a shape they're bound to, they keep every binding) |
+| `CustomTranslation` | Moving by its own rules instead of by its frame, when a `TranslatingSession` moves it (dragging the selection, a shape just placed). When a drag starts, `beginTranslation` gets the shape, every shape moving with it and the starting transaction (committed on its own, before the first move), and returns a `ShapeTranslation`: a closure run on every drag event with the pointer's delta, after the moving boxes have moved. A kind without a frame needs this to be movable at all. | Arrows (alone, bound ends slide on their shapes; with a shape they're bound to, they keep every binding); Polylines (every point by the delta) |
 | `HandleProviding` (Selection's) | Draggable handles on the only selected shape. The select tool finds, draws and hit-tests them; `pressHandle` returns `.drag` or `.consumed`, and `dragSession` does the dragging. | Arrows |
 | `BrushHitTesting` (Selection's) | Whether the marquee touches it, when the brush overlaps its bounds without containing them. Default: `ShapeGeometry.isHit(byBrush:)`. | Arrows (against the visible arc) |
 | `PaintOrderAnchored` | Painted just above another shape, and never raised when pressed. | Arrows (above the shapes they join) |
@@ -985,6 +1217,7 @@ detail-panel        service DetailPanelState · ShapeDetails
 checklists          overlay ChecklistOverlay
 validation-details  DetailStatuses
 rectangles          shape rectangle · tool rectangle [r]
+polylines           shape polyline · tool polyline [l]
 eraser              tool eraser [e]
 titles              overlay TitleOverlay
 ellipse-titles      ShapeTitles → ellipse
@@ -1000,18 +1233,22 @@ Tests are plain executables built on a small macro-free kit (swift-testing's mac
 with this toolchain, and there's no XCTest). `./test.sh` builds and runs them all.
 `TEST_FILTER=substring ./test.sh` runs the matching tests. A test that would open a real menu
 (which shows on screen, even from an unshown window) is opt-in: `TEST_UI_MENUS=1 ./test.sh`.
+[Your first plugin](#your-first-plugin) sets up a test target. A test that selects and drags as a
+user does installs Selection first
+([ExamplesTests](../Tests/ExamplesTests/ExamplesTests.swift)):
 
 ```swift
-@MainActor let rectangleTests = Suite("Rectangles", [
-    test("R and a press place a rectangle") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), RectanglesPlugin()])
-        h.key("r")
-        h.press(at: CGPoint(x: 300, y: 200))
-        h.release()
-        let rectangle = try require(h.editor.document.shapes.first)
-        expectEqual(rectangle.box, CGRect(x: 220, y: 150, width: 160, height: 100))
-    },
-])
+test("Polylines: the select tool moves a line by its own translation, and Escape puts it back") {
+    let h = try EditorHarness(plugins: [SelectionPlugin(), PolylinesPlugin()])
+    let points = [CGPoint(x: 100, y: 100), CGPoint(x: 200, y: 100)]
+    let id = h.add(Polyline(points: points))
+    h.press(at: CGPoint(x: 150, y: 101))
+    h.drag(to: CGPoint(x: 180, y: 141))
+    expectEqual(h.editor.selection, id)
+    expectEqual(h.editor.document[id]?.typed(as: Polyline.self)?.props.points, [CGPoint(x: 130, y: 140), CGPoint(x: 230, y: 140)])
+    h.escape()
+    expectEqual(h.editor.document[id]?.typed(as: Polyline.self)?.props.points, points)
+},
 ```
 
 - `EditorHarness` (CanvasTesting) drives a headless editor like a user: `move`, `press`, `drag`

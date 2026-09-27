@@ -28,6 +28,7 @@ and `./build.sh audit` checks it without compiling.
 | New ellipse | O, then click; keep dragging to place it |
 | New task | T, then click; edit it in the detail panel |
 | New rectangle | R, then click (an example plugin) |
+| Draw a line | L, then drag; Escape takes back the line being drawn (an example plugin) |
 | Erase | E, then click or drag across shapes (an example plugin) |
 | Select | Click a shape, or drag across empty space to select what the marquee touches (⌘: only what it encloses; ⇧: add to the selection) |
 | Add to or remove from the selection | ⇧-click (or ⌘-click) a shape |

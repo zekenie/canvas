@@ -15,9 +15,9 @@ import Validation
     test("the shipped plugin list registers without conflicts") {
         _ = try ShippedPlugins.registry()
     },
-    test("the toolbar is Select V, Hand H, Arrow A, Note N, Ellipse O, Task T, Rectangle R, Eraser E") {
+    test("the toolbar is Select V, Hand H, Arrow A, Note N, Ellipse O, Task T, Rectangle R, Line L, Eraser E") {
         let tools = try ShippedPlugins.registry().tools
-        expectEqual(tools.map(\.help), ["Select (V)", "Hand (H)", "Arrow (A)", "Note (N)", "Ellipse (O)", "Task (T)", "Rectangle (R)", "Eraser (E)"])
+        expectEqual(tools.map(\.help), ["Select (V)", "Hand (H)", "Arrow (A)", "Note (N)", "Ellipse (O)", "Task (T)", "Rectangle (R)", "Line (L)", "Eraser (E)"])
     },
     test("the registry report: who contributes what") {
         expectEqual(try ShippedPlugins.registry().report, """
@@ -32,6 +32,7 @@ import Validation
         checklists          overlay ChecklistOverlay
         validation-details  DetailStatuses
         rectangles          shape rectangle · tool rectangle [r]
+        polylines           shape polyline · tool polyline [l]
         eraser              tool eraser [e]
         titles              overlay TitleOverlay
         ellipse-titles      ShapeTitles → ellipse
@@ -51,6 +52,19 @@ import Validation
         }
         expectEqual(panels, ["Ellipse: Arrange", "Rectangle: Arrange", "Arrow: ", "Note: Checklist, Arrange",
                              "New Task: Task, Checklist, Style, Arrange"])
+    },
+    test("a line drawn with L is a Line in the panel, with nothing but its header") {
+        let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0) }
+        let state = try require(h.editor.detailPanel)
+        h.key("l")
+        h.press(at: CGPoint(x: 100, y: 100))
+        h.drag(to: CGPoint(x: 300, y: 100))
+        h.release()
+        h.key("v")
+        h.click(at: CGPoint(x: 300, y: 100))
+        let layout = state.layout(for: try require(h.editor.selection.flatMap { h.editor.document[$0] }))
+        expectEqual(layout.header.title, "Line")
+        expectEqual(layout.tabs.count, 0)
     },
     test("the welcome board: six notes, three arrows, no warnings") {
         let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler())

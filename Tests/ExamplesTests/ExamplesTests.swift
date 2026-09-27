@@ -5,6 +5,7 @@ import CoreGraphics
 import EllipseTitles
 import Ellipses
 import Eraser
+import Polylines
 import Rectangles
 import Selection
 import TestKit
@@ -35,24 +36,77 @@ struct MoreLabelTitles: CanvasPlugin {
     }
 }
 
+/// Rectangles' own tests are in RectanglesTests; these use it as a shape to work with.
 @MainActor let examplesTests = Suite("Examples", [
-    test("Rectangles: R and a press place a 160 × 100 rectangle that follows the pointer") {
+    test("Rectangles: placed with Selection installed, a new rectangle is selected") {
         let h = try EditorHarness(plugins: [SelectionPlugin(), RectanglesPlugin()])
         expect(h.key("r"))
-        h.press(at: CGPoint(x: 300, y: 200))
-        h.drag(to: CGPoint(x: 310, y: 205))
-        h.release()
+        h.click(at: CGPoint(x: 300, y: 200))
         let rectangle = try require(h.editor.document.shapes.first)
-        expectEqual(rectangle.kind, Rectangle.kind)
-        expectEqual(rectangle.box, CGRect(x: 230, y: 155, width: 160, height: 100))
         expectEqual(h.editor.selection, rectangle.id)
         expectEqual(h.editor.currentToolID, .select)
     },
-    test("Rectangles: hit testing comes from the frame, with nothing written for it") {
-        let h = try EditorHarness(plugins: [SelectionPlugin(), RectanglesPlugin()])
-        let id = h.add(Rectangle(frame: CGRect(x: 0, y: 0, width: 100, height: 50)))
-        expectEqual(h.editor.shape(at: CGPoint(x: 90, y: 40)), id)
-        expectEqual(h.editor.shape(at: CGPoint(x: 110, y: 40)), nil)
+    test("Polylines: L and a drag draw a line through every point dragged; a click draws nothing") {
+        let h = try EditorHarness(plugins: [SelectionPlugin(), PolylinesPlugin()])
+        expect(h.key("l"))
+        h.click(at: CGPoint(x: 50, y: 50))
+        expect(h.editor.document.shapes.isEmpty, "a click draws nothing")
+        h.press(at: CGPoint(x: 100, y: 100))
+        h.drag(to: CGPoint(x: 150, y: 120))
+        h.drag(to: CGPoint(x: 200, y: 100))
+        h.release()
+        let line = try require(h.editor.document.shapes.first?.typed(as: Polyline.self))
+        expectEqual(line.props.points, [CGPoint(x: 100, y: 100), CGPoint(x: 150, y: 120), CGPoint(x: 200, y: 100)])
+        expectEqual(h.editor.currentToolID, ToolID(placing: Polyline.kind), "the tool stays current")
+    },
+    test("Polylines: Escape takes back the line being drawn") {
+        let h = try EditorHarness(plugins: [SelectionPlugin(), PolylinesPlugin()])
+        expect(h.key("l"))
+        h.press(at: CGPoint(x: 100, y: 100))
+        h.drag(to: CGPoint(x: 150, y: 120))
+        h.escape()
+        h.release()
+        expect(h.editor.document.shapes.isEmpty)
+    },
+    test("Polylines: a line is hit near its stroke only, never inside the loop it draws") {
+        let h = try EditorHarness(plugins: [SelectionPlugin(), PolylinesPlugin()])
+        let triangle = [CGPoint(x: 0, y: 0), CGPoint(x: 200, y: 0), CGPoint(x: 200, y: 200), CGPoint(x: 0, y: 0)]
+        let id = h.add(Polyline(points: triangle))
+        expectEqual(h.editor.shape(at: CGPoint(x: 100, y: 4)), id, "within 3 pt of the 3 pt stroke")
+        expectEqual(h.editor.shape(at: CGPoint(x: 100, y: 6)), nil)
+        expectEqual(h.editor.shape(at: CGPoint(x: 150, y: 50)), nil, "inside the loop")
+    },
+    test("Polylines: the select tool moves a line by its own translation, and Escape puts it back") {
+        let h = try EditorHarness(plugins: [SelectionPlugin(), PolylinesPlugin()])
+        let points = [CGPoint(x: 100, y: 100), CGPoint(x: 200, y: 100)]
+        let id = h.add(Polyline(points: points))
+        h.press(at: CGPoint(x: 150, y: 101))
+        h.drag(to: CGPoint(x: 180, y: 141))
+        expectEqual(h.editor.selection, id)
+        expectEqual(h.editor.document[id]?.typed(as: Polyline.self)?.props.points, [CGPoint(x: 130, y: 140), CGPoint(x: 230, y: 140)])
+        h.escape()
+        expectEqual(h.editor.document[id]?.typed(as: Polyline.self)?.props.points, points)
+    },
+    test("Polylines: the marquee selects a line it crosses, but not from inside the loop") {
+        let h = try EditorHarness(plugins: [SelectionPlugin(), PolylinesPlugin()])
+        let triangle = [CGPoint(x: 0, y: 0), CGPoint(x: 200, y: 0), CGPoint(x: 200, y: 200), CGPoint(x: 0, y: 0)]
+        let id = h.add(Polyline(points: triangle))
+        h.press(at: CGPoint(x: 120, y: 20))
+        h.drag(to: CGPoint(x: 160, y: 60))
+        expectEqual(h.editor.selectedShapeIDs, [], "a brush in the loop crosses no segment")
+        h.drag(to: CGPoint(x: 160, y: -20))
+        expectEqual(h.editor.selectedShapeIDs, [id])
+        h.release()
+    },
+    test("Polylines: arrows don't bind to a line, since it's open") {
+        let h = try EditorHarness(plugins: [SelectionPlugin(), ArrowsPlugin(), PolylinesPlugin()])
+        h.add(Polyline(points: [CGPoint(x: 100, y: 100), CGPoint(x: 300, y: 100)]))
+        expect(h.key("a"))
+        h.press(at: CGPoint(x: 200, y: 300))
+        h.drag(to: CGPoint(x: 200, y: 101))
+        h.release()
+        let arrow = try require(h.editor.document.shapes.last?.typed(as: Arrow.self))
+        expect(arrow.props.end.binding == nil, "the end stays free")
     },
     test("Eraser: dragging across shapes deletes them, and an arrow lets go of what was erased") {
         let h = try EditorHarness(plugins: [SelectionPlugin(), ArrowsPlugin(), RectanglesPlugin(), EraserPlugin()])
@@ -127,11 +181,12 @@ struct MoreLabelTitles: CanvasPlugin {
         }
     },
     test("the examples' report: who contributes what") {
-        let registry = try Registry(plugins: [RectanglesPlugin(), EraserPlugin(), EllipsesPlugin(), TitlesPlugin(), EllipseTitlesPlugin()])
+        let registry = try Registry(plugins: [RectanglesPlugin(), EraserPlugin(), PolylinesPlugin(), EllipsesPlugin(), TitlesPlugin(), EllipseTitlesPlugin()])
         expectEqual(registry.report, """
         core            tool hand [h]
         rectangles      shape rectangle · tool rectangle [r]
         eraser          tool eraser [e]
+        polylines       shape polyline · tool polyline [l]
         ellipses        shape ellipse · tool ellipse [o]
         titles          overlay TitleOverlay
         ellipse-titles  ShapeTitles → ellipse

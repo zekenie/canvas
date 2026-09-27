@@ -6,6 +6,7 @@ import DetailPanel
 import EllipseTitles
 import Ellipses
 import Eraser
+import Polylines
 import Rectangles
 import Selection
 import StickyNotes
@@ -26,7 +27,7 @@ public enum ShippedPlugins {
             ArrowsPlugin(), StickyNotesPlugin(), EllipsesPlugin(), TaskCardsPlugin(),
             ValidationPlugin(), DetailPanelPlugin(), ChecklistsPlugin(), ValidationDetailsPlugin(),
             // The examples (Examples/). Each is one line here; delete it to leave it out.
-            RectanglesPlugin(), EraserPlugin(), TitlesPlugin(), EllipseTitlesPlugin(),
+            RectanglesPlugin(), PolylinesPlugin(), EraserPlugin(), TitlesPlugin(), EllipseTitlesPlugin(),
         ]
     }
 
