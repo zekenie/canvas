@@ -19,8 +19,13 @@ final class ArrowTargeting {
     /// Makes a new arrow's start bind precisely where it was pressed.
     var arrowToolIsPrecise = false
     private var preciseTimer: ScheduledTask?
+    /// Every plugin's rules for what an end may bind to (`ArrowBindingRules`), found once.
+    let rules: [ArrowBindingRules.Contribution]
 
-    init(editor: CanvasEditor) { self.editor = editor }
+    init(editor: CanvasEditor) {
+        self.editor = editor
+        rules = editor.registry.contributions(to: ArrowBindingRules.self).map(\.value)
+    }
 
     var connectables: Connectables { Connectables(shapes: editor.shapeContext) }
 
@@ -37,15 +42,25 @@ final class ArrowTargeting {
 
     // MARK: - Targeting
 
-    /// The front-most shape under `point` that arrows can bind to.
-    func connectable(at point: CGPoint) -> ConnectableShape? {
-        connectables.shape(at: point)
+    /// The front-most shape under `point` that arrows can bind to, of those `accepts` lets it.
+    func connectable(at point: CGPoint, accepting accepts: ((AnyShapeRecord) -> Bool)? = nil) -> ConnectableShape? {
+        connectables.shape(at: point, accepting: accepts)
     }
 
     /// The shape an arrow end at `point` would bind to. Holding ⌘ (or ⌃) binds to nothing.
-    func arrowTarget(at point: CGPoint, modifiers: Modifiers) -> ConnectableShape? {
+    func arrowTarget(at point: CGPoint, modifiers: Modifiers, accepting accepts: ((AnyShapeRecord) -> Bool)? = nil) -> ConnectableShape? {
         guard modifiers.isDisjoint(with: [.command, .control]) else { return nil }
-        return connectable(at: point)
+        return connectable(at: point, accepting: accepts)
+    }
+
+    /// What an end of an arrow may bind to, by the plugins' rules (`ArrowBindingRules`) and
+    /// `also`: nil, anything, when there are neither.
+    func filter(for arrowID: ShapeID, _ end: ArrowEnd, also: ((AnyShapeRecord) -> Bool)? = nil) -> ((AnyShapeRecord) -> Bool)? {
+        guard !rules.isEmpty, let arrow = editor.document[arrowID] else { return also }
+        let rules = rules, registry = editor.registry
+        return { shape in
+            rules.allSatisfy { $0(ArrowBindingQuery(arrow: arrow, end: end, shape: shape, registry: registry)) } && (also?(shape) ?? true)
+        }
     }
 
     /// Before pressing, the arrow tool outlines the shape it would start from. Hovering one shape
@@ -74,12 +89,15 @@ final class ArrowTargeting {
     }
 
     /// Binds one end of an arrow to the shape at `point`, or frees it if there's none. This is
-    /// tldraw's `updateArrowTargetState` and `onTerminalHandleDrag`.
-    func bindTerminal(of arrowID: ShapeID, _ end: ArrowEnd, to point: CGPoint, isPrecise: Bool, modifiers: Modifiers) {
+    /// tldraw's `updateArrowTargetState` and `onTerminalHandleDrag`. It binds only to a shape the
+    /// plugins' rules let it (`ArrowBindingRules`), and `also` (a drag from a port's), looking
+    /// through the rest.
+    func bindTerminal(of arrowID: ShapeID, _ end: ArrowEnd, to point: CGPoint, isPrecise: Bool, modifiers: Modifiers,
+                      accepting also: ((AnyShapeRecord) -> Bool)? = nil) {
         guard let arrow = arrow(arrowID) else { return }
         let current = arrow[end].binding
         let opposite = arrow[end.opposite].binding
-        guard let target = arrowTarget(at: point, modifiers: modifiers) else {
+        guard let target = arrowTarget(at: point, modifiers: modifiers, accepting: filter(for: arrowID, end, also: also)) else {
             updateArrow(arrowID) { $0[end] = .free(point) }
             editor.hintedShapeID = nil
             return

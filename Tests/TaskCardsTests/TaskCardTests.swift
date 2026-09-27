@@ -6,6 +6,7 @@ import ContextMenus
 import DetailPanel
 import Foundation
 import Keyboard
+import Ports
 import Selection
 import TableOfContents
 import TaskCards
@@ -34,13 +35,14 @@ import Validation
         expectEqual(registry.report.split(separator: "\n").first { $0.hasPrefix("task-cards") }.map(String.init), """
         task-cards         shape task-card v3 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · \
         ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · \
-        ShapeDetails → task-card · ShapeContextMenus → task-card · property title → task-card · ShapeTitles → task-card · ContentsTitles → task-card
+        ShapeDetails → task-card · ShapeContextMenus → task-card · property title → task-card · ShapeTitles → task-card · ContentsTitles → task-card · \
+        ports task-link → task-card · channel task-link
         """)
     },
-    test("needs validation, checklists, the panel, context menus and the table of contents installed") {
+    test("needs validation, checklists, the panel, context menus, the table of contents and ports installed") {
         let plugins = taskPlugins()
         for (point, owner) in [("ValidationRules", PluginID.validation), ("ShapeChecklists", .checklists), ("ShapeDetails", .detailPanel),
-                              ("ShapeContextMenus", .contextMenus), ("ContentsRows", .tableOfContents)] {
+                              ("ShapeContextMenus", .contextMenus), ("ContentsRows", .tableOfContents), ("ShapePorts", .ports)] {
             expectThrows(RegistryError.ownerNotInstalled(point: point, owner: owner, contributor: .taskCards)) {
                 _ = try Registry(plugins: plugins.filter { $0.id != owner })
             }

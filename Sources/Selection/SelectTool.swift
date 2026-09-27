@@ -11,7 +11,7 @@ final class SelectTool {}
 
 extension SelectTool: Tool {
     func cursor(in editor: CanvasEditor) -> CanvasCursor {
-        if editor.hoveredButton != nil { return .pointingHand }
+        if let button = editor.selectionState?.hoveredButton { return button.source.cursor }
         return editor.hoveredHandle != nil ? .openHand : .standard
     }
 
@@ -24,7 +24,7 @@ extension SelectTool: Tool {
         defer { editor.selectionState?.pressEnded() }
         if let hit = editor.buttonHit(atViewPoint: pointer.view) {
             editor.pressedButton = hit.button
-            editor.session = PressingButtonSession(source: hit.source, button: hit.button)
+            editor.session = PressingButtonSession(source: hit.source, button: hit.button, press: pointer.view)
             return
         }
         if let handle = editor.handle(atViewPoint: pointer.view) {
@@ -74,16 +74,17 @@ extension SelectTool: Tool {
 
     func pointerMoved(_ pointer: Pointer, in editor: CanvasEditor) {
         editor.selectionState?.lastPointer = pointer.view
-        if let button = editor.button(atViewPoint: pointer.view) {
-            editor.hoveredButton = button
+        let state = editor.selectionState
+        if let hit = editor.buttonHit(atViewPoint: pointer.view) {
+            state?.hoveredButton = hit
             editor.hoveredHandle = nil
             editor.hovered = nil
         } else if let handle = editor.handle(atViewPoint: pointer.view) {
-            editor.hoveredButton = nil
+            state?.hoveredButton = nil
             editor.hoveredHandle = handle
             editor.hovered = nil
         } else {
-            editor.hoveredButton = nil
+            state?.hoveredButton = nil
             editor.hoveredHandle = nil
             editor.hovered = editor.selectableShape(at: pointer.world)
         }
@@ -93,7 +94,7 @@ extension SelectTool: Tool {
         editor.selectionState?.lastPointer = nil
         editor.hovered = nil
         editor.hoveredHandle = nil
-        editor.hoveredButton = nil
+        editor.selectionState?.hoveredButton = nil
     }
 
     /// Escape with nothing under way deselects all.

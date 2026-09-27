@@ -5,6 +5,7 @@ import Checklists
 import ContextMenus
 import DetailPanel
 import Keyboard
+import Ports
 import Selection
 import TableOfContents
 import StickyNotes
@@ -15,7 +16,7 @@ import Validation
 /// The note and every plugin it opts into.
 @MainActor var notePlugins: [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
-     TableOfContentsPlugin(), TitlesPlugin()]
+     TableOfContentsPlugin(), TitlesPlugin(), PortsPlugin()]
 }
 
 extension ShapeRecord where Props == StickyNote {
@@ -35,7 +36,7 @@ extension ShapeRecord where Props == StickyNote {
         expect(registry.definition(for: StickyNote.kind) is any Editable)
         expectEqual(registry.contributions(to: DoubleClickPlacement.self).map(\.value.kind), [StickyNote.kind])
     },
-    test("can't be installed without the keyboard, selection, validation, checklists and titles plugins it opts into, the panel, context menus and the table of contents") {
+    test("can't be installed without the keyboard, selection, validation, checklists, titles and ports plugins it opts into, the panel, context menus and the table of contents") {
         expectThrows(RegistryError.ownerNotInstalled(point: "KeyboardShortcuts", owner: .keyboard, contributor: .stickyNotes)) {
             _ = try Registry(plugins: [StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin()])
         }
@@ -62,6 +63,10 @@ extension ShapeRecord where Props == StickyNote {
         expectThrows(RegistryError.ownerNotInstalled(point: "ContentsTitles", owner: .tableOfContents, contributor: .stickyNotes)) {
             _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
                                        ContextMenusPlugin(), TitlesPlugin()])
+        }
+        expectThrows(RegistryError.ownerNotInstalled(point: "ShapePorts", owner: .ports, contributor: .stickyNotes)) {
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
+                                       ContextMenusPlugin(), TableOfContentsPlugin(), TitlesPlugin()])
         }
     },
     test("its row in the table of contents: its text on one line, or Empty Note, and its checklist's tally") {

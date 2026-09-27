@@ -2,6 +2,7 @@ import AppKit
 import Canvas
 import Checklists
 import Keyboard
+import Ports
 import Selection
 import Titles
 import Validation
@@ -56,7 +57,9 @@ public struct StickyNotesPlugin: CanvasPlugin {
             note.title()                                       // and titles: a title, its pill, and its row's name
             note.noteHeader()                                  // renamed in the detail panel's header
             note.noteRow()                                     // and the table of contents
+            note.noteLinks()                                   // and ports: arrows from a note to a note
         }
+        registrar.channel(NoteLink.self)                       // which this plugin declares
     }
 }
 

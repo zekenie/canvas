@@ -2,7 +2,7 @@
 
 A native macOS infinite canvas: a small core, with everything on it (selecting, what each key does,
 sticky notes, ellipses, arrows modeled on tldraw's, task cards, validation, checklists, a detail
-panel, a table of contents) added by plugins.
+panel, a table of contents, ports to drag arrows from) added by plugins.
 The plugin system is a port, in Swift, of the one in data-canvas. Start with
 [docs/plugin-system.md](docs/plugin-system.md).
 
@@ -54,6 +54,7 @@ A board remembers, on each Mac, where you left its view, and whether its minimap
 | Cut, copy and paste shapes | ⌘X, ⌘C and ⌘V (Edit menu, or right-click a shape; right-click empty space to paste). A paste lands where the originals were if they're in view, else in the middle of the view; arrows copied with their shapes stay attached to the copies |
 | Arrow tool | A (V or Escape to go back to select) |
 | Draw an arrow | Drag from one shape to another with the arrow tool. Arriving quickly aims at a shape's center; arriving slowly, or pausing inside the shape, aims at that exact spot |
+| Link a note to a note, or a task to a task | With the select tool, point at one: dots show just outside its sides (a note has none on top; zoomed out below 25%, none show). Drag from a dot to another note (or task): those it could link to are outlined faintly as you drag, and released anywhere else, nothing is drawn |
 | Aim into a shape | Hold ⌥ while drawing or dragging an end: the arrow runs all the way to the spot |
 | Don't attach | Hold ⌘ while drawing or dragging an end |
 | Snap angle | Hold ⇧ while dragging an end (15° steps) |
@@ -68,6 +69,8 @@ A titled shape shows its title in a pill above its top-left corner, and in the t
 Name a note in the detail panel's header; an ellipse is titled by its size (the ellipse-titles example). A title is
 part of its shape's schema, at most 80 characters: a longer one gets a warning, as does any value outside the
 bounds its schema sets (the validation plugin checks every shape against its kind's schema).
+A note's dots link it only to another note, and a task's only to another task: each kind has a channel of its own
+(the ports plugin), and the link is an arrow (the arrow-ports bridge) that keeps to its channel when an end is re-aimed.
 
 ## Layout
 
@@ -91,8 +94,12 @@ Sources/
   Clipboard/            the clipboard horizontal: cut, copy and paste, which kinds may opt out of
   Titles/               a horizontal any kind opts into: a title, a property it adds (or derived), in a pill
                         and the table of contents, and a header that renames it
+  Locking/              a horizontal every kind is in: a lock from the context menu, its chip and its shake
+  Ports/                a horizontal any kind opts into: dots beside its sides that a drag connects from,
+                        on channels that say what may connect to what
   ValidationDetails/    a bridge between two horizontals: validation issues in the panel's Issues tab
   ValidationContents/   a bridge between two horizontals: a dot on the row of each shape with issues
+  ArrowPorts/           a bridge: arrows are what a drag from a port draws, bound only where its channel goes
   Composition/          the shipped plugin list, and the welcome board
   InfiniteCanvas/       the SwiftUI app
 Examples/               the smallest plugin for each pattern

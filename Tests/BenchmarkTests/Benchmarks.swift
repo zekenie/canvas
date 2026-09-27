@@ -19,9 +19,9 @@ import Validation
 
 // The persistence plan's budgets, for boards of generated shapes: saving and opening, validation's
 // first read (every shape checked, against its kind's schema too), and one hover and one drag frame
-// (the input, then drawing the whole canvas, and the minimap with it) at 60 fps. `./build.sh bench`
-// runs these in a release build and holds them to the budgets; `./test.sh` runs them debug and
-// small, so they keep working, and only reports.
+// (the input, then drawing the whole canvas, and the minimap with it), on a note and from a note's
+// port, at 60 fps. `./build.sh bench` runs these in a release build and holds them to the budgets;
+// `./test.sh` runs them debug and small, so they keep working, and only reports.
 #if DEBUG
 let sizes = [300]
 let holdsToBudgets = false
@@ -200,6 +200,56 @@ enum Budget {
             if holdsToBudgets {
                 expect(hover < Budget.frame, "a hover over \(size) shapes took \(hover) ms")
                 expect(drag < Budget.frame, "a drag over \(size) shapes took \(drag) ms")
+            }
+        }
+    },
+    test("a hover on a note's dot, and a drag from it drawing an arrow across the board, each with the whole canvas redrawn, fit in a frame") {
+        let viewport = CGSize(width: 1200, height: 800)
+        let context = try bitmapContext(viewport)
+        for size in sizes {
+            let document = generatedBoard(shapes: size)
+            let registry = try ShippedPlugins.registry()
+            let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
+            // The first note's bottom dot, 12 points below it in the gap between the rows, where no
+            // arrow leaves it.
+            let note = try require(document.shapes.first { $0.kind == StickyNote.kind }?.box)
+            let dot = CGPoint(x: note.midX, y: note.maxY + 12)
+            h.move(to: CGPoint(x: note.midX, y: note.midY))
+            var step = 0
+            let hover = median(runs: 21) {
+                step += 1
+                h.move(to: dot + CGPoint(x: CGFloat(step % 7) - 3, y: 0))
+                draw(h.editor, into: context, size: viewport)
+            }
+            expectEqual(h.editor.cursor, .openHand, "the pointer is on the dot")
+            let hoverInput = median(runs: 21) {
+                step += 1
+                h.move(to: dot + CGPoint(x: CGFloat(step % 7) - 3, y: 0))
+            }
+            // Pressed there and dragged round a circle over the rows in view: notes, which take the
+            // arrow, and tasks and ellipses, which don't.
+            let around = { (turn: Int) in
+                CGPoint(x: 700 + 300 * cos(CGFloat(turn) * .pi / 21), y: 450 + 300 * sin(CGFloat(turn) * .pi / 21))
+            }
+            h.press(at: dot)
+            h.drag(to: around(0))
+            expectEqual(h.editor.document.shapes.count, size + 1, "an arrow is being drawn")
+            var turn = 0
+            let drag = median(runs: 21) {
+                turn += 1
+                h.drag(to: around(turn))
+                draw(h.editor, into: context, size: viewport)
+            }
+            let dragInput = median(runs: 21) {
+                turn += 1
+                h.drag(to: around(turn))
+            }
+            h.release()
+            report(String(format: "%6d shapes: hover on a note's dot %5.1f ms, drag from it %5.1f ms (budget %.0f); hover input %.1f, drag input %.1f",
+                          size, hover, drag, Budget.frame, hoverInput, dragInput))
+            if holdsToBudgets {
+                expect(hover < Budget.frame, "a hover on a note's dot over \(size) shapes took \(hover) ms")
+                expect(drag < Budget.frame, "a drag from a note's dot over \(size) shapes took \(drag) ms")
             }
         }
     },

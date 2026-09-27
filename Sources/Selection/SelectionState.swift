@@ -37,9 +37,10 @@ final class SelectionState {
     }
     /// Every plugin's canvas buttons (`CanvasButtons`), found once.
     @ObservationIgnored let buttonSources: [CanvasButtonSource]
-    @ObservationIgnored var hoveredButton: AnyHashable? {
+    /// The button under the pointer, with its plugin's buttons, which say what the cursor is.
+    @ObservationIgnored var hoveredButton: ButtonHit? {
         didSet {
-            guard hoveredButton != oldValue else { return }
+            guard hoveredButton?.button != oldValue?.button || hoveredButton?.source.cursor != oldValue?.source.cursor else { return }
             editor.setNeedsDisplay()
             editor.refreshCursor()
         }
@@ -49,7 +50,10 @@ final class SelectionState {
     }
     /// Where the pointer was last seen over the canvas in the select tool, in view points: where to
     /// look for a button again when buttons change under a pointer that's still.
-    @ObservationIgnored var lastPointer: CGPoint?
+    @ObservationIgnored var lastPointer: CGPoint? {
+        // What's drawn only while the pointer's over the canvas (a port's dots) comes and goes with it.
+        didSet { if (lastPointer == nil) != (oldValue == nil) { editor.setNeedsDisplay() } }
+    }
 
     init(editor: CanvasEditor) {
         self.editor = editor
@@ -61,9 +65,9 @@ final class SelectionState {
     /// button found takes the hover, as the pointer moving onto it would.
     func findHoveredButton() {
         guard !buttonSources.isEmpty, editor.currentToolID == .select, editor.session == nil else { return }
-        let button = lastPointer.flatMap { editor.button(atViewPoint: $0) }
-        hoveredButton = button
-        if button != nil {
+        let hit = lastPointer.flatMap { editor.buttonHit(atViewPoint: $0) }
+        hoveredButton = hit
+        if hit != nil {
             hoveredHandle = nil
             hover(nil)
         }

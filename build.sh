@@ -281,12 +281,13 @@ for hit in ${(f)"$(matching "^[^:]+:[0-9]+:[[:space:]]*(@[A-Za-z]+[[:space:]]+)*
     problems+="$(at $hit): a public type named $match[2] shadows $what"
 done
 
-# Ids: a module may write another module's ShapeKind, PluginID, ToolID or PropertyKey as a string
-# only if it depends on that module. The graph already keeps a module from naming another's types;
-# this keeps it from reaching that module's shapes, tools, plugins or added properties by string
-# instead. A module owns the ids its non-test code declares: as a static member (`static let kind:
-# ShapeKind = "ellipse"`, `static let arrow: ToolID = "arrow"`, `static let key: PropertyKey =
-# "checklist"`) or as a plugin's `id` (`var id: PluginID { "ellipses" }`). Test fixtures' ids
+# Ids: a module may write another module's ShapeKind, PluginID, ToolID, PropertyKey or ChannelID
+# (Ports') as a string only if it depends on that module. The graph already keeps a module from
+# naming another's types; this keeps it from reaching that module's shapes, tools, plugins, added
+# properties or channels by string instead. A module owns the ids its non-test code declares: as a
+# static member (`static let kind: ShapeKind = "ellipse"`, `static let arrow: ToolID = "arrow"`,
+# `static let key: PropertyKey = "checklist"`, `static let id: ChannelID = "note-link"`) or as a
+# plugin's `id` (`var id: PluginID { "ellipses" }`). Test fixtures' ids
 # ("box", "card") are ordinary words, so they own nothing. Any other string literal is a use,
 # except an SF Symbol or asset name (the argument of systemImage:, systemName:, systemSymbolName:
 # or named:), which only looks like one; a kind's own property's name (`Property("title", ...)`),
@@ -294,7 +295,7 @@ done
 # before a colon (`["title": ...]`, `"title" : ...` in JSON text, but not a `case` label or a
 # ternary's), which names a member of some JSON (a kind's own props, a schema's keywords) that
 # ordinary words name too.
-ID_DECL='((let|var)[[:space:]]+id|static[[:space:]]+(let|var)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*)[[:space:]]*(:[[:space:]]*(ShapeKind|PluginID|ToolID|PropertyKey)[[:space:]]*(=|\{)|=[[:space:]]*(ShapeKind|PluginID|ToolID|PropertyKey)\((rawValue:)?)[[:space:]]*"[^"\\]+"'
+ID_DECL='((let|var)[[:space:]]+id|static[[:space:]]+(let|var)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*)[[:space:]]*(:[[:space:]]*(ShapeKind|PluginID|ToolID|PropertyKey|ChannelID)[[:space:]]*(=|\{)|=[[:space:]]*(ShapeKind|PluginID|ToolID|PropertyKey|ChannelID)\((rawValue:)?)[[:space:]]*"[^"\\]+"'
 module_of() { print -r -- ${${1#*/}%%/*} }       # Sources/Canvas/Model/Identity.swift:3:... -> Canvas
 typeset -A ID_OWNERS
 for hit in ${(f)"$(matching $ID_DECL)"}; do

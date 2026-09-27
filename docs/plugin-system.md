@@ -2,7 +2,8 @@
 
 Everything on the canvas comes from a plugin: sticky notes, ellipses, arrows, task cards,
 validation, checklists, titles, the detail panel and the table of contents beside the canvas,
-selecting itself, copying and pasting, locking, what each key does, even the examples.
+selecting itself, copying and pasting, locking, the ports arrows are dragged from, what each key
+does, even the examples.
 The core (`Sources/Canvas`) knows how to hold shapes, run tools, draw, and wire plugins together,
 and nothing about any particular shape or concern. Its one built-in tool is tldraw's Hand, which
 pans (a flung release slides on). Select, which selects (a click, ⇧-click, or a marquee dragged
@@ -29,6 +30,7 @@ maps one onto the other.
 - [The table of contents](#the-table-of-contents)
 - [The clipboard](#the-clipboard)
 - [Locking](#locking)
+- [Ports](#ports)
 - [Capabilities](#capabilities)
 - [The editor, the document, and drawing](#the-editor-the-document-and-drawing)
 - [Boards on disk](#boards-on-disk)
@@ -236,7 +238,10 @@ Once one plugin works, the question is which piece the next feature needs.
 | Keep a kind from being selected | `x.unselectable()`, or `x.selectable { ... }` | [Selection](#selection) |
 | Keep a kind from being copied | `x.uncopyable()`, or `x.copyable { ... }` | [The clipboard](#the-clipboard) |
 | Keep some shapes from changing (a lock), and say why when something tries | `registrar.readOnlyShapes { ... }`; `EditorService.didRefuseChanges` | [Locking](#locking) |
-| Put a button on the canvas that a click does something with (a chip) | Selection's `registrar.canvasButtons(at:click:)`, drawn in an overlay with `editor.hoveredButton` and `editor.pressedButton` | [Canvas buttons](#canvas-buttons), [Locking](#locking) |
+| Put a button on the canvas that a click does something with (a chip), or a drag starts something from (a port's dot) | Selection's `registrar.canvasButtons(at:click:)` or `canvasButtons(at:drag:)`, drawn in an overlay with `editor.hoveredButton` and `editor.pressedButton` | [Canvas buttons](#canvas-buttons), [Locking](#locking), [Ports](#ports) |
+| Connect shapes with arrows: dots beside a kind's sides, dragged to another shape | `x.ports(C.self, sides:role:)`, on a channel; ArrowPorts draws the arrow | [Ports](#a-kinds-ports), [ArrowPorts](#the-connector-arrowports) |
+| Declare a channel: a kind of connection, and which kinds take it | A `Channel` type, `registrar.channel(C.self)`; `ports` on each kind that takes it | [Channels](#channels) |
+| Say what an arrow's end may bind to (tldraw's canBind) | Arrows' `registrar.arrowBindingRule { query in ... }` | [ArrowPorts](#the-connector-arrowports) |
 | Draw a shape away from where it is, for an animation (a shake) | `editor.setDrawingOffset(_:for:)`; an overlay follows with `context.worldDrawingOffset(of:)` | [Locking](#locking) |
 | Keep what a kind's props name right as shapes are deleted and copied (a connector) | `ShapeReferencing` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
 | Keep something about any shape beside its props (where it came from) | A `ShapeMetaKey`, and `record.meta[Key.self]` | [Metadata](#metadata) |
@@ -276,7 +281,9 @@ through it, the Select tool, and Delete, Return, ⌘A and Back; the detail panel
 show the selected shape. So are the keys: [Keyboard](#keyboard-shortcuts) holds every shortcut,
 and a plugin whose tool or command has a key registers it there. So is [locking](#locking): any
 shape can be locked, and Locking owns the lock, its chip and its shake, while the core only
-refuses to change the shapes a plugin says are read-only.
+refuses to change the shapes a plugin says are read-only. So are [ports](#ports): any kind can
+have them, on the channels it takes, and Ports owns the dots and what a drag from one may end on,
+while the plugin that owns a channel's meaning declares it.
 
 Opting in goes in one of two directions:
 
@@ -286,7 +293,8 @@ Opting in goes in one of two directions:
   though Ellipses has never heard of titles and Titles has never heard of ellipses. A bridge may
   join two horizontals: `ValidationDetails` shows each shape's validation issues in an Issues tab
   of the detail panel, and `ValidationContents` marks their rows in the table of contents, though
-  Validation has never heard of either, nor either of validity.
+  Validation has never heard of either, nor either of validity. `ArrowPorts` makes arrows what a
+  drag from a port draws, though Arrows has never heard of a channel, nor Ports of an arrow.
 
 Either way the edge is visible in `Package.swift`, and the dependency always points from the
 vertical (or bridge) to the horizontal, never back.
@@ -315,9 +323,9 @@ Each target is one line, with its layer:
 |---|---|---|
 | foundation | foundation | Geometry, Canvas (the core) |
 | ui | foundation | CanvasUI (the AppKit view, the SwiftUI toolbar, and `CanvasFocus`) |
-| horizontal | foundation, horizontal | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Checklists, Clipboard, Locking |
+| horizontal | foundation, horizontal | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Checklists, Clipboard, Locking, Ports |
 | vertical | foundation, horizontal | Arrows, StickyNotes, Ellipses, TaskCards, Rectangles, Polylines, Eraser, Reordering |
-| bridge | foundation, horizontal, vertical | EllipseTitles, ValidationDetails, ValidationContents |
+| bridge | foundation, horizontal, vertical | EllipseTitles, ValidationDetails, ValidationContents, ArrowPorts |
 | composition | foundation, horizontal, vertical, bridge | Composition (the shipped plugin list) |
 | app | foundation, ui, composition | InfiniteCanvas |
 | testsupport, test | (see Package.swift) | TestKit, CanvasTesting, `*Tests` |
@@ -331,15 +339,16 @@ What `./build.sh audit` enforces:
   that isn't a declared dependency fails, and so does a declared dependency that's never imported.
   `@_exported`, `@_implementationOnly` and `@testable` are banned, since each hides an edge, and
   so are imports inside `#if`.
-- **No other module's ids as literals.** A module that writes another module's kind, plugin, tool
-  or added property id as a string literal (`kind == "sticky-note"`) without depending on it fails.
-  An id is a module's when it declares it as a static `ShapeKind`, `ToolID`, `PluginID` or
-  `PropertyKey`, or as its plugin's `id`. A kind's own property names (`Property("title", ...)`)
-  are only that kind's, so they're exempt, and so is a JSON member's name: a subscript's key
-  (`json["title"]`) or a key before a colon (`["title": ...]`, or JSON text), but not a `case`
-  label's or a ternary's. Those name members of some JSON (a kind's own props, JSON Schema's
-  `title` keyword), where ordinary words are also ids (Titles' `title` property). Lookups at run
-  time (a tool by its shortcut or label) aren't audited.
+- **No other module's ids as literals.** A module that writes another module's kind, plugin, tool,
+  added property or channel id as a string literal (`kind == "sticky-note"`) without depending on
+  it fails. An id is a module's when it declares it as a static `ShapeKind`, `ToolID`, `PluginID`,
+  `PropertyKey` or `ChannelID` (`static let id: ChannelID = "note-link"`), or as its plugin's
+  `id`. A kind's own property names (`Property("title", ...)`) are only that kind's, so they're
+  exempt, and so is a JSON member's name: a subscript's key (`json["title"]`) or a key before a
+  colon (`["title": ...]`, or JSON text), but not a `case` label's or a ternary's. Those name
+  members of some JSON (a kind's own props, JSON Schema's `title` keyword), where ordinary words
+  are also ids (Titles' `title` property). Lookups at run time (a tool by its shortcut or label)
+  aren't audited.
 - **The host API is fenced off.** What `CanvasView` calls on the editor (input, the cursor,
   drawing, the delegate) is `@_spi(Host)`. Only modules that `@_spi(Host) import Canvas` see it,
   and only the ui, testsupport and test layers may; a plugin that calls it doesn't compile.
@@ -641,7 +650,11 @@ after the tool: "Line", with the tool's symbol.
 
 [Arrows](../Sources/Arrows/ArrowDefinition.swift) is the full-size version: a kind without a frame
 that also has handles (`HandleProviding`), an exact marquee test (`BrushHitTesting`), a paint order
-of its own (`PaintOrderAnchored`), and a translation that keeps its bindings.
+of its own (`PaintOrderAnchored`), and a translation that keeps its bindings. It lends other
+plugins two things, and knows nothing of why ([ArrowConnecting.swift](../Sources/Arrows/ArrowConnecting.swift)):
+rules for what an arrow's end may bind to (`ArrowBindingRules`, tldraw's canBind), and an arrow
+drawn for a gesture of theirs (`editor.beginArrow`), which is how [ports](#the-connector-arrowports)
+draw theirs.
 
 ## A horizontal plugin
 
@@ -1163,8 +1176,8 @@ shakes them).
 - `BrushHitTesting` is Selection's capability for a kind that decides for itself whether the
   marquee touches it. The default is `ShapeGeometry.isHit(byBrush:)`, from its geometry.
 - Arrows (to select the arrow it draws, and for its handles), DetailPanel (to follow the selection),
-  ContextMenus (the menu is for the selection) and TableOfContents (to list and select shapes)
-  import Selection too.
+  ContextMenus (the menu is for the selection), TableOfContents (to list and select shapes) and
+  Ports (its dots are [canvas buttons](#canvas-buttons)) import Selection too.
 
 **The select tool** follows tldraw's states. A plugin's [canvas buttons](#canvas-buttons) win,
 then handles, then the selectable shape under the pointer, then empty space inside a
@@ -1194,29 +1207,46 @@ multi-selection's box, then the canvas.
 ### Canvas buttons
 
 A plugin can put a button on the canvas: something it draws in an overlay that a click does
-something with, as the lock chip unlocks its shape ([Locking](#locking)). It says where its buttons
-are, and what a click on one does; the select tool does the rest.
+something with, as the lock chip unlocks its shape ([Locking](#locking)), or that a drag starts
+something from, as a port's dot draws an arrow ([Ports](#ports)). It says where its buttons are,
+and what a click on one, or a drag from one, does; the select tool does the rest.
 
 ```swift
 registrar.canvasButtons(at: { editor, viewPoint in state.chip(atViewPoint: viewPoint) },   // any Hashable, or nil
                         click: { chip, editor in state.click(chip) })
+registrar.canvasButtons(at: { editor, viewPoint in state.dot(atViewPoint: viewPoint) },
+                        drag: { dot, origin, editor in state.connect(from: dot, at: origin) })     // a Session, or nil
 ```
 
 - **Buttons come first.** A press on one, in the select tool, is the button's, whatever is under
-  it: a handle, a shape, the selection's box. A release on it clicks it, as an NSButton's does;
-  dragged off, the press does nothing (and Escape lets go of it). Where two plugins' buttons
-  overlap, the later plugin's wins, as its overlay draws on top. A click neither selects nor moves
-  anything by itself.
-- **Hover and press.** The pointing hand (`CanvasCursor.pointingHand`) shows over a button, and
+  it: a handle, a shape, the selection's box. Where two plugins' buttons overlap, the later
+  plugin's wins, as its overlay draws on top. A button neither selects nor moves anything by
+  itself.
+- **A click** is a press and a release on the button, as an NSButton's is; dragged off, the press
+  does nothing (and Escape lets go of it).
+- **A drag**, past the drag threshold (4 points), goes to the session `drag` returns, given the
+  button and where it was pressed (world units); the press hands it over, and the session gets
+  the drag event that crossed the threshold. Nil ends the press. Released without a drag, the
+  press does nothing, and Escape lets go of it.
+- **Hover and press.** The pointing hand (`CanvasCursor.pointingHand`) shows over a button that's
+  clicked; the open hand over one that's dragged, and the closed hand while it's pressed.
   `editor.hoveredButton` and `editor.pressedButton` say which the plugin should draw hovered and
-  pressed; the canvas redraws as they change.
+  pressed, and the canvas redraws as they change; a drag that's handed over clears both.
+- **Where the pointer is.** `editor.pointerOverCanvas` is where the pointer is over the canvas in
+  the select tool, in view points, as it last moved with nothing under way: nil once it's left the
+  canvas or gone over the minimap, while another tool is current, and once Escape lets go of a
+  dragged button's press, until the pointer moves again (the select tool doesn't see a held press
+  move). A plugin whose buttons show
+  only while the pointer is near them goes by it (a port's dots).
 - **Only in the select tool.** In any other tool a button is only drawn, and a press there is the
   tool's: the hand pans over a lock chip, and the eraser erases under it.
 - **Buttons that come and go** with the document are looked for again under a still pointer after
   each commit. One that comes or goes some other way (a chip fading out) calls
   `editor.canvasButtonsDidChange()`.
 - **Keep `at` cheap**: the select tool asks it as the pointer moves. Locking's looks only where a
-  chip could be, through `editor.paintOrder(in:)`, and at nothing on a board with no lock.
+  chip could be, through `editor.paintOrder(in:)`, and at nothing on a board with no lock; Ports'
+  at the dots of the few shapes near the pointer, and at what covers them only for a dot within
+  reach.
 
 ## Keyboard shortcuts
 
@@ -2335,6 +2365,221 @@ chip, the validation outline and the lock chip do. Everything else goes by where
 testing, handles, arrows bound to it, and pictures of the board (the minimap). Deleting a shape
 drops its offset.
 
+## Ports
+
+Ports are data-canvas's: dots just outside the sides of the shape the pointer is over, from which a
+drag draws an arrow to another shape. Not to any shape: each port is on a channel, a kind of
+connection, and the arrow may end only on a shape that takes its channel, so a note links to a note
+and a task to a task, never one to the other. It's a horizontal ([`Sources/Ports`](../Sources/Ports))
+any kind opts into, built on Selection, whose [canvas buttons](#canvas-buttons) the dots are; the
+core has never heard of a port, and Ports has never heard of an arrow: a bridge,
+[ArrowPorts](#the-connector-arrowports), makes arrows what a drag from a port draws. Ports itself
+([Ports.swift](../Sources/Ports/Ports.swift)):
+
+```swift
+registrar.declare(ChannelProperty.self)                 // `channel` on a connection drawn from a port
+registrar.service { PortState(editor: $0) }             // every kind's ports, and whose dots show
+registrar.overlay(PortOverlay())                        // the dots; while a connection is drawn, what it could end on
+registrar.canvasButtons(at: { editor, point in editor.service(PortState.self)?.dot(atViewPoint: point) },
+                        drag: { dot, origin, editor in editor.service(PortState.self)?.connect(from: dot, at: origin) })
+```
+
+and what a sticky note adds, its channel and its ports
+([NoteLinks.swift](../Sources/StickyNotes/NoteLinks.swift), [StickyNotes.swift](../Sources/StickyNotes/StickyNotes.swift)):
+
+```swift
+public enum NoteLink {}
+
+extension NoteLink: Channel {
+    public static let id: ChannelID = "note-link"
+    /// A brown amber, darker than the note, so a dot reads beside one.
+    public static var color: NSColor { NSColor(srgbRed: 0.70, green: 0.45, blue: 0.05, alpha: 1) }
+}
+
+extension ShapeRegistrar where Definition == StickyNoteDefinition {
+    /// Ports on every side but the top, where a titled note's pill is.
+    mutating func noteLinks() {
+        ports(NoteLink.self, sides: [.left, .right, .bottom])
+    }
+}
+
+// In StickyNotesPlugin.register:
+registrar.shape(StickyNoteDefinition()) { note in
+    ...
+    note.noteLinks()                                   // and ports: arrows from a note to a note
+}
+registrar.channel(NoteLink.self)                       // which this plugin declares
+```
+
+Task cards do the same with `TaskLink` (`task-link`, purple), on all four sides, since a card draws
+its title inside and nothing sits above it ([TaskCardLinks.swift](../Sources/TaskCards/TaskCardLinks.swift)).
+Both channels say nothing more yet: a channel is where a connection's meaning would go (one task
+blocking another, say).
+
+### Channels
+
+- **A channel is a type** (`Channel`), as a tab or an added property is: its `id` (`ChannelID`)
+  and the color of its dots (`static var color`, computed, since colors aren't `Sendable`; gray by
+  default). The plugin that owns what a connection on it means declares it,
+  `registrar.channel(C.self)` (the `Channels` point: a channel declared twice is a `conflict`), and
+  kinds have ports on it by its type, so a plugin that gives a kind ports on another's channel
+  imports that plugin's module. StickyNotes declares `NoteLink` for its notes, and TaskCards
+  `TaskLink` for its tasks; a channel that joins kinds of several plugins would be declared by the
+  horizontal whose meaning it is (data-canvas's `registerHostChannel` calls come from such a
+  feature), and given to their kinds by bridges.
+- **The id never changes once shipped**, since connections keep it. The id audit holds a
+  `ChannelID` literal to the module that declares it, as it does a kind
+  ([The module graph](#the-module-graph)).
+- **What a connection knows is its channel**: `ChannelProperty` (key `channel`), an [added
+  property](#added-properties) Ports declares and the connector's kind opts into. It has no
+  default, so only a connection drawn from a port has one (`"added" : { "channel" : "note-link" }`),
+  and an arrow drawn with the arrow tool has none. In the arrow's schema it's a string of at least
+  one character, since the channels are whatever plugins declare; its fixture is
+  `Fixtures/added/channel.v0.json`.
+
+### A kind's ports
+
+`x.ports(C.self, sides:role:)` gives a kind ports on a channel (`registrar.ports(K.self, on:
+C.self, sides:role:)` for another plugin's kind, from a bridge). It's the `ShapePorts` point, one
+contribution per kind and channel, and a kind may have ports on several:
+
+- **`sides`** (`PortSide`: `.top`, `.right`, `.bottom`, `.left`; all four by default) are where
+  its dots are, one just outside the middle of each. A side with ports on several channels has one
+  dot, in its first channel's color, and a connection from it is drawn on the first of its channels
+  the shape it ends on takes.
+- **`role`** (`PortRole`, a data-canvas port's end) is what the ports let the kind be: `.both`
+  (the default), `.source` (its dots start connections, and none ends on it) or `.target`
+  (connections end on it, and it has no dots).
+
+The registry refuses ports on a channel no installed plugin declares, and ports on the connector's
+own kind, since a connection neither starts nor ends on another (`ShapePorts.check`):
+
+```
+ShapePorts: ratings gives box ports on channel wire, which no installed plugin declares
+ShapePorts: ratings gives arrow ports, but it's what connections are
+```
+
+Its report shows `ports note-link → sticky-note` on the line of the plugin that gives the kind its
+ports, and `channel note-link` on the declarer's. Rules about connections already drawn go by
+`registry.accepts(shape, on: channel, as: .source)` (or `.target`), whether a shape's kind takes a
+channel at that end, and `registry.declares(channel)`. `editor.channel(of: connection, endingAt:
+record)` is the channel a connection would be drawn on if it ended at a shape: the first of its
+channels the shape's kind takes as a target, and nil for the shape it starts from, a shape kept
+aside, or one that takes none.
+
+### The dots and the select tool
+
+The dots are canvas buttons, dragged rather than clicked (`PortDot`: a shape and a side, what
+`editor.hoveredButton` and `editor.pressedButton` are while the pointer's on one). They show for
+one shape at a time, the host, as data-canvas's show on the hovered shape:
+
+- **Whose.** The shape whose dot the pointer is on, any shape's (so a dot the pointer comes to
+  straight from empty canvas shows its shape's, as data-canvas's halo does); else the shape the
+  pointer's over, if it has dots; and over empty canvas or a shape without ports, the last one,
+  while the pointer stays within reach of its dots (its bounds grown by 24 view points, a dot's 12
+  out and its 12 of reach), so the pointer can leave a shape for one of its dots. None while a handle is under the pointer, which takes the
+  hover from shapes as it does in Selection, and none once the tool changes or the shape is
+  deleted. A shape has dots when its kind has a side with ports that aren't `.target`, it isn't
+  kept aside, and the connector can start from it (`canConnect`: an arrow can bind to it, so it's
+  closed and isn't an arrow).
+- **When.** In the select tool, while the pointer's over the canvas (`editor.pointerOverCanvas`)
+  and, where it is now (`editor.pointerWorldLocation`, so not after Escape with the press held
+  elsewhere), within reach of them, and nothing is under way but a dot's press, at 25% zoom and up, where the chips start to shrink:
+  further out, a shape is too small on screen for its dots to be told from its neighbors'. And only
+  with a connector installed: without one, no shape shows ports.
+- **Where.** 12 view points out from the middle of each of its sides of the shape's bounds (its
+  geometry's), constant on screen, and where the shape is drawn, so they shake with a locked shape.
+  A dot shows, and is pressed, only while no selectable shape painted above its own covers its
+  center (an arrow leaving the shape there, a neighbor on top: `PortState.liveDots(of:)`), so what
+  shows is what a press there presses, and a shape lying on a bigger one shows its dots over it.
+- **How they look.** A disc 8 points across in its channel's color at 60%, in a white ring (1.5
+  points); hovered or pressed, 10 points across at full color, in a halo of the color at 24% 24
+  points across, its reach, as a handle's is (`PortStyle` gives the radii: 4, 5 and 12). The open hand shows over one, the closed hand while
+  one's pressed.
+- **A press** within 12 view points of a showing dot's center (the nearest, if several) is the dot's,
+  whatever is under it. Where the select tool hasn't seen the pointer move (just after a tool
+  change, or a first click into the window) no dot shows, so none takes the press: it's the
+  canvas's, or the shape's. Past the drag threshold, the connector draws a connection from it;
+  released without a drag, nothing happens; Escape lets go. Ports comes after Locking in the
+  shipped list, so a dot is found before a lock chip it overlaps, and draws above it.
+- **While a connection is drawn** the dots are gone, and each shape in view it could end on is
+  outlined faintly, as a hovered shape is (2.5 points, the accent at 60%); the shape it would end
+  on now gets the full outline, the hint.
+- **Locked shapes keep their ports.** A connection to or from one changes an arrow, never the
+  shape.
+- **What it costs.** `PortState` finds every kind's ports once, as the registry is frozen. The
+  select tool asks for the dot under the pointer as it moves, which looks at the dots of the few
+  shapes near the pointer, and at what's painted above one only for a dot within 12 points, and
+  then only between the middle of its side and its center (`liveDots(of:on:)`); the overlay draws
+  one shape's dots, those in view. While a connection is drawn, the overlay goes through
+  `editor.paintOrder(in:)` with the visible rect. `./build.sh bench` holds a hover on a note's dot
+  and a drag from it at 10,000 shapes to a frame.
+
+### The connector: ArrowPorts
+
+Ports never learns what a connection is. One plugin draws them, the connector
+(`registrar.connects(K.self, canConnect:begin:)`, the `Connectors` point, at most one). `K` is what
+connections are, and opts into `ChannelProperty`; `canConnect` says which shapes one may start
+from and end on; and `begin`, given the drag's `Connection` (the port's shape and side, the dot's
+channels in plugin order, and where it was pressed, in world units), returns the session that
+draws it, which the dot's press hands the drag to, or nil to draw nothing. The bridge
+([ArrowPorts.swift](../Sources/ArrowPorts/ArrowPorts.swift)) makes arrows the connector, though
+Arrows has never heard of a channel:
+
+```swift
+registrar.connects(Arrow.self, canConnect: { id, editor in editor.canBindArrow(to: id) }) { connection, editor in
+    editor.beginArrow(from: connection.shape, at: connection.origin,
+                      canBind: { editor.channel(of: connection, endingAt: $0) != nil },
+                      complete: { arrow, end in
+                          guard let shape = editor.document[end] else { return }
+                          arrow[ChannelProperty.self] = editor.channel(of: connection, endingAt: shape)
+                      })
+}
+registrar.arrowBindingRule { query in
+    guard let channel = query.arrow[ChannelProperty.self], query.registry.declares(channel) else { return true }
+    return query.registry.accepts(query.shape, on: channel, as: query.end == .start ? .source : .target)
+}
+```
+
+- **A drag from a dot draws an arrow.** Its start is bound to the port's shape, aiming at its
+  center, and its end follows the pointer, binding by tldraw's rules as the arrow tool's does
+  (arriving fast, it aims at a shape's center; arriving slowly, or after a 320 ms pause, at the
+  spot; ⌥ runs all the way to it, ⌘ or ⌃ binds nothing, ⇧ snaps the angle), but only to a shape
+  that takes one of the port's channels, looking through the rest to the shapes behind. Released
+  on one, the arrow keeps the channel it's drawn on; released anywhere else, or on Escape, it's
+  deleted, and nothing is drawn. Its binding hints are the arrow tool's.
+- **A drawn arrow keeps to its channel** (the rule): re-aimed or moved, each end binds only to a
+  shape that takes the channel at that end, the start as a source and the end as a target,
+  looking through the rest. An arrow without a channel (the arrow tool's), or with one no installed
+  plugin declares (a board from an app with another plugin), binds wherever an arrow can.
+- **It differs from tldraw** on three counts, as data-canvas's does: released free, the arrow is
+  deleted, where tldraw's keeps a free end; its start binds the port's shape at its center,
+  imprecise, with none of the arrow tool's hover and press timers; and the selection and the tool
+  are left as they were, where the arrow tool selects its arrow and goes back to Select.
+
+What Arrows lends, it lends any plugin, and it knows no channel
+([ArrowConnecting.swift](../Sources/Arrows/ArrowConnecting.swift)):
+
+- **`ArrowBindingRules`** (`registrar.arrowBindingRule { query in ... }`, a list) is tldraw's
+  canBind: an end binds only to a shape every rule allows, looking through the rest. A rule gets an
+  `ArrowBindingQuery`: the arrow as it is (its props and added values), the end, a shape under the
+  end, and the registry. It's asked wherever an end binds: drawn, re-aimed (the precise timer and a
+  modifier's change included) or moved alone (`beginTranslation`'s probe), and only of the shapes
+  the point hits, but as the pointer moves, so keep it cheap. With no rule nothing is filtered,
+  and arrows behave as they did before.
+- **`editor.canBindArrow(to:)`** is whether an arrow can bind to a shape: it's there, it's closed,
+  and it isn't an arrow.
+- **`editor.beginArrow(from:at:canBind:complete:)`** draws an arrow for another plugin's gesture:
+  it inserts one, its start bound to the shape (imprecise) and its end at `origin`, and returns the
+  session that drags its end, for the caller to hand the drag to (nil if an arrow can't bind to the
+  shape). Released bound, `complete` gets the arrow's record and the shape its end is bound to, in
+  the transaction that finishes it.
+- **`BindingHintsOverlay`** draws the hints of the arrow being dragged, else the selected arrow's,
+  so an arrow drawn from a port, which leaves the selection alone, hints as the tool's does.
+
+Ports are the part of data-canvas's that notes and tasks need to prove the API; the rest is in
+[Not built yet](#not-built-yet).
+
 ## Capabilities
 
 Some behavior belongs to a kind itself rather than to a concern others can join. That's a
@@ -2602,9 +2847,9 @@ core                 tool hand
 keyboard             service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
 selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
 arrows               shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay
-sticky-notes         shape sticky-note v2 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note
+sticky-notes         shape sticky-note v2 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · channel note-link
 ellipses             shape ellipse · tool ellipse · shortcut O → tool ellipse
-task-cards           shape task-card v3 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · property title → task-card · ShapeTitles → task-card · ContentsTitles → task-card
+task-cards           shape task-card v3 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · property title → task-card · ShapeTitles → task-card · ContentsTitles → task-card · ports task-link → task-card · channel task-link
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
 detail-panel         service DetailPanelState · ShapeDetails
 context-menus        service ContextMenuState · secondary-click menu
@@ -2615,6 +2860,8 @@ validation-details   DetailStatuses in Issues
 validation-contents  ContentsMarks
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
 locking              property locked · property locked → every shape · read-only shapes · service LockState · overlay LockOverlay · CanvasButtons · CanvasContextMenu
+ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
+arrow-ports          property channel → arrow · connector → arrow · ArrowBindingRules
 rectangles           shape rectangle · tool rectangle · shortcut R → tool rectangle
 polylines            shape polyline · tool polyline · shortcut L → tool polyline
 eraser               tool eraser · shortcut E → tool eraser
@@ -2633,7 +2880,9 @@ title in two steps: a blank one was an untitled task's, and is dropped first).
 entry after them is the note's header, where it's renamed. Validation's `ValidationRules`, for
 every kind, is its schema rule ([Checking shapes](#checking-shapes-against-their-schemas)). Locking opts
 every kind in itself (`property locked → every shape`), and `read-only shapes` is its rule for the
-core.
+core. `ports note-link → sticky-note` is a note's ports and `channel note-link` the channel
+StickyNotes declares for them; arrow-ports' `connector → arrow` makes arrows what ports draw, and
+brings the opt-in before it (`property channel → arrow`).
 
 ## Testing plugins
 
@@ -2672,8 +2921,10 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   tools have no keys (CanvasTesting can't import Keyboard): a test picks one with `h.editor.setTool`,
   or registers a key for it (`$0.shortcut("c", forTool: ToolID(placing: Card.kind))`).
   SelectionTests, ArrowsTests, ValidationTests, DetailPanelTests, ChecklistsTests, ClipboardTests,
-  TitlesTests, ValidationDetailsTests, ValidationContentsTests and LockingTests import no real vertical (only these fixtures, and local test kinds), which
-  proves those plugins are shape-agnostic.
+  TitlesTests, ValidationDetailsTests, ValidationContentsTests, LockingTests and PortsTests import
+  no real vertical (only these fixtures, and local test kinds), which proves those plugins are
+  shape-agnostic. ArrowPortsTests import one real vertical, Arrows, and join fixtures with its
+  arrows.
 - **Read-only shapes** without Locking: `FreezingPlugin(log:)` (CanvasTesting) declares `Frozen`, a
   flag every kind opts into, makes frozen shapes read-only, and logs the refusals services hear in
   its `RefusalLog`; `editor.freeze(ids)` sets it. CanvasTests, SelectionTests and DetailPanelTests
@@ -2710,6 +2961,18 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   touches the user's: `ClipboardPlugin(pasteboard: NSPasteboard.withUniqueName())`, or
   `ShippedPlugins.makeEditor(pasteboard:)` (and `releaseGlobally()` it after). Two editors on one
   pasteboard are two boards copying and pasting between them.
+- **Ports.** PortsTests hold the horizontal without an arrow: `portsHarness` installs Keyboard,
+  Selection, the fixtures, Ports, `channelsPlugin` (boxes have ports on its `Wire` channel, with the
+  `sides:` and `role:` a test asks for, and discs on `Pipe`) and a connector over CanvasTesting's
+  `Tag` that only records (`connectorPlugin(Connections())`: `begun` lists each `Connection`, its
+  session appends each drag to `drags`, and `canConnect` and `draws` make it refuse). A 200 × 100
+  box at (100, 100), `boxFrame`, has its dots at `topDot`, `rightDot`, `bottomDot` and `leftDot`, at
+  zoom 1. A test moves onto a dot before pressing, as a user does (`h.hoverDot` comes from the
+  shape's middle): dots draw only while `editor.pointerOverCanvas` is set. ArrowPortsTests draw real
+  arrows on a `PortBoard`: boxes A and B where the POC's first two welcome notes are, taking
+  `Wire`, and a disc C below B taking `Pipe`; `board.connect(to:speed:release:)` hovers A and drags
+  from its right dot (`aRightDot`), `fast` or `slow`, and `board.arrows` are the arrows drawn, with
+  their bindings and `ChannelProperty`.
 - **What AppKit logs.** Some of AppKit's complaints go only to standard error (NSLog), and the test
   passes anyway. `standardError(during:)` (CanvasTesting) returns what was written there while a
   closure ran, and writes it on after, so a test can check: TableOfContentsTests and CompositionTests'
@@ -2735,7 +2998,8 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   `registry.fillingDefaults(document)`. CanvasTests read broken and scrambled boards (a seeded fuzz test), and CompositionTests'
   BoardDocumentTests open, save, revert and host boards with `BoardDocument.configuration` set as
   the app sets it. `./build.sh bench` builds BenchmarkTests in release and holds saving, opening,
-  a hover and a drag frame, reading the table of contents' rows after a drag event, an insert, a
+  a hover and a drag frame, a hover on a note's port dot and a drag from it, reading the table of
+  contents' rows after a drag event, an insert, a
   delete and a restack, and the minimap's first picture (a frame at a time) and a drag frame with
   it, to their budgets on generated boards of 1,000 and 10,000 shapes; `./test.sh` runs it small,
   in debug, and only reports.
@@ -2777,6 +3041,8 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
 | `DetailsPanel`'s `emptyView` and `multiSelectView` (the TOC, whole or filtered to the selection) | `DetailPanelView`'s overview, which Composition fills with `TableOfContentsView`. |
 | `ToolIdle` / `ToolPointing` click-to-create | `Placement` (follow the pointer, or edit), used by place tools and the double-click claim. |
 | `toolbarItems` with a decorative `kbd` | A key registered with the Keyboard horizontal (`shortcut:`), collision-checked, that the canvas answers and the tooltip names. |
+| `defineChannel({ id, color, ... })`, `registerHostChannel(type, channel)` | A `Channel` type (`id`, `color`) declared by the plugin that owns its meaning, `registrar.channel(C.self)`, and `x.ports(C.self, sides:role:)` on each kind that takes it (`role:` is a port's `end`), collision-checked; an arrow keeps its channel as an added property, `ChannelProperty` ([Ports](#ports)). |
+| `EdgeMidpointDots`, the port drag, and `canBind` refusing what a channel doesn't take | Ports' dots, Selection's canvas buttons, whose drag goes to the one connector (ArrowPorts: `editor.beginArrow`), and `registrar.arrowBindingRule`, Arrows' canBind, for arrows already drawn. Released on nothing, nothing is drawn. |
 | `install*Lifecycle(editor)` side effects | `registrar.willDelete` inside transactions; `EditorService` for per-editor state. |
 | `module.json` + ESLint DAG + barrel `index.ts` | `Package.swift` with layers + `build.sh audit` + the compiler; `public` is the barrel. |
 | `plugins.config.ts` | `ShippedPlugins.all` in Composition. |
@@ -2840,6 +3106,17 @@ Each of these adds to the design without changing what plugins are written again
 - **More of locking**: Unlock All (tldraw has it); a lock on a shape's row in the table of
   contents; the menu's other items for a locked shape dimmed, rather than shaking it once chosen;
   a line in the detail panel saying why it's disabled; and a tooltip on the chip.
+- **More of ports**, most of which data-canvas has: a channel's cardinality (at most one
+  connection at an end, and a dot that stops taking more); wildcard channels (a port on every
+  channel); directional reversal (a drag from a port that only takes connections, drawn the other
+  way round); ports on part of a shape (a row, a checklist item); an arrow's start pinned to its
+  dot's side, and its end to the side of its shape facing it (data-canvas's `anchorToPort`; a
+  precise start at a side's midpoint means nothing without it, since tldraw's clipping starts an
+  arrow where it crosses its shape's edge toward the other end, whichever side that is); a
+  channel's title, and a legend of the channels; a line in an arrow's detail panel naming its
+  channel; reading connections as data (what a note links to, for rules and agents); and, once
+  ports draw every arrow a board needs, removing the arrow tool (the POC's transcript drives it
+  today).
 - **More of properties**: checking what an agent writes against its kind's schema before it lands
   (the check is there: `registry.schemaViolations(of:)`, and `SchemaValidator` for any JSON), and
   a board's shapes as it opens, in its report; the agents' CLI handing schemas out; a projection of

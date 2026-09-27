@@ -140,11 +140,20 @@ extension ArrowDefinition: CustomTranslation {
         }
         transaction.update(shape.id, as: Arrow.self) { $0.props = arrow }
         let startHandle = geometry.startHandle, endHandle = geometry.endHandle
+        // Each end sees only what the plugins' rules let it bind to (tldraw's onTranslate, which
+        // looks for the shape under an end through its canBind filter).
+        let rules = transaction.shapes.registry.contributions(to: ArrowBindingRules.self).map(\.value)
+        let record = transaction.shapes.shape(shape.id), registry = transaction.shapes.registry
+        func accepts(_ end: ArrowEnd) -> ((AnyShapeRecord) -> Bool)? {
+            guard !rules.isEmpty, let record else { return nil }
+            return { candidate in rules.allSatisfy { $0(ArrowBindingQuery(arrow: record, end: end, shape: candidate, registry: registry)) } }
+        }
+        let filters = [ArrowEnd.start: accepts(.start), .end: accepts(.end)]
         return ShapeTranslation { delta, shape, shapes in
             let connectables = Connectables(shapes: shapes)
             for (end, handle, binding) in [(ArrowEnd.start, startHandle, bindings[.start]), (.end, endHandle, bindings[.end])] {
                 let point = handle + delta
-                if var binding, let target = connectables.shape(at: point), target.id == binding.shapeID {
+                if var binding, let target = connectables.shape(at: point, accepting: filters[end] ?? nil), target.id == binding.shapeID {
                     binding.normalizedAnchor = normalizedAnchor(point, in: target.bounds)
                     shape.props[end] = .bound(binding)
                 } else {
@@ -219,8 +228,11 @@ struct BindingHintsOverlay: CanvasOverlay {
 
     func draw(in overlay: OverlayContext) {
         let editor = overlay.editor
-        guard editor.currentToolID == .select || editor.session is ArrowHandleDragSession,
-              let id = editor.selection,
+        // The arrow being drawn or re-aimed (the selection, but for one drawn for another plugin's
+        // gesture, which leaves the selection alone), else the selected one.
+        let drag = editor.session as? ArrowHandleDragSession
+        guard editor.currentToolID == .select || drag != nil,
+              let id = drag?.arrowID ?? editor.selection,
               let arrow = editor.document[id]?.typed(as: Arrow.self)?.props else { return }
         let connectables = Connectables(shapes: overlay.shapes)
         let geometry = ArrowGeometry(arrow: arrow, strokeWidth: ArrowStyle.strokeWidth) { connectables[$0] }

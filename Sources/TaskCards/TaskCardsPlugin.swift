@@ -1,6 +1,7 @@
 import Canvas
 import Checklists
 import Keyboard
+import Ports
 import Titles
 import Validation
 
@@ -9,8 +10,9 @@ extension PluginID {
 }
 
 /// Task cards: the Task tool (T), validation rules, a detail panel that is the card's only editor,
-/// a Status submenu in its context menu, and a row in the table of contents. The card draws its
-/// own title and checklist, so it opts into Titles without the pill and Checklists without the chip.
+/// a Status submenu in its context menu, a row in the table of contents, and ports, whose arrows
+/// link a task to a task (`TaskLink`). The card draws its own title and checklist, so it opts into
+/// Titles without the pill and Checklists without the chip.
 public struct TaskCardsPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .taskCards }
@@ -24,7 +26,9 @@ public struct TaskCardsPlugin: CanvasPlugin {
             task.taskRow()
             task.checklist(badge: false)
             task.title(pill: false)
+            task.taskLinks()
         }
+        registrar.channel(TaskLink.self)
     }
 }
 

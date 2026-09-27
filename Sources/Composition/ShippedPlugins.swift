@@ -1,4 +1,5 @@
 import AppKit
+import ArrowPorts
 import Arrows
 import Canvas
 import Checklists
@@ -12,6 +13,7 @@ import Eraser
 import Keyboard
 import Locking
 import Polylines
+import Ports
 import Rectangles
 import Reordering
 import Selection
@@ -42,6 +44,9 @@ public enum ShippedPlugins {
             ValidationDetailsPlugin(), ValidationContentsPlugin(), ClipboardPlugin(pasteboard: pasteboard),
             // After Titles and Checklists: its chip draws above their pill and chip.
             LockingPlugin(),
+            // Ports, whose arrows the bridge draws. After Locking: a shape's dots draw above its chips,
+            // and are found first.
+            PortsPlugin(), ArrowPortsPlugin(),
             // The examples (Examples/). Each is one line here; delete it to leave it out.
             RectanglesPlugin(), PolylinesPlugin(), EraserPlugin(), EllipseTitlesPlugin(), ReorderingPlugin(),
         ]

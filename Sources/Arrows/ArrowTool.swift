@@ -81,21 +81,25 @@ extension PointingWithArrowToolSession {
 final class ArrowHandleDragSession {
     let arrowID: ShapeID
     let handle: ArrowHandle
-    /// This drag is drawing a new arrow with the arrow tool.
+    /// This drag is drawing a new arrow, with the arrow tool or for another plugin (`connecting`).
     let isCreating: Bool
     /// The handle keeps its offset from the pointer, so grabbing it off-center doesn't make it jump.
     let handleOffset: CGPoint
     /// Whether the dragged end aims precisely: after pausing on a shape, or arriving slowly.
     private(set) var isPrecise: Bool
     let targeting: ArrowTargeting
+    /// This drag is drawing an arrow for another plugin's gesture (`CanvasEditor.beginArrow`).
+    let connecting: ArrowConnecting?
 
-    init(arrowID: ShapeID, handle: ArrowHandle, isCreating: Bool, handleOffset: CGPoint, isPrecise: Bool, targeting: ArrowTargeting) {
+    init(arrowID: ShapeID, handle: ArrowHandle, isCreating: Bool, handleOffset: CGPoint, isPrecise: Bool, targeting: ArrowTargeting,
+         connecting: ArrowConnecting? = nil) {
         self.arrowID = arrowID
         self.handle = handle
         self.isCreating = isCreating
         self.handleOffset = handleOffset
         self.isPrecise = isPrecise
         self.targeting = targeting
+        self.connecting = connecting
     }
 }
 
@@ -115,15 +119,36 @@ extension ArrowHandleDragSession: Session {
     func end(_ pointer: Pointer, in editor: CanvasEditor) {
         targeting.cancelPreciseTimer()
         editor.hintedShapeID = nil
+        if let connecting {
+            finish(connecting, in: editor)
+            return
+        }
         editor.selection = arrowID
         if isCreating {
             editor.setTool(editor.registry.defaultTool)       // Select, with the selection installed
         }
     }
 
-    /// Escape while drawing a new arrow deletes it and stays in the arrow tool, ready for another
-    /// try. Escape while re-aiming an existing end does nothing.
+    /// An arrow drawn for another plugin's gesture: bound, it's finished by that plugin; free, it's
+    /// deleted, so nothing is drawn. The selection is left as it was.
+    private func finish(_ connecting: ArrowConnecting, in editor: CanvasEditor) {
+        guard case .terminal(let end) = handle, let target = targeting.arrow(arrowID)?[end].binding?.shapeID else {
+            editor.transact { $0.delete([arrowID]) }
+            return
+        }
+        editor.transact { $0.update(arrowID) { connecting.complete(&$0, target) } }
+    }
+
+    /// Escape while drawing a new arrow deletes it: with the arrow tool, staying in the tool, ready
+    /// for another try; for another plugin's gesture, leaving the selection as it was. Escape while
+    /// re-aiming an existing end does nothing.
     func cancel(in editor: CanvasEditor) -> Bool {
+        if connecting != nil {
+            targeting.cancelPreciseTimer()
+            editor.transact { $0.delete([arrowID]) }
+            editor.hintedShapeID = nil
+            return true
+        }
         guard isCreating else { return false }
         targeting.cancelPreciseTimer()
         editor.transact { $0.delete([arrowID]) }
@@ -152,7 +177,8 @@ extension ArrowHandleDragSession {
                 point = snapAngle(of: point, around: pivot, steps: 24)
             }
             let before = arrow[end].binding
-            targeting.bindTerminal(of: arrowID, end, to: point, isPrecise: isPrecise || modifiers.contains(.option), modifiers: modifiers)
+            targeting.bindTerminal(of: arrowID, end, to: point, isPrecise: isPrecise || modifiers.contains(.option), modifiers: modifiers,
+                                   accepting: connecting?.canBind)
             let after = targeting.arrow(arrowID)?[end].binding
             // Each new shape starts over: precise only if arrived at slowly or after a pause there.
             if let after {

@@ -32,12 +32,12 @@ import PackageDescription
 //   - an import sits inside #if or carries @_exported, @_implementationOnly or @testable, or code
 //     asks canImport(<a module here>);
 //   - a public type is named like a module, or Task (it would shadow Swift's in every importer);
-//   - a module writes another module's ShapeKind, PluginID, ToolID or PropertyKey as a string
-//     literal without depending on that module.
+//   - a module writes another module's ShapeKind, PluginID, ToolID, PropertyKey or ChannelID (a
+//     Ports channel's) as a string literal without depending on that module.
 // The graph keeps the core from naming a plugin's types (a module compiles against only its
 // dependency closure, with MemberImportVisibility, and the import check rejects undeclared
-// imports); the id check keeps any module from writing another module's kind, tool, plugin or property id
-// as a literal. The editor's host API is @_spi(Host), which only ui, testsupport and test modules
+// imports); the id check keeps any module from writing another module's kind, tool, plugin, property or
+// channel id as a literal. The editor's host API is @_spi(Host), which only ui, testsupport and test modules
 // may import.
 // Audit it:  ./build.sh graph | dot | audit | api <Module>
 let package = Package(
@@ -58,14 +58,16 @@ let package = Package(
         .target(name: "Clipboard", dependencies: ["Canvas", "ContextMenus", "Geometry", "Keyboard", "Selection"]), // layer: horizontal
         .target(name: "Titles", dependencies: ["Canvas", "DetailPanel", "TableOfContents"]),  // layer: horizontal
         .target(name: "Locking", dependencies: ["Canvas", "ContextMenus", "Geometry", "Selection"]), // layer: horizontal
+        .target(name: "Ports", dependencies: ["Canvas", "Geometry", "Selection"]),            // layer: horizontal
 
         .target(name: "Arrows", dependencies: ["Canvas", "Geometry", "Keyboard", "Selection", "TableOfContents"]), // layer: vertical
-        .target(name: "StickyNotes", dependencies: ["Canvas", "Checklists", "DetailPanel", "Keyboard", "Selection", "TableOfContents", "Titles", "Validation"]), // layer: vertical
+        .target(name: "StickyNotes", dependencies: ["Canvas", "Checklists", "DetailPanel", "Keyboard", "Ports", "Selection", "TableOfContents", "Titles", "Validation"]), // layer: vertical
         .target(name: "Ellipses", dependencies: ["Canvas", "Keyboard"]),                      // layer: vertical
-        .target(name: "TaskCards", dependencies: ["Canvas", "Checklists", "ContextMenus", "DetailPanel", "Keyboard", "TableOfContents", "Titles", "Validation"]), // layer: vertical
+        .target(name: "TaskCards", dependencies: ["Canvas", "Checklists", "ContextMenus", "DetailPanel", "Keyboard", "Ports", "TableOfContents", "Titles", "Validation"]), // layer: vertical
 
         .target(name: "ValidationDetails", dependencies: ["Canvas", "DetailPanel", "Validation"]), // layer: bridge
         .target(name: "ValidationContents", dependencies: ["Canvas", "TableOfContents", "Validation"]), // layer: bridge
+        .target(name: "ArrowPorts", dependencies: ["Arrows", "Canvas", "Ports"]),             // layer: bridge
 
         // Examples: the smallest plugin for each pattern (see docs/plugin-system.md).
         .target(name: "Rectangles", dependencies: ["Canvas", "Keyboard"], path: "Examples/Rectangles"),                 // layer: vertical
@@ -74,7 +76,7 @@ let package = Package(
         .target(name: "Reordering", dependencies: ["Canvas", "ContextMenus"], path: "Examples/Reordering"),             // layer: vertical
         .target(name: "EllipseTitles", dependencies: ["Canvas", "Ellipses", "Titles"], path: "Examples/EllipseTitles"), // layer: bridge
 
-        .target(name: "Composition", dependencies: ["Arrows", "Canvas", "Checklists", "Clipboard", "ContextMenus", "DetailPanel", "EllipseTitles", "Ellipses", "Eraser", "Keyboard", "Locking", "Polylines", "Rectangles", "Reordering", "Selection", "StickyNotes", "TableOfContents", "TaskCards", "Titles", "Validation", "ValidationContents", "ValidationDetails"]), // layer: composition
+        .target(name: "Composition", dependencies: ["ArrowPorts", "Arrows", "Canvas", "Checklists", "Clipboard", "ContextMenus", "DetailPanel", "EllipseTitles", "Ellipses", "Eraser", "Keyboard", "Locking", "Polylines", "Ports", "Rectangles", "Reordering", "Selection", "StickyNotes", "TableOfContents", "TaskCards", "Titles", "Validation", "ValidationContents", "ValidationDetails"]), // layer: composition
         .executableTarget(name: "InfiniteCanvas", dependencies: ["Canvas", "CanvasUI", "Composition"]),           // layer: app
 
         .target(name: "TestKit", dependencies: [], path: "Tests/TestKit"),                                        // layer: testsupport
@@ -92,10 +94,12 @@ let package = Package(
         .executableTarget(name: "ValidationContentsTests", dependencies: ["Canvas", "CanvasTesting", "TableOfContents", "TestKit", "Validation", "ValidationContents"], path: "Tests/ValidationContentsTests"), // layer: test
         .executableTarget(name: "ClipboardTests", dependencies: ["Canvas", "CanvasTesting", "Clipboard", "ContextMenus", "Geometry", "Keyboard", "Selection", "TestKit"], path: "Tests/ClipboardTests"), // layer: test
         .executableTarget(name: "ChecklistsTests", dependencies: ["Canvas", "CanvasTesting", "Checklists", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "Selection", "TestKit"], path: "Tests/ChecklistsTests"), // layer: test
-        .executableTarget(name: "TaskCardsTests", dependencies: ["Canvas", "CanvasTesting", "Checklists", "ContextMenus", "DetailPanel", "Keyboard", "Selection", "TableOfContents", "TaskCards", "TestKit", "Titles", "Validation"], path: "Tests/TaskCardsTests"), // layer: test
-        .executableTarget(name: "StickyNotesTests", dependencies: ["Canvas", "CanvasTesting", "Checklists", "ContextMenus", "DetailPanel", "Keyboard", "Selection", "StickyNotes", "TableOfContents", "TestKit", "Titles", "Validation"], path: "Tests/StickyNotesTests"), // layer: test
+        .executableTarget(name: "TaskCardsTests", dependencies: ["Canvas", "CanvasTesting", "Checklists", "ContextMenus", "DetailPanel", "Keyboard", "Ports", "Selection", "TableOfContents", "TaskCards", "TestKit", "Titles", "Validation"], path: "Tests/TaskCardsTests"), // layer: test
+        .executableTarget(name: "StickyNotesTests", dependencies: ["Canvas", "CanvasTesting", "Checklists", "ContextMenus", "DetailPanel", "Keyboard", "Ports", "Selection", "StickyNotes", "TableOfContents", "TestKit", "Titles", "Validation"], path: "Tests/StickyNotesTests"), // layer: test
         .executableTarget(name: "LockingTests", dependencies: ["Canvas", "CanvasTesting", "ContextMenus", "Geometry", "Keyboard", "Locking", "Selection", "TestKit"], path: "Tests/LockingTests"), // layer: test
         .executableTarget(name: "TitlesTests", dependencies: ["Canvas", "CanvasTesting", "CanvasUI", "DetailPanel", "Geometry", "Keyboard", "Selection", "TableOfContents", "TestKit", "Titles"], path: "Tests/TitlesTests"), // layer: test
+        .executableTarget(name: "PortsTests", dependencies: ["Canvas", "CanvasTesting", "Geometry", "Keyboard", "Ports", "Selection", "TestKit"], path: "Tests/PortsTests"), // layer: test
+        .executableTarget(name: "ArrowPortsTests", dependencies: ["ArrowPorts", "Arrows", "Canvas", "CanvasTesting", "Geometry", "Keyboard", "Ports", "Selection", "TableOfContents", "TestKit"], path: "Tests/ArrowPortsTests"), // layer: test
         .executableTarget(name: "RectanglesTests", dependencies: ["Canvas", "CanvasTesting", "Keyboard", "Rectangles", "TestKit"], path: "Tests/RectanglesTests"), // layer: test
         .executableTarget(name: "ExamplesTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "ContextMenus", "EllipseTitles", "Ellipses", "Eraser", "Keyboard", "Polylines", "Rectangles", "Reordering", "Selection", "TableOfContents", "TestKit", "Titles"], path: "Tests/ExamplesTests"), // layer: test
         .executableTarget(name: "CompositionTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "CanvasUI", "Checklists", "Clipboard", "Composition", "DetailPanel", "Geometry", "Keyboard", "Locking", "Selection", "StickyNotes", "TableOfContents", "TaskCards", "TestKit", "Titles", "Validation", "ValidationDetails"], path: "Tests/CompositionTests"), // layer: test

@@ -32,9 +32,9 @@ import ValidationDetails
         keyboard             service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
         selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
         arrows               shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay
-        sticky-notes         shape sticky-note v2 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note
+        sticky-notes         shape sticky-note v2 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · channel note-link
         ellipses             shape ellipse · tool ellipse · shortcut O → tool ellipse
-        task-cards           shape task-card v3 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · property title → task-card · ShapeTitles → task-card · ContentsTitles → task-card
+        task-cards           shape task-card v3 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · property title → task-card · ShapeTitles → task-card · ContentsTitles → task-card · ports task-link → task-card · channel task-link
         validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
         detail-panel         service DetailPanelState · ShapeDetails
         context-menus        service ContextMenuState · secondary-click menu
@@ -45,6 +45,8 @@ import ValidationDetails
         validation-contents  ContentsMarks
         clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
         locking              property locked · property locked → every shape · read-only shapes · service LockState · overlay LockOverlay · CanvasButtons · CanvasContextMenu
+        ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
+        arrow-ports          property channel → arrow · connector → arrow · ArrowBindingRules
         rectangles           shape rectangle · tool rectangle · shortcut R → tool rectangle
         polylines            shape polyline · tool polyline · shortcut L → tool polyline
         eraser               tool eraser · shortcut E → tool eraser
