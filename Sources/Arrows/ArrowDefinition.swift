@@ -172,15 +172,46 @@ func releaseArrows(boundTo ids: Set<ShapeID>, in transaction: inout Transaction)
         guard let arrow = record.typed(as: Arrow.self)?.props else { continue }
         let ends = Set([ArrowEnd.start, .end].filter { arrow[$0].binding.map { ids.contains($0.shapeID) } ?? false })
         guard !ends.isEmpty else { continue }
-        let geometry = ArrowGeometry(arrow: arrow, strokeWidth: ArrowStyle.strokeWidth) { connectables[$0] }
-        transaction.update(record.id, as: Arrow.self) { shape in
-            if let bend = geometry.bendKeepingCurve(movingHandlesToVisibleEndsAt: ends) {
-                shape.props.bend = bend
-            }
-            for end in ends {
-                shape.props[end] = .free(geometry.visiblePoint(at: end))
-            }
+        let released = arrow.releasing(ends, connectables: connectables)
+        transaction.update(record.id, as: Arrow.self) { $0.props = released }
+    }
+}
+
+extension Arrow {
+    /// The arrow with `ends` let go of the shapes they're bound to: each end stays where it
+    /// visibly is, and the arrow keeps its curve.
+    @MainActor
+    func releasing(_ ends: Set<ArrowEnd>, connectables: Connectables) -> Arrow {
+        let geometry = ArrowGeometry(arrow: self, strokeWidth: ArrowStyle.strokeWidth) { connectables[$0] }
+        var arrow = self
+        if let bend = geometry.bendKeepingCurve(movingHandlesToVisibleEndsAt: ends) {
+            arrow.bend = bend
         }
+        for end in ends {
+            arrow[end] = .free(geometry.visiblePoint(at: end))
+        }
+        return arrow
+    }
+}
+
+extension ArrowDefinition: ShapeReferencing {
+    /// A copy of an arrow stays bound to the copies of its shapes, and lets go of the rest as a
+    /// deletion would (tldraw's copy: bindings to shapes left out are dropped, the end staying
+    /// where it was drawn).
+    func remappingReferences(of shape: ShapeRecord<Arrow>, _ map: (ShapeID) -> ShapeID?, in context: ShapeContext) -> Arrow {
+        var released: Set<ArrowEnd> = []
+        var remapped: [ArrowEnd: ShapeID] = [:]
+        for end in [ArrowEnd.start, .end] {
+            guard let binding = shape.props[end].binding else { continue }
+            if let id = map(binding.shapeID) { remapped[end] = id } else { released.insert(end) }
+        }
+        var arrow = released.isEmpty ? shape.props : shape.props.releasing(released, connectables: Connectables(shapes: context))
+        for (end, id) in remapped {
+            guard var binding = arrow[end].binding else { continue }
+            binding.shapeID = id
+            arrow[end] = .bound(binding)
+        }
+        return arrow
     }
 }
 

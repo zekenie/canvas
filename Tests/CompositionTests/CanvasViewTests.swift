@@ -263,21 +263,26 @@ final class ActionLog: NSView {
         expectEqual(editor.camera, scrolled)
     },
     test("a right-click opens a shape's context menu through the view; where there's nothing to offer, it and a Control-click do nothing") {
-        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard)
         let (window, canvas) = windowed(editor)
-        // An arrow is the shipped kind with nothing to offer: Arrange leaves out what's painted by anchor.
         editor.add(Arrow(start: .free(CGPoint(x: 40, y: 300)), end: .free(CGPoint(x: 340, y: 300))))
         let task = editor.add(TaskCard(frame: CGRect(x: 400, y: 40, width: 240, height: 200), title: "Ship"))
-        let arrow = CGPoint(x: 190, y: 300), card = CGPoint(x: 520, y: 140)
-        expect(canvas.menu(for: window.mouse(.rightMouseDown, at: arrow, time: 1)) == nil)
-        // AppKit sends a Control-click to mouseDown only when menu(for:) has nothing: it isn't a press.
-        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: arrow, modifiers: .control, time: 2))
-        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: arrow, modifiers: .control, time: 2.05))
-        expectEqual(editor.selectedShapeIDs, [])
-        let menu = try require(canvas.menu(for: window.mouse(.rightMouseDown, at: card, time: 3)))
+        let arrow = CGPoint(x: 190, y: 300), card = CGPoint(x: 520, y: 140), empty = CGPoint(x: 190, y: 500)
+        // Every shipped shape has something to offer (Cut, Copy and Paste, at least); empty canvas has nothing.
+        expect(canvas.menu(for: window.mouse(.rightMouseDown, at: empty, time: 1)) == nil)
+        let menu = try require(canvas.menu(for: window.mouse(.rightMouseDown, at: card, time: 2)))
         expectEqual(menu.outline.first, "Status ▸")
         expectEqual(editor.selectedShapeIDs, [task])
+        // AppKit sends a Control-click to mouseDown only when menu(for:) has nothing: it isn't a press,
+        // so it doesn't deselect.
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: empty, modifiers: .control, time: 3))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: empty, modifiers: .control, time: 3.05))
+        expectEqual(editor.selectedShapeIDs, [task])
         expect(canvas.menu(for: window.mouse(.leftMouseDown, at: card, modifiers: .control, time: 4)) != nil)
+        // An arrow's menu is just the clipboard's: Arrange leaves out what's painted by anchor.
+        expectEqual(try require(canvas.menu(for: window.mouse(.rightMouseDown, at: arrow, time: 5))).outline, ["Cut", "Copy", "(Paste)"])
         // Asked with some other event (the accessibility Show Menu action), there's no click to go by.
         let key = try require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 5, windowNumber: window.windowNumber,
                                                context: nil, characters: "m", charactersIgnoringModifiers: "m", isARepeat: false, keyCode: 46))

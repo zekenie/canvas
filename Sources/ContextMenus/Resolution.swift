@@ -36,15 +36,16 @@ final class ContextMenuState {
         let revision = editor.revision
         editor.endEditing()
         if let selects { editor.selection = selects }
-        // Ending editing may have saved the editing view: resolve against what it saved.
-        if editor.revision != revision { entries = self.entries(for: ids) }
+        // Ending editing may have saved the editing view: resolve against what it saved, and against
+        // the selection the menu is for (items that ask the editor may read it).
+        if editor.revision != revision || selects != nil { entries = self.entries(for: ids) }
         return entries.isEmpty ? nil : ContextMenuItems.menu(entries)
     }
 
     /// What the menu holds for these shapes: the items that apply to every one of them.
     func entries(for ids: [ShapeID]) -> [ResolvedEntry] {
         let records = ids.compactMap { editor.document[$0] }
-        return ContextMenuItems.resolve(records.map { ($0, ContextMenuItems.shown(candidates(for: $0.kind), for: $0)) }, in: editor)
+        return ContextMenuItems.resolve(records.map { ($0, ContextMenuItems.shown(candidates(for: $0.kind), for: $0, in: editor)) }, in: editor)
     }
 
     /// The kind's own entries, then every shape's that apply to it, each in plugin and builder order.
@@ -77,9 +78,9 @@ struct ResolvedEntry {
 enum ContextMenuItems {
     /// What shows for one shape at one level: the first entry with each key (a kind's own before
     /// every shape's), then only those whose `when` holds.
-    static func shown(_ entries: [ErasedEntry], for record: AnyShapeRecord) -> [ErasedEntry] {
+    static func shown(_ entries: [ErasedEntry], for record: AnyShapeRecord, in editor: CanvasEditor) -> [ErasedEntry] {
         var seen = Set<EntryKey>()
-        return entries.filter { seen.insert($0.key).inserted }.filter { $0.isShown(record) }
+        return entries.filter { seen.insert($0.key).inserted }.filter { $0.isShown(record, editor) }
     }
 
     /// The entries every shape shows, in the first shape's order. An item is enabled if it is for
@@ -98,7 +99,7 @@ enum ContextMenuItems {
                 var levels: [(record: AnyShapeRecord, entries: [ErasedEntry])] = []
                 for (record, match) in matches {
                     guard case .submenu(let entries) = match.content else { return nil }
-                    levels.append((record, shown(entries, for: record)))
+                    levels.append((record, shown(entries, for: record, in: editor)))
                 }
                 let items = resolve(levels, in: editor)
                 return items.isEmpty ? nil : ResolvedEntry(title: entry.title, group: entry.key.group, content: .submenu(items))
@@ -111,7 +112,7 @@ enum ContextMenuItems {
         var checks: [Bool?] = []
         for (record, match) in matches {
             guard case .item(let isEnabled, let isChecked, let action) = match.content else { return nil }
-            if isEnabled(record) { enabled.append((record.id, action, match)) }
+            if isEnabled(record, editor) { enabled.append((record.id, action, match)) }
             checks.append(isChecked.map { $0(record) })
         }
         let state: NSControl.StateValue? = checks.allSatisfy { $0 == nil } ? nil

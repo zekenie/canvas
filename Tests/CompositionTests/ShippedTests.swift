@@ -35,6 +35,7 @@ import Validation
         table-of-contents   service ContentsState
         checklists          overlay ChecklistOverlay
         validation-details  DetailStatuses
+        clipboard           service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · ShapeContextMenus
         rectangles          shape rectangle · tool rectangle · shortcut R → tool rectangle
         polylines           shape polyline · tool polyline · shortcut L → tool polyline
         eraser              tool eraser · shortcut E → tool eraser

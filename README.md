@@ -49,6 +49,7 @@ A board remembers, on each Mac, where you left its view.
 | Go back to the previous selection | The back button in the detail panel's header, or ⌘[ (Go › Back): what was selected before, and the view as it was then (from a row's details, the list) |
 | Add a checklist to a note or task | The panel's Checklist tab: + adds an item, − or Delete removes the selected one |
 | Delete shapes or arrows | Select them and press Delete |
+| Cut, copy and paste shapes | ⌘X, ⌘C and ⌘V (Edit menu, or right-click a shape). A paste lands where the originals were if they're in view, else in the middle of the view; arrows copied with their shapes stay attached to the copies |
 | Arrow tool | A (V or Escape to go back to select) |
 | Draw an arrow | Drag from one shape to another with the arrow tool. Arriving quickly aims at a shape's center; arriving slowly, or pausing inside the shape, aims at that exact spot |
 | Aim into a shape | Hold ⌥ while drawing or dragging an end: the arrow runs all the way to the spot |
@@ -81,6 +82,7 @@ Sources/
   ContextMenus/         the context menu horizontal: right-click items, groups, the selection's menu
   TableOfContents/      the table of contents horizontal: a row per shape, in the detail panel
   Checklists/           a horizontal any kind opts into: a checklist, its panel tab, menu items, a chip
+  Clipboard/            the clipboard horizontal: cut, copy and paste, which kinds may opt out of
   ValidationDetails/    a bridge between two horizontals: validation issues in the panel's footer
   Composition/          the shipped plugin list, and the welcome board
   InfiniteCanvas/       the SwiftUI app

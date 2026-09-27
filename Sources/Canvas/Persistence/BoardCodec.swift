@@ -12,9 +12,10 @@ import Geometry
 ///     }
 ///
 /// `format` versions the envelope and each record's own members; `schema` gives each kind's props
-/// version (`ShapeProps.migrations`). A shape the app can't use is kept as it was, with its own
-/// version in `v`: its kind isn't installed, it's from a newer version of its kind, or it didn't
-/// load. Reading never drops a shape and never stops at one: it refuses only a file that isn't a
+/// version (`ShapeProps.migrations`). A record with metadata (`AnyShapeRecord.meta`) has it in
+/// `meta`, an object by `owner.name`; one without has none, so a board without any reads as
+/// before. A shape the app can't use is kept as it was, with its own version in `v`: its kind
+/// isn't installed, it's from a newer version of its kind, or it didn't load. Reading never drops a shape and never stops at one: it refuses only a file that isn't a
 /// board, or one in a newer format. What it had to fix, and what it kept aside, is in the report.
 public struct BoardCodec: Sendable {
     /// The envelope's version.
@@ -92,15 +93,17 @@ public struct BoardCodec: Sendable {
         guard let container = try? decoder.container(keyedBy: RecordKeys.self) else {
             let json = (try? JSONValue(from: decoder)) ?? .null
             return ReadRecord(id: nil, kind: ShapeKind(rawValue: ""), key: nil, props: OpaqueProps(json: json, version: 0),
-                              keptAside: .unreadable("it isn't a JSON object"))
+                              meta: ShapeMeta(), keptAside: .unreadable("it isn't a JSON object"))
         }
         let id = try? container.decode(ShapeID.self, forKey: .id)
         let kind = ShapeKind(rawValue: (try? container.decode(String.self, forKey: .kind)) ?? "")
         let key = (try? container.decode(String.self, forKey: .index)).flatMap(StackingKey.init)
         let version = (try? container.decodeIfPresent(Int.self, forKey: .v)) ?? schema[kind.rawValue] ?? 0
+        // Metadata that isn't an object can't be any plugin's: it's left out.
+        let meta = ShapeMeta(json: (try? container.decodeIfPresent(JSONValue.self, forKey: .meta))?.objectValue ?? [:])
         func keptAside(_ reason: LoadReport.KeptShape.Reason) -> ReadRecord {
             let json = (try? container.decode(JSONValue.self, forKey: .props)) ?? .null
-            return ReadRecord(id: id, kind: kind, key: key, props: OpaqueProps(json: json, version: version), keptAside: reason)
+            return ReadRecord(id: id, kind: kind, key: key, props: OpaqueProps(json: json, version: version), meta: meta, keptAside: reason)
         }
         guard let codec = kinds[kind] else { return keptAside(.unknownKind) }
         guard version <= codec.version else { return keptAside(.newerVersion(file: version, app: codec.version)) }
@@ -114,7 +117,7 @@ public struct BoardCodec: Sendable {
         if let frame = (props as? any BoxShapeProps)?.frame, !frame.isFinite {
             return keptAside(.unreadable("its frame isn't finite"))
         }
-        return ReadRecord(id: id, kind: kind, key: key, props: props, keptAside: nil)
+        return ReadRecord(id: id, kind: kind, key: key, props: props, meta: meta, keptAside: nil)
     }
 
     /// The document, after the repairs a board may need: an id for each shape that has none or
@@ -135,7 +138,7 @@ public struct BoardCodec: Sendable {
                 report.repairs.append(.newID(old: item.id, new: id))
             }
             if let reason = item.keptAside { report.keptAside.append(LoadReport.KeptShape(id: id, kind: item.kind, reason: reason)) }
-            records.append(AnyShapeRecord(id: id, kind: item.kind, props: item.props, stackingKey: item.key))
+            records.append(AnyShapeRecord(id: id, kind: item.kind, props: item.props, stackingKey: item.key, meta: item.meta))
         }
         if !CanvasDocument.keysRise(records) {
             // Shapes with keys in key order, ties broken by id; each key that doesn't rise is
@@ -289,11 +292,12 @@ private struct ReadRecord {
     let kind: ShapeKind
     let key: StackingKey?
     let props: any ShapeProps
+    let meta: ShapeMeta
     /// Nil when the props are the kind's own type.
     let keptAside: LoadReport.KeptShape.Reason?
 }
 
-private enum RecordKeys: String, CodingKey { case id, kind, index, props, v }
+private enum RecordKeys: String, CodingKey { case id, kind, index, props, v, meta }
 
 private struct Envelope: Encodable {
     let format: Int
@@ -311,6 +315,7 @@ private struct Record: Encodable {
         try container.encodeIfPresent(record.stackingKey, forKey: .index)
         try record.props.encode(to: container.superEncoder(forKey: .props))
         if let opaque = record.opaqueProps { try container.encode(opaque.version, forKey: .v) }
+        if !record.meta.isEmpty { try container.encode(record.meta.json, forKey: .meta) }
     }
 }
 

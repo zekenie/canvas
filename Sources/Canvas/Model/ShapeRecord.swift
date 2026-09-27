@@ -43,11 +43,23 @@ public struct AnyShapeRecord: Identifiable, Equatable, Sendable {
     /// Where it sits in the stack. Nil until the shape is in a document, which gives it one; only
     /// the document's order changes it (`bringToFront`, `sendToBack`).
     public internal(set) var stackingKey: StackingKey?
+    /// What plugins keep about the shape beside its props, each member typed by its key
+    /// (`meta[CopiedFrom.self]`). Kept with the shape in its board. Changed, like the props, in a
+    /// transaction: `tx.update(id) { $0.meta[Key.self] = value }`.
+    public var meta = ShapeMeta()
 
     public init<P: ShapeProps>(_ shape: ShapeRecord<P>) {
         id = shape.id
         kind = P.kind
         props = shape.props
+    }
+
+    /// The same shape under another id: its kind, props and meta, with no place in a stack yet.
+    /// Props that name other shapes still name them (see `remappingReferences`).
+    public func copy(as id: ShapeID = ShapeID()) -> AnyShapeRecord {
+        var copy = AnyShapeRecord(id: id, kind: kind, props: props, stackingKey: nil)
+        copy.meta = meta
+        return copy
     }
 
     public func typed<P: ShapeProps>(as _: P.Type = P.self) -> ShapeRecord<P>? {
@@ -71,7 +83,7 @@ public struct AnyShapeRecord: Identifiable, Equatable, Sendable {
     }
 
     public static func == (a: Self, b: Self) -> Bool {
-        a.id == b.id && a.kind == b.kind && a.stackingKey == b.stackingKey && a.props.isEqual(to: b.props)
+        a.id == b.id && a.kind == b.kind && a.stackingKey == b.stackingKey && a.meta == b.meta && a.props.isEqual(to: b.props)
     }
 }
 

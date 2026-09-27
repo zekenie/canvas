@@ -70,3 +70,13 @@ public protocol PaintOrderAnchored: ShapeDefinition {
     /// when the stack, or this shape, changes.
     func paintAnchor(of shape: ShapeRecord<Props>, in document: CanvasDocument) -> ShapeID?
 }
+
+/// Props that name other shapes (a connector's ends). Whatever makes copies of shapes (pasting)
+/// asks it, so that a copy names the copies of the shapes its original named, and lets go of the
+/// rest. A kind whose props name no shape needs nothing: its copy's props are its own.
+public protocol ShapeReferencing: ShapeDefinition {
+    /// The props, with every shape they name passed through `map`: named as the shape `map`
+    /// returns instead, or, where it returns nil, let go of as though that shape were being deleted
+    /// (an arrow's end stays where it visibly is in `context`, which still has the shape).
+    func remappingReferences(of shape: ShapeRecord<Props>, _ map: (ShapeID) -> ShapeID?, in context: ShapeContext) -> Props
+}

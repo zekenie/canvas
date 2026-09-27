@@ -1,5 +1,4 @@
 import AppKit
-import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
@@ -22,14 +21,15 @@ import TestKit
 @MainActor let menuRoutingTests = Suite("Context menu routing, on screen", [
     test("a Control-click goes to the menu first: shown, it never presses; with none, the select tool ignores it; a right-click opens it too") {
         NSApplication.shared.setActivationPolicy(.accessory)
-        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard)
         let window = NSWindow(contentRect: CGRect(x: -6000, y: -6000, width: 800, height: 600), styleMask: [.borderless],
                               backing: .buffered, defer: false)
         let canvas = CanvasView(editor: editor)
         window.contentView = canvas
         window.orderFrontRegardless()
         defer { window.orderOut(nil) }
-        editor.add(Arrow(start: .free(CGPoint(x: 40, y: 300)), end: .free(CGPoint(x: 340, y: 300))))
         let task = editor.add(TaskCard(frame: CGRect(x: 400, y: 40, width: 240, height: 200), title: "Ship"))
 
         let opened = OpenedMenus()
@@ -54,9 +54,9 @@ import TestKit
         expectEqual(editor.selectedShapeIDs, [task])
         expect(editor.session == nil)
 
-        click(.leftMouseDown, .leftMouseUp, at: CGPoint(x: 190, y: 300), .control)
-        expectEqual(opened.outlines.count, 1, "the arrow has nothing to offer")
-        expectEqual(editor.selectedShapeIDs, [task], "and the Control-click that reached mouseDown didn't select it")
+        click(.leftMouseDown, .leftMouseUp, at: CGPoint(x: 190, y: 500), .control)
+        expectEqual(opened.outlines.count, 1, "empty canvas has nothing to offer")
+        expectEqual(editor.selectedShapeIDs, [task], "and the Control-click that reached mouseDown didn't deselect")
 
         click(.rightMouseDown, .rightMouseUp, at: CGPoint(x: 520, y: 140), [])
         expectEqual(opened.outlines.count, 2)

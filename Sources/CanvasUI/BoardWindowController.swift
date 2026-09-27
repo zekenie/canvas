@@ -7,7 +7,9 @@ import SwiftUI
 ///
 /// It answers the menu commands that must reach the canvas whatever has the keyboard (the
 /// responder chain from a detail-panel field never passes through the canvas, but always reaches
-/// this controller): zooming, showing or hiding the details, and going back.
+/// this controller): zooming, showing or hiding the details, and going back. And Edit › Cut, Copy
+/// and Paste, wherever the keyboard is (the canvas, the table of contents' list, a control in the
+/// panel), except in text, which takes them first: a note being edited, a field.
 @MainActor
 public final class BoardWindowController: NSWindowController {
     public init(board: BoardDocument) {
@@ -36,6 +38,16 @@ public final class BoardWindowController: NSWindowController {
 
     /// Go › Back: the command a plugin claims (Selection's, back to the previous selection).
     @objc public func goBack(_ sender: Any?) { board?.editor.perform(.goBack) }
+
+    // Edit › Cut, Copy and Paste: the commands a plugin claims (Clipboard's, on the selection).
+    @objc public func cut(_ sender: Any?) { board?.editor.perform(.cut) }
+    @objc public func copy(_ sender: Any?) { board?.editor.perform(.copy) }
+    @objc public func paste(_ sender: Any?) { board?.editor.perform(.paste) }
+
+    /// The menu items that run a command, enabled while it can run.
+    private static let commands: [Selector: CanvasCommand] = [
+        #selector(goBack(_:)): .goBack, #selector(cut(_:)): .cut, #selector(copy(_:)): .copy, #selector(paste(_:)): .paste,
+    ]
 }
 
 extension BoardWindowController: NSMenuItemValidation {
@@ -43,7 +55,7 @@ extension BoardWindowController: NSMenuItemValidation {
         if item.action == #selector(toggleDetails(_:)) {
             item.title = board?.viewState.showsDetails == true ? "Hide Inspector" : "Show Inspector"
         }
-        if item.action == #selector(goBack(_:)) { return board?.editor.canPerform(.goBack) == true }
+        if let command = item.action.flatMap({ Self.commands[$0] }) { return board?.editor.canPerform(command) == true }
         return board != nil
     }
 }

@@ -2,7 +2,7 @@
 
 Everything on the canvas comes from a plugin: sticky notes, ellipses, arrows, task cards,
 validation, checklists, the detail panel and the table of contents beside the canvas, selecting
-itself, what each key does, even the examples.
+itself, copying and pasting, what each key does, even the examples.
 The core (`Sources/Canvas`) knows how to hold shapes, run tools, draw, and wire plugins together,
 and nothing about any particular shape or concern. Its one built-in tool is tldraw's Hand, which
 pans (a flung release slides on). Select, which selects (a click, ⇧-click, or a marquee dragged
@@ -26,6 +26,7 @@ maps one onto the other.
 - [The detail panel](#the-detail-panel)
 - [Context menus](#context-menus)
 - [The table of contents](#the-table-of-contents)
+- [The clipboard](#the-clipboard)
 - [Capabilities](#capabilities)
 - [The editor, the document, and drawing](#the-editor-the-document-and-drawing)
 - [Boards on disk](#boards-on-disk)
@@ -218,6 +219,10 @@ Once one plugin works, the question is which piece the next feature needs.
 | Let go of shapes as they're deleted | `registrar.willDelete` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
 | Create a kind with a double-click on empty canvas | `x.createOnDoubleClick(place)` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
 | Keep a kind from being selected | `x.unselectable()`, or `x.selectable { ... }` | [Selection](#selection) |
+| Keep a kind from being copied | `x.uncopyable()`, or `x.copyable { ... }` | [The clipboard](#the-clipboard) |
+| Make copies of a kind name the copies of the shapes it names (a connector) | `ShapeReferencing` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
+| Keep something about any shape beside its props (where it came from) | A `ShapeMetaKey`, and `record.meta[Key.self]` | [Metadata](#metadata) |
+| Show or dim a right-click item by more than its shape | `.shown { record, editor in ... }`, `.enabled { ... }` | [The clipboard](#the-clipboard)'s Paste |
 | Show a shape's state at the foot of the panel | `registrar.detailStatusForEveryShape` | [ValidationDetails](#footer-lines-from-a-bridge-validationdetails) |
 | Change a shipped kind's props | A migration in its `static let migrations`, and a fixture for the new version | [Boards on disk](#boards-on-disk) |
 
@@ -285,7 +290,7 @@ Each target is one line, with its layer:
 |---|---|---|
 | foundation | foundation | Geometry, Canvas (the core) |
 | ui | foundation | CanvasUI (the AppKit view, the SwiftUI toolbar, and `CanvasFocus`) |
-| horizontal | foundation, horizontal | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Checklists |
+| horizontal | foundation, horizontal | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Checklists, Clipboard |
 | vertical | foundation, horizontal | Arrows, StickyNotes, Ellipses, TaskCards, Rectangles, Polylines, Eraser, Reordering |
 | bridge | foundation, horizontal, vertical | EllipseTitles, ValidationDetails |
 | composition | foundation, horizontal, vertical, bridge | Composition (the shipped plugin list) |
@@ -476,9 +481,10 @@ The details:
   whose drawn state changes some other way (its own state, a timer) calls `editor.setNeedsDisplay()`,
   as Selection does when the selection or hover changes; a tool whose cursor follows such state
   calls `editor.refreshCursor()`.
-- **Commands** (`CanvasCommand`: `.delete`, `.selectAll`, `.goBack`) are what menu items run: the
-  canvas view forwards Edit › Delete and Edit › Select All (AppKit's standard actions) with
-  `editor.perform`, the board's window Go › Back (⌘[), whatever has the keyboard, and a key or any
+- **Commands** (`CanvasCommand`: `.delete`, `.selectAll`, `.goBack`, `.cut`, `.copy`, `.paste`)
+  are what menu items run: the canvas view forwards Edit › Delete and Edit › Select All (AppKit's
+  standard actions) with `editor.perform`, the board's window Go › Back (⌘[) whatever has the
+  keyboard, and Edit › Cut, Copy and Paste wherever text doesn't take them first, and a key or any
   plugin may run one. A plugin claims each with `registrar.command`, or with Keyboard's
   `registrar.command(_:shortcuts:)`, which gives it its keys too, and may say when it can run
   (`isEnabled:`), which `editor.canPerform` asks for a menu item to enable it, and a key to take
@@ -833,6 +839,7 @@ What the shipped app's keys do:
 | ↩ (and ⌤) | Edits the only selected shape | Selection |
 | ⌘A | Selects everything, as Edit › Select All does | Selection |
 | ⌘[ | Goes back to what was selected before, as Go › Back does (while there's somewhere to go) | Selection |
+| ⌘X, ⌘C, ⌘V | Cuts, copies and pastes shapes, as Edit › Cut, Copy and Paste do | Clipboard |
 
 - **A chord** (`KeyChord`) is a key and the modifiers held with it. A character literal is a key
   alone (`"v"`), and a letter's case doesn't count; `KeyChord("a", .command)` is ⌘A, and the keys
@@ -1290,12 +1297,17 @@ right-click on a task card with one of its three items checked:
 │ Uncheck All             │    actions with something to do
 │ Remove Checked          │
 ├─────────────────────────┤
+│ Cut                     │  every shape's (Clipboard): Paste dimmed with nothing to paste
+│ Copy                    │
+│ Paste                   │
+├─────────────────────────┤
 │ Arrange               ▸ │  every shape's (Reordering): Bring to Front, Bring Forward,
 └─────────────────────────┘    Send Backward, Send to Back
 ```
 
-A shape nothing offers anything has no menu: the right-click does nothing. As shipped, that's an
-arrow, the one kind Arrange leaves out.
+A shape nothing offers anything has no menu: the right-click does nothing. As shipped, every shape
+has the clipboard's items, so that's only empty canvas; an arrow's menu is those alone, since
+Arrange leaves it out.
 
 ### Contributing
 
@@ -1322,7 +1334,11 @@ task.contextMenu {
   props can't do (reordering, deleting, selecting), the other form, `{ ids, editor in ... }`, gets
   the shapes, in selection order, and the editor, and changes the document with `editor.transact`.
 - **`when` leaves an item out; `isEnabled` dims it.** A context menu shows only what applies, so
-  reach for `when`. `isChecked` checks it (✓ for every shape, – for some).
+  reach for `when`. `isChecked` checks it (✓ for every shape, – for some). An item that depends on
+  more than its shape (a horizontal's rules, a service, the pasteboard) adds `.shown { value,
+  editor in ... }` or `.enabled { value, editor in ... }`, which hold together with `when` and
+  `isEnabled` and see the selection the menu is for (Clipboard's Paste is
+  `.enabled { _, editor in editor.canPaste }`).
 - **`Submenu(title) { items }`** shows when any of its items does.
 - **Groups are types**, like tabs: a separator falls between groups, which sort by `order`, then by
   first appearance, in the tabs' bands. An item names its group with `in:`; the default is
@@ -1332,7 +1348,7 @@ task.contextMenu {
   |---|---|
   | 0 (the default) | A kind's own items (`ShapeMenuGroup`) |
   | 50 | A horizontal's feature, on the kinds that opt in (`ChecklistMenuGroup`) |
-  | 100 and up | Shared by every kind (`ReorderMenuGroup`, 200) |
+  | 100 and up | Shared by every kind (`ClipboardMenuGroup`, 100; `ReorderMenuGroup`, 200) |
 
 - **Keyed.** Each item claims its target, group and `id` (the title by default), and an item in a
   submenu its path, so two plugins adding one item to a kind are a `conflict`
@@ -1548,6 +1564,85 @@ Bringing shapes into view takes two generic things from the core: `editor.viewpo
 tldraw's camera moves and stopped by any other camera change, as the hand tool's slide is.
 `Camera(fitting:in:inset:maxZoom:)` (Geometry) does the fit.
 
+## The clipboard
+
+Cut, copy and paste are a horizontal ([`Sources/Clipboard`](../Sources/Clipboard)) built on three
+others: Selection (what's copied, and what's selected after a paste), Keyboard (⌘X, ⌘C and ⌘V) and
+ContextMenus (Cut, Copy and Paste on every shape). The core has never heard of a clipboard. It
+lends three generic things: commands (`.cut`, `.copy` and `.paste`, which Edit › Cut, Copy and
+Paste send), shape [metadata](#metadata), and the `ShapeReferencing` [capability](#capabilities).
+
+| | Does |
+|---|---|
+| ⌘C, Edit › Copy, Copy | Puts copies of the selection's copyable shapes on the pasteboard, back to front. The board doesn't change. |
+| ⌘X, Edit › Cut, Cut | Copies, then deletes what it copied, in one transaction. What can't be copied stays. |
+| ⌘V, Edit › Paste, Paste | Puts the copies on top of the board, with new ids, and selects them. |
+
+- **Copies get new ids, and remember their originals.** Each pasted shape's metadata names the
+  shape it was copied from: `record.copiedFrom`, which is `meta[CopiedFrom.self]?.shape`, and its
+  board keeps it. That's the shape the copy was made from: a copy, if a copy was copied; in
+  whichever board it was copied from, this one or another; and maybe gone since (a cut shape always
+  is). Pasting twice makes two copies of the same shapes. The rest of a shape's metadata comes
+  with it.
+- **Where a paste lands** is tldraw's: where the originals were, if any of them would be in view
+  there; otherwise centered in the view, the shapes keeping their places among themselves. A paste
+  in place lies exactly over its originals, as in tldraw and Figma. Moving them is
+  `transaction.translate(ids, by:)`, which moves every kind as dragging would: boxes by their frame,
+  others by their `CustomTranslation`.
+- **Shapes that name shapes.** A kind whose props name other shapes (an arrow's bound ends) adopts
+  the core's `ShapeReferencing`. Copying asks it to let go of the shapes left out of the copy, and
+  pasting asks it to name the copies of those copied with it. So two notes and the arrow between
+  them paste as two notes and an arrow between the copies, and an arrow copied alone pastes free,
+  ending where it was drawn, as it would if its notes were deleted. tldraw's copy does the same.
+- **The pasteboard** holds a small board: `BoardCodec`'s JSON, each kind at its version, under the
+  app's own type. So one window can paste what another copied, a paste into a newer app migrates as
+  opening a board does, and a kind the board doesn't install is left out of a paste. Anything else
+  on the pasteboard (text, an image from another app) is left alone for now: ⌘V does nothing, and
+  its key goes on. `ClipboardPlugin(pasteboard:)` takes the pasteboard, the system's by default.
+- **Where the keys work.** ⌘X, ⌘C and ⌘V are Keyboard's while the canvas has the keyboard.
+  Elsewhere the menu has them: the board's window controller answers Edit › Cut, Copy and Paste
+  wherever the keyboard is, the table of contents' list included, except in text (a note being
+  edited, a panel's field), which takes them first. Cut and Paste don't run mid-gesture; Copy does.
+- **In the context menu**, every shape has Cut, Copy and Paste, in `ClipboardMenuGroup` (order 100,
+  before Arrange). Like the rest of the menu they're for the selection; Paste is dimmed with nothing
+  to paste. They depend on more than the shape (the copyability rules, the pasteboard), so they use
+  ContextMenus' editor-aware modifiers: `.enabled { record, editor in ... }`.
+
+**Opting out.** Every kind is copyable unless it says otherwise, for all its shapes or for some, as
+with selecting:
+
+```swift
+registrar.shape(TicketDefinition()) { ticket in ticket.uncopyable() }
+registrar.shape(StampDefinition()) { stamp in stamp.copyable { !$0.props.isSealed } }
+```
+
+A selection's uncopyable shapes are left out of a copy, and stay when it's cut. With only such
+shapes selected, ⌘C and ⌘X pass the key on, and Cut and Copy are dimmed in the menu. Everything
+else treats them as usual: they're selected, moved, deleted and erased. The rule is
+`ShapeCopyability`: at most one per kind, plus one for every kind, which a kind's own overrides.
+
+### Metadata
+
+A shape's metadata (`AnyShapeRecord.meta`) is the core's place for what a plugin keeps about a
+shape that isn't the kind's own data, such as where it was copied from. A member is typed by a key
+the plugin that owns it declares, as an extension point is:
+
+```swift
+public enum CopiedFrom {}
+extension CopiedFrom: ShapeMetaKey {
+    public typealias Value = CopySource        // { shape: ShapeID }
+    public static var owner: PluginID { .clipboard }
+    public static var name: String { "copiedFrom" }
+}
+```
+
+Read it with `record.meta[CopiedFrom.self]`, and change it in a transaction:
+`tx.update(id) { $0.meta[Key.self] = value }`. A board keeps it beside the props, by
+`owner.name` (`"meta" : { "clipboard.copiedFrom" : { "shape" : "…" } }`), members no installed
+plugin knows included, and a copy (`record.copy(as:)`) takes it along. Unlike props, members
+aren't versioned: add only optional fields to a value, since one that no longer decodes reads as
+nil.
+
 ## Capabilities
 
 Some behavior belongs to a kind itself rather than to a concern others can join. That's a
@@ -1561,6 +1656,7 @@ it, the core or a horizontal.
 | `HandleProviding` (Selection's) | Draggable handles on the only selected shape. The select tool finds, draws and hit-tests them; `pressHandle` returns `.drag` or `.consumed`, and `dragSession` does the dragging. | Arrows |
 | `BrushHitTesting` (Selection's) | Whether the marquee touches it, when the brush overlaps its bounds without containing them. Default: `ShapeGeometry.isHit(byBrush:)`. | Arrows (against the visible arc) |
 | `PaintOrderAnchored` | Painted just above another shape, whatever its place in the document. The anchor follows from the shape's own props and the document's order, since the paint order is kept until one of those changes. | Arrows (above the shapes they join) |
+| `ShapeReferencing` | Props that name other shapes. `remappingReferences(of:_:in:)` passes each through a map: named as the shape it gives, or, for nil, let go of as a deletion would. Whatever copies shapes calls it through `record.remappingReferences(_:in:)`; a kind that names no shape needs nothing. | Arrows (a copy stays bound to the copies of its shapes, and lets go of the rest where it's drawn) |
 
 The rule of thumb: behavior intrinsic to a kind is a capability; behavior anyone can add, to any
 kind, from any plugin, is an extension point. What a kind shows in the detail panel is an extension
@@ -1573,7 +1669,9 @@ to it.
   their stacking keys: each record carries its own (`stackingKey`, a fractional index as in
   tldraw), so moving a shape in the stack changes that shape alone. The only way to change it is
   `editor.transact { tx in ... }`: `insert` (on top), `update` (typed with `as:`; it can't change a
-  shape's id or key), `bringToFront`, `sendToBack`, `move(_:above:)`, `move(_:below:)`, `delete`.
+  shape's id or key), `bringToFront`, `sendToBack`, `move(_:above:)`, `move(_:below:)`, `delete`,
+  and `translate(_:by:)`, which moves shapes as dragging them would. A record carries its props and
+  its [metadata](#metadata), and `record.copy(as:)` is the same shape under another id.
   A transaction commits once, if anything changed, and bumps `editor.revision`. What it did goes
   with it, record by record: its `ChangeSet` names the shapes it added, changed and removed, and
   says whether the stack changed. Transactions don't nest. A frame that isn't finite never gets in: such an insert or update is dropped, since a board
@@ -1627,12 +1725,15 @@ pretty-printed, so a board diffs cleanly.
   "format" : 1,
   "schema" : { "arrow" : 0, "sticky-note" : 1 },
   "shapes" : [
-    { "id" : "…", "index" : "a0", "kind" : "sticky-note", "props" : { "frame" : [[80, 80], [200, 200]], "text" : "…" } }
+    { "id" : "…", "index" : "a0", "kind" : "sticky-note", "props" : { "frame" : [[80, 80], [200, 200]], "text" : "…" } },
+    { "id" : "…", "index" : "a1", "kind" : "sticky-note", "props" : { … }, "meta" : { "clipboard.copiedFrom" : { "shape" : "…" } } }
   ]
 }
 ```
 
-`format` versions the envelope, and `schema` each kind's props. The camera, the selection and
+`format` versions the envelope, and `schema` each kind's props. A shape with
+[metadata](#metadata) has it in `meta`, and one without has none, so boards from before it read
+as they did (an app from before it reads such a board, and drops `meta` when it saves). The camera, the selection and
 whether the details show aren't in it: they're remembered per file on this Mac, so panning never
 marks a board edited.
 
@@ -1741,6 +1842,7 @@ context-menus       service ContextMenuState · secondary-click menu
 table-of-contents   service ContentsState
 checklists          overlay ChecklistOverlay
 validation-details  DetailStatuses
+clipboard           service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · ShapeContextMenus
 rectangles          shape rectangle · tool rectangle · shortcut R → tool rectangle
 polylines           shape polyline · tool polyline · shortcut L → tool polyline
 eraser              tool eraser · shortcut E → tool eraser
@@ -1789,8 +1891,8 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   cards into more, like Selection's double-click), so they never depend on a real vertical. Their
   tools have no keys (CanvasTesting can't import Keyboard): a test picks one with `h.editor.setTool`,
   or registers a key for it (`$0.shortcut("c", forTool: ToolID(placing: Card.kind))`).
-  SelectionTests, ArrowsTests, ValidationTests, DetailPanelTests, ChecklistsTests and
-  ValidationDetailsTests import no real vertical (only these fixtures, and local test kinds), which
+  SelectionTests, ArrowsTests, ValidationTests, DetailPanelTests, ChecklistsTests, ClipboardTests
+  and ValidationDetailsTests import no real vertical (only these fixtures, and local test kinds), which
   proves those plugins are shape-agnostic.
 - CanvasTests run the core with no plugin claiming the default tool, so it's the Hand there, and
   none claiming key strokes, so no key does anything; a test that presses, drags or selects shapes
@@ -1819,6 +1921,10 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   `menu.choose("Level", "2")` runs an item as a click would, failing the test if it's dimmed. No
   menu goes on screen. `h.hold(.control)` first makes it a Control-click. ContextMenusTests import no
   real vertical.
+- **The clipboard.** A test that copies gives the clipboard a pasteboard of its own, so it never
+  touches the user's: `ClipboardPlugin(pasteboard: NSPasteboard.withUniqueName())`, or
+  `ShippedPlugins.makeEditor(pasteboard:)` (and `releaseGlobally()` it after). Two editors on one
+  pasteboard are two boards copying and pasting between them.
 - A test target is `Tests/<Name>Tests` with a `main.swift` that calls `runTests([...])`. Every
   `Suite` must be listed there (`test.sh` checks). `<M>Tests` may depend only on M, what M
   depends on, and the test-support and ui modules.
@@ -1905,6 +2011,10 @@ Each of these adds to the design without changing what plugins are written again
   dragging rows to restack their shapes; per-kind zoom targets
   and click actions (data-canvas's `getZoomConfig` and `onClick`); Return editing the selected
   shape; and arrow rows that name the shapes they join.
+- **More of the clipboard**: pasting what other apps put on the pasteboard (text as a note, an
+  image) and giving them a text or image version of copied shapes; pasting at the pointer
+  (tldraw's preference, and ⌥); Duplicate (⌘D) and ⌥-dragging a copy, on the same copying; and
+  undo grouping a cut or a paste into one step.
 - **More of the context menu**: items for empty canvas (Paste, Select All), through a point of
   their own; key equivalents and symbols on items; and the items everyone expects, such as Delete
   and Duplicate, once a plugin owns them.

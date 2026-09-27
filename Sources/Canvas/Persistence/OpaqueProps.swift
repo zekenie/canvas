@@ -25,11 +25,12 @@ struct OpaqueProps: ShapeProps {
 
 extension AnyShapeRecord {
     /// A shape as a board reads it: `props` are `kind`'s own type, or opaque.
-    init(id: ShapeID, kind: ShapeKind, props: any ShapeProps, stackingKey: StackingKey?) {
+    init(id: ShapeID, kind: ShapeKind, props: any ShapeProps, stackingKey: StackingKey?, meta: ShapeMeta = ShapeMeta()) {
         self.id = id
         self.kind = kind
         self.props = props
         self.stackingKey = stackingKey
+        self.meta = meta
     }
 
     /// Kept aside by the board it came from: its kind isn't installed, it's from a newer version of

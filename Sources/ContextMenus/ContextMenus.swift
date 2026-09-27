@@ -53,11 +53,11 @@ public struct ContextMenuContribution {
 final class ErasedEntry {
     let title: String
     let key: EntryKey
-    let isShown: @MainActor (AnyShapeRecord) -> Bool
+    let isShown: @MainActor (AnyShapeRecord, CanvasEditor) -> Bool
     let content: Content
 
     enum Content {
-        case item(isEnabled: @MainActor (AnyShapeRecord) -> Bool, isChecked: (@MainActor (AnyShapeRecord) -> Bool)?, action: Action)
+        case item(isEnabled: @MainActor (AnyShapeRecord, CanvasEditor) -> Bool, isChecked: (@MainActor (AnyShapeRecord) -> Bool)?, action: Action)
         case submenu([ErasedEntry])
     }
 
@@ -73,7 +73,7 @@ final class ErasedEntry {
         title = entry.title
         key = EntryKey(group: entry.group, id: entry.id)
         let shown = entry.isShown
-        isShown = { read($0).map(shown) ?? false }
+        isShown = { record, editor in read(record).map { shown($0, editor) } ?? false }
         switch entry.content {
         case .item(let isEnabled, let isChecked, let action):
             var checked: (@MainActor (AnyShapeRecord) -> Bool)?
@@ -82,7 +82,8 @@ final class ErasedEntry {
             case .edit(let edit): .edit { id, transaction in write(id, &transaction, edit) }
             case .perform(let perform): .perform(perform)
             }
-            content = .item(isEnabled: { read($0).map(isEnabled) ?? false }, isChecked: checked, action: erased)
+            content = .item(isEnabled: { record, editor in read(record).map { isEnabled($0, editor) } ?? false },
+                            isChecked: checked, action: erased)
         case .submenu(let entries):
             content = .submenu(entries.map { ErasedEntry($0, read: read, write: write) })
         }

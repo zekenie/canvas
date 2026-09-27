@@ -1,6 +1,8 @@
+import AppKit
 import Arrows
 import Canvas
 import Checklists
+import Clipboard
 import ContextMenus
 import CoreGraphics
 import DetailPanel
@@ -24,25 +26,31 @@ import ValidationDetails
 /// order overlays draw in). Tests import this, so they check exactly what ships.
 @MainActor
 public enum ShippedPlugins {
-    public static var all: [any CanvasPlugin] {
+    public static var all: [any CanvasPlugin] { plugins() }
+
+    /// The shipped list, its clipboard on `pasteboard`: the system's, but for tests, which pass one of
+    /// their own so they never touch the user's.
+    public static func plugins(pasteboard: NSPasteboard = .general) -> [any CanvasPlugin] {
         [
             // First: every key is registered with Keyboard; the others build on Selection, and its
             // handles draw below their view overlays.
             KeyboardPlugin(), SelectionPlugin(),
             ArrowsPlugin(), StickyNotesPlugin(), EllipsesPlugin(), TaskCardsPlugin(),
             ValidationPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin(), ChecklistsPlugin(), ValidationDetailsPlugin(),
+            ClipboardPlugin(pasteboard: pasteboard),
             // The examples (Examples/). Each is one line here; delete it to leave it out.
             RectanglesPlugin(), PolylinesPlugin(), EraserPlugin(), TitlesPlugin(), EllipseTitlesPlugin(), ReorderingPlugin(),
         ]
     }
 
-    public static func registry() throws(RegistryError) -> Registry {
-        try Registry(plugins: all)
+    public static func registry(pasteboard: NSPasteboard = .general) throws(RegistryError) -> Registry {
+        try Registry(plugins: plugins(pasteboard: pasteboard))
     }
 
-    public static func makeEditor(document: CanvasDocument = WelcomeBoard.document(), scheduler: any Scheduler = TaskScheduler()) -> CanvasEditor {
+    public static func makeEditor(document: CanvasDocument = WelcomeBoard.document(), scheduler: any Scheduler = TaskScheduler(),
+                                  pasteboard: NSPasteboard = .general) -> CanvasEditor {
         do {
-            return CanvasEditor(registry: try registry(), document: document, scheduler: scheduler)
+            return CanvasEditor(registry: try registry(pasteboard: pasteboard), document: document, scheduler: scheduler)
         } catch {
             fatalError("The shipped plugins don't register: \(error)")   // CompositionTests catches this first
         }

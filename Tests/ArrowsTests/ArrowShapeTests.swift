@@ -66,6 +66,29 @@ import TestKit
         expectClose(after.middle, before.middle, within: 1e-6)
         expectClose(after.end, before.end, within: 1e-6)
     },
+    test("a copy of an arrow stays bound to the copies of its shapes, anchors and all") {
+        let board = try Board(arrow: 70)
+        let record = try require(board.arrow.flatMap { board.h.editor.document[$0] })
+        let a2 = ShapeID(), b2 = ShapeID()
+        let copy = try require(record.remappingReferences({ [board.a: a2, board.b: b2][$0] }, in: board.h.editor.shapeContext).typed(as: Arrow.self)?.props)
+        let arrow = try require(record.typed(as: Arrow.self)?.props)
+        expectEqual(copy.start.binding?.shapeID, a2)
+        expectEqual(copy.end.binding?.shapeID, b2)
+        expectEqual(copy.start.binding?.normalizedAnchor, arrow.start.binding?.normalizedAnchor)
+        expectEqual(copy.bend, arrow.bend)
+    },
+    test("a copy of an arrow lets go of a shape copied without it as deleting that shape would: where it visibly was, keeping the curve") {
+        let board = try Board(arrow: 70)
+        let id = try require(board.arrow)
+        let record = try require(board.h.editor.document[id])
+        let a2 = ShapeID()
+        let copy = try require(record.remappingReferences({ $0 == board.a ? a2 : nil }, in: board.h.editor.shapeContext).typed(as: Arrow.self)?.props)
+        board.h.editor.transact { $0.delete([board.b]) }
+        var released = try require(board.arrows.first)
+        expectEqual(released.start.binding?.shapeID, board.a)
+        released.start = .bound(ArrowBinding(shapeID: a2, normalizedAnchor: released.start.binding!.normalizedAnchor, isPrecise: false, isExact: false))
+        expectEqual(copy, released)
+    },
     test("an arrow paints just above the highest shape it's bound to; unbound arrows paint on top") {
         let board = try Board(arrow: 0)
         let c = board.h.add(Box(CGRect(x: 0, y: 600, width: 50, height: 50)))

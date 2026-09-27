@@ -64,6 +64,26 @@ import TestKit
         expect(h.secondaryClick(at: middle(0)) == nil)
         expectEqual(h.editor.selectedShapeIDs, [])
     },
+    test("shown(when:) and enabled(when:) ask with the editor too, for what depends on more than the shape") {
+        final class Switch { var isOn = false }
+        let power = Switch()
+        let h = try harness([Contributor(id: "editor-aware") { r in
+            r.contextMenuForEveryShape {
+                MenuItem("Only Selected Alone") { _, _ in }
+                    .shown { record, editor in editor.selection == record.id }
+                MenuItem("Powered", isEnabled: { $0.box != nil }) { _, _ in }
+                    .enabled { _, _ in power.isOn }
+                Submenu("More") { MenuItem("Inside") { _, _ in } }
+                    .shown { _, editor in editor.selectedShapeIDs.count > 1 }
+            }
+        }])
+        let a = h.add(Box(slot(0)))
+        let b = h.add(Box(slot(1)))
+        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Only Selected Alone", "(Powered)"])
+        power.isOn = true
+        h.editor.selectedShapeIDs = [a, b]
+        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Powered", "More ▸", "  Inside"])
+    },
     test("without the plugin nothing claims the click; contributing needs it installed") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
         h.add(Box(slot(0)))

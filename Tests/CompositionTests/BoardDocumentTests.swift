@@ -10,9 +10,10 @@ import StickyNotes
 import SwiftUI
 import TestKit
 
-/// Boards as the app configures them, with the app's content less its toolbar.
-@MainActor func configureBoards() throws {
-    BoardDocument.configuration = BoardConfiguration(registry: try ShippedPlugins.registry()) { board in
+/// Boards as the app configures them, with the app's content less its toolbar, and their clipboard
+/// on `pasteboard` (a test that copies passes its own).
+@MainActor func configureBoards(pasteboard: NSPasteboard = .general) throws {
+    BoardDocument.configuration = BoardConfiguration(registry: try ShippedPlugins.registry(pasteboard: pasteboard)) { board in
         AnyView(InspectorHost(editor: board.editor, focus: board.focus, showsDetails: board.view.showsDetails))
     }
 }

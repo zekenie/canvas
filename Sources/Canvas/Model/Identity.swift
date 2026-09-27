@@ -63,4 +63,8 @@ public struct CanvasCommand: Hashable, Sendable, ExpressibleByStringLiteral, Cus
     public static let selectAll: CanvasCommand = "selectAll"
     /// Go › Back (⌘[), whatever has the keyboard.
     public static let goBack: CanvasCommand = "goBack"
+    /// Edit › Cut, Copy and Paste, from the board's window, wherever the keyboard is but in text.
+    public static let cut: CanvasCommand = "cut"
+    public static let copy: CanvasCommand = "copy"
+    public static let paste: CanvasCommand = "paste"
 }

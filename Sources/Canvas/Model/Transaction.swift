@@ -1,3 +1,4 @@
+import CoreGraphics
 import Geometry
 
 /// The only way to change a document: `editor.transact { tx in ... }`. Everything in one
@@ -60,6 +61,28 @@ public struct Transaction {
 
     public mutating func update<P: ShapeProps>(_ id: ShapeID, as _: P.Type, _ body: (inout ShapeRecord<P>) -> Void) {
         update(id) { $0.modify(as: P.self, body) }
+    }
+
+    /// Moves shapes by `delta`, in world units, as dragging them that far would: a box by its
+    /// frame, a `CustomTranslation` kind by its own rules (every `beginTranslation` first, then the
+    /// boxes, then the rest, as a drag event does), anything else not at all.
+    public mutating func translate(_ ids: Set<ShapeID>, by delta: CGPoint) {
+        let records = ids.compactMap { document.index(of: $0) }.sorted().map { document.shapes[$0] }
+        var boxes: [ShapeID] = []
+        var moves: [@MainActor (CGPoint, inout Transaction) -> Void] = []
+        for record in records {
+            if let custom = registry.definition(for: record.kind) as? any CustomTranslation {
+                if let move = custom.erasedBeginTranslation(of: record, movingWith: ids, in: &self) { moves.append(move) }
+            } else if record.box != nil {
+                boxes.append(record.id)
+            }
+        }
+        for id in boxes {
+            update(id) { record in
+                if let box = record.box { record.box = CGRect(origin: box.origin + delta, size: box.size) }
+            }
+        }
+        for move in moves { move(delta, &self) }
     }
 
     /// Paints the shape above every other. Does nothing if it's already on top.
