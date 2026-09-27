@@ -1669,6 +1669,15 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
   on the canvas and only they are listed, under their header ("2 Shapes") and "Selection"; select
   nothing and the whole board is, under "Board"; select one and the panel shows its details. Show
   All lists the board again without deselecting.
+- **A change of what's listed replaces the rows**, so the new scope's come in as one run under the
+  header, not around the rows both scopes list (and nested rows start collapsed again). Rows coming
+  in at several places at once, the last row among them, make AppKit measure the last row from
+  inside measuring the others (a table whose rows size themselves, as a SwiftUI `List`'s do,
+  measures new rows a run at a time and resizes itself after each) and log "a reentrant operation
+  in its NSTableView delegate", which it says will become an assert. It still logs that when a list
+  first shows 200 rows or more (it measures 200 at a time), and when a commit brings rows in at
+  several places, the last row among them: deleting a note that two arrows start from can, as their
+  rows come out from under it.
 - **Selecting rows** (a click, ⌘- and ⇧-clicks, the arrow keys) selects their shapes and brings
   them into view: centered, zoomed to fit with 100 points of margin but no closer than 120%, over
   200 ms (data-canvas's click-to-zoom, and tldraw's zoomToBounds). A click on one row selects one
@@ -2105,6 +2114,11 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   touches the user's: `ClipboardPlugin(pasteboard: NSPasteboard.withUniqueName())`, or
   `ShippedPlugins.makeEditor(pasteboard:)` (and `releaseGlobally()` it after). Two editors on one
   pasteboard are two boards copying and pasting between them.
+- **What AppKit logs.** Some of AppKit's complaints go only to standard error (NSLog), and the test
+  passes anyway. `standardError(during:)` (CanvasTesting) returns what was written there while a
+  closure ran, and writes it on after, so a test can check: TableOfContentsTests and CompositionTests'
+  ContentsPanelTests check that changing what the table of contents lists logs no
+  `tableReentrancyWarning`.
 - A test target is `Tests/<Name>Tests` with a `main.swift` that calls `runTests([...])`. Every
   `Suite` must be listed there (`test.sh` checks). `<M>Tests` may depend only on M, what M
   depends on, and the test-support and ui modules.
@@ -2199,7 +2213,10 @@ Each of these adds to the design without changing what plugins are written again
   `nestedUnder`), with each row's disclosure remembered (every nested row starts collapsed today);
   dragging rows to restack their shapes; per-kind zoom targets
   and click actions (data-canvas's `getZoomConfig` and `onClick`); Return editing the selected
-  shape; and arrow rows that name the shapes they join.
+  shape; arrow rows that name the shapes they join; and rows all of one height, which AppKit
+  never measures from inside a measurement, so it would stop logging its reentrancy warning
+  ([What's listed](#whats-listed-and-selecting)): a list of our own, since a SwiftUI `List`'s rows
+  size themselves.
 - **More of validation**: listing just the shapes with issues in the table of contents (a filter
   beside Show All), and going to the next one from anywhere (Xcode's ⌘'), for a board too big to
   look down for dots; an issue in the Issues tab going to the row it's about, which the panel would

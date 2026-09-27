@@ -75,3 +75,32 @@ extension NSView {
     /// The views under this one of a class (controls are found by their public AppKit class).
     public func descendants<View: NSView>(_: View.Type) -> [View] { descendants.compactMap { $0 as? View } }
 }
+
+/// What the process wrote to standard error while `body` ran, which is where AppKit logs its
+/// warnings (NSLog). It's written on to standard error after, so the run's output still shows it.
+/// Tests that drive a list check AppKit didn't log `tableReentrancyWarning`.
+public func standardError(during body: () throws -> Void) rethrows -> String {
+    let path = NSTemporaryDirectory() + "standard-error-\(UUID().uuidString)"
+    let file = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
+    precondition(file >= 0, "can't make \(path)")
+    let original = dup(STDERR_FILENO)
+    dup2(file, STDERR_FILENO)
+    close(file)
+    var written = ""
+    do {
+        defer {
+            dup2(original, STDERR_FILENO)
+            close(original)
+            written = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+            unlink(path)
+            FileHandle.standardError.write(Data(written.utf8))
+        }
+        try body()
+    }
+    return written
+}
+
+/// What AppKit logs when a table whose rows size themselves (a SwiftUI `List`'s) measures rows
+/// from inside measuring them, as an update that brings rows in at several places at once can
+/// make it do. AppKit says it will become an assert.
+public let tableReentrancyWarning = "reentrant operation in its NSTableView delegate"

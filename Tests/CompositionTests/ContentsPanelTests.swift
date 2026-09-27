@@ -73,6 +73,17 @@ extension NSTableView {
         w.editor.selection = nil
         w.window.spin { w.rows == 6 }
     },
+    test("from several shapes to none, the panel lists the board and AppKit logs no reentrant update") {
+        let w = try BoardWindow()
+        w.window.spin { w.rows == 6 }
+        w.editor.selectedShapeIDs = [w.notes[1], w.notes[2]]
+        w.window.spin { w.rows == 2 }
+        let log = standardError {
+            w.editor.selection = nil        // the list of two takes the board's rows as the panel lets it go
+            w.window.spin { w.rows == 6 }
+        }
+        expect(!log.contains(tableReentrancyWarning), "AppKit logged: \(log)")
+    },
     test("the pointer on a note on the canvas tints the note's row, and only that; leaving the canvas takes the tint away") {
         let w = try BoardWindow()
         w.window.spin { w.rows == 6 }

@@ -71,6 +71,26 @@ final class ContentsWindow {
         editor.selectedShapeIDs = []
         w.window.spin { w.rows == 3 }
     },
+    test("a change of what's listed brings the new rows in as one run: the list keeps the keyboard and the selection, and AppKit logs no reentrant update") {
+        let editor = try contentsEditor(scheduler: TaskScheduler())
+        let (_, b, _) = threeWidgets(editor)
+        let w = ContentsWindow(editor)
+        w.window.spin { w.rows == 3 }
+        let log = try standardError {
+            editor.selectedShapeIDs = [b]
+            w.window.spin { w.rows == 1 }
+            editor.selectedShapeIDs = []            // A's row and C's come back on either side of B's
+            w.window.spin { w.rows == 3 }
+            editor.selectedShapeIDs = [b]
+            w.window.spin { w.rows == 1 }
+            try w.focusList()
+            editor.contents.showAll()
+            w.window.spin { w.rows == 3 && w.table?.selectedRowIndexes == [2] }     // B's new row, under the header and A's
+        }
+        expect(!log.contains(tableReentrancyWarning), "AppKit logged: \(log)")
+        expectEqual(editor.selectedShapeIDs, [b], "Show All keeps the selection")
+        expect(w.window.firstResponder === w.table, "the rows are new, the list isn't: it keeps the keyboard")
+    },
     test("the list shows the selection as selected rows") {
         let editor = try contentsEditor(scheduler: TaskScheduler())
         let (_, b, _) = threeWidgets(editor)
