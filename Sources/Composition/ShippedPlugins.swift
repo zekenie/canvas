@@ -7,6 +7,7 @@ import EllipseTitles
 import Ellipses
 import Eraser
 import Rectangles
+import Selection
 import StickyNotes
 import SwiftUI
 import TaskCards
@@ -20,6 +21,8 @@ import ValidationDetails
 public enum ShippedPlugins {
     public static var all: [any CanvasPlugin] {
         [
+            // First: the others build on it, and its handles draw below their view overlays.
+            SelectionPlugin(),
             ArrowsPlugin(), StickyNotesPlugin(), EllipsesPlugin(), TaskCardsPlugin(),
             ValidationPlugin(), DetailPanelPlugin(), ChecklistsPlugin(), ValidationDetailsPlugin(),
             // The examples (Examples/). Each is one line here; delete it to leave it out.

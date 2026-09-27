@@ -6,6 +6,7 @@ import CanvasUI
 import Composition
 import CoreGraphics
 import Geometry
+import Selection
 import StickyNotes
 import TestKit
 

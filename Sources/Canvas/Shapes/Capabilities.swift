@@ -1,7 +1,8 @@
 import AppKit
 
-/// Edited in place: double-click, Return, or an editing placement. The view is laid over the
-/// shape's box, with bounds in world units so AppKit scales it with the zoom.
+/// Edited in place: from an editing placement, or by any plugin that calls `editor.beginEditing`
+/// (Selection's double-click and Return). The view is laid over the shape's box, with bounds in
+/// world units so AppKit scales it with the zoom.
 public protocol Editable: ShapeDefinition where Props: BoxShapeProps {
     func makeEditingView(for shape: ShapeRecord<Props>, context: EditContext<Props>) -> EditingView
 }
@@ -35,40 +36,11 @@ public struct EditContext<Props: BoxShapeProps> {
     public func end() { editor?.endEditing() }
 }
 
-/// What pressing a handle did.
-public enum HandlePress: Sendable {
-    /// Wait for a drag: past the drag threshold, `dragSession` takes over.
-    case drag
-    /// The press did something on its own (a double-click toggle, say), so there's no drag.
-    case consumed
-}
-
-/// Draggable handles on the selected shape. The core finds, draws and hit-tests them (in view
-/// points, `Style.handleRadius` / `handleHitRadius`) and applies the drag threshold; the
-/// definition decides what they do.
-public protocol HandleProviding: ShapeDefinition {
-    associatedtype Handle: Hashable & Sendable
-    /// Visible handles, front to back, in world coordinates.
-    func handles(of shape: ShapeRecord<Props>, in context: ShapeContext) -> [HandleLocation<Handle>]
-    func pressHandle(_ handle: Handle, of shape: ShapeRecord<Props>, at pointer: Pointer, in editor: CanvasEditor) -> HandlePress
-    /// Called once the pointer passes the drag threshold; `origin` is where it was pressed (world).
-    func dragSession(for handle: Handle, of shape: ShapeRecord<Props>, from origin: CGPoint, in editor: CanvasEditor) -> any Session
-}
-
-public struct HandleLocation<Handle: Hashable & Sendable>: Sendable {
-    public var handle: Handle
-    public var point: CGPoint
-    public init(_ handle: Handle, at point: CGPoint) {
-        self.handle = handle
-        self.point = point
-    }
-}
-
-/// Moved with the selection by its own rules instead of by its frame (a kind without a box needs
-/// this to move at all; one with both uses this). When a drag of the selection starts, the core
-/// calls `beginTranslation` once for each such shape, all in one transaction that commits before
-/// the first move. On every drag event it then runs the returned translation, inside that event's
-/// single transaction, after every box in the selection has moved. Escape puts every moved shape
+/// Moved by its own rules instead of by its frame when a `TranslatingSession` moves it (a kind
+/// without a box needs this to move at all; one with both uses this). When the drag starts, the
+/// core calls `beginTranslation` once for each such shape, all in one transaction that commits
+/// before the first move. On every drag event it then runs the returned translation, inside that
+/// event's single transaction, after every moving box has moved. Escape puts every moved shape
 /// back as it was before `beginTranslation`.
 public protocol CustomTranslation: ShapeDefinition {
     /// `moving` is every shape being moved, this one included. A change made in `transaction`
@@ -89,8 +61,9 @@ public struct ShapeTranslation<Props: ShapeProps> {
     }
 }
 
-/// Painted relative to another shape instead of by document order, and never brought to front
-/// when pressed. (A connector stays just above the shapes it joins; a label, above its host.)
+/// Painted relative to another shape instead of by document order, so bringing it to front means
+/// nothing (the select tool doesn't, when it's pressed). A connector stays just above the shapes
+/// it joins; a label, above its host.
 public protocol PaintOrderAnchored: ShapeDefinition {
     /// Paint just above this shape; nil (or a shape that isn't there) paints above everything.
     func paintAnchor(of shape: ShapeRecord<Props>, in document: CanvasDocument) -> ShapeID?

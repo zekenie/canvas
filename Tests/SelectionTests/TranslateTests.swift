@@ -2,6 +2,7 @@
 import CanvasTesting
 import CoreGraphics
 import Geometry
+import Selection
 import TestKit
 
 @MainActor let translateTests = Suite("Translate", [
@@ -25,7 +26,7 @@ import TestKit
         expectEqual(h.editor.document.shapes.map(\.id), [a, b, c])
     },
     test("Escape mid-translation reverts every shape (the deliberate change); later drags do nothing") {
-        let h = try EditorHarness(plugins: [FixturesPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
         let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let b = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
         let before = h.editor.document
@@ -42,11 +43,7 @@ import TestKit
         expectEqual(h.editor.selectedShapeIDs, [a, b])
     },
     test("Escape reverts a lone box's move, and puts a just-placed shape back where it was placed") {
-        let h = try EditorHarness(plugins: [Contributor(id: "discs") { r in
-            r.shape(DiscDefinitionForTests()) { disc in
-                disc.tool(label: "Disc", systemImage: "circle", shortcut: "d", placing: disc.placement(size: CGSize(width: 40, height: 40)) { Disc(.zero) })
-            }
-        }])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), discTools()])
         let box = h.add(Disc(CGRect(x: 0, y: 0, width: 100, height: 100)))   // this Disc's geometry is its frame
         h.press(at: CGPoint(x: 50, y: 50)); h.drag(to: CGPoint(x: 70, y: 60))
         expectEqual(h.editor.document[box]?.box?.origin, CGPoint(x: 20, y: 10))
@@ -64,7 +61,7 @@ import TestKit
         expectEqual(h.editor.currentToolID, .select)
     },
     test("a CustomTranslation kind: begin runs once for each shape, all in one commit before the first move; its move gets the delta and sees this event's boxes already moved") {
-        let h = try EditorHarness(plugins: [FixturesPlugin(), PinsPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), PinsPlugin()])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let p = h.add(Pin(point: CGPoint(x: 300, y: 50), follows: box))
         let q = h.add(Pin(point: CGPoint(x: 500, y: 50), follows: nil))
@@ -88,7 +85,7 @@ import TestKit
         h.release()
     },
     test("Escape puts a CustomTranslation kind back as it was before its begin") {
-        let h = try EditorHarness(plugins: [FixturesPlugin(), PinsPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), PinsPlugin()])
         let p = h.add(Pin(point: CGPoint(x: 300, y: 50), follows: nil))
         let before = h.editor.document
         h.press(at: CGPoint(x: 300, y: 50)); h.drag(to: CGPoint(x: 340, y: 90))
@@ -97,7 +94,7 @@ import TestKit
         expectEqual(h.editor.document, before)
     },
     test("a kind with neither a box nor a custom translation stays put while the rest move") {
-        let h = try EditorHarness(plugins: [FixturesPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let tag = h.add(Tag(target: box))
         let before = h.editor.document[tag]
@@ -113,9 +110,9 @@ import TestKit
         let frame = CGRect(x: 100, y: 100, width: 200, height: 200)
         let press = CGPoint(x: 101.25, y: 99.5)
         let points = [CGPoint(x: 143.7, y: 151.3), CGPoint(x: 157.9, y: 172.1), CGPoint(x: 0.1, y: 0.7)]
-        let lone = try EditorHarness(plugins: [FixturesPlugin()])
+        let lone = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
         let loneBox = lone.add(Box(frame))
-        let multi = try EditorHarness(plugins: [FixturesPlugin()])
+        let multi = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
         let multiBox = multi.add(Box(frame))
         let other = multi.add(Box(CGRect(x: 900, y: 900, width: 10, height: 10)))
         multi.editor.selectedShapeIDs = [multiBox, other]

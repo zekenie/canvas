@@ -3,6 +3,7 @@ import Arrows
 import CanvasTesting
 import CoreGraphics
 import Geometry
+import Selection
 import TestKit
 
 @MainActor let arrowToolTests = Suite("Arrow tool", [
@@ -15,6 +16,17 @@ import TestKit
         expectEqual(board.h.editor.currentToolID, .select)
         expectEqual(board.h.editor.selection, board.arrowIDs.first)
         expectEqual(board.h.editor.hintedShapeID, nil)
+    },
+    test("without the selection installed, drawing an arrow still works and returns to the default tool") {
+        let h = try EditorHarness(plugins: [FixturesPlugin(), ArrowsPlugin()])
+        h.add(Box(CGRect(x: 80, y: 80, width: 200, height: 200)))
+        h.key("a")
+        h.press(at: CGPoint(x: 180, y: 180))
+        h.drag(to: CGPoint(x: 500, y: 120), speed: 2)
+        h.release()
+        expect(h.editor.document.shapes.contains { $0.kind == Arrow.kind })
+        expectEqual(h.editor.currentToolID, .hand)
+        expectEqual(h.editor.selection, nil)
     },
     test("arriving slowly binds precisely where the pointer is") {
         let board = try Board()

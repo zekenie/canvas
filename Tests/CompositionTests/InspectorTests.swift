@@ -6,6 +6,7 @@ import CanvasUI
 import Checklists
 import Composition
 import DetailPanel
+import Selection
 import StickyNotes
 import SwiftUI
 import TaskCards

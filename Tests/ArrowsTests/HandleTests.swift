@@ -3,6 +3,7 @@ import Arrows
 import CanvasTesting
 import CoreGraphics
 import Geometry
+import Selection
 import TestKit
 
 @MainActor let handleTests = Suite("Arrow handles", [

@@ -2,6 +2,7 @@
 import CanvasTesting
 import CoreGraphics
 import Geometry
+import Selection
 import TestKit
 
 @MainActor let selectToolTests = Suite("Select tool", [
@@ -36,7 +37,7 @@ import TestKit
         expectEqual(h.editor.selectedShapeIDs, [a, b])
     },
     test("⌘-press doesn't select or raise; ⌘-click adds on release, and removes a selected shape; ⌘-drag from a shape brushes from the press, enclosing only") {
-        let h = try EditorHarness(plugins: [FixturesPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
         let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let b = h.add(Box(CGRect(x: 150, y: 40, width: 20, height: 20)))
         let c = h.add(Box(CGRect(x: 250, y: 0, width: 100, height: 100)))
@@ -113,7 +114,7 @@ import TestKit
         expectEqual(h.editor.selectedShapeIDs, [a, c, b])
     },
     test("the release is hit-tested again: pressing A in a multi-selection and releasing over overlapping B collapses to B; with ⇧, adds B") {
-        let h = try EditorHarness(plugins: [FixturesPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
         let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let b = h.add(Box(CGRect(x: 97, y: 0, width: 100, height: 100)))
         let c = h.add(Box(CGRect(x: 400, y: 0, width: 100, height: 100)))
@@ -170,7 +171,7 @@ import TestKit
         expectEqual(h.editor.selectedShapeIDs, [])
     },
     test("pressing empty space inside a multi-selection's box drags the selection; a click there deselects; a ⇧-click keeps it") {
-        let h = try EditorHarness(plugins: [FixturesPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
         let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let c = h.add(Box(CGRect(x: 400, y: 0, width: 100, height: 100)))
         h.editor.selectedShapeIDs = [a, c]
@@ -231,7 +232,7 @@ import TestKit
     // Double-click, handles, editing
 
     test("double-clicking empty canvas places the claimed kind; with ⇧ it doesn't") {
-        let h = try EditorHarness(plugins: [CardsPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), doubleClickCards()])
         h.hold(.shift)
         h.press(at: CGPoint(x: 300, y: 200), clickCount: 2)
         expect(h.editor.document.shapes.isEmpty)
@@ -245,7 +246,7 @@ import TestKit
         expectEqual(h.editor.editingShapeID, card.id)
     },
     test("double-clicking an editable member of a multi-selection edits it and selects only it") {
-        let h = try EditorHarness(plugins: [FixturesPlugin(), CardsPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), CardsPlugin()])
         let card = h.add(Card(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let box = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
         h.editor.selectedShapeIDs = [card, box]
@@ -256,7 +257,7 @@ import TestKit
         h.release()
     },
     test("a multi-selection shows no handles; pressing where a handle would be presses the shape") {
-        let h = try EditorHarness(plugins: [FixturesPlugin(), KnobsPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), KnobsPlugin()])
         let knob = h.add(Knob(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let box = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
         h.editor.selection = knob
@@ -295,7 +296,7 @@ import TestKit
 
 /// Boxes A, B and C at x = 0, 200 and 400, each 100 × 100, in that order.
 @MainActor func threeBoxes() throws -> (EditorHarness, ShapeID, ShapeID, ShapeID) {
-    let h = try EditorHarness(plugins: [FixturesPlugin()])
+    let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
     let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
     let b = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
     let c = h.add(Box(CGRect(x: 400, y: 0, width: 100, height: 100)))

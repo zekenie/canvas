@@ -3,6 +3,7 @@ import Arrows
 import CanvasTesting
 import CoreGraphics
 import Geometry
+import Selection
 import TestKit
 
 @MainActor let arrowShapeTests = Suite("Arrows as shapes", [
@@ -13,7 +14,7 @@ import TestKit
         expectClose(geometry.end, CGPoint(x: 448.25, y: 180))
     },
     test("arrows bind to any closed shape, analytic hit tests included, and never to arrows") {
-        let h = try EditorHarness(plugins: [FixturesPlugin(), ArrowsPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), ArrowsPlugin()])
         let disc = h.add(Disc(CGRect(x: 460, y: 80, width: 200, height: 140)))
         h.add(Box(boxA))
         h.key("a"); h.move(to: boxA.center); h.press()
@@ -60,10 +61,13 @@ import TestKit
     },
     test("pressing an arrow selects it without reordering anything") {
         let board = try Board(arrow: 0)
+        board.h.add(Box(CGRect(x: 0, y: 600, width: 50, height: 50)))      // so the arrow isn't last
         let order = board.h.editor.document.shapes.map(\.id)
+        let revision = board.h.editor.revision
         board.h.press(at: CGPoint(x: 364, y: 180)); board.h.release()
         expectEqual(board.h.editor.selection, board.arrow)
         expectEqual(board.h.editor.document.shapes.map(\.id), order)
+        expectEqual(board.h.editor.revision, revision)
     },
     test("at 1,000 shapes and 1,000 bound arrows, hovering stays fast: finding a shape by id is constant time") {
         var shapes: [AnyShapeRecord] = []
@@ -78,7 +82,7 @@ import TestKit
             }
             shapes.append(AnyShapeRecord(ShapeRecord(Arrow(start: bound(box.id), end: bound(next.id)))))
         }
-        let registry = try Registry(plugins: [FixturesPlugin(), ArrowsPlugin()])
+        let registry = try Registry(plugins: [SelectionPlugin(), FixturesPlugin(), ArrowsPlugin()])
         let h = EditorHarness { CanvasEditor(registry: registry, document: CanvasDocument(shapes: shapes), scheduler: $0) }
         let clock = ContinuousClock()
         let elapsed = clock.measure {

@@ -4,8 +4,21 @@ public enum OverlaySpace: Sendable {
     /// Drawn with the camera transform, after the shapes and their outlines. Sizes meant as view
     /// points are divided by `zoom`.
     case world
-    /// Drawn in view points, after the handles.
+    /// Drawn in view points, after everything in world units (and the session's drawing).
     case view
+}
+
+/// What a plugin wants outlined, from `registrar.outlines`: shapes by their `indicatorPath`, and
+/// world rects. The core strokes every plugin's outlines and the hint in one pass, in the accent
+/// color at a constant screen width, just above the shapes.
+public struct Outlines {
+    public var shapes: [ShapeID]
+    /// World units.
+    public var rects: [CGRect]
+    public init(shapes: [ShapeID] = [], rects: [CGRect] = []) {
+        self.shapes = shapes
+        self.rects = rects
+    }
 }
 
 /// Something a plugin draws above every shape (status outlines, hints). Shapes never

@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import Checklists
+import Selection
 import Validation
 
 public struct StickyNote: BoxShapeProps {
@@ -30,7 +31,7 @@ public struct StickyNotesPlugin: CanvasPlugin {
         registrar.shape(StickyNoteDefinition()) { note in
             let place = note.editingPlacement(size: NoteStyle.size) { StickyNote() }
             note.tool(label: "Note", systemImage: "note.text", shortcut: "n", placing: place)
-            note.createOnDoubleClick(place)
+            note.createOnDoubleClick(place)                    // opts into the selection's double-click
             note.validate { shape, _ in                        // opts into the validation horizontal
                 shape.props.isEmpty ? [.warning("This note is empty.")] : []
             }

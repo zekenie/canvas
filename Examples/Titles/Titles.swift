@@ -1,10 +1,12 @@
 import AppKit
 import Canvas
 import Geometry
+import Selection
 
 /// The smallest horizontal plugin: a concern other plugins opt into, one kind at a time. A kind
-/// can say what its shapes are called; this plugin shows the title of the shape under the pointer.
-/// The core never learns what a title is.
+/// can say what its shapes are called; this plugin shows the title of the shape under the pointer
+/// (the select tool's hover, from the Selection horizontal it builds on). The core never learns
+/// what a title is.
 extension PluginID {
     public static let titles: PluginID = "titles"
 }

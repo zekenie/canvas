@@ -6,6 +6,7 @@ import Composition
 import CoreGraphics
 import DetailPanel
 import Geometry
+import Selection
 import StickyNotes
 import TestKit
 import Validation
@@ -20,9 +21,10 @@ import Validation
     },
     test("the registry report: who contributes what") {
         expectEqual(try ShippedPlugins.registry().report, """
-        core                tool select [v] · tool hand [h]
+        core                tool hand [h]
+        selection           service SelectionState · tool select [v] · default tool select · outlines · overlay HandlesOverlay · command delete · command insertNewline · command selectAll
         arrows              shape arrow · service ArrowTargeting · tool arrow [a] · overlay BindingHintsOverlay · willDelete
-        sticky-notes        shape sticky-note · tool sticky-note [n] · double-click sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note
+        sticky-notes        shape sticky-note · tool sticky-note [n] · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note
         ellipses            shape ellipse · tool ellipse [o]
         task-cards          shape task-card · tool task-card [t] · ValidationRules → task-card · ShapeDetails → task-card · ShapeChecklists → task-card · ShapeDetails → task-card
         validation          service ValidationEngine · overlay ValidationOverlay

@@ -2,7 +2,7 @@ import CoreGraphics
 import Geometry
 
 /// The core's hand tool (tldraw's): dragging pans, and a flung release lets the camera slide on.
-/// It never selects or moves shapes, and a click does nothing. Escape returns to Select.
+/// It never moves shapes, and a click does nothing. Escape returns to the default tool.
 final class HandTool {}
 
 extension HandTool: Tool {
@@ -51,6 +51,6 @@ extension HandSession: Session {
     }
 
     /// Escape: stop where it is, with no slide (tldraw: back to the hand's idle). Escape again
-    /// returns to Select.
+    /// returns to the default tool.
     func cancel(in editor: CanvasEditor) -> Bool { true }
 }

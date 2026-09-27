@@ -1,12 +1,12 @@
 # The plugin system
 
 Everything on the canvas comes from a plugin: sticky notes, ellipses, arrows, task cards,
-validation, checklists, the detail panel beside the canvas, even the examples. The core
-(`Sources/Canvas`) knows how to hold shapes, run tools, draw, and wire plugins together, and
-nothing about any particular shape or concern. Its built-in tools are tldraw's two: Select, which
-selects (a click, ⇧-click, or a marquee dragged across empty canvas), moves the selection, and
-drives handles and editing for whatever kinds offer them; and Hand, which pans (a flung release
-slides on).
+validation, checklists, the detail panel beside the canvas, selecting itself, even the examples.
+The core (`Sources/Canvas`) knows how to hold shapes, run tools, draw, and wire plugins together,
+and nothing about any particular shape or concern. Its one built-in tool is tldraw's Hand, which
+pans (a flung release slides on). Select, which selects (a click, ⇧-click, or a marquee dragged
+across empty canvas), moves the selection, and drives handles and editing for whatever kinds offer
+them, comes from [the Selection plugin](#selection).
 
 This is the same system as data-canvas's `definePlugin`, in Swift. [The last section](#coming-from-data-canvas)
 maps one onto the other.
@@ -17,6 +17,7 @@ maps one onto the other.
 - [A vertical plugin](#a-vertical-plugin)
 - [Tools and sessions](#tools-and-sessions)
 - [A horizontal plugin](#a-horizontal-plugin)
+- [Selection](#selection)
 - [The detail panel](#the-detail-panel)
 - [Capabilities](#capabilities)
 - [The editor, the document, and drawing](#the-editor-the-document-and-drawing)
@@ -38,8 +39,8 @@ Two more things hold them together:
 
 - The **registry** is built once from the plugin list, checked (every collision is an error), and
   then frozen.
-- The **editor** (`CanvasEditor`) is the headless brain: the document, the camera, selection,
-  tools, input and drawing. `CanvasView` only turns `NSEvent`s into editor calls, through a host
+- The **editor** (`CanvasEditor`) is the headless brain: the document, the camera, tools,
+  sessions, input and drawing. `CanvasView` only turns `NSEvent`s into editor calls, through a host
   API that plugins can't see.
 
 ## Horizontal and vertical
@@ -59,6 +60,10 @@ A horizontal can also be a feature that individual shapes opt into, and that sho
 tab in the panel, and a done/total chip on the canvas. Checklists owns the item type and everything
 done with it; the kind only stores the items. One horizontal may build on another: Checklists
 imports DetailPanel.
+
+Selecting is a horizontal too, one that every kind is in unless it opts out
+(`backdrop.unselectable()`). [Selection](#selection) owns what's selected, the Select tool, and
+Delete, Return and ⌘A; the detail panel builds on it to show the selected shape.
 
 Opting in goes in one of two directions:
 
@@ -88,7 +93,7 @@ compiles each module on its own, with only its dependency closure on the include
 Each target is one line, with its layer:
 
 ```swift
-.target(name: "StickyNotes", dependencies: ["Canvas", "Checklists", "Validation"]),   // layer: vertical
+.target(name: "StickyNotes", dependencies: ["Canvas", "Checklists", "Selection", "Validation"]), // layer: vertical
 .target(name: "EllipseTitles", dependencies: ["Canvas", "Ellipses", "Titles"], path: "Examples/EllipseTitles"), // layer: bridge
 ```
 
@@ -96,7 +101,7 @@ Each target is one line, with its layer:
 |---|---|---|
 | foundation | foundation | Geometry, Canvas (the core) |
 | ui | foundation | CanvasUI (the AppKit view, the SwiftUI toolbar, and `CanvasFocus`) |
-| horizontal | foundation, horizontal | Validation, Titles, DetailPanel, Checklists |
+| horizontal | foundation, horizontal | Selection, Validation, Titles, DetailPanel, Checklists |
 | vertical | foundation, horizontal | Arrows, StickyNotes, Ellipses, TaskCards, Rectangles, Eraser |
 | bridge | foundation, horizontal, vertical | EllipseTitles, ValidationDetails |
 | composition | foundation, horizontal, vertical, bridge | Composition (the shipped plugin list) |
@@ -179,25 +184,24 @@ public struct RectanglesPlugin: CanvasPlugin {
   |---|---|
   | `geometry(of:in:)` | the frame (box kinds); every other kind must say |
   | `hitTest(_:on:in:)` | inside the geometry's closed outline |
-  | `indicatorPath(of:in:)` | the geometry's outline (hover, selection and target outlines) |
-  | `brushHitTest(_:on:in:)` | an outline edge crossing or touching the marquee, or the marquee inside a closed outline |
+  | `indicatorPath(of:in:)` | the geometry's outline (the target hint, and hover and selection outlines) |
 
   `geometry` is the one source of truth. Override it and hit testing, the outline, the marquee and
-  arrows all follow. Override `hitTest`, `indicatorPath` or `brushHitTest` only when you can do
-  better; Ellipses does the first two (an exact hit test, a smooth outline), and Arrows tests the
-  marquee against its arc. The core decides containment itself: a marquee that strictly contains a
-  shape's bounds always selects it, and `brushHitTest` is asked only when they overlap.
+  arrows all follow. Override `hitTest` or `indicatorPath` only when you can do better; Ellipses
+  does both (an exact hit test, a smooth outline). A kind that knows better than its geometry
+  whether the marquee touches it (Arrows, against its arc) adopts Selection's `BrushHitTesting`.
 - **Conform in an extension**, as above, for `ShapeDefinition` and its capabilities, `Tool`,
   `Session`, `EditorService`, and an extension point that implements `check`. Swift flags a member that *nearly* matches a defaulted requirement
   (a wrong label, a missing return type) only in the extension that declares the conformance, and
   the build fails on it. Declared on the type, a near miss compiles and the default silently runs.
 - **The kind is stated once.** Everything registered inside `registrar.shape(...) { rectangle in ... }`
   is stamped with `"rectangle"`: the tool's id, its report line, and any horizontal contributions.
-- **Placements create box shapes** for place tools and the double-click claim.
-  `placement(size:props:)` centers a new shape on the press, selects it, and lets it follow the
-  pointer until release. `editingPlacement` opens it for editing instead, and exists only for
-  `Editable` kinds, a restriction the compiler checks. Any tool can also insert a shape itself,
-  with `editor.transact { $0.insert(record) }`, as the arrow tool does.
+- **Placements create box shapes** for place tools and Selection's double-click claim.
+  `placement(size:props:)` centers a new shape on the press, brings back the default tool (Select,
+  which selects the new shape), and lets it follow the pointer until release. `editingPlacement`
+  opens it for editing instead, and exists only for `Editable` kinds, a restriction the compiler
+  checks. Any tool can also insert a shape itself, with `editor.transact { $0.insert(record) }`, as
+  the arrow tool does.
 
 What a real vertical adds on top ([StickyNotes](../Sources/StickyNotes/StickyNotes.swift)):
 
@@ -205,7 +209,7 @@ What a real vertical adds on top ([StickyNotes](../Sources/StickyNotes/StickyNot
 registrar.shape(StickyNoteDefinition()) { note in
     let place = note.editingPlacement(size: NoteStyle.size) { StickyNote() }
     note.tool(label: "Note", systemImage: "note.text", shortcut: "n", placing: place)
-    note.createOnDoubleClick(place)          // double-clicking empty canvas places a note
+    note.createOnDoubleClick(place)          // opts into Selection: double-clicking empty canvas places a note
     note.validate { shape, _ in              // opts into the Validation horizontal
         shape.props.isEmpty ? [.warning("This note is empty.")] : []    // no text and no checklist
     }
@@ -218,8 +222,8 @@ registrar.shape(StickyNoteDefinition()) { note in
 A **tool** handles what happens before a press: hover, the press itself, and which cursor to
 show. It's a class with one instance per editor, so it can keep state. A **session** owns one
 press-drag-release. It lives on the editor, not the tool, so it outlives tool switches. A place tool
-switches back to select and keeps dragging its new shape; the arrow tool drags first and switches
-after.
+switches back to the default tool and keeps dragging its new shape; the arrow tool drags first and
+switches after.
 
 [`Examples/Eraser`](../Examples/Eraser/Eraser.swift) is a tool with no shape:
 
@@ -281,30 +285,21 @@ arrows plugin registered a `willDelete` handler. The eraser never heard of arrow
 The details:
 
 - **`Tool`**: `pointerDown` (may start a session), `pointerMoved` (hover, with no session
-  running), `pointerExited`, `modifiersChanged`, `cursor(in:)`. All but `pointerDown` have defaults.
-- **`Session`**: `drag`, `end`, `cancel` (Escape; return true if you cancelled),
-  `modifiersChanged`, `cursor(in:)`, `hidesSelectionIndicator`. A session can hand over to another by
+  running), `pointerExited`, `modifiersChanged`, `cursor(in:)`, `cancel` (Escape; return true if
+  you handled it). All but `pointerDown` have defaults.
+- **`Session`**: `drag`, `end`, `cancel` (Escape; return true if you cancelled), `modifiersChanged`,
+  `cursor(in:)`, `hidesOutlines` (plugins' outlines aren't drawn while it runs, for a drag that
+  reshapes a shape its outline would crowd, like an arrow's handle), `draw(in:)` (what it shows
+  while it runs, like a marquee, above the world overlays). A session can hand over to another by
   setting `editor.session` (pressing an arrow handle becomes dragging it). A session that sets
   `editor.hintedShapeID` clears it when it ends.
-- **The select tool** follows tldraw's states. Handles win, then the shape under the pointer,
-  then empty space inside a multi-selection's box, then the canvas.
-  - A press on a shape selects just it (and brings it to the front); ⇧ adds it. With ⌘, or on a
-    shape already selected, the press keeps the selection, so a drag past the 4-point threshold
-    moves it all; released without a drag, it selects the shape under the release (⇧ or ⌘ toggles
-    it instead). A lone box pressed without ⇧ or ⌘ follows the pointer from the press, with
-    no threshold.
-  - A press on empty canvas deselects (not with ⇧ or ⌘); a drag from there is a marquee, the
-    brush. It selects as it goes: whatever it touches, or with ⌘ only what it strictly encloses;
-    ⇧ adds to the selection from before. ⇧ and ⌘ take effect as they're pressed or let go, and a
-    ⌘-drag from a shape brushes too.
-  - A drag from empty space inside a multi-selection's box moves the selection; a click there is
-    a click on the canvas.
-  - ⌘ is the Command key only: Control-click is a secondary click on the Mac.
-- **Escape while moving shapes** puts every one back where it was when the drag began (tldraw's
-  behavior): a lone box, a selection, an arrow (its precise ends included) or a shape just placed.
-  Escape while a shape is pressed, before the drag threshold, ends the press; mid-marquee it puts
-  back the selection from before. A press on empty canvas ignores Escape until the release, as in
-  tldraw.
+- **The default tool** is where the editor starts, and where Escape and placing a shape return. One
+  plugin may claim it (`registrar.defaultTool(.select)`, as Selection does); without a claim it's
+  the Hand. Claiming a tool nobody registers is `RegistryError.invalid`.
+- **Escape** goes to the running session (`cancel`), else to the tool (`cancel`), else back to the
+  default tool. Escape while shapes move with the pointer (`TranslatingSession`) puts every one back
+  where it was when the drag began (tldraw's behavior): a lone box, a selection, an arrow (its
+  precise ends included) or a shape just placed.
 - **Input**: tools see `Pointer` values, never `NSEvent`s. A `Pointer` has `view` (view points)
   and `world` (world units) locations, `modifiers` and `clickCount`. `editor.pointerSpeed` is
   smoothed like tldraw's. `editor.effectiveModifiers` counts a key released in the last 150 ms as
@@ -313,12 +308,16 @@ The details:
   hand, which is how the arrows' 600/320/150 ms timers are pinned to the millisecond, and how the
   hand tool's slide plays frame by frame.
 - **Shortcuts** are single unmodified keys, handled by the canvas (so typing in a note never
-  switches tools). A shortcut or tool id used twice is a registry error, including the core's `V` and `H`.
-- **The toolbar** is the registry's tools in plugin-list order, after the core's Select and Hand. It follows
-  `editor.currentToolID`, which is observable.
-- **Redrawing**: the core redraws whenever the document, camera, selection, hover, tool or session
-  changes. A plugin whose drawn state changes some other way (on a timer, say) calls
-  `editor.setNeedsDisplay()`.
+  switches tools). A shortcut or tool id used twice is a registry error, including the core's `H`.
+- **The toolbar** is the default tool, then the rest in plugin-list order, the core's Hand first. It
+  follows `editor.currentToolID`, which is observable.
+- **Redrawing**: the core redraws whenever the document, camera, tool or session changes. A plugin
+  whose drawn state changes some other way (its own state, a timer) calls `editor.setNeedsDisplay()`,
+  as Selection does when the selection or hover changes; a tool whose cursor follows such state
+  calls `editor.refreshCursor()`.
+- **Commands** (`CanvasCommand`: `.delete`, `.insertNewline`, `.selectAll`) are the standard
+  AppKit actions the canvas view forwards with `editor.perform`. A plugin claims each with
+  `registrar.command`; unclaimed, `perform` returns false.
 
 ## A horizontal plugin
 
@@ -358,9 +357,9 @@ extension Registry {
     }
 }
 
-/// The hovered shape's title, just below it.
+/// The hovered shape's title, just below it (`hovered` is the select tool's, from Selection).
 struct TitleOverlay: CanvasOverlay {
-    var space: OverlaySpace { .view }       // drawn in view points, after the handles
+    var space: OverlaySpace { .view }       // drawn in view points
 
     func draw(in context: OverlayContext) {
         let editor = context.editor
@@ -416,6 +415,83 @@ The mechanics:
 
 [Validation](../Sources/Validation/Validation.swift) is the full-size version of the same pattern:
 per-kind rules, rules for another plugin's kind, rules for every kind, an engine, and an overlay.
+
+## Selection
+
+Selecting is a horizontal ([`Sources/Selection`](../Sources/Selection)), and the one most others
+build on. It owns what's selected, the hovered shape, the Select tool (V) and its marquee, the
+handles of the one selected shape, and what Delete, Return and ⌘A do. The core has never heard of a
+selection: Selection works through the same generic hooks any plugin can use.
+
+| Core hook | What Selection does with it |
+|---|---|
+| `registrar.defaultTool(.select)` | The editor starts in Select, Select leads the toolbar, and Escape and placing a shape come back to it. |
+| `registrar.outlines { ... }` | The hover outline, each selected shape's outline, and the box around several. The core strokes every plugin's outlines and the hint in one pass. |
+| `registrar.command(.delete)`, `.insertNewline`, `.selectAll` | Delete deletes the selection, Return edits the only selected shape, ⌘A selects everything. |
+| `Tool.cancel` | Escape in Select, with nothing under way, deselects. |
+| `EditorService.documentDidChange`, `didPlace` | Drops shapes that are gone (or no longer selectable) from the selection and the hover; selects a shape just placed. |
+| `Session.draw(in:)` | The marquee draws itself. |
+| `TranslatingSession`, `editor.shape(at:where:)` | Dragging the selection moves it; presses and hover find the front-most selectable shape. |
+
+Its state is `CanvasEditor` members that only modules importing Selection see. Without
+`SelectionPlugin` installed they're empty and ignore sets.
+
+- `selectedShapeIDs` is every selected shape, in the order selected; `selection` is the only
+  selected one, nil when none or several are (tldraw's onlySelectedShape), and setting it selects
+  exactly that shape. Handles, Return, editing and the arrows' binding hints follow `selection`, so
+  they apply to a lone shape. Both only ever name selectable shapes that exist, and setting what's
+  already selected changes nothing (no redraw, no Observation notification).
+- `hovered` (the select tool's), `hoveredHandle`, `brush` (the marquee), `selectionBounds`,
+  `isSelectable(_:)`, and the commands' `selectAll()`, `deleteSelection()` and `editSelection()`.
+
+**Opting out.** Every kind is selectable unless it says otherwise, for all its shapes or for some:
+
+```swift
+registrar.shape(BackdropDefinition()) { backdrop in backdrop.unselectable() }
+registrar.shape(LockableDefinition()) { lockable in lockable.selectable { !$0.props.isLocked } }
+```
+
+The select tool sees through such a shape: a press lands on whatever is beneath it (or on the
+canvas, where a drag is a marquee), and the marquee and ⌘A pass it by, so it's never selected,
+outlined on hover, or shown in the detail panel. It still draws, and everything else treats it as
+usual: arrows bind to it, the eraser erases it, code moves and deletes it. A place tool still puts
+one down and drags it, with nothing selected; a double-click on it goes to what's beneath, so an
+unselectable `Editable` kind is edited only as it's placed. A shape that stops being selectable
+leaves the selection with the change that did it. The rule is `ShapeSelectability`: at most one per
+kind, plus one for every kind, which a kind's own overrides.
+
+**Opting in** to the rest:
+
+- `note.createOnDoubleClick(place)` fills `DoubleClickPlacement`: what a double-click on empty
+  canvas places, at most one kind. StickyNotes does, so it can't be installed without Selection.
+- `HandleProviding` is Selection's capability: handles on the only selected shape. The select tool
+  finds, draws and hit-tests them; the definition says what a press and a drag do.
+- `BrushHitTesting` is Selection's capability for a kind that decides for itself whether the
+  marquee touches it. The default is `ShapeGeometry.isHit(byBrush:)`, from its geometry.
+- Arrows (to select the arrow it draws, and for its handles), DetailPanel (to follow the selection)
+  and Titles (for the hovered shape) import Selection too.
+
+**The select tool** follows tldraw's states. Handles win, then the selectable shape under the
+pointer, then empty space inside a multi-selection's box, then the canvas.
+
+- A press on a shape selects just it (and brings it to the front); ⇧ adds it. With ⌘, or on a
+  shape already selected, the press keeps the selection, so a drag past the 4-point threshold
+  moves it all; released without a drag, it selects the shape under the release (⇧ or ⌘ toggles it
+  instead). A lone box pressed without ⇧ or ⌘ follows the pointer from the press, with no
+  threshold. A double-click edits an `Editable` shape, selected alone.
+- A press on empty canvas deselects (not with ⇧ or ⌘); a drag from there is a marquee, the brush.
+  It selects as it goes: whatever it touches, or with ⌘ only what it strictly encloses; ⇧ adds to
+  the selection from before. ⇧ and ⌘ take effect as they're pressed or let go, and a ⌘-drag from a
+  shape brushes too.
+- A drag from empty space inside a multi-selection's box moves the selection; a click there is a
+  click on the canvas.
+- The selection stays outlined while it moves, box and all (tldraw, and the POC, hide it). Only
+  a session that `hidesOutlines` (dragging an arrow's handle, or drawing an arrow) takes the
+  outlines away.
+- ⌘ is the Command key only: Control-click is a secondary click on the Mac.
+- Escape while a shape is pressed, before the drag threshold, ends the press; mid-marquee it puts
+  back the selection from before. A press on empty canvas ignores Escape until the release, as in
+  tldraw.
 
 ## The detail panel
 
@@ -808,13 +884,15 @@ heavy goes in a service cached by `editor.revision`.
 ## Capabilities
 
 Some behavior belongs to a kind itself rather than to a concern others can join. That's a
-**capability**: a protocol refining `ShapeDefinition`, found by the core with `as?`.
+**capability**: a protocol refining `ShapeDefinition`, found with `as?` by the module that declares
+it, the core or a horizontal.
 
 | Capability | For | Used by |
 |---|---|---|
-| `Editable` | Edited in place: double-click, Return, or an editing placement. Supplies an `NSView` laid over the shape; writes go through `EditContext.update`. | StickyNotes |
-| `HandleProviding` | Draggable handles on the selected shape. The core finds, draws and hit-tests them; `pressHandle` returns `.drag` or `.consumed`, and `dragSession` does the dragging. | Arrows |
-| `CustomTranslation` | Moving with the selection by its own rules instead of by its frame. When a drag starts, `beginTranslation` gets the shape, every shape moving with it and the starting transaction (committed on its own, before the first move), and returns a `ShapeTranslation`: a closure run on every drag event with the pointer's delta, after the selection's boxes have moved. A kind without a frame needs this to be movable at all. | Arrows (alone, bound ends slide on their shapes; with a shape they're bound to, they keep every binding) |
+| `Editable` | Edited in place: an editing placement, or Selection's double-click and Return. Supplies an `NSView` laid over the shape; writes go through `EditContext.update`. | StickyNotes |
+| `CustomTranslation` | Moving by its own rules instead of by its frame, when a `TranslatingSession` moves it (dragging the selection, a shape just placed). When a drag starts, `beginTranslation` gets the shape, every shape moving with it and the starting transaction (committed on its own, before the first move), and returns a `ShapeTranslation`: a closure run on every drag event with the pointer's delta, after the moving boxes have moved. A kind without a frame needs this to be movable at all. | Arrows (alone, bound ends slide on their shapes; with a shape they're bound to, they keep every binding) |
+| `HandleProviding` (Selection's) | Draggable handles on the only selected shape. The select tool finds, draws and hit-tests them; `pressHandle` returns `.drag` or `.consumed`, and `dragSession` does the dragging. | Arrows |
+| `BrushHitTesting` (Selection's) | Whether the marquee touches it, when the brush overlaps its bounds without containing them. Default: `ShapeGeometry.isHit(byBrush:)`. | Arrows (against the visible arc) |
 | `PaintOrderAnchored` | Painted just above another shape, and never raised when pressed. | Arrows (above the shapes they join) |
 
 The rule of thumb: behavior intrinsic to a kind is a capability; behavior anyone can add, to any
@@ -832,17 +910,16 @@ to it.
 - **`willDelete`** handlers run inside the deleting transaction, before anything is removed, so a
   plugin can let go of shapes that are about to disappear (arrows bake their curve there). They may
   delete more; each shape's handlers run once.
-- **Selection, hover and hint** always name shapes that exist. `selectedShapeIDs` is every selected
-  shape, in the order selected; `selection` is the only selected one, nil when none or several are
-  (tldraw's onlySelectedShape), and setting it selects exactly that shape. Handles, Return, editing
-  and the arrows' binding hints follow `selection`, so they apply to a lone shape; plugins written
-  for one selected shape keep working. `selectAll()` (⌘A) selects every shape, and Delete deletes
-  the whole selection in one transaction. `editingShapeID` is the shape being edited.
-- **Drawing**, back to front: background and grid; shapes in paint order (culled by frame); the
-  hover, selection and target outlines, with a box around a multi-selection's bounds, in one stroke
-  at a constant screen width; world overlays; the marquee (`editor.brush`); the only selected
-  shape's handles; view overlays. Each shape and overlay draws with a fresh graphics
-  state. Sizes meant as view points are divided by `zoom` in world space.
+- **The hint** (`hintedShapeID`, a target outlined whatever the tool) always names a shape that
+  exists, and so does `editingShapeID`, the shape being edited. After every transaction that
+  changed the document, services hear `documentDidChange` and drop what's gone (the selection
+  does). What's selected is [Selection's](#selection).
+- **Drawing**, back to front: background and grid; shapes in paint order (culled by frame); every
+  plugin's outlines (`registrar.outlines`: hover, selection, the box around several; none while the
+  session `hidesOutlines`) and the hint, in one stroke at a constant screen width; world overlays;
+  the running session's `draw(in:)` (the marquee); view overlays (Selection's handles first). Each
+  shape, overlay and session draws with a fresh graphics state. Sizes meant as view points are
+  divided by `zoom` in world space.
 - **The view.** `CanvasView` (CanvasUI) is the only AppKit in the loop. It converts events, hosts
   the editing view over its shape, and draws the editor, all through the editor's `@_spi(Host)`
   API. Only the app and tests can import CanvasUI, and no plugin can see the host API, so no
@@ -851,15 +928,15 @@ to it.
 ## The registry
 
 `Registry(plugins:)` runs every plugin's `register(into:)` once, after the core's own plugin (the
-select and hand tools). It then checks everything and throws on:
+hand tool). It then checks everything and throws on:
 
 | Error | When |
 |---|---|
 | `duplicatePlugin` | The same plugin id twice. |
 | `ownerNotInstalled` | A contribution to a point whose owner isn't in the list. |
 | `unknownKind` | A contribution for a kind no plugin registers. |
-| `conflict` | Two claims to the same key: a kind, a tool id, a shortcut, a service type, the double-click claim, or a key in any `KeyedExtensionPoint`. |
-| `invalid` | A point's own `check` refused the list. |
+| `conflict` | Two claims to the same key: a kind, a tool id, a shortcut, a service type, a command, the default tool, or a key in any `KeyedExtensionPoint` (one kind's double-click claim, say). |
+| `invalid` | A point's own `check` refused the list (the default tool must be a registered one). |
 
 Some rules span contributions in a way keys can't express. For those, a point implements `check`,
 which the registry calls once it's built, after the checks above, so a point may assume its owner
@@ -897,9 +974,10 @@ Once built, it's frozen and handed to the editor. The app's list is `ShippedPlug
 `registry.report` prints who contributes what: the runtime half of the graph, pinned by a test.
 
 ```
-core                tool select [v] · tool hand [h]
+core                tool hand [h]
+selection           service SelectionState · tool select [v] · default tool select · outlines · overlay HandlesOverlay · command delete · command insertNewline · command selectAll
 arrows              shape arrow · service ArrowTargeting · tool arrow [a] · overlay BindingHintsOverlay · willDelete
-sticky-notes        shape sticky-note · tool sticky-note [n] · double-click sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note
+sticky-notes        shape sticky-note · tool sticky-note [n] · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note
 ellipses            shape ellipse · tool ellipse [o]
 task-cards          shape task-card · tool task-card [t] · ValidationRules → task-card · ShapeDetails → task-card · ShapeChecklists → task-card · ShapeDetails → task-card
 validation          service ValidationEngine · overlay ValidationOverlay
@@ -926,7 +1004,7 @@ with this toolchain, and there's no XCTest). `./test.sh` builds and runs them al
 ```swift
 @MainActor let rectangleTests = Suite("Rectangles", [
     test("R and a press place a rectangle") {
-        let h = try EditorHarness(plugins: [RectanglesPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), RectanglesPlugin()])
         h.key("r")
         h.press(at: CGPoint(x: 300, y: 200))
         h.release()
@@ -941,10 +1019,14 @@ with this toolchain, and there's no XCTest). `./test.sh` builds and runs them al
   clock drives both event timestamps and the `ManualScheduler`, so pointer speed, timers and the
   hand tool's slide agree.
 - `FixturesPlugin` and `CardsPlugin` (CanvasTesting) give core and horizontal tests shapes to work
-  with (`Box`, `Disc`, `Tag`, and the editable `Card`), so they never depend on a real vertical.
-  ArrowsTests, ValidationTests, DetailPanelTests, ChecklistsTests and ValidationDetailsTests
-  import no real vertical (only these fixtures, and local test kinds), which proves those plugins
-  are shape-agnostic.
+  with (`Box`, `Disc`, `Tag`, and the editable `Card`; `CardsPlugin { card, place in ... }` opts
+  cards into more, like Selection's double-click), so they never depend on a real vertical.
+  SelectionTests, ArrowsTests, ValidationTests, DetailPanelTests, ChecklistsTests and
+  ValidationDetailsTests import no real vertical (only these fixtures, and local test kinds), which
+  proves those plugins are shape-agnostic.
+- CanvasTests run the core with no plugin claiming the default tool, so it's the Hand there; a
+  test that presses, drags or selects shapes the way a user does installs `SelectionPlugin()`
+  first, as the app does.
 - Tests drive the editor's host API, so they `@_spi(Host) import Canvas`.
 - `renderBitmap(editor, size:)`, `pixel(_:at:)` and `changedPixels(_:_:in:)` check what's drawn.
 - `Contributor(id:) { registrar in ... }` is a plugin written inline, and `editor.add(props)`

@@ -3,13 +3,15 @@ import Canvas
 import CanvasTesting
 import Checklists
 import DetailPanel
+import Selection
 import TaskCards
 import TestKit
 import Validation
 
-/// Every plugin a task card needs: it contributes to validation, checklists and the panel.
+/// Every plugin a task card needs (it contributes to validation, checklists and the panel), and
+/// the selection, to select one.
 @MainActor func taskPlugins() -> [any CanvasPlugin] {
-    [TaskCardsPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin()]
+    [SelectionPlugin(), TaskCardsPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin()]
 }
 
 @MainActor func taskEditor(scheduler: any Scheduler = ManualScheduler()) throws -> CanvasEditor {

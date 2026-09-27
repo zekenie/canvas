@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Selection
 import SwiftUI
 
 /// The panel. The app places it (in `.inspector`, through Composition); it follows the editor's

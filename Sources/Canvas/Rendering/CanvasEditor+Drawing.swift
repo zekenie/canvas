@@ -32,23 +32,16 @@ extension CanvasEditor {
                 definition.erasedRender(record, in: RenderContext(cg: context, shapes: shapes, isEditing: record.id == editingShapeID))
             }
         }
-        drawIndicators(in: context, shapes: shapes)
+        drawOutlines(in: context, shapes: shapes)
         let overlayContext = OverlayContext(cg: context, editor: self, shapes: shapes)
         for overlay in registry.overlays where overlay.space == .world {
             drawIsolated(context) { overlay.draw(in: overlayContext) }
         }
-        if let brush {
-            drawIsolated(context) {
-                context.setFillColor(Style.brushFill.cgColor)
-                context.fill(brush)
-                context.setStrokeColor(Style.brushStroke.cgColor)
-                context.setLineWidth(1 / camera.zoom)
-                context.stroke(brush)
-            }
+        if let session {
+            drawIsolated(context) { session.draw(in: overlayContext) }
         }
         context.restoreGState()
 
-        drawIsolated(context) { drawHandles(in: context) }
         for overlay in registry.overlays where overlay.space == .view {
             drawIsolated(context) { overlay.draw(in: overlayContext) }
         }
@@ -87,57 +80,31 @@ extension CanvasEditor {
         context.fillPath()
     }
 
-    /// Hover, selection and target outlines, and the box around several selected shapes (tldraw's
-    /// selection bounds), in one stroke at a constant screen width.
-    private func drawIndicators(in context: CGContext, shapes: ShapeContext) {
+    /// Every plugin's outlines (unless the session hides them), then the hint, in one stroke at a
+    /// constant screen width.
+    private func drawOutlines(in context: CGContext, shapes: ShapeContext) {
         var outlined: [ShapeID] = []
-        if currentToolID == .select, session == nil, let hovered, !isSelected(hovered) {
-            outlined.append(hovered)
+        var rects: [CGRect] = []
+        if session?.hidesOutlines != true {
+            for source in registry.outlineSources {
+                let outlines = source(self)
+                outlined += outlines.shapes
+                rects += outlines.rects
+            }
         }
-        let showsSelection = !(session?.hidesSelectionIndicator ?? false)
-        if showsSelection { outlined += selectedShapeIDs }
         if let hintedShapeID { outlined.append(hintedShapeID) }
-        let box = showsSelection && selectedShapeIDs.count > 1 ? selectionBounds : nil
-        guard !outlined.isEmpty else { return }
+        guard !outlined.isEmpty || !rects.isEmpty else { return }
         context.saveGState()
         for id in outlined {
             guard let record = document[id], let path = registry.definition(for: record.kind)?.erasedIndicatorPath(of: record, in: shapes) else { continue }
             context.addPath(path)
         }
-        if let box { context.addRect(box) }
+        for rect in rects { context.addRect(rect) }
         context.setStrokeColor(Style.accent.cgColor)
         context.setLineWidth(Style.indicatorWidth / camera.zoom)
         context.setLineCap(.round)
         context.setLineJoin(.round)
         context.strokePath()
         context.restoreGState()
-    }
-
-    /// The only selected shape's handles, in view points. They show in the select tool, and hide while
-    /// anything but a handle press is under way.
-    private func drawHandles(in context: CGContext) {
-        var pressed: AnyHashable?
-        switch session {
-        case nil: break
-        case let pointing as PointingHandleSession: pressed = pointing.handle
-        default: return
-        }
-        guard currentToolID == .select else { return }
-        // Handles shrink once zoomed out past 25%.
-        let radius = Style.handleRadius * min(1, camera.zoom / 0.25)
-        for (handle, center) in visibleHandles() {
-            func circle(_ radius: CGFloat) -> CGRect {
-                CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
-            }
-            if handle == hoveredHandle || handle == pressed {
-                context.setFillColor(Style.accentFill.cgColor)
-                context.fillEllipse(in: circle(Style.handleHitRadius))
-            }
-            context.setFillColor(NSColor.white.cgColor)
-            context.fillEllipse(in: circle(radius))
-            context.setStrokeColor(Style.accent.cgColor)
-            context.setLineWidth(Style.indicatorWidth)
-            context.strokeEllipse(in: circle(radius))
-        }
     }
 }

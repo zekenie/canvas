@@ -138,7 +138,7 @@ extension LookalikeStyleTab: DetailTab { static var title: String { "Style" } }
             }
         }])
         expectEqual(registry.report, """
-        core          tool select [v] · tool hand [h]
+        core          tool hand [h]
         fixtures      shape box · shape disc · shape tag
         detail-panel  service DetailPanelState · ShapeDetails
         p             ShapeDetails → box

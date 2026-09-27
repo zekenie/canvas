@@ -3,12 +3,13 @@ import AppKit
 import CanvasTesting
 import Checklists
 import DetailPanel
+import Selection
 import StickyNotes
 import TestKit
 import Validation
 
 /// The note and every plugin it opts into.
-@MainActor var notePlugins: [any CanvasPlugin] { [StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin()] }
+@MainActor var notePlugins: [any CanvasPlugin] { [SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin()] }
 
 @MainActor let stickyNotesTests = Suite("Sticky notes", [
     test("registers its kind, the N tool and the double-click claim") {
@@ -16,16 +17,20 @@ import Validation
         expectEqual(registry.kinds, [StickyNote.kind])
         expectEqual(registry.tool(forShortcut: "n"), ToolID(placing: StickyNote.kind))
         expect(registry.definition(for: StickyNote.kind) is any Editable)
+        expectEqual(registry.contributions(to: DoubleClickPlacement.self).map(\.value.kind), [StickyNote.kind])
     },
-    test("can't be installed without the validation and checklists plugins it opts into, and the panel") {
+    test("can't be installed without the selection, validation and checklists plugins it opts into, and the panel") {
+        expectThrows(RegistryError.ownerNotInstalled(point: "DoubleClickPlacement", owner: .selection, contributor: .stickyNotes)) {
+            _ = try Registry(plugins: [StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin()])
+        }
         expectThrows(RegistryError.ownerNotInstalled(point: "ValidationRules", owner: .validation, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [StickyNotesPlugin()])
+            _ = try Registry(plugins: [SelectionPlugin(), StickyNotesPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeChecklists", owner: .checklists, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [StickyNotesPlugin(), ValidationPlugin(), DetailPanelPlugin()])
+            _ = try Registry(plugins: [SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), DetailPanelPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeDetails", owner: .detailPanel, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin()])
+            _ = try Registry(plugins: [SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin()])
         }
     },
     test("a note has a checklist: the registry reads it, and the panel shows it in a Checklist tab") {

@@ -1,6 +1,7 @@
 import Canvas
 import CoreGraphics
 import Geometry
+import Selection
 
 /// Draws arrows. Hovering outlines the shape an arrow would start from; pressing starts a
 /// pointing session, which past the drag threshold creates the arrow and drags its end.
@@ -100,7 +101,7 @@ final class ArrowHandleDragSession {
 
 extension ArrowHandleDragSession: Session {
     func cursor(in editor: CanvasEditor) -> CanvasCursor? { .closedHand }
-    var hidesSelectionIndicator: Bool { true }
+    var hidesOutlines: Bool { true }
 
     func drag(_ pointer: Pointer, in editor: CanvasEditor) {
         update(to: pointer.world, modifiers: pointer.modifiers)
@@ -116,7 +117,7 @@ extension ArrowHandleDragSession: Session {
         editor.hintedShapeID = nil
         editor.selection = arrowID
         if isCreating {
-            editor.setTool(.select)
+            editor.setTool(editor.registry.defaultTool)       // Select, with the selection installed
         }
     }
 

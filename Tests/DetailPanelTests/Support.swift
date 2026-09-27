@@ -4,6 +4,7 @@ import CanvasTesting
 import CoreGraphics
 import DetailPanel
 import Foundation
+import Selection
 import SwiftUI
 import TestKit
 
@@ -106,7 +107,7 @@ struct RemarksPlugin: CanvasPlugin {
 
 /// Every plugin the gadget needs, then `more`.
 @MainActor func gadgetEditor(_ more: [any CanvasPlugin] = [], scheduler: any Scheduler = ManualScheduler()) throws -> CanvasEditor {
-    CanvasEditor(registry: try Registry(plugins: [FixturesPlugin(), GadgetsPlugin(), RemarksPlugin(), DetailPanelPlugin()] + more),
+    CanvasEditor(registry: try Registry(plugins: [SelectionPlugin(), FixturesPlugin(), GadgetsPlugin(), RemarksPlugin(), DetailPanelPlugin()] + more),
                  scheduler: scheduler)
 }
 

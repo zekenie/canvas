@@ -74,115 +74,44 @@ import TestKit
         expectEqual(opaque, 100 * 100, "the background (an AppKit fill) covers the context")
         expectEqual(black, 40 * 40, "the shape's AppKit fill lands in the context")
     },
-    test("two selected shapes are both outlined, with the selection box around them") {
-        let (h, disc, box, _) = try selectables()
-        let unselected = renderBitmap(h.editor, size: selectablesCanvas)
-        h.editor.selectedShapeIDs = [disc, box]
-        let selected = renderBitmap(h.editor, size: selectablesCanvas)
-        for edge in [CGPoint(x: 60, y: 40), CGPoint(x: 100, y: 80)] {          // the disc's right, the box's left
-            expect(pixel(selected, at: edge) != pixel(unselected, at: edge), "outlined at \(edge)")
+    test("plugins' outlines and the hint are stroked in one pass: a shape outlined twice looks outlined once; a session can hide the plugins'") {
+        @MainActor func render(outlining shapes: @escaping @MainActor ([ShapeID]) -> Outlines, hint: Bool, hidingOutlines: Bool = false) throws -> NSBitmapImageRep {
+            let ids = IDBox()
+            let h = try EditorHarness(plugins: [FixturesPlugin(), Contributor(id: "outliner") { r in r.outlines { _ in shapes(ids.ids) } }])
+            ids.ids = [h.add(Box(CGRect(x: 20, y: 20, width: 40, height: 40))), h.add(Box(CGRect(x: 100, y: 20, width: 40, height: 40)))]
+            if hint { h.editor.hintedShapeID = ids.ids[0] }
+            if hidingOutlines { h.editor.session = OutlineHidingSession() }
+            return renderBitmap(h.editor, size: CGSize(width: 160, height: 80))
         }
-        // The union of their bounds, (20, 20)–(140, 100), where neither shape is.
-        for edge in [CGPoint(x: 80, y: 20), CGPoint(x: 80, y: 100), CGPoint(x: 20, y: 80)] {
-            expect(pixel(selected, at: edge) != pixel(unselected, at: edge), "the box at \(edge)")
-        }
-        expectEqual(pixel(selected, at: CGPoint(x: 80, y: 60)), pixel(unselected, at: CGPoint(x: 80, y: 60)), "it's a box, not a fill")
+        let everywhere = CGRect(x: 0, y: 0, width: 160, height: 80)
+        let plain = try render(outlining: { _ in Outlines() }, hint: false)
+        let first = try render(outlining: { Outlines(shapes: [$0[0]]) }, hint: false)
+        expect(pixel(first, at: CGPoint(x: 20, y: 40)) != pixel(plain, at: CGPoint(x: 20, y: 40)), "the first box is outlined")
+        expectEqual(changedPixels(plain, first, in: CGRect(x: 90, y: 0, width: 70, height: 80)), 0, "the second isn't")
+        expectEqual(changedPixels(first, try render(outlining: { _ in Outlines() }, hint: true), in: everywhere), 0, "the hint alone looks the same")
+        expectEqual(changedPixels(first, try render(outlining: { Outlines(shapes: [$0[0], $0[0]]) }, hint: true), in: everywhere), 0,
+                    "outlined twice by the plugin and once as the hint: still one stroke")
+        let hidden = try render(outlining: { Outlines(shapes: [$0[1]]) }, hint: true, hidingOutlines: true)
+        expectEqual(changedPixels(first, hidden, in: everywhere), 0, "a session that hides outlines leaves only the hint")
+        let rect = try render(outlining: { _ in Outlines(rects: [CGRect(x: 10, y: 10, width: 140, height: 60)]) }, hint: false)
+        expect(pixel(rect, at: CGPoint(x: 80, y: 10)) != pixel(plain, at: CGPoint(x: 80, y: 10)), "rects are stroked")
+        expectEqual(pixel(rect, at: CGPoint(x: 80, y: 40)), pixel(plain, at: CGPoint(x: 80, y: 40)), "not filled")
     },
-    test("one selected shape is outlined, with no box") {
-        let (h, disc, _, _) = try selectables()
-        let unselected = renderBitmap(h.editor, size: selectablesCanvas)
-        h.editor.selection = disc
-        let selected = renderBitmap(h.editor, size: selectablesCanvas)
-        expect(pixel(selected, at: CGPoint(x: 60, y: 40)) != pixel(unselected, at: CGPoint(x: 60, y: 40)))
-        let frameCorner = CGRect(x: 18, y: 18, width: 5, height: 5)             // clear of the disc's outline
-        expectEqual(changedPixels(unselected, selected, in: frameCorner), 0)
-        expectEqual(changedPixels(unselected, selected, in: CGRect(x: 64, y: 0, width: 136, height: 120)), 0)
-        expectEqual(changedPixels(unselected, selected, in: CGRect(x: 0, y: 64, width: 200, height: 56)), 0)
-    },
-    test("a session that hides the selection indicator hides every outline and the box, not the hint") {
-        let (h, disc, box, hinted) = try selectables()
-        h.editor.hintedShapeID = hinted
-        let unselected = renderBitmap(h.editor, size: selectablesCanvas)
-        h.editor.selectedShapeIDs = [disc, box]
-        h.editor.session = HidingSession()
-        expectEqual(changedPixels(unselected, renderBitmap(h.editor, size: selectablesCanvas), in: CGRect(origin: .zero, size: selectablesCanvas)), 0)
-    },
-    test("translating hides every outline and the box; brushing keeps them") {
-        let (h, disc, box, _) = try selectables()
-        let everywhere = CGRect(origin: .zero, size: selectablesCanvas)
-        let unselected = renderBitmap(h.editor, size: selectablesCanvas)
-        h.editor.selectedShapeIDs = [disc, box]
-        let selected = renderBitmap(h.editor, size: selectablesCanvas)
-        // Empty space in the selection box: past the threshold and back, so nothing has moved.
-        h.press(at: CGPoint(x: 80, y: 60)); h.drag(to: CGPoint(x: 90, y: 60)); h.drag(to: CGPoint(x: 80, y: 60))
-        expectEqual(changedPixels(unselected, renderBitmap(h.editor, size: selectablesCanvas), in: everywhere), 0)
-        h.release()
-        h.hold(.shift)
-        h.press(at: CGPoint(x: 195, y: 115)); h.drag(to: CGPoint(x: 190, y: 110))
-        expect(h.editor.brush != nil)
-        expectEqual(changedPixels(selected, renderBitmap(h.editor, size: selectablesCanvas), in: CGRect(x: 0, y: 0, width: 185, height: 105)), 0)
-        h.release()
-    },
-    test("the brush fills tldraw's gray at 0.102 and strokes it at 0.251, 1 view point wide at zoom 1 and 2") {
-        for zoom: CGFloat in [1, 2] {
-            let h = try EditorHarness(plugins: [])
-            h.editor.camera = Camera(origin: .zero, zoom: zoom)
-            let size = CGSize(width: 100, height: 100)
-            let background = renderBitmap(h.editor, size: size, scale: 2)
-            h.press(at: CGPoint(x: 20, y: 20)); h.drag(to: CGPoint(x: 80, y: 70))
-            let brushed = renderBitmap(h.editor, size: size, scale: 2)
-            h.release()
-            // Device pixels at 2×: the left edge's 1 pt stroke covers x 19.5–20.5, the fill x ≥ 20.
-            func blend(_ under: [Int], _ alpha: CGFloat) -> [Int] {
-                under.prefix(3).map { Int((CGFloat($0) + (0.56 * 255 - CGFloat($0)) * alpha).rounded()) } + [255]
-            }
-            @MainActor func expectNear(_ point: CGPoint, _ expected: [Int], _ what: String) {
-                let actual = pixel(brushed, at: point, scale: 2)
-                expect(zip(actual, expected).allSatisfy { abs($0 - $1) <= 1 }, "\(what) at zoom \(zoom): \(actual), not \(expected)")
-            }
-            let bg = pixel(background, at: CGPoint(x: 21, y: 45), scale: 2)
-            expectEqual(pixel(brushed, at: CGPoint(x: 19.25, y: 45), scale: 2), pixel(background, at: CGPoint(x: 19.25, y: 45), scale: 2), "outside at zoom \(zoom)")
-            expectNear(CGPoint(x: 19.75, y: 45), blend(bg, 0.251), "stroke")
-            expectNear(CGPoint(x: 20.25, y: 45), blend(blend(bg, 0.102), 0.251), "fill and stroke")
-            expectNear(CGPoint(x: 21, y: 45), blend(bg, 0.102), "fill")
-        }
+    test("a running session draws above the world overlays, with the camera applied, and below the view overlays") {
+        let log = OverlayLog()
+        let h = try EditorHarness(plugins: [Contributor(id: "overlays") {
+            $0.overlay(PaintOverlay(rect: CGRect(x: 10, y: 10, width: 20, height: 20)))
+            $0.overlay(LogOverlay(name: "view", space: .view, log: log))
+        }])
+        h.editor.camera = Camera(origin: .zero, zoom: 2)
+        let session = PaintingSession(log: log)
+        h.editor.session = session
+        let bitmap = renderBitmap(h.editor, size: CGSize(width: 100, height: 100))
+        expectEqual(pixel(bitmap, at: CGPoint(x: 40, y: 40)), [255, 255, 255, 255], "the session's white over the overlay's black")
+        expectEqual(pixel(bitmap, at: CGPoint(x: 22, y: 22)), [0, 0, 0, 255], "the overlay where the session doesn't draw")
+        expectEqual(log.drawn.map(\.name), ["session", "view"])
     },
 ])
-
-let selectablesCanvas = CGSize(width: 200, height: 120)
-
-/// A disc in (20, 20, 40, 40), a box at (100, 60, 40, 40), and a small box at (160, 10, 20, 20).
-@MainActor func selectables() throws -> (EditorHarness, ShapeID, ShapeID, ShapeID) {
-    let h = try EditorHarness(plugins: [FixturesPlugin()])
-    let disc = h.add(Disc(CGRect(x: 20, y: 20, width: 40, height: 40)))
-    let box = h.add(Box(CGRect(x: 100, y: 60, width: 40, height: 40)))
-    let small = h.add(Box(CGRect(x: 160, y: 10, width: 20, height: 20)))
-    return (h, disc, box, small)
-}
-
-/// Stands in for a drag of the selection.
-final class HidingSession {}
-
-extension HidingSession: Session {
-    var hidesSelectionIndicator: Bool { true }
-    func drag(_ pointer: Pointer, in editor: CanvasEditor) {}
-}
-
-/// A box kind whose definition states only `render` and `geometry`: a diamond inside its frame.
-struct Diamond: BoxShapeProps {
-    static let kind: ShapeKind = "diamond"
-    var frame: CGRect
-    init(_ frame: CGRect) { self.frame = frame }
-}
-
-struct DiamondDefinition: ShapeDefinition {
-    func render(_ shape: ShapeRecord<Diamond>, in context: RenderContext) {}
-    func geometry(of shape: ShapeRecord<Diamond>, in context: ShapeContext) -> ShapeGeometry {
-        let f = shape.frame
-        return ShapeGeometry(outline: [CGPoint(x: f.midX, y: f.minY), CGPoint(x: f.maxX, y: f.midY),
-                                       CGPoint(x: f.midX, y: f.maxY), CGPoint(x: f.minX, y: f.midY)], bounds: f)
-    }
-}
 
 /// Draws nothing of its own, but leaves the context 90% transparent; or fills its frame black
 /// the AppKit way (`NSColor.set`, `NSRect.fill`), through the current NSGraphicsContext.
@@ -236,5 +165,24 @@ extension AnyShapeRecord {
     static func make(_ props: any ShapeProps) -> AnyShapeRecord {
         func open<P: ShapeProps>(_ props: P) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(props)) }
         return open(props)
+    }
+}
+
+@MainActor final class IDBox {
+    var ids: [ShapeID] = []
+}
+
+/// Fills (15, 15, 15, 15) white, in world units.
+final class PaintingSession {
+    let log: OverlayLog
+    init(log: OverlayLog) { self.log = log }
+}
+
+extension PaintingSession: Session {
+    func drag(_ pointer: Pointer, in editor: CanvasEditor) {}
+    func draw(in context: OverlayContext) {
+        log.drawn.append(("session", context.cg.ctm))
+        context.cg.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.cg.fill(CGRect(x: 15, y: 15, width: 15, height: 15))
     }
 }

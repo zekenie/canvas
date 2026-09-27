@@ -7,6 +7,7 @@ import Composition
 import CoreGraphics
 import Foundation
 import Geometry
+import Selection
 import StickyNotes
 import TestKit
 

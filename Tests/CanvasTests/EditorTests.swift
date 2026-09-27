@@ -5,71 +5,9 @@ import Geometry
 import Observation
 import TestKit
 
+// The core on its own: with no plugin claiming it, the Hand is the default tool.
 @MainActor let editorTests = Suite("Editor", [
-    test("pressing a shape brings it to front, selects it, and dragging moves it with no threshold") {
-        let h = try EditorHarness(plugins: [FixturesPlugin()])
-        let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
-        let b = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
-        h.press(at: CGPoint(x: 50, y: 50))
-        expectEqual(h.editor.document.shapes.map(\.id), [b, a])
-        expectEqual(h.editor.selection, a)
-        h.drag(to: CGPoint(x: 52, y: 51))
-        expectEqual(h.editor.document[a]?.box?.origin, CGPoint(x: 2, y: 1))
-        h.release()
-    },
-    test("pressing empty canvas deselects on press; a drag brushes and never pans") {
-        let h = try EditorHarness(plugins: [FixturesPlugin()])
-        let box = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
-        h.editor.selection = box
-        h.press(at: CGPoint(x: 500, y: 500))
-        expectEqual(h.editor.selection, nil)
-        h.drag(to: CGPoint(x: 520, y: 530))
-        expectEqual(h.editor.camera.origin, .zero)
-        expectEqual(h.editor.brush, CGRect(x: 500, y: 500, width: 20, height: 30))
-        expectEqual(h.editor.cursor, .standard)
-        h.drag(to: CGPoint(x: 5, y: 5))
-        expectEqual(h.editor.selectedShapeIDs, [box])
-        h.release()
-        expectEqual(h.editor.camera.origin, .zero)
-        expectEqual(h.editor.brush, nil)
-    },
-    test("double-clicking empty canvas places the claimed kind and starts editing it") {
-        let h = try EditorHarness(plugins: [CardsPlugin()])
-        h.press(at: CGPoint(x: 300, y: 200), clickCount: 2)
-        let card = try require(h.editor.document.shapes.first)
-        expectEqual(card.kind, Card.kind)
-        expectEqual(card.box, CGRect(x: 250, y: 170, width: 100, height: 60))
-        expectEqual(h.editor.editingShapeID, card.id)
-        expectEqual(h.editor.selection, card.id)
-    },
-    test("with no claim, double-clicking empty canvas deselects; a drag brushes") {
-        let h = try EditorHarness(plugins: [FixturesPlugin()])
-        let box = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
-        h.editor.selection = box
-        h.press(at: CGPoint(x: 300, y: 200), clickCount: 2)
-        expectEqual(h.editor.document.shapes.map(\.id), [box])
-        expectEqual(h.editor.selection, nil)
-        h.drag(to: CGPoint(x: 5, y: 5))
-        expectEqual(h.editor.brush, CGRect(x: 5, y: 5, width: 295, height: 195))
-        expectEqual(h.editor.selectedShapeIDs, [box])
-        expectEqual(h.editor.camera.origin, .zero)
-        h.release()
-    },
-    test("double-clicking a shape edits it only if its kind is editable; Return does the same") {
-        let h = try EditorHarness(plugins: [FixturesPlugin(), CardsPlugin()])
-        let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
-        let card = h.add(Card(CGRect(x: 200, y: 0, width: 100, height: 100)))
-        h.press(at: CGPoint(x: 50, y: 50), clickCount: 2); h.release()
-        expectEqual(h.editor.editingShapeID, nil)
-        h.press(at: CGPoint(x: 250, y: 50), clickCount: 2); h.release()
-        expectEqual(h.editor.editingShapeID, card)
-        h.editor.endEditing()
-        h.editor.selection = box; h.editor.editSelection()
-        expectEqual(h.editor.editingShapeID, nil)
-        h.editor.selection = card; h.editor.editSelection()
-        expectEqual(h.editor.editingShapeID, card)
-    },
-    test("a place tool that edits: centered, selected, editing, and back to select") {
+    test("a place tool that edits: centered, editing, and back to the default tool") {
         let h = try EditorHarness(plugins: [CardsPlugin()])
         expect(h.key("c"))
         expectEqual(h.editor.currentToolID, ToolID(placing: Card.kind))
@@ -78,21 +16,42 @@ import TestKit
         let card = try require(h.editor.document.shapes.first)
         expectEqual(card.box?.origin, CGPoint(x: 50, y: 70))
         expectEqual(h.editor.editingShapeID, card.id)
-        expectEqual(h.editor.currentToolID, .select)
+        expectEqual(h.editor.currentToolID, .hand)
     },
-    test("a place tool that translates keeps dragging the new shape after switching to select") {
-        let h = try EditorHarness(plugins: [Contributor(id: "discs") { r in
-            r.shape(DiscDefinitionForTests()) { disc in
-                disc.tool(label: "Disc", systemImage: "circle", shortcut: "d", placing: disc.placement(size: CGSize(width: 40, height: 40)) { Disc(.zero) })
-            }
-        }])
+    test("a place tool that translates keeps dragging the new shape after switching to the default tool") {
+        let h = try EditorHarness(plugins: [discTools()])
         h.key("d")
         h.press(at: CGPoint(x: 100, y: 100))
-        expectEqual(h.editor.currentToolID, .select)
+        expectEqual(h.editor.currentToolID, .hand)
         h.drag(to: CGPoint(x: 130, y: 110))
         expectEqual(h.editor.document.shapes.first?.box?.origin, CGPoint(x: 110, y: 90))
+        expectEqual(h.editor.camera.origin, .zero, "the drag moves the shape; the hand doesn't pan")
         h.release()
-        expectEqual(h.editor.selection, h.editor.document.shapes.first?.id)
+    },
+    test("services hear of a placed shape once the default tool is back, before it's edited or starts following the pointer") {
+        let log = ServiceLog()
+        let h = try EditorHarness(plugins: [CardsPlugin(), discTools(), Contributor(id: "log") { r in r.service { _ in LoggingService(log: log) } }])
+        h.key("c")
+        log.events = []
+        h.press(at: CGPoint(x: 100, y: 100)); h.release()
+        let card = try require(h.editor.document.shapes.first?.id)
+        expectEqual(log.events, ["document", "tool card → hand", "placed \(card) in hand, editing nil, session none"])
+        expectEqual(h.editor.editingShapeID, card)
+        h.key("d")
+        log.events = []
+        h.press(at: CGPoint(x: 300, y: 300))
+        let disc = try require(h.editor.document.shapes.last?.id)
+        expectEqual(log.events.last, "placed \(disc) in hand, editing nil, session none")
+        expect(h.editor.session is TranslatingSession)
+        h.release()
+    },
+    test("services hear of every transaction that changed the document, and of no other") {
+        let log = ServiceLog()
+        let h = try EditorHarness(plugins: [FixturesPlugin(), Contributor(id: "log") { r in r.service { _ in LoggingService(log: log) } }])
+        let box = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
+        h.editor.transact { $0.bringToFront(box) }              // already in front: nothing changes
+        h.editor.transact { $0.delete([box]) }
+        expectEqual(log.events, ["document", "document"])
     },
     test("tool switches made on the canvas are observable, so the toolbar needs no callback") {
         let h = try EditorHarness(plugins: [CardsPlugin()])
@@ -101,40 +60,26 @@ import TestKit
         h.key("c")
         expect(changed.isSet)
     },
-    test("Escape leaves a non-select tool; in select it deselects") {
-        let h = try EditorHarness(plugins: [CardsPlugin()])
+    test("Escape: the session's, else the tool's own, else back to the default tool") {
+        let log = ServiceLog()
+        let h = try EditorHarness(plugins: [CardsPlugin(), Contributor(id: "escapes") {
+            $0.tool(ToolDescriptor(id: "keeper", label: "Keeper", systemImage: "circle", shortcut: "k")) { _ in EscapeKeeper(log: log) }
+        }])
         h.key("c"); h.escape()
-        expectEqual(h.editor.currentToolID, .select)
-        h.editor.selection = h.add(Card(.zero))
+        expectEqual(h.editor.currentToolID, .hand)
+        h.key("k"); h.escape()
+        expectEqual(h.editor.currentToolID, "keeper", "the tool handled it")
+        expectEqual(log.events, ["keeper cancelled"])
         h.escape()
-        expectEqual(h.editor.selection, nil)
+        expectEqual(h.editor.currentToolID, "keeper")
     },
     test("shortcuts are case-insensitive; other keys fall through") {
         let h = try EditorHarness(plugins: [CardsPlugin()])
         expect(h.key("C")); expectEqual(h.editor.currentToolID, ToolID(placing: Card.kind))
-        expect(h.key("v")); expectEqual(h.editor.currentToolID, .select)
-        expect(!h.key("q")); expect(!h.key("cv"))
+        expect(h.key("h")); expectEqual(h.editor.currentToolID, .hand)
+        expect(!h.key("q")); expect(!h.key("ch"))
     },
-    test("hover outlines only in the select tool with no session") {
-        let h = try EditorHarness(plugins: [FixturesPlugin(), CardsPlugin()])
-        let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
-        h.move(to: CGPoint(x: 50, y: 50))
-        expectEqual(h.editor.hovered, box)
-        h.key("c")
-        expectEqual(h.editor.hovered, nil)
-        h.move(to: CGPoint(x: 60, y: 60))
-        expectEqual(h.editor.hovered, nil)
-    },
-    test("deleting the selection clears selection and hover") {
-        let h = try EditorHarness(plugins: [FixturesPlugin()])
-        let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
-        h.move(to: CGPoint(x: 50, y: 50))
-        h.editor.selection = box
-        h.editor.deleteSelection()
-        expect(h.editor.document.shapes.isEmpty)
-        expectEqual(h.editor.selection, nil); expectEqual(h.editor.hovered, nil)
-    },
-    test("an anchored shape paints just above its anchor, or on top without one, and isn't raised when pressed") {
+    test("an anchored shape paints just above its anchor, or on top without one") {
         let h = try EditorHarness(plugins: [FixturesPlugin()])
         let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let tagA = h.add(Tag(target: a))
@@ -142,8 +87,17 @@ import TestKit
         let b = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
         let tagB = h.add(Tag(target: b))
         expectEqual(h.editor.paintOrder().map(\.id), [a, tagA, b, tagB, loose])
-        h.press(at: CGPoint(x: 50, y: 50)); h.release()       // bring a to front: its tag comes with it
+        h.editor.transact { $0.bringToFront(a) }
         expectEqual(h.editor.paintOrder().map(\.id), [b, tagB, a, tagA, loose])
+    },
+    test("shape(at:) finds the front-most shape under a point, of those it's asked about") {
+        let h = try EditorHarness(plugins: [FixturesPlugin()])
+        let back = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
+        let front = h.add(Disc(CGRect(x: 0, y: 0, width: 100, height: 100)))
+        expectEqual(h.editor.shape(at: CGPoint(x: 50, y: 50)), front)
+        expectEqual(h.editor.shape(at: CGPoint(x: 50, y: 50)) { $0.kind == Box.kind }, back)
+        expectEqual(h.editor.shape(at: CGPoint(x: 2, y: 2)), back, "the disc's corner is empty")
+        expectEqual(h.editor.shape(at: CGPoint(x: 50, y: 50)) { _ in false }, nil)
     },
     test("an editing view's context writes through a transaction and ends editing") {
         let h = try EditorHarness(plugins: [CardsPlugin()])
@@ -156,16 +110,19 @@ import TestKit
         expectEqual(h.editor.editingShapeID, nil)
         expect(h.editor.makeEditingView() == nil)
     },
-    test("any transaction that deletes a shape lets go of it: selection, hover, hint and editing") {
+    test("only an editable kind can be edited") {
+        let h = try EditorHarness(plugins: [FixturesPlugin()])
+        let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 60)))
+        expect(!h.editor.beginEditing(box))
+        expectEqual(h.editor.editingShapeID, nil)
+    },
+    test("any transaction that deletes a shape lets go of it: hint and editing") {
         let h = try EditorHarness(plugins: [CardsPlugin()])
         let card = h.add(Card(CGRect(x: 0, y: 0, width: 100, height: 60)))
-        h.move(to: CGPoint(x: 50, y: 30))
         h.editor.hintedShapeID = card
         h.editor.beginEditing(card)
-        expectEqual(h.editor.hovered, card); expectEqual(h.editor.selection, card); expectEqual(h.editor.hintedShapeID, card)
-        h.editor.transact { $0.delete([card]) }                 // not deleteSelection, which clears some itself
-        expectEqual(h.editor.selection, nil)
-        expectEqual(h.editor.hovered, nil)
+        expectEqual(h.editor.hintedShapeID, card); expectEqual(h.editor.editingShapeID, card)
+        h.editor.transact { $0.delete([card]) }
         expectEqual(h.editor.hintedShapeID, nil)
         expectEqual(h.editor.editingShapeID, nil)
     },
@@ -176,38 +133,24 @@ import TestKit
         h.press(at: CGPoint(x: 500, y: 500)); h.release()
         expectEqual(h.editor.editingShapeID, nil)
     },
-    test("selection and hint only ever name a shape that exists") {
+    test("the hint only ever names a shape that exists") {
         let h = try EditorHarness(plugins: [FixturesPlugin()])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
-        h.editor.selection = box
-        h.editor.selection = ShapeID()
-        expectEqual(h.editor.selection, nil)
         h.editor.hintedShapeID = box
         h.editor.hintedShapeID = ShapeID()
         expectEqual(h.editor.hintedShapeID, nil)
     },
-    test("changing the selection drops the hovered handle") {
-        let h = try EditorHarness(plugins: [FixturesPlugin(), KnobsPlugin()])
-        let knob = h.add(Knob(CGRect(x: 0, y: 0, width: 100, height: 100)))
-        let box = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
-        h.editor.selection = knob
-        h.move(to: CGPoint(x: 50, y: 50))
-        expectEqual(h.editor.hoveredHandle, AnyHashable(0))
-        h.editor.selection = box
-        expectEqual(h.editor.hoveredHandle, nil)
-    },
-    test("setting the selection or hint to a shape that isn't there, when unset, changes nothing: no redraw, no notification") {
+    test("setting the hint to a shape that isn't there, when unset, changes nothing: no redraw, no notification") {
         let h = try EditorHarness(plugins: [FixturesPlugin()])
         let host = DisplayCounter()
         h.editor.delegate = host
         let changed = Flag()
-        withObservationTracking { _ = h.editor.selection; _ = h.editor.hintedShapeID } onChange: { changed.set() }
-        h.editor.selection = ShapeID()
+        withObservationTracking { _ = h.editor.hintedShapeID } onChange: { changed.set() }
         h.editor.hintedShapeID = ShapeID()
         expectEqual(host.redraws, 0)
         expect(!changed.isSet)
     },
-    test("switching tools redraws, since handles and binding hints depend on the tool") {
+    test("switching tools redraws, since what plugins draw can depend on the tool") {
         let h = try EditorHarness(plugins: [CardsPlugin()])
         let host = DisplayCounter()
         h.editor.delegate = host
@@ -232,51 +175,51 @@ import TestKit
                           placing: disc.placement(size: CGSize(width: 10, height: 10)) { Disc(.zero) })
             }
         }])
-        expectEqual(h.editor.registry.tools.map(\.id), [.select, .hand, ToolID(placing: Disc.kind), "small-disc"])
+        expectEqual(h.editor.registry.tools.map(\.id), [.hand, ToolID(placing: Disc.kind), "small-disc"])
         h.key("s"); h.press(at: CGPoint(x: 100, y: 100)); h.release()
         h.key("d"); h.press(at: CGPoint(x: 300, y: 300)); h.release()
         expectEqual(h.editor.document.shapes.map(\.box), [CGRect(x: 95, y: 95, width: 10, height: 10), CGRect(x: 280, y: 280, width: 40, height: 40)])
     },
 ])
 
-/// A box with one handle, at its center.
-struct Knob: BoxShapeProps {
-    static let kind: ShapeKind = "knob"
-    var frame: CGRect
-    init(_ frame: CGRect) { self.frame = frame }
+@MainActor final class ServiceLog {
+    var events: [String] = []
 }
 
-struct KnobDefinition: ShapeDefinition, HandleProviding {
-    func render(_ shape: ShapeRecord<Knob>, in context: RenderContext) {}
-    func handles(of shape: ShapeRecord<Knob>, in context: ShapeContext) -> [HandleLocation<Int>] {
-        [HandleLocation(0, at: CGPoint(x: shape.frame.midX, y: shape.frame.midY))]
+/// Logs what the editor tells services.
+final class LoggingService {
+    let log: ServiceLog
+    init(log: ServiceLog) { self.log = log }
+}
+
+extension LoggingService: EditorService {
+    func toolDidChange(from old: ToolID, to new: ToolID, in editor: CanvasEditor) { log.events.append("tool \(old) → \(new)") }
+    func documentDidChange(in editor: CanvasEditor) { log.events.append("document") }
+    func didPlace(_ id: ShapeID, in editor: CanvasEditor) {
+        log.events.append("placed \(id) in \(editor.currentToolID), editing \(editor.editingShapeID.map(\.description) ?? "nil"), "
+                          + "session \(editor.session == nil ? "none" : "running")")
     }
-    func pressHandle(_ handle: Int, of shape: ShapeRecord<Knob>, at pointer: Pointer, in editor: CanvasEditor) -> HandlePress { .drag }
-    func dragSession(for handle: Int, of shape: ShapeRecord<Knob>, from origin: CGPoint, in editor: CanvasEditor) -> any Session { IdleSession() }
 }
 
-final class IdleSession: Session {
-    func drag(_ pointer: Pointer, in editor: CanvasEditor) {}
+/// A tool that keeps Escape for itself.
+final class EscapeKeeper {
+    let log: ServiceLog
+    init(log: ServiceLog) { self.log = log }
 }
 
-struct KnobsPlugin: CanvasPlugin {
-    var id: PluginID { "knobs" }
-    func register(into registrar: inout PluginRegistrar) { registrar.shape(KnobDefinition()) }
+extension EscapeKeeper: Tool {
+    func pointerDown(_ pointer: Pointer, in editor: CanvasEditor) {}
+    func cancel(in editor: CanvasEditor) -> Bool {
+        log.events.append("keeper cancelled")
+        return true
+    }
 }
 
-/// Counts what the editor tells its view.
+/// Counts what the editor tells its view. (Its delegate protocol is the host's, so it can't be
+/// public in CanvasTesting.)
 final class DisplayCounter: CanvasEditorDelegate {
     var redraws = 0
     func editorNeedsDisplay(_ editor: CanvasEditor) { redraws += 1 }
     func editorCursorDidChange(_ editor: CanvasEditor) {}
     func editorEditingDidChange(_ editor: CanvasEditor) {}
-}
-
-struct DiscDefinitionForTests: ShapeDefinition {
-    func render(_ shape: ShapeRecord<Disc>, in context: RenderContext) {}
-}
-
-final class Flag: @unchecked Sendable {
-    private(set) var isSet = false
-    func set() { isSet = true }
 }

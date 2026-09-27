@@ -107,13 +107,15 @@ public final class CanvasView: NSView {
         }
     }
 
-    public override func deleteBackward(_ sender: Any?) { editor.deleteSelection() }
-    public override func deleteForward(_ sender: Any?) { editor.deleteSelection() }
-    public override func insertNewline(_ sender: Any?) { editor.editSelection() }
+    // The editor hands these to whichever plugin claims them (the selection, in the shipped app);
+    // unclaimed, they do nothing.
+    public override func deleteBackward(_ sender: Any?) { editor.perform(.delete) }
+    public override func deleteForward(_ sender: Any?) { editor.perform(.delete) }
+    public override func insertNewline(_ sender: Any?) { editor.perform(.insertNewline) }
     public override func cancelOperation(_ sender: Any?) { editor.cancel() }
-    /// Edit › Select All (⌘A), sent to the first responder: every shape when the canvas has the
-    /// keyboard. Text being edited (a note, a panel field) selects its own text instead.
-    public override func selectAll(_ sender: Any?) { editor.selectAll() }
+    /// Edit › Select All (⌘A), sent to the first responder when the canvas has the keyboard. Text
+    /// being edited (a note, a panel field) selects its own text instead.
+    public override func selectAll(_ sender: Any?) { editor.perform(.selectAll) }
 
     @objc public func zoomIn(_ sender: Any?) {
         editor.camera.zoom(by: 1.25, around: CGPoint(x: bounds.midX, y: bounds.midY))

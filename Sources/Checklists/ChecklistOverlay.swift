@@ -8,7 +8,7 @@ enum ChecklistStyle {
     static let padding: CGFloat = 5
     /// How far the chip reaches past the shape's right edge; it's centered on the top edge.
     static let overhang: CGFloat = 6
-    /// Below this zoom the chip shrinks with the shapes, as the core's handles do.
+    /// Below this zoom the chip shrinks with the shapes, as the selection's handles do.
     static let fullSizeZoom: CGFloat = 0.25
     static let fill = NSColor(white: 0.25, alpha: 0.9)
     static let doneFill = NSColor.systemGreen

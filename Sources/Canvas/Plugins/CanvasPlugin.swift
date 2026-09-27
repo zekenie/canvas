@@ -49,6 +49,22 @@ public struct PluginRegistrar {
         contribute(overlay, to: CorePoints.Overlays.self)
     }
 
+    /// Shapes (and rects) to outline, asked on every redraw. See `Outlines`.
+    public mutating func outlines(_ outlines: @escaping @MainActor (CanvasEditor) -> Outlines) {
+        contribute(outlines, to: CorePoints.OutlineSources.self)
+    }
+
+    /// What a command does (`editor.perform`). At most one plugin may claim each.
+    public mutating func command(_ command: CanvasCommand, _ run: @escaping @MainActor (CanvasEditor) -> Void) {
+        contribute(CommandRegistration(command: command, run: run), to: CorePoints.Commands.self)
+    }
+
+    /// The tool the editor starts in, and returns to on Escape and after placing a shape (a
+    /// registered tool, any plugin's). At most one plugin may claim it; otherwise it's the Hand.
+    public mutating func defaultTool(_ id: ToolID) {
+        contribute(id, to: CorePoints.DefaultTool.self)
+    }
+
     /// Runs inside the deleting transaction, before the shapes are removed. It may change other
     /// shapes, and delete more (their handlers run too). Each shape's handlers run once per
     /// transaction, and every shape being deleted still exists while any handler runs.
@@ -82,25 +98,19 @@ public struct ShapeRegistrar<Definition: ShapeDefinition> {
         contributions.append(RawContribution(ToolRegistration(descriptor: descriptor) { _ in PlaceShapeTool(placement) },
                                              to: CorePoints.Tools.self, for: .any, from: pluginID))
     }
-
-    /// Double-clicking empty canvas with the select tool places this. At most one kind may claim it.
-    public mutating func createOnDoubleClick(_ placement: Placement) {
-        precondition(placement.kind == kind, "\(kind) can't claim double-click for \(placement.kind)")
-        contributions.append(RawContribution(placement, to: CorePoints.DoubleClickPlacement.self, for: .kind(kind), from: pluginID))
-    }
 }
 
 // Placements, gated by the type system: only box shapes can be placed, and only editable ones can
 // be placed straight into editing.
 extension ShapeRegistrar where Definition.Props: BoxShapeProps {
-    /// Centered where the canvas is pressed, selected, and following the pointer until release.
+    /// Centered where the canvas is pressed, and following the pointer until release.
     public func placement(size: CGSize, props: @escaping @MainActor () -> Definition.Props) -> Placement {
         Placement(kind: kind, size: size, completion: .translate, props: props)
     }
 }
 
 extension ShapeRegistrar where Definition: Editable {
-    /// Centered where the canvas is pressed, selected, and being edited.
+    /// Centered where the canvas is pressed, and being edited.
     public func editingPlacement(size: CGSize, props: @escaping @MainActor () -> Definition.Props) -> Placement {
         Placement(kind: kind, size: size, completion: .edit, props: props)
     }
@@ -121,7 +131,8 @@ public struct ToolDescriptor: Identifiable, Sendable {
     }
 }
 
-/// "Put one of these here": used by place tools and the double-click claim alike.
+/// "Put one of these here", with `editor.place`: used by place tools, and by any plugin that
+/// creates shapes the same way (the select tool's double-click).
 public struct Placement {
     public let kind: ShapeKind
     let size: CGSize

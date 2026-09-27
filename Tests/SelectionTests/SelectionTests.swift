@@ -3,11 +3,12 @@ import CanvasTesting
 import CoreGraphics
 import Geometry
 import Observation
+import Selection
 import TestKit
 
 @MainActor let selectionTests = Suite("Selection", [
     test("selection is the only selected shape: nil with none or several; setting it selects exactly that one; nil clears a multi-selection") {
-        let h = try EditorHarness(plugins: [FixturesPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
         let a = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10))), b = h.add(Box(CGRect(x: 20, y: 0, width: 10, height: 10)))
         expectEqual(h.editor.selection, nil)
         h.editor.selection = a
@@ -24,7 +25,7 @@ import TestKit
         expect(!h.editor.isSelected(a))
     },
     test("selectedShapeIDs keeps selection order and drops missing ids and repeats") {
-        let h = try EditorHarness(plugins: [FixturesPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
         let a = h.add(Box(.zero)), b = h.add(Box(.zero)), c = h.add(Box(.zero))
         h.editor.selectedShapeIDs = [c, a, b]
         expectEqual(h.editor.selectedShapeIDs, [c, a, b])
@@ -34,7 +35,7 @@ import TestKit
         expectEqual(h.editor.selection, a)
     },
     test("setting the same set, or only missing ids when nothing is selected, changes nothing: no redraw, no notification") {
-        let h = try EditorHarness(plugins: [FixturesPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
         let a = h.add(Box(.zero)), b = h.add(Box(.zero))
         let host = DisplayCounter()
         h.editor.delegate = host
@@ -54,7 +55,7 @@ import TestKit
         expect(!changedAgain.isSet)
     },
     test("observers of selection hear only changes to the only selected shape: [a,b] → [a,b,c] fires selectedShapeIDs but not selection; [a] → [a,b] fires both") {
-        let h = try EditorHarness(plugins: [FixturesPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
         let a = h.add(Box(.zero)), b = h.add(Box(.zero)), c = h.add(Box(.zero))
         @MainActor func changes(_ change: () -> Void) -> (selection: Bool, set: Bool) {
             let selection = Flag(), set = Flag()
@@ -71,7 +72,7 @@ import TestKit
         expect(added.selection && added.set)
     },
     test("a transaction deleting one selected shape keeps the others selected") {
-        let h = try EditorHarness(plugins: [FixturesPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
         let a = h.add(Box(.zero)), b = h.add(Box(.zero)), c = h.add(Box(.zero))
         h.editor.selectedShapeIDs = [a, b, c]
         h.editor.transact { $0.delete([b]) }
@@ -81,7 +82,7 @@ import TestKit
         expectEqual(h.editor.selection, a, "down to one, it's the only selected shape")
     },
     test("changing the only selected shape drops the hovered handle; adding a second drops it too") {
-        let h = try EditorHarness(plugins: [FixturesPlugin(), KnobsPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), KnobsPlugin()])
         let knob = h.add(Knob(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let other = h.add(Knob(CGRect(x: 200, y: 0, width: 100, height: 100)))
         h.editor.selection = knob
@@ -99,7 +100,7 @@ import TestKit
     },
     test("Delete deletes every selected shape in one commit and clears selection and hover") {
         let deleted = DeletionLog()
-        let h = try EditorHarness(plugins: [FixturesPlugin(), Contributor(id: "log") { r in r.willDelete { ids, _ in deleted.batches.append(ids) } }])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), Contributor(id: "log") { r in r.willDelete { ids, _ in deleted.batches.append(ids) } }])
         let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let b = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
         let c = h.add(Box(CGRect(x: 400, y: 0, width: 100, height: 100)))
@@ -116,7 +117,7 @@ import TestKit
         expectEqual(h.editor.revision, revision + 1, "nothing selected: nothing to do")
     },
     test("selectAll ends editing, switches to select and selects every shape in document order; mid-gesture it does nothing") {
-        let h = try EditorHarness(plugins: [FixturesPlugin(), CardsPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), CardsPlugin()])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let card = h.add(Card(CGRect(x: 200, y: 0, width: 100, height: 60)))
         h.editor.beginEditing(card)
@@ -132,13 +133,13 @@ import TestKit
         h.release()
     },
     test("Escape in select with several selected selects none") {
-        let h = try EditorHarness(plugins: [FixturesPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
         h.editor.selectedShapeIDs = [h.add(Box(.zero)), h.add(Box(.zero))]
         h.escape()
         expectEqual(h.editor.selectedShapeIDs, [])
     },
     test("selectionBounds is the union of geometry bounds, ignoring shapes with no outline") {
-        let h = try EditorHarness(plugins: [FixturesPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin()])
         let a = h.add(Box(CGRect(x: 10, y: 20, width: 10, height: 10)))
         let b = h.add(Box(CGRect(x: 100, y: 50, width: 20, height: 20)))
         let tag = h.add(Tag(target: nil))                       // bounds .zero, which would reach the origin

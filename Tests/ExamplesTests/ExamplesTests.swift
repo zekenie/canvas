@@ -6,6 +6,7 @@ import EllipseTitles
 import Ellipses
 import Eraser
 import Rectangles
+import Selection
 import TestKit
 import Titles
 
@@ -36,7 +37,7 @@ struct MoreLabelTitles: CanvasPlugin {
 
 @MainActor let examplesTests = Suite("Examples", [
     test("Rectangles: R and a press place a 160 × 100 rectangle that follows the pointer") {
-        let h = try EditorHarness(plugins: [RectanglesPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), RectanglesPlugin()])
         expect(h.key("r"))
         h.press(at: CGPoint(x: 300, y: 200))
         h.drag(to: CGPoint(x: 310, y: 205))
@@ -48,13 +49,13 @@ struct MoreLabelTitles: CanvasPlugin {
         expectEqual(h.editor.currentToolID, .select)
     },
     test("Rectangles: hit testing comes from the frame, with nothing written for it") {
-        let h = try EditorHarness(plugins: [RectanglesPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), RectanglesPlugin()])
         let id = h.add(Rectangle(frame: CGRect(x: 0, y: 0, width: 100, height: 50)))
         expectEqual(h.editor.shape(at: CGPoint(x: 90, y: 40)), id)
         expectEqual(h.editor.shape(at: CGPoint(x: 110, y: 40)), nil)
     },
     test("Eraser: dragging across shapes deletes them, and an arrow lets go of what was erased") {
-        let h = try EditorHarness(plugins: [ArrowsPlugin(), RectanglesPlugin(), EraserPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), ArrowsPlugin(), RectanglesPlugin(), EraserPlugin()])
         let a = h.add(Rectangle(frame: CGRect(x: 0, y: 0, width: 100, height: 100)))
         let b = h.add(Rectangle(frame: CGRect(x: 200, y: 0, width: 100, height: 100)))
         let c = h.add(Rectangle(frame: CGRect(x: 400, y: 0, width: 100, height: 100)))
@@ -72,7 +73,7 @@ struct MoreLabelTitles: CanvasPlugin {
         expectEqual(h.editor.currentToolID, .eraser)
     },
     test("Eraser: a quick stroke erases what it crosses between two events, even a thin arrow") {
-        let h = try EditorHarness(plugins: [ArrowsPlugin(), RectanglesPlugin(), EraserPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), ArrowsPlugin(), RectanglesPlugin(), EraserPlugin()])
         let arrow = h.add(Arrow(start: .free(CGPoint(x: 100, y: 300)), end: .free(CGPoint(x: 300, y: 300))))
         let thin = h.add(Rectangle(frame: CGRect(x: 391, y: 0, width: 4, height: 100)))
         expect(h.key("e"))
@@ -86,7 +87,7 @@ struct MoreLabelTitles: CanvasPlugin {
         expectEqual(h.editor.document[thin], nil)
     },
     test("Titles: a kind opts in with one line; kinds that don't have no title") {
-        let h = try EditorHarness(plugins: [TitlesPlugin(), LabelsPlugin(), RectanglesPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), TitlesPlugin(), LabelsPlugin(), RectanglesPlugin()])
         let label = h.add(Label(frame: CGRect(x: 0, y: 0, width: 100, height: 40), text: "Hello"))
         let rectangle = h.add(Rectangle(frame: CGRect(x: 200, y: 0, width: 100, height: 40)))
         expectEqual(h.editor.registry.title(of: try require(h.editor.document[label])), "Hello")
@@ -98,7 +99,7 @@ struct MoreLabelTitles: CanvasPlugin {
         }
     },
     test("Titles: hovering a titled shape draws its title below it") {
-        let h = try EditorHarness(plugins: [TitlesPlugin(), LabelsPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), TitlesPlugin(), LabelsPlugin()])
         h.add(Label(frame: CGRect(x: 20, y: 20, width: 100, height: 40), text: "Hello"))
         h.move(to: CGPoint(x: 300, y: 300))
         let before = renderBitmap(h.editor, size: CGSize(width: 200, height: 120))
@@ -113,7 +114,7 @@ struct MoreLabelTitles: CanvasPlugin {
         expect(changed > 20, "title pixels below the label: \(changed)")
     },
     test("EllipseTitles: a bridge titles ellipses, though Ellipses and Titles don't know each other") {
-        let h = try EditorHarness(plugins: [EllipsesPlugin(), TitlesPlugin(), EllipseTitlesPlugin()])
+        let h = try EditorHarness(plugins: [SelectionPlugin(), EllipsesPlugin(), TitlesPlugin(), EllipseTitlesPlugin()])
         let ellipse = h.add(Ellipse(frame: CGRect(x: 0, y: 0, width: 200, height: 140)))
         expectEqual(h.editor.registry.title(of: try require(h.editor.document[ellipse])), "Ellipse, 200 × 140")
     },
@@ -128,7 +129,7 @@ struct MoreLabelTitles: CanvasPlugin {
     test("the examples' report: who contributes what") {
         let registry = try Registry(plugins: [RectanglesPlugin(), EraserPlugin(), EllipsesPlugin(), TitlesPlugin(), EllipseTitlesPlugin()])
         expectEqual(registry.report, """
-        core            tool select [v] · tool hand [h]
+        core            tool hand [h]
         rectangles      shape rectangle · tool rectangle [r]
         eraser          tool eraser [e]
         ellipses        shape ellipse · tool ellipse [o]

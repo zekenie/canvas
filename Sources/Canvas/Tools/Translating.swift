@@ -4,15 +4,17 @@ import Geometry
 /// Every shape in `ids` follows the pointer from where it was when the drag began, in one
 /// transaction per drag event (tldraw's Translating, without cloning, snapping or the axis lock).
 /// Boxes move by their frame; `CustomTranslation` kinds by their own rules, after the boxes;
-/// anything else stays put. Escape puts them all back.
+/// anything else stays put. Escape puts them all back. Placing a shape starts one; so may any
+/// tool (dragging a selection).
 @MainActor
-final class TranslatingSession {
+public final class TranslatingSession {
     private let origin: CGPoint                                  // world units, at the press
     private let before: [AnyShapeRecord]                         // for Escape, from before any begin
     private let frames: [(id: ShapeID, grabOffset: CGPoint)]
     private let moves: [@MainActor (CGPoint, inout Transaction) -> Void]
 
-    init(ids: [ShapeID], from origin: CGPoint, in editor: CanvasEditor) {
+    /// `origin` is where the drag began, in world units. Every `beginTranslation` runs now.
+    public init(ids: [ShapeID], from origin: CGPoint, in editor: CanvasEditor) {
         let before = ids.compactMap { editor.document[$0] }
         let moving = Set(ids), registry = editor.registry
         var frames: [(id: ShapeID, grabOffset: CGPoint)] = []
@@ -35,9 +37,7 @@ final class TranslatingSession {
 }
 
 extension TranslatingSession: Session {
-    var hidesSelectionIndicator: Bool { true }
-
-    func drag(_ pointer: Pointer, in editor: CanvasEditor) {
+    public func drag(_ pointer: Pointer, in editor: CanvasEditor) {
         let delta = pointer.world - origin
         editor.transact { tx in
             // `pointer.world − grabOffset`, not `start + delta`: the two differ in the last bit
@@ -49,7 +49,7 @@ extension TranslatingSession: Session {
 
     /// Escape (tldraw): every shape back to its record from before the drag, including what
     /// `beginTranslation` changed (an arrow's precise ends).
-    func cancel(in editor: CanvasEditor) -> Bool {
+    public func cancel(in editor: CanvasEditor) -> Bool {
         editor.transact { tx in
             for record in before { tx.update(record.id) { $0 = record } }
         }

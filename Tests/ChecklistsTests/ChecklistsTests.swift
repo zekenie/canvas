@@ -96,7 +96,7 @@ extension LookalikeChecklistTab: DetailTab { static var title: String { "Checkli
             r.shape(ChoreDefinition()) { $0.checklist(\.items) }
         }])
         expectEqual(registry.report, """
-        core          tool select [v] · tool hand [h]
+        core          tool hand [h]
         checklists    overlay ChecklistOverlay
         detail-panel  service DetailPanelState · ShapeDetails
         p             shape chore · ShapeChecklists → chore · ShapeDetails → chore
@@ -175,7 +175,7 @@ let chipPoint = CGPoint(x: 323, y: 40)
         expectClose(full, 16, within: 0.5)
         expectEqual(try height(zoom: 2), full)
         expectEqual(try height(zoom: 0.25), full)
-        // As the core's handles do: at 10%, 0.4 of full size.
+        // As the selection's handles do: at 10%, 0.4 of full size.
         expectClose(try height(zoom: 0.1), full * 0.4, within: 0.5)
     },
 ])

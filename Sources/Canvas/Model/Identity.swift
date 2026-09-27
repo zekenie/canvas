@@ -23,7 +23,7 @@ public struct PluginID: Hashable, Sendable, ExpressibleByStringLiteral, CustomSt
     public init(_ rawValue: String) { self.rawValue = rawValue }
     public init(stringLiteral value: String) { rawValue = value }
     public var description: String { rawValue }
-    /// The core's own plugin: the Select and Hand tools and the core's extension points.
+    /// The core's own plugin: the Hand tool and the core's extension points.
     public static let core: PluginID = "core"
 }
 
@@ -34,6 +34,20 @@ public struct ToolID: Hashable, Sendable, ExpressibleByStringLiteral, CustomStri
     /// A tool that places a shape is named after the shape's kind.
     public init(placing kind: ShapeKind) { rawValue = kind.rawValue }
     public var description: String { rawValue }
-    public static let select: ToolID = "select"
     public static let hand: ToolID = "hand"
+}
+
+/// A command the canvas view forwards from the keyboard and the menus (AppKit's standard actions),
+/// for a plugin to claim with `registrar.command`. The core only routes it.
+public struct CanvasCommand: Hashable, Sendable, ExpressibleByStringLiteral, CustomStringConvertible {
+    public let rawValue: String
+    public init(_ rawValue: String) { self.rawValue = rawValue }
+    public init(stringLiteral value: String) { rawValue = value }
+    public var description: String { rawValue }
+    /// Delete and Forward Delete.
+    public static let delete: CanvasCommand = "delete"
+    /// Return.
+    public static let insertNewline: CanvasCommand = "insertNewline"
+    /// Edit › Select All (⌘A).
+    public static let selectAll: CanvasCommand = "selectAll"
 }

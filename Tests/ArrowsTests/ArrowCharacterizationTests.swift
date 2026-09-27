@@ -4,10 +4,12 @@ import Arrows
 import CanvasTesting
 import CoreGraphics
 import Geometry
+import Selection
 import TestKit
 
 // Pins how a lone arrow moves: what its press and drags commit, when its handles and indicator
-// show, and how it re-binds. Don't edit these to make a change pass.
+// show, and how it re-binds. Don't edit these to make a change pass. (One deliberate change: the
+// POC hid the indicator once the arrow moved, as tldraw does; it now stays.)
 @MainActor let arrowCharacterizationTests = Suite("Arrow characterization", [
     test("an arrow body press commits nothing through 4 pt; the first drag past it commits twice (precise ends, then the move); later drags once each") {
         let board = try Board(arrow: 0)
@@ -36,7 +38,7 @@ import TestKit
         expectEqual(board.arrows, before)
         expectEqual(h.editor.revision, revision)
     },
-    test("handles hide while an arrow body is pressed; the indicator shows until the threshold, then hides") {
+    test("handles hide while an arrow body is pressed and moved; the indicator stays throughout") {
         let size = CGSize(width: 700, height: 300)
         let handle = CGPoint(x: 180, y: 180)       // the start handle, at A's center
         let body = CGPoint(x: 320, y: 180)         // on the body, clear of every handle
@@ -55,14 +57,15 @@ import TestKit
         board.h.drag(to: CGPoint(x: 364, y: 184))
         expectEqual(pixel(renderBitmap(board.h.editor, size: size), at: body), pixel(selected, at: body))
         board.h.drag(to: CGPoint(x: 364, y: 200))
-        // Past the threshold, the body and its middle handle draw as they would with nothing
-        // selected. (The binding hints, at the ends, still show.)
+        // Past the threshold the arrow moves, still outlined, with no handles: between the ends it
+        // draws as the same arrow selected would with its handles away.
         let moved = renderBitmap(board.h.editor, size: size)
-        let reference = try EditorHarness(plugins: [FixturesPlugin(), ArrowsPlugin()], document: board.h.editor.document)
+        let reference = try EditorHarness(plugins: [SelectionPlugin(), FixturesPlugin(), ArrowsPlugin()], document: board.h.editor.document)
         let between = CGRect(x: 290, y: 170, width: 150, height: 60)
-        expectEqual(changedPixels(moved, renderBitmap(reference.editor, size: size), in: between), 0)
+        expect(changedPixels(moved, renderBitmap(reference.editor, size: size), in: between) > 0, "unselected, it wouldn't be outlined")
         reference.editor.selection = board.arrow
-        expect(changedPixels(moved, renderBitmap(reference.editor, size: size), in: between) > 0, "selected and idle, it would show")
+        reference.editor.session = IdleSession()                      // hides the handles, as moving does
+        expectEqual(changedPixels(moved, renderBitmap(reference.editor, size: size), in: between), 0)
         board.h.release()
     },
     test("a lone arrow dragged off its shape and back re-binds precisely") {

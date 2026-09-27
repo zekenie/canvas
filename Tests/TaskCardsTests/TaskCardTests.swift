@@ -4,6 +4,7 @@ import CanvasTesting
 import Checklists
 import DetailPanel
 import Foundation
+import Selection
 import TaskCards
 import TestKit
 import Validation

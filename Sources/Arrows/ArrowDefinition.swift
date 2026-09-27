@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import Geometry
+import Selection
 
 /// Arrows as a shape kind: no box; handles; their own translation; painted just above the
 /// highest shape they're bound to. Each capability is its own extension.
@@ -39,19 +40,21 @@ extension ArrowDefinition: ShapeDefinition {
         return arrowGeometry(shape.props, in: context).distance(to: point) <= margin
     }
 
-    /// Exact, against the visible body: a brush in the hollow of a bent arrow's bounds doesn't
-    /// select it (arrows are open, as in tldraw), nor does one over only the hidden stub inside a
-    /// bound shape.
-    func brushHitTest(_ brush: CGRect, on shape: ShapeRecord<Arrow>, in context: ShapeContext) -> Bool {
-        arrowGeometry(shape.props, in: context).crosses(brush.polygon)
-    }
-
     func indicatorPath(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> CGPath {
         let geometry = arrowGeometry(shape.props, in: context)
         let path = CGMutablePath()
         path.addPath(geometry.bodyPath)
         path.addPath(geometry.arrowheadsPath(strokeWidth: ArrowStyle.strokeWidth))
         return path
+    }
+}
+
+extension ArrowDefinition: BrushHitTesting {
+    /// Exact, against the visible body: a brush in the hollow of a bent arrow's bounds doesn't
+    /// select it (arrows are open, as in tldraw), nor does one over only the hidden stub inside a
+    /// bound shape.
+    func brushHitTest(_ brush: CGRect, on shape: ShapeRecord<Arrow>, in context: ShapeContext) -> Bool {
+        arrowGeometry(shape.props, in: context).crosses(brush.polygon)
     }
 }
 

@@ -29,42 +29,19 @@ import TestKit
 }
 
 @MainActor let handTests = Suite("Hand", [
-    test("the core registers Select V then Hand H, ahead of every plugin's tools; a plugin claiming H conflicts") {
+    test("the core registers Hand H, ahead of every plugin's tools, and starts in it; a plugin claiming H conflicts") {
         let registry = try Registry(plugins: [CardsPlugin()])
-        expectEqual(registry.tools.map(\.id), [.select, .hand, ToolID(placing: Card.kind)])
-        expectEqual(registry.tools.map(\.shortcut), ["v", "h", "c"])
-        expectEqual(registry.tools[1].label, "Hand")
-        expectEqual(registry.tools[1].systemImage, "hand.raised")
+        expectEqual(registry.tools.map(\.id), [.hand, ToolID(placing: Card.kind)])
+        expectEqual(registry.tools.map(\.shortcut), ["h", "c"])
+        expectEqual(registry.tools[0].label, "Hand")
+        expectEqual(registry.tools[0].systemImage, "hand.raised")
+        expectEqual(registry.defaultTool, .hand)
+        expectEqual(CanvasEditor(registry: registry, scheduler: ManualScheduler()).currentToolID, .hand)
         expectThrows(RegistryError.conflict(point: "Tools", key: "shortcut h", plugins: ["core", "clash"])) {
             _ = try Registry(plugins: [Contributor(id: "clash") {
                 $0.tool(ToolDescriptor(id: "other", label: "Other", systemImage: "circle", shortcut: "H")) { _ in NoTool() }
             }])
         }
-    },
-    test("H selects the hand: open hand; closed while pressed and dragging; no hover outlines or handles") {
-        let h = try EditorHarness(plugins: [FixturesPlugin(), KnobsPlugin()])
-        let knob = h.add(Knob(CGRect(x: 0, y: 0, width: 100, height: 100)))   // its handle is at (50, 50)
-        h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
-        h.editor.selection = knob
-        let size = CGSize(width: 400, height: 200)
-        let inSelect = renderBitmap(h.editor, size: size)
-        expect(h.key("h"))
-        expectEqual(h.editor.currentToolID, .hand)
-        expectEqual(h.editor.cursor, .openHand)
-        h.move(to: CGPoint(x: 50, y: 50))
-        expectEqual(h.editor.hoveredHandle, nil)
-        h.move(to: CGPoint(x: 250, y: 50))
-        expectEqual(h.editor.hovered, nil)
-        let inHand = renderBitmap(h.editor, size: size)
-        expect(changedPixels(inSelect, inHand, in: CGRect(x: 40, y: 40, width: 20, height: 20)) > 0, "select draws the handle; the hand doesn't")
-        expectEqual(changedPixels(inSelect, inHand, in: CGRect(x: 190, y: 0, width: 120, height: 120)), 0, "no hover outline on the box")
-        h.press(at: CGPoint(x: 50, y: 50))
-        expectEqual(h.editor.cursor, .closedHand)
-        h.drag(to: CGPoint(x: 70, y: 60))
-        expectEqual(h.editor.cursor, .closedHand)
-        h.release(after: 200)
-        expectEqual(h.editor.cursor, .openHand)
-        expectEqual(h.editor.selection, knob)
     },
     test("a hand drag pans absolutely from the press: after (0,0) → (3,0) → (30,10), camera.origin = start − (30,10)/zoom") {
         for zoom: CGFloat in [1, 0.5, 0.6] {
@@ -87,27 +64,6 @@ import TestKit
             expectEqual(h.editor.camera.origin, end)
         }
     },
-    test("a hand click selects, deselects and moves nothing; a press on a shape pans instead") {
-        let h = try EditorHarness(plugins: [FixturesPlugin()])
-        let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
-        let b = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
-        h.editor.selection = a
-        let revision = h.editor.revision
-        h.key("h")
-        h.press(at: CGPoint(x: 500, y: 500)); h.release()
-        expectEqual(h.editor.selectedShapeIDs, [a])
-        // A quick 4 pt jiggle on B: not a drag, so no pan and no slide.
-        h.press(at: CGPoint(x: 250, y: 50)); h.drag(to: CGPoint(x: 254, y: 50)); h.release(after: 0)
-        expectEqual(h.editor.selectedShapeIDs, [a])
-        expectEqual(h.editor.camera.origin, .zero)
-        expectEqual(h.scheduler.pendingCount, 0)
-        h.press(at: CGPoint(x: 250, y: 50)); h.drag(to: CGPoint(x: 280, y: 70)); h.release(after: 200)
-        expectEqual(h.editor.camera.origin, CGPoint(x: -30, y: -20))
-        expectEqual(h.editor.revision, revision)
-        expectEqual(h.editor.document.shapes.map(\.id), [a, b])
-        expectEqual(h.editor.document[b]?.box?.origin, CGPoint(x: 200, y: 0))
-        expectEqual(h.editor.selectedShapeIDs, [a])
-    },
     test("a scroll or pinch mid hand-drag isn't undone: the drag carries on from there") {
         let h = try EditorHarness(plugins: [])
         h.key("h")
@@ -126,8 +82,8 @@ import TestKit
         h.drag(to: CGPoint(x: 170, y: 135))
         expectEqual(h.editor.camera, Camera(origin: CGPoint(x: pinched.origin.x - 5, y: pinched.origin.y - 5), zoom: 2))
     },
-    test("Escape mid-drag stops without a slide; Escape in idle returns to select") {
-        let h = try EditorHarness(plugins: [])
+    test("Escape mid-drag stops without a slide; Escape in idle returns to the default tool") {
+        let h = try EditorHarness(plugins: [idleTool(isDefault: true)])
         h.key("h")
         h.press(at: CGPoint(x: 100, y: 100))
         h.drag(to: CGPoint(x: 400, y: 100), speed: 2)
@@ -142,7 +98,7 @@ import TestKit
         h.wait(100)
         expectEqual(h.editor.camera, stopped)
         h.escape()
-        expectEqual(h.editor.currentToolID, .select)
+        expectEqual(h.editor.currentToolID, "idle")
     },
     test("a flung release slides with tldraw's friction") {
         let (v, moves) = try fling(at: 1.5)
@@ -176,7 +132,7 @@ import TestKit
         for (a, b) in zip(near.moves, far.moves) { expectClose(a, b, within: 1e-9) }
     },
     test("a press with any tool, setting the camera (as scroll and pinch do), or a new flick stops the slide; a tool switch doesn't") {
-        let h = try EditorHarness(plugins: [])
+        let h = try EditorHarness(plugins: [idleTool()])
         @MainActor func flick() {
             h.key("h")
             h.press(at: CGPoint(x: 100, y: 100))
@@ -192,7 +148,7 @@ import TestKit
             expectEqual(h.editor.camera, camera)
         }
         flick()
-        h.key("v")
+        h.key("i")
         let before = h.editor.camera
         h.wait(16)
         expect(h.editor.camera != before, "still sliding after a tool switch")
@@ -205,8 +161,8 @@ import TestKit
         h.press(after: 0); h.release()                                          // the hand catches it
         expectStill()
         flick()
-        h.key("v")
-        h.press(at: CGPoint(x: 700, y: 700), after: 0); h.release()             // a select press
+        h.key("i")
+        h.press(at: CGPoint(x: 700, y: 700), after: 0); h.release()             // another tool's press
         expectStill()
         flick()
         flick()                                                                 // one slide, not two
@@ -231,3 +187,11 @@ import TestKit
         expectEqual(try pan(waiting: 0).scheduler.pendingCount, 1, "without the wait, the release would slide")
     },
 ])
+
+/// A tool that does nothing, I; with `isDefault`, the default tool.
+@MainActor func idleTool(isDefault: Bool = false) -> Contributor {
+    Contributor(id: "idle") {
+        $0.tool(ToolDescriptor(id: "idle", label: "Idle", systemImage: "circle", shortcut: "i")) { _ in NoTool() }
+        if isDefault { $0.defaultTool("idle") }
+    }
+}

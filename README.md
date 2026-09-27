@@ -1,7 +1,8 @@
 # Infinite Canvas
 
-A native macOS infinite canvas: a small core, with everything on it (sticky notes, ellipses,
-arrows modeled on tldraw's, task cards, validation, checklists, a detail panel) added by plugins.
+A native macOS infinite canvas: a small core, with everything on it (selecting, sticky notes,
+ellipses, arrows modeled on tldraw's, task cards, validation, checklists, a detail panel) added by
+plugins.
 The plugin system is a port, in Swift, of the one in data-canvas. Start with
 [docs/plugin-system.md](docs/plugin-system.md).
 
@@ -56,8 +57,9 @@ Hovering an ellipse shows its title (the titles example).
 Package.swift           the module graph: one line per module, with its layer
 Sources/
   Geometry/             vector math, arcs, Camera
-  Canvas/               the core: model, plugin registry, editor, tools, drawing
+  Canvas/               the core: model, plugin registry, editor, the hand tool, drawing
   CanvasUI/             the AppKit view, the SwiftUI toolbar, and CanvasFocus
+  Selection/            the selection horizontal: the select tool, marquee, handles, Delete and ⌘A
   Arrows/               arrows (a port of tldraw's arrow geometry and binding)
   StickyNotes/          sticky notes, with in-place editing
   Ellipses/             ellipses

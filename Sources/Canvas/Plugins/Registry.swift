@@ -78,8 +78,16 @@ public struct Registry {
 
     public func definition(for kind: ShapeKind) -> (any ShapeDefinition)? { definitions[kind] }
 
-    /// The toolbar: the core's Select and Hand tools, then each plugin's tools in plugin order.
-    public var tools: [ToolDescriptor] { contributions(to: CorePoints.Tools.self).map(\.value.descriptor) }
+    /// The toolbar: the default tool, then the rest in plugin order (the core's Hand first).
+    public var tools: [ToolDescriptor] {
+        let all = contributions(to: CorePoints.Tools.self).map(\.value.descriptor)
+        let lead = defaultTool
+        return all.filter { $0.id == lead } + all.filter { $0.id != lead }
+    }
+
+    /// Where the editor starts, and returns to on Escape and after placing a shape: the tool a
+    /// plugin claimed (`registrar.defaultTool`), else the Hand.
+    public var defaultTool: ToolID { contributions(to: CorePoints.DefaultTool.self).first?.value ?? .hand }
 
     public func tool(forShortcut key: Character) -> ToolID? {
         let key = Character(key.lowercased())
@@ -94,7 +102,10 @@ public struct Registry {
     var willDeleteHandlers: [@MainActor (Set<ShapeID>, inout Transaction) -> Void] {
         contributions(to: CorePoints.WillDelete.self).map(\.value)
     }
-    var doubleClickPlacement: Placement? { contributions(to: CorePoints.DoubleClickPlacement.self).first?.value }
+    var outlineSources: [@MainActor (CanvasEditor) -> Outlines] { contributions(to: CorePoints.OutlineSources.self).map(\.value) }
+    func command(_ command: CanvasCommand) -> (@MainActor (CanvasEditor) -> Void)? {
+        contributions(to: CorePoints.Commands.self).first { $0.value.command == command }?.value.run
+    }
 
     /// Who contributes what, where: the runtime counterpart of Package.swift. A test pins it.
     public var report: String {
@@ -156,8 +167,14 @@ struct RawContribution {
         case let tool as ToolRegistration: "tool \(tool.descriptor.id)" + (tool.descriptor.shortcut.map { " [\($0)]" } ?? "")
         case let service as ServiceRegistration: "service \(service.name)"
         case let overlay as any CanvasOverlay: "overlay \(type(of: overlay))"
-        case is Placement: "double-click \(target)"
-        default: P.self == CorePoints.WillDelete.self ? "willDelete" : "\(P.self)" + (target == .any ? "" : " → \(target)")
+        case let command as CommandRegistration: "command \(command.command)"
+        default:
+            switch P.self {
+            case is CorePoints.WillDelete.Type: "willDelete"
+            case is CorePoints.OutlineSources.Type: "outlines"
+            case is CorePoints.DefaultTool.Type: "default tool \(value)"
+            default: "\(P.self)" + (target == .any ? "" : " → \(target)")
+            }
         }
     }
 

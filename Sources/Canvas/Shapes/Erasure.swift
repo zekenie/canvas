@@ -18,9 +18,6 @@ extension ShapeDefinition {
     func erasedHitTest(_ point: CGPoint, on record: AnyShapeRecord, in context: ShapeContext) -> Bool {
         record.typed(as: Props.self).map { hitTest(point, on: $0, in: context) } ?? false
     }
-    func erasedBrushHitTest(_ brush: CGRect, on record: AnyShapeRecord, in context: ShapeContext) -> Bool {
-        record.typed(as: Props.self).map { brushHitTest(brush, on: $0, in: context) } ?? false
-    }
     func erasedIndicatorPath(of record: AnyShapeRecord, in context: ShapeContext) -> CGPath? {
         record.typed(as: Props.self).map { indicatorPath(of: $0, in: context) }
     }
@@ -29,21 +26,6 @@ extension ShapeDefinition {
 extension Editable {
     func erasedEditingView(for record: AnyShapeRecord, editor: CanvasEditor) -> EditingView? {
         record.typed(as: Props.self).map { makeEditingView(for: $0, context: EditContext(shapeID: record.id, editor: editor)) }
-    }
-}
-
-extension HandleProviding {
-    func erasedHandles(of record: AnyShapeRecord, in context: ShapeContext) -> [(handle: AnyHashable, point: CGPoint)] {
-        guard let shape = record.typed(as: Props.self) else { return [] }
-        return handles(of: shape, in: context).map { (AnyHashable($0.handle), $0.point) }
-    }
-    func erasedPressHandle(_ handle: AnyHashable, of record: AnyShapeRecord, at pointer: Pointer, in editor: CanvasEditor) -> HandlePress {
-        guard let handle = handle.base as? Handle, let shape = record.typed(as: Props.self) else { return .consumed }
-        return pressHandle(handle, of: shape, at: pointer, in: editor)
-    }
-    func erasedDragSession(for handle: AnyHashable, of record: AnyShapeRecord, from origin: CGPoint, in editor: CanvasEditor) -> (any Session)? {
-        guard let handle = handle.base as? Handle, let shape = record.typed(as: Props.self) else { return nil }
-        return dragSession(for: handle, of: shape, from: origin, in: editor)
     }
 }
 

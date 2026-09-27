@@ -2,6 +2,7 @@ import Canvas
 import CanvasTesting
 import CoreGraphics
 import DetailPanel
+import Selection
 import SwiftUI
 import TestKit
 

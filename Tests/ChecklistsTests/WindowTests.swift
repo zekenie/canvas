@@ -3,6 +3,7 @@ import Canvas
 import CanvasTesting
 import Checklists
 import DetailPanel
+import Selection
 import SwiftUI
 import TestKit
 

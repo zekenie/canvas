@@ -11,9 +11,11 @@ public struct Card: BoxShapeProps {
     }
 }
 
-struct CardDefinition: ShapeDefinition, Editable {
-    func render(_ shape: ShapeRecord<Card>, in context: RenderContext) {}
-    func makeEditingView(for shape: ShapeRecord<Card>, context: EditContext<Card>) -> EditingView {
+public struct CardDefinition {}
+
+extension CardDefinition: ShapeDefinition, Editable {
+    public func render(_ shape: ShapeRecord<Card>, in context: RenderContext) {}
+    public func makeEditingView(for shape: ShapeRecord<Card>, context: EditContext<Card>) -> EditingView {
         let view = CardField(text: shape.props.text, context: context)
         return EditingView(view: view, firstResponder: view)
     }
@@ -40,15 +42,20 @@ public final class CardField: NSTextField, NSTextFieldDelegate {
     }
 }
 
-/// A "card" kind that's editable, with a place tool ("c") and the double-click claim.
+/// A "card" kind that's editable, with a place tool ("c"). `optIn` adds what a test needs
+/// (`CardsPlugin { card, place in card.createOnDoubleClick(place) }`), given the place tool's
+/// placement.
 public struct CardsPlugin: CanvasPlugin {
-    public init() {}
+    let optIn: @MainActor (inout ShapeRegistrar<CardDefinition>, Placement) -> Void
+    public init(_ optIn: @escaping @MainActor (inout ShapeRegistrar<CardDefinition>, Placement) -> Void = { _, _ in }) {
+        self.optIn = optIn
+    }
     public var id: PluginID { "cards" }
     public func register(into registrar: inout PluginRegistrar) {
         registrar.shape(CardDefinition()) { card in
             let place = card.editingPlacement(size: CGSize(width: 100, height: 60)) { Card(.zero) }
             card.tool(label: "Card", systemImage: "rectangle", shortcut: "c", placing: place)
-            card.createOnDoubleClick(place)
+            optIn(&card, place)
         }
     }
 }

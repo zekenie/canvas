@@ -43,8 +43,6 @@ extension CanvasEditor {
     }
 
     @_spi(Host) public func pointerExited() {
-        hovered = nil
-        hoveredHandle = nil
         if session == nil { currentTool.pointerExited(in: self) }
     }
 

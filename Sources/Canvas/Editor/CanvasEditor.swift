@@ -6,7 +6,7 @@ import Observation
 /// What an editor tells the view hosting it.
 @_spi(Host) @MainActor
 public protocol CanvasEditorDelegate: AnyObject {
-    /// Something visible changed (document, camera, selection, hover, ...): redraw, and keep any
+    /// Something visible changed (document, camera, tool, session, ...): redraw, and keep any
     /// editing view over its shape.
     func editorNeedsDisplay(_ editor: CanvasEditor)
     func editorCursorDidChange(_ editor: CanvasEditor)
@@ -14,7 +14,7 @@ public protocol CanvasEditorDelegate: AnyObject {
     func editorEditingDidChange(_ editor: CanvasEditor)
 }
 
-/// The canvas's brain, with no view: document, camera, selection, tools, sessions and input.
+/// The canvas's brain, with no view: document, camera, tools, sessions and input.
 /// `CanvasView` feeds it events and draws it through its host API (CanvasEditor+Host.swift);
 /// plugins get everything else.
 @MainActor
@@ -37,82 +37,20 @@ public final class CanvasEditor {
         }
     }
 
-    // The selection, hover and hint always name shapes in the document: setting one to a shape
-    // that isn't there drops it (nil, or out of the set).
-
-    /// Every selected shape, in the order it was selected, each once: setting drops ids that
-    /// aren't there and repeats (the first is kept). Setting what's already selected does nothing
-    /// (no redraw, no Observation notification). Changing which shape is the only selected one
-    /// drops the hovered handle.
-    public var selectedShapeIDs: [ShapeID] {
-        get { selectedIDs }
-        set {
-            var seen = Set<ShapeID>()
-            let ids = newValue.filter { document[$0] != nil && seen.insert($0).inserted }
-            guard ids != selectedIDs else { return }
-            selectedIDs = ids
-            let only = ids.count == 1 ? ids[0] : nil
-            if only != onlySelectedID {
-                onlySelectedID = only
-                hoveredHandle = nil            // handles belong to the only selected shape
-            }
-            setNeedsDisplay()
-        }
-    }
-    /// The only selected shape: nil when none or several are (tldraw's onlySelectedShape). Setting
-    /// it selects exactly that shape; nil selects none. Handles, Return and editing follow this, so
-    /// they apply only to a lone shape. Observers of this hear only changes to the only selected
-    /// shape, not 2 → 3.
-    public var selection: ShapeID? {
-        get { onlySelectedID }
-        set { selectedShapeIDs = newValue.map { [$0] } ?? [] }
-    }
-    public func isSelected(_ id: ShapeID) -> Bool { selectedIDs.contains(id) }
-    /// The union of the selected shapes' geometry bounds, in world units; nil with nothing
-    /// selected. Shapes with no outline (nothing drawn) don't count.
-    public var selectionBounds: CGRect? {
-        let context = shapeContext
-        let rects = selectedIDs.compactMap { context.geometry(of: $0) }
-            .filter { !$0.outline.isEmpty && !$0.bounds.isNull }.map(\.bounds)
-        guard let first = rects.first else { return nil }
-        return rects.dropFirst().reduce(first) { $0.union($1) }
-    }
-    /// The marquee being dragged in the select tool, in world units, for drawing; nil otherwise.
-    public var brush: CGRect? { (session as? BrushingSession)?.brush }
-    /// Under the pointer in the select tool, outlined as a hover hint.
-    public internal(set) var hovered: ShapeID? {
-        get { hoveredID }
-        set {
-            let id = existing(newValue)
-            guard id != hoveredID else { return }
-            hoveredID = id
-            setNeedsDisplay()
-        }
-    }
     /// A shape outlined as a target, whatever the tool (a connector tool sets it while aiming).
+    /// Setting it to a shape that isn't there drops it.
     public var hintedShapeID: ShapeID? {
         get { hintedID }
         set {
-            let id = existing(newValue)
+            let id = newValue.flatMap { document[$0] == nil ? nil : $0 }
             guard id != hintedID else { return }
             hintedID = id
             setNeedsDisplay()
         }
     }
-    private var selectedIDs: [ShapeID] = []
-    private var onlySelectedID: ShapeID?
-    private var hoveredID: ShapeID?
     private var hintedID: ShapeID?
-    private func existing(_ id: ShapeID?) -> ShapeID? { id.flatMap { document[$0] == nil ? nil : $0 } }
-    /// A handle of the only selected shape under the pointer (its definition's `Handle`).
-    public internal(set) var hoveredHandle: AnyHashable? {
-        didSet {
-            guard hoveredHandle != oldValue else { return }
-            setNeedsDisplay()
-            refreshCursor()
-        }
-    }
-    public private(set) var currentToolID: ToolID = .select
+    /// Starts as the registry's default tool.
+    public private(set) var currentToolID: ToolID
     public private(set) var editingShapeID: ShapeID?
     /// The press-drag-release in progress, if any. Tools start sessions; a session may hand over
     /// to another by setting this.
@@ -144,6 +82,7 @@ public final class CanvasEditor {
         self.registry = registry
         self.document = document
         self.scheduler = scheduler
+        currentToolID = registry.defaultTool
         serviceRegistrations = Dictionary(registry.services.map { ($0.type, $0) }, uniquingKeysWith: { first, _ in first })
         // Services first, so tools can look them up; each resolves the services it asks for.
         for registration in registry.services { _ = resolveService(registration.type) }
@@ -167,11 +106,13 @@ public final class CanvasEditor {
     var currentTool: any Tool { tools[currentToolID]! }
     public var shapeContext: ShapeContext { ShapeContext(document: document, registry: registry, camera: camera) }
 
-    /// Redraw. The core redraws for everything it owns (the document, camera, selection, hover,
-    /// sessions); a plugin whose drawn state changes some other way (a timer, say) calls this.
+    /// Redraw. The core redraws for everything it owns (the document, camera, tool, sessions); a
+    /// plugin whose drawn state changes some other way (its own state, a timer) calls this.
     public func setNeedsDisplay() { delegate?.editorNeedsDisplay(self) }
 
-    func refreshCursor() { delegate?.editorCursorDidChange(self) }
+    /// Sets the cursor again. The core does after every pointer event and tool switch; a tool
+    /// whose cursor follows state that changes some other way (a key press) calls this.
+    public func refreshCursor() { delegate?.editorCursorDidChange(self) }
 
     // MARK: Document
 
@@ -196,9 +137,8 @@ public final class CanvasEditor {
     private func commit(_ newDocument: CanvasDocument) {
         document = newDocument
         revision += 1
-        // The setters drop ids that no longer name a shape.
-        selectedShapeIDs = selectedIDs
-        hovered = hoveredID
+        // Services drop what no longer names a shape, as the hint's setter does.
+        for service in serviceOrder { service.documentDidChange(in: self) }
         hintedShapeID = hintedID
         if let editing = editingShapeID, document[editing] == nil { endEditing() }
         setNeedsDisplay()
@@ -211,20 +151,20 @@ public final class CanvasEditor {
         let old = currentToolID
         currentToolID = id
         hintedShapeID = nil
-        hovered = nil
-        hoveredHandle = nil
         for service in serviceOrder { service.toolDidChange(from: old, to: id, in: self) }
         setNeedsDisplay()
         refreshCursor()
     }
 
-    /// Where place tools and the double-click claim create shapes. (Other tools create shapes
-    /// with `transact { $0.insert(...) }`, as the arrow tool does.)
+    /// Where place tools (and any plugin with a `Placement`) create shapes: the shape goes in, the
+    /// default tool comes back, services hear `didPlace` (the selection selects it), and the shape
+    /// follows the pointer or is edited. (Other tools create shapes with
+    /// `transact { $0.insert(...) }`, as the arrow tool does.)
     public func place(_ placement: Placement, at point: CGPoint) {
         let record = placement.make(CGRect(center: point, size: placement.size))
         transact { $0.insert(record) }
-        selection = record.id
-        setTool(.select)
+        setTool(registry.defaultTool)
+        for service in serviceOrder { service.didPlace(record.id, in: self) }
         switch placement.completion {
         case .translate: session = TranslatingSession(ids: [record.id], from: point, in: self)
         case .edit: beginEditing(record.id)
@@ -233,39 +173,24 @@ public final class CanvasEditor {
 
     // MARK: Commands
 
-    /// Escape: cancels a session that can be cancelled (and does nothing during any other),
-    /// otherwise leaves a non-select tool, otherwise deselects all.
+    /// Escape: cancels a session that can be cancelled (and does nothing during any other);
+    /// otherwise the tool's own Escape; otherwise leaves a tool that isn't the default one.
     public func cancel() {
         if let running = session {
             if running.cancel(in: self), session === running { session = nil }
             return
         }
-        if currentToolID != .select { setTool(.select) } else { selection = nil }
+        if currentTool.cancel(in: self) { return }
+        setTool(registry.defaultTool)
     }
 
-    /// Return: edits the only selected shape if its kind is editable.
-    public func editSelection() {
-        if let selection { beginEditing(selection) }
-    }
-
-    /// Delete: removes every selected shape in one transaction. willDelete handlers see them all,
-    /// so arrows bound to them let go where they are.
-    public func deleteSelection() {
-        let ids = selectedShapeIDs
-        guard !ids.isEmpty else { return }
-        transact { $0.delete(Set(ids)) }
-        selectedShapeIDs = []
-        hovered = nil
-        hoveredHandle = nil
-    }
-
-    /// ⌘A (tldraw's selectAll): ends editing, switches to select, and selects every shape in
-    /// document order. Does nothing mid-gesture.
-    public func selectAll() {
-        guard session == nil else { return }
-        endEditing()
-        setTool(.select)
-        selectedShapeIDs = document.shapes.map(\.id)
+    /// Runs the command a plugin claimed (Delete, Return, ⌘A: the canvas view forwards them).
+    /// Returns false if no plugin claims it.
+    @discardableResult
+    public func perform(_ command: CanvasCommand) -> Bool {
+        guard let run = registry.command(command) else { return false }
+        run(self)
+        return true
     }
 
     // MARK: Input, for tools and sessions
@@ -281,12 +206,12 @@ public final class CanvasEditor {
 
     // MARK: Editing
 
+    /// Edits a shape of an `Editable` kind in place. Returns false for any other shape.
     @discardableResult
     public func beginEditing(_ id: ShapeID) -> Bool {
         endEditing()
         guard let record = document[id], registry.definition(for: record.kind) is any Editable else { return false }
         editingShapeID = id
-        selection = id
         delegate?.editorEditingDidChange(self)
         setNeedsDisplay()
         return true
@@ -328,51 +253,11 @@ public final class CanvasEditor {
         return plain.flatMap { [$0] + (above[$0.id] ?? []) } + top
     }
 
-    /// The front-most shape under a world point.
-    public func shape(at point: CGPoint) -> ShapeID? {
+    /// The front-most shape under a world point, of those `include` accepts.
+    public func shape(at point: CGPoint, where include: (AnyShapeRecord) -> Bool = { _ in true }) -> ShapeID? {
         let context = shapeContext
         return paintOrder().reversed().first { record in
-            registry.definition(for: record.kind)?.erasedHitTest(point, on: record, in: context) ?? false
+            include(record) && registry.definition(for: record.kind)?.erasedHitTest(point, on: record, in: context) ?? false
         }?.id
-    }
-
-    /// The shapes a brush (a world rect) selects, back to front. Bounds strictly inside the brush
-    /// always count; with `mustContain` (⌘) nothing else does; otherwise a shape whose bounds the
-    /// brush overlaps or touches counts if its definition's `brushHitTest` says so. Shapes with no
-    /// outline never count.
-    func shapes(inBrush brush: CGRect, mustContain: Bool) -> [ShapeID] {
-        let context = shapeContext
-        return paintOrder().filter { record in
-            guard let definition = registry.definition(for: record.kind),
-                  let geometry = definition.erasedGeometry(of: record, in: context),
-                  !geometry.outline.isEmpty, !geometry.bounds.isNull else { return false }
-            if brush.containsStrictly(geometry.bounds) { return true }
-            guard !mustContain, brush.touches(geometry.bounds) else { return false }
-            return definition.erasedBrushHitTest(brush, on: record, in: context)
-        }.map(\.id)
-    }
-
-    /// The only selected shape's handles, in view space, front to back.
-    func visibleHandles() -> [(handle: AnyHashable, point: CGPoint)] {
-        guard let id = selection, let record = document[id],
-              let definition = registry.definition(for: record.kind) as? any HandleProviding else { return [] }
-        return definition.erasedHandles(of: record, in: shapeContext).map { ($0.handle, camera.toView($0.point)) }
-    }
-
-    /// The only selected shape's handle under a view point: the nearest within `Style.handleHitRadius`.
-    @_spi(Host) public func handle(atViewPoint viewPoint: CGPoint) -> AnyHashable? {
-        visibleHandles()
-            .map { ($0.handle, $0.point.distance(to: viewPoint)) }
-            .filter { $0.1 <= Style.handleHitRadius }
-            .min { $0.1 < $1.1 }?
-            .0
-    }
-
-    func pressHandle(_ handle: AnyHashable, with pointer: Pointer) {
-        guard let id = selection, let record = document[id],
-              let definition = registry.definition(for: record.kind) as? any HandleProviding else { return }
-        if definition.erasedPressHandle(handle, of: record, at: pointer, in: self) == .drag {
-            session = PointingHandleSession(shapeID: id, handle: handle, origin: pointer.view)
-        }
     }
 }

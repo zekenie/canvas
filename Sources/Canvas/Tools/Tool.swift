@@ -14,6 +14,9 @@ public protocol Tool: AnyObject {
     func pointerExited(in editor: CanvasEditor)
     /// Held or released keys changed with no session running.
     func modifiersChanged(_ modifiers: Modifiers, in editor: CanvasEditor)
+    /// Escape with no session running. Return true if the tool handled it; otherwise the editor
+    /// switches to its default tool.
+    func cancel(in editor: CanvasEditor) -> Bool
 }
 
 extension Tool {
@@ -21,29 +24,35 @@ extension Tool {
     public func pointerMoved(_ pointer: Pointer, in editor: CanvasEditor) {}
     public func pointerExited(in editor: CanvasEditor) {}
     public func modifiersChanged(_ modifiers: Modifiers, in editor: CanvasEditor) {}
+    public func cancel(in editor: CanvasEditor) -> Bool { false }
 }
 
 /// One press-drag-release. Lives on the editor, so it outlives tool switches: a place tool can
-/// switch to select and keep dragging; a drawing tool can drag first and switch after. A session
-/// that sets `editor.hintedShapeID` clears it when it ends or cancels.
+/// switch to the default tool and keep dragging; a drawing tool can drag first and switch after. A
+/// session that sets `editor.hintedShapeID` clears it when it ends or cancels.
 @MainActor
 public protocol Session: AnyObject {
     /// Nil shows the tool's cursor.
     func cursor(in editor: CanvasEditor) -> CanvasCursor?
-    /// Selection outlines and the selection box step aside while the selection is being dragged.
-    var hidesSelectionIndicator: Bool { get }
+    /// While it runs, plugins' outlines (`registrar.outlines`) aren't drawn; the hint still is. For
+    /// a drag that reshapes a shape its outline would crowd (an arrow's handle).
+    var hidesOutlines: Bool { get }
     func drag(_ pointer: Pointer, in editor: CanvasEditor)
     /// The button came up. The editor clears the session afterwards unless this started another.
     func end(_ pointer: Pointer, in editor: CanvasEditor)
     /// Escape. Return true if the session cancelled; the editor then clears it.
     func cancel(in editor: CanvasEditor) -> Bool
     func modifiersChanged(_ modifiers: Modifiers, in editor: CanvasEditor)
+    /// Draws what the session shows while it runs (a marquee), in world units, above the world
+    /// overlays.
+    func draw(in context: OverlayContext)
 }
 
 extension Session {
     public func cursor(in editor: CanvasEditor) -> CanvasCursor? { nil }
-    public var hidesSelectionIndicator: Bool { false }
+    public var hidesOutlines: Bool { false }
     public func end(_ pointer: Pointer, in editor: CanvasEditor) {}
     public func cancel(in editor: CanvasEditor) -> Bool { false }
     public func modifiersChanged(_ modifiers: Modifiers, in editor: CanvasEditor) {}
+    public func draw(in context: OverlayContext) {}
 }

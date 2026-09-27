@@ -89,24 +89,17 @@ extension ShapeRegistrar {
             _ = try Registry(plugins: [FixturesPlugin(), FixturesPlugin(id: "more")])
         }
     },
-    test("a shortcut that's taken conflicts, whatever its case, including the core's V") {
-        expectThrows(RegistryError.conflict(point: "Tools", key: "shortcut v", plugins: ["core", "clash"])) {
+    test("a shortcut that's taken conflicts, whatever its case, including the core's H") {
+        expectThrows(RegistryError.conflict(point: "Tools", key: "shortcut h", plugins: ["core", "clash"])) {
             _ = try Registry(plugins: [Contributor(id: "clash") {
-                $0.tool(ToolDescriptor(id: "other", label: "Other", systemImage: "circle", shortcut: "V")) { _ in NoTool() }
+                $0.tool(ToolDescriptor(id: "other", label: "Other", systemImage: "circle", shortcut: "H")) { _ in NoTool() }
             }])
         }
     },
     test("a tool id that's taken conflicts") {
-        expectThrows(RegistryError.conflict(point: "Tools", key: "tool select", plugins: ["core", "clash"])) {
+        expectThrows(RegistryError.conflict(point: "Tools", key: "tool hand", plugins: ["core", "clash"])) {
             _ = try Registry(plugins: [Contributor(id: "clash") {
-                $0.tool(ToolDescriptor(id: .select, label: "Mine", systemImage: "circle")) { _ in NoTool() }
-            }])
-        }
-    },
-    test("only one kind may claim double-clicking empty canvas") {
-        expectThrows(RegistryError.conflict(point: "DoubleClickPlacement", key: "double-click on empty canvas", plugins: ["cards", "more-cards"])) {
-            _ = try Registry(plugins: [CardsPlugin(), Contributor(id: "more-cards") { r in
-                r.shape(BoxDefinitionForTests()) { box in box.createOnDoubleClick(box.placement(size: .zero) { Box(.zero) }) }
+                $0.tool(ToolDescriptor(id: .hand, label: "Mine", systemImage: "circle")) { _ in NoTool() }
             }])
         }
     },
@@ -117,24 +110,62 @@ extension ShapeRegistrar {
                                        Contributor(id: "b") { $0.contribute("B", to: Titles.self, for: .kind(Box.kind)) }])
         }
     },
-    test("the toolbar is the core's Select and Hand tools, then each plugin's tools in plugin order") {
+    test("the toolbar is the core's Hand tool, then each plugin's tools in plugin order") {
         let registry = try Registry(plugins: [CardsPlugin(), Contributor(id: "x") {
             $0.tool(ToolDescriptor(id: "zap", label: "Zap", systemImage: "bolt", shortcut: "z")) { _ in NoTool() }
         }])
-        expectEqual(registry.tools.map(\.id), [.select, .hand, ToolID(placing: Card.kind), "zap"])
+        expectEqual(registry.tools.map(\.id), [.hand, ToolID(placing: Card.kind), "zap"])
         expectEqual(registry.tool(forShortcut: "C"), ToolID(placing: Card.kind))
-        expectEqual(registry.tools.map(\.label), ["Select", "Hand", "Card", "Zap"])
-        expectEqual(registry.tools.map(\.shortcut), ["v", "h", "c", "z"])
+        expectEqual(registry.tools.map(\.label), ["Hand", "Card", "Zap"])
+        expectEqual(registry.tools.map(\.shortcut), ["h", "c", "z"])
+    },
+    test("a claimed default tool leads the toolbar, and the editor starts in it") {
+        let registry = try Registry(plugins: [CardsPlugin(), Contributor(id: "x") {
+            $0.tool(ToolDescriptor(id: "zap", label: "Zap", systemImage: "bolt", shortcut: "z")) { _ in NoTool() }
+            $0.defaultTool("zap")
+        }])
+        expectEqual(registry.defaultTool, "zap")
+        expectEqual(registry.tools.map(\.id), ["zap", .hand, ToolID(placing: Card.kind)])
+        expectEqual(CanvasEditor(registry: registry, scheduler: ManualScheduler()).currentToolID, "zap")
+    },
+    test("any plugin's tool can be the default; one that isn't registered is invalid, and two claims conflict") {
+        let registry = try Registry(plugins: [CardsPlugin(), Contributor(id: "x") { $0.defaultTool(ToolID(placing: Card.kind)) }])
+        expectEqual(registry.defaultTool, ToolID(placing: Card.kind))
+        expectThrows(RegistryError.invalid(point: "DefaultTool", reason: "no plugin registers tool zap")) {
+            _ = try Registry(plugins: [Contributor(id: "x") { $0.defaultTool("zap") }])
+        }
+        expectThrows(RegistryError.conflict(point: "DefaultTool", key: "the default tool", plugins: ["x", "y"])) {
+            _ = try Registry(plugins: [Contributor(id: "x") { $0.defaultTool(.hand) }, Contributor(id: "y") { $0.defaultTool(.hand) }])
+        }
+    },
+    test("a command runs what its plugin claimed; an unclaimed one reports false; two claims conflict") {
+        let ran = RunLog()
+        let editor = CanvasEditor(registry: try Registry(plugins: [Contributor(id: "x") { r in
+            r.command(.delete) { _ in ran.commands.append("delete") }
+            r.command("custom") { _ in ran.commands.append("custom") }
+        }]), scheduler: ManualScheduler())
+        expect(editor.perform(.delete))
+        expect(editor.perform("custom"))
+        expect(!editor.perform(.selectAll))
+        expectEqual(ran.commands, ["delete", "custom"])
+        expectThrows(RegistryError.conflict(point: "Commands", key: "delete", plugins: ["x", "y"])) {
+            _ = try Registry(plugins: [Contributor(id: "x") { $0.command(.delete) { _ in } }, Contributor(id: "y") { $0.command(.delete) { _ in } }])
+        }
     },
     test("the report lists who contributes what") {
         let registry = try Registry(plugins: [FixturesPlugin(), CardsPlugin(), StampsPlugin(),
-                                              Contributor(id: "p") { $0.contribute("x", to: Stamps.self, for: .kind(Card.kind)) }])
+                                              Contributor(id: "p") { r in
+                                                  r.contribute("x", to: Stamps.self, for: .kind(Card.kind))
+                                                  r.outlines { _ in Outlines() }
+                                                  r.command(.delete) { _ in }
+                                                  r.defaultTool(ToolID(placing: Card.kind))
+                                              }])
         expectEqual(registry.report, """
-        core          tool select [v] · tool hand [h]
+        core          tool hand [h]
         fixtures      shape box · shape disc · shape tag
-        cards         shape card · tool card [c] · double-click card
+        cards         shape card · tool card [c]
         stamps        \("")
-        p             Stamps → card
+        p             Stamps → card · outlines · command delete · default tool card
         """)
     },
     test("a plain point takes any number of contributions for one target, as a list") {
@@ -206,14 +237,6 @@ extension ShapeRegistrar {
     },
 ])
 
-struct BoxDefinitionForTests: ShapeDefinition {
-    func render(_ shape: ShapeRecord<Box>, in context: RenderContext) {}
-}
-
-final class NoTool: Tool {
-    func pointerDown(_ pointer: Pointer, in editor: CanvasEditor) {}
-}
-
 // Two services whose types share a name, as two plugins' private engines might.
 enum Left { final class Engine: EditorService {} }
 enum Right { final class Engine: EditorService {} }
@@ -224,3 +247,7 @@ final class Early: EditorService {
     init(late: Late?) { self.late = late }
 }
 final class Late: EditorService {}
+
+@MainActor final class RunLog {
+    var commands: [String] = []
+}

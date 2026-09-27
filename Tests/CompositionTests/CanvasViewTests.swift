@@ -6,6 +6,7 @@ import CanvasUI
 import Composition
 import CoreGraphics
 import Geometry
+import Selection
 import StickyNotes
 import SwiftUI
 import TestKit
@@ -82,8 +83,25 @@ import Validation
         expectEqual(editor.currentToolID, .arrow)
         expectEqual(field.stringValue, "")
     },
+    test("Return, Delete and ⌘A reach the selection's commands through the canvas view") {
+        let editor = CanvasEditor(registry: try Registry(plugins: [SelectionPlugin(), FixturesPlugin(), CardsPlugin()]), scheduler: ManualScheduler())
+        let (window, canvas) = windowed(editor)
+        let box = editor.add(Box(CGRect(x: 300, y: 100, width: 100, height: 100)))
+        let card = editor.add(Card(CGRect(x: 100, y: 100, width: 100, height: 60)))
+        window.makeFirstResponder(canvas)
+        canvas.selectAll(nil)
+        expectEqual(editor.selectedShapeIDs, [box, card])
+        editor.selection = card
+        window.pressReturn()
+        expectEqual(editor.editingShapeID, card)
+        editor.endEditing()
+        expect(window.firstResponder === canvas)
+        editor.selection = box
+        window.pressDelete()
+        expectEqual(editor.document.shapes.map(\.id), [card])
+    },
     test("an editing view that saves as editing ends: pressing the canvas saves; deleting its shape doesn't trap") {
-        let editor = CanvasEditor(registry: try Registry(plugins: [CardsPlugin()]), scheduler: ManualScheduler())
+        let editor = CanvasEditor(registry: try Registry(plugins: [SelectionPlugin(), CardsPlugin()]), scheduler: ManualScheduler())
         let (window, canvas) = windowed(editor)
         let card = ShapeRecord(Card(CGRect(x: 100, y: 100, width: 100, height: 60), text: "old"))
         editor.transact { $0.insert(card) }

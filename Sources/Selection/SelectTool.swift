@@ -1,7 +1,8 @@
-import CoreGraphics
+import AppKit
+import Canvas
 import Geometry
 
-/// The core's select tool (tldraw's). Handles win; then the shape under the pointer; then empty
+/// The select tool (tldraw's). Handles win; then the shape under the pointer; then empty
 /// space inside a multi-selection's box; then the canvas, where a drag brushes. ⇧ adds to the
 /// selection or takes away from it, and ⌘ (tldraw's accel) does too, without selecting on the
 /// press. A lone box pressed without ⇧ or ⌘ follows the pointer from the press, with no drag
@@ -22,9 +23,9 @@ extension SelectTool: Tool {
         // tldraw ignores double clicks while adding to or toggling the selection.
         let isDoubleClick = pointer.clickCount == 2 && !shift && !command
         let insideSelection = editor.selectedShapeIDs.count > 1 && editor.selectionBounds?.contains(pointer.world) == true
-        guard let id = editor.shape(at: pointer.world), let record = editor.document[id],
+        guard let id = editor.selectableShape(at: pointer.world), let record = editor.document[id],
               let definition = editor.registry.definition(for: record.kind) else {
-            if isDoubleClick, let placement = editor.registry.doubleClickPlacement {
+            if isDoubleClick, let placement = editor.registry.contributions(to: DoubleClickPlacement.self).first?.value {
                 editor.selection = nil
                 editor.place(placement, at: pointer.world)
             } else if insideSelection {
@@ -47,10 +48,11 @@ extension SelectTool: Tool {
             editor.transact { $0.bringToFront(id) }
         }
         if isDoubleClick, definition is any Editable {
+            editor.selection = id
             editor.beginEditing(id)
             return
         }
-        // A lone box follows the pointer from the press: no drag threshold, its outline hidden.
+        // A lone box follows the pointer from the press, with no drag threshold.
         if !shift, !command, editor.selectedShapeIDs == [id], record.box != nil, !(definition is any CustomTranslation) {
             editor.session = TranslatingSession(ids: [id], from: pointer.world, in: editor)
             return
@@ -65,8 +67,19 @@ extension SelectTool: Tool {
             editor.hovered = nil
         } else {
             editor.hoveredHandle = nil
-            editor.hovered = editor.shape(at: pointer.world)
+            editor.hovered = editor.selectableShape(at: pointer.world)
         }
+    }
+
+    func pointerExited(in editor: CanvasEditor) {
+        editor.hovered = nil
+        editor.hoveredHandle = nil
+    }
+
+    /// Escape with nothing under way deselects all.
+    func cancel(in editor: CanvasEditor) -> Bool {
+        editor.selection = nil
+        return true
     }
 }
 
@@ -106,7 +119,7 @@ extension PointingShapeSession: Session {
     /// the shape there; otherwise it becomes the only selected shape.
     func end(_ pointer: Pointer, in editor: CanvasEditor) {
         guard !didSelectOnPress else { return }
-        let hit = editor.shape(at: pointer.world) ?? shapeID
+        let hit = editor.selectableShape(at: pointer.world) ?? shapeID
         let additive = !pointer.modifiers.isDisjoint(with: [.shift, .command])
         if editor.isSelected(hit) {
             if additive { editor.selectedShapeIDs.removeAll { $0 == hit } } else { editor.selection = hit }
@@ -125,7 +138,7 @@ extension PointingShapeSession: Session {
 @MainActor
 func selectOnCanvasRelease(_ pointer: Pointer, in editor: CanvasEditor) {
     let additive = !pointer.modifiers.isDisjoint(with: [.shift, .command])
-    guard let hit = editor.shape(at: pointer.world) else {
+    guard let hit = editor.selectableShape(at: pointer.world) else {
         if !additive { editor.selection = nil }
         return
     }
@@ -215,5 +228,14 @@ extension BrushingSession: Session {
     func cancel(in editor: CanvasEditor) -> Bool {
         editor.selectedShapeIDs = initial
         return true
+    }
+
+    func draw(in context: OverlayContext) {
+        let cg = context.cg
+        cg.setFillColor(SelectionStyle.brushFill.cgColor)
+        cg.fill(brush)
+        cg.setStrokeColor(SelectionStyle.brushStroke.cgColor)
+        cg.setLineWidth(SelectionStyle.brushStrokeWidth / context.zoom)
+        cg.stroke(brush)
     }
 }

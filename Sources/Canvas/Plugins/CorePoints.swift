@@ -31,10 +31,32 @@ enum CorePoints {
         static var owner: PluginID { .core }
     }
 
-    enum DoubleClickPlacement: KeyedExtensionPoint {
-        typealias Contribution = Placement
+    enum OutlineSources: ExtensionPoint {
+        typealias Contribution = @MainActor (CanvasEditor) -> Outlines
         static var owner: PluginID { .core }
-        static func uniqueKeys(of _: Placement, for _: ShapeTarget) -> [AnyHashable] { ["double-click on empty canvas"] }
+    }
+
+    enum Commands: KeyedExtensionPoint {
+        typealias Contribution = CommandRegistration
+        static var owner: PluginID { .core }
+        static func uniqueKeys(of c: CommandRegistration, for _: ShapeTarget) -> [AnyHashable] { [c.command] }
+    }
+
+    /// The tool the editor starts in, and returns to on Escape and after placing a shape. One
+    /// plugin may claim it; otherwise it's the Hand.
+    enum DefaultTool {}
+}
+
+extension CorePoints.DefaultTool: KeyedExtensionPoint {
+    typealias Contribution = ToolID
+    static var owner: PluginID { .core }
+    static func uniqueKeys(of _: ToolID, for _: ShapeTarget) -> [AnyHashable] { ["the default tool"] }
+    /// The claimed tool must exist.
+    static func check(_ registry: Registry) throws(RegistryError) {
+        let id = registry.defaultTool
+        guard registry.tools.contains(where: { $0.id == id }) else {
+            throw .invalid(point: "DefaultTool", reason: "no plugin registers tool \(id)")
+        }
     }
 }
 
@@ -51,6 +73,11 @@ enum ToolKey: Hashable, CustomStringConvertible {
 struct ShapeRegistration {
     let kind: ShapeKind
     let definition: any ShapeDefinition
+}
+
+struct CommandRegistration {
+    let command: CanvasCommand
+    let run: @MainActor (CanvasEditor) -> Void
 }
 
 struct ToolRegistration {
@@ -77,7 +104,6 @@ struct ServiceRegistration {
 struct CorePlugin: CanvasPlugin {
     var id: PluginID { .core }
     func register(into registrar: inout PluginRegistrar) {
-        registrar.tool(ToolDescriptor(id: .select, label: "Select", systemImage: "cursorarrow", shortcut: "v")) { _ in SelectTool() }
         registrar.tool(ToolDescriptor(id: .hand, label: "Hand", systemImage: "hand.raised", shortcut: "h")) { _ in HandTool() }
     }
 }
