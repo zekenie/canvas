@@ -1,3 +1,5 @@
+import AppKit
+
 /// The core's own extension points. They work exactly like a plugin's; the core just owns them.
 enum CorePoints {
     enum Shapes: KeyedExtensionPoint {
@@ -45,6 +47,13 @@ enum CorePoints {
     /// The tool the editor starts in, and returns to on Escape and after placing a shape. One
     /// plugin may claim it; otherwise it's the Hand.
     enum DefaultTool {}
+
+    /// What a secondary click opens. One plugin may claim it; otherwise there's no menu.
+    enum SecondaryClickMenu: KeyedExtensionPoint {
+        typealias Contribution = @MainActor (CanvasEditor, Pointer) -> NSMenu?
+        static var owner: PluginID { .core }
+        static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["the secondary-click menu"] }
+    }
 }
 
 extension CorePoints.DefaultTool: KeyedExtensionPoint {

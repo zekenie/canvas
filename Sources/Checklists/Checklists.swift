@@ -1,4 +1,5 @@
 import Canvas
+import ContextMenus
 import DetailPanel
 import Foundation
 import SwiftUI
@@ -75,10 +76,16 @@ public enum ShapeChecklists: KeyedExtensionPoint {
     public static func uniqueKeys(of _: ChecklistContribution, for target: ShapeTarget) -> [AnyHashable] { [target] }
 }
 
+/// The bulk actions in a shape's context menu: after the kind's own items.
+public enum ChecklistMenuGroup {}
+extension ChecklistMenuGroup: MenuGroup {
+    public static var order: Int { 50 }
+}
+
 extension ShapeRegistrar {
     /// Gives this kind a checklist, stored at `items` in its props: a Checklist tab in the detail
-    /// panel, and (unless `badge` is false, for kinds that draw their own) a small done/total chip
-    /// on the canvas. `note.checklist(\.checklist)`.
+    /// panel, the bulk actions that apply in its context menu, and (unless `badge` is false, for
+    /// kinds that draw their own) a small done/total chip on the canvas. `note.checklist(\.checklist)`.
     public mutating func checklist(_ items: WritableKeyPath<Definition.Props, [ChecklistItem]>, badge: Bool = true) {
         contribute(ChecklistContribution(items: { $0.typed(as: Definition.Props.self)?.props[keyPath: items] }, showsBadge: badge),
                    to: ShapeChecklists.self)
@@ -92,6 +99,14 @@ extension ShapeRegistrar {
                 ChecklistProgress(items: shape.wrappedValue[keyPath: items])
             }
         }
+        // The Items menu's actions, each only where it has something to do.
+        contextMenu {
+            for action in ChecklistBulkAction.allCases {
+                MenuItem(action.title, in: ChecklistMenuGroup.self, when: { action.isEnabled(for: $0[keyPath: items]) }) {
+                    action.apply(to: &$0[keyPath: items])
+                }
+            }
+        }
     }
 }
 
@@ -103,7 +118,8 @@ extension Registry {
 }
 
 /// A horizontal any kind can opt into: a checklist stored in the kind's own props. Opting in is one
-/// line, and brings a Checklist tab in the detail panel and a done/total chip on the canvas. The
+/// line, and brings a Checklist tab in the detail panel, its bulk actions in the context menu, and
+/// a done/total chip on the canvas. The
 /// kind stores the items; this plugin owns their type and everything done with them.
 public struct ChecklistsPlugin: CanvasPlugin {
     public init() {}

@@ -53,6 +53,12 @@ public struct Transaction {
         didChange = true
     }
 
+    public mutating func sendToBack(_ id: ShapeID) {
+        guard let index = document.index(of: id), index != 0 else { return }
+        document.moveToStart(from: index)
+        didChange = true
+    }
+
     /// Runs every plugin's `willDelete` handlers first, in this transaction, while the shapes still
     /// exist. Handlers may delete more shapes: each shape's handlers run once, and everything is
     /// removed together when the outermost `delete` returns.

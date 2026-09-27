@@ -54,9 +54,10 @@ extension NSWindow {
 
     /// A mouse event at a point in the content view's top-left coordinates. Hand it to the view
     /// (`canvas.mouseDown(with:)`): `sendEvent` mouse-downs don't reach views in an unshown window.
-    public func mouse(_ type: NSEvent.EventType, at point: CGPoint, clicks: Int = 1, time: TimeInterval) -> NSEvent {
+    public func mouse(_ type: NSEvent.EventType, at point: CGPoint, clicks: Int = 1, modifiers: NSEvent.ModifierFlags = [],
+                      time: TimeInterval) -> NSEvent {
         let height = contentView?.frame.height ?? frame.height
-        return NSEvent.mouseEvent(with: type, location: CGPoint(x: point.x, y: height - point.y), modifierFlags: [], timestamp: time,
+        return NSEvent.mouseEvent(with: type, location: CGPoint(x: point.x, y: height - point.y), modifierFlags: modifiers, timestamp: time,
                                   windowNumber: windowNumber, context: nil, eventNumber: 0, clickCount: clicks, pressure: 1)!
     }
 }

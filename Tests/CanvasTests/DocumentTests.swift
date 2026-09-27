@@ -60,6 +60,16 @@ struct Cascade: CanvasPlugin {
         h.editor.transact { $0.bringToFront(top) }
         expectEqual(h.editor.revision, revision)
     },
+    test("sending a shape to back puts it first; the back shape changes nothing") {
+        let h = try EditorHarness(plugins: [FixturesPlugin()])
+        let ids = [h.add(Box(.zero)), h.add(Box(.zero)), h.add(Box(.zero))]
+        h.editor.transact { $0.sendToBack(ids[2]) }
+        expectEqual(h.editor.document.shapes.map(\.id), [ids[2], ids[0], ids[1]])
+        expectEqual(h.editor.document.index(of: ids[1]), 2)
+        let revision = h.editor.revision
+        h.editor.transact { $0.sendToBack(ids[2]) }
+        expectEqual(h.editor.revision, revision)
+    },
     test("willDelete handlers see the shapes and can change others in the same transaction") {
         let log = DeleteLog()
         let h = try EditorHarness(plugins: [FixturesPlugin(), Cleaner(log: log)])

@@ -112,6 +112,12 @@ extension CanvasEditor {
         return rects.dropFirst().reduce(first) { $0.union($1) }
     }
 
+    /// Whether a world point is inside the box around several selected shapes, where a press on
+    /// empty space acts on the selection (tldraw's selection bounds). False with one or none.
+    public func isInSelectionBox(_ point: CGPoint) -> Bool {
+        selectedShapeIDs.count > 1 && selectionBounds?.contains(point) == true
+    }
+
     /// Under the pointer in the select tool, outlined as a hover hint.
     public internal(set) var hovered: ShapeID? {
         get { selectionState?.hoveredID }
@@ -128,8 +134,8 @@ extension CanvasEditor {
     public var brush: CGRect? { (session as? BrushingSession)?.brush }
 
     /// The front-most selectable shape under a world point: what the select tool presses and
-    /// hovers.
-    func selectableShape(at point: CGPoint) -> ShapeID? {
+    /// hovers. Nil without the Selection plugin.
+    public func selectableShape(at point: CGPoint) -> ShapeID? {
         guard let state = selectionState else { return nil }
         return shape(at: point) { state.isSelectable($0) }
     }

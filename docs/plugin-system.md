@@ -22,6 +22,7 @@ maps one onto the other.
 - [A horizontal plugin](#a-horizontal-plugin)
 - [Selection](#selection)
 - [The detail panel](#the-detail-panel)
+- [Context menus](#context-menus)
 - [Capabilities](#capabilities)
 - [The editor, the document, and drawing](#the-editor-the-document-and-drawing)
 - [The registry](#the-registry)
@@ -194,8 +195,11 @@ Once one plugin works, the question is which piece the next feature needs.
 | Add a tool that makes no shape | `registrar.tool`, a `Tool` and a `Session` | [Eraser](#tools-and-sessions) |
 | Give a shape handles to drag | Selection's `HandleProviding` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
 | Edit a kind's properties beside the canvas | `x.details { DetailSection(...) }` | [TaskCards](#the-full-showcase-taskcards) |
+| Add items to a kind's right-click menu | `x.contextMenu { MenuItem(...) }` | [TaskCards](#contributing) |
+| Add a right-click item to every shape | `registrar.contextMenuForEveryShape` | [Reordering](#every-shape-reordering) |
 | Add a concern any kind can opt into | An `ExtensionPoint`, sugar on `ShapeRegistrar`, and whatever reads the point | [Titles](#a-horizontal-plugin), [Validation](../Sources/Validation/Validation.swift) |
 | Give that concern a tab on the kinds that opt in | A `DetailTab` at order 50, contributed from the same sugar | [Checklists](#a-horizontals-feature-tab-checklists) |
+| Give that concern menu items on the kinds that opt in | A `MenuGroup` at order 50, and `contextMenu` from the same sugar | [Checklists](#a-feature-that-comes-with-menu-items-checklists) |
 | Opt another plugin's kind into a concern | A bridge, which imports both | [EllipseTitles](#a-horizontal-plugin), [ValidationDetails](#footer-lines-from-a-bridge-validationdetails) |
 | Keep state per editor: an engine, a cache, a timer | `registrar.service`, an `EditorService` | [Validation](../Sources/Validation/Validation.swift)'s `ValidationEngine` |
 | Draw above every shape | `registrar.overlay`, a `CanvasOverlay` | [Titles](#a-horizontal-plugin) |
@@ -219,11 +223,12 @@ another. The horizontal owns the contract, the engine, and whatever it draws. Sh
 they're invalid; the validation plugin outlines them.
 
 A horizontal can also be a feature that individual shapes opt into, and that shows up in the
-[detail panel](#the-detail-panel) as a tab of its own. Checklists is the example: one line,
-`note.checklist(\.checklist)`, gives sticky notes a checklist stored in their own props, a Checklist
-tab in the panel, and a done/total chip on the canvas. Checklists owns the item type and everything
+[detail panel](#the-detail-panel) as a tab of its own, and in the [context menu](#context-menus).
+Checklists is the example: one line, `note.checklist(\.checklist)`, gives sticky notes a checklist
+stored in their own props, a Checklist tab in the panel, its bulk actions in the context menu, and a
+done/total chip on the canvas. Checklists owns the item type and everything
 done with it; the kind only stores the items. One horizontal may build on another: Checklists
-imports DetailPanel.
+imports DetailPanel and ContextMenus.
 
 Selecting is a horizontal too, one that every kind is in unless it opts out
 (`backdrop.unselectable()`). [Selection](#selection) owns what's selected, the Select tool, and
@@ -265,8 +270,8 @@ Each target is one line, with its layer:
 |---|---|---|
 | foundation | foundation | Geometry, Canvas (the core) |
 | ui | foundation | CanvasUI (the AppKit view, the SwiftUI toolbar, and `CanvasFocus`) |
-| horizontal | foundation, horizontal | Selection, Validation, Titles, DetailPanel, Checklists |
-| vertical | foundation, horizontal | Arrows, StickyNotes, Ellipses, TaskCards, Rectangles, Polylines, Eraser |
+| horizontal | foundation, horizontal | Selection, Validation, Titles, DetailPanel, ContextMenus, Checklists |
+| vertical | foundation, horizontal | Arrows, StickyNotes, Ellipses, TaskCards, Rectangles, Polylines, Eraser, Reordering |
 | bridge | foundation, horizontal, vertical | EllipseTitles, ValidationDetails |
 | composition | foundation, horizontal, vertical, bridge | Composition (the shipped plugin list) |
 | app | foundation, ui, composition | InfiniteCanvas |
@@ -449,6 +454,13 @@ The details:
 - **Commands** (`CanvasCommand`: `.delete`, `.insertNewline`, `.selectAll`) are the standard
   AppKit actions the canvas view forwards with `editor.perform`. A plugin claims each with
   `registrar.command`; unclaimed, `perform` returns false.
+- **The secondary click** (a right-click, or a Control-click) opens whatever menu the one plugin
+  that claims it makes (`registrar.menuForSecondaryClick`), ContextMenus in the shipped app;
+  unclaimed, or nil, the click does nothing. AppKit offers a Control-click to the menu first; with
+  none, it reaches the tool as a press with `pointer.isControlClick` set (exact, unlike `modifiers`,
+  which count ⌃ let go in the last 150 ms). The select tool ignores it, since it's the secondary
+  click there; a tool that reads ⌃ as a modifier (the arrow tool binds nothing) takes the press.
+  See [context menus](#context-menus).
 
 ## A shape without a frame
 
@@ -720,7 +732,8 @@ pointer, then empty space inside a multi-selection's box, then the canvas.
 - The selection stays outlined while it moves, box and all (tldraw, and the POC, hide it). Only
   a session that `hidesOutlines` (dragging an arrow's handle, or drawing an arrow) takes the
   outlines away.
-- ⌘ is the Command key only: Control-click is a secondary click on the Mac.
+- ⌘ is the Command key only: Control-click is a secondary click on the Mac, so it never presses
+  here (`pointer.isControlClick`). It opens the context menu, if there is one.
 - Escape while a shape is pressed, before the drag threshold, ends the press; mid-marquee it puts
   back the selection from before. A press on empty canvas ignores Escape until the release, as in
   tldraw.
@@ -910,9 +923,10 @@ extension ShapeRegistrar {
 
 - **Opting in.** Sticky notes write `note.checklist(\.checklist)`, task cards
   `task.checklist(\.checklist, badge: false)`, since a card draws its own list.
-- **The graph.** StickyNotes imports Checklists and never DetailPanel, yet gets a panel tab. The
-  requirement shows up at startup instead: a list with StickyNotes but without `ChecklistsPlugin`
-  or `DetailPanelPlugin` is `ownerNotInstalled`, naming the missing one.
+- **The graph.** StickyNotes imports Checklists and never DetailPanel or ContextMenus, yet gets a
+  panel tab and menu items. The requirement shows up at startup instead: a list with StickyNotes but
+  without `ChecklistsPlugin`, `DetailPanelPlugin` or `ContextMenusPlugin` is `ownerNotInstalled`,
+  naming the missing one.
 - **The key path is the contract.** `$shape[dynamicMember: items]` turns the key path into a
   binding that writes only that field. The Items header's menu is a `ForEach` over
   `ChecklistBulkAction` (Check All, Uncheck All, Remove Checked), each disabled unless
@@ -921,9 +935,9 @@ extension ShapeRegistrar {
   check them without opening the menu.
 
 Another feature in this pattern has the same parts: its data type, a keyed point holding an erased
-accessor per kind, a tab type at order 50, sugar that takes a `WritableKeyPath` into the kind's
-props and contributes to both points, and whatever consumes the point (a lookup on `Registry`, an
-overlay).
+accessor per kind, a tab type at order 50 (and a menu group, if it has actions), sugar that takes a
+`WritableKeyPath` into the kind's props and contributes to its points, and whatever consumes the
+point (a lookup on `Registry`, an overlay).
 
 ### Footer lines from a bridge: ValidationDetails
 
@@ -1113,6 +1127,148 @@ are gathered once.
 For your part: sections read only their binding, `when` and footer lines stay cheap, and anything
 heavy goes in a service cached by `editor.revision`.
 
+## Context menus
+
+A right-click on a shape (or a Control-click) opens a menu of what can be done to it. It's a
+horizontal ([`Sources/ContextMenus`](../Sources/ContextMenus)) like the detail panel: it declares one
+extension point, kinds and other plugins fill it, and the core only passes the click along. A
+right-click on a task card with one of its three items checked:
+
+```
+┌─────────────────────────┐
+│ Status                ▸ │  the kind's own (TaskCards): a submenu, ✓ by the task's status
+├─────────────────────────┤
+│ Check All               │  a feature's (Checklists, through task.checklist): only the
+│ Uncheck All             │    actions with something to do
+│ Remove Checked          │
+└─────────────────────────┘
+```
+
+A shape nothing offers anything (an ellipse, a rectangle or an arrow, as shipped, or a note with no
+checklist items) has no menu: the right-click does nothing.
+
+### Contributing
+
+| Sugar | For |
+|---|---|
+| `x.contextMenu { items }` | This kind's items, inside `registrar.shape { x in ... }`. A horizontal's opt-in sugar calls it too. |
+| `registrar.contextMenu(P.self) { items }` | Another plugin's kind, typed as its own (bridges). |
+| `registrar.contextMenuForEveryShape { items }` | Every shape, over `AnyShapeRecord` (`when: { $0.box != nil }` for those with a frame). |
+
+TaskCards' own, in [TaskCardMenu.swift](../Sources/TaskCards/TaskCardMenu.swift):
+
+```swift
+task.contextMenu {
+    Submenu("Status") {
+        for status in TaskStatus.allCases {
+            MenuItem(status.label, isChecked: { $0.status == status }) { $0.status = status }
+        }
+    }
+}
+```
+
+- **`MenuItem(title, in:, id:, when:, isEnabled:, isChecked:) { edit }`** edits each shape it's for
+  on the live value, all of them in one transaction, as the panel's `update` does. For what editing
+  props can't do (reordering, deleting, selecting), the other form, `{ ids, editor in ... }`, gets
+  the shapes, in selection order, and the editor, and changes the document with `editor.transact`.
+- **`when` leaves an item out; `isEnabled` dims it.** A context menu shows only what applies, so
+  reach for `when`. `isChecked` checks it (✓ for every shape, – for some).
+- **`Submenu(title) { items }`** shows when any of its items does.
+- **Groups are types**, like tabs: a separator falls between groups, which sort by `order`, then by
+  first appearance, in the tabs' bands. An item names its group with `in:`; the default is
+  `ShapeMenuGroup`.
+
+  | Order | Groups |
+  |---|---|
+  | 0 (the default) | A kind's own items (`ShapeMenuGroup`) |
+  | 50 | A horizontal's feature, on the kinds that opt in (`ChecklistMenuGroup`) |
+  | 100 and up | Shared by every kind (`ReorderMenuGroup`, 200) |
+
+- **Keyed.** Each item claims its target, group and `id` (the title by default), and an item in a
+  submenu its path, so two plugins adding one item to a kind are a `conflict`
+  ("sticky-note Check All"), and so are two for every shape. A kind's own item replaces an
+  every-shape one with the same group and id.
+
+### A feature that comes with menu items: Checklists
+
+The pattern of the detail panel's feature tabs, again. Checklists' opt-in sugar contributes to its
+own point, the panel's, and this one, so `note.checklist(\.checklist)` brings the Checklist tab and
+the bulk actions, each shown only where it has something to do:
+
+```swift
+public enum ChecklistMenuGroup {}
+extension ChecklistMenuGroup: MenuGroup {
+    public static var order: Int { 50 }
+}
+
+// In ShapeRegistrar.checklist(_:badge:), after `details { ... }`:
+contextMenu {
+    for action in ChecklistBulkAction.allCases {
+        MenuItem(action.title, in: ChecklistMenuGroup.self, when: { action.isEnabled(for: $0[keyPath: items]) }) {
+            action.apply(to: &$0[keyPath: items])
+        }
+    }
+}
+```
+
+A future horizontal does the same inside its own sugar: its point, its tab, its menu items, one line
+on the kind. The edge comes with it: Checklists imports ContextMenus, so a list with Checklists needs
+`ContextMenusPlugin` too. A feature whose menu items should be optional puts them in a bridge
+instead.
+
+### Every shape: Reordering
+
+[`Examples/Reordering`](../Examples/Reordering/Reordering.swift) adds Bring to Front and Send to Back
+for every shape with a frame, in a group of its own after the rest. It isn't in
+`ShippedPlugins.all`, so a right-click on a shape with no items of its own still does nothing; one
+line there gives every box a menu.
+
+```swift
+registrar.contextMenuForEveryShape {
+    MenuItem("Bring to Front", in: ReorderMenuGroup.self, when: { $0.box != nil }) { ids, editor in
+        let ordered = backToFront(ids, in: editor.document)
+        editor.transact { transaction in
+            for id in ordered { transaction.bringToFront(id) }
+        }
+    }
+    MenuItem("Send to Back", ...)
+}
+```
+
+### What a right-click does
+
+The menu is for the selection, as in Keynote and tldraw.
+
+| Right-click | Does |
+|---|---|
+| On a shape that isn't selected | The menu is for that shape, which becomes the selection. |
+| On a selected shape, or on empty space inside a multi-selection's box | The menu is for the whole selection, which stays. |
+| Where nothing applies | Nothing: no menu, and the selection and any editing stay. That's the rest of the canvas, a kind nothing contributes to, or items all left out by `when`. |
+| During a press | Nothing. |
+
+The select tool's hit rule finds the shape, so unselectable shapes are seen through. Opening a menu
+ends editing. A right-click opens the menu in any tool; a Control-click only in the select tool,
+since other tools may read ⌃ as a modifier.
+
+With several shapes, an item shows when every one of them shows it: the same group and id, whichever
+plugin contributed it for each kind, so a note and a task selected together share Check All. It's
+enabled when it is for any of them, and runs on those: each kind's own `edit`, all in one
+transaction, then each contribution's `perform` once, with its shapes. It's checked (✓) when every
+shape checks it and mixed (–) when some do; a kind whose item has no `isChecked` counts as
+unchecked. A submenu holds what its items resolve to. In a group, a kind's own items come first, then every shape's, each in plugin and
+builder order.
+
+### The core's part
+
+The core has never heard of context menus. It has one generic hook, like commands: at most one
+plugin claims the secondary click (`registrar.menuForSecondaryClick { editor, pointer in ... }`,
+returning an `NSMenu` or nil), and ContextMenus does. `CanvasView.menu(for:)`, which AppKit asks on a
+right-click and on a Control-click, passes the click to the editor (`editor.menu(for:)`, host API),
+which asks that plugin unless a press is under way. AppKit shows what comes back. A Control-click
+with no menu then reaches `mouseDown`, a press with `pointer.isControlClick` set, for the tool to
+take or ignore. ContextMenus keeps each kind's items, gathered once, in a service,
+`ContextMenuState`.
+
 ## Capabilities
 
 Some behavior belongs to a kind itself rather than to a concern others can join. That's a
@@ -1136,7 +1292,7 @@ to it.
 
 - **The document is a value.** `CanvasDocument` holds every shape, back to front. The only way to
   change it is `editor.transact { tx in ... }`: `insert`, `update` (typed with `as:`),
-  `bringToFront`, `delete`. A transaction commits once, if anything changed, and bumps
+  `bringToFront`, `sendToBack`, `delete`. A transaction commits once, if anything changed, and bumps
   `editor.revision`. Transactions don't nest. Undo (not built yet) will group commits: everything
   from a press to its release, and everything while a shape is being edited, will be one step.
 - **`willDelete`** handlers run inside the deleting transaction, before anything is removed, so a
@@ -1153,7 +1309,7 @@ to it.
   shape, overlay and session draws with a fresh graphics state. Sizes meant as view points are
   divided by `zoom` in world space.
 - **The view.** `CanvasView` (CanvasUI) is the only AppKit in the loop. It converts events, hosts
-  the editing view over its shape, and draws the editor, all through the editor's `@_spi(Host)`
+  the editing view over its shape, hands AppKit the menu for a secondary click, and draws the editor, all through the editor's `@_spi(Host)`
   API. Only the app and tests can import CanvasUI, and no plugin can see the host API, so no
   plugin can reach around the editor.
 
@@ -1167,7 +1323,7 @@ hand tool). It then checks everything and throws on:
 | `duplicatePlugin` | The same plugin id twice. |
 | `ownerNotInstalled` | A contribution to a point whose owner isn't in the list. |
 | `unknownKind` | A contribution for a kind no plugin registers. |
-| `conflict` | Two claims to the same key: a kind, a tool id, a shortcut, a service type, a command, the default tool, or a key in any `KeyedExtensionPoint` (one kind's double-click claim, say). |
+| `conflict` | Two claims to the same key: a kind, a tool id, a shortcut, a service type, a command, the default tool, the secondary click, or a key in any `KeyedExtensionPoint` (one kind's double-click claim, say). |
 | `invalid` | A point's own `check` refused the list (the default tool must be a registered one). |
 
 Some rules span contributions in a way keys can't express. For those, a point implements `check`,
@@ -1209,11 +1365,12 @@ Once built, it's frozen and handed to the editor. The app's list is `ShippedPlug
 core                tool hand [h]
 selection           service SelectionState · tool select [v] · default tool select · outlines · overlay HandlesOverlay · command delete · command insertNewline · command selectAll
 arrows              shape arrow · service ArrowTargeting · tool arrow [a] · overlay BindingHintsOverlay · willDelete
-sticky-notes        shape sticky-note · tool sticky-note [n] · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note
+sticky-notes        shape sticky-note · tool sticky-note [n] · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note
 ellipses            shape ellipse · tool ellipse [o]
-task-cards          shape task-card · tool task-card [t] · ValidationRules → task-card · ShapeDetails → task-card · ShapeChecklists → task-card · ShapeDetails → task-card
+task-cards          shape task-card · tool task-card [t] · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card
 validation          service ValidationEngine · overlay ValidationOverlay
 detail-panel        service DetailPanelState · ShapeDetails
+context-menus       service ContextMenuState · secondary-click menu
 checklists          overlay ChecklistOverlay
 validation-details  DetailStatuses
 rectangles          shape rectangle · tool rectangle [r]
@@ -1224,17 +1381,18 @@ ellipse-titles      ShapeTitles → ellipse
 ```
 
 A horizontal's opt-in shows as what it contributes: `note.checklist(\.checklist)` is a
-`ShapeChecklists` entry and a `ShapeDetails` entry, which is why task-cards has two `ShapeDetails`
-entries (its own panel, then the Checklist tab).
+`ShapeChecklists` entry, a `ShapeDetails` entry and a `ShapeContextMenus` entry, which is why
+task-cards has two of each of the last two (its own panel and menu, then the checklist's).
 
 ## Testing plugins
 
 Tests are plain executables built on a small macro-free kit (swift-testing's macros don't work
 with this toolchain, and there's no XCTest). `./test.sh` builds and runs them all.
 `TEST_FILTER=substring ./test.sh` runs the matching tests. A test that would open a real menu
-(which shows on screen, even from an unshown window) is opt-in: `TEST_UI_MENUS=1 ./test.sh`.
-[Your first plugin](#your-first-plugin) sets up a test target. A test that selects and drags as a
-user does installs Selection first
+(which shows on screen, even from an unshown window) is opt-in: `TEST_UI_MENUS=1 ./test.sh`. There
+are two: Checklists' Items menu, and CompositionTests' check that AppKit gives a Control-click to
+the context menu before `mouseDown`. [Your first plugin](#your-first-plugin) sets up a test target.
+A test that selects and drags as a user does installs Selection first
 ([ExamplesTests](../Tests/ExamplesTests/ExamplesTests.swift)):
 
 ```swift
@@ -1282,6 +1440,12 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   send keys with `window.type` and `window.press`, and press the canvas with
   `canvas.mouseDown(with: window.mouse(...))`: `sendEvent` mouse-downs don't reach views in an
   unshown window.
+- **Context menus.** `h.secondaryClick(at:)` (CanvasTesting) right-clicks through the host API and
+  returns the `NSMenu`, or nil. `menu.outline` reads it a line per item ("(Brighter)" when dimmed,
+  "✓ 1", "– 2" when mixed, "Level ▸" and its items indented, "—" between groups), and
+  `menu.choose("Level", "2")` runs an item as a click would, failing the test if it's dimmed. No
+  menu goes on screen. `h.hold(.control)` first makes it a Control-click. ContextMenusTests import no
+  real vertical.
 - A test target is `Tests/<Name>Tests` with a `main.swift` that calls `runTests([...])`. Every
   `Suite` must be listed there (`test.sh` checks). `<M>Tests` may depend only on M, what M
   depends on, and the test-support and ui modules.
@@ -1345,6 +1509,9 @@ Each of these adds to the design without changing what plugins are written again
   the display rather than nominal 16 ms frames.
 - **More horizontals** from data-canvas: describe, search, table of contents, commands. Each is an
   extension point in its own plugin.
+- **More of the context menu**: items for empty canvas (Paste, Select All), through a point of
+  their own; key equivalents and symbols on items; and the items everyone expects, such as Delete
+  and Duplicate, once a plugin owns them.
 - **More of the detail panel**: editing several selected shapes at once (it shows "N Shapes"
   today); every-shape sections over the
   record (not only every-box ones over the frame), and every-box overrides such as an aspect lock;

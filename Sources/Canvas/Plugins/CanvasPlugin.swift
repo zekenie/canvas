@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 
 /// A plugin: a value that says what it adds. Plugins are compiled in, and the app's plugin list is
@@ -63,6 +64,13 @@ public struct PluginRegistrar {
     /// registered tool, any plugin's). At most one plugin may claim it; otherwise it's the Hand.
     public mutating func defaultTool(_ id: ToolID) {
         contribute(id, to: CorePoints.DefaultTool.self)
+    }
+
+    /// The menu a secondary click (a right-click, or a Control-click) opens at the pointer, made
+    /// as the click happens; nil, and the click does nothing. At most one plugin may claim it;
+    /// otherwise secondary clicks do nothing. It isn't asked while a press is under way.
+    public mutating func menuForSecondaryClick(_ make: @escaping @MainActor (CanvasEditor, Pointer) -> NSMenu?) {
+        contribute(make, to: CorePoints.SecondaryClickMenu.self)
     }
 
     /// Runs inside the deleting transaction, before the shapes are removed. It may change other

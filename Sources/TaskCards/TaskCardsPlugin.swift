@@ -6,8 +6,9 @@ extension PluginID {
     public static let taskCards: PluginID = "task-cards"
 }
 
-/// Task cards: the Task tool (T), validation rules, and a detail panel that is the card's only
-/// editor. The card draws its own checklist, so it opts into Checklists without the chip.
+/// Task cards: the Task tool (T), validation rules, a detail panel that is the card's only editor,
+/// and a Status submenu in its context menu. The card draws its own checklist, so it opts into
+/// Checklists without the chip.
 public struct TaskCardsPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .taskCards }
@@ -17,6 +18,7 @@ public struct TaskCardsPlugin: CanvasPlugin {
             task.tool(label: "Task", systemImage: "checklist", shortcut: "t", placing: place)
             task.validate { shape, _ in shape.props.issues }
             task.taskPanel()
+            task.taskMenu()
             task.checklist(\.checklist, badge: false)
         }
     }

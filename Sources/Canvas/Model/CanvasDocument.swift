@@ -33,6 +33,11 @@ public struct CanvasDocument: Equatable, Sendable {
         reindex(from: index)
     }
 
+    mutating func moveToStart(from index: Int) {
+        shapes.insert(shapes.remove(at: index), at: 0)
+        reindex(from: 0)
+    }
+
     mutating func remove(_ ids: Set<ShapeID>) {
         guard let first = ids.compactMap({ indices[$0] }).min() else { return }
         shapes.removeAll { ids.contains($0.id) }

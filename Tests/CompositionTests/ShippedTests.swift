@@ -24,11 +24,12 @@ import Validation
         core                tool hand [h]
         selection           service SelectionState · tool select [v] · default tool select · outlines · overlay HandlesOverlay · command delete · command insertNewline · command selectAll
         arrows              shape arrow · service ArrowTargeting · tool arrow [a] · overlay BindingHintsOverlay · willDelete
-        sticky-notes        shape sticky-note · tool sticky-note [n] · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note
+        sticky-notes        shape sticky-note · tool sticky-note [n] · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note
         ellipses            shape ellipse · tool ellipse [o]
-        task-cards          shape task-card · tool task-card [t] · ValidationRules → task-card · ShapeDetails → task-card · ShapeChecklists → task-card · ShapeDetails → task-card
+        task-cards          shape task-card · tool task-card [t] · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card
         validation          service ValidationEngine · overlay ValidationOverlay
         detail-panel        service DetailPanelState · ShapeDetails
+        context-menus       service ContextMenuState · secondary-click menu
         checklists          overlay ChecklistOverlay
         validation-details  DetailStatuses
         rectangles          shape rectangle · tool rectangle [r]

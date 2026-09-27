@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// Everything the installed plugins registered: built once from the plugin list, checked, then
@@ -106,6 +107,9 @@ public struct Registry {
     func command(_ command: CanvasCommand) -> (@MainActor (CanvasEditor) -> Void)? {
         contributions(to: CorePoints.Commands.self).first { $0.value.command == command }?.value.run
     }
+    var secondaryClickMenu: (@MainActor (CanvasEditor, Pointer) -> NSMenu?)? {
+        contributions(to: CorePoints.SecondaryClickMenu.self).first?.value
+    }
 
     /// Who contributes what, where: the runtime counterpart of Package.swift. A test pins it.
     public var report: String {
@@ -173,6 +177,7 @@ struct RawContribution {
             case is CorePoints.WillDelete.Type: "willDelete"
             case is CorePoints.OutlineSources.Type: "outlines"
             case is CorePoints.DefaultTool.Type: "default tool \(value)"
+            case is CorePoints.SecondaryClickMenu.Type: "secondary-click menu"
             default: "\(P.self)" + (target == .any ? "" : " → \(target)")
             }
         }

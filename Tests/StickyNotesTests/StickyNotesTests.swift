@@ -2,6 +2,7 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import Checklists
+import ContextMenus
 import DetailPanel
 import Selection
 import StickyNotes
@@ -9,7 +10,9 @@ import TestKit
 import Validation
 
 /// The note and every plugin it opts into.
-@MainActor var notePlugins: [any CanvasPlugin] { [SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin()] }
+@MainActor var notePlugins: [any CanvasPlugin] {
+    [SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(), ContextMenusPlugin()]
+}
 
 @MainActor let stickyNotesTests = Suite("Sticky notes", [
     test("registers its kind, the N tool and the double-click claim") {
@@ -19,7 +22,7 @@ import Validation
         expect(registry.definition(for: StickyNote.kind) is any Editable)
         expectEqual(registry.contributions(to: DoubleClickPlacement.self).map(\.value.kind), [StickyNote.kind])
     },
-    test("can't be installed without the selection, validation and checklists plugins it opts into, and the panel") {
+    test("can't be installed without the selection, validation and checklists plugins it opts into, the panel and context menus") {
         expectThrows(RegistryError.ownerNotInstalled(point: "DoubleClickPlacement", owner: .selection, contributor: .stickyNotes)) {
             _ = try Registry(plugins: [StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin()])
         }
@@ -31,6 +34,9 @@ import Validation
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeDetails", owner: .detailPanel, contributor: .stickyNotes)) {
             _ = try Registry(plugins: [SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin()])
+        }
+        expectThrows(RegistryError.ownerNotInstalled(point: "ShapeContextMenus", owner: .contextMenus, contributor: .stickyNotes)) {
+            _ = try Registry(plugins: [SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin()])
         }
     },
     test("a note has a checklist: the registry reads it, and the panel shows it in a Checklist tab") {

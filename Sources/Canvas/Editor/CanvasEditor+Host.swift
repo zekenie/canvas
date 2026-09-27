@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import Geometry
@@ -10,7 +11,8 @@ extension CanvasEditor {
     @_spi(Host) public var cursor: CanvasCursor { session?.cursor(in: self) ?? currentTool.cursor(in: self) }
 
     @_spi(Host) public func pointerDown(_ event: PointerEvent) {
-        let pointer = sample(event)
+        var pointer = sample(event)
+        pointer.isControlClick = event.modifiers.contains(.control)
         tracker.resetVelocity()
         stopCameraSlide()
         endEditing()
@@ -61,6 +63,18 @@ extension CanvasEditor {
             }
         }
         dispatchModifiers(held.union(recentlyReleased))
+    }
+
+    /// A secondary click (a right-click, or a Control-click): the menu to open there, from the
+    /// plugin that claims it (`registrar.menuForSecondaryClick`). Nil, the click does nothing: no
+    /// plugin claims it, it has nothing to show, or a press is under way.
+    @_spi(Host) public func menu(for event: PointerEvent) -> NSMenu? {
+        guard session == nil, let make = registry.secondaryClickMenu else { return nil }
+        let pointer = Pointer(view: event.location, world: camera.toWorld(event.location), modifiers: event.modifiers,
+                              clickCount: event.clickCount, isControlClick: event.modifiers.contains(.control))
+        guard let menu = make(self, pointer) else { return nil }
+        stopCameraSlide()
+        return menu
     }
 
     /// An unmodified key typed on the canvas. Returns false if no tool claims it.

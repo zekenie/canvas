@@ -13,6 +13,9 @@ extension SelectTool: Tool {
     func cursor(in editor: CanvasEditor) -> CanvasCursor { editor.hoveredHandle != nil ? .openHand : .standard }
 
     func pointerDown(_ pointer: Pointer, in editor: CanvasEditor) {
+        // A Control-click is the Mac's secondary click: whatever menu it has, AppKit already showed.
+        // It doesn't press. (Tools that read ⌃ as a modifier, like the arrow tool's, still get it.)
+        guard !pointer.isControlClick else { return }
         if let handle = editor.handle(atViewPoint: pointer.view) {
             editor.pressHandle(handle, with: pointer)
             return
@@ -22,7 +25,7 @@ extension SelectTool: Tool {
         let command = pointer.modifiers.contains(.command)
         // tldraw ignores double clicks while adding to or toggling the selection.
         let isDoubleClick = pointer.clickCount == 2 && !shift && !command
-        let insideSelection = editor.selectedShapeIDs.count > 1 && editor.selectionBounds?.contains(pointer.world) == true
+        let insideSelection = editor.isInSelectionBox(pointer.world)
         guard let id = editor.selectableShape(at: pointer.world), let record = editor.document[id],
               let definition = editor.registry.definition(for: record.kind) else {
             if isDoubleClick, let placement = editor.registry.contributions(to: DoubleClickPlacement.self).first?.value {

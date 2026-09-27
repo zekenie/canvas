@@ -9,6 +9,7 @@ import Geometry
 import Selection
 import StickyNotes
 import SwiftUI
+import TaskCards
 import TestKit
 import Validation
 
@@ -185,5 +186,39 @@ import Validation
         let scrolled = editor.camera
         scheduler.advance(by: .milliseconds(100))
         expectEqual(editor.camera, scrolled)
+    },
+    test("a right-click opens a shape's context menu through the view; where there's nothing to offer, it and a Control-click do nothing") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
+        let (window, canvas) = windowed(editor)
+        editor.add(StickyNote(frame: CGRect(x: 40, y: 40, width: 200, height: 200), text: "No checklist"))
+        let task = editor.add(TaskCard(frame: CGRect(x: 400, y: 40, width: 240, height: 200), title: "Ship"))
+        let note = CGPoint(x: 140, y: 140), card = CGPoint(x: 520, y: 140)
+        expect(canvas.menu(for: window.mouse(.rightMouseDown, at: note, time: 1)) == nil)
+        // AppKit sends a Control-click to mouseDown only when menu(for:) has nothing: it isn't a press.
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: note, modifiers: .control, time: 2))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: note, modifiers: .control, time: 2.05))
+        expectEqual(editor.selectedShapeIDs, [])
+        let menu = try require(canvas.menu(for: window.mouse(.rightMouseDown, at: card, time: 3)))
+        expectEqual(menu.outline.first, "Status ▸")
+        expectEqual(editor.selectedShapeIDs, [task])
+        expect(canvas.menu(for: window.mouse(.leftMouseDown, at: card, modifiers: .control, time: 4)) != nil)
+        // Asked with some other event (the accessibility Show Menu action), there's no click to go by.
+        let key = try require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 5, windowNumber: window.windowNumber,
+                                               context: nil, characters: "m", charactersIgnoringModifiers: "m", isARepeat: false, keyCode: 46))
+        expect(canvas.menu(for: key) == nil)
+    },
+    test("in the arrow tool, a Control-press is a press with ⌃: no menu, and the arrow it draws binds nothing") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
+        let (window, canvas) = windowed(editor)
+        editor.add(TaskCard(frame: CGRect(x: 400, y: 40, width: 240, height: 200), title: "Ship"))
+        window.press("a")
+        let down = window.mouse(.leftMouseDown, at: CGPoint(x: 520, y: 140), modifiers: .control, time: 1)
+        expect(canvas.menu(for: down) == nil)
+        canvas.mouseDown(with: down)
+        canvas.mouseDragged(with: window.mouse(.leftMouseDragged, at: CGPoint(x: 700, y: 400), modifiers: .control, time: 1.2))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: CGPoint(x: 700, y: 400), modifiers: .control, time: 1.3))
+        let arrow = try require(editor.document.shapes.lazy.compactMap { $0.typed(as: Arrow.self)?.props }.first)
+        expect(arrow.start.binding == nil)
+        expect(arrow.end.binding == nil)
     },
 ])

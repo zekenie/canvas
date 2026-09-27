@@ -2,8 +2,10 @@ import AppKit
 import Canvas
 import CanvasTesting
 import Checklists
+import ContextMenus
 import DetailPanel
 import Geometry
+import Selection
 import SwiftUI
 import TestKit
 
@@ -91,23 +93,27 @@ extension LookalikeChecklistTab: DetailTab { static var title: String { "Checkli
         expectEqual(editor.items(id), [])
         expectEqual(editor.revision, revision + 2)
     },
-    test("opting in is one line: the kind's checklist, and its panel, in the report") {
-        let registry = try Registry(plugins: [ChecklistsPlugin(), DetailPanelPlugin(), Contributor(id: "p") { r in
+    test("opting in is one line: the kind's checklist, its panel and its menu items, in the report") {
+        let registry = try Registry(plugins: [ChecklistsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), Contributor(id: "p") { r in
             r.shape(ChoreDefinition()) { $0.checklist(\.items) }
         }])
         expectEqual(registry.report, """
-        core          tool hand [h]
-        checklists    overlay ChecklistOverlay
-        detail-panel  service DetailPanelState · ShapeDetails
-        p             shape chore · ShapeChecklists → chore · ShapeDetails → chore
+        core           tool hand [h]
+        checklists     overlay ChecklistOverlay
+        detail-panel   service DetailPanelState · ShapeDetails
+        context-menus  service ContextMenuState · secondary-click menu
+        p              shape chore · ShapeChecklists → chore · ShapeDetails → chore · ShapeContextMenus → chore
         """)
     },
-    test("the opt-in needs Checklists installed, and the panel") {
+    test("the opt-in needs Checklists installed, the panel and context menus") {
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeChecklists", owner: .checklists, contributor: "chores")) {
             _ = try Registry(plugins: [ChoresPlugin(), DetailPanelPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeDetails", owner: .detailPanel, contributor: "chores")) {
             _ = try Registry(plugins: [ChoresPlugin(), ChecklistsPlugin()])
+        }
+        expectThrows(RegistryError.ownerNotInstalled(point: "ShapeContextMenus", owner: .contextMenus, contributor: "chores")) {
+            _ = try Registry(plugins: [ChoresPlugin(), ChecklistsPlugin(), DetailPanelPlugin()])
         }
     },
     test("another tab titled Checklist is invalid") {
@@ -118,6 +124,31 @@ extension LookalikeChecklistTab: DetailTab { static var title: String { "Checkli
                 r.details(Box.self) { DetailSection(in: LookalikeChecklistTab.self) { _ in Text("Mine") } }
             }])
         }
+    },
+    test("opting in brings the bulk actions to the context menu, each only where it has something to do") {
+        let h = try EditorHarness { try choreEditor(scheduler: $0) }
+        let chore = h.add(Chore(choreFrame, items: laundry(done: 1)))
+        let menu = try require(h.secondaryClick(at: CGPoint(x: choreFrame.midX, y: choreFrame.midY)))
+        expectEqual(menu.outline, ["Check All", "Uncheck All", "Remove Checked"])
+        let revision = h.editor.revision
+        try menu.choose("Check All")
+        expectEqual(h.editor.items(chore)?.map(\.isDone), [true, true, true])
+        expectEqual(h.editor.revision, revision + 1)
+        expectEqual(try require(h.secondaryClick()).outline, ["Uncheck All", "Remove Checked"])
+        try require(h.secondaryClick()).choose("Remove Checked")
+        expectEqual(h.editor.items(chore), [])
+        expect(h.secondaryClick() == nil, "an empty checklist offers nothing, and the chore nothing else")
+    },
+    test("two kinds selected together share the actions, each on its own list") {
+        let h = try EditorHarness { try choreEditor(scheduler: $0) }
+        let chore = h.add(Chore(choreFrame, items: laundry(done: 1)))
+        let errand = h.add(Errand(frame: choreFrame.offsetBy(dx: 300, dy: 0), steps: [ChecklistItem(text: "post office")]))
+        h.editor.selectedShapeIDs = [chore, errand]
+        let menu = try require(h.secondaryClick(at: CGPoint(x: choreFrame.midX, y: choreFrame.midY)))
+        expectEqual(menu.outline, ["Check All"], "the errand has nothing checked to uncheck or remove")
+        try menu.choose("Check All")
+        expectEqual(h.editor.items(chore)?.map(\.isDone), [true, true, true])
+        expectEqual(h.editor.document[errand]?.typed(as: Errand.self)?.props.steps.map(\.isDone), [true])
     },
 ])
 

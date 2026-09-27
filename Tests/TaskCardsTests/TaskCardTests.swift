@@ -2,6 +2,7 @@ import AppKit
 import Canvas
 import CanvasTesting
 import Checklists
+import ContextMenus
 import DetailPanel
 import Foundation
 import Selection
@@ -28,17 +29,36 @@ import Validation
         expectEqual(registry.tool(forShortcut: "t"), tool.id)
         expect(!(registry.definition(for: TaskCard.kind) is any Editable))
         expectEqual(registry.report.split(separator: "\n").first { $0.hasPrefix("task-cards") }.map(String.init), """
-        task-cards    shape task-card · tool task-card [t] · ValidationRules → task-card · ShapeDetails → task-card · \
-        ShapeChecklists → task-card · ShapeDetails → task-card
+        task-cards     shape task-card · tool task-card [t] · ValidationRules → task-card · ShapeDetails → task-card · \
+        ShapeContextMenus → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card
         """)
     },
-    test("needs validation, checklists and the panel installed") {
+    test("needs validation, checklists, the panel and context menus installed") {
         let plugins = taskPlugins()
-        for (point, owner) in [("ValidationRules", PluginID.validation), ("ShapeChecklists", .checklists), ("ShapeDetails", .detailPanel)] {
+        for (point, owner) in [("ValidationRules", PluginID.validation), ("ShapeChecklists", .checklists), ("ShapeDetails", .detailPanel),
+                              ("ShapeContextMenus", .contextMenus)] {
             expectThrows(RegistryError.ownerNotInstalled(point: point, owner: owner, contributor: .taskCards)) {
                 _ = try Registry(plugins: plugins.filter { $0.id != owner })
             }
         }
+    },
+    test("its context menu sets the status, checked, then the checklist's actions; several tasks' statuses show mixed") {
+        let h = try EditorHarness { try taskEditor(scheduler: $0) }
+        let task = h.add(fullTask())
+        let menu = try require(h.secondaryClick(at: CGPoint(x: cardFrame.midX, y: cardFrame.midY)))
+        expectEqual(menu.outline, ["Status ▸", "  To Do", "  ✓ In Progress", "  Blocked", "  Done", "—",
+                                   "Check All", "Uncheck All", "Remove Checked"])
+        try menu.choose("Status", "Done")
+        expectEqual(h.editor.task(task)?.status, .done)
+        var todo = fullTask()
+        todo.frame = cardFrame.offsetBy(dx: 300, dy: 0)
+        todo.status = .todo
+        let other = h.add(todo)
+        h.editor.selectedShapeIDs = [task, other]
+        let both = try require(h.secondaryClick(at: CGPoint(x: cardFrame.midX, y: cardFrame.midY)))
+        expectEqual(Array(both.outline.prefix(5)), ["Status ▸", "  – To Do", "  In Progress", "  Blocked", "  – Done"])
+        try both.choose("Status", "Blocked")
+        expectEqual([h.editor.task(task)?.status, h.editor.task(other)?.status], [.blocked, .blocked])
     },
     test("props round-trip through JSON: checklist, due date, color and what the card shows") {
         var task = fullTask()

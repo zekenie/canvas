@@ -1,6 +1,7 @@
 import Arrows
 import Canvas
 import Checklists
+import ContextMenus
 import CoreGraphics
 import DetailPanel
 import EllipseTitles
@@ -25,7 +26,7 @@ public enum ShippedPlugins {
             // First: the others build on it, and its handles draw below their view overlays.
             SelectionPlugin(),
             ArrowsPlugin(), StickyNotesPlugin(), EllipsesPlugin(), TaskCardsPlugin(),
-            ValidationPlugin(), DetailPanelPlugin(), ChecklistsPlugin(), ValidationDetailsPlugin(),
+            ValidationPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), ChecklistsPlugin(), ValidationDetailsPlugin(),
             // The examples (Examples/). Each is one line here; delete it to leave it out.
             RectanglesPlugin(), PolylinesPlugin(), EraserPlugin(), TitlesPlugin(), EllipseTitlesPlugin(),
         ]

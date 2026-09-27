@@ -8,6 +8,20 @@ import TestKit
 @MainActor let selectToolTests = Suite("Select tool", [
     // Pressing shapes
 
+    test("a Control-click is the secondary click: it doesn't select, move or deselect; a click just after letting go of ⌃ does") {
+        let (h, a, b, _) = try threeBoxes()
+        h.editor.selection = b
+        h.hold(.control)
+        h.press(at: CGPoint(x: 50, y: 50)); h.drag(to: CGPoint(x: 90, y: 90)); h.release()
+        expectEqual(h.editor.selectedShapeIDs, [b])
+        expectEqual(h.editor.document[a]?.box?.origin, .zero)
+        h.click(at: CGPoint(x: 150, y: 400))
+        expectEqual(h.editor.selectedShapeIDs, [b], "nor does one on empty canvas")
+        h.hold([])
+        h.click(at: CGPoint(x: 50, y: 50))           // ⌃ still counts as held for 150 ms, but not as a Control-click
+        expectEqual(h.editor.selectedShapeIDs, [a])
+    },
+
     test("pressing an unselected shape selects only it and raises it; ⇧-pressing adds it without raising") {
         let (h, a, b, c) = try threeBoxes()
         h.editor.selection = c

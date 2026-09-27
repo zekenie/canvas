@@ -1,12 +1,14 @@
 import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
+import ContextMenus
 import CoreGraphics
 import EllipseTitles
 import Ellipses
 import Eraser
 import Polylines
 import Rectangles
+import Reordering
 import Selection
 import TestKit
 import Titles
@@ -191,5 +193,22 @@ struct MoreLabelTitles: CanvasPlugin {
         titles          overlay TitleOverlay
         ellipse-titles  ShapeTitles → ellipse
         """)
+    },
+    test("Reordering: every box's menu brings the selection to front or sends it back, in its own order; an arrow gets none") {
+        let h = try EditorHarness(plugins: [SelectionPlugin(), ContextMenusPlugin(), ArrowsPlugin(), EllipsesPlugin(), RectanglesPlugin(),
+                                            ReorderingPlugin()])
+        let a = h.add(Rectangle(frame: CGRect(x: 0, y: 0, width: 100, height: 100)))
+        let b = h.add(Ellipse(frame: CGRect(x: 200, y: 0, width: 100, height: 100)))
+        let c = h.add(Rectangle(frame: CGRect(x: 400, y: 0, width: 100, height: 100)))
+        h.editor.selectedShapeIDs = [c, a]
+        let menu = try require(h.secondaryClick(at: CGPoint(x: 50, y: 50)))
+        expectEqual(menu.outline, ["Bring to Front", "Send to Back"])
+        try menu.choose("Send to Back")
+        expectEqual(h.editor.document.shapes.map(\.id), [a, c, b])
+        try require(h.secondaryClick()).choose("Bring to Front")
+        expectEqual(h.editor.document.shapes.map(\.id), [b, a, c])
+        h.add(Arrow(start: .free(CGPoint(x: 0, y: 300)), end: .free(CGPoint(x: 400, y: 300))))
+        expect(h.secondaryClick(at: CGPoint(x: 200, y: 300)) == nil)
+        expectEqual(h.editor.selectedShapeIDs, [c, a])
     },
 ])

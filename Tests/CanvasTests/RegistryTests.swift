@@ -1,6 +1,8 @@
+import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
+import Geometry
 import TestKit
 
 // A horizontal declared by a test plugin: the core has never heard of it.
@@ -152,6 +154,30 @@ extension ShapeRegistrar {
             _ = try Registry(plugins: [Contributor(id: "x") { $0.command(.delete) { _ in } }, Contributor(id: "y") { $0.command(.delete) { _ in } }])
         }
     },
+    test("a secondary click opens what its plugin makes, asked in world units; unclaimed or nil, nothing opens; two claims conflict") {
+        let h = try EditorHarness(plugins: [FixturesPlugin(), Contributor(id: "x") { r in
+            r.menuForSecondaryClick { _, pointer in pointer.world.x > 100 ? NSMenu(title: "at \(Int(pointer.world.x))") : nil }
+        }])
+        h.editor.camera.setZoom(2, around: .zero)
+        expectEqual(h.secondaryClick(at: CGPoint(x: 300, y: 10))?.title, "at 150")
+        expect(h.secondaryClick(at: CGPoint(x: 100, y: 10)) == nil)
+        expect(try EditorHarness(plugins: [FixturesPlugin()]).secondaryClick(at: CGPoint(x: 300, y: 10)) == nil)
+        expectThrows(RegistryError.conflict(point: "SecondaryClickMenu", key: "the secondary-click menu", plugins: ["x", "y"])) {
+            _ = try Registry(plugins: [Contributor(id: "x") { $0.menuForSecondaryClick { _, _ in nil } },
+                                       Contributor(id: "y") { $0.menuForSecondaryClick { _, _ in nil } }])
+        }
+    },
+    test("a secondary click isn't asked while a press is under way (the hand's, here)") {
+        let asked = RunLog()
+        let h = try EditorHarness(plugins: [Contributor(id: "x") { r in
+            r.menuForSecondaryClick { _, _ in asked.commands.append("menu"); return NSMenu() }
+        }])
+        h.press(at: CGPoint(x: 10, y: 10))
+        expect(h.secondaryClick() == nil)
+        h.release()
+        expect(h.secondaryClick() != nil)
+        expectEqual(asked.commands, ["menu"])
+    },
     test("the report lists who contributes what") {
         let registry = try Registry(plugins: [FixturesPlugin(), CardsPlugin(), StampsPlugin(),
                                               Contributor(id: "p") { r in
@@ -159,13 +185,14 @@ extension ShapeRegistrar {
                                                   r.outlines { _ in Outlines() }
                                                   r.command(.delete) { _ in }
                                                   r.defaultTool(ToolID(placing: Card.kind))
+                                                  r.menuForSecondaryClick { _, _ in nil }
                                               }])
         expectEqual(registry.report, """
         core          tool hand [h]
         fixtures      shape box · shape disc · shape tag
         cards         shape card · tool card [c]
         stamps        \("")
-        p             Stamps → card · outlines · command delete · default tool card
+        p             Stamps → card · outlines · command delete · default tool card · secondary-click menu
         """)
     },
     test("a plain point takes any number of contributions for one target, as a list") {

@@ -34,6 +34,10 @@ public struct Pointer: Sendable {
     public var world: CGPoint
     public var modifiers: Modifiers
     public var clickCount: Int
+    /// A press (or secondary click) made with ⌃ held, by the event alone: `modifiers` also counts
+    /// keys let go in the last 150 ms. On the Mac it's the secondary click, which AppKit offers to
+    /// the context menu first; a tool that takes it as a click, not ⌃ as a modifier, ignores it.
+    public var isControlClick = false
 }
 
 public enum CanvasCursor: Sendable {

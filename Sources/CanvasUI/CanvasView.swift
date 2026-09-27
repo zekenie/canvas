@@ -66,6 +66,8 @@ public final class CanvasView: NSView {
                      modifiers: Modifiers(event.modifierFlags), clickCount: event.clickCount)
     }
 
+    /// A Control-click comes here only when `menu(for:)` had nothing for it; the tool decides
+    /// whether it's a click (`Pointer.isControlClick`).
     public override func mouseDown(with event: NSEvent) { editor.pointerDown(pointerEvent(event)) }
     public override func mouseDragged(with event: NSEvent) { editor.pointerDragged(pointerEvent(event)) }
     public override func mouseUp(with event: NSEvent) { editor.pointerUp(pointerEvent(event)) }
@@ -73,6 +75,15 @@ public final class CanvasView: NSView {
     public override func mouseExited(with event: NSEvent) { editor.pointerExited() }
     public override func cursorUpdate(with event: NSEvent) { cursor(editor.cursor).set() }
     public override func flagsChanged(with event: NSEvent) { editor.modifiersChanged(held: Modifiers(event.modifierFlags)) }
+
+    /// A right-click or a Control-click (AppKit asks for both, and shows what this returns): the
+    /// editor's menu for it, from whichever plugin claims secondary clicks. Nil does nothing.
+    /// AppKit may also ask with some other event (the accessibility Show Menu action), which has no
+    /// location or click count to give: then there's no menu.
+    public override func menu(for event: NSEvent) -> NSMenu? {
+        guard [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event.type) else { return nil }
+        return editor.menu(for: pointerEvent(event))
+    }
 
     // MARK: Trackpad and scroll wheel
 
