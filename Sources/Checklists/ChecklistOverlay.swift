@@ -10,6 +10,9 @@ enum ChecklistStyle {
     static let overhang: CGFloat = 6
     /// Below this zoom the chip shrinks with the shapes, as the selection's handles do.
     static let fullSizeZoom: CGFloat = 0.25
+    /// No chip is this wide (in view points), so a shape farther than this outside the view has no
+    /// chip in it.
+    static let reach: CGFloat = 200
     static let fill = NSColor(white: 0.25, alpha: 0.9)
     static let doneFill = NSColor.systemGreen
     static let attributes: [NSAttributedString.Key: Any] = [
@@ -25,14 +28,21 @@ struct ChecklistOverlay: CanvasOverlay {
 
     func draw(in context: OverlayContext) {
         let registry = context.editor.registry
-        guard registry.contributions(to: ShapeChecklists.self).contains(where: \.value.showsBadge) else { return }
+        // Each kind's checklist that shows the chip, found once per kind rather than per shape.
+        var badged: [ShapeKind: ChecklistContribution] = [:]
+        for kind in registry.kinds {
+            if let checklist = registry.contributions(to: ShapeChecklists.self, for: kind).first, checklist.showsBadge {
+                badged[kind] = checklist
+            }
+        }
+        guard !badged.isEmpty else { return }
+        // From the shape's top-right corner on, in view points (fewer when zoomed far out).
+        let scale = min(1, context.zoom / ChecklistStyle.fullSizeZoom) / context.zoom
+        let reach = ChecklistStyle.reach * scale
         // In paint order, so overlapping chips stack as their shapes do.
-        for record in context.editor.paintOrder() {
-            guard let checklist = registry.contributions(to: ShapeChecklists.self, for: record.kind).first, checklist.showsBadge,
-                  let items = checklist.items(record), !items.isEmpty,
+        for record in context.editor.paintOrder(in: context.visibleRect.insetBy(dx: -reach, dy: -reach)) {
+            guard let checklist = badged[record.kind], let items = checklist.items(record), !items.isEmpty,
                   let bounds = context.shapes.geometry(of: record.id)?.bounds else { continue }
-            // From the shape's top-right corner on, in view points (fewer when zoomed far out).
-            let scale = min(1, context.zoom / ChecklistStyle.fullSizeZoom) / context.zoom
             context.cg.saveGState()
             context.cg.translateBy(x: bounds.maxX, y: bounds.minY)
             context.cg.scaleBy(x: scale, y: scale)

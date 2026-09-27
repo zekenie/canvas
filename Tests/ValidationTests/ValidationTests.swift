@@ -84,6 +84,34 @@ struct Tiny: BoxShapeProps {
         h.editor.transact { $0.delete([box]) }
         expectEqual(h.editor.validation?.result(for: tag)?.issues.map(\.message), ["dangling"])
     },
+    test("after a change, only the shapes it touched are checked again, and those whose rules looked one of them up") {
+        calls = 0
+        let h = try EditorHarness(plugins: [FixturesPlugin(), ValidationPlugin(), Rules { r in
+            r.validate(Tag.self) { tag, context in
+                calls += 1
+                guard let box = tag.props.target.flatMap({ context.shape($0)?.box }) else { return [.error("dangling")] }
+                return box.isEmpty ? [.warning("empty target")] : []
+            }
+        }])
+        let box = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
+        let other = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
+        let tag = h.add(Tag(target: box))
+        let engine = try require(h.editor.validation)
+        expect(engine.result(for: tag) == nil)
+        expectEqual(calls, 1)
+        h.editor.transact { $0.update(other, as: Box.self) { $0.frame.size = .zero } }
+        _ = engine.results
+        expectEqual(calls, 1, "the tag's rule never looked at the other box")
+        h.editor.transact { $0.update(box, as: Box.self) { $0.frame.size = .zero } }
+        expectEqual(engine.result(for: tag)?.issues.map(\.message), ["empty target"])
+        expectEqual(calls, 2)
+        h.editor.transact { $0.update(tag, as: Tag.self) { $0.props.target = other } }
+        expectEqual(engine.result(for: tag)?.issues.map(\.message), ["empty target"], "the other box is empty too")
+        expectEqual(calls, 3)
+        h.editor.transact { $0.update(box, as: Box.self) { $0.frame.size = CGSize(width: 5, height: 5) } }
+        _ = engine.results
+        expectEqual(calls, 3, "the tag no longer looks at the first box")
+    },
     test("contributing a rule without the validation plugin installed is an error") {
         expectThrows(RegistryError.ownerNotInstalled(point: "ValidationRules", owner: .validation, contributor: "rules")) {
             _ = try Registry(plugins: [FixturesPlugin(), Rules { r in r.validate(Box.self) { _, _ in [] } }])

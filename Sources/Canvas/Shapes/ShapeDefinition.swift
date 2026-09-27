@@ -18,28 +18,77 @@ public struct ShapeGeometry: Sendable {
 }
 
 /// Read-only lookups for definitions, overlays and plugins.
+///
+/// The editor keeps each shape's geometry from frame to frame, until the shape changes or a shape
+/// its definition looked up while working it out does. So a definition that looks at other shapes
+/// (a connector, at the shapes it joins) does it through `shape(_:)`, `geometry(of:)` and
+/// `hitTest(_:shape:)`, which keep track. Reading all of `document`, or `camera`, while working
+/// out a geometry ties that geometry to every change of them.
 @MainActor
 public struct ShapeContext {
-    public let document: CanvasDocument
+    public var document: CanvasDocument {
+        currentIndex?.noteReadingDocument()
+        return storedDocument
+    }
     public let registry: Registry
-    public let camera: Camera
+    public var camera: Camera {
+        currentIndex?.noteReadingCamera()
+        return storedCamera
+    }
     public var zoom: CGFloat { camera.zoom }
 
-    init(document: CanvasDocument, registry: Registry, camera: Camera) {
-        self.document = document
+    let storedDocument: CanvasDocument
+    let storedCamera: Camera
+    /// The editor's index, if this context was made from the editor's document and camera; used
+    /// while they're still the editor's (`generation`).
+    private let index: ShapeIndex?
+    private let generation: Int
+
+    init(document: CanvasDocument, registry: Registry, camera: Camera, index: ShapeIndex? = nil) {
+        storedDocument = document
         self.registry = registry
-        self.camera = camera
+        storedCamera = camera
+        self.index = index
+        generation = index?.generation ?? 0
+    }
+
+    private var currentIndex: ShapeIndex? {
+        guard let index, index.generation == generation else { return nil }
+        return index
+    }
+
+    /// A shape, by id.
+    public func shape(_ id: ShapeID) -> AnyShapeRecord? {
+        currentIndex?.noteRead(id)
+        return storedDocument[id]
     }
 
     public func geometry(of id: ShapeID) -> ShapeGeometry? {
-        guard let record = document[id], let definition = registry.definition(for: record.kind) else { return nil }
+        if let index = currentIndex { return index.entry(for: id, in: self)?.geometry }
+        guard let record = storedDocument[id], let definition = registry.definition(for: record.kind) else { return nil }
         return definition.erasedGeometry(of: record, in: self)
     }
 
     /// Whether a world point hits the shape, by its definition's own test.
     public func hitTest(_ point: CGPoint, shape id: ShapeID) -> Bool {
-        guard let record = document[id], let definition = registry.definition(for: record.kind) else { return false }
+        if let index = currentIndex {
+            // Nowhere near it, it's a miss, and there's no need to ask.
+            guard let entry = index.entry(for: id, in: self),
+                  ShapeIndex.mayHit(point, extent: entry.extent, margin: entry.hitMargin, zoom: storedCamera.zoom) else { return false }
+        }
+        guard let record = storedDocument[id], let definition = registry.definition(for: record.kind) else { return false }
         return definition.erasedHitTest(point, on: record, in: self)
+    }
+}
+
+/// How far past its geometry a shape can still be hit (`ShapeDefinition.hitMargin`): world units,
+/// plus view points, which are divided by the zoom.
+public struct HitMargin: Equatable, Sendable {
+    public var world: CGFloat
+    public var view: CGFloat
+    public init(world: CGFloat = 0, view: CGFloat = 0) {
+        self.world = world
+        self.view = view
     }
 }
 
@@ -83,12 +132,19 @@ public protocol ShapeDefinition<Props> {
     /// Whether a world point is on the shape: for pressing, hovering and attaching to it.
     /// Default: inside a closed outline (an open shape can't be hit unless it says how).
     func hitTest(_ point: CGPoint, on shape: ShapeRecord<Props>, in context: ShapeContext) -> Bool
+    /// How far outside its geometry's bounds (and its box) `hitTest` can still say yes. The editor
+    /// asks `hitTest` only about points that near, so a kind whose `hitTest` reaches past its
+    /// outline (a stroke's width, a few points to make a thin line easy to click) says how far.
+    /// Default: nowhere, as the default `hitTest` hits only inside the outline.
+    var hitMargin: HitMargin { get }
     /// The outline drawn for it: the target hint, and whatever plugins outline (hover, selection).
     /// The core strokes them all in one pass.
     func indicatorPath(of shape: ShapeRecord<Props>, in context: ShapeContext) -> CGPath
 }
 
 extension ShapeDefinition {
+    public var hitMargin: HitMargin { HitMargin() }
+
     public func hitTest(_ point: CGPoint, on shape: ShapeRecord<Props>, in context: ShapeContext) -> Bool {
         let geometry = geometry(of: shape, in: context)
         return geometry.isClosed && polygonContains(geometry.outline, point)

@@ -28,12 +28,19 @@ public final class CanvasEditor {
     @_spi(Host) @ObservationIgnored public weak var delegate: (any CanvasEditorDelegate)?
 
     /// Changes only through `transact`.
-    public private(set) var document: CanvasDocument
+    public var document: CanvasDocument {
+        access(keyPath: \.document)
+        return storedDocument
+    }
+    /// Observed through `document`, which a commit sets with `withMutation`: the macro's setter
+    /// would first compare the old document with the new one, every shape of it, on every commit.
+    @ObservationIgnored private var storedDocument: CanvasDocument
     /// +1 per transaction that changed something.
     public private(set) var revision = 0
     /// Setting it stops the camera's slide or animation (CanvasEditor+Camera.swift).
     public var camera = Camera() {
         didSet {
+            shapeIndex.cameraDidChange()
             stopCameraMotion()
             setNeedsDisplay()
         }
@@ -76,6 +83,8 @@ public final class CanvasEditor {
     @ObservationIgnored private var serviceOrder: [any EditorService] = []
     @ObservationIgnored private var resolvingServices: Set<ObjectIdentifier> = []
     @ObservationIgnored private var isTransacting = false
+    /// Each shape's geometry and extent, and the paint order, kept from frame to frame.
+    @ObservationIgnored let shapeIndex = ShapeIndex()
     // Input state, used by CanvasEditor+Host.swift.
     @ObservationIgnored var tracker = PointerTracker()
     @ObservationIgnored var heldModifiers: Modifiers = []
@@ -91,7 +100,7 @@ public final class CanvasEditor {
                          "no installed plugin defines \(record.kind) shapes with these props")
         }
         self.registry = registry
-        self.document = document
+        storedDocument = document
         self.scheduler = scheduler
         self.stackingKeys = stackingKeys
         currentToolID = registry.defaultTool
@@ -116,7 +125,7 @@ public final class CanvasEditor {
     }
 
     var currentTool: any Tool { tools[currentToolID]! }
-    public var shapeContext: ShapeContext { ShapeContext(document: document, registry: registry, camera: camera) }
+    public var shapeContext: ShapeContext { ShapeContext(document: document, registry: registry, camera: camera, index: shapeIndex) }
 
     /// Redraw. The core redraws for everything it owns (the document, camera, tool, sessions); a
     /// plugin whose drawn state changes some other way (its own state, a timer) calls this.
@@ -143,7 +152,7 @@ public final class CanvasEditor {
         // Committing can end editing, and an editing view may save as it closes: outside the
         // transaction, so it can.
         if transaction.didChange {
-            commit(transaction.document)
+            commit(transaction.document, changes: transaction.changes)
             didCommitTransaction?(self)
         }
         return result
@@ -160,14 +169,15 @@ public final class CanvasEditor {
         }
         session = nil
         endEditing()
-        commit(newDocument)
+        commit(newDocument, changes: ChangeSet(from: storedDocument, to: newDocument))
     }
 
-    private func commit(_ newDocument: CanvasDocument) {
-        document = newDocument
+    private func commit(_ newDocument: CanvasDocument, changes: ChangeSet) {
+        withMutation(keyPath: \.document) { storedDocument = newDocument }
         revision += 1
+        shapeIndex.documentDidChange(changes, in: newDocument, registry: registry)
         // Services drop what no longer names a shape, as the hint's setter does.
-        for service in serviceOrder { service.documentDidChange(in: self) }
+        for service in serviceOrder { service.documentDidChange(changes, in: self) }
         hintedShapeID = hintedID
         if let editing = editingShapeID, document[editing] == nil { endEditing() }
         setNeedsDisplay()
@@ -258,35 +268,34 @@ public final class CanvasEditor {
     /// Back to front: document order, with each anchored shape just above its anchor (anchored
     /// shapes whose anchor is missing go on top).
     public func paintOrder() -> [AnyShapeRecord] {
-        var anchors: [ShapeID: ShapeID?] = [:]
-        for record in document.shapes {
-            if let anchored = registry.definition(for: record.kind) as? any PaintOrderAnchored {
-                anchors.updateValue(anchored.erasedPaintAnchor(of: record, in: document), forKey: record.id)
-            }
-        }
-        var above: [ShapeID: [AnyShapeRecord]] = [:]
-        var plain: [AnyShapeRecord] = []
-        var top: [AnyShapeRecord] = []
-        for record in document.shapes {
-            guard let anchor = anchors[record.id] else {
-                plain.append(record)
-                continue
-            }
-            // Only a plain shape that's still there can anchor another.
-            if let anchor, document[anchor] != nil, anchors[anchor] == nil {
-                above[anchor, default: []].append(record)
-            } else {
-                top.append(record)
-            }
-        }
-        return plain.flatMap { [$0] + (above[$0.id] ?? []) } + top
+        let list = shapeIndex.paintList(in: shapeContext), shapes = document.shapes
+        return list.order.map { shapes[$0] }
     }
 
-    /// The front-most shape under a world point, of those `include` accepts.
+    /// Back to front, the shapes that may show in a world rect: those whose geometry, or box,
+    /// meets it, and any with no outline to go by. What drawing goes through, and overlays should
+    /// too, so that a frame costs what's in view rather than what's on the board.
+    public func paintOrder(in rect: CGRect) -> [AnyShapeRecord] {
+        let list = shapeIndex.paintList(in: shapeContext), shapes = document.shapes
+        var shown: [AnyShapeRecord] = []
+        for (position, extent) in list.extents.enumerated() where extent.touches(rect) {
+            shown.append(shapes[list.order[position]])
+        }
+        return shown
+    }
+
+    /// The front-most shape under a world point, of those `include` accepts. Only shapes near the
+    /// point are asked (see `ShapeDefinition.hitMargin`).
     public func shape(at point: CGPoint, where include: (AnyShapeRecord) -> Bool = { _ in true }) -> ShapeID? {
         let context = shapeContext
-        return paintOrder().reversed().first { record in
-            include(record) && registry.definition(for: record.kind)?.erasedHitTest(point, on: record, in: context) ?? false
-        }?.id
+        let list = shapeIndex.paintList(in: context), shapes = document.shapes, zoom = camera.zoom
+        for position in list.order.indices.reversed()
+        where ShapeIndex.mayHit(point, extent: list.extents[position], margin: list.hitMargins[position], zoom: zoom) {
+            let record = shapes[list.order[position]]
+            if include(record), registry.definition(for: record.kind)?.erasedHitTest(point, on: record, in: context) == true {
+                return record.id
+            }
+        }
+        return nil
     }
 }

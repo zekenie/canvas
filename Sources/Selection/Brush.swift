@@ -41,7 +41,8 @@ extension CanvasEditor {
     func shapes(inBrush brush: CGRect, mustContain: Bool) -> [ShapeID] {
         guard let state = selectionState else { return [] }
         let context = shapeContext
-        return paintOrder().filter { record in
+        // Only shapes the brush reaches can count.
+        return paintOrder(in: brush).filter { record in
             guard state.isSelectable(record),
                   let geometry = context.geometry(of: record.id),
                   !geometry.outline.isEmpty, !geometry.bounds.isNull else { return false }

@@ -34,12 +34,23 @@ public struct ValidationResult: Equatable, Sendable {
     public var worst: Severity? { issues.map(\.severity).max() }
 }
 
-/// Rules' only way into the document, so dependency tracking can replace full recomputation
-/// later without changing any rule. Add lookups here as rules need them.
+/// Rules' only way into the document. The engine notes the shapes a rule looks up, and checks the
+/// shape again when one of them changes. Add lookups here as rules need them.
 @MainActor
 public struct ValidationContext {
     let document: CanvasDocument
-    public func shape(_ id: ShapeID) -> AnyShapeRecord? { document[id] }
+    let lookups: Lookups
+
+    public func shape(_ id: ShapeID) -> AnyShapeRecord? {
+        lookups.ids.insert(id)
+        return document[id]
+    }
+}
+
+/// The shapes a shape's rules looked up while it was checked.
+@MainActor
+final class Lookups {
+    var ids: Set<ShapeID> = []
 }
 
 public struct ValidationRule {
@@ -79,14 +90,28 @@ extension PluginRegistrar {
     }
 }
 
-/// Every shape's issues, recomputed on the first read after the document changes.
+/// Every shape's issues: on the first read, every shape's; after that, on the first read after a
+/// change, only those of the shapes it touched and of the shapes whose rules looked one of them up.
 @MainActor
 public final class ValidationEngine {
     private unowned let editor: CanvasEditor
-    private var checkedRevision = -1
+    /// Each kind's rules, found once: the registry is frozen.
+    private var rules: [ShapeKind: [ValidationRule]] = [:]
+    /// Only shapes with at least one issue.
     private var cache: [ShapeID: ValidationResult] = [:]
+    /// The shapes to check on the next read; nil for every shape.
+    private var unchecked: Set<ShapeID>?
+    /// The revision `unchecked` is up to date with. Read before this engine has heard of a commit
+    /// (by a service that hears first), it checks every shape.
+    private var heardRevision: Int
+    /// The shapes each shape's rules looked up, and the other way around.
+    private var lookups: [ShapeID: Set<ShapeID>] = [:]
+    private var lookedUpBy: [ShapeID: Set<ShapeID>] = [:]
 
-    init(editor: CanvasEditor) { self.editor = editor }
+    init(editor: CanvasEditor) {
+        self.editor = editor
+        heardRevision = editor.revision
+    }
 
     /// Only shapes with at least one issue.
     public var results: [ShapeID: ValidationResult] {
@@ -97,20 +122,66 @@ public final class ValidationEngine {
     public func result(for id: ShapeID) -> ValidationResult? { results[id] }
 
     private func refreshIfNeeded() {
-        guard checkedRevision != editor.revision else { return }
-        let context = ValidationContext(document: editor.document)
-        var fresh: [ShapeID: ValidationResult] = [:]
-        // Shapes the board keeps aside aren't the app's to judge.
-        for shape in editor.document.shapes where !shape.isOpaque {
-            let issues = editor.registry.contributions(to: ValidationRules.self, for: shape.kind).flatMap { $0.check(shape, context) }
-            if !issues.isEmpty { fresh[shape.id] = ValidationResult(issues: issues) }
+        let document = editor.document
+        if heardRevision != editor.revision {
+            unchecked = nil
+            heardRevision = editor.revision
         }
-        cache = fresh
-        checkedRevision = editor.revision
+        guard let ids = unchecked else {
+            cache = [:]
+            lookups = [:]
+            lookedUpBy = [:]
+            for shape in document.shapes { check(shape, in: document) }
+            unchecked = []
+            return
+        }
+        guard !ids.isEmpty else { return }
+        unchecked = []
+        for id in ids {
+            for other in lookups.removeValue(forKey: id) ?? [] {
+                lookedUpBy[other]?.remove(id)
+                if lookedUpBy[other]?.isEmpty == true { lookedUpBy[other] = nil }
+            }
+            if let shape = document[id] {
+                check(shape, in: document)
+            } else {
+                cache[id] = nil
+            }
+        }
+    }
+
+    private func check(_ shape: AnyShapeRecord, in document: CanvasDocument) {
+        // Shapes the board keeps aside aren't the app's to judge.
+        guard !shape.isOpaque else {
+            cache[shape.id] = nil
+            return
+        }
+        let context = ValidationContext(document: document, lookups: Lookups())
+        let issues = rules(for: shape.kind).flatMap { $0.check(shape, context) }
+        cache[shape.id] = issues.isEmpty ? nil : ValidationResult(issues: issues)
+        guard !context.lookups.ids.isEmpty else { return }
+        lookups[shape.id] = context.lookups.ids
+        for other in context.lookups.ids { lookedUpBy[other, default: []].insert(shape.id) }
+    }
+
+    private func rules(for kind: ShapeKind) -> [ValidationRule] {
+        if let found = rules[kind] { return found }
+        let found = editor.registry.contributions(to: ValidationRules.self, for: kind)
+        rules[kind] = found
+        return found
     }
 }
 
-extension ValidationEngine: EditorService {}
+extension ValidationEngine: EditorService {
+    public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
+        heardRevision = editor.revision
+        guard unchecked != nil else { return }             // every shape is unchecked already
+        for id in changes.shapeIDs {
+            unchecked!.insert(id)
+            unchecked!.formUnion(lookedUpBy[id] ?? [])
+        }
+    }
+}
 
 extension CanvasEditor {
     public var validation: ValidationEngine? { service(ValidationEngine.self) }
@@ -133,10 +204,12 @@ struct ValidationOverlay: CanvasOverlay {
     func draw(in context: OverlayContext) {
         guard let results = context.editor.validation?.results, !results.isEmpty else { return }
         let zoom = context.zoom
-        // In paint order, so overlapping outlines stack the same way every time.
-        for record in context.editor.paintOrder() {
+        let pad = ValidationStyle.padding / zoom, radius = ValidationStyle.cornerRadius / zoom
+        // In paint order, so overlapping outlines stack the same way every time; only shapes whose
+        // outline can reach the view.
+        let reach = pad + ValidationStyle.lineWidth / zoom
+        for record in context.editor.paintOrder(in: context.visibleRect.insetBy(dx: -reach, dy: -reach)) {
             guard let worst = results[record.id]?.worst, let bounds = context.shapes.geometry(of: record.id)?.bounds else { continue }
-            let pad = ValidationStyle.padding / zoom, radius = ValidationStyle.cornerRadius / zoom
             context.cg.addPath(CGPath(roundedRect: bounds.insetBy(dx: -pad, dy: -pad), cornerWidth: radius, cornerHeight: radius, transform: nil))
             let color = switch worst {
             case .error: ValidationStyle.error

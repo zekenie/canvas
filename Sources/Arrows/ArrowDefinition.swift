@@ -41,6 +41,9 @@ extension ArrowDefinition: ShapeDefinition {
         return arrowGeometry(shape.props, in: context).distance(to: point) <= margin
     }
 
+    /// How far `hitTest` reaches past the body (its geometry's bounds): half the stroke, and the margin.
+    var hitMargin: HitMargin { HitMargin(world: ArrowStyle.strokeWidth / 2, view: ArrowStyle.hitMargin) }
+
     func indicatorPath(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> CGPath {
         let geometry = arrowGeometry(shape.props, in: context)
         let path = CGMutablePath()

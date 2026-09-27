@@ -13,6 +13,8 @@ public struct Transaction {
     let camera: Camera
     let keys: StackingKeyGenerator
     private(set) var didChange = false
+    /// What it did so far, record by record: what the commit hands services.
+    private(set) var changes = ChangeSet()
     /// Shapes whose willDelete handlers have run in this transaction; removed together at the end
     /// of the outermost `delete`.
     private var deleting: Set<ShapeID> = []
@@ -38,6 +40,8 @@ public struct Transaction {
         var record = record
         record.stackingKey = keys.key(between: document.shapes.last?.stackingKey, and: nil)
         document.append(record)
+        changes.added.insert(record.id)
+        changes.reordered = true
         didChange = true
     }
 
@@ -51,7 +55,7 @@ public struct Transaction {
         record.stackingKey = old.stackingKey
         guard record != old, record.box?.isFinite ?? true else { return }
         document.replace(at: index, with: record)
-        didChange = true
+        noteChanged(id)
     }
 
     public mutating func update<P: ShapeProps>(_ id: ShapeID, as _: P.Type, _ body: (inout ShapeRecord<P>) -> Void) {
@@ -62,14 +66,14 @@ public struct Transaction {
     public mutating func bringToFront(_ id: ShapeID) {
         guard let index = document.index(of: id), index != document.shapes.count - 1 else { return }
         document.moveToEnd(from: index, key: keys.key(between: document.shapes.last?.stackingKey, and: nil))
-        didChange = true
+        noteChanged(id, reordering: true)
     }
 
     /// Paints the shape below every other. Does nothing if it's already at the bottom.
     public mutating func sendToBack(_ id: ShapeID) {
         guard let index = document.index(of: id), index != 0 else { return }
         document.moveToStart(from: index, key: keys.key(between: nil, and: document.shapes.first?.stackingKey))
-        didChange = true
+        noteChanged(id, reordering: true)
     }
 
     /// Puts a shape just above another in document order (a step forward, past `other`): a key
@@ -78,7 +82,7 @@ public struct Transaction {
         guard id != other, let from = document.index(of: id), let target = document.index(of: other), from != target + 1 else { return }
         let shapes = document.shapes
         let next = target + 1 < shapes.count ? shapes[target + 1].stackingKey : nil
-        move(from: from, to: from < target ? target : target + 1, key: keys.key(between: shapes[target].stackingKey, and: next))
+        move(id, from: from, to: from < target ? target : target + 1, key: keys.key(between: shapes[target].stackingKey, and: next))
     }
 
     /// Puts a shape just below another in document order (a step back, past `other`): a key
@@ -87,11 +91,18 @@ public struct Transaction {
         guard id != other, let from = document.index(of: id), let target = document.index(of: other), from != target - 1 else { return }
         let shapes = document.shapes
         let previous = target > 0 ? shapes[target - 1].stackingKey : nil
-        move(from: from, to: from < target ? target - 1 : target, key: keys.key(between: previous, and: shapes[target].stackingKey))
+        move(id, from: from, to: from < target ? target - 1 : target, key: keys.key(between: previous, and: shapes[target].stackingKey))
     }
 
-    private mutating func move(from: Int, to: Int, key: StackingKey) {
+    private mutating func move(_ id: ShapeID, from: Int, to: Int, key: StackingKey) {
         document.move(from: from, to: to, key: key)
+        noteChanged(id, reordering: true)
+    }
+
+    /// A shape added in this transaction stays added, however it changes after.
+    private mutating func noteChanged(_ id: ShapeID, reordering: Bool = false) {
+        if !changes.added.contains(id) { changes.changed.insert(id) }
+        if reordering { changes.reordered = true }
         didChange = true
     }
 
@@ -106,6 +117,11 @@ public struct Transaction {
         for handler in registry.willDeleteHandlers { handler(ids, &self) }
         guard isOutermost else { return }
         document.remove(deleting)
+        for id in deleting where changes.added.remove(id) == nil {       // added and removed here: never seen
+            changes.changed.remove(id)
+            changes.removed.insert(id)
+        }
+        changes.reordered = true
         deleting = []
         didChange = true
     }

@@ -65,5 +65,8 @@ public struct ShapeTranslation<Props: ShapeProps> {
 /// nothing. A connector stays just above the shapes it joins; a label, above its host.
 public protocol PaintOrderAnchored: ShapeDefinition {
     /// Paint just above this shape; nil (or a shape that isn't there) paints above everything.
+    /// It must follow from the shape's own props and the document's order (which shapes there
+    /// are, and where), not other shapes' props: the editor works the paint order out again only
+    /// when the stack, or this shape, changes.
     func paintAnchor(of shape: ShapeRecord<Props>, in document: CanvasDocument) -> ShapeID?
 }

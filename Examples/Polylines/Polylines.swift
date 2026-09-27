@@ -52,6 +52,9 @@ extension PolylineDefinition: ShapeDefinition {
         let points = shape.props.points
         return zip(points, points.dropFirst()).contains { distanceToSegment(from: point, $0, $1) <= margin }
     }
+
+    /// `hitTest`'s margin, past the points: the editor asks `hitTest` only about points this near.
+    var hitMargin: HitMargin { HitMargin(world: PolylineStyle.strokeWidth / 2, view: PolylineStyle.hitMargin) }
 }
 
 extension PolylineDefinition: CustomTranslation {

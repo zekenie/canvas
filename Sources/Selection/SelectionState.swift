@@ -68,7 +68,7 @@ extension SelectionState: EditorService {
         hoveredHandle = nil
     }
 
-    func documentDidChange(in editor: CanvasEditor) {
+    func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         select(selectedIDs)
         hover(hoveredID)
     }

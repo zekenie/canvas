@@ -22,18 +22,16 @@ extension CanvasEditor {
         context.saveGState()
         context.scaleBy(x: camera.zoom, y: camera.zoom)
         context.translateBy(x: -camera.origin.x, y: -camera.origin.y)
-        // Pad the visible area so shadows of shapes just offscreen still get drawn. Shapes without
-        // a box are always drawn.
-        let visible = camera.toWorld(bounds).insetBy(dx: -40, dy: -40)
-        for record in paintOrder() {
+        // Pad the visible area so shadows of shapes just offscreen still get drawn.
+        let world = camera.toWorld(bounds)
+        for record in paintOrder(in: world.insetBy(dx: -40, dy: -40)) {
             guard let definition = registry.definition(for: record.kind) else { continue }
-            if let box = record.box, !box.intersects(visible) { continue }
             drawIsolated(context) {
                 definition.erasedRender(record, in: RenderContext(cg: context, shapes: shapes, isEditing: record.id == editingShapeID))
             }
         }
         drawOutlines(in: context, shapes: shapes)
-        let overlayContext = OverlayContext(cg: context, editor: self, shapes: shapes)
+        let overlayContext = OverlayContext(cg: context, editor: self, shapes: shapes, visibleRect: world)
         for overlay in registry.overlays where overlay.space == .world {
             drawIsolated(context) { overlay.draw(in: overlayContext) }
         }

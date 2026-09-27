@@ -192,7 +192,8 @@ Once one plugin works, the question is which piece the next feature needs.
 | I want to… | Use | Example |
 |---|---|---|
 | Add a shape with a frame | `BoxShapeProps`; a `ShapeDefinition` with `render`; a place tool | [Rectangles](#your-first-plugin) |
-| Add a shape without a frame (a line, a path) | `ShapeProps`; `geometry`, `hitTest` and `CustomTranslation`; a tool that inserts it | [Polylines](#a-shape-without-a-frame) |
+| Add a shape without a frame (a line, a path) | `ShapeProps`; `geometry`, `hitTest` (with its `hitMargin`) and `CustomTranslation`; a tool that inserts it | [Polylines](#a-shape-without-a-frame) |
+| Work out a kind's geometry from other shapes (a connector) | Look them up through the `ShapeContext`: `shape(_:)`, `geometry(of:)`, `hitTest(_:shape:)` | [Arrows](../Sources/Arrows/Connectables.swift) |
 | Hit or outline a shape more exactly than its frame | Override `geometry`, `hitTest` or `indicatorPath` | [Ellipses](../Sources/Ellipses/Ellipses.swift) |
 | Edit a shape in place, as text | `Editable`, and an `editingPlacement` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
 | Add a tool that makes no shape | `registrar.tool`, a `Tool` and a `Session` | [Eraser](#tools-and-sessions) |
@@ -205,8 +206,8 @@ Once one plugin works, the question is which piece the next feature needs.
 | Give that concern a tab on the kinds that opt in | A `DetailTab` at order 50, contributed from the same sugar | [Checklists](#a-horizontals-feature-tab-checklists) |
 | Give that concern menu items on the kinds that opt in | A `MenuGroup` at order 50, and `contextMenu` from the same sugar | [Checklists](#a-feature-that-comes-with-menu-items-checklists) |
 | Opt another plugin's kind into a concern | A bridge, which imports both | [EllipseTitles](#a-horizontal-plugin), [ValidationDetails](#footer-lines-from-a-bridge-validationdetails) |
-| Keep state per editor: an engine, a cache, a timer | `registrar.service`, an `EditorService` | [Validation](../Sources/Validation/Validation.swift)'s `ValidationEngine` |
-| Draw above every shape | `registrar.overlay`, a `CanvasOverlay` | [Titles](#a-horizontal-plugin) |
+| Keep state per editor: an engine, a cache, a timer | `registrar.service`, an `EditorService`; redo what's kept per shape for the shapes each commit's `ChangeSet` names | [Validation](../Sources/Validation/Validation.swift)'s `ValidationEngine` |
+| Draw above every shape, or beside the shapes in view | `registrar.overlay`, a `CanvasOverlay`; `editor.paintOrder(in: context.visibleRect)` | [Titles](#a-horizontal-plugin), [Checklists](../Sources/Checklists/ChecklistOverlay.swift) |
 | Let go of shapes as they're deleted | `registrar.willDelete` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
 | Create a kind with a double-click on empty canvas | `x.createOnDoubleClick(place)` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
 | Keep a kind from being selected | `x.unselectable()`, or `x.selectable { ... }` | [Selection](#selection) |
@@ -324,12 +325,21 @@ is compiled by `./test.sh`, even before anything depends on it.
   |---|---|
   | `geometry(of:in:)` | the frame (box kinds); every other kind must say ([a shape without a frame](#a-shape-without-a-frame)) |
   | `hitTest(_:on:in:)` | inside the geometry's closed outline |
+  | `hitMargin` | none: how far past its geometry's bounds `hitTest` can still say yes |
   | `indicatorPath(of:in:)` | the geometry's outline (the target hint, and hover and selection outlines) |
 
   `geometry` is the one source of truth. Override it and hit testing, the outline, the marquee and
   arrows all follow. Override `hitTest` or `indicatorPath` only when you can do better; Ellipses
-  does both (an exact hit test, a smooth outline). A kind that knows better than its geometry
-  whether the marquee touches it (Arrows, against its arc) adopts Selection's `BrushHitTesting`.
+  does both (an exact hit test, a smooth outline). A `hitTest` that reaches past the outline (a
+  stroke, a few points of slop) says how far in `hitMargin`: the editor asks it only about points
+  that near. A kind that knows better than its geometry whether the marquee touches it (Arrows,
+  against its arc) adopts Selection's `BrushHitTesting`.
+- **Other shapes come through the context.** The editor keeps each shape's geometry from frame to
+  frame, until the shape changes or a shape its definition looked up while working it out does. So
+  a definition that looks at other shapes (Arrows, at the shapes they join) does it through its
+  `ShapeContext`: `shape(_:)`, `geometry(of:)` and `hitTest(_:shape:)` keep track. Reading all of
+  `context.document`, or `context.camera`, while working out a geometry ties it to every change of
+  them.
 - **Conform in an extension**, as Rectangles does, for `ShapeDefinition` and its capabilities,
   `Tool`, `Session`, `EditorService`, and an extension point that implements `check`. Swift flags a
   member that *nearly* matches a defaulted requirement (a wrong label, a missing return type) only
@@ -504,6 +514,9 @@ extension PolylineDefinition: ShapeDefinition {
         let points = shape.props.points
         return zip(points, points.dropFirst()).contains { distanceToSegment(from: point, $0, $1) <= margin }
     }
+
+    /// `hitTest`'s margin, past the points: the editor asks `hitTest` only about points this near.
+    var hitMargin: HitMargin { HitMargin(world: PolylineStyle.strokeWidth / 2, view: PolylineStyle.hitMargin) }
 }
 
 extension PolylineDefinition: CustomTranslation {
@@ -518,8 +531,8 @@ extension PolylineDefinition: CustomTranslation {
 ```
 
 - **`ShapeProps`, not `BoxShapeProps`.** Nothing that works from a frame applies: no default
-  geometry, no placements, no Arrange tab in the detail panel, and no culling (the core draws a
-  shape without a frame whether or not it's on screen).
+  geometry, no placements, and no Arrange tab in the detail panel. The core culls it by its
+  geometry, as it culls a box by its frame.
 - **`render` draws in world units**, into `context.cg`, with the camera already applied and a fresh
   graphics state each time; AppKit drawing (`NSAttributedString.draw`) lands there too.
   `context.zoom` turns view points into world units, `context.isEditing` says the shape's editing
@@ -530,7 +543,9 @@ extension PolylineDefinition: CustomTranslation {
   keeps arrows off it, since they bind only to closed shapes.
 - **`hitTest` is required in practice.** The default hits only inside a closed outline, so an open
   kind that doesn't say can't be pressed, hovered or erased. Hit margins are view points, divided
-  by `zoom`.
+  by `zoom`. `hitMargin` says how far past the points they reach (in world units, for the stroke,
+  plus view points): the editor asks `hitTest` only about points within the geometry's bounds
+  grown by it, so a point in a margin left out would miss.
 - **`CustomTranslation` moves it.** The core moves a shape with a frame by its frame; any other kind
   stays put when the selection is dragged, unless it moves itself. `beginTranslation` runs once, as
   the drag starts: capture what you move from. The closure it returns runs on every drag event,
@@ -1143,7 +1158,8 @@ dragging another shape costs one comparison. A section is rebuilt only when its 
 Only the current tab is built, a collapsed section's content isn't, and each kind's contributions
 are gathered once.
 For your part: sections read only their binding, `when` and footer lines stay cheap, and anything
-heavy goes in a service cached by `editor.revision`.
+heavy goes in a service, kept per shape and redone for the shapes each commit's change set names
+(`documentDidChange`), as `ValidationEngine` does.
 
 ## Context menus
 
@@ -1427,7 +1443,7 @@ it, the core or a horizontal.
 | `CustomTranslation` | Moving by its own rules instead of by its frame, when a `TranslatingSession` moves it (dragging the selection, a shape just placed). When a drag starts, `beginTranslation` gets the shape, every shape moving with it and the starting transaction (committed on its own, before the first move), and returns a `ShapeTranslation`: a closure run on every drag event with the pointer's delta, after the moving boxes have moved. A kind without a frame needs this to be movable at all. | Arrows (alone, bound ends slide on their shapes; with a shape they're bound to, they keep every binding); Polylines (every point by the delta) |
 | `HandleProviding` (Selection's) | Draggable handles on the only selected shape. The select tool finds, draws and hit-tests them; `pressHandle` returns `.drag` or `.consumed`, and `dragSession` does the dragging. | Arrows |
 | `BrushHitTesting` (Selection's) | Whether the marquee touches it, when the brush overlaps its bounds without containing them. Default: `ShapeGeometry.isHit(byBrush:)`. | Arrows (against the visible arc) |
-| `PaintOrderAnchored` | Painted just above another shape, whatever its place in the document. | Arrows (above the shapes they join) |
+| `PaintOrderAnchored` | Painted just above another shape, whatever its place in the document. The anchor follows from the shape's own props and the document's order, since the paint order is kept until one of those changes. | Arrows (above the shapes they join) |
 
 The rule of thumb: behavior intrinsic to a kind is a capability; behavior anyone can add, to any
 kind, from any plugin, is an extension point. What a kind shows in the detail panel is an extension
@@ -1441,8 +1457,9 @@ to it.
   tldraw), so moving a shape in the stack changes that shape alone. The only way to change it is
   `editor.transact { tx in ... }`: `insert` (on top), `update` (typed with `as:`; it can't change a
   shape's id or key), `bringToFront`, `sendToBack`, `move(_:above:)`, `move(_:below:)`, `delete`.
-  A transaction commits once, if anything changed, and bumps `editor.revision`. Transactions don't
-  nest. A frame that isn't finite never gets in: such an insert or update is dropped, since a board
+  A transaction commits once, if anything changed, and bumps `editor.revision`. What it did goes
+  with it, record by record: its `ChangeSet` names the shapes it added, changed and removed, and
+  says whether the stack changed. Transactions don't nest. A frame that isn't finite never gets in: such an insert or update is dropped, since a board
   must always save. Undo (not built yet) will group commits: everything from a press to its
   release, and everything while a shape is being edited, will be one step.
 - **`willDelete`** handlers run inside the deleting transaction, before anything is removed, so a
@@ -1450,9 +1467,21 @@ to it.
   delete more; each shape's handlers run once.
 - **The hint** (`hintedShapeID`, a target outlined whatever the tool) always names a shape that
   exists, and so does `editingShapeID`, the shape being edited. After every transaction that
-  changed the document, services hear `documentDidChange` and drop what's gone (the selection
+  changed the document, services hear `documentDidChange` with its change set: they drop what's
+  gone (the selection does), and redo what they keep per shape for just those shapes (validation
   does). What's selected is [Selection's](#selection).
-- **Drawing**, back to front: background and grid; shapes in paint order (culled by frame); every
+- **What the editor keeps.** Each shape's geometry and extent (its geometry's bounds, with its
+  box), and the paint order, from one frame to the next, so a frame costs what's in view and what
+  changed rather than what's on the board. A shape's geometry is kept until the shape changes or a
+  shape its definition looked up through its `ShapeContext` does. The paint order is kept until
+  the stack changes or an anchored shape's anchor does, which is why an anchor follows from the
+  shape's own props and the document's order. `editor.shape(at:)` asks a shape's `hitTest` only
+  about points within its extent grown by its `hitMargin`, and `editor.paintOrder(in:)` is the
+  paint order of just the shapes that may show in a world rect: what drawing goes through, and
+  overlays too, with `context.visibleRect`. Code that runs per frame doesn't go through every
+  shape; `./build.sh bench` holds a hover and a drag at 10,000 shapes to a frame (16 ms).
+- **Drawing**, back to front: background and grid; shapes in paint order (culled by extent: those
+  more than 40 world units out of view don't draw, and a shape with no outline always does); every
   plugin's outlines (`registrar.outlines`: selection, the box around several; none while the
   session `hidesOutlines`) and the hint, in one stroke at a constant screen width, over the faint
   ones (`Outlines.faintShapes`: the hover), stroked first, wider and lighter; world overlays;
@@ -1713,8 +1742,9 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
 
 Each of these adds to the design without changing what plugins are written against.
 
-- **Change sets:** each transaction saying what it added, changed and removed, and who made it (the
-  user, an agent). Undo, an agents' CLI and sync build on them.
+- **More of change sets:** each commit already says what it added, changed and removed
+  (`ChangeSet`, which services get with `documentDidChange`); what's left is who made it (the user,
+  an agent) and the records before and after. Undo, an agents' CLI and sync build on them.
 - **An arrow end bound to a shape that isn't there** (deleted outside a transaction, or kept aside)
   is drawn at the origin; a binding should keep a point to fall back on.
 - **Undo.** `transact` is already the one mutation path. The editor will open an undo group on

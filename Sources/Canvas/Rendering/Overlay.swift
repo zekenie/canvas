@@ -39,5 +39,9 @@ public struct OverlayContext {
     public let cg: CGContext
     public let editor: CanvasEditor
     public let shapes: ShapeContext
+    /// What the view shows, in world units. An overlay that draws for some shapes goes through
+    /// `editor.paintOrder(in:)` with this, grown by however far past its shapes it draws, rather
+    /// than through every shape.
+    public let visibleRect: CGRect
     public var zoom: CGFloat { shapes.zoom }
 }

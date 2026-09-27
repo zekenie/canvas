@@ -38,6 +38,21 @@ import TestKit
         board.h.drag(to: CGPoint(x: 320, y: 250)); board.h.drag(to: CGPoint(x: 320, y: 570)); board.h.release()
         expectEqual(board.arrows.first?.start, .free(CGPoint(x: 180, y: 570)))
     },
+    test("an arrow is hit within its stroke and margin at any zoom, and where the shapes it joins have taken it") {
+        let board = try Board(arrow: 0)
+        let arrow = try require(board.arrow)
+        let h = board.h
+        // The body runs along y = 180 from x = 280. Its reach: 3 pt of margin and half its 3.5 stroke.
+        expectEqual(h.editor.shape(at: CGPoint(x: 364, y: 184.5)), arrow)
+        expectEqual(h.editor.shape(at: CGPoint(x: 364, y: 185)), nil)
+        h.editor.camera = Camera(origin: .zero, zoom: 0.25)
+        expectEqual(h.editor.shape(at: CGPoint(x: 364, y: 193.5)), arrow, "3 pt is 12 world units at 25%")
+        h.editor.camera = Camera()
+        h.editor.transact { $0.update(board.b, as: Box.self) { $0.frame.origin.y += 300 } }
+        expectEqual(h.editor.shape(at: CGPoint(x: 364, y: 180)), nil, "the arrow went with B")
+        let moved = try require(h.editor.arrowGeometry(of: arrow))
+        expectEqual(h.editor.shape(at: (moved.start + moved.end) / 2), arrow)
+    },
     test("deleting a shape frees the arrow's end where it visibly was, keeping the curve") {
         let board = try Board(arrow: 70)
         let id = try require(board.arrow)

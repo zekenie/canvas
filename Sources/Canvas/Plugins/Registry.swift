@@ -8,6 +8,11 @@ public struct Registry {
     /// Core first, then the plugin list's order.
     let pluginIDs: [PluginID]
     private let byPoint: [ObjectIdentifier: [RawContribution]]
+    /// What `contributions(to:for:)` returns, worked out once, since plugins ask per shape (every
+    /// shape in a frame, some of them): each kind with contributions of its own to a point, then
+    /// every kind's (`forAnyKind`, which is also the answer for a kind with none of its own).
+    private let forKind: [ObjectIdentifier: [ShapeKind: [RawContribution]]]
+    private let forAnyKind: [ObjectIdentifier: [RawContribution]]
     private let all: [RawContribution]
     private let definitions: [ShapeKind: any ShapeDefinition]
 
@@ -27,6 +32,13 @@ public struct Registry {
         // Stable: contributions keep plugin order within each point.
         all = ids.flatMap { id in contributions.filter { $0.pluginID == id } }
         byPoint = Dictionary(grouping: all, by: \.point)
+        forAnyKind = byPoint.mapValues { $0.filter { $0.target == .any } }
+        forKind = byPoint.mapValues { point in
+            let anyKind = point.filter { $0.target == .any }
+            return Dictionary(grouping: point.filter { $0.target != .any }, by: \.target).reduce(into: [:]) { kinds, own in
+                if case .kind(let kind) = own.key { kinds[kind] = own.value + anyKind }
+            }
+        }
         definitions = Dictionary((byPoint[ObjectIdentifier(CorePoints.Shapes.self)] ?? []).map {
             let shape = $0.value as! ShapeRegistration
             return (shape.kind, shape.definition)
@@ -69,8 +81,9 @@ public struct Registry {
     /// The contributions that apply to a kind: those for that kind, then those for every kind,
     /// each in plugin order.
     public func contributions<P: ExtensionPoint>(to point: P.Type, for kind: ShapeKind) -> [P.Contribution] {
-        let all = contributions(to: P.self)
-        return all.filter { $0.target == .kind(kind) }.map(\.value) + all.filter { $0.target == .any }.map(\.value)
+        let point = ObjectIdentifier(P.self)
+        // A closure, not `\.value`: a key path in a generic function is built again on every call.
+        return (forKind[point]?[kind] ?? forAnyKind[point] ?? []).map { $0.value as! P.Contribution }
     }
 
     // MARK: The core's points

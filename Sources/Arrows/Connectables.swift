@@ -17,7 +17,7 @@ struct Connectables {
     let shapes: ShapeContext
 
     subscript(id: ShapeID) -> ConnectableShape? {
-        guard let record = shapes.document[id], record.kind != Arrow.kind,
+        guard let record = shapes.shape(id), record.kind != Arrow.kind,
               let geometry = shapes.geometry(of: id), geometry.isClosed else { return nil }
         return ConnectableShape(id: id, outline: geometry.outline, bounds: geometry.bounds)
     }

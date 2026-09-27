@@ -78,6 +78,8 @@ struct MoreLabelTitles: CanvasPlugin {
         expectEqual(h.editor.shape(at: CGPoint(x: 100, y: 4)), id, "within 3 pt of the 3 pt stroke")
         expectEqual(h.editor.shape(at: CGPoint(x: 100, y: 6)), nil)
         expectEqual(h.editor.shape(at: CGPoint(x: 150, y: 50)), nil, "inside the loop")
+        expectEqual(h.editor.shape(at: CGPoint(x: 100, y: -4)), id, "above it: past its points' bounds, within its hit margin")
+        expectEqual(h.editor.shape(at: CGPoint(x: -4, y: -1)), id, "past its end")
     },
     test("Polylines: the select tool moves a line by its own translation, and Escape puts it back") {
         let h = try EditorHarness(plugins: [SelectionPlugin(), PolylinesPlugin()])
