@@ -8,7 +8,12 @@ extension PluginID {
     public static let checklists: PluginID = "checklists"
 }
 
-public struct ChecklistItem: Codable, Equatable, Hashable, Sendable, Identifiable {
+public struct ChecklistItem: SchemaDefined, Equatable, Hashable, Identifiable {
+    public static let properties = Properties<ChecklistItem>(title: "Checklist item", definition: "item") {
+        Property("id", \.id).required()
+        Property("text", \.text)
+        Property("isDone", \.isDone)
+    }
     public var id: UUID
     public var text: String
     public var isDone: Bool
@@ -18,6 +23,15 @@ public struct ChecklistItem: Codable, Equatable, Hashable, Sendable, Identifiabl
         self.text = text
         self.isDone = isDone
     }
+    public init() { self.init(id: UUID()) }
+}
+
+/// A shape's checklist: the property Checklists adds to every kind that opts in (`note.checklist()`),
+/// which every shape of that kind has, empty until someone adds an item.
+public enum ChecklistProperty {}
+extension ChecklistProperty: ShapeProperty {
+    public static let key: PropertyKey = "checklist"
+    public static var defaultValue: [ChecklistItem]? { [] }
 }
 
 extension Array where Element == ChecklistItem {
@@ -63,15 +77,14 @@ public enum ChecklistBulkAction: CaseIterable, Sendable {
     }
 }
 
-/// What `ShapeChecklists` stores for a kind: how to read its items, and whether the canvas shows
-/// the chip. Only the sugar below makes one.
+/// What `ShapeChecklists` stores for a kind: whether the canvas shows the chip. Only the sugar below
+/// makes one.
 @MainActor
 public struct ChecklistContribution {
-    let items: @MainActor (AnyShapeRecord) -> [ChecklistItem]?
     let showsBadge: Bool
 }
 
-/// The extension point: which kinds have a checklist. At most one per kind.
+/// The extension point: which kinds have a checklist, and how they show it. At most one per kind.
 public enum ShapeChecklists: KeyedExtensionPoint {
     public typealias Contribution = ChecklistContribution
     public static var owner: PluginID { .checklists }
@@ -85,28 +98,27 @@ extension ChecklistMenuGroup: MenuGroup {
 }
 
 extension ShapeRegistrar {
-    /// Gives this kind a checklist, stored at `items` in its props: a Checklist tab in the detail
-    /// panel, the bulk actions that apply in its context menu, and (unless `badge` is false, for
-    /// kinds that draw their own) a small done/total chip on the canvas. `note.checklist(\.checklist)`.
-    public mutating func checklist(_ items: WritableKeyPath<Definition.Props, [ChecklistItem]>, badge: Bool = true) {
-        contribute(ChecklistContribution(items: { $0.typed(as: Definition.Props.self)?.props[keyPath: items] }, showsBadge: badge),
-                   to: ShapeChecklists.self)
-        details {
-            DetailSection("Items", in: ChecklistTab.self) { $shape in
-                ChecklistRows(items: $shape[dynamicMember: items])
-            } accessory: { $shape in
-                ChecklistMenu(shape: $shape, items: items)
+    /// Gives this kind's shapes a checklist (`ChecklistProperty`, in the kind's schema as
+    /// `checklist`): a Checklist tab in the detail panel, the bulk actions that apply in its context
+    /// menu, and (unless `badge` is false, for kinds that draw their own) a small done/total chip on
+    /// the canvas. `note.checklist()`.
+    public mutating func checklist(badge: Bool = true) {
+        optIn(to: ChecklistProperty.self)
+        contribute(ChecklistContribution(showsBadge: badge), to: ShapeChecklists.self)
+        details(of: ChecklistProperty.self) {
+            DetailSection("Items", in: ChecklistTab.self) { $items in
+                ChecklistRows(items: $items[dynamicMember: \.self])
+            } accessory: { $items in
+                ChecklistMenu(items: $items)
             }
-            DetailSection("Progress", in: ChecklistTab.self, when: { !$0[keyPath: items].isEmpty }) { shape in
-                ChecklistProgress(items: shape.wrappedValue[keyPath: items])
+            DetailSection("Progress", in: ChecklistTab.self, when: { !$0.isEmpty }) { items in
+                ChecklistProgress(items: items.wrappedValue)
             }
         }
         // The Items menu's actions, each only where it has something to do.
-        contextMenu {
+        contextMenu(of: ChecklistProperty.self) {
             for action in ChecklistBulkAction.allCases {
-                MenuItem(action.title, in: ChecklistMenuGroup.self, when: { action.isEnabled(for: $0[keyPath: items]) }) {
-                    action.apply(to: &$0[keyPath: items])
-                }
+                MenuItem(action.title, in: ChecklistMenuGroup.self, when: { action.isEnabled(for: $0) }) { action.apply(to: &$0) }
             }
         }
     }
@@ -114,20 +126,19 @@ extension ShapeRegistrar {
 
 extension Registry {
     /// A shape's checklist; nil if its kind has none.
-    public func checklist(of shape: AnyShapeRecord) -> [ChecklistItem]? {
-        contributions(to: ShapeChecklists.self, for: shape.kind).first.flatMap { $0.items(shape) }
-    }
+    public func checklist(of shape: AnyShapeRecord) -> [ChecklistItem]? { shape[ChecklistProperty.self] }
 }
 
-/// A horizontal any kind can opt into: a checklist stored in the kind's own props. Opting in is one
-/// line, and brings a Checklist tab in the detail panel, its bulk actions in the context menu, and
-/// a done/total chip on the canvas. The
-/// kind stores the items; this plugin owns their type and everything done with them.
+/// A horizontal any kind can opt into: a checklist on each of its shapes, as a property this plugin
+/// adds (`ChecklistProperty`), so the kind declares nothing. Opting in is one line, and brings a
+/// Checklist tab in the detail panel, its bulk actions in the context menu, and a done/total chip
+/// on the canvas. This plugin owns the items, their type and everything done with them.
 public struct ChecklistsPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .checklists }
 
     public func register(into registrar: inout PluginRegistrar) {
+        registrar.declare(ChecklistProperty.self)
         registrar.overlay(ChecklistOverlay())
     }
 }

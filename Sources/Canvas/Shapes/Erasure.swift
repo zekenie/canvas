@@ -6,6 +6,13 @@ import AppKit
 extension ShapeDefinition {
     var kind: ShapeKind { Props.kind }
     var kindCodec: KindCodec { KindCodec(Props.self) }
+    var propsType: any ShapeProps.Type { Props.self }
+    var ownPropertyNames: [String] { Props.properties.names }
+
+    /// The kind's own properties, as an object schema.
+    func propsSchema(in definitions: inout SchemaDefinitions) -> JSONObject {
+        Props.properties.objectSchema(in: &definitions)
+    }
 
     func erasedAccepts(_ record: AnyShapeRecord) -> Bool {
         record.kind == Props.kind && record.props is Props

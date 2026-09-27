@@ -1,9 +1,10 @@
 import CoreGraphics
 import Foundation
 
-/// A shape kind's own data: a plain value. The kind is stated here, once, and so is its history:
-/// how older boards' props become today's (`migrations`, none by default).
-public protocol ShapeProps: Codable, Equatable, Sendable {
+/// A shape kind's own data: a plain value, defined by its list of properties (`SchemaDefined`),
+/// which is how boards write it and what its JSON Schema says. The kind is stated here, once, and
+/// so is its history: how older boards' props become today's (`migrations`, none by default).
+public protocol ShapeProps: SchemaDefined, Equatable {
     static var kind: ShapeKind { get }
     /// Append only; see `PropsMigration`.
     static var migrations: [PropsMigration] { get }
@@ -20,6 +21,8 @@ public protocol BoxShapeProps: ShapeProps {
 public struct ShapeRecord<Props: ShapeProps>: Identifiable, Equatable, Sendable {
     public let id: ShapeID
     public var props: Props
+    /// What plugins add to the kind: `shape[ChecklistProperty.self]`.
+    var added = AddedValues()
     public init(id: ShapeID = ShapeID(), _ props: Props) {
         self.id = id
         self.props = props
@@ -47,23 +50,30 @@ public struct AnyShapeRecord: Identifiable, Equatable, Sendable {
     /// (`meta[CopiedFrom.self]`). Kept with the shape in its board. Changed, like the props, in a
     /// transaction: `tx.update(id) { $0.meta[Key.self] = value }`.
     public var meta = ShapeMeta()
+    /// The values of the properties plugins add to its kind (`record[ChecklistProperty.self]`).
+    var added = AddedValues()
 
     public init<P: ShapeProps>(_ shape: ShapeRecord<P>) {
         id = shape.id
         kind = P.kind
         props = shape.props
+        added = shape.added
     }
 
-    /// The same shape under another id: its kind, props and meta, with no place in a stack yet.
-    /// Props that name other shapes still name them (see `remappingReferences`).
+    /// The same shape under another id: its kind, props, added properties and meta, with no place
+    /// in a stack yet. Props that name other shapes still name them (see `remappingReferences`).
     public func copy(as id: ShapeID = ShapeID()) -> AnyShapeRecord {
         var copy = AnyShapeRecord(id: id, kind: kind, props: props, stackingKey: nil)
         copy.meta = meta
+        copy.added = added
         return copy
     }
 
     public func typed<P: ShapeProps>(as _: P.Type = P.self) -> ShapeRecord<P>? {
-        (props as? P).map { ShapeRecord(id: id, $0) }
+        guard let props = props as? P else { return nil }
+        var shape = ShapeRecord(id: id, props)
+        shape.added = added
+        return shape
     }
 
     /// The shape's rectangle, if its kind has one.
@@ -80,10 +90,12 @@ public struct AnyShapeRecord: Identifiable, Equatable, Sendable {
         guard var shape = typed(as: P.self) else { return }
         body(&shape)
         props = shape.props
+        added = shape.added
     }
 
     public static func == (a: Self, b: Self) -> Bool {
-        a.id == b.id && a.kind == b.kind && a.stackingKey == b.stackingKey && a.meta == b.meta && a.props.isEqual(to: b.props)
+        a.id == b.id && a.kind == b.kind && a.stackingKey == b.stackingKey && a.meta == b.meta && a.added == b.added
+            && a.props.isEqual(to: b.props)
     }
 }
 

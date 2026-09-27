@@ -11,9 +11,18 @@ struct Ticket: BoxShapeProps {
         PropsMigration("name becomes title") { props in props["title"] = props.removeValue(forKey: "name") },
         PropsMigration("tickets can be done") { props in props["done"] = false },
     ]
+    static let properties = Properties<Ticket> {
+        Property("frame", \.frame).required()
+        Property("title", \.title)
+        Property("done", \.done)
+    }
     var frame: CGRect
     var title: String
     var done: Bool
+}
+
+extension Ticket {
+    init() { self.init(frame: .zero, title: "", done: false) }
 }
 
 struct TicketDefinition {}
@@ -24,7 +33,14 @@ extension TicketDefinition: ShapeDefinition {
 /// A kind with a plain number, to show what a board does with one that isn't finite.
 struct Reading: ShapeProps {
     static let kind: ShapeKind = "reading"
+    static let properties = Properties<Reading> {
+        Property("value", \.value)
+    }
     var value: Double
+}
+
+extension Reading {
+    init() { self.init(value: 0) }
 }
 
 struct ReadingDefinition {}
@@ -50,7 +66,8 @@ private func uuid(_ n: Int) -> ShapeID { ShapeID(UUID(uuidString: String(format:
     }
 }
 
-/// A board's JSON with these shape records (already JSON) and this schema.
+/// A format-1 board's JSON (as boards were before added properties) with these shape records
+/// (already JSON) and this schema.
 private func board(_ records: [String], schema: String = #"{ "box" : 0, "ticket" : 2 }"#, format: Int = 1) -> String {
     #"{ "format" : \#(format), "schema" : \#(schema), "shapes" : [\#(records.joined(separator: ", "))] }"#
 }

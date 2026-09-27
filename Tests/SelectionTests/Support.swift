@@ -11,8 +11,14 @@ import Selection
 /// A box with one handle, at its center.
 struct Knob: BoxShapeProps {
     static let kind: ShapeKind = "knob"
+    static let properties = Properties<Knob> {
+        Property("frame", \.frame).required()
+    }
     var frame: CGRect
     init(_ frame: CGRect) { self.frame = frame }
+}
+extension Knob {
+    init() { self.init(.zero) }
 }
 
 struct KnobDefinition {}

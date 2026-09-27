@@ -7,11 +7,16 @@ import Keyboard
 /// a frame: hit testing, the selection outline, moving, being culled offscreen, and arrows
 /// attaching to it.
 
-/// The kind: plain data, named once.
+/// The kind: plain data, named once, with its list of properties: how a board writes it, and what
+/// its JSON Schema says.
 public struct Rectangle: BoxShapeProps {
     public static let kind: ShapeKind = "rectangle"
+    public static let properties = Properties<Rectangle>(title: "Rectangle") {
+        Property("frame", \.frame).required()
+    }
     public var frame: CGRect
-    public init(frame: CGRect = .zero) { self.frame = frame }
+    public init(frame: CGRect) { self.frame = frame }
+    public init() { self.init(frame: .zero) }
 }
 
 /// How rectangles look: the only thing a box kind has to say. Conforming in an extension lets the

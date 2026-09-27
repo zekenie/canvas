@@ -18,27 +18,27 @@ public struct TaskCardsPlugin: CanvasPlugin {
         registrar.shape(TaskCardDefinition()) { task in
             let place = task.placement(size: TaskStyle.size) { TaskCard(title: "New Task") }
             task.tool(label: "Task", systemImage: "checklist", shortcut: "t", placing: place)
-            task.validate { shape, _ in shape.props.issues }
+            task.validate { shape, _ in shape.issues }
             task.taskPanel()
             task.taskMenu()
             task.taskRow()
-            task.checklist(\.checklist, badge: false)
+            task.checklist(badge: false)
             task.title(pill: false) { $0.props.title }
         }
     }
 }
 
-extension TaskCard {
-    /// The task's rules. Only the props: no clock (validation caches by revision, so a rule like
+extension ShapeRecord where Props == TaskCard {
+    /// The task's rules. Only the shape: no clock (validation caches by revision, so a rule like
     /// "overdue" would go stale) and no other shape.
     var issues: [ValidationIssue] {
         var issues: [ValidationIssue] = []
-        if isUntitled { issues.append(.error("A task needs a title.", field: "title")) }
+        if props.isUntitled { issues.append(.error("A task needs a title.", field: "title")) }
         let open = checklist.count - checklist.doneCount
-        if status == .done, open > 0 {
+        if props.status == .done, open > 0 {
             issues.append(.warning("Done, with \(open) unchecked \(open == 1 ? "item" : "items").", field: "checklist"))
         }
-        if status == .blocked, notes.allSatisfy(\.isWhitespace) {
+        if props.status == .blocked, props.notes.allSatisfy(\.isWhitespace) {
             issues.append(.warning("Blocked: say why in the notes.", field: "notes"))
         }
         return issues

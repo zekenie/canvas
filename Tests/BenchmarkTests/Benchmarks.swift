@@ -3,6 +3,7 @@ import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
+import Checklists
 import Composition
 import CoreGraphics
 import Ellipses
@@ -34,7 +35,8 @@ enum Budget {
 }
 
 /// Notes, tasks and ellipses in a grid, with an arrow from every fourth note to the note after it.
-/// Every other note has a title, so frames draw pills.
+/// Every other note has a title, so frames draw pills, and every task a checklist of three, so boards
+/// save and open added values.
 @MainActor func generatedBoard(shapes count: Int) -> CanvasDocument {
     var shapes: [AnyShapeRecord] = []
     let columns = Int(Double(count).squareRoot().rounded(.up))
@@ -44,8 +46,10 @@ enum Budget {
         let origin = CGPoint(x: (i % columns) * 260, y: (i / columns) * 260)
         switch i % 10 {
         case 0, 1:
-            shapes.append(AnyShapeRecord(ShapeRecord(TaskCard(frame: CGRect(origin: origin, size: TaskCard.defaultSize), title: "Task \(i)",
-                                                              status: .doing, estimate: 3))))
+            var task = AnyShapeRecord(ShapeRecord(TaskCard(frame: CGRect(origin: origin, size: TaskCard.defaultSize), title: "Task \(i)",
+                                                           status: .doing, estimate: 3)))
+            task[ChecklistProperty.self] = [ChecklistItem(text: "Spec", isDone: true), ChecklistItem(text: "Build"), ChecklistItem(text: "Ship")]
+            shapes.append(task)
         case 2:
             shapes.append(AnyShapeRecord(ShapeRecord(Ellipse(frame: CGRect(origin: origin, size: CGSize(width: 160, height: 120))))))
         default:
@@ -112,7 +116,7 @@ enum Budget {
             let open = try median(runs: 5) {
                 opened = CanvasEditor(registry: registry, document: try codec.decode(data).document, scheduler: ManualScheduler())
             }
-            expectEqual(opened?.document, document)
+            expectEqual(opened?.document, registry.fillingDefaults(document))
             report(String(format: "%6d shapes, %5.1f MB: save %7.1f ms, open %7.1f ms", size, Double(data.count) / 1e6, save, open))
             if holdsToBudgets, size >= 10_000 { expect(open < Budget.open10k, "opening \(size) shapes took \(open) ms") }
         }

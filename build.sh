@@ -281,15 +281,17 @@ for hit in ${(f)"$(matching "^[^:]+:[0-9]+:[[:space:]]*(@[A-Za-z]+[[:space:]]+)*
     problems+="$(at $hit): a public type named $match[2] shadows $what"
 done
 
-# Ids: a module may write another module's ShapeKind, PluginID or ToolID as a string only if it
-# depends on that module. The graph already keeps a module from naming another's types; this
-# keeps it from reaching that module's shapes, tools or plugins by string instead.
-# A module owns the ids its non-test code declares: as a static member (`static let kind:
-# ShapeKind = "ellipse"`, `static let arrow: ToolID = "arrow"`) or as a plugin's `id` (`var id:
-# PluginID { "ellipses" }`). Test fixtures' ids ("box", "card") are ordinary words, so they own
-# nothing. Any other string literal is a use, except an SF Symbol or asset name (the argument of
-# systemImage:, systemName:, systemSymbolName: or named:), which only looks like one.
-ID_DECL='((let|var)[[:space:]]+id|static[[:space:]]+(let|var)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*)[[:space:]]*(:[[:space:]]*(ShapeKind|PluginID|ToolID)[[:space:]]*(=|\{)|=[[:space:]]*(ShapeKind|PluginID|ToolID)\((rawValue:)?)[[:space:]]*"[^"\\]+"'
+# Ids: a module may write another module's ShapeKind, PluginID, ToolID or PropertyKey as a string
+# only if it depends on that module. The graph already keeps a module from naming another's types;
+# this keeps it from reaching that module's shapes, tools, plugins or added properties by string
+# instead. A module owns the ids its non-test code declares: as a static member (`static let kind:
+# ShapeKind = "ellipse"`, `static let arrow: ToolID = "arrow"`, `static let key: PropertyKey =
+# "checklist"`) or as a plugin's `id` (`var id: PluginID { "ellipses" }`). Test fixtures' ids
+# ("box", "card") are ordinary words, so they own nothing. Any other string literal is a use,
+# except an SF Symbol or asset name (the argument of systemImage:, systemName:, systemSymbolName:
+# or named:), which only looks like one, and a kind's own property's name (`Property("title", ...)`),
+# which is only that kind's.
+ID_DECL='((let|var)[[:space:]]+id|static[[:space:]]+(let|var)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*)[[:space:]]*(:[[:space:]]*(ShapeKind|PluginID|ToolID|PropertyKey)[[:space:]]*(=|\{)|=[[:space:]]*(ShapeKind|PluginID|ToolID|PropertyKey)\((rawValue:)?)[[:space:]]*"[^"\\]+"'
 module_of() { print -r -- ${${1#*/}%%/*} }       # Sources/Canvas/Model/Identity.swift:3:... -> Canvas
 typeset -A ID_OWNERS
 for hit in ${(f)"$(matching $ID_DECL)"}; do
@@ -304,7 +306,8 @@ for hit in ${(f)"$(matching $ID_DECL)"}; do
 done
 if (( ${#ID_OWNERS} )); then
     print -rl -- \"${(k)^ID_OWNERS}\" > $AUDIT/ids
-    sed -E 's/(systemImage|systemName|systemSymbolName|named):[[:space:]]*"[^"]*"/\1: ""/g' $CODE > $AUDIT/uses
+    sed -E -e 's/(systemImage|systemName|systemSymbolName|named):[[:space:]]*"[^"]*"/\1: ""/g' \
+           -e 's/(^|[^A-Za-z0-9_])Property\([[:space:]]*"[^"]*"/\1Property(""/g' $CODE > $AUDIT/uses
     for hit in ${(f)"$(grep -F -f $AUDIT/ids $AUDIT/uses || true)"}; do
         user=$(module_of $hit)
         for id in ${(k)ID_OWNERS}; do

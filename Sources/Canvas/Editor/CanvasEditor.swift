@@ -102,7 +102,7 @@ public final class CanvasEditor {
                          "no installed plugin defines \(record.kind) shapes with these props")
         }
         self.registry = registry
-        storedDocument = document
+        storedDocument = registry.fillingDefaults(document)
         self.scheduler = scheduler
         self.stackingKeys = stackingKeys
         currentToolID = registry.defaultTool
@@ -171,6 +171,7 @@ public final class CanvasEditor {
         }
         session = nil
         endEditing()
+        let newDocument = registry.fillingDefaults(newDocument)
         commit(newDocument, changes: ChangeSet(from: storedDocument, to: newDocument))
     }
 

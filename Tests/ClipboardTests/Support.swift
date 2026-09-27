@@ -14,6 +14,10 @@ import TestKit
 /// A link between two shapes, by id, like a connector: its props name them.
 struct Link: ShapeProps {
     static let kind: ShapeKind = "link"
+    static let properties = Properties<Link> {
+        Property("from", \.from)
+        Property("to", \.to)
+    }
     var from: ShapeID?
     var to: ShapeID?
 }
@@ -38,6 +42,10 @@ extension LinkDefinition: ShapeReferencing {
 /// arrow, it can't let go of a shape it can't find, or one with no outline.
 struct Tether: ShapeProps {
     static let kind: ShapeKind = "tether"
+    static let properties = Properties<Tether> {
+        Property("to", \.to)
+        Property("end", \.end)
+    }
     var to: ShapeID?
     var end: CGPoint?
 }
@@ -63,8 +71,16 @@ extension TetherDefinition: ShapeReferencing {
 /// A stamp: a box that's copyable only while it isn't sealed.
 struct Stamp: BoxShapeProps {
     static let kind: ShapeKind = "stamp"
+    static let properties = Properties<Stamp> {
+        Property("frame", \.frame).required()
+        Property("isSealed", \.isSealed)
+    }
     var frame: CGRect
     var isSealed = false
+}
+
+extension Stamp {
+    init() { self.init(frame: .zero) }
 }
 
 struct StampDefinition {}
@@ -76,7 +92,14 @@ extension StampDefinition: ShapeDefinition {
 /// A ticket: a box that opts out of copying altogether.
 struct Ticket: BoxShapeProps {
     static let kind: ShapeKind = "ticket"
+    static let properties = Properties<Ticket> {
+        Property("frame", \.frame).required()
+    }
     var frame: CGRect
+}
+
+extension Ticket {
+    init() { self.init(frame: .zero) }
 }
 
 struct TicketDefinition {}

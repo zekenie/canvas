@@ -192,10 +192,15 @@ extension LoadReport {
             if !unreadable.isEmpty { parts.append("\(count(unreadable.count)) that couldn’t be read") }
             lines.append("\(count(keptAside.count).capitalizedFirst) \(keptAside.count == 1 ? "is" : "are") kept as \(keptAside.count == 1 ? "it was" : "they were") but hidden: \(parts.joined(separator: "; ")). Saving keeps \(keptAside.count == 1 ? "it" : "them").")
         }
-        if !repairs.isEmpty {
-            lines.append("\(repairs.count) \(repairs.count == 1 ? "repair was" : "repairs were") made to shapes’ ids, stacking order or metadata. Saving keeps \(repairs.count == 1 ? "it" : "them").")
+        if !keptValues.isEmpty {
+            let n = keptValues.count
+            lines.append("\(n == 1 ? "1 shape holds a property" : "Shapes hold \(n) properties") this app can’t use (\(names(keptValues.map(\.key.rawValue)))), kept as \(n == 1 ? "it was" : "they were"); the \(n == 1 ? "shape shows" : "shapes show") without \(n == 1 ? "it" : "them"). Saving keeps \(n == 1 ? "it" : "them").")
         }
-        let message = keptAside.isEmpty ? "This board was repaired as it opened." : "Some of this board can’t be shown."
+        if !repairs.isEmpty {
+            lines.append("\(repairs.count) \(repairs.count == 1 ? "repair was" : "repairs were") made to shapes’ ids, stacking order, metadata or added values. Saving keeps \(repairs.count == 1 ? "it" : "them").")
+        }
+        let message = !keptAside.isEmpty ? "Some of this board can’t be shown."
+            : !keptValues.isEmpty ? "Some of this board can’t be used here." : "This board was repaired as it opened."
         return (message, lines.joined(separator: "\n\n"))
     }
 

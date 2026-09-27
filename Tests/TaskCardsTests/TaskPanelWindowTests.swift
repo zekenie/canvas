@@ -19,7 +19,7 @@ final class TaskPanelWindow {
     let window: NSWindow
     let hosting: NSHostingView<DetailPanelView>
 
-    init(_ task: TaskCard, width: CGFloat = DetailStyle.idealWidth) throws {
+    init(_ task: ShapeRecord<TaskCard>, width: CGFloat = DetailStyle.idealWidth) throws {
         window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: width, height: 700), styleMask: [.titled], backing: .buffered, defer: false)
         editor = try taskEditor(scheduler: TaskScheduler())
         id = editor.add(task)
@@ -80,7 +80,7 @@ final class TaskPanelWindow {
 
 @MainActor let taskPanelWindowTests = Suite("Task panel in a window", [
     test("every tab builds: Task's fields, Checklist's rows, Style's checkboxes and well, Arrange's four pt fields") {
-        let panel = try TaskPanelWindow(TaskCard(frame: cardFrame, title: "New Task", checklist: steps(done: 1)))
+        let panel = try TaskPanelWindow(ShapeRecord(TaskCard(frame: cardFrame, title: "New Task"), checklist: steps(done: 1)))
         expectEqual(panel.titleField?.placeholderString, "Untitled Task")
         expectEqual(panel.fields, ["New Task", "0 h"], "the header's title, then Estimate")
         expectEqual(panel.status?.titleOfSelectedItem, "To Do")
@@ -112,7 +112,7 @@ final class TaskPanelWindow {
         expectEqual(panel.editor.revision, revision + 1)
     },
     test("typing a title in the header retitles the task and clears its error, and never switches tools") {
-        let panel = try TaskPanelWindow(TaskCard(frame: cardFrame))
+        let panel = try TaskPanelWindow(ShapeRecord(TaskCard(frame: cardFrame)))
         expectEqual(panel.editor.validation?.result(for: panel.id)?.isValid, false)
         try panel.typeTitle("Plant tomatoes")     // T, the task tool's shortcut, on the canvas
         expectEqual(panel.task?.title, "Plant tomatoes")
@@ -153,7 +153,7 @@ final class TaskPanelWindow {
     },
     test("the Style checkboxes show what the card shows") {
         var task = fullTask()
-        task.shows.checklist = false
+        task.props.shows.checklist = false
         let panel = try TaskPanelWindow(task)
         try panel.show(StyleTab.self)
         expectEqual(panel.checkboxes, [.on, .off, .on])

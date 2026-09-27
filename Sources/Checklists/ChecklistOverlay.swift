@@ -28,12 +28,10 @@ struct ChecklistOverlay: CanvasOverlay {
 
     func draw(in context: OverlayContext) {
         let registry = context.editor.registry
-        // Each kind's checklist that shows the chip, found once per kind rather than per shape.
-        var badged: [ShapeKind: ChecklistContribution] = [:]
-        for kind in registry.kinds {
-            if let checklist = registry.contributions(to: ShapeChecklists.self, for: kind).first, checklist.showsBadge {
-                badged[kind] = checklist
-            }
+        // The kinds whose checklist shows the chip, found once per kind rather than per shape.
+        var badged: Set<ShapeKind> = []
+        for kind in registry.kinds where registry.contributions(to: ShapeChecklists.self, for: kind).first?.showsBadge == true {
+            badged.insert(kind)
         }
         guard !badged.isEmpty else { return }
         // From the shape's top-right corner on, in view points (fewer when zoomed far out).
@@ -41,7 +39,7 @@ struct ChecklistOverlay: CanvasOverlay {
         let reach = ChecklistStyle.reach * scale
         // In paint order, so overlapping chips stack as their shapes do.
         for record in context.editor.paintOrder(in: context.visibleRect.insetBy(dx: -reach, dy: -reach)) {
-            guard let checklist = badged[record.kind], let items = checklist.items(record), !items.isEmpty,
+            guard badged.contains(record.kind), let items = record[ChecklistProperty.self], !items.isEmpty,
                   let bounds = context.shapes.geometry(of: record.id)?.bounds else { continue }
             context.cg.saveGState()
             context.cg.translateBy(x: bounds.maxX, y: bounds.minY)

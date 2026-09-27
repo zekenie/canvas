@@ -7,6 +7,22 @@ import Foundation
 /// editing view; the detail panel is its editor.
 public struct TaskCard: BoxShapeProps {
     public static let kind: ShapeKind = "task-card"
+    /// Append only. The count is the version boards record.
+    public static let migrations = [
+        // Checklists adds the checklist to every kind that opts in; the card no longer keeps one.
+        PropsMigration.handOver("checklist", to: ChecklistProperty.self),
+    ]
+    public static let properties = Properties<TaskCard>(title: "Task card") {
+        Property("frame", \.frame).required()
+        Property("title", \.title).description("Blank is invalid, and drawn as \"Untitled Task\".")
+        Property("notes", \.notes)
+        Property("status", \.status)
+        Property("priority", \.priority)
+        Property("estimate", \.estimate).minimum(0).description("Hours.")
+        Property("due", \.due)
+        Property("color", \.color)
+        Property("shows", \.shows).description("What the card shows besides its title, status and schedule line.")
+    }
     public static let defaultSize = CGSize(width: 240, height: 200)
 
     public var frame: CGRect
@@ -18,13 +34,11 @@ public struct TaskCard: BoxShapeProps {
     public var estimate: Double
     public var due: Date?
     public var color: TaskColor
-    /// Checklists' items: the card opts into that horizontal, and draws them itself.
-    public var checklist: [ChecklistItem]
     public var shows: TaskDisplay
 
     public init(frame: CGRect = .zero, title: String = "", notes: String = "", status: TaskStatus = .todo,
                 priority: TaskPriority = .medium, estimate: Double = 0, due: Date? = nil, color: TaskColor = .blue,
-                checklist: [ChecklistItem] = [], shows: TaskDisplay = TaskDisplay()) {
+                shows: TaskDisplay = TaskDisplay()) {
         self.frame = frame
         self.title = title
         self.notes = notes
@@ -33,9 +47,10 @@ public struct TaskCard: BoxShapeProps {
         self.estimate = estimate
         self.due = due
         self.color = color
-        self.checklist = checklist
         self.shows = shows
     }
+
+    public init() { self.init(frame: .zero) }
 }
 
 // MARK: Derived
@@ -44,16 +59,6 @@ extension TaskCard {
     /// Whether the title is blank: such a task is invalid, and is drawn and named "Untitled Task".
     public var isUntitled: Bool { title.allSatisfy(\.isWhitespace) }
 
-    /// The hours still to go: the estimate less the checked share of the checklist; none once done.
-    public var remaining: Double { status == .done ? 0 : estimate * (1 - checklist.progress) }
-
-    /// "In Progress · 2 of 5 · Due Sep 30": the status, then the checklist and due date if any.
-    public var summary: String {
-        var parts = [status.label]
-        if !checklist.isEmpty { parts.append("\(checklist.doneCount) of \(checklist.count)") }
-        if let due { parts.append("Due \(TaskCard.format(due))") }
-        return parts.joined(separator: " · ")
-    }
 
     /// "Sep 30", in the user's locale.
     static func format(_ due: Date) -> String { due.formatted(.dateTime.month(.abbreviated).day()) }
@@ -85,9 +90,25 @@ extension TaskCard {
     }
 }
 
+extension ShapeRecord where Props == TaskCard {
+    /// The card's checklist: Checklists' property, which the card opts into.
+    public var checklist: [ChecklistItem] { self[ChecklistProperty.self] ?? [] }
+
+    /// The hours still to go: the estimate less the checked share of the checklist; none once done.
+    public var remaining: Double { props.status == .done ? 0 : props.estimate * (1 - checklist.progress) }
+
+    /// "In Progress · 2 of 5 · Due Sep 30": the status, then the checklist and due date if any.
+    public var summary: String {
+        var parts = [props.status.label]
+        if !checklist.isEmpty { parts.append("\(checklist.doneCount) of \(checklist.count)") }
+        if let due = props.due { parts.append("Due \(TaskCard.format(due))") }
+        return parts.joined(separator: " · ")
+    }
+}
+
 // MARK: Values
 
-public enum TaskStatus: String, Codable, Sendable, CaseIterable, Identifiable {
+public enum TaskStatus: String, Codable, Sendable, CaseIterable, Identifiable, SchemaCases {
     case todo, doing, blocked, done
     public var id: Self { self }
     public var label: String {
@@ -98,9 +119,10 @@ public enum TaskStatus: String, Codable, Sendable, CaseIterable, Identifiable {
         case .done: "Done"
         }
     }
+    public var schemaTitle: String { label }
 }
 
-public enum TaskPriority: String, Codable, Sendable, CaseIterable, Identifiable {
+public enum TaskPriority: String, Codable, Sendable, CaseIterable, Identifiable, SchemaCases {
     case low, medium, high
     public var id: Self { self }
     /// Short enough for a segmented control.
@@ -111,6 +133,7 @@ public enum TaskPriority: String, Codable, Sendable, CaseIterable, Identifiable 
         case .high: "High"
         }
     }
+    public var schemaTitle: String { rawValue.capitalized }
     /// What the card shows: "!", "!!" or "!!!".
     public var marks: String {
         switch self {
@@ -122,10 +145,15 @@ public enum TaskPriority: String, Codable, Sendable, CaseIterable, Identifiable 
 }
 
 /// A card's color, in sRGB.
-public struct TaskColor: Codable, Hashable, Sendable {
-    let red: Double
-    let green: Double
-    let blue: Double
+public struct TaskColor: SchemaDefined, Hashable {
+    public static let properties = Properties<TaskColor>(title: "Color", description: "sRGB components, 0 to 1.") {
+        Property("red", \.red).minimum(0).maximum(1)
+        Property("green", \.green).minimum(0).maximum(1)
+        Property("blue", \.blue).minimum(0).maximum(1)
+    }
+    private(set) var red: Double
+    private(set) var green: Double
+    private(set) var blue: Double
 
     public init(red: Double, green: Double, blue: Double) {
         self.red = red
@@ -139,6 +167,8 @@ public struct TaskColor: Codable, Hashable, Sendable {
         let c = srgb?.components ?? [0, 0, 0]
         self.init(red: Double(c[0]), green: Double(c[1]), blue: Double(c[2]))
     }
+
+    public init() { self = .blue }
 
     public var cgColor: CGColor { CGColor(srgbRed: red, green: green, blue: blue, alpha: 1) }
 
@@ -155,7 +185,12 @@ public struct TaskColor: Codable, Hashable, Sendable {
 }
 
 /// What the card shows besides its title, status and schedule line.
-public struct TaskDisplay: Codable, Equatable, Sendable {
+public struct TaskDisplay: SchemaDefined, Equatable {
+    public static let properties = Properties<TaskDisplay> {
+        Property("notes", \.notes)
+        Property("checklist", \.checklist)
+        Property("progress", \.progress)
+    }
     public var notes: Bool
     public var checklist: Bool
     public var progress: Bool
@@ -165,4 +200,5 @@ public struct TaskDisplay: Codable, Equatable, Sendable {
         self.checklist = checklist
         self.progress = progress
     }
+    public init() { self.init(notes: true) }
 }

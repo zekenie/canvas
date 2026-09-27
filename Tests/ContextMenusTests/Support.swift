@@ -12,6 +12,11 @@ import TestKit
 /// A lamp: on or off, at level 1, 2 or 3.
 struct Lamp: BoxShapeProps {
     static let kind: ShapeKind = "lamp"
+    static let properties = Properties<Lamp> {
+        Property("frame", \.frame).required()
+        Property("isOn", \.isOn)
+        Property("level", \.level)
+    }
     var frame: CGRect
     var isOn: Bool
     var level: Int
@@ -23,6 +28,10 @@ struct Lamp: BoxShapeProps {
     }
 }
 
+extension Lamp {
+    init() { self.init(.zero) }
+}
+
 struct LampDefinition {}
 
 extension LampDefinition: ShapeDefinition {
@@ -32,8 +41,16 @@ extension LampDefinition: ShapeDefinition {
 /// A fan: on or off.
 struct Fan: BoxShapeProps {
     static let kind: ShapeKind = "fan"
+    static let properties = Properties<Fan> {
+        Property("frame", \.frame).required()
+        Property("isOn", \.isOn)
+    }
     var frame: CGRect
     var isOn = false
+}
+
+extension Fan {
+    init() { self.init(frame: .zero) }
 }
 
 struct FanDefinition {}

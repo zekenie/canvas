@@ -8,6 +8,16 @@ public struct ShapeKind: RawRepresentable, Hashable, Codable, Sendable, Expressi
     public var description: String { rawValue }
 }
 
+/// Names a property a plugin adds to the kinds that opt in (`ShapeProperty`). Stated once, as
+/// `static let key` on the property's type: where boards keep its values, and its name in each
+/// kind's schema.
+public struct PropertyKey: RawRepresentable, Hashable, Codable, Sendable, ExpressibleByStringLiteral, CustomStringConvertible {
+    public let rawValue: String
+    public init(rawValue: String) { self.rawValue = rawValue }
+    public init(stringLiteral value: String) { rawValue = value }
+    public var description: String { rawValue }
+}
+
 /// A shape's identity. Pass one in to build a shape with a known id (decoding, tests).
 public struct ShapeID: Hashable, Sendable, CustomStringConvertible {
     public let rawValue: UUID

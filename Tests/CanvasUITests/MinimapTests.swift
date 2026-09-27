@@ -9,6 +9,9 @@ import TestKit
 /// geometry looks the host up, as an arrow's looks up the shapes it joins.
 struct Flag: ShapeProps {
     static let kind: ShapeKind = "flag"
+    static let properties = Properties<Flag> {
+        Property("host", \.host)
+    }
     var host: ShapeID?
 }
 
@@ -26,7 +29,14 @@ extension FlagDefinition: ShapeDefinition {
 /// An open line through its points, as an arrow or a drawn line is.
 struct Stroke: ShapeProps {
     static let kind: ShapeKind = "stroke"
+    static let properties = Properties<Stroke> {
+        Property("points", \.points)
+    }
     var points: [CGPoint]
+}
+
+extension Stroke {
+    init() { self.init(points: []) }
 }
 
 struct StrokeDefinition {}

@@ -3,12 +3,20 @@ import AppKit
 
 public struct Card: BoxShapeProps {
     public static let kind: ShapeKind = "card"
+    public static let properties = Properties<Card> {
+        Property("frame", \.frame).required()
+        Property("text", \.text)
+    }
     public var frame: CGRect
     public var text: String
     public init(_ frame: CGRect, text: String = "") {
         self.frame = frame
         self.text = text
     }
+}
+
+extension Card {
+    public init() { self.init(.zero) }
 }
 
 public struct CardDefinition {}

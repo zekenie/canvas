@@ -19,8 +19,16 @@ extension Origin: ShapeMetaKey {
 /// Points with no frame, moved by its own translation, and naming the shape it follows.
 struct Trail: ShapeProps {
     static let kind: ShapeKind = "trail"
+    static let properties = Properties<Trail> {
+        Property("points", \.points)
+        Property("follows", \.follows)
+    }
     var points: [CGPoint]
     var follows: ShapeID?
+}
+
+extension Trail {
+    init() { self.init(points: []) }
 }
 
 struct TrailDefinition {}

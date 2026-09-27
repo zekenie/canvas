@@ -20,8 +20,15 @@ extension NoTool: Tool {
 /// A box kind whose definition states only `render` and `geometry`: a diamond inside its frame.
 public struct Diamond: BoxShapeProps {
     public static let kind: ShapeKind = "diamond"
+    public static let properties = Properties<Diamond> {
+        Property("frame", \.frame).required()
+    }
     public var frame: CGRect
     public init(_ frame: CGRect) { self.frame = frame }
+}
+
+extension Diamond {
+    public init() { self.init(.zero) }
 }
 
 public struct DiamondDefinition {

@@ -21,7 +21,13 @@ struct TinyBoxDefinition: ShapeDefinition {
 }
 struct Tiny: BoxShapeProps {
     static let kind: ShapeKind = "tiny"
+    static let properties = Properties<Tiny> {
+        Property("frame", \.frame).required()
+    }
     var frame: CGRect
+}
+extension Tiny {
+    init() { self.init(frame: .zero) }
 }
 
 @MainActor var calls = 0

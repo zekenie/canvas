@@ -57,7 +57,7 @@ final class ChecklistWindow {
 @MainActor let windowTests = Suite("Checklist in a window", [
     test("Items has a row per item: its checkbox shows the item, its field edits it; Progress follows") {
         let editor = try choreEditor(scheduler: TaskScheduler())
-        let id = editor.add(Chore(choreFrame, items: laundry(done: 1)))
+        let id = editor.add(Chore(choreFrame), items: laundry(done: 1))
         editor.selection = id
         let panel = try ChecklistWindow(editor)
         expectEqual(panel.tables.map(\.numberOfRows), [3])
@@ -65,7 +65,7 @@ final class ChecklistWindow {
         expectEqual(panel.fields.map(\.stringValue), ["wash", "dry", "fold"])
         expectEqual(panel.progress, [1.0 / 3])
 
-        editor.transact { $0.update(id, as: Chore.self) { $0.props.items[1].isDone = true } }
+        editor.transact { $0.update(id) { $0[ChecklistProperty.self]?[1].isDone = true } }
         panel.window.spin { panel.checkboxes.map(\.state) == [.on, .on, .off] }
         expectEqual(panel.checkboxes.map(\.state), [.on, .on, .off])
         expectEqual(panel.progress, [2.0 / 3])
@@ -77,11 +77,11 @@ final class ChecklistWindow {
     },
     test("the header's pull-down reads done of total, and follows the list") {
         let editor = try choreEditor(scheduler: TaskScheduler())
-        let id = editor.add(Chore(choreFrame, items: laundry(done: 1)))
+        let id = editor.add(Chore(choreFrame), items: laundry(done: 1))
         editor.selection = id
         let panel = try ChecklistWindow(editor)
         expectEqual(panel.menuButton?.title, "1 of 3")
-        editor.transact { $0.update(id, as: Chore.self) { ChecklistBulkAction.checkAll.apply(to: &$0.props.items) } }
+        editor.transact { $0.update(id) { ChecklistBulkAction.checkAll.apply(to: &$0[ChecklistProperty.self]!) } }
         panel.window.spin { panel.menuButton?.title == "3 of 3" }
         expectEqual(panel.menuButton?.title, "3 of 3")
     },
@@ -100,7 +100,7 @@ final class ChecklistWindow {
 @MainActor let menuTests = Suite("Checklist menu, on screen", [
     test("the menu lists the bulk actions, off when there's nothing to do; choosing one is one transaction") {
         let editor = try choreEditor(scheduler: TaskScheduler())
-        let id = editor.add(Chore(choreFrame, items: laundry(done: 1)))
+        let id = editor.add(Chore(choreFrame), items: laundry(done: 1))
         editor.selection = id
         let panel = try ChecklistWindow(editor)
         expectEqual(try panel.menuItems(), ["Check All", "Uncheck All", "Remove Checked"])

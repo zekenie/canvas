@@ -7,8 +7,15 @@ import AppKit
 /// keep it on their own, so the RegistryTests check fails only once both are gone.
 public struct Sealed: BoxShapeProps {
     public static let kind: ShapeKind = "sealed"
+    public static let properties = Properties<Sealed> {
+        Property("frame", \.frame).required()
+    }
     public var frame: CGRect
     public init(_ frame: CGRect) { self.frame = frame }
+}
+
+extension Sealed {
+    public init() { self.init(.zero) }
 }
 
 struct SealedDefinition: ShapeDefinition {

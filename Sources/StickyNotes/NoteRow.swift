@@ -8,7 +8,7 @@ extension ShapeRegistrar where Definition == StickyNoteDefinition {
     /// note, and its checklist's tally.
     mutating func noteRow() {
         contentsRow { note in
-            ContentsLabel(note.props.text, placeholder: "Empty Note", color: .yellow, badge: note.props.checklist.tally)
+            ContentsLabel(note.props.text, placeholder: "Empty Note", color: .yellow, badge: note[ChecklistProperty.self]?.tally)
         }
     }
 }

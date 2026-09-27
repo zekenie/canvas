@@ -331,7 +331,7 @@ extension ShapeRegistrar {
 
     /// This kind's header and sections, in one call:
     ///
-    ///     task.details(header: { $task in DetailHeader(task.title, subtitle: task.summary) }) {
+    ///     task.details(header: { $task in DetailHeader(task.title, subtitle: $task.shape.summary) }) {
     ///         DetailSection(in: TaskTab.self) { $task in LabeledContent("Notes") { TextField("Notes", text: $task.notes) } }
     ///         DetailSection("Color", in: StyleTab.self) { $task in ... }
     ///     }
@@ -348,7 +348,21 @@ extension ShapeRegistrar {
     }
 }
 
+extension ShapeRegistrar {
+    /// Sections over an added property's value, on this kind's shapes that have one: what a
+    /// horizontal's opt-in sugar contributes for the property it opts the kind into
+    /// (`note.checklist()`). Each write changes the value, in one transaction.
+    public mutating func details<P: ShapeProperty>(of _: P.Type, @DetailSectionsBuilder<P.Value> _ sections: () -> [DetailSection<P.Value>]) {
+        contribute(DetailContribution(property: P.self, sections: sections()), to: ShapeDetails.self)
+    }
+}
+
 extension PluginRegistrar {
+    /// Sections over an added property's value, on every shape that has one, whatever its kind.
+    public mutating func details<P: ShapeProperty>(of _: P.Type, @DetailSectionsBuilder<P.Value> _ sections: () -> [DetailSection<P.Value>]) {
+        contribute(DetailContribution(property: P.self, sections: sections()), to: ShapeDetails.self, for: .any)
+    }
+
     /// Sections for a kind another plugin registers (bridges). Typed as the kind's own.
     public mutating func details<P: ShapeProps>(_: P.Type, @DetailSectionsBuilder<P> _ sections: () -> [DetailSection<P>]) {
         contribute(DetailContribution(P.self, sections: sections()), to: ShapeDetails.self, for: .kind(P.kind))
@@ -387,6 +401,12 @@ extension PluginRegistrar {
 }
 
 extension DetailContribution {
+    init<P: ShapeProperty>(property _: P.Type, sections: [DetailSection<P.Value>]) {
+        self.init(header: nil, sections: sections.map {
+            ErasedSection($0, value: { $0[P.self] }, binding: { ShapeBinding<P.Value>.property(P.self, of: $0, in: $1) })
+        })
+    }
+
     init<P: ShapeProps>(_: P.Type, header: (@MainActor (AnyShapeRecord, CanvasEditor) -> ResolvedHeader?)? = nil, sections: [DetailSection<P>]) {
         self.init(header: header, sections: sections.map { ErasedSection($0, value: { $0.typed(as: P.self)?.props }, binding: ShapeBinding<P>.props) })
     }

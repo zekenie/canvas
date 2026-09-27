@@ -1,0 +1,292 @@
+import Foundation
+
+/// A struct defined by its list of properties: the list is how it's written in a board and read
+/// back (its `Codable`), and what its JSON Schema says. Every kind's props are one
+/// (`ShapeProps`), and so is any struct stored in them:
+///
+///     public struct StickyNote: BoxShapeProps {
+///         public static let kind: ShapeKind = "sticky-note"
+///         public static let properties = Properties<StickyNote>(title: "Sticky note") {
+///             Property("frame", \.frame).required()
+///             Property("text", \.text).description("What the note says.")
+///         }
+///         public var frame: CGRect = .zero
+///         public var text = ""
+///         public init() {}
+///     }
+///
+/// Each property's type comes from its member, and its default from `init()`. A property is named
+/// after its member, every stored member is listed (the registry refuses a kind whose list misses
+/// one: a board wouldn't save it), and a member missing from a board reads as its default, unless
+/// it's `required()`.
+public protocol SchemaDefined: Codable, SchemaDescribed, Sendable {
+    /// Every member at its default: what a member missing from a board reads as, and each
+    /// property's `default`.
+    init()
+    /// Every stored member, in order.
+    static var properties: Properties<Self> { get }
+}
+
+/// A type's list of properties, and what its schema says about the type as a whole.
+public struct Properties<Root: SchemaDefined>: Sendable {
+    public let title: String?
+    public let description: String?
+    /// Set, the type's schema is a shared definition of this name (`$defs`), which each use refers
+    /// to; otherwise it's written out where it's used.
+    public let definition: String?
+    let list: [AnyProperty<Root>]
+
+    public init(title: String? = nil, description: String? = nil, definition: String? = nil,
+                @PropertyListBuilder<Root> _ properties: () -> [AnyProperty<Root>]) {
+        self.title = title
+        self.description = description
+        self.definition = definition
+        list = properties()
+    }
+
+    /// The properties' names, in order: the keys a board writes.
+    public var names: [String] { list.map(\.name) }
+
+    /// The object schema, written out.
+    func objectSchema(in definitions: inout SchemaDefinitions) -> JSONObject {
+        let id = ObjectIdentifier(Root.self)
+        definitions.record(Root.self)
+        guard !definitions.inPlace.contains(id) else {
+            definitions.problems.append("\(Root.self) holds itself; give it a definition name (Properties(definition:)) so its schema can refer to itself")
+            return [:]
+        }
+        definitions.inPlace.append(id)
+        defer { definitions.inPlace.removeLast() }
+        let prototype = Root()
+        var json: JSONObject = [:]
+        if let title { json["title"] = .string(title) }
+        if let description { json["description"] = .string(description) }
+        json["type"] = "object"
+        var properties: JSONObject = [:]
+        for property in list { properties[property.name] = .object(property.schema(prototype, &definitions)) }
+        json["properties"] = .object(properties)
+        let required = list.filter(\.isRequired).map { JSONValue.string($0.name) }
+        if !required.isEmpty { json["required"] = .array(required) }
+        json["additionalProperties"] = false
+        return json
+    }
+}
+
+/// One property: a stored member, named, with anything its schema says beyond its type.
+/// `Property("estimate", \.estimate).minimum(0).description("Hours.")`
+public struct Property<Root, Value: Codable & SchemaDescribed & Sendable>: Sendable {
+    let name: String
+    let keyPath: WritableKeyPath<Root, Value> & Sendable
+    var keywords: JSONObject = [:]
+    var examples: [Value] = []
+    var isRequired = false
+
+    public init(_ name: String, _ keyPath: WritableKeyPath<Root, Value> & Sendable) {
+        self.name = name
+        self.keyPath = keyPath
+    }
+
+    /// Has no default: a board, or anyone writing one, must give it. Reading one without it fails.
+    public func required() -> Self { with { $0.isRequired = true } }
+    public func title(_ text: String) -> Self { keywords(["title": .string(text)]) }
+    public func description(_ text: String) -> Self { keywords(["description": .string(text)]) }
+    public func minimum(_ value: Double) -> Self { keywords(["minimum": .number(value)]) }
+    public func maximum(_ value: Double) -> Self { keywords(["maximum": .number(value)]) }
+    public func minLength(_ count: Int) -> Self { keywords(["minLength": .number(Double(count))]) }
+    public func maxLength(_ count: Int) -> Self { keywords(["maxLength": .number(Double(count))]) }
+    /// An ECMA-262 regular expression the whole string must match somewhere (anchor it with ^ and $).
+    public func pattern(_ regex: String) -> Self { keywords(["pattern": .string(regex)]) }
+    public func minItems(_ count: Int) -> Self { keywords(["minItems": .number(Double(count))]) }
+    public func maxItems(_ count: Int) -> Self { keywords(["maxItems": .number(Double(count))]) }
+    public func deprecated() -> Self { keywords(["deprecated": true]) }
+    public func readOnly() -> Self { keywords(["readOnly": true]) }
+    public func examples(_ values: Value...) -> Self { with { $0.examples += values } }
+    /// Any other JSON Schema keywords, as they're written: `.keywords(["multipleOf": 0.5])`.
+    public func keywords(_ more: JSONObject) -> Self { with { $0.keywords.merge(more) { _, new in new } } }
+
+    private func with(_ change: (inout Self) -> Void) -> Self {
+        var copy = self
+        change(&copy)
+        return copy
+    }
+
+    var erased: AnyProperty<Root> {
+        let name = name, keyPath = keyPath, keywords = keywords, examples = examples, isRequired = isRequired
+        let isOptional = Value.self is any OptionalValue.Type
+        let isNil: @Sendable (Value) -> Bool = { isOptional && ($0 as? any OptionalValue)?.isNil == true }
+        return AnyProperty(
+            name: name,
+            isRequired: isRequired,
+            valueType: Value.self,
+            keyPath: keyPath,
+            isOptional: isOptional,
+            isNil: { isNil($0[keyPath: keyPath]) },
+            encode: { root, container in
+                let value = root[keyPath: keyPath]
+                guard !isNil(value) else { return }
+                try container.encode(value, forKey: PropertyCodingKey(name))
+            },
+            decode: { container, root in
+                let key = PropertyCodingKey(name)
+                guard container.contains(key), try !container.decodeNil(forKey: key) else {
+                    guard !isRequired else {
+                        throw DecodingError.keyNotFound(key, .init(codingPath: container.codingPath, debugDescription: "\(name) is missing"))
+                    }
+                    return
+                }
+                root[keyPath: keyPath] = try container.decode(Value.self, forKey: key)
+            },
+            schema: { prototype, definitions in
+                var json = Value.schema(in: &definitions).merging(keywords) { _, new in new }
+                let value = prototype[keyPath: keyPath]
+                if !isRequired, !isNil(value), let encoded = try? JSONValue(encoding: value) { json["default"] = encoded }
+                let encodedExamples = examples.compactMap { try? JSONValue(encoding: $0) }
+                if !encodedExamples.isEmpty { json["examples"] = .array(encodedExamples) }
+                return json
+            })
+    }
+}
+
+/// A property, whatever its member's type: what a list holds.
+public struct AnyProperty<Root>: Sendable {
+    let name: String
+    let isRequired: Bool
+    let valueType: Any.Type
+    /// Which member it writes.
+    let keyPath: AnyKeyPath & Sendable
+    let isOptional: Bool
+    /// Whether it's a nil optional in `root`.
+    let isNil: @Sendable (Root) -> Bool
+    let encode: @Sendable (Root, inout KeyedEncodingContainer<PropertyCodingKey>) throws -> Void
+    let decode: @Sendable (KeyedDecodingContainer<PropertyCodingKey>, inout Root) throws -> Void
+    /// Its schema, with its default read off `prototype`.
+    let schema: @Sendable (_ prototype: Root, inout SchemaDefinitions) -> JSONObject
+}
+
+@resultBuilder
+public enum PropertyListBuilder<Root> {
+    public static func buildExpression<Value>(_ property: Property<Root, Value>) -> [AnyProperty<Root>] { [property.erased] }
+    public static func buildBlock(_ parts: [AnyProperty<Root>]...) -> [AnyProperty<Root>] { parts.flatMap { $0 } }
+}
+
+extension SchemaDefined {
+    /// Each listed property from its key; a missing one keeps `init()`'s value, unless required.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: PropertyCodingKey.self)
+        var value = Self()
+        for property in Self.properties.list { try property.decode(container, &value) }
+        self = value
+    }
+
+    /// Each listed property under its name; a nil optional is left out.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: PropertyCodingKey.self)
+        for property in Self.properties.list { try property.encode(self, &container) }
+    }
+
+    public static func schema(in definitions: inout SchemaDefinitions) -> JSONObject {
+        guard let name = properties.definition else { return properties.objectSchema(in: &definitions) }
+        return definitions.reference(name, of: Self.self) { properties.objectSchema(in: &$0) }
+    }
+}
+
+/// A property's name as a coding key.
+struct PropertyCodingKey: CodingKey, Sendable {
+    let stringValue: String
+    var intValue: Int? { nil }
+    init(_ name: String) { stringValue = name }
+    init?(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue _: Int) { nil }
+}
+
+protocol OptionalValue {
+    var isNil: Bool { get }
+    static var wrappedType: Any.Type { get }
+}
+
+extension Optional: OptionalValue {
+    var isNil: Bool { self == nil }
+    static var wrappedType: Any.Type { Wrapped.self }
+}
+
+extension JSONValue {
+    /// A value as a board writes it.
+    init(encoding value: some Encodable) throws {
+        self = try BoardCodec.makeDecoder().decode(JSONValue.self, from: BoardCodec.makeEncoder().encode(value))
+    }
+}
+
+// MARK: Every member listed
+
+/// Element types, for finding the optionals a property holds.
+protocol SchemaContainer {
+    static var elementType: Any.Type { get }
+}
+
+extension Array: SchemaContainer {
+    static var elementType: Any.Type { Element.self }
+}
+
+extension Set: SchemaContainer {
+    static var elementType: Any.Type { Element.self }
+}
+
+extension Optional: SchemaContainer {
+    static var elementType: Any.Type { Wrapped.self }
+}
+
+/// What's wrong with a struct's list of properties, as a board would find out too late: a stored
+/// member that isn't listed (a board wouldn't save it), a property that names no member, or whose
+/// key path isn't that member (a computed view, part of a member), a name or a member listed twice,
+/// an optional that's required or has a default that isn't nil (a nil one wouldn't save, or would
+/// read back as the default), and optionals inside a collection or another optional (which a schema
+/// can't say). Empty when there's nothing. In list order, so the first is always the same.
+func propertyListProblems<T: SchemaDefined>(of _: T.Type) -> [String] {
+    let name = String(describing: T.self)
+    let prototype = T()
+    let children = Mirror(reflecting: prototype).children
+    let members = children.compactMap(\.label)
+    let list = T.properties.list
+    let listed = list.map(\.name)
+    var problems: [String] = []
+    for member in members where !listed.contains(member) {
+        problems.append("\(name).\(member) isn't in \(name)'s properties, so boards wouldn't save it")
+    }
+    var seen: Set<String> = [], twice: Set<String> = []
+    for property in listed where !seen.insert(property).inserted && twice.insert(property).inserted {
+        problems.append("\(name) lists \(property) twice")
+    }
+    for property in list {
+        guard let member = children.first(where: { $0.label == property.name }) else {
+            problems.append("\(name)'s property \(property.name) names no member of \(name); a property is named after its member")
+            continue
+        }
+        // Its key path must be that stored member, whole: not a computed view, nor part of one.
+        let isStored = (property.keyPath as? PartialKeyPath<T>).flatMap { MemoryLayout<T>.offset(of: $0) } != nil
+        if !isStored || type(of: member.value) != property.valueType {
+            problems.append("\(name)'s property \(property.name) doesn't write its member \(property.name); a property's key path is the stored member it's named after")
+        }
+    }
+    var writers: [AnyKeyPath: String] = [:]
+    for property in list {
+        if let first = writers[property.keyPath] {
+            problems.append("\(name)'s properties \(first) and \(property.name) write the same member")
+        }
+        writers[property.keyPath] = writers[property.keyPath] ?? property.name
+        if property.isOptional, property.isRequired {
+            problems.append("\(name).\(property.name) is optional and required: a nil one wouldn't save, nor read back")
+        } else if property.isOptional, !property.isNil(prototype) {
+            problems.append("\(name).\(property.name) is optional with a default that isn't nil, so a nil one would read back as the default")
+        }
+        if holdsOptionals(property.valueType) {
+            problems.append("\(name).\(property.name) holds optionals in a collection or an optional, which a schema can't say")
+        }
+    }
+    return problems
+}
+
+/// Whether a collection (or optional) holds optionals, at any depth.
+func holdsOptionals(_ type: Any.Type) -> Bool {
+    guard let container = type as? any SchemaContainer.Type else { return false }
+    return container.elementType is any OptionalValue.Type || holdsOptionals(container.elementType)
+}

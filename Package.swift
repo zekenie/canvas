@@ -32,11 +32,11 @@ import PackageDescription
 //   - an import sits inside #if or carries @_exported, @_implementationOnly or @testable, or code
 //     asks canImport(<a module here>);
 //   - a public type is named like a module, or Task (it would shadow Swift's in every importer);
-//   - a module writes another module's ShapeKind, PluginID or ToolID as a string literal without
-//     depending on that module.
+//   - a module writes another module's ShapeKind, PluginID, ToolID or PropertyKey as a string
+//     literal without depending on that module.
 // The graph keeps the core from naming a plugin's types (a module compiles against only its
 // dependency closure, with MemberImportVisibility, and the import check rejects undeclared
-// imports); the id check keeps any module from writing another module's kind, tool or plugin id
+// imports); the id check keeps any module from writing another module's kind, tool, plugin or property id
 // as a literal. The editor's host API is @_spi(Host), which only ui, testsupport and test modules
 // may import.
 // Audit it:  ./build.sh graph | dot | audit | api <Module>
@@ -97,7 +97,7 @@ let package = Package(
         .executableTarget(name: "RectanglesTests", dependencies: ["Canvas", "CanvasTesting", "Keyboard", "Rectangles", "TestKit"], path: "Tests/RectanglesTests"), // layer: test
         .executableTarget(name: "ExamplesTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "ContextMenus", "EllipseTitles", "Ellipses", "Eraser", "Keyboard", "Polylines", "Rectangles", "Reordering", "Selection", "TableOfContents", "TestKit", "Titles"], path: "Tests/ExamplesTests"), // layer: test
         .executableTarget(name: "CompositionTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "CanvasUI", "Checklists", "Clipboard", "Composition", "DetailPanel", "Geometry", "Keyboard", "Selection", "StickyNotes", "TableOfContents", "TaskCards", "TestKit", "Titles", "Validation", "ValidationDetails"], path: "Tests/CompositionTests"), // layer: test
-        .executableTarget(name: "BenchmarkTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "CanvasUI", "Composition", "Ellipses", "Geometry", "StickyNotes", "TableOfContents", "TaskCards", "TestKit"], path: "Tests/BenchmarkTests"), // layer: test
+        .executableTarget(name: "BenchmarkTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "CanvasUI", "Checklists", "Composition", "Ellipses", "Geometry", "StickyNotes", "TableOfContents", "TaskCards", "TestKit"], path: "Tests/BenchmarkTests"), // layer: test
     ],
     swiftLanguageModes: [.v6]
 )

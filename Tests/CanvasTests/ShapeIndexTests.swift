@@ -16,6 +16,9 @@ import TestKit
 /// the host up, as a connector's looks up the shapes it joins.
 struct Marker: ShapeProps {
     static let kind: ShapeKind = "marker"
+    static let properties = Properties<Marker> {
+        Property("host", \.host)
+    }
     var host: ShapeID?
 }
 
@@ -38,6 +41,7 @@ extension MarkerDefinition: ShapeDefinition {
 /// whole document.
 struct Census: ShapeProps {
     static let kind: ShapeKind = "census"
+    static let properties = Properties<Census> {}
 }
 
 struct CensusDefinition {}
@@ -54,6 +58,7 @@ extension CensusDefinition: ShapeDefinition {
 /// A square at the origin, 20 view points a side at any zoom: its geometry reads the camera.
 struct Badge: ShapeProps {
     static let kind: ShapeKind = "badge"
+    static let properties = Properties<Badge> {}
 }
 
 struct BadgeDefinition {}
@@ -70,8 +75,16 @@ extension BadgeDefinition: ShapeDefinition {
 /// A segment, hit within 5 view points and 2 world units of it, as its hit margin says.
 struct Wire: ShapeProps {
     static let kind: ShapeKind = "wire"
+    static let properties = Properties<Wire> {
+        Property("from", \.from).required()
+        Property("to", \.to).required()
+    }
     var from: CGPoint
     var to: CGPoint
+}
+
+extension Wire {
+    init() { self.init(from: .zero, to: .zero) }
 }
 
 struct WireDefinition {

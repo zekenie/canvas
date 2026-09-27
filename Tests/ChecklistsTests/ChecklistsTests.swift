@@ -67,12 +67,12 @@ extension LookalikeChecklistTab: DetailTab { static var title: String { "Checkli
     test("Progress shows once the checklist has items") {
         let editor = try choreEditor()
         let id = editor.add(Chore(choreFrame))
-        editor.transact { $0.update(id, as: Chore.self) { $0.props.items = laundry() } }
+        editor.transact { $0.update(id) { $0[ChecklistProperty.self] = laundry() } }
         expectEqual(try editor.layout(id).outline, ["Chore: main", "Checklist: Items, Progress", "Arrange: Size, Position"])
     },
     test("the registry reads a shape's checklist; a kind without one has none") {
         let editor = try choreEditor()
-        let choreID = editor.add(Chore(choreFrame, items: laundry(done: 1))), boxID = editor.add(Box(choreFrame))
+        let choreID = editor.add(Chore(choreFrame), items: laundry(done: 1)), boxID = editor.add(Box(choreFrame))
         let chore = try require(editor.document[choreID]), box = try require(editor.document[boxID])
         expectEqual(editor.registry.checklist(of: chore)?.map(\.text), ["wash", "dry", "fold"])
         expectEqual(editor.registry.checklist(of: chore)?.doneCount, 1)
@@ -80,29 +80,29 @@ extension LookalikeChecklistTab: DetailTab { static var title: String { "Checkli
     },
     test("a bulk action is one transaction, on the live list") {
         let editor = try choreEditor()
-        let id = editor.add(Chore(choreFrame, items: laundry(done: 1)))
-        let binding = try require(editor.shapeBinding(id, as: Chore.self))
+        let id = editor.add(Chore(choreFrame), items: laundry(done: 1))
+        let binding = try require(editor.propertyBinding(id, ChecklistProperty.self))
         // An item added after the panel drew still gets checked, then removed.
-        editor.transact { $0.update(id, as: Chore.self) { $0.props.items.append(ChecklistItem(text: "iron")) } }
+        editor.transact { $0.update(id) { $0[ChecklistProperty.self]?.append(ChecklistItem(text: "iron")) } }
         let revision = editor.revision
         // As the menu applies one.
-        binding.update { ChecklistBulkAction.checkAll.apply(to: &$0.items) }
+        binding.update { ChecklistBulkAction.checkAll.apply(to: &$0) }
         expectEqual(editor.items(id)?.map(\.isDone), [true, true, true, true])
         expectEqual(editor.revision, revision + 1)
-        binding.update { ChecklistBulkAction.removeChecked.apply(to: &$0.items) }
+        binding.update { ChecklistBulkAction.removeChecked.apply(to: &$0) }
         expectEqual(editor.items(id), [])
         expectEqual(editor.revision, revision + 2)
     },
     test("opting in is one line: the kind's checklist, its panel and its menu items, in the report") {
         let registry = try Registry(plugins: [ChecklistsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), Contributor(id: "p") { r in
-            r.shape(ChoreDefinition()) { $0.checklist(\.items) }
+            r.shape(ChoreDefinition()) { $0.checklist() }
         }])
         expectEqual(registry.report, """
         core           tool hand
-        checklists     overlay ChecklistOverlay
+        checklists     property checklist · overlay ChecklistOverlay
         detail-panel   service DetailPanelState · ShapeDetails
         context-menus  service ContextMenuState · secondary-click menu
-        p              shape chore · ShapeChecklists → chore · ShapeDetails → chore · ShapeContextMenus → chore
+        p              shape chore · property checklist → chore · ShapeChecklists → chore · ShapeDetails → chore · ShapeContextMenus → chore
         """)
     },
     test("the opt-in needs Checklists installed, the panel and context menus") {
@@ -127,7 +127,7 @@ extension LookalikeChecklistTab: DetailTab { static var title: String { "Checkli
     },
     test("opting in brings the bulk actions to the context menu, each only where it has something to do") {
         let h = try EditorHarness { try choreEditor(scheduler: $0) }
-        let chore = h.add(Chore(choreFrame, items: laundry(done: 1)))
+        let chore = h.editor.add(Chore(choreFrame), items: laundry(done: 1))
         let menu = try require(h.secondaryClick(at: CGPoint(x: choreFrame.midX, y: choreFrame.midY)))
         expectEqual(menu.outline, ["Check All", "Uncheck All", "Remove Checked"])
         let revision = h.editor.revision
@@ -141,21 +141,21 @@ extension LookalikeChecklistTab: DetailTab { static var title: String { "Checkli
     },
     test("two kinds selected together share the actions, each on its own list") {
         let h = try EditorHarness { try choreEditor(scheduler: $0) }
-        let chore = h.add(Chore(choreFrame, items: laundry(done: 1)))
-        let errand = h.add(Errand(frame: choreFrame.offsetBy(dx: 300, dy: 0), steps: [ChecklistItem(text: "post office")]))
+        let chore = h.editor.add(Chore(choreFrame), items: laundry(done: 1))
+        let errand = h.editor.add(Errand(frame: choreFrame.offsetBy(dx: 300, dy: 0)), items: [ChecklistItem(text: "post office")])
         h.editor.selectedShapeIDs = [chore, errand]
         let menu = try require(h.secondaryClick(at: CGPoint(x: choreFrame.midX, y: choreFrame.midY)))
         expectEqual(menu.outline, ["Check All"], "the errand has nothing checked to uncheck or remove")
         try menu.choose("Check All")
         expectEqual(h.editor.items(chore)?.map(\.isDone), [true, true, true])
-        expectEqual(h.editor.document[errand]?.typed(as: Errand.self)?.props.steps.map(\.isDone), [true])
+        expectEqual(h.editor.items(errand)?.map(\.isDone), [true])
     },
 ])
 
-/// The canvas with one shape, drawn at `zoom`.
-@MainActor func render<P: ShapeProps>(_ shape: P, zoom: CGFloat = 1) throws -> NSBitmapImageRep {
+/// The canvas with one shape, with these checklist items, drawn at `zoom`.
+@MainActor func render<P: ShapeProps>(_ shape: P, items: [ChecklistItem] = [], zoom: CGFloat = 1) throws -> NSBitmapImageRep {
     let editor = try choreEditor()
-    editor.add(shape)
+    editor.add(shape, items: items)
     editor.camera = Camera(zoom: zoom)
     return renderBitmap(editor, size: CGSize(width: 400, height: 300) * zoom)
 }
@@ -173,25 +173,25 @@ let chipPoint = CGPoint(x: 323, y: 40)
 
 @MainActor let badgeTests = Suite("Checklist badge", [
     test("a checklist with items shows a dark chip on the shape's top-right corner") {
-        let color = pixel(try render(Chore(choreFrame, items: laundry(done: 1))), at: chipPoint)
+        let color = pixel(try render(Chore(choreFrame), items: laundry(done: 1)), at: chipPoint)
         expect(color[0..<3].allSatisfy { $0 < 100 }, "\(color)")
     },
     test("the chip turns green once every item is done") {
-        let color = pixel(try render(Chore(choreFrame, items: laundry(done: 3))), at: chipPoint)
+        let color = pixel(try render(Chore(choreFrame), items: laundry(done: 3)), at: chipPoint)
         expect(color[1] > color[0] + 80 && color[1] > color[2] + 60, "\(color)")
     },
     test("an empty checklist draws nothing, and neither does a kind that opted in with badge: false") {
         let bare = try render(Chore(choreFrame)).bytes
         // An errand draws just as a chore does.
-        expectEqual(try render(Errand(frame: choreFrame, steps: laundry())).bytes, bare)
-        expect(try render(Chore(choreFrame, items: laundry())).bytes != bare)
+        expectEqual(try render(Errand(frame: choreFrame), items: laundry()).bytes, bare)
+        expect(try render(Chore(choreFrame), items: laundry()).bytes != bare)
     },
     test("the chip is sized in view points: as tall at 200% as at 100% and 25%; shorter when zoomed out further") {
         /// How many view points tall the chip is: the dark rows, drawn at 4x, around the chore's
         /// top-right corner.
         @MainActor func height(zoom: CGFloat) throws -> CGFloat {
             let editor = try choreEditor()
-            editor.add(Chore(choreFrame, items: laundry(done: 1)))
+            editor.add(Chore(choreFrame), items: laundry(done: 1))
             editor.camera = Camera(zoom: zoom)
             let rep = renderBitmap(editor, size: CGSize(width: 400, height: 300) * zoom, scale: 4)
             let corner = CGPoint(x: 320 * zoom, y: 40 * zoom)

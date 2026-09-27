@@ -14,6 +14,12 @@ import TestKit
 /// widgets aren't listed.
 struct Widget: BoxShapeProps {
     static let kind: ShapeKind = "widget"
+    static let properties = Properties<Widget> {
+        Property("frame", \.frame).required()
+        Property("name", \.name)
+        Property("count", \.count)
+        Property("isHidden", \.isHidden)
+    }
     var frame: CGRect
     var name: String
     var count = 0
@@ -27,6 +33,10 @@ struct Widget: BoxShapeProps {
     }
 }
 
+extension Widget {
+    init() { self.init(widgetFrame) }
+}
+
 struct WidgetDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<Widget>, in context: RenderContext) {}
 }
@@ -34,8 +44,15 @@ struct WidgetDefinition: ShapeDefinition {
 /// A box with the Gizmo tool and no row of its own.
 struct Gizmo: BoxShapeProps {
     static let kind: ShapeKind = "gizmo"
+    static let properties = Properties<Gizmo> {
+        Property("frame", \.frame).required()
+    }
     var frame: CGRect
     init(_ frame: CGRect = widgetFrame) { self.frame = frame }
+}
+
+extension Gizmo {
+    init() { self.init(widgetFrame) }
 }
 
 struct GizmoDefinition: ShapeDefinition {
@@ -45,6 +62,11 @@ struct GizmoDefinition: ShapeDefinition {
 /// A box pinned to another shape, whose row nests under that shape's.
 struct Pin: BoxShapeProps {
     static let kind: ShapeKind = "pin"
+    static let properties = Properties<Pin> {
+        Property("frame", \.frame).required()
+        Property("name", \.name)
+        Property("target", \.target)
+    }
     var frame: CGRect
     var name: String
     var target: ShapeID?
@@ -55,6 +77,10 @@ struct Pin: BoxShapeProps {
     }
 }
 
+extension Pin {
+    init() { self.init("", on: nil) }
+}
+
 struct PinDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<Pin>, in context: RenderContext) {}
 }
@@ -62,12 +88,20 @@ struct PinDefinition: ShapeDefinition {
 /// A box linked to another shape: it nests under that shape's row, and keeps the Link tool's row.
 struct Link: BoxShapeProps {
     static let kind: ShapeKind = "link"
+    static let properties = Properties<Link> {
+        Property("frame", \.frame).required()
+        Property("target", \.target)
+    }
     var frame: CGRect
     var target: ShapeID?
     init(on target: ShapeID?) {
         frame = widgetFrame
         self.target = target
     }
+}
+
+extension Link {
+    init() { self.init(on: nil) }
 }
 
 struct LinkDefinition: ShapeDefinition {

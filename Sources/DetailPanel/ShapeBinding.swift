@@ -13,6 +13,8 @@ import SwiftUI
 @MainActor @propertyWrapper @dynamicMemberLookup
 public struct ShapeBinding<Value> {
     private let value: Value
+    /// The whole shape the value was read from, as the panel drew it.
+    private let record: AnyShapeRecord
     /// What the binding's `Binding`s read: the snapshot, until a write through them, then what the
     /// shape became. A control reads back what it wrote before the panel draws again, as SwiftUI
     /// expects of a binding (a text field that took Return first would put the old text back).
@@ -30,8 +32,9 @@ public struct ShapeBinding<Value> {
     public var projectedValue: ShapeBinding<Value> { self }
     public init(projectedValue: ShapeBinding<Value>) { self = projectedValue }
 
-    private init(value: Value, write: @escaping @MainActor (_ change: (inout Value) -> Void) -> Value?) {
+    private init(value: Value, record: AnyShapeRecord, write: @escaping @MainActor (_ change: (inout Value) -> Void) -> Value?) {
         self.value = value
+        self.record = record
         latest = Latest(value)
         self.write = write
     }
@@ -47,22 +50,49 @@ public struct ShapeBinding<Value> {
     }
 
     /// Several changes in one transaction, applied to the live shape (read-modify-write belongs
-    /// here, not in a sequence of binding sets): `$task.update { $0.checklist.removeDone() }`.
+    /// here, not in a sequence of binding sets): `$items.update { $0.removeDone() }`.
     public func update(_ change: (inout Value) -> Void) {
         if let live = write(change) { latest.value = live }
     }
 }
 
-// The only write paths: every panel edit goes through one of these two. (This file imports
+extension ShapeBinding where Value: ShapeProps {
+    /// The shape as the panel drew it: its props, and the added properties beside them
+    /// (`$task.shape[ChecklistProperty.self]`), for what a section or header shows from both.
+    public var shape: ShapeRecord<Value> {
+        record.typed(as: Value.self) ?? ShapeRecord(id: record.id, value)
+    }
+}
+
+// The only write paths: every panel edit goes through one of these three. (This file imports
 // SwiftUI, whose `Transaction` shadows the core's, so the transactions go unnamed.)
 extension ShapeBinding where Value: ShapeProps {
     static func props(of record: AnyShapeRecord, in editor: CanvasEditor) -> ShapeBinding? {
         guard let shape = record.typed(as: Value.self) else { return nil }
         let id = record.id
-        return ShapeBinding(value: shape.props) { [weak editor] change in
+        return ShapeBinding(value: shape.props, record: record) { [weak editor] change in
             guard let editor else { return nil }
             editor.transact { $0.update(id, as: Value.self) { change(&$0.props) } }
             return editor.document[id]?.typed(as: Value.self)?.props
+        }
+    }
+}
+
+extension ShapeBinding {
+    /// An added property's value; nil if the shape has none.
+    static func property<P: ShapeProperty>(_: P.Type, of record: AnyShapeRecord, in editor: CanvasEditor) -> ShapeBinding? where P.Value == Value {
+        guard let value = record[P.self] else { return nil }
+        let id = record.id
+        return ShapeBinding(value: value, record: record) { [weak editor] change in
+            guard let editor else { return nil }
+            editor.transact {
+                $0.update(id) { record in
+                    guard var value = record[P.self] else { return }
+                    change(&value)
+                    record[P.self] = value
+                }
+            }
+            return editor.document[id]?[P.self]
         }
     }
 }
@@ -71,7 +101,7 @@ extension ShapeBinding where Value == CGRect {
     static func box(of record: AnyShapeRecord, in editor: CanvasEditor) -> ShapeBinding? {
         guard let frame = record.box else { return nil }
         let id = record.id
-        return ShapeBinding(value: frame) { [weak editor] change in
+        return ShapeBinding(value: frame, record: record) { [weak editor] change in
             guard let editor else { return nil }
             editor.transact {
                 $0.update(id) { record in
@@ -95,5 +125,11 @@ extension CanvasEditor {
     /// no frame.
     public func frameBinding(_ id: ShapeID) -> ShapeBinding<CGRect>? {
         document[id].flatMap { ShapeBinding<CGRect>.box(of: $0, in: self) }
+    }
+
+    /// An added property's value as its sections get it; nil if there's no such shape, or it has
+    /// no value.
+    public func propertyBinding<P: ShapeProperty>(_ id: ShapeID, _ property: P.Type) -> ShapeBinding<P.Value>? {
+        document[id].flatMap { ShapeBinding<P.Value>.property(P.self, of: $0, in: self) }
     }
 }

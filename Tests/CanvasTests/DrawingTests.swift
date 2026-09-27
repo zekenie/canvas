@@ -143,10 +143,19 @@ import TestKit
 /// the AppKit way (`NSColor.set`, `NSRect.fill`), through the current NSGraphicsContext.
 struct Leak: BoxShapeProps {
     static let kind: ShapeKind = "leak"
+    static let properties = Properties<Leak> {
+        Property("frame", \.frame).required()
+        Property("fillsWithAppKit", \.fillsWithAppKit)
+        Property("leavesPath", \.leavesPath)
+    }
     var frame: CGRect
     var fillsWithAppKit = false
     /// Adds its frame to the current path, and paints nothing.
     var leavesPath = false
+}
+
+extension Leak {
+    init() { self.init(frame: .zero) }
 }
 
 struct LeakDefinition: ShapeDefinition {

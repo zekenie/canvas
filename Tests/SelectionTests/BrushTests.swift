@@ -194,8 +194,15 @@ import TestKit
 /// An open shape: across from `from`, then down to `to`.
 struct Corner: ShapeProps {
     static let kind: ShapeKind = "corner"
+    static let properties = Properties<Corner> {
+        Property("from", \.from).required()
+        Property("to", \.to).required()
+    }
     var from: CGPoint
     var to: CGPoint
+}
+extension Corner {
+    init() { self.init(from: .zero, to: .zero) }
 }
 
 struct CornerDefinition {}
@@ -215,8 +222,14 @@ extension CornerDefinition: ShapeDefinition {
 
 struct Picky: BoxShapeProps {
     static let kind: ShapeKind = "picky"
+    static let properties = Properties<Picky> {
+        Property("frame", \.frame).required()
+    }
     var frame: CGRect
     init(_ frame: CGRect) { self.frame = frame }
+}
+extension Picky {
+    init() { self.init(.zero) }
 }
 
 struct PickyDefinition {

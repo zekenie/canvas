@@ -4,8 +4,12 @@ import Keyboard
 
 public struct Ellipse: BoxShapeProps {
     public static let kind: ShapeKind = "ellipse"
+    public static let properties = Properties<Ellipse>(title: "Ellipse") {
+        Property("frame", \.frame).required()
+    }
     public var frame: CGRect
-    public init(frame: CGRect = .zero) { self.frame = frame }
+    public init(frame: CGRect) { self.frame = frame }
+    public init() { self.init(frame: .zero) }
 }
 
 extension PluginID {

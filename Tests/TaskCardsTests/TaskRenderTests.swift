@@ -46,16 +46,19 @@ enum Band {
     }
 }
 
-/// An editor showing one task, written to only through its panel binding.
+/// An editor showing one task, written to only through its panel bindings.
 @MainActor final class Drawn {
     let editor: CanvasEditor
     let id: ShapeID
     let task: ShapeBinding<TaskCard>
+    /// The checklist, as its Items section binds it.
+    let checklist: Binding<[ChecklistItem]>
 
-    init(_ props: TaskCard = fullTask()) throws {
+    init(_ shape: ShapeRecord<TaskCard> = fullTask()) throws {
         editor = try taskEditor()
-        id = editor.add(props)
+        id = editor.add(shape)
         task = try require(editor.shapeBinding(id, as: TaskCard.self))
+        checklist = try require(editor.propertyBinding(id, ChecklistProperty.self))[dynamicMember: \.self]
     }
 
     var bitmap: NSBitmapImageRep { renderBitmap(editor, size: CGSize(width: 320, height: 240)) }
@@ -90,66 +93,66 @@ enum Band {
         let card = try Drawn()          // 1 of 3 done
         expectColor(pixel(card.bitmap, at: bar(0.15)), [51, 122, 245])
         expectColor(pixel(card.bitmap, at: bar(0.6)), [230, 230, 230])
-        card.task.checklist.wrappedValue = steps(done: 2)
+        card.checklist.wrappedValue = steps(done: 2)
         expectColor(pixel(card.bitmap, at: bar(0.6)), [51, 122, 245])
         expectColor(pixel(card.bitmap, at: bar(0.9)), [230, 230, 230])
         card.task.shows.progress.wrappedValue = false
         expectColor(pixel(card.bitmap, at: bar(0.15)), [255, 255, 255])
         card.task.shows.progress.wrappedValue = true
-        card.task.checklist.wrappedValue = []
+        card.checklist.wrappedValue = []
         expectColor(pixel(card.bitmap, at: bar(0.15)), [255, 255, 255])
     },
     test("every Task and Style field changes the drawing, where that field is drawn") {
-        let cases: [(field: String, band: CGRect, write: @MainActor (ShapeBinding<TaskCard>) -> Void)] = [
-            ("title", Band.header, { $0.title.wrappedValue = "Ship it" }),
-            ("no title", Band.header, { $0.title.wrappedValue = "" }),
-            ("status", Band.header, { $0.status.wrappedValue = .blocked }),
-            ("priority", Band.meta, { $0.priority.wrappedValue = .high }),
-            ("estimate", Band.meta, { $0.estimate.wrappedValue = 6 }),
-            ("due date", Band.meta, { $0.dueDate.wrappedValue = day(10, 2) }),
-            ("no due date", Band.meta, { $0.hasDue.wrappedValue = false }),
-            ("notes", Band.body, { $0.notes.wrappedValue = "Just the card." }),
+        let cases: [(field: String, band: CGRect, write: @MainActor (Drawn) -> Void)] = [
+            ("title", Band.header, { $0.task.title.wrappedValue = "Ship it" }),
+            ("no title", Band.header, { $0.task.title.wrappedValue = "" }),
+            ("status", Band.header, { $0.task.status.wrappedValue = .blocked }),
+            ("priority", Band.meta, { $0.task.priority.wrappedValue = .high }),
+            ("estimate", Band.meta, { $0.task.estimate.wrappedValue = 6 }),
+            ("due date", Band.meta, { $0.task.dueDate.wrappedValue = day(10, 2) }),
+            ("no due date", Band.meta, { $0.task.hasDue.wrappedValue = false }),
+            ("notes", Band.body, { $0.task.notes.wrappedValue = "Just the card." }),
             ("a checked item", Band.body, { $0.checklist[1].isDone.wrappedValue = true }),
             ("an item's text", Band.body, { $0.checklist[2].text.wrappedValue = "celebrate" }),
             ("progress", Band.bar, { $0.checklist[1].isDone.wrappedValue = true }),
-            ("shows notes", Band.body, { $0.shows.notes.wrappedValue = false }),
-            ("shows checklist", Band.body, { $0.shows.checklist.wrappedValue = false }),
-            ("shows progress", Band.bar, { $0.shows.progress.wrappedValue = false }),
-            ("color", Band.strip, { $0.displayColor.wrappedValue = TaskColor.presets[4].color.cgColor }),
+            ("shows notes", Band.body, { $0.task.shows.notes.wrappedValue = false }),
+            ("shows checklist", Band.body, { $0.task.shows.checklist.wrappedValue = false }),
+            ("shows progress", Band.bar, { $0.task.shows.progress.wrappedValue = false }),
+            ("color", Band.strip, { $0.task.displayColor.wrappedValue = TaskColor.presets[4].color.cgColor }),
         ]
         for (field, band, write) in cases {
             let card = try Drawn()
             let before = card.bitmap, revision = card.editor.revision
-            write(card.task)
+            write(card)
             expectEqual(card.editor.revision, revision + 1, field)
             expect(changedPixels(before, card.bitmap, in: band) > 0, "\(field) left its part of the card as it was")
         }
     },
     test("notes get two lines, the second drawn, not cut to one with an ellipsis") {
         var task = fullTask()
-        task.shows.checklist = false
-        task.notes = "Keep the old tables read-only for a week after cut-over, in case we need to roll back."
+        task.props.shows.checklist = false
+        task.props.notes = "Keep the old tables read-only for a week after cut-over, in case we need to roll back."
         let long = try render(task)
         // The title and meta lines end at y 89; the notes start 6 points on, 14 points a line.
         let first = CGRect(x: 57, y: 97, width: 211, height: 10), second = first.offsetBy(dx: 0, dy: 14)
         expect(hasInk(long, in: first))
         expect(hasInk(long, in: second), "the notes' second line wasn't drawn")
-        task.notes = "One line."
+        task.props.notes = "One line."
         expect(!hasInk(try render(task), in: second))
     },
     test("a full task at the default size shows its checklist's open items, not just the done ones") {
         let items = ["Draft the migration plan", "Review schema", "Write backfill script", "Dry run on staging", "Cut over"]
-        let task = TaskCard(frame: CGRect(origin: cardFrame.origin, size: TaskCard.defaultSize), title: "Migrate billing to Postgres",
-                            notes: "Keep the old tables read-only for a week after cut-over, in case we need to roll back.",
-                            status: .doing, estimate: 12, due: day(10, 9),
-                            checklist: items.enumerated().map { ChecklistItem(text: $1, isDone: $0 < 2) })
+        let task = ShapeRecord(TaskCard(frame: CGRect(origin: cardFrame.origin, size: TaskCard.defaultSize), title: "Migrate billing to Postgres",
+                                        notes: "Keep the old tables read-only for a week after cut-over, in case we need to roll back.",
+                                        status: .doing, estimate: 12, due: day(10, 9)),
+                               checklist: items.enumerated().map { ChecklistItem(text: $1, isDone: $0 < 2) })
         var renamed = task
-        renamed.checklist[2].text = "Write the backfill"     // the first open item, same count
+        renamed[ChecklistProperty.self]?[2].text = "Write the backfill"     // the first open item, same count
         expect(changedPixels(try render(task), try render(renamed), in: Band.body) > 0, "the first open item's row wasn't drawn")
     },
     test("a small card drops the pill beside a narrow title, and draws below the title only what fits above the bar") {
         var task = fullTask()
-        task.color = .purple
+        task.props.color = .purple
         let titleLine = CGRect(x: 57, y: 52, width: 61, height: 17)
         for height: CGFloat in [60, 51] {
             task.frame = CGRect(x: 40, y: 40, width: 90, height: height)
@@ -165,7 +168,7 @@ enum Band {
     },
     test("a card sized down to a sliver still draws, and the checklist chip stays off it") {
         var task = fullTask()
-        let full = try render(task), bare = try render(TaskCard(frame: cardFrame, title: task.title))
+        let full = try render(task), bare = try render(ShapeRecord(TaskCard(frame: cardFrame, title: task.props.title)))
         // Checklists' chip would sit on the top-right corner: the card draws its own list instead.
         expectEqual(pixel(full, at: CGPoint(x: cardFrame.maxX + 3, y: cardFrame.minY)),
                     pixel(bare, at: CGPoint(x: cardFrame.maxX + 3, y: cardFrame.minY)))

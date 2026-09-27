@@ -15,6 +15,14 @@ import TestKit
 /// A box kind with one field of each sort a panel edits.
 struct Gadget: BoxShapeProps {
     static let kind: ShapeKind = "gadget"
+    static let properties = Properties<Gadget> {
+        Property("frame", \.frame).required()
+        Property("name", \.name)
+        Property("mode", \.mode)
+        Property("count", \.count)
+        Property("remark", \.remark)
+        Property("parts", \.parts)
+    }
     var frame: CGRect
     var name = ""
     var mode = Mode.plain
@@ -22,8 +30,15 @@ struct Gadget: BoxShapeProps {
     var remark = ""
     var parts: [Part] = []
 
-    enum Mode: String, Codable, CaseIterable, Sendable { case plain, fancy }
-    struct Part: Codable, Hashable, Identifiable, Sendable {
+    enum Mode: String, Codable, CaseIterable, Sendable, SchemaCases {
+        case plain, fancy
+        var schemaTitle: String { rawValue.capitalized }
+    }
+    struct Part: SchemaDefined, Hashable, Identifiable, Sendable {
+        static let properties = Properties<Part> {
+            Property("id", \.id)
+            Property("text", \.text)
+        }
         var id = UUID()
         var text = ""
     }
@@ -33,6 +48,10 @@ struct Gadget: BoxShapeProps {
         self.name = name
         self.parts = parts
     }
+}
+
+extension Gadget {
+    init() { self.init(.zero) }
 }
 
 struct GadgetDefinition: ShapeDefinition {

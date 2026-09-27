@@ -12,8 +12,12 @@ import Keyboard
 /// The kind: points in world units, in the order they were drawn.
 public struct Polyline: ShapeProps {
     public static let kind: ShapeKind = "polyline"
+    public static let properties = Properties<Polyline>(title: "Line") {
+        Property("points", \.points).description("In world units, in the order they were drawn.")
+    }
     public var points: [CGPoint]
-    public init(points: [CGPoint] = []) { self.points = points }
+    public init(points: [CGPoint]) { self.points = points }
+    public init() { self.init(points: []) }
 }
 
 public struct PolylinesPlugin: CanvasPlugin {

@@ -4,22 +4,43 @@ import AppKit
 /// A plain box: frame geometry, frame hit testing.
 public struct Box: BoxShapeProps {
     public static let kind: ShapeKind = "box"
+    public static let properties = Properties<Box> {
+        Property("frame", \.frame).required()
+    }
     public var frame: CGRect
     public init(_ frame: CGRect) { self.frame = frame }
+}
+
+extension Box {
+    public init() { self.init(.zero) }
 }
 
 /// A disc: analytic hit test and a 128-point outline, like an ellipse.
 public struct Disc: BoxShapeProps {
     public static let kind: ShapeKind = "disc"
+    public static let properties = Properties<Disc> {
+        Property("frame", \.frame).required()
+    }
     public var frame: CGRect
     public init(_ frame: CGRect) { self.frame = frame }
+}
+
+extension Disc {
+    public init() { self.init(.zero) }
 }
 
 /// A box shown above another shape, like a connector.
 public struct Tag: ShapeProps {
     public static let kind: ShapeKind = "tag"
+    public static let properties = Properties<Tag> {
+        Property("target", \.target)
+    }
     public var target: ShapeID?
     public init(target: ShapeID?) { self.target = target }
+}
+
+extension Tag {
+    public init() { self.init(target: nil) }
 }
 
 struct BoxDefinition: ShapeDefinition {

@@ -17,6 +17,11 @@ import Titles
 /// caption, or "Blank"), and its header renames it.
 struct Plaque: BoxShapeProps {
     static let kind: ShapeKind = "plaque"
+    static let properties = Properties<Plaque> {
+        Property("frame", \.frame).required()
+        Property("name", \.name)
+        Property("caption", \.caption)
+    }
     var frame: CGRect
     var name: String?
     var caption = ""
@@ -26,6 +31,10 @@ struct Plaque: BoxShapeProps {
         self.name = name
         self.caption = caption
     }
+}
+
+extension Plaque {
+    init() { self.init(.zero) }
 }
 
 struct PlaqueDefinition: ShapeDefinition {

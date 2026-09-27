@@ -25,7 +25,7 @@ extension TaskCardDefinition: ShapeDefinition {
         cg.clip()
         cg.setFillColor(task.color.cgColor)
         cg.fill(CGRect(x: frame.minX, y: frame.minY, width: TaskStyle.stripWidth, height: frame.height))
-        drawContent(task, in: TaskStyle.content(of: frame), cg: cg)
+        drawContent(task, checklist: shape.checklist, in: TaskStyle.content(of: frame), cg: cg)
         cg.restoreGState()
         if task.status == .done { cg.endTransparencyLayer() }
     }
@@ -34,7 +34,7 @@ extension TaskCardDefinition: ShapeDefinition {
         TaskStyle.path(shape.frame)
     }
 
-    private func drawContent(_ task: TaskCard, in inner: CGRect, cg: CGContext) {
+    private func drawContent(_ task: TaskCard, checklist: [ChecklistItem], in inner: CGRect, cg: CGContext) {
         let pill = pill(task.status, topRight: CGPoint(x: inner.maxX, y: inner.minY))
         // The title beside the pill; on a card too narrow for both, the title alone.
         var titleWidth = pill.frame.minX - TaskStyle.spacing - inner.minX
@@ -45,9 +45,9 @@ extension TaskCardDefinition: ShapeDefinition {
         }
         // The bar keeps the foot; the rest fits above it, the title with at least a line.
         var bottom = inner.maxY
-        if task.shows.progress, !task.checklist.isEmpty {
+        if task.shows.progress, !checklist.isEmpty {
             bottom -= TaskStyle.barHeight
-            drawBar(task, in: CGRect(x: inner.minX, y: bottom, width: inner.width, height: TaskStyle.barHeight), cg: cg)
+            drawBar(task, progress: checklist.progress, in: CGRect(x: inner.minX, y: bottom, width: inner.width, height: TaskStyle.barHeight), cg: cg)
             bottom -= TaskStyle.spacing
         }
         func lines(_ most: Int, _ lineHeight: CGFloat, from y: CGFloat) -> Int { min(most, Int(max(0, bottom - y) / lineHeight)) }
@@ -62,10 +62,10 @@ extension TaskCardDefinition: ShapeDefinition {
             y += draw(NSAttributedString(string: task.notes, attributes: TaskStyle.secondary), at: CGPoint(x: inner.minX, y: y),
                       width: inner.width, lines: lines(TaskStyle.noteLines, TaskStyle.lineHeight, from: y), lineHeight: TaskStyle.lineHeight)
         }
-        if task.shows.checklist, !task.checklist.isEmpty {
+        if task.shows.checklist, !checklist.isEmpty {
             y += TaskStyle.spacing
             // Never a negative height: a CGRect's would read as positive, and draw rows over the title.
-            drawChecklist(task.checklist, in: CGRect(x: inner.minX, y: y, width: inner.width, height: max(0, bottom - y)))
+            drawChecklist(checklist, in: CGRect(x: inner.minX, y: y, width: inner.width, height: max(0, bottom - y)))
         }
     }
 
@@ -128,11 +128,11 @@ extension TaskCardDefinition: ShapeDefinition {
     }
 
     /// A track, filled in the card's color by the share of the checklist that's done.
-    private func drawBar(_ task: TaskCard, in rect: CGRect, cg: CGContext) {
+    private func drawBar(_ task: TaskCard, progress: Double, in rect: CGRect, cg: CGContext) {
         cg.addPath(TaskStyle.rounded(rect, radius: rect.height / 2))
         cg.setFillColor(TaskStyle.track.cgColor)
         cg.fillPath()
-        let done = CGRect(x: rect.minX, y: rect.minY, width: rect.width * task.checklist.progress, height: rect.height)
+        let done = CGRect(x: rect.minX, y: rect.minY, width: rect.width * progress, height: rect.height)
         cg.addPath(TaskStyle.rounded(done, radius: rect.height / 2))
         cg.setFillColor(task.color.cgColor)
         cg.fillPath()

@@ -23,17 +23,16 @@ struct ChecklistRows: View {
 }
 
 /// The Items header: "2 of 5", a menu of the bulk actions, each one transaction on the live list.
-struct ChecklistMenu<Props>: View {
-    @ShapeBinding var shape: Props
-    let items: WritableKeyPath<Props, [ChecklistItem]>
+struct ChecklistMenu: View {
+    @ShapeBinding var items: [ChecklistItem]
 
     var body: some View {
-        let list = shape[keyPath: items]
+        let list = items
         if !list.isEmpty {
             Menu("\(list.doneCount) of \(list.count)") {
                 ForEach(ChecklistBulkAction.allCases, id: \.self) { action in
                     if action == .removeChecked { Divider() }
-                    Button(action.title) { $shape.update { action.apply(to: &$0[keyPath: items]) } }
+                    Button(action.title) { $items.update { action.apply(to: &$0) } }
                         .disabled(!action.isEnabled(for: list))
                 }
             }

@@ -32,9 +32,9 @@ import Validation
         expectEqual(registry.shortcut(forTool: tool.id)?.chord, "t")
         expect(!(registry.definition(for: TaskCard.kind) is any Editable))
         expectEqual(registry.report.split(separator: "\n").first { $0.hasPrefix("task-cards") }.map(String.init), """
-        task-cards         shape task-card · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · \
-        ShapeContextMenus → task-card · ContentsRows → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · \
-        ShapeContextMenus → task-card · ShapeTitles → task-card · ContentsTitles → task-card
+        task-cards         shape task-card v1 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · \
+        ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · \
+        ShapeDetails → task-card · ShapeContextMenus → task-card · ShapeTitles → task-card · ContentsTitles → task-card
         """)
     },
     test("needs validation, checklists, the panel, context menus and the table of contents installed") {
@@ -48,7 +48,7 @@ import Validation
     },
     test("its context menu sets the status, checked, then the checklist's actions; several tasks' statuses show mixed") {
         let h = try EditorHarness { try taskEditor(scheduler: $0) }
-        let task = h.add(fullTask())
+        let task = h.editor.add(fullTask())
         let menu = try require(h.secondaryClick(at: CGPoint(x: cardFrame.midX, y: cardFrame.midY)))
         expectEqual(menu.outline, ["Status ▸", "  To Do", "  ✓ In Progress", "  Blocked", "  Done", "—",
                                    "Check All", "Uncheck All", "Remove Checked"])
@@ -56,36 +56,41 @@ import Validation
         expectEqual(h.editor.task(task)?.status, .done)
         var todo = fullTask()
         todo.frame = cardFrame.offsetBy(dx: 300, dy: 0)
-        todo.status = .todo
-        let other = h.add(todo)
+        todo.props.status = .todo
+        let other = h.editor.add(todo)
         h.editor.selectedShapeIDs = [task, other]
         let both = try require(h.secondaryClick(at: CGPoint(x: cardFrame.midX, y: cardFrame.midY)))
         expectEqual(Array(both.outline.prefix(5)), ["Status ▸", "  – To Do", "  In Progress", "  Blocked", "  – Done"])
         try both.choose("Status", "Blocked")
         expectEqual([h.editor.task(task)?.status, h.editor.task(other)?.status], [.blocked, .blocked])
     },
-    test("props round-trip through JSON: checklist, due date, color and what the card shows") {
+    test("props round-trip through JSON: due date, color and what the card shows; the checklist, beside them in a board") {
         var task = fullTask()
-        task.color = .purple
-        task.shows = TaskDisplay(notes: false, checklist: true, progress: false)
-        let decoded = try JSONDecoder().decode(TaskCard.self, from: JSONEncoder().encode(task))
-        expectEqual(decoded, task)
-        expectEqual(decoded.checklist.map(\.text), ["spec", "review", "ship"])
+        task.props.color = .purple
+        task.props.shows = TaskDisplay(notes: false, checklist: true, progress: false)
+        let decoded = try JSONDecoder().decode(TaskCard.self, from: JSONEncoder().encode(task.props))
+        expectEqual(decoded, task.props)
+        let editor = try taskEditor()
+        let id = editor.add(task)
+        let codec = BoardCodec(registry: editor.registry)
+        let board = try codec.decode(codec.encode(editor.document)).document
+        expectEqual(board[id], editor.document[id])
+        expectEqual(board[id]?[ChecklistProperty.self]?.map(\.text), ["spec", "review", "ship"])
     },
     test("rules: no title is an error on title; done with open items warns on checklist, and blocked without notes on notes") {
         let editor = try taskEditor()
         expectEqual(editor.issues(editor.add(fullTask())), [])
         expectEqual(editor.issues(editor.add(TaskCard(frame: cardFrame, title: " "))), [.error("A task needs a title.", field: "title")])
         var task = fullTask()
-        task.status = .done
+        task.props.status = .done
         expectEqual(editor.issues(editor.add(task)), [.warning("Done, with 2 unchecked items.", field: "checklist")])
-        task.checklist = steps(done: 2)
+        task[ChecklistProperty.self] = steps(done: 2)
         expectEqual(editor.issues(editor.add(task)), [.warning("Done, with 1 unchecked item.", field: "checklist")])
-        task.checklist = steps(done: 3)
+        task[ChecklistProperty.self] = steps(done: 3)
         expectEqual(editor.issues(editor.add(task)), [])
-        task.status = .blocked
+        task.props.status = .blocked
         expectEqual(editor.issues(editor.add(task)), [])
-        task.notes = "\n"
+        task.props.notes = "\n"
         expectEqual(editor.issues(editor.add(task)), [.warning("Blocked: say why in the notes.", field: "notes")])
     },
     test("hasDue on gives a date a week from today and keeps one already set; off clears it") {
@@ -106,9 +111,9 @@ import Validation
         var task = fullTask()
         expectClose(task.remaining, 4 * 2 / 3)
         expectEqual(task.summary, "In Progress · 1 of 3 · Due \(day(9, 30).formatted(.dateTime.month(.abbreviated).day()))")
-        task.status = .done
+        task.props.status = .done
         expectEqual(task.remaining, 0)
-        task = TaskCard(frame: cardFrame, title: "New Task", estimate: 2.5)
+        task = ShapeRecord(TaskCard(frame: cardFrame, title: "New Task", estimate: 2.5))
         expectEqual(task.remaining, 2.5)
         expectEqual(task.summary, "To Do")
     },

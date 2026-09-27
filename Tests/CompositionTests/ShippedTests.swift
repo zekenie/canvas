@@ -31,14 +31,14 @@ import Validation
         keyboard             service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
         selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
         arrows               shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay
-        sticky-notes         shape sticky-note · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note
+        sticky-notes         shape sticky-note v1 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note
         ellipses             shape ellipse · tool ellipse · shortcut O → tool ellipse
-        task-cards           shape task-card · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ShapeTitles → task-card · ContentsTitles → task-card
+        task-cards           shape task-card v1 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ShapeTitles → task-card · ContentsTitles → task-card
         validation           service ValidationEngine · overlay ValidationOverlay
         detail-panel         service DetailPanelState · ShapeDetails
         context-menus        service ContextMenuState · secondary-click menu
         table-of-contents    service ContentsState
-        checklists           overlay ChecklistOverlay
+        checklists           property checklist · overlay ChecklistOverlay
         titles               service TitleState · overlay TitleOverlay
         validation-details   DetailStatuses in Issues
         validation-contents  ContentsMarks
@@ -72,10 +72,10 @@ import Validation
         // above its top-left corner and as wide as the note), or neither; its text keeps it from
         // being empty, and outlined.
         @MainActor func render(checklist: Bool, title: Bool) -> NSBitmapImageRep {
-            let note = StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Buy milk",
-                                  checklist: checklist ? [ChecklistItem(text: "oat milk")] : [],
-                                  title: title ? "A title much longer than the note is wide" : nil)
-            let editor = ShippedPlugins.makeEditor(document: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(note))]), scheduler: ManualScheduler())
+            var note = AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Buy milk",
+                                                             title: title ? "A title much longer than the note is wide" : nil)))
+            note[ChecklistProperty.self] = checklist ? [ChecklistItem(text: "oat milk")] : []
+            let editor = ShippedPlugins.makeEditor(document: CanvasDocument(shapes: [note]), scheduler: ManualScheduler())
             return renderBitmap(editor, size: CGSize(width: 400, height: 340))
         }
         let plain = render(checklist: false, title: false)

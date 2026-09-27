@@ -135,11 +135,21 @@ import TestKit
 /// names a box whose origin each move records in `seen`.
 struct Pin: ShapeProps {
     static let kind: ShapeKind = "pin"
+    static let properties = Properties<Pin> {
+        Property("point", \.point).required()
+        Property("follows", \.follows)
+        Property("begins", \.begins)
+        Property("moving", \.moving)
+        Property("seen", \.seen)
+    }
     var point: CGPoint
     var follows: ShapeID?
     var begins = 0
     var moving: Set<ShapeID> = []
     var seen: CGPoint?
+}
+extension Pin {
+    init() { self.init(point: .zero) }
 }
 
 struct PinDefinition {}

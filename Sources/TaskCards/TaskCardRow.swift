@@ -9,7 +9,7 @@ extension ShapeRegistrar where Definition == TaskCardDefinition {
     mutating func taskRow() {
         contentsRow { task in
             ContentsLabel(task.props.title, placeholder: "Untitled Task", systemImage: task.props.status.symbol,
-                          color: Color(nsColor: TaskStyle.statusColor(task.props.status)), badge: task.props.checklist.tally)
+                          color: Color(nsColor: TaskStyle.statusColor(task.props.status)), badge: task.checklist.tally)
         }
     }
 }

@@ -88,6 +88,25 @@ let boardType = "com.example.InfiniteCanvas.board"
         expect(summary.details.contains("1 repair was made"), summary.details)
         expect(LoadReport().summary == nil)
     },
+    test("a board whose shapes hold properties the app can't use opens as it was, unedited, and says so") {
+        try configureBoards()
+        let id = ShapeID()
+        let json = """
+        { "format" : 3, "versions" : { "kinds" : { "ellipse" : 0 } }, "shapes" : [
+          { "added" : { "confetti" : { "velocity" : 240 } }, "id" : "\(id)", "index" : "a0", "kind" : "ellipse",
+            "props" : { "frame" : [[0, 0], [10, 10]] } } ] }
+        """
+        let board = BoardDocument()
+        try board.read(from: Data(json.utf8), ofType: boardType)
+        expectEqual(board.loadReport.keptValues.map(\.key), ["confetti"])
+        expect(board.loadReport.keptAside.isEmpty, "the ellipse itself shows")
+        expectEqual(board.editor.document[id]?.keptProperties, ["confetti"])
+        runLoop { false }
+        expect(!board.isDocumentEdited)
+        let summary = try require(board.loadReport.summary)
+        expectEqual(summary.message, "Some of this board can’t be used here.")
+        expectEqual(summary.details, "1 shape holds a property this app can’t use (confetti), kept as it was; the shape shows without it. Saving keeps it.")
+    },
     test("a file that isn't a board won't open, says why, and offers an earlier version when there is one") {
         try configureBoards()
         do {

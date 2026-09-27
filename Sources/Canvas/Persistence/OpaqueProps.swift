@@ -14,6 +14,10 @@ struct OpaqueProps: ShapeProps {
         self.version = version
     }
 
+    // Coded by hand, below; the list is never read.
+    init() { self.init(json: .null, version: 0) }
+    static let properties = Properties<OpaqueProps> {}
+
     // As its JSON. (The board codec writes the version beside it.)
     init(from decoder: any Decoder) throws {
         json = try JSONValue(from: decoder)

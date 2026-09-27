@@ -17,6 +17,8 @@ public struct Registry {
     private let definitions: [ShapeKind: any ShapeDefinition]
     /// Kinds whose props name other shapes (`ShapeReferencing`): what a deletion asks to let go.
     let referencingKinds: Set<ShapeKind>
+    /// Added properties: who declares each, and which kinds opt in.
+    let propertyTable: PropertyTable
 
     public init(plugins: [any CanvasPlugin]) throws(RegistryError) {
         let plugins: [any CanvasPlugin] = [CorePlugin()] + plugins
@@ -41,11 +43,40 @@ public struct Registry {
                 if case .kind(let kind) = own.key { kinds[kind] = own.value + anyKind }
             }
         }
-        definitions = Dictionary((byPoint[ObjectIdentifier(CorePoints.Shapes.self)] ?? []).map {
+        let shapes = byPoint[ObjectIdentifier(CorePoints.Shapes.self)] ?? []
+        definitions = Dictionary(shapes.map {
             let shape = $0.value as! ShapeRegistration
             return (shape.kind, shape.definition)
         }, uniquingKeysWith: { first, _ in first })
         referencingKinds = Set(definitions.filter { $0.value is any ShapeReferencing }.keys)
+        let declarations = byPoint[ObjectIdentifier(CorePoints.PropertyDeclarations.self)] ?? []
+        propertyTable = try PropertyTable(declarations: declarations,
+                                          optIns: byPoint[ObjectIdentifier(CorePoints.PropertyOptIns.self)] ?? [],
+                                          definitions: definitions,
+                                          kinds: shapes.map { ($0.value as! ShapeRegistration).kind })
+        // Every declared property's schema, and every kind's, is described once now, so that what
+        // can't be (two types under one name, a struct that holds itself in place) and a member some
+        // struct doesn't list (which a board would never save) refuse the plugin list now, not at the
+        // first save or the first schema asked for. Properties first, so a problem in a property's
+        // value is its declarer's, not that of the first kind that opts in.
+        for c in declarations {
+            let codec = (c.value as! PropertyDeclaration).codec
+            var described = SchemaDefinitions()
+            _ = codec.schema(&described)
+            let problems = (codec.holdsOptionals ? ["its value is an optional, or holds optionals in a collection, which a schema can't say"] : [])
+                + Self.problems(of: described)
+            if let problem = problems.first {
+                throw .invalid(point: c.pointName, reason: "property \(codec.key) (from \(c.pluginID)): \(problem)")
+            }
+        }
+        for c in shapes {
+            let shape = c.value as! ShapeRegistration
+            var described = SchemaDefinitions()
+            _ = composedSchema(of: shape.kind, in: &described)
+            if let problem = Self.problems(of: described).first {
+                throw .invalid(point: c.pointName, reason: "\(shape.kind) (from \(c.pluginID)): \(problem)")
+            }
+        }
         // Owners are installed and keys unique by now, so a point's own rules can rely on both.
         var checked: Set<ObjectIdentifier> = []
         for c in all where checked.insert(c.point).inserted {
@@ -101,6 +132,69 @@ public struct Registry {
     public var kinds: [ShapeKind] { contributions(to: CorePoints.Shapes.self).map(\.value.kind) }
 
     public func definition(for kind: ShapeKind) -> (any ShapeDefinition)? { definitions[kind] }
+
+    /// A kind's properties as one JSON Schema (draft 2020-12): an object with each of its own
+    /// properties, then each added property it opts into (marked with its owner, `x-canvas-owner`),
+    /// with their types, defaults and constraints; only those marked `required()` required, and nothing
+    /// else allowed. Shared definitions are under `$defs`, named after their modules (`core.rect`,
+    /// `checklists.item`), and every `$ref` is local. It describes a shape as one object, own and
+    /// added properties side by side (a board keeps the two apart). Nil for a kind no plugin
+    /// registers.
+    public func schema(for kind: ShapeKind) -> JSONSchema? {
+        var shared = SchemaDefinitions()
+        guard var json = composedSchema(of: kind, in: &shared) else { return nil }
+        json["$schema"] = .string(JSONSchema.dialect)
+        json["$id"] = .string("tag:infinite-canvas,2026:kinds/\(kind)")
+        if !shared.json.isEmpty { json["$defs"] = .object(shared.json) }
+        return JSONSchema(json)
+    }
+
+    /// The kind's own properties and those it opts into, as an object schema, with the definitions
+    /// they share in `shared`.
+    private func composedSchema(of kind: ShapeKind, in shared: inout SchemaDefinitions) -> JSONObject? {
+        guard let definition = definitions[kind] else { return nil }
+        var json = definition.propsSchema(in: &shared)
+        var properties = json["properties"]?.objectValue ?? [:]
+        for key in propertyTable.byKind[kind] ?? [] {
+            guard let codec = propertyTable.codecs[key], let owner = propertyTable.owners[key] else { continue }
+            var property = codec.schema(&shared)
+            property["x-canvas-owner"] = .string(owner.rawValue)
+            if let value = codec.defaultValue, let encoded = try? JSONValue(encoding: value) { property["default"] = encoded }
+            properties[key.rawValue] = .object(property)
+        }
+        json["properties"] = .object(properties)
+        if json["title"] == nil { json["title"] = .string(kind.rawValue) }
+        return json
+    }
+
+    /// What describing found wrong, then what's wrong with the list of each struct it described, in
+    /// the order it met them (a kind's own props first).
+    private static func problems(of described: SchemaDefinitions) -> [String] {
+        described.problems + described.described.flatMap { propertyListProblems(of: $0) }
+    }
+
+    /// The added properties installed plugins declare.
+    public var declaredProperties: [PropertyKey] {
+        contributions(to: CorePoints.PropertyDeclarations.self).map(\.value.codec.key)
+    }
+
+    /// The added properties a kind opts into, in plugin order.
+    public func properties(for kind: ShapeKind) -> [PropertyKey] { propertyTable.byKind[kind] ?? [] }
+
+    /// The plugin that declares an added property.
+    public func owner(of property: PropertyKey) -> PluginID? { propertyTable.owners[property] }
+
+    /// The document with every shape as its kind has it: each added property its kind opts into
+    /// that has a default, and that the shape has no value for, set to the default. What an editor
+    /// does to a document it's given, and what opening a board does.
+    public func fillingDefaults(_ document: CanvasDocument) -> CanvasDocument {
+        var document = document
+        for (index, record) in document.shapes.enumerated() {
+            let normalized = propertyTable.normalized(record)
+            if normalized != record { document.replace(at: index, with: normalized) }
+        }
+        return document
+    }
 
     /// The toolbar: the default tool, then the rest in plugin order (the core's Hand first).
     public var tools: [ToolDescriptor] {
@@ -195,6 +289,9 @@ struct RawContribution {
         case let service as ServiceRegistration: "service \(service.name)"
         case let overlay as any CanvasOverlay: "overlay \(type(of: overlay))"
         case let command as CommandRegistration: "command \(command.command)"
+        case let declaration as PropertyDeclaration:
+            "property \(declaration.codec.key)" + (declaration.codec.version > 0 ? " v\(declaration.codec.version)" : "")
+        case let optIn as PropertyOptIn: "property \(optIn.key) → \(target == .any ? "every shape" : "\(target)")"
         default:
             switch P.self {
             case is CorePoints.WillDelete.Type: "willDelete"

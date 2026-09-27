@@ -4,6 +4,13 @@ import CoreGraphics
 /// An arrow: a shape kind with no box. The record's id is the arrow's id.
 public struct Arrow: ShapeProps {
     public static let kind: ShapeKind = "arrow"
+    public static let properties = Properties<Arrow>(title: "Arrow") {
+        Property("start", \.start).required()
+        Property("end", \.end).required()
+        Property("bend", \.bend).description("How far the midpoint is pushed off the straight line, in world units; 0 is straight.")
+        Property("startArrowhead", \.startArrowhead)
+        Property("endArrowhead", \.endArrowhead)
+    }
     public var start: ArrowTerminal
     public var end: ArrowTerminal
     /// How far the arrow's midpoint is pushed off the straight line between its terminals, in
@@ -19,6 +26,8 @@ public struct Arrow: ShapeProps {
         self.startArrowhead = startArrowhead
         self.endArrowhead = endArrowhead
     }
+
+    public init() { self.init(start: .free(.zero), end: .free(.zero)) }
 
     public subscript(end: ArrowEnd) -> ArrowTerminal {
         get { end == .start ? start : self.end }
@@ -71,7 +80,27 @@ public enum ArrowTerminal: Equatable, Codable, Sendable {
     }
 }
 
-public struct ArrowBinding: Equatable, Codable, Sendable {
+extension ArrowTerminal: SchemaDescribed {
+    /// As it codes itself: an object with one member, `free` or `bound`.
+    public static func schema(in definitions: inout SchemaDefinitions) -> JSONObject {
+        let point = CGPoint.schema(in: &definitions), binding = ArrowBinding.schema(in: &definitions)
+        return definitions.reference("terminal", of: Self.self) { _ in
+            ["description": "Where an end is: a point, or a shape it's bound to.",
+             "oneOf": [
+                ["type": "object", "properties": ["free": .object(point)], "required": ["free"], "additionalProperties": false],
+                ["type": "object", "properties": ["bound": .object(binding)], "required": ["bound"], "additionalProperties": false],
+             ]]
+        }
+    }
+}
+
+public struct ArrowBinding: SchemaDefined, Equatable {
+    public static let properties = Properties<ArrowBinding> {
+        Property("shapeID", \.shapeID).required()
+        Property("normalizedAnchor", \.normalizedAnchor).description("Where it aims within the shape's bounds: [0, 0] is the top-left corner, [1, 1] the bottom-right.")
+        Property("isPrecise", \.isPrecise).description("Imprecise bindings aim at the center of the shape's bounds.")
+        Property("isExact", \.isExact).description("Exact bindings run to the anchor, not the shape's outline.")
+    }
     /// A shape arrows can bind to (see `Connectables`).
     public var shapeID: ShapeID
     /// Where the arrow aims within the shape's bounds: (0, 0) is the top-left corner, (1, 1) the
@@ -88,6 +117,8 @@ public struct ArrowBinding: Equatable, Codable, Sendable {
         self.isPrecise = isPrecise
         self.isExact = isExact
     }
+
+    public init() { self.init(shapeID: ShapeID(), normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false) }
 }
 
 public enum ArrowHandle: Hashable, Sendable {

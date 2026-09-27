@@ -38,7 +38,7 @@ public struct Transaction {
         precondition(registry.definition(for: record.kind)?.erasedAccepts(record) == true,
                      "no installed plugin defines \(record.kind) shapes with these props")
         guard record.box?.isFinite ?? true else { return }
-        var record = record
+        var record = registry.propertyTable.normalized(record)
         record.stackingKey = keys.key(between: document.shapes.last?.stackingKey, and: nil)
         document.append(record)
         changes.added.insert(record.id)
@@ -54,6 +54,8 @@ public struct Transaction {
         body(&record)
         precondition(record.id == id, "a shape's id can't change")
         record.stackingKey = old.stackingKey
+        // Values only for what its kind opts into.
+        if record.added != old.added { record = registry.propertyTable.normalized(record) }
         guard record != old, record.box?.isFinite ?? true else { return }
         document.replace(at: index, with: record)
         noteChanged(id)

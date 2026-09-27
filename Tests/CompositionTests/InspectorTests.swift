@@ -102,7 +102,9 @@ struct InspectorHost: View {
 /// A note at (100, 100), 200 square: its top-right corner, where the checklist chip goes, is at
 /// (300, 100) in the window's canvas.
 func note(_ text: String = "", checklist: [ChecklistItem] = []) -> ShapeRecord<StickyNote> {
-    ShapeRecord(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: text, checklist: checklist))
+    var shape = ShapeRecord(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: text))
+    shape[ChecklistProperty.self] = checklist
+    return shape
 }
 
 /// Just inside the chip's right end.
@@ -142,7 +144,7 @@ let chipPoint = CGPoint(x: 303, y: 100)
         w.window.spin { w.fields.contains { $0.placeholderString == "Item" } }
         w.window.focus(try require(w.fields.first { $0.placeholderString == "Item" }))
         w.window.type("milk")
-        expectEqual(w.editor.document[shape.id]?.typed(as: StickyNote.self)?.props.checklist.map(\.text), ["milk"])
+        expectEqual(w.editor.document[shape.id]?[ChecklistProperty.self]?.map(\.text), ["milk"])
         expectEqual(w.editor.document[shape.id]?.typed(as: StickyNote.self)?.props.text, "Shopping")
 
         let color = pixel(w.render(), at: chipPoint)
@@ -155,7 +157,7 @@ let chipPoint = CGPoint(x: 303, y: 100)
         w.click(CGPoint(x: 200, y: 200))
         w.window.focus(try require(w.fields.first { $0.stringValue == "eggs" }))
         w.window.type("anev")     // the arrow, note, ellipse and select shortcuts, on the canvas
-        expectEqual(w.editor.document[shape.id]?.typed(as: StickyNote.self)?.props.checklist.map(\.text), ["anev"])
+        expectEqual(w.editor.document[shape.id]?[ChecklistProperty.self]?.map(\.text), ["anev"])
         expectEqual(w.editor.currentToolID, .select)
         expectEqual(w.editor.selection, shape.id)
     },
@@ -172,7 +174,7 @@ let chipPoint = CGPoint(x: 303, y: 100)
         expectEqual(w.editor.selection, shape.id, "Escape in the panel isn't Escape on the canvas")
         w.window.type("a")
         expectEqual(w.editor.currentToolID, .arrow)
-        expectEqual(w.editor.document[shape.id]?.typed(as: StickyNote.self)?.props.checklist.map(\.text), ["eggs"])
+        expectEqual(w.editor.document[shape.id]?[ChecklistProperty.self]?.map(\.text), ["eggs"])
     },
     test("hiding the inspector while a panel field has the keyboard hands it to the canvas, keeping the draft") {
         let w = try InspectorWindow()
@@ -305,7 +307,7 @@ let chipPoint = CGPoint(x: 303, y: 100)
         w.window.spin { w.fields.contains { $0.placeholderString == "Item" } }
         w.window.focus(try require(w.fields.first { $0.placeholderString == "Item" }))
         w.window.type("milk")
-        expectEqual(w.editor.document[task.id]?.typed(as: TaskCard.self)?.props.checklist.map(\.text), ["milk"])
+        expectEqual(w.editor.document[task.id]?[ChecklistProperty.self]?.map(\.text), ["milk"])
 
         let after = w.render()
         // Below the title and the meta line, above the progress bar.

@@ -21,6 +21,7 @@ maps one onto the other.
 - [Tools and sessions](#tools-and-sessions)
 - [A shape without a frame](#a-shape-without-a-frame)
 - [A horizontal plugin](#a-horizontal-plugin)
+- [Properties](#properties)
 - [Selection](#selection)
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [The detail panel](#the-detail-panel)
@@ -39,7 +40,7 @@ maps one onto the other.
 
 | | What it is | Example |
 |---|---|---|
-| **Kind** | A plain value type holding a shape's data. It names itself once, with `static let kind`. | `struct StickyNote: BoxShapeProps { frame, text, checklist }` |
+| **Kind** | A plain value type holding a shape's data, defined by its list of properties. It names itself once, with `static let kind`. | `struct StickyNote: BoxShapeProps { frame, text, title }` |
 | **Definition** | Stateless behavior for a kind: how it draws, where it is, how it's hit, what else it can do. | `StickyNoteDefinition`, conforming to `ShapeDefinition` and `Editable` |
 | **Plugin** | A value that says what it adds, in `register(into:)`. | `struct StickyNotesPlugin: CanvasPlugin` |
 | **Extension point** | A typed slot some plugin declares and other plugins fill. The type is the key. | `enum ValidationRules: ExtensionPoint` |
@@ -69,8 +70,12 @@ import Keyboard
 
 public struct Rectangle: BoxShapeProps {
     public static let kind: ShapeKind = "rectangle"
+    public static let properties = Properties<Rectangle>(title: "Rectangle") {
+        Property("frame", \.frame).required()
+    }
     public var frame: CGRect
-    public init(frame: CGRect = .zero) { self.frame = frame }
+    public init(frame: CGRect) { self.frame = frame }
+    public init() { self.init(frame: .zero) }
 }
 
 struct RectangleDefinition {}
@@ -94,8 +99,10 @@ public struct RectanglesPlugin: CanvasPlugin {
 }
 ```
 
-`Rectangle` is the kind: its data, named once. `RectangleDefinition` says how it looks, and a kind
-with a frame needs to say nothing else. `RectanglesPlugin` registers both, with a tool that puts a
+`Rectangle` is the kind: its data, named once, with its list of properties (how a board writes it,
+and what its JSON Schema says: [Properties](#properties)) and an `init()` that sets every member to
+its default. `RectangleDefinition` says how it looks, and a kind with a frame needs to say nothing
+else. `RectanglesPlugin` registers both, with a tool that puts a
 160 × 100 rectangle where the canvas is pressed, and R, the key that switches to it: `shortcut:` is
 the Keyboard horizontal's, which every key is registered with ([Keyboard
 shortcuts](#keyboard-shortcuts)). [A vertical plugin](#a-vertical-plugin) goes through it part by
@@ -198,6 +205,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | I want to… | Use | Example |
 |---|---|---|
 | Add a shape with a frame | `BoxShapeProps`; a `ShapeDefinition` with `render`; a place tool | [Rectangles](#your-first-plugin) |
+| Define a kind's properties: how boards write it, and its JSON Schema | `static let properties = Properties<K> { Property("text", \.text) }`, and `init()`; `registry.schema(for:)` | [Properties](#a-kinds-own-properties) |
 | Add a shape without a frame (a line, a path) | `ShapeProps`; `geometry`, `hitTest` (with its `hitMargin`) and `CustomTranslation`; a tool that inserts it | [Polylines](#a-shape-without-a-frame) |
 | Work out a kind's geometry from other shapes (a connector) | Look them up through the `ShapeContext`: `shape(_:)`, `geometry(of:)`, `hitTest(_:shape:)` | [Arrows](../Sources/Arrows/Connectables.swift) |
 | Hit or outline a shape more exactly than its frame | Override `geometry`, `hitTest` or `indicatorPath` | [Ellipses](../Sources/Ellipses/Ellipses.swift) |
@@ -214,9 +222,11 @@ Once one plugin works, the question is which piece the next feature needs.
 | Rename a shape in the detail panel's header | `x.details(header: { $x in TitleHeader($x.title) }) {}` | [StickyNotes](#renaming-in-the-header-titleheader) |
 | Name a kind's rows in the table of contents from another plugin | `x.contentsTitle { ... }` | [Titles](#a-horizontal-plugin) |
 | Add a concern any kind can opt into | An `ExtensionPoint`, sugar on `ShapeRegistrar`, and whatever reads the point | [Titles](#a-horizontal-plugin), [Validation](../Sources/Validation/Validation.swift) |
+| Give the shapes of the kinds that opt in something to hold (a checklist) | A `ShapeProperty`, `registrar.declare`, and `optIn(to:)` from the concern's sugar | [Checklists](#added-properties) |
 | Give that concern a tab on the kinds that opt in | A `DetailTab` at order 50, contributed from the same sugar | [Checklists](#a-horizontals-feature-tab-checklists) |
 | Give that concern menu items on the kinds that opt in | A `MenuGroup` at order 50, and `contextMenu` from the same sugar | [Checklists](#a-feature-that-comes-with-menu-items-checklists) |
-| Opt another plugin's kind into a concern | A bridge, which imports both | [EllipseTitles](#a-horizontal-plugin), [ValidationDetails](#a-tab-of-status-lines-from-a-bridge-validationdetails) |
+| Edit an added property in the panel, or from the menu | `details(of: P.self) { DetailSection ... }`, `contextMenu(of: P.self) { MenuItem ... }` | [Checklists](#a-horizontals-feature-tab-checklists) |
+| Opt another plugin's kind into a concern | A bridge, which imports both; `registrar.optIn(Kind.self, to:)` for an added property | [EllipseTitles](#a-horizontal-plugin), [ValidationDetails](#a-tab-of-status-lines-from-a-bridge-validationdetails) |
 | Keep state per editor: an engine, a cache, a timer | `registrar.service`, an `EditorService`; redo what's kept per shape for the shapes each commit's `ChangeSet` names | [Validation](../Sources/Validation/Validation.swift)'s `ValidationEngine`, [TableOfContents](../Sources/TableOfContents/ContentsState.swift)' `ContentsState` |
 | Draw above every shape, or beside the shapes in view | `registrar.overlay`, a `CanvasOverlay`; `editor.paintOrder(in: context.visibleRect)` | [Titles](#a-horizontal-plugin), [Checklists](../Sources/Checklists/ChecklistOverlay.swift) |
 | Act on shapes about to be deleted (delete what depends on them) | `registrar.willDelete` | [The document](#the-editor-the-document-and-drawing) |
@@ -229,6 +239,8 @@ Once one plugin works, the question is which piece the next feature needs.
 | Show a shape's state in the panel: at its foot, or in a tab that shows while there's something to say | `registrar.detailStatusForEveryShape`, with `in: SomeTab.self` for a tab | [ValidationDetails](#a-tab-of-status-lines-from-a-bridge-validationdetails) |
 | Show a shape's state at a glance in the table of contents: a dot on its row | `registrar.contentsMarkForEveryShape` | [ValidationContents](#marks-validationcontents) |
 | Change a shipped kind's props | A migration in its `static let migrations`, and a fixture for the new version | [Boards on disk](#boards-on-disk) |
+| Move a kind's own member onto an added property | `PropsMigration.handOver("checklist", to: ChecklistProperty.self)` in the kind's migrations | [StickyNotes](#boards-on-disk) |
+| Change how an added property's value encodes | A `PropertyMigration` in the property's `migrations`, and a fixture in `Fixtures/added` | [Boards on disk](#boards-on-disk) |
 
 The rule of thumb: behavior intrinsic to a kind is a [capability](#capabilities), a protocol its
 definition adopts; behavior any plugin can add to any kind is an extension point.
@@ -246,11 +258,12 @@ they're invalid; the validation plugin outlines them.
 
 A horizontal can also be a feature that individual shapes opt into, and that shows up in the
 [detail panel](#the-detail-panel) as a tab of its own, and in the [context menu](#context-menus).
-Checklists is the example: one line, `note.checklist(\.checklist)`, gives sticky notes a checklist
-stored in their own props, a Checklist tab in the panel, its bulk actions in the context menu, and a
-done/total chip on the canvas. Checklists owns the item type and everything
-done with it; the kind only stores the items. One horizontal may build on another: Checklists
-imports DetailPanel and ContextMenus.
+Checklists is the example: one line, `note.checklist()`, gives every sticky note a checklist, a
+property Checklists adds to the kinds that opt in ([added properties](#added-properties)), with a
+Checklist tab in the panel, its bulk actions in the context menu, and a done/total chip on the
+canvas. Checklists owns the property, the item type and everything done with them; the kind
+declares nothing. One horizontal may build on another: Checklists imports DetailPanel and
+ContextMenus.
 
 Selecting is a horizontal too, one that every kind is in unless it opts out
 (`backdrop.unselectable()`). [Selection](#selection) owns what's selected and the way back
@@ -287,7 +300,7 @@ compiles each module on its own, with only its dependency closure on the include
 Each target is one line, with its layer:
 
 ```swift
-.target(name: "StickyNotes", dependencies: ["Canvas", "Checklists", "DetailPanel", "Selection", "TableOfContents", "Titles", "Validation"]), // layer: vertical
+.target(name: "StickyNotes", dependencies: ["Canvas", "Checklists", "DetailPanel", "Keyboard", "Selection", "TableOfContents", "Titles", "Validation"]), // layer: vertical
 .target(name: "EllipseTitles", dependencies: ["Canvas", "Ellipses", "Titles"], path: "Examples/EllipseTitles"), // layer: bridge
 ```
 
@@ -311,10 +324,12 @@ What `./build.sh audit` enforces:
   that isn't a declared dependency fails, and so does a declared dependency that's never imported.
   `@_exported`, `@_implementationOnly` and `@testable` are banned, since each hides an edge, and
   so are imports inside `#if`.
-- **No other module's ids as literals.** A module that writes another module's kind, plugin or
-  tool id as a string literal (`kind == "sticky-note"`) without depending on it fails. An id is a
-  module's when it declares it as a static `ShapeKind`, `ToolID` or `PluginID`, or as its plugin's
-  `id`. Lookups at run time (a tool by its shortcut or label) aren't audited.
+- **No other module's ids as literals.** A module that writes another module's kind, plugin, tool
+  or added property id as a string literal (`kind == "sticky-note"`) without depending on it fails.
+  An id is a module's when it declares it as a static `ShapeKind`, `ToolID`, `PluginID` or
+  `PropertyKey`, or as its plugin's `id`. A kind's own property names (`Property("title", ...)`)
+  are only that kind's, so they're exempt. Lookups at run time (a tool by its shortcut or label)
+  aren't audited.
 - **The host API is fenced off.** What `CanvasView` calls on the editor (input, the cursor,
   drawing, the delegate) is `@_spi(Host)`. Only modules that `@_spi(Host) import Canvas` see it,
   and only the ui, testsupport and test layers may; a plugin that calls it doesn't compile.
@@ -335,9 +350,11 @@ is compiled by `./test.sh`, even before anything depends on it.
 
 [Rectangles](#your-first-plugin) is a whole vertical. What each part of it does:
 
-- **The kind is its props.** `ShapeProps` values are `Codable`, `Equatable` and `Sendable`.
-  `BoxShapeProps` adds a `frame`, and with it most behavior for free. The document stores each
-  shape as an `AnyShapeRecord` (id, kind, props). Definitions get it typed, as `ShapeRecord<Rectangle>`.
+- **The kind is its props.** `ShapeProps` values are `Equatable` and `Sendable`, and list their
+  properties (`SchemaDefined`): the list makes them `Codable` and gives them a JSON Schema
+  ([Properties](#properties)). `BoxShapeProps` adds a `frame`, and with it most behavior for free.
+  The document stores each shape as an `AnyShapeRecord` (id, kind, props, and the values of any
+  [added properties](#added-properties)). Definitions get it typed, as `ShapeRecord<Rectangle>`.
 - **The definition is stateless.** For a box kind, only `render` is required. The rest has defaults:
 
   | Requirement | Default |
@@ -382,9 +399,9 @@ registrar.shape(StickyNoteDefinition()) { note in
     note.tool(label: "Note", systemImage: "note.text", shortcut: "n", placing: place)   // and N, with Keyboard
     note.createOnDoubleClick(place)          // opts into Selection: double-clicking empty canvas places a note
     note.validate { shape, _ in              // opts into the Validation horizontal
-        shape.props.isEmpty ? [.warning("This note is empty.")] : []    // no text, checklist or title
+        shape.isEmpty ? [.warning("This note is empty.")] : []          // no text, checklist or title
     }
-    note.checklist(\.checklist)              // opts into Checklists: a panel tab and a chip
+    note.checklist()                         // opts into Checklists: a checklist on every note, a panel tab and a chip
     note.title { $0.props.title }            // opts into Titles: a pill, and its row's name
     note.details(header: { $note in TitleHeader($note.title) }) {}      // renamed in the panel's header
 }
@@ -516,8 +533,12 @@ pointer passes through while it's dragged with the Line tool (L).
 ```swift
 public struct Polyline: ShapeProps {
     public static let kind: ShapeKind = "polyline"
+    public static let properties = Properties<Polyline>(title: "Line") {
+        Property("points", \.points).description("In world units, in the order they were drawn.")
+    }
     public var points: [CGPoint]
-    public init(points: [CGPoint] = []) { self.points = points }
+    public init(points: [CGPoint]) { self.points = points }
+    public init() { self.init(points: []) }
 }
 
 extension PolylineDefinition: ShapeDefinition {
@@ -720,6 +741,10 @@ The mechanics:
   `editor.revision` changes and is cached otherwise.
 - **Horizontals draw their own decoration** through `registrar.overlay`, above every shape. World
   overlays draw with the camera transform; view overlays draw in view points.
+- **Data on the shape is an added property.** A concern that gives each shape something to hold
+  (Checklists' items) declares a `ShapeProperty`, and its sugar opts the kind in
+  ([Properties](#added-properties)). Its extension point then holds only how the kind takes part:
+  `ShapeChecklists` says whether the canvas shows the chip.
 - **Contracts should be pure.** Validation rules read the document only through
   `ValidationContext`, so dependency tracking can replace full recomputation later without
   changing any rule. Design your contexts the same way.
@@ -735,6 +760,224 @@ detail panel lists a shape's issues in an Issues tab
 ([ValidationDetails](#a-tab-of-status-lines-from-a-bridge-validationdetails)), and the table of
 contents puts a dot of the same color on the row of each shape with issues, so the board's are
 found at a glance and a click goes to one ([ValidationContents](#marks-validationcontents)).
+
+## Properties
+
+A shape's data is its properties. Most are its kind's own, which the kind lists. Others are added
+by a plugin to the kinds that opt in, as Checklists adds a checklist. Both are typed, saved with the
+shape, versioned, and described by one JSON Schema per kind.
+
+### A kind's own properties
+
+A kind lists its properties beside `static let kind`, and has an `init()` that sets every member to
+its default ([StickyNotes](../Sources/StickyNotes/StickyNotes.swift)):
+
+```swift
+public struct StickyNote: BoxShapeProps {
+    public static let kind: ShapeKind = "sticky-note"
+    public static let properties = Properties<StickyNote>(title: "Sticky note") {
+        Property("frame", \.frame).required()
+        Property("text", \.text).description("What the note says.")
+        Property("title", \.title).description("What the note is called, once someone names it.")
+    }
+    public var frame: CGRect
+    public var text: String
+    public var title: String?
+    public init(frame: CGRect = .zero, text: String = "", title: String? = nil) { ... }
+    public init() { self.init(frame: .zero) }
+}
+```
+
+The list is the kind's `Codable` and its schema (`SchemaDefined`, which `ShapeProps` refines), so
+the two never disagree:
+
+- **Writing and reading.** A board writes each property under its name, and leaves out a nil
+  optional. Reading takes each from its name. A member that's missing, or null, reads as its value
+  in `init()`, unless it's `required()`: then the read fails, and a board keeps the shape aside.
+- **Types come from the members.** Strings, booleans, integers, `Double` and `CGFloat`, `UUID`,
+  `Date` (ISO 8601), arrays, sets (`uniqueItems`), and optionals, as what they wrap. `CGRect`,
+  `CGPoint`, `CGSize` and `ShapeID` are the core's shared definitions (`core.rect`, `core.point`,
+  `core.size`, `core.shape-id`); a rect is `[[x, y], [width, height]]`, as a board writes it.
+- **Defaults come from `init()`.** Each property's `default` is its member's value there, except a
+  nil optional's. `required()` means there's none: a board, or anyone writing one, must give it.
+  Only those are `required` in the schema. Every shipped box kind's `frame` is one.
+- **Modifiers** add JSON Schema keywords: `title`, `description`, `minimum`, `maximum`,
+  `minLength`, `maxLength`, `pattern`, `minItems`, `maxItems`, `examples`, `deprecated()`,
+  `readOnly()`, and `keywords([...])` for any other (`.keywords(["multipleOf": 0.5])`). A task's
+  estimate is `Property("estimate", \.estimate).minimum(0).description("Hours.")`.
+- **A string enum** adopts `SchemaCases` and titles its cases: its schema is `oneOf` a `const` per
+  case, with its title. TaskCards' `TaskStatus` titles its cases with their labels ("To Do", "In
+  Progress").
+- **A struct in the props** is `SchemaDefined` too, with a list of its own (TaskCards' `TaskColor`
+  and `TaskDisplay`, Arrows' `ArrowBinding`), written out where it's used. Given a name, it's a
+  shared definition instead, which each use refers to: `Properties<ChecklistItem>(title: "Checklist
+  item", definition: "item")` is `checklists.item` in a schema, named after the module that
+  declares the type, so a type has one name wherever it's described, and two modules' definitions
+  never collide. A struct that holds itself (a tree) needs a name, and its definition then refers to
+  itself.
+- **A type that codes itself by hand** writes its schema by hand, as a `SchemaDescribed`: Arrows'
+  `ArrowTerminal`, an object with one member, `free` or `bound`, is `oneOf` the two.
+- **Every list holds up.** A property is named after its member. As it's built, the registry
+  describes every kind's schema and every added property's, and refuses a list, of any struct those
+  reach (a kind's props, a struct inside them or behind a hand-written schema, an added property's
+  value), that misses a stored member (a board would never save it), names one it doesn't have or
+  whose key path isn't that stored member (a computed view, or part of one), lists one twice or has
+  two properties write one member; an optional that's `required()` (a nil
+  one wouldn't save) or has a default that isn't nil (a nil one would read back as the default);
+  and optionals inside a collection or another optional, which a schema can't say (nor may an
+  added property's value be an optional, or hold one). It refuses two types under one definition
+  name, and a struct that holds itself with no name. The first problem is the one reported, and a
+  problem in a property's value is its declarer's:
+
+  ```
+  Shapes: unlisted (from kinds): Unlisted.note isn't in Unlisted's properties, so boards wouldn't save it
+  ```
+
+Changing the list changes what boards hold. A member renamed, removed or retyped, or a new one, takes
+a step in the kind's `migrations` and a fixture for the new version ([Boards on disk](#boards-on-disk)).
+
+### Added properties
+
+A plugin can give other plugins' kinds a property: something their shapes know that the kinds don't
+declare. The property is a type, as a tab or an extension point is, and says everything about itself
+once ([Checklists](../Sources/Checklists/Checklists.swift)):
+
+```swift
+public enum ChecklistProperty {}
+extension ChecklistProperty: ShapeProperty {
+    public static let key: PropertyKey = "checklist"
+    public static var defaultValue: [ChecklistItem]? { [] }
+}
+```
+
+- **`key`** is where boards keep its values, and its name in each kind's schema. It's unique among
+  added properties, never one of an opted-in kind's own property names, and never changes once
+  shipped. The id audit holds a `PropertyKey` literal to the module that declares it, as it does a
+  kind ([The module graph](#the-module-graph)).
+- **`defaultValue`** is what every shape of a kind that opts in has until it's changed: every note
+  has a checklist, empty. Nil means only the shapes it's set on have one, and setting it to nil
+  removes it.
+- **`migrations`** is its history (`PropertyMigration`s, none by default), its own whatever kinds
+  opt in ([Boards on disk](#boards-on-disk)).
+- **The value** is `SchemaDescribed`, `Codable`, `Equatable` and `Sendable`: a scalar, an array, or
+  a `SchemaDefined` struct.
+
+**Declaring and opting in.** The plugin that owns the property declares it, and a kind opts in, one
+of three ways:
+
+```swift
+registrar.declare(ChecklistProperty.self)                   // the owner, ChecklistsPlugin; one plugin per key
+note.optIn(to: ChecklistProperty.self)                      // a kind, inside registrar.shape { note in ... }
+registrar.optIn(Ellipse.self, to: ChecklistProperty.self)   // another plugin's kind, from a bridge
+registrar.optInEveryShape(to: P.self, where: { !($0 is any PaintOrderAnchored) })   // every kind, or those a definition picks
+```
+
+A kind opts into a property once: its own opt-in and an every-shape one can't both hold. It rarely
+calls `optIn(to:)` itself: the horizontal's sugar does, and brings the rest. `note.checklist()` opts
+the note in, then contributes the chip flag, the Checklist tab and the bulk actions
+([Checklists](#a-horizontals-feature-tab-checklists)).
+
+**Reading and writing.** A shape's value is `record[ChecklistProperty.self]`, on an
+`AnyShapeRecord` or a typed `ShapeRecord<StickyNote>`, beside its props; nil if it has none. It
+changes as the props do, in a transaction:
+`tx.update(id) { $0[ChecklistProperty.self]?.append(item) }`. What a kind derives from both goes on
+its record: a note is empty with no text, no title and no items (`isEmpty` on
+`ShapeRecord<StickyNote>`), and a task's summary and remaining hours count its checklist (`summary`
+and `remaining` on `ShapeRecord<TaskCard>`).
+
+- **Writes that can't hold are dropped**, as a frame that isn't finite is: a value set on a kind
+  that doesn't opt in, nil for a property with a default, and anything set on a value or a shape
+  kept aside ([Boards on disk](#boards-on-disk)). Setting the value a shape has commits nothing.
+- **Defaults are filled in where shapes enter an editor**: an insert (placing, pasting),
+  `CanvasEditor.init`, `replaceDocument`, and reading a board. Filling them adds no commit of its
+  own and never marks a board edited: `init` commits nothing, `replaceDocument` (and so opening a
+  board) makes its one commit with the defaults in it, which services hear but which doesn't mark
+  the board edited, and an insert is an edit anyway. `registry.fillingDefaults(document)` does the
+  same to a document.
+- **Copies keep them**: `record.copy(as:)` takes the values along, as it does the metadata.
+
+**The registry** refuses an opt-in to a property no installed plugin declares, two declarations of
+one key, a kind opted in twice (by one plugin or two), and a kind opting into a property named like
+one of its own:
+
+```
+PropertyOptIns: ratings opts box into property stars, which no installed plugin declares
+ratings and more both claim box's stars in PropertyOptIns
+PropertyOptIns: rated has a property of its own named stars, so it can't opt into the one ratings declares; hand the member over to it (PropsMigration.handOver), or rename one
+```
+
+Its report shows each declaration and opt-in: `property checklist` on the owner's line (`property
+checklist v1` once it has a migration), `property checklist → sticky-note` on the line of the plugin
+that opts a kind in, and `property … → every shape` for `optInEveryShape`. In code,
+`registry.declaredProperties`, `registry.properties(for: kind)` (in plugin order) and
+`registry.owner(of: key)`.
+
+**In the panel and the menu.** DetailPanel and ContextMenus take sections and items over an added
+property's value:
+
+| Sugar | For |
+|---|---|
+| `x.details(of: P.self) { sections }` | Sections over the value, on this kind's shapes that have one: what a horizontal's sugar contributes for the property it opts the kind into (Checklists' Items and Progress). |
+| `registrar.details(of: P.self) { sections }` | The same, on every shape that has one, whatever its kind. |
+| `x.contextMenu(of: P.self) { items }`, `registrar.contextMenu(of: P.self) { items }` | Items over the value, on this kind's shapes, or every shape, that have one (Checklists' bulk actions). |
+
+A section gets a `ShapeBinding` of the value (`$items`, a `ShapeBinding<[ChecklistItem]>`), and
+each write is one transaction on that shape's value; an item edits it in place
+(`{ action.apply(to: &$0) }`). A kind's own sections and header read an added value through the
+shape the panel drew: `$task.shape[ChecklistProperty.self]`
+([`ShapeBinding`](#reading-and-writing-shapebinding)).
+
+### A kind's schema
+
+`registry.schema(for: kind)` is a kind's properties as one JSON Schema (draft 2020-12): an object
+with each of its own properties, then each added property it opts into, marked with its owner
+(`x-canvas-owner`) and its default, if it has one; only properties marked `required()` are
+`required`, and nothing else is allowed.
+Shared definitions are under `$defs`, named after the modules that declare them (`core.rect`, `checklists.item`,
+`arrows.terminal`), and every `$ref` is local. The sticky note's, abbreviated (CompositionTests pins
+it whole):
+
+```json
+{
+  "$defs" : {
+    "checklists.item" : {
+      "additionalProperties" : false,
+      "properties" : { "id" : { "format" : "uuid", "type" : "string" }, "isDone" : { "default" : false, "type" : "boolean" }, "text" : { … } },
+      "required" : [ "id" ],
+      "title" : "Checklist item",
+      "type" : "object"
+    },
+    "core.rect" : { "description" : "[[x, y], [width, height]], in world units", "type" : "array", "prefixItems" : [ … ], … },
+    …
+  },
+  "$id" : "tag:infinite-canvas,2026:kinds/sticky-note",
+  "$schema" : "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties" : false,
+  "properties" : {
+    "checklist" : { "default" : [], "items" : { "$ref" : "#/$defs/checklists.item" }, "type" : "array", "x-canvas-owner" : "checklists" },
+    "frame" : { "$ref" : "#/$defs/core.rect" },
+    "text" : { "default" : "", "description" : "What the note says.", "type" : "string" },
+    "title" : { "description" : "What the note is called, once someone names it.", "type" : "string" }
+  },
+  "required" : [ "frame" ],
+  "title" : "Sticky note",
+  "type" : "object"
+}
+```
+
+It describes a shape as one object, own and added properties side by side, as whatever reads or
+writes a shape (an agent, a form) sees it. A board keeps the two apart, `props` and `added`, each
+with its own versions ([Boards on disk](#boards-on-disk)), so a plugin's property comes and goes
+without touching the kind. CompositionTests also checks that every shipped kind's schema describes
+its fixture. Nothing checks shapes against their schemas yet ([Not built yet](#not-built-yet)).
+
+### Properties and metadata
+
+A property is what a shape knows: a note's text, its checklist. It's in the kind's schema, for
+anything that reads or writes shapes. [Metadata](#metadata) (`ShapeMeta`) is what a plugin keeps
+*about* a shape, such as the shape it was copied from (Clipboard's `CopiedFrom`): typed by its
+owner's key, but in no schema, and unversioned. Something the shape says is a property; something
+said about it is metadata.
 
 ## Selection
 
@@ -1035,6 +1278,7 @@ Plugins write the sugar, not the points:
 | `x.details(header:) { sections }` | This kind's header and sections, inside `registrar.shape { x in ... }`. The header is a view made from the shape's binding ([the header](#the-header)). |
 | `registrar.details(P.self, header:) { sections }` | Another plugin's kind, typed as its own (bridges). |
 | `registrar.detailsForEveryBox { sections }` | Every shape with a frame, editing the frame. Arrows have none, so they don't get these. |
+| `x.details(of: P.self) { sections }`, `registrar.details(of: P.self) { sections }` | An [added property](#added-properties), editing its value: on this kind's shapes that have one, or on every shape that has one. |
 | `registrar.detailStatusForEveryShape { shape, context in ... }` | Footer lines for every shape. Return `[]` when there's nothing to say. |
 | `registrar.detailStatusForEveryShape(in: SomeTab.self) { shape, context in ... }` | Lines in a tab for every shape. The tab shows while the shape has lines there, above its sections if it has any. |
 
@@ -1062,7 +1306,7 @@ How it resolves, per shape:
 
 | What | Order |
 |---|---|
-| Sections in a tab | The kind's own (from its vertical, a horizontal it opts into, or a bridge), in plugin order and builder order; then every-box sections, in plugin order. |
+| Sections in a tab | The kind's own (from its vertical, a horizontal it opts into, or a bridge), in plugin order and builder order; then every kind's (every-box sections, and those over an added property on every shape that has it), in plugin order. |
 | Tabs | By `order`, then first appearance over the same sequence, then status lines'. A tab with no shown section and no status line is dropped. |
 | Status lines, the footer's and each tab's | The kind's, then every kind's, each in plugin order. |
 | Header | The kind's own; else the label and symbol of the tool that places the kind; else the kind's name. A header without a symbol takes the tool's. |
@@ -1102,7 +1346,7 @@ its own ([TitleHeader.swift](../Sources/Titles/TitleHeader.swift)). The kind put
 
 ```swift
 note.details(header: { $note in TitleHeader($note.title) }) {}
-task.details(header: { $task in TitleHeader($task.title, placeholder: "Untitled Task", subtitle: task.summary) }) { ... }
+task.details(header: { $task in TitleHeader($task.title, placeholder: "Untitled Task", subtitle: $task.shape.summary) }) { ... }
 ```
 
 It's a `DetailHeaderLabel` whose title is a `DetailHeaderField`. Each keystroke renames the shape
@@ -1122,58 +1366,64 @@ The pattern the panel is built for: a horizontal exposes a way for individual sh
 feature, and the feature shows up as a tab in the panel. Opting in is one line on the kind, and the
 tab comes with it, on exactly the kinds that opt in.
 
-[Checklists](../Sources/Checklists/Checklists.swift) gives any kind a checklist, stored in the
-kind's props. Checklists owns the item type, its helpers (`doneCount`, `progress`, `setAllDone`,
+[Checklists](../Sources/Checklists/Checklists.swift) gives any kind a checklist, an
+[added property](#added-properties) of each of its shapes. Checklists owns the property
+(`ChecklistProperty`), the item type, its helpers (`doneCount`, `progress`, `setAllDone`,
 `removeDone`), the bulk actions (`ChecklistBulkAction`), the tab, and the chip it draws on the
-canvas. Its sugar contributes to its own point
-and to the panel's, from the same `ShapeRegistrar`, fully typed:
+canvas. `ChecklistsPlugin` declares the property (`registrar.declare(ChecklistProperty.self)`), and
+its sugar opts the kind in, then contributes to its own point and to the panel's, from the same
+`ShapeRegistrar`, fully typed:
 
 ```swift
-/// The extension point: which kinds have a checklist. At most one per kind.
+/// The extension point: which kinds have a checklist, and how they show it. At most one per kind.
 public enum ShapeChecklists: KeyedExtensionPoint {
-    public typealias Contribution = ChecklistContribution    // how to read the items, and the badge flag
+    public typealias Contribution = ChecklistContribution    // whether the canvas shows the chip
     public static var owner: PluginID { .checklists }
     public static func uniqueKeys(of _: ChecklistContribution, for target: ShapeTarget) -> [AnyHashable] { [target] }
 }
 
 extension ShapeRegistrar {
-    /// Gives this kind a checklist, stored at `items` in its props: a Checklist tab in the detail
-    /// panel, and (unless `badge` is false, for kinds that draw their own) a small done/total chip
-    /// on the canvas. `note.checklist(\.checklist)`.
-    public mutating func checklist(_ items: WritableKeyPath<Definition.Props, [ChecklistItem]>, badge: Bool = true) {
-        contribute(ChecklistContribution(items: { $0.typed(as: Definition.Props.self)?.props[keyPath: items] }, showsBadge: badge),
-                   to: ShapeChecklists.self)
-        details {
-            DetailSection("Items", in: ChecklistTab.self) { $shape in
-                ChecklistRows(items: $shape[dynamicMember: items])
-            } accessory: { $shape in
-                ChecklistMenu(shape: $shape, items: items)
+    /// Gives this kind's shapes a checklist (`ChecklistProperty`, in the kind's schema as
+    /// `checklist`): a Checklist tab in the detail panel, the bulk actions that apply in its context
+    /// menu, and (unless `badge` is false, for kinds that draw their own) a small done/total chip on
+    /// the canvas. `note.checklist()`.
+    public mutating func checklist(badge: Bool = true) {
+        optIn(to: ChecklistProperty.self)
+        contribute(ChecklistContribution(showsBadge: badge), to: ShapeChecklists.self)
+        details(of: ChecklistProperty.self) {
+            DetailSection("Items", in: ChecklistTab.self) { $items in
+                ChecklistRows(items: $items[dynamicMember: \.self])
+            } accessory: { $items in
+                ChecklistMenu(items: $items)
             }
-            DetailSection("Progress", in: ChecklistTab.self, when: { !$0[keyPath: items].isEmpty }) { shape in
-                ChecklistProgress(items: shape.wrappedValue[keyPath: items])
+            DetailSection("Progress", in: ChecklistTab.self, when: { !$0.isEmpty }) { items in
+                ChecklistProgress(items: items.wrappedValue)
             }
         }
+        // ... and the bulk actions, in the context menu (below)
     }
 }
 ```
 
-- **Opting in.** Sticky notes write `note.checklist(\.checklist)`, task cards
-  `task.checklist(\.checklist, badge: false)`, since a card draws its own list.
-- **The graph.** StickyNotes imports Checklists and never DetailPanel or ContextMenus, yet gets a
-  panel tab and menu items. The requirement shows up at startup instead: a list with StickyNotes but
-  without `ChecklistsPlugin`, `DetailPanelPlugin` or `ContextMenusPlugin` is `ownerNotInstalled`,
-  naming the missing one.
-- **The key path is the contract.** `$shape[dynamicMember: items]` turns the key path into a
-  binding that writes only that field. The Items header's menu is a `ForEach` over
-  `ChecklistBulkAction` (Check All, Uncheck All, Remove Checked), each disabled unless
-  `isEnabled(for:)` and applied in one `update`:
-  `$shape.update { action.apply(to: &$0[keyPath: items]) }`. The rules live on the enum, so tests
-  check them without opening the menu.
+- **Opting in.** Sticky notes write `note.checklist()`, task cards `task.checklist(badge: false)`,
+  since a card draws its own list. Neither kind declares anything: every note and every task has a
+  checklist, empty until someone adds an item, and reads it as `shape[ChecklistProperty.self]`
+  where it shows it (a note's row, a task's summary).
+- **The graph.** StickyNotes imports Checklists and never ContextMenus, yet gets menu items. The
+  requirement shows up at startup instead: a list with StickyNotes but without `ChecklistsPlugin`,
+  `DetailPanelPlugin` or `ContextMenusPlugin` is `ownerNotInstalled`, naming the missing one.
+- **The property is the contract.** The sections are over the property's value, not the kind's
+  props: each gets a `ShapeBinding<[ChecklistItem]>`, and `$items[dynamicMember: \.self]` is a
+  `Binding` to the list that writes only that value, on that shape. The Items header's menu is a
+  `ForEach` over `ChecklistBulkAction` (Check All, Uncheck All, Remove Checked), each disabled
+  unless `isEnabled(for:)` and applied in one `update`: `$items.update { action.apply(to: &$0) }`.
+  The rules live on the enum, so tests check them without opening the menu.
 
-Another feature in this pattern has the same parts: its data type, a keyed point holding an erased
-accessor per kind, a tab type at order 50 (and a menu group, if it has actions), sugar that takes a
-`WritableKeyPath` into the kind's props and contributes to its points, and whatever consumes the
-point (a lookup on `Registry`, an overlay).
+Another feature in this pattern has the same parts: its data type, an added property holding it,
+declared by the horizontal; a keyed point for whatever else it needs per kind (Checklists' chip
+flag); a tab type at order 50 (and a menu group, if it has actions); sugar that opts the kind into
+the property and contributes sections and items over its value; and whatever consumes it (a lookup
+on `Registry`, an overlay).
 
 ### A tab of status lines, from a bridge: ValidationDetails
 
@@ -1229,9 +1479,9 @@ and StickyNotes didn't change.
 registrar.shape(TaskCardDefinition()) { task in
     let place = task.placement(size: TaskStyle.size) { TaskCard(title: "New Task") }
     task.tool(label: "Task", systemImage: "checklist", shortcut: "t", placing: place)
-    task.validate { shape, _ in shape.props.issues }
+    task.validate { shape, _ in shape.issues }
     task.taskPanel()                                  // below
-    task.checklist(\.checklist, badge: false)         // the Checklist tab, without the chip
+    task.checklist(badge: false)                      // a checklist, and its tab, without the chip
     task.title(pill: false) { $0.props.title }        // a title (its row's name), without the pill
 }
 ```
@@ -1240,7 +1490,7 @@ registrar.shape(TaskCardDefinition()) { task in
 `details` call, here abbreviated:
 
 ```swift
-details(header: { $task in TitleHeader($task.title, placeholder: "Untitled Task", subtitle: task.summary) }) {
+details(header: { $task in TitleHeader($task.title, placeholder: "Untitled Task", subtitle: $task.shape.summary) }) {
     DetailSection(in: TaskTab.self) { $task in
         LabeledContent("Status") { StatusPicker(status: $task.status) }
         LabeledContent("Priority") { ... }
@@ -1260,12 +1510,15 @@ details(header: { $task in TitleHeader($task.title, placeholder: "Untitled Task"
             }
         }
         LabeledContent("Estimate") { DetailNumberField(value: $task.estimate, unit: "h", in: 0...999, step: 0.5) }
-        LabeledContent("Remaining", value: DetailNumberText.format(task.remaining, unit: "h"))
+        LabeledContent("Remaining", value: DetailNumberText.format($task.shape.remaining, unit: "h"))
     }
     DetailSection("Color", in: StyleTab.self) { $task in ... }
     DetailSection("On the Card", in: StyleTab.self) { $task in ... }
 }
 ```
+
+The summary and the hours remaining count the task's checklist, which isn't in its props: they're
+read from `$task.shape`, the shape the panel drew, with its added values.
 
 Five plugins fill one card's panel:
 
@@ -1293,20 +1546,25 @@ A section's content closure gets a `ShapeBinding`. Take it as a `$` parameter, a
   put the text from before back.
 - **Writes go to the shape the binding was made for**, never to whatever is selected by the time
   they happen. A write to a shape that's gone does nothing.
-- **Read-modify-write goes in `update`**: `$task.update { $0.checklist.removeDone() }` applies the
-  change to the live value, in one transaction.
-- **Bind the narrowest key path.** A collection's binding (`$task.checklist`, and the row bindings
-  `ForEach` derives from it) writes the whole collection, rebuilt from what the binding read (the
+- **Read-modify-write goes in `update`**: `$items.update { action.apply(to: &$0) }` (Checklists'
+  bulk actions) applies the change to the live value, in one transaction.
+- **Bind the narrowest key path.** A collection's binding (`$items[dynamicMember: \.self]`, and the
+  row bindings `ForEach` derives from it) writes the whole collection, rebuilt from what the binding read (the
   snapshot, or its last write). Use `update` for list operations.
-- **Every-box sections get a `ShapeBinding<CGRect>`**, the frame, whatever the kind. Typed props
-  come only from contributing for the kind: from its own plugin, a horizontal it opts into, or a
-  bridge.
-- **Other forms.** A plain parameter works too (`shape.wrappedValue` is the snapshot, as in
+- **`$task.shape` is the whole shape** the snapshot came from, a `ShapeRecord<TaskCard>`: its props
+  and its [added properties](#added-properties)' values, for what a section or a header shows from
+  both (`$task.shape.summary`, `$task.shape[ChecklistProperty.self]`). It only reads; writes go
+  through the binding.
+- **Three kinds of binding, three write paths.** A kind's own sections get its props, typed, only
+  from contributing for the kind: from its own plugin, a horizontal it opts into, or a bridge.
+  Every-box sections get a `ShapeBinding<CGRect>`, the frame, whatever the kind. Sections over an
+  added property get its value (`ShapeBinding<[ChecklistItem]>`), on the shapes that have one.
+- **Other forms.** A plain parameter works too (`items.wrappedValue` is the snapshot, as in
   Checklists' Progress), and a larger section can be a View declaring
-  `@ShapeBinding var shape: Props`, passed `$shape` (Checklists' `ChecklistMenu`).
+  `@ShapeBinding var items: [ChecklistItem]`, passed `$items` (Checklists' `ChecklistMenu`).
 
-Tests and tools reach the same bindings with `editor.shapeBinding(id, as: TaskCard.self)` and
-`editor.frameBinding(id)`.
+Tests and tools reach the same bindings with `editor.shapeBinding(id, as: TaskCard.self)`,
+`editor.frameBinding(id)` and `editor.propertyBinding(id, ChecklistProperty.self)`.
 
 Two compiler rules come with this:
 
@@ -1417,6 +1675,7 @@ items alone: Paste, once there's something to paste.
 |---|---|
 | `x.contextMenu { items }` | This kind's items, inside `registrar.shape { x in ... }`. A horizontal's opt-in sugar calls it too. |
 | `registrar.contextMenu(P.self) { items }` | Another plugin's kind, typed as its own (bridges). |
+| `x.contextMenu(of: P.self) { items }`, `registrar.contextMenu(of: P.self) { items }` | An [added property](#added-properties), over its value: on this kind's shapes that have one, or on every shape that has one. |
 | `registrar.contextMenuForEveryShape(where:) { items }` | Every shape, over `AnyShapeRecord`. `where:` picks kinds by their definition, and so by capability (`{ !($0 is any PaintOrderAnchored) }`); `when:` picks shapes (`{ $0.box != nil }` for those with a frame). |
 | `registrar.contextMenuForCanvas { items }` | Items that aren't one shape's (Cut, Copy, Paste), over the menu's `MenuSubject`: its shapes (none on empty canvas) and the editor. In every menu, after the shapes' own in their groups' order, and alone on empty canvas. Each is asked once per menu, not per shape. |
 
@@ -1459,8 +1718,9 @@ task.contextMenu {
 ### A feature that comes with menu items: Checklists
 
 The pattern of the detail panel's feature tabs, again. Checklists' opt-in sugar contributes to its
-own point, the panel's, and this one, so `note.checklist(\.checklist)` brings the Checklist tab and
-the bulk actions, each shown only where it has something to do:
+own point, the panel's, and this one, so `note.checklist()` brings the Checklist tab and the bulk
+actions, each shown only where it has something to do. The items are over the property's value, the
+list, as the sections are:
 
 ```swift
 public enum ChecklistMenuGroup {}
@@ -1468,20 +1728,18 @@ extension ChecklistMenuGroup: MenuGroup {
     public static var order: Int { 50 }
 }
 
-// In ShapeRegistrar.checklist(_:badge:), after `details { ... }`:
-contextMenu {
+// In ShapeRegistrar.checklist(badge:), after `details(of:) { ... }`:
+contextMenu(of: ChecklistProperty.self) {
     for action in ChecklistBulkAction.allCases {
-        MenuItem(action.title, in: ChecklistMenuGroup.self, when: { action.isEnabled(for: $0[keyPath: items]) }) {
-            action.apply(to: &$0[keyPath: items])
-        }
+        MenuItem(action.title, in: ChecklistMenuGroup.self, when: { action.isEnabled(for: $0) }) { action.apply(to: &$0) }
     }
 }
 ```
 
-A future horizontal does the same inside its own sugar: its point, its tab, its menu items, one line
-on the kind. The edge comes with it: Checklists imports ContextMenus, so a list with Checklists needs
-`ContextMenusPlugin` too. A feature whose menu items should be optional puts them in a bridge
-instead.
+A future horizontal does the same inside its own sugar: its property, its point, its tab, its menu
+items, one line on the kind. The edge comes with it: Checklists imports ContextMenus, so a list with
+Checklists needs `ContextMenusPlugin` too. A feature whose menu items should be optional puts them
+in a bridge instead.
 
 ### Every shape: Reordering
 
@@ -1579,7 +1837,7 @@ StickyNotes' row, in full ([NoteRow.swift](../Sources/StickyNotes/NoteRow.swift)
 
 ```swift
 note.contentsRow { note in
-    ContentsLabel(note.props.text, placeholder: "Empty Note", color: .yellow, badge: note.props.checklist.tally)
+    ContentsLabel(note.props.text, placeholder: "Empty Note", color: .yellow, badge: note[ChecklistProperty.self]?.tally)
 }
 ```
 
@@ -1749,7 +2007,7 @@ Paste send), shape [metadata](#metadata), and the `ShapeReferencing` [capability
   board keeps it. That's the shape the copy was made from: a copy, if a copy was copied; in
   whichever board it was copied from, this one or another; and maybe gone since (a cut shape always
   is). Pasting twice makes two copies of the same shapes. The rest of a shape's metadata comes
-  with it.
+  with it, and so do its [added properties](#added-properties)' values.
 - **Where a paste lands** is tldraw's: where the originals were, if any of them would be in view
   there; otherwise centered in the view, the shapes keeping their places among themselves. A paste
   in place lies exactly over its originals, as in tldraw and Figma. Moving them is
@@ -1762,7 +2020,7 @@ Paste send), shape [metadata](#metadata), and the `ShapeReferencing` [capability
   arrow copied alone pastes free, ending where it was drawn, as it would if its notes were deleted.
   tldraw's copy does the same. A shape that can't let go of one it can't find (an arrow bound to a
   shape its board keeps aside, or one a paste can't read) is left out, rather than copied wrong.
-- **The pasteboard** holds a small board: `BoardCodec`'s JSON, each kind at its version, under the
+- **The pasteboard** holds a small board: `BoardCodec`'s JSON, each kind and added property at its version, under the
   app's own type. So one window can paste what another copied, a paste into a newer app migrates as
   opening a board does, and a kind the board doesn't install is left out of a paste. Anything else
   on the pasteboard (text, an image from another app) is left alone for now. ⌘V, Edit › Paste and
@@ -1794,8 +2052,9 @@ else treats them as usual: they're selected, moved, deleted and erased. The rule
 ### Metadata
 
 A shape's metadata (`AnyShapeRecord.meta`) is the core's place for what a plugin keeps about a
-shape that isn't the kind's own data, such as where it was copied from. A member is typed by a key
-the plugin that owns it declares, as an extension point is:
+shape, such as where it was copied from, as opposed to what the shape knows: its kind's properties,
+and those plugins add to it ([Properties](#properties-and-metadata)). A member is typed by a key the
+plugin that owns it declares, as an extension point is:
 
 ```swift
 public enum CopiedFrom {}
@@ -1810,8 +2069,8 @@ Read it with `record.meta[CopiedFrom.self]`, and change it in a transaction:
 `tx.update(id) { $0.meta[Key.self] = value }`. A board keeps it beside the props, under the
 owner's id, then the name (`"meta" : { "clipboard" : { "copiedFrom" : { "shape" : "…" } } }`), so
 two plugins' members never share a place; members no installed plugin knows are kept, and a copy
-(`record.copy(as:)`) takes it along. A board with any metadata is format 2, which an app from
-before it won't open rather than save without it; opening one leaves out metadata that isn't an
+(`record.copy(as:)`) takes it along. A board with any metadata is format 2 at least, which an app
+from before it won't open rather than save without it; opening one leaves out metadata that isn't an
 object for each plugin, and says so (`LoadReport.Repair.droppedMeta`). Unlike props, members
 aren't versioned: add only optional fields to a value, since one that no longer decodes reads as
 nil.
@@ -1843,13 +2102,15 @@ to it.
   tldraw), so moving a shape in the stack changes that shape alone. The only way to change it is
   `editor.transact { tx in ... }`: `insert` (on top), `update` (typed with `as:`; it can't change a
   shape's id or key), `bringToFront`, `sendToBack`, `move(_:above:)`, `move(_:below:)`, `delete`,
-  and `translate(_:by:)`, which moves shapes as dragging them would. A record carries its props and
-  its [metadata](#metadata), and `record.copy(as:)` is the same shape under another id.
+  and `translate(_:by:)`, which moves shapes as dragging them would. A record carries its props, the
+  values of its [added properties](#added-properties) and its [metadata](#metadata), and
+  `record.copy(as:)` is the same shape under another id.
   A transaction commits once, if anything changed, and bumps `editor.revision`. What it did goes
   with it, record by record: its `ChangeSet` names the shapes it added, changed and removed, and
   says whether the stack changed. Transactions don't nest. A frame that isn't finite never gets in: such an insert or update is dropped, since a board
-  must always save. Undo (not built yet) will group commits: everything from a press to its
-  release, and everything while a shape is being edited, will be one step.
+  must always save. An added value the shape's kind can't hold is dropped too, and an insert fills
+  in the defaults of what its kind opts into. Undo (not built yet) will group commits: everything
+  from a press to its release, and everything while a shape is being edited, will be one step.
 - **`willDelete`** handlers run inside the deleting transaction, before anything is removed, and
   see every shape as it was, so a plugin can act on shapes about to disappear (delete what depends
   on them). They may delete more; each shape's handlers run once. Then every shape that names one
@@ -1913,60 +2174,102 @@ pretty-printed, so a board diffs cleanly.
 
 ```json
 {
-  "format" : 2,
-  "schema" : { "arrow" : 0, "sticky-note" : 1 },
+  "format" : 3,
   "shapes" : [
-    { "id" : "…", "index" : "a0", "kind" : "sticky-note", "props" : { "frame" : [[80, 80], [200, 200]], "text" : "…" } },
-    { "id" : "…", "index" : "a1", "kind" : "sticky-note", "props" : { … }, "meta" : { "clipboard" : { "copiedFrom" : { "shape" : "…" } } } }
-  ]
+    { "added" : { "checklist" : [] }, "id" : "…", "index" : "a0", "kind" : "sticky-note", "props" : { "frame" : [[80, 80], [200, 200]], "text" : "…" } },
+    { "added" : { "checklist" : [ … ] }, "id" : "…", "index" : "a1", "kind" : "sticky-note", "meta" : { "clipboard" : { "copiedFrom" : { "shape" : "…" } } }, "props" : { … } },
+    { "id" : "…", "index" : "a2", "kept" : { "confetti" : { "v" : 0, "value" : { "velocity" : 240 } } }, "kind" : "ellipse", "props" : { … } }
+  ],
+  "versions" : { "added" : { "checklist" : 0 }, "kinds" : { "ellipse" : 0, "sticky-note" : 1 } }
 }
 ```
 
-`format` versions the envelope and each record's own members, and `schema` each kind's props. The
-app writes the oldest format that holds the board: 2 if any shape has [metadata](#metadata) (in
-`meta`), else 1. So an app from before metadata opens every board it would save back whole, and
-refuses one it would save without its metadata. The camera, the selection and
-whether the details and the minimap show aren't in it: they're remembered per file on this Mac,
-so panning never marks a board edited.
+`format` versions the envelope and each record's own members. The app writes the oldest format
+that holds the board: 3 if any shape has [added values](#added-properties) (in `added`, or kept in
+`kept`), else 2 if any has [metadata](#metadata) (in `meta`), else 1. So an older app opens every
+board it would save back whole, and refuses one it would save without what it doesn't know.
+Formats 1 and 2 give each kind's version in `schema`; format 3 in `versions`, beside each added
+property's (`kinds` and `added`). A shape's `props` are its kind's own properties; the values of
+the properties plugins add to its kind are beside them, in `added`, by key. What a shape doesn't
+have is left out. The camera, the selection and whether the details and the minimap show aren't
+in it: they're remembered per file on this Mac, so panning never marks a board edited.
 
 **A kind versions its own props.** Its migrations sit beside `static let kind`, and their count
-is the version boards record. A migration rewrites one shape's props as JSON (`JSONObject`), since
-old props may no longer decode:
+is the version boards record. The sticky note's first step handed its checklist over to Checklists:
 
 ```swift
 public struct StickyNote: BoxShapeProps {
     public static let kind: ShapeKind = "sticky-note"
     /// Append only. The count is the version boards record.
     public static let migrations = [
-        PropsMigration("notes get a color") { props in props["color"] = "yellow" },
+        // Checklists adds the checklist to every kind that opts in; the note no longer keeps one.
+        PropsMigration.handOver("checklist", to: ChecklistProperty.self),
     ]
     ...
 }
 ```
 
-- Any change to how a kind's props encode needs a migration: a member renamed, removed or
-  retyped, a changed unit or meaning, a new member that isn't optional. (Swift's synthesized
-  `Codable` ignores defaults when a member is missing; a new optional member needs none, as a
-  note's `title` needed none: nil isn't written, so an untitled note writes what it did before.)
+A step is one of three:
+
+- **`PropsMigration("…") { props in ... }`** rewrites one shape's props as JSON (`JSONObject`), since
+  old props may no longer decode.
+- **`PropsMigration("…")`**, with no body, is the step for a new member with a default. Boards
+  from before it read as the default, but it still takes a version: otherwise an older app would
+  read a board this one wrote as its own version, and drop the member when it saved. The version
+  also gets its fixture.
+- **`PropsMigration.handOver("checklist", to: ChecklistProperty.self)`** hands one of the kind's own
+  members over to an added property the kind now opts into. Reading an older board moves the
+  member's value from `props` to `added`, as the property's value at the version the step names
+  (`version:`, the property's version when the step is written; it defaults to 0, so pass it if the
+  property already has steps. Pinned, it stays right as the property takes steps of its own), then
+  migrates it by the property's history. Sticky notes and
+  task cards took this step at version 1, when Checklists moved onto `ChecklistProperty`.
+
+The rules:
+
+- Any change to how a kind's props encode needs a step: a member renamed, removed or retyped, a
+  changed unit or meaning, a new member. A step removes what it retires: a member it leaves behind
+  is no longer the kind's, and reading drops it.
 - Migrations are append only, pure (only that shape's props: no registry, no other shapes, no
   clock, no randomness) and up only.
-- A kind's string never changes once shipped.
-- A value several kinds store (Checklists' `ChecklistItem`) is versioned by each kind that stores
-  it: its owner publishes the step, and each kind appends it.
+- A kind's string never changes once shipped, nor does an added property's key.
+- An added property versions its own value, once, whatever kinds opt in: its
+  `static let migrations`, a list of `PropertyMigration`s, each rewriting one shape's value as JSON
+  (`JSONValue`, since a value may be an array or a string), with the same rules. A value several
+  kinds keep belongs in an added property, so it has one history rather than one per kind.
 - Each shipped kind has a fixture per version, `Tests/CompositionTests/Fixtures/kinds/<kind>.v<N>.json`,
   one shape's props as boards of that version wrote them. `expectKindFixtures` (CanvasTesting)
-  checks that every fixture migrates and reads, and that today's writes back byte for byte, so a
-  props change without a migration fails. Add a fixture for each new version; never edit one.
-  The registry's report shows each kind's version once it has one (`shape sticky-note v1`).
+  checks that every fixture migrates and reads, with any member its history hands over reading as
+  that property, and that today's holds every property the kind lists and writes back byte for byte,
+  so a props change without a migration fails, even a new optional member (which a board leaves out
+  when nil). Each shipped added property has the same, `Tests/CompositionTests/Fixtures/added/<key>.v<N>.json`,
+  one shape's value, held by `expectPropertyFixtures` to the byte-for-byte check alone: a value's
+  fixture, and the structs inside a kind's, should set every member, so a new one changes the bytes. Add a fixture for each new version; never
+  edit one. The registry's report shows each kind's version once it has one (`shape sticky-note
+  v1`), and each property's.
 
 **Opening never drops a shape.** What the app can't use is kept aside (`AnyShapeRecord.isOpaque`),
 in its place in the stack, and saved back as it was, with its own version (`v`): a kind no plugin
 installs, a newer version of a kind, or props that don't read (or don't migrate, or have a frame
 that isn't finite). Nothing draws, hits, selects or edits a kept-aside shape; a horizontal that goes
-through every shape skips `isOpaque` records, as Validation does. Opening also repairs ids that
-repeat or are missing, and stacking keys that don't rise. `LoadedBoard.report` says what was kept
-aside and repaired; the window shows it, and repairs mark the board edited, so saving keeps them.
-Only a file that isn't a board, or comes from a newer app, refuses to open (`BoardReadError`).
+through every shape skips `isOpaque` records, as Validation does. A kept-aside shape keeps its added
+values the same way, in its `kept`.
+
+**Nor a value.** An added value the app can't use (no installed plugin declares the property, the
+shape's kind doesn't opt in, it's from a newer version of the property, or it doesn't read or
+migrate) is kept in the shape's `kept`, by key, with its version (`{ "v" : 0, "value" : … }`), and
+written back as it was. The shape itself is usable, just without it (`record.keptProperties` names
+what it keeps), and nothing can set it. Once the app can use it (the plugin installed, the kind
+opted in), it's taken back into `added`. Opening also fills in the defaults of what each kind opts
+into, which doesn't mark the board edited.
+
+It repairs ids that repeat or are missing, and stacking keys that don't rise, and leaves out
+metadata, or added or kept values, that aren't an object by key (a kept one with its version):
+those can't be anything's (`droppedMeta`, `droppedValues`), and the report says so.
+`LoadedBoard.report` says what was kept aside (`keptAside`, the shapes; `keptValues`, the values on
+shapes the app can use) and what was repaired; the window shows it, offering to delete the shapes
+kept aside but never to discard a value. Repairs mark the board edited, so saving keeps them. Only
+a file that isn't a board, or comes from a newer app, refuses to open (`BoardReadError`).
 
 ## The registry
 
@@ -1978,8 +2281,8 @@ hand tool). It then checks everything and throws on:
 | `duplicatePlugin` | The same plugin id twice. |
 | `ownerNotInstalled` | A contribution to a point whose owner isn't in the list. |
 | `unknownKind` | A contribution for a kind no plugin registers. |
-| `conflict` | Two claims to the same key: a kind, a tool id, a service type, a command, the default tool, the secondary click, key strokes, or a key in any `KeyedExtensionPoint` (a keyboard shortcut's chord, one kind's double-click claim). |
-| `invalid` | A point's own `check` refused the list (the default tool must be a registered one). |
+| `conflict` | Two claims to the same key: a kind, a tool id, a service type, a command, the default tool, the secondary click, key strokes, an added property's key (two declarations), one kind's opt-in to a property (from two plugins, or twice from one), or a key in any `KeyedExtensionPoint` (a keyboard shortcut's chord, one kind's double-click claim). |
+| `invalid` | A property list that doesn't hold up, two types under one definition name, or a struct that holds itself with no name ([Properties](#a-kinds-own-properties)); an opt-in to a property no installed plugin declares, a plugin opting a kind into one both by itself and through `optInEveryShape`, or a kind opting into a property named like one of its own ([added properties](#added-properties)); or a point's own `check` refused the list (the default tool must be a registered one). |
 
 Some rules span contributions in a way keys can't express. For those, a point implements `check`,
 which the registry calls once it's built, after the checks above, so a point may assume its owner
@@ -2026,14 +2329,14 @@ core                 tool hand
 keyboard             service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
 selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
 arrows               shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay
-sticky-notes         shape sticky-note · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note
+sticky-notes         shape sticky-note v1 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note
 ellipses             shape ellipse · tool ellipse · shortcut O → tool ellipse
-task-cards           shape task-card · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ShapeTitles → task-card · ContentsTitles → task-card
+task-cards           shape task-card v1 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ShapeTitles → task-card · ContentsTitles → task-card
 validation           service ValidationEngine · overlay ValidationOverlay
 detail-panel         service DetailPanelState · ShapeDetails
 context-menus        service ContextMenuState · secondary-click menu
 table-of-contents    service ContentsState
-checklists           overlay ChecklistOverlay
+checklists           property checklist · overlay ChecklistOverlay
 titles               service TitleState · overlay TitleOverlay
 validation-details   DetailStatuses in Issues
 validation-contents  ContentsMarks
@@ -2045,9 +2348,11 @@ ellipse-titles       ShapeTitles → ellipse · ContentsTitles → ellipse
 reordering           ShapeContextMenus
 ```
 
-A horizontal's opt-in shows as what it contributes: `note.checklist(\.checklist)` is a
-`ShapeChecklists` entry, a `ShapeDetails` entry and a `ShapeContextMenus` entry, which is why
-task-cards has two of each of the last two (its own panel and menu, then the checklist's).
+A horizontal's opt-in shows as what it contributes: `note.checklist()` is the opt-in to the property
+checklists declares (`property checklist → sticky-note`), then a `ShapeChecklists` entry, a
+`ShapeDetails` entry and a `ShapeContextMenus` entry, which is why task-cards has two of each of the
+last two (its own panel and menu, then the checklist's). `v1` on sticky-note and task-card is the
+version of their props, since each handed its checklist over.
 `note.title { ... }` is a `ShapeTitles` entry and a `ContentsTitles` entry (the title naming the
 row); the `ShapeDetails` entry after them is the note's header, where it's renamed.
 
@@ -2099,9 +2404,9 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   inserts a shape in a transaction of its own.
 - **The detail panel.** `editor.detailPanel?.layout(for:)` resolves a shape's header, tabs and
   sections without a view (a tab's status lines are `layout.statuses(in:)`), and `statuses(for:)`
-  its footer lines. `editor.shapeBinding(id, as:)`
-  and `editor.frameBinding(id)` are the bindings a section gets: write through them and check the
-  document. For the view, host `DetailPanelView` in an `NSHostingView` in an unshown `NSWindow`,
+  its footer lines. `editor.shapeBinding(id, as:)`, `editor.frameBinding(id)` and
+  `editor.propertyBinding(id, P.self)` are the bindings a section gets: write through them and check
+  the document. For the view, host `DetailPanelView` in an `NSHostingView` in an unshown `NSWindow`,
   beside a `CanvasView` when focus matters (DetailPanelTests; CompositionTests' InspectorTests use
   the app's wiring, `CanvasRepresentable` and `ShippedPlugins.detailPanel`). Give the editor the
   real `TaskScheduler`. SwiftUI's updates land on the main run loop, so wait for the state you
@@ -2131,8 +2436,12 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   `Suite` must be listed there (`test.sh` checks). `<M>Tests` may depend only on M, what M
   depends on, and the test-support and ui modules.
 - **Boards.** `expectKindFixtures(kinds, in: registry, directory:)` (CanvasTesting) holds kinds to
-  their fixtures ([Boards on disk](#boards-on-disk)); CompositionTests runs it for every shipped
-  kind. CanvasTests read broken and scrambled boards (a seeded fuzz test), and CompositionTests'
+  their fixtures, and `expectPropertyFixtures(keys, in: registry, directory:)` added properties to
+  theirs ([Boards on disk](#boards-on-disk)); CompositionTests runs them for every shipped kind
+  (`registry.kinds`, in `Fixtures/kinds`) and property (`registry.declaredProperties`, in
+  `Fixtures/added`). A document built by hand has none of the defaults an editor fills in, so it
+  equals one an editor holds, or one a board reads back as, only after
+  `registry.fillingDefaults(document)`. CanvasTests read broken and scrambled boards (a seeded fuzz test), and CompositionTests'
   BoardDocumentTests open, save, revert and host boards with `BoardDocument.configuration` set as
   the app sets it. `./build.sh bench` builds BenchmarkTests in release and holds saving, opening,
   a hover and a drag frame, reading the table of contents' rows after a drag event, an insert, a
@@ -2194,7 +2503,7 @@ Each of these adds to the design without changing what plugins are written again
   each press and when editing begins, close it on release and when editing ends, and register each
   group's before and after with `UndoManager`. Panel edits are one transaction per keystroke or
   step today; grouping them (per focused field, per stepper or color drag) hooks into
-  `ShapeBinding`'s two write paths.
+  `ShapeBinding`'s three write paths.
 - **More document hooks** (before/after create and change), and **document-scoped services** for
   several windows on one board.
 - **An editing view hearing about outside changes** to its shape (needed once undo exists).
@@ -2237,8 +2546,14 @@ Each of these adds to the design without changing what plugins are written again
 - **More of the context menu**: more items for the canvas (Select All, on empty canvas); key
   equivalents and symbols on items; and the items everyone expects, such as Delete
   and Duplicate, once a plugin owns them.
+- **More of properties**: checking shapes against their kinds' schemas (as a board opens, as an
+  agent writes); the agents' CLI handing schemas out; a projection of a schema for LLM tool
+  calling, whose strict modes reject `prefixItems` and `oneOf` (a rect, a task's status); panel
+  controls made from a schema; sections and menu items that turn on a property whose default is nil
+  (they show only once it's set today); discarding a kept value; and moving a stored title (a
+  note's, a task's) onto a property Titles adds, so a kind opts into a title rather than keeping one.
 - **More of the detail panel**: editing several selected shapes at once (it shows "N Shapes"
-  today); every-shape sections over the
-  record (not only every-box ones over the frame), and every-box overrides such as an aspect lock;
+  today); every-shape sections over the record (there are every-box ones over the frame, and those
+  over an added property), and every-box overrides such as an aspect lock;
   remembering the chosen tab and collapsed sections across launches (`DetailTabID.name` is stable
   for that); and marking the row a validation issue is about (`ValidationIssue.field`).

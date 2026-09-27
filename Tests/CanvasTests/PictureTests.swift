@@ -8,7 +8,14 @@ import TestKit
 /// A box whose geometry has no outline: only its box says where it is.
 struct Stamp: BoxShapeProps {
     static let kind: ShapeKind = "stamp"
+    static let properties = Properties<Stamp> {
+        Property("frame", \.frame).required()
+    }
     var frame: CGRect
+}
+
+extension Stamp {
+    init() { self.init(frame: .zero) }
 }
 
 struct StampDefinition {}

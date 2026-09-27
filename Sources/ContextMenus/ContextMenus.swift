@@ -106,6 +106,19 @@ extension ContextMenuContribution {
         }
     }
 
+    /// An added property's items, over its value, on the shapes that have one.
+    init<P: ShapeProperty>(property _: P.Type, _ entries: [MenuEntry<P.Value>]) {
+        self.entries = entries.map {
+            ErasedEntry($0, read: { $0[P.self] }, write: { id, transaction, edit in
+                transaction.update(id) { record in
+                    guard var value = record[P.self] else { return }
+                    edit(&value)
+                    record[P.self] = value
+                }
+            })
+        }
+    }
+
     /// Every shape's items, over the record.
     init(everyShape entries: [MenuEntry<AnyShapeRecord>], where appliesTo: @escaping @MainActor (any ShapeDefinition) -> Bool) {
         self.entries = entries.map {
@@ -132,12 +145,23 @@ extension ShapeRegistrar {
     public mutating func contextMenu(@MenuBuilder<Definition.Props> _ items: () -> [MenuEntry<Definition.Props>]) {
         contribute(ContextMenuContribution(Definition.Props.self, items()), to: ShapeContextMenus.self)
     }
+
+    /// Items over an added property's value, on this kind's shapes that have one: what a
+    /// horizontal's opt-in sugar contributes for the property it opts the kind into.
+    public mutating func contextMenu<P: ShapeProperty>(of _: P.Type, @MenuBuilder<P.Value> _ items: () -> [MenuEntry<P.Value>]) {
+        contribute(ContextMenuContribution(property: P.self, items()), to: ShapeContextMenus.self)
+    }
 }
 
 extension PluginRegistrar {
     /// Items for a kind another plugin registers (bridges). Typed as the kind's own.
     public mutating func contextMenu<P: ShapeProps>(_: P.Type, @MenuBuilder<P> _ items: () -> [MenuEntry<P>]) {
         contribute(ContextMenuContribution(P.self, items()), to: ShapeContextMenus.self, for: .kind(P.kind))
+    }
+
+    /// Items over an added property's value, on every shape that has one, whatever its kind.
+    public mutating func contextMenu<P: ShapeProperty>(of _: P.Type, @MenuBuilder<P.Value> _ items: () -> [MenuEntry<P.Value>]) {
+        contribute(ContextMenuContribution(property: P.self, items()), to: ShapeContextMenus.self, for: .any)
     }
 
     /// Items for every shape, over the record. `where` picks kinds by their definition, and so by

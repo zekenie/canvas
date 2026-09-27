@@ -15,7 +15,7 @@ extension ShapeRegistrar where Definition == TaskCardDefinition {
     /// tab, and its part of Style. The Checklist tab comes from opting into Checklists, and Arrange
     /// from the panel itself.
     mutating func taskPanel() {
-        details(header: { $task in TitleHeader($task.title, placeholder: "Untitled Task", subtitle: task.summary) }) {
+        details(header: { $task in TitleHeader($task.title, placeholder: "Untitled Task", subtitle: $task.shape.summary) }) {
             DetailSection(in: TaskTab.self) { $task in
                 LabeledContent("Status") { StatusPicker(status: $task.status) }
                 LabeledContent("Priority") {
@@ -41,7 +41,7 @@ extension ShapeRegistrar where Definition == TaskCardDefinition {
                     }
                 }
                 LabeledContent("Estimate") { DetailNumberField(value: $task.estimate, unit: "h", in: 0...999, step: 0.5) }
-                LabeledContent("Remaining", value: DetailNumberText.format(task.remaining, unit: "h"))
+                LabeledContent("Remaining", value: DetailNumberText.format($task.shape.remaining, unit: "h"))
             }
             DetailSection("Color", in: StyleTab.self) { $task in
                 DetailSwatches($task.displayColor, presets: TaskColor.presets.map { ($0.name, $0.color.cgColor) })

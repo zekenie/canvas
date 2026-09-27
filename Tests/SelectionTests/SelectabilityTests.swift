@@ -151,8 +151,14 @@ import TestKit
 /// A box the select tool sees through.
 struct Ghost: BoxShapeProps {
     static let kind: ShapeKind = "ghost"
+    static let properties = Properties<Ghost> {
+        Property("frame", \.frame).required()
+    }
     var frame: CGRect
     init(_ frame: CGRect) { self.frame = frame }
+}
+extension Ghost {
+    init() { self.init(.zero) }
 }
 
 struct GhostDefinition {}
@@ -173,9 +179,16 @@ struct GhostsPlugin: CanvasPlugin {
 /// A box that can't be selected while it's locked.
 struct Lockable: BoxShapeProps {
     static let kind: ShapeKind = "lockable"
+    static let properties = Properties<Lockable> {
+        Property("frame", \.frame).required()
+        Property("isLocked", \.isLocked)
+    }
     var frame: CGRect
     var isLocked = false
     init(_ frame: CGRect) { self.frame = frame }
+}
+extension Lockable {
+    init() { self.init(.zero) }
 }
 
 struct LockableDefinition {}

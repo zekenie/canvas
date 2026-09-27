@@ -18,6 +18,15 @@ import Validation
      TableOfContentsPlugin(), TitlesPlugin()]
 }
 
+extension ShapeRecord where Props == StickyNote {
+    /// The note with `items` in its checklist, the property Checklists adds.
+    func withChecklist(_ items: [ChecklistItem]) -> Self {
+        var note = self
+        note[ChecklistProperty.self] = items
+        return note
+    }
+}
+
 @MainActor let stickyNotesTests = Suite("Sticky notes", [
     test("registers its kind, the N tool and the double-click claim") {
         let registry = try Registry(plugins: notePlugins)
@@ -59,8 +68,8 @@ import Validation
         let editor = CanvasEditor(registry: try Registry(plugins: notePlugins), scheduler: ManualScheduler())
         let frame = CGRect(x: 0, y: 0, width: 200, height: 200)
         editor.transact {
-            $0.insert(ShapeRecord(StickyNote(frame: frame, text: "Shopping\nlist", checklist: [ChecklistItem(text: "milk", isDone: true),
-                                                                                                ChecklistItem(text: "eggs")])))
+            $0.insert(ShapeRecord(StickyNote(frame: frame, text: "Shopping\nlist")).withChecklist([ChecklistItem(text: "milk", isDone: true),
+                                                                                                  ChecklistItem(text: "eggs")]))
             $0.insert(ShapeRecord(StickyNote(frame: frame)))
         }
         let entries = try require(editor.tableOfContents).entries
@@ -71,19 +80,20 @@ import Validation
     test("a note has a checklist: the registry reads it, and the panel shows it in a Checklist tab") {
         let editor = CanvasEditor(registry: try Registry(plugins: notePlugins), scheduler: ManualScheduler())
         let items = [ChecklistItem(text: "milk", isDone: true), ChecklistItem(text: "eggs")]
-        let note = ShapeRecord(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "Shopping", checklist: items))
-        editor.transact { $0.insert(note) }
+        let note = ShapeRecord(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "Shopping")).withChecklist(items)
+        let blank = ShapeRecord(StickyNote(frame: CGRect(x: 300, y: 0, width: 200, height: 200)))
+        editor.transact { $0.insert(note); $0.insert(blank) }
         let record = try require(editor.document[note.id])
         expectEqual(editor.registry.checklist(of: record), items)
         let layout = try require(editor.detailPanel).layout(for: record)
         expectEqual(layout.header(as: TitleHeader.self)?.title, "", "an untitled note's header, where it's named")
         expectEqual(layout.tabs, [.of(ChecklistTab.self), .of(ArrangeTab.self)])
         expectEqual(layout.sections(in: .of(ChecklistTab.self)).map(\.section), ["Items", "Progress"])
-        expectEqual(StickyNote().checklist, [], "a new note's checklist is empty")
+        expectEqual(editor.document[blank.id]?[ChecklistProperty.self], [], "a new note's checklist is empty")
     },
     test("a note with no text but a checklist isn't empty; one with neither warns") {
         let editor = CanvasEditor(registry: try Registry(plugins: notePlugins), scheduler: ManualScheduler())
-        let listed = ShapeRecord(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: " ", checklist: [ChecklistItem(text: "milk")]))
+        let listed = ShapeRecord(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: " ")).withChecklist([ChecklistItem(text: "milk")])
         let empty = ShapeRecord(StickyNote(frame: CGRect(x: 300, y: 0, width: 200, height: 200), text: " "))
         editor.transact { $0.insert(listed); $0.insert(empty) }
         expect(editor.validation?.result(for: listed.id) == nil)
