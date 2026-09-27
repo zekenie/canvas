@@ -11,6 +11,8 @@ extension CanvasEditor {
 
     @_spi(Host) public func pointerDown(_ event: PointerEvent) {
         let pointer = sample(event)
+        tracker.resetVelocity()
+        stopCameraSlide()
         endEditing()
         currentTool.pointerDown(pointer, in: self)
         refreshCursor()

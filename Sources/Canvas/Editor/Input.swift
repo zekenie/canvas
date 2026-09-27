@@ -40,13 +40,23 @@ public enum CanvasCursor: Sendable {
     case standard, crosshair, openHand, closedHand
 }
 
-/// Pointer position and smoothed speed, from event locations and timestamps.
+/// Pointer position, smoothed speed and smoothed velocity, from event locations and timestamps.
 struct PointerTracker {
     /// View points.
     private(set) var location: CGPoint = .zero
-    /// View points per millisecond, smoothed like tldraw's: the old value's weight halves every 16 ms.
+    /// tldraw's pointer smoothing: the old value's weight halves every this many milliseconds.
+    static let halfLifeMilliseconds: CGFloat = 16
+    /// A speed, or a velocity component, under this (view points per millisecond) reads 0.
+    static let restThreshold: CGFloat = 0.01
+
+    /// View points per millisecond, smoothed like tldraw's (see `halfLifeMilliseconds`).
     private(set) var speed: CGFloat = 0
+    /// View points per millisecond, per axis, smoothed like `speed` (tldraw's pointer velocity).
+    /// Components under `restThreshold` read 0. Reset on every press.
+    private(set) var velocity: CGPoint = .zero
     private var lastTime: TimeInterval?
+
+    mutating func resetVelocity() { velocity = .zero }
 
     mutating func sample(_ point: CGPoint, at time: TimeInterval) {
         defer {
@@ -55,10 +65,14 @@ struct PointerTracker {
         }
         guard let lastTime else { return }
         let elapsedMilliseconds = max((time - lastTime) * 1000, 1)
+        let weight = 1 - pow(0.5, elapsedMilliseconds / Self.halfLifeMilliseconds)
         let instant = point.distance(to: location) / elapsedMilliseconds
-        speed += (instant - speed) * (1 - pow(0.5, elapsedMilliseconds / 16))
-        if speed < 0.01 {
+        speed += (instant - speed) * weight
+        if speed < Self.restThreshold {
             speed = 0
         }
+        velocity = velocity + ((point - location) / elapsedMilliseconds - velocity) * weight
+        if abs(velocity.x) < Self.restThreshold { velocity.x = 0 }
+        if abs(velocity.y) < Self.restThreshold { velocity.y = 0 }
     }
 }

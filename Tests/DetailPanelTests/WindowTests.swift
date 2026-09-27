@@ -269,6 +269,68 @@ extension ListTab: DetailTab { static var title: String { "List" } }
         expect(panel.canvasHasKeyboard)
         expectEqual(panel.fields.first?.stringValue, "240 pt")
     },
+    test("several selected show a summary header over a placeholder, not a shape's fields or No Selection") {
+        let editor = try gadgetEditor(scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
+        let a = editor.add(Box(gadgetFrame)), b = editor.add(Box(gadgetFrame))
+        panel.window.settle()
+        let none = try panel.render()
+        expectEqual(hairlines(none), 0, "No Selection")
+        editor.selectedShapeIDs = [a, b]
+        panel.window.settle()
+        let several = try panel.render()
+        expectEqual(panel.fields.map(\.stringValue), [])
+        expectEqual(hairlines(several), 1, "one under the header")
+        expect(several.tiffRepresentation != none.tiffRepresentation)
+    },
+    test("the panel follows the set: 2 → 3 updates the count, back to one shows its panel, none shows No Selection") {
+        let editor = try gadgetEditor(scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
+        let a = editor.add(Box(gadgetFrame)), b = editor.add(Box(gadgetFrame)), c = editor.add(Box(gadgetFrame))
+        panel.window.settle()
+        let none = try panel.render()
+        editor.selectedShapeIDs = [a, b]
+        panel.window.settle()
+        let two = try panel.render()
+        editor.selectedShapeIDs = [a, b, c]
+        panel.window.spin { (try? panel.render().tiffRepresentation) != two.tiffRepresentation }
+        editor.selectedShapeIDs = [b]
+        panel.window.spin { !panel.fields.isEmpty }
+        expectEqual(panel.fields.map(\.stringValue), ["240 pt", "160 pt", "80 pt", "40 pt"])
+        editor.selectedShapeIDs = []
+        panel.window.spin { panel.fields.isEmpty }
+        panel.window.settle()
+        expectEqual(try panel.render().tiffRepresentation, none.tiffRepresentation)
+    },
+    test("a draft commits to its own shape when the selection grows to several, and the canvas gets the keyboard") {
+        let editor = try gadgetEditor(scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
+        let a = editor.add(Box(gadgetFrame)), b = editor.add(Box(gadgetFrame))
+        editor.selection = a
+        panel.window.spin { !panel.fields.isEmpty }
+        panel.window.focus(try panel.field("240 pt"))
+        panel.window.type("260")
+        editor.selectedShapeIDs = [a, b]
+        panel.window.spin { panel.canvasHasKeyboard }
+        expectEqual(editor.document[a]?.box?.width, 260)
+        expectEqual(editor.document[b]?.box?.width, 240)
+        expectEqual(panel.exits, 1)
+    },
+    test("a focused panel control removed by a multi-select hands the keyboard to the canvas") {
+        let editor = try gadgetEditor(scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
+        let gadget = editor.add(Gadget(gadgetFrame)), box = editor.add(Box(gadgetFrame))
+        editor.selection = gadget
+        panel.window.spin { !panel.fields.isEmpty }
+        panel.window.focus(try panel.field("Name"))
+        panel.window.type("x")
+        editor.selectedShapeIDs = [gadget, box]
+        panel.window.spin { panel.canvasHasKeyboard }
+        expectEqual(editor.props(gadget, as: Gadget.self)?.name, "x")
+        expectEqual(panel.exits, 1)
+        panel.window.type("g")                                  // a tool shortcut, on the canvas
+        expectEqual(editor.currentToolID, ToolID(placing: Gadget.kind))
+    },
     test("Escape drops the draft, leaves the value, and hands the keyboard to the canvas") {
         let editor = try gadgetEditor(scheduler: TaskScheduler())
         let panel = PanelWindow(editor)

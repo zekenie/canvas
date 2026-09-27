@@ -64,10 +64,29 @@ public struct HandleLocation<Handle: Hashable & Sendable>: Sendable {
     }
 }
 
-/// Pressed in the select tool, these start their own session instead of following the pointer
-/// by their box. A kind without a box needs this to be movable at all.
+/// Moved with the selection by its own rules instead of by its frame (a kind without a box needs
+/// this to move at all; one with both uses this). When a drag of the selection starts, the core
+/// calls `beginTranslation` once for each such shape, all in one transaction that commits before
+/// the first move. On every drag event it then runs the returned translation, inside that event's
+/// single transaction, after every box in the selection has moved. Escape puts every moved shape
+/// back as it was before `beginTranslation`.
 public protocol CustomTranslation: ShapeDefinition {
-    func translationSession(for shape: ShapeRecord<Props>, at pointer: Pointer, in editor: CanvasEditor) -> any Session
+    /// `moving` is every shape being moved, this one included. A change made in `transaction`
+    /// (arrows make bound ends precise) commits on its own, before anything moves.
+    func beginTranslation(of shape: ShapeRecord<Props>, movingWith moving: Set<ShapeID>,
+                          in transaction: inout Transaction) -> ShapeTranslation<Props>
+}
+
+/// One shape's part in one translation: `move(delta, &shape, shapes)` runs on every drag event.
+/// - `delta`: world units the pointer has moved since the press;
+/// - `shape`: the record as it is now (after `beginTranslation` and earlier moves);
+/// - `shapes`: the document mid-transaction, with this event's boxes already moved.
+@MainActor
+public struct ShapeTranslation<Props: ShapeProps> {
+    let move: @MainActor (CGPoint, inout ShapeRecord<Props>, ShapeContext) -> Void
+    public init(_ move: @escaping @MainActor (_ delta: CGPoint, _ shape: inout ShapeRecord<Props>, _ shapes: ShapeContext) -> Void) {
+        self.move = move
+    }
 }
 
 /// Painted relative to another shape instead of by document order, and never brought to front

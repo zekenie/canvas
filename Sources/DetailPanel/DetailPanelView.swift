@@ -21,7 +21,10 @@ public struct DetailPanelView: View {
     public var body: some View {
         Group {
             if let state = editor.detailPanel {
-                if let id = editor.selection, let record = editor.document[id] {
+                let ids = editor.selectedShapeIDs
+                if ids.count > 1 {
+                    SelectionSummary(header: state.selectionSummary(of: ids.compactMap { editor.document[$0] }))
+                } else if let id = editor.selection, let record = editor.document[id] {
                     ShapePanel(state: state, editor: editor, record: record, statuses: state.statuses(for: record),
                                contentChanged: reclaimSoon)
                         .equatable()
@@ -46,7 +49,7 @@ public struct DetailPanelView: View {
             onExit()
             return .handled
         }
-        .onChange(of: editor.selection) { reclaimSoon() }
+        .onChange(of: editor.selectedShapeIDs) { reclaimSoon() }
         .inspectorColumnWidth(min: DetailStyle.minWidth, ideal: DetailStyle.idealWidth, max: DetailStyle.maxWidth)
     }
 
@@ -95,6 +98,18 @@ struct Placeholder: View {
             .font(DetailStyle.placeholder)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// Several shapes are selected. Details are per shape: editing several at once isn't built.
+struct SelectionSummary: View {
+    let header: DetailHeader
+    var body: some View {
+        VStack(spacing: 0) {
+            HeaderView(header: header)
+            Divider()
+            Placeholder(text: "Select one shape to see its details")
+        }
     }
 }
 

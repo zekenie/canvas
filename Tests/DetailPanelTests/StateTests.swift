@@ -39,6 +39,15 @@ import TestKit
         state.setCollapsed(gadgetSize, false)
         expect(!state.isCollapsed(boxSize))
     },
+    test("selectionSummary is 'N Shapes', with each kind's name once in selection order, and stacked squares") {
+        let editor = try gadgetEditor()
+        let state = try require(editor.detailPanel)
+        let ids = [editor.add(Gadget(gadgetFrame)), editor.add(Box(gadgetFrame)), editor.add(Gadget(gadgetFrame)), editor.add(Tag(target: nil))]
+        // Named by the tool that places the kind (Gadget), else by the kind.
+        expectEqual(state.selectionSummary(of: ids.compactMap { editor.document[$0] }),
+                    DetailHeader("4 Shapes", subtitle: "Gadget, box, tag", systemImage: "square.on.square"))
+        expectEqual(state.selectionSummary(of: ids.reversed().prefix(2).compactMap { editor.document[$0] }).subtitle, "tag, Gadget")
+    },
     test("each editor has its own state, and none without the panel's plugin") {
         let registry = try Registry(plugins: [FixturesPlugin(), GadgetsPlugin(), RemarksPlugin(), DetailPanelPlugin()])
         let one = CanvasEditor(registry: registry, scheduler: ManualScheduler())

@@ -47,18 +47,24 @@ public enum ShippedPlugins {
 }
 
 public enum WelcomeBoard {
-    public static func document() -> CanvasDocument {
-        func note(_ x: CGFloat, _ y: CGFloat, _ text: String) -> ShapeRecord<StickyNote> {
-            ShapeRecord(StickyNote(frame: CGRect(origin: CGPoint(x: x, y: y), size: StickyNote.defaultSize), text: text))
+    /// The six notes' text: the top row left to right, then the bottom row.
+    public static let texts = [
+        "Double-click empty space to add a note. Drag a note to move it.",
+        "Double-click a note (or select it and press Return) to edit it.",
+        "Pinch to zoom, scroll with two fingers to pan. Press H for the hand tool; drag the background to select.",
+        "Press A for the arrow tool, then drag from one shape to another. Press O to place an ellipse.",
+        "Pause inside a note while drawing to aim at that spot. Hold ⌥ to go all the way in, ⌘ to not attach.",
+        "Select an arrow and drag its middle handle to bend it.",
+    ]
+
+    /// The board, its notes saying `texts` in that order.
+    public static func document(texts: [String] = WelcomeBoard.texts) -> CanvasDocument {
+        precondition(texts.count == 6, "the welcome board has six notes")
+        let origins = [CGPoint(x: 80, y: 80), CGPoint(x: 460, y: 80), CGPoint(x: 840, y: 80),
+                       CGPoint(x: 80, y: 420), CGPoint(x: 460, y: 420), CGPoint(x: 840, y: 420)]
+        let notes = zip(origins, texts).map { origin, text in
+            ShapeRecord(StickyNote(frame: CGRect(origin: origin, size: StickyNote.defaultSize), text: text))
         }
-        let notes = [
-            note(80, 80, "Double-click empty space to add a note. Drag a note to move it."),
-            note(460, 80, "Double-click a note (or select it and press Return) to edit it."),
-            note(840, 80, "Pinch to zoom, scroll with two fingers to pan. Dragging the background pans too."),
-            note(80, 420, "Press A for the arrow tool, then drag from one shape to another. Press O to place an ellipse."),
-            note(460, 420, "Pause inside a note while drawing to aim at that spot. Hold ⌥ to go all the way in, ⌘ to not attach."),
-            note(840, 420, "Select an arrow and drag its middle handle to bend it."),
-        ]
         func bound(_ note: ShapeRecord<StickyNote>) -> ArrowTerminal {
             .bound(ArrowBinding(shapeID: note.id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))
         }

@@ -18,6 +18,9 @@ extension ShapeDefinition {
     func erasedHitTest(_ point: CGPoint, on record: AnyShapeRecord, in context: ShapeContext) -> Bool {
         record.typed(as: Props.self).map { hitTest(point, on: $0, in: context) } ?? false
     }
+    func erasedBrushHitTest(_ brush: CGRect, on record: AnyShapeRecord, in context: ShapeContext) -> Bool {
+        record.typed(as: Props.self).map { brushHitTest(brush, on: $0, in: context) } ?? false
+    }
     func erasedIndicatorPath(of record: AnyShapeRecord, in context: ShapeContext) -> CGPath? {
         record.typed(as: Props.self).map { indicatorPath(of: $0, in: context) }
     }
@@ -45,8 +48,15 @@ extension HandleProviding {
 }
 
 extension CustomTranslation {
-    func erasedTranslationSession(for record: AnyShapeRecord, at pointer: Pointer, in editor: CanvasEditor) -> (any Session)? {
-        record.typed(as: Props.self).map { translationSession(for: $0, at: pointer, in: editor) }
+    func erasedBeginTranslation(of record: AnyShapeRecord, movingWith moving: Set<ShapeID>,
+                                in transaction: inout Transaction) -> (@MainActor (CGPoint, inout Transaction) -> Void)? {
+        guard let shape = record.typed(as: Props.self) else { return nil }
+        let translation = beginTranslation(of: shape, movingWith: moving, in: &transaction)
+        let id = record.id
+        return { delta, transaction in
+            let shapes = transaction.shapes           // read before update: no overlapping access
+            transaction.update(id, as: Props.self) { translation.move(delta, &$0, shapes) }
+        }
     }
 }
 

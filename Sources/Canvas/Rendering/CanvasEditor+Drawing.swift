@@ -37,6 +37,15 @@ extension CanvasEditor {
         for overlay in registry.overlays where overlay.space == .world {
             drawIsolated(context) { overlay.draw(in: overlayContext) }
         }
+        if let brush {
+            drawIsolated(context) {
+                context.setFillColor(Style.brushFill.cgColor)
+                context.fill(brush)
+                context.setStrokeColor(Style.brushStroke.cgColor)
+                context.setLineWidth(1 / camera.zoom)
+                context.stroke(brush)
+            }
+        }
         context.restoreGState()
 
         drawIsolated(context) { drawHandles(in: context) }
@@ -78,22 +87,24 @@ extension CanvasEditor {
         context.fillPath()
     }
 
-    /// Hover, selection and target outlines, in one stroke at a constant screen width.
+    /// Hover, selection and target outlines, and the box around several selected shapes (tldraw's
+    /// selection bounds), in one stroke at a constant screen width.
     private func drawIndicators(in context: CGContext, shapes: ShapeContext) {
         var outlined: [ShapeID] = []
-        if currentToolID == .select, session == nil, let hovered, hovered != selection {
+        if currentToolID == .select, session == nil, let hovered, !isSelected(hovered) {
             outlined.append(hovered)
         }
-        if let selection, !(session?.hidesSelectionIndicator ?? false) {
-            outlined.append(selection)
-        }
+        let showsSelection = !(session?.hidesSelectionIndicator ?? false)
+        if showsSelection { outlined += selectedShapeIDs }
         if let hintedShapeID { outlined.append(hintedShapeID) }
+        let box = showsSelection && selectedShapeIDs.count > 1 ? selectionBounds : nil
         guard !outlined.isEmpty else { return }
         context.saveGState()
         for id in outlined {
             guard let record = document[id], let path = registry.definition(for: record.kind)?.erasedIndicatorPath(of: record, in: shapes) else { continue }
             context.addPath(path)
         }
+        if let box { context.addRect(box) }
         context.setStrokeColor(Style.accent.cgColor)
         context.setLineWidth(Style.indicatorWidth / camera.zoom)
         context.setLineCap(.round)
@@ -102,7 +113,7 @@ extension CanvasEditor {
         context.restoreGState()
     }
 
-    /// The selected shape's handles, in view points. They show in the select tool, and hide while
+    /// The only selected shape's handles, in view points. They show in the select tool, and hide while
     /// anything but a handle press is under way.
     private func drawHandles(in context: CGContext) {
         var pressed: AnyHashable?

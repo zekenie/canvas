@@ -61,6 +61,17 @@ extension CGRect {
 
     public var center: CGPoint { CGPoint(x: midX, y: midY) }
 
+    /// Whether `rect` is strictly inside this one, on every side (tldraw's Box.Contains).
+    public func containsStrictly(_ rect: CGRect) -> Bool {
+        minX < rect.minX && minY < rect.minY && maxX > rect.maxX && maxY > rect.maxY
+    }
+
+    /// Whether the two overlap or share an edge or corner (tldraw's Box.Collides). Unlike
+    /// `intersects`, touching counts.
+    public func touches(_ rect: CGRect) -> Bool {
+        !(maxX < rect.minX || minX > rect.maxX || maxY < rect.minY || minY > rect.maxY)
+    }
+
     /// The corners in order, as a closed polygon.
     public var polygon: [CGPoint] {
         [CGPoint(x: minX, y: minY), CGPoint(x: maxX, y: minY), CGPoint(x: maxX, y: maxY), CGPoint(x: minX, y: maxY)]

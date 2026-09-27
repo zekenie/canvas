@@ -23,7 +23,7 @@ public struct PluginID: Hashable, Sendable, ExpressibleByStringLiteral, CustomSt
     public init(_ rawValue: String) { self.rawValue = rawValue }
     public init(stringLiteral value: String) { rawValue = value }
     public var description: String { rawValue }
-    /// The core's own plugin: the select tool and the core's extension points.
+    /// The core's own plugin: the Select and Hand tools and the core's extension points.
     public static let core: PluginID = "core"
 }
 
@@ -35,4 +35,5 @@ public struct ToolID: Hashable, Sendable, ExpressibleByStringLiteral, CustomStri
     public init(placing kind: ShapeKind) { rawValue = kind.rawValue }
     public var description: String { rawValue }
     public static let select: ToolID = "select"
+    public static let hand: ToolID = "hand"
 }

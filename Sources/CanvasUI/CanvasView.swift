@@ -111,6 +111,9 @@ public final class CanvasView: NSView {
     public override func deleteForward(_ sender: Any?) { editor.deleteSelection() }
     public override func insertNewline(_ sender: Any?) { editor.editSelection() }
     public override func cancelOperation(_ sender: Any?) { editor.cancel() }
+    /// Edit › Select All (⌘A), sent to the first responder: every shape when the canvas has the
+    /// keyboard. Text being edited (a note, a panel field) selects its own text instead.
+    public override func selectAll(_ sender: Any?) { editor.selectAll() }
 
     @objc public func zoomIn(_ sender: Any?) {
         editor.camera.zoom(by: 1.25, around: CGPoint(x: bounds.midX, y: bounds.midY))

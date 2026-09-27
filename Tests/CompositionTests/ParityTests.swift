@@ -41,9 +41,21 @@ import TestKit
     expectEqual(differing, 0, "\(name): differing pixels; see build/parity-\(name).png", file: file, line: line)
 }
 
+/// The POC's welcome board text (804db97), verbatim. The shipped board's third note says how the
+/// hand tool and the marquee work instead, and the goldens come only from the POC, so the welcome
+/// renders use these.
+let pocWelcomeTexts = [
+    "Double-click empty space to add a note. Drag a note to move it.",
+    "Double-click a note (or select it and press Return) to edit it.",
+    "Pinch to zoom, scroll with two fingers to pan. Dragging the background pans too.",
+    "Press A for the arrow tool, then drag from one shape to another. Press O to place an ellipse.",
+    "Pause inside a note while drawing to aim at that spot. Hold ⌥ to go all the way in, ⌘ to not attach.",
+    "Select an arrow and drag its middle handle to bend it.",
+]
+
 @MainActor let parityTests = Suite("Pixel parity", [
     test("the welcome board, a selected bent arrow, and a zoomed selection render identically") {
-        let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler())
+        let editor = ShippedPlugins.makeEditor(document: WelcomeBoard.document(texts: pocWelcomeTexts), scheduler: ManualScheduler())
         let canvas = CanvasView(editor: editor)
         canvas.frame = CGRect(x: 0, y: 0, width: 1200, height: 800)
         let arrows = editor.document.shapes.filter { $0.kind == Arrow.kind }.map(\.id)

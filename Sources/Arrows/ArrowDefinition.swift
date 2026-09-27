@@ -39,6 +39,13 @@ extension ArrowDefinition: ShapeDefinition {
         return arrowGeometry(shape.props, in: context).distance(to: point) <= margin
     }
 
+    /// Exact, against the visible body: a brush in the hollow of a bent arrow's bounds doesn't
+    /// select it (arrows are open, as in tldraw), nor does one over only the hidden stub inside a
+    /// bound shape.
+    func brushHitTest(_ brush: CGRect, on shape: ShapeRecord<Arrow>, in context: ShapeContext) -> Bool {
+        arrowGeometry(shape.props, in: context).crosses(brush.polygon)
+    }
+
     func indicatorPath(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> CGPath {
         let geometry = arrowGeometry(shape.props, in: context)
         let path = CGMutablePath()
@@ -91,8 +98,52 @@ extension ArrowDefinition: HandleProviding {
 }
 
 extension ArrowDefinition: CustomTranslation {
-    func translationSession(for shape: ShapeRecord<Arrow>, at pointer: Pointer, in editor: CanvasEditor) -> any Session {
-        PointingArrowSession(arrowID: shape.id, origin: pointer.view, targeting: editor.service(ArrowTargeting.self)!)
+    /// tldraw's arrow onTranslateStart and onTranslate:
+    /// - Moving with a shape it's bound to, every binding stays (an end bound to a shape left
+    ///   behind stretches) and free ends move by the delta.
+    /// - Moving without any of its shapes (alone, or with unrelated shapes), bound ends are made
+    ///   precise where they are, committed before the first move. Each end stays bound, its anchor
+    ///   sliding with the pointer, while that point is on its shape; off it, the end lets go, and
+    ///   it binds again if the point comes back.
+    /// Deliberate, pre-existing deviation: the ends probe at the full delta (tldraw: delta × 0.5),
+    /// as the POC's transcript pins.
+    func beginTranslation(of shape: ShapeRecord<Arrow>, movingWith moving: Set<ShapeID>,
+                          in transaction: inout Transaction) -> ShapeTranslation<Arrow> {
+        let ends = [ArrowEnd.start, .end]
+        var arrow = shape.props
+        let movesWithItsShapes = ends.contains { end in arrow[end].binding.map { moving.contains($0.shapeID) } ?? false }
+        if movesWithItsShapes {
+            let start = arrow
+            return ShapeTranslation { delta, shape, _ in
+                for end in ends {
+                    if case .free(let point) = start[end] { shape.props[end] = .free(point + delta) }
+                }
+            }
+        }
+        let connectables = Connectables(shapes: transaction.shapes)
+        let geometry = ArrowGeometry(arrow: arrow, strokeWidth: ArrowStyle.strokeWidth) { connectables[$0] }
+        var bindings: [ArrowEnd: ArrowBinding] = [:]
+        for end in ends {
+            guard var binding = arrow[end].binding, let bounds = connectables[binding.shapeID]?.bounds else { continue }
+            binding.normalizedAnchor = normalizedAnchor(geometry.handlePoint(at: end), in: bounds)
+            binding.isPrecise = true
+            arrow[end] = .bound(binding)
+            bindings[end] = binding
+        }
+        transaction.update(shape.id, as: Arrow.self) { $0.props = arrow }
+        let startHandle = geometry.startHandle, endHandle = geometry.endHandle
+        return ShapeTranslation { delta, shape, shapes in
+            let connectables = Connectables(shapes: shapes)
+            for (end, handle, binding) in [(ArrowEnd.start, startHandle, bindings[.start]), (.end, endHandle, bindings[.end])] {
+                let point = handle + delta
+                if var binding, let target = connectables.shape(at: point), target.id == binding.shapeID {
+                    binding.normalizedAnchor = normalizedAnchor(point, in: target.bounds)
+                    shape.props[end] = .bound(binding)
+                } else {
+                    shape.props[end] = .free(point)
+                }
+            }
+        }
     }
 }
 

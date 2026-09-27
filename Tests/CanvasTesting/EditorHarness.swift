@@ -73,6 +73,12 @@ public final class EditorHarness {
         editor.pointerUp(event())
     }
 
+    /// A press and a release where the pointer is (or at `point`), 16 ms apart.
+    public func click(at point: CGPoint? = nil, clickCount: Int = 1) {
+        press(at: point, clickCount: clickCount)
+        release()
+    }
+
     /// The keys held from now on (a flagsChanged event).
     public func hold(_ modifiers: Modifiers) {
         held = modifiers

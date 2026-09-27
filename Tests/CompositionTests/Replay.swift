@@ -50,10 +50,28 @@ let scenarios: [(String, withArrow: CGFloat?, [Step])] = [
     ("translate arrow off", 0, [.move(364, 180), .down(364, 180, clicks: 1), .drag(364, 200), .drag(364, 520), .up]),
     ("delete bent", 70, [.selectShape(1), .delete]),
     ("move shape", 0, [.move(100, 100), .down(100, 100, clicks: 1), .drag(140, 150), .drag(150, 170), .up]),
-    ("pan", 0, [.move(380, 500), .down(380, 500, clicks: 1), .drag(400, 520), .drag(420, 530), .up, .tool("a"), .move(200, 200), .down(200, 200, clicks: 1), .dragPath(600, 200, speed: fast), .up]),
+    // The app pans with the Hand tool (H); the POC's select tool panned on empty canvas, and its
+    // insertText ignores "h". Holding still for 100 ms lets the app's pointer velocity decay to 0
+    // (about (0.94, 0.63) pt/ms × 0.5^7.25 < 0.01 per axis), so no slide moves the camera off the
+    // golden. The POC runs no timer while panning: the wait changes nothing there.
+    ("pan", 0, [.tool("h"), .move(380, 500), .down(380, 500, clicks: 1), .drag(400, 520), .drag(420, 530), .wait(100), .up,
+                .tool("a"), .move(200, 200), .down(200, 200, clicks: 1), .dragPath(600, 200, speed: fast), .up]),
     // Released 208 ms after slowing into B: precise by pointer speed alone, before the 320 ms timer
     // could make it so (in "slow into B" the timer fires too, so speed isn't what's pinned there).
     ("slow into B, quick release", nil, [.tool("a"), .move(180, 180), .down(180, 180, clicks: 1), .dragPath(400, 120, speed: fast), .dragPath(480, 120, speed: slow), .up]),
+    // Appended later (scenarios are only ever appended, and recorded from the POC), to hold arrow
+    // translation and pressing to the POC before the select tool learned multi-selection.
+    ("translate arrow off and back", 0, [.move(364, 180), .down(364, 180, clicks: 1), .drag(364, 200), .drag(364, 520), .drag(364, 210), .up]),
+    ("translate arrow, fractional", 0, [.move(364.5, 180.25), .down(364.5, 180.25, clicks: 1), .drag(366.75, 203.5), .drag(371.125, 229.875), .up]),
+    // View (338.4, 188) is world (364, 180) at this zoom.
+    ("translate arrow, zoomed", 0, [.zoom(0.6, around: CGPoint(x: 300, y: 200)), .move(338.4, 188), .down(338.4, 188, clicks: 1), .drag(338.4, 200.5), .drag(341.2, 221.7), .up]),
+    ("click arrow body", 0, [.move(364, 180), .down(364, 180, clicks: 1), .up]),
+    ("arrow drag under threshold", 0, [.move(364, 180), .down(364, 180, clicks: 1), .drag(366, 181), .up]),
+    ("move bound shape", 0, [.move(600, 250), .down(600, 250, clicks: 1), .drag(640, 300), .drag(650, 320), .up]),
+    // The end re-aimed off B, then the arrow moved by a press on its body: (500, 301.4) is on the
+    // new line, 32 points from its middle handle.
+    ("translate arrow with a free end", 0, [.selectArrow(0), .move(560, 180), .down(560, 180, clicks: 1), .dragPath(760, 400, speed: fast), .up,
+                                            .move(500, 301.4), .down(500, 301.4, clicks: 1), .drag(500, 321.4), .drag(520, 341.4), .up]),
 ]
 
 /// The notes' text in `interactions`, so today's canvas shows no validation warning (the POC had

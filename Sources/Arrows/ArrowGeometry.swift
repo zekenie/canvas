@@ -125,6 +125,15 @@ public struct ArrowGeometry: Sendable {
         }
     }
 
+    /// Whether the visible body (between the clipped ends, arrowheads left out) crosses or
+    /// touches the closed polygon's edges.
+    public func crosses(_ polygon: [CGPoint]) -> Bool {
+        switch path {
+        case .straight: !intersections(ofSegmentFrom: start, to: end, withPolygon: polygon).isEmpty
+        case .curved(let arc, let startT, let endT): !intersections(of: arc.trimmed(from: startT, to: endT), withPolygon: polygon).isEmpty
+        }
+    }
+
     /// The bend that keeps this exact curve if the terminal handles move to the visible ends
     /// named in `ends`, e.g. when the arrow is detached from its shapes.
     public func bendKeepingCurve(movingHandlesToVisibleEndsAt ends: Set<ArrowEnd>) -> CGFloat? {

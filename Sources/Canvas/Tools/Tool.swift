@@ -30,7 +30,7 @@ extension Tool {
 public protocol Session: AnyObject {
     /// Nil shows the tool's cursor.
     func cursor(in editor: CanvasEditor) -> CanvasCursor?
-    /// The selection outline steps aside while the selection is being dragged.
+    /// Selection outlines and the selection box step aside while the selection is being dragged.
     var hidesSelectionIndicator: Bool { get }
     func drag(_ pointer: Pointer, in editor: CanvasEditor)
     /// The button came up. The editor clears the session afterwards unless this started another.

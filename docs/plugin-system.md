@@ -3,8 +3,10 @@
 Everything on the canvas comes from a plugin: sticky notes, ellipses, arrows, task cards,
 validation, checklists, the detail panel beside the canvas, even the examples. The core
 (`Sources/Canvas`) knows how to hold shapes, run tools, draw, and wire plugins together, and
-nothing about any particular shape or concern. Its one built-in tool is Select, which
-also pans, moves shapes, and drives handles and editing for whatever kinds offer them.
+nothing about any particular shape or concern. Its built-in tools are tldraw's two: Select, which
+selects (a click, ⇧-click, or a marquee dragged across empty canvas), moves the selection, and
+drives handles and editing for whatever kinds offer them; and Hand, which pans (a flung release
+slides on).
 
 This is the same system as data-canvas's `definePlugin`, in Swift. [The last section](#coming-from-data-canvas)
 maps one onto the other.
@@ -178,10 +180,13 @@ public struct RectanglesPlugin: CanvasPlugin {
   | `geometry(of:in:)` | the frame (box kinds); every other kind must say |
   | `hitTest(_:on:in:)` | inside the geometry's closed outline |
   | `indicatorPath(of:in:)` | the geometry's outline (hover, selection and target outlines) |
+  | `brushHitTest(_:on:in:)` | an outline edge crossing or touching the marquee, or the marquee inside a closed outline |
 
-  `geometry` is the one source of truth. Override it and hit testing, the outline and arrows all
-  follow. Override `hitTest` or `indicatorPath` only when you can do better; Ellipses does both (an
-  exact hit test, a smooth outline).
+  `geometry` is the one source of truth. Override it and hit testing, the outline, the marquee and
+  arrows all follow. Override `hitTest`, `indicatorPath` or `brushHitTest` only when you can do
+  better; Ellipses does the first two (an exact hit test, a smooth outline), and Arrows tests the
+  marquee against its arc. The core decides containment itself: a marquee that strictly contains a
+  shape's bounds always selects it, and `brushHitTest` is asked only when they overlap.
 - **Conform in an extension**, as above, for `ShapeDefinition` and its capabilities, `Tool`,
   `Session`, `EditorService`, and an extension point that implements `check`. Swift flags a member that *nearly* matches a defaulted requirement
   (a wrong label, a missing return type) only in the extension that declares the conformance, and
@@ -281,15 +286,35 @@ The details:
   `modifiersChanged`, `cursor(in:)`, `hidesSelectionIndicator`. A session can hand over to another by
   setting `editor.session` (pressing an arrow handle becomes dragging it). A session that sets
   `editor.hintedShapeID` clears it when it ends.
+- **The select tool** follows tldraw's states. Handles win, then the shape under the pointer,
+  then empty space inside a multi-selection's box, then the canvas.
+  - A press on a shape selects just it (and brings it to the front); ⇧ adds it. With ⌘, or on a
+    shape already selected, the press keeps the selection, so a drag past the 4-point threshold
+    moves it all; released without a drag, it selects the shape under the release (⇧ or ⌘ toggles
+    it instead). A lone box pressed without ⇧ or ⌘ follows the pointer from the press, with
+    no threshold.
+  - A press on empty canvas deselects (not with ⇧ or ⌘); a drag from there is a marquee, the
+    brush. It selects as it goes: whatever it touches, or with ⌘ only what it strictly encloses;
+    ⇧ adds to the selection from before. ⇧ and ⌘ take effect as they're pressed or let go, and a
+    ⌘-drag from a shape brushes too.
+  - A drag from empty space inside a multi-selection's box moves the selection; a click there is
+    a click on the canvas.
+  - ⌘ is the Command key only: Control-click is a secondary click on the Mac.
+- **Escape while moving shapes** puts every one back where it was when the drag began (tldraw's
+  behavior): a lone box, a selection, an arrow (its precise ends included) or a shape just placed.
+  Escape while a shape is pressed, before the drag threshold, ends the press; mid-marquee it puts
+  back the selection from before. A press on empty canvas ignores Escape until the release, as in
+  tldraw.
 - **Input**: tools see `Pointer` values, never `NSEvent`s. A `Pointer` has `view` (view points)
   and `world` (world units) locations, `modifiers` and `clickCount`. `editor.pointerSpeed` is
   smoothed like tldraw's. `editor.effectiveModifiers` counts a key released in the last 150 ms as
   still held, so letting go of ⌥ and the mouse together doesn't undo ⌥.
 - **Time**: timers go through `editor.scheduler`. Tests swap in a `ManualScheduler` and run time by
-  hand, which is how the arrows' 600/320/150 ms timers are pinned to the millisecond.
+  hand, which is how the arrows' 600/320/150 ms timers are pinned to the millisecond, and how the
+  hand tool's slide plays frame by frame.
 - **Shortcuts** are single unmodified keys, handled by the canvas (so typing in a note never
-  switches tools). A shortcut or tool id used twice is a registry error, including the core's `V`.
-- **The toolbar** is the registry's tools in plugin-list order, after the core's Select. It follows
+  switches tools). A shortcut or tool id used twice is a registry error, including the core's `V` and `H`.
+- **The toolbar** is the registry's tools in plugin-list order, after the core's Select and Hand. It follows
   `editor.currentToolID`, which is observable.
 - **Redrawing**: the core redraws whenever the document, camera, selection, hover, tool or session
   changes. A plugin whose drawn state changes some other way (on a timer, say) calls
@@ -434,8 +459,9 @@ The panel owns all of the chrome, and plugins fill it in:
 | Fonts, control size, the label column and checkbox toggles, all through the environment | |
 | Focus: what gives the keyboard back to the canvas | |
 
-With nothing selected the panel says "No Selection". A shape nothing contributes to (an arrow,
-today) gets its header, then "No Options". Without `DetailPanelPlugin` installed, the panel says
+With nothing selected the panel says "No Selection", and with several, "N Shapes" over the kinds
+selected (details are per shape: editing several at once isn't built). A shape nothing contributes
+to (an arrow, today) gets its header, then "No Options". Without `DetailPanelPlugin` installed, the panel says
 "No Details".
 
 Sections are stock SwiftUI plus a few primitives, and get the look by following these conventions:
@@ -788,7 +814,7 @@ Some behavior belongs to a kind itself rather than to a concern others can join.
 |---|---|---|
 | `Editable` | Edited in place: double-click, Return, or an editing placement. Supplies an `NSView` laid over the shape; writes go through `EditContext.update`. | StickyNotes |
 | `HandleProviding` | Draggable handles on the selected shape. The core finds, draws and hit-tests them; `pressHandle` returns `.drag` or `.consumed`, and `dragSession` does the dragging. | Arrows |
-| `CustomTranslation` | Moving the shape with its own session instead of by its frame. A kind without a frame needs this to be movable at all. | Arrows |
+| `CustomTranslation` | Moving with the selection by its own rules instead of by its frame. When a drag starts, `beginTranslation` gets the shape, every shape moving with it and the starting transaction (committed on its own, before the first move), and returns a `ShapeTranslation`: a closure run on every drag event with the pointer's delta, after the selection's boxes have moved. A kind without a frame needs this to be movable at all. | Arrows (alone, bound ends slide on their shapes; with a shape they're bound to, they keep every binding) |
 | `PaintOrderAnchored` | Painted just above another shape, and never raised when pressed. | Arrows (above the shapes they join) |
 
 The rule of thumb: behavior intrinsic to a kind is a capability; behavior anyone can add, to any
@@ -806,11 +832,16 @@ to it.
 - **`willDelete`** handlers run inside the deleting transaction, before anything is removed, so a
   plugin can let go of shapes that are about to disappear (arrows bake their curve there). They may
   delete more; each shape's handlers run once.
-- **Selection, hover and hint** (`selection`, `hovered`, `hintedShapeID`) always name a shape that
-  exists. `editingShapeID` is the shape being edited.
+- **Selection, hover and hint** always name shapes that exist. `selectedShapeIDs` is every selected
+  shape, in the order selected; `selection` is the only selected one, nil when none or several are
+  (tldraw's onlySelectedShape), and setting it selects exactly that shape. Handles, Return, editing
+  and the arrows' binding hints follow `selection`, so they apply to a lone shape; plugins written
+  for one selected shape keep working. `selectAll()` (⌘A) selects every shape, and Delete deletes
+  the whole selection in one transaction. `editingShapeID` is the shape being edited.
 - **Drawing**, back to front: background and grid; shapes in paint order (culled by frame); the
-  hover, selection and target outlines in one stroke at a constant screen width; world overlays;
-  the selected shape's handles; view overlays. Each shape and overlay draws with a fresh graphics
+  hover, selection and target outlines, with a box around a multi-selection's bounds, in one stroke
+  at a constant screen width; world overlays; the marquee (`editor.brush`); the only selected
+  shape's handles; view overlays. Each shape and overlay draws with a fresh graphics
   state. Sizes meant as view points are divided by `zoom` in world space.
 - **The view.** `CanvasView` (CanvasUI) is the only AppKit in the loop. It converts events, hosts
   the editing view over its shape, and draws the editor, all through the editor's `@_spi(Host)`
@@ -820,7 +851,7 @@ to it.
 ## The registry
 
 `Registry(plugins:)` runs every plugin's `register(into:)` once, after the core's own plugin (the
-select tool). It then checks everything and throws on:
+select and hand tools). It then checks everything and throws on:
 
 | Error | When |
 |---|---|
@@ -866,7 +897,7 @@ Once built, it's frozen and handed to the editor. The app's list is `ShippedPlug
 `registry.report` prints who contributes what: the runtime half of the graph, pinned by a test.
 
 ```
-core                tool select [v]
+core                tool select [v] · tool hand [h]
 arrows              shape arrow · service ArrowTargeting · tool arrow [a] · overlay BindingHintsOverlay · willDelete
 sticky-notes        shape sticky-note · tool sticky-note [n] · double-click sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note
 ellipses            shape ellipse · tool ellipse [o]
@@ -906,8 +937,9 @@ with this toolchain, and there's no XCTest). `./test.sh` builds and runs them al
 ```
 
 - `EditorHarness` (CanvasTesting) drives a headless editor like a user: `move`, `press`, `drag`
-  (optionally at a speed), `release`, `hold(modifiers)`, `key`, `escape`, `wait(ms)`. One clock
-  drives both event timestamps and the `ManualScheduler`, so pointer speed and timers agree.
+  (optionally at a speed), `release`, `click`, `hold(modifiers)`, `key`, `escape`, `wait(ms)`. One
+  clock drives both event timestamps and the `ManualScheduler`, so pointer speed, timers and the
+  hand tool's slide agree.
 - `FixturesPlugin` and `CardsPlugin` (CanvasTesting) give core and horizontal tests shapes to work
   with (`Box`, `Disc`, `Tag`, and the editable `Card`), so they never depend on a real vertical.
   ArrowsTests, ValidationTests, DetailPanelTests, ChecklistsTests and ValidationDetailsTests
@@ -934,14 +966,18 @@ with this toolchain, and there's no XCTest). `./test.sh` builds and runs them al
 - A test target is `Tests/<Name>Tests` with a `main.swift` that calls `runTests([...])`. Every
   `Suite` must be listed there (`test.sh` checks). `<M>Tests` may depend only on M, what M
   depends on, and the test-support and ui modules.
-- **Arrow behavior is pinned to the proof of concept.** CompositionTests replays 23 arrow
+- **Arrow behavior is pinned to the proof of concept.** CompositionTests replays 30 arrow
   scenarios through `CanvasView` with real events and compares where every arrow ends up, byte for
   byte, with a transcript recorded from the POC. It also compares nine renders pixel for pixel:
   the welcome board, hover and target outlines, binding hints mid-drag, handles and their halos,
   zoomed out. The same replay code (`Tests/CompositionTests/Replay.swift`) drives the POC when
   recording and the app when testing. The recordings come only from the POC:
   `scripts/record-poc-fixtures.sh` rebuilds them from commit 804db97, and re-running it should
-  change nothing. Never regenerate them from the app to make a change pass.
+  change nothing. Never regenerate them from the app to make a change pass. Scenarios are only
+  ever appended, and recorded from the POC. Where the app differs on purpose, the replay says so:
+  the "pan" scenario presses H and holds still 100 ms before the release (both do nothing in the
+  POC, whose select tool panned), and the welcome renders use the POC's note text
+  (`pocWelcomeTexts`), since the shipped board's third note describes the hand tool and the marquee.
 
 ## Coming from data-canvas
 
@@ -979,12 +1015,19 @@ Each of these adds to the design without changing what plugins are written again
 - **More document hooks** (before/after create and change), and **document-scoped services** for
   several windows on one board.
 - **An editing view hearing about outside changes** to its shape (needed once undo exists).
-- **Canvas features**: multi-select (a set of selected shapes, keeping `selection` as "the only
-  selected shape", as tldraw does, so plugins keep working), resize, marquee, snapping, and
-  hierarchical tool states once the select tool has more than a handful of sessions.
+- **Canvas features**: resize and rotate handles on the selection box; snapping; ⇧ locking a move
+  to an axis; ⌥-drag to clone; the scribble brush; arrow-key nudging; a long press starting a drag;
+  the "move" cursor while moving shapes; and hierarchical tool states once the select tool has more
+  than a handful of sessions.
+- **More panning**: the space bar, and middle- or right-button drags, through a host entry point of
+  their own (not `setTool`, which resets arrow targeting); the canvas scrolling at its edges while
+  brushing or moving, hit-testing again as the camera moves (a scroll mid-brush waits for the next
+  drag event today); the hand tool's double-, triple- and quadruple-click zoom; and a slide timed by
+  the display rather than nominal 16 ms frames.
 - **More horizontals** from data-canvas: describe, search, table of contents, commands. Each is an
   extension point in its own plugin.
-- **More of the detail panel**: several selected shapes at once; every-shape sections over the
+- **More of the detail panel**: editing several selected shapes at once (it shows "N Shapes"
+  today); every-shape sections over the
   record (not only every-box ones over the frame), and every-box overrides such as an aspect lock;
   remembering the chosen tab and collapsed sections across launches (`DetailTabID.name` is stable
   for that); and marking the row a validation issue is about (`ValidationIssue.field`).

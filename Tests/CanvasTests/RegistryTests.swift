@@ -117,20 +117,20 @@ extension ShapeRegistrar {
                                        Contributor(id: "b") { $0.contribute("B", to: Titles.self, for: .kind(Box.kind)) }])
         }
     },
-    test("the toolbar is the core's select tool, then each plugin's tools in plugin order") {
+    test("the toolbar is the core's Select and Hand tools, then each plugin's tools in plugin order") {
         let registry = try Registry(plugins: [CardsPlugin(), Contributor(id: "x") {
             $0.tool(ToolDescriptor(id: "zap", label: "Zap", systemImage: "bolt", shortcut: "z")) { _ in NoTool() }
         }])
-        expectEqual(registry.tools.map(\.id), [.select, ToolID(placing: Card.kind), "zap"])
+        expectEqual(registry.tools.map(\.id), [.select, .hand, ToolID(placing: Card.kind), "zap"])
         expectEqual(registry.tool(forShortcut: "C"), ToolID(placing: Card.kind))
-        expectEqual(registry.tools.map(\.label), ["Select", "Card", "Zap"])
-        expectEqual(registry.tools.map(\.shortcut), ["v", "c", "z"])
+        expectEqual(registry.tools.map(\.label), ["Select", "Hand", "Card", "Zap"])
+        expectEqual(registry.tools.map(\.shortcut), ["v", "h", "c", "z"])
     },
     test("the report lists who contributes what") {
         let registry = try Registry(plugins: [FixturesPlugin(), CardsPlugin(), StampsPlugin(),
                                               Contributor(id: "p") { $0.contribute("x", to: Stamps.self, for: .kind(Card.kind)) }])
         expectEqual(registry.report, """
-        core          tool select [v]
+        core          tool select [v] · tool hand [h]
         fixtures      shape box · shape disc · shape tag
         cards         shape card · tool card [c] · double-click card
         stamps        \("")

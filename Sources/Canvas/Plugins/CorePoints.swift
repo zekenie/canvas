@@ -78,5 +78,6 @@ struct CorePlugin: CanvasPlugin {
     var id: PluginID { .core }
     func register(into registrar: inout PluginRegistrar) {
         registrar.tool(ToolDescriptor(id: .select, label: "Select", systemImage: "cursorarrow", shortcut: "v")) { _ in SelectTool() }
+        registrar.tool(ToolDescriptor(id: .hand, label: "Hand", systemImage: "hand.raised", shortcut: "h")) { _ in HandTool() }
     }
 }

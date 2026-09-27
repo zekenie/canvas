@@ -18,8 +18,30 @@ final class ModifierLog: Tool {
         expectClose(h.editor.pointerSpeed, 0.5)
         h.move(to: CGPoint(x: 32, y: 0), after: 16)
         expectClose(h.editor.pointerSpeed, 0.75)
-        h.move(to: CGPoint(x: 32, y: 0), after: 468)
+        h.move(to: CGPoint(x: 32, y: 0), after: 96)
+        expectClose(h.editor.pointerSpeed, 0.75 / 64)         // just over 0.01: kept
+        h.move(to: CGPoint(x: 32, y: 0), after: 16)
         expectEqual(h.editor.pointerSpeed, 0)                 // below 0.01 reads as 0
+    },
+    test("pointer velocity smooths per axis like speed, zeroes components under 0.01, and resets on press") {
+        let h = try EditorHarness(plugins: [])
+        h.move(to: CGPoint(x: 0, y: 0))
+        expectEqual(h.editor.pointerVelocity, .zero)
+        h.move(to: CGPoint(x: 16, y: -32), after: 16)        // (1, -2) pt/ms for 16 ms
+        expectClose(h.editor.pointerVelocity, CGPoint(x: 0.5, y: -1))
+        h.move(to: CGPoint(x: 32, y: -32), after: 16)        // (1, 0)
+        expectClose(h.editor.pointerVelocity, CGPoint(x: 0.75, y: -0.5))
+        h.move(to: CGPoint(x: 32, y: -64), after: 160)       // (0, -0.2): x decays under 0.01, y doesn't
+        expectEqual(h.editor.pointerVelocity.x, 0)
+        expectClose(h.editor.pointerVelocity.y, -0.2 - 0.3 * 0.5 * 0.5 * 0.5 * 0.5 * 0.5 * 0.5 * 0.5 * 0.5 * 0.5 * 0.5)
+        h.press(at: CGPoint(x: 64, y: -64))                  // moving, but a press starts from rest
+        expectEqual(h.editor.pointerVelocity, .zero)
+        h.drag(to: CGPoint(x: 80, y: -64))
+        expectClose(h.editor.pointerVelocity, CGPoint(x: 0.5, y: 0))
+        h.release(after: 80)
+        expectClose(h.editor.pointerVelocity, CGPoint(x: 0.5 / 32, y: 0))   // just over 0.01: kept
+        h.move(to: CGPoint(x: 80, y: -64), after: 16)
+        expectEqual(h.editor.pointerVelocity, .zero)
     },
     test("a released modifier stays held for 150 ms, then the release is dispatched") {
         var log: ModifierLog?

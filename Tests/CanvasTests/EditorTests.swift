@@ -17,14 +17,21 @@ import TestKit
         expectEqual(h.editor.document[a]?.box?.origin, CGPoint(x: 2, y: 1))
         h.release()
     },
-    test("pressing empty canvas deselects and pans") {
+    test("pressing empty canvas deselects on press; a drag brushes and never pans") {
         let h = try EditorHarness(plugins: [FixturesPlugin()])
-        h.editor.selection = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
+        let box = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
+        h.editor.selection = box
         h.press(at: CGPoint(x: 500, y: 500))
         expectEqual(h.editor.selection, nil)
         h.drag(to: CGPoint(x: 520, y: 530))
-        expectEqual(h.editor.camera.origin, CGPoint(x: -20, y: -30))
-        expectEqual(h.editor.cursor, .closedHand)
+        expectEqual(h.editor.camera.origin, .zero)
+        expectEqual(h.editor.brush, CGRect(x: 500, y: 500, width: 20, height: 30))
+        expectEqual(h.editor.cursor, .standard)
+        h.drag(to: CGPoint(x: 5, y: 5))
+        expectEqual(h.editor.selectedShapeIDs, [box])
+        h.release()
+        expectEqual(h.editor.camera.origin, .zero)
+        expectEqual(h.editor.brush, nil)
     },
     test("double-clicking empty canvas places the claimed kind and starts editing it") {
         let h = try EditorHarness(plugins: [CardsPlugin()])
@@ -35,11 +42,18 @@ import TestKit
         expectEqual(h.editor.editingShapeID, card.id)
         expectEqual(h.editor.selection, card.id)
     },
-    test("with no claim, double-clicking empty canvas pans") {
+    test("with no claim, double-clicking empty canvas deselects; a drag brushes") {
         let h = try EditorHarness(plugins: [FixturesPlugin()])
+        let box = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
+        h.editor.selection = box
         h.press(at: CGPoint(x: 300, y: 200), clickCount: 2)
-        expect(h.editor.document.shapes.isEmpty)
-        expectEqual(h.editor.cursor, .closedHand)
+        expectEqual(h.editor.document.shapes.map(\.id), [box])
+        expectEqual(h.editor.selection, nil)
+        h.drag(to: CGPoint(x: 5, y: 5))
+        expectEqual(h.editor.brush, CGRect(x: 5, y: 5, width: 295, height: 195))
+        expectEqual(h.editor.selectedShapeIDs, [box])
+        expectEqual(h.editor.camera.origin, .zero)
+        h.release()
     },
     test("double-clicking a shape edits it only if its kind is editable; Return does the same") {
         let h = try EditorHarness(plugins: [FixturesPlugin(), CardsPlugin()])
@@ -218,7 +232,7 @@ import TestKit
                           placing: disc.placement(size: CGSize(width: 10, height: 10)) { Disc(.zero) })
             }
         }])
-        expectEqual(h.editor.registry.tools.map(\.id), [.select, ToolID(placing: Disc.kind), "small-disc"])
+        expectEqual(h.editor.registry.tools.map(\.id), [.select, .hand, ToolID(placing: Disc.kind), "small-disc"])
         h.key("s"); h.press(at: CGPoint(x: 100, y: 100)); h.release()
         h.key("d"); h.press(at: CGPoint(x: 300, y: 300)); h.release()
         expectEqual(h.editor.document.shapes.map(\.box), [CGRect(x: 95, y: 95, width: 10, height: 10), CGRect(x: 280, y: 280, width: 40, height: 40)])

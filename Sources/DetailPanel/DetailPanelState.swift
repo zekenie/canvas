@@ -69,10 +69,26 @@ public final class DetailPanelState {
     /// The kind's header, else the label and symbol of the tool that places the kind, else the
     /// kind. A header without a symbol takes the tool's.
     private func header(for record: AnyShapeRecord, from headers: [@MainActor (AnyShapeRecord) -> DetailHeader?]) -> DetailHeader {
-        let tool = editor.registry.tools.first { $0.id == ToolID(placing: record.kind) }
+        let tool = placingTool(of: record.kind)
         var header = headers.lazy.compactMap { $0(record) }.first ?? DetailHeader(tool?.label ?? record.kind.rawValue)
         if header.systemImage == nil { header.systemImage = tool?.systemImage }
         return header
+    }
+
+    /// The header shown when several shapes are selected: "N Shapes", with each kind's name once,
+    /// in selection order ("Sticky Note, Arrow"), and stacked squares. A kind's name is the label
+    /// of the tool that places it, else the kind.
+    public func selectionSummary(of records: [AnyShapeRecord]) -> DetailHeader {
+        var names: [String] = []
+        for record in records {
+            let name = placingTool(of: record.kind)?.label ?? record.kind.rawValue
+            if !names.contains(name) { names.append(name) }
+        }
+        return DetailHeader("\(records.count) Shapes", subtitle: names.joined(separator: ", "), systemImage: "square.on.square")
+    }
+
+    private func placingTool(of kind: ShapeKind) -> ToolDescriptor? {
+        editor.registry.tools.first { $0.id == ToolID(placing: kind) }
     }
 
     /// The kind's contributions, then every kind's, each in plugin order.

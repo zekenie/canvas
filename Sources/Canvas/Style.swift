@@ -24,6 +24,9 @@ public enum Style {
     }
     static let indicatorWidth: CGFloat = 1.5
     public static let dragThreshold: CGFloat = 4
+    /// The select tool's marquee: tldraw's hsl(0, 0%, 56%), in light and dark alike.
+    static let brushFill = NSColor(srgbRed: 0.56, green: 0.56, blue: 0.56, alpha: 0.102)
+    static let brushStroke = NSColor(srgbRed: 0.56, green: 0.56, blue: 0.56, alpha: 0.251)
     static let handleRadius: CGFloat = 4
     /// Also the radius of the hover halo around a handle.
     static let handleHitRadius: CGFloat = 12
@@ -31,6 +34,20 @@ public enum Style {
     /// Releasing a modifier takes effect this much later, so letting go of it and the mouse
     /// together doesn't undo what it did.
     static let modifierReleaseDelay: Duration = .milliseconds(150)
+
+    // The camera's slide after a flung hand drag (tldraw's slideCamera). Speeds are view points
+    // per millisecond.
+    /// A release slower than this doesn't slide.
+    static let cameraSlideMinSpeed: CGFloat = 0.1
+    /// Release speeds are clamped to this (the slide itself starts at no more than 1).
+    static let cameraSlideMaxSpeed: CGFloat = 2
+    /// The speed lost every frame.
+    static let cameraSlideFriction: CGFloat = 0.09
+    /// The slide stops once its speed would drop under this.
+    static let cameraSlideStopSpeed: CGFloat = 0.01
+    /// A slide frame's length.
+    static let cameraSlideFrameMilliseconds: CGFloat = 16
+    static var cameraSlideFrame: Duration { .milliseconds(Int(cameraSlideFrameMilliseconds)) }
 }
 
 extension NSAppearance {

@@ -78,7 +78,7 @@ public struct Registry {
 
     public func definition(for kind: ShapeKind) -> (any ShapeDefinition)? { definitions[kind] }
 
-    /// The toolbar: core's select tool, then each plugin's tools in plugin order.
+    /// The toolbar: the core's Select and Hand tools, then each plugin's tools in plugin order.
     public var tools: [ToolDescriptor] { contributions(to: CorePoints.Tools.self).map(\.value.descriptor) }
 
     public func tool(forShortcut key: Character) -> ToolID? {

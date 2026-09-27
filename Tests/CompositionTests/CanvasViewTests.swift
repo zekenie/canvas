@@ -111,4 +111,61 @@ import Validation
         expect(canvas.subviews.isEmpty)
         expect(window.firstResponder === canvas)
     },
+    test("V, then a mouse drag on the background, brushes: it selects the note it crosses and never pans") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
+        let (window, canvas) = windowed(editor)
+        let note = editor.add(StickyNote(frame: CGRect(x: 320, y: 320, width: 200, height: 200)))
+        window.press("h")
+        window.press("v")
+        expectEqual(editor.currentToolID, .select)
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: CGPoint(x: 300, y: 300), time: 1))
+        canvas.mouseDragged(with: window.mouse(.leftMouseDragged, at: CGPoint(x: 350, y: 350), time: 1.016))
+        expectEqual(editor.brush, CGRect(x: 300, y: 300, width: 50, height: 50))
+        expectEqual(editor.selectedShapeIDs, [note])
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: CGPoint(x: 350, y: 350), time: 1.032))
+        expectEqual(editor.brush, nil)
+        expectEqual(editor.selectedShapeIDs, [note])
+        expectEqual(editor.camera, Camera())
+    },
+    test("Select All (the standard selectAll: action) selects every shape on the canvas; in a note being edited, its text") {
+        let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler())
+        let (window, canvas) = windowed(editor)
+        canvas.selectAll(nil)
+        expectEqual(editor.selectedShapeIDs, editor.document.shapes.map(\.id))
+        editor.selection = nil
+        expect(window.firstResponder === canvas)
+        expect(canvas.tryToPerform(#selector(NSResponder.selectAll(_:)), with: nil), "down the responder chain, as the menu item sends it")
+        expectEqual(editor.selectedShapeIDs.count, 9)
+
+        let note = try require(editor.document.shapes.first { $0.kind == StickyNote.kind }?.id)
+        editor.selection = note
+        editor.editSelection()
+        let text = try require(window.firstResponder as? NSTextView)
+        text.setSelectedRange(NSRange(location: 0, length: 0))
+        expect(text.tryToPerform(#selector(NSResponder.selectAll(_:)), with: nil))
+        expectEqual(text.selectedRange(), NSRange(location: 0, length: (text.string as NSString).length))
+        expectEqual(editor.selectedShapeIDs, [note])
+        expectEqual(editor.editingShapeID, note)
+    },
+    test("H, then a mouse drag, pans the camera; a flung release slides on, and a scrollWheel event stops it") {
+        let scheduler = ManualScheduler()
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: scheduler)
+        let (window, canvas) = windowed(editor)
+        window.press("h")
+        expectEqual(editor.currentToolID, .hand)
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: CGPoint(x: 300, y: 300), time: 1))
+        canvas.mouseDragged(with: window.mouse(.leftMouseDragged, at: CGPoint(x: 330, y: 320), time: 1.016))
+        canvas.mouseDragged(with: window.mouse(.leftMouseDragged, at: CGPoint(x: 360, y: 340), time: 1.032))
+        expectEqual(editor.camera.origin, CGPoint(x: -60, y: -40))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: CGPoint(x: 360, y: 340), time: 1.033))
+        scheduler.advance(by: .milliseconds(16))
+        expect(editor.camera.origin.x < -60 && editor.camera.origin.y < -40, "sliding on down and to the right")
+        expectEqual(scheduler.pendingCount, 1)
+        let wheel = try require(CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: 5, wheel2: 0, wheel3: 0))
+        canvas.scrollWheel(with: try require(NSEvent(cgEvent: wheel)))
+        expectEqual(scheduler.pendingCount, 0)
+        let scrolled = editor.camera
+        scheduler.advance(by: .milliseconds(100))
+        expectEqual(editor.camera, scrolled)
+    },
 ])

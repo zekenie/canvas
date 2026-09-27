@@ -54,7 +54,7 @@ extension EditorHarness {
     test("the bridge is one line in the report, and contributes to Validation nothing") {
         let registry = try Registry(plugins: [ValidationPlugin(), DetailPanelPlugin(), ValidationDetailsPlugin()])
         expectEqual(registry.report, """
-        core                tool select [v]
+        core                tool select [v] · tool hand [h]
         validation          service ValidationEngine · overlay ValidationOverlay
         detail-panel        service DetailPanelState · ShapeDetails
         validation-details  DetailStatuses

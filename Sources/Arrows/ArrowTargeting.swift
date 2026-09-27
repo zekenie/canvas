@@ -110,12 +110,12 @@ final class ArrowTargeting {
                 anchor = bounds.center
             }
         }
-        var normalizedAnchor = normalized(anchor, in: bounds)
-        if let opposite, opposite.shapeID == target.id, opposite.normalizedAnchor == normalizedAnchor {
-            normalizedAnchor.x += 0.05
+        var normalized = normalizedAnchor(anchor, in: bounds)
+        if let opposite, opposite.shapeID == target.id, opposite.normalizedAnchor == normalized {
+            normalized.x += 0.05
         }
         updateArrow(arrowID) {
-            $0[end] = .bound(ArrowBinding(shapeID: target.id, normalizedAnchor: normalizedAnchor, isPrecise: precise, isExact: isExact))
+            $0[end] = .bound(ArrowBinding(shapeID: target.id, normalizedAnchor: normalized, isPrecise: precise, isExact: isExact))
         }
         editor.hintedShapeID = target.id
     }
@@ -132,10 +132,6 @@ final class ArrowTargeting {
         preciseTimer?.cancel()
         preciseTimer = nil
     }
-
-    func normalized(_ point: CGPoint, in bounds: CGRect) -> CGPoint {
-        CGPoint(x: (point.x - bounds.minX) / bounds.width, y: (point.y - bounds.minY) / bounds.height)
-    }
 }
 
 extension ArrowTargeting: EditorService {
@@ -143,4 +139,9 @@ extension ArrowTargeting: EditorService {
     func toolDidChange(from old: ToolID, to new: ToolID, in editor: CanvasEditor) {
         resetArrowToolTargeting()
     }
+}
+
+/// Where `point` lies in `bounds`, as a binding's anchor: (0, 0) at its min corner, (1, 1) at its max.
+func normalizedAnchor(_ point: CGPoint, in bounds: CGRect) -> CGPoint {
+    CGPoint(x: (point.x - bounds.minX) / bounds.width, y: (point.y - bounds.minY) / bounds.height)
 }

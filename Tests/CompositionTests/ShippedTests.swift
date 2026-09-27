@@ -14,13 +14,13 @@ import Validation
     test("the shipped plugin list registers without conflicts") {
         _ = try ShippedPlugins.registry()
     },
-    test("the toolbar is Select V, Arrow A, Note N, Ellipse O, Task T, Rectangle R, Eraser E") {
+    test("the toolbar is Select V, Hand H, Arrow A, Note N, Ellipse O, Task T, Rectangle R, Eraser E") {
         let tools = try ShippedPlugins.registry().tools
-        expectEqual(tools.map(\.help), ["Select (V)", "Arrow (A)", "Note (N)", "Ellipse (O)", "Task (T)", "Rectangle (R)", "Eraser (E)"])
+        expectEqual(tools.map(\.help), ["Select (V)", "Hand (H)", "Arrow (A)", "Note (N)", "Ellipse (O)", "Task (T)", "Rectangle (R)", "Eraser (E)"])
     },
     test("the registry report: who contributes what") {
         expectEqual(try ShippedPlugins.registry().report, """
-        core                tool select [v]
+        core                tool select [v] · tool hand [h]
         arrows              shape arrow · service ArrowTargeting · tool arrow [a] · overlay BindingHintsOverlay · willDelete
         sticky-notes        shape sticky-note · tool sticky-note [n] · double-click sticky-note · ValidationRules → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note
         ellipses            shape ellipse · tool ellipse [o]
@@ -55,6 +55,15 @@ import Validation
         expectEqual(editor.document.shapes.filter { $0.kind == StickyNote.kind }.count, 6)
         expectEqual(editor.document.shapes.filter { $0.kind == Arrow.kind }.count, 3)
         expectEqual(editor.validation?.results.count, 0)
+    },
+    test("the shipped welcome board differs from the POC's only in the third note, which mentions H and no longer says dragging the background pans") {
+        let shipped = WelcomeBoard.texts
+        expectEqual(shipped.count, pocWelcomeTexts.count)
+        expectEqual(shipped.indices.filter { shipped[$0] != pocWelcomeTexts[$0] }, [2])
+        expect(shipped[2].contains("Press H"))
+        expect(!shipped[2].contains("pans too"))
+        let notes = WelcomeBoard.document().shapes.compactMap { $0.typed(as: StickyNote.self)?.props.text }
+        expectEqual(notes, shipped)
     },
     test("O then a drag places an ellipse and moves it into place") {
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0) }

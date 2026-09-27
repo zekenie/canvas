@@ -128,7 +128,7 @@ struct MoreLabelTitles: CanvasPlugin {
     test("the examples' report: who contributes what") {
         let registry = try Registry(plugins: [RectanglesPlugin(), EraserPlugin(), EllipsesPlugin(), TitlesPlugin(), EllipseTitlesPlugin()])
         expectEqual(registry.report, """
-        core            tool select [v]
+        core            tool select [v] · tool hand [h]
         rectangles      shape rectangle · tool rectangle [r]
         eraser          tool eraser [e]
         ellipses        shape ellipse · tool ellipse [o]

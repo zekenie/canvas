@@ -21,19 +21,22 @@ and `./build.sh audit` checks it without compiling.
 
 | Action | How |
 | --- | --- |
-| Pan | Two-finger scroll, or drag the background |
+| Pan | Two-finger scroll, or H (the hand tool) and drag; a fling slides on. V or Escape goes back to select |
 | Zoom | Pinch, ⌘-scroll, or ⌘= / ⌘- / ⌘0 |
 | New note | Double-click empty space, or N (the note tool) and click |
 | New ellipse | O, then click; keep dragging to place it |
 | New task | T, then click; edit it in the detail panel |
 | New rectangle | R, then click (an example plugin) |
 | Erase | E, then click or drag across shapes (an example plugin) |
-| Move a shape | Drag it |
+| Select | Click a shape, or drag across empty space to select what the marquee touches (⌘: only what it encloses; ⇧: add to the selection) |
+| Add to or remove from the selection | ⇧-click (or ⌘-click) a shape |
+| Select all | ⌘A |
+| Move shapes | Drag a shape. With several selected, drag any of them, or the space between them, to move them all; Escape puts them back |
 | Edit a note | Double-click it, or select it and press Return; Escape to finish |
 | Edit a shape's details | Select it; the detail panel on the right edits it. Escape gives the keyboard back to the canvas |
 | Show or hide the detail panel | ⌃⌘I, or the Details button in the toolbar |
 | Add a checklist to a note or task | The panel's Checklist tab: + adds an item, − or Delete removes the selected one |
-| Delete a shape or arrow | Select it and press Delete |
+| Delete shapes or arrows | Select them and press Delete |
 | Arrow tool | A (V or Escape to go back to select) |
 | Draw an arrow | Drag from one shape to another with the arrow tool. Arriving quickly aims at a shape's center; arriving slowly, or pausing inside the shape, aims at that exact spot |
 | Aim into a shape | Hold ⌥ while drawing or dragging an end: the arrow runs all the way to the spot |

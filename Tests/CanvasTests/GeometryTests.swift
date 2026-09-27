@@ -26,4 +26,25 @@ import TestKit
         expect(!polygonContains(square, CGPoint(x: 15, y: 5)))
         expectEqual(intersections(ofSegmentFrom: CGPoint(x: -5, y: 5), to: CGPoint(x: 15, y: 5), withPolygon: square).count, 2)
     },
+    test("containsStrictly is strict on every side") {
+        let outer = CGRect(x: 0, y: 0, width: 10, height: 10)
+        expect(outer.containsStrictly(CGRect(x: 1, y: 1, width: 8, height: 8)))
+        expect(outer.containsStrictly(CGRect(x: 5, y: 5, width: 0, height: 0)))
+        for inner in [CGRect(x: 0, y: 1, width: 8, height: 8), CGRect(x: 1, y: 0, width: 8, height: 8),
+                      CGRect(x: 1, y: 1, width: 9, height: 8), CGRect(x: 1, y: 1, width: 8, height: 9), outer] {
+            expect(!outer.containsStrictly(inner), "\(inner) shares an edge")
+        }
+    },
+    test("touches includes shared edges and zero-width and zero-height rects") {
+        let rect = CGRect(x: 0, y: 0, width: 10, height: 10)
+        expect(rect.touches(CGRect(x: 10, y: 0, width: 5, height: 5)), "a shared edge")
+        expect(!rect.intersects(CGRect(x: 10, y: 0, width: 5, height: 5)), "which intersects misses")
+        expect(rect.touches(CGRect(x: 10, y: 10, width: 5, height: 5)), "a shared corner")
+        expect(!rect.touches(CGRect(x: 10.5, y: 0, width: 5, height: 5)))
+        expect(!rect.touches(CGRect(x: 0, y: -5.5, width: 5, height: 5)))
+        let level = CGRect(x: -5, y: 5, width: 20, height: 0)
+        expect(rect.touches(level) && level.touches(rect), "zero height")
+        expect(rect.touches(CGRect(x: 5, y: -5, width: 0, height: 20)), "zero width")
+        expect(!rect.touches(CGRect(x: 5, y: 11, width: 0, height: 20)))
+    },
 ])

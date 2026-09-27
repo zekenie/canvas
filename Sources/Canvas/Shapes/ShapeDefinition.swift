@@ -83,6 +83,12 @@ public protocol ShapeDefinition<Props> {
     /// Whether a world point is on the shape: for pressing, hovering and attaching to it.
     /// Default: inside a closed outline (an open shape can't be hit unless it says how).
     func hitTest(_ point: CGPoint, on shape: ShapeRecord<Props>, in context: ShapeContext) -> Bool
+    /// Whether a marquee (a world rect) selects the shape. The core asks only when the brush
+    /// overlaps or touches the shape's `geometry.bounds` without strictly containing them: bounds
+    /// strictly inside always select, and with ⌘ nothing else does, so a kind never deals with
+    /// containment. Default, from `geometry`: an edge of the outline crosses or touches the brush,
+    /// or, for a closed shape, the brush lies inside the outline.
+    func brushHitTest(_ brush: CGRect, on shape: ShapeRecord<Props>, in context: ShapeContext) -> Bool
     /// Hover, selection and target outline. The core strokes them all in one pass.
     func indicatorPath(of shape: ShapeRecord<Props>, in context: ShapeContext) -> CGPath
 }
@@ -91,6 +97,18 @@ extension ShapeDefinition {
     public func hitTest(_ point: CGPoint, on shape: ShapeRecord<Props>, in context: ShapeContext) -> Bool {
         let geometry = geometry(of: shape, in: context)
         return geometry.isClosed && polygonContains(geometry.outline, point)
+    }
+
+    public func brushHitTest(_ brush: CGRect, on shape: ShapeRecord<Props>, in context: ShapeContext) -> Bool {
+        let geometry = geometry(of: shape, in: context)
+        let outline = geometry.outline
+        guard !outline.isEmpty else { return false }
+        let edges = geometry.isClosed ? outline.closedEdges : Array(zip(outline, outline.dropFirst()))
+        let box = brush.polygon
+        if edges.contains(where: { !intersections(ofSegmentFrom: $0.0, to: $0.1, withPolygon: box).isEmpty }) { return true }
+        // No edge meets the brush, so the brush is wholly inside the shape or wholly outside it.
+        // Geometric, not `hitTest`: a hit margin mustn't select a brush just outside the shape.
+        return geometry.isClosed && polygonContains(outline, brush.origin)
     }
 
     public func indicatorPath(of shape: ShapeRecord<Props>, in context: ShapeContext) -> CGPath {

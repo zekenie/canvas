@@ -44,3 +44,17 @@ pan: tool=select camera=(-40.0, -30.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@
     bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.500000,0.500000,imprecise) bend=0.000000 heads=false,true
 slow into B, quick release: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
     bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.100000,0.200000,precise) bend=0.000000 heads=false,true
+translate arrow off and back: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
+    bound(#0,0.500000,0.650000,precise) -> bound(#1,0.500000,0.650000,precise) bend=0.000000 heads=false,true
+translate arrow, fractional: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
+    bound(#0,0.533125,0.748125,precise) -> bound(#1,0.533125,0.748125,precise) bend=0.000000 heads=false,true
+translate arrow, zoomed: tool=select camera=(-200.0, -133.33333333333337) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
+    bound(#0,0.523333,0.780833,precise) -> bound(#1,0.523333,0.780833,precise) bend=0.000000 heads=false,true
+click arrow body: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
+    bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.500000,0.500000,imprecise) bend=0.000000 heads=false,true
+arrow drag under threshold: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
+    bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.500000,0.500000,imprecise) bend=0.000000 heads=false,true
+move bound shape: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(510.0, 150.0, 200.0, 200.0)]
+    bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.500000,0.500000,imprecise) bend=0.000000 heads=false,true
+translate arrow with a free end: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
+    bound(#0,0.600000,0.700000,precise) -> free(780.000000,440.000000) bend=0.000000 heads=false,true

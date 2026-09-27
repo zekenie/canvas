@@ -29,19 +29,56 @@ public final class CanvasEditor {
     public private(set) var document: CanvasDocument
     /// +1 per transaction that changed something.
     public private(set) var revision = 0
-    public var camera = Camera() { didSet { setNeedsDisplay() } }
-
-    // These always name a shape in the document: setting one to a shape that isn't there sets nil.
-    public var selection: ShapeID? {
-        get { selectedID }
-        set {
-            let id = existing(newValue)
-            guard id != selectedID else { return }
-            selectedID = id
-            hoveredHandle = nil
+    /// Setting it stops the camera's slide (CanvasEditor+Camera.swift).
+    public var camera = Camera() {
+        didSet {
+            stopCameraSlide()
             setNeedsDisplay()
         }
     }
+
+    // The selection, hover and hint always name shapes in the document: setting one to a shape
+    // that isn't there drops it (nil, or out of the set).
+
+    /// Every selected shape, in the order it was selected, each once: setting drops ids that
+    /// aren't there and repeats (the first is kept). Setting what's already selected does nothing
+    /// (no redraw, no Observation notification). Changing which shape is the only selected one
+    /// drops the hovered handle.
+    public var selectedShapeIDs: [ShapeID] {
+        get { selectedIDs }
+        set {
+            var seen = Set<ShapeID>()
+            let ids = newValue.filter { document[$0] != nil && seen.insert($0).inserted }
+            guard ids != selectedIDs else { return }
+            selectedIDs = ids
+            let only = ids.count == 1 ? ids[0] : nil
+            if only != onlySelectedID {
+                onlySelectedID = only
+                hoveredHandle = nil            // handles belong to the only selected shape
+            }
+            setNeedsDisplay()
+        }
+    }
+    /// The only selected shape: nil when none or several are (tldraw's onlySelectedShape). Setting
+    /// it selects exactly that shape; nil selects none. Handles, Return and editing follow this, so
+    /// they apply only to a lone shape. Observers of this hear only changes to the only selected
+    /// shape, not 2 → 3.
+    public var selection: ShapeID? {
+        get { onlySelectedID }
+        set { selectedShapeIDs = newValue.map { [$0] } ?? [] }
+    }
+    public func isSelected(_ id: ShapeID) -> Bool { selectedIDs.contains(id) }
+    /// The union of the selected shapes' geometry bounds, in world units; nil with nothing
+    /// selected. Shapes with no outline (nothing drawn) don't count.
+    public var selectionBounds: CGRect? {
+        let context = shapeContext
+        let rects = selectedIDs.compactMap { context.geometry(of: $0) }
+            .filter { !$0.outline.isEmpty && !$0.bounds.isNull }.map(\.bounds)
+        guard let first = rects.first else { return nil }
+        return rects.dropFirst().reduce(first) { $0.union($1) }
+    }
+    /// The marquee being dragged in the select tool, in world units, for drawing; nil otherwise.
+    public var brush: CGRect? { (session as? BrushingSession)?.brush }
     /// Under the pointer in the select tool, outlined as a hover hint.
     public internal(set) var hovered: ShapeID? {
         get { hoveredID }
@@ -62,11 +99,12 @@ public final class CanvasEditor {
             setNeedsDisplay()
         }
     }
-    private var selectedID: ShapeID?
+    private var selectedIDs: [ShapeID] = []
+    private var onlySelectedID: ShapeID?
     private var hoveredID: ShapeID?
     private var hintedID: ShapeID?
     private func existing(_ id: ShapeID?) -> ShapeID? { id.flatMap { document[$0] == nil ? nil : $0 } }
-    /// A handle of the selected shape under the pointer (its definition's `Handle`).
+    /// A handle of the only selected shape under the pointer (its definition's `Handle`).
     public internal(set) var hoveredHandle: AnyHashable? {
         didSet {
             guard hoveredHandle != oldValue else { return }
@@ -95,6 +133,8 @@ public final class CanvasEditor {
     @ObservationIgnored var heldModifiers: Modifiers = []
     @ObservationIgnored var recentlyReleased: Modifiers = []
     @ObservationIgnored var releaseTimer: ScheduledTask?
+    // The camera's slide's next frame, used by CanvasEditor+Camera.swift.
+    @ObservationIgnored var cameraSlide: ScheduledTask?
 
     public init(registry: Registry, document: CanvasDocument = CanvasDocument(), scheduler: any Scheduler = TaskScheduler()) {
         for record in document.shapes {
@@ -157,7 +197,7 @@ public final class CanvasEditor {
         document = newDocument
         revision += 1
         // The setters drop ids that no longer name a shape.
-        selection = selectedID
+        selectedShapeIDs = selectedIDs
         hovered = hoveredID
         hintedShapeID = hintedID
         if let editing = editingShapeID, document[editing] == nil { endEditing() }
@@ -186,7 +226,7 @@ public final class CanvasEditor {
         selection = record.id
         setTool(.select)
         switch placement.completion {
-        case .translate: session = MoveShapeSession(id: record.id, grabOffset: point - record.box!.origin)
+        case .translate: session = TranslatingSession(ids: [record.id], from: point, in: self)
         case .edit: beginEditing(record.id)
         }
     }
@@ -194,7 +234,7 @@ public final class CanvasEditor {
     // MARK: Commands
 
     /// Escape: cancels a session that can be cancelled (and does nothing during any other),
-    /// otherwise leaves a non-select tool, otherwise deselects.
+    /// otherwise leaves a non-select tool, otherwise deselects all.
     public func cancel() {
         if let running = session {
             if running.cancel(in: self), session === running { session = nil }
@@ -203,17 +243,29 @@ public final class CanvasEditor {
         if currentToolID != .select { setTool(.select) } else { selection = nil }
     }
 
-    /// Return: edits the selection if its kind is editable.
+    /// Return: edits the only selected shape if its kind is editable.
     public func editSelection() {
         if let selection { beginEditing(selection) }
     }
 
+    /// Delete: removes every selected shape in one transaction. willDelete handlers see them all,
+    /// so arrows bound to them let go where they are.
     public func deleteSelection() {
-        guard let id = selection else { return }
-        transact { $0.delete([id]) }
-        selection = nil
+        let ids = selectedShapeIDs
+        guard !ids.isEmpty else { return }
+        transact { $0.delete(Set(ids)) }
+        selectedShapeIDs = []
         hovered = nil
         hoveredHandle = nil
+    }
+
+    /// ⌘A (tldraw's selectAll): ends editing, switches to select, and selects every shape in
+    /// document order. Does nothing mid-gesture.
+    public func selectAll() {
+        guard session == nil else { return }
+        endEditing()
+        setTool(.select)
+        selectedShapeIDs = document.shapes.map(\.id)
     }
 
     // MARK: Input, for tools and sessions
@@ -222,6 +274,8 @@ public final class CanvasEditor {
     public var pointerWorldLocation: CGPoint { camera.toWorld(tracker.location) }
     /// View points per millisecond, smoothed.
     public var pointerSpeed: CGFloat { tracker.speed }
+    /// View points per millisecond, per axis, smoothed like `pointerSpeed`; reset on every press.
+    public var pointerVelocity: CGPoint { tracker.velocity }
     /// Held now, plus any released within `Style.modifierReleaseDelay`.
     public var effectiveModifiers: Modifiers { liveModifiers().union(recentlyReleased) }
 
@@ -282,14 +336,30 @@ public final class CanvasEditor {
         }?.id
     }
 
-    /// The selected shape's handles, in view space, front to back.
+    /// The shapes a brush (a world rect) selects, back to front. Bounds strictly inside the brush
+    /// always count; with `mustContain` (⌘) nothing else does; otherwise a shape whose bounds the
+    /// brush overlaps or touches counts if its definition's `brushHitTest` says so. Shapes with no
+    /// outline never count.
+    func shapes(inBrush brush: CGRect, mustContain: Bool) -> [ShapeID] {
+        let context = shapeContext
+        return paintOrder().filter { record in
+            guard let definition = registry.definition(for: record.kind),
+                  let geometry = definition.erasedGeometry(of: record, in: context),
+                  !geometry.outline.isEmpty, !geometry.bounds.isNull else { return false }
+            if brush.containsStrictly(geometry.bounds) { return true }
+            guard !mustContain, brush.touches(geometry.bounds) else { return false }
+            return definition.erasedBrushHitTest(brush, on: record, in: context)
+        }.map(\.id)
+    }
+
+    /// The only selected shape's handles, in view space, front to back.
     func visibleHandles() -> [(handle: AnyHashable, point: CGPoint)] {
         guard let id = selection, let record = document[id],
               let definition = registry.definition(for: record.kind) as? any HandleProviding else { return [] }
         return definition.erasedHandles(of: record, in: shapeContext).map { ($0.handle, camera.toView($0.point)) }
     }
 
-    /// The selected shape's handle under a view point: the nearest within `Style.handleHitRadius`.
+    /// The only selected shape's handle under a view point: the nearest within `Style.handleHitRadius`.
     @_spi(Host) public func handle(atViewPoint viewPoint: CGPoint) -> AnyHashable? {
         visibleHandles()
             .map { ($0.handle, $0.point.distance(to: viewPoint)) }

@@ -96,7 +96,7 @@ extension LookalikeChecklistTab: DetailTab { static var title: String { "Checkli
             r.shape(ChoreDefinition()) { $0.checklist(\.items) }
         }])
         expectEqual(registry.report, """
-        core          tool select [v]
+        core          tool select [v] · tool hand [h]
         checklists    overlay ChecklistOverlay
         detail-panel  service DetailPanelState · ShapeDetails
         p             shape chore · ShapeChecklists → chore · ShapeDetails → chore
