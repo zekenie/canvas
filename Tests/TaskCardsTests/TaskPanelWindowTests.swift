@@ -7,6 +7,7 @@ import Selection
 import SwiftUI
 import TaskCards
 import TestKit
+import Titles
 import Validation
 
 /// The panel alone in an unshown window. The editor keeps real time, so SwiftUI's updates land
@@ -76,11 +77,12 @@ final class TaskPanelWindow {
     }
 
     var task: TaskCard? { editor.task(id) }
+    var title: String? { editor.document[id]?[TitleProperty.self] }
 }
 
 @MainActor let taskPanelWindowTests = Suite("Task panel in a window", [
     test("every tab builds: Task's fields, Checklist's rows, Style's checkboxes and well, Arrange's four pt fields") {
-        let panel = try TaskPanelWindow(ShapeRecord(TaskCard(frame: cardFrame, title: "New Task"), checklist: steps(done: 1)))
+        let panel = try TaskPanelWindow(ShapeRecord(TaskCard(frame: cardFrame), title: "New Task", checklist: steps(done: 1)))
         expectEqual(panel.titleField?.placeholderString, "Untitled Task")
         expectEqual(panel.fields, ["New Task", "0 h"], "the header's title, then Estimate")
         expectEqual(panel.status?.titleOfSelectedItem, "To Do")
@@ -115,7 +117,7 @@ final class TaskPanelWindow {
         let panel = try TaskPanelWindow(ShapeRecord(TaskCard(frame: cardFrame)))
         expectEqual(panel.editor.validation?.result(for: panel.id)?.isValid, false)
         try panel.typeTitle("Plant tomatoes")     // T, the task tool's shortcut, on the canvas
-        expectEqual(panel.task?.title, "Plant tomatoes")
+        expectEqual(panel.title, "Plant tomatoes")
         expect(panel.editor.validation?.result(for: panel.id) == nil)
         expectEqual(panel.editor.currentToolID, .select)
     },

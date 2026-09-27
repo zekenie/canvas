@@ -72,9 +72,35 @@ public struct Properties<Root: SchemaDefined>: Sendable {
     }
 }
 
+/// The modifiers a property takes, each adding JSON Schema keywords to what its type says: a kind's
+/// own properties (`Property`), and an added property's (`ShapeProperty.keywords`). A bound
+/// (`maxLength`, `minimum`, `pattern`) is what a shape can break, and what checking it against its
+/// kind's schema finds (`Registry.schemaViolations(of:)`); the rest describe.
+public protocol PropertyModifiers {
+    /// Any other JSON Schema keywords, as they're written: `.keywords(["multipleOf": 0.5])`.
+    func keywords(_ more: JSONObject) -> Self
+}
+
+extension PropertyModifiers {
+    public func title(_ text: String) -> Self { keywords(["title": .string(text)]) }
+    public func description(_ text: String) -> Self { keywords(["description": .string(text)]) }
+    public func minimum(_ value: Double) -> Self { keywords(["minimum": .number(value)]) }
+    public func maximum(_ value: Double) -> Self { keywords(["maximum": .number(value)]) }
+    /// In code points, as JSON Schema counts a string's length.
+    public func minLength(_ count: Int) -> Self { keywords(["minLength": .number(Double(count))]) }
+    /// In code points, as JSON Schema counts a string's length.
+    public func maxLength(_ count: Int) -> Self { keywords(["maxLength": .number(Double(count))]) }
+    /// An ECMA-262 regular expression the whole string must match somewhere (anchor it with ^ and $).
+    public func pattern(_ regex: String) -> Self { keywords(["pattern": .string(regex)]) }
+    public func minItems(_ count: Int) -> Self { keywords(["minItems": .number(Double(count))]) }
+    public func maxItems(_ count: Int) -> Self { keywords(["maxItems": .number(Double(count))]) }
+    public func deprecated() -> Self { keywords(["deprecated": true]) }
+    public func readOnly() -> Self { keywords(["readOnly": true]) }
+}
+
 /// One property: a stored member, named, with anything its schema says beyond its type.
 /// `Property("estimate", \.estimate).minimum(0).description("Hours.")`
-public struct Property<Root, Value: Codable & SchemaDescribed & Sendable>: Sendable {
+public struct Property<Root, Value: Codable & SchemaDescribed & Sendable>: PropertyModifiers, Sendable {
     let name: String
     let keyPath: WritableKeyPath<Root, Value> & Sendable
     var keywords: JSONObject = [:]
@@ -88,20 +114,7 @@ public struct Property<Root, Value: Codable & SchemaDescribed & Sendable>: Senda
 
     /// Has no default: a board, or anyone writing one, must give it. Reading one without it fails.
     public func required() -> Self { with { $0.isRequired = true } }
-    public func title(_ text: String) -> Self { keywords(["title": .string(text)]) }
-    public func description(_ text: String) -> Self { keywords(["description": .string(text)]) }
-    public func minimum(_ value: Double) -> Self { keywords(["minimum": .number(value)]) }
-    public func maximum(_ value: Double) -> Self { keywords(["maximum": .number(value)]) }
-    public func minLength(_ count: Int) -> Self { keywords(["minLength": .number(Double(count))]) }
-    public func maxLength(_ count: Int) -> Self { keywords(["maxLength": .number(Double(count))]) }
-    /// An ECMA-262 regular expression the whole string must match somewhere (anchor it with ^ and $).
-    public func pattern(_ regex: String) -> Self { keywords(["pattern": .string(regex)]) }
-    public func minItems(_ count: Int) -> Self { keywords(["minItems": .number(Double(count))]) }
-    public func maxItems(_ count: Int) -> Self { keywords(["maxItems": .number(Double(count))]) }
-    public func deprecated() -> Self { keywords(["deprecated": true]) }
-    public func readOnly() -> Self { keywords(["readOnly": true]) }
     public func examples(_ values: Value...) -> Self { with { $0.examples += values } }
-    /// Any other JSON Schema keywords, as they're written: `.keywords(["multipleOf": 0.5])`.
     public func keywords(_ more: JSONObject) -> Self { with { $0.keywords.merge(more) { _, new in new } } }
 
     private func with(_ change: (inout Self) -> Void) -> Self {

@@ -12,6 +12,7 @@ import StickyNotes
 import SwiftUI
 import TaskCards
 import TestKit
+import Titles
 import Validation
 
 /// A canvas view in an unshown window, which is enough for first responders, field editors and
@@ -21,6 +22,17 @@ import Validation
     let canvas = CanvasView(editor: editor)
     window.contentView = canvas
     return (window, canvas)
+}
+
+extension CanvasEditor {
+    /// Inserts a shape named `title` (the property Titles keeps), in a transaction of its own.
+    @discardableResult
+    func add<P: ShapeProps>(_ props: P, title: String) -> ShapeID {
+        var shape = ShapeRecord(props)
+        shape[TitleProperty.self] = title
+        transact { $0.insert(shape) }
+        return shape.id
+    }
 }
 
 /// Records the standard actions that reach it up the responder chain.
@@ -278,7 +290,7 @@ final class ActionLog: NSView {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard)
         let (window, canvas) = windowed(editor)
         editor.add(Arrow(start: .free(CGPoint(x: 40, y: 300)), end: .free(CGPoint(x: 340, y: 300))))
-        let task = editor.add(TaskCard(frame: CGRect(x: 400, y: 40, width: 240, height: 200), title: "Ship"))
+        let task = editor.add(TaskCard(frame: CGRect(x: 400, y: 40, width: 240, height: 200)), title: "Ship")
         let arrow = CGPoint(x: 190, y: 300), card = CGPoint(x: 520, y: 140), empty = CGPoint(x: 190, y: 500)
         // Every shipped shape has something to offer (Cut, Copy and Paste, at least); empty canvas has nothing.
         expect(canvas.menu(for: window.mouse(.rightMouseDown, at: empty, time: 1)) == nil)
@@ -302,7 +314,7 @@ final class ActionLog: NSView {
     test("in the arrow tool, a Control-press is a press with ⌃: no menu, and the arrow it draws binds nothing") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
         let (window, canvas) = windowed(editor)
-        editor.add(TaskCard(frame: CGRect(x: 400, y: 40, width: 240, height: 200), title: "Ship"))
+        editor.add(TaskCard(frame: CGRect(x: 400, y: 40, width: 240, height: 200)), title: "Ship")
         window.press("a")
         let down = window.mouse(.leftMouseDown, at: CGPoint(x: 520, y: 140), modifiers: .control, time: 1)
         expect(canvas.menu(for: down) == nil)

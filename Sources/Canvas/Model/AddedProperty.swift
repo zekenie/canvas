@@ -28,14 +28,39 @@ public protocol ShapeProperty {
     /// enter an editor (placed, inserted, opened). Nil: only the shapes it's set on have one, and
     /// setting it to nil removes it.
     static var defaultValue: Value? { get }
+    /// What its schema says beyond its value's type, in the modifiers a kind's own properties take:
+    /// `PropertyKeywords().description("What the shape is called.").minLength(1).maxLength(80)`. A
+    /// bound is what a shape's value can break (`Registry.schemaViolations(of:)`). None by default.
+    static var keywords: PropertyKeywords<Value> { get }
     /// Append only; the count is the version boards record. See `PropertyMigration`.
     static var migrations: [PropertyMigration] { get }
 }
 
 extension ShapeProperty {
+    public static var keywords: PropertyKeywords<Value> { PropertyKeywords() }
     public static var migrations: [PropertyMigration] { [] }
     /// How many steps the value has been through: what a board records for this property.
     public static var version: Int { migrations.count }
+}
+
+/// What an added property's schema says beyond its value's type (`ShapeProperty.keywords`), in the
+/// modifiers a kind's own properties take (`Property`'s).
+public struct PropertyKeywords<Value: Encodable>: PropertyModifiers, Sendable {
+    /// The keywords, as they're written into the schema of each kind that opts in.
+    public private(set) var json: JSONObject = [:]
+
+    public init() {}
+
+    public func keywords(_ more: JSONObject) -> Self {
+        var copy = self
+        copy.json.merge(more) { _, new in new }
+        return copy
+    }
+
+    public func examples(_ values: Value...) -> Self {
+        let more = values.compactMap { try? JSONValue(encoding: $0) }
+        return keywords(["examples": .array((json["examples"]?.arrayValue ?? []) + more)])
+    }
 }
 
 /// One step in an added property's history: rewrites one shape's value, as JSON (whatever JSON it

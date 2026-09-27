@@ -65,7 +65,9 @@ An empty note (no text, no checklist) gets an orange outline (the validation plu
 warning), says why in an Issues tab of the detail panel (the validation-details bridge), and gets an orange dot on its
 row in the table of contents (the validation-contents bridge). A note with a checklist shows a done/total chip.
 A titled shape shows its title in a pill above its top-left corner, and in the table of contents (the titles plugin).
-Name a note in the detail panel's header; an ellipse is titled by its size (the ellipse-titles example).
+Name a note in the detail panel's header; an ellipse is titled by its size (the ellipse-titles example). A title is
+part of its shape's schema, at most 80 characters: a longer one gets a warning, as does any value outside the
+bounds its schema sets (the validation plugin checks every shape against its kind's schema).
 
 ## Layout
 
@@ -87,8 +89,8 @@ Sources/
   TableOfContents/      the table of contents horizontal: a row per shape, in the detail panel
   Checklists/           a horizontal any kind opts into: a checklist, its panel tab, menu items, a chip
   Clipboard/            the clipboard horizontal: cut, copy and paste, which kinds may opt out of
-  Titles/               a horizontal any kind opts into: a title, stored or derived, in a pill and the table
-                        of contents, and a header that renames it
+  Titles/               a horizontal any kind opts into: a title, a property it adds (or derived), in a pill
+                        and the table of contents, and a header that renames it
   ValidationDetails/    a bridge between two horizontals: validation issues in the panel's Issues tab
   ValidationContents/   a bridge between two horizontals: a dot on the row of each shape with issues
   Composition/          the shipped plugin list, and the welcome board

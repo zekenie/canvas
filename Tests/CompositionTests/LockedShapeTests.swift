@@ -11,6 +11,7 @@ import Locking
 import Selection
 import StickyNotes
 import TestKit
+import Titles
 
 /// A board of the shipped plugins with nothing on it, its clipboard on a pasteboard of the test's own.
 @MainActor private func emptyBoard(_ pasteboard: NSPasteboard = .withUniqueName()) -> EditorHarness {
@@ -22,8 +23,8 @@ import TestKit
         // A note with the lock, its checklist (the chip, on its top-right corner) or its long title
         // (the pill, above its top-left corner, up to the corner the lock takes), or none of them.
         @MainActor func render(locked: Bool = false, checklist: Bool = false, title: Bool = false) -> NSBitmapImageRep {
-            var note = AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Buy milk",
-                                                             title: title ? "A title much longer than the note is wide" : nil)))
+            var note = AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Buy milk")))
+            note[TitleProperty.self] = title ? "A title much longer than the note is wide" : nil
             note[ChecklistProperty.self] = checklist ? [ChecklistItem(text: "oat milk")] : []
             if locked { note[LockedProperty.self] = true }
             let editor = ShippedPlugins.makeEditor(document: CanvasDocument(shapes: [note]), scheduler: ManualScheduler())

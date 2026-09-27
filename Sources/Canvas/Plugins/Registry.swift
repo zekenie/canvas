@@ -22,6 +22,8 @@ public struct Registry {
     private let readOnlyRules: [@MainActor (AnyShapeRecord) -> Bool]
     /// Added properties: who declares each, and which kinds opt in.
     let propertyTable: PropertyTable
+    /// Each kind's schema, compiled to check its shapes against (`schemaViolations(of:)`).
+    let schemaValidators = SchemaValidators()
 
     public init(plugins: [any CanvasPlugin]) throws(RegistryError) {
         let plugins: [any CanvasPlugin] = [CorePlugin()] + plugins

@@ -35,10 +35,11 @@ func steps(done: Int = 0) -> [ChecklistItem] {
     ["spec", "review", "ship"].enumerated().map { ChecklistItem(text: $1, isDone: $0 < done) }
 }
 
-/// A task with every field set, and its checklist, so each one has something on the card to change.
+/// A task with every field set, its title and its checklist, so each one has something on the card
+/// to change.
 func fullTask() -> ShapeRecord<TaskCard> {
-    ShapeRecord(TaskCard(frame: cardFrame, title: "Write the spec", notes: "Cover the panel and the card.", status: .doing, priority: .medium,
-                         estimate: 4, due: day(9, 30)), checklist: steps(done: 1))
+    ShapeRecord(TaskCard(frame: cardFrame, notes: "Cover the panel and the card.", status: .doing, priority: .medium,
+                         estimate: 4, due: day(9, 30)), title: "Write the spec", checklist: steps(done: 1))
 }
 
 extension ShapeRecord where Props == TaskCard {
@@ -46,6 +47,12 @@ extension ShapeRecord where Props == TaskCard {
     init(_ props: TaskCard, checklist: [ChecklistItem]) {
         self.init(props)
         self[ChecklistProperty.self] = checklist
+    }
+
+    /// A task, its title, which Titles keeps beside the props, and its checklist.
+    init(_ props: TaskCard, title: String?, checklist: [ChecklistItem] = []) {
+        self.init(props, checklist: checklist)
+        self[TitleProperty.self] = title
     }
 }
 

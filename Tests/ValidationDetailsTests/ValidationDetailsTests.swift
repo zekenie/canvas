@@ -88,7 +88,7 @@ extension EditorHarness {
         let registry = try Registry(plugins: [ValidationPlugin(), DetailPanelPlugin(), ValidationDetailsPlugin()])
         expectEqual(registry.report, """
         core                tool hand
-        validation          service ValidationEngine · overlay ValidationOverlay
+        validation          service ValidationEngine · overlay ValidationOverlay · ValidationRules
         detail-panel        service DetailPanelState · ShapeDetails
         validation-details  DetailStatuses in Issues
         """)

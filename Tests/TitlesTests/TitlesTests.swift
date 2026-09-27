@@ -11,15 +11,15 @@ import Titles
 @MainActor let titlesTests = Suite("Titles", [
     test("a kind opts in with one line; its shapes may have no title, and a blank one is none; kinds that don't opt in have none") {
         let editor = try titleEditor()
-        let named = editor.add(Plaque(plaqueFrame, name: "Lobby"))
+        let named = editor.add(Plaque(plaqueFrame), named: "Lobby")
         let unnamed = editor.add(Plaque(plaqueFrame))
-        let blank = editor.add(Plaque(plaqueFrame, name: " \n "))
+        let blank = editor.add(Plaque(plaqueFrame), named: " \n ")
         let box = editor.add(Box(plaqueFrame))
         expectEqual([named, unnamed, blank, box].map(editor.title), ["Lobby", nil, nil, nil])
     },
     test("a title reads on one line wherever it shows: the lookup, the row, the pill") {
         let editor = try titleEditor()
-        let id = editor.add(Plaque(plaqueFrame, name: "  Front\n\ndesk\t"))
+        let id = editor.add(Plaque(plaqueFrame), named: "  Front\n\ndesk\t")
         expectEqual(editor.title(id), "Front desk")
         expectEqual(try require(editor.tableOfContents).entries.map { $0.label?.text }, ["Front desk"])
     },
@@ -44,6 +44,48 @@ import Titles
         }
         _ = try Registry(plugins: [FixturesPlugin(), TitlesPlugin(), Contributor(id: "box-titles") { $0.title(Box.self, contents: false) { _ in "Box" } }])
     },
+    test("a title Titles keeps is its property: in the kind's schema with its bounds and owner, and in the report") {
+        let registry = try titleEditor().registry
+        let title = try require(registry.schema(for: Plaque.kind)?.json["properties"]?["title"])
+        expectEqual(title, ["type": "string", "description": "What the shape is called.", "minLength": 1, "maxLength": 80,
+                            "x-canvas-owner": "titles"])
+        expectEqual(registry.schema(for: Plaque.kind)?.json["required"], ["frame"], "no default, and not required: nil until named")
+        expectEqual(registry.properties(for: Plaque.kind), ["title"])
+        expectEqual(registry.owner(of: TitleProperty.key), .titles)
+        expect(registry.report.contains("plaques            shape plaque · tool plaque · shortcut P → tool plaque · property title → plaque · ShapeTitles → plaque"),
+               registry.report)
+    },
+    test("a derived title isn't a property: the kind's schema doesn't have it") {
+        let registry = try titleEditor([CardsPlugin(), CardTitlesPlugin()]).registry
+        expectEqual(registry.properties(for: Card.kind), [])
+        expectEqual(registry.schema(for: Card.kind)?.json["properties"]?["title"], nil)
+    },
+    test("a bridge gives another plugin's kind a title Titles keeps, one line") {
+        let registry = try titleEditor([Contributor(id: "box-titles") { $0.title(Box.self) }]).registry
+        expectEqual(registry.properties(for: Box.kind), ["title"])
+        expect(registry.report.contains("box-titles         property title → box · ShapeTitles → box · ContentsTitles → box"), registry.report)
+        var box = ShapeRecord(Box(plaqueFrame))
+        box[TitleProperty.self] = "Crate"
+        expectEqual(registry.title(of: AnyShapeRecord(box)), "Crate")
+    },
+    test("a title outside its bounds breaks the kind's schema: past 80 characters (code points), or empty; it's kept all the same") {
+        let editor = try titleEditor()
+        let id = editor.add(Plaque(plaqueFrame), named: String(repeating: "a", count: 80))
+        @MainActor func violations() throws -> [SchemaViolation] { editor.registry.schemaViolations(of: try require(editor.document[id])) }
+        expectEqual(try violations(), [])
+        editor.rename(id, String(repeating: "a", count: 81))
+        expectEqual(editor.name(id)?.count, 81, "kept: a warning's for Validation to give, not a refusal")
+        expectEqual(try violations(), [SchemaViolation(path: [.member("title")], keyword: "maxLength",
+                                                       message: "Title is 81 characters long, and should be at most 80.")])
+        // A thumbs-up with a skin tone is one character on screen, and two code points.
+        editor.rename(id, String(repeating: "👍🏽", count: 41))
+        expectEqual(try violations().map(\.message), ["Title is 82 characters long, and should be at most 80."])
+        editor.rename(id, "")
+        expectEqual(try violations(), [SchemaViolation(path: [.member("title")], keyword: "minLength", message: "Title is empty.")])
+        expectEqual(editor.title(id), nil, "and no title")
+        editor.rename(id, nil)
+        expectEqual(try violations(), [], "untitled: nothing to check")
+    },
     test("a title is two lines in the report, its own and its row's name; without the row's, one") {
         let registry = try Registry(plugins: [FixturesPlugin(), TitlesPlugin(), TableOfContentsPlugin(), Contributor(id: "fixture-titles") { r in
             r.title(Box.self) { _ in "Box" }
@@ -52,7 +94,7 @@ import Titles
         expectEqual(registry.report, """
         core               tool hand
         fixtures           shape box · shape disc · shape tag
-        titles             service TitleState · overlay TitleOverlay
+        titles             property title · service TitleState · overlay TitleOverlay
         table-of-contents  service ContentsState
         fixture-titles     ShapeTitles → box · ContentsTitles → box · ShapeTitles → disc
         """)
@@ -62,7 +104,7 @@ import Titles
 @MainActor let contentsTests = Suite("Titles in the table of contents", [
     test("a title names its shape's row, which keeps its kind's symbol and badge; untitled, the row is the kind's own") {
         let editor = try titleEditor()
-        editor.add(Plaque(plaqueFrame, name: "Lobby", caption: "Welcome"))
+        editor.add(Plaque(plaqueFrame, caption: "Welcome"), named: "Lobby")
         let unnamed = editor.add(Plaque(plaqueFrame, caption: "Exit"))
         let rows = try require(editor.tableOfContents).entries
         expectEqual(rows.map { $0.label?.text }, ["Lobby", "Exit"])

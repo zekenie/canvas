@@ -8,7 +8,7 @@ extension ShapeRegistrar where Definition == TaskCardDefinition {
     /// symbol in the status pill's color, and its checklist's tally.
     mutating func taskRow() {
         contentsRow { task in
-            ContentsLabel(task.props.title, placeholder: "Untitled Task", systemImage: task.props.status.symbol,
+            ContentsLabel(task.title ?? "", placeholder: "Untitled Task", systemImage: task.props.status.symbol,
                           color: Color(nsColor: TaskStyle.statusColor(task.props.status)), badge: task.checklist.tally)
         }
     }

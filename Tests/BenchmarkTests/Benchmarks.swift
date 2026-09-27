@@ -14,11 +14,14 @@ import StickyNotes
 import TableOfContents
 import TaskCards
 import TestKit
+import Titles
+import Validation
 
-// The persistence plan's budgets, for boards of generated shapes: saving and opening, and one hover
-// and one drag frame (the input, then drawing the whole canvas, and the minimap with it) at 60
-// fps. `./build.sh bench` runs these in a release build and holds them to the budgets; `./test.sh`
-// runs them debug and small, so they keep working, and only reports.
+// The persistence plan's budgets, for boards of generated shapes: saving and opening, validation's
+// first read (every shape checked, against its kind's schema too), and one hover and one drag frame
+// (the input, then drawing the whole canvas, and the minimap with it) at 60 fps. `./build.sh bench`
+// runs these in a release build and holds them to the budgets; `./test.sh` runs them debug and
+// small, so they keep working, and only reports.
 #if DEBUG
 let sizes = [300]
 let holdsToBudgets = false
@@ -33,6 +36,11 @@ enum Budget {
     static let frame = 16.0
     /// Reading the table of contents' rows after a commit that changed a shape or two.
     static let contentsRows = 1.0
+    /// Validation's first read of 10,000 shapes' issues, each shape checked against its kind's
+    /// schema too: once, on the first frame after opening.
+    static let validation10k = 100.0
+    /// Validation's read after a commit that changed a shape or two.
+    static let validationAfterCommit = 1.0
 }
 
 /// Notes, tasks and ellipses in a grid, with an arrow from every fourth note to the note after it.
@@ -47,8 +55,8 @@ enum Budget {
         let origin = CGPoint(x: (i % columns) * 260, y: (i / columns) * 260)
         switch i % 10 {
         case 0, 1:
-            var task = AnyShapeRecord(ShapeRecord(TaskCard(frame: CGRect(origin: origin, size: TaskCard.defaultSize), title: "Task \(i)",
-                                                           status: .doing, estimate: 3)))
+            var task = AnyShapeRecord(ShapeRecord(TaskCard(frame: CGRect(origin: origin, size: TaskCard.defaultSize), status: .doing, estimate: 3)))
+            task[TitleProperty.self] = "Task \(i)"
             task[ChecklistProperty.self] = [ChecklistItem(text: "Spec", isDone: true), ChecklistItem(text: "Build"), ChecklistItem(text: "Ship")]
             shapes.append(task)
         case 2:
@@ -56,8 +64,8 @@ enum Budget {
             ellipse[LockedProperty.self] = true
             shapes.append(ellipse)
         default:
-            let note = ShapeRecord(StickyNote(frame: CGRect(origin: origin, size: StickyNote.defaultSize), text: "Note \(i): something to do",
-                                              title: i % 2 == 0 ? "Title \(i)" : nil))
+            var note = ShapeRecord(StickyNote(frame: CGRect(origin: origin, size: StickyNote.defaultSize), text: "Note \(i): something to do"))
+            note[TitleProperty.self] = i % 2 == 0 ? "Title \(i)" : nil
             shapes.append(AnyShapeRecord(note))
             if let previousNote, i % 4 == 0, shapes.count < count {
                 let bound = { (id: ShapeID) in ArrowTerminal.bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)) }
@@ -122,6 +130,32 @@ enum Budget {
             expectEqual(opened?.document, registry.fillingDefaults(document))
             report(String(format: "%6d shapes, %5.1f MB: save %7.1f ms, open %7.1f ms", size, Double(data.count) / 1e6, save, open))
             if holdsToBudgets, size >= 10_000 { expect(open < Budget.open10k, "opening \(size) shapes took \(open) ms") }
+        }
+    },
+    test("validation's first read checks every shape, against its kind's schema too; a drag checks the dragged shape again") {
+        for size in sizes {
+            let document = generatedBoard(shapes: size)
+            let registry = try ShippedPlugins.registry()
+            var editor = CanvasEditor(registry: registry, document: document, scheduler: ManualScheduler())
+            let first = median(runs: 5, prepare: { editor = CanvasEditor(registry: registry, document: document, scheduler: ManualScheduler()) }) {
+                _ = editor.validation?.results
+            }
+            let schemas = median(runs: 5) {
+                for shape in document.shapes { _ = registry.schemaViolations(of: shape) }
+            }
+            let note = try require(document.shapes.first { $0.kind == StickyNote.kind })
+            var step = 0.0
+            let again = median(runs: 21, prepare: {
+                step += 1
+                editor.transact { $0.update(note.id) { $0.box = $0.box?.offsetBy(dx: 1, dy: step) } }
+            }) { _ = editor.validation?.results }
+            expectEqual(editor.validation?.results.isEmpty, true, "the generated board has no issues")
+            report(String(format: "%6d shapes, validation: first read %6.1f ms (budget %.0f), of which the schemas about %6.1f; after a drag event %6.3f (budget %.0f)",
+                          size, first, Budget.validation10k, schemas, again, Budget.validationAfterCommit))
+            if holdsToBudgets {
+                if size >= 10_000 { expect(first < Budget.validation10k, "validation's first read of \(size) shapes took \(first) ms") }
+                expect(again < Budget.validationAfterCommit, "validation after a drag event on \(size) shapes took \(again) ms")
+            }
         }
     },
     test("a hover and a drag, each with the whole canvas redrawn, fit in a frame") {

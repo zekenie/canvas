@@ -25,7 +25,7 @@ extension TaskCardDefinition: ShapeDefinition {
         cg.clip()
         cg.setFillColor(task.color.cgColor)
         cg.fill(CGRect(x: frame.minX, y: frame.minY, width: TaskStyle.stripWidth, height: frame.height))
-        drawContent(task, checklist: shape.checklist, in: TaskStyle.content(of: frame), cg: cg)
+        drawContent(task, title: title(shape), checklist: shape.checklist, in: TaskStyle.content(of: frame), cg: cg)
         cg.restoreGState()
         if task.status == .done { cg.endTransparencyLayer() }
     }
@@ -34,7 +34,7 @@ extension TaskCardDefinition: ShapeDefinition {
         TaskStyle.path(shape.frame)
     }
 
-    private func drawContent(_ task: TaskCard, checklist: [ChecklistItem], in inner: CGRect, cg: CGContext) {
+    private func drawContent(_ task: TaskCard, title: NSAttributedString, checklist: [ChecklistItem], in inner: CGRect, cg: CGContext) {
         let pill = pill(task.status, topRight: CGPoint(x: inner.maxX, y: inner.minY))
         // The title beside the pill; on a card too narrow for both, the title alone.
         var titleWidth = pill.frame.minX - TaskStyle.spacing - inner.minX
@@ -52,7 +52,7 @@ extension TaskCardDefinition: ShapeDefinition {
         }
         func lines(_ most: Int, _ lineHeight: CGFloat, from y: CGFloat) -> Int { min(most, Int(max(0, bottom - y) / lineHeight)) }
         var y = inner.minY
-        y += draw(title(task), at: CGPoint(x: inner.minX, y: y), width: titleWidth,
+        y += draw(title, at: CGPoint(x: inner.minX, y: y), width: titleWidth,
                   lines: max(1, lines(TaskStyle.titleLines, TaskStyle.titleLineHeight, from: y)), lineHeight: TaskStyle.titleLineHeight)
         y += TaskStyle.spacing
         y += draw(meta(task), at: CGPoint(x: inner.minX, y: y), width: inner.width,
@@ -86,11 +86,13 @@ extension TaskCardDefinition: ShapeDefinition {
     }
 
     /// The title, struck through when done; "Untitled Task" in gray when there's none.
-    private func title(_ task: TaskCard) -> NSAttributedString {
-        guard !task.isUntitled else { return NSAttributedString(string: "Untitled Task", attributes: TaskStyle.placeholderTitle) }
+    private func title(_ shape: ShapeRecord<TaskCard>) -> NSAttributedString {
+        guard let title = shape.title, !shape.isUntitled else {
+            return NSAttributedString(string: "Untitled Task", attributes: TaskStyle.placeholderTitle)
+        }
         var attributes = TaskStyle.title
-        if task.status == .done { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
-        return NSAttributedString(string: task.title, attributes: attributes)
+        if shape.props.status == .done { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
+        return NSAttributedString(string: title, attributes: attributes)
     }
 
     /// "!! · Due Sep 30 · 4 h": the priority marks in their color, then the due date and estimate if set.

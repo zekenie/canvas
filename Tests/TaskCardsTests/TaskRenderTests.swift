@@ -6,6 +6,7 @@ import DetailPanel
 import SwiftUI
 import TaskCards
 import TestKit
+import Titles
 
 // Where things are on a card at `cardFrame` (40, 40, 240 × 200): a 5-point strip, then 12 points of
 // padding all round, so the content runs from x 57 to 268 and y 52 to 228. Title lines are 17
@@ -104,8 +105,8 @@ enum Band {
     },
     test("every Task and Style field changes the drawing, where that field is drawn") {
         let cases: [(field: String, band: CGRect, write: @MainActor (Drawn) -> Void)] = [
-            ("title", Band.header, { $0.task.title.wrappedValue = "Ship it" }),
-            ("no title", Band.header, { $0.task.title.wrappedValue = "" }),
+            ("title", Band.header, { $0.task[TitleProperty.self].wrappedValue = "Ship it" }),
+            ("no title", Band.header, { $0.task[TitleProperty.self].wrappedValue = nil }),
             ("status", Band.header, { $0.task.status.wrappedValue = .blocked }),
             ("priority", Band.meta, { $0.task.priority.wrappedValue = .high }),
             ("estimate", Band.meta, { $0.task.estimate.wrappedValue = 6 }),
@@ -142,10 +143,10 @@ enum Band {
     },
     test("a full task at the default size shows its checklist's open items, not just the done ones") {
         let items = ["Draft the migration plan", "Review schema", "Write backfill script", "Dry run on staging", "Cut over"]
-        let task = ShapeRecord(TaskCard(frame: CGRect(origin: cardFrame.origin, size: TaskCard.defaultSize), title: "Migrate billing to Postgres",
+        let task = ShapeRecord(TaskCard(frame: CGRect(origin: cardFrame.origin, size: TaskCard.defaultSize),
                                         notes: "Keep the old tables read-only for a week after cut-over, in case we need to roll back.",
                                         status: .doing, estimate: 12, due: day(10, 9)),
-                               checklist: items.enumerated().map { ChecklistItem(text: $1, isDone: $0 < 2) })
+                               title: "Migrate billing to Postgres", checklist: items.enumerated().map { ChecklistItem(text: $1, isDone: $0 < 2) })
         var renamed = task
         renamed[ChecklistProperty.self]?[2].text = "Write the backfill"     // the first open item, same count
         expect(changedPixels(try render(task), try render(renamed), in: Band.body) > 0, "the first open item's row wasn't drawn")
@@ -168,7 +169,7 @@ enum Band {
     },
     test("a card sized down to a sliver still draws, and the checklist chip stays off it") {
         var task = fullTask()
-        let full = try render(task), bare = try render(ShapeRecord(TaskCard(frame: cardFrame, title: task.props.title)))
+        let full = try render(task), bare = try render(ShapeRecord(TaskCard(frame: cardFrame), title: task.title))
         // Checklists' chip would sit on the top-right corner: the card draws its own list instead.
         expectEqual(pixel(full, at: CGPoint(x: cardFrame.maxX + 3, y: cardFrame.minY)),
                     pixel(bare, at: CGPoint(x: cardFrame.maxX + 3, y: cardFrame.minY)))

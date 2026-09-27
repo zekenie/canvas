@@ -16,6 +16,7 @@ import TaskCards
 import TestKit
 import Titles
 import Validation
+import ValidationDetails
 
 @MainActor let shippedTests = Suite("Shipped plugins", [
     test("the shipped plugin list registers without conflicts") {
@@ -31,15 +32,15 @@ import Validation
         keyboard             service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
         selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
         arrows               shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay
-        sticky-notes         shape sticky-note v1 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note
+        sticky-notes         shape sticky-note v2 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note
         ellipses             shape ellipse · tool ellipse · shortcut O → tool ellipse
-        task-cards           shape task-card v1 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ShapeTitles → task-card · ContentsTitles → task-card
-        validation           service ValidationEngine · overlay ValidationOverlay
+        task-cards           shape task-card v3 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · property title → task-card · ShapeTitles → task-card · ContentsTitles → task-card
+        validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
         detail-panel         service DetailPanelState · ShapeDetails
         context-menus        service ContextMenuState · secondary-click menu
         table-of-contents    service ContentsState
         checklists           property checklist · overlay ChecklistOverlay
-        titles               service TitleState · overlay TitleOverlay
+        titles               property title · service TitleState · overlay TitleOverlay
         validation-details   DetailStatuses in Issues
         validation-contents  ContentsMarks
         clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
@@ -73,8 +74,8 @@ import Validation
         // above its top-left corner and as wide as the note), or neither; its text keeps it from
         // being empty, and outlined.
         @MainActor func render(checklist: Bool, title: Bool) -> NSBitmapImageRep {
-            var note = AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Buy milk",
-                                                             title: title ? "A title much longer than the note is wide" : nil)))
+            var note = AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Buy milk")))
+            note[TitleProperty.self] = title ? "A title much longer than the note is wide" : nil
             note[ChecklistProperty.self] = checklist ? [ChecklistItem(text: "oat milk")] : []
             let editor = ShippedPlugins.makeEditor(document: CanvasDocument(shapes: [note]), scheduler: ManualScheduler())
             return renderBitmap(editor, size: CGSize(width: 400, height: 340))
@@ -116,12 +117,33 @@ import Validation
     test("the table of contents marks each shape with issues in its outline's color: an empty note orange, an untitled task red") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
         let empty = editor.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200)))
-        let untitled = editor.add(TaskCard(frame: CGRect(x: 300, y: 0, width: 240, height: 200), title: ""))
+        let untitled = editor.add(TaskCard(frame: CGRect(x: 300, y: 0, width: 240, height: 200)))
         let written = editor.add(StickyNote(frame: CGRect(x: 600, y: 0, width: 200, height: 200), text: "Hi"))
         let marks = Dictionary(uniqueKeysWithValues: try require(editor.tableOfContents).entries.map { ($0.id, $0.marks) })
         expectEqual(marks[empty], [ContentsMark(color: Color(nsColor: Severity.warning.color), help: "This note is empty.")])
         expectEqual(marks[untitled], [ContentsMark(color: Color(nsColor: Severity.error.color), help: "A task needs a title.")])
         expectEqual(marks[written], [])
+    },
+    test("a title past 80 characters breaks its schema, which is a warning: an orange outline, a line in Issues, an orange dot") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler())
+        let long = String(repeating: "Groceries ", count: 9)       // 90 characters
+        let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Milk"), title: long)
+        let task = editor.add(TaskCard(frame: CGRect(x: 400, y: 100, width: 240, height: 200)), title: long)
+        let warning = ValidationIssue.warning("Title is 90 characters long, and should be at most 80.", field: "title")
+        expectEqual(editor.validation?.result(for: note)?.issues, [warning])
+        expectEqual(editor.validation?.result(for: task)?.issues, [warning], "a task's title is Titles' as a note's is")
+        let panel = try require(editor.detailPanel)
+        expectEqual(panel.layout(for: try require(editor.document[note])).statuses(in: .of(IssuesTab.self)),
+                    [DetailStatus(warning.message, tone: .warning)])
+        let marks = Dictionary(uniqueKeysWithValues: try require(editor.tableOfContents).entries.map { ($0.id, $0.marks) })
+        expectEqual(marks[note], [ContentsMark(color: Color(nsColor: Severity.warning.color), help: warning.message)])
+        // The note's top edge, 3 points out, clear of the pill above it.
+        let outline = pixel(renderBitmap(editor, size: CGSize(width: 700, height: 340)), at: CGPoint(x: 200, y: 97))
+        expect(outline[0] > 200 && outline[1] > 110 && outline[2] < 100, "orange: \(outline)")
+        // Kept as typed, the title still shows (cut off); back within bounds, the warning goes.
+        expectEqual(editor.document[note].flatMap(editor.registry.title(of:)), String(long.dropLast()))
+        editor.transact { $0.update(note) { $0[TitleProperty.self] = "Groceries" } }
+        expectEqual(editor.validation?.result(for: note), nil)
     },
     test("the welcome board: six notes, three arrows, no warnings") {
         let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler())

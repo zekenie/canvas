@@ -10,7 +10,7 @@ import Titles
     test("a kind that puts TitleHeader in its header: the title, empty while there's none, over the subtitle") {
         let editor = try titleEditor()
         let panel = try require(editor.detailPanel)
-        let namedID = editor.add(Plaque(plaqueFrame, name: "Lobby")), unnamedID = editor.add(Plaque(plaqueFrame))
+        let namedID = editor.add(Plaque(plaqueFrame), named: "Lobby"), unnamedID = editor.add(Plaque(plaqueFrame))
         let named = try require(editor.document[namedID]), unnamed = try require(editor.document[unnamedID])
         let header = try require(panel.layout(for: named).header(as: TitleHeader.self))
         expectEqual(header.title, "Lobby")
@@ -33,24 +33,24 @@ import Titles
         w.window.focus(field)
         let revision = editor.revision
         w.window.type("pool")                 // P is the plaque tool's shortcut, on the canvas
-        expectEqual(editor.plaque(id)?.name, "pool")
+        expectEqual(editor.name(id), "pool")
         expectEqual(editor.revision, revision + 4)
         expectEqual(editor.currentToolID, .select)
         expectEqual(editor.title(id), "pool")
 
         w.window.focus(field)                 // selects the text
         w.window.pressDelete()
-        expectEqual(editor.plaque(id)?.name, nil, "cleared, it's untitled, not an empty title")
+        expectEqual(editor.name(id), nil, "cleared, it's untitled, not an empty title")
         w.window.type(" ")
-        expectEqual(editor.plaque(id)?.name, " ", "kept as typed")
+        expectEqual(editor.name(id), " ", "kept as typed")
         expectEqual(editor.title(id), nil, "a blank title is none")
         w.window.type("a")
-        expectEqual(editor.plaque(id)?.name, " a")
+        expectEqual(editor.name(id), " a")
         expectEqual(editor.title(id), "a", "on one line, as the pill and the row show it")
     },
     test("Return, like Escape, gives the keyboard back to the canvas, keeping the title as typed, even before the panel redraws") {
         let editor = try titleEditor(scheduler: TaskScheduler())
-        editor.selection = editor.add(Plaque(plaqueFrame, name: "Lobby"))
+        editor.selection = editor.add(Plaque(plaqueFrame), named: "Lobby")
         let w = HeaderWindow(editor)
         w.window.spin { w.titleField != nil }
         // Each key at once after the last, so the panel hasn't drawn the rename when Return comes:
@@ -60,13 +60,13 @@ import Titles
         expect(!w.canvasHasKeyboard)
         w.window.pressReturn()
         w.window.spin { w.canvasHasKeyboard }
-        expectEqual(editor.selection.flatMap(editor.plaque)?.name, "Hall")
+        expectEqual(editor.selection.flatMap(editor.name), "Hall")
 
         w.window.focus(try require(w.titleField))
         w.window.type("Stairs")
         w.window.pressEscape()
         w.window.spin { w.canvasHasKeyboard }
-        expectEqual(editor.selection.flatMap(editor.plaque)?.name, "Stairs")
+        expectEqual(editor.selection.flatMap(editor.name), "Stairs")
         w.window.type("p")
         expectEqual(editor.currentToolID, ToolID(placing: Plaque.kind), "the canvas has the keyboard")
     },

@@ -2,19 +2,26 @@ import Canvas
 import Checklists
 import CoreGraphics
 import Foundation
+import Titles
 
 /// A task on the canvas: a title, a status, a schedule and a checklist, drawn as a card. It has no
-/// editing view; the detail panel is its editor.
+/// editing view; the detail panel is its editor. Its title and checklist are the properties Titles
+/// and Checklists add to it.
 public struct TaskCard: BoxShapeProps {
     public static let kind: ShapeKind = "task-card"
     /// Append only. The count is the version boards record.
     public static let migrations = [
         // Checklists adds the checklist to every kind that opts in; the card no longer keeps one.
         PropsMigration.handOver("checklist", to: ChecklistProperty.self),
+        // A blank title was an untitled task's; Titles keeps none for one.
+        PropsMigration("a blank title is none") { props in
+            if props["title"]?.stringValue?.allSatisfy(\.isWhitespace) == true { props["title"] = nil }
+        },
+        // Titles adds the title to every kind that opts in; the card no longer keeps one.
+        PropsMigration.handOver("title", to: TitleProperty.self),
     ]
     public static let properties = Properties<TaskCard>(title: "Task card") {
         Property("frame", \.frame).required()
-        Property("title", \.title).description("Blank is invalid, and drawn as \"Untitled Task\".")
         Property("notes", \.notes)
         Property("status", \.status)
         Property("priority", \.priority)
@@ -26,7 +33,6 @@ public struct TaskCard: BoxShapeProps {
     public static let defaultSize = CGSize(width: 240, height: 200)
 
     public var frame: CGRect
-    public var title: String
     public var notes: String
     public var status: TaskStatus
     public var priority: TaskPriority
@@ -36,11 +42,10 @@ public struct TaskCard: BoxShapeProps {
     public var color: TaskColor
     public var shows: TaskDisplay
 
-    public init(frame: CGRect = .zero, title: String = "", notes: String = "", status: TaskStatus = .todo,
+    public init(frame: CGRect = .zero, notes: String = "", status: TaskStatus = .todo,
                 priority: TaskPriority = .medium, estimate: Double = 0, due: Date? = nil, color: TaskColor = .blue,
                 shows: TaskDisplay = TaskDisplay()) {
         self.frame = frame
-        self.title = title
         self.notes = notes
         self.status = status
         self.priority = priority
@@ -56,10 +61,6 @@ public struct TaskCard: BoxShapeProps {
 // MARK: Derived
 
 extension TaskCard {
-    /// Whether the title is blank: such a task is invalid, and is drawn and named "Untitled Task".
-    public var isUntitled: Bool { title.allSatisfy(\.isWhitespace) }
-
-
     /// "Sep 30", in the user's locale.
     static func format(_ due: Date) -> String { due.formatted(.dateTime.month(.abbreviated).day()) }
 
@@ -91,6 +92,13 @@ extension TaskCard {
 }
 
 extension ShapeRecord where Props == TaskCard {
+    /// The card's title: Titles' property, which the card opts into; nil while it's untitled.
+    public var title: String? { self[TitleProperty.self] }
+
+    /// Whether it has no title, or a blank one: such a task is invalid, and is drawn and named
+    /// "Untitled Task".
+    public var isUntitled: Bool { title?.allSatisfy(\.isWhitespace) ?? true }
+
     /// The card's checklist: Checklists' property, which the card opts into.
     public var checklist: [ChecklistItem] { self[ChecklistProperty.self] ?? [] }
 

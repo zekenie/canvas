@@ -30,7 +30,7 @@ import TestKit
         window.contentView = canvas
         window.orderFrontRegardless()
         defer { window.orderOut(nil) }
-        let task = editor.add(TaskCard(frame: CGRect(x: 400, y: 40, width: 240, height: 200), title: "Ship"))
+        let task = editor.add(TaskCard(frame: CGRect(x: 400, y: 40, width: 240, height: 200)), title: "Ship")
 
         let opened = OpenedMenus()
         let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: nil) { note in

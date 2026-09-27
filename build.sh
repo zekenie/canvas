@@ -289,8 +289,11 @@ done
 # "checklist"`) or as a plugin's `id` (`var id: PluginID { "ellipses" }`). Test fixtures' ids
 # ("box", "card") are ordinary words, so they own nothing. Any other string literal is a use,
 # except an SF Symbol or asset name (the argument of systemImage:, systemName:, systemSymbolName:
-# or named:), which only looks like one, and a kind's own property's name (`Property("title", ...)`),
-# which is only that kind's.
+# or named:), which only looks like one; a kind's own property's name (`Property("title", ...)`),
+# which is only that kind's; and a JSON member's name, a subscript's key (`json["title"]`) or a key
+# before a colon (`["title": ...]`, `"title" : ...` in JSON text, but not a `case` label or a
+# ternary's), which names a member of some JSON (a kind's own props, a schema's keywords) that
+# ordinary words name too.
 ID_DECL='((let|var)[[:space:]]+id|static[[:space:]]+(let|var)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*)[[:space:]]*(:[[:space:]]*(ShapeKind|PluginID|ToolID|PropertyKey)[[:space:]]*(=|\{)|=[[:space:]]*(ShapeKind|PluginID|ToolID|PropertyKey)\((rawValue:)?)[[:space:]]*"[^"\\]+"'
 module_of() { print -r -- ${${1#*/}%%/*} }       # Sources/Canvas/Model/Identity.swift:3:... -> Canvas
 typeset -A ID_OWNERS
@@ -307,7 +310,10 @@ done
 if (( ${#ID_OWNERS} )); then
     print -rl -- \"${(k)^ID_OWNERS}\" > $AUDIT/ids
     sed -E -e 's/(systemImage|systemName|systemSymbolName|named):[[:space:]]*"[^"]*"/\1: ""/g' \
-           -e 's/(^|[^A-Za-z0-9_])Property\([[:space:]]*"[^"]*"/\1Property(""/g' $CODE > $AUDIT/uses
+           -e 's/(^|[^A-Za-z0-9_])Property\([[:space:]]*"[^"]*"/\1Property(""/g' \
+           -e 's/([]A-Za-z0-9_)?!])\["[^"]*"\]/\1[""]/g' \
+           -e 's/((case|\?)[[:space:]]+"[^"]*")[[:space:]]*:/\1 ;/g' \
+           -e 's/"[^"]*"[[:space:]]*:/"":/g' $CODE > $AUDIT/uses
     for hit in ${(f)"$(grep -F -f $AUDIT/ids $AUDIT/uses || true)"}; do
         user=$(module_of $hit)
         for id in ${(k)ID_OWNERS}; do

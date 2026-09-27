@@ -32,6 +32,21 @@ import TestKit
         expectEqual(terminal.map { $0["required"] }, [["free"], ["bound"]])
         expectEqual(terminal[1]["properties"]?["bound"]?["properties"]?["shapeID"], ["$ref": "#/$defs/core.shape-id"])
     },
+    // What checking a shape reads is what a board writes of it (the encoder that makes it isn't
+    // the board's), and every shipped kind's fixture holds up against its kind's schema.
+    test("every shipped kind's fixture holds up against its schema, and its properties as one object are what the board writes") {
+        let registry = try ShippedPlugins.registry()
+        let codec = BoardCodec(registry: registry)
+        for kind in registry.kinds {
+            let version = try require(codec.version(of: kind))
+            let data = try Data(contentsOf: URL(fileURLWithPath: "Tests/CompositionTests/Fixtures/kinds/\(kind.rawValue).v\(version).json"))
+            let record = try codec.decodeRecord(props: data, kind: kind, version: version)
+            expectEqual(registry.schemaViolations(of: record), [], "\(kind)")
+            var json = try require(record.propertiesJSON)
+            for key in registry.properties(for: kind) { json[key.rawValue] = nil }
+            expectEqual(json, try JSONDecoder().decode(JSONValue.self, from: data).objectValue, "\(kind)")
+        }
+    },
     // Each kind's fixture is how boards write it: every key it writes is a property of its schema,
     // and every property the schema requires is there.
     test("every shipped kind's schema describes what its fixture holds, and every $ref in it resolves") {
@@ -146,8 +161,11 @@ private let stickyNoteSchema = """
       "type" : "string"
     },
     "title" : {
-      "description" : "What the note is called, once someone names it.",
-      "type" : "string"
+      "description" : "What the shape is called.",
+      "maxLength" : 80,
+      "minLength" : 1,
+      "type" : "string",
+      "x-canvas-owner" : "titles"
     }
   },
   "required" : [

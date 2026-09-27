@@ -1,15 +1,18 @@
+import Canvas
 import DetailPanel
 import SwiftUI
 
 /// The detail panel's header for a kind whose shapes are renamed there, so no kind writes its own:
 /// the title, as a field in the title's place, over an optional subtitle. It renames the shape as
 /// you type (its pill and its row follow), and clearing it leaves the shape untitled. Return, like
-/// Escape, gives the keyboard back to the canvas. Put it in the kind's header:
+/// Escape, gives the keyboard back to the canvas. Put it in the kind's header, given the shape:
 ///
-///     note.details(header: { $note in TitleHeader($note.title) }) {}
+///     note.details(header: { $note in TitleHeader($note) }) {}
 ///
-/// For a title stored in the props: a `String?`, nil while untitled, or a `String`, blank while
-/// untitled. A derived title isn't renamed; such a kind shows it in a `DetailHeader`, if at all.
+/// That renames the title Titles keeps (`x.title()`). A title derived from what the kind keeps is
+/// renamed where it comes from, given that binding instead: a `String?`, nil while untitled, or a
+/// `String`, blank while untitled (`TitleHeader($card.text)`). One that can't be, such as an
+/// ellipse's size, isn't; such a kind shows it in a `DetailHeader`, if at all.
 public struct TitleHeader: View {
     /// The title as the field shows it: empty while untitled.
     public let title: String
@@ -19,6 +22,12 @@ public struct TitleHeader: View {
     /// Nil for the kind's symbol.
     public let systemImage: String?
     private let text: Binding<String>
+
+    /// The title Titles keeps for the shape (`TitleProperty`, which its kind opts into with
+    /// `x.title()`), nil while untitled.
+    public init<P: ShapeProps>(_ shape: ShapeBinding<P>, placeholder: String? = nil, subtitle: String? = nil, systemImage: String? = nil) {
+        self.init(shape[TitleProperty.self], placeholder: placeholder, subtitle: subtitle, systemImage: systemImage)
+    }
 
     /// A title that's nil while untitled: clearing the field sets nil. Anything else is kept as
     /// typed, so what the field shows is what's stored; a title of only spaces reads as none

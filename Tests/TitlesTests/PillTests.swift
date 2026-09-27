@@ -37,7 +37,7 @@ import Titles
     },
     test("a title of several lines shows on one") {
         let editor = try titleEditor()
-        let id = editor.add(Plaque(plaqueFrame, name: "Front\ndesk"))
+        let id = editor.add(Plaque(plaqueFrame), named: "Front\ndesk")
         let twoLines = render(editor)
         editor.rename(id, "Front desk")
         expectEqual(changedPixels(twoLines, render(editor), in: CGRect(x: 0, y: 0, width: 400, height: 300)), 0)
@@ -46,9 +46,9 @@ import Titles
         let editor = try titleEditor([Contributor(id: "disc-titles") { $0.title(Disc.self, pill: false) { _ in "Disc" } }])
         let empty = render(editor)
         editor.add(Plaque(CGRect(x: 20, y: 60, width: 100, height: 60)))
-        editor.add(Plaque(CGRect(x: 140, y: 60, width: 100, height: 60), name: "  "))
+        editor.add(Plaque(CGRect(x: 140, y: 60, width: 100, height: 60)), named: "  ")
         editor.add(Disc(CGRect(x: 260, y: 60, width: 100, height: 60)))
-        editor.add(Plaque(CGRect(x: 20, y: 200, width: 24, height: 60), name: "Narrow"))
+        editor.add(Plaque(CGRect(x: 20, y: 200, width: 24, height: 60)), named: "Narrow")
         let shapes = render(editor)
         for x in [20, 140, 260] {
             expectEqual(changedPixels(empty, shapes, in: CGRect(x: x, y: 35, width: 100, height: 12)), 0, "above the shape at \(x)")
@@ -84,7 +84,7 @@ import Titles
     },
     test("the pill goes where its shape is drawn (a shake), in view points") {
         let editor = try titleEditor()
-        let id = editor.add(Plaque(CGRect(x: 30, y: 50, width: 100, height: 60), name: "Lobby"))
+        let id = editor.add(Plaque(CGRect(x: 30, y: 50, width: 100, height: 60)), named: "Lobby")
         editor.camera = Camera(origin: .zero, zoom: 2)      // the plaque's top-left corner at (60, 100)
         let still = render(editor)
         editor.setDrawingOffset(CGPoint(x: 12, y: 0), for: id)

@@ -12,21 +12,18 @@ public struct StickyNote: BoxShapeProps {
     public static let migrations = [
         // Checklists adds the checklist to every kind that opts in; the note no longer keeps one.
         PropsMigration.handOver("checklist", to: ChecklistProperty.self),
+        // So does Titles the title, once someone names the note.
+        PropsMigration.handOver("title", to: TitleProperty.self),
     ]
     public static let properties = Properties<StickyNote>(title: "Sticky note") {
         Property("frame", \.frame).required()
         Property("text", \.text).description("What the note says.")
-        Property("title", \.title).description("What the note is called, once someone names it.")
     }
     public var frame: CGRect
     public var text: String
-    /// What the note is called, once someone names it (in the detail panel's header); nil until
-    /// then. The canvas shows it in a pill above the note, not in it.
-    public var title: String?
-    public init(frame: CGRect = .zero, text: String = "", title: String? = nil) {
+    public init(frame: CGRect = .zero, text: String = "") {
         self.frame = frame
         self.text = text
-        self.title = title
     }
     public init() { self.init(frame: .zero) }
     public static let defaultSize = CGSize(width: 200, height: 200)
@@ -35,7 +32,8 @@ public struct StickyNote: BoxShapeProps {
 extension ShapeRecord where Props == StickyNote {
     /// No text, no checklist and no title.
     var isEmpty: Bool {
-        props.text.allSatisfy(\.isWhitespace) && (self[ChecklistProperty.self] ?? []).isEmpty && (props.title ?? "").allSatisfy(\.isWhitespace)
+        props.text.allSatisfy(\.isWhitespace) && (self[ChecklistProperty.self] ?? []).isEmpty
+            && (self[TitleProperty.self] ?? "").allSatisfy(\.isWhitespace)
     }
 }
 
@@ -55,7 +53,7 @@ public struct StickyNotesPlugin: CanvasPlugin {
                 shape.isEmpty ? [.warning("This note is empty.")] : []
             }
             note.checklist()                                   // opts into the checklists horizontal
-            note.title { $0.props.title }                      // and titles: a pill, and its row's name
+            note.title()                                       // and titles: a title, its pill, and its row's name
             note.noteHeader()                                  // renamed in the detail panel's header
             note.noteRow()                                     // and the table of contents
         }

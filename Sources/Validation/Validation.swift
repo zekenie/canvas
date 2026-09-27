@@ -47,6 +47,7 @@ public struct ValidationResult: Equatable, Sendable {
 @MainActor
 public struct ValidationContext {
     let document: CanvasDocument
+    let registry: Registry
     let lookups: Lookups
 
     public func shape(_ id: ShapeID) -> AnyShapeRecord? {
@@ -171,7 +172,7 @@ public final class ValidationEngine {
             cache[shape.id] = nil
             return
         }
-        let context = ValidationContext(document: document, lookups: Lookups())
+        let context = ValidationContext(document: document, registry: editor.registry, lookups: Lookups())
         let issues = rules(for: shape.kind).flatMap { $0.check(shape, context) }
         cache[shape.id] = issues.isEmpty ? nil : ValidationResult(issues: issues)
         guard !context.lookups.ids.isEmpty else { return }
@@ -246,8 +247,18 @@ struct ValidationOverlay: CanvasOverlay {
     }
 }
 
+/// Where a shape breaks its kind's schema (`Registry.schemaViolations(of:)`): a warning for each
+/// place, about the property it's in. Typed props always have their schema's shape, so what a shape
+/// can break are the bounds its properties declare (a title's `maxLength`, an estimate's `minimum`)
+/// and a number that isn't finite. Warnings, not errors: the shape still works, and saves.
+@MainActor
+func schemaIssues(of shape: AnyShapeRecord, in context: ValidationContext) -> [ValidationIssue] {
+    context.registry.schemaViolations(of: shape).map { .warning($0.message, field: $0.property) }
+}
+
 /// Validation, as a plugin: any plugin gives any kind rules (`x.validate { ... }`), each finding
-/// errors or warnings on a shape; the engine keeps every shape's, and the overlay outlines the shapes
+/// errors or warnings on a shape, and every shape is checked against its kind's schema, each place it
+/// breaks it a warning; the engine keeps every shape's issues, and the overlay outlines the shapes
 /// that have any. Where else they show is for bridges: the detail panel's Issues tab
 /// (ValidationDetails), a dot on a shape's row in the table of contents (ValidationContents).
 public struct ValidationPlugin: CanvasPlugin {
@@ -256,5 +267,6 @@ public struct ValidationPlugin: CanvasPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { ValidationEngine(editor: $0) }
         registrar.overlay(ValidationOverlay())
+        registrar.validateEveryShape(schemaIssues)
     }
 }

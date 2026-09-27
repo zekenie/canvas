@@ -88,7 +88,8 @@ struct PropertyCodec: Sendable {
         // Through a single-value container, so the decoder's settings apply (a date as a board writes one).
         decode = { Boxed(value: try $0.singleValueContainer().decode(P.Value.self)) }
         decodeData = { Boxed(value: try BoardCodec.makeDecoder().decode(P.Value.self, from: $0)) }
-        schema = { P.Value.schema(in: &$0) }
+        let keywords = P.keywords.json
+        schema = { P.Value.schema(in: &$0).merging(keywords) { _, keyword in keyword } }
         holdsOptionals = P.Value.self is any OptionalValue.Type || Canvas.holdsOptionals(P.Value.self)
     }
 }

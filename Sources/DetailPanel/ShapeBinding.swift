@@ -21,6 +21,8 @@ public struct ShapeBinding<Value> {
     private let latest: Latest
     /// Changes the live shape, and returns what it is then; nil if it's gone.
     private let write: @MainActor (_ change: (inout Value) -> Void) -> Value?
+    /// The same, for the whole record: what an added property's binding writes through.
+    private let edit: @MainActor (_ change: (inout AnyShapeRecord) -> Void) -> AnyShapeRecord?
 
     private final class Latest {
         var value: Value
@@ -32,11 +34,18 @@ public struct ShapeBinding<Value> {
     public var projectedValue: ShapeBinding<Value> { self }
     public init(projectedValue: ShapeBinding<Value>) { self = projectedValue }
 
-    private init(value: Value, record: AnyShapeRecord, write: @escaping @MainActor (_ change: (inout Value) -> Void) -> Value?) {
+    private init(value: Value, record: AnyShapeRecord, in editor: CanvasEditor,
+                 write: @escaping @MainActor (_ change: (inout Value) -> Void) -> Value?) {
         self.value = value
         self.record = record
         latest = Latest(value)
         self.write = write
+        let id = record.id
+        edit = { [weak editor] change in
+            guard let editor else { return nil }
+            editor.transact { $0.update(id, change) }
+            return editor.document[id]
+        }
     }
 
     /// `$task.title`: reads the snapshot, or what its last write made of the shape; writes the key
@@ -54,6 +63,24 @@ public struct ShapeBinding<Value> {
     public func update(_ change: (inout Value) -> Void) {
         if let live = write(change) { latest.value = live }
     }
+
+    /// An added property of the shape, nil while it has none: `$note[TitleProperty.self]`. Each
+    /// write sets it on the live shape, in one transaction; nil removes it, for a property whose
+    /// default is nil (a property every shape has keeps its value). It reads what it last wrote
+    /// until the panel redraws, as the key paths' bindings do.
+    public subscript<P: ShapeProperty>(_: P.Type) -> Binding<P.Value?> {
+        let written = Written(record[P.self]), edit = edit
+        return Binding(get: { written.value }, set: { new in
+            if let live = edit({ $0[P.self] = new }) { written.value = live[P.self] }
+        })
+    }
+}
+
+/// What an added property's binding last wrote, or read.
+@MainActor
+private final class Written<T> {
+    var value: T
+    init(_ value: T) { self.value = value }
 }
 
 extension ShapeBinding where Value: ShapeProps {
@@ -64,13 +91,14 @@ extension ShapeBinding where Value: ShapeProps {
     }
 }
 
-// The only write paths: every panel edit goes through one of these three. (This file imports
-// SwiftUI, whose `Transaction` shadows the core's, so the transactions go unnamed.)
+// The only write paths: every panel edit goes through one of these three, or through the whole
+// record (`edit`, for an added property of the shape). (This file imports SwiftUI, whose
+// `Transaction` shadows the core's, so the transactions go unnamed.)
 extension ShapeBinding where Value: ShapeProps {
     static func props(of record: AnyShapeRecord, in editor: CanvasEditor) -> ShapeBinding? {
         guard let shape = record.typed(as: Value.self) else { return nil }
         let id = record.id
-        return ShapeBinding(value: shape.props, record: record) { [weak editor] change in
+        return ShapeBinding(value: shape.props, record: record, in: editor) { [weak editor] change in
             guard let editor else { return nil }
             editor.transact { $0.update(id, as: Value.self) { change(&$0.props) } }
             return editor.document[id]?.typed(as: Value.self)?.props
@@ -83,7 +111,7 @@ extension ShapeBinding {
     static func property<P: ShapeProperty>(_: P.Type, of record: AnyShapeRecord, in editor: CanvasEditor) -> ShapeBinding? where P.Value == Value {
         guard let value = record[P.self] else { return nil }
         let id = record.id
-        return ShapeBinding(value: value, record: record) { [weak editor] change in
+        return ShapeBinding(value: value, record: record, in: editor) { [weak editor] change in
             guard let editor else { return nil }
             editor.transact {
                 $0.update(id) { record in
@@ -101,7 +129,7 @@ extension ShapeBinding where Value == CGRect {
     static func box(of record: AnyShapeRecord, in editor: CanvasEditor) -> ShapeBinding? {
         guard let frame = record.box else { return nil }
         let id = record.id
-        return ShapeBinding(value: frame, record: record) { [weak editor] change in
+        return ShapeBinding(value: frame, record: record, in: editor) { [weak editor] change in
             guard let editor else { return nil }
             editor.transact {
                 $0.update(id) { record in

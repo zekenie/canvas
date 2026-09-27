@@ -13,22 +13,19 @@ import Titles
 // Fixtures only: the CanvasTesting kinds plus a local plaque, so every test here shows the
 // horizontal knows no real kind.
 
-/// A box whose title is stored, and nil until it's named: the Plaque tool, a row of its own (its
-/// caption, or "Blank"), and its header renames it.
+/// A box with a name, the title Titles keeps for it (nil until it's named): the Plaque tool, a row
+/// of its own (its caption, or "Blank"), and its header renames it.
 struct Plaque: BoxShapeProps {
     static let kind: ShapeKind = "plaque"
     static let properties = Properties<Plaque> {
         Property("frame", \.frame).required()
-        Property("name", \.name)
         Property("caption", \.caption)
     }
     var frame: CGRect
-    var name: String?
     var caption = ""
 
-    init(_ frame: CGRect, name: String? = nil, caption: String = "") {
+    init(_ frame: CGRect, caption: String = "") {
         self.frame = frame
-        self.name = name
         self.caption = caption
     }
 }
@@ -49,9 +46,9 @@ struct PlaquesPlugin: CanvasPlugin {
         registrar.shape(PlaqueDefinition()) { plaque in
             let place = plaque.placement(size: plaqueFrame.size) { Plaque(.zero) }
             plaque.tool(label: "Plaque", systemImage: "rectangle.portrait", shortcut: "p", placing: place)
-            plaque.title { $0.props.name }
+            plaque.title()
             plaque.contentsRow { plaque in ContentsLabel(plaque.props.caption, placeholder: "Blank", badge: "B") }
-            plaque.details(header: { $plaque in TitleHeader($plaque.name, subtitle: "A plaque") }) {}
+            plaque.details(header: { $plaque in TitleHeader($plaque, subtitle: "A plaque") }) {}
         }
     }
 }
@@ -78,10 +75,20 @@ let plaqueFrame = CGRect(x: 60, y: 100, width: 200, height: 120)
 
 extension CanvasEditor {
     func title(_ id: ShapeID) -> String? { document[id].flatMap(registry.title(of:)) }
-    func plaque(_ id: ShapeID) -> Plaque? { document[id]?.typed(as: Plaque.self)?.props }
+    /// A shape's name as it's kept: the title Titles keeps, as typed.
+    func name(_ id: ShapeID) -> String? { document[id]?[TitleProperty.self] }
+
+    /// Inserts a plaque named `name`, in a transaction of its own.
+    @discardableResult
+    func add(_ plaque: Plaque, named name: String?) -> ShapeID {
+        var shape = ShapeRecord(plaque)
+        shape[TitleProperty.self] = name
+        transact { $0.insert(shape) }
+        return shape.id
+    }
 
     func rename(_ id: ShapeID, _ name: String?) {
-        transact { $0.update(id, as: Plaque.self) { $0.props.name = name } }
+        transact { $0.update(id) { $0[TitleProperty.self] = name } }
     }
 }
 

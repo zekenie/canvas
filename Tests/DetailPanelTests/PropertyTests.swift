@@ -2,6 +2,7 @@ import Canvas
 import CanvasTesting
 import CoreGraphics
 import DetailPanel
+import Selection
 import SwiftUI
 import TestKit
 
@@ -76,5 +77,39 @@ struct BadgesPlugin: CanvasPlugin {
         let binding = try require(editor.shapeBinding(gadget, as: Gadget.self))
         expectEqual(binding.shape[Badges.self], ["gold", "silver"])
         expectEqual(binding.shape.props, binding.wrappedValue)
+    },
+    test("a shape's binding binds an added property, nil while it has none: each write one transaction, nil removing it") {
+        let editor = try gadgetEditor([BadgesPlugin()])
+        let gadget = editor.add(Gadget(gadgetFrame))
+        let seal = try require(editor.shapeBinding(gadget, as: Gadget.self))[Seal.self]
+        expectEqual(seal.wrappedValue, nil, "no seal yet")
+        let revision = editor.revision
+        seal.wrappedValue = "wax"
+        expectEqual(editor.document[gadget]?[Seal.self], "wax")
+        expectEqual(seal.wrappedValue, "wax", "it reads back its own write before the panel draws again")
+        expectEqual(editor.revision, revision + 1)
+        seal.wrappedValue = "wax"
+        expectEqual(editor.revision, revision + 1, "the same value commits nothing")
+        seal.wrappedValue = nil
+        expectEqual(editor.document[gadget]?[Seal.self], nil)
+        expectEqual(editor.revision, revision + 2)
+        // Badges every gadget has: a nil write is dropped, and the binding reads what the shape kept.
+        let badges = try require(editor.shapeBinding(gadget, as: Gadget.self))[Badges.self]
+        badges.wrappedValue = nil
+        expectEqual(editor.document[gadget]?[Badges.self], [])
+        expectEqual(badges.wrappedValue, [])
+        expectEqual(editor.revision, revision + 2)
+    },
+    test("an added property's binding writes the shape it was made for, whatever is selected by then; nothing once it's gone") {
+        let editor = try gadgetEditor([BadgesPlugin()])
+        let gadget = editor.add(Gadget(gadgetFrame)), other = editor.add(Gadget(gadgetFrame))
+        let seal = try require(editor.shapeBinding(gadget, as: Gadget.self))[Seal.self]
+        editor.selection = other
+        seal.wrappedValue = "wax"
+        expectEqual([gadget, other].map { editor.document[$0]?[Seal.self] }, ["wax", nil])
+        editor.transact { $0.delete([gadget]) }
+        let revision = editor.revision
+        seal.wrappedValue = "stamp"
+        expectEqual(editor.revision, revision)
     },
 ])

@@ -130,7 +130,7 @@ extension ShapeRecord where Props == StickyNote {
         expectEqual(try require(editor.tableOfContents).entries.map { $0.label?.text }, ["Buy milk"])
         let untitled = renderBitmap(editor, size: CGSize(width: 300, height: 300))
 
-        editor.transact { $0.update(note.id, as: StickyNote.self) { $0.props.title = "Groceries" } }
+        editor.transact { $0.update(note.id) { $0[TitleProperty.self] = "Groceries" } }
         expectEqual(editor.registry.title(of: try require(editor.document[note.id])), "Groceries")
         let row = try require(editor.tableOfContents?.entries.first?.label)
         expectEqual(row.text, "Groceries")
@@ -141,10 +141,23 @@ extension ShapeRecord where Props == StickyNote {
     },
     test("a note with only a title isn't empty") {
         let editor = CanvasEditor(registry: try Registry(plugins: notePlugins), scheduler: ManualScheduler())
-        let named = ShapeRecord(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), title: "Ideas"))
-        let blank = ShapeRecord(StickyNote(frame: CGRect(x: 300, y: 0, width: 200, height: 200), title: "  "))
+        var named = ShapeRecord(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200)))
+        named[TitleProperty.self] = "Ideas"
+        var blank = ShapeRecord(StickyNote(frame: CGRect(x: 300, y: 0, width: 200, height: 200)))
+        blank[TitleProperty.self] = "  "
         editor.transact { $0.insert(named); $0.insert(blank) }
         expect(editor.validation?.result(for: named.id) == nil)
-        expectEqual(editor.validation?.result(for: blank.id)?.worst, .warning)
+        expectEqual(editor.validation?.result(for: blank.id)?.issues, [.warning("This note is empty.")])
+    },
+    test("a title longer than 80 characters is a warning on the title, from its schema; one of 80 isn't") {
+        let editor = CanvasEditor(registry: try Registry(plugins: notePlugins), scheduler: ManualScheduler())
+        var note = ShapeRecord(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "Buy milk"))
+        note[TitleProperty.self] = String(repeating: "a", count: 80)
+        editor.transact { $0.insert(note) }
+        expect(editor.validation?.result(for: note.id) == nil)
+        editor.transact { $0.update(note.id) { $0[TitleProperty.self] = String(repeating: "a", count: 81) } }
+        expectEqual(editor.validation?.result(for: note.id)?.issues,
+                    [.warning("Title is 81 characters long, and should be at most 80.", field: "title")])
+        expectEqual(editor.validation?.result(for: note.id)?.isValid, true, "a warning, not an error")
     },
 ])

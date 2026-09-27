@@ -16,14 +16,14 @@ public struct TaskCardsPlugin: CanvasPlugin {
     public var id: PluginID { .taskCards }
     public func register(into registrar: inout PluginRegistrar) {
         registrar.shape(TaskCardDefinition()) { task in
-            let place = task.placement(size: TaskStyle.size) { TaskCard(title: "New Task") }
+            let place = task.placement(size: TaskStyle.size) { TaskCard() }.setting(TitleProperty.self, to: "New Task")
             task.tool(label: "Task", systemImage: "checklist", shortcut: "t", placing: place)
             task.validate { shape, _ in shape.issues }
             task.taskPanel()
             task.taskMenu()
             task.taskRow()
             task.checklist(badge: false)
-            task.title(pill: false) { $0.props.title }
+            task.title(pill: false)
         }
     }
 }
@@ -33,7 +33,7 @@ extension ShapeRecord where Props == TaskCard {
     /// "overdue" would go stale) and no other shape.
     var issues: [ValidationIssue] {
         var issues: [ValidationIssue] = []
-        if props.isUntitled { issues.append(.error("A task needs a title.", field: "title")) }
+        if isUntitled { issues.append(.error("A task needs a title.", field: "title")) }
         let open = checklist.count - checklist.doneCount
         if props.status == .done, open > 0 {
             issues.append(.warning("Done, with \(open) unchecked \(open == 1 ? "item" : "items").", field: "checklist"))

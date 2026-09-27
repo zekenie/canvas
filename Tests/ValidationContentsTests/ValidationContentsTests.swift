@@ -78,7 +78,7 @@ extension CanvasEditor {
         let registry = try Registry(plugins: [ValidationPlugin(), TableOfContentsPlugin(), ValidationContentsPlugin()])
         expectEqual(registry.report, """
         core                 tool hand
-        validation           service ValidationEngine · overlay ValidationOverlay
+        validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
         table-of-contents    service ContentsState
         validation-contents  ContentsMarks
         """)

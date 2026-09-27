@@ -99,7 +99,7 @@ let package = Package(
         .executableTarget(name: "RectanglesTests", dependencies: ["Canvas", "CanvasTesting", "Keyboard", "Rectangles", "TestKit"], path: "Tests/RectanglesTests"), // layer: test
         .executableTarget(name: "ExamplesTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "ContextMenus", "EllipseTitles", "Ellipses", "Eraser", "Keyboard", "Polylines", "Rectangles", "Reordering", "Selection", "TableOfContents", "TestKit", "Titles"], path: "Tests/ExamplesTests"), // layer: test
         .executableTarget(name: "CompositionTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "CanvasUI", "Checklists", "Clipboard", "Composition", "DetailPanel", "Geometry", "Keyboard", "Locking", "Selection", "StickyNotes", "TableOfContents", "TaskCards", "TestKit", "Titles", "Validation", "ValidationDetails"], path: "Tests/CompositionTests"), // layer: test
-        .executableTarget(name: "BenchmarkTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "CanvasUI", "Checklists", "Composition", "Ellipses", "Geometry", "Locking", "StickyNotes", "TableOfContents", "TaskCards", "TestKit"], path: "Tests/BenchmarkTests"), // layer: test
+        .executableTarget(name: "BenchmarkTests", dependencies: ["Arrows", "Canvas", "CanvasTesting", "CanvasUI", "Checklists", "Composition", "Ellipses", "Geometry", "Locking", "StickyNotes", "TableOfContents", "TaskCards", "TestKit", "Titles", "Validation"], path: "Tests/BenchmarkTests"), // layer: test
     ],
     swiftLanguageModes: [.v6]
 )

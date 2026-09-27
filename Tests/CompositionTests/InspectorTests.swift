@@ -12,6 +12,7 @@ import SwiftUI
 import TableOfContents
 import TaskCards
 import TestKit
+import Titles
 import ValidationDetails
 
 /// The app's window, unshown: the canvas (through `CanvasRepresentable`) with the shipped detail
@@ -237,7 +238,7 @@ let chipPoint = CGPoint(x: 303, y: 100)
         w.window.focus(field)
         w.window.type("Groceries")      // e is the eraser's shortcut, on the canvas
         w.window.settle()
-        expectEqual(w.editor.document[shape.id]?.typed(as: StickyNote.self)?.props.title, "Groceries")
+        expectEqual(w.editor.document[shape.id]?[TitleProperty.self], "Groceries")
         expectEqual(w.editor.currentToolID, .select)
         // The pill, 9 to 27 points above the note's top-left corner at (100, 100).
         expect(changedPixels(untitled, w.render(), in: CGRect(x: 100, y: 75, width: 60, height: 12)) > 300, "the pill")
@@ -265,7 +266,7 @@ let chipPoint = CGPoint(x: 303, y: 100)
     test("T places a task, which the panel shows with its tabs: Task, Checklist, Style, Arrange") {
         let w = try InspectorWindow()
         let task = try w.placeTask(at: CGPoint(x: 300, y: 300))
-        expectEqual(task.props.title, "New Task")
+        expectEqual(task.title, "New Task")
         expectEqual(w.editor.currentToolID, .select)
         let layout = try require(w.editor.detailPanel).layout(for: AnyShapeRecord(task))
         expectEqual(layout.headerText, "New Task")
@@ -279,12 +280,12 @@ let chipPoint = CGPoint(x: 303, y: 100)
         let task = try w.placeTask(at: CGPoint(x: 300, y: 300))
         w.window.focus(try require(w.titleField))
         w.window.pressDelete()
-        expectEqual(w.editor.document[task.id]?.typed(as: TaskCard.self)?.props.title, "")
+        expectEqual(w.editor.document[task.id]?[TitleProperty.self], nil, "cleared, it's untitled, not titled \"\"")
         expectEqual(w.issues, ["A task needs a title."])
         let untitled = w.render()
 
         w.window.type("tea")     // t is the task tool's shortcut, on the canvas
-        expectEqual(w.editor.document[task.id]?.typed(as: TaskCard.self)?.props.title, "tea")
+        expectEqual(w.editor.document[task.id]?[TitleProperty.self], "tea")
         expectEqual(w.issues, [])
         expectEqual(w.editor.currentToolID, .select)
         expectEqual(w.editor.selection, task.id)

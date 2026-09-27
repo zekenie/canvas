@@ -176,13 +176,29 @@ public struct Placement {
     enum Completion { case translate, edit }
 
     init<P: BoxShapeProps>(kind: ShapeKind, size: CGSize, completion: Completion, props: @escaping @MainActor () -> P) {
-        self.kind = kind
-        self.size = size
-        self.completion = completion
-        make = { frame in
+        self.init(kind: kind, size: size, completion: completion) { frame in
             var shape = props()
             shape.frame = frame
             return AnyShapeRecord(ShapeRecord(shape))
+        }
+    }
+
+    private init(kind: ShapeKind, size: CGSize, completion: Completion, make: @escaping @MainActor (CGRect) -> AnyShapeRecord) {
+        self.kind = kind
+        self.size = size
+        self.completion = completion
+        self.make = make
+    }
+
+    /// The same placement, with an added property set on every shape it places:
+    /// `task.placement(size: size) { TaskCard() }.setting(TitleProperty.self, to: "New Task")`. A
+    /// value its kind doesn't opt into is dropped as the shape is placed.
+    public func setting<P: ShapeProperty>(_: P.Type, to value: P.Value) -> Placement {
+        let make = make
+        return Placement(kind: kind, size: size, completion: completion) { frame in
+            var record = make(frame)
+            record[P.self] = value
+            return record
         }
     }
 }

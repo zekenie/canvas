@@ -20,7 +20,7 @@ import Validation
         h.press(at: CGPoint(x: 300, y: 300)); h.release()
         let record = try require(h.editor.document.shapes.first)
         expectEqual(record.box, CGRect(x: 180, y: 200, width: 240, height: 200))
-        expectEqual(record.typed(as: TaskCard.self)?.props.title, "New Task")
+        expectEqual(record[TitleProperty.self], "New Task")
         expectEqual(h.editor.selection, record.id)
         expectEqual(h.editor.currentToolID, .select)
         expectEqual(h.editor.editingShapeID, nil)
@@ -32,9 +32,9 @@ import Validation
         expectEqual(registry.shortcut(forTool: tool.id)?.chord, "t")
         expect(!(registry.definition(for: TaskCard.kind) is any Editable))
         expectEqual(registry.report.split(separator: "\n").first { $0.hasPrefix("task-cards") }.map(String.init), """
-        task-cards         shape task-card v1 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · \
+        task-cards         shape task-card v3 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · \
         ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · \
-        ShapeDetails → task-card · ShapeContextMenus → task-card · ShapeTitles → task-card · ContentsTitles → task-card
+        ShapeDetails → task-card · ShapeContextMenus → task-card · property title → task-card · ShapeTitles → task-card · ContentsTitles → task-card
         """)
     },
     test("needs validation, checklists, the panel, context menus and the table of contents installed") {
@@ -80,7 +80,7 @@ import Validation
     test("rules: no title is an error on title; done with open items warns on checklist, and blocked without notes on notes") {
         let editor = try taskEditor()
         expectEqual(editor.issues(editor.add(fullTask())), [])
-        expectEqual(editor.issues(editor.add(TaskCard(frame: cardFrame, title: " "))), [.error("A task needs a title.", field: "title")])
+        expectEqual(editor.issues(editor.add(ShapeRecord(TaskCard(frame: cardFrame), title: " "))), [.error("A task needs a title.", field: "title")])
         var task = fullTask()
         task.props.status = .done
         expectEqual(editor.issues(editor.add(task)), [.warning("Done, with 2 unchecked items.", field: "checklist")])
@@ -113,13 +113,13 @@ import Validation
         expectEqual(task.summary, "In Progress · 1 of 3 · Due \(day(9, 30).formatted(.dateTime.month(.abbreviated).day()))")
         task.props.status = .done
         expectEqual(task.remaining, 0)
-        task = ShapeRecord(TaskCard(frame: cardFrame, title: "New Task", estimate: 2.5))
+        task = ShapeRecord(TaskCard(frame: cardFrame, estimate: 2.5), title: "New Task")
         expectEqual(task.remaining, 2.5)
         expectEqual(task.summary, "To Do")
     },
     test("the panel: Task, Checklist, Style, Arrange, from three plugins") {
         let editor = try taskEditor()
-        expectEqual(try editor.layout(editor.add(TaskCard(frame: cardFrame, title: "New Task"))).outline, [
+        expectEqual(try editor.layout(editor.add(ShapeRecord(TaskCard(frame: cardFrame), title: "New Task"))).outline, [
             "Task: main, Notes, Schedule", "Checklist: Items", "Style: Color, On the Card", "Arrange: Size, Position",
         ])
     },
@@ -142,11 +142,11 @@ import Validation
         let editor = try taskEditor()
         let id = editor.add(TaskCard(frame: cardFrame.offsetBy(dx: 0, dy: 40)))
         expectEqual(editor.registry.title(of: try require(editor.document[id])), nil, "untitled")
-        editor.transact { $0.update(id, as: TaskCard.self) { $0.props.title = "Write the spec" } }
+        editor.transact { $0.update(id) { $0[TitleProperty.self] = "Write the spec" } }
         expectEqual(editor.registry.title(of: try require(editor.document[id])), "Write the spec")
         // Renamed, it's valid either way: validation's outline doesn't change.
         let before = renderBitmap(editor, size: CGSize(width: 320, height: 300))
-        editor.transact { $0.update(id, as: TaskCard.self) { $0.props.title = "Plant tomatoes, in rows along the fence" } }
+        editor.transact { $0.update(id) { $0[TitleProperty.self] = "Plant tomatoes, in rows along the fence" } }
         expectEqual(changedPixels(before, renderBitmap(editor, size: CGSize(width: 320, height: 300)), in: CGRect(x: 0, y: 0, width: 320, height: 78)), 0)
     },
     test("its row in the table of contents: the title or Untitled Task, the status as a symbol, the checklist's tally") {
