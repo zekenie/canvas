@@ -1584,6 +1584,9 @@ note.contentsRow { note in
 
 - **Rows are in document order**, back to front, like data-canvas's z-ordered outline. Selecting a
   shape doesn't restack it, so rows move only when shapes are restacked (Bring to Front).
+- **A shape the board keeps aside has no row**, whatever its kind (one that isn't installed isn't
+  listed by its kind's name), since nothing on the canvas sees it
+  ([Boards on disk](#boards-on-disk)). A row that names it to nest under stays at the top.
 - **Selecting filters the list**, like data-canvas's multi-select summary: select several shapes
   on the canvas and only they are listed, under their header ("2 Shapes") and "Selection"; select
   nothing and the whole board is, under "Board"; select one and the panel shows its details. Show

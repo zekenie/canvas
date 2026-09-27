@@ -151,7 +151,8 @@ public final class ContentsState {
     // MARK: Rows
 
     /// The shape's row: its kind's, else its tool's label; called what `ContentsTitles` names it, if
-    /// it's a `ContentsLabel`. Made again only when the shape changes.
+    /// it's a `ContentsLabel`. Made again only when the shape changes. A shape the board keeps aside
+    /// isn't listed, whatever its kind: nothing on the canvas sees it.
     private func resolve(_ record: AnyShapeRecord) -> Cached {
         if let cached = cache[record.id], cached.record == record { return cached }
         let contribution = contribution(for: record.kind)
@@ -159,7 +160,8 @@ public final class ContentsState {
         if let label = row.label, let title = title(for: record.kind)?(record), !title.allSatisfy(\.isWhitespace) {
             row = ResolvedRow(label.retitled(title))
         }
-        let cached = Cached(record: record, isListed: contribution?.isListed(record) ?? true, parent: contribution?.parent?(record), row: row)
+        let cached = Cached(record: record, isListed: !record.isOpaque && (contribution?.isListed(record) ?? true),
+                            parent: contribution?.parent?(record), row: row)
         cache[record.id] = cached
         return cached
     }

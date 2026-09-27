@@ -1,6 +1,7 @@
 import Canvas
 import CanvasTesting
 import CoreGraphics
+import Foundation
 import Keyboard
 import Selection
 import SwiftUI
@@ -82,6 +83,24 @@ import TestKit
         editor.add(Pin("pinned to a hidden widget", on: hidden))
         editor.add(Pin("pinned to nothing", on: ShapeID()))
         expectEqual(editor.contents.entries.outline, ["pinned to a hidden widget", "pinned to nothing"])
+    },
+    test("a shape the board keeps aside has no row, whatever its kind, and rows naming it go at the top") {
+        let registry = try contentsRegistry()
+        let gadget = ShapeID(), unread = ShapeID()
+        // A kind nobody installs, and a widget whose props don't read.
+        let json = """
+        { "format" : 1, "schema" : { "widget" : 0 }, "shapes" : [
+          { "id" : "\(gadget)", "index" : "a0", "kind" : "gadget", "props" : { "frame" : [[0, 0], [40, 40]] } },
+          { "id" : "\(unread)", "index" : "a1", "kind" : "widget", "props" : { "frame" : "not a frame" } } ] }
+        """
+        let document = try BoardCodec(registry: registry).decode(Data(json.utf8)).document
+        expect(try require(document[gadget]).isOpaque)
+        expect(try require(document[unread]).isOpaque)
+        let editor = CanvasEditor(registry: registry, document: document, scheduler: ManualScheduler())
+        editor.add(Widget(name: "Shown"))
+        editor.add(Pin("pinned to the gadget", on: gadget))
+        editor.add(Link(on: unread))
+        expectEqual(editor.contents.entries.outline, ["Shown", "pinned to the gadget", "Link"])
     },
     test("rows nest as deep as their shapes do, and a loop keeps the later shape at the top") {
         let editor = try contentsEditor()

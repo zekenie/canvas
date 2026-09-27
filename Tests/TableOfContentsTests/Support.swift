@@ -106,10 +106,14 @@ struct WidgetsPlugin: CanvasPlugin {
 
 let widgetFrame = CGRect(x: 1000, y: 1000, width: 100, height: 60)
 
-/// The selection, the fixtures, widgets, and the table of contents, then `more`.
+/// The keyboard, the selection, the fixtures, widgets, and the table of contents, then `more`.
+@MainActor func contentsRegistry(_ more: [any CanvasPlugin] = []) throws -> Registry {
+    try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), WidgetsPlugin(), TableOfContentsPlugin()] + more)
+}
+
+/// An editor with `contentsRegistry(more)`, on an empty board.
 @MainActor func contentsEditor(_ more: [any CanvasPlugin] = [], scheduler: any Scheduler = ManualScheduler()) throws -> CanvasEditor {
-    CanvasEditor(registry: try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), WidgetsPlugin(), TableOfContentsPlugin()] + more),
-                 scheduler: scheduler)
+    CanvasEditor(registry: try contentsRegistry(more), scheduler: scheduler)
 }
 
 extension CanvasEditor {
