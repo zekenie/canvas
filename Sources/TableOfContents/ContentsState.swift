@@ -119,6 +119,11 @@ public final class ContentsState {
     /// What the marks' contributors say a commit affects besides the shapes it changes (`affected`).
     @ObservationIgnored private let markAffected: [@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>]
     private var pin: Pin?
+    #if DEBUG
+    /// How many times the list has asked a row for its view (debug builds only), so tests can hold
+    /// a change to redrawing the rows it changes.
+    @ObservationIgnored public var rowsRedrawn = 0
+    #endif
 
     init(editor: CanvasEditor) {
         self.editor = editor
@@ -224,8 +229,10 @@ public final class ContentsState {
 
     /// Whether the shape's row shows as hovered: its shape is hovered, whether the pointer is on the
     /// row or on the shape on the canvas, and isn't selected (as the canvas outlines the hover only
-    /// on an unselected shape).
-    public func isHovered(_ id: ShapeID) -> Bool { editor.hovered == id && !editor.isSelected(id) }
+    /// on an unselected shape). Observing it hears only this shape's hover change, and the selection
+    /// only while the shape is hovered, so the hover moving down the list redraws the row it leaves
+    /// and the row it reaches, not every row.
+    public func isHovered(_ id: ShapeID) -> Bool { editor.isHovered(id) && !editor.isSelected(id) }
 
     // MARK: Rows
 

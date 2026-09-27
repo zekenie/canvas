@@ -143,6 +143,29 @@ import TestKit
         h.editor.pointerExited()
         expectEqual(h.editor.hovered, nil)
     },
+    test("observers of one shape's hover hear only that shape's; observers of the hover hear every change") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
+        let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
+        let b = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
+        let c = h.add(Box(CGRect(x: 400, y: 0, width: 100, height: 100)))
+        /// Whether `change` reaches observers of `id`'s hover, and of the hover.
+        @MainActor func reaches(_ id: ShapeID, _ change: () -> Void) -> (shape: Bool, hover: Bool) {
+            let shape = Flag(), hover = Flag()
+            withObservationTracking { _ = h.editor.isHovered(id) } onChange: { shape.set() }
+            withObservationTracking { _ = h.editor.hovered } onChange: { hover.set() }
+            change()
+            return (shape.isSet, hover.isSet)
+        }
+        h.move(to: CGPoint(x: 50, y: 50))
+        expect(h.editor.isHovered(a) && !h.editor.isHovered(b))
+        let aToB = reaches(c) { h.move(to: CGPoint(x: 250, y: 50)) }
+        expect(!aToB.shape && aToB.hover, "the hover moving between two other shapes")
+        expect(reaches(b) { h.move(to: CGPoint(x: 450, y: 50)) }.shape, "the hover leaving")
+        expect(h.editor.isHovered(c))
+        expect(reaches(c) { h.editor.pointerExited() }.shape)
+        let missing = reaches(a) { h.editor.hovered = ShapeID() }
+        expect(!missing.shape && !missing.hover, "a shape that isn't there: no change")
+    },
     test("deleting the selection clears selection and hover") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))

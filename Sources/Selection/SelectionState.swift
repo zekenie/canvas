@@ -21,7 +21,12 @@ final class SelectionState {
     @ObservationIgnored private var press: Press?
     /// Going back, which records nothing.
     @ObservationIgnored private var isGoingBack = false
-    private(set) var hoveredID: ShapeID?
+    /// Observed whole through `hoveredID`, and a shape at a time through `isHovered`.
+    @ObservationIgnored private var storedHover: ShapeID?
+    var hoveredID: ShapeID? {
+        access(keyPath: \.hoveredID)
+        return storedHover
+    }
     var hoveredHandle: AnyHashable? {
         didSet {
             guard hoveredHandle != oldValue else { return }
@@ -114,10 +119,29 @@ final class SelectionState {
 
     func hover(_ id: ShapeID?) {
         let kept = id.flatMap { isSelectable(id: $0) ? $0 : nil }
-        guard kept != hoveredID else { return }
-        hoveredID = kept
+        let left = storedHover
+        guard kept != left else { return }
+        withMutation(keyPath: \.hoveredID) {
+            changingHover(of: left) { changingHover(of: kept) { storedHover = kept } }
+        }
         editor.setNeedsDisplay()
     }
+
+    /// Whether `id` is the hovered shape. Observing it hears only this shape's hover change.
+    func isHovered(_ id: ShapeID) -> Bool {
+        access(keyPath: \.[hovering: id])
+        return storedHover == id
+    }
+
+    /// Runs `change` as a change to `id`'s hover, for whoever observes that shape's (`isHovered`).
+    private func changingHover(of id: ShapeID?, _ change: () -> Void) {
+        guard let id else { return change() }
+        withMutation(keyPath: \.[hovering: id], change)
+    }
+
+    /// Only a key: one key path per shape, under which Observation keeps the observers of that
+    /// shape's hover apart from every other shape's.
+    private subscript(hovering id: ShapeID) -> Bool { storedHover == id }
 }
 
 extension SelectionState: EditorService {
@@ -193,6 +217,11 @@ extension CanvasEditor {
         get { selectionState?.hoveredID }
         set { selectionState?.hover(newValue) }
     }
+
+    /// Whether this shape is `hovered`. Observers of it hear only this shape's hover change, not the
+    /// hover moving between two others, so a view per shape (a row of the table of contents)
+    /// redraws when its own shape's hover changes. Without the Selection plugin, false.
+    public func isHovered(_ id: ShapeID) -> Bool { selectionState?.isHovered(id) ?? false }
 
     /// A handle of the only selected shape under the pointer (its definition's `Handle`).
     public internal(set) var hoveredHandle: AnyHashable? {

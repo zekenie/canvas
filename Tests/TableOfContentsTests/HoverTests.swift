@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import CanvasTesting
+import Observation
 import Selection
 import TableOfContents
 import TestKit
@@ -77,4 +78,61 @@ extension ContentsWindow {
         expect(!editor.contents.isHovered(b))
         expectEqual(changedPixels(selected, snapshot(w.hosting), in: everywhere), 0, "a selected row isn't tinted")
     },
+    test("a row's tint is observed as its own: its shape's hover, and the selection only while it's hovered") {
+        let editor = try contentsEditor()
+        let (a, b, c) = threeWidgets(editor)
+        let contents = editor.contents
+        /// Whether `change` reaches whoever observes `id`'s tint, as its row's view does.
+        @MainActor func reaches(_ id: ShapeID, _ change: () -> Void) -> Bool {
+            let changed = Flag()
+            withObservationTracking { _ = contents.isHovered(id) } onChange: { changed.set() }
+            change()
+            return changed.isSet
+        }
+        expect(reaches(a) { contents.hover(a) })
+        expect(!reaches(c) { contents.hover(b) }, "the hover moving between two other rows")
+        expect(reaches(b) { editor.hovered = c }, "the hover leaving, set as the canvas sets it")
+        expect(!reaches(a) { editor.selectedShapeIDs = [a] }, "the selection, while the shape isn't hovered")
+        expect(reaches(c) { editor.selectedShapeIDs = [c] }, "the selection, which takes a hovered row's tint")
+        expect(reaches(c) { editor.hovered = nil })
+    },
+    test("a hover redraws the rows it leaves and reaches, not every row") {
+        let editor = try contentsEditor(scheduler: TaskScheduler())
+        let ids = widgets(150, in: editor)          // under 200: AppKit logs a reentrant update first showing more
+        let w = ContentsWindow(editor)
+        w.window.spin { w.rows == ids.count }
+        w.window.settle()
+        let contents = editor.contents
+        /// How many rows the list redraws for `change`: once one has, and a few more turns of the run
+        /// loop have passed.
+        @MainActor func redrawn(_ change: () -> Void) -> Int {
+            let before = contents.rowsRedrawn
+            change()
+            w.window.spin { contents.rowsRedrawn > before }
+            w.window.settle()
+            return contents.rowsRedrawn - before
+        }
+        let changes: [(String, Int, @MainActor () -> Void)] = [
+            ("the pointer onto a row", 1, { contents.hover(ids[3]) }),
+            ("onto the next row", 2, { contents.hover(ids[4]) }),
+            ("onto a shape on the canvas", 2, { editor.hovered = ids[5] }),
+            ("onto a shape whose row is far down the list", 2, { editor.hovered = ids[140] }),
+            ("selecting the hovered shape, which takes its row's tint", 1, { contents.select([ids[140]]) }),
+            ("the pointer from the selected shape's row onto another", 2, { contents.hover(ids[6]) }),
+            ("the pointer off the list", 1, { contents.endHover(ids[6]) }),
+        ]
+        for (what, most, change) in changes {
+            let rows = redrawn(change)
+            expect(rows <= most, "\(what): \(rows) of \(ids.count) rows redrawn, not \(most) or fewer")
+        }
+    },
 ])
+
+/// `count` widgets, named in order, added in one transaction.
+@MainActor func widgets(_ count: Int, in editor: CanvasEditor) -> [ShapeID] {
+    let records = (0..<count).map { ShapeRecord(Widget(name: "Widget \($0)")) }
+    editor.transact { transaction in
+        for record in records { transaction.insert(record) }
+    }
+    return records.map(\.id)
+}

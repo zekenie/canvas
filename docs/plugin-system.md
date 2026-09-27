@@ -1014,7 +1014,11 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   rows do), in any tool, and changing tools clears it. It's outlined faintly (not while a session
   runs, nor on a selected shape): wider and lighter than the selection's (2.5 points, the accent at
   60%), easy to see over a yellow note, but a hovered shape doesn't read as selected
-  as it would in tldraw, which strokes a hover like the selection.
+  as it would in tldraw, which strokes a hover like the selection. `isHovered(_:)` says whether
+  one shape is hovered, and is observed per shape: its observers hear only that shape's hover
+  change, not the hover moving between two others, so a view per shape (a row of the table of
+  contents) redraws only when its own shape's hover does. Observation keeps observers by key path,
+  and each shape has its own, `\.[hovering: id]`.
 - `goBack()` and `canGoBack` are data-canvas's selection history. Each change of the selection
   puts the selection it leaves on a stack, with the camera as it is at that moment (or, while it
   glides, `editor.cameraTarget`, where it's headed): a click, a row of the table of contents,
@@ -1956,7 +1960,11 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
   would, and the canvas outlines it faintly. The pointer on a shape on the canvas tints its row:
   a faint accent where the selection's highlight goes, in its shape. A selected shape shows neither,
   only its selection. data-canvas marks a row when its shape is hovered on the canvas (a faint ring);
-  its rows don't hover the canvas.
+  its rows don't hover the canvas. A row's tint observes only its own shape's hover
+  (`editor.isHovered`) and, while that shape is hovered, the selection, so the pointer moving down
+  the list, or across the canvas, redraws the row the hover leaves and the row it reaches. A row
+  that read `editor.hovered` instead would be asked for its view again on every hover change, as
+  every other row would.
 - **Going back.** A row's click is a step in Selection's history like any other change of the
   selection, so the back button in the shape's header (or Go › Back, ⌘[) brings the list back,
   with the view as it was before the zoom, as data-canvas's back button does.
@@ -1967,6 +1975,7 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
   `scope`, `select(_:)`, `showAll()`, and the rows' hover: `hover(_:)` and `endHover(_:)` as the
   pointer moves onto a row and off it, and `isHovered(_:)` for whether a row shows as hovered. Tests
   read a row's text, symbol and badge through `entry.label`, and its marks through `entry.marks`.
+  In debug builds, `rowsRedrawn` counts how often the list has asked a row for its view.
 
 ### Hosting
 
@@ -2432,6 +2441,14 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   closure ran, and writes it on after, so a test can check: TableOfContentsTests and CompositionTests'
   ContentsPanelTests check that changing what the table of contents lists logs no
   `tableReentrancyWarning`.
+- **What a change redraws.** SwiftUI asks a view for its body again whenever something it read
+  changes, so a view that reads more than it shows redraws when it hasn't changed, and rows that all
+  read one value all redraw when it changes. Headless, `withObservationTracking { … } onChange:
+  { … }` shows what a read observes (a row's tint, `contents.isHovered(id)`, hears only its own
+  shape's hover). In a window, the table of contents counts, in debug builds, how often the list has
+  asked a row for its view (`contents.rowsRedrawn`), so HoverTests holds a hover over a list of
+  150 rows (a list of 200 or more logs `tableReentrancyWarning` as it first shows) to the one or
+  two rows it changes.
 - A test target is `Tests/<Name>Tests` with a `main.swift` that calls `runTests([...])`. Every
   `Suite` must be listed there (`test.sh` checks). `<M>Tests` may depend only on M, what M
   depends on, and the test-support and ui modules.

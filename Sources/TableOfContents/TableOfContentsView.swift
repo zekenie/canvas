@@ -94,12 +94,17 @@ struct ContentsHeader: View {
 
 /// A row and its hover, which the canvas shares: the pointer on the row hovers its shape, which the
 /// canvas outlines faintly, and the row is tinted while its shape is hovered, from here or from the
-/// canvas (unless it's selected, as the canvas outlines only an unselected shape's hover).
+/// canvas (unless it's selected, as the canvas outlines only an unselected shape's hover). The tint
+/// observes only this row's shape (`isHovered`), so the hover moving down the list redraws the row it
+/// leaves and the row it reaches, not every row.
 struct ContentsRow: View {
     let entry: ContentsEntry
     let state: ContentsState
 
     var body: some View {
+        #if DEBUG
+        let _ = (state.rowsRedrawn += 1)
+        #endif
         ContentsRowView(entry: entry)
             .equatable()
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
