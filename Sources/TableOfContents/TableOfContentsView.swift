@@ -116,16 +116,16 @@ struct ContentsHoverHighlight: View {
 }
 
 /// One row, as its kind drew it. Skipped (`.equatable()`) unless its shape changes, so dragging
-/// another shape costs one comparison.
+/// another shape costs one comparison: a row is the same object until its shape changes.
 struct ContentsRowView: View, Equatable {
     let entry: ContentsEntry
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
-        MainActor.assumeIsolated { a.entry.record == b.entry.record && a.entry.symbol == b.entry.symbol }
+        MainActor.assumeIsolated { a.entry.row === b.entry.row }
     }
 
     var body: some View {
-        entry.row
+        entry.row.view
             .environment(\.contentsSymbol, entry.symbol)
             .lineLimit(1)
     }

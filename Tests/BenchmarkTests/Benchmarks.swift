@@ -8,6 +8,7 @@ import Ellipses
 import Foundation
 import Geometry
 import StickyNotes
+import TableOfContents
 import TaskCards
 import TestKit
 
@@ -27,6 +28,8 @@ let holdsToBudgets = true
 enum Budget {
     static let open10k = 1_000.0
     static let frame = 16.0
+    /// Reading the table of contents' rows after a commit that changed a shape or two.
+    static let contentsRows = 1.0
 }
 
 /// Notes, tasks and ellipses in a grid, with an arrow from every fourth note to the note after it.
@@ -59,16 +62,20 @@ enum Budget {
     return CanvasDocument(shapes: shapes)
 }
 
-/// The median of `runs` timings, in milliseconds.
-@MainActor func median(runs: Int, _ body: () throws -> Void) rethrows -> Double {
+/// The median of `runs` timings of `body`, in milliseconds, each after an untimed `prepare`.
+@MainActor func median(runs: Int, prepare: () -> Void = {}, _ body: () throws -> Void) rethrows -> Double {
     let clock = ContinuousClock()
     var times: [Double] = []
     for _ in 0..<runs {
+        prepare()
         let elapsed = try clock.measure(body)
         times.append(Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15)
     }
     return times.sorted()[times.count / 2]
 }
+
+/// Every row, nested ones included.
+@MainActor func rowCount(_ entries: [ContentsEntry]) -> Int { entries.reduce(0) { $0 + 1 + rowCount($1.children ?? []) } }
 
 @MainActor func draw(_ editor: CanvasEditor, into context: CGContext, size: CGSize) {
     editor.draw(in: context, bounds: CGRect(origin: .zero, size: size), dirtyRect: CGRect(origin: .zero, size: size))
@@ -135,6 +142,56 @@ enum Budget {
             if holdsToBudgets {
                 expect(hover < Budget.frame, "a hover over \(size) shapes took \(hover) ms")
                 expect(drag < Budget.frame, "a drag over \(size) shapes took \(drag) ms")
+            }
+        }
+    },
+    test("the table of contents' rows cost what a commit changed, not what's on the board") {
+        for size in sizes {
+            let document = generatedBoard(shapes: size)
+            let registry = try ShippedPlugins.registry()
+            let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
+            let contents = try require(h.editor.tableOfContents)
+            let note = try require(document.shapes.first { $0.kind == StickyNote.kind })
+            let center = CGPoint(x: try require(note.box).midX, y: try require(note.box).midY)
+            var step = 0
+            let dragNote = {
+                step += 1
+                h.drag(to: center + CGPoint(x: CGFloat(step), y: CGFloat(step) / 2))
+            }
+            // Pressing the note selects it, which lists it alone. The rows read are held until the
+            // next read, as the list holds the rows it shows.
+            h.press(at: center)
+            var rows = contents.entries
+            let alone = median(runs: 21, prepare: dragNote) { rows = contents.entries }
+            expectEqual(rowCount(rows), 1)
+            // Show All lists every shape again, through the drag and after it.
+            contents.showAll()
+            rows = contents.entries
+            let drag = median(runs: 21, prepare: dragNote) { rows = contents.entries }
+            h.release()
+            var added: [ShapeID] = []
+            let insert = median(runs: 21, prepare: {
+                added.append(h.editor.add(StickyNote(frame: CGRect(x: -1000, y: -1000, width: 200, height: 200), text: "Added")))
+            }) { rows = contents.entries }
+            let delete = median(runs: 21, prepare: {
+                let id = added.removeLast()
+                h.editor.transact { $0.delete([id]) }
+            }) { rows = contents.entries }
+            var restacked = 0
+            let restack = median(runs: 21, prepare: {
+                restacked += 1
+                let id = document.shapes[restacked * size / 22].id
+                h.editor.transact { $0.bringToFront(id) }
+            }) { rows = contents.entries }
+            expect(contents.scope == nil, "every shape is listed")
+            expectEqual(rowCount(rows), size)
+            report(String(format: "%6d shapes, the table of contents' rows: after a drag event %6.3f ms (budget %.0f), %6.3f listing only the dragged shape; after an insert %6.3f, a delete %6.3f, a restack %6.3f",
+                          size, drag, Budget.contentsRows, alone, insert, delete, restack))
+            if holdsToBudgets {
+                for (what, time) in [("a drag event", drag), ("a drag event, listing only the dragged shape,", alone), ("an insert", insert),
+                                     ("a delete", delete), ("a restack", restack)] {
+                    expect(time < Budget.contentsRows, "reading the rows after \(what) on \(size) shapes took \(time) ms")
+                }
             }
         }
     },

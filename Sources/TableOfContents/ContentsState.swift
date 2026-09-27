@@ -9,45 +9,95 @@ import SwiftUI
 @MainActor
 public struct ContentsEntry: Identifiable {
     public let id: ShapeID
-    public let kind: ShapeKind
+    public var kind: ShapeKind { row.record.kind }
     /// The row, when it's a plain `ContentsLabel` (as most are); nil for any other view.
-    public let label: ContentsLabel?
+    public var label: ContentsLabel? { row.label }
     /// The symbol of the tool that places the kind, which a `ContentsLabel` without its own shows.
-    public let symbol: String
+    public var symbol: String { row.symbol }
     /// The rows nested under this one, in document order; nil when there are none, so the list
     /// shows no disclosure triangle.
-    public let children: [ContentsEntry]?
+    public internal(set) var children: [ContentsEntry]?
+    /// The shape's row, as its kind made it for the shape as listed: the same object until the
+    /// shape changes.
+    var row: ShapeRow
+
+    init(row: ShapeRow, children: [ContentsEntry]?) {
+        id = row.id
+        self.row = row
+        self.children = children
+    }
+}
+
+/// A shape's row as its kind made it for one version of the shape, with what places it in the
+/// list. Made again only when the shape changes, and shared by every scope that lists it.
+@MainActor
+final class ShapeRow {
     let record: AnyShapeRecord
-    let row: AnyView
+    /// Whether the kind lists the shape (`when`).
+    let isListed: Bool
+    /// The shape the kind nests it under (`nestedUnder`), listed or not.
+    let parent: ShapeID?
+    let view: AnyView
+    let label: ContentsLabel?
+    let symbol: String
+    /// Where the shape is in the stack, which orders rows among their siblings. Every shape in a
+    /// document has a key.
+    let key: StackingKey
+
+    init(record: AnyShapeRecord, isListed: Bool, parent: ShapeID?, row: ResolvedRow, symbol: String) {
+        self.record = record
+        self.isListed = isListed
+        self.parent = parent
+        view = row.view
+        label = row.label
+        self.symbol = symbol
+        key = record.stackingKey!
+    }
+
+    var id: ShapeID { record.id }
 }
 
 /// Per editor (so per window): what the table of contents lists, and each shape's row, made again
-/// only when that shape changes.
+/// only when that shape changes. What a commit changed is all a read after it redoes: the rows of
+/// the shapes its change set names, and where those nest.
 @MainActor
 @Observable
 public final class ContentsState {
-    /// A shape's row, as its kind drew it for this version of the shape.
-    private struct Cached {
-        let record: AnyShapeRecord
-        let isListed: Bool
-        let parent: ShapeID?
-        let row: ResolvedRow
-    }
-
     /// What the table of contents listed when it last selected, and the selection it made then.
     private struct Pin {
         let scope: [ShapeID]?
         let selectionRevision: Int
     }
 
+    /// How a kind's shapes get their rows.
+    private struct KindRows {
+        let contribution: ContentsContribution?
+        /// What its rows are called (`ContentsTitles`): the kind's own name for them, else every kind's.
+        let title: ContentsTitles.Contribution?
+        /// The label and symbol of the tool that places the kind, else its name and a dashed square.
+        let name: String
+        let symbol: String
+    }
+
     @ObservationIgnored private unowned let editor: CanvasEditor
-    /// Each kind's contributions, found once: the registry is frozen.
-    @ObservationIgnored private var contributions: [ShapeKind: ContentsContribution?] = [:]
-    @ObservationIgnored private var titles: [ShapeKind: ContentsTitles.Contribution?] = [:]
-    @ObservationIgnored private var cache: [ShapeID: Cached] = [:]
+    /// Each kind's, found once: the registry is frozen.
+    @ObservationIgnored private var kinds: [ShapeKind: KindRows] = [:]
+    /// Each shape's row, made when a scope first takes the shape in, and again after it changes.
+    @ObservationIgnored private var rows: [ShapeID: ShapeRow] = [:]
+    /// What's listed for the whole board, and for the last scope of some shapes: each kept, and
+    /// brought up to date as it's read.
+    @ObservationIgnored private var board: ContentsListing?
+    @ObservationIgnored private var filtered: ContentsListing?
+    /// The revision the rows and listings are up to date with. Read before this service hears of
+    /// a commit (by a service that hears first), it keeps the rows whose shapes are as they were
+    /// and lists them again.
+    @ObservationIgnored private var heardRevision: Int
     private var pin: Pin?
 
-    init(editor: CanvasEditor) { self.editor = editor }
+    init(editor: CanvasEditor) {
+        self.editor = editor
+        heardRevision = editor.revision
+    }
 
     // MARK: What's listed
 
@@ -67,37 +117,41 @@ public final class ContentsState {
     /// The top-level rows in document order (back to front, as data-canvas's z-ordered outline),
     /// each with the rows nested under it. Only listed shapes in `scope` have rows. A row nests
     /// under the shape its kind names (`nestedUnder`) when that shape has a row too, unless that
-    /// would make a loop: then the later shape stays at the top.
+    /// would make a loop: then the later shape stays at the top. Kept from one read to the next,
+    /// so a read after a commit costs what the commit changed.
     public var entries: [ContentsEntry] {
-        let shapes = editor.document.shapes
-        let inScope = scope.map(Set.init)
-        var rows: [ShapeID: Cached] = [:]
-        var order: [ShapeID] = []
-        for record in shapes where inScope?.contains(record.id) ?? true {
-            let cached = resolve(record)
-            rows[record.id] = cached
-            if cached.isListed { order.append(record.id) }
+        catchUp()
+        guard let scope else {
+            if board == nil || !board!.update(row: row(of:)) { board = listing(of: nil) }
+            return board!.entries
         }
-        // Keep only what's still there, so the cache doesn't grow with deleted shapes.
-        if cache.count > shapes.count { cache = cache.filter { editor.document[$0.key] != nil } }
+        let ids = Set(scope)
+        if filtered?.scope != ids || !filtered!.update(row: row(of:)) { filtered = listing(of: ids) }
+        return filtered!.entries
+    }
 
-        var parents: [ShapeID: ShapeID] = [:]
-        for id in order {
-            guard let parent = rows[id]?.parent, parent != id, rows[parent]?.isListed == true else { continue }
-            var ancestor: ShapeID? = parent
-            while let next = ancestor, next != id { ancestor = parents[next] }
-            if ancestor == nil { parents[id] = parent }
-        }
-        var children: [ShapeID: [ShapeID]] = [:]
-        for id in order { if let parent = parents[id] { children[parent, default: []].append(id) } }
+    /// Every row in scope (nil for every shape), listed from scratch, from the rows made already.
+    private func listing(of scope: Set<ShapeID>?) -> ContentsListing {
+        ContentsListing(scope: scope, shapes: inDocumentOrder(scope), row: row(of:))
+    }
 
-        func entry(_ id: ShapeID) -> ContentsEntry {
-            let cached = rows[id]!
-            let nested = children[id]?.map(entry)
-            return ContentsEntry(id: id, kind: cached.record.kind, label: cached.row.label, symbol: symbol(of: cached.record.kind),
-                                 children: nested, record: cached.record, row: cached.row.view)
-        }
-        return order.filter { parents[$0] == nil }.map(entry)
+    /// Every shape, or the shapes of `ids` still in the document, back to front.
+    private func inDocumentOrder(_ ids: Set<ShapeID>?) -> [ShapeID] {
+        let document = editor.document
+        guard let ids else { return document.shapes.map(\.id) }
+        return ids.compactMap { id in document.index(of: id).map { (id, $0) } }.sorted { $0.1 < $1.1 }.map(\.0)
+    }
+
+    /// After a commit this service hasn't heard of: keeps the rows whose shapes are as they were,
+    /// and lists them again. Reading the revision also ties whoever reads `entries` to every
+    /// commit, as reading the document would.
+    private func catchUp() {
+        guard heardRevision != editor.revision else { return }
+        heardRevision = editor.revision
+        let document = editor.document
+        rows = rows.filter { document[$0.key] == $0.value.record }
+        board = nil
+        filtered = nil
     }
 
     // MARK: Selecting
@@ -107,7 +161,7 @@ public final class ContentsState {
     /// listed stays as it was. Selecting what's already selected moves nothing.
     public func select(_ ids: Set<ShapeID>) {
         let listed = scope
-        let ordered = editor.document.shapes.map(\.id).filter(ids.contains)
+        let ordered = inDocumentOrder(ids)
         let isNew = Set(ordered) != Set(editor.selectedShapeIDs)
         editor.selectedShapeIDs = ordered
         pin = Pin(scope: listed, selectionRevision: editor.selectionRevision)
@@ -151,48 +205,46 @@ public final class ContentsState {
     // MARK: Rows
 
     /// The shape's row: its kind's, else its tool's label; called what `ContentsTitles` names it, if
-    /// it's a `ContentsLabel`. Made again only when the shape changes. A shape the board keeps aside
-    /// isn't listed, whatever its kind: nothing on the canvas sees it.
-    private func resolve(_ record: AnyShapeRecord) -> Cached {
-        if let cached = cache[record.id], cached.record == record { return cached }
-        let contribution = contribution(for: record.kind)
-        var row = contribution?.row?(record) ?? ResolvedRow(ContentsLabel(name(of: record.kind)))
-        if let label = row.label, let title = title(for: record.kind)?(record), !title.allSatisfy(\.isWhitespace) {
+    /// it's a `ContentsLabel`. Made again only after the shape changes; nil once it's gone. A shape
+    /// the board keeps aside isn't listed, whatever its kind: nothing on the canvas sees it.
+    private func row(of id: ShapeID) -> ShapeRow? {
+        if let made = rows[id] { return made }
+        guard let record = editor.document[id] else { return nil }
+        let kind = kindRows(record.kind), contribution = kind.contribution
+        var row = contribution?.row?(record) ?? ResolvedRow(ContentsLabel(kind.name))
+        if let label = row.label, let title = kind.title?(record), !title.allSatisfy(\.isWhitespace) {
             row = ResolvedRow(label.retitled(title))
         }
-        let cached = Cached(record: record, isListed: !record.isOpaque && (contribution?.isListed(record) ?? true),
-                            parent: contribution?.parent?(record), row: row)
-        cache[record.id] = cached
-        return cached
+        let made = ShapeRow(record: record, isListed: !record.isOpaque && (contribution?.isListed(record) ?? true),
+                            parent: contribution?.parent?(record), row: row, symbol: kind.symbol)
+        rows[id] = made
+        return made
     }
 
-    private func contribution(for kind: ShapeKind) -> ContentsContribution? {
-        if let found = contributions[kind] { return found }
-        let found = editor.registry.contributions(to: ContentsRows.self, for: kind).first
-        contributions[kind] = found
+    private func kindRows(_ kind: ShapeKind) -> KindRows {
+        if let found = kinds[kind] { return found }
+        let registry = editor.registry
+        let tool = registry.tools.first { $0.id == ToolID(placing: kind) }
+        let found = KindRows(contribution: registry.contributions(to: ContentsRows.self, for: kind).first,
+                             title: registry.contributions(to: ContentsTitles.self, for: kind).first,
+                             name: tool?.label ?? kind.rawValue, symbol: tool?.systemImage ?? ContentsSymbolKey.defaultValue)
+        kinds[kind] = found
         return found
     }
-
-    /// The kind's own name for its rows, else every kind's.
-    private func title(for kind: ShapeKind) -> ContentsTitles.Contribution? {
-        if let found = titles[kind] { return found }
-        let found = editor.registry.contributions(to: ContentsTitles.self, for: kind).first
-        titles[kind] = found
-        return found
-    }
-
-    private func placingTool(of kind: ShapeKind) -> ToolDescriptor? {
-        editor.registry.tools.first { $0.id == ToolID(placing: kind) }
-    }
-
-    /// The label of the tool that places the kind, else the kind.
-    func name(of kind: ShapeKind) -> String { placingTool(of: kind)?.label ?? kind.rawValue }
-
-    /// The symbol of the tool that places the kind, else a dashed square.
-    func symbol(of kind: ShapeKind) -> String { placingTool(of: kind)?.systemImage ?? ContentsSymbolKey.defaultValue }
 }
 
-extension ContentsState: EditorService {}
+extension ContentsState: EditorService {
+    /// Forgets the rows of the shapes the commit touched, for the next read to make again and
+    /// place: each scope's listing notes them.
+    public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
+        guard heardRevision != editor.revision else { return }         // read since, and caught up
+        heardRevision = editor.revision
+        let touched = changes.shapeIDs
+        for id in touched { rows[id] = nil }
+        board?.pending.formUnion(touched)
+        filtered?.pending.formUnion(touched)
+    }
+}
 
 extension CanvasEditor {
     /// The table of contents' state; nil without TableOfContentsPlugin.

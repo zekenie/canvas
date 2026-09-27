@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([contentsTests, nameTests, scopeTests, revealTests, hoverTests, windowTests])
+runTests([contentsTests, nameTests, scopeTests, keepingUpTests, revealTests, hoverTests, windowTests])

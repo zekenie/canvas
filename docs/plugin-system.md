@@ -217,7 +217,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Give that concern a tab on the kinds that opt in | A `DetailTab` at order 50, contributed from the same sugar | [Checklists](#a-horizontals-feature-tab-checklists) |
 | Give that concern menu items on the kinds that opt in | A `MenuGroup` at order 50, and `contextMenu` from the same sugar | [Checklists](#a-feature-that-comes-with-menu-items-checklists) |
 | Opt another plugin's kind into a concern | A bridge, which imports both | [EllipseTitles](#a-horizontal-plugin), [ValidationDetails](#footer-lines-from-a-bridge-validationdetails) |
-| Keep state per editor: an engine, a cache, a timer | `registrar.service`, an `EditorService`; redo what's kept per shape for the shapes each commit's `ChangeSet` names | [Validation](../Sources/Validation/Validation.swift)'s `ValidationEngine` |
+| Keep state per editor: an engine, a cache, a timer | `registrar.service`, an `EditorService`; redo what's kept per shape for the shapes each commit's `ChangeSet` names | [Validation](../Sources/Validation/Validation.swift)'s `ValidationEngine`, [TableOfContents](../Sources/TableOfContents/ContentsState.swift)' `ContentsState` |
 | Draw above every shape, or beside the shapes in view | `registrar.overlay`, a `CanvasOverlay`; `editor.paintOrder(in: context.visibleRect)` | [Titles](#a-horizontal-plugin), [Checklists](../Sources/Checklists/ChecklistOverlay.swift) |
 | Let go of shapes as they're deleted | `registrar.willDelete` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
 | Create a kind with a double-click on empty canvas | `x.createOnDoubleClick(place)` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
@@ -1545,8 +1545,11 @@ note.contentsRow { note in
   height, indentation, disclosure triangles, selection, the header. Any view works, but
   `ContentsLabel` is what keeps rows from different plugins alike; use it unless a row really needs
   something else.
-- **A row reads only its shape.** A shape's row is made again only when that shape changes, so
-  dragging another shape costs one comparison.
+- **A row reads only its shape**, as `when`, `nestedUnder` and `contentsTitle` do. The table of
+  contents keeps each shape's row, and where it's listed, from one commit to the next, and redoes
+  only those of the shapes the commit's change set names (and the rows nested under a shape that
+  came or went). So dragging a shape costs its own row, however big the board: well under a
+  millisecond at 10,000 shapes, every one listed.
 - **`when`** lists only some of a kind's shapes: `contentsRow(when: { $0.props.isBound }) { ... }`.
 - **`nestedUnder`** names the shape a row goes under. It holds only while that shape is listed
   too, so a selection of just the child still shows it, at the top. Rows nest as deep as their
@@ -1765,7 +1768,8 @@ to it.
   about points within its extent grown by its `hitMargin`, and `editor.paintOrder(in:)` is the
   paint order of just the shapes that may show in a world rect: what drawing goes through, and
   overlays too, with `context.visibleRect`. Code that runs per frame doesn't go through every
-  shape; `./build.sh bench` holds a hover and a drag at 10,000 shapes to a frame (16 ms).
+  shape; `./build.sh bench` holds a hover and a drag at 10,000 shapes to a frame (16 ms), and the
+  table of contents' rows after a commit to a millisecond.
 - **Drawing**, back to front: background and grid; shapes in paint order (culled by extent: those
   more than 40 world units out of view don't draw, and a shape with no outline always does); every
   plugin's outlines (`registrar.outlines`: selection, the box around several; none while the
@@ -2007,7 +2011,8 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   kind. CanvasTests read broken and scrambled boards (a seeded fuzz test), and CompositionTests'
   BoardDocumentTests open, save, revert and host boards with `BoardDocument.configuration` set as
   the app sets it. `./build.sh bench` builds BenchmarkTests in release and holds saving, opening,
-  and a hover and a drag frame to their budgets on generated boards of 1,000 and 10,000 shapes;
+  a hover and a drag frame, and reading the table of contents' rows after a drag event, an insert,
+  a delete and a restack, to their budgets on generated boards of 1,000 and 10,000 shapes;
   `./test.sh` runs it small, in debug, and only reports.
 - **Arrow behavior is pinned to the proof of concept.** CompositionTests replays 30 arrow
   scenarios through `CanvasView` with real events and compares where every arrow ends up, byte for
