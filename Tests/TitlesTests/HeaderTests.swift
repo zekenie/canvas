@@ -42,10 +42,9 @@ import Titles
         w.window.pressDelete()
         expectEqual(editor.name(id), nil, "cleared, it's untitled, not an empty title")
         w.window.type(" ")
-        expectEqual(editor.name(id), " ", "kept as typed")
-        expectEqual(editor.title(id), nil, "a blank title is none")
+        expectEqual(editor.name(id), nil, "a blank title is none, so none is kept")
         w.window.type("a")
-        expectEqual(editor.name(id), " a")
+        expectEqual(editor.name(id), " a", "kept as typed")
         expectEqual(editor.title(id), "a", "on one line, as the pill and the row show it")
     },
     test("Return, like Escape, gives the keyboard back to the canvas, keeping the title as typed, even before the panel redraws") {

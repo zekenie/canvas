@@ -25,8 +25,70 @@ extension Remark: ShapeProperty {
     static var keywords: PropertyKeywords<String> { PropertyKeywords().maxLength(8) }
 }
 
-struct GaugeDefinition: ShapeDefinition {
+struct GaugeDefinition {}
+
+extension GaugeDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<Gauge>, in context: RenderContext) {}
+}
+
+/// A box whose props count how often they're written as JSON: how often its schema is checked.
+struct Counted: BoxShapeProps {
+    static let kind: ShapeKind = "counted"
+    static let properties = Properties<Counted> {
+        Property("frame", \.frame).required()
+        Property("label", \.label).maxLength(3)
+        Property("tally", \.tally)
+    }
+    var frame = CGRect(x: 0, y: 0, width: 10, height: 10)
+    var label = ""
+    var tally = Tally()
+}
+
+/// Counts its encodings.
+struct Tally: Codable, Equatable, Sendable, SchemaDescribed {
+    nonisolated(unsafe) static var encodings = 0
+    static func schema(in _: inout SchemaDefinitions) -> JSONObject { ["type": "integer"] }
+    init() {}
+    init(from _: any Decoder) throws {}
+    func encode(to encoder: any Encoder) throws {
+        Self.encodings += 1
+        var container = encoder.singleValueContainer()
+        try container.encode(0)
+    }
+}
+
+/// Moves a shape a point whenever a commit changes it other than by moving it: a service that
+/// commits while hearing a commit.
+final class Nudger {}
+
+extension Nudger: EditorService {
+    func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
+        let changed = changes.changed.subtracting(changes.moved)
+        guard !changed.isEmpty else { return }
+        editor.transact { $0.translate(changed, by: CGPoint(x: 1, y: 0)) }
+    }
+}
+
+/// What validation says of each shape a commit touched, as a service hears the commit.
+@MainActor final class IssueLog {
+    var issues: [[ValidationIssue]] = []
+}
+
+final class IssueReader {
+    let log: IssueLog
+    init(log: IssueLog) { self.log = log }
+}
+
+extension IssueReader: EditorService {
+    func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
+        for id in changes.shapeIDs { log.issues.append(editor.validation?.result(for: id)?.issues ?? []) }
+    }
+}
+
+struct CountedDefinition {}
+
+extension CountedDefinition: ShapeDefinition {
+    func render(_ shape: ShapeRecord<Counted>, in context: RenderContext) {}
 }
 
 @MainActor private func gauges(_ rules: @escaping @MainActor (inout ShapeRegistrar<GaugeDefinition>) -> Void = { _ in }) throws -> EditorHarness {
@@ -74,6 +136,53 @@ struct GaugeDefinition: ShapeDefinition {
         ])
         h.editor.transact { $0.update(id, as: Gauge.self) { $0.props.level = 3; $0.props.label = "tank" } }
         expectEqual(engine.result(for: id), nil)
+    },
+    test("a shape that only moves keeps its schema's issues, unchecked; any other change checks it again") {
+        let h = try EditorHarness(plugins: [FixturesPlugin(), ValidationPlugin(), Rules { $0.shape(CountedDefinition()) }])
+        let id = h.add(Counted(label: "long"))
+        let engine = try require(h.editor.validation)
+        let tooLong = ValidationIssue.warning("Label is 4 characters long, and should be at most 3.", field: "label")
+        expectEqual(engine.result(for: id)?.issues, [tooLong])
+        let checked = Tally.encodings
+        for _ in 1...3 {
+            h.editor.transact { $0.translate([id], by: CGPoint(x: 10, y: 5)) }
+            expectEqual(engine.result(for: id)?.issues, [tooLong], "kept")
+        }
+        // A drag, as the select tool starts one: each event only moves the shape.
+        h.move(to: CGPoint(x: 5, y: 5))
+        h.editor.session = TranslatingSession(ids: [id], from: CGPoint(x: 5, y: 5), in: h.editor)
+        for step in 1...3 {
+            h.drag(to: CGPoint(x: 5 + 10 * step, y: 5))
+            expectEqual(engine.result(for: id)?.issues, [tooLong], "kept")
+        }
+        h.release()
+        expectEqual(Tally.encodings, checked, "never written as JSON, so never checked")
+
+        h.editor.transact { $0.update(id) { $0.box = CGRect(x: 0, y: 0, width: 40, height: 30) } }
+        expectEqual(engine.result(for: id)?.issues, [tooLong])
+        expectEqual(Tally.encodings, checked + 1, "resized, not moved: checked")
+        h.editor.transact { $0.update(id, as: Counted.self) { $0.props.label = "ok" } }
+        expectEqual(engine.result(for: id), nil)
+        expectEqual(Tally.encodings, checked + 2, "anything else: checked")
+        h.editor.transact { $0.translate([id], by: CGPoint(x: -5, y: 0)) }
+        expectEqual(engine.result(for: id), nil, "and what it found kept")
+        expectEqual(Tally.encodings, checked + 2)
+    },
+    test("a commit heard out of turn, after one a service made while hearing it, keeps no schema verdict it may have made stale") {
+        let log = IssueLog()
+        let h = try EditorHarness(plugins: [FixturesPlugin(), Rules("nudges") { r in
+            r.shape(CountedDefinition())
+            r.service { _ in Nudger() }
+        }, ValidationPlugin(), Rules("reads") { $0.service { _ in IssueReader(log: log) } }])
+        let id = h.add(Counted(label: "ok"))
+        let engine = try require(h.editor.validation)
+        expectEqual(engine.result(for: id), nil)
+        log.issues = []
+        // The nudger hears the rename first, and moves the shape: that commit, only a move, reaches
+        // Validation and the reader before the rename does.
+        h.editor.transact { $0.update(id, as: Counted.self) { $0.props.label = "long" } }
+        let tooLong = ValidationIssue.warning("Label is 4 characters long, and should be at most 3.", field: "label")
+        expectEqual(log.issues, [[tooLong], [tooLong]], "the move's, then the rename's")
     },
     test("the schema's rule is Validation's own, one for every kind, in the report") {
         let registry = try Registry(plugins: [FixturesPlugin(), ValidationPlugin()])

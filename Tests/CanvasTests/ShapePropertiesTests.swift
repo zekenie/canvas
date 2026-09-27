@@ -58,6 +58,17 @@ import TestKit
         expectEqual(read[Stars.self], 0)
         expectEqual(read[Sticker.self], nil)
     },
+    test("an added property given a value that's none is as if left out: its default, or none") {
+        let registry = try Registry(plugins: [FixturesPlugin(), Contributor(id: "tempers") { r in
+            r.declare(Temper.self)
+            r.declare(Nickname.self)
+            r.optIn(Box.self, to: Temper.self)
+            r.optIn(Box.self, to: Nickname.self)
+        }])
+        let read = try registry.shape(Box.kind, properties: ["frame": [[0, 0], [10, 10]], "temper": "  ", "nickname": " "])
+        expectEqual(read[Temper.self], "calm")
+        expectEqual(read[Nickname.self], nil)
+    },
     test("a kind nobody registers, a property the kind doesn't have, and a value that doesn't read are refused, saying which") {
         let registry = try cardsWithStars()
         let frame: JSONValue = [[0, 0], [10, 10]]

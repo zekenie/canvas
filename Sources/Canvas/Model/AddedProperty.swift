@@ -32,12 +32,17 @@ public protocol ShapeProperty {
     /// `PropertyKeywords().description("What the shape is called.").minLength(1).maxLength(80)`. A
     /// bound is what a shape's value can break (`Registry.schemaViolations(of:)`). None by default.
     static var keywords: PropertyKeywords<Value> { get }
+    /// Whether a value is no value at all, as a title of only spaces is Titles' none: a shape set
+    /// to one, or read from a board with one, holds nil instead, or the default for a property that
+    /// has one, so no shape ever holds it (and a default can't be one). Never, by default.
+    static func isNone(_ value: Value) -> Bool
     /// Append only; the count is the version boards record. See `PropertyMigration`.
     static var migrations: [PropertyMigration] { get }
 }
 
 extension ShapeProperty {
     public static var keywords: PropertyKeywords<Value> { PropertyKeywords() }
+    public static func isNone(_: Value) -> Bool { false }
     public static var migrations: [PropertyMigration] { [] }
     /// How many steps the value has been through: what a board records for this property.
     public static var version: Int { migrations.count }
@@ -96,9 +101,10 @@ struct AddedValues: Equatable, Sendable {
     subscript<P: ShapeProperty>(_: P.Type) -> P.Value? {
         get { (values[P.key] as? Boxed<P.Value>)?.value }
         set {
+            let value = newValue.flatMap { P.isNone($0) ? P.defaultValue : $0 }
             // A kept value stays as it was, and a property every shape has can't be removed.
-            guard kept[P.key] == nil, newValue != nil || P.defaultValue == nil else { return }
-            values[P.key] = newValue.map(Boxed.init)
+            guard kept[P.key] == nil, value != nil || P.defaultValue == nil else { return }
+            values[P.key] = value.map(Boxed.init)
         }
     }
 
@@ -147,7 +153,8 @@ extension AnyShapeRecord {
     /// property's default is nil and it's unset, or the value is kept aside). Setting it changes
     /// the shape in a transaction, like its props: `tx.update(id) { $0[ChecklistProperty.self]?.append(item) }`.
     /// A value set on a kind that doesn't opt in is dropped when the transaction takes it, as is
-    /// nil for a property every shape has, and anything set on a value that's kept aside.
+    /// nil for a property every shape has, and anything set on a value that's kept aside. A value
+    /// that's no value at all (`ShapeProperty.isNone`, a blank title) sets nil, or the default.
     public subscript<P: ShapeProperty>(_ property: P.Type) -> P.Value? {
         get { added[P.self] }
         set { added[P.self] = newValue }

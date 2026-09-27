@@ -75,6 +75,8 @@ struct PropertyCodec: Sendable {
     let typeName: String
     let decode: @Sendable (any Decoder) throws -> any AddedValue
     let decodeData: @Sendable (Data) throws -> any AddedValue
+    /// Whether a value is no value at all (`ShapeProperty.isNone`): one read from a board is dropped.
+    let isNone: @Sendable (any AddedValue) -> Bool
     let schema: @Sendable (inout SchemaDefinitions) -> JSONObject
     /// Its value is an optional, or holds optionals, which a schema can't say.
     let holdsOptionals: Bool
@@ -88,6 +90,7 @@ struct PropertyCodec: Sendable {
         // Through a single-value container, so the decoder's settings apply (a date as a board writes one).
         decode = { Boxed(value: try $0.singleValueContainer().decode(P.Value.self)) }
         decodeData = { Boxed(value: try BoardCodec.makeDecoder().decode(P.Value.self, from: $0)) }
+        isNone = { ($0 as? Boxed<P.Value>).map { P.isNone($0.value) } ?? false }
         let keywords = P.keywords.json
         schema = { P.Value.schema(in: &$0).merging(keywords) { _, keyword in keyword } }
         holdsOptionals = P.Value.self is any OptionalValue.Type || Canvas.holdsOptionals(P.Value.self)

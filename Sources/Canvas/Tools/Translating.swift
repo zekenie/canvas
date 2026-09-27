@@ -56,7 +56,7 @@ extension TranslatingSession: Session {
         editor.transact { tx in
             // `pointer.world − grabOffset`, not `start + delta`: the two differ in the last bit
             // for some fractional points. This is the POC's box drag, and Characterization pins it.
-            for (id, grabOffset) in frames { tx.update(id) { $0.box?.origin = pointer.world - grabOffset } }
+            for (id, grabOffset) in frames { tx.moveBox(id, to: pointer.world - grabOffset) }
             for move in moves { move(delta, &tx) }
         }
     }

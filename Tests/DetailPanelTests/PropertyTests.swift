@@ -112,4 +112,15 @@ struct BadgesPlugin: CanvasPlugin {
         seal.wrappedValue = "stamp"
         expectEqual(editor.revision, revision)
     },
+    test("every binding a shape's binding makes of its added properties reads what a write through any of them made, until the panel redraws") {
+        let editor = try gadgetEditor([BadgesPlugin()])
+        let gadget = editor.add(Gadget(gadgetFrame))
+        let shape = try require(editor.shapeBinding(gadget, as: Gadget.self))
+        let field = shape[Seal.self], counter = shape[Seal.self]
+        field.wrappedValue = "wax"
+        expectEqual(counter.wrappedValue, "wax", "a second binding of the same property")
+        shape[Seal.self].wrappedValue = (shape[Seal.self].wrappedValue ?? "") + " and ribbon"
+        expectEqual(editor.document[gadget]?[Seal.self], "wax and ribbon", "a read-modify-write reads the last write")
+        expectEqual(shape[Badges.self].wrappedValue, [], "another property, as the shape has it")
+    },
 ])

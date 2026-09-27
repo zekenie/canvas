@@ -83,6 +83,8 @@ import Validation
         let editor = try taskEditor()
         expectEqual(editor.issues(editor.add(fullTask())), [])
         expectEqual(editor.issues(editor.add(ShapeRecord(TaskCard(frame: cardFrame), title: " "))), [.error("A task needs a title.", field: "title")])
+        expectEqual(editor.issues(editor.add(ShapeRecord(TaskCard(frame: cardFrame), title: ""))), [.error("A task needs a title.", field: "title")],
+                    "said once: an empty title is none, not a title too short")
         var task = fullTask()
         task.props.status = .done
         expectEqual(editor.issues(editor.add(task)), [.warning("Done, with 2 unchecked items.", field: "checklist")])

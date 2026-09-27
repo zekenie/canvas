@@ -37,7 +37,7 @@ extension Registry {
     /// schema's shape, so what a shape the app holds can break are the bounds its properties declare
     /// (`maxLength`, `minimum`, `pattern`), and a number that isn't finite.
     public func schemaViolations(of shape: AnyShapeRecord) -> [SchemaViolation] {
-        guard let validator = schemaValidators.validator(for: shape.kind, in: self), let json = shape.propertiesJSON else { return [] }
+        guard let validator = schemaValidators[shape.kind], let json = shape.propertiesJSON else { return [] }
         return validator.violations(of: .object(json))
     }
 
@@ -45,7 +45,8 @@ extension Registry {
     /// schema describes (`schema(for:)`), as `AnyShapeRecord.propertiesJSON` writes it, at today's
     /// versions. For what writes shapes as JSON (the command line). A property the object leaves
     /// out, or gives as null, is as the kind has it (its `init()`, or an added property's default),
-    /// unless it's required. It throws for a kind no plugin registers, a property the kind doesn't
+    /// unless it's required; and so is an added property given a value that's none (a blank title,
+    /// `ShapeProperty.isNone`). It throws for a kind no plugin registers, a property the kind doesn't
     /// have, and a value that doesn't read as its property's type; one that breaks only its schema's
     /// bounds reads (`schemaViolations(of:)` finds it). The shape is in no document yet.
     public func shape(_ kind: ShapeKind, properties: JSONObject, id: ShapeID = ShapeID()) throws(ShapePropertiesError) -> AnyShapeRecord {
@@ -75,7 +76,8 @@ extension Registry {
         for (key, value) in addedJSON {
             guard let codec = propertyTable.codecs[key] else { continue }
             do {
-                record.added[key] = try codec.decodeData(encoder.encode(value))
+                let read = try codec.decodeData(encoder.encode(value))
+                record.added[key] = codec.isNone(read) ? nil : read
             } catch {
                 let why = BoardCodec.describe(error)
                 throw .unreadable(why.isEmpty ? key.rawValue : "\(key): \(why)")
@@ -100,19 +102,5 @@ public enum ShapePropertiesError: Error, Equatable, CustomStringConvertible {
         case .unknownProperty(let name, let kind): "\(kind) shapes have no property \(name)"
         case .unreadable(let why): why
         }
-    }
-}
-
-/// Each kind's schema, compiled the first time a shape of it is checked: the registry never changes.
-@MainActor
-final class SchemaValidators {
-    private var byKind: [ShapeKind: SchemaValidator] = [:]
-
-    func validator(for kind: ShapeKind, in registry: Registry) -> SchemaValidator? {
-        if let known = byKind[kind] { return known }
-        guard let schema = registry.schema(for: kind) else { return nil }
-        let validator = SchemaValidator(schema)
-        byKind[kind] = validator
-        return validator
     }
 }

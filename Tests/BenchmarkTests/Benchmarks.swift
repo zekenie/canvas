@@ -18,10 +18,11 @@ import Titles
 import Validation
 
 // The persistence plan's budgets, for boards of generated shapes: saving and opening, validation's
-// first read (every shape checked, against its kind's schema too), and one hover and one drag frame
-// (the input, then drawing the whole canvas, and the minimap with it), on a note and from a note's
-// port, at 60 fps. `./build.sh bench` runs these in a release build and holds them to the budgets;
-// `./test.sh` runs them debug and small, so they keep working, and only reports.
+// first read (every shape checked, against its kind's schema too) and its read after moving them
+// all, and one hover and one drag frame (the input, then drawing the whole canvas, and the minimap
+// with it), on a note and from a note's port, at 60 fps. `./build.sh bench` runs these in a release
+// build and holds them to the budgets; `./test.sh` runs them debug and small, so they keep working,
+// and only reports.
 #if DEBUG
 let sizes = [300]
 let holdsToBudgets = false
@@ -41,6 +42,10 @@ enum Budget {
     static let validation10k = 100.0
     /// Validation's read after a commit that changed a shape or two.
     static let validationAfterCommit = 1.0
+    /// Validation's read after a drag event that moved all 10,000 shapes (⌘A, then a drag): each
+    /// moved shape's rules run again, but not its schema check, which moving a shape can't change
+    /// (with it, some 30 ms). The drag event's own commit, before it, costs more than a frame.
+    static let validationAfterMovingAll10k = 16.0
 }
 
 /// Notes, tasks and ellipses in a grid, with an arrow from every fourth note to the note after it.
@@ -132,7 +137,7 @@ enum Budget {
             if holdsToBudgets, size >= 10_000 { expect(open < Budget.open10k, "opening \(size) shapes took \(open) ms") }
         }
     },
-    test("validation's first read checks every shape, against its kind's schema too; a drag checks the dragged shape again") {
+    test("validation's first read checks every shape, against its kind's schema too; a drag checks the dragged shapes again, but not their schemas") {
         for size in sizes {
             let document = generatedBoard(shapes: size)
             let registry = try ShippedPlugins.registry()
@@ -149,11 +154,31 @@ enum Budget {
                 step += 1
                 editor.transact { $0.update(note.id) { $0.box = $0.box?.offsetBy(dx: 1, dy: step) } }
             }) { _ = editor.validation?.results }
+            // ⌘A, and a drag from a note, as a user moves the whole board: every shape moves on every
+            // drag event (but the locked ellipses, and the arrows with their notes).
+            let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
+            _ = h.editor.validation?.results
+            h.hold(.command)
+            h.key("a")
+            h.hold([])
+            let center = CGPoint(x: try require(note.box).midX, y: try require(note.box).midY)
+            // Once ⌘, let go, no longer counts as held: a press with it would brush.
+            h.press(at: center, after: 200)
+            var nudge = 0.0
+            let all = median(runs: 11, prepare: {
+                nudge += 1
+                h.drag(to: center + CGPoint(x: nudge, y: 0))
+            }) { _ = h.editor.validation?.results }
+            expectEqual(h.editor.document[note.id]?.box?.origin.x, (note.box?.origin.x ?? 0) + nudge, "the drag moves what ⌘A selected")
+            h.release()
             expectEqual(editor.validation?.results.isEmpty, true, "the generated board has no issues")
-            report(String(format: "%6d shapes, validation: first read %6.1f ms (budget %.0f), of which the schemas about %6.1f; after a drag event %6.3f (budget %.0f)",
-                          size, first, Budget.validation10k, schemas, again, Budget.validationAfterCommit))
+            report(String(format: "%6d shapes, validation: first read %6.1f ms (budget %.0f), of which the schemas about %6.1f; after a drag event %6.3f (budget %.0f); after moving them all %6.2f (budget %.0f)",
+                          size, first, Budget.validation10k, schemas, again, Budget.validationAfterCommit, all, Budget.validationAfterMovingAll10k))
             if holdsToBudgets {
-                if size >= 10_000 { expect(first < Budget.validation10k, "validation's first read of \(size) shapes took \(first) ms") }
+                if size >= 10_000 {
+                    expect(first < Budget.validation10k, "validation's first read of \(size) shapes took \(first) ms")
+                    expect(all < Budget.validationAfterMovingAll10k, "validation after moving all \(size) shapes took \(all) ms")
+                }
                 expect(again < Budget.validationAfterCommit, "validation after a drag event on \(size) shapes took \(again) ms")
             }
         }

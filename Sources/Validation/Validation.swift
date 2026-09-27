@@ -48,6 +48,8 @@ public struct ValidationResult: Equatable, Sendable {
 public struct ValidationContext {
     let document: CanvasDocument
     let registry: Registry
+    /// Validation's own rule's: each shape's schema issues, kept from one check to the next.
+    let schemaVerdicts: SchemaVerdicts
     let lookups: Lookups
 
     public func shape(_ id: ShapeID) -> AnyShapeRecord? {
@@ -116,6 +118,8 @@ public final class ValidationEngine {
     /// The shapes each shape's rules looked up, and the other way around.
     private var lookups: [ShapeID: Set<ShapeID>] = [:]
     private var lookedUpBy: [ShapeID: Set<ShapeID>] = [:]
+    /// What the schema rule found of each shape, so one that only moved isn't checked again.
+    private let schemaVerdicts = SchemaVerdicts()
 
     init(editor: CanvasEditor) {
         self.editor = editor
@@ -147,6 +151,7 @@ public final class ValidationEngine {
             cache = [:]
             lookups = [:]
             lookedUpBy = [:]
+            schemaVerdicts.forgetAll()
             for shape in document.shapes { check(shape, in: document) }
             unchecked = []
             return
@@ -172,7 +177,7 @@ public final class ValidationEngine {
             cache[shape.id] = nil
             return
         }
-        let context = ValidationContext(document: document, registry: editor.registry, lookups: Lookups())
+        let context = ValidationContext(document: document, registry: editor.registry, schemaVerdicts: schemaVerdicts, lookups: Lookups())
         let issues = rules(for: shape.kind).flatMap { $0.check(shape, context) }
         cache[shape.id] = issues.isEmpty ? nil : ValidationResult(issues: issues)
         guard !context.lookups.ids.isEmpty else { return }
@@ -190,7 +195,12 @@ public final class ValidationEngine {
 
 extension ValidationEngine: EditorService {
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
+        // A commit heard out of turn (a service committed while hearing an earlier one, which this
+        // engine hasn't heard yet): what the earlier one changed isn't known, so no verdict kept
+        // can be trusted to still hold. The rest catches up when that one is heard.
+        if heardRevision < editor.revision - 1 { schemaVerdicts.forgetAll() }
         heardRevision = editor.revision
+        schemaVerdicts.documentDidChange(changes)
         guard unchecked != nil else { return }             // every shape is unchecked already
         for id in changes.shapeIDs {
             unchecked!.insert(id)
@@ -253,7 +263,34 @@ struct ValidationOverlay: CanvasOverlay {
 /// and a number that isn't finite. Warnings, not errors: the shape still works, and saves.
 @MainActor
 func schemaIssues(of shape: AnyShapeRecord, in context: ValidationContext) -> [ValidationIssue] {
-    context.registry.schemaViolations(of: shape).map { .warning($0.message, field: $0.property) }
+    context.schemaVerdicts.issues(of: shape, in: context.registry)
+}
+
+/// The schema rule's issues for each shape, kept until a commit changes the shape in any way but
+/// moving it (`ChangeSet.moved`): a drag commits every shape it drags on every event, and checking
+/// a task card against its schema costs several microseconds, while where a shape is is nothing its
+/// schema checks. A box is the core's rect in every kind's schema, and moving one keeps it as finite
+/// as it was (a transaction refuses a box that isn't). And a shape checked again because a shape
+/// its rules looked up changed keeps its own.
+@MainActor
+final class SchemaVerdicts {
+    private var verdicts: [ShapeID: [ValidationIssue]] = [:]
+
+    func issues(of shape: AnyShapeRecord, in registry: Registry) -> [ValidationIssue] {
+        if let issues = verdicts[shape.id] { return issues }
+        let issues = registry.schemaViolations(of: shape).map { ValidationIssue.warning($0.message, field: $0.property) }
+        verdicts[shape.id] = issues
+        return issues
+    }
+
+    /// Drops the verdict of each shape the commit added, removed, or changed but by moving it.
+    func documentDidChange(_ changes: ChangeSet) {
+        for id in changes.added { verdicts[id] = nil }
+        for id in changes.removed { verdicts[id] = nil }
+        for id in changes.changed where !changes.moved.contains(id) { verdicts[id] = nil }
+    }
+
+    func forgetAll() { verdicts = [:] }
 }
 
 /// Validation, as a plugin: any plugin gives any kind rules (`x.validate { ... }`), each finding

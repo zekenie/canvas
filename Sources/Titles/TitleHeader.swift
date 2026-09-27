@@ -22,16 +22,23 @@ public struct TitleHeader: View {
     /// Nil for the kind's symbol.
     public let systemImage: String?
     private let text: Binding<String>
+    /// False for a shape whose kind doesn't opt into the title Titles keeps: it can't be renamed.
+    private var isRenamable = true
 
-    /// The title Titles keeps for the shape (`TitleProperty`, which its kind opts into with
-    /// `x.title()`), nil while untitled.
+    /// The title Titles keeps for the shape (`TitleProperty`), nil while untitled; Titles keeps no
+    /// blank one, so a field of only spaces is untitled too. The kind must opt in with `x.title()`:
+    /// on one that doesn't, the shape can't hold a title, so a debug build stops here, and the
+    /// field is disabled.
     public init<P: ShapeProps>(_ shape: ShapeBinding<P>, placeholder: String? = nil, subtitle: String? = nil, systemImage: String? = nil) {
+        assert(shape.holds(TitleProperty.self),
+               "TitleHeader($x) renames the title Titles keeps, which \(P.kind) doesn't opt into: call x.title() where it's registered, or give TitleHeader the binding of the title it derives")
         self.init(shape[TitleProperty.self], placeholder: placeholder, subtitle: subtitle, systemImage: systemImage)
+        isRenamable = shape.holds(TitleProperty.self)
     }
 
-    /// A title that's nil while untitled: clearing the field sets nil. Anything else is kept as
-    /// typed, so what the field shows is what's stored; a title of only spaces reads as none
-    /// (`Registry.title(of:)`, the pill, the row).
+    /// A title that's nil while untitled: clearing the field sets nil. Anything else is written as
+    /// typed, for the binding to keep (Titles' own keeps no blank title); a title of only spaces
+    /// reads as none (`Registry.title(of:)`, the pill, the row).
     public init(_ title: Binding<String?>, placeholder: String? = nil, subtitle: String? = nil, systemImage: String? = nil) {
         self.init(Binding(get: { title.wrappedValue ?? "" }, set: { title.wrappedValue = $0.isEmpty ? nil : $0 }),
                   placeholder: placeholder, subtitle: subtitle, systemImage: systemImage)
@@ -49,6 +56,7 @@ public struct TitleHeader: View {
     public var body: some View {
         DetailHeaderLabel(subtitle: subtitle, systemImage: systemImage) {
             DetailHeaderField(text, placeholder: placeholder)
+                .disabled(!isRenamable)
         }
     }
 }

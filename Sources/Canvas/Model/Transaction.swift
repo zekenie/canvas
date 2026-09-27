@@ -107,11 +107,20 @@ public struct Transaction {
             }
         }
         for id in boxes {
-            update(id) { record in
-                if let box = record.box { record.box = CGRect(origin: box.origin + delta, size: box.size) }
-            }
+            if let box = document[id]?.box { moveBox(id, to: box.origin + delta) }
         }
         for move in moves { move(delta, &self) }
+    }
+
+    /// Puts a box shape's frame at `origin`, its size as it was: a move, as `translate` and a drag
+    /// make, which the commit's `ChangeSet` names in `moved` unless something else in the
+    /// transaction changes the shape too. A shape without a box stays as it is, and so does a
+    /// read-only one, as with `update`.
+    public mutating func moveBox(_ id: ShapeID, to origin: CGPoint) {
+        // Only moved, if nothing but moves changed it before in this transaction.
+        let unchanged = !changes.added.contains(id) && (!changes.changed.contains(id) || changes.moved.contains(id))
+        update(id) { $0.box?.origin = origin }
+        if unchanged, changes.changed.contains(id) { changes.moved.insert(id) }
     }
 
     /// Paints the shape above every other. Does nothing if it's already on top, or read-only.
@@ -156,6 +165,7 @@ public struct Transaction {
     /// A shape added in this transaction stays added, however it changes after.
     private mutating func noteChanged(_ id: ShapeID, reordering: Bool = false) {
         if !changes.added.contains(id) { changes.changed.insert(id) }
+        changes.moved.remove(id)
         if reordering { changes.reordered = true }
         didChange = true
     }
@@ -182,6 +192,7 @@ public struct Transaction {
         document.remove(deleting)
         for id in deleting where changes.added.remove(id) == nil {       // added and removed here: never seen
             changes.changed.remove(id)
+            changes.moved.remove(id)
             changes.removed.insert(id)
         }
         changes.reordered = true

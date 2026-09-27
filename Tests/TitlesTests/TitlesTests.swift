@@ -68,7 +68,7 @@ import Titles
         box[TitleProperty.self] = "Crate"
         expectEqual(registry.title(of: AnyShapeRecord(box)), "Crate")
     },
-    test("a title outside its bounds breaks the kind's schema: past 80 characters (code points), or empty; it's kept all the same") {
+    test("a title past 80 characters (code points) breaks the kind's schema, and is kept all the same; a blank one is none, and never kept") {
         let editor = try titleEditor()
         let id = editor.add(Plaque(plaqueFrame), named: String(repeating: "a", count: 80))
         @MainActor func violations() throws -> [SchemaViolation] { editor.registry.schemaViolations(of: try require(editor.document[id])) }
@@ -79,12 +79,13 @@ import Titles
                                                        message: "Title is 81 characters long, and should be at most 80.")])
         // A thumbs-up with a skin tone is one character on screen, and two code points.
         editor.rename(id, String(repeating: "👍🏽", count: 41))
-        expectEqual(try violations().map(\.message), ["Title is 82 characters long, and should be at most 80."])
-        editor.rename(id, "")
-        expectEqual(try violations(), [SchemaViolation(path: [.member("title")], keyword: "minLength", message: "Title is empty.")])
-        expectEqual(editor.title(id), nil, "and no title")
-        editor.rename(id, nil)
-        expectEqual(try violations(), [], "untitled: nothing to check")
+        expectEqual(try violations().map(\.message), ["Title is 82 characters long as JSON Schema counts them (41 as shown), and should be at most 80."])
+        for blank in ["", "   ", " \n\t"] {
+            editor.rename(id, "Lobby")
+            editor.rename(id, blank)
+            expectEqual(editor.name(id), nil, "\(blank.debugDescription) is no title, so none is kept")
+            expectEqual(try violations(), [], "untitled: nothing to check")
+        }
     },
     test("a title is two lines in the report, its own and its row's name; without the row's, one") {
         let registry = try Registry(plugins: [FixturesPlugin(), TitlesPlugin(), TableOfContentsPlugin(), Contributor(id: "fixture-titles") { r in

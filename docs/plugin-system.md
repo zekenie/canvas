@@ -44,7 +44,7 @@ maps one onto the other.
 
 | | What it is | Example |
 |---|---|---|
-| **Kind** | A plain value type holding a shape's data, defined by its list of properties. It names itself once, with `static let kind`. | `struct StickyNote: BoxShapeProps { frame, text, title }` |
+| **Kind** | A plain value type holding a shape's data, defined by its list of properties. It names itself once, with `static let kind`. | `struct StickyNote: BoxShapeProps { frame, text }` |
 | **Definition** | Stateless behavior for a kind: how it draws, where it is, how it's hit, what else it can do. | `StickyNoteDefinition`, conforming to `ShapeDefinition` and `Editable` |
 | **Plugin** | A value that says what it adds, in `register(into:)`. | `struct StickyNotesPlugin: CanvasPlugin` |
 | **Extension point** | A typed slot some plugin declares and other plugins fill. The type is the key. | `enum ValidationRules: ExtensionPoint` |
@@ -349,10 +349,14 @@ What `./build.sh audit` enforces:
   it fails. An id is a module's when it declares it as a static `ShapeKind`, `ToolID`, `PluginID`,
   `PropertyKey` or `ChannelID` (`static let id: ChannelID = "note-link"`), or as its plugin's
   `id`. A kind's own property names (`Property("title", ...)`) are only that kind's, so they're
-  exempt, and so is a JSON member's name: a subscript's key (`json["title"]`) or a key before a
-  colon (`["title": ...]`, or JSON text), but not a `case` label's or a ternary's. Those name
-  members of some JSON (a kind's own props, JSON Schema's `title` keyword), where ordinary words
-  are also ids (Titles' `title` property). Lookups at run time (a tool by its shortcut or label)
+  exempt, and so is a JSON member named by one of JSON Schema's keywords, which schemas write
+  wherever they're built or read, and which ordinary words, and so ids, may also be (Titles'
+  `title` property): a subscript's key (`json["title"]`) or a key before a colon where a member's
+  name can start (`["title": ...]`, after a comma, or starting a line of JSON text), but not in a
+  `case`'s patterns or its `where`, on its line or the lines they go on to, nor in a ternary
+  (`? "title" : …`, even across a line), nor after an operator (`prefix + "title" : …`). Any other
+  member's name counts: reading another plugin's property out of a shape's JSON
+  (`json["locked"]`) needs the dependency. Lookups at run time (a tool by its shortcut or label)
   aren't audited.
 - **The host API is fenced off.** What `CanvasView` calls on the editor (input, the cursor,
   drawing, the delegate) is `@_spi(Host)`. Only modules that `@_spi(Host) import Canvas` see it,
@@ -733,11 +737,13 @@ public struct TitlesPlugin: CanvasPlugin {
 
 A title someone gives a shape is Titles' to keep: `note.title()` opts the kind into Titles' `title`
 property, and each note holds its own, nil until someone names it. It's in the kind's schema, where
-Titles says what a title is: a string of 1 to 80 characters. Nothing stops a longer one (a pasted
-paragraph): [Validation](#checking-shapes-against-their-schemas) checks every shape against its
-kind's schema, so the shape gets a warning, "Title is 95 characters long, and should be at most
-80.", with the title kept as it is. A kind that stores a title of its own would have none of that,
-so notes and tasks hand theirs over ([Boards on disk](#boards-on-disk)).
+Titles says what a title is: a string of 1 to 80 characters. A blank one is no title at all
+(`TitleProperty.isNone`), so no shape holds one: a note named "   ", or read from a board with an
+empty title, is untitled. Nothing stops a longer one (a pasted paragraph):
+[Validation](#checking-shapes-against-their-schemas) checks every shape against its kind's schema,
+so the shape gets a warning, "Title is 95 characters long, and should be at most 80.", with the
+title kept as it is. A kind that stores a title of its own would have none of that, so notes and
+tasks hand theirs over ([Boards on disk](#boards-on-disk)).
 
 A title may be derived instead, from what the kind keeps itself: then it isn't data, and isn't in
 the schema. The bridge that opts ellipses in,
@@ -892,8 +898,10 @@ the two never disagree:
   one wouldn't save) or has a default that isn't nil (a nil one would read back as the default);
   and optionals inside a collection or another optional, which a schema can't say (nor may an
   added property's value be an optional, or hold one). It refuses two types under one definition
-  name, and a struct that holds itself with no name. The first problem is the one reported, and a
-  problem in a property's value is its declarer's:
+  name, a struct that holds itself with no name, and a schema that can't be checked against (a
+  `$ref` to a place the schema doesn't have, or one that leads back to itself before going into the
+  value, and a `pattern` that isn't a regular expression). The first problem is the one reported,
+  and a problem in a property's value is its declarer's:
 
   ```
   Shapes: unlisted (from kinds): Unlisted.note isn't in Unlisted's properties, so boards wouldn't save it
@@ -927,6 +935,11 @@ extension ChecklistProperty: ShapeProperty {
   properties take (none by default). Titles' title is one to 80 characters:
   `PropertyKeywords().description("What the shape is called.").minLength(1).maxLength(80)`, and a
   shape whose title is longer gets a warning ([Checking shapes](#checking-shapes-against-their-schemas)).
+- **`isNone(_:)`** says which values are no value at all (never, by default): Titles' says a blank
+  title, `title.allSatisfy(\.isWhitespace)`. No shape holds one: setting one sets nil, or the
+  default for a property that has one (which can't itself be none), and a board's reads as none,
+  so the shape has the default. A value a board writes as null, among the added values, kept, or
+  handed over from a kind's own member, is none too.
 - **`migrations`** is its history (`PropertyMigration`s, none by default), its own whatever kinds
   opt in ([Boards on disk](#boards-on-disk)).
 - **The value** is `SchemaDescribed`, `Codable`, `Equatable` and `Sendable`: a scalar, an array, or
@@ -1050,9 +1063,10 @@ its fixture, and that every fixture holds up against it.
 `registry.schemaViolations(of: shape)` is where a shape breaks its kind's schema: its properties,
 own and added, as one object (`record.propertiesJSON`, each as a board writes it), checked against
 `schema(for:)`, one `SchemaViolation` for each keyword broken at each place. Empty when it holds
-up, and for a shape kept aside. The schemas are compiled once per kind, the first time a shape of
-it is checked (`SchemaValidator`, which checks any JSON against any schema:
-`schema.violations(of: json)`).
+up, and for a shape kept aside. Each kind's schema is compiled once, as the registry is built
+(`SchemaValidator`, which checks any JSON against any schema: `schema.violations(of: json)`), so a
+schema it couldn't check refuses the plugin list then, rather than warning on every shape
+(`validator.problems` says what's wrong with one).
 
 ```swift
 registry.schemaViolations(of: note).first
@@ -1072,8 +1086,14 @@ strings, arrays and objects, `required`, `dependentRequired`) and its applicator
 `patternProperties`, `additionalProperties`, `propertyNames`, `prefixItems`, `items`, `contains`,
 `allOf`, `anyOf`, `oneOf`, `not`, `if`/`then`/`else`, and `$ref` to any place in the same schema).
 `format` is an annotation, as 2020-12 has it, and so is any keyword it doesn't know
-(`x-canvas-owner`): neither is checked. A length is in code points, as JSON Schema counts: a
-thumbs-up with a skin tone is two.
+(`x-canvas-owner`): neither is checked. It compares as JSON Schema does: strings code point for
+code point (so "é" and "e\u{301}" differ, where Swift's `==` equates them), numbers by value. A
+length is in code points too: a thumbs-up with a skin tone is two, so a message gives both counts
+when they differ ("82 characters long as JSON Schema counts them (41 as shown)"). A pattern is
+ECMA-262's, run by ICU (`NSRegularExpression`) once what ICU reads differently is rewritten: `$`
+ends the string (ICU's also matches before a final line break), `.` and `\s` are ECMA's, and `\d`,
+`\w` and `\b` are ASCII. A pattern ICU can't read at all (a lookbehind of no fixed length) refuses
+the plugin list, as one that's no regular expression does.
 
 **Validation turns each violation into a warning.** The rule is Validation's own, for every kind
 (`ValidationRules` on its line of the report), after the kind's own rules: the violation's message,
@@ -1081,7 +1101,10 @@ about the property it's in (`ValidationIssue.field`). So a bound is a guideline 
 break and still work: it's outlined orange, listed in its Issues tab, and dotted in the table of
 contents, and it saves as it is. A rule that should refuse a shape is the kind's, as an error. The
 engine checks a shape when it changes, as it does every rule, and reads every shape once, on the
-first frame after a board opens: `./build.sh bench` holds that to 100 ms for 10,000 shapes.
+first frame after a board opens: `./build.sh bench` holds that to 100 ms for 10,000 shapes. A shape
+keeps what its schema said until a commit changes it other than by moving it (`ChangeSet.moved`),
+since where a shape is is nothing its schema checks: a drag that moves 10,000 shapes redoes their
+rules, not their schemas.
 
 ### Properties and metadata
 
@@ -1522,9 +1545,10 @@ task.details(header: { $task in TitleHeader($task, placeholder: "Untitled Task",
 
 It's a `DetailHeaderLabel` whose title is a `DetailHeaderField`. Each keystroke renames the shape
 (one transaction), so its pill and its row in the table of contents follow as you type. Given the
-shape, it renames the title Titles keeps (`$note[TitleProperty.self]`): clearing the field sets
-nil, and anything else is kept as typed, so a title of only spaces is stored but reads as none,
-and one past 80 characters is kept, and warned about. A title derived from what the kind keeps is
+shape, it renames the title Titles keeps (`$note[TitleProperty.self]`, which the kind must opt
+into with `note.title()`: a debug build stops at one that doesn't): clearing the field, or leaving
+only spaces in it, sets nil, since Titles keeps no blank title; anything else is kept as typed, and
+one past 80 characters is kept, and warned about. A title derived from what the kind keeps is
 renamed where it comes from, given that binding instead: a `String?`, or a `String` blank while
 untitled (`TitleHeader($card.text)`). While there's no title it shows its placeholder,
 dimmed: the kind's name ("Note"), unless the kind gives one ("Untitled Task"). A derived title that
@@ -1743,7 +1767,9 @@ A section's content closure gets a `ShapeBinding`. Take it as a `$` parameter, a
   Every-box sections get a `ShapeBinding<CGRect>`, the frame, whatever the kind. Sections over an
   added property get its value (`ShapeBinding<[ChecklistItem]>`), on the shapes that have one. Any
   of them binds an added property of its shape by its type (`$x[P.self]`), through the whole
-  record.
+  record: nil, and writes dropped, on a kind that doesn't opt into it (`$x.holds(P.self)` says
+  whether it does). The added properties' bindings one `$x` makes read back the last write through
+  any of them, until the panel redraws.
 - **Other forms.** A plain parameter works too (`items.wrappedValue` is the snapshot, as in
   Checklists' Progress), and a larger section can be a View declaring
   `@ShapeBinding var items: [ChecklistItem]`, passed `$items` (Checklists' `ChecklistMenu`).
@@ -2712,12 +2738,14 @@ to it.
   tldraw), so moving a shape in the stack changes that shape alone. The only way to change it is
   `editor.transact { tx in ... }`: `insert` (on top), `update` (typed with `as:`; it can't change a
   shape's id or key), `bringToFront`, `sendToBack`, `move(_:above:)`, `move(_:below:)`, `delete`,
-  and `translate(_:by:)`, which moves shapes as dragging them would. A record carries its props, the
+  `translate(_:by:)`, which moves shapes as dragging them would, and `moveBox(_:to:)`, which puts
+  a box where a drag does. A record carries its props, the
   values of its [added properties](#added-properties) and its [metadata](#metadata), and
   `record.copy(as:)` is the same shape under another id.
   A transaction commits once, if anything changed, and bumps `editor.revision`. What it did goes
   with it, record by record: its `ChangeSet` names the shapes it added, changed and removed, and
-  says whether the stack changed. Transactions don't nest. A frame that isn't finite never gets in: such an insert or update is dropped, since a board
+  of those changed, the ones it only moved (`moveBox`, as a drag and `translate` do, and nothing
+  else), and says whether the stack changed. Transactions don't nest. A frame that isn't finite never gets in: such an insert or update is dropped, since a board
   must always save. An added value the shape's kind can't hold is dropped too, and an insert fills
   in the defaults of what its kind opts into. A read-only shape (a locked one,
   `registrar.readOnlyShapes`) keeps whatever a transaction does to it, unless the change leaves it

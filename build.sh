@@ -296,11 +296,14 @@ done
 # plugin's `id` (`var id: PluginID { "ellipses" }`). Test fixtures' ids
 # ("box", "card") are ordinary words, so they own nothing. Any other string literal is a use,
 # except an SF Symbol or asset name (the argument of systemImage:, systemName:, systemSymbolName:
-# or named:), which only looks like one; a kind's own property's name (`Property("title", ...)`),
-# which is only that kind's; and a JSON member's name, a subscript's key (`json["title"]`) or a key
-# before a colon (`["title": ...]`, `"title" : ...` in JSON text, but not a `case` label or a
-# ternary's), which names a member of some JSON (a kind's own props, a schema's keywords) that
-# ordinary words name too.
+# or named:), which only looks like one, and a kind's own property's name (`Property("title", ...)`),
+# which is only that kind's; nor is a JSON member named by one of JSON Schema's keywords, which ids
+# may be too (Titles' `title`): a subscript's key (`json["title"]`), or a key before a colon where
+# a member's name can start (`["title": ...]`, `, "title": ...`, `"title" : ...` beginning a line
+# of JSON text), but never in a `case`'s patterns or its `where` (on its line, or the lines a
+# pattern list or a `where` goes on to) or a ternary's (after its `?`, on its line or the next).
+# Any other member's name is a use: a module can't read another's property out of a shape's JSON
+# (`json["locked"]`) without depending on it.
 ID_DECL='((let|var)[[:space:]]+id|static[[:space:]]+(let|var)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*)[[:space:]]*(:[[:space:]]*(ShapeKind|PluginID|ToolID|PropertyKey|ChannelID)[[:space:]]*(=|\{)|=[[:space:]]*(ShapeKind|PluginID|ToolID|PropertyKey|ChannelID)\((rawValue:)?)[[:space:]]*"[^"\\]+"'
 module_of() { print -r -- ${${1#*/}%%/*} }       # Sources/Canvas/Model/Identity.swift:3:... -> Canvas
 typeset -A ID_OWNERS
@@ -314,13 +317,32 @@ for hit in ${(f)"$(matching $ID_DECL)"}; do
         rest=${rest[MEND+1,-1]}
     done
 done
+# JSON Schema's keywords (draft 2020-12, less those that start with `$`), which schemas write as members'
+# names wherever they're built or read.
+SCHEMA_KEYWORDS='(prefixItems|items|contains|additionalProperties|properties|patternProperties|dependentSchemas|propertyNames|if|then|else|allOf|anyOf|oneOf|not|unevaluatedItems|unevaluatedProperties|type|const|enum|multipleOf|maximum|exclusiveMaximum|minimum|exclusiveMinimum|maxLength|minLength|pattern|maxItems|minItems|uniqueItems|maxContains|minContains|maxProperties|minProperties|required|dependentRequired|title|description|default|deprecated|readOnly|writeOnly|examples|format|contentEncoding|contentMediaType|contentSchema)'
 if (( ${#ID_OWNERS} )); then
     print -rl -- \"${(k)^ID_OWNERS}\" > $AUDIT/ids
-    sed -E -e 's/(systemImage|systemName|systemSymbolName|named):[[:space:]]*"[^"]*"/\1: ""/g' \
-           -e 's/(^|[^A-Za-z0-9_])Property\([[:space:]]*"[^"]*"/\1Property(""/g' \
-           -e 's/([]A-Za-z0-9_)?!])\["[^"]*"\]/\1[""]/g' \
-           -e 's/((case|\?)[[:space:]]+"[^"]*")[[:space:]]*:/\1 ;/g' \
-           -e 's/"[^"]*"[[:space:]]*:/"":/g' $CODE > $AUDIT/uses
+    # Not uses: symbols' and a kind's own properties' names. Then, for JSON members named by a schema
+    # keyword, the colons that can't follow a member's name become semicolons: all of a `case`'s,
+    # on its line and on the lines its pattern list (ending in a comma) or `where` goes on to, and
+    # those of a line after one ending in a ternary's `?`; and a ternary's on its own line. Last, a
+    # subscript's key, and a key before a colon where a member's name can start: the start of a
+    # line or of a raw string's JSON (`#"`), or after a `[`, a `{` or a comma.
+    sed -E -e 's/(^|[^A-Za-z0-9_])(systemImage|systemName|systemSymbolName|named):[[:space:]]*"[^"]*"/\1\2: ""/g' \
+           -e 's/(^|[^A-Za-z0-9_])Property\([[:space:]]*"[^"]*"/\1Property(""/g' $CODE |
+    awk '{
+        split($0, part, ":"); prefix = part[1] ":" part[2] ":"; code = substr($0, length(prefix) + 1)
+        line = code; sub(/^[ \t]+/, "", line); sub(/[ \t]+$/, "", line)
+        isCase = code ~ /(^[ \t]*|[{};][ \t]*|[^A-Za-z0-9_](if|guard|while|for)[ \t]+)case([^A-Za-z0-9_]|$)/
+        goesOn = part[1] == file && (last == "?" || (inCase && (last == "," || line ~ /^where([^A-Za-z0-9_]|$)/)))
+        if (isCase || goesOn || line ~ /^where([^A-Za-z0-9_]|$)/) gsub(/:/, ";", code)
+        inCase = isCase || (goesOn && inCase)
+        file = part[1]; last = substr(line, length(line), 1)
+        print prefix code
+    }' |
+    sed -E -e 's/(\?[[:space:]]*"[^"]*"[[:space:]]*):/\1;/g' \
+           -e "s/([]A-Za-z0-9_)?!])\\[\"$SCHEMA_KEYWORDS\"\\]/\\1[\"\"]/g" \
+           -e "s/(^[^:]*:[0-9]+:[[:space:]]*|[[{,][[:space:]]*|#\")\"$SCHEMA_KEYWORDS\"[[:space:]]*:/\\1\"\":/g" > $AUDIT/uses
     for hit in ${(f)"$(grep -F -f $AUDIT/ids $AUDIT/uses || true)"}; do
         user=$(module_of $hit)
         for id in ${(k)ID_OWNERS}; do

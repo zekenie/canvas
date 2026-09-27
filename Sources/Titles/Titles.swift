@@ -14,8 +14,9 @@ extension PluginID {
 /// What a shape is called, where Titles keeps it: the property it adds to each kind that opts in
 /// with `x.title()`, and so a property of that kind's schema. A string of 1 to 80 characters (the
 /// schema's `minLength` and `maxLength`, in code points); nil until the shape is named, and again
-/// once its name is cleared. Nothing refuses a title outside the bounds: Validation checks every
-/// shape against its kind's schema, and warns about it.
+/// once its name is cleared. A blank title is none: a shape given one (empty, or only spaces and
+/// line breaks) holds nil, as does one read from a board, so no shape holds one. Nothing refuses a
+/// title too long: Validation checks every shape against its kind's schema, and warns about it.
 public enum TitleProperty {}
 
 extension TitleProperty: ShapeProperty {
@@ -24,6 +25,7 @@ extension TitleProperty: ShapeProperty {
     public static var keywords: PropertyKeywords<String> {
         PropertyKeywords().description("What the shape is called.").minLength(1).maxLength(maxLength)
     }
+    public static func isNone(_ title: String) -> Bool { title.allSatisfy(\.isWhitespace) }
     /// The longest title that draws no warning, in characters (code points, as JSON Schema counts).
     public static let maxLength = 80
 }

@@ -22,8 +22,10 @@ public struct Registry {
     private let readOnlyRules: [@MainActor (AnyShapeRecord) -> Bool]
     /// Added properties: who declares each, and which kinds opt in.
     let propertyTable: PropertyTable
-    /// Each kind's schema, compiled to check its shapes against (`schemaViolations(of:)`).
-    let schemaValidators = SchemaValidators()
+    /// Each kind's schema (`schema(for:)`), described once, as the registry is built.
+    private let schemas: [ShapeKind: JSONSchema]
+    /// The same, compiled to check its shapes against (`schemaViolations(of:)`).
+    let schemaValidators: [ShapeKind: SchemaValidator]
 
     public init(plugins: [any CanvasPlugin]) throws(RegistryError) {
         let plugins: [any CanvasPlugin] = [CorePlugin()] + plugins
@@ -60,29 +62,39 @@ public struct Registry {
                                           optIns: byPoint[ObjectIdentifier(CorePoints.PropertyOptIns.self)] ?? [],
                                           definitions: definitions,
                                           kinds: shapes.map { ($0.value as! ShapeRegistration).kind })
-        // Every declared property's schema, and every kind's, is described once now, so that what
-        // can't be (two types under one name, a struct that holds itself in place) and a member some
-        // struct doesn't list (which a board would never save) refuse the plugin list now, not at the
-        // first save or the first schema asked for. Properties first, so a problem in a property's
+        // Every declared property's schema, and every kind's, is described and compiled once now, so
+        // that what can't be described (two types under one name, a struct that holds itself in
+        // place), a member some struct doesn't list (which a board would never save), and a schema
+        // that can't be checked against (a `$ref` to nowhere, or back to itself without end, a
+        // pattern that isn't a regular expression) refuse the plugin list now, not at the first save,
+        // or as a warning on every shape of the kind. Properties first, so a problem in a property's
         // value is its declarer's, not that of the first kind that opts in.
         for c in declarations {
             let codec = (c.value as! PropertyDeclaration).codec
             var described = SchemaDefinitions()
-            _ = codec.schema(&described)
+            var json = codec.schema(&described)
+            if !described.json.isEmpty { json["$defs"] = .object(described.json) }
             let problems = (codec.holdsOptionals ? ["its value is an optional, or holds optionals in a collection, which a schema can't say"] : [])
-                + Self.problems(of: described)
+                + (codec.defaultValue.map(codec.isNone) == true ? ["its default is a value that's none (isNone), which no shape holds"] : [])
+                + Self.problems(of: described) + SchemaValidator(JSONSchema(json)).problems.map { "its schema is broken: \($0)" }
             if let problem = problems.first {
                 throw .invalid(point: c.pointName, reason: "property \(codec.key) (from \(c.pluginID)): \(problem)")
             }
         }
+        var schemas: [ShapeKind: JSONSchema] = [:], validators: [ShapeKind: SchemaValidator] = [:]
         for c in shapes {
             let shape = c.value as! ShapeRegistration
             var described = SchemaDefinitions()
-            _ = composedSchema(of: shape.kind, in: &described)
-            if let problem = Self.problems(of: described).first {
+            let schema = Self.schema(of: shape.kind, defined: shape.definition, properties: propertyTable, in: &described)
+            let validator = SchemaValidator(schema)
+            if let problem = Self.problems(of: described).first ?? validator.problems.first.map({ "its schema is broken: \($0)" }) {
                 throw .invalid(point: c.pointName, reason: "\(shape.kind) (from \(c.pluginID)): \(problem)")
             }
+            schemas[shape.kind] = schema
+            validators[shape.kind] = validator
         }
+        self.schemas = schemas
+        schemaValidators = validators
         // Owners are installed and keys unique by now, so a point's own rules can rely on both.
         var checked: Set<ObjectIdentifier> = []
         for c in all where checked.insert(c.point).inserted {
@@ -155,23 +167,16 @@ public struct Registry {
     /// `checklists.item`), and every `$ref` is local. It describes a shape as one object, own and
     /// added properties side by side (a board keeps the two apart). Nil for a kind no plugin
     /// registers.
-    public func schema(for kind: ShapeKind) -> JSONSchema? {
-        var shared = SchemaDefinitions()
-        guard var json = composedSchema(of: kind, in: &shared) else { return nil }
-        json["$schema"] = .string(JSONSchema.dialect)
-        json["$id"] = .string("tag:infinite-canvas,2026:kinds/\(kind)")
-        if !shared.json.isEmpty { json["$defs"] = .object(shared.json) }
-        return JSONSchema(json)
-    }
+    public func schema(for kind: ShapeKind) -> JSONSchema? { schemas[kind] }
 
-    /// The kind's own properties and those it opts into, as an object schema, with the definitions
-    /// they share in `shared`.
-    private func composedSchema(of kind: ShapeKind, in shared: inout SchemaDefinitions) -> JSONObject? {
-        guard let definition = definitions[kind] else { return nil }
+    /// A kind's schema, as `schema(for:)` has it: its own properties and those it opts into, as an
+    /// object schema, with the definitions they share, which `shared` holds too.
+    private static func schema(of kind: ShapeKind, defined definition: any ShapeDefinition, properties table: PropertyTable,
+                               in shared: inout SchemaDefinitions) -> JSONSchema {
         var json = definition.propsSchema(in: &shared)
         var properties = json["properties"]?.objectValue ?? [:]
-        for key in propertyTable.byKind[kind] ?? [] {
-            guard let codec = propertyTable.codecs[key], let owner = propertyTable.owners[key] else { continue }
+        for key in table.byKind[kind] ?? [] {
+            guard let codec = table.codecs[key], let owner = table.owners[key] else { continue }
             var property = codec.schema(&shared)
             property["x-canvas-owner"] = .string(owner.rawValue)
             if let value = codec.defaultValue, let encoded = try? JSONValue(encoding: value) { property["default"] = encoded }
@@ -179,7 +184,10 @@ public struct Registry {
         }
         json["properties"] = .object(properties)
         if json["title"] == nil { json["title"] = .string(kind.rawValue) }
-        return json
+        json["$schema"] = .string(JSONSchema.dialect)
+        json["$id"] = .string("tag:infinite-canvas,2026:kinds/\(kind)")
+        if !shared.json.isEmpty { json["$defs"] = .object(shared.json) }
+        return JSONSchema(json)
     }
 
     /// What describing found wrong, then what's wrong with the list of each struct it described, in

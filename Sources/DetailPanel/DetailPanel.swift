@@ -110,8 +110,8 @@ public struct DetailStatus: Hashable, Sendable {
 /// One section of a tab: an optional bold header (collapsible, with an optional control at its
 /// trailing end), then rows. `Value` is what it edits: a kind's props, or a box's frame.
 ///
-/// The content closure gets a `ShapeBinding`. Take it as `$task`: `task.title` is the value,
-/// `$task.title` a `Binding` that writes that one field in its own transaction.
+/// The content closure gets a `ShapeBinding`. Take it as `$task`: `task.notes` is the value,
+/// `$task.notes` a `Binding` that writes that one field in its own transaction.
 /// (The closure types are deliberately unannotated: annotated `@MainActor`, Swift 6.3 compiles a
 /// `$`-parameter body as nonisolated, and every view initializer in it fails.)
 @MainActor
@@ -331,14 +331,14 @@ extension ShapeRegistrar {
 
     /// This kind's header and sections, in one call:
     ///
-    ///     task.details(header: { $task in DetailHeader(task.title, subtitle: $task.shape.summary) }) {
+    ///     task.details(header: { $task in DetailHeader("Task", subtitle: $task.shape.summary) }) {
     ///         DetailSection(in: TaskTab.self) { $task in LabeledContent("Notes") { TextField("Notes", text: $task.notes) } }
     ///         DetailSection("Color", in: StyleTab.self) { $task in ... }
     ///     }
     ///
     /// The header is a view made from the shape's binding, as a section's content is: a
     /// `DetailHeader`, or a header that edits the shape, built on `DetailHeaderLabel` (Titles'
-    /// `TitleHeader($note.title)` renames it). A header alone is `details(header: ...) {}`.
+    /// `TitleHeader($note)` renames it). A header alone is `details(header: ...) {}`.
     public mutating func details<Header: View>(
         @ViewBuilder header: @escaping (ShapeBinding<Definition.Props>) -> Header,
         @DetailSectionsBuilder<Definition.Props> _ sections: () -> [DetailSection<Definition.Props>]

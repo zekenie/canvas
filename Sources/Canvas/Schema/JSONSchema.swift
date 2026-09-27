@@ -70,7 +70,9 @@ public struct SchemaDefinitions {
     }
 
     private mutating func define(_ name: String, of type: Any.Type, _ make: (inout SchemaDefinitions) -> JSONObject) -> JSONObject {
-        let reference: JSONObject = ["$ref": .string("#/$defs/\(name)")]
+        // The name as one step of a JSON Pointer, in a URI fragment: a `/`, `~` or `%` in it escaped,
+        // so the reference finds it (`SchemaValidator` reads it back that way, as any validator does).
+        let reference: JSONObject = ["$ref": .string(JSONPointer.fragment("/$defs/\(JSONPointer.escaped(name))"))]
         if let existing = types[name] {
             if existing != ObjectIdentifier(type) {
                 problems.append("two types are defined as \(name) (\(type) is one); give one another definition name")

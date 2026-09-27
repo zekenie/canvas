@@ -98,7 +98,8 @@ extension StampedAt: ShapeProperty {
         let schema: JSONObject = ["maxLength": 2]
         expectEqual(check(schema, "é"), [], "one code point, precomposed")
         expectEqual(check(schema, "👍🏽"), [], "a thumbs-up and its skin tone: two")
-        expectEqual(check(schema, "👍🏽!"), ["/ maxLength: The value is 3 characters long, and should be at most 2."])
+        expectEqual(check(schema, "👍🏽!"), ["/ maxLength: The value is 3 characters long as JSON Schema counts them (2 as shown), and should be at most 2."])
+        expectEqual(check(schema, "abc"), ["/ maxLength: The value is 3 characters long, and should be at most 2."], "the two counts only when they differ")
     },
     test("titles name the places they describe, and paths the rest: a member, an element as its item's number") {
         let schema: JSONObject = [
@@ -166,7 +167,7 @@ extension StampedAt: ShapeProperty {
             "/any contains: Any has no item that fits.",
             "/list/1 type: List › item 2 should be a string, not 2.",
             "/pair items: Pair has 3 items, and should have at most 2.",
-            "/some contains: Some has 1 item that fits, and should have at least 2.",
+            "/some minContains: Some has 1 item that fits, and should have at least 2.",
         ])
         expectEqual(check(schema, ["some": [1, 2, 3, 4]]), ["/some maxContains: Some has 4 items that fit, and should have at most 3."])
     },

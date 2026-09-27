@@ -32,6 +32,30 @@ extension Ribbons: ShapeProperty {
     static var defaultValue: [Ribbon]? { [] }
 }
 
+/// Every shape of a kind that opts in has a temper: calm until it's set, and none when it's blank.
+enum Temper {}
+extension Temper: ShapeProperty {
+    static let key: PropertyKey = "temper"
+    static var defaultValue: String? { "calm" }
+    static func isNone(_ temper: String) -> Bool { temper.allSatisfy(\.isWhitespace) }
+}
+
+/// A nickname only the shapes given one have, and none when it's blank.
+enum Nickname {}
+extension Nickname: ShapeProperty {
+    static let key: PropertyKey = "nickname"
+    static var defaultValue: String? { nil }
+    static func isNone(_ name: String) -> Bool { name.allSatisfy(\.isWhitespace) }
+}
+
+/// A default that's none, which no shape could hold.
+enum Hollow {}
+extension Hollow: ShapeProperty {
+    static let key: PropertyKey = "hollow"
+    static var defaultValue: String? { "" }
+    static func isNone(_ value: String) -> Bool { value.isEmpty }
+}
+
 /// A kind with a property of its own named like an added one.
 struct Rated: BoxShapeProps {
     static let kind: ShapeKind = "rated"
@@ -107,6 +131,50 @@ private let frame = CGRect(x: 0, y: 0, width: 100, height: 100)
         expectEqual(h.editor.document[box]?[Stars.self], 0)
         expectEqual(h.editor.document[disc]?[Stars.self], nil)
         expectEqual(h.editor.revision, revision)
+    },
+    test("a value that's none is no value: a shape set to one holds nil, or its property's default; a board's reads the same") {
+        let h = try EditorHarness(plugins: [FixturesPlugin(), Contributor(id: "tempers") { r in
+            r.declare(Temper.self)
+            r.declare(Nickname.self)
+            r.optIn(Box.self, to: Temper.self)
+            r.optIn(Box.self, to: Nickname.self)
+        }])
+        let box = h.add(Box(frame))
+        h.editor.transact { $0.update(box) { $0[Temper.self] = "stormy"; $0[Nickname.self] = "Boxy" } }
+        h.editor.transact { $0.update(box) { $0[Temper.self] = "  "; $0[Nickname.self] = "" } }
+        expectEqual(h.editor.document[box]?[Temper.self], "calm", "the default")
+        expectEqual(h.editor.document[box]?[Nickname.self], nil)
+        let board = """
+            { "format" : 3, "versions" : { "added" : { "nickname" : 0, "temper" : 0 }, "kinds" : { "box" : 0 } }, "shapes" : [
+              { "id" : "11111111-1111-1111-1111-111111111111", "index" : "a0", "kind" : "box",
+                "props" : { "frame" : [[0, 0], [10, 10]] }, "added" : { "nickname" : " ", "temper" : "" } } ] }
+            """
+        let loaded = try BoardCodec(registry: h.editor.registry).decode(Data(board.utf8))
+        expectEqual(loaded.report, LoadReport())
+        expectEqual(loaded.document.shapes.first?[Temper.self], "calm")
+        expectEqual(loaded.document.shapes.first?[Nickname.self], nil)
+    },
+    test("the registry refuses a property whose default is a value that's none") {
+        expectEqual(refusal([FixturesPlugin(), Contributor(id: "hollows") { $0.declare(Hollow.self) }]),
+                    "PropertyDeclarations: property hollow (from hollows): its default is a value that's none (isNone), which no shape holds")
+    },
+    test("a value written as null, added or kept, is none, as a missing one is: nothing is kept aside, and the shape takes one") {
+        let registry = try Registry(plugins: [FixturesPlugin(), ratings()])
+        let board = """
+            { "format" : 3, "versions" : { "added" : { "stars" : 0, "sticker" : 0 }, "kinds" : { "box" : 0 } }, "shapes" : [
+              { "id" : "11111111-1111-1111-1111-111111111111", "index" : "a0", "kind" : "box",
+                "props" : { "frame" : [[0, 0], [10, 10]] }, "added" : { "stars" : null, "sticker" : null } },
+              { "id" : "22222222-2222-2222-2222-222222222222", "index" : "a1", "kind" : "box",
+                "props" : { "frame" : [[0, 0], [10, 10]] }, "kept" : { "sticker" : { "v" : 0, "value" : null } } } ] }
+            """
+        let loaded = try BoardCodec(registry: registry).decode(Data(board.utf8))
+        expectEqual(loaded.report, LoadReport())
+        expectEqual(loaded.document.shapes.map { $0[Stars.self] }, [0, 0], "the default")
+        expectEqual(loaded.document.shapes.map { $0[Sticker.self] }, [nil, nil])
+        expectEqual(loaded.document.shapes.map(\.keptProperties), [[], []])
+        let editor = CanvasEditor(registry: registry, document: loaded.document, scheduler: ManualScheduler())
+        for shape in loaded.document.shapes { editor.transact { $0.update(shape.id) { $0[Sticker.self] = "gold" } } }
+        expectEqual(editor.document.shapes.map { $0[Sticker.self] }, ["gold", "gold"])
     },
     test("an editor fills in the defaults of a document it's given, or replaces its own with, without marking it edited") {
         let registry = try Registry(plugins: [FixturesPlugin(), ratings()])

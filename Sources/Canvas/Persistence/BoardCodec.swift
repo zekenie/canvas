@@ -106,7 +106,8 @@ public struct BoardCodec: Sendable {
             guard let property = properties[key], optIns[kind]?.contains(key) == true else {
                 throw ReadProblem("\(kind) hands \(key) over, but it doesn't opt into that property")
             }
-            record.added[key] = try value(of: property, at: handed.version, direct: nil, json: { handed.json })
+            let handedValue = try value(of: property, at: handed.version, direct: nil, json: { handed.json })
+            record.added[key] = property.isNone(handedValue) ? nil : handedValue
         }
         fillDefaults(&record.added, kind: kind)
         return record
@@ -132,7 +133,9 @@ public struct BoardCodec: Sendable {
         guard case .object(var props) = try json() else { throw ReadProblem("its props aren't a JSON object") }
         var handedOver: [PropertyKey: Handed] = [:]
         for migration in codec.migrations[max(version, 0)...] {
-            if let handOver = migration.handOver, let member = props[handOver.member] {
+            // A member that's null is one the props didn't have, as a property reads it: nothing to
+            // hand over (a title of null was no title).
+            if let handOver = migration.handOver, let member = props[handOver.member], member != .null {
                 handedOver[handOver.key] = Handed(version: handOver.version, json: member)
             }
             do { try migration.body(&props) } catch {
@@ -237,8 +240,13 @@ public struct BoardCodec: Sendable {
             guard opted.contains(key) else { return keep(.notOptedIn) }
             guard version <= property.version else { return keep(.newerVersion(file: version, app: property.version)) }
             do {
-                values[key] = try value(of: property, at: version, direct: direct, json: json)
+                // A value that's no value at all (a blank title) is none: the shape has the default.
+                let read = try value(of: property, at: version, direct: direct, json: json)
+                values[key] = property.isNone(read) ? nil : read
             } catch {
+                // A value written as null (no property's can be) is none too, as a missing member
+                // of the props is: kept aside, it would stop the shape ever having one.
+                if json() == .null { return }
                 keep(.unreadable(Self.describe(error)))
             }
         }

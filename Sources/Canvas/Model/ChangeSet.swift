@@ -7,6 +7,12 @@ public struct ChangeSet: Equatable, Sendable {
     public internal(set) var added: Set<ShapeID> = []
     /// Shapes that were there before and still are, with other props or another stacking key.
     public internal(set) var changed: Set<ShapeID> = []
+    /// Those of `changed` that only moved: their box moved (`Transaction.moveBox`, which a drag and
+    /// `translate` use), and nothing else in the commit changed them (their props but the box,
+    /// their added values, their metadata or their place in the stack). What a service keeps of
+    /// each shape that isn't about where it is (its schema checked, as Validation keeps it) still
+    /// holds for these: a drag moves every shape it drags, on every event.
+    public internal(set) var moved: Set<ShapeID> = []
     /// Shapes that were there before and aren't now.
     public internal(set) var removed: Set<ShapeID> = []
     /// Whether the stack changed: a shape came, went, or moved in it.
