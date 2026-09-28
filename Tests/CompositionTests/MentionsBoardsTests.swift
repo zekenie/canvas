@@ -15,33 +15,32 @@ import Selection
 import StickyNotes
 import Subboards
 import TableOfContents
-import TaskCards
 import TestKit
 import Titles
 
 // Mentions as shipped in a file of boards: notes on the root and inside a subboard that mention
-// each other and a task, followed, renamed, deleted with their board, undone, copied as a tree,
+// each other and a titled note, followed, renamed, deleted with their board, undone, copied as a tree,
 // and drawn by `canvas draw`.
 
-/// A file as shipped: on the root, subboard "Plans", task "Ship it", and a note mentioning note
-/// Alpha (by the name "Old alpha"); on Plans' board, Alpha, and a note mentioning Alpha and the
-/// task.
+/// A file as shipped: on the root, subboard "Plans", a note titled "Ship it", and a note mentioning
+/// note Alpha (by the name "Old alpha"); on Plans' board, Alpha, and a note mentioning Alpha and
+/// Ship it.
 @MainActor private struct PlansFile {
-    let plans = ShapeID(), task = ShapeID(), outer = ShapeID(), alpha = ShapeID(), beta = ShapeID()
+    let plans = ShapeID(), ship = ShapeID(), outer = ShapeID(), alpha = ShapeID(), beta = ShapeID()
     var plansBoard: BoardID { BoardID(owner: plans) }
 
     var file: CanvasFile {
         var plans = ShapeRecord(id: plans, Subboard(frame: CGRect(x: 100, y: 400, width: 240, height: 160)))
         plans[TitleProperty.self] = "Plans"
-        var task = ShapeRecord(id: task, TaskCard(frame: CGRect(x: 400, y: 100, width: 240, height: 200)))
-        task[TitleProperty.self] = "Ship it"
+        var ship = ShapeRecord(id: ship, StickyNote(frame: CGRect(x: 400, y: 100, width: 200, height: 200), text: MentionText(plain: "Launch")))
+        ship[TitleProperty.self] = "Ship it"
         let outer = ShapeRecord(id: outer, StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200),
                                                       text: MentionText([.text("See "), .mention(alpha, label: "Old alpha")])))
         let alpha = ShapeRecord(id: alpha, StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: MentionText(plain: "Alpha")))
         let beta = ShapeRecord(id: beta, StickyNote(frame: CGRect(x: 300, y: 0, width: 200, height: 200),
                                                     text: MentionText([.text("After "), .mention(alpha.id, label: "Alpha"), .text(", "),
-                                                                       .mention(task.id, label: "Ship it")])))
-        return CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(plans), AnyShapeRecord(task), AnyShapeRecord(outer)]),
+                                                                       .mention(ship.id, label: "Ship it")])))
+        return CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(plans), AnyShapeRecord(ship), AnyShapeRecord(outer)]),
                           children: [plans.id: CanvasDocument(shapes: [AnyShapeRecord(alpha), AnyShapeRecord(beta)])])
     }
 
@@ -84,20 +83,20 @@ extension CanvasEditor {
 
         // Alpha renamed inside Plans: the root's row, kept, is made again on going back up.
         expect(h.enter(f.plans))
-        expectEqual(h.editor.contentsRow(f.beta), "After @Alpha, @Ship it", "and the task on the root, from inside")
+        expectEqual(h.editor.contentsRow(f.beta), "After @Alpha, @Ship it", "and the note on the root, from inside")
         h.editor.setText(f.alpha, "Alpha plan")
         h.editor.goToEnclosingBoard()
         expectEqual(h.editor.board, .root)
         expectEqual(h.editor.contentsRow(f.outer), "See @Alpha plan")
         expectEqual(mentions.resolve(f.alpha).appearance?.label, "Alpha plan")
 
-        // The task renamed on the root: Plans' row, kept, is made again on going back in.
-        h.editor.transact { $0.update(f.task) { $0[TitleProperty.self] = "Shipped" } }
+        // Ship it renamed on the root: Plans' row, kept, is made again on going back in.
+        h.editor.transact { $0.update(f.ship) { $0[TitleProperty.self] = "Shipped" } }
         expect(h.enter(f.plans))
         expectEqual(h.editor.contentsRow(f.beta), "After @Alpha plan, @Shipped")
         h.editor.goToEnclosingBoard()
 
-        // Undoing the task's rename, then Alpha's, which shows Plans first.
+        // Undoing the rename of Ship it, then Alpha's, which shows Plans first.
         h.editor.undo()
         h.editor.undo()
         expectEqual(h.editor.board, f.plansBoard)
@@ -169,11 +168,11 @@ extension CanvasEditor {
         expectEqual(h.editor.text(of: outerCopy), MentionText([.text("See "), .mention(alphaCopy, label: "Old alpha")]),
                     "the root's copy names the copy of the note inside")
         expectEqual(h.editor.text(of: betaCopy), MentionText([.text("After "), .mention(alphaCopy, label: "Alpha"), .text(", "),
-                                                              .mention(f.task, label: "Ship it")]),
-                    "inside, the copy named, and the task, not copied, as it was")
+                                                              .mention(f.ship, label: "Ship it")]),
+                    "inside, the copy named, and Ship it, not copied, as it was")
         expectEqual(h.editor.contentsRow(outerCopy), "See @Alpha")
         expectEqual(h.editor.mentions?.resolve(alphaCopy).appearance?.label, "Alpha")
-        expectEqual(h.editor.text(of: f.beta)?.mentioned, [f.alpha, f.task], "the originals as they were")
+        expectEqual(h.editor.text(of: f.beta)?.mentioned, [f.alpha, f.ship], "the originals as they were")
 
         // Plans alone.
         h.editor.selectedShapeIDs = [f.plans]
@@ -184,7 +183,7 @@ extension CanvasEditor {
         plansCopy = try require(pasted.first?.id)
         inside = h.editor.contents(of: BoardID(owner: plansCopy)).shapes.map(\.id)
         (alphaCopy, betaCopy) = (inside[0], inside[1])
-        expectEqual(h.editor.text(of: betaCopy)?.mentioned, [alphaCopy, f.task])
+        expectEqual(h.editor.text(of: betaCopy)?.mentioned, [alphaCopy, f.ship])
 
         // The root's note alone: still the note inside Plans, live.
         h.editor.selectedShapeIDs = [f.outer]
@@ -211,7 +210,7 @@ extension CanvasEditor {
         let inside = h.editor.contents(of: BoardID(owner: plansCopy)).shapes.map(\.id)
         expectEqual(inside.count, 2)
         expect(!inside.contains(f.alpha), "a paste gets new ids, even of what a cut took")
-        expectEqual(h.editor.text(of: inside[1])?.mentioned, [inside[0], f.task], "inside, the copy of Alpha named, as a copy does")
+        expectEqual(h.editor.text(of: inside[1])?.mentioned, [inside[0], f.ship], "inside, the copy of Alpha named, as a copy does")
         expectEqual(h.editor.text(of: f.outer)?.mentioned, [f.alpha], "outside, the note cut, which nothing renames")
         expectEqual(h.editor.mentions?.resolve(f.alpha), .missing)
         expectEqual(h.editor.contentsRow(f.outer), "See @Old alpha")

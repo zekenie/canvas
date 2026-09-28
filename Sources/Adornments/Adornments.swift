@@ -227,7 +227,7 @@ extension ShapeRegistrar {
     /// It reads only the shape, and is asked again only when a commit changes it. A horizontal's
     /// opt-in sugar may call this, so opting in brings its adornment.
     ///
-    ///     task.adornment(BlockedChip.self) { $0.props.status == .blocked ? AdornmentLabel("Blocked") : nil }
+    ///     rectangle.adornment(SizeBadge.self) { AdornmentLabel("\(Int($0.frame.width)) pt") }
     public mutating func adornment<A: Adornment>(_: A.Type, _ label: @escaping @MainActor (ShapeRecord<Definition.Props>) -> AdornmentLabel?) {
         contribute(AdornmentContribution(A.self) { shape, _ in shape.typed(as: Definition.Props.self).flatMap(label) },
                    to: ShapeAdornments.self)

@@ -1,6 +1,6 @@
 ---
 name: canvas
-description: Put, draw or lay out things on a live board in Infinite Canvas (sticky notes, task cards, shapes and the arrows between them, for plans, flows, architectures, roadmaps, retros) with `canvas draw`, a text language where each line says what a shape is, what it's called, and where it sits against shapes already named. Use when asked to "draw this on the board", "put these on the canvas", "make a diagram in the app", "lay out the tasks", "add notes or tasks to the board", "connect these on the board", or to turn a plan, list or architecture into shapes in the running app. NOT for changing the app's Swift code, plugins, tests or docs; NOT for reading or writing .canvasboard files (only `canvas` touches a board); NOT for diagrams meant for a file (SVG, Mermaid, images).
+description: Put, draw or lay out things on a live board in Infinite Canvas (sticky notes, subboards, schema cards, rectangles and the arrows between them, for plans, flows, architectures, roadmaps, retros) with `canvas draw`, a text language where each line says what a shape is, what it's called, and where it sits against shapes already named. Use when asked to "draw this on the board", "put these on the canvas", "make a diagram in the app", "lay out the tasks", "add notes to the board", "connect these on the board", or to turn a plan, list or architecture into shapes in the running app. NOT for changing the app's Swift code, plugins, tests or docs; NOT for reading or writing .canvasboard files (only `canvas` touches a board); NOT for diagrams meant for a file (SVG, Mermaid, images).
 ---
 
 # Drawing on a board with canvas
@@ -79,10 +79,9 @@ A title is how you, the user and later scripts refer to a shape. There are no hi
 - **Quote every title** in straight double quotes: `"API"`. A bare word is read as a placement word or a value, and curly or single quotes are refused.
 - **A title on the board means that shape.** A statement whose title is already on the board updates that shape; any other title creates a new one. The match is exact and case matters, so a typo like `"deploy"` for `"Deploy"` draws a second shape. The result warns about near misses, so read the warnings.
 - **Title everything you may touch again**, and keep your own list of the titles you drew, since nothing reads the board back yet. An untitled shape can't be moved, connected, changed or deleted by a later script.
-- **A note's title is the pill above it; what it says is `text:`.** Give notes both. A task card's title is its headline. Rectangles and ellipses show a pill.
+- **A note's title is the pill above it; what it says is `text:`.** Give notes both. A subboard's title is on its card. Rectangles show a pill.
 - **Keep titles short and specific** ("Auth service", not "Service"). Longer than 80 characters is kept but warned about. A generic title like "Notes" may already be on the board, and your statement would then change the user's shape, so dry-run first on any board you didn't just draw.
 - **Shapes the user made are usually untitled.** A note's words are its text, not a title. Place against `board` or `view` instead, or ask the user to title the shapes you need.
-- **An unnamed ellipse is called by its size**, like "Ellipse, 200 × 140". You can target it while it's the only one with that name, but the name changes when the size does. Name it instead.
 - **A schema card is called by its schema's `"title"`**, and has no title of its own: `schema-card "Order"` is refused (`untitlable`). Draw it untitled, with its title inside `schema:`, and call it by that title from the next script on. Restated with a schema whose title is another, it's renamed (`did: "renamed"`).
 - **A note's `text:` is kept as written.** In it, `@[label](shape:…)` is a mention of a shape by its id, which only the app writes, and no id ever reaches you, so write plain words; an `@` or `@[…]` on its own is just text.
 
@@ -103,18 +102,16 @@ style <name> attribute { attribute }             a named set of attributes, for 
 | kind | size | attributes besides `size`, `gap`, `overlap`, `style`, `title` | edges |
 |---|---|---|---|
 | `sticky-note` | 200x200 | `text`, `checklist`, `locked` | `note-link`, on its left, right and bottom |
-| `task-card` | 240x200 | `notes`, `status` (todo, doing, blocked, done), `priority` (low, medium, high), `estimate` (hours), `due`, `color`, `shows`, `checklist`, `locked` | `task-link`, on all four sides |
-| `ellipse` | 200x140 | `locked` | none: plain arrows |
 | `rectangle` | 160x100 | `locked` | none: plain arrows |
 | `schema-card` | 240x67 | `schema` (a JSON Schema, as text: the card grows to list it), `prompt` (what it holds, in words), `locked` | `schema-link`, on all four sides |
 | `subboard` | 240x160 | `locked` | none: plain arrows |
 
-Arrows are what edges are; you don't draw one on its own. Values: text is quoted (`notes: "Two words"`). A choice or a number is a bare word (`status: doing`, `estimate: 3`). `due` takes `2026-10-15` or a full date-time. Objects and lists are one-line JSON: `color: {"red": 0.9, "green": 0.25, "blue": 0.24}`, `checklist: [{"text": "Write tests"}]`. An object or a list replaces the whole property: members you leave out take their defaults, not what the shape had, so write every member. A member the property doesn't have (`"done"` for `"isDone"`) is refused, `invalid_value`, never dropped. `null` puts a property back to its default (but not a title: `title:` only renames). `size: 300x200` is in world units, up to 100000. A value past a bound, like a negative estimate, is kept and warned about.
+Arrows are what edges are; you don't draw one on its own. Values: text is quoted (`text: "Two words"`). `true` and `false` are bare words (`locked: true`). Lists are one-line JSON: `checklist: [{"text": "Write tests"}]`. A list replaces the whole property, and what an item leaves out takes its default, not what the shape had, so write every member. A member the property doesn't have (`"done"` for `"isDone"`) is refused, `invalid_value`, never dropped. `null` puts a property back to its default (but not a title: `title:` only renames). `size: 300x200` is in world units, up to 100000. A value past a bound, like a title over 80 characters, is kept and warned about.
 
 A subboard is a card that holds a board of its own. `inside "Payments" top-left` puts a shape over its card, on the board you're drawing on, never onto its board, and deleting it deletes everything on its board too (the result warns how much). A schema card's `schema:` is JSON inside a quoted string, so escape each quote: `schema: "{\"title\": \"Order\", \"type\": \"object\"}"`; the card grows to list it. What you write on one is taken as written: the Claude sync that rewrites one side when the user edits the other isn't asked, so write a prompt and a schema that agree, or leave `prompt:` out.
 
 ```draw
-task-card "Ship v1" below "API" status: doing priority: high due: 2026-10-15 checklist: [{"text": "Write tests"}, {"text": "Tag release"}]
+sticky-note "Ship v1" below "API" text: "Cut the release" checklist: [{"text": "Write tests"}, {"text": "Tag release"}]
 ```
 
 ### Placements
@@ -143,9 +140,9 @@ sticky-note "Risks" right of "Ship v1" top level with "Ship v1" text: "Load-test
 `board` (unquoted) is the box around every shape the script doesn't move, and `view` is the part of the board in the window. So a column on the right is `right of board`, the space under everything is `below board`, and a legend in a corner is `inside view top-right`. Shapes whose placements are written identically form a list: they stack down the page in script order, 64 apart, and are placed as one. A later script's `right of board` won't join this column but goes right of the whole board again, so to add to a list, restate every member.
 
 ```draw
-task-card "Design" right of board
-task-card "Build" right of board
-task-card "Launch" right of board
+subboard "Design" right of board
+subboard "Build" right of board
+subboard "Launch" right of board
 ```
 
 ### Parts, inside, and zones
@@ -176,15 +173,15 @@ edge "Build" -> "Launch"
 
 `<-` is the same edge written the other way round, and `<->` has heads at both ends. `from:` and `to:` name the side each end leaves or arrives on; without them the line runs center to center. An edge statement means "A is connected to B", so written again it updates that edge (`reconnected`) or leaves it alone (`unchanged`), and never draws a second one.
 
-An edge travels on a channel that both ends take: notes connect to notes (`note-link`), tasks to tasks (`task-link`). The edge picks the channel both ends share, and if they share none it's refused. `channel: none` draws a plain arrow between any two shapes. Rectangles and ellipses have no channels at all, so an edge between two of them is plain without asking; between one of them and a note or task, say `channel: none`.
+An edge travels on a channel that both ends take: notes connect to notes (`note-link`), schema cards to schema cards (`schema-link`). The edge picks the channel both ends share, and if they share none it's refused. `channel: none` draws a plain arrow between any two shapes. Rectangles and subboards have no channels at all, so an edge between two of them is plain without asking (Design, Build and Launch above); between one of them and a note or a schema card, say `channel: none`.
 
 ```draw-error
 // reason: no_channel
-edge "API" -> "Ship v1"
+edge "Ship v1" -> "Design"
 ```
 
 ```draw
-edge "API" -> "Ship v1" channel: none
+edge "Ship v1" -> "Design" channel: none
 ```
 
 ### Styles
@@ -192,17 +189,17 @@ edge "API" -> "Ship v1" channel: none
 A style bundles attributes for the script it's in. A shape's own attributes win over its styles, and of several styles, the later one wins.
 
 ```draw
-style urgent priority: high status: doing
-task-card "Fix login" left of "Web" style: urgent
-task-card "Fix signup" below "Fix login" style: urgent
+style small size: 160x160
+sticky-note "Fix login" left of "Web" style: small text: "Sessions expire too soon"
+sticky-note "Fix signup" below "Fix login" style: small text: "The form drops the email"
 ```
 
 ### Restating, renaming, deleting
 
-A statement about a title that's on the board updates that shape. Whatever it doesn't say stays as it was, and with no placements the shape stays where it is. Writing a checklist replaces the whole list, and writing an object (a task's `color` or `shows`) the whole object.
+A statement about a title that's on the board updates that shape. Whatever it doesn't say stays as it was, and with no placements the shape stays where it is. Writing a checklist replaces the whole list.
 
 ```draw
-task-card "Ship v1" status: done checklist: [{"text": "Write tests", "isDone": true}, {"text": "Tag release", "isDone": true}]
+sticky-note "Ship v1" checklist: [{"text": "Write tests", "isDone": true}, {"text": "Tag release", "isDone": true}]
 ```
 
 With placements, a restated shape moves. An axis that none of its placements speaks for stays where it was, so this moves Risks sideways without changing its vertical position:
@@ -214,7 +211,7 @@ sticky-note "Risks" left level with "Web"
 `title:` renames a shape. Other lines in the same script still call it by its old title; the new one applies from the next script. `delete` removes a shape and every edge on it, even one whose other end is free. To change a shape's kind, delete it and draw it again in the same script, along with its edges.
 
 ```draw
-task-card "Ship v1" title: "Ship 1.0"
+sticky-note "Ship v1" title: "Ship 1.0"
 delete "Risks"
 ```
 
@@ -224,15 +221,15 @@ These are real shipped kinds; `build/canvas kinds` says what your app has. Only 
 
 ```draw
 // A sign-up flow, left to right, and the work it needs underneath.
-style next priority: high due: 2026-11-02
+style work size: 240x160
 
 sticky-note "Sign-up form" text: "Email and password"
 sticky-note "Auth service" right of "Sign-up form" text: "Creates the account"
 sticky-note "Welcome email" right of "Auth service" text: "Sent once the account exists"
 
-task-card "Rate-limit sign-ups" below "Auth service" style: next
-task-card "Verify emails" below "Auth service" checklist: [{"text": "Send a code"}, {"text": "Expire it after a day"}]
-task-card "Write the email copy" below "Welcome email" style: next
+sticky-note "Rate-limit sign-ups" below "Auth service" style: work text: "Five a minute per address"
+sticky-note "Verify emails" below "Auth service" style: work checklist: [{"text": "Send a code"}, {"text": "Expire it after a day"}]
+sticky-note "Write the email copy" below "Welcome email" style: work text: "Short, and says what's next"
 
 edge "Sign-up form" -> "Auth service"
 edge "Auth service" -> "Welcome email"
@@ -254,13 +251,12 @@ edge "Web" --> "API"
 
 ```draw-error
 // reason: unknown_attribute
-task-card "Ship 1.0" owner: "Ann"
+sticky-note "Ship 1.0" owner: "Ann"
 ```
 
 - **Between, with nothing on the other axis.** `right of "Web" left of "Cache"` alone is `unplaced`: add `level with "Web"`.
 - **Two unplaced shapes.** Only one per script may say nothing about where it goes; place the rest against it. And there are no coordinates in any form: if a shape is in the wrong place, give it another placement.
 - **Re-running a whole layout script to add one line.** Its placements run again and snap back anything the user has moved since, and its untitled shapes are drawn a second time. Write only the new statements. To change attributes without moving a shape, restate it without placements.
-- **Untitled task cards.** One is named "New Task", as the tool names it, so a second shares that name and neither can be referred to again. Title every task.
 - **Edges across channels**, and **shapes the user locked**, which refuse changes (`read_only`). Connect like to like or say `channel: none`; tell the user about a locked shape rather than unlocking it.
 
 ## Honest limits

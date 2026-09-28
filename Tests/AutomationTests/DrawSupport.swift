@@ -7,9 +7,9 @@ import Foundation
 import TestKit
 
 // What `canvas draw` needs from plugins it doesn't know, as tests give it: names (a tile is called
-// by its label, a card by its nickname, else "Card, 100 × 60", worked out from its size, as an
-// unnamed ellipse is), edges (links, with a tone and a head at each end as added properties, and
-// what each kind may carry from each side), and checks (a card that says nothing, a glossy tile).
+// by its label, a card by its nickname, else "Card, 100 × 60", worked out from its size), edges
+// (links, with a tone and a head at each end as added properties, and what each kind may carry from
+// each side), and checks (a card that says nothing, a glossy tile).
 
 /// How the test plugins fold a title: runs of whitespace one space, trimmed; nil if blank.
 @Sendable func fold(_ title: String) -> String? {

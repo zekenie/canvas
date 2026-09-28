@@ -25,7 +25,7 @@ extension ShapeContextMenus: KeyedExtensionPoint {
     }
 }
 
-/// Where an item is: which shapes, and its group and id at each level ("task-card Status ▸ Done").
+/// Where an item is: which shapes, and its group and id at each level ("* Arrange ▸ Send to Back").
 struct MenuItemKey: Hashable, CustomStringConvertible {
     let target: ShapeTarget
     let path: [EntryKey]
@@ -133,11 +133,9 @@ extension ContextMenuContribution {
 extension ShapeRegistrar {
     /// This kind's items in its context menu, in one call (one contribution, one report line):
     ///
-    ///     task.contextMenu {
-    ///         Submenu("Status") {
-    ///             for status in TaskStatus.allCases {
-    ///                 MenuItem(status.label, isChecked: { $0.status == status }) { $0.status = status }
-    ///             }
+    ///     sub.contextMenu {
+    ///         MenuItem("Open", in: BoardsMenuGroup.self) { ids, editor in
+    ///             if let first = ids.first { editor.open(first) }
     ///         }
     ///     }
     ///

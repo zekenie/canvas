@@ -8,7 +8,7 @@ import LanguageModels
 import Mentions
 import Selection
 import StickyNotes
-import TaskCards
+import Subboards
 import TestKit
 
 /// The menus a test saw open, each closed as soon as it opened.
@@ -32,7 +32,7 @@ import TestKit
         window.contentView = canvas
         window.orderFrontRegardless()
         defer { window.orderOut(nil) }
-        let task = editor.add(TaskCard(frame: CGRect(x: 400, y: 40, width: 240, height: 200)), title: "Ship")
+        let subboard = editor.add(Subboard(frame: CGRect(x: 400, y: 40, width: 240, height: 160)), title: "Ship")
 
         let opened = OpenedMenus()
         let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: nil) { note in
@@ -52,13 +52,13 @@ import TestKit
         }
 
         click(.leftMouseDown, .leftMouseUp, at: CGPoint(x: 520, y: 140), .control)
-        expectEqual(opened.outlines.first?.first, "Status ▸")
-        expectEqual(editor.selectedShapeIDs, [task])
+        expectEqual(opened.outlines.first?.first, "Open")
+        expectEqual(editor.selectedShapeIDs, [subboard])
         expect(editor.session == nil)
 
         click(.leftMouseDown, .leftMouseUp, at: CGPoint(x: 190, y: 500), .control)
         expectEqual(opened.outlines.count, 1, "empty canvas has nothing to offer")
-        expectEqual(editor.selectedShapeIDs, [task], "and the Control-click that reached mouseDown didn't deselect")
+        expectEqual(editor.selectedShapeIDs, [subboard], "and the Control-click that reached mouseDown didn't deselect")
 
         click(.rightMouseDown, .rightMouseUp, at: CGPoint(x: 520, y: 140), [])
         expectEqual(opened.outlines.count, 2)

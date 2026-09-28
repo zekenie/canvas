@@ -211,7 +211,7 @@ public struct Placement {
     }
 
     /// The same placement, with an added property set on every shape it places:
-    /// `task.placement(size: size) { TaskCard() }.setting(TitleProperty.self, to: "New Task")`. A
+    /// `rectangle.placement(size: size) { Rectangle() }.setting(TitleProperty.self, to: "Zone")`. A
     /// value its kind doesn't opt into is dropped as the shape is placed.
     public func setting<P: ShapeProperty>(_: P.Type, to value: P.Value) -> Placement {
         let make = make

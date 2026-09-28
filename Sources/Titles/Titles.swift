@@ -4,8 +4,8 @@ import TableOfContents
 
 /// Titles, as a plugin: what a shape is called, a trait any kind can opt into. A kind's title is
 /// kept by Titles, in the `title` property it adds to the kinds that opt in (`TitleProperty`), where
-/// someone names the shape (a note, a task); or derived from what the kind keeps itself (an
-/// ellipse's size). Any shape of a titled kind may have none. A titled shape shows its title in a
+/// someone names the shape (a note, a subboard); or derived from what the kind keeps itself (a
+/// schema card's, its schema's `"title"`). Any shape of a titled kind may have none. A titled shape shows its title in a
 /// pill just outside its top-left corner (`TitlePill`, an adornment), and its row in the table of
 /// contents is called by it; `TitleHeader` renames it in the detail panel. The core never learns
 /// what a title is.
@@ -108,7 +108,7 @@ extension PluginRegistrar {
     /// A derived title for a kind another plugin registers (bridges), as `title { ... }` on a kind's
     /// own registrar. A bridge that also opts the kind into `TitleProperty` (`optIn(_:to:)`) can
     /// derive a title for the shapes nobody named: `TitleProperty.folded(shape[TitleProperty.self])
-    /// ?? what it derives` (EllipseTitles).
+    /// ?? what it derives`.
     public mutating func title<P: ShapeProps>(_: P.Type, pill: Bool = true, contents: Bool = true,
                                               _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) {
         title(P.self, pill: pill, contents: contents, isDerived: true, make)
@@ -127,10 +127,10 @@ extension Registry {
         contributions(to: ShapeTitles.self, for: shape.kind).first?.title(shape)
     }
 
-    /// Whether a kind's titles are derived from what the kind keeps (`title { … }`: an ellipse's
-    /// size), rather than only named by someone (`title()`); false for a kind without titles. A
-    /// kind whose shapes can be named opts into `TitleProperty` (`properties(for:)` has its key),
-    /// and may be both: named, and derived for the shapes nobody named (EllipseTitles' ellipses).
+    /// Whether a kind's titles are derived from what the kind keeps (`title { … }`: a schema card's,
+    /// from its schema), rather than only named by someone (`title()`); false for a kind without
+    /// titles. A kind whose shapes can be named opts into `TitleProperty` (`properties(for:)` has its
+    /// key), and may be both: named, and derived for the shapes nobody named.
     public func titleIsDerived(_ kind: ShapeKind) -> Bool {
         contributions(to: ShapeTitles.self, for: kind).first?.isDerived ?? false
     }

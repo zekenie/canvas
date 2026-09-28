@@ -11,8 +11,8 @@ import TitleNames
 import Titles
 
 // `canvas draw` naming shapes by their titles, as Titles has them: cards are named (the title
-// Titles keeps), tiles named with a title worked out for those nobody named ("Tile, 120 × 80", as
-// an unnamed ellipse's), discs only worked out, and boxes have none.
+// Titles keeps), tiles named with a title worked out for those nobody named ("Tile, 120 × 80"),
+// discs only worked out, and boxes have none.
 
 /// Titles for the fixtures: cards named, tiles named or worked out from their size, discs worked out.
 @MainActor func fixtureTitles(tilesNamed: Bool = true) -> Contributor {

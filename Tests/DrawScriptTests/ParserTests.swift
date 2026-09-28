@@ -583,7 +583,7 @@ import TestKit
     },
     test("did you mean: case, spacing and × first, then containing, sharing a word, a few letters off") {
         expectEqual(Suggestions.closest(to: "deploy", among: ["Deploy", "Deploy now", "Depot", "Other"]), ["Deploy", "Deploy now", "Depot"])
-        expectEqual(Suggestions.closest(to: "Ellipse, 200 x 140", among: ["Ellipse, 200 × 140", "Box"]), ["Ellipse, 200 × 140"])
+        expectEqual(Suggestions.closest(to: "Tile, 120 x 80", among: ["Tile, 120 × 80", "Box"]), ["Tile, 120 × 80"])
         expectEqual(Suggestions.closest(to: "rigth", among: Direction.allCases.map(\.rawValue), limit: 1), ["right"])
         expectEqual(Suggestions.closest(to: "Web tier", among: ["Tier two", "API"]), ["Tier two"])
         expectEqual(Suggestions.closest(to: "zzz", among: ["right", "left"]), [])
@@ -607,7 +607,7 @@ import TestKit
     },
     test("a near miss: the same title but for case, spacing and ×, or a letter off (two in a long one), never itself") {
         expect(Suggestions.isNearMiss("deploy", "Deploy"))
-        expect(Suggestions.isNearMiss("Ellipse, 200 x 140", "Ellipse,  200 × 140"))
+        expect(Suggestions.isNearMiss("Tile, 120 x 80", "Tile,  120 × 80"))
         expect(Suggestions.isNearMiss("Ship it", "Shop it"))
         expect(Suggestions.isNearMiss("Checkout flow", "Chekout flwo"))
         expect(!Suggestions.isNearMiss("Deploy", "Deploy"), "the same title is no miss")

@@ -16,7 +16,7 @@ public struct SchemaCard: BoxShapeProps {
             .keywords(["contentMediaType": .string("application/schema+json")])
         Property("prompt", \.prompt).description("What the schema should hold, in words.")
     }
-    /// A placed card: 240 wide (as a task card), and as tall as the empty card, which `starter` is.
+    /// A placed card: 240 wide (as a subboard), and as tall as the empty card, which `starter` is.
     public static let defaultSize = CGSize(width: SchemaCardMetrics.defaultWidth, height: SchemaCardMetrics.emptyHeight)
     /// A new card's schema: an object with no properties yet.
     public static let starter = """
@@ -108,7 +108,7 @@ extension SchemaCard {
 public enum SchemaCardMetrics {
     public static let defaultWidth: CGFloat = 240
     public static let padding: CGFloat = 12
-    /// The title's line: what 14-point semibold system text takes, as the task card measures it.
+    /// The title's line: what 14-point semibold system text takes, as string drawing lays it out.
     public static let titleLineHeight: CGFloat = 17
     public static let headerGap: CGFloat = 8
     public static let chipHeight: CGFloat = 18

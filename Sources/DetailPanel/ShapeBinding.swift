@@ -3,16 +3,16 @@ import CoreGraphics
 import SwiftUI
 
 /// A shape as a section sees it. Take it as a `$` parameter, as with `ForEach($items) { $item in }`:
-/// `task` is the value the panel last drew, and `$task.notes` is a `Binding` whose every write
+/// `card` is the value the panel last drew, and `$card.prompt` is a `Binding` whose every write
 /// changes that one field of the live shape, in one `editor.transact`, and always on this shape
 /// (never on whatever is selected by the time it writes). A write to a shape that's gone does
 /// nothing; a write of the value the shape already has commits nothing.
 ///
 /// Reads never touch `editor.document`, so a section isn't re-rendered when other shapes change.
-/// For a larger section, write a View with `@ShapeBinding var task: TaskCard` and pass `$task`.
+/// For a larger section, write a View with `@ShapeBinding var card: SchemaCard` and pass `$card`.
 ///
-/// Writes are undo steps named for the section ("Change Color"; "Change" and the kind's name, "Change
-/// Task", in the header or a section without a title). Writes to one field of one shape, one after
+/// Writes are undo steps named for the section ("Change Description"; "Change" and the kind's name,
+/// "Change Schema", in the header or a section without a title). Writes to one field of one shape, one after
 /// another, are one step (a field typed into, a slider or a color dragged), until anything else
 /// happens: another field, a click or a key elsewhere (the host seals the run), any other change.
 /// `update` is a step of its own; `update(\.field)`, a write to a field through a method, runs
@@ -80,7 +80,7 @@ public struct ShapeBinding<Value> {
         return named
     }
 
-    /// `$task.notes`: reads the snapshot, or what its last write made of the shape; writes the key
+    /// `$card.prompt`: reads the snapshot, or what its last write made of the shape; writes the key
     /// path into the live shape. Bind the narrowest key path: a collection's binding writes the
     /// whole collection. Writes to one key path of one shape, one after another, are one undo step.
     public subscript<T>(dynamicMember keyPath: WritableKeyPath<Value, T>) -> Binding<T> {
@@ -140,7 +140,7 @@ public struct ShapeBinding<Value> {
 
 extension CanvasEditor {
     /// What a panel write names its undo step when its section has no title (the header, say):
-    /// "Change" and the kind's name, the label of the tool that places it ("Change Task"), else the
+    /// "Change" and the kind's name, the label of the tool that places it ("Change Schema"), else the
     /// kind.
     func changeName(of id: ShapeID) -> String {
         guard let kind = document[id]?.kind else { return "Change" }
@@ -151,7 +151,7 @@ extension CanvasEditor {
 
 extension ShapeBinding where Value: ShapeProps {
     /// The shape as the panel drew it: its props, and the added properties beside them
-    /// (`$task.shape[ChecklistProperty.self]`), for what a section or header shows from both.
+    /// (`$note.shape[ChecklistProperty.self]`), for what a section or header shows from both.
     public var shape: ShapeRecord<Value> {
         record.typed(as: Value.self) ?? ShapeRecord(id: record.id, value)
     }

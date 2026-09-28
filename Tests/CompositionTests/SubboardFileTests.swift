@@ -297,10 +297,10 @@ struct NestedFile {
             #"{ "id" : "\#(id)", "index" : "\#(index)", "kind" : "\#(kind)", "props" : { "frame" : [[0, 0], [10, 10]] } }"#
         }
         let json = """
-        { "format" : 4, "versions" : { "kinds" : { "subboard" : 0, "ellipse" : 0 } },
+        { "format" : 4, "versions" : { "kinds" : { "subboard" : 0, "rectangle" : 0 } },
           "shapes" : [ \(record(s, "subboard", "a0")), \(record(box, "gadget-box", "a1")) ],
-          "boards" : { "\(s)" : { "shapes" : [ \(record(note, "ellipse", "a0")), \(record(gadget, "gadget", "a1")) ] },
-                       "\(box)" : { "shapes" : [ \(record(inBox, "ellipse", "a0")) ] } } }
+          "boards" : { "\(s)" : { "shapes" : [ \(record(note, "rectangle", "a0")), \(record(gadget, "gadget", "a1")) ] },
+                       "\(box)" : { "shapes" : [ \(record(inBox, "rectangle", "a0")) ] } } }
         """
         let board = BoardDocument()
         try board.read(from: Data(json.utf8), ofType: boardType)

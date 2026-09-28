@@ -12,18 +12,6 @@ import TestKit
         let schema = try require(registry.schema(for: "sticky-note"))
         expectEqual(String(decoding: schema.data, as: UTF8.self), stickyNoteSchema)
     },
-    test("a task card's schema: titled statuses, an optional due date, a bounded estimate, and its color's default") {
-        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
-        let json = try require(registry.schema(for: "task-card")).json
-        let properties = try require(json["properties"]?.objectValue)
-        expectEqual(properties["status"]?["oneOf"], [["const": "todo", "title": "To Do"], ["const": "doing", "title": "In Progress"],
-                                                     ["const": "blocked", "title": "Blocked"], ["const": "done", "title": "Done"]])
-        expectEqual(properties["priority"]?["oneOf"]?.arrayValue?.compactMap { $0["title"]?.stringValue }, ["Low", "Medium", "High"])
-        expectEqual(properties["due"], ["type": "string", "format": "date-time"])
-        expectEqual(properties["estimate"]?["minimum"], 0)
-        expectEqual(properties["color"]?["default"], ["red": 0.2, "green": 0.48, "blue": 0.96])
-        expectEqual(json["required"], ["frame"])
-    },
     test("an arrow's ends are one of two objects, and both are required") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let json = try require(registry.schema(for: "arrow")).json

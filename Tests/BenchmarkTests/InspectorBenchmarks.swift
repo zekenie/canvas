@@ -17,7 +17,7 @@ import TestKit
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         for size in sizes {
             let file = generatedFile(root: size, children: [size])
-            let owner = try require(subboards(on: file.root).first)
+            let owner = try require(owners(in: file).first)
             // As the app places it: the detail panel, which shows the table of contents with
             // nothing selected, about the panel's width, with real time for SwiftUI's updates.
             let editor = CanvasEditor(registry: registry, file: file, scheduler: TaskScheduler())

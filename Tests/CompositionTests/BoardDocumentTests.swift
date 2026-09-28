@@ -81,9 +81,9 @@ let boardType = "com.example.InfiniteCanvas.board"
         try configureBoards()
         let id = ShapeID()
         let json = """
-        { "format" : 1, "schema" : { "ellipse" : 0 }, "shapes" : [
-          { "id" : "\(id)", "index" : "a0", "kind" : "ellipse", "props" : { "frame" : [[0, 0], [10, 10]] } },
-          { "id" : "\(id)", "index" : "a1", "kind" : "ellipse", "props" : { "frame" : [[20, 0], [10, 10]] } },
+        { "format" : 1, "schema" : { "rectangle" : 0 }, "shapes" : [
+          { "id" : "\(id)", "index" : "a0", "kind" : "rectangle", "props" : { "frame" : [[0, 0], [10, 10]] } },
+          { "id" : "\(id)", "index" : "a1", "kind" : "rectangle", "props" : { "frame" : [[20, 0], [10, 10]] } },
           { "id" : "\(ShapeID())", "index" : "a2", "kind" : "gadget", "props" : { } } ] }
         """
         let board = BoardDocument()
@@ -103,14 +103,14 @@ let boardType = "com.example.InfiniteCanvas.board"
         try configureBoards()
         let id = ShapeID()
         let json = """
-        { "format" : 3, "versions" : { "kinds" : { "ellipse" : 0 } }, "shapes" : [
-          { "added" : { "confetti" : { "velocity" : 240 } }, "id" : "\(id)", "index" : "a0", "kind" : "ellipse",
+        { "format" : 3, "versions" : { "kinds" : { "rectangle" : 0 } }, "shapes" : [
+          { "added" : { "confetti" : { "velocity" : 240 } }, "id" : "\(id)", "index" : "a0", "kind" : "rectangle",
             "props" : { "frame" : [[0, 0], [10, 10]] } } ] }
         """
         let board = BoardDocument()
         try board.read(from: Data(json.utf8), ofType: boardType)
         expectEqual(board.loadReport.keptValues.map(\.key), ["confetti"])
-        expect(board.loadReport.keptAside.isEmpty, "the ellipse itself shows")
+        expect(board.loadReport.keptAside.isEmpty, "the rectangle itself shows")
         expectEqual(board.editor.document[id]?.keptProperties, ["confetti"])
         settleRunLoop()
         expect(!board.isDocumentEdited)
@@ -120,21 +120,21 @@ let boardType = "com.example.InfiniteCanvas.board"
     },
     test("a file with other boards saves every one of them, those it can't show too, and Delete Hidden Shapes reaches them") {
         try configureBoards()
-        // No shipped kind owns boards: the ellipse's board is kept (its kind owns none), with the
-        // gadget on it, and so are a board no shape owns and an entry that isn't a board.
-        let ellipse = ShapeID(), inside = ShapeID(), gadget = ShapeID(), orphan = ShapeID(), stray = ShapeID()
-        func record(_ id: ShapeID, _ kind: String = "ellipse", _ index: String = "a0") -> String {
+        // A rectangle owns no board, so the board filed under one is kept, with the gadget on it, and
+        // so are a board no shape owns and an entry that isn't a board.
+        let rectangle = ShapeID(), inside = ShapeID(), gadget = ShapeID(), orphan = ShapeID(), stray = ShapeID()
+        func record(_ id: ShapeID, _ kind: String = "rectangle", _ index: String = "a0") -> String {
             #"{ "id" : "\#(id)", "index" : "\#(index)", "kind" : "\#(kind)", "props" : { "frame" : [[0, 0], [10, 10]] } }"#
         }
         let json = """
-        { "format" : 4, "versions" : { "kinds" : { "ellipse" : 0 } }, "shapes" : [ \(record(ellipse)) ],
-          "boards" : { "\(ellipse)" : { "shapes" : [ \(record(inside)), \(record(gadget, "gadget", "a1")) ] },
+        { "format" : 4, "versions" : { "kinds" : { "rectangle" : 0 } }, "shapes" : [ \(record(rectangle)) ],
+          "boards" : { "\(rectangle)" : { "shapes" : [ \(record(inside)), \(record(gadget, "gadget", "a1")) ] },
                        "\(orphan)" : { "shapes" : [ \(record(stray)) ] },
                        "nope" : 7 } }
         """
         let board = BoardDocument()
         try board.read(from: Data(json.utf8), ofType: boardType)
-        expectEqual(Set(board.loadReport.keptBoards.map(\.key)), [ellipse.description, orphan.description, "nope"])
+        expectEqual(Set(board.loadReport.keptBoards.map(\.key)), [rectangle.description, orphan.description, "nope"])
         expectEqual(board.loadReport.keptAside.map(\.id), [gadget])
         let summary = try require(board.loadReport.summary)
         expectEqual(summary.message, "Some of this board can’t be shown.")
@@ -152,7 +152,7 @@ let boardType = "com.example.InfiniteCanvas.board"
         reopened.deleteHiddenShapes()
         expectEqual(reopened.editor.file.children, [:])
         expectEqual(reopened.editor.file.unreadableBoards, [:])
-        expectEqual(reopened.editor.document.shapes.map(\.id), [ellipse])
+        expectEqual(reopened.editor.document.shapes.map(\.id), [rectangle])
         expect(reopened.isDocumentEdited)
     },
     test("a file that isn't a board won't open, says why, and offers an earlier version when there is one") {

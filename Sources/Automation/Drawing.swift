@@ -508,8 +508,8 @@ struct Drawing {
                     items[index].rename = now
                 }
             } else {
-                // One a kind works out for the shapes nobody named (an unnamed ellipse's size)
-                // mustn't change under it.
+                // One a kind works out for the shapes nobody named (from its size, say) mustn't
+                // change under it.
                 try keepsName(sized, title, item)
             }
         }
@@ -884,7 +884,7 @@ func quoted(_ title: String) -> String {
     return "\"\(escaped)\""
 }
 
-/// A word with its article, as a message names one of a kind: `a task-card`, `an ellipse`.
+/// A word with its article, as a message names one of a kind: `a sticky-note`, `an arrow`.
 func indefinite(_ word: some CustomStringConvertible) -> String {
     let text = word.description
     return (text.first.map { "aeiou".contains($0.lowercased()) } ?? false ? "an " : "a ") + text

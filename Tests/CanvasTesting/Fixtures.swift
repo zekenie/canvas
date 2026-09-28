@@ -15,7 +15,7 @@ extension Box {
     public init() { self.init(.zero) }
 }
 
-/// A disc: analytic hit test and a 128-point outline, like an ellipse.
+/// A disc: analytic hit test and a 128-point outline, as a round shape needs.
 public struct Disc: BoxShapeProps {
     public static let kind: ShapeKind = "disc"
     public static let properties = Properties<Disc> {

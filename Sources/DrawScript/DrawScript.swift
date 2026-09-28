@@ -118,7 +118,7 @@ public enum Part: String, Sendable, CaseIterable {
     public var isSide: Bool { self == .top || self == .bottom || self == .left || self == .right }
 
     /// One of the four corners, which the caller may put on a shape's outline rather than its
-    /// bounds (an ellipse's).
+    /// bounds (a round shape's).
     public var isCorner: Bool { self == .topLeft || self == .topRight || self == .bottomLeft || self == .bottomRight }
 
     /// The direction from this part toward the box's middle: what `inside` means (`outside` is

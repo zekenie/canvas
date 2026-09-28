@@ -1,8 +1,8 @@
 # Infinite Canvas
 
 A native macOS infinite canvas: a small core, with everything on it (selecting, what each key does,
-sticky notes, ellipses, arrows modeled on tldraw's, task cards, validation, checklists, a detail
-panel, a table of contents, ports to drag arrows from) added by plugins.
+sticky notes, arrows modeled on tldraw's, validation, checklists, a detail panel, a table of
+contents, ports to drag arrows from) added by plugins.
 The plugin system is a port, in Swift, of the one in data-canvas. Start with
 [docs/plugin-system.md](docs/plugin-system.md).
 
@@ -39,7 +39,7 @@ build/canvas draw 'sticky-note "Inbox" text: "Buy milk"'     # a note titled Inb
 build/canvas draw --board 2 --dry-run - <<'EOF'               # a script on standard input: what it would do, changing nothing
 sticky-note "Web" text: "Browser app"
 sticky-note "API" right of "Web" text: "Public HTTP API"
-task-card "Ship v1" below "API" status: doing
+subboard "Payments" below "API"
 edge "Web" -> "API"
 EOF
 ```
@@ -66,8 +66,6 @@ check before running it again). To run it as just `canvas`, put the link on your
 | Zoom | Pinch, ⌘-scroll, or ⌘= / ⌘- / ⌘0 |
 | See where you are | The minimap, in the canvas's bottom-left corner: every shape in miniature, and the part the canvas shows outlined. Click beside that part to move there, drag it to move it, double-click to center on a spot. ⌃⌘M shows or hides it |
 | New note | Double-click empty space, or N (the note tool) and click |
-| New ellipse | O, then click; keep dragging to place it |
-| New task | T, then click; edit it in the detail panel |
 | New rectangle | R, then click (an example plugin) |
 | Draw a line | L, then drag; Escape takes back the line being drawn (an example plugin) |
 | Erase | E, then click or drag across shapes (an example plugin) |
@@ -82,13 +80,13 @@ check before running it again). To run it as just `canvas`, put the link on your
 | See what's on the board | With nothing selected, the detail panel lists every shape, each arrow under the shape it starts from; with several selected, just those (Show All lists every shape again) |
 | Find a shape from the list | Click its row: it's selected and the canvas zooms to it. Pointing at a row outlines its shape faintly, and pointing at a shape tints its row |
 | Go back to the previous selection | The back button in the detail panel's header, or ⌘[ (Go › Back): what was selected before, and the view as it was then (from a row's details, the list) |
-| Add a checklist to a note or task | The panel's Checklist tab: + adds an item, − or Delete removes the selected one |
-| Name a note, a rectangle or an ellipse, or rename a task | Select it and click its title in the detail panel's header; Return or Escape goes back to the canvas |
+| Add a checklist to a note | The panel's Checklist tab: + adds an item, − or Delete removes the selected one |
+| Name a note or a rectangle | Select it and click its title in the detail panel's header; Return or Escape goes back to the canvas |
 | Delete shapes or arrows | Select them and press Delete |
 | Cut, copy and paste shapes | ⌘X, ⌘C and ⌘V (Edit menu, or right-click a shape; right-click empty space to paste). A paste lands where the originals were if they're in view, else in the middle of the view; arrows copied with their shapes stay attached to the copies |
 | Arrow tool | A (V or Escape to go back to select) |
 | Draw an arrow | Drag from one shape to another with the arrow tool. Arriving quickly aims at a shape's center; arriving slowly, or pausing inside the shape, aims at that exact spot |
-| Link a note to a note, or a task to a task | With the select tool, point at one: dots show just outside its sides (a note has none on top; zoomed out below 25%, none show). Drag from a dot to another note (or task): those it could link to are outlined faintly as you drag, and released anywhere else, nothing is drawn |
+| Link a note to a note, or a schema card to a schema card | With the select tool, point at one: dots show just outside its sides (a note has none on top; zoomed out below 25%, none show). Drag from a dot to another of its kind: those it could link to are outlined faintly as you drag, and released anywhere else, nothing is drawn |
 | Aim into a shape | Hold ⌥ while drawing or dragging an end: the arrow runs all the way to the spot |
 | Don't attach | Hold ⌘ while drawing or dragging an end |
 | Snap angle | Hold ⇧ while dragging an end (15° steps) |
@@ -100,11 +98,10 @@ An empty note (no text, no checklist) gets an orange outline (the validation plu
 warning), says why in an Issues tab of the detail panel (the validation-details bridge), and gets an orange dot on its
 row in the table of contents (the validation-contents bridge). A note with a checklist shows a done/total chip.
 A titled shape shows its title in a pill above its top-left corner, and in the table of contents (the titles plugin).
-Name a note, a rectangle or an ellipse in the detail panel's header; an ellipse nobody named is called by its size (the
-ellipse-titles and rectangle-titles examples). A title is
+Name a note or a rectangle in the detail panel's header (a rectangle's title is the rectangle-titles example). A title is
 part of its shape's schema, at most 80 characters: a longer one gets a warning, as does any value outside the
 bounds its schema sets (the validation plugin checks every shape against its kind's schema).
-A note's dots link it only to another note, and a task's only to another task: each kind has a channel of its own
+A note's dots link it only to another note, and a schema card's only to another schema card: each kind has a channel of its own
 (the ports plugin), and the link is an arrow (the arrow-ports bridge) that keeps to its channel when an end is re-aimed.
 
 ## Layout
@@ -122,8 +119,6 @@ Sources/
   Selection/            the selection horizontal: the select tool, marquee, handles, Delete and ⌘A
   Arrows/               arrows (a port of tldraw's arrow geometry and binding)
   StickyNotes/          sticky notes, with in-place editing
-  Ellipses/             ellipses
-  TaskCards/            task cards, edited only in the detail panel
   Schemas/              schema cards: a JSON Schema on the canvas, as a card that lists its fields, written in its
                         panel in words or as JSON, the two kept in step by Claude
   Validation/           the validation horizontal: rules, engine, outline
@@ -155,8 +150,6 @@ Examples/               the smallest plugin for each pattern
   Rectangles/           a vertical: a kind, how it draws, a tool
   Polylines/            a shape without a frame: its own geometry, hit test and translation
   Eraser/               a tool with no shape, and a session
-  EllipseTitles/        a bridge: an ellipse can be named, and one nobody named is called by its size,
-                        without Ellipses or Titles knowing
   RectangleTitles/      the smallest bridge: rectangles can be named
   Reordering/           menu items for every kind with a capability: the Arrange submenu
 Tests/                  test executables (the core, each plugin with logic of its own, the examples,
