@@ -6,8 +6,8 @@ import Canvas
 /// a tab is the detail panel's: every item that names it lands in it, sharing one means importing
 /// the module that declares it, and a typo doesn't compile.
 ///
-///     public enum ChecklistMenuGroup {}
-///     extension ChecklistMenuGroup: MenuGroup {
+///     public enum MentionsMenuGroup {}
+///     extension MentionsMenuGroup: MenuGroup {
 ///         public static var order: Int { 50 }
 ///     }
 public protocol MenuGroup {

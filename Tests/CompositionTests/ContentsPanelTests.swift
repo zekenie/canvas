@@ -50,7 +50,7 @@ extension NSView {
 }
 
 extension NSTableView {
-    /// The table of contents' list, as opposed to a list in a shape's panel (a checklist): the one
+    /// The table of contents' list, as opposed to a list in a shape's panel: the one
     /// whose first row is a section header, its "Board" or "Selection".
     var isTableOfContents: Bool {
         guard let outline = self as? NSOutlineView, outline.numberOfRows > 0 else { return false }

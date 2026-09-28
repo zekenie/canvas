@@ -85,7 +85,7 @@ extension CornerDisc: Adornment {
         expect(changedPixels(untitled, titled, in: CGRect(x: 60, y: 95, width: 36, height: 12)) > 300, "9 to 27 points above the corner")
         expectEqual(changedPixels(untitled, titled, in: CGRect(x: 60, y: 60, width: 200, height: 32)), 0, "not up to 54, as it would be zoomed")
     },
-    test("below 25% the pill shrinks with the shapes, as the checklist chip does") {
+    test("below 25% the pill shrinks with the shapes, as every adornment does") {
         let editor = try titleEditor()
         let id = editor.add(Plaque(CGRect(x: 480, y: 960, width: 800, height: 480)))
         editor.camera = Camera(origin: .zero, zoom: 0.125)  // at (60, 120), 100 points wide: the pill half size, 4.5 to 13.5 points above

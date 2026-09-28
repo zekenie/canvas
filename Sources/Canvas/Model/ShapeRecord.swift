@@ -21,7 +21,7 @@ public protocol BoxShapeProps: ShapeProps {
 public struct ShapeRecord<Props: ShapeProps>: Identifiable, Equatable, Sendable {
     public let id: ShapeID
     public var props: Props
-    /// What plugins add to the kind: `shape[ChecklistProperty.self]`.
+    /// What plugins add to the kind: `shape[TitleProperty.self]`.
     var added = AddedValues()
     public init(id: ShapeID = ShapeID(), _ props: Props) {
         self.id = id
@@ -50,7 +50,7 @@ public struct AnyShapeRecord: Identifiable, Equatable, Sendable {
     /// (`meta[CopiedFrom.self]`). Kept with the shape in its board. Changed, like the props, in a
     /// transaction: `tx.update(id) { $0.meta[Key.self] = value }`.
     public var meta = ShapeMeta()
-    /// The values of the properties plugins add to its kind (`record[ChecklistProperty.self]`).
+    /// The values of the properties plugins add to its kind (`record[TitleProperty.self]`).
     var added = AddedValues()
 
     public init<P: ShapeProps>(_ shape: ShapeRecord<P>) {

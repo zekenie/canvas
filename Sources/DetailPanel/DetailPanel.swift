@@ -13,9 +13,9 @@ extension PluginID {
 /// declare one; it shows for a shape when a section that applies to the shape names it, or when the
 /// shape has status lines for it (`DetailStatuses`).
 ///
-///     public enum ChecklistTab {}
-///     extension ChecklistTab: DetailTab {
-///         public static var title: String { "Checklist" }
+///     public enum BoardTab {}
+///     extension BoardTab: DetailTab {
+///         public static var title: String { "Board" }
 ///         public static var order: Int { 50 }
 ///     }
 ///
@@ -24,8 +24,8 @@ public protocol DetailTab {
     static var title: String { get }
     /// Tabs sort by this, then by first appearance. The bands: 0 for a kind's own tabs (the
     /// default), 50 for a feature tab a horizontal adds to the kinds that opt into it, 100 for
-    /// Style and 200 for Arrange, so the shared tabs trail, as in Keynote, and 300 for a tab of the
-    /// shape's state that comes and goes with it (Issues), last, so the others keep their order.
+    /// Style, so a shared tab trails, as in Keynote, and 300 for a tab of the shape's state that
+    /// comes and goes with it (Issues), last, so the others keep their order.
     /// (The strip shares its width among the tabs, so a tab that comes narrows the rest.)
     static var order: Int { get }
 }
@@ -39,13 +39,6 @@ public enum StyleTab {}
 extension StyleTab: DetailTab {
     public static var title: String { "Style" }
     public static var order: Int { 100 }
-}
-
-/// Position and size. The panel fills it for every box shape.
-public enum ArrangeTab {}
-extension ArrangeTab: DetailTab {
-    public static var title: String { "Arrange" }
-    public static var order: Int { 200 }
 }
 
 /// A tab as the layout reports it. Equal when the tab types are.
@@ -107,8 +100,8 @@ public struct DetailStatus: Hashable, Sendable {
 
 // MARK: Sections
 
-/// One section of a tab: an optional bold header (collapsible, with an optional control at its
-/// trailing end), then rows. `Value` is what it edits: a kind's props, or a box's frame.
+/// One section of a tab: an optional bold header (collapsible), then rows. `Value` is what it
+/// edits: a kind's props, or a box's frame.
 ///
 /// The content closure gets a `ShapeBinding`. Take it as `$card`: `card.prompt` is the value,
 /// `$card.prompt` a `Binding` that writes that one field in its own transaction.
@@ -121,7 +114,6 @@ public struct DetailSection<Value> {
     let title: String?
     let isShown: @MainActor (Value) -> Bool
     let content: @MainActor (ShapeBinding<Value>) -> AnyView
-    let accessory: (@MainActor (ShapeBinding<Value>) -> AnyView)?
     private(set) var isEnabledWhileReadOnly = false
     private(set) var isShownWhile: (@MainActor (AnyShapeRecord, DetailContext) -> Bool)?
 
@@ -138,23 +130,6 @@ public struct DetailSection<Value> {
         self.title = title
         self.isShown = isShown
         self.content = { AnyView(content($0)) }
-        accessory = nil
-    }
-
-    /// With one small control in the header row, which acts on the whole section (Checklists'
-    /// menu). A switch for one row goes in that row, beside what it governs.
-    public init<Tab: DetailTab, Content: View, Accessory: View>(
-        _ title: String, in tab: Tab.Type, id: String? = nil,
-        when isShown: @escaping @MainActor (Value) -> Bool = { _ in true },
-        @ViewBuilder content: @escaping (ShapeBinding<Value>) -> Content,
-        @ViewBuilder accessory: @escaping (ShapeBinding<Value>) -> Accessory
-    ) {
-        self.tab = DetailTabID(Tab.self)
-        self.id = id ?? title
-        self.title = title
-        self.isShown = isShown
-        self.content = { AnyView(content($0)) }
-        self.accessory = { AnyView(accessory($0)) }
     }
 
     /// The section, its controls working on a read-only shape (a locked one) too, where the panel
@@ -237,7 +212,6 @@ struct ErasedSection {
     let title: String?
     let isShown: @MainActor (AnyShapeRecord) -> Bool
     let content: @MainActor (AnyShapeRecord, CanvasEditor) -> AnyView
-    let accessory: (@MainActor (AnyShapeRecord, CanvasEditor) -> AnyView)?
     let isEnabledWhileReadOnly: Bool
     /// `shownWhile`'s, asked apart from `isShown`: on every commit, beside the status lines.
     let isShownWhile: (@MainActor (AnyShapeRecord, DetailContext) -> Bool)?
@@ -255,11 +229,6 @@ struct ErasedSection {
         let stepName = section.title.map { "Change \($0)" }
         let binding = { @MainActor (record: AnyShapeRecord, editor: CanvasEditor) in binding(record, editor)?.named(stepName) }
         self.content = { record, editor in binding(record, editor).map(content) ?? AnyView(EmptyView()) }
-        if let accessory = section.accessory {
-            self.accessory = { record, editor in binding(record, editor).map(accessory) ?? AnyView(EmptyView()) }
-        } else {
-            accessory = nil
-        }
     }
 }
 
@@ -390,8 +359,8 @@ extension ShapeRegistrar {
 
 extension ShapeRegistrar {
     /// Sections over an added property's value, on this kind's shapes that have one: what a
-    /// horizontal's opt-in sugar contributes for the property it opts the kind into
-    /// (`note.checklist()`). Each write changes the value, in one transaction.
+    /// horizontal's opt-in sugar contributes for the property it opts the kind into. Each write
+    /// changes the value, in one transaction.
     public mutating func details<P: ShapeProperty>(of _: P.Type, @DetailSectionsBuilder<P.Value> _ sections: () -> [DetailSection<P.Value>]) {
         contribute(DetailContribution(property: P.self, sections: sections()), to: ShapeDetails.self)
     }

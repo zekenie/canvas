@@ -481,7 +481,7 @@ private func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     },
 ])
 
-/// An item with an id of its own from the moment it's made, as a checklist's are.
+/// An item with an id of its own from the moment it's made.
 struct Stub: SchemaDefined, Equatable {
     static let properties = Properties<Stub> {
         Property("id", \.id)

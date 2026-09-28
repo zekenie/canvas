@@ -425,8 +425,8 @@ struct TabStripLayout: Layout {
 }
 
 /// A section: its header (which collapses it, read-only shape or not), then its content. A
-/// read-only shape's content and header control are there to read, not to use, unless the section
-/// says they change nothing of it (`enabledWhileReadOnly()`).
+/// read-only shape's content is there to read, not to use, unless the section says it changes
+/// nothing of it (`enabledWhileReadOnly()`).
 struct SectionView: View, Equatable {
     let resolved: ResolvedSection
     let editor: CanvasEditor
@@ -458,7 +458,6 @@ struct SectionView: View, Equatable {
                     .buttonStyle(.plain)
                     .accessibilityLabel(title)
                     Spacer(minLength: DetailStyle.pairSpacing)
-                    resolved.section.accessory?(record, editor).disabled(isDisabled)
                 }
                 .frame(height: DetailStyle.sectionHeaderHeight)
             }

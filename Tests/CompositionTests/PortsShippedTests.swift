@@ -2,7 +2,6 @@ import AppKit
 import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
-import Checklists
 import Clipboard
 import Composition
 import CoreGraphics
@@ -208,18 +207,17 @@ extension EditorHarness {
         expectEqual(arrow.props.end.binding?.shapeID, b.id)
         expectEqual(try channel(of: arrow.id, in: h.editor), schemaLink)
     },
-    test("a titled, locked note with a checklist shows its dots whole: no pixel is both a dot's and the pill's, the lock chip's or the checklist chip's") {
+    test("a titled, locked note shows its dots whole: no pixel is both a dot's and the pill's or the lock chip's") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let frame = CGRect(x: 100, y: 100, width: 200, height: 200)
         let size = CGSize(width: 400, height: 340)
         let sides = [Side.right, .bottom, .left]
-        // The note plain or with all three, at rest and with the pointer on each dot (lit, with its halo).
+        // The note plain or with both, at rest and with the pointer on each dot (lit, with its halo).
         @MainActor func renders(decorated: Bool) -> (rest: NSBitmapImageRep, lit: [Side: NSBitmapImageRep]) {
             var record = note(frame, text: "Buy milk")
             if decorated {
                 record[TitleProperty.self] = "A title much longer than the note is wide"
-                record[ChecklistProperty.self] = [ChecklistItem(text: "oat milk")]
                 record[LockedProperty.self] = true
             }
             let h = shipped([record], pasteboard)
@@ -235,7 +233,6 @@ extension EditorHarness {
         let plain = renders(decorated: false), decorated = renders(decorated: true)
         expect(changedPixels(plain.rest, decorated.rest, in: CGRect(x: 100, y: 75, width: 170, height: 12)) > 1000, "the pill")
         expect(changedPixels(plain.rest, decorated.rest, in: CGRect(x: 286, y: 77, width: 10, height: 10)) > 90, "the lock")
-        expect(changedPixels(plain.rest, decorated.rest, in: CGRect(x: 270, y: 94, width: 36, height: 12)) > 100, "the checklist chip")
         for side in sides {
             let plainLit = try require(plain.lit[side]), lit = try require(decorated.lit[side])
             for dot in sides.map({ $0.dot(of: frame) }) {
@@ -368,11 +365,9 @@ extension EditorHarness {
         expectEqual(try require(json["shapes"]?.arrayValue).map { $0["added"] }, [nil, nil, nil])
         let withoutArrowPorts = try Registry(plugins: ShippedPlugins.plugins(pasteboard: pasteboard, model: ScriptedLanguageModel()).filter { $0.id != "arrow-ports" })
         expectEqual(try BoardCodec(registry: withoutArrowPorts).encode(h.editor.document), data)
-        // On a board of notes, which has added values (their checklists), the welcome board's arrows
-        // add none.
+        // Between notes, the welcome board's arrows add none either.
         let welcome = try JSONDecoder().decode(JSONValue.self, from: BoardCodec(registry: h.editor.registry).encode(
             ShippedPlugins.makeEditor(scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel()).document))
-        expectEqual(welcome["versions"]?["added"], .object(["checklist": 0]))
         let welcomeArrows = try require(welcome["shapes"]?.arrayValue).filter { $0["kind"]?.stringValue == Arrow.kind.rawValue }
         expectEqual(welcomeArrows.map { $0["added"] }, [nil, nil, nil])
     },

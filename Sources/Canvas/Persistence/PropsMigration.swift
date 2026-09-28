@@ -45,7 +45,7 @@ public struct PropsMigration: Sendable {
 
     /// A step that hands one of the kind's own members over to an added property the kind now opts
     /// into, as the value it was, which that property reads at `version` (and then migrates, like
-    /// any value of it): `.handOver("checklist", to: ChecklistProperty.self)`. The kind no longer
+    /// any value of it): `.handOver("title", to: TitleProperty.self)`. The kind no longer
     /// has the member; its shapes have the property. A member that's missing, or null, hands nothing
     /// over: the shape has the property's default, as with any shape of a kind that opts in.
     public static func handOver<P: ShapeProperty>(_ member: String, to _: P.Type, version: Int = 0) -> PropsMigration {

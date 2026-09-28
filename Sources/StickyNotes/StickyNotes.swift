@@ -1,6 +1,5 @@
 import AppKit
 import Canvas
-import Checklists
 import Keyboard
 import Mentions
 import Ports
@@ -12,9 +11,11 @@ public struct StickyNote: BoxShapeProps {
     public static let kind: ShapeKind = "sticky-note"
     /// Append only. The count is the version boards record.
     public static let migrations = [
-        // Checklists adds the checklist to every kind that opts in; the note no longer keeps one.
-        PropsMigration.handOver("checklist", to: ChecklistProperty.self),
-        // So does Titles the title, once someone names the note.
+        // The note no longer keeps a checklist. (This step handed it over to Checklists' added
+        // property, since removed.)
+        PropsMigration("checklist becomes the checklist property") { $0["checklist"] = nil },
+        // Titles adds the title to every kind that opts in, once someone names the shape; the
+        // note no longer keeps one.
         PropsMigration.handOver("title", to: TitleProperty.self),
         // Its text may mention shapes: text that would now read as a mention (or an escaped one)
         // is escaped, so it stays the text it was.
@@ -36,10 +37,9 @@ public struct StickyNote: BoxShapeProps {
 }
 
 extension ShapeRecord where Props == StickyNote {
-    /// No text (a mention is text), no checklist and no title.
+    /// No text (a mention is text) and no title.
     var isEmpty: Bool {
-        props.text.isBlank && (self[ChecklistProperty.self] ?? []).isEmpty
-            && (self[TitleProperty.self] ?? "").allSatisfy(\.isWhitespace)
+        props.text.isBlank && (self[TitleProperty.self] ?? "").allSatisfy(\.isWhitespace)
     }
 
     /// Where the note draws its text: in its frame, inset by the padding. The render draws exactly
@@ -64,7 +64,6 @@ public struct StickyNotesPlugin: CanvasPlugin {
             note.validate { shape, _ in                        // opts into the validation horizontal
                 shape.isEmpty ? [.warning("This note is empty.")] : []
             }
-            note.checklist()                                   // opts into the checklists horizontal
             note.title()                                       // and titles: a title, its pill, and its row's name
             note.noteHeader()                                  // renamed in the detail panel's header
             note.noteRow()                                     // and the table of contents

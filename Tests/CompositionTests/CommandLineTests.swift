@@ -4,7 +4,6 @@ import Arrows
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
-import Checklists
 import Composition
 import Foundation
 import LanguageModels
@@ -41,7 +40,7 @@ import Titles
 let diagram = #"""
 sticky-note "Web" text: "Browser app"
 sticky-note "API" right of "Web" text: "Public API"
-sticky-note "Jobs" below "API" text: "Background work" checklist: [{"text": "Write tests"}]
+sticky-note "Jobs" below "API" text: "Background work"
 sticky-note "Mail" right of "Jobs" text: "Sends email"
 rectangle "Backend" below "Jobs" size: 600x200
 subboard "Cache" left of "Backend"
@@ -209,7 +208,6 @@ edge "API" -> "Cache" channel: none
         let web = try require(try shape("Web").box), api = try require(try shape("API").box)
         expectEqual(api.minX, web.maxX + 80, "a normal gap")
         expectEqual(api.midY, web.midY, "a lone direction centers the other axis")
-        expectEqual(try shape("Jobs")[ChecklistProperty.self]?.map(\.text), ["Write tests"])
         expectEqual(try shape("Cache").kind, "subboard")
 
         let arrows = editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }
@@ -297,22 +295,9 @@ edge "API" -> "Cache" channel: none
         let help = try canvas(server, ["help"]).output
         for command in ["status", "boards", "draw", "kinds"] { expect(help.contains("\n  \(command) "), help) }
     },
-    test("canvas draw holds the shipped kinds' JSON to their schemas, replaces a list whole, and says what a habit meant") {
+    test("canvas draw says what a habit meant, refuses a kind its tool draws by hand, and deletes an arrow with the shape it leaves") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
-        // A member a checklist item hasn't is refused, not dropped.
-        let done = try refusedInProcess(#"sticky-note "Shopping" checklist: [{"text": "Eggs", "done": true}]"#, on: editor)
-        expectEqual(done.reason, "invalid_value")
-        expectEqual(done.message, #""Shopping": checklist: done isn't a member of item 1 (it has isDone and text)"#)
-        expectEqual(done.hint, "did you mean isDone? checklist: takes JSON [{isDone, text}]")
-        expectEqual(editor.document.shapes.count, 0)
-        // A list replaces the whole property, and what an item leaves out takes its default, not
-        // what the item there had.
-        _ = try drawnInProcess(#"sticky-note "Backfill" checklist: [{"text": "Eggs", "isDone": true}, {"text": "Milk"}]"#, on: editor)
-        _ = try drawnInProcess(#"sticky-note "Backfill" checklist: [{"text": "Eggs"}]"#, on: editor)
-        let note = try require(editor.document.shapes.first { editor.registry.title(of: $0) == "Backfill" })
-        expectEqual(note[ChecklistProperty.self]?.map(\.text), ["Eggs"])
-        expectEqual(note[ChecklistProperty.self]?.map(\.isDone), [false])
         // Another language's word for a shape is told the kind like it; its word for a connection, the edge.
         let word = try refusedInProcess(#"note "Idea" text: "Try a cache""#, on: editor)
         expectEqual(word.reason, "unknown_kind")
@@ -324,7 +309,7 @@ edge "API" -> "Cache" channel: none
         expectEqual(line.reason, "not_placeable")
         expectEqual(line.message, "a polyline isn't drawn on its own: its tool (Line) draws one by hand, so a script can't place one")
         // A delete takes an arrow that leaves the shape for empty canvas.
-        _ = try drawnInProcess(#"sticky-note "Old" right of "Backfill""#, on: editor)
+        _ = try drawnInProcess(#"sticky-note "Old""#, on: editor)
         let old = try require(editor.document.shapes.first { editor.registry.title(of: $0) == "Old" })
         let arrow = AnyShapeRecord(ShapeRecord(Arrow(start: .bound(ArrowBinding(shapeID: old.id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false,
                                                                                 isExact: false)),

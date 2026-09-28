@@ -111,8 +111,8 @@ struct KindVocabulary {
         return "{\(shown.joined(separator: ", "))\(shared.map { ": \($0)" } ?? "")}"
     }
 
-    /// An object's members a script writes, sorted: all but an id no one writes (a checklist
-    /// item's), which is made when it's missing.
+    /// An object's members a script writes, sorted: all but an id no one writes (an item's, in
+    /// a list), which is made when it's missing.
     private func written(_ schema: JSONObject) -> [String] {
         let members = schema["properties"]?.objectValue ?? [:]
         let required = Set((schema["required"]?.arrayValue ?? []).compactMap(\.stringValue))

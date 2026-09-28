@@ -1,19 +1,19 @@
 import Foundation
 
-/// A property a plugin adds to the kinds that opt in: something those shapes know (a checklist,
-/// say) that the kinds don't declare themselves. The type is the key, as with detail tabs and
-/// extension points, and says everything about the property once:
+/// A property a plugin adds to the kinds that opt in: something those shapes know (a title, say)
+/// that the kinds don't declare themselves. The type is the key, as with detail tabs and extension
+/// points, and says everything about the property once:
 ///
-///     public enum ChecklistProperty {}
-///     extension ChecklistProperty: ShapeProperty {
-///         public static let key: PropertyKey = "checklist"
-///         public static var defaultValue: [ChecklistItem]? { [] }
+///     public enum TitleProperty {}
+///     extension TitleProperty: ShapeProperty {
+///         public static let key: PropertyKey = "title"
+///         public static var defaultValue: String? { nil }
 ///     }
 ///
-/// The plugin that owns it declares it (`registrar.declare(ChecklistProperty.self)`), and a kind
-/// opts in, usually through that plugin's sugar (`note.checklist()`, which calls
-/// `optIn(to: ChecklistProperty.self)`). Its value is then in each shape's record,
-/// `shape[ChecklistProperty.self]`, changed in a transaction like the props, and saved with the
+/// The plugin that owns it declares it (`registrar.declare(TitleProperty.self)`), and a kind opts
+/// in, usually through that plugin's sugar (`note.title()`, which calls
+/// `optIn(to: TitleProperty.self)`). Its value is then in each shape's record,
+/// `shape[TitleProperty.self]`, changed in a transaction like the props, and saved with the
 /// shape, in the board beside its props. The kind's schema (`registry.schema(for:)`) gains it as
 /// one property, and its history (`migrations`) is its own, whatever kinds opt in.
 ///
@@ -151,7 +151,7 @@ struct Boxed<Value: Codable & Equatable & Sendable>: AddedValue {
 extension AnyShapeRecord {
     /// The value of an added property; nil if the shape has none (its kind doesn't opt in, the
     /// property's default is nil and it's unset, or the value is kept aside). Setting it changes
-    /// the shape in a transaction, like its props: `tx.update(id) { $0[ChecklistProperty.self]?.append(item) }`.
+    /// the shape in a transaction, like its props: `tx.update(id) { $0[TitleProperty.self] = "Plans" }`.
     /// A value set on a kind that doesn't opt in is dropped when the transaction takes it, as is
     /// nil for a property every shape has, and anything set on a value that's kept aside. A value
     /// that's no value at all (`ShapeProperty.isNone`, a blank title) sets nil, or the default.

@@ -143,11 +143,11 @@ final class SettingsCatcher: NSObject, NSApplicationDelegate {
 let blankCard = SchemaCard(frame: CGRect(x: 40, y: 40, width: 240, height: 67))
 
 @MainActor let panelTests = Suite("Schema card panel", [
-    test("a card's panel: the name in the header, the Schema tab (Description over the JSON), then Arrange") {
+    test("a card's panel: the name in the header, then the Schema tab (Description over the JSON)") {
         let editor = try schemaEditor()
         let order = editor.add(card(fixture(6)))
         let layout = try require(editor.detailPanel?.layout(for: try require(editor.document[order])))
-        expectEqual(layout.tabs.map(\.title), ["Schema", "Arrange"])
+        expectEqual(layout.tabs.map(\.title), ["Schema"])
         expectEqual(layout.sections(in: .of(SchemaTab.self)).map(\.section), ["Description", "JSON"])
         let header = try require(layout.header(as: TitleHeader.self))
         expectEqual([header.title, header.placeholder, header.subtitle], ["Order", "Untitled", "6 fields"])

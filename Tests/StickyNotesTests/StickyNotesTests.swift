@@ -2,7 +2,6 @@ import Adornments
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
-import Checklists
 import ContextMenus
 import DetailPanel
 import Keyboard
@@ -18,17 +17,8 @@ import Validation
 
 /// The note, every plugin it opts into, and Adornments, which lays out what Titles shows on it.
 @MainActor var notePlugins: [any CanvasPlugin] {
-    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), ValidationPlugin(), AdornmentsPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
+    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), ValidationPlugin(), AdornmentsPlugin(), DetailPanelPlugin(),
      ContextMenusPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin()]
-}
-
-extension ShapeRecord where Props == StickyNote {
-    /// The note with `items` in its checklist, the property Checklists adds.
-    func withChecklist(_ items: [ChecklistItem]) -> Self {
-        var note = self
-        note[ChecklistProperty.self] = items
-        return note
-    }
 }
 
 @MainActor let stickyNotesTests = Suite("Sticky notes", [
@@ -39,76 +29,62 @@ extension ShapeRecord where Props == StickyNote {
         expect(registry.definition(for: StickyNote.kind) is any Editable)
         expectEqual(registry.contributions(to: DoubleClickPlacement.self).map(\.value.kind), [StickyNote.kind])
     },
-    test("can't be installed without the keyboard, selection, validation, checklists, titles, ports and mentions plugins it opts into, the panel, context menus and the table of contents") {
+    test("can't be installed without the keyboard, selection, validation, titles, ports and mentions plugins it opts into, the panel and the table of contents") {
         expectThrows(RegistryError.ownerNotInstalled(point: "KeyboardShortcuts", owner: .keyboard, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin()])
+            _ = try Registry(plugins: [StickyNotesPlugin(), ValidationPlugin(), DetailPanelPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "DoubleClickPlacement", owner: .selection, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), StickyNotesPlugin(), ValidationPlugin(), DetailPanelPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ValidationRules", owner: .validation, contributor: .stickyNotes)) {
             _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin()])
         }
-        expectThrows(RegistryError.ownerNotInstalled(point: "ShapeChecklists", owner: .checklists, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), DetailPanelPlugin()])
-        }
-        expectThrows(RegistryError.ownerNotInstalled(point: "ShapeDetails", owner: .detailPanel, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin()])
-        }
-        expectThrows(RegistryError.ownerNotInstalled(point: "ShapeContextMenus", owner: .contextMenus, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin()])
-        }
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeTitles", owner: .titles, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
-                                       ContextMenusPlugin(), TableOfContentsPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), DetailPanelPlugin(), TableOfContentsPlugin()])
         }
         // A title names the note's row, so titles need the table of contents too.
         expectThrows(RegistryError.ownerNotInstalled(point: "ContentsTitles", owner: .tableOfContents, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
-                                       ContextMenusPlugin(), TitlesPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), DetailPanelPlugin(), TitlesPlugin()])
+        }
+        expectThrows(RegistryError.ownerNotInstalled(point: "ShapeDetails", owner: .detailPanel, contributor: .stickyNotes)) {
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), TableOfContentsPlugin(), TitlesPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapePorts", owner: .ports, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
-                                       ContextMenusPlugin(), TableOfContentsPlugin(), TitlesPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), DetailPanelPlugin(),
+                                       TableOfContentsPlugin(), TitlesPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "MentionTexts", owner: .mentions, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
-                                       ContextMenusPlugin(), TableOfContentsPlugin(), TitlesPlugin(), PortsPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), ValidationPlugin(), DetailPanelPlugin(),
+                                       TableOfContentsPlugin(), TitlesPlugin(), PortsPlugin()])
         }
     },
-    test("its row in the table of contents: its text on one line, or Empty Note, and its checklist's tally") {
+    test("its row in the table of contents: its text on one line, or Empty Note") {
         let editor = CanvasEditor(registry: try Registry(plugins: notePlugins), scheduler: ManualScheduler())
         let frame = CGRect(x: 0, y: 0, width: 200, height: 200)
         editor.transact {
-            $0.insert(ShapeRecord(StickyNote(frame: frame, text: "Shopping\nlist")).withChecklist([ChecklistItem(text: "milk", isDone: true),
-                                                                                                  ChecklistItem(text: "eggs")]))
+            $0.insert(ShapeRecord(StickyNote(frame: frame, text: "Shopping\nlist")))
             $0.insert(ShapeRecord(StickyNote(frame: frame)))
         }
         let entries = try require(editor.tableOfContents).entries
         expectEqual(entries.map { $0.label?.text }, ["Shopping list", "Empty Note"])
-        expectEqual(entries.map { $0.label?.badge }, ["1/2", nil])
+        expectEqual(entries.map { $0.label?.badge }, [nil, nil])
         expectEqual(entries.map(\.symbol), ["note.text", "note.text"], "the Note tool's")
     },
-    test("a note has a checklist: the registry reads it, and the panel shows it in a Checklist tab") {
+    test("a note's panel is its header, where it's named, and no tab of its own") {
         let editor = CanvasEditor(registry: try Registry(plugins: notePlugins), scheduler: ManualScheduler())
-        let items = [ChecklistItem(text: "milk", isDone: true), ChecklistItem(text: "eggs")]
-        let note = ShapeRecord(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "Shopping")).withChecklist(items)
-        let blank = ShapeRecord(StickyNote(frame: CGRect(x: 300, y: 0, width: 200, height: 200)))
-        editor.transact { $0.insert(note); $0.insert(blank) }
-        let record = try require(editor.document[note.id])
-        expectEqual(editor.registry.checklist(of: record), items)
-        let layout = try require(editor.detailPanel).layout(for: record)
+        let note = ShapeRecord(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "Shopping"))
+        editor.transact { $0.insert(note) }
+        let layout = try require(editor.detailPanel).layout(for: try require(editor.document[note.id]))
         expectEqual(layout.header(as: TitleHeader.self)?.title, "", "an untitled note's header, where it's named")
-        expectEqual(layout.tabs, [.of(ChecklistTab.self), .of(ArrangeTab.self)])
-        expectEqual(layout.sections(in: .of(ChecklistTab.self)).map(\.section), ["Items", "Progress"])
-        expectEqual(editor.document[blank.id]?[ChecklistProperty.self], [], "a new note's checklist is empty")
+        expectEqual(layout.tabs, [])
     },
-    test("a note with no text but a checklist isn't empty; one with neither warns") {
+    test("a note with no text but a title isn't empty; one with neither warns") {
         let editor = CanvasEditor(registry: try Registry(plugins: notePlugins), scheduler: ManualScheduler())
-        let listed = ShapeRecord(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: " ")).withChecklist([ChecklistItem(text: "milk")])
+        var titled = ShapeRecord(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: " "))
+        titled[TitleProperty.self] = "Groceries"
         let empty = ShapeRecord(StickyNote(frame: CGRect(x: 300, y: 0, width: 200, height: 200), text: " "))
-        editor.transact { $0.insert(listed); $0.insert(empty) }
-        expect(editor.validation?.result(for: listed.id) == nil)
+        editor.transact { $0.insert(titled); $0.insert(empty) }
+        expect(editor.validation?.result(for: titled.id) == nil)
         expectEqual(editor.validation?.result(for: empty.id)?.worst, .warning)
     },
     test("N then a click places a note centered there, editing, and back in select") {

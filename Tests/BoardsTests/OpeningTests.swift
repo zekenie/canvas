@@ -87,7 +87,7 @@ final class BoardPanelWindow {
         let editor = try CanvasEditor(registry: Registry(plugins: boardsPlugins()), file: nest.file, scheduler: TaskScheduler())
         let drawer = try require(editor.document[nest.d])
         let layout = try require(editor.detailPanel?.layout(for: drawer))
-        expectEqual(layout.tabs.map(\.title), ["Board", "Arrange"])
+        expectEqual(layout.tabs.map(\.title), ["Board"])
         expectEqual(layout.sections(in: .of(BoardTab.self)).map(\.section), ["main"])
 
         editor.selection = nest.d

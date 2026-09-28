@@ -18,7 +18,7 @@ import TestKit
         expectEqual(state.currentTab(in: try editor.layout(withParts), for: Gadget.kind), .of(PartsTab.self))
         expectEqual(state.currentTab(in: try editor.layout(without), for: Gadget.kind), .of(GadgetTab.self))
         expectEqual(state.currentTab(in: try editor.layout(withParts), for: Gadget.kind), .of(PartsTab.self), "still remembered")
-        expectEqual(state.currentTab(in: try editor.layout(box), for: Box.kind), .of(ArrangeTab.self))
+        expectEqual(state.currentTab(in: try editor.layout(box), for: Box.kind), .of(FrameTab.self))
         expectEqual(state.currentTab(in: try editor.layout(editor.add(Tag(target: nil))), for: Tag.kind), nil)
     },
     test("collapsing an every-box section collapses it for every kind; a kind's own, for that kind only") {
@@ -28,8 +28,8 @@ import TestKit
         let state = try require(editor.detailPanel)
         let gadget = try editor.layout(editor.add(Gadget(gadgetFrame)))
         let box = try editor.layout(editor.add(Box(gadgetFrame)))
-        let gadgetSize = try require(gadget.sections(in: .of(ArrangeTab.self)).first)
-        let boxSize = try require(box.sections(in: .of(ArrangeTab.self)).first)
+        let gadgetSize = try require(gadget.sections(in: .of(FrameTab.self)).first)
+        let boxSize = try require(box.sections(in: .of(FrameTab.self)).first)
         state.setCollapsed(gadgetSize, true)
         expect(state.isCollapsed(boxSize))
         let counts = gadget.sections(in: .of(GadgetTab.self)).filter { $0.section == "Count" }

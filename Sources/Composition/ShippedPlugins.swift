@@ -6,7 +6,6 @@ import Automation
 import Boards
 import Canvas
 import CanvasRPC
-import Checklists
 import Clipboard
 import ContextMenus
 import CoreGraphics
@@ -60,7 +59,7 @@ public enum ShippedPlugins {
             TopologyPlugin(),
             ArrowsPlugin(), StickyNotesPlugin(), SubboardsPlugin(), SchemasPlugin(),
             // After Validation: what's shown on shapes draws over its outline.
-            ValidationPlugin(), AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin(), ChecklistsPlugin(), TitlesPlugin(),
+            ValidationPlugin(), AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin(), TitlesPlugin(),
             // After Titles, whose names its pills show, and the table of contents, whose rows it names.
             MentionsPlugin(),
             // Getting around a file's boards (a subboard's): opening one, ⌘↑, the path.

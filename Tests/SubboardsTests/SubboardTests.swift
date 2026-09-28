@@ -102,7 +102,7 @@ import Titles
         expectEqual(header.title, "Kitchen")
         expectEqual(header.placeholder, "Untitled Subboard")
         expectEqual(header.systemImage, "rectangle.stack")
-        expectEqual(layout.tabs.map(\.title), ["Board", "Arrange"])
+        expectEqual(layout.tabs.map(\.title), ["Board"])
     },
     test("a double-click, Return and ⌘↓ enter it; ⌘↑ comes back with it selected") {
         let nest = Nest()

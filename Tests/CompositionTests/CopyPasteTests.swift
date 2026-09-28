@@ -3,7 +3,6 @@ import Arrows
 import Canvas
 import CanvasTesting
 import CanvasUI
-import Checklists
 import Clipboard
 import Composition
 import CoreGraphics
@@ -13,6 +12,7 @@ import Selection
 import StickyNotes
 import TableOfContents
 import TestKit
+import Titles
 
 /// The welcome board, its clipboard on a pasteboard of the test's own.
 @MainActor func welcomeBoard(_ pasteboard: NSPasteboard) -> EditorHarness {
@@ -68,16 +68,16 @@ import TestKit
         defer { pasteboard.releaseGlobally() }
         let h = welcomeBoard(pasteboard)
         let note = try require(h.editor.document.shapes.first?.id)
-        h.editor.transact { $0.update(note) { $0[ChecklistProperty.self] = [ChecklistItem(text: "Oat milk")] } }
+        h.editor.transact { $0.update(note) { $0[TitleProperty.self] = "Oat milk" } }
         h.editor.selection = note
         h.editor.copySelection()
         h.editor.paste()
         let copy = try require(h.editor.selection)
-        expectEqual(h.editor.document[copy]?[ChecklistProperty.self]?.map(\.text), ["Oat milk"], "a pasted note keeps its checklist")
+        expectEqual(h.editor.document[copy]?[TitleProperty.self], "Oat milk", "a pasted note keeps its title")
         let codec = BoardCodec(registry: h.editor.registry)
         let data = try codec.encode(h.editor.document)
         let json = try require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        expectEqual(json["format"] as? Int, 3, "a board with added values (the notes' checklists) and metadata, which an app from before either would drop")
+        expectEqual(json["format"] as? Int, 3, "a board with added values (the notes' titles) and metadata, which an app from before either would drop")
         let shapes = try require(json["shapes"] as? [[String: Any]])
         let meta = try require(shapes.last?["meta"] as? [String: [String: Any]])
         expectEqual((meta["clipboard"]?["copiedFrom"] as? [String: Any])?["shape"] as? String, note.description)

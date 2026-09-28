@@ -10,7 +10,7 @@ enum AdornmentStyle {
     static let fill = NSColor(white: 0.25, alpha: 0.9)
     static let hoverFill = NSColor(white: 0.4, alpha: 0.9)
     static let pressedFill = NSColor(white: 0.1, alpha: 0.9)
-    /// Something done (`.success`): a checklist with every item checked.
+    /// Something done (`.success`): a tally with every item done.
     static var successFill: NSColor { .systemGreen }
     /// Between a capsule's ends and its text, in the row.
     static let rowPadding: CGFloat = 7
