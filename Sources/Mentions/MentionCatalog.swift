@@ -1,7 +1,8 @@
 import Canvas
+import DetailPanel
 
 /// Every mentionable shape on the boards of a file the editor can show, ready for the picker to
-/// match: each shape's appearance and board, and its label folded once (`MentionMatcher.Label`),
+/// match: each shape's appearance and board, and its label folded once (`CaretListMatcher.Label`),
 /// the keys of every label back to back in one buffer, so a keystroke reads them in two linear
 /// passes with nothing to retain or allocate per shape. A renamed shape's new keys go at the end;
 /// the buffer is packed again once half of it is keys no shape uses.
@@ -51,7 +52,7 @@ struct MentionCatalog {
             if appearances[slot].label != appearance.label {
                 unused += entries[slot].count
                 let start = keys.count
-                entries[slot].labelLength = MentionMatcher.appendKeys(of: appearance.label, to: &keys)
+                entries[slot].labelLength = CaretListMatcher.appendKeys(of: appearance.label, to: &keys)
                 entries[slot].start = start
                 entries[slot].count = keys.count - start
             }
@@ -59,7 +60,7 @@ struct MentionCatalog {
             appearances[slot] = appearance
         } else {
             let start = keys.count
-            let length = MentionMatcher.appendKeys(of: appearance.label, to: &keys)
+            let length = CaretListMatcher.appendKeys(of: appearance.label, to: &keys)
             slots[id] = entries.count
             counts[board, default: 0] += 1
             entries.append(Entry(id: id, board: board, start: start, count: keys.count - start, labelLength: length,

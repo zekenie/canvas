@@ -123,14 +123,15 @@ public indirect enum SchemaFieldType: Equatable, Sendable {
             guard let options = schema[combinator.rawValue]?.elements else { continue }
             return .choice(combinator, options.enumerated().map { i, option in
                 if let title = option["title"]?.string, !title.allSatisfy(\.isWhitespace) { return title }
-                if let type = option["type"], let names = typeNames(type) { return names.joined(separator: "|") }
+                let names = JSONValues.typeNames(of: option)
+                if !names.isEmpty { return names.joined(separator: "|") }
                 if let ref = option["$ref"]?.string { return SchemaResolver.name(of: ref) }
                 return "option \(i + 1)"
             })
         }
         if let values = schema["enum"]?.elements { return .enumeration(values.map(\.brief)) }
         if let value = schema["const"] { return .constant(value.brief) }
-        var names = schema["type"].flatMap(typeNames) ?? []
+        var names = JSONValues.typeNames(of: schema)
         if names.count > 1 { return .types(names) }
         if names.isEmpty {
             if schema["properties"] != nil || schema["patternProperties"] != nil { names = ["object"] }
@@ -154,13 +155,6 @@ public indirect enum SchemaFieldType: Equatable, Sendable {
 
     /// JSON Schema's seven types: a `type` names one of these, or a list of them.
     public static let jsonTypes: Set<String> = ["string", "number", "integer", "boolean", "null", "object", "array"]
-
-    /// `"string"` or `["string", "null"]`; nil for anything else.
-    private static func typeNames(_ type: JSONNode) -> [String]? {
-        if let name = type.string { return [name] }
-        let names = type.elements?.compactMap(\.string) ?? []
-        return names.isEmpty ? nil : names
-    }
 
     /// How the card says it at a row's end: `string`, `email`, `string|null`, `enum`, `= DE`,
     /// `object`, `string[]`, `object[]`, `array`, `→ money`, `oneOf`, `any`, `never`, and a type

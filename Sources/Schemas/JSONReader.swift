@@ -153,6 +153,42 @@ public enum JSONReader {
         return tokens
     }
 
+    /// The tokens scanned from offset `start` in `bytes` that start before `end`: part of a text
+    /// scanned again from somewhere other than where its tokens began (`JSONCaret`).
+    static func tokens(in bytes: [UInt8], from start: Int, before end: Int) -> [JSONToken] {
+        var scanner = Scanner(bytes)
+        scanner.i = start
+        var tokens: [JSONToken] = []
+        while let token = scanner.next(), token.range.lowerBound < end { tokens.append(token) }
+        return tokens
+    }
+
+    /// Whether `range` of `bytes` is a number as JSON writes one, the whole range:
+    /// `-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?`.
+    static func isNumber(_ bytes: [UInt8], _ range: Range<Int>) -> Bool {
+        var k = range.lowerBound
+        let end = range.upperBound
+        // Each part in turn: its sign, its whole digits, a fraction, an exponent.
+        if k < end, bytes[k] == UInt8(ascii: "-") { k += 1 }
+        var start = k
+        while k < end, bytes[k].isDigit { k += 1 }
+        if k == start || (bytes[start] == UInt8(ascii: "0") && k - start > 1) { return false }
+        if k < end, bytes[k] == UInt8(ascii: ".") {
+            k += 1
+            start = k
+            while k < end, bytes[k].isDigit { k += 1 }
+            if k == start { return false }
+        }
+        if k < end, bytes[k] == UInt8(ascii: "e") || bytes[k] == UInt8(ascii: "E") {
+            k += 1
+            if k < end, bytes[k] == UInt8(ascii: "+") || bytes[k] == UInt8(ascii: "-") { k += 1 }
+            start = k
+            while k < end, bytes[k].isDigit { k += 1 }
+            if k == start { return false }
+        }
+        return k == end
+    }
+
     /// `string` as a JSON string literal, quotes included: `"`, `\` and control characters escaped,
     /// everything else as it is.
     public static func literal(_ string: String) -> String {
@@ -302,7 +338,7 @@ private struct Parser {
             advance()
             return JSONNode(.string(try string(token)), range: token.range)
         case .number:
-            guard isNumber(token.range) else { throw error("Invalid number", at: token.range.lowerBound) }
+            guard JSONReader.isNumber(bytes, token.range) else { throw error("Invalid number", at: token.range.lowerBound) }
             advance()
             return JSONNode(.number(text(token.range)), range: token.range)
         case .literal:
@@ -380,29 +416,6 @@ private struct Parser {
             default: throw error("Expected “,” or “]”", at: next.range.lowerBound)
             }
         }
-    }
-
-    /// JSON's number: `-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?`, the whole token.
-    func isNumber(_ range: Range<Int>) -> Bool {
-        var i = range.lowerBound
-        func digits() -> Int {
-            let start = i
-            while i < range.upperBound, bytes[i].isDigit { i += 1 }
-            return i - start
-        }
-        if bytes[i] == UInt8(ascii: "-") { i += 1 }
-        guard i < range.upperBound, bytes[i].isDigit else { return false }
-        if bytes[i] == UInt8(ascii: "0") { i += 1 } else { _ = digits() }
-        if i < range.upperBound, bytes[i] == UInt8(ascii: ".") {
-            i += 1
-            guard digits() > 0 else { return false }
-        }
-        if i < range.upperBound, bytes[i] == UInt8(ascii: "e") || bytes[i] == UInt8(ascii: "E") {
-            i += 1
-            if i < range.upperBound, bytes[i] == UInt8(ascii: "+") || bytes[i] == UInt8(ascii: "-") { i += 1 }
-            guard digits() > 0 else { return false }
-        }
-        return i == range.upperBound
     }
 
     /// A string token's contents, its escapes decoded.

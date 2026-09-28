@@ -39,14 +39,15 @@ import Validation
 // again, warm, and the minimap's picture of the board entered; a keystroke in the `@` picker and a
 // rename of a shape mentioned 100 times (the rows and validation after it too); the panel of a
 // subboard mentioned 100 times, read after a drag of another note and after renaming one of its
-// mentioners; undo and redo, a drag's in a frame and a tenth of the board's moved or deleted too,
-// and deleting a subboard whose boards hold as many shapes, and its undo and redo; ten subboards in
-// view, each holding as many, their previews filling in; and a `canvas draw` whose shapes are
-// pushed along the grid; and the root crumb's menu inside a subboard, the root's rows after a
-// move and a rename on the board shown. `./build.sh bench` runs these in a release build and holds
-// them to the budgets; `./test.sh` runs them debug and small, so they keep working, and only
-// reports. Reported alone: the inspector's list replaced on a switch, and a crumb's menu shown in
-// the window (InspectorBenchmarks.swift), a chain of 1,000 boards, and a crumb's menu's first read.
+// mentioners; completing a schema card's JSON as long as the model writes it; undo and redo, a
+// drag's in a frame and a tenth of the board's moved or deleted too, and deleting a subboard whose
+// boards hold as many shapes, and its undo and redo; ten subboards in view, each holding as many,
+// their previews filling in; and a `canvas draw` whose shapes are pushed along the grid; and the
+// root crumb's menu inside a subboard, the root's rows after a move and a rename on the board
+// shown. `./build.sh bench` runs these in a release build and holds them to the budgets;
+// `./test.sh` runs them debug and small, so they keep working, and only reports. Reported alone:
+// the inspector's list replaced on a switch, and a crumb's menu shown in the window
+// (InspectorBenchmarks.swift), a chain of 1,000 boards, and a crumb's menu's first read.
 #if DEBUG
 let sizes = [300]
 let holdsToBudgets = false
@@ -87,6 +88,9 @@ enum Budget {
     static let neighbors100 = 1.0
     /// A keystroke in the `@` picker, the `@` that opens it (recent picks and nearby shapes) included.
     static let pickerKeystroke = 2.0
+    /// Completing a schema card's JSON at the caret, in a schema as long as the model writes: a
+    /// keystroke, as in the `@` picker.
+    static let schemaCompletion = pickerKeystroke
     /// What renaming a shape mentioned 100 times adds to the commit, over renaming one mentioned
     /// by none; and to validation's read after it.
     static let renameMentioned = 1.0
@@ -719,6 +723,35 @@ extension Duration {
                 expect(sparseOpening < Budget.pickerKeystroke, "the @ among 3 mentionable shapes of \(size) took \(sparseOpening) ms")
             }
         }
+    },
+    test("completing a schema card's JSON near the end of a schema as long as the model writes costs a keystroke") {
+        // Fields until the text is as long as the model may write; the caret near its end.
+        var fields = #"{"title": "Everything", "type": "object", "properties": {"#
+        var names: [String] = []
+        while fields.utf8.count < SchemaPrompts.toSchemaMaxLength {
+            names.append("field\(names.count)")
+            fields += "\n    \"\(names[names.count - 1])\": {\"type\": \"string\", \"description\": \"Field number \(names.count), kept short\", \"maxLength\": 80},"
+        }
+        let cases: [(what: String, text: String, caret: Int, offered: String)] = [
+            // A keyword being typed in the last field's schema, left open.
+            ("a key typed", fields + "\n    \"last\": {\"type\": \"string\", \"mi", 0, "minLength"),
+            // The root's keywords, beside the members the whole schema holds.
+            ("the root's keys", fields + "\n    \"last\": {}\n  }\n  \n}", -2, "description"),
+            // A required list, which offers every field's name.
+            ("a required name", fields + "\n    \"last\": {}\n  },\n  \"required\": [\"field0\", ]\n}", -3, "field1"),
+        ]
+        var times: [String] = []
+        for (what, text, fromEnd, offered) in cases {
+            let caret = (text as NSString).length + fromEnd
+            var completions: JSONCompletions?
+            let time = median(runs: 21) { completions = SchemaCompletions.completions(in: text, at: caret) }
+            expect(completions?.items.contains { $0.label == offered } == true, what)
+            times.append(String(format: "%@ %6.3f ms", what, time))
+            if holdsToBudgets { expect(time < Budget.schemaCompletion, "completing \(what) in \(text.utf8.count) bytes took \(time) ms") }
+        }
+        let lengths = cases.map(\.text.utf8.count)
+        report(String(format: "a schema card's JSON of %d to %d bytes, %d fields: completing %@ (budget %.0f)",
+                      lengths.min() ?? 0, lengths.max() ?? 0, names.count + 1, times.joined(separator: ", "), Budget.schemaCompletion))
     },
     test("renaming a shape mentioned 100 times costs its commit, and reading the rows and validation after it, little more than renaming one mentioned by none") {
         for size in sizes {

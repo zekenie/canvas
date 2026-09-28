@@ -15,7 +15,8 @@ import Validation
 /// The panel beside a canvas, in an unshown window, with real time (SwiftUI's updates and the
 /// panel's hand-back land as the main run loop runs), and a scripted model. The window is deferred,
 /// never given a place in the window server, so each turn lays its views out without drawing their
-/// layers, which nothing here looks at (a test that reads pixels draws the panel itself).
+/// layers, which nothing here looks at (a test that reads pixels draws the panel itself). A test of
+/// the sync's timer passes a `ManualScheduler` (the panel's hand-back then waits for it too).
 @MainActor
 final class SchemaPanelWindow {
     let model = ScriptedLanguageModel()
@@ -24,8 +25,8 @@ final class SchemaPanelWindow {
     let canvas: CanvasView
     let hosting: NSView
 
-    init(document: CanvasDocument = CanvasDocument()) throws {
-        editor = try schemaEditor(scheduler: TaskScheduler(), model: model, document: document)
+    init(document: CanvasDocument = CanvasDocument(), scheduler: any Scheduler = TaskScheduler()) throws {
+        editor = try schemaEditor(scheduler: scheduler, model: model, document: document)
         canvas = CanvasView(editor: editor)
         canvas.frame = CGRect(x: 0, y: 0, width: 1000 - DetailStyle.idealWidth, height: 800)
         let panel = DetailPanelView(editor: editor) { [unowned canvas, window] in window.makeFirstResponder(canvas) }

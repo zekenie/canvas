@@ -1,6 +1,7 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import DetailPanel
 import Foundation
 import Mentions
 import StickyNotes

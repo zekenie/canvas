@@ -49,10 +49,10 @@ enum MentionStyle {
 
     // MARK: The picker
 
+    /// Its size (`pickerMetrics`): its look is every caret list's (DetailPanel's `CaretListWindow`).
     static let pickerWidth: CGFloat = 280
     static let pickerRowHeight: CGFloat = 24
     static let pickerRowsShown = 8
-    static let pickerCornerRadius: CGFloat = 8
     /// Below the `@`.
     static let pickerOffset: CGFloat = 4
     /// Where the picker looks for the shapes nearest the text's: a square this far out from its

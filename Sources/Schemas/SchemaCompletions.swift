@@ -1,0 +1,138 @@
+import Canvas
+import Foundation
+
+// A schema card's JSON completes as VS Code completes a JSON Schema: the generic engine
+// (`JSONCompleter`) over JSON Schema's own meta-schema (`MetaSchema`), which holds all it knows of
+// JSON Schema as data (the keywords, their descriptions, the values they take, when they matter).
+// Code adds only what a schema can't say of where in the text it is: which names a `required` list
+// can hold (the same object's `properties`), where a `$ref` can point (the root's definitions), and
+// that `$schema` and `$vocabulary` belong at the top (the spec's rule of where, which no meta-schema
+// checks). Offsets are UTF-16, as the code editor's text view counts them.
+
+/// What can be typed where the caret is in a schema card's JSON: keywords with their descriptions,
+/// the values a keyword takes, the fields a `required` list can name, the definitions a `$ref` can
+/// point to.
+public enum SchemaCompletions {
+    /// The engine over the meta-schema, made once.
+    static let engine = JSONCompleter(schema: MetaSchema.root, offers: offers(at:))
+
+    /// What can be typed at the caret at `utf16Caret` in `text`, a schema's JSON, with every range
+    /// in UTF-16 (the completions' range into the text, each item's selection within its insert).
+    /// Nil where nothing can (`JSONCaret.at`), nothing is offered, or the text is too long to color
+    /// (`SchemaCodeColors.maxLength`), as it would be to read at every keystroke.
+    public static func completions(in text: String, at utf16Caret: Int) -> JSONCompletions? {
+        let count = text.utf8.count
+        guard count <= SchemaCodeColors.maxLength, utf16Caret >= 0 else { return nil }
+        // An ASCII text (a schema mostly is) counts alike either way.
+        let isASCII = text.utf16.count == count
+        guard let offset = isASCII ? utf16Caret : TextOffsets.utf8(ofUTF16: utf16Caret, in: Array(text.utf8)),
+              let caret = JSONCaret.at(offset, in: text), var completions = engine.completions(at: caret, in: text) else {
+            return nil
+        }
+        completions.items.removeAll { !belongs($0, at: caret) }
+        guard !completions.items.isEmpty else { return nil }
+        if !isASCII {
+            let utf16 = SchemaCodeColors.UTF16Offsets(text, utf8Count: count)
+            completions.range = utf16[completions.range.lowerBound]..<utf16[completions.range.upperBound]
+        }
+        for i in completions.items.indices {
+            let insert = completions.items[i].insert, selection = completions.items[i].selection
+            guard insert.utf16.count != insert.utf8.count else { continue }
+            let utf16 = SchemaCodeColors.UTF16Offsets(insert, utf8Count: insert.utf8.count)
+            completions.items[i].selection = utf16[selection.lowerBound]..<utf16[selection.upperBound]
+        }
+        return completions
+    }
+
+    // MARK: What only code knows
+
+    /// The meta-schema's schemas of `required` and `$ref`: a place held to one of them is in that
+    /// keyword's value. (A schema is known by where it's written.)
+    private static let requiredKeyword = MetaSchema.root["properties"]?["required"]
+    private static let refKeyword = MetaSchema.root["properties"]?["$ref"]
+    /// What `#` is offered as, beside a `$ref`.
+    static let wholeSchema = "Whole schema"
+
+    /// A `required` list's names, and a `$ref`'s targets.
+    static func offers(at place: JSONCompletionPlace) -> [JSONCompletionOffer] {
+        let caret = place.caret
+        switch caret.position {
+        case .element where caret.path.last == .member("required") && holds(place.schemas, requiredKeyword):
+            return requirable(caret)
+        case .value(of: "$ref") where holds(place.valueSchemas, refKeyword):
+            return targets(in: caret.root)
+        default:
+            return []
+        }
+    }
+
+    private static func holds(_ schemas: [JSONNode], _ keyword: JSONNode?) -> Bool {
+        guard let keyword else { return false }
+        return schemas.contains { $0.range == keyword.range }
+    }
+
+    /// Whether a candidate goes where it's offered, as the spec has it (core §8.1): `$vocabulary`
+    /// only in the root schema (never in a subschema), and `$schema` only in a schema resource's
+    /// root, the root or a subschema with an `$id`.
+    static func belongs(_ item: JSONCompletionItem, at caret: JSONCaret) -> Bool {
+        guard case .key = caret.position, !caret.path.isEmpty else { return true }
+        switch item.label {
+        case "$vocabulary": return false
+        case "$schema": return caret.siblings.contains { $0.key == "$id" }
+        default: return true
+        }
+    }
+
+    /// The names in the `properties` of the object whose `required` list the caret is in, that the
+    /// list doesn't hold yet, each with its type as the card says it.
+    static func requirable(_ caret: JSONCaret) -> [JSONCompletionOffer] {
+        guard caret.containers.count >= 2 else { return [] }
+        let object = caret.containers[caret.containers.count - 2]
+        let listed = Set(caret.elements.compactMap(\.string))
+        var named = Set<String>()
+        return (object["properties"]?.members ?? []).compactMap { property in
+            guard !listed.contains(property.key), named.insert(property.key).inserted else { return nil }
+            return JSONCompletionOffer(string: property.key, detail: SchemaFieldType(property.value).label)
+        }
+    }
+
+    /// Where a `$ref` can point: the whole schema, and each of the root's definitions (`$defs`, and
+    /// the older `definitions`), each with its type as the card says it.
+    static func targets(in root: JSONNode) -> [JSONCompletionOffer] {
+        var offers = [JSONCompletionOffer(string: "#", detail: wholeSchema)]
+        for keyword in ["$defs", "definitions"] {
+            for definition in root[keyword]?.members ?? [] {
+                offers.append(JSONCompletionOffer(string: "#/\(keyword)/\(pointerToken(definition.key))",
+                                                  detail: SchemaFieldType(definition.value).label))
+            }
+        }
+        return offers
+    }
+
+    /// A name as a JSON pointer's step in a URI's fragment: `~` and `/` escaped as the pointer
+    /// escapes them, then what a fragment can't hold percent-encoded, as `SchemaResolver` reads it.
+    /// (The core writes a `$ref` the same way, `JSONPointer.escaped` then `fragment`, which it keeps
+    /// to itself.)
+    static func pointerToken(_ name: String) -> String {
+        let escaped = name.replacingOccurrences(of: "~", with: "~0").replacingOccurrences(of: "/", with: "~1")
+        return escaped.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed) ?? escaped
+    }
+}
+
+/// UTF-16 offsets (`NSString`'s) as UTF-8 ones: the other way is `SchemaCodeColors.UTF16Offsets`.
+enum TextOffsets {
+    /// The UTF-8 offset of UTF-16 offset `target`, counted a scalar at a time from the text's start:
+    /// the start of the character it's in (a surrogate pair's second half is its first's); nil past
+    /// the end.
+    static func utf8(ofUTF16 target: Int, in bytes: [UInt8]) -> Int? {
+        var utf16 = 0, i = 0
+        while i < bytes.count {
+            let lead = bytes[i]
+            let units = lead >= 0xF0 ? 2 : 1
+            if utf16 + units > target { return i }
+            utf16 += units
+            i += lead < 0x80 ? 1 : lead < 0xE0 ? 2 : lead < 0xF0 ? 3 : 4
+        }
+        return target == utf16 ? bytes.count : nil
+    }
+}

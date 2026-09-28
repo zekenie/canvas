@@ -12,15 +12,22 @@ extension CodeTab: DetailTab { static var title: String { "Code" } }
 /// How often each box in the Code tab said it was done.
 @MainActor var codeCommits = 0
 @MainActor var wordCommits = 0
+/// How often the code editor wrote its text.
+@MainActor var codeWrites = 0
+/// What the code editor said of its completion list, in order: open (true), closed (false).
+@MainActor var codeCompleting: [Bool] = []
 
-/// A Code tab for the gadget: its remark as code (read-only while its count isn't 0, as a box a
-/// model is writing is), and its name as words that commit.
+/// A Code tab for the gadget: its remark as code, which completes fruit (read-only while its count
+/// isn't 0, as a box a model is writing is), and its name as words that commit.
 struct CodeBoxesPlugin: CanvasPlugin {
     var id: PluginID { "code-boxes" }
     func register(into registrar: inout PluginRegistrar) {
         registrar.details(Gadget.self) {
             DetailSection("Code", in: CodeTab.self) { $gadget in
-                DetailCodeEditor($gadget.remark, coloring: digitsAndXs, onCommit: { codeCommits += 1 })
+                let remark = $gadget.remark
+                DetailCodeEditor(Binding(get: { remark.wrappedValue }, set: { codeWrites += 1; remark.wrappedValue = $0 }),
+                                 coloring: digitsAndXs, completions: fruitCompletions, onCompleting: { codeCompleting.append($0) },
+                                 onCommit: { codeCommits += 1 })
                     .detailUpdating(gadget.count > 0)
             }
             DetailSection("Words", in: CodeTab.self) { $gadget in
@@ -55,6 +62,8 @@ extension PanelWindow {
         window.spin { self.code != nil && self.words != nil }
         codeCommits = 0
         wordCommits = 0
+        codeWrites = 0
+        codeCompleting = []
         return id
     }
 
