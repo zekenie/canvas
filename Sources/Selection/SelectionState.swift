@@ -24,6 +24,8 @@ final class SelectionState {
     @ObservationIgnored private var press: Press?
     /// Going back, which records nothing.
     @ObservationIgnored private var isGoingBack = false
+    /// Doing what's one step back of its own (`asOneStep`), which records nothing else.
+    @ObservationIgnored private var isOneStep = false
     /// A board was just shown, and nothing has been selected or pressed there since: the arrival's
     /// empty selection, which undo's restoring a selection there doesn't make a step of its own.
     @ObservationIgnored private var hasJustArrived = false
@@ -135,9 +137,10 @@ final class SelectionState {
 
     /// The selection is about to change from `previous` to `next`: `previous` goes on the stack,
     /// with the camera as it is now (or, mid-animation, where it's headed), unless this is going
-    /// back, it isn't the press's first change, or it only reorders the shapes.
+    /// back or part of one step (`asOneStep`), it isn't the press's first change, or it only
+    /// reorders the shapes.
     private func record(leaving previous: [ShapeID], for next: [ShapeID]) {
-        guard !isGoingBack else { return }
+        guard !isGoingBack, !isOneStep else { return }
         if let current = press, !current.isPressing, editor.session == nil { press = nil }
         guard press?.isRecorded != true, Set(previous) != Set(next) else { return }
         press?.isRecorded = true
@@ -157,6 +160,18 @@ final class SelectionState {
         let kept = entry.selection.filter { isSelectable(id: $0) }
         guard entry.selection.isEmpty || !kept.isEmpty, Set(kept) != Set(selectedIDs) else { return nil }
         return kept
+    }
+
+    /// Runs `body` as one step back, to the board and selection before it, with the camera as it
+    /// was (or where it was headed), however many selections and boards it goes through; none if it
+    /// leaves the board and the selection as they were.
+    func asOneStep(_ body: () -> Void) {
+        guard !isOneStep else { return body() }
+        let entry = SelectionHistory.Entry(board: editor.board, selection: selectedIDs, camera: editor.cameraTarget)
+        isOneStep = true
+        body()
+        isOneStep = false
+        if editor.board != entry.board || Set(selectedIDs) != Set(entry.selection) { history.push(entry) }
     }
 
     /// Whether `goBack` would change the selection, or the board: some step on the stack would be
@@ -219,13 +234,14 @@ extension SelectionState: EditorService {
     }
 
     /// Another board is shown: what was selected on the board left is a step back (even nothing
-    /// selected, so Back returns to that board), unless this is going back, or a file put in place
-    /// (opening one on the board left open, or a revert that took the board shown) came with the
-    /// switch, which no one took; nothing is selected on arrival, which isn't a step of its own; and
-    /// the press, the hover, the handle and the canvas buttons, all the board left's, are let go.
+    /// selected, so Back returns to that board), unless this is going back, part of one step
+    /// (`asOneStep`: going into a shape), or a file put in place (opening one on the board left
+    /// open, or a revert that took the board shown) came with the switch, which no one took;
+    /// nothing is selected on arrival, which isn't a step of its own; and the press, the hover, the
+    /// handle and the canvas buttons, all the board left's, are let go.
     /// Keeps no state per board, so the switch's change set is never worked out.
     func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
-        if !isGoingBack && !change.isFileReplaced {
+        if !isGoingBack && !isOneStep && !change.isFileReplaced {
             history.push(SelectionHistory.Entry(board: change.from, selection: selectedIDs, camera: change.leftCamera))
         }
         // Going back arrives at a step of its own, what it selects there.

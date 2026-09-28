@@ -131,6 +131,24 @@ extension CanvasEditor {
         expectEqual(h.editor.selection, f.outer)
     },
 
+    test("a note mentions a subboard by its title, picked with @ on its board; a double-click on the pill enters it, and Back returns to the note") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let f = PlansFile()
+        let h = try f.harness(pasteboard)
+        let mentions = try require(h.editor.mentions)
+        expectEqual(mentions.candidates(matching: "Plans", in: AnyMentionable.self, for: f.outer).all.first?.id, f.plans)
+        h.editor.transact { $0.update(f.outer, as: StickyNote.self) { $0.props.text = MentionText([.text("In "), .mention(f.plans, label: "Plans")]) } }
+        let pill = try require(h.editor.mentionPills(of: f.outer).first)
+        expect(pill.isLive)
+        h.editor.lock([f.outer])                                    // a double-click on an editable note's pill is its text view's
+        h.click(at: h.view(CGPoint(x: pill.frame.midX, y: pill.frame.midY)), clickCount: 2)
+        expectEqual(h.editor.board, f.plansBoard)
+        h.editor.goBack()
+        expectEqual(h.editor.board, .root)
+        expectEqual(h.editor.selection, f.outer)
+    },
+
     test("copying a subboard with a note that mentions one beside it: every copy mentions the copies copied with it, on any board of the tree, and the rest what it did") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

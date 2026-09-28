@@ -11,8 +11,8 @@ import Titles
 // Mentions in a file of several boards, with CanvasTesting's pockets: a mention names a shape
 // anywhere in the file, and shows it as it's called now, on the canvas, in the rows and in the
 // state; a double-click on its pill shows its board first; a board deleted with its owner takes
-// its shapes' names with it until undo brings them back. The index and the picker are the board
-// shown's.
+// its shapes' names with it until undo brings them back. The index is the board shown's; the
+// picker's catalog is the file's.
 
 /// A file whose root holds a pocket, holding plate "Groceries" on its board, and a jot at (20, 20)
 /// whose text mentions the plate (by the name "Old name") and token "Milk", on the root, far off;
@@ -24,8 +24,9 @@ import Titles
     var state: MentionState { h.editor.mentionState }
     var pocketBoard: BoardID { BoardID(owner: pocket) }
 
-    /// `holdsGroceries` false leaves the plate out of the file.
-    init(holdsGroceries: Bool = true, groceriesOnRoot: Bool = false) throws {
+    /// `holdsGroceries` false leaves the plate out of the file; `more` are plugins after the
+    /// standard list and pockets.
+    init(holdsGroceries: Bool = true, groceriesOnRoot: Bool = false, more: [any CanvasPlugin] = []) throws {
         var plate = ShapeRecord(id: groceries, Plate(CGRect(x: 1000, y: 1000, width: 120, height: 80)))
         plate[TitleProperty.self] = "Groceries"
         let text = mentioning([.text("Ask "), .mention(groceries, label: "Old name"), .text(" and "), .mention(milk, label: "Milk")])
@@ -37,7 +38,7 @@ import Titles
         if holdsGroceries {
             if groceriesOnRoot { root.append(AnyShapeRecord(plate)) } else { inside.append(AnyShapeRecord(plate)) }
         }
-        h = try EditorHarness(plugins: mentionPlugins([PocketsPlugin()]),
+        h = try EditorHarness(plugins: mentionPlugins([PocketsPlugin()] + more),
                               file: CanvasFile(root: CanvasDocument(shapes: root), children: [pocket: CanvasDocument(shapes: inside)]))
         editor.viewportDidResize(to: CGSize(width: 800, height: 600))
     }
@@ -154,6 +155,34 @@ import Titles
         expectEqual(b.editor.selection, b.groceries)
     },
 
+    test("a mention of a kind followed by opening it goes into it: a double-click on its pill, or following it from the text, shows its board, one step back") {
+        let pocket = ShapeID(), jot = ShapeID()
+        let entered = Contributor(id: "entered-pockets") { r in
+            r.opens(Pocket.self, "Open") { pocket, editor in editor.showBoard(BoardID(owner: pocket.id)) }
+            r.mentionable(Pocket.self, following: .opens)
+        }
+        let root = [AnyShapeRecord(ShapeRecord(id: pocket, Pocket(CGRect(x: 1200, y: 1200, width: 100, height: 100)))),
+                    AnyShapeRecord(ShapeRecord(id: jot, Jot(CGRect(x: 20, y: 20, width: 200, height: 200),
+                                                            text: mentioning([.text("See "), .mention(pocket, label: "Pocket")]))))]
+        let h = try EditorHarness(plugins: mentionPlugins([PocketsPlugin(), entered]), file: CanvasFile(root: CanvasDocument(shapes: root)))
+        h.editor.viewportDidResize(to: CGSize(width: 800, height: 600))
+        let pill = try require(h.editor.mentionPills(of: jot).first)
+        expect(pill.isLive)
+        h.click(at: h.view(CGPoint(x: pill.frame.midX, y: pill.frame.midY)), clickCount: 2)
+        expectEqual(h.editor.board, BoardID(owner: pocket))
+        h.editor.goBack()
+        expectEqual(h.editor.board, .root, "one step back")
+        expectEqual(h.editor.selection, jot, "to the jot the press selected, not the pocket going into it passed through")
+
+        let mentions = try require(h.editor.mentions)
+        mentions.follow(pocket)
+        h.wait(10)
+        expectEqual(h.editor.board, BoardID(owner: pocket))
+        h.editor.goBack()
+        expectEqual(h.editor.board, .root)
+        expectEqual(h.editor.selection, jot)
+    },
+
     test("a mention of a shape on a board the app can't show (its owner not in the file, or of a kind that owns none) is unavailable: not live, not followed, drawn as missing") {
         let hidden = ShapeID(), held = ShapeID(), token = ShapeID(), jot = ShapeID(), orphanBoard = ShapeID()
         @MainActor func plate(_ id: ShapeID, _ title: String) -> AnyShapeRecord {
@@ -190,53 +219,69 @@ import Titles
         expectEqual(h.editor.selectedShapeIDs, [jot])
     },
 
-    test("entering a board for the first time reads its mention text at once, and its catalog on the scheduler's next turn, or at the first @ if that comes first") {
+    test("the catalog is the file's, read as the editor opens: entering a board reads its mention text and none of the catalog, nor does the turn after, the first @, or going back") {
         #if DEBUG
         let b = try PocketBoard()
         let entries = b.state.entriesRead, texts = b.state.textsRead
+        expectEqual(entries, 4, "every mentionable shape of the file, on either board: the jots, the token and the plate")
         expect(b.editor.showBoard(b.pocketBoard))
         expect(b.state.textsRead > texts, "the mention text is read on the way in")
         expectEqual(b.state.mentions(in: b.inner), [b.milk])
         expectEqual(b.row(b.inner), "@Milk")
-        expectEqual(b.state.entriesRead, entries, "no catalog entry is read on the way in")
         b.h.wait(0)
-        let read = b.state.entriesRead
-        expect(read > entries, "read on the scheduler's next turn")
         expectEqual(b.state.candidates(matching: "Groceries", in: AnyMentionable.self, for: b.inner).all.map(\.id), [b.groceries])
-        expectEqual(b.state.entriesRead, read, "and not again at the first @")
         expect(b.editor.showBoard(.root))
         expect(b.editor.showBoard(b.pocketBoard))
         b.h.wait(0)
-        expectEqual(b.state.entriesRead, read, "nor on going back to it")
-
-        // The first @ before that turn reads it then, and the turn reads nothing more.
-        let c = try PocketBoard()
-        let before = c.state.entriesRead
-        expect(c.editor.showBoard(c.pocketBoard))
-        expectEqual(c.state.candidates(matching: "Groceries", in: AnyMentionable.self, for: c.inner).all.map(\.id), [c.groceries])
-        let queried = c.state.entriesRead
-        expectEqual(queried - before, read - entries, "the same catalog, read at the query")
-        c.h.wait(0)
-        expectEqual(c.state.entriesRead, queried)
-
-        // Left before that turn, it's kept unread, and read at the first @ on going back.
-        let d = try PocketBoard()
-        expect(d.editor.showBoard(d.pocketBoard))
-        expect(d.editor.showBoard(.root))
-        expectEqual(d.state.candidates(matching: "Milk", in: AnyMentionable.self, for: d.jot).all.map(\.id), [d.milk], "the root's catalog, as it was kept")
-        expect(d.editor.showBoard(d.pocketBoard))
-        expectEqual(d.state.candidates(matching: "Groceries", in: AnyMentionable.self, for: d.inner).all.map(\.id), [d.groceries])
+        expectEqual(b.state.entriesRead, entries, "no entry read again")
         #endif
     },
 
-    test("the @ picker lists the shapes on the board shown, not those on other boards") {
+    test("the @ picker lists the mentionable shapes on every board of the file it can show, the board shown's first; not those on a board it can't show") {
         let b = try PocketBoard()
-        let root = b.state.candidates(matching: "Groceries", in: AnyMentionable.self, for: b.jot).all.map(\.id)
-        expect(!root.contains(b.groceries), "\(root)")
+        let fromRoot = { (query: String) in b.state.candidates(matching: query, in: AnyMentionable.self, for: b.jot).matches.map(\.id) }
+        expectEqual(fromRoot("Groceries"), [b.groceries], "on the pocket's board")
         expect(b.editor.showBoard(b.pocketBoard))
-        let inside = b.state.candidates(matching: "Groceries", in: AnyMentionable.self, for: b.inner).all.map(\.id)
-        expectEqual(inside, [b.groceries])
-        let milk = b.state.candidates(matching: "Milk", in: AnyMentionable.self, for: b.inner).all.map(\.id)
-        expect(!milk.contains(b.milk), "the token is on the root: \(milk)")
+        expectEqual(b.state.candidates(matching: "Milk", in: AnyMentionable.self, for: b.inner).matches.map(\.id), [b.milk], "on the root")
+        expect(b.editor.showBoard(.root))
+
+        // Another "Groceries" on the root, far off: the root's comes first there, the pocket's inside.
+        var far = ShapeRecord(Plate(CGRect(x: 9000, y: 9000, width: 120, height: 80)))
+        far[TitleProperty.self] = "Groceries"
+        b.editor.transact { $0.insert(far) }
+        expectEqual(fromRoot("Groceries"), [far.id, b.groceries])
+        expect(b.editor.showBoard(b.pocketBoard))
+        expectEqual(b.state.candidates(matching: "Groceries", in: AnyMentionable.self, for: b.inner).matches.map(\.id), [b.groceries, far.id])
+
+        // Not a shape on a board the app can't show: one whose owner isn't in the file.
+        let orphan = ShapeID(), hidden = ShapeID()
+        var plate = ShapeRecord(id: hidden, Plate(CGRect(x: 0, y: 0, width: 120, height: 80)))
+        plate[TitleProperty.self] = "Hidden"
+        let root = [AnyShapeRecord(ShapeRecord(id: b.jot, Jot(CGRect(x: 20, y: 20, width: 200, height: 200))))]
+        let h = try EditorHarness(plugins: mentionPlugins([PocketsPlugin()]),
+                                  file: CanvasFile(root: CanvasDocument(shapes: root), children: [orphan: CanvasDocument(shapes: [AnyShapeRecord(plate)])]))
+        expectEqual(h.editor.mentionState.candidates(matching: "Hidden", in: AnyMentionable.self, for: b.jot).matches.map(\.id), [])
+    },
+
+    test("an empty @ lists what's nearby on the board shown, then the boards it's inside, the board shown's own first") {
+        let mentionablePockets = Contributor(id: "mentionable-pockets") { $0.mentionable(Pocket.self) }
+        let b = try PocketBoard(more: [mentionablePockets])
+        expect(b.editor.showBoard(b.pocketBoard))
+        let found = b.state.candidates(matching: "", in: AnyMentionable.self, for: b.inner)
+        expectEqual(found.nearby.map(\.id), [b.groceries, b.pocket], "the plate beside it, then the pocket it's in")
+    },
+
+    test("the catalog follows commits on every board: a rename written to another board is found by its new name, a board deleted with its owner takes its shapes out, and undo brings them back") {
+        let b = try PocketBoard()
+        let find = { (query: String) in b.state.candidates(matching: query, in: AnyMentionable.self, for: b.jot).matches.map(\.id) }
+        b.editor.transact(on: b.pocketBoard, "Rename") { $0.update(b.groceries) { $0[TitleProperty.self] = "Errands" } }
+        expectEqual(find("Errands"), [b.groceries])
+        expectEqual(find("Groceries"), [])
+        b.editor.transact { $0.delete([b.pocket]) }
+        expectEqual(find("Errands"), [])
+        b.editor.undo()
+        expectEqual(find("Errands"), [b.groceries])
+        b.editor.redo()
+        expectEqual(find("Errands"), [])
     },
 ])

@@ -4,6 +4,7 @@ import CanvasTesting
 import CoreGraphics
 import DetailPanel
 import Keyboard
+import Mentions
 import Selection
 import Subboards
 import TableOfContents
@@ -65,6 +66,33 @@ import Titles
         expectEqual(label.text, "Kitchen")
         expect(!label.isPlaceholder)
         expectEqual(label.systemImage, "rectangle.stack")
+    },
+    test("it's mentioned by its title, else \"Untitled Subboard\", with its symbol; following a mention enters it, one step back, from its board or another") {
+        let nest = Nest()
+        let h = try nestHarness(nest)
+        let mentions = try require(h.editor.mentions)
+        let looks = try require(mentions.resolve(nest.s).appearance)
+        expectEqual(looks.label, "Untitled Subboard")
+        expect(looks.isPlaceholder)
+        expectEqual(looks.systemImage, "rectangle.stack")
+        h.editor.transact("Rename") { $0.update(nest.s) { $0[TitleProperty.self] = "Kitchen" } }
+        expectEqual(mentions.resolve(nest.s).appearance?.label, "Kitchen")
+
+        h.editor.selection = nest.a
+        mentions.follow(nest.s)
+        h.wait(0)
+        expectEqual(h.editor.board, nest.sBoard, "entered")
+        h.editor.goBack()
+        expectEqual(h.editor.board, .root, "one step back")
+        expectEqual(h.editor.selectedShapeIDs, [nest.a], "to what was selected where it was followed from")
+
+        // T, inside S, from the root: through S's board into T's, still one step.
+        mentions.follow(nest.t)
+        h.wait(0)
+        expectEqual(h.editor.boardPath, [.root, nest.sBoard, nest.tBoard])
+        h.editor.goBack()
+        expectEqual(h.editor.board, .root)
+        expectEqual(h.editor.selectedShapeIDs, [nest.a])
     },
     test("its panel's header is a TitleHeader with its placeholder and symbol, and it has a Board tab") {
         let nest = Nest()

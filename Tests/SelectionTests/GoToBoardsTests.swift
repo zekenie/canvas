@@ -103,4 +103,46 @@ private struct Pocketed {
         expectEqual(h.editor.board, .root)
         expectEqual(h.editor.selectedShapeIDs, [tree.a], "back to the face's shape")
     },
+    test("going into a pocket shows its board, one step back to where it was gone into from: from its board, from another, or with it selected already") {
+        let boards = PocketBoards()
+        let h = try pocketsHarness(boards)
+        h.editor.viewportDidResize(to: view)
+        h.editor.selection = boards.a
+        h.editor.goInto(boards.p)
+        expectEqual(h.editor.board, boards.pBoard)
+        h.editor.goBack()
+        expectEqual(h.editor.board, .root, "one step back")
+        expectEqual(h.editor.selectedShapeIDs, [boards.a], "not to P selected, which going to it passed through")
+
+        // Q, on P's board, from the root: through P's board into Q's, still one step.
+        h.editor.goInto(boards.q)
+        expectEqual(h.editor.boardPath, [.root, boards.pBoard, BoardID(owner: boards.q)])
+        h.editor.goBack()
+        expectEqual(h.editor.board, .root)
+        expectEqual(h.editor.selectedShapeIDs, [boards.a])
+
+        // P selected and in view already: going to it takes no step, so showing its board is the
+        // step, as opening it is.
+        h.editor.selection = boards.p
+        h.editor.goInto(boards.p)
+        expectEqual(h.editor.board, boards.pBoard)
+        h.editor.goBack()
+        expectEqual(h.editor.board, .root)
+        expectEqual(h.editor.selectedShapeIDs, [boards.p])
+    },
+    test("going into a shape that opens by editing edits it, selected; one that doesn't open is only gone to; none while a press runs") {
+        let boards = PocketBoards()
+        let h = try pocketsHarness(boards)
+        h.editor.goInto(boards.c)
+        expectEqual(h.editor.editingShapeID, boards.c)
+        expectEqual(h.editor.selectedShapeIDs, [boards.c])
+        h.editor.goInto(boards.a)
+        expectEqual(h.editor.editingShapeID, nil, "going ends editing")
+        expectEqual(h.editor.selectedShapeIDs, [boards.a])
+        expectEqual(h.editor.board, .root)
+        h.editor.session = TranslatingSession(ids: [boards.a], from: .zero, in: h.editor)
+        h.editor.goInto(boards.p)
+        expectEqual(h.editor.board, .root)
+        h.editor.session = nil
+    },
 ])

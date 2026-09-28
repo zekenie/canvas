@@ -47,6 +47,20 @@ extension CanvasEditor {
         if !isReadablyInView(here) { reveal(here) }
     }
 
+    /// Goes into a shape, as following a link to a shape that's opened rather than looked at does (a
+    /// mention of a subboard enters its board): goes to it (`goTo`), then opens it there (`open`),
+    /// as one step back, to the board and selection it was followed from, whatever boards it went
+    /// through. A shape that doesn't open (`canOpen`) is only gone to. Does nothing mid-gesture, or
+    /// when the shape isn't on a board it can show.
+    public func goInto(_ id: ShapeID) {
+        guard session == nil else { return }
+        let go = { [self] in
+            goTo([id])
+            if canOpen(id) { open(id) }
+        }
+        if let selectionState { selectionState.asOneStep(go) } else { go() }
+    }
+
     /// Where `reveal` takes the camera to show `bounds`; nil before the view has a size.
     private func revealCamera(fitting bounds: CGRect) -> Camera? {
         let size = viewportSize

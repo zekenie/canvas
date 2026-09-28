@@ -16,7 +16,8 @@ struct MentionFace: Hashable, Sendable {
 /// - a click edits the shape from the pill (`beginEditing(_:at:)`), whose text view selects the
 ///   pill there: a pill is selected as text is, never followed on a single click. A read-only shape
 ///   (a locked one) isn't asked to, since a refused edit is a try to change it, and a click isn't;
-/// - a double-click on a live one goes to what it names (`goTo`), and Back comes back. On a shape
+/// - a double-click on a live one goes to what it names (`goTo`), or into it for a kind followed so
+///   (`MentionFollowing.opens`: a subboard shows its board), and Back comes back. On a shape
 ///   that's edited, the click before it opened the text view, which takes the second press, so
 ///   this is what a read-only shape's pill does. On one naming a shape that isn't there, nothing;
 /// - a double-click on a live one naming a shape on another board of the file goes there too,
@@ -30,7 +31,7 @@ func registerMentionFaces(into registrar: inout PluginRegistrar) {
                              if !editor.isReadOnly(face.shape) { editor.beginEditing(face.shape, at: face.center) }
                          },
                          doubleClick: { face, editor in
-                             if face.isLive { editor.goTo([face.target]) }
+                             if face.isLive { editor.followMention(of: face.target) }
                          },
                          hovering: { face, editor in face.isLive && editor.document[face.target] != nil ? face.target : nil })
 }
