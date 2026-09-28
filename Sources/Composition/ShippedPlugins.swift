@@ -26,6 +26,7 @@ import Rectangles
 import Reordering
 import Schemas
 import Selection
+import Snapping
 import StickyNotes
 import Subboards
 import SwiftUI
@@ -64,6 +65,9 @@ public enum ShippedPlugins {
             BoardsPlugin(),
             ValidationDetailsPlugin(), ValidationContentsPlugin(), ClipboardPlugin(pasteboard: pasteboard),
             LockingPlugin(),
+            // What a drag moves snaps to the shapes in view: their edges, their middles and the spaces
+            // between them.
+            SnappingPlugin(),
             // Ports, whose arrows the bridge draws. After Adornments: a shape's dots draw above its
             // adornments (the lock chip among them), and are found before them.
             PortsPlugin(), ArrowPortsPlugin(),

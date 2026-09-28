@@ -17,6 +17,7 @@ import Locking
 import Mentions
 import Schemas
 import Selection
+import Snapping
 import StickyNotes
 import Subboards
 import TableOfContents
@@ -484,6 +485,47 @@ extension Duration {
             }
         }
     },
+    test("a drag that snaps with every shape of the board in view: its first event, which reads them, fits in a frame, and each event after costs its input's budget") {
+        let viewport = CGSize(width: 1200, height: 800)
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let clock = ContinuousClock()
+        for size in sizes {
+            // Ellipses 60 × 40, 96 apart in rows of 125: 10,000 fill 12,000 × 7,680, all in view at 10%.
+            let shapes = (0..<size).map { i in
+                AnyShapeRecord(ShapeRecord(Ellipse(frame: CGRect(x: CGFloat(i % 125) * 96, y: CGFloat(i / 125) * 96, width: 60, height: 40))))
+            }
+            let h = EditorHarness { CanvasEditor(registry: registry, document: CanvasDocument(shapes: shapes), scheduler: $0) }
+            h.editor.viewportDidResize(to: viewport)
+            h.editor.camera = Camera(fitting: h.editor.shapeBounds, in: viewport, inset: 0)
+            let first = try require(h.editor.document.shapes.first?.box)
+            let center = h.view(CGPoint(x: first.midX, y: first.midY))
+            // A lone box follows the pointer from the press, and snaps once the pointer is past the
+            // drag threshold: that event reads what's in view. Each drag is undone for the next.
+            var reads: [Double] = []
+            for run in 0..<11 {
+                h.press(at: center)
+                reads.append(clock.measure { h.drag(to: center + CGPoint(x: 6, y: CGFloat(run % 3))) }.milliseconds)
+                h.release()
+                h.editor.undo()
+            }
+            let read = reads.sorted()[reads.count / 2]
+            var step = 0
+            h.press(at: center)
+            h.drag(to: center + CGPoint(x: 6, y: 0))
+            let after = median(runs: 21) {
+                step += 1
+                h.drag(to: center + CGPoint(x: 6 + CGFloat(step % 20) / 2, y: CGFloat(step % 7) / 2))
+            }
+            expect(!h.editor.snapGuides.isEmpty, "the drag snaps")
+            h.release()
+            report(String(format: "%6d shapes in view (%.0f%%): a drag's first event that snaps, reading them, %6.3f ms (budget %.0f); each event after %6.3f (budget %.0f)",
+                          size, h.editor.camera.zoom * 100, read, Budget.frame, after, Budget.dragInput))
+            if holdsToBudgets {
+                expect(read < Budget.frame, "a drag's first event that snaps, with \(size) shapes in view, took \(read) ms")
+                expect(after < Budget.dragInput, "a drag event that snaps, with \(size) shapes in view, took \(after) ms")
+            }
+        }
+    },
     test("a hover on a note's dot, and a drag from it drawing an arrow across the board, each with the whole canvas redrawn, fit in a frame") {
         let viewport = CGSize(width: 1200, height: 800)
         let context = try bitmapContext(viewport)
@@ -788,7 +830,9 @@ extension Duration {
             }) { rows = contents.entries }
             h.release()
             expectEqual(rowCount(rows), h.editor.document.shapes.count, "every shape of the board shown listed")
-            expectEqual(h.editor.document[note.id]?.box?.origin.x, (note.box?.origin.x ?? 0) + CGFloat(step), "the drag moved the note")
+            // Where the pointer put it, or snapped within 8 points of there to a shape in view.
+            let moved = try require(h.editor.document[note.id]?.box?.origin.x) - (note.box?.origin.x ?? 0)
+            expect(abs(moved - CGFloat(step)) <= 8, "the drag moved the note \(moved), the pointer \(step)")
             return (hover, drag, input, afterDrag)
         }
         for size in sizes {

@@ -75,6 +75,7 @@ check before running it again). To run it as just `canvas`, put the link on your
 | Add to or remove from the selection | ⇧-click (or ⌘-click) a shape |
 | Select all | ⌘A |
 | Move shapes | Drag a shape. With several selected, drag any of them, or the space between them, to move them all; Escape puts them back |
+| Line shapes up | Drag near other shapes: edges and middles snap to theirs, and to even spaces between them, with red guides. Once dragging, hold ⌘ (or ⌃) to move freely |
 | Edit a note | Double-click it, or select it and press Return; Escape to finish |
 | Edit a shape's details | Select it; the detail panel on the right edits it. Escape gives the keyboard back to the canvas |
 | Show or hide the detail panel | ⌃⌘I, or the Details button in the toolbar |
@@ -140,6 +141,8 @@ Sources/
                         on channels that say what may connect to what
   Automation/           the command line's horizontal: every command canvas runs, draw and kinds its own
   LanguageModels/       a horizontal that lends every editor a language model (Claude Haiku), its key in Settings
+  Snapping/             a horizontal: what a drag moves snaps to the shapes in view (edges, middles, even
+                        spaces), with guides
   ValidationDetails/    a bridge between two horizontals: validation issues in the panel's Issues tab
   ValidationContents/   a bridge between two horizontals: a dot on the row of each shape with issues
   ArrowPorts/           a bridge: arrows are what a drag from a port draws, bound only where its channel goes
