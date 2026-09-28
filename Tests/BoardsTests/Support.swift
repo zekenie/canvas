@@ -119,12 +119,17 @@ extension EditorHarness {
 @MainActor
 final class PathWindow {
     let editor: CanvasEditor
-    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 900, height: 120), styleMask: [.titled], backing: .buffered, defer: false)
+    let window: NSWindow
     let hosting: NSHostingView<BoardPath>
 
-    init(_ editor: CanvasEditor, rootName: String = "Plans") {
+    /// `size` is the canvas's, which a crumb's menu stays inside.
+    init(_ editor: CanvasEditor, rootName: String = "Plans", size: CGSize = CGSize(width: 900, height: 120)) {
         self.editor = editor
+        window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.titled], backing: .buffered, defer: false)
         hosting = NSHostingView(rootView: BoardPath(editor: editor, rootName: rootName))
+        // The canvas's size, as the host's overlay proposes it; not the path's own.
+        hosting.sizingOptions = []
+        hosting.frame = CGRect(origin: .zero, size: size)
         window.contentView = hosting
         window.settle()
     }
@@ -132,8 +137,33 @@ final class PathWindow {
     /// The crumbs that are buttons, leading first; "…" is a pull-down, not among them. (Their
     /// titles are drawn by SwiftUI, not the button's: `pathTests` reads them from the crumbs.)
     var buttons: [NSButton] {
-        hosting.descendants(NSButton.self).filter { !($0 is NSPopUpButton) }
-            .sorted { $0.convert($0.bounds, to: nil).minX < $1.convert($1.bounds, to: nil).minX }
+        hosting.descendants(NSButton.self).filter { !($0 is NSPopUpButton) && frame(of: $0).minY < Self.pillBottom }
+            .sorted { frame(of: $0).minX < frame(of: $1).minX }
+    }
+
+    /// The buttons of the menu that shows, below the pill, top first: each row's, and a disclosure
+    /// triangle's before a row with rows under it.
+    var menuButtons: [NSButton] {
+        hosting.descendants(NSButton.self).filter { frame(of: $0).minY >= Self.pillBottom }
+            .sorted { (frame(of: $0).minY, frame(of: $0).minX) < (frame(of: $1).minY, frame(of: $1).minX) }
+    }
+
+    /// Where a view is, from the canvas's top left, in points.
+    func frame(of view: NSView) -> CGRect {
+        let rect = hosting.convert(view.bounds, from: view)
+        return hosting.isFlipped ? rect : CGRect(x: rect.minX, y: hosting.bounds.height - rect.maxY, width: rect.width, height: rect.height)
+    }
+
+    /// Below the pill, which is 8 points down and about 26 tall.
+    static let pillBottom: CGFloat = 40
+
+    /// Whether the path draws anything: a pixel of it that isn't the window's background.
+    var drawsSomething: Bool {
+        let bitmap = snapshot(hosting)
+        let background = pixel(bitmap, at: CGPoint(x: 1, y: hosting.bounds.height - 1))
+        return stride(from: 0, to: hosting.bounds.height, by: 2).contains { y in
+            stride(from: 0, to: hosting.bounds.width, by: 2).contains { pixel(bitmap, at: CGPoint(x: $0, y: y)) != background }
+        }
     }
     var folded: NSPopUpButton? { hosting.descendants(NSPopUpButton.self).first }
     var redrawn: Int { editor.boardCrumbs?.pathRedrawn ?? 0 }

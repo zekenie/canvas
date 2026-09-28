@@ -182,7 +182,10 @@ extension ShapeRegistrar {
     /// commit, listed or not, so it must cost what the commit changed, never the board: a service
     /// that keeps who reads what answers it. Read before it hears of a commit, the table of contents
     /// makes every kept row of such a kind again, since only hearing of the commit says which it
-    /// affects. `when` and `nestedUnder` read only the shape, as above.
+    /// affects. `when` and `nestedUnder` read only the shape, as above. The row reads what other
+    /// shapes are (their names, their state), never where they are: another board's outline
+    /// (`ContentsState.outline(of:)`, where `affected` can't answer) makes such rows again after a
+    /// commit that did more than move shapes, and not after a move.
     public mutating func contentsRow(
         when isListed: @escaping @MainActor (ShapeRecord<Definition.Props>) -> Bool = { _ in true },
         nestedUnder parent: (@MainActor (ShapeRecord<Definition.Props>) -> ShapeID?)? = nil,
@@ -361,4 +364,16 @@ enum ContentsStyle {
     static let hoverOpacity: CGFloat = 0.14
     static let highlightInset: CGFloat = 10
     static let highlightRadius: CGFloat = 8
+    /// The outline's (`ContentsOutline`): its rows, all of one height; how far each level of nesting
+    /// goes in, and the disclosure triangle's column; the row under the pointer's light, and the
+    /// corners of it and of the highlight; the symbol's column, and from it to the title.
+    static let outlineRowHeight: CGFloat = 24
+    static let outlineIndent: CGFloat = 14
+    static let outlineDisclosureWidth: CGFloat = 14
+    static let outlineDisclosureSize: CGFloat = 9
+    static let outlineRowPadding: CGFloat = 6
+    static let outlineHoverOpacity: CGFloat = 0.08
+    static let outlineRadius: CGFloat = 6
+    static let outlineIconWidth: CGFloat = 18
+    static let outlineIconSpacing: CGFloat = 5
 }

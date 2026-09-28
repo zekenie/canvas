@@ -106,6 +106,17 @@ public final class ContentsState {
         let revision: Int
     }
 
+    /// What's kept of a board's outline (`outline(of:)`): its rows, as listed, and the revisions
+    /// they're up to date with.
+    private struct Outline {
+        /// The board's (`file.revision(of:)`), as its rows were made.
+        let revision: Int
+        /// The editor's, as its rows that read more than their shapes were last made.
+        var heard: Int
+        var rows: [ShapeID: ShapeRow]
+        var entries: [ContentsEntry]
+    }
+
     /// How a kind's shapes get their rows.
     private struct KindRows {
         let contribution: ContentsContribution?
@@ -163,6 +174,13 @@ public final class ContentsState {
     /// The shape the pointer on its row hovered, until it leaves the row: all a row's leaving
     /// lets go of.
     @ObservationIgnored private var rowHover: ShapeID?
+    /// The boards whose outlines have been read (`outline(of:)`), while they're on the path.
+    @ObservationIgnored private var outlines: [BoardID: Outline] = [:]
+    /// The editor's revision as of the last commit whose change set this service has heard, and as
+    /// of the last that did more than move shapes: what the rows of an outline that read more than
+    /// their shapes may have changed with (a move names nothing anew: a drag's every event).
+    @ObservationIgnored private var changesHeard: Int
+    @ObservationIgnored private var lastBeyondMoves: Int
     private var pin: Pin?
     #if DEBUG
     /// How many times the list has asked a row for its view (debug builds only), so tests can hold
@@ -176,6 +194,8 @@ public final class ContentsState {
     init(editor: CanvasEditor) {
         self.editor = editor
         heardRevision = editor.revision
+        changesHeard = editor.revision
+        lastBeyondMoves = editor.revision
         rowAffected = editor.registry.contributions(to: ContentsRows.self).compactMap(\.value.affected)
         markAffected = editor.registry.contributions(to: ContentsMarks.self).compactMap(\.value.affected)
     }
@@ -328,6 +348,65 @@ public final class ContentsState {
     /// and the row it reaches, not every row.
     public func isHovered(_ id: ShapeID) -> Bool { editor.isHovered(id) && !editor.isSelected(id) }
 
+    // MARK: Another board
+
+    /// A board's rows as the table of contents lists every shape of it, whether it's shown or not:
+    /// what a view of a board of the file lists, the one shown or another (the path's crumb menus,
+    /// each its crumb's board). The rows are those `entries` would list there with nothing selected, less
+    /// their marks, which are the board shown's (validation checks only it). Made on the first read,
+    /// and kept while the board is as it was (its revision) and on the path to the board shown; a
+    /// read after a commit that did more than move shapes makes again the rows that read more than
+    /// their shapes (`affected`, whose answers are the board shown's, can't say which), and keeps
+    /// each unless its label changed. Reading it ties the reader to every commit, as `entries` does.
+    public func outline(of board: BoardID) -> [ContentsEntry] {
+        let revision = editor.file.revision(of: board), now = editor.revision
+        guard var kept = outlines.removeValue(forKey: board), kept.revision == revision else {
+            let made = makeOutline(of: board, revision: revision, at: now)
+            outlines[board] = made
+            return made.entries
+        }
+        // A commit since that did more than move shapes, or one this service hasn't heard yet (read
+        // by a service that hears first), may have changed what they read.
+        if kept.heard != now {
+            if lastBeyondMoves > kept.heard || changesHeard != now, remakeRowsReadingOthers(in: &kept.rows) {
+                let rows = kept.rows
+                kept.entries = ContentsListing(scope: nil, shapes: editor.contents(of: board).shapes.map(\.id)) { rows[$0] }.entries
+            }
+            kept.heard = now
+        }
+        outlines[board] = kept
+        return kept.entries
+    }
+
+    /// Every row of `board`, listed as `outline(of:)` lists them.
+    private func makeOutline(of board: BoardID, revision: Int, at now: Int) -> Outline {
+        let document = editor.contents(of: board)
+        var rows: [ShapeID: ShapeRow] = [:]
+        rows.reserveCapacity(document.shapes.count)
+        let listing = ContentsListing(scope: nil, shapes: document.shapes.map(\.id)) { id in
+            guard let record = document[id] else { return nil }
+            let made = makeRow(of: record, marked: false)
+            rows[id] = made
+            return made
+        }
+        return Outline(revision: revision, heard: now, rows: rows, entries: listing.entries)
+    }
+
+    /// Makes again the rows of kinds whose rows read more than their shapes: whether any label changed.
+    private func remakeRowsReadingOthers(in rows: inout [ShapeID: ShapeRow]) -> Bool {
+        guard !rowAffected.isEmpty else { return false }
+        var changed = false
+        for (id, made) in rows {
+            let kind = kindRows(made.record.kind)
+            guard kind.readsOtherShapes else { continue }
+            let row = resolvedRow(of: made.record, kind: kind)
+            if let label = row.label, let old = made.label, label.showsSame(as: old) { continue }
+            rows[id] = ShapeRow(made, resolved: row, marks: [])
+            changed = true
+        }
+        return changed
+    }
+
     // MARK: Rows
 
     /// The shape's row: its kind's, else its tool's label; called what `ContentsTitles` names it, if
@@ -354,15 +433,20 @@ public final class ContentsState {
             return replaced
         }
         guard let record = editor.document[id] else { return nil }
+        let made = makeRow(of: record, marked: true)
+        rows[id] = made
+        return made
+    }
+
+    /// A shape's row as its kind makes it, with its marks when `marked` (the board shown's rows are).
+    private func makeRow(of record: AnyShapeRecord, marked: Bool) -> ShapeRow {
         let kind = kindRows(record.kind), contribution = kind.contribution
         let isListed = !record.isOpaque && (contribution?.isListed(record) ?? true)
         #if DEBUG
         rowsMade += 1
         #endif
-        let made = ShapeRow(record: record, isListed: isListed, parent: contribution?.parent?(record), row: resolvedRow(of: record, kind: kind),
-                            symbol: kind.symbol, marks: marks(of: record, isListed: isListed, kind: kind))
-        rows[id] = made
-        return made
+        return ShapeRow(record: record, isListed: isListed, parent: contribution?.parent?(record), row: resolvedRow(of: record, kind: kind),
+                        symbol: kind.symbol, marks: marked ? marks(of: record, isListed: isListed, kind: kind) : [])
     }
 
     /// The shape's row as its kind makes it, else its tool's label, called what `ContentsTitles`
@@ -401,6 +485,8 @@ extension ContentsState: EditorService {
     /// (as the rows' and the marks' contributors say), for the next read to make their rows again
     /// or read their marks again. Each scope's listing notes them all.
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
+        changesHeard = editor.revision
+        if !changes.onlyMoves { lastBeyondMoves = editor.revision }
         let touched = changes.shapeIDs
         if heardRevision != editor.revision {          // else read since, and caught up
             heardRevision = editor.revision
@@ -474,6 +560,11 @@ extension ContentsState: EditorService {
             missed = Set(touchedAway.lazy.filter { $0.value > taken.revision }.map(\.key))
         }
         forgetTouchedAway()
+        let path = Set(editor.boardPath)
+        outlines = outlines.filter { path.contains($0.key) }
+        // A switch names nothing anew; a file put in place with it may have renamed anything.
+        changesHeard = editor.revision
+        if change.isFileReplaced { lastBeyondMoves = editor.revision }
     }
 
     /// Keeps what was touched away only as far back as the board kept longest ago was left.
@@ -496,4 +587,12 @@ extension ContentsState: EditorService {
 extension CanvasEditor {
     /// The table of contents' state; nil without TableOfContentsPlugin.
     public var tableOfContents: ContentsState? { service(ContentsState.self) }
+}
+
+extension ChangeSet {
+    /// Whether the commit only moved shapes on its board (a drag's every event, its undo): it named
+    /// nothing anew, so what a row reads of other shapes is as it was.
+    var onlyMoves: Bool {
+        added.isEmpty && removed.isEmpty && changed == moved && elsewhere.isEmpty && boardsReached.isEmpty && !replacedDocument
+    }
 }

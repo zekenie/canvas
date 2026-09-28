@@ -5,10 +5,11 @@ import CanvasTesting
 import CoreGraphics
 import Selection
 import SwiftUI
+import TableOfContents
 import TestKit
 
-@MainActor func windowEditor(_ file: CanvasFile) throws -> CanvasEditor {
-    try CanvasEditor(registry: Registry(plugins: boardsPlugins()), file: file, scheduler: TaskScheduler())
+@MainActor func windowEditor(_ file: CanvasFile, _ more: [any CanvasPlugin] = []) throws -> CanvasEditor {
+    try CanvasEditor(registry: Registry(plugins: boardsPlugins(more)), file: file, scheduler: TaskScheduler())
 }
 
 @MainActor let windowTests = Suite("The path in a window", [
@@ -17,10 +18,10 @@ import TestKit
         let editor = try windowEditor(nest.file)
         let path = PathWindow(editor)
         expectEqual(path.buttons, [])
-        expectEqual(path.hosting.fittingSize.height, 0, "nothing drawn")
+        expect(!path.drawsSomething, "nothing drawn")
         expect(editor.showBoard(nest.dBoard))
         path.window.spin { path.buttons.count == 1 }
-        expect(path.hosting.fittingSize.height > 0)
+        expect(path.drawsSomething)
         expect(editor.showBoard(nest.pBoard))
         path.window.spin { path.buttons.count == 2 }
         expectEqual(path.buttons.count, 2, "the root and D's board; P's, shown, isn't a button")
@@ -82,6 +83,52 @@ import TestKit
         editor.goToEnclosingBoard()
         path.window.spin { path.redrawn > drawn }
         path.window.spin { path.buttons.count == 1 }
+    },
+])
+
+/// The path's window over the nest, with the table of contents, inside P's board (root › D › P),
+/// its crumbs in place.
+@MainActor func menuWindow(_ nest: Nest, size: CGSize = CGSize(width: 900, height: 500)) throws -> PathWindow {
+    let editor = try windowEditor(nest.file, [TableOfContentsPlugin()])
+    let path = PathWindow(editor, size: size)
+    expect(editor.showBoard(nest.dBoard))
+    expect(editor.showBoard(nest.pBoard))
+    path.window.spin { path.buttons.count == 2 }
+    return path
+}
+
+@MainActor let menuWindowTests = Suite("The path's menus in a window", [
+    test("the pointer on a crumb shows its menu below it, lined up with it: its board's rows, each a button that goes to its shape") {
+        let nest = Nest()
+        let path = try menuWindow(nest)
+        let crumbs = try require(path.editor.boardCrumbs)
+        let crumb = path.frame(of: try require(path.buttons.first))
+        crumbs.pointerEntered(crumb: .root)
+        path.window.spin { path.menuButtons.count == 2 }
+        let rows = path.menuButtons.map(path.frame(of:))
+        expectEqual(rows.count, 2, "the root's: A, and D")
+        let first = try require(rows.first)
+        expect(first.minY > crumb.maxY + 6 && first.minY < crumb.maxY + 20, "6 points below the crumb, and the menu's padding: \(crumb), \(first)")
+        expect(first.minX >= crumb.minX && first.minX < crumb.minX + 30, "lined up with it: \(crumb), \(first)")
+        expect(rows[1].minY >= first.maxY - 0.5, "one row under the other: \(rows)")
+        try require(path.menuButtons.first).performClick(nil)
+        path.window.spin { path.editor.board == .root }
+        expectEqual(path.editor.selectedShapeIDs, [nest.a], "A, gone to on the root")
+        expectEqual(crumbs.openMenu, nil)
+    },
+    test("the board shown's crumb has a menu too, its own shapes, and a menu stays inside the canvas") {
+        let nest = Nest()
+        let path = try menuWindow(nest, size: CGSize(width: 420, height: 300))
+        let crumbs = try require(path.editor.boardCrumbs)
+        crumbs.pointerEntered(crumb: nest.pBoard)
+        path.window.spin { path.menuButtons.count == 2 }
+        let rows = path.menuButtons.map(path.frame(of:))
+        expect(rows.allSatisfy { $0.maxX <= 420 - 8 && $0.minX >= 8 }, "inside the canvas: \(rows)")
+        try require(path.menuButtons.first).performClick(nil)
+        path.window.settle()
+        expectEqual(path.editor.board, nest.pBoard, "B is on the board shown")
+        expectEqual(path.editor.selectedShapeIDs, [nest.b])
+        expectEqual(crumbs.openMenu, nil)
     },
 ])
 

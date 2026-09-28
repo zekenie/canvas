@@ -2561,6 +2561,10 @@ ref.contentsRow(affected: { changes, context in
   row or mark reads other shapes: a commit costs one more write per shape it touched.
 - **`when` and `nestedUnder` still read only the shape**, and `contentsTitle` still names the row:
   a name that isn't blank takes the place of the label's title (a titled note shows its title).
+- **What other shapes are, never where they are.** Such a row reads other shapes' names and state,
+  not their positions: on a board that isn't shown, where `affected` can't say which rows a commit
+  changes, [another board's outline](#another-boards-outline) makes these rows again after a commit
+  that did more than move shapes, and not after a move (a drag's every event).
 - `registrar.contentsRow(OtherKind.self, affected:) { shape, context in ... }` is the same for
   another plugin's kind (bridges). The row that reads only its shape keeps its forms,
   `x.contentsRow { ... }` and `x.contentsRow(when:nestedUnder:)`.
@@ -2677,6 +2681,40 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
   read a row's text, symbol and badge through `entry.label`, and its marks through `entry.marks`;
   `open(_:)` is a row's primary action. In debug builds, `rowsRedrawn` counts how often the list
   has asked a row for its view, and `rowsMade` how many rows it has made.
+
+### Another board's outline
+
+The list is the board shown's, as the selection filters it. A view of any board of the file lists
+that board's rows through `ContentsState.outline(of: board)`: the rows `entries` would list there
+with nothing selected, nested alike, whichever board is shown. What the path's crumb menus show
+(Boards: a crumb's menu is its own board, [A crumb's menu](#a-crumbs-menu)).
+
+```swift
+ContentsOutline(editor: editor, board: board, highlighted: next, maxHeight: 348) { id in
+    editor.goTo([id])
+}
+```
+
+- **The rows are the list's**, each as its kind draws it (`contentsRow`, named by `contentsTitle`),
+  less their marks, which are the board shown's: validation checks only it.
+- **Made once, kept while the board is as it was.** The first read makes every row of the board;
+  another is taken back while the board's revision is unchanged and it's on the path to the board
+  shown (showing a board forgets the outlines of boards off its path). A read after a commit that
+  did more than move shapes makes again the rows that read more than their shapes (a note's, with
+  the live names of what it mentions: its kind's `affected` answers only for the board shown, so
+  every such row is made again, whatever else the commit touched), and keeps each whose label is
+  the same; a move (a drag's every event) names nothing anew, and makes none. Reading it ties the
+  reader to every commit, as `entries` does. `./build.sh bench` holds the reads after a move and a
+  rename on a subboard under a root of 10,000 to 1 ms and a frame; the first read there is some
+  23 ms.
+- **`ContentsOutline(editor:board:highlighted:maxHeight:onPick:)`** shows it, for a small panel:
+  one line a row, 24 points each, as tall as its rows up to `maxHeight`, past which it scrolls
+  (only the rows in view are made into views); nested rows behind a disclosure triangle, collapsed
+  until it's opened, as in the list; `highlighted`'s row tinted as a hovered row is in the list,
+  and the row under the pointer lit. A click on a row picks its shape (`onPick`), and what that
+  does is the host's. It opens at the top, as data-canvas's menus do (scrolling a lazy stack to a
+  row far down lays out the rows before it: some 70 ms to the last of 10,000). Nothing without the
+  plugin, or for a board with no rows.
 
 ### Hosting
 
@@ -3892,7 +3930,8 @@ A file holds a tree of boards: the root, and one for each shape of a kind that o
 `BoardOwning`; [Boards in a file](#boards-in-a-file)). Boards
 ([`Sources/Boards`](../Sources/Boards)) is the horizontal that gets you around them, whatever kind
 owns them. It builds on Selection (opening), ContextMenus (Open), DetailPanel (the Open button),
-Keyboard (⌘↑) and Titles (what a board is called), and none of them learns what a board is.
+Keyboard (⌘↑), Titles (what a board is called) and TableOfContents (the rows a crumb's menu lists),
+and none of them learns what a board is.
 
 A board-owning kind opts in with one line, on its own registrar
 ([OpensBoard.swift](../Sources/Boards/OpensBoard.swift)):
@@ -3958,17 +3997,25 @@ registrar.command(.enclosingBoard, shortcuts: [KeyChord(KeyChord.upArrow.key, .c
 
 `BoardPath(editor:rootName:)` is where you are, as data-canvas shows it: a small capsule of
 crumbs over the top middle of the canvas, root first, the board shown last, in a material pill 8
-points below the canvas's top edge (`BoardsStyle`). The host places it with
-`.overlay(alignment: .top)`; only the pill takes clicks. It shows nothing on the root.
+points below the canvas's top edge (`BoardsStyle`). The host places it over the whole canvas, with
+`.overlay(alignment: .top)`, so a crumb's menu can stay inside it; only the pill and the menu take
+clicks. It shows nothing on the root.
 
 ```
-        ╭─────────────────────────────────────────────╮
-        │  Plans  ›  …  ›  Kitchen  ›  **Pantry**     │
-        ╰─────────────────────────────────────────────╯
+        ╭────────────────────────────────────────────────╮
+        │  Plans ⌄  ›  …  ›  Kitchen ⌄  ›  **Pantry** ⌄  │
+        ╰────────────────────────────────────────────────╯
+                                  ┌──────────────────────────┐
+                                  │ › ▤ Groceries            │  the pointer on Kitchen: its rows
+                                  │   ▤ Spices               │
+                                  │   ▭ Pantry               │  the way you came, highlighted
+                                  │   ▭ Fridge               │
+                                  └──────────────────────────┘
 ```
 
 - The root's crumb is `rootName` ("Board" when that's empty); the others are `name(of:)`. The
-  board shown is bold and isn't a button. Each crumb is at most 180 points wide, truncated past it.
+  board shown is bold and isn't a button. Each crumb is at most 180 points wide, truncated past it,
+  with its name as its tooltip.
 - More than four crumbs fold the middle into "…", a menu of the boards it hides, root side first:
   root › … › parent › current (`BoardCrumbs.layout(rootName:)`).
 - A crumb, or an item of "…", runs `goUp(to:)`: it shows that board and selects there the shape the
@@ -3979,8 +4026,45 @@ points below the canvas's top edge (`BoardsStyle`). The host places it with
   each one's revision, so a commit on the board shown (a drag's every event) costs a look at the
   path's revisions and redraws nothing. A crumb's title changing is the path changing.
 
-data-canvas's crumbs also open, on hover, an outline of the parent board's contents for hopping
-sideways; that's in [Not built yet](#not-built-yet).
+#### A crumb's menu
+
+Every crumb has a menu, as data-canvas's do: a caret after its title, and the pointer on the crumb
+shows the menu below it, lined up with it. It lists what's in that crumb's board, as the table of
+contents lists it (Boards builds on TableOfContents for it: `ContentsOutline`,
+[below](#another-boards-outline)), with the shape whose board is next on the path highlighted: the
+way you came. The board shown's crumb lists its own shapes. So from inside a subboard you can jump
+into another, or to any shape on any board on the way here, without going up and hunting for it
+on the canvas. (data-canvas's crumbs listed their boards' subboards this way at first, and later
+the board above instead, VS Code's siblings; the owner chose what's in the crumb's board.)
+
+- **What it lists** is `BoardCrumbs.menu(of: board)`, a `CrumbMenu`: the board listed (the
+  crumb's) and the shape highlighted there, nil on the board shown's; the menu is nil for the board
+  shown while it has no shapes (no caret; kept as commits change it, `shownIsEmpty`, so the path
+  never reads the document), and without the table of contents, whose rows a menu shows (no menus,
+  no carets). The rows are the table of contents' with nothing selected, each as its kind draws
+  it, nested rows behind a disclosure triangle.
+- **Picking a row** closes the menu, then goes into its shape if its kind opens its board
+  (`opensBoard`: `editor.goInto`, as following a mention of a subboard does), and else to it, shown
+  selected on its board (`editor.goTo`). Either is one step back, so ⌘[ returns. The highlighted
+  row goes back into the board it's the way to, and a row of the board shown's own menu selects
+  its shape there.
+- **Hover intent**, data-canvas's timers (through `editor.scheduler`, so a test's clock drives
+  them): the menu shows once the pointer has stayed on the crumb 150 ms, so a crumb passed over
+  shows nothing, and closes 150 ms after the pointer has left it and its crumb, unless it's back on
+  one of them by then. Another crumb's menu takes its place once the pointer has stayed on that
+  crumb. A click on a crumb closes its menu (the board shown's goes nowhere else), and so does
+  another board shown. One menu shows at a time: `BoardCrumbs.openMenu`, which the view drives with
+  `pointerEntered(crumb:)`, `pointerExited(crumb:)`, `pointerEnteredMenu()`,
+  `pointerExitedMenu()`, `closeMenu()` and `pick(_:)`, and a test headlessly.
+- **The panel** is 300 points wide, as tall as its rows up to 360 before it scrolls, 6 points below
+  the crumb, on a thick material with data-canvas's shadow, and kept 8 points inside the canvas
+  (moved left, and shorter, where the canvas is small). data-canvas's is as wide as its rows,
+  from 260 to 380; a lazy list can't measure the rows it hasn't made, so here the width is fixed.
+  It opens at the top of its rows. A menu showing or closing redraws only the menu (`CrumbMenuLayer` reads `openMenu`, the pill
+  never does), and the menu reads its board's rows, as they are while it shows.
+- **The canvas under it.** Where the pill or a menu is over the canvas, the pointer isn't on the
+  canvas: `CanvasView` asks the window what's at the pointer, and a view the host put over it has
+  it, as the minimap does (the tool hears the pointer leave, so nothing under the path is hovered).
 
 ### Subboards
 
@@ -5918,6 +6002,7 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
 | The page lifecycle's guards: duplicates, cycles, cascade delete, and the orphan sweep with its recovery shapes | Not needed: keyed by its owner, a board can't have two owners or be its own ancestor, deleting a shape takes every board under it in the same commit (one undo step), and a copy has a new id, so a board of its own. Only a file edited by hand breaks the tree, and reading keeps what it can't show, reports it and writes it back (`LoadReport.keptBoards`). |
 | `editor.setCurrentPage(targetPageId)`: entering and exiting | `editor.showBoard`, through Selection's opener (`x.opensBoard`: a double-click, Return, ⌘↓, the row, Open), and ⌘↑ (`goToEnclosingBoard`); never an undo step, and each board keeps its camera. |
 | `SubboardBreadcrumbs` | `BoardPath` (Boards), over the top middle of the canvas, hidden on the root; a crumb shows its board and selects there the shape the path came through. |
+| A crumb's hover menu (`CrumbButton`'s popover, a level as `TocLevel` renders it, compact, one shape highlighted) | A crumb's menu: the crumb's own board's rows as the table of contents lists them (`ContentsOutline` over `ContentsState.outline(of:)`), the way you came highlighted, as data-canvas's first menus listed a crumb's children (its later ones show the level above, VS Code's siblings); data-canvas's 150 ms hover intent each way; a row picked goes into a board-opening kind's shape (`goInto`), else to the shape (`goTo`). |
 | `generateBoardPreview` on the card | `context.drawBoardPreview(ofBoardOwnedBy:in:)`: every shape a silhouette in one gray, as the minimap draws, built a chunk a frame. |
 | `install*Lifecycle(editor)` side effects | `registrar.willDelete` inside transactions; `EditorService` for per-editor state. |
 | `module.json` + ESLint DAG + barrel `index.ts` | `Package.swift` with layers + `build.sh audit` + the compiler; `public` is the barrel. |
@@ -6047,8 +6132,8 @@ Each of these adds to the design without changing what plugins are written again
   their ids, with a check that no shape goes into its own board; arrows across boards (an end bound
   to a shape on another board: bindings stay on their board, and a copy lets go of the rest); the
   selection remembered per board, so going back into a board selects what was selected there
-  (nothing is selected on arrival, and only Back returns to it); data-canvas's sideways hover menus
-  on the path's crumbs (the parent board's contents, as an outline, to hop into a sibling board);
+  (nothing is selected on arrival, and only Back returns to it); a crumb's menu from the keyboard
+  (it shows only for the pointer), and the boards "…" folds each with a menu of its own;
   renaming a board from inside it (the path's last crumb, or the table of contents' header), which
   writes its owner's title on the board above, with `transact(on:)`; a mark on a shape's row (and
   its card) for issues on the boards inside it, and validation and Find across a file's boards (the

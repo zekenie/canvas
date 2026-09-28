@@ -21,6 +21,18 @@ extension EditingProbeTool: Tool {
     func pointerExited(in editor: CanvasEditor) { log.events.append("exited") }
 }
 
+/// Puts a view over the canvas's top middle, as the host puts the path there: 200 points wide, 60
+/// tall, from x 300. The canvas fills the window.
+@MainActor func cover(_ canvas: CanvasView) throws {
+    let window = try require(canvas.window)
+    let container = NSView(frame: window.contentLayoutRect)
+    canvas.frame = container.bounds
+    let cover = NSView(frame: CGRect(x: 300, y: container.bounds.height - 60, width: 200, height: 60))
+    container.addSubview(canvas)
+    container.addSubview(cover)
+    window.contentView = container
+}
+
 /// A canvas 800 × 600 in an unshown window, a 200 × 100 card at (100, 100) on it, and the probe
 /// tool, which logs what it hears.
 @MainActor func cardCanvas() throws -> (h: EditorHarness, canvas: CanvasView, card: ShapeID, log: PointerLog) {
@@ -62,6 +74,33 @@ extension EditingProbeTool: Tool {
         canvas.mouseUp(with: mouse(.leftMouseUp, at: CGPoint(x: 200, y: 150), in: canvas, clicks: 2, time: 1.05))
         canvas.mouseMoved(with: mouse(.mouseMoved, at: CGPoint(x: 210, y: 150), in: canvas, time: 1.1))
         expectEqual(log.events, ["down", "moved", "exited"], "the release hovers what's there, then leaves; the move stays off")
+    },
+    test("under a view the host puts over the canvas (the path) the pointer is off the canvas: the tool hears it leave, once, and move again back on the canvas") {
+        let (_, canvas, _, log) = try cardCanvas()
+        try cover(canvas)
+        canvas.mouseMoved(with: mouse(.mouseMoved, at: CGPoint(x: 50, y: 30), in: canvas))
+        canvas.mouseMoved(with: mouse(.mouseMoved, at: CGPoint(x: 400, y: 30), in: canvas, time: 1.1))
+        canvas.mouseMoved(with: mouse(.mouseMoved, at: CGPoint(x: 410, y: 30), in: canvas, time: 1.2))
+        canvas.mouseMoved(with: mouse(.mouseMoved, at: CGPoint(x: 400, y: 90), in: canvas, time: 1.3))
+        expectEqual(log.events, ["moved", "exited", "moved"])
+        canvas.mouseDown(with: mouse(.leftMouseDown, at: CGPoint(x: 400, y: 90), in: canvas, time: 1.4))
+        canvas.mouseUp(with: mouse(.leftMouseUp, at: CGPoint(x: 400, y: 30), in: canvas, time: 1.5))
+        expectEqual(log.events.suffix(3), ["down", "moved", "exited"], "a press released under it hovers what's there, then leaves: the pointer's off the canvas")
+    },
+    test("under a view over the canvas the cursor is the arrow, moved there or released there after a press; back on the canvas, the tool's") {
+        let (_, canvas, _, _) = try cardCanvas()        // the probe's cursor is a tool's default, the crosshair
+        try cover(canvas)
+        canvas.mouseMoved(with: mouse(.mouseMoved, at: CGPoint(x: 400, y: 90), in: canvas))
+        NSCursor.crosshair.set()
+        canvas.mouseMoved(with: mouse(.mouseMoved, at: CGPoint(x: 400, y: 30), in: canvas, time: 1.1))
+        expect(NSCursor.current === NSCursor.arrow, "moved under it")
+        canvas.mouseMoved(with: mouse(.mouseMoved, at: CGPoint(x: 400, y: 90), in: canvas, time: 1.2))
+        expect(NSCursor.current === NSCursor.crosshair, "back on the canvas")
+        canvas.mouseDown(with: mouse(.leftMouseDown, at: CGPoint(x: 400, y: 90), in: canvas, time: 1.3))
+        canvas.mouseUp(with: mouse(.leftMouseUp, at: CGPoint(x: 400, y: 30), in: canvas, time: 1.4))
+        expect(NSCursor.current === NSCursor.arrow, "released under it")
+        canvas.mouseMoved(with: mouse(.mouseMoved, at: CGPoint(x: 410, y: 30), in: canvas, time: 1.5))
+        expect(NSCursor.current === NSCursor.arrow, "and moved on there")
     },
     test("a release on the canvas stays on it, and the editing view is where its shape is at any zoom") {
         let (h, canvas, card, log) = try cardCanvas()
