@@ -9,6 +9,7 @@ import Geometry
 import Keyboard
 import LanguageModels
 import Locking
+import Mentions
 import Selection
 import StickyNotes
 import SwiftUI

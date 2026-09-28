@@ -8,6 +8,7 @@ import DetailPanel
 import Foundation
 import Geometry
 import LanguageModels
+import Mentions
 import Selection
 import StickyNotes
 import SwiftUI
@@ -216,7 +217,7 @@ let welcomeNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x:
         try save(b.board, to: url)
         expect(!b.board.isDocumentEdited)
         for text in ["AB", "A"] {
-            b.editor.transact("Change Text", coalescing: "text") { $0.update(note, as: StickyNote.self) { $0.props.text = text } }
+            b.editor.transact("Change Text", coalescing: "text") { $0.update(note, as: StickyNote.self) { $0.props.text = MentionText(plain: text) } }
         }
         expect(b.board.isDocumentEdited, "a run under way")
         try save(b.board, to: url)

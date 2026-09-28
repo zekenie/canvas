@@ -5,6 +5,7 @@ import Composition
 import CoreGraphics
 import Foundation
 import LanguageModels
+import Mentions
 import StickyNotes
 import TaskCards
 import TestKit
@@ -36,6 +37,30 @@ import Titles
             let props = try JSONDecoder().decode(JSONValue.self, from: codec.encodeProps(record.props))
             expect(props["checklist"] == nil, "\(kind) keeps no checklist of its own")
         }
+    },
+    // Since its third version a note's text may mention shapes: what it said before reads as it did.
+    test("a note's text from before mentions reads as the text it was; today's fixture holds mentions, and a look-alike that's text") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let codec = BoardCodec(registry: registry)
+        let directory = "Tests/CompositionTests/Fixtures/kinds"
+        expectEqual(codec.version(of: StickyNote.kind), 3)
+        for version in 0...2 {
+            let data = try Data(contentsOf: URL(fileURLWithPath: "\(directory)/sticky-note.v\(version).json"))
+            let note = try require(codec.decodeRecord(props: data, kind: StickyNote.kind, version: version).typed(as: StickyNote.self))
+            expectEqual(note.props.text.stored, "Buy milk\nand bread", "version \(version): no look-alike, so written as it was")
+            expectEqual(note.props.text.runs, [.text("Buy milk\nand bread")])
+        }
+        let data = try Data(contentsOf: URL(fileURLWithPath: "\(directory)/sticky-note.v3.json"))
+        let note = try require(codec.decodeRecord(props: data, kind: StickyNote.kind, version: 3).typed(as: StickyNote.self))
+        let groceries = ShapeID(UUID(uuidString: "7C1E0B8A-2F4D-4A6B-9C3E-5D2F1A0B9C8D")!)
+        let review = ShapeID(UUID(uuidString: "0A1B2C3D-4E5F-4061-8293-A4B5C6D7E8F9")!)
+        expectEqual(note.props.text.runs, [
+            .text("Ask "), .mention(groceries, label: "Groceries"), .text(" first.\nThen "),
+            .mention(review, label: #"Q3 ] review \ notes"#),
+            .text(#", not @[Q2](shape:11111111-2222-4333-8444-555555555555).\#nSaved in C:\"#),
+            .mention(groceries, label: "Plans"),
+        ])
+        expectEqual(MentionText(note.props.text.runs), note.props.text, "written as a note's editor writes it")
     },
     test("the welcome board, and a board of every shipped kind, read back as they were") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())

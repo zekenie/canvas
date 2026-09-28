@@ -8,6 +8,7 @@ import CoreGraphics
 import Geometry
 import LanguageModels
 import Locking
+import Mentions
 import Selection
 import StickyNotes
 import TableOfContents

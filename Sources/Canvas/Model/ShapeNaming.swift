@@ -20,11 +20,22 @@ public protocol ShapeNaming: Sendable {
     /// Itself with each name that `rename` gives an id for renamed to that id; nil keeps the name
     /// as it is. Pure: it reads nothing else, so it runs anywhere.
     func renamingShapes(_ rename: (ShapeID) -> ShapeID?) -> Self
+    /// Calls `body` with each leaf it holds, the values coded by hand that hold the ids themselves
+    /// (a mention text), wherever they are in it: in order, but for a set's or a dictionary's. A
+    /// leaf is its own one leaf, which is the default; collections and structs (their listed
+    /// members) go into what they hold. For a plugin that reads its own leaves wherever a shape
+    /// keeps them.
+    func forEachNamingLeaf(_ body: (any ShapeNaming) -> Void)
+}
+
+extension ShapeNaming {
+    public func forEachNamingLeaf(_ body: (any ShapeNaming) -> Void) { body(self) }
 }
 
 extension Optional: ShapeNaming where Wrapped: ShapeNaming {
     public func forEachNamedShape(_ body: (ShapeID) -> Void) { self?.forEachNamedShape(body) }
     public func renamingShapes(_ rename: (ShapeID) -> ShapeID?) -> Self { self.map { $0.renamingShapes(rename) } }
+    public func forEachNamingLeaf(_ body: (any ShapeNaming) -> Void) { self?.forEachNamingLeaf(body) }
 }
 
 extension Array: ShapeNaming where Element: ShapeNaming {
@@ -32,6 +43,9 @@ extension Array: ShapeNaming where Element: ShapeNaming {
         for element in self { element.forEachNamedShape(body) }
     }
     public func renamingShapes(_ rename: (ShapeID) -> ShapeID?) -> Self { map { $0.renamingShapes(rename) } }
+    public func forEachNamingLeaf(_ body: (any ShapeNaming) -> Void) {
+        for element in self { element.forEachNamingLeaf(body) }
+    }
 }
 
 /// Renaming rebuilds the set: two elements renamed alike are one.
@@ -40,6 +54,9 @@ extension Set: ShapeNaming where Element: ShapeNaming {
         for element in self { element.forEachNamedShape(body) }
     }
     public func renamingShapes(_ rename: (ShapeID) -> ShapeID?) -> Self { Set(map { $0.renamingShapes(rename) }) }
+    public func forEachNamingLeaf(_ body: (any ShapeNaming) -> Void) {
+        for element in self { element.forEachNamingLeaf(body) }
+    }
 }
 
 /// Keyed by strings, as a schema can describe it: its values name shapes, its keys don't.
@@ -48,6 +65,9 @@ extension Dictionary: ShapeNaming where Key == String, Value: ShapeNaming {
         for value in values { value.forEachNamedShape(body) }
     }
     public func renamingShapes(_ rename: (ShapeID) -> ShapeID?) -> Self { mapValues { $0.renamingShapes(rename) } }
+    public func forEachNamingLeaf(_ body: (any ShapeNaming) -> Void) {
+        for value in values { value.forEachNamingLeaf(body) }
+    }
 }
 
 /// A struct's names are those of its listed members that name shapes, in list order.
@@ -56,6 +76,9 @@ extension ShapeNaming where Self: SchemaDefined {
         forEachListedNamingValue { _, value in value.forEachNamedShape(body) }
     }
     public func renamingShapes(_ rename: (ShapeID) -> ShapeID?) -> Self { renamingListedNames(rename) }
+    public func forEachNamingLeaf(_ body: (any ShapeNaming) -> Void) {
+        forEachListedNamingValue { _, value in value.forEachNamingLeaf(body) }
+    }
 }
 
 extension SchemaDefined {
@@ -78,7 +101,8 @@ extension AnyShapeRecord {
     /// Each value in its props and added values that names shapes (`ShapeNaming`), with the
     /// property it's in: its own properties in list order, then its added ones in its kind's
     /// order. None for a kind outside `registry.namingKinds`, or a shape kept aside, and none from
-    /// an added value kept aside (`keptProperties`), which the app can't read.
+    /// an added value kept aside (`keptProperties`), which the app can't read. Each value is the
+    /// property's whole value; `forEachNamingLeaf` goes into it.
     @MainActor
     public func forEachNamingValue(in registry: Registry, _ body: (_ property: String, _ value: any ShapeNaming) -> Void) {
         guard registry.namingKinds.contains(kind), !isOpaque else { return }

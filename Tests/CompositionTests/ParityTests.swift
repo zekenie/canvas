@@ -7,6 +7,7 @@ import Composition
 import CoreGraphics
 import Geometry
 import LanguageModels
+import Mentions
 import Selection
 import StickyNotes
 import TestKit

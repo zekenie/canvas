@@ -2,6 +2,7 @@ import AppKit
 import Canvas
 import Checklists
 import Keyboard
+import Mentions
 import Ports
 import Selection
 import Titles
@@ -15,14 +16,18 @@ public struct StickyNote: BoxShapeProps {
         PropsMigration.handOver("checklist", to: ChecklistProperty.self),
         // So does Titles the title, once someone names the note.
         PropsMigration.handOver("title", to: TitleProperty.self),
+        // Its text may mention shapes: text that would now read as a mention (or an escaped one)
+        // is escaped, so it stays the text it was.
+        PropsMigration("text may mention shapes") { props in MentionTextFormat.escapeLookalikesV1(in: &props, "text") },
     ]
     public static let properties = Properties<StickyNote>(title: "Sticky note") {
         Property("frame", \.frame).required()
         Property("text", \.text).description("What the note says.")
     }
     public var frame: CGRect
-    public var text: String
-    public init(frame: CGRect = .zero, text: String = "") {
+    /// What it says, with mentions of other shapes.
+    public var text: MentionText
+    public init(frame: CGRect = .zero, text: MentionText = "") {
         self.frame = frame
         self.text = text
     }
@@ -31,10 +36,16 @@ public struct StickyNote: BoxShapeProps {
 }
 
 extension ShapeRecord where Props == StickyNote {
-    /// No text, no checklist and no title.
+    /// No text (a mention is text), no checklist and no title.
     var isEmpty: Bool {
-        props.text.allSatisfy(\.isWhitespace) && (self[ChecklistProperty.self] ?? []).isEmpty
+        props.text.isBlank && (self[ChecklistProperty.self] ?? []).isEmpty
             && (self[TitleProperty.self] ?? "").allSatisfy(\.isWhitespace)
+    }
+
+    /// Where the note draws its text: in its frame, inset by the padding. The render draws exactly
+    /// this, and Mentions finds the note's pills through it.
+    @MainActor var mentionTexts: [MentionTextPlacement] {
+        [MentionTextPlacement(props.text, in: props.frame.insetBy(dx: NoteStyle.padding, dy: NoteStyle.padding), style: NoteStyle.text)]
     }
 }
 
@@ -58,6 +69,8 @@ public struct StickyNotesPlugin: CanvasPlugin {
             note.noteHeader()                                  // renamed in the detail panel's header
             note.noteRow()                                     // and the table of contents
             note.noteLinks()                                   // and ports: arrows from a note to a note
+            note.mentionText { $0.mentionTexts }               // and mentions: its text shows pills,
+            note.mentionable(untitled: { $0.props.text.firstLine })   // and it's called by its title, else its first line
         }
         registrar.channel(NoteLink.self)                       // which this plugin declares
     }
@@ -70,10 +83,7 @@ extension StickyNoteDefinition: ShapeDefinition {
         context.fillWithShadow(NoteStyle.path(shape.frame), NoteStyle.color)
         // While editing, the editing view draws the text instead.
         guard !context.isEditing else { return }
-        NSAttributedString(string: shape.props.text, attributes: NoteStyle.textAttributes).draw(
-            with: shape.frame.insetBy(dx: NoteStyle.padding, dy: NoteStyle.padding),
-            options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine]
-        )
+        for placement in shape.mentionTexts { context.drawMentionText(placement) }
     }
 
     func indicatorPath(of shape: ShapeRecord<StickyNote>, in context: ShapeContext) -> CGPath {
@@ -83,7 +93,7 @@ extension StickyNoteDefinition: ShapeDefinition {
 
 extension StickyNoteDefinition: Editable {
     func makeEditingView(for shape: ShapeRecord<StickyNote>, context: EditContext<StickyNote>) -> EditingView {
-        let editor = NoteEditor(text: shape.props.text, size: shape.frame.size, context: context)
+        let editor = NoteEditor(text: shape.props.text, frame: shape.frame, context: context)
         return EditingView(view: editor, firstResponder: editor.textView)
     }
 }
@@ -98,49 +108,50 @@ enum NoteStyle {
     /// drawing's own pitch for the font, so the render is as it was; TextKit 2, which lays out the
     /// editor, would set lines a point closer, so the text moved when editing started.
     static let lineHeight: CGFloat = 19
-    /// Shared by the renderer and the editor so text doesn't shift when editing starts.
-    static let textAttributes: [NSAttributedString.Key: Any] = [
-        .font: NSFont.systemFont(ofSize: 16),
-        .foregroundColor: NSColor(white: 0.12, alpha: 1),
-        .paragraphStyle: fixedLines(lineHeight),
-    ]
+    /// Shared by the renderer and the editor so text, and its pills, don't shift when editing starts.
+    static let text = MentionTextStyle(font: .systemFont(ofSize: 16), color: NSColor(white: 0.12, alpha: 1), lineHeight: lineHeight)
+    /// The text's attributes: its font, its color and its fixed lines.
+    static var textAttributes: [NSAttributedString.Key: Any] { text.attributes }
     /// Where the editor's text starts in the note. At the same line height, TextKit 2 sets a line's
     /// glyphs a point lower in it than string drawing does, so the editor's text starts a point
     /// higher than the render's and its lines fall exactly on the render's.
     static let editorInset = NSSize(width: padding, height: padding - 1)
-    private static func fixedLines(_ height: CGFloat) -> NSParagraphStyle {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = height
-        paragraph.maximumLineHeight = height
-        return paragraph
-    }
     static func path(_ frame: CGRect) -> CGPath {
         CGPath(roundedRect: frame, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
     }
 }
 
 /// A text view laid over the note being edited. Its frame is in view points and its bounds in
-/// world units, so AppKit scales it by the zoom and the text lays out exactly as the canvas draws it.
+/// world units, the note's frame at its origin, so AppKit scales it by the zoom and the text lays
+/// out exactly as the canvas draws it. Its text shows mentions as pills (`MentionTextView`), and
+/// begun from a press on a pill, that pill is selected.
 final class NoteEditor: NSView, NSTextViewDelegate {
-    let textView: NSTextView
+    let textView: MentionTextView<AnyMentionable>
     private let context: EditContext<StickyNote>
 
-    init(text: String, size: CGSize, context: EditContext<StickyNote>) {
+    init(text: MentionText, frame: CGRect, context: EditContext<StickyNote>) {
         self.context = context
-        textView = NSTextView(frame: CGRect(origin: .zero, size: size))
+        textView = MentionTextView(frame: CGRect(origin: .zero, size: frame.size), text: text, style: NoteStyle.text,
+                                   owner: context.shapeID, mentions: context.service(MentionState.self))
         super.init(frame: .zero)
         textView.isRichText = false
         textView.allowsUndo = true
         textView.drawsBackground = false
         textView.focusRingType = .none
-        textView.textContainerInset = NoteStyle.editorInset
+        // The padding before the inset: setting the inset fits the pills to the line.
         textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainerInset = NoteStyle.editorInset
         textView.typingAttributes = NoteStyle.textAttributes
-        textView.textStorage?.setAttributedString(NSAttributedString(string: text, attributes: NoteStyle.textAttributes))
-        textView.insertionPointColor = NoteStyle.textAttributes[.foregroundColor] as? NSColor ?? .black
+        textView.insertionPointColor = NoteStyle.text.color
         textView.delegate = self
         clipsToBounds = true
         addSubview(textView)
+        // Begun from a press on a pill, the pill is selected: the view's bounds, and so the text
+        // view's, are world units with the note's frame at their origin. Anywhere else, the text
+        // view puts the caret where it always has.
+        if let start = context.startPoint {
+            textView.selectPill(at: CGPoint(x: start.x - frame.minX, y: start.y - frame.minY))
+        }
     }
 
     @available(*, unavailable)
@@ -148,8 +159,11 @@ final class NoteEditor: NSView, NSTextViewDelegate {
 
     override var isFlipped: Bool { true }
 
+    /// Commits the text only when it differs from the note's: a second report of one change (after
+    /// an undo, the text view's own and then the board's window's) writes nothing.
     func textDidChange(_ notification: Notification) {
-        context.update { $0.text = textView.string }
+        let text = textView.mentionText
+        context.update { if $0.text != text { $0.text = text } }
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {

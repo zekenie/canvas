@@ -16,6 +16,7 @@ import Eraser
 import Keyboard
 import LanguageModels
 import Locking
+import Mentions
 import Polylines
 import Ports
 import Rectangles
@@ -51,6 +52,8 @@ public enum ShippedPlugins {
             ArrowsPlugin(), StickyNotesPlugin(), EllipsesPlugin(), TaskCardsPlugin(), SchemasPlugin(),
             // After Validation: what's shown on shapes draws over its outline.
             ValidationPlugin(), AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin(), ChecklistsPlugin(), TitlesPlugin(),
+            // After Titles, whose names its pills show, and the table of contents, whose rows it names.
+            MentionsPlugin(),
             ValidationDetailsPlugin(), ValidationContentsPlugin(), ClipboardPlugin(pasteboard: pasteboard),
             LockingPlugin(),
             // Ports, whose arrows the bridge draws. After Adornments: a shape's dots draw above its
@@ -127,7 +130,7 @@ public enum WelcomeBoard {
         let origins = [CGPoint(x: 80, y: 80), CGPoint(x: 460, y: 80), CGPoint(x: 840, y: 80),
                        CGPoint(x: 80, y: 420), CGPoint(x: 460, y: 420), CGPoint(x: 840, y: 420)]
         let notes = zip(origins, texts).map { origin, text in
-            ShapeRecord(StickyNote(frame: CGRect(origin: origin, size: StickyNote.defaultSize), text: text))
+            ShapeRecord(StickyNote(frame: CGRect(origin: origin, size: StickyNote.defaultSize), text: MentionText(plain: text)))
         }
         func bound(_ note: ShapeRecord<StickyNote>) -> ArrowTerminal {
             .bound(ArrowBinding(shapeID: note.id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))

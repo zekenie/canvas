@@ -7,6 +7,7 @@ import Checklists
 import Composition
 import DetailPanel
 import LanguageModels
+import Mentions
 import Selection
 import StickyNotes
 import SwiftUI
@@ -107,7 +108,7 @@ struct InspectorHost: View {
 /// A note at (100, 100), 200 square: its top-right corner, where the checklist chip goes, is at
 /// (300, 100) in the window's canvas.
 func note(_ text: String = "", checklist: [ChecklistItem] = []) -> ShapeRecord<StickyNote> {
-    var shape = ShapeRecord(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: text))
+    var shape = ShapeRecord(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: MentionText(plain: text)))
     shape[ChecklistProperty.self] = checklist
     return shape
 }

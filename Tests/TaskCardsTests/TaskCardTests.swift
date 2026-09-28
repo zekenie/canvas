@@ -6,6 +6,7 @@ import ContextMenus
 import DetailPanel
 import Foundation
 import Keyboard
+import Mentions
 import Ports
 import Selection
 import TableOfContents
@@ -36,17 +37,36 @@ import Validation
         task-cards         shape task-card v3 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · \
         ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · \
         ShapeDetails → task-card · ShapeContextMenus → task-card · property title → task-card · ShapeTitles → task-card · ContentsTitles → task-card · \
-        ports task-link → task-card · channel task-link
+        ports task-link → task-card · mentionable → task-card · channel task-link
         """)
     },
-    test("needs validation, checklists, the panel, context menus, the table of contents and ports installed") {
+    test("needs validation, checklists, the panel, context menus, the table of contents, ports and mentions installed") {
         let plugins = taskPlugins()
         for (point, owner) in [("ValidationRules", PluginID.validation), ("ShapeChecklists", .checklists), ("ShapeDetails", .detailPanel),
-                              ("ShapeContextMenus", .contextMenus), ("ContentsRows", .tableOfContents), ("ShapePorts", .ports)] {
+                              ("ShapeContextMenus", .contextMenus), ("ContentsRows", .tableOfContents), ("ShapePorts", .ports),
+                              ("ShapeMentions", .mentions)] {
             expectThrows(RegistryError.ownerNotInstalled(point: point, owner: owner, contributor: .taskCards)) {
                 _ = try Registry(plugins: plugins.filter { $0.id != owner })
             }
         }
+    },
+    test("a task is mentioned by its title, else as an untitled task, with its status's symbol, which follows the status") {
+        let editor = try taskEditor()
+        let titled = editor.add(fullTask())
+        var blank = fullTask()
+        blank[TitleProperty.self] = nil
+        blank.frame = cardFrame.offsetBy(dx: 300, dy: 0)
+        let untitled = editor.add(blank)
+        @MainActor func appearance(_ id: ShapeID) throws -> MentionAppearance {
+            try require(editor.document[id].flatMap(editor.registry.mentionAppearance))
+        }
+        expectEqual(try appearance(titled), MentionAppearance(label: "Write the spec", systemImage: "circle.lefthalf.filled", kindName: "Task",
+                                                              detail: "Task"))
+        expectEqual(try appearance(untitled), MentionAppearance(label: "Untitled Task", isPlaceholder: true, systemImage: "circle.lefthalf.filled",
+                                                                kindName: "Task", detail: "Task"))
+        editor.transact { $0.update(titled, as: TaskCard.self) { $0.props.status = .done } }
+        expectEqual(try appearance(titled).systemImage, "checkmark.circle.fill")
+        expectEqual(editor.mentions?.resolve(titled), .live(try appearance(titled)))
     },
     test("its context menu sets the status, checked, then the checklist's actions; several tasks' statuses show mixed") {
         let h = try EditorHarness { try taskEditor(scheduler: $0) }

@@ -197,6 +197,24 @@ private func uuid(_ n: Int) -> ShapeID { ShapeID(UUID(uuidString: String(format:
         note.forEachNamedShape { named.append($0) }
         expectEqual(named, [a, b, a], "in order, repeats included")
     },
+    test("the leaves a value holds, wherever they are in it: in a struct's members, a list, an optional and a dictionary") {
+        let a = ShapeID(), b = ShapeID(), c = ShapeID()
+        @MainActor func leaves(of value: any ShapeNaming) -> [Citation] {
+            var found: [Citation] = []
+            value.forEachNamingLeaf { leaf in
+                guard let citation = leaf as? Citation else { return expect(false, "\(leaf) isn't a leaf") }
+                found.append(citation)
+            }
+            return found
+        }
+        expectEqual(leaves(of: Citation(a)), [Citation(a)], "a leaf is its own")
+        let note = MemoNote("see", cites: [Citation(a), Citation(b)])
+        expectEqual(leaves(of: note), [Citation(a), Citation(b)])
+        expectEqual(leaves(of: [note, MemoNote("more", cites: [Citation(c)])]), [Citation(a), Citation(b), Citation(c)])
+        expectEqual(leaves(of: Optional(["one": [note]])), [Citation(a), Citation(b)])
+        expectEqual(leaves(of: (nil as MemoNote?)), [])
+        expectEqual(Set(leaves(of: Set([Citation(a), Citation(c)]))), [Citation(a), Citation(c)])
+    },
     test("a dictionary keyed by strings is an object in a schema, its members its values', and a board keeps it") {
         let registry = try Registry(plugins: [FixturesPlugin(), NamingPlugin()])
         let json = try require(registry.schema(for: Memo.kind)).json

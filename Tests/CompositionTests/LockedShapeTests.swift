@@ -9,6 +9,7 @@ import CoreGraphics
 import Foundation
 import LanguageModels
 import Locking
+import Mentions
 import Selection
 import StickyNotes
 import TestKit

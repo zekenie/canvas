@@ -1,0 +1,218 @@
+import AppKit
+import Canvas
+
+/// One row of the `@` picker: a section's header, a shape that can be picked, or the one row an
+/// empty list shows instead (quiet: "No matches", "Nothing to mention"). Only a shape's row can be
+/// highlighted and picked.
+public enum MentionPickerRow: Hashable, Sendable {
+    case header(String)
+    case candidate(MentionCandidate)
+    case empty(String)
+
+    /// The shape a row picks; nil for a header or an empty state.
+    public var candidate: MentionCandidate? {
+        if case .candidate(let candidate) = self { candidate } else { nil }
+    }
+}
+
+/// The `@` picker of a mention text view, while it's open: what's typed after its `@` (the query),
+/// the rows that lists, and which row is highlighted. It's the picker's model, headless: the text
+/// view feeds it the text and the caret after each change (`read`), hands it the commands the keys
+/// send (`perform`), and shows it in a window of its own.
+///
+/// When it opens and closes is its rules too, so a test can hold them without a view: an `@` typed
+/// at the start of the text, after whitespace or a line break, or after an opening bracket or
+/// quote opens it (`opens(in:at:)`); the caret leaving the query, the `@` deleted, a line break in
+/// the query, a query longer than `MentionStyle.queryLimit` characters, and a query ending in a
+/// space that matches nothing close it (`Closing`).
+@MainActor
+public final class MentionPicker {
+    /// Why an open picker closes, as the text read after a change says (`read`).
+    public enum Closing: Hashable, Sendable {
+        /// The caret left the query: before the `@`, past what was typed, or a selection.
+        case caretLeft
+        /// The `@` isn't there any more.
+        case atDeleted
+        /// The query holds a line break.
+        case newline
+        /// The query is longer than `MentionStyle.queryLimit` characters (a title's longest).
+        case tooLong
+        /// The query ends in a space and nothing matches: the person was just writing.
+        case spaceWithoutMatch
+    }
+
+    /// What a command the keys send does while the picker is open.
+    public enum Action: Hashable, Sendable {
+        case moveUp, moveDown, pageUp, pageDown, pick, close
+    }
+
+    /// Where its `@` is: the character's index in the text.
+    public let location: Int
+    /// What's typed after the `@`, to the caret.
+    public private(set) var query = ""
+    /// What it lists for the query.
+    public private(set) var rows: [MentionPickerRow] = []
+    /// The index in `rows` of the highlighted row, always a shape's; nil when none can be picked.
+    public private(set) var highlighted: Int?
+    /// How far the query reaches (a character index): typing moves it, so the caret can go back
+    /// over the query and forward again, but not past it.
+    private var queryEnd: Int
+    /// What the picker lists for a query.
+    private let search: @MainActor (String) -> MentionCandidates
+    /// Called after the rows or the highlight change.
+    var onChange: (@MainActor () -> Void)?
+
+    /// A picker for the `@` at `location`, listing what `search` finds for each query.
+    public init(at location: Int, search: @escaping @MainActor (String) -> MentionCandidates) {
+        self.location = location
+        self.search = search
+        queryEnd = location + 1
+        setRows(for: "")
+    }
+
+    /// A picker listing what `mentions` offers text of `scope` on `owner` (never listed itself).
+    public convenience init<S: MentionScope>(at location: Int, mentions: MentionState, scope: S.Type, owner: ShapeID?) {
+        self.init(at: location) { [weak mentions] query in
+            mentions?.candidates(matching: query, in: scope, for: owner) ?? MentionCandidates()
+        }
+    }
+
+    // MARK: Opening and closing
+
+    /// Whether an `@` typed at `location` of `text` opens the picker: at the start of the text,
+    /// after whitespace or a line break, or after `(`, `[`, `{`, `"`, `'`, `“` or `‘`; never in a
+    /// word (`name@example.com`).
+    public static func opens(in text: NSString, at location: Int) -> Bool {
+        guard location >= 0, location < text.length, text.character(at: location) == 0x40 else { return false }
+        guard location > 0 else { return true }
+        let before = text.character(at: location - 1)
+        if let scalar = Unicode.Scalar(before), scalar.properties.isWhitespace { return true }
+        return opensAfter.contains(before)
+    }
+
+    /// What an `@` may follow, besides whitespace, to open the picker.
+    private static let opensAfter: Set<unichar> = Set("([{\"'“‘".utf16)
+
+    /// Reads the query again from the text and the selection after a change, and lists what it
+    /// finds; or says why the picker closes. `isEdit` is whether the text changed (typing moves the
+    /// query's end to the caret), rather than only the selection.
+    public func read(_ text: NSString, selection: NSRange, isEdit: Bool) -> Closing? {
+        guard location < text.length, text.character(at: location) == 0x40 else { return .atDeleted }
+        guard selection.length == 0 else { return .caretLeft }
+        let caret = selection.location
+        guard caret > location, caret <= text.length else { return .caretLeft }
+        if isEdit {
+            queryEnd = caret
+        } else if caret > queryEnd {
+            return .caretLeft
+        }
+        let typed = text.substring(with: NSRange(location: location + 1, length: caret - location - 1))
+        if typed.contains(where: \.isNewline) { return .newline }
+        if typed.unicodeScalars.contains("\u{FFFC}") { return .caretLeft }
+        if typed.count > MentionStyle.queryLimit { return .tooLong }
+        if typed != query { setRows(for: typed) }
+        if typed.last?.isWhitespace == true, highlighted == nil { return .spaceWithoutMatch }
+        return nil
+    }
+
+    // MARK: Rows
+
+    /// Lists what the query finds, the first shape highlighted: for an empty query, the recent picks
+    /// and the shapes nearby, each under its header; for any other, the best matches.
+    private func setRows(for query: String) {
+        self.query = query
+        let found = search(query)
+        var rows: [MentionPickerRow] = []
+        if query.isEmpty {
+            if !found.recent.isEmpty { rows += [.header(MentionStyle.recentHeader)] + found.recent.map { .candidate($0) } }
+            if !found.nearby.isEmpty { rows += [.header(MentionStyle.nearbyHeader)] + found.nearby.map { .candidate($0) } }
+            if rows.isEmpty { rows = [.empty(MentionStyle.nothingToMention)] }
+        } else {
+            rows = found.matches.map { .candidate($0) }
+            if rows.isEmpty { rows = [.empty(MentionStyle.noMatches)] }
+        }
+        self.rows = rows
+        highlighted = rows.firstIndex { $0.candidate != nil }
+        onChange?()
+    }
+
+    /// The highlighted row's shape.
+    public var highlightedCandidate: MentionCandidate? { highlighted.flatMap { rows[$0].candidate } }
+
+    /// The indexes of the rows that can be highlighted, in order.
+    private var selectable: [Int] { rows.indices.filter { rows[$0].candidate != nil } }
+
+    /// Highlights a row (the pointer's over it); a header or an empty state highlights nothing new.
+    public func highlight(row index: Int) {
+        guard rows.indices.contains(index), rows[index].candidate != nil, highlighted != index else { return }
+        highlighted = index
+        onChange?()
+    }
+
+    /// Moves the highlight `steps` shapes down (up, if negative): by one it wraps around the ends,
+    /// by more (a page) it stops at them.
+    public func moveHighlight(by steps: Int) {
+        let selectable = selectable
+        guard !selectable.isEmpty else { return }
+        let current = highlighted.flatMap { selectable.firstIndex(of: $0) } ?? 0
+        let next = abs(steps) == 1 ? (current + steps + selectable.count) % selectable.count
+            : min(max(current + steps, 0), selectable.count - 1)
+        guard selectable[next] != highlighted else { return }
+        highlighted = selectable[next]
+        onChange?()
+    }
+
+    // MARK: Keys
+
+    /// What a text view command does while the picker is open, if it takes it: ↑/↓ (and ⌃P/⌃N)
+    /// move the highlight, Page Up/Down (and ⌥) by a page, Return and Tab pick, Escape and ⌥⎋ close.
+    /// Every other command (←/→ among them) is the text view's.
+    public static func action(for command: Selector) -> Action? {
+        switch command {
+        case #selector(NSResponder.moveUp(_:)): .moveUp
+        case #selector(NSResponder.moveDown(_:)): .moveDown
+        case #selector(NSResponder.scrollPageUp(_:)), #selector(NSResponder.pageUp(_:)): .pageUp
+        case #selector(NSResponder.scrollPageDown(_:)), #selector(NSResponder.pageDown(_:)): .pageDown
+        case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.insertTab(_:)): .pick
+        case #selector(NSResponder.cancelOperation(_:)), #selector(NSResponder.complete(_:)): .close
+        default: nil
+        }
+    }
+
+    /// Does what a command does to the list: whether the picker takes it (the text view then
+    /// doesn't run it), and what's left for the view to carry out, `.pick` or `.close` (nil when
+    /// moving the highlight was all). Return and Tab with nothing to pick aren't taken, so they do
+    /// what they would without the picker; nor is any command the picker doesn't know.
+    public func perform(_ command: Selector) -> (taken: Bool, action: Action?) {
+        guard let action = Self.action(for: command) else { return (false, nil) }
+        switch action {
+        case .moveUp: moveHighlight(by: -1)
+        case .moveDown: moveHighlight(by: 1)
+        case .pageUp: moveHighlight(by: -MentionStyle.pickerRowsShown)
+        case .pageDown: moveHighlight(by: MentionStyle.pickerRowsShown)
+        case .pick: return highlightedCandidate == nil ? (false, nil) : (true, .pick)
+        case .close: return (true, .close)
+        }
+        return (true, nil)
+    }
+
+    // MARK: Picking
+
+    /// Whether a pick puts a space after its pill, given the character after the query (nil at the
+    /// end of the text, where it does): not before whitespace or `. , ; : ! ? ) ] } ” ’ ' "`.
+    public static func spaceAfterPick(before next: unichar?) -> Bool {
+        guard let next else { return true }
+        if let scalar = Unicode.Scalar(next), scalar.properties.isWhitespace { return false }
+        return !noSpaceBefore.contains(next)
+    }
+
+    private static let noSpaceBefore: Set<unichar> = Set(".,;:!?)]}”’'\"".utf16)
+}
+
+extension MentionStyle {
+    /// The picker's sections and empty states: quiet, one row each.
+    static let recentHeader = "Recent"
+    static let nearbyHeader = "Nearby"
+    static let noMatches = "No matches"
+    static let nothingToMention = "Nothing to mention"
+}

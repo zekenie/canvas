@@ -9,6 +9,7 @@ import CoreGraphics
 import DetailPanel
 import Geometry
 import LanguageModels
+import Mentions
 import Selection
 import StickyNotes
 import SwiftUI
@@ -44,9 +45,9 @@ import ValidationDetails
         keyboard             service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo
         selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
         arrows               shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay
-        sticky-notes         shape sticky-note v2 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · channel note-link
+        sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · channel note-link
         ellipses             shape ellipse · tool ellipse · shortcut O → tool ellipse
-        task-cards           shape task-card v3 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · property title → task-card · ShapeTitles → task-card · ContentsTitles → task-card · ports task-link → task-card · channel task-link
+        task-cards           shape task-card v3 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · property title → task-card · ShapeTitles → task-card · ContentsTitles → task-card · ports task-link → task-card · mentionable → task-card · channel task-link
         schemas              service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link
         validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
         adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
@@ -55,6 +56,7 @@ import ValidationDetails
         table-of-contents    service ContentsState
         checklists           property checklist · adornment ChecklistChip → every shape
         titles               property title · adornment TitlePill → every shape
+        mentions             service MentionState · overlay MentionFrames · ShapeFaces
         validation-details   DetailStatuses in Issues
         validation-contents  ContentsMarks
         clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
@@ -69,6 +71,13 @@ import ValidationDetails
         ellipse-titles       ShapeTitles → ellipse · ContentsTitles → ellipse
         reordering           ShapeContextMenus
         """)
+    },
+    test("the guide shows the registry report as it is") {
+        let guide = try String(contentsOf: URL(fileURLWithPath: "docs/plugin-system.md"), encoding: .utf8)
+        let lead = "`registry.report` prints who contributes what: the runtime half of the graph, pinned by a test.\n\n```\n"
+        let start = try require(guide.range(of: lead), "the guide's report is gone").upperBound
+        let end = try require(guide.range(of: "\n```", range: start..<guide.endIndex)).lowerBound
+        expectEqual(String(guide[start..<end]), try ShippedPlugins.registry(model: ScriptedLanguageModel()).report)
     },
     test("every placed kind has a panel: a note its Checklist and Arrange (and Issues, empty), a task and a schema their own tabs too, other boxes Arrange, an arrow only its header") {
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
@@ -175,7 +184,7 @@ import ValidationDetails
         expectEqual(shipped.indices.filter { shipped[$0] != pocWelcomeTexts[$0] }, [2])
         expect(shipped[2].contains("Press H"))
         expect(!shipped[2].contains("pans too"))
-        let notes = WelcomeBoard.document().shapes.compactMap { $0.typed(as: StickyNote.self)?.props.text }
+        let notes = WelcomeBoard.document().shapes.compactMap { $0.typed(as: StickyNote.self)?.props.text.stored }
         expectEqual(notes, shipped)
     },
     test("O then a drag places an ellipse and moves it into place") {

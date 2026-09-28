@@ -5,6 +5,7 @@ import CanvasUI
 import Composition
 import CoreGraphics
 import LanguageModels
+import Mentions
 import Selection
 import StickyNotes
 import TaskCards

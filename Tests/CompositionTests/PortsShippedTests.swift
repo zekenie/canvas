@@ -9,6 +9,7 @@ import CoreGraphics
 import Foundation
 import LanguageModels
 import Locking
+import Mentions
 import Schemas
 import Selection
 import StickyNotes
@@ -44,7 +45,7 @@ private func around(_ point: CGPoint, _ radius: CGFloat = 6) -> CGRect {
 }
 
 @MainActor private func note(_ frame: CGRect, text: String = "Hi") -> AnyShapeRecord {
-    AnyShapeRecord(ShapeRecord(StickyNote(frame: frame, text: text)))
+    AnyShapeRecord(ShapeRecord(StickyNote(frame: frame, text: MentionText(plain: text))))
 }
 
 /// Titled, so it has no issues and no red outline.

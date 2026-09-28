@@ -5,8 +5,11 @@ import CanvasUI
 import Composition
 import Foundation
 import LanguageModels
+import Mentions
 import Schemas
 import StickyNotes
+import TableOfContents
+import TaskCards
 import TestKit
 import Titles
 
@@ -53,6 +56,50 @@ import Titles
         expectEqual(try JSON(text: unknown.error)["error"]?["reason"], "unknown_kind")
         expect(try JSON(text: unknown.error)["error"]?["hint"]?.stringValue?.hasPrefix("Did you mean sticky-note?") == true, unknown.error)
         expectEqual(board.editor.document.shapes.count, 1)
+    },
+    test("canvas create sticky-note --set text= takes plain text as it is, and mentions as written: of a task on the board, named as it is now") {
+        try configureBoards()
+        let board = newBoard()
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        @MainActor func created(_ result: ProcessOutput) throws -> (record: AnyShapeRecord, warnings: JSON?) {
+            expectEqual(result.status, 0, result.error)
+            let json = try JSON(text: result.output)
+            let id = try require(json["id"]?.stringValue.flatMap(UUID.init(uuidString:)))
+            return (try require(board.editor.document[ShapeID(id)]), json["warnings"])
+        }
+        @MainActor func text(_ record: AnyShapeRecord) throws -> MentionText { try require(record.typed(as: StickyNote.self)?.props.text) }
+
+        let plain = try created(canvas(server, ["create", "sticky-note", "--at", "100,100", "--set", #"text=a@b.c, @ [x] and C:\path"#]))
+        expectEqual(try text(plain.record).stored, #"a@b.c, @ [x] and C:\path"#)
+        expectEqual(try text(plain.record).mentioned, [])
+        expectEqual(plain.warnings, nil)
+
+        let task = try created(canvas(server, ["create", "task-card", "--at", "500,100", "--set", "title=Ship it"])).record
+        let written = "Ask @[Ship](shape:\(task.id.rawValue.uuidString)) first, then @[it](shape:\(task.id.rawValue.uuidString.lowercased()))"
+        let note = try created(canvas(server, ["create", "sticky-note", "--at", "100,400", "--set", "text=\(written)"]))
+        expectEqual(note.warnings, nil, "every shape it mentions is there")
+        expectEqual(try text(note.record).stored, written, "kept as written, an agent's lowercase id too")
+        expectEqual(try text(note.record).mentioned, [task.id, task.id])
+        expectEqual(board.editor.mentions?.mentioners(of: task.id), [note.record.id])
+        let row = board.editor.tableOfContents?.entries.first { $0.id == note.record.id }?.label?.text
+        expectEqual(row, "Ask @Ship it first, then @Ship it", "each mention by the task's title now")
+    },
+    test("canvas create sticky-note makes a note mentioning a shape that isn't on the board, and warns that it shows as missing") {
+        try configureBoards()
+        let board = newBoard()
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let gone = ShapeID()
+        let result = try canvas(server, ["create", "sticky-note", "--set", "text=See @[Old plan](shape:\(gone)) again"])
+        expectEqual(result.status, 0, result.error)
+        let json = try JSON(text: result.output)
+        expectEqual(json["warnings"], [.string("text names shapes that aren't on this board: \(gone); they show as missing.")])
+        let id = try require(json["id"]?.stringValue.flatMap(UUID.init(uuidString:)))
+        let note = try require(board.editor.document[ShapeID(id)]?.typed(as: StickyNote.self))
+        expectEqual(note.props.text.mentioned, [gone])
+        expectEqual(board.editor.mentions?.resolve(gone), .missing)
+        expectEqual(board.editor.tableOfContents?.entries.first?.label?.text, "See @Old plan again", "by the name it holds")
     },
     test("canvas create schema-card is as tall as the schema it's given, as the panel makes it; a --size is as asked") {
         try configureBoards()

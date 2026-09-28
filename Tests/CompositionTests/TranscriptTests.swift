@@ -8,6 +8,7 @@ import CoreGraphics
 import Foundation
 import Geometry
 import LanguageModels
+import Mentions
 import Selection
 import StickyNotes
 import TestKit
@@ -39,7 +40,7 @@ struct Board {
     let player: Player
 
     init(withArrow bend: CGFloat?, texts: (String, String) = ("", "")) {
-        let a = ShapeRecord(StickyNote(frame: A, text: texts.0)), b = ShapeRecord(StickyNote(frame: B, text: texts.1))
+        let a = ShapeRecord(StickyNote(frame: A, text: MentionText(plain: texts.0))), b = ShapeRecord(StickyNote(frame: B, text: MentionText(plain: texts.1)))
         func bound(_ note: ShapeRecord<StickyNote>) -> ArrowTerminal {
             .bound(ArrowBinding(shapeID: note.id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))
         }

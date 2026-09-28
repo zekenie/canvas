@@ -32,11 +32,13 @@ maps one onto the other.
 - [The clipboard](#the-clipboard)
 - [Locking](#locking)
 - [Ports](#ports)
+- [Mentions](#mentions)
 - [The command line](#the-command-line)
 - [Schema cards](#schema-cards)
 - [Language models](#language-models)
 - [Capabilities](#capabilities)
 - [The editor, the document, and drawing](#the-editor-the-document-and-drawing)
+- [Undo](#undo)
 - [Boards on disk](#boards-on-disk)
 - [The registry](#the-registry)
 - [Testing plugins](#testing-plugins)
@@ -257,6 +259,9 @@ Once one plugin works, the question is which piece the next feature needs.
 | Draw a shape away from where it is, for an animation (a shake) | `editor.setDrawingOffset(_:for:)`; adornments follow by themselves, and an overlay with `context.worldDrawingOffset(of:)` | [Locking](#locking) |
 | Ask Claude something (and test it without the network) | `editor.languageModel?.respond(to: ModelRequest(...))`; `ScriptedLanguageModel` in tests | [Language models](#language-models) |
 | Keep what a kind's props are bound to right as shapes are deleted and copied (a connector) | `ShapeReferencing` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
+| Let a kind's shapes be mentioned in text, as pills | `x.mentionable(untitled:symbol:…)` (Mentions) | [Mentions](#mentionable-kinds) |
+| Let a kind's text mention shapes, drawn with pills and edited with a picker | A `MentionText` property; `x.mentionText { … }` and `context.drawMentionText`; a `MentionTextView` editor | [Mentions](#mention-text-and-its-stored-form) |
+| Restrict what a text may mention to some kinds | `ScopedMentionText<Only<Kind>>`, or a declared scope: `registrar.mentionScope(S.self)` and `x.mentionable(in: S.self)` | [Scopes](#scopes-what-a-text-may-mention) |
 | Hold names of shapes that may outlive them (a mention), renamed when copied with them | A value that adopts `ShapeNaming`; `registry.namingKinds` and `record.forEachNamingValue(in:)` to read them | [Values that name shapes](#values-that-name-shapes) |
 | Put an editing view's selection where the press that began editing was | `editor.beginEditing(id, at: point)`, read as `EditContext.startPoint` | [Capabilities](#capabilities) |
 | Name an undo step, or make several changes one | `editor.transact("Name") { ... }`; `editor.undoHistory.group("Name") { ... }`; `transact(coalescing:)` for a run of writes | [Undo](#undo) |
@@ -303,7 +308,9 @@ core only refuses to change the shapes a plugin says are read-only. So are [port
 kind can have them, on the channels it takes, and Ports owns the dots and what a drag from one may
 end on, while the plugin that owns a channel's meaning declares it. So is what's shown on shapes:
 [Adornments](#adornments) lays out and draws what any plugin puts on them, a title's pill beside a
-lock, so none overlaps another. And a horizontal may declare no point at all and only lend
+lock, so none overlaps another. So are [mentions](#mentions): any kind can be mentioned, and any
+kind's text can hold mentions, while Mentions owns the stored form, the pills, the picker and what
+keeps them in step with the shapes they name. And a horizontal may declare no point at all and only lend
 something: [LanguageModels](#language-models) lends every editor the model plugins ask.
 
 Opting in goes in one of two directions:
@@ -345,7 +352,7 @@ Each target is one line, with its layer:
 | wire | wire | CanvasRPC (what the app and its [command line](#the-command-line) say to each other) |
 | foundation | foundation | Geometry, Canvas (the core) |
 | ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
-| horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Adornments, Checklists, Clipboard, Locking, Ports, Automation, LanguageModels |
+| horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Adornments, Checklists, Clipboard, Locking, Ports, Mentions, Automation, LanguageModels |
 | vertical | foundation, horizontal | Arrows, StickyNotes, Ellipses, TaskCards, Schemas, Rectangles, Polylines, Eraser, Reordering |
 | bridge | foundation, horizontal, vertical | EllipseTitles, ValidationDetails, ValidationContents, ArrowPorts |
 | composition | foundation, horizontal, vertical, bridge, wire | Composition (the shipped plugin list) |
@@ -1233,7 +1240,10 @@ that both binds and names.)
   value.forEachNamedShape { id in … } }` is each value in a shape that names shapes, with the
   property it's in: the kind's own in list order, then its added ones. A shape kept aside has none,
   and neither has an added value kept aside (a newer version's), which a copy doesn't rename either:
-  it goes on naming the originals.
+  it goes on naming the originals. A plugin that reads leaves of its own (Mentions' text) goes into
+  each value with `value.forEachNamingLeaf { leaf in … }`: each leaf wherever it is in the value (a
+  struct's listed members, a list, an optional, a set, a dictionary), a leaf being its own one, so
+  it finds its leaves however deep a kind keeps them.
 - **Copying.** `record.remappingReferences(map, in:)` does both forms: first what the kind binds, as
   its `ShapeReferencing` says (nil lets a binding go), then every name, for `namingKinds` (nil keeps
   a name). A definition remaps what it binds and leaves names to the core. Clipboard's copy and
@@ -2411,9 +2421,10 @@ note.contentsRow { note in
 
 ### Rows read from more than their shape
 
-A row may show what other shapes say: a note's row will show its text with the names of the
-shapes it mentions, as they're named now, so renaming a shape changes the rows of the notes that
-mention it. Such a row is built from the shape and a `ContentsContext` (the editor's services, as
+A row may show what other shapes say: a note's row shows its text with the names of the shapes it
+mentions, as they're named now, so renaming a shape changes the rows of the notes that mention it
+([Mentions](#the-service-mentionstate): `note.contentsRow(affected: MentionRows.affected) { note,
+context in ContentsLabel(context.plainText(note.props.text), placeholder: "Empty Note", …) }`). Such a row is built from the shape and a `ContentsContext` (the editor's services, as
 a mark's is), returns a `ContentsLabel`, and names, with `affected`, the shapes each commit may
 change the rows of without changing them. A ref that shows the name of the shape it refers to,
 with a service of its plugin's own that keeps which refs refer to each shape
@@ -3289,6 +3300,290 @@ What Arrows lends, it lends any plugin, and it knows no channel
 Ports are the part of data-canvas's that notes and tasks need to prove the API; the rest is in
 [Not built yet](#not-built-yet).
 
+## Mentions
+
+Mentions ([`Sources/Mentions`](../Sources/Mentions)) lets text mention other shapes: `@` in a
+note, a few letters of a task's title, Return, and the note says "Ask ⟨▢ Ship the beta⟩ first",
+the mention an inline pill with the task's symbol and name. It's a horizontal on Selection, the
+table of contents and Titles, and two kinds opt in: sticky notes, whose text holds mentions and
+which can be mentioned, and task cards, which can be mentioned. The core knows no mention; what
+Mentions needs of it is generic: [names](#values-that-name-shapes) of shapes that may outlive them,
+[faces](#faces-clickable-parts-of-a-shape), [going to shapes](#selection), and
+[rows read from more than their shape](#rows-read-from-more-than-their-shape).
+
+```swift
+// In StickyNotesPlugin.register:
+registrar.shape(StickyNoteDefinition()) { note in
+    ...
+    note.noteRow()                                               // its row reads its mention text (below)
+    note.mentionText { $0.mentionTexts }                         // where its text, with pills, is drawn
+    note.mentionable(untitled: { $0.props.text.firstLine })     // called by its title, else its first line
+}
+
+// In TaskCardsPlugin.register:
+task.mentionable(symbol: { $0.props.status.symbol })            // called by its title; its symbol its status's
+```
+
+### Mentionable kinds
+
+A kind opts into being mentioned with `x.mentionable(label:untitled:symbol:detail:tint:)`, one per
+kind (the `ShapeMentions` point; `registrar.mentionable(K.self, …)` from a bridge, and
+`registrar.mentionableEveryShape(where:)` for a composition that wants every kind, which a kind's
+own takes the place of). Every closure reads only the shape, as a title does, so a pill changes
+only when its shape does:
+
+- **Its name** is `label`, else the shape's title (Titles' `registry.title(of:)`, named or
+  derived), else `untitled`, else "Untitled" and the kind's name ("Untitled Task"), each on one
+  line, blank counting as none. A note that isn't titled is called by the first line of its text
+  with words in it (`firstLine`), each mention there "@…" ("See @… first"): it names no other
+  shape, live or as its mentions hold them. A mention holds its target's name as it was written,
+  and an untitled note's name is its first line, so if its mentions' names were in it, two notes
+  that mention each other would each take in the other's name, and their own with it, every time
+  either was written.
+- **Its symbol** is `symbol`, else its placing tool's; `detail` is said beside the name in the
+  picker (the kind's name by default), and `tint` colors the symbol where the surface is neutral.
+
+`registry.mentionAppearance(of:)` is how a shape shows (`MentionAppearance`), and
+`registry.mentionResolution(of:lookup:)` what a mention of an id shows now (`MentionResolution`):
+`.live` with its appearance, `.missing` for no such shape on the board, or `.unavailable` for one
+kept aside or whose kind can't be mentioned, which shows as missing.
+
+### Mention text and its stored form
+
+Text holds mentions when its type is `ScopedMentionText<Scope>`; `MentionText` is
+`ScopedMentionText<AnyMentionable>`, any mentionable shape. A sticky note's `text` is one:
+
+```swift
+Property("text", \.text).description("What the note says.")    // public var text: MentionText
+```
+
+It's stored as **one string**, so a board, the schema and the command line see a plain string, an
+older app shows readable text, and there's no second structure to fall out of step:
+
+```
+Ask @[Ship the beta](shape:0A1B2C3D-4E5F-4061-8293-A4B5C6D7E8F9) first
+```
+
+- **The grammar.** `@[name](shape:UUID)` is a mention (any case of UUID); in a name, `\]` is `]`
+  and `\\` is `\`; in the text, `\@[` is a literal `@[`, and backslashes just before an `@[` are
+  doubled. Anything that isn't a whole mention is text, byte for byte. The schema's definition
+  (`mentions.text`, which every scope refers to) says so, for agents; it's a string without bounds,
+  and the registry refuses mention text given a length or a pattern (`MentionTextFormat.checkBounds`).
+- **The value.** `runs` (`MentionRun`: `.text(String)`, `.mention(ShapeID, label:)`) are parsed
+  once, as it's made. `stored` is the string it was made from, and equality compares it, so a
+  board's text, or an agent's lowercase id, writes back as it was read; text made from runs
+  (`MentionText([.text("Ask "), .mention(id, label: "Ship"), …])`, what every Mentions surface
+  writes) is canonical, ids in uppercase. A string literal is plain text, as is `init(plain:)`:
+  `StickyNote(text: "Hi")` never gains a mention. `mentioned`, `isBlank`, `firstLine` ("Ask @…
+  first") and `plainText(label:)` ("Ask @Ship the beta first") read it.
+- **The name a mention holds is a snapshot**, what its shape was called when the text was last
+  written. The app shows it only while the shape isn't live; everywhere else it shows the shape's
+  name now.
+- **A mention is a name, not a binding** (`ScopedMentionText: ShapeNaming`, coded by hand). Deleting
+  the shape writes nothing: its pills show the name they hold, dashed, and undoing the deletion,
+  which puts the shape back as it was, id and all ([Undo](#undo)), brings them back to life;
+  redoing it, they're missing again. A copy renames the mentions of shapes copied along and keeps the rest
+  (a note pasted on another board mentions a shape that isn't there, which shows as missing), and
+  `canvas create` makes a note that mentions a shape that isn't there, with a warning.
+- **The migration.** A note's text became `MentionText` in its third step,
+  `PropsMigration("text may mention shapes")`, which escapes what would now read as a mention
+  (`MentionTextFormat.escapeLookalikesV1`), so old text stays the text it was. The escaper is
+  frozen, as a shipped step is: a later grammar gets a new one.
+
+### Scopes: what a text may mention
+
+A text's scope is its type parameter, a `MentionScope` (conformed to in an extension): whether it
+admits a shape, and what its schema says of it (`x-canvas-mentions`, beside the reference).
+
+- `AnyMentionable`: every mentionable shape (`MentionText`).
+- `Only<Kind>`: one kind, which must be mentionable. A vertical names only its own kind, since no
+  vertical imports another: `ScopedMentionText<Only<SchemaCard>>`.
+- A **declared scope** (`DeclaredMentionScope`, with a `title`), which the plugin that owns its
+  meaning declares, `registrar.mentionScope(Blockers.self)` (the `MentionScopes` point; no two
+  titled alike), and kinds join from their own plugin or a bridge, `x.mentionable(in:
+  Blockers.self)` or `registrar.mentionable(TaskCard.self, in: Blockers.self)` (a kind must be
+  mentionable to join, and the scope declared).
+
+A scope limits what the picker offers, and the schema says it. It never refuses a mention that's
+there (pasted, or written by an agent), as a bound is a guideline. No shipped text is restricted
+yet: a note's mentions any mentionable shape. MentionsTests hold scopes with fixtures (a `Brief`
+holds text of `Only<Plate>` and of `Blockers`, which plates and tokens join).
+
+### Drawing
+
+A kind lists where it draws mention text, from the shape alone, and its render draws exactly those:
+
+```swift
+extension ShapeRecord where Props == StickyNote {
+    @MainActor var mentionTexts: [MentionTextPlacement] {
+        [MentionTextPlacement(props.text, in: props.frame.insetBy(dx: NoteStyle.padding, dy: NoteStyle.padding), style: NoteStyle.text)]
+    }
+}
+
+func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
+    context.fillWithShadow(NoteStyle.path(shape.frame), NoteStyle.color)
+    guard !context.isEditing else { return }                     // the editing view draws the text
+    for placement in shape.mentionTexts { context.drawMentionText(placement) }
+}
+```
+
+- **The style** (`MentionTextStyle`: a font, a color, a fixed line height, and its
+  `MentionSurface`) is shared by the render and the editor, as `NoteStyle.text`; its `attributes`
+  are what the editor types with. On a shape's surface a pill is monochrome, the text's own color
+  at a few strengths (a yellow tint on a yellow note would vanish); on a neutral one (the picker),
+  its symbol takes the kind's tint.
+- **The pill** (`MentionAttachment`, one U+FFFC character) is the kind's symbol and the name, no
+  "@", its metrics fractions of the font's size (`MentionStyle`): 17 points tall in 16-point text,
+  so a note's lines keep their 19 points; at most 16 em wide, or the line, its name ending in "…".
+  A missing one has no fill, a dashed outline, and its name in italic. Its image is drawn afresh
+  wherever it's drawn, never kept as a bitmap (`cacheMode` `.never`): the canvas keeps thousands
+  of pills built, and a bitmap for each scale they're drawn at would come to hundreds of megabytes
+  after a pan at 400%.
+- **`drawMentionText`** is string drawing, as the note's plain text always was: text with no
+  mention draws exactly as a plain string with the style's attributes, pixel for pixel. Text with
+  mentions is resolved through the render's `shapes` (a render's lookups aren't tracked, but the
+  canvas redraws what's in view on every commit, so a rename shows the next frame), and each built
+  string is kept (`MentionTextMemo`) by what it says and how each of its mentions shows, so a frame
+  of texts that didn't change builds nothing: the 2,048 used last, and never one the frame being
+  drawn has drawn, so a frame of more grows it, and it keeps what each editor's last frame drew
+  (a cache of fixed size that a frame goes through in order would lose each text just before
+  drawing it again). Where a frame ends is an overlay of Mentions' that draws nothing.
+- **Where pills are.** `editor.mentionPills(of:)` is each pill's frame, in world units, with
+  `isLive`, from the same placements, as string drawing puts them: a line that doesn't fit, or a
+  pill the "…" of a cut-short last line covers, has none. The `MentionTexts` point (`x.mentionText`,
+  `registrar.mentionText(K.self)` from a bridge, `registry.mentionTextPlacements(of:)`) is what the
+  faces read.
+
+### The service: `MentionState`
+
+`MentionState` (`editor.mentions`) is what Mentions knows about a board, and never transacts (so it
+follows undo and redo, during which nothing may):
+
+- **The index**: who mentions whom, both ways (`mentioners(of:)`, `mentions(in:)`), and how each
+  mentioned shape shows now (`resolve(_:)`), from mention text wherever a shape keeps it (a
+  property, or a struct, list, set or dictionary in one: `forEachNamingLeaf`). It's built as a
+  board opens, walking only the kinds that can hold names (`registry.namingKinds`), and each
+  commit costs what it changed: the text of the shapes it added or changed is read again, and the
+  mentioned shapes it touched are resolved again. A commit that only moved shapes costs nothing.
+  Undo and redo are commits too, with exact change sets (`restoredStep`), so the state follows a
+  step undone as any other: a rename undone gives every pill, row and editor its name back, and a
+  deletion undone makes its pills live. A board opened again (`replaceDocument`) is read afresh,
+  with nothing to undo.
+- **Following changes**: `observe(_:_:)` tells an AppKit view which of its targets' resolutions a
+  commit changed (the text view's pills), `labelRevision(of:)` observes one target for SwiftUI, and
+  `rowsAffected(by:)` names the shapes that mention what changed, for rows: a note's row reads its
+  text with live names (`context.plainText(_:)`), and names `MentionRows.affected` as its
+  `affected:`, so a rename remakes only the rows of the notes that mention the renamed shape.
+- **The catalog**, what the picker searches: every mentionable shape on the board but those kept
+  aside, read again at the next query for the shapes a commit changed. `candidates(matching:in:for:)`
+  lists, for an empty query, the recent picks (`didPick(_:)`) and the shapes nearest the text's
+  shape (looked for in squares around it, grown until one holds enough, or holds as many shapes as
+  the catalog, when reading the catalog costs less: a board with few mentionable shapes reads
+  them), and for any other the best 50 matches. `MentionMatcher` scores the folded query (case and
+  diacritics ignored) against each name, each taking its best tier: exact 1000, a prefix 800, each
+  word a prefix of a word, in order, 600, a substring 400, a subsequence (fzf-style: word starts,
+  runs and the first character count, gaps cost) at most 300, and, for a query of 4 or more that
+  found fewer than 8 above, one typo (a Damerau edit of a word's prefix) 100; then recent picks and
+  nearness add to the best, a placeholder name loses some, and ties go to the shorter name, then
+  the shape in front. Two linear passes over the catalog's folded names and a heap: a keystroke at
+  10,000 shapes, and the `@` that opens the picker among 10,000 of which 3 can be mentioned, are
+  held to 2 ms.
+- **Going and hovering**: `follow(_:)` goes to a shape on the next turn of the scheduler
+  (`editor.goTo`: editing ends, the shape is selected and brought into view, and ⌘[ comes back;
+  going is no undo step, so Undo after it takes back the edit before it, selecting what was
+  selected then, and Back returns to where the mention went),
+  since a click in the text being edited is still being handled by the view that going ends;
+  `hover(_:)` and `endHover(_:)` set `editor.hovered`, so the shape is outlined faintly and its row
+  tinted, the one hover every plugin shares.
+
+### On the canvas: faces
+
+A pill on the canvas is a [face](#faces-clickable-parts-of-a-shape): its shape's press, which
+selects and drags the shape as any press does. Two planes, as text selection has them: the shape
+is the note, and the text is its editor.
+
+- **A click** on a pill edits its shape from the pill (`beginEditing(_:at:)` at the pill's
+  center), and the editor selects the pill's character there: a pill is selected as text is, never
+  followed on a single click. A read-only shape (a locked one) isn't asked to: a refused edit is a
+  try to change it, which Locking shakes, and a click isn't one.
+- **A double-click** on an editable note's pill lands in the text view the click opened, which
+  follows it. On a read-only shape the canvas's face follows it (`goTo`). A missing pill's does
+  nothing.
+- **The pointer** over a live pill hovers the shape it names; over a missing one, its own shape.
+
+Faces are Selection's, so a plugin list with Mentions needs `SelectionPlugin()` (and so
+`KeyboardPlugin()`).
+
+### Editing: `MentionTextView`
+
+The note's editor is a `MentionTextView<AnyMentionable>`, an `NSTextView` on TextKit 2, with the
+note's style, its shape as `owner` (never offered in its own picker) and the service:
+
+```swift
+textView = MentionTextView(frame: CGRect(origin: .zero, size: frame.size), text: text, style: NoteStyle.text,
+                           owner: context.shapeID, mentions: context.service(MentionState.self))
+if let start = context.startPoint {                             // begun from a pill: world units, the note at 0, 0
+    textView.selectPill(at: CGPoint(x: start.x - frame.minX, y: start.y - frame.minY))
+}
+
+func textDidChange(_ notification: Notification) {
+    let text = textView.mentionText                             // canonical, each pill named as it shows now
+    context.update { if $0.text != text { $0.text = text } }    // a second report of one change writes nothing
+}
+```
+
+- **A pill is one character.** The caret steps over it, a selection takes it whole, Delete takes
+  it, typing replaces it. A click on it selects it; a double-click on a live one follows it
+  (`MentionState.follow`), and on a missing one keeps it selected. Such a press is the view's to
+  its release: its drags and its release never reach the canvas behind, which would take them for
+  the pointer over it and hover the note. It's not a link: no pointing hand. Its menu adds Go to “Name” (a live one) and Remove Mention, which leaves its name as text.
+- **Copy and paste** write the stored form under a type of the app's own (`.mentionText`) and the
+  plain form ("@Ship the beta") as a string; a paste reads the stored form first, then plain text,
+  where a whole `@[name](shape:UUID)` becomes a pill. So ⌘C and ⌘V on a pill make another mention
+  of the same shape.
+- **Live.** The view observes its pills' shapes and redraws the pills of those that change, with no
+  edit and nothing committed. Each pill holds the name the board holds for it (as the text was
+  last written, each pill named as it showed then), so a pill whose shape goes shows that name, as
+  the canvas does, and nothing changes as editing ends or begins.
+- **Undo.** While the text is edited, Undo is the text's own: a board's window gives Edit › Undo to
+  the text that has the keyboard ([Undo](#undo)), and so does any window whose undo manager the
+  text uses. Under TextKit 2 a text view's own undo and redo change its text without telling its
+  delegate, so after either the view shows the pills it put back as their targets are now (renamed
+  or deleted meanwhile) and calls `didChangeText()` if its text isn't what it last reported, and
+  the host commits it. That's what writes an undo back in any window; a board's window also tells
+  the text it changed after its undo, which finds the text reported, and the host commits only a
+  changed value, so each undo writes once. Its steps go with it as it leaves its window, and only
+  its own (its text's and its own actions): a board's window forgets its text's undo as the text
+  loses the keyboard anyway, but any other window's undo manager outlives the editing view, so
+  this keeps ⌘Z to what this editing did. For the board, the editing session, whatever it did
+  (typing, picks, Remove Mention, pastes), is one step, which Undo takes back whole once editing
+  is over: "Typing" when it began on a note already there (a click on a pill too), and one with
+  the action that began it when there was one ([Undo](#undo): a note placed and typed into is
+  "Add Note"); the board's Undo while the text is edited (from a plugin, or a host without a
+  board's window) ends editing first.
+- **Accessibility.** Every range is the text's own, a pill one character, so its value (with
+  U+FFFC for each pill, as the text holds it), its count and its selection agree; the strings
+  VoiceOver reads for a range, or the selection, say a pill as its name and kind ("Ship the beta,
+  Task"), or why it isn't live ("…, deleted"). Writing Tools leave pills alone.
+- **The picker.** `@` typed where a word starts (at the start, after whitespace or an opening
+  bracket or quote, never in `name@example.com`) opens it: `textView.picker`, a `MentionPicker`,
+  the picker's model, headless, shown in a child window that never takes the keyboard. What's
+  typed after the `@` is the query: Recent and Nearby for an empty one, else the matches, the
+  matched characters semibold; "No matches" or "Nothing to mention" when there's none. ↑ and ↓
+  move, Return and Tab pick, Escape closes, and so do the caret leaving the query, a line break,
+  a query longer than 80 characters (a whole title can be typed), or a space after a query that
+  matches nothing. A pick puts the pill in the query's place, then a space, one step of the text's
+  undo, which gives back the query as typed. Undo while it's open closes it: the text's, taking
+  back the `@` typed, or the board's, ending editing. While it's open, the highlighted shape is hovered on the canvas,
+  and autocorrection is off. VoiceOver hears its list change as the highlight moves (the row, or
+  the empty state, said) and go as it closes (`MentionAccessibility`).
+- **Where editing began.** `selectPill(at:)` selects the pill at a point in the view: the note
+  calls it with `EditContext.startPoint`, so a click on a pill on the canvas has that pill
+  selected in the editor, and a click anywhere else puts the caret where it always has.
+
+A note's render and its editor lay the pills out alike: each pill's frame in the editor is the
+canvas's (StickyNotesTests' `noteEditorTests`), so nothing moves when editing starts.
+
 ## The command line
 
 `canvas` is the app's command line, for agents first and people too: it runs commands on the
@@ -4020,9 +4315,9 @@ core                 tool hand · command undo · command redo
 keyboard             service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo
 selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
 arrows               shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay
-sticky-notes         shape sticky-note v2 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · channel note-link
+sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · channel note-link
 ellipses             shape ellipse · tool ellipse · shortcut O → tool ellipse
-task-cards           shape task-card v3 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · property title → task-card · ShapeTitles → task-card · ContentsTitles → task-card · ports task-link → task-card · channel task-link
+task-cards           shape task-card v3 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · property title → task-card · ShapeTitles → task-card · ContentsTitles → task-card · ports task-link → task-card · mentionable → task-card · channel task-link
 schemas              service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
 adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
@@ -4031,6 +4326,7 @@ context-menus        service ContextMenuState · secondary-click menu
 table-of-contents    service ContentsState
 checklists           property checklist · adornment ChecklistChip → every shape
 titles               property title · adornment TitlePill → every shape
+mentions             service MentionState · overlay MentionFrames · ShapeFaces
 validation-details   DetailStatuses in Issues
 validation-contents  ContentsMarks
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
@@ -4049,9 +4345,10 @@ reordering           ShapeContextMenus
 A horizontal's opt-in shows as what it contributes: `note.checklist()` is the opt-in to the property
 checklists declares (`property checklist → sticky-note`), then a `ShapeChecklists` entry, a
 `ShapeDetails` entry and a `ShapeContextMenus` entry, which is why task-cards has two of each of the
-last two (its own panel and menu, then the checklist's). `v2` on sticky-note and `v3` on task-card
-are the versions of their props, since each handed its checklist and its title over (a task's
-title in two steps: a blank one was an untitled task's, and is dropped first).
+last two (its own panel and menu, then the checklist's). `v3` on sticky-note and on task-card
+are the versions of their props: each handed its checklist and its title over (a task's title in
+two steps: a blank one was an untitled task's, and is dropped first), and a note's text became
+mention text ("text may mention shapes", which escapes what would now read as a mention).
 `note.title()` is the opt-in to the property titles declares (`property title → sticky-note`), a
 `ShapeTitles` entry and a `ContentsTitles` entry (the title naming the row); the `ShapeDetails`
 entry after them is the note's header, where it's renamed. Validation's `ValidationRules`, for
@@ -4059,8 +4356,13 @@ every kind, is its schema rule ([Checking shapes](#checking-shapes-against-their
 every kind in itself (`property locked → every shape`), and `read-only shapes` is its rule for the
 core. `ports note-link → sticky-note` is a note's ports and `channel note-link` the channel
 StickyNotes declares for them; arrow-ports' `connector → arrow` makes arrows what ports draw, and
-brings the opt-in before it (`property channel → arrow`). Titles places its pill on every shape
-whose kind's title shows one (`adornment TitlePill → every shape`), Checklists its chip likewise,
+brings the opt-in before it (`property channel → arrow`). `mention text → sticky-note` and
+`mentionable → sticky-note` are Mentions' opt-ins: a note's text shows pills (`note.mentionText`),
+and text may mention a note (`note.mentionable`), as it may a task (`mentionable → task-card`);
+`mentions` keeps who mentions whom (`MentionState`), tells the text it keeps drawn
+(`MentionTextMemo`) where each frame ends (`MentionFrames`, an overlay that draws nothing), and
+makes pills answer clicks (`ShapeFaces`).
+Titles places its pill on every shape whose kind's title shows one (`adornment TitlePill → every shape`), Checklists its chip likewise,
 and Locking its lock; `adornments` lends them their layout and drawing, a canvas button
 (`CanvasButtons`) and their hits (`DecorationHits`), and places none of its own.
 
@@ -4218,15 +4520,18 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   equals one an editor holds, or one a board reads back as, only after
   `registry.fillingDefaults(document)`. CanvasTests read broken and scrambled boards (a seeded fuzz test), and CompositionTests'
   BoardDocumentTests open, save, revert and host boards with `BoardDocument.configuration` set as
-  the app sets it. `./build.sh bench` builds BenchmarkTests in release and holds saving, opening,
-  a hover and a drag frame (titles' pills, checklists' tallies and locks in view), a hover on a
-  note's port dot and a drag from it, a hover onto a title's pill, reading the table of contents'
-  rows after a drag event, an insert, a delete and a restack, the minimap's first picture (a frame
-  at a time) and a drag frame with it, and undoing and redoing a drag (with its frame), a tenth of
-  the board's move and deletion and every shape's deletion (the steps alone), to their budgets on
-  generated boards of 1,000 and 10,000 shapes, and reports the first frame and the next zoomed out
-  to fit the board (at 10,000, as far as the 10% zoom goes); `./test.sh` runs it small, in debug,
-  and only reports.
+  the app sets it. `./build.sh bench` builds BenchmarkTests in release and holds saving, opening
+  (Mentions' index and catalog, built as a board opens, among it), a hover and a drag frame
+  (titles' pills, checklists' tallies, locks and mentions' pills in view), a hover on a note's
+  port dot and a drag from it, a hover onto a title's pill and onto a mention's, reading the table
+  of contents' rows after a drag event, an insert, a delete and a restack, a keystroke in the `@`
+  picker (the `@` that opens it too), a rename of a task mentioned 100 times against one mentioned
+  by none, the minimap's first picture (a frame at a time) and a drag frame with it, and undoing
+  and redoing a drag (with its frame), a tenth of the board's move and deletion and every shape's
+  deletion (the steps alone), to their budgets on generated boards of 1,000 and 10,000 shapes
+  (three notes in ten mention a task and a shape that isn't there), and reports the first frame
+  and the next zoomed out to fit the board (at 10,000, as far as the 10% zoom goes); `./test.sh`
+  runs it small, in debug, and only reports.
 - **Undo.** `h.editor.undo()` and `redo()` headlessly, with `undoHistory.undoName` for the step's
   name, and `h.editor.undoHistory.seal()` where a user would click or type elsewhere between panel
   writes. A step's round trip is best checked with `==` on the document, and, for a board, its
@@ -4244,12 +4549,41 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   tool to it, `editor.hovered` nil over a note being edited.
 - **Faces with editing and going to shapes.** CompositionTests' canvas view tests put a pill-like
   face in the shipped notes (`pillsPlugin`, a 60 × 20 face naming one shape) and hold the pieces
-  Mentions will use to working together through `CanvasView`: the pointer over the pill hovers what
+  Mentions uses to working together through `CanvasView`: the pointer over the pill hovers what
   it names, a click edits the note from the pill (`editingStartPoint`) and leaves nothing hovered
   under its text, and on a locked note a double-click goes to what it names, which Back undoes.
   The locked note doesn't shake through the click or the double-click. SelectionTests' Going to
   shapes clicks a link-like face and presses again with a click count of 2 while the camera glides:
   nothing is placed, and the camera arrives.
+- **Mentions.** MentionsTests use fixtures only (`MentionFixturesPlugin`: `Jot`, a box of mention
+  text with a `MentionTextView` editor, and `Plate`, `Token`, `Endpoint` and `Brief`, with the
+  `Blockers` scope; `mentionHarness` puts Keyboard and Selection first). They fuzz the stored
+  grammar, hold scopes and their registry checks, names, `MentionState`'s index, observations and
+  rows (`textsRead` counts the texts a commit reads, in debug builds), the matcher's tiers, and the
+  pill's images; drawing, pixel for pixel against string drawing, and each pill's pixels within
+  its `mentionPills` frame (`MentionDrawingCounts`, in debug builds, counts what's built); faces,
+  through `EditorHarness`; the text view in an unshown window (`EditedJot`: typing, the picker's
+  keys, clicks, the menu, tooltips, copy and paste on `NSPasteboard.withUniqueName()`, undo in a
+  plain window, which the view writes back itself, once, and leaving the window with only its own
+  steps); the state, the pills and the rows as steps are undone and redone (`editor.undo()`,
+  `redo()`: never a record inserted again in undo's place); and the picker's model, headless. AppKit closes an undo group at the end of a turn of the run loop,
+  so a test that undoes steps one at a time settles the window (`window.settle()`) between them.
+  StickyNotesTests hold a note's text (its third migration, its row, what it's called) and its
+  editor to its render with pills (`noteEditorTests`: each pill's frame in the editor, TextKit 2's
+  for its attachment, is the canvas's; at a whole number of pixels to a point, the lines start
+  alike and the pills' pixels are within a quarter; at 60%, string drawing draws a pill part way
+  into a pixel and TextKit 2 on the nearest, so there only the pixels off the pills are held).
+  CompositionTests' `mentionsShippedTests` hold the shipped pieces together in a `CanvasView`: a
+  task picked with `@`, renamed (the editor, the row and the canvas), deleted and undone; the
+  pill clicked on the canvas and double-clicked in the text; a locked note's pill; copying and
+  pasting a pill; and the text view's undo written back to the note. In a board's window
+  (`UndoBoard`, whose `BoardWindow` gives Edit › Undo to the text with the keyboard), they hold a
+  session begun from a pill, with a pick, Remove Mention, a paste and typing, to one step, and a
+  note placed and typed into with a pick to one step with its placing, "Add Note"; a pick
+  undone in the text to its query, each undo to one write; Undo with the picker open, the text's
+  and the board's, to closing it; a deletion and a rename undone to pills as they were; and going
+  to a mention to no step, with Back beside Undo. CommandLineTests `create`
+  notes that mention shapes, on the board or not.
 - **Arrow behavior is pinned to the proof of concept.** CompositionTests replays 30 arrow
   scenarios through `CanvasView` with real events and compares where every arrow ends up, byte for
   byte, with a transcript recorded from the POC. It also compares nine renders pixel for pixel:
@@ -4395,6 +4729,13 @@ Each of these adds to the design without changing what plugins are written again
 - **More of checking shapes against their schemas**: `unevaluatedProperties`, `dependentSchemas`
   and references to other documents, which no schema here writes; and checking only the parts of a
   shape its schema bounds, for the first read of a large board (10,000 shapes take about 30 ms).
+- **More of mentions**: mention text in the detail panel (a field for a task card's notes, a
+  panel text view shared with schema cards), in task cards' notes and checklist items, and on the
+  canvas where they're drawn; a text restricted to some kinds among the shipped ones (what may
+  block a task); a shape's backlinks ("Mentioned in"); validation of mentions that are missing or
+  outside their scope; mentions of shapes on other boards; the command line reading and listing
+  what can be mentioned; more kinds mentionable (through bridges); and making a shape from the
+  picker.
 - **More of the detail panel**: editing several selected shapes at once (it shows "N Shapes"
   today); every-shape sections over the record (there are every-box ones over the frame, and those
   over an added property), and every-box overrides such as an aspect lock;

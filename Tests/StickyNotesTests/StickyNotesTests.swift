@@ -6,6 +6,7 @@ import Checklists
 import ContextMenus
 import DetailPanel
 import Keyboard
+import Mentions
 import Ports
 import Selection
 import TableOfContents
@@ -17,7 +18,7 @@ import Validation
 /// The note, every plugin it opts into, and Adornments, which lays out what Titles shows on it.
 @MainActor var notePlugins: [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), AdornmentsPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
-     ContextMenusPlugin(), TableOfContentsPlugin(), TitlesPlugin(), PortsPlugin()]
+     ContextMenusPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin()]
 }
 
 extension ShapeRecord where Props == StickyNote {
@@ -37,7 +38,7 @@ extension ShapeRecord where Props == StickyNote {
         expect(registry.definition(for: StickyNote.kind) is any Editable)
         expectEqual(registry.contributions(to: DoubleClickPlacement.self).map(\.value.kind), [StickyNote.kind])
     },
-    test("can't be installed without the keyboard, selection, validation, checklists, titles and ports plugins it opts into, the panel, context menus and the table of contents") {
+    test("can't be installed without the keyboard, selection, validation, checklists, titles, ports and mentions plugins it opts into, the panel, context menus and the table of contents") {
         expectThrows(RegistryError.ownerNotInstalled(point: "KeyboardShortcuts", owner: .keyboard, contributor: .stickyNotes)) {
             _ = try Registry(plugins: [StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin()])
         }
@@ -68,6 +69,10 @@ extension ShapeRecord where Props == StickyNote {
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapePorts", owner: .ports, contributor: .stickyNotes)) {
             _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
                                        ContextMenusPlugin(), TableOfContentsPlugin(), TitlesPlugin()])
+        }
+        expectThrows(RegistryError.ownerNotInstalled(point: "MentionTexts", owner: .mentions, contributor: .stickyNotes)) {
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
+                                       ContextMenusPlugin(), TableOfContentsPlugin(), TitlesPlugin(), PortsPlugin()])
         }
     },
     test("its row in the table of contents: its text on one line, or Empty Note, and its checklist's tally") {
