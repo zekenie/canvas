@@ -1,0 +1,297 @@
+{
+  "boards" : {
+    "5B000000-0000-0000-0000-000000000001" : {
+      "shapes" : [
+        {
+          "added" : {
+            "checklist" : [
+
+            ]
+          },
+          "id" : "00000002-0000-0000-0000-00000000000A",
+          "index" : "a0",
+          "kind" : "sticky-note",
+          "props" : {
+            "frame" : [
+              [
+                80,
+                80
+              ],
+              [
+                200,
+                200
+              ]
+            ],
+            "text" : "Plans, first"
+          }
+        },
+        {
+          "added" : {
+            "checklist" : [
+
+            ]
+          },
+          "id" : "00000002-0000-0000-0000-00000000000B",
+          "index" : "a1",
+          "kind" : "sticky-note",
+          "props" : {
+            "frame" : [
+              [
+                460,
+                80
+              ],
+              [
+                200,
+                200
+              ]
+            ],
+            "text" : "Plans, second"
+          }
+        },
+        {
+          "id" : "00000002-0000-0000-0000-00000000000C",
+          "index" : "a2",
+          "kind" : "arrow",
+          "props" : {
+            "bend" : 0,
+            "end" : {
+              "bound" : {
+                "isExact" : false,
+                "isPrecise" : false,
+                "normalizedAnchor" : [
+                  0.5,
+                  0.5
+                ],
+                "shapeID" : "00000002-0000-0000-0000-00000000000B"
+              }
+            },
+            "endArrowhead" : true,
+            "start" : {
+              "bound" : {
+                "isExact" : false,
+                "isPrecise" : false,
+                "normalizedAnchor" : [
+                  0.5,
+                  0.5
+                ],
+                "shapeID" : "00000002-0000-0000-0000-00000000000A"
+              }
+            },
+            "startArrowhead" : false
+          }
+        },
+        {
+          "id" : "5B000000-0000-0000-0000-000000000002",
+          "index" : "a3",
+          "kind" : "subboard",
+          "props" : {
+            "frame" : [
+              [
+                80,
+                420
+              ],
+              [
+                240,
+                160
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "5B000000-0000-0000-0000-000000000002" : {
+      "shapes" : [
+        {
+          "added" : {
+            "checklist" : [
+
+            ]
+          },
+          "id" : "00000003-0000-0000-0000-00000000000A",
+          "index" : "a0",
+          "kind" : "sticky-note",
+          "props" : {
+            "frame" : [
+              [
+                80,
+                80
+              ],
+              [
+                200,
+                200
+              ]
+            ],
+            "text" : "Inside, first"
+          }
+        },
+        {
+          "added" : {
+            "checklist" : [
+
+            ]
+          },
+          "id" : "00000003-0000-0000-0000-00000000000B",
+          "index" : "a1",
+          "kind" : "sticky-note",
+          "props" : {
+            "frame" : [
+              [
+                460,
+                80
+              ],
+              [
+                200,
+                200
+              ]
+            ],
+            "text" : "Inside, second"
+          }
+        },
+        {
+          "id" : "00000003-0000-0000-0000-00000000000C",
+          "index" : "a2",
+          "kind" : "arrow",
+          "props" : {
+            "bend" : 0,
+            "end" : {
+              "bound" : {
+                "isExact" : false,
+                "isPrecise" : false,
+                "normalizedAnchor" : [
+                  0.5,
+                  0.5
+                ],
+                "shapeID" : "00000003-0000-0000-0000-00000000000B"
+              }
+            },
+            "endArrowhead" : true,
+            "start" : {
+              "bound" : {
+                "isExact" : false,
+                "isPrecise" : false,
+                "normalizedAnchor" : [
+                  0.5,
+                  0.5
+                ],
+                "shapeID" : "00000003-0000-0000-0000-00000000000A"
+              }
+            },
+            "startArrowhead" : false
+          }
+        }
+      ]
+    }
+  },
+  "format" : 4,
+  "shapes" : [
+    {
+      "added" : {
+        "checklist" : [
+
+        ]
+      },
+      "id" : "00000001-0000-0000-0000-00000000000A",
+      "index" : "a0",
+      "kind" : "sticky-note",
+      "props" : {
+        "frame" : [
+          [
+            80,
+            80
+          ],
+          [
+            200,
+            200
+          ]
+        ],
+        "text" : "Root, first"
+      }
+    },
+    {
+      "added" : {
+        "checklist" : [
+
+        ]
+      },
+      "id" : "00000001-0000-0000-0000-00000000000B",
+      "index" : "a1",
+      "kind" : "sticky-note",
+      "props" : {
+        "frame" : [
+          [
+            460,
+            80
+          ],
+          [
+            200,
+            200
+          ]
+        ],
+        "text" : "Root, second"
+      }
+    },
+    {
+      "id" : "00000001-0000-0000-0000-00000000000C",
+      "index" : "a2",
+      "kind" : "arrow",
+      "props" : {
+        "bend" : 0,
+        "end" : {
+          "bound" : {
+            "isExact" : false,
+            "isPrecise" : false,
+            "normalizedAnchor" : [
+              0.5,
+              0.5
+            ],
+            "shapeID" : "00000001-0000-0000-0000-00000000000B"
+          }
+        },
+        "endArrowhead" : true,
+        "start" : {
+          "bound" : {
+            "isExact" : false,
+            "isPrecise" : false,
+            "normalizedAnchor" : [
+              0.5,
+              0.5
+            ],
+            "shapeID" : "00000001-0000-0000-0000-00000000000A"
+          }
+        },
+        "startArrowhead" : false
+      }
+    },
+    {
+      "added" : {
+        "title" : "Plans"
+      },
+      "id" : "5B000000-0000-0000-0000-000000000001",
+      "index" : "a3",
+      "kind" : "subboard",
+      "props" : {
+        "frame" : [
+          [
+            80,
+            420
+          ],
+          [
+            240,
+            160
+          ]
+        ]
+      }
+    }
+  ],
+  "versions" : {
+    "added" : {
+      "checklist" : 0,
+      "title" : 0
+    },
+    "kinds" : {
+      "arrow" : 0,
+      "sticky-note" : 2,
+      "subboard" : 0
+    }
+  }
+}

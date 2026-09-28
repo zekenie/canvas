@@ -1,6 +1,7 @@
 import AppKit
-import Canvas
+@_spi(Host) import Canvas
 import CanvasRPC
+import CanvasTesting
 import CanvasUI
 import Composition
 import Foundation
@@ -8,6 +9,7 @@ import LanguageModels
 import Mentions
 import Schemas
 import StickyNotes
+import SwiftUI
 import TableOfContents
 import TaskCards
 import TestKit
@@ -85,7 +87,7 @@ import Titles
         let row = board.editor.tableOfContents?.entries.first { $0.id == note.record.id }?.label?.text
         expectEqual(row, "Ask @Ship it first, then @Ship it", "each mention by the task's title now")
     },
-    test("canvas create sticky-note makes a note mentioning a shape that isn't on the board, and warns that it shows as missing") {
+    test("canvas create sticky-note makes a note mentioning a shape that isn't in the file, and warns that it shows as missing") {
         try configureBoards()
         let board = newBoard()
         let server = try startCommandServer(boards: [board], frontmost: board)
@@ -94,7 +96,7 @@ import Titles
         let result = try canvas(server, ["create", "sticky-note", "--set", "text=See @[Old plan](shape:\(gone)) again"])
         expectEqual(result.status, 0, result.error)
         let json = try JSON(text: result.output)
-        expectEqual(json["warnings"], [.string("text names shapes that aren't on this board: \(gone); they show as missing.")])
+        expectEqual(json["warnings"], [.string("text names shapes that aren't in the file: \(gone); they show as missing.")])
         let id = try require(json["id"]?.stringValue.flatMap(UUID.init(uuidString:)))
         let note = try require(board.editor.document[ShapeID(id)]?.typed(as: StickyNote.self))
         expectEqual(note.props.text.mentioned, [gone])
@@ -153,5 +155,40 @@ import Titles
         expectEqual(note?["schema"]?["properties"]?["title"]?["maxLength"], 80)
         let help = try canvas(server, ["help"]).output
         for command in ["status", "boards", "create", "kinds"] { expect(help.contains("\n  \(command) "), help) }
+    },
+    test("status and boards say which board inside each file its window shows, and a board command works there") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        BoardDocument.configuration = BoardConfiguration(registry: try Registry(plugins: ShippedPlugins.plugins(pasteboard: pasteboard, model: ScriptedLanguageModel()) + [PocketsPlugin()])) { _ in
+            AnyView(EmptyView())
+        }
+        // Pocket P on the root; pocket Q on P's board, with a note on its board.
+        let p = ShapeRecord(Pocket(CGRect(x: 0, y: 0, width: 160, height: 100))), q = ShapeRecord(Pocket(CGRect(x: 0, y: 0, width: 160, height: 100)))
+        let note = ShapeRecord(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "Deep"))
+        let board = BoardDocument(), other = newBoard()
+        board.editor.replaceFile(with: CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(p)]),
+                                                  children: [p.id: CanvasDocument(shapes: [AnyShapeRecord(q)]),
+                                                             q.id: CanvasDocument(shapes: [AnyShapeRecord(note)])]))
+        expect(board.editor.showBoard(BoardID(owner: p.id)) && board.editor.showBoard(BoardID(owner: q.id)))
+        let server = try startCommandServer(boards: [board, other], frontmost: board)
+        defer { server.stop() }
+        let status = try JSON(text: canvas(server, ["status"]).output)
+        expectEqual(status["frontmostShows"], .string(q.id.description))
+        let boards = try JSON(text: canvas(server, ["boards"]).output).arrayValue ?? []
+        expectEqual(boards.map { $0["shows"] }, [.string(q.id.description), "root"])
+        expectEqual(boards.first?["showsPath"], .array(["root", .string(p.id.description), .string(q.id.description)]))
+        expectEqual(boards.first?["shapes"], 1, "the board shown's")
+        let text = try canvas(server, ["boards", "--format", "text"]).output
+        expect(text.contains("shows") && text.contains(q.id.description), text)
+
+        expectEqual(try canvas(server, ["create", "ellipse"]).status, 0)
+        expectEqual(board.editor.document.shapes.count, 2, "on the board shown")
+        expectEqual(board.editor.file.root.shapes.map(\.id), [p.id])
+        board.editor.showBoard(.root)
+        board.editor.undo()
+        expectEqual(board.editor.board, BoardID(owner: q.id), "the command's step is on the board it ran on")
+        expectEqual(board.editor.document.shapes.map(\.id), [note.id])
+        board.close()
+        other.close()
     },
 ])

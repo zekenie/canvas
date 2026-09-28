@@ -84,9 +84,11 @@ extension SelectTool: Tool {
             doubleClick(face.face, editor)
             return
         }
-        if isDoubleClick, definition is any Editable {
+        // A double-click opens the shape, selected alone: its kind's opener (a board-owning kind's
+        // shows its board), else editing, for an `Editable` kind.
+        if isDoubleClick, editor.canOpen(id) {
             editor.selection = id
-            editor.beginEditing(id)
+            editor.open(id)
             return
         }
         // A face waits for the drag threshold, even on a lone box: released within it, it clicks.

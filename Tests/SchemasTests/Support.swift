@@ -23,8 +23,8 @@ import Validation
 }
 
 @MainActor func schemaEditor(scheduler: any Scheduler = ManualScheduler(), model: any LanguageModel = ScriptedLanguageModel(),
-                             document: CanvasDocument = CanvasDocument(), more: [any CanvasPlugin] = []) throws -> CanvasEditor {
-    CanvasEditor(registry: try Registry(plugins: schemaPlugins(model: model) + more), document: document, scheduler: scheduler)
+                             document: CanvasDocument = CanvasDocument(), file: CanvasFile? = nil, more: [any CanvasPlugin] = []) throws -> CanvasEditor {
+    CanvasEditor(registry: try Registry(plugins: schemaPlugins(model: model) + more), file: file ?? CanvasFile(root: document), scheduler: scheduler)
 }
 
 /// A card at `origin`, `width` wide, as tall as its schema makes it (the empty card's height for a

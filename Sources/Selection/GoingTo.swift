@@ -8,8 +8,9 @@ extension CanvasEditor {
     /// Brings the shapes into view: centers their bounds (`shapeContext.bounds(of:)`), zoomed to fit
     /// with 100 points of margin in all but no closer than 120%, and moves the camera there over
     /// 200 ms (`animateCamera`), as data-canvas's table of contents does (tldraw's zoomToBounds). What
-    /// selecting rows of the table of contents does. Does nothing before the view has a size, or when none of the
-    /// shapes has bounds (none is on the board).
+    /// selecting rows of the table of contents does. Only on the board shown (`goTo` goes to shapes
+    /// on another). Does nothing before the view has a size, or when none of the shapes has bounds
+    /// (none is on the board shown).
     public func reveal(_ ids: [ShapeID]) {
         guard let bounds = shapeContext.bounds(of: ids), let target = revealCamera(fitting: bounds) else { return }
         animateCamera(to: target, duration: SelectionStyle.revealDuration)
@@ -22,15 +23,28 @@ extension CanvasEditor {
     /// selected, leaves the selection as it is and takes no step, so it only moves the camera.
     /// "Readable" is 70% or closer (where a note's text reads at about 11 points), or, for
     /// shapes too big to show whole at that, as close as fitting them would bring them. The camera
-    /// is judged where it's headed, if it's gliding. Does nothing mid-gesture, or when none of the
-    /// shapes is on the board. Without the Selection plugin, nothing is selectable: it ends editing
-    /// and brings them into view.
+    /// is judged where it's headed, if it's gliding.
+    ///
+    /// The shapes may be anywhere in the file (a mention names a shape on any board). It goes to the
+    /// board of the first of them that's on a board it can show (`canShow`), and to those of them on
+    /// that board, leaving the rest. On another board, it shows that board and selects them there as
+    /// one step back (`showBoard(_:selecting:)`: Back returns to the board left, with its
+    /// selection), then brings them into view from the camera the board was left with (or its
+    /// first visit's). Does nothing mid-gesture, or when none of the shapes is on a board it can
+    /// show. Without the Selection plugin, nothing is selectable: it ends editing, shows their
+    /// board, and brings them into view.
     public func goTo(_ ids: [ShapeID]) {
-        guard session == nil, ids.contains(where: { document[$0] != nil }) else { return }
+        let file = file
+        guard session == nil, let target = ids.lazy.compactMap({ file.board(containing: $0) }).first(where: canShow) else { return }
+        let here = ids.filter { file.board(containing: $0) == target }
         endEditing()
-        let selectable = ids.filter(isSelectable)
-        if !selectable.isEmpty, Set(selectable) != Set(selectedShapeIDs) { selectedShapeIDs = selectable }
-        if !isReadablyInView(ids) { reveal(ids) }
+        if target == board {
+            let selectable = here.filter(isSelectable)
+            if !selectable.isEmpty, Set(selectable) != Set(selectedShapeIDs) { selectedShapeIDs = selectable }
+        } else {
+            guard showBoard(target, selecting: here) else { return }
+        }
+        if !isReadablyInView(here) { reveal(here) }
     }
 
     /// Where `reveal` takes the camera to show `bounds`; nil before the view has a size.

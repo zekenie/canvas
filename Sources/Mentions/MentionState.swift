@@ -14,6 +14,15 @@ import Selection
 /// again; only a resolution that changed tells its observers, bumps its `labelRevision`, and names
 /// its mentioners' rows (`rowsAffected`). A commit that only moved shapes (a drag) changes no text
 /// and no name, so it costs nothing here.
+///
+/// In a file of several boards, the index and the catalog are the board shown's (the `@` picker
+/// lists what's on it), kept for the boards shown lately; a board entered for the first time has
+/// its mention text read on the way in, and its catalog on the scheduler's next turn, once it's on
+/// screen (or at the first `@`, if that comes first). A mention names a shape anywhere in the
+/// file, and shows it as it's called now: what a commit changes on other boards
+/// (`ChangeSet.elsewhere`: the boards a deletion took or a paste brought, a write to a board that
+/// isn't shown) is resolved again, and so, on going back to a board, is every shape its mentions
+/// name on the others, which may have changed while it wasn't shown.
 @MainActor
 @Observable
 public final class MentionState {
@@ -38,6 +47,11 @@ public final class MentionState {
     @ObservationIgnored private var catalog = MentionCatalog()
     /// Those a commit changed since, to read again at the next query.
     @ObservationIgnored private var stale: Set<ShapeID> = []
+    /// False while the catalog of a board entered for the first time isn't read yet: the next
+    /// query reads it whole, or the scheduler's next turn after the switch (`catalogTurn`), once the
+    /// board is on screen, so entering a board doesn't wait for what only the `@` picker needs.
+    @ObservationIgnored private var catalogIsRead = true
+    @ObservationIgnored private var catalogTurn: ScheduledTask?
     @ObservationIgnored private var kindDefaults: [ShapeKind: MentionKindDefaults] = [:]
 
     /// This editor's picks, the latest first; never saved.
@@ -47,6 +61,9 @@ public final class MentionState {
     /// of contents hears each commit first, and asks (`rowsAffected`) before this service hears it.
     @ObservationIgnored private var heardRevision: Int
     @ObservationIgnored private var lastAffected: Set<ShapeID> = []
+
+    /// The index and catalog of boards shown lately, for going back to them (`BoardStash`).
+    @ObservationIgnored private var kept = BoardStash<Kept>()
 
     #if DEBUG
     /// How many shapes' mention text has been read, and how many catalog entries (debug builds), so
@@ -58,9 +75,27 @@ public final class MentionState {
     init(editor: CanvasEditor) {
         self.editor = editor
         heardRevision = editor.revision
-        for record in editor.document.shapes {
+        index(editor.document)
+    }
+
+    /// Indexes a board as it opens: every shape's mention text, and every mentionable shape.
+    private func index(_ document: CanvasDocument) {
+        for record in document.shapes {
             reindex(record.id, record)
             readEntry(record)
+        }
+    }
+
+    /// Indexes a board entered for the first time: every shape's mention text now (who mentions
+    /// whom, for the rows and the pills), and the catalog on the scheduler's next turn, or at the
+    /// first query if that comes first.
+    private func indexEntered(_ document: CanvasDocument) {
+        for record in document.shapes { reindex(record.id, record) }
+        catalogIsRead = false
+        catalogTurn?.cancel()
+        catalogTurn = editor.scheduler.schedule(after: .zero) { [weak self] in
+            self?.catalogTurn = nil
+            self?.refreshStale()
         }
     }
 
@@ -76,11 +111,28 @@ public final class MentionState {
     /// The shapes a shape's mention text mentions, in text order, each once.
     public func mentions(in shape: ShapeID) -> [ShapeID] { forward[shape] ?? [] }
 
-    /// What a mention of `target` shows now.
+    /// What a mention of `target` shows now: live wherever it is in the file, on the board shown or
+    /// another the editor can show; unavailable on a board it can't show (the app keeps it without
+    /// using it, so it isn't followed there); missing if it isn't in the file.
     public func resolve(_ target: ShapeID) -> MentionResolution {
-        guard let record = editor.document[target] else { return .missing }
+        if let record = editor.document[target] { return resolve(record) }
+        return resolve(elsewhere: target, in: editor.file)
+    }
+
+    /// What a mention of a shape that isn't on the board shown shows, in the file as it is.
+    private func resolve(elsewhere target: ShapeID, in file: CanvasFile) -> MentionResolution {
+        guard file.board(containing: target) != nil else { return .missing }
+        return editor.shape(inFile: target).map(resolve) ?? .unavailable
+    }
+
+    /// What a mention of a shape shows, found (nil: missing).
+    private func resolve(_ record: AnyShapeRecord?) -> MentionResolution {
+        guard let record else { return .missing }
         return appearance(of: record).map { .live($0) } ?? .unavailable
     }
+
+    /// Whether `target` is on the board shown: what hovering it can outline.
+    func isShown(_ target: ShapeID) -> Bool { editor.document[target] != nil }
 
     /// The text as plain text, each mention "@" and its target's live name, or the name it holds
     /// where its target isn't live.
@@ -124,10 +176,18 @@ public final class MentionState {
 
     /// The mentioners whose rows a commit may change without changing them: those of the targets
     /// whose resolution it changed. Answers for the commit it's given the first time it's asked
-    /// about a revision, and from then on as it answered.
+    /// about a revision, and from then on as it answered; and, asked again with shapes elsewhere
+    /// (what changed on other boards while the board shown wasn't, which the table of contents
+    /// hands its rows on going back to it), the mentioners of those shapes too.
     public func rowsAffected(by changes: ChangeSet) -> Set<ShapeID> {
-        if heardRevision != editor.revision { hear(changes) }
-        return lastAffected
+        if heardRevision != editor.revision {
+            hear(changes)
+            return lastAffected
+        }
+        guard !changes.elsewhere.isEmpty else { return lastAffected }
+        var affected = lastAffected
+        for id in changes.elsewhere { affected.formUnion(backward[id] ?? []) }
+        return affected
     }
 
     // MARK: Going to and hovering
@@ -139,8 +199,12 @@ public final class MentionState {
         _ = editor.scheduler.schedule(after: .zero) { [weak editor] in editor?.goTo([target]) }
     }
 
-    /// Hovers the target (`editor.hovered`): outlined faintly on the canvas, its row tinted.
-    public func hover(_ target: ShapeID) { editor.hovered = target }
+    /// Hovers the target (`editor.hovered`): outlined faintly on the canvas, its row tinted. Only
+    /// one on the board shown: one elsewhere has neither there.
+    public func hover(_ target: ShapeID) {
+        guard isShown(target) else { return }
+        editor.hovered = target
+    }
 
     /// Ends the target's hover, only if it's still what's hovered.
     public func endHover(_ target: ShapeID) {
@@ -298,16 +362,28 @@ public final class MentionState {
             stale.insert(id)
         }
         var changedTargets: Set<ShapeID> = []
-        for id in changes.shapeIDs where !changes.moved.contains(id) {
-            guard let before = resolutions[id] else { continue }
-            let now = resolve(id)
-            if now != before {
-                resolutions[id] = now
-                changedTargets.insert(id)
-            }
-        }
+        for id in changes.shapeIDs where !changes.moved.contains(id) { resolveAgain(id, into: &changedTargets) }
+        // Shapes on other boards it reached: those a deletion took with a board, or a paste
+        // brought, or a write to a board that isn't shown changed.
+        for id in changes.elsewhere { resolveAgain(id, into: &changedTargets) }
         lastAffected = changedTargets.reduce(into: Set<ShapeID>()) { $0.formUnion(backward[$1] ?? []) }
         if changes.replacedDocument { refreshStale() }                  // a board opened: read now, not at the first `@`
+        tell(changedTargets)
+    }
+
+    /// Resolves a tracked target again (or takes what it shows now, `shown`), noting it in
+    /// `changed` if that changed.
+    private func resolveAgain(_ id: ShapeID, as shown: @autoclosure () -> MentionResolution? = nil, into changed: inout Set<ShapeID>) {
+        guard let before = resolutions[id] else { return }
+        let now = shown() ?? resolve(id)
+        if now != before {
+            resolutions[id] = now
+            changed.insert(id)
+        }
+    }
+
+    /// Bumps the revisions of the targets whose resolution changed, and tells their observers.
+    private func tell(_ changedTargets: Set<ShapeID>) {
         guard !changedTargets.isEmpty else { return }
         for target in changedTargets {
             withMutation(keyPath: \.[revision: target]) { revisions[target, default: 0] += 1 }
@@ -372,6 +448,12 @@ public final class MentionState {
     // MARK: The catalog
 
     private func refreshStale() {
+        guard catalogIsRead else {
+            for record in editor.document.shapes { readEntry(record) }
+            catalogIsRead = true
+            stale = []
+            return
+        }
         guard !stale.isEmpty else { return }
         let document = editor.document
         for id in stale {
@@ -412,6 +494,63 @@ extension MentionState: EditorService {
         guard heardRevision != editor.revision else { return }
         hear(changes)
     }
+
+    /// Keeps the board left's index and catalog, as they are, for going back to it.
+    public func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor) {
+        guard old != new, heardRevision == editor.revision else { return }
+        kept.keep(Kept(forward: forward, backward: backward, resolutions: resolutions, catalog: catalog, stale: stale,
+                       catalogIsRead: catalogIsRead, recent: recent),
+                  for: old, in: editor)
+    }
+
+    /// Takes back the shown board's index and catalog, if it's as it was left, or indexes it as it
+    /// opens (its catalog a turn later, `indexEntered`). Only the board shown is indexed (the picker lists what's on it), but its mentions of
+    /// shapes on other boards show them live: taken back, what they name on other boards is resolved
+    /// again, since a rename there (or a deletion, or its undo) while the board wasn't shown leaves
+    /// its revision as it was, and those whose resolution changed bump their revisions and tell
+    /// their observers, and their mentioners are the rows it affects (`rowsAffected`). Recent picks
+    /// and observations stay (the picker lists only what's in the catalog; the views observing
+    /// pills of the board left go with it).
+    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
+        heardRevision = editor.revision
+        lastAffected = []
+        var changedTargets: Set<ShapeID> = []
+        if let taken = kept.take(for: change.to, in: editor) {
+            forward = taken.forward
+            backward = taken.backward
+            resolutions = taken.resolutions
+            catalog = taken.catalog
+            stale = taken.stale
+            catalogIsRead = taken.catalogIsRead
+            catalog.markRecent(recent, previous: taken.recent)
+            // A change to a target on this board would have changed its revision, so those are as
+            // kept; those elsewhere may not be.
+            let document = editor.document, file = editor.file
+            for id in Array(resolutions.keys) where document[id] == nil { resolveAgain(id, as: resolve(elsewhere: id, in: file), into: &changedTargets) }
+            lastAffected = changedTargets.reduce(into: Set<ShapeID>()) { $0.formUnion(backward[$1] ?? []) }
+        } else {
+            forward = [:]
+            backward = [:]
+            resolutions = [:]
+            catalog = MentionCatalog()
+            stale = []
+            indexEntered(editor.document)
+        }
+        for target in observersByTarget.keys { track(target) }
+        tell(changedTargets)
+    }
+}
+
+/// A board's index and catalog, kept while another board is shown.
+private struct Kept {
+    let forward: [ShapeID: [ShapeID]]
+    let backward: [ShapeID: Set<ShapeID>]
+    let resolutions: [ShapeID: MentionResolution]
+    let catalog: MentionCatalog
+    let stale: Set<ShapeID>
+    let catalogIsRead: Bool
+    /// The recent picks then, which the catalog's ranks follow.
+    let recent: [ShapeID]
 }
 
 extension CanvasEditor {

@@ -69,7 +69,10 @@ final class ContextMenuState {
     }
 }
 
-extension ContextMenuState: EditorService {}
+extension ContextMenuState: EditorService {
+    /// Nothing kept per shape, so nothing to follow to another board.
+    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
+}
 
 /// One item of a menu as it will show, for the shapes it's for.
 @MainActor

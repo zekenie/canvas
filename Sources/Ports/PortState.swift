@@ -211,4 +211,11 @@ extension PortState: EditorService {
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         if let host, changes.removed.contains(host) { self.host = nil }
     }
+
+    /// Another board is shown: the shape whose dots showed, and any connection, were the board
+    /// left's. Keeps nothing per board, so the switch's change set is never worked out.
+    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
+        host = nil
+        connection = nil
+    }
 }

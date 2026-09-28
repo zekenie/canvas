@@ -1,6 +1,7 @@
 import Adornments
 import AppKit
 import Arrows
+import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
@@ -16,6 +17,7 @@ import Mentions
 import Schemas
 import Selection
 import StickyNotes
+import Subboards
 import TableOfContents
 import TaskCards
 import TestKit
@@ -23,13 +25,21 @@ import Titles
 import Validation
 
 // The persistence plan's budgets, for boards of generated shapes: saving and opening (Mentions'
-// index and catalog built as it opens), validation's first read (every shape checked, against its
-// kind's schema too) and its read after moving them all, and one hover and one drag frame (the
-// input, then drawing the whole canvas, and the minimap with it), on a note, from a note's port and
-// onto a title's pill and a mention's, at 60 fps; a keystroke in the `@` picker and a rename of a
-// shape mentioned 100 times; and undo and redo, a drag's in a frame and a tenth of the board's
-// moved or deleted too. `./build.sh bench` runs these in a release build and holds them to the
-// budgets; `./test.sh` runs them debug and small, so they keep working, and only reports.
+// index and catalog built as it opens), a board and a file whose shapes are spread across nested
+// subboards, validation's first read (every shape checked, against its kind's schema too) and its
+// read after moving them all, and one hover and one drag frame (the input, then drawing the whole
+// canvas, and the minimap with it), on a note, from a note's port and onto a title's pill and a
+// mention's, at 60 fps; frames and rows on a board beside a subboard holding the board's worth, and
+// inside one while the root holds as many, with a drag event's input
+// alone, which the file's other boards mustn't cost; entering a subboard, cold (the switch, a frame, the rows
+// and validation's read), going back up to its board and down again, warm, and the minimap's
+// picture of the board entered; a keystroke in the `@` picker and a rename of a shape mentioned 100
+// times; and undo and redo, a drag's in a frame and a tenth of the board's moved or deleted too, and
+// deleting a subboard whose boards hold as many shapes, and its undo and redo; and ten subboards in
+// view, each holding as many, their previews filling in. `./build.sh bench` runs these in a release
+// build and holds them to the budgets; `./test.sh` runs them debug and small, so they keep working,
+// and only reports. Reported alone: the inspector's list replaced on a switch
+// (InspectorBenchmarks.swift), and a chain of 1,000 boards.
 #if DEBUG
 let sizes = [300]
 let holdsToBudgets = false
@@ -56,15 +66,41 @@ enum Budget {
     /// (with it, some 30 ms). The drag event's own commit, before it, costs more than a frame.
     static let validationAfterMovingAll10k = 16.0
     /// Undoing or redoing every shape's deletion, with the frame after it: 10,000 shapes back or gone.
+    /// Also undoing or redoing the deletion of a shape whose boards hold 10,000, with the frame after
+    /// it.
     static let undoEveryShape = 100.0
     /// Mentions' index (who mentions whom) and catalog (what the `@` picker searches), built as a
-    /// board opens: part of opening it.
+    /// board opens: part of opening it. Also the catalog alone of a board entered for the first
+    /// time, read on the turn after.
     static let mentionIndex10k = 50.0
     /// A keystroke in the `@` picker, the `@` that opens it (recent picks and nearby shapes) included.
     static let pickerKeystroke = 2.0
     /// What renaming a shape mentioned 100 times adds to the commit, over renaming one mentioned
     /// by none.
     static let renameMentioned = 1.0
+    /// Going back to a board shown lately, as it was left: the switch, its first frame, the table
+    /// of contents' rows and validation's read, together.
+    static let warmReturn = frame
+    /// Entering a board of 10,000 shapes for the first time: the switch (the camera's first fit
+    /// with it, Mentions' index of who mentions whom, which the rows and pills read), the first
+    /// frame (three notes in ten drawing pills), the table of contents' rows and validation's first
+    /// read, together. Once a board, like opening a file. Mentions' catalog, which only the `@`
+    /// picker reads, is left for the scheduler's next turn, and held to `mentionIndex10k`.
+    static let enterCold = 250.0
+    /// Deleting a shape whose boards hold 10,000 shapes: the commit, and every board under it taken
+    /// with it.
+    static let subboardDeletion = frame
+    /// A drag event's input (its commit, without the frame) on a board beside or inside a subboard,
+    /// on 10,000 shapes: some 0.25 ms, so a commit's upkeep of the whole file shows.
+    static let dragInput = 1.0
+    /// And how many times what it costs on a file of that board alone it may cost: the file's other
+    /// boards cost a commit nothing.
+    static let dragInputOverAlone = 3.0
+    /// And more, for a timing too short to hold to a ratio (a drag on a board of 1,000, some 0.03 ms).
+    static let dragInputSlack = 0.1
+    /// The inspector's list replaced on a switch between boards of 10,000 rows each: reported, not
+    /// held, until it's known to fit.
+    static let listReplacedTarget = 50.0
 }
 
 /// Notes, tasks, ellipses and schema cards in a grid, with an arrow from every fourth note to the
@@ -169,6 +205,51 @@ enum Budget {
     return plugins
 }
 
+/// A file of generated boards (`generatedBoard`): a root of `root` shapes beside a subboard for each
+/// of `children` (in a row above the grid, out of the frames' view), whose board holds that many.
+/// The last is the top of a chain `depth` boards deep, the shapes shared among them, each board but
+/// the deepest holding the subboard of the next beside its share. A board's subboards aren't among
+/// its count.
+@MainActor func generatedFile(root: Int, children: [Int], depth: Int = 1) -> CanvasFile {
+    precondition(depth >= 1 && (depth == 1 || !children.isEmpty))
+    var boards: [ShapeID: CanvasDocument] = [:]
+    let card = { (i: Int) in ShapeRecord(Subboard(frame: CGRect(origin: CGPoint(x: CGFloat(i) * 300, y: -400), size: Subboard.defaultSize))) }
+    let owners = children.indices.map(card)
+    for (owner, count) in zip(owners, children) {
+        // Down the chain from this owner: each board its share, and the next board's card.
+        var owner = owner
+        let levels = owner.id == owners.last?.id ? depth : 1
+        for level in 0..<levels {
+            let share = level == levels - 1 ? count - count / levels * level : count / levels
+            var shapes = generatedBoard(shapes: share).shapes
+            if level < levels - 1 {
+                let next = card(0)
+                shapes.append(AnyShapeRecord(next))
+                boards[owner.id] = CanvasDocument(shapes: shapes)
+                owner = next
+            } else {
+                boards[owner.id] = CanvasDocument(shapes: shapes)
+            }
+        }
+    }
+    return CanvasFile(root: CanvasDocument(shapes: generatedBoard(shapes: root).shapes + owners.map(AnyShapeRecord.init)), children: boards)
+}
+
+/// The board's subboards, in its order.
+func subboards(on document: CanvasDocument) -> [ShapeID] { document.shapes.filter { $0.kind == Subboard.kind }.map(\.id) }
+
+/// Every board with no shape locked (a locked shape inside a subboard keeps it from being deleted).
+func unlocked(_ file: CanvasFile) -> CanvasFile {
+    let unlock = { (document: CanvasDocument) in
+        CanvasDocument(shapes: document.shapes.map { shape in
+            var shape = shape
+            shape[LockedProperty.self] = nil
+            return shape
+        })
+    }
+    return CanvasFile(root: unlock(file.root), children: file.children.mapValues(unlock))
+}
+
 extension Duration {
     var milliseconds: Double { Double(components.seconds) * 1000 + Double(components.attoseconds) / 1e15 }
 }
@@ -250,6 +331,19 @@ extension Duration {
                 expect(open < Budget.open10k, "opening \(size) shapes took \(open) ms")
                 expect(index < Budget.mentionIndex10k, "Mentions' index and catalog of \(size) shapes took \(index) ms")
             }
+            // The same shapes spread across boards: a tenth on the root, a tenth in each of nine
+            // subboards, the last of them the top of a chain ten boards deep.
+            let tenth = size / 10
+            let file = generatedFile(root: tenth, children: Array(repeating: tenth, count: 9), depth: 10)
+            let nestedSave = try median(runs: 5) { data = try codec.encode(file) }
+            let nestedOpen = try median(runs: 5) {
+                opened = CanvasEditor(registry: registry, file: try codec.decode(data).file, scheduler: ManualScheduler())
+            }
+            expectEqual(opened?.file, registry.fillingDefaults(file))
+            expectEqual(file.children.count, 18, "nine subboards, and nine more down the chain")
+            report(String(format: "%6d shapes on %d boards, %5.1f MB: save %7.1f ms, open %7.1f ms (budget %.0f)",
+                          file.shapeCount, file.children.count + 1, Double(data.count) / 1e6, nestedSave, nestedOpen, Budget.open10k))
+            if holdsToBudgets, size >= 10_000 { expect(nestedOpen < Budget.open10k, "opening \(file.shapeCount) shapes on \(file.children.count + 1) boards took \(nestedOpen) ms") }
         }
     },
     test("validation's first read checks every shape, against its kind's schema too; a drag checks the dragged shapes again, but not their schemas") {
@@ -565,6 +659,175 @@ extension Duration {
             }
         }
     },
+    test("entering a subboard of the board's worth of shapes fits the budget once, and going back up to its board and down again, as they were left, costs a frame") {
+        let viewport = CGSize(width: 1200, height: 800)
+        let context = try bitmapContext(viewport)
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        for size in sizes {
+            let file = generatedFile(root: size, children: [size])
+            let owner = try require(subboards(on: file.root).first)
+            let child = BoardID(owner: owner)
+            var h = EditorHarness { CanvasEditor(registry: registry, file: file, scheduler: $0) }
+            var rows: [ContentsEntry] = []
+            // What showing a board takes before it's seen: a frame, the rows, the issues.
+            let reads = {
+                draw(h.editor, into: context, size: viewport)
+                rows = try require(h.editor.tableOfContents).entries
+                _ = try require(h.editor.validation).results
+            }
+            // Cold: a new editor each run, on the root as it's first seen, the subboard selected;
+            // then ⌘↓ (the camera's first fit on the way in).
+            let cold = try median(runs: 3, prepare: {
+                h = EditorHarness { CanvasEditor(registry: registry, file: file, scheduler: $0) }
+                h.editor.viewportDidResize(to: viewport)
+                try? reads()
+                h.editor.selectedShapeIDs = [owner]
+            }) {
+                h.editor.perform(.openSelection)
+                try reads()
+            }
+            expectEqual(h.editor.board, child, "⌘↓ entered the subboard")
+            expectEqual(rowCount(rows), size)
+            // Mentions' catalog (what the @ picker searches), left for the scheduler's next turn,
+            // once the board is on screen.
+            let catalog = ContinuousClock().measure { h.wait(0) }.milliseconds
+            let fitted = h.editor.camera.zoom
+            // As the root's, and the frame benchmark's: the first visit fitted every shape into view,
+            // and a frame of them all is a frame of 10,000 shapes, whatever board they're on.
+            h.editor.camera = Camera()
+            // Warm: ⌘↑ to the root, which selects the subboard, and ⌘↓ into it again, each run
+            // going back to the board the one before left.
+            let up = try median(runs: 21, prepare: { if h.editor.board.isRoot { h.editor.perform(.openSelection) } }) {
+                h.editor.perform(.enclosingBoard)
+                try reads()
+            }
+            expect(h.editor.board.isRoot, "⌘↑ went up")
+            expectEqual(rowCount(rows), 1, "the subboard selected, and listed alone")
+            let down = try median(runs: 21, prepare: { if !h.editor.board.isRoot { h.editor.perform(.enclosingBoard) } }) {
+                h.editor.perform(.openSelection)
+                try reads()
+            }
+            expectEqual(h.editor.board, child, "⌘↓ went down")
+            // Up again, then the selection let go of, so the root lists every row: its rows and
+            // listing as it was left, taken back.
+            let upListed = try median(runs: 21, prepare: {
+                if h.editor.board.isRoot {
+                    h.editor.selectedShapeIDs = [owner]
+                    h.editor.perform(.openSelection)
+                }
+            }) {
+                h.editor.perform(.enclosingBoard)
+                h.editor.selectedShapeIDs = []
+                try reads()
+            }
+            expect(h.editor.board.isRoot, "⌘↑ went up")
+            expectEqual(rowCount(rows), size + 1, "every shape of the root listed, the subboard's too")
+            report(String(format: "%6d shapes on each board: entering the subboard, cold, %6.1f ms (budget %.0f; fitted at %.0f%%), Mentions' catalog on the next turn %5.1f (budget %.0f); going back up to the root %5.1f ms (listing it all %5.1f), down again %5.1f (budget %.0f)",
+                          size, cold, Budget.enterCold, fitted * 100, catalog, Budget.mentionIndex10k, up, upListed, down, Budget.warmReturn))
+            if holdsToBudgets {
+                if size >= 10_000 {
+                    expect(cold < Budget.enterCold, "entering a subboard of \(size) shapes, cold, took \(cold) ms")
+                    expect(catalog < Budget.mentionIndex10k, "Mentions' catalog of a subboard of \(size) shapes took \(catalog) ms")
+                }
+                expect(up < Budget.warmReturn, "going back up to a board of \(size) shapes took \(up) ms")
+                expect(upListed < Budget.warmReturn, "going back up to a board of \(size) shapes and listing it all took \(upListed) ms")
+                expect(down < Budget.warmReturn, "going back down to a board of \(size) shapes took \(down) ms")
+            }
+        }
+    },
+    test("frames and rows cost the board shown: a board beside a subboard of ten times its shapes, and a subboard as big as the root") {
+        let viewport = CGSize(width: 1200, height: 800)
+        let context = try bitmapContext(viewport)
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        // A drag event's input alone (its commit), without the frame: drawing hides a commit's
+        // upkeep of the whole file, which a drag on a board beside or inside a subboard mustn't
+        // cost more than on a file of that board alone. With the board's first note pressed.
+        @MainActor func dragInput(_ h: EditorHarness, from center: CGPoint, step: inout Int) -> Double {
+            var at = step
+            defer { step = at }
+            return median(runs: 51) {
+                at += 1
+                h.drag(to: center + CGPoint(x: CGFloat(at), y: CGFloat(at) / 2))
+            }
+        }
+        // The same on a file of one board of `size` generated shapes.
+        @MainActor func dragInputAlone(_ size: Int) throws -> Double {
+            let h = EditorHarness { CanvasEditor(registry: registry, document: generatedBoard(shapes: size), scheduler: $0) }
+            h.editor.viewportDidResize(to: viewport)
+            let note = try require(h.editor.document.shapes.first { $0.kind == StickyNote.kind })
+            let center = CGPoint(x: try require(note.box).midX, y: try require(note.box).midY)
+            var step = 0
+            h.press(at: center)
+            defer { h.release() }
+            return dragInput(h, from: center, step: &step)
+        }
+        // A hover and a drag on the board's first note, each with a frame, the drag's input alone,
+        // and the rows (every shape listed) after a drag event.
+        @MainActor func frames(_ h: EditorHarness) throws -> (hover: Double, drag: Double, input: Double, rows: Double) {
+            let contents = try require(h.editor.tableOfContents)
+            let note = try require(h.editor.document.shapes.first { $0.kind == StickyNote.kind })
+            let center = CGPoint(x: try require(note.box).midX, y: try require(note.box).midY)
+            var step = 0
+            let hover = median(runs: 21) {
+                step += 1
+                h.move(to: center + CGPoint(x: CGFloat(step % 7), y: 0))
+                draw(h.editor, into: context, size: viewport)
+            }
+            h.press(at: center)
+            let drag = median(runs: 21) {
+                step += 1
+                h.drag(to: center + CGPoint(x: CGFloat(step), y: CGFloat(step) / 2))
+                draw(h.editor, into: context, size: viewport)
+            }
+            let input = dragInput(h, from: center, step: &step)
+            contents.showAll()
+            var rows = contents.entries
+            let afterDrag = median(runs: 21, prepare: {
+                step += 1
+                h.drag(to: center + CGPoint(x: CGFloat(step), y: CGFloat(step) / 2))
+            }) { rows = contents.entries }
+            h.release()
+            expectEqual(rowCount(rows), h.editor.document.shapes.count, "every shape of the board shown listed")
+            expectEqual(h.editor.document[note.id]?.box?.origin.x, (note.box?.origin.x ?? 0) + CGFloat(step), "the drag moved the note")
+            return (hover, drag, input, afterDrag)
+        }
+        for size in sizes {
+            // The root: a tenth of the shapes, or all of them at the smallest size, beside a
+            // subboard holding them all.
+            let beside = EditorHarness { CanvasEditor(registry: registry, file: generatedFile(root: min(1_000, size), children: [size]), scheduler: $0) }
+            beside.editor.viewportDidResize(to: viewport)
+            let root = try frames(beside)
+            // Inside a subboard of the board's worth, the root holding as many: at the frame
+            // benchmark's camera, not the first visit's fit.
+            let file = generatedFile(root: size, children: [size])
+            let inside = EditorHarness { CanvasEditor(registry: registry, file: file, scheduler: $0) }
+            inside.editor.viewportDidResize(to: viewport)
+            expect(inside.enter(try require(subboards(on: file.root).first)), "entered the subboard")
+            inside.editor.camera = Camera()
+            let child = try frames(inside)
+            expectEqual(inside.file.shapeCount, file.shapeCount)
+            let rootAlone = try dragInputAlone(min(1_000, size)), childAlone = try dragInputAlone(size)
+            report(String(format: "%6d shapes in a subboard of a root of %d: hover %5.1f ms, drag %5.1f (budget %.0f; its input %6.3f, budget %.0f, %6.3f on that board alone), rows after a drag event %6.3f (budget %.0f)",
+                          size, min(1_000, size), root.hover, root.drag, Budget.frame, root.input, Budget.dragInput, rootAlone, root.rows, Budget.contentsRows))
+            report(String(format: "%6d shapes inside a subboard, as many on the root: hover %5.1f ms, drag %5.1f (budget %.0f; its input %6.3f, budget %.0f, %6.3f on that board alone), rows after a drag event %6.3f (budget %.0f)",
+                          size, child.hover, child.drag, Budget.frame, child.input, Budget.dragInput, childAlone, child.rows, Budget.contentsRows))
+            if holdsToBudgets {
+                for (what, times) in [("on a root beside a subboard of \(size) shapes", root), ("inside a subboard of \(size) shapes", child)] {
+                    expect(times.hover < Budget.frame, "a hover \(what) took \(times.hover) ms")
+                    expect(times.drag < Budget.frame, "a drag \(what) took \(times.drag) ms")
+                    expect(times.rows < Budget.contentsRows, "reading the rows after a drag event \(what) took \(times.rows) ms")
+                }
+                if size >= 10_000 {
+                    for (what, input, alone) in [("on a root beside a subboard of \(size) shapes", root.input, rootAlone),
+                                                 ("inside a subboard of \(size) shapes", child.input, childAlone)] {
+                        expect(input < Budget.dragInput, "a drag event's input \(what) took \(input) ms")
+                        expect(input < Budget.dragInputOverAlone * alone + Budget.dragInputSlack,
+                               "a drag event's input \(what) took \(input) ms, against \(alone) on its board alone")
+                    }
+                }
+            }
+        }
+    },
     test("the minimap draws a board a frame's worth at a time, and a drag redraws only what moved") {
         let viewport = CGSize(width: 1200, height: 800)
         let context = try bitmapContext(viewport)
@@ -612,6 +875,88 @@ extension Duration {
             if holdsToBudgets {
                 expect(longest < Budget.frame, "a frame of the minimap's first picture of \(size) shapes took \(longest) ms")
                 expect(drag < Budget.frame, "a drag over \(size) shapes, with the minimap, took \(drag) ms")
+            }
+        }
+    },
+    test("the minimap's picture of a subboard entered fills a frame's worth at a time, as the root's did") {
+        let viewport = CGSize(width: 1200, height: 800)
+        let context = try bitmapContext(viewport)
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        for size in sizes {
+            let file = generatedFile(root: size, children: [size])
+            let h = EditorHarness { CanvasEditor(registry: registry, file: file, scheduler: $0) }
+            let window = NSWindow(contentRect: CGRect(origin: .zero, size: viewport), styleMask: [.titled], backing: .buffered, defer: false)
+            let canvas = CanvasView(editor: h.editor)
+            window.contentView = canvas
+            canvas.showsMinimap = true
+            let minimap = try require(canvas.minimap)
+            let minimapContext = try bitmapContext(minimap.bounds.size, scale: window.backingScaleFactor)
+            // Frames as they come, until the picture is all drawn: how many, and the longest (the
+            // minimap's part of each).
+            let clock = ContinuousClock()
+            let fill = { () -> (frames: Int, longest: Double, total: Double) in
+                var frames = 0, longest = 0.0, total = 0.0
+                while true {
+                    let ms = clock.measure { display(minimap, into: minimapContext) }.milliseconds
+                    frames += 1
+                    longest = max(longest, ms)
+                    total += ms
+                    guard h.scheduler.pendingCount > 0, frames < 1000 else { break }
+                    h.wait(0)                                   // the next frame the minimap asked for
+                }
+                return (frames, longest, total)
+            }
+            draw(h.editor, into: context, size: viewport)
+            let root = fill()
+            expect(h.enter(try require(subboards(on: file.root).first)), "entered the subboard")
+            draw(h.editor, into: context, size: viewport)     // the first frame on the board entered
+            let entered = fill()
+            expectEqual(h.scheduler.pendingCount, 0, "the picture of the board entered is all drawn")
+            report(String(format: "%6d shapes on each board: the minimap's picture of the root %.1f ms in %d frames (longest %.1f); of the subboard entered %.1f ms in %d frames, the longest %.1f (budget %.0f)",
+                          size, root.total, root.frames, root.longest, entered.total, entered.frames, entered.longest, Budget.frame))
+            if holdsToBudgets {
+                expect(entered.longest < Budget.frame, "a frame of the minimap's picture of a subboard of \(size) shapes, entered, took \(entered.longest) ms")
+            }
+        }
+    },
+    test("ten subboards in view, each holding the board's worth of shapes: their previews fill in a frame's worth at a time") {
+        let viewport = CGSize(width: 1200, height: 800)
+        let context = try bitmapContext(viewport)
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        for size in sizes {
+            // Five across and two down, all in view, each board its own (ids are unique in a file).
+            let subs = (0..<10).map { i in
+                ShapeRecord(Subboard(frame: CGRect(origin: CGPoint(x: 10 + CGFloat(i % 5) * 237, y: 60 + CGFloat(i / 5) * 300), size: Subboard.defaultSize)))
+            }
+            let file = CanvasFile(root: CanvasDocument(shapes: subs.map(AnyShapeRecord.init)),
+                                  children: Dictionary(uniqueKeysWithValues: subs.map { ($0.id, generatedBoard(shapes: size)) }))
+            // The cards' first frame loads what drawing them takes (fonts, symbols, formatting a count),
+            // which isn't the previews'; and a frame of the cards alone, with nothing inside, is what
+            // one costs without them.
+            let warm = CanvasFile(root: file.root, children: Dictionary(uniqueKeysWithValues: subs.map { ($0.id, generatedBoard(shapes: 2)) }))
+            draw(CanvasEditor(registry: registry, file: warm, scheduler: ManualScheduler()), into: context, size: viewport)
+            let empty = CanvasEditor(registry: registry, file: CanvasFile(root: file.root), scheduler: ManualScheduler())
+            let cards = median(runs: 11) { draw(empty, into: context, size: viewport) }
+            let h = EditorHarness { CanvasEditor(registry: registry, file: file, scheduler: $0) }
+            h.editor.viewportDidResize(to: viewport)
+            // Frames as they come, until the last preview is built (and drawn, in the frame that
+            // builds it): how many, and the longest.
+            let clock = ContinuousClock()
+            var frames = 0, longest = 0.0, total = 0.0
+            repeat {
+                let took = clock.measure { draw(h.editor, into: context, size: viewport) }
+                let ms = Double(took.components.seconds) * 1000 + Double(took.components.attoseconds) / 1e15
+                frames += 1
+                longest = max(longest, ms)
+                total += ms
+                h.wait(0)                                   // the next frame the editor asked for
+            } while h.editor.boardPreviews.isPending && frames < 10_000
+            expectEqual(h.editor.boardPreviews.keptKeys.count, subs.count, "every preview built")
+            expectEqual(h.scheduler.pendingCount, 0, "and no frame asked for after")
+            report(String(format: "%6d shapes in each of 10 subboards: their previews all drawn in %d frames (%.1f ms), the longest %.1f ms (budget %.0f); a frame of the cards alone %.1f",
+                          size, frames, total, longest, Budget.frame, cards))
+            if holdsToBudgets {
+                expect(longest < Budget.frame, "a frame while previews of 10 subboards of \(size) shapes filled took \(longest) ms")
             }
         }
     },
@@ -667,5 +1012,70 @@ extension Duration {
                 }
             }
         }
+    },
+    test("deleting a subboard whose boards hold the board's worth of shapes takes a frame, and undoing and redoing it puts them back or takes them whole") {
+        let viewport = CGSize(width: 1200, height: 800)
+        let context = try bitmapContext(viewport)
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        for size in sizes {
+            // A subboard on the root, among a few shapes: its board holds half the shapes and a
+            // subboard whose board holds the other half, none locked (a locked shape inside keeps it).
+            let file = unlocked(generatedFile(root: 20, children: [size], depth: 2))
+            let owner = try require(subboards(on: file.root).first)
+            let h = EditorHarness { CanvasEditor(registry: registry, file: file, scheduler: $0) }
+            h.editor.viewportDidResize(to: viewport)
+            let frame = { draw(h.editor, into: context, size: viewport) }
+            frame()
+            let under = file.shapeCount - file.root.shapes.count
+            // Each run deletes it as Delete does (the commit, and every board under it with it),
+            // after an untimed undo of the run before.
+            let delete = median(runs: 11, prepare: { if h.file.record(owner) == nil { h.editor.undo() } }) {
+                h.editor.transact("Delete") { $0.delete([owner]) }
+            }
+            expectEqual(h.file.shapeCount, file.root.shapes.count - 1, "the subboard, and every board under it")
+            expectEqual(h.file.children.count, 0)
+            let times = undoAndRedo(h.editor, runs: 5, frame: frame)
+            h.editor.undo()
+            expectEqual(h.file, registry.fillingDefaults(file), "every board back, every id")
+            report(String(format: "%6d shapes under a subboard: deleting it %5.2f ms (budget %.0f); undone %5.1f and redone %5.1f ms, with a frame (budget %.0f)",
+                          under, delete, Budget.subboardDeletion, times.undo, times.redo, Budget.undoEveryShape))
+            if holdsToBudgets {
+                expect(delete < Budget.subboardDeletion, "deleting a subboard holding \(under) shapes took \(delete) ms")
+                expect(times.undo < Budget.undoEveryShape && times.redo < Budget.undoEveryShape,
+                       "undoing and redoing the deletion of a subboard holding \(under) shapes took \(times) ms")
+            }
+        }
+    },
+    test("a chain of 1,000 boards, each inside the one before, is written, read and walked without trouble") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let codec = BoardCodec(registry: registry)
+        let levels = 1_000
+        // Each board a note and the subboard of the next; the deepest, a note.
+        let cards = (0..<levels).map { _ in ShapeRecord(Subboard(frame: CGRect(x: 0, y: 0, width: 240, height: 160))) }
+        let note = { AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(x: 300, y: 0, width: 200, height: 200), text: "Here"))) }
+        var boards: [ShapeID: CanvasDocument] = [:]
+        for (i, card) in cards.enumerated() {
+            boards[card.id] = CanvasDocument(shapes: [note()] + (i + 1 < levels ? [AnyShapeRecord(cards[i + 1])] : []))
+        }
+        let file = CanvasFile(root: CanvasDocument(shapes: [note(), AnyShapeRecord(cards[0])]), children: boards)
+        let deepest = BoardID(owner: try require(cards.last).id)
+        let clock = ContinuousClock()
+        var data = Data()
+        let save = try clock.measure { data = try codec.encode(file) }.milliseconds
+        var read: CanvasFile?
+        let open = try clock.measure { read = try codec.decode(data).file }.milliseconds
+        expectEqual(read, registry.fillingDefaults(file), "read back as written")
+        var path: [BoardID]?
+        let walk = clock.measure { path = file.path(to: deepest) }.milliseconds
+        expectEqual(path?.count, levels + 1, "the root, then every board down")
+        expectEqual(file.subtree(ownedBy: [cards[0].id]).count, levels)
+        var editor: CanvasEditor?
+        let show = clock.measure { editor = CanvasEditor(registry: registry, file: file, showing: deepest, scheduler: ManualScheduler()) }.milliseconds
+        expectEqual(editor?.board, deepest)
+        expectEqual(editor?.boardPath.count, levels + 1)
+        editor?.goToEnclosingBoard()
+        expectEqual(editor?.boardPath.count, levels, "⌘↑ goes up one")
+        report(String(format: "a chain of %d boards, %.1f MB: save %.1f ms, open %.1f ms, the path to the deepest %.3f ms, an editor showing it %.1f ms (reported)",
+                      levels, Double(data.count) / 1e6, save, open, walk, show))
     },
 ])

@@ -75,6 +75,8 @@ public enum BoardMenus {
         ])
         let go = menu("Go", [
             item("Back", #selector(BoardWindowController.goBack(_:)), "["),
+            item("Enclosing Board", #selector(BoardWindowController.enclosingBoard(_:)), upArrow),
+            item("Open", #selector(BoardWindowController.openSelection(_:)), downArrow),
         ])
         let windows = menu("Window", [
             item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
@@ -83,10 +85,14 @@ public enum BoardMenus {
             item("Bring All to Front", #selector(NSApplication.arrangeInFront(_:))),
         ])
         let help = menu("Help", helpItems)
-        let main = NSMenu(title: "Main Menu")
+        let main = MenuBar(title: "Main Menu")
         for menu in [app, file, edit, view, go, windows, help] { main.addItem(submenu(menu.title, menu)) }
         return Menus(main: main, services: services, windows: windows, help: help)
     }
+
+    /// The arrow keys, as a menu item's key equivalent.
+    static let upArrow = String(UnicodeScalar(UInt16(NSUpArrowFunctionKey))!)
+    static let downArrow = String(UnicodeScalar(UInt16(NSDownArrowFunctionKey))!)
 
     private static func item(_ title: String, _ action: Selector, _ key: String = "",
                              _ modifiers: NSEvent.ModifierFlags = .command) -> NSMenuItem {
@@ -105,5 +111,33 @@ public enum BoardMenus {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         item.submenu = menu
         return item
+    }
+}
+
+/// The menu bar: as any, but an item whose key is an arrow key (Go › Enclosing Board, ⌘↑, and Open,
+/// ⌘↓) leaves that key to the key window while it's disabled, as it is while text has the keyboard,
+/// so the text moves its caret with it. (AppKit's menus take a disabled item's key, and beep.)
+final class MenuBar: NSMenu {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.type == .keyDown, let item = arrowItem(for: event, in: self) {
+            item.menu?.update()
+            if !item.isEnabled { return false }
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    private static let arrows: Set<String> = Set([NSUpArrowFunctionKey, NSDownArrowFunctionKey, NSLeftArrowFunctionKey, NSRightArrowFunctionKey]
+        .map { String(UnicodeScalar(UInt16($0))!) })
+
+    /// The item, in `menu` or a menu under it, whose key equivalent is `event`'s arrow key, with its
+    /// modifiers (less the function and keypad flags every arrow key carries).
+    private func arrowItem(for event: NSEvent, in menu: NSMenu) -> NSMenuItem? {
+        guard let key = event.charactersIgnoringModifiers, Self.arrows.contains(key) else { return nil }
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        for item in menu.items {
+            if item.keyEquivalent == key, item.keyEquivalentModifierMask.intersection([.command, .shift, .option, .control]) == modifiers { return item }
+            if let submenu = item.submenu, let found = arrowItem(for: event, in: submenu) { return found }
+        }
+        return nil
     }
 }

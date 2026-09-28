@@ -49,6 +49,10 @@ final class ShapeIndex {
 
     /// Bumped by every commit and camera change; a context made before then goes without the index.
     private(set) var generation = 0
+    /// This index's own number, never another's: a damage mark names the index it was taken on, so
+    /// an index made after another is freed can't take the other's marks for its own.
+    let serial: Int
+    private static var serials = 0
     private var entries: [ShapeID: Entry] = [:]
     /// For each shape, the shapes whose geometry looked it up.
     private var readers: [ShapeID: Set<ShapeID>] = [:]
@@ -83,6 +87,11 @@ final class ShapeIndex {
     /// its oldest. A picture on screen catches up every frame, which takes a record or two.
     static let damageLogLength = 512
     static let damageLogCapacity = 50_000
+
+    init() {
+        Self.serials += 1
+        serial = Self.serials
+    }
 
     // MARK: Lookups, as definitions make them
 
@@ -275,23 +284,27 @@ final class ShapeIndex {
 
     /// Now, for `damage(since:in:)`. Works out every extent that's out of date first, so that what a
     /// commit after this forgets, it knows where it was.
-    func mark(in context: ShapeContext) -> Int {
+    func mark(in context: ShapeContext) -> DamageMark {
         _ = paintList(in: context)
-        return generation
+        return DamageMark(index: serial, generation: generation)
     }
+
+    /// Whether the mark was taken on this index.
+    func isCurrent(_ mark: DamageMark) -> Bool { mark.index == serial }
 
     /// Where shapes may be other than they were at `mark`, in world units: wherever the shapes a
     /// commit since then touched were before it, and wherever they are now, with those of every
     /// shape whose geometry followed theirs (an arrow, its ends' shapes) or the camera. Not the paint
     /// order: a restack names the shapes it moved in the stack, but not a shape it carried along
     /// with its anchor. Null when nothing moved; infinite when anything may have, since the log
-    /// doesn't reach back that far, or a shape that could be anywhere changed.
-    func damage(since mark: Int, in context: ShapeContext) -> CGRect {
-        guard mark >= damageFloor, mark <= generation else { return .infinite }
+    /// doesn't reach back that far, a shape that could be anywhere changed, or the mark is another
+    /// index's (another board's).
+    func damage(since mark: DamageMark, in context: ShapeContext) -> CGRect {
+        guard isCurrent(mark), mark.generation >= damageFloor, mark.generation <= generation else { return .infinite }
         var damage = CGRect.null
         var ids: Set<ShapeID> = []
         for record in damageLog.reversed() {
-            guard record.generation > mark else { break }
+            guard record.generation > mark.generation else { break }
             damage = damage.union(record.before)
             ids.formUnion(record.ids)
         }
@@ -342,4 +355,12 @@ final class ShapeIndex {
         if paintList != nil { staleExtents.formUnion(forgotten) }
         return (forgotten, extents)
     }
+}
+
+/// When a picture of a board was brought up to date (`editor.damageMark`): the moment, on the index
+/// of the board shown then. A mark from another board's index, or one no longer kept, is never
+/// current (`editor.isCurrent`), and the damage since it is everywhere.
+@_spi(Host) public struct DamageMark: Equatable, Sendable {
+    let index: Int
+    let generation: Int
 }

@@ -18,6 +18,18 @@ public protocol EditorService: AnyObject {
     /// after its commit of the rest, if any); a drag, once it gets going (past the drag threshold);
     /// or editing one. The plugin whose rule made them read-only may say why (Locking shakes them).
     func didRefuseChanges(to ids: Set<ShapeID>, in editor: CanvasEditor)
+    /// Another board is about to be shown (`editor.showBoard`), and the one shown is still `old`:
+    /// save what belongs to it (a draft, state kept per board in a `BoardStash`). Also before the
+    /// file is replaced (`replaceFile`), when `new` is the board shown after, which may be `old`.
+    func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor)
+    /// Another board is shown: its document, its camera, what the editor keeps of it and the default
+    /// tool are in place. Take back what's kept for it, or start over. Don't read another service
+    /// here: services hear it one by one, and one read before it's heard is out of date. By default,
+    /// the shown board's change as a commit's (`change.changes`, every shape of one board gone and
+    /// every shape of the other come): right for state kept per shape, which then follows the switch
+    /// like any commit, but it costs both boards' shapes, so a service that keeps less, or keeps it
+    /// per board, says what it does instead.
+    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor)
 }
 
 extension EditorService {
@@ -25,4 +37,6 @@ extension EditorService {
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {}
     public func didPlace(_ id: ShapeID, in editor: CanvasEditor) {}
     public func didRefuseChanges(to ids: Set<ShapeID>, in editor: CanvasEditor) {}
+    public func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor) {}
+    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) { documentDidChange(change.changes, in: editor) }
 }

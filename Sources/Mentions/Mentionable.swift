@@ -90,8 +90,8 @@ public enum MentionResolution: Hashable, Sendable {
     case live(MentionAppearance)
     /// No shape has that id on the board (deleted, or never here): the name the mention holds, dashed.
     case missing
-    /// The shape is on the board but can't be mentioned (kept aside, or its kind isn't
-    /// mentionable): as missing.
+    /// The shape is in the file but can't be mentioned (kept aside, its kind isn't mentionable, or
+    /// it's on a board the app can't show): as missing.
     case unavailable
 
     /// The appearance of a live one.

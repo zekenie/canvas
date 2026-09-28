@@ -8,7 +8,9 @@ import Foundation
 /// actor. Two commands are its own, since they're about the app's boards, which only it knows:
 /// `status` and `boards`. It's given the rest (`Commands`: the plugins' commands, from Composition),
 /// and runs each on the board its request names (`board`), or the one in front, whose editor it
-/// changes as anything else does, so the board's window shows each change as it's made.
+/// changes as anything else does, so the board's window shows each change as it's made. A file with
+/// boards inside shapes is worked on where its window is: the board it shows (`editor.board`),
+/// which `status` and `boards` name.
 @MainActor
 public final class CommandServer {
     /// The commands it's given, and how to run one: by name, with its params, on a board's editor
@@ -72,14 +74,20 @@ public final class CommandServer {
             var status: [String: JSON] = ["app": .string(info.name), "version": .string(info.version), "pid": .number(Double(info.pid)),
                                           "protocol": .number(Double(RPC.protocolVersion)), "socket": .string(path),
                                           "boards": .number(Double(open.count))]
-            if let front = frontmost() { status["frontmost"] = .number(Double(front.number)) }
+            if let front = frontmost() {
+                status["frontmost"] = .number(Double(front.number))
+                status["frontmostShows"] = .string(front.editor.board.description)
+            }
             return .success(.object(status))
         case RPC.boardsCommand:
             let front = frontmost()
             return .success(.array(boards().map { board in
+                let editor = board.editor
                 var entry: [String: JSON] = ["id": .number(Double(board.number)), "name": .string(board.displayName),
                                              "frontmost": .bool(board === front), "edited": .bool(board.isDocumentEdited),
-                                             "shapes": .number(Double(board.editor.document.shapes.count))]
+                                             "shows": .string(editor.board.description),
+                                             "showsPath": .array(editor.boardPath.map { .string($0.description) }),
+                                             "shapes": .number(Double(editor.document.shapes.count))]
                 if let url = board.fileURL { entry["path"] = .string(url.path) }
                 return .object(entry)
             }))
@@ -123,11 +131,13 @@ public final class CommandServer {
 
     /// The server's own commands: about the app, and its boards.
     static let ownSpecs = [
-        CommandSpec(name: RPC.statusCommand, summary: "Say whether the app is running, and how many boards it has open.", scope: .app,
+        CommandSpec(name: RPC.statusCommand, summary: "Say whether the app is running, how many boards it has open, and which is in front.",
+                    discussion: "frontmostShows is the board inside the file in front that its window shows (\"root\", or the id of the shape that owns it): where a board command works.",
+                    scope: .app,
                     params: ["type": "object", "properties": [:], "additionalProperties": false],
                     examples: [CommandExample("\(RPC.commandName) status", "The app's version, its process, and its boards.")]),
-        CommandSpec(name: RPC.boardsCommand, summary: "List the open boards: each one's id, name, file, and which is in front.",
-                    discussion: "A board command works on the board in front unless --board names another: by its id here (which lasts while the app runs), its file, or its name.",
+        CommandSpec(name: RPC.boardsCommand, summary: "List the open boards: each one's id, name, file, which is in front, and what its window shows.",
+                    discussion: "A board command works on the board in front unless --board names another: by its id here (which lasts while the app runs), its file, or its name. A file can hold boards inside its shapes; a command works on the one its window shows: shows (\"root\", or the id of the shape that owns it), whose shapes are counted, and showsPath, the boards from the root down to it.",
                     scope: .app, params: ["type": "object", "properties": [:], "additionalProperties": false],
                     examples: [CommandExample("\(RPC.commandName) boards", "Every open board.")]),
     ]

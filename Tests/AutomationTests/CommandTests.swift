@@ -114,8 +114,8 @@ let extras = Contributor(id: "extras") { registrar in
             return expect(false, "it was bound to a shape that isn't there")
         }
         expectEqual(error.reason, "unknown_shape")
-        expectEqual(error.message, "A tag can't be bound to shapes that aren't on this board: \(elsewhere).")
-        expectEqual(error.hint, "Bind it only to shapes on the board the command works on (--board).")
+        expectEqual(error.message, "A tag can't be bound to shapes that aren't on this board: \(elsewhere) isn't in the file.")
+        expectEqual(error.hint, "Bind it only to shapes on the board the command works on, the one its file's window shows (`canvas boards` says which).")
         expectEqual(editor.document.shapes.count, 2)
     },
     test("a shape may name shapes that aren't on its board (ShapeNaming): it's made, keeps naming them, and says which") {
@@ -128,8 +128,8 @@ let extras = Contributor(id: "extras") { registrar in
         expectEqual(memo.typed(as: Memo.self)?.props.lead, Citation(gone))
         expectEqual(memo.typed(as: Memo.self)?.props.sources, ["here": Citation(box.id), "there": Citation(alsoGone), "again": Citation(alsoGone)])
         expectEqual(try result.get()["warnings"], [
-            .string("lead names shapes that aren't on this board: \(gone); they show as missing."),
-            .string("sources names shapes that aren't on this board: \(alsoGone); they show as missing."),
+            .string("lead names shapes that aren't in the file: \(gone); they show as missing."),
+            .string("sources names shapes that aren't in the file: \(alsoGone); they show as missing."),
         ])
         let named = try run(["create", "memo", "--set", "frame=[[0, 0], [10, 10]]", "--set", "lead=\(box.id)"], on: editor)
         expectEqual(try named.get()["warnings"], nil, "every shape it names is there")
@@ -140,14 +140,58 @@ let extras = Contributor(id: "extras") { registrar in
         let gone = ShapeID(), alsoGone = ShapeID()
         let cited = try run(["create", "citing-tag", "--set", "target=\(box.id)", "--set", "cite=\(gone)"], on: editor)
         expectEqual(try created(cited, in: editor).typed(as: CitingTag.self)?.props, CitingTag(target: box.id, cite: Citation(gone)))
-        expectEqual(try cited.get()["warnings"], [.string("cite names shapes that aren't on this board: \(gone); they show as missing.")])
+        expectEqual(try cited.get()["warnings"], [.string("cite names shapes that aren't in the file: \(gone); they show as missing.")])
         guard case .failure(let error) = try run(["create", "citing-tag", "--set", "target=\(alsoGone)", "--set", "cite=\(gone)"], on: editor) else {
             return expect(false, "it was bound to a shape that isn't there")
         }
         expectEqual(error.reason, "unknown_shape")
-        expectEqual(error.message, "A citing-tag can't be bound to shapes that aren't on this board: \(alsoGone).",
+        expectEqual(error.message, "A citing-tag can't be bound to shapes that aren't on this board: \(alsoGone) isn't in the file.",
                     "what it's bound to is refused, where what it names is only warned about")
         expectEqual(editor.document.shapes.count, 2)
+    },
+    test("in a file of several boards, a name of a shape on another board names a shape that's there; a binding to one is refused as on another board") {
+        let pocket = ShapeID(), inside = ShapeID(), gone = ShapeID()
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: pocket, Pocket(CGRect(x: 0, y: 0, width: 10, height: 10))))]),
+                              children: [pocket: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: inside, Box(CGRect(x: 0, y: 0, width: 10, height: 10))))])])
+        let editor = try makeEditor([NamingPlugin(), PocketsPlugin()])
+        editor.replaceFile(with: file)
+        let named = try run(["create", "memo", "--set", "frame=[[0, 0], [10, 10]]", "--set", "lead=\(inside)"], on: editor)
+        expectEqual(try named.get()["warnings"], nil, "the shape it names is on the pocket's board")
+        let cited = try run(["create", "citing-tag", "--set", "target=\(pocket)", "--set", "cite=\(inside)"], on: editor)
+        expectEqual(try created(cited, in: editor).typed(as: CitingTag.self)?.props, CitingTag(target: pocket, cite: Citation(inside)))
+        expectEqual(try cited.get()["warnings"], nil)
+        guard case .failure(let away) = try run(["create", "tag", "--set", "target=\(inside)"], on: editor) else {
+            return expect(false, "it was bound to a shape on another board")
+        }
+        expectEqual(away.reason, "shape_on_another_board")
+        expectEqual(away.message, "A tag can't be bound to shapes that aren't on this board: \(inside) is on another board of it.")
+        guard case .failure(let both) = try run(["create", "citing-tag", "--set", "target=\(gone)", "--props", #"{"cite": "\#(gone)"}"#], on: editor),
+              case .failure(let mixed) = try run(["create", "tag", "--set", "target=\(gone)"], on: editor) else {
+            return expect(false, "bound to shapes that aren't in the file")
+        }
+        expectEqual(both.reason, "unknown_shape")
+        expectEqual(mixed.message, "A tag can't be bound to shapes that aren't on this board: \(gone) isn't in the file.")
+        expect(editor.showBoard(BoardID(owner: pocket)))
+        let there = try run(["create", "tag", "--set", "target=\(inside)"], on: editor)
+        expectEqual(try created(there, in: editor).typed(as: Tag.self)?.props.target, inside, "on the board the command works on now")
+        expectEqual(editor.file.root.shapes.count, 3)
+    },
+    test("a name of a shape on a board the app can't show (its owner not in the file, or of a kind that owns none) is made, with a warning") {
+        let orphan = ShapeID(), keeper = ShapeID(), unowned = ShapeID(), held = ShapeID()
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: keeper, Box(CGRect(x: 0, y: 0, width: 10, height: 10))))]),
+                              children: [ShapeID(): CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: orphan, Box(CGRect(x: 0, y: 0, width: 10, height: 10))))]),
+                                         keeper: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: held, Box(CGRect(x: 0, y: 0, width: 10, height: 10))))])])
+        let editor = try makeEditor([NamingPlugin(), PocketsPlugin()])
+        editor.replaceFile(with: file)
+        expect(editor.file.record(orphan) != nil && editor.file.record(held) != nil, "both are in the file")
+        let result = try run(["create", "memo", "--set", "frame=[[0, 0], [10, 10]]", "--set", "lead=\(orphan)",
+                              "--props", #"{"sources": {"here": "\#(held)", "gone": "\#(unowned)"}}"#], on: editor)
+        _ = try created(result, in: editor)
+        expectEqual(try result.get()["warnings"], [
+            .string("lead names shapes on boards this app can't show: \(orphan); they show as missing."),
+            .string("sources names shapes that aren't in the file: \(unowned); they show as missing."),
+            .string("sources names shapes on boards this app can't show: \(held); they show as missing."),
+        ])
     },
     test("a shape past its schema's bounds is made anyway, with a warning") {
         let editor = try makeEditor()

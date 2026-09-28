@@ -5,7 +5,8 @@ import Keyboard
 /// Selecting shapes, as a plugin: the selection itself (`editor.selection`,
 /// `editor.selectedShapeIDs`) and the way back through it (`editor.goBack()`), the Select tool and
 /// its marquee, the handles of the one selected shape, what Delete, Return, ⌘A and Back do (their
-/// keys are registered with Keyboard), and what a double-click on empty canvas places. Every kind is
+/// keys are registered with Keyboard), what opening a shape does (`ShapeOpening`: a double-click,
+/// Return, ⌘↓), and what a double-click on empty canvas places. Every kind is
 /// selectable unless it opts out (`shape.unselectable()`). The core never learns what a selection
 /// is: it outlines what this plugin asks, and tells it about Escape, commands, placed shapes and
 /// document changes.
@@ -89,11 +90,17 @@ public struct SelectionPlugin: CanvasPlugin {
         registrar.overlay(HandlesOverlay())
         // Delete and Forward Delete, and Edit › Delete, delete the selection; ⌘A and Edit › Select
         // All select everything; ⌘[ and Go › Back go back to what was selected before, when there's
-        // somewhere to go; Return (and Enter) edits the only selected shape.
+        // somewhere to go; ⌘↓ opens the only selected shape, when it can be opened and isn't being
+        // edited (⌘↓ is then the text's), and Return (and Enter) does too, but always takes the
+        // key, as it did when it only edited.
         registrar.command(.delete, shortcuts: [.delete, .deleteForward]) { $0.deleteSelection() }
         registrar.command(.selectAll, shortcuts: [KeyChord("a", .command)]) { $0.selectAll() }
         registrar.command(.goBack, shortcuts: [KeyChord("[", .command)], isEnabled: { $0.canGoBack && $0.session == nil }) { $0.goBack() }
-        registrar.shortcut(.return, "Edit Selection") { $0.editSelection() }
-        registrar.shortcut(.enter, "Edit Selection") { $0.editSelection() }
+        registrar.command(.openSelection, shortcuts: [KeyChord(KeyChord.downArrow.key, .command)],
+                          isEnabled: { editor in
+                              editor.session == nil && editor.editingShapeID == nil && (editor.selection.map(editor.canOpen) ?? false)
+                          }) { $0.openSelection() }
+        registrar.shortcut(.return, "Open Selection") { $0.perform(.openSelection) }
+        registrar.shortcut(.enter, "Open Selection") { $0.perform(.openSelection) }
     }
 }

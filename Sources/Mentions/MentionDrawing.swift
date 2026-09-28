@@ -86,15 +86,17 @@ extension Registry {
 
 extension RenderContext {
     /// Draws it with `NSAttributedString.draw(with:options:)`, each mention a pill named as its
-    /// shape is now (looked up through `shapes`, which a render's lookups don't tie it to), or, if
-    /// it isn't on the board, by the name it holds, dashed. Text without mentions draws exactly as a
-    /// plain string with the style's attributes. What it draws is kept (`MentionTextMemo`), by what
-    /// it says and how each mention shows, so a frame of texts that didn't change builds nothing.
+    /// shape is now, on any board of the file the editor can show (looked up through
+    /// `shape(inFile:)`, which a render's lookups don't tie it to), or, if it isn't on one, by the
+    /// name it holds, dashed. Text without mentions draws exactly as a plain string with the style's
+    /// attributes. What it draws is kept (`MentionTextMemo`), by what it says and how each mention
+    /// shows, so a frame of texts that didn't change builds nothing.
     public func drawMentionText(_ placement: MentionTextPlacement) {
         let box = placement.laidOutBox
         let string: NSAttributedString
         if placement.hasMentions {
-            var resolver = MentionResolver(registry: shapes.registry, lookup: { [shapes] in shapes.shape($0) })
+            let context = self
+            var resolver = MentionResolver(registry: shapes.registry, lookup: { context.shape(inFile: $0) })
             string = MentionTextMemo.shared.entry(for: placement, resolver: &resolver, drawing: true).string
         } else {
             string = placement.style.attributedString(placement.text, width: placement.box.width) { _ in .missing }
@@ -137,8 +139,7 @@ extension CanvasEditor {
         guard let record = document[shape] else { return [] }
         let placements = registry.mentionTextPlacements(of: record)
         guard !placements.isEmpty else { return [] }
-        let document = document
-        var resolver = MentionResolver(registry: registry, lookup: { document[$0] })
+        var resolver = MentionResolver(registry: registry, lookup: { [unowned self] in self.shape(inFile: $0) })
         var frames: [MentionPillFrame] = []
         for placement in placements where placement.hasMentions {
             let box = placement.laidOutBox

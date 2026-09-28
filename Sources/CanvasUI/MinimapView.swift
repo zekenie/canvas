@@ -11,7 +11,8 @@ import Geometry
 ///
 /// The canvas view hosts it (`CanvasView.showsMinimap`) and redraws it with itself. It keeps its
 /// picture of the board (`MinimapPicture`) from frame to frame, and marks the shapes the canvas
-/// outlines (`editor.outlines`), so it knows no particular shape or plugin.
+/// outlines (`editor.outlines`), so it knows no particular shape or plugin. It shows the board shown
+/// (`editor.board`), and keeps the pictures of the boards shown lately for when they're shown again.
 public final class MinimapView: NSView {
     public let editor: CanvasEditor
 
@@ -20,6 +21,12 @@ public final class MinimapView: NSView {
     public var frameBudget = MinimapStyle.frameBudget
 
     private var picture: MinimapPicture?
+    /// The board `picture` is of.
+    private var pictureBoard: BoardID
+    /// Pictures of the boards shown lately, for when they're shown again; the one left longest ago
+    /// first. Past `MinimapStyle.keptPictures`, the one left longest ago goes, but those on the path
+    /// to the board shown last, as the editor keeps their indexes (`BoardStash`).
+    private var keptPictures: [(board: BoardID, picture: MinimapPicture)] = []
     /// Seconds a silhouette takes to draw, on average, as the pictures learn it.
     private var costPerShape = MinimapStyle.initialCostPerShape
     private var nextFrame: ScheduledTask?
@@ -42,6 +49,7 @@ public final class MinimapView: NSView {
 
     public init(editor: CanvasEditor) {
         self.editor = editor
+        pictureBoard = editor.board
         super.init(frame: .zero)
         wantsLayer = true
         shadow = MinimapStyle.shadow
@@ -60,6 +68,28 @@ public final class MinimapView: NSView {
     public override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         picture?.invalidate()
+        for kept in keptPictures { kept.picture.invalidate() }
+        needsDisplay = true
+    }
+
+    /// Another board is shown: the picture of the one left is kept, and the one shown gets its own
+    /// back if it's still current (the editor kept that board as it was, so the damage since the
+    /// picture's mark says what changed), else starts afresh. Never from another board's picture:
+    /// until its first tiles are drawn, the minimap shows none of the board. (The canvas calls this
+    /// as the editor switches, and drawing checks too.)
+    func boardDidChange() {
+        guard pictureBoard != editor.board else { return }
+        if let picture {
+            keptPictures.removeAll { $0.board == pictureBoard }
+            keptPictures.append((pictureBoard, picture))
+            if keptPictures.count > MinimapStyle.keptPictures {
+                let path = Set(editor.boardPath)
+                keptPictures.remove(at: keptPictures.firstIndex { !path.contains($0.board) } ?? 0)
+            }
+        }
+        pictureBoard = editor.board
+        let kept = keptPictures.firstIndex { $0.board == pictureBoard }.map { keptPictures.remove(at: $0).picture }
+        picture = kept.flatMap { editor.isCurrent($0.mark) ? $0 : nil }
         needsDisplay = true
     }
 
@@ -90,6 +120,7 @@ public final class MinimapView: NSView {
 
     public override func draw(_ dirtyRect: NSRect) {
         guard let cg = NSGraphicsContext.current?.cgContext else { return }
+        boardDidChange()
         let layout = layoutNow
         let panel = MinimapStyle.panel(bounds)
         cg.addPath(panel)
@@ -377,8 +408,6 @@ enum MinimapStyle {
     static var faintSelection: NSColor { NSColor.controlAccentColor.withAlphaComponent(0.5) }
     /// An open shape's line (an arrow's), in the minimap's points.
     static let lineWidth: CGFloat = 1
-    /// A shape under this many pixels across (in a picture) is drawn as its bounds.
-    static let detailedSilhouette: CGFloat = 4
     /// Over the board but the part the canvas shows. (tldraw shades that part instead.)
     static let veil = NSColor(name: nil) {
         $0.isDark ? NSColor(white: 0, alpha: 0.2) : NSColor(white: 0, alpha: 0.06)
@@ -409,6 +438,9 @@ enum MinimapStyle {
     static let largestPicture = 4096
     /// The side of a picture's tiles: what goes stale, and is drawn again, as one.
     static let tile = 32
+    /// How many pictures of boards not shown are kept, for when they're shown again: as many as the
+    /// boards the editor keeps (a picture of one it no longer keeps is drawn afresh anyway).
+    static let keptPictures = 8
     /// How long drawing the picture may take in a frame; what doesn't fit waits for the next.
     static let frameBudget: Duration = .milliseconds(4)
     /// A guess at what a silhouette takes to draw, until the pictures have measured it, and how

@@ -466,4 +466,9 @@ private func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
         let registry = try Registry(plugins: [FixturesPlugin()])
         expectEqual(try require(registry.schema(for: Box.kind)).json["title"], "box")
     },
+    test("a kind whose shapes own boards says so in its schema") {
+        let registry = try Registry(plugins: [FixturesPlugin(), PocketsPlugin()])
+        expectEqual(try require(registry.schema(for: Pocket.kind)).json["x-canvas-board"], true)
+        expectEqual(try require(registry.schema(for: Box.kind)).json["x-canvas-board"], nil)
+    },
 ])

@@ -1,0 +1,53 @@
+import AppKit
+@_spi(Host) import Canvas
+import CanvasTesting
+import Composition
+import Foundation
+import LanguageModels
+import SwiftUI
+import TableOfContents
+import TestKit
+
+// The inspector's list, SwiftUI's `List` in an NSHostingView, replaced on a switch between boards of
+// the board's worth of shapes each: from the switch to the new board's rows in the table. Reported
+// against its target, not held to it (design §6), in its own file since it needs SwiftUI.
+
+@MainActor let inspectorBenchmarks = Suite("Inspector benchmarks", [
+    test("the inspector's list is replaced on a switch between boards of the board's worth of shapes") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        for size in sizes {
+            let file = generatedFile(root: size, children: [size])
+            let owner = try require(subboards(on: file.root).first)
+            // As the app places it: the detail panel, which shows the table of contents with
+            // nothing selected, about the panel's width, with real time for SwiftUI's updates.
+            let editor = CanvasEditor(registry: registry, file: file, scheduler: TaskScheduler())
+            let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 260, height: 700), styleMask: [.titled], backing: .buffered, defer: false)
+            let hosting = NSHostingView(rootView: ShippedPlugins.detailPanel(editor: editor, onExit: {}))
+            hosting.frame = CGRect(x: 0, y: 0, width: 260, height: 700)
+            window.contentView = hosting
+            // The table's rows, less its header, and those it should show for the board shown: one
+            // for each shape that isn't nested (an arrow is under its note, folded).
+            let rows = { max(0, (hosting.descendants(NSTableView.self).first?.numberOfRows ?? 0) - 1) }
+            let contents = try require(editor.tableOfContents)
+            let listed = { contents.entries.count }
+            let clock = ContinuousClock()
+            var first = 0.0, down = 0.0, up = 0.0
+            // AppKit logs its reentrancy warning when a list first shows 200 rows or more: counted.
+            let logged = standardError {
+                first = clock.measure { window.spin(until: { rows() == listed() }, timeout: 60) }.milliseconds
+                down = clock.measure {
+                    editor.showBoard(BoardID(owner: owner))
+                    window.spin(until: { rows() == listed() }, timeout: 60)
+                }.milliseconds
+                up = clock.measure {
+                    editor.showBoard(.root)
+                    window.spin(until: { rows() == listed() }, timeout: 60)
+                }.milliseconds
+            }
+            expect(editor.board.isRoot && rows() > 0, "the root's rows are shown")
+            let warnings = logged.components(separatedBy: tableReentrancyWarning).count - 1
+            report(String(format: "%6d shapes on each board: the inspector's list first shown %.0f ms; replaced going into the subboard %.0f ms, back up %.0f ms (target %.0f, reported); AppKit's reentrancy warning logged %d times",
+                          size, first, down, up, Budget.listReplacedTarget, warnings))
+        }
+    },
+])

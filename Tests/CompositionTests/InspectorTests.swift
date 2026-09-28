@@ -1,11 +1,13 @@
 import AppKit
 import Arrows
+import Boards
 import Canvas
 import CanvasTesting
 import CanvasUI
 import Checklists
 import Composition
 import DetailPanel
+import Geometry
 import LanguageModels
 import Mentions
 import Selection
@@ -25,7 +27,7 @@ import ValidationDetails
 /// at (`render()` draws the canvas itself).
 @MainActor
 final class InspectorWindow {
-    let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: TaskScheduler(), model: ScriptedLanguageModel())
+    let editor: CanvasEditor
     let window = BoardWindow(contentRect: CGRect(x: 0, y: 0, width: 1000, height: 700), styleMask: [.titled], backing: .buffered, defer: true)
     let focus = CanvasFocus()
     let host: NSHostingView<InspectorHost>
@@ -36,7 +38,10 @@ final class InspectorWindow {
         didSet { host.rootView = InspectorHost(editor: editor, focus: focus, showsDetails: showsDetails) }
     }
 
-    init() throws {
+    /// Over an empty board, or `file`.
+    init(file: CanvasFile? = nil) throws {
+        editor = try file.map { CanvasEditor(registry: try ShippedPlugins.registry(model: ScriptedLanguageModel()), file: $0, scheduler: TaskScheduler()) }
+            ?? ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: TaskScheduler(), model: ScriptedLanguageModel())
         host = NSHostingView(rootView: InspectorHost(editor: editor, focus: focus, showsDetails: true))
         host.frame = CGRect(x: 0, y: 0, width: 1000, height: 700)
         window.editor = editor
@@ -86,18 +91,39 @@ final class InspectorWindow {
     /// The canvas as the window draws it.
     func render() -> NSBitmapImageRep { renderBitmap(editor, size: canvas.bounds.size) }
 
+    /// The path's crumbs that are buttons, over the canvas.
+    var crumbs: [NSButton] {
+        host.descendants(NSButton.self).filter {
+            let frame = canvas.convert($0.bounds, from: $0)
+            return !($0 is NSPopUpButton) && canvas.bounds.contains(CGPoint(x: frame.midX, y: frame.midY))
+        }
+    }
+    /// The table of contents' list, while the panel shows it.
+    var contents: NSTableView? { host.descendants(NSTableView.self).first { $0.isTableOfContents } }
+    /// Its rows, less its header.
+    var contentsRows: Int { max(0, (contents?.numberOfRows ?? 0) - 1) }
+    /// The buttons in its header: up from the board, while it can go up.
+    var contentsHeaderButtons: [NSButton] {
+        guard let table = contents, table.numberOfRows > 0 else { return [] }
+        let header = table.rect(ofRow: 0)
+        return table.descendants(NSButton.self).filter { header.contains($0.convert($0.bounds, to: table)) }
+    }
+
     private var time: TimeInterval = 1
 }
 
-/// The app's content view, less its toolbar.
+/// The app's content view, less its toolbar: the canvas, with the path over it (its root crumb
+/// named by `view`'s file name), and the panel.
 struct InspectorHost: View {
     let editor: CanvasEditor
     let focus: CanvasFocus
     let showsDetails: Bool
     var showsMinimap = false
+    var view: BoardViewState?
 
     var body: some View {
         CanvasRepresentable(editor: editor, focus: focus, showsMinimap: showsMinimap)
+            .overlay(alignment: .top) { ShippedPlugins.boardPath(editor: editor, rootName: view?.fileName ?? "") }
             .inspector(isPresented: .constant(showsDetails)) {
                 ShippedPlugins.detailPanel(editor: editor, onExit: focus.take)
             }
@@ -320,5 +346,64 @@ let chipPoint = CGPoint(x: 303, y: 100)
         let rows = CGRect(x: task.frame.minX + 17, y: task.frame.minY + 50, width: 200, height: 80)
         expect(changedPixels(before, after, in: rows) > 20, "the card draws the item")
         expect(pixel(after, at: corner)[0..<3].allSatisfy { $0 > 200 }, "no chip: the card opted in with badge: false: \(pixel(after, at: corner))")
+    },
+    test("a number being typed in the panel lands on its shape, on its board, before a crumb shows another") {
+        let nest = NestedFile()
+        let w = try InspectorWindow(file: nest.file)
+        expect(w.editor.showBoard(nest.sBoard))
+        w.editor.camera = Camera()
+        let task = try w.placeTask(at: CGPoint(x: 500, y: 330))
+        w.window.focus(try require(w.fields.first { $0.stringValue.hasSuffix(" h") }, "the Estimate field"))
+        w.window.type("7")
+        expectEqual(w.editor.document[task.id]?.typed(as: TaskCard.self)?.props.estimate, 0, "a draft, while it's typed")
+        w.window.spin { w.crumbs.count == 1 }
+        try require(w.crumbs.first).performClick(nil)
+        w.window.settle()
+        expectEqual(w.editor.board, .root)
+        expectEqual(w.editor.contents(of: nest.sBoard)[task.id]?.typed(as: TaskCard.self)?.props.estimate, 7)
+        w.window.spin { w.canvasHasKeyboard }
+    },
+    test("inside a subboard, with nothing selected, the overview lists its board under its name, with a way up") {
+        let nest = NestedFile()
+        let w = try InspectorWindow(file: nest.file)
+        w.window.spin { w.contentsRows == 3 }
+        expectEqual(w.contentsHeaderButtons.count, 0, "nothing above the root")
+        expect(ShippedPlugins.contentsHeading(for: w.editor) == nil, "the root's is the list's own, \"Board\"")
+        expect(w.editor.showBoard(nest.sBoard))
+        w.window.spin { w.contentsHeaderButtons.count == 1 }
+        let (first, second) = nest.notes(on: 2)
+        expectEqual(w.editor.tableOfContents?.entries.map(\.id), [first, second, nest.t], "its notes (the arrow under the first) and the subboard in it")
+        let heading = try require(ShippedPlugins.contentsHeading(for: w.editor))
+        expectEqual(heading.title, "Plans")
+        expectEqual(heading.systemImage, "rectangle.stack")
+        expectEqual(heading.up, .enclosingBoard)
+        expect(w.editor.showBoard(nest.tBoard))
+        expectEqual(ShippedPlugins.contentsHeading(for: w.editor)?.title, "Untitled Subboard", "the placeholder, as the path has it")
+        w.editor.goToEnclosingBoard()
+        w.editor.selection = nil
+        w.window.spin { w.contentsHeaderButtons.count == 1 }
+        try require(w.contentsHeaderButtons.first).performClick(nil)
+        w.window.spin { w.editor.board == .root }
+        expectEqual(w.editor.selectedShapeIDs, [nest.s], "up, to the subboard")
+    },
+    test("inside a subboard, the way up is back once a click on empty canvas has let go of a note") {
+        let nest = NestedFile()
+        let w = try InspectorWindow(file: nest.file)
+        expect(w.editor.showBoard(nest.sBoard))
+        w.editor.camera = Camera()
+        w.window.spin { w.contentsHeaderButtons.count == 1 }
+        w.click(CGPoint(x: 180, y: 180))
+        expectEqual(w.editor.selection, nest.notes(on: 2).0)
+        w.window.spin { w.contents == nil }
+        // As AppKit delivers it: the list comes back, and its heading draws, while the press is
+        // under way, when there's no going up.
+        let empty = CGPoint(x: 600, y: 600)
+        w.window.makeFirstResponder(w.canvas)
+        w.canvas.mouseDown(with: w.window.mouse(.leftMouseDown, at: empty, time: 10))
+        w.window.spin { w.contentsRows == 3 }
+        expect(!w.editor.canPerform(.enclosingBoard), "mid-press")
+        w.canvas.mouseUp(with: w.window.mouse(.leftMouseUp, at: empty, time: 10.05))
+        expect(w.editor.canPerform(.enclosingBoard))
+        w.window.spin { w.contentsHeaderButtons.count == 1 }
     },
 ])

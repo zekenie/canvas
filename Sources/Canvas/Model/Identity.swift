@@ -80,4 +80,8 @@ public struct CanvasCommand: Hashable, Sendable, ExpressibleByStringLiteral, Cus
     /// Edit › Undo and Redo: the core's own (`editor.undo()`, `editor.redo()`).
     public static let undo: CanvasCommand = "undo"
     public static let redo: CanvasCommand = "redo"
+    /// Go › Open (⌘↓): the only selected shape's board, or whatever opening that shape does.
+    public static let openSelection: CanvasCommand = "openSelection"
+    /// Go › Enclosing Board (⌘↑): the board holding the shown board's owner.
+    public static let enclosingBoard: CanvasCommand = "enclosingBoard"
 }

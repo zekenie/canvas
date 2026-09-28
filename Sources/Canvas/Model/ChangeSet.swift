@@ -1,8 +1,8 @@
 /// What one commit did to the document, record by record: the shapes it added, changed (props,
 /// or place in the stack) and removed. Services get it with `documentDidChange`, so what they keep
 /// per shape can follow the few shapes a commit touched rather than go through every shape. The
-/// records before and after are a `DocumentDelta`'s (what undo keeps); who made the change comes
-/// with agents.
+/// records before and after are a `DocumentDelta`'s (what undo keeps, other boards whole); who made
+/// the change comes with agents.
 public struct ChangeSet: Equatable, Sendable {
     /// Shapes that weren't in the document before.
     public internal(set) var added: Set<ShapeID> = []
@@ -29,6 +29,25 @@ public struct ChangeSet: Equatable, Sendable {
     /// acts on edits (a sync) follows none, and puts back what it kept of them as they were then (as
     /// an `UndoParticipant`).
     public internal(set) var restoredStep = false
+    /// Boards it brought into the file with the shapes that own them (`insert(_:contents:)`: a
+    /// paste), and boards it took out of the file with theirs (every board under a deleted shape).
+    /// Neither is the board the commit was on, whose shapes are the ones named above.
+    public internal(set) var boardsAdded: Set<BoardID> = []
+    public internal(set) var boardsRemoved: Set<BoardID> = []
+    /// Boards it changed the shapes of while another was shown, keeping them in the file: Delete
+    /// Hidden Shapes deleting what's kept aside on them, and undo putting that back.
+    public internal(set) var boardsChanged: Set<BoardID> = []
+
+    /// Every board it reached but its own: added, removed or changed.
+    public var boardsReached: Set<BoardID> { boardsAdded.union(boardsRemoved).union(boardsChanged) }
+    /// The shapes it touched on the boards it reached: every shape of a board it brought
+    /// (`boardsAdded`) or took (`boardsRemoved`), and those it added, changed or removed on a board
+    /// it changed (`boardsChanged`); for a whole file put in place over the board shown, those its
+    /// other boards don't have as they were. None is a shape of the board the commit was on, so what
+    /// a service keeps of that board's shapes needn't follow them, but what reads shapes anywhere in
+    /// the file does: a row showing the name of a shape on another board, which went with the board
+    /// its owner took.
+    public internal(set) var elsewhere: Set<ShapeID> = []
 
     /// Every shape the commit touched.
     public var shapeIDs: Set<ShapeID> { added.union(changed).union(removed) }
@@ -48,4 +67,11 @@ public struct ChangeSet: Equatable, Sendable {
     }
 
     init() {}
+
+    /// Only shapes elsewhere: what changed on other boards while a board wasn't shown, which a
+    /// service that kept what it knew of that board hands, on going back to it, to what reads other
+    /// shapes (the table of contents' rows, through their `affected`).
+    public init(elsewhere: Set<ShapeID>) {
+        self.elsewhere = elsewhere
+    }
 }

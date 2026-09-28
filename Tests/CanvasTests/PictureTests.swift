@@ -179,6 +179,37 @@ extension StampDefinition: ShapeDefinition {
         h.editor.transact { $0.update(a, as: Box.self) { $0.frame.origin.x = 0 } }
         expect(h.editor.damage(since: mark).isInfinite, "513 commits back")
     },
+    test("a mark is the shown board's: another board's damage since it is everywhere, and back on its board it's current again") {
+        let p = ShapeID(), a = ShapeID()
+        let h = try EditorHarness(plugins: [FixturesPlugin(), PocketsPlugin()],
+                                  file: CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: a, Box(CGRect(x: 0, y: 0, width: 10, height: 10)))),
+                                                                                 AnyShapeRecord(ShapeRecord(id: p, Pocket(CGRect(x: 50, y: 0, width: 10, height: 10))))]),
+                                                   children: [p: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(Box(CGRect(x: 0, y: 0, width: 30, height: 30))))])]))
+        let rootMark = h.editor.damageMark
+        expect(h.editor.isCurrent(rootMark))
+        h.enter(p)
+        expect(!h.editor.isCurrent(rootMark))
+        expect(h.editor.damage(since: rootMark).isInfinite, "the root's mark, on P's board")
+        let pMark = h.editor.damageMark
+        expect(h.editor.isCurrent(pMark))
+        _ = h.add(Box(CGRect(x: 100, y: 100, width: 10, height: 10)))
+        expectEqual(h.editor.damage(since: pMark), CGRect(x: 100, y: 100, width: 10, height: 10))
+        let pLater = h.editor.damageMark
+        h.editor.showBoard(.root)
+        expect(h.editor.isCurrent(rootMark), "the root's index was kept")
+        expect(!h.editor.isCurrent(pMark))
+        expect(h.editor.damage(since: rootMark).isNull, "nothing moved on the root meanwhile")
+        h.editor.transact { $0.update(a, as: Box.self) { $0.frame.origin.x = 20 } }
+        expectEqual(h.editor.damage(since: rootMark), CGRect(x: 0, y: 0, width: 30, height: 10))
+        h.enter(p)
+        expect(h.editor.isCurrent(pMark), "and P's, while it's among those kept")
+        expect(h.editor.damage(since: pLater).isNull)
+        expectEqual(h.editor.damage(since: pMark), CGRect(x: 100, y: 100, width: 10, height: 10), "what changed on P before it was left")
+        h.editor.replaceFile(with: h.file)
+        h.editor.showBoard(.root)
+        expect(!h.editor.isCurrent(rootMark), "the root was worked out afresh: no mark from before is current")
+        expect(h.editor.damage(since: rootMark).isInfinite)
+    },
     test("what the canvas outlines is every plugin's outlines and the hint, and a faint shape only if it isn't outlined in full") {
         let outlined = Outlined()
         let h = try pictureEditor(outlined: outlined)

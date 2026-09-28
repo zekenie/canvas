@@ -16,7 +16,8 @@ import TestKit
 /// on `pasteboard` (a test that copies passes its own).
 @MainActor func configureBoards(pasteboard: NSPasteboard = .general) throws {
     BoardDocument.configuration = BoardConfiguration(registry: try ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel())) { board in
-        AnyView(InspectorHost(editor: board.editor, focus: board.focus, showsDetails: board.view.showsDetails, showsMinimap: board.view.showsMinimap))
+        AnyView(InspectorHost(editor: board.editor, focus: board.focus, showsDetails: board.view.showsDetails, showsMinimap: board.view.showsMinimap,
+                              view: board.view))
     }
 }
 
@@ -116,6 +117,43 @@ let boardType = "com.example.InfiniteCanvas.board"
         let summary = try require(board.loadReport.summary)
         expectEqual(summary.message, "Some of this board can’t be used here.")
         expectEqual(summary.details, "1 shape holds a property this app can’t use (confetti), kept as it was; the shape shows without it. Saving keeps it.")
+    },
+    test("a file with other boards saves every one of them, those it can't show too, and Delete Hidden Shapes reaches them") {
+        try configureBoards()
+        // No shipped kind owns boards: the ellipse's board is kept (its kind owns none), with the
+        // gadget on it, and so are a board no shape owns and an entry that isn't a board.
+        let ellipse = ShapeID(), inside = ShapeID(), gadget = ShapeID(), orphan = ShapeID(), stray = ShapeID()
+        func record(_ id: ShapeID, _ kind: String = "ellipse", _ index: String = "a0") -> String {
+            #"{ "id" : "\#(id)", "index" : "\#(index)", "kind" : "\#(kind)", "props" : { "frame" : [[0, 0], [10, 10]] } }"#
+        }
+        let json = """
+        { "format" : 4, "versions" : { "kinds" : { "ellipse" : 0 } }, "shapes" : [ \(record(ellipse)) ],
+          "boards" : { "\(ellipse)" : { "shapes" : [ \(record(inside)), \(record(gadget, "gadget", "a1")) ] },
+                       "\(orphan)" : { "shapes" : [ \(record(stray)) ] },
+                       "nope" : 7 } }
+        """
+        let board = BoardDocument()
+        try board.read(from: Data(json.utf8), ofType: boardType)
+        expectEqual(Set(board.loadReport.keptBoards.map(\.key)), [ellipse.description, orphan.description, "nope"])
+        expectEqual(board.loadReport.keptAside.map(\.id), [gadget])
+        let summary = try require(board.loadReport.summary)
+        expectEqual(summary.message, "Some of this board can’t be shown.")
+        expect(summary.details.contains("3 boards in this file can’t be opened (3 shapes on them), kept as they were but hidden. Saving keeps them."), summary.details)
+        runLoop { false }
+        expect(!board.isDocumentEdited)
+
+        let saved = try board.data(ofType: boardType)
+        let reopened = BoardDocument()
+        try reopened.read(from: saved, ofType: boardType)
+        expectEqual(reopened.editor.file, board.editor.file, "every board, as it was")
+        expectEqual(reopened.loadReport, board.loadReport)
+        expectEqual(try reopened.data(ofType: boardType), saved)
+
+        reopened.deleteHiddenShapes()
+        expectEqual(reopened.editor.file.children, [:])
+        expectEqual(reopened.editor.file.unreadableBoards, [:])
+        expectEqual(reopened.editor.document.shapes.map(\.id), [ellipse])
+        expect(reopened.isDocumentEdited)
     },
     test("a file that isn't a board won't open, says why, and offers an earlier version when there is one") {
         try configureBoards()
@@ -267,6 +305,8 @@ let boardType = "com.example.InfiniteCanvas.board"
         try check("View", "Zoom Out", "zoomOut:", "-")
         try check("View", "Actual Size", "zoomToActualSize:", "0")
         try check("Go", "Back", "goBack:", "[")
+        try check("Go", "Enclosing Board", "enclosingBoard:", "\u{F700}")
+        try check("Go", "Open", "openSelection:", "\u{F701}")
         expectEqual(menus.main.items.map(\.title), ["Infinite Canvas", "File", "Edit", "View", "Go", "Window", "Help"])
         try check("Infinite Canvas", "Settings…", "showSettings:", ",")
         let app = try require(menus.main.item(withTitle: "Infinite Canvas")?.submenu)

@@ -3,26 +3,33 @@ import Canvas
 import Selection
 import SwiftUI
 
-/// The table of contents: a Mac source list of the board's shapes. The app shows it in the detail
-/// panel when nothing or several shapes are selected (through Composition); it follows the editor
-/// by itself. Clicking a row gives it the keyboard, as a source list does: the arrow keys move
-/// through the rows, Delete runs the `.delete` command (what Delete on the canvas and Edit › Delete
-/// run: deleting the selection), and Escape calls `onExit`, which gives the keyboard back to the
+/// The table of contents: a Mac source list of the shown board's shapes. The app shows it in the
+/// detail panel when nothing or several shapes are selected (through Composition); it follows the
+/// editor by itself. Clicking a row gives it the keyboard, as a source list does: the arrow keys
+/// move through the rows, Delete runs the `.delete` command (what Delete on the canvas and Edit ›
+/// Delete run: deleting the selection), a double-click or Return on a row opens its shape (as
+/// Return on the canvas does: Selection's `editor.open`), and Escape calls `onExit`, which gives the keyboard back to the
 /// canvas. So does hiding the list while a row has the keyboard.
+///
+/// Its header names the board listed: `heading` says how, else it's "Board". The list doesn't know
+/// what a board is; whoever places it (Composition) does.
 public struct TableOfContentsView: View {
     let editor: CanvasEditor
     let onExit: @MainActor () -> Void
+    let heading: @MainActor (CanvasEditor) -> ContentsHeading?
     @State private var window = ContentsWindowBox()
 
-    public init(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void = {}) {
+    public init(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void = {},
+                heading: @escaping @MainActor (CanvasEditor) -> ContentsHeading? = { _ in nil }) {
         self.editor = editor
         self.onExit = onExit
+        self.heading = heading
     }
 
     public var body: some View {
         Group {
             if let state = editor.tableOfContents {
-                ContentsList(state: state, editor: editor)
+                ContentsList(state: state, editor: editor, heading: heading)
             } else {
                 ContentUnavailableView("No Contents", systemImage: "list.bullet.indent")
             }
@@ -39,10 +46,33 @@ public struct TableOfContentsView: View {
     }
 }
 
+/// What the table of contents' header calls the board it lists, when it lists every shape: its
+/// title, a symbol before it, and a command that goes up from it, which the header offers as a
+/// button while it can run (`editor.canPerform`).
+public struct ContentsHeading {
+    public var title: String
+    public var systemImage: String?
+    public var up: CanvasCommand?
+
+    public init(_ title: String, systemImage: String? = nil, up: CanvasCommand? = nil) {
+        self.title = title
+        self.systemImage = systemImage
+        self.up = up
+    }
+}
+
+/// Which list the table of contents shows: one per board and scope, so a change of either replaces
+/// the rows rather than moving them.
+struct ContentsListID: Hashable {
+    let board: BoardID
+    let scope: [ShapeID]?
+}
+
 /// The rows, under a header that says whether they're the whole board or the selection.
 struct ContentsList: View {
     let state: ContentsState
     let editor: CanvasEditor
+    let heading: @MainActor (CanvasEditor) -> ContentsHeading?
 
     var body: some View {
         let entries = state.entries
@@ -62,31 +92,55 @@ struct ContentsList: View {
                     // row from inside measuring the first run (it resizes the table after each run),
                     // and log "a reentrant operation in its NSTableView delegate", a future assert.
                     // AppKit's own doing: a plain NSTableView whose rows size themselves does it too.
-                    .id(state.scope)
+                    // Another board's rows replace this one's the same way, whatever the scopes: a
+                    // file put in place can show a board holding some of the last one's shapes.
+                    .id(ContentsListID(board: editor.board, scope: state.scope))
                 } header: {
-                    ContentsHeader(isFiltered: state.isFiltered, showAll: state.showAll)
+                    ContentsHeader(state: state, editor: editor, heading: heading)
                 }
             }
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)         // on the panel's background, not a sidebar's
             .onDeleteCommand { editor.perform(.delete) }
+            // No menu of its own (the canvas's is the shapes'): a double-click or Return on a row.
+            .contextMenu(forSelectionType: ShapeID.self, menu: { _ in }, primaryAction: { state.open($0) })
         }
     }
 }
 
-/// "Board", or "Selection" with a button that lists every shape again.
+/// The board's heading (else "Board"), with a button up from it while it can go up; or "Selection"
+/// with a button that lists every shape again. Its own view, so what the heading reads redraws only
+/// the header.
 struct ContentsHeader: View {
-    let isFiltered: Bool
-    let showAll: @MainActor () -> Void
+    let state: ContentsState
+    let editor: CanvasEditor
+    let heading: @MainActor (CanvasEditor) -> ContentsHeading?
 
     var body: some View {
-        HStack {
-            Text(isFiltered ? "Selection" : "Board")
-            Spacer()
-            if isFiltered {
-                Button("Show All", action: showAll)
+        HStack(spacing: ContentsStyle.headerSpacing) {
+            if state.isFiltered {
+                Text("Selection")
+                Spacer()
+                Button("Show All", action: state.showAll)
                     .buttonStyle(.borderless)
                     .help("List every shape on the board")
+            } else {
+                let heading = heading(editor) ?? ContentsHeading("Board")
+                if let up = heading.up, editor.canPerform(up) {
+                    Button { editor.perform(up) } label: {
+                        Image(systemName: "chevron.up")
+                            .frame(width: ContentsStyle.upWidth)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Go up")
+                    .accessibilityLabel("Up")
+                }
+                if let symbol = heading.systemImage {
+                    Image(systemName: symbol)
+                }
+                Text(heading.title).lineLimit(1)
+                Spacer()
             }
         }
     }

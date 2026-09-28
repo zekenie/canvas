@@ -71,7 +71,8 @@ struct Created: Encodable {
     let bounds: CGRect?
     /// Where it breaks its kind's schema's bounds (a title too long): it's made anyway, as the app
     /// makes anything, and validation warns about it too. And each property that names shapes
-    /// (`ShapeNaming`) that aren't on the board, which it keeps naming.
+    /// (`ShapeNaming`) that aren't in the file, on any board, or are on a board the app can't show,
+    /// which it keeps naming.
     let warnings: [String]?
 }
 
@@ -117,12 +118,19 @@ func create(_ params: CreateShape, in context: AutomationContext) throws(Automat
         record.box = CGRect(center: params.at ?? CGPoint(x: box.midX, y: box.midY), size: params.size ?? box.size)
     }
     // What its props are bound to must be on this board (an arrow's ends): a shape bound to one that
-    // isn't would stay bound to it, and nothing would ever let go of it. What it only names (a
-    // mention) may be gone, as it may once a shape it names is deleted: that's said, not refused.
-    let missing = record.boundShapes(in: editor.shapeContext).filter { editor.document[$0] == nil }
-    if !missing.isEmpty {
-        throw AutomationError("A \(kind) can't be bound to shapes that aren't on this board: \(missing.map(\.description).joined(separator: ", ")).",
-                              reason: "unknown_shape", hint: "Bind it only to shapes on the board the command works on (--board).")
+    // isn't would stay bound to it, and nothing would ever let go of it; one on another board of the
+    // file is no better. What it only names (a mention) may be anywhere in the file, or gone, as it
+    // may once a shape it names is deleted: that's said, not refused.
+    let file = editor.file
+    let away = record.boundShapes(in: editor.shapeContext).filter { editor.document[$0] == nil }
+    if !away.isEmpty {
+        let missing = away.filter { file.record($0) == nil }, elsewhere = away.filter { file.record($0) != nil }
+        var why: [String] = []
+        if !missing.isEmpty { why.append("\(list(missing)) \(missing.count == 1 ? "isn't" : "aren't") in the file") }
+        if !elsewhere.isEmpty { why.append("\(list(elsewhere)) \(elsewhere.count == 1 ? "is" : "are") on another board of it") }
+        throw AutomationError("A \(kind) can't be bound to shapes that aren't on this board: \(why.joined(separator: "; ")).",
+                              reason: missing.isEmpty ? "shape_on_another_board" : "unknown_shape",
+                              hint: "Bind it only to shapes on the board the command works on, the one its file's window shows (`\(RPC.commandName) boards` says which).")
     }
     let id = record.id, inserted = record
     editor.transact { transaction in
@@ -137,16 +145,27 @@ func create(_ params: CreateShape, in context: AutomationContext) throws(Automat
     }
     // Each names the property it's about ("Title is 95 characters long, and should be at most 80.").
     var warnings = registry.schemaViolations(of: placed).map(\.message)
+    // A name of a shape on another board of the file names a shape that's there, if the app can
+    // show that board (not one it keeps without using, under an owner kept aside).
+    let now = editor.file
     placed.forEachNamingValue(in: registry) { property, value in
-        var gone: [ShapeID] = []
+        var gone: [ShapeID] = [], hidden: [ShapeID] = []
         value.forEachNamedShape { id in
-            if editor.document[id] == nil, !gone.contains(id) { gone.append(id) }
+            guard !gone.contains(id), !hidden.contains(id) else { return }
+            if now.record(id) == nil { gone.append(id) } else if editor.shape(inFile: id) == nil { hidden.append(id) }
         }
-        guard !gone.isEmpty else { return }
-        warnings.append("\(property) names shapes that aren't on this board: \(gone.map(\.description).joined(separator: ", ")); they show as missing.")
+        if !gone.isEmpty {
+            warnings.append("\(property) names shapes that aren't in the file: \(list(gone)); they show as missing.")
+        }
+        if !hidden.isEmpty {
+            warnings.append("\(property) names shapes on boards this app can't show: \(list(hidden)); they show as missing.")
+        }
     }
     return Created(id: id.description, kind: kind.rawValue, bounds: editor.shapeContext.bounds(of: [id]), warnings: warnings.isEmpty ? nil : warnings)
 }
+
+/// Ids as a message lists them.
+private func list(_ ids: [ShapeID]) -> String { ids.map(\.description).joined(separator: ", ") }
 
 /// A `--set` value: as typed for a property that's text (a string, or one of some strings), and
 /// read as JSON for any other (a number, a list, an object).

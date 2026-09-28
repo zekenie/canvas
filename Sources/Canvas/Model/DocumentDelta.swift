@@ -1,13 +1,16 @@
 import CoreGraphics
 
-/// What a step did to a board, shape by shape: each touched shape's whole record before and after
-/// (nil: it wasn't there), its stacking key, metadata, added and kept values included, opaque (kept
-/// aside) or not. Undo puts the `before` records back (`inverted`), and redo the `after` ones, with
-/// `CanvasDocument.apply`.
+/// What a step did to a file: on the board it was made on (`board`), shape by shape, each touched
+/// shape's whole record before and after (nil: it wasn't there), its stacking key, metadata, added
+/// and kept values included, opaque (kept aside) or not; and every other board it reached, whole
+/// (`boards`: those a deletion took with the shapes that owned them, those a paste brought, those
+/// Delete Hidden Shapes deleted from), with the entries of the file it couldn't read as boards
+/// that it took or replaced (`unreadableBoards`). Undo puts the `before` side back (`inverted`), and
+/// redo the `after` one: `CanvasDocument.apply` for the board's shapes, `CanvasFile.apply` for all
+/// of it.
 ///
-/// It's the one type that holds a change's before and after, so what builds on them (subboards'
-/// steps, an agent's change, a change from another copy of the board) grows here: a step will name
-/// the board it was on, and the whole boards it added or removed.
+/// It's the one type that holds a change's before and after, so what builds on them (an agent's
+/// change, a change from another copy of the board) grows here.
 public struct DocumentDelta: Equatable, Sendable {
     /// One shape's record before and after. Never both nil, and never equal.
     public struct Change: Equatable, Sendable {
@@ -20,55 +23,123 @@ public struct DocumentDelta: Equatable, Sendable {
         }
     }
 
-    public private(set) var changes: [ShapeID: Change]
+    /// A board's shapes before and after, whole: empty where the file had no such board (a board
+    /// with no shapes isn't kept). Never equal.
+    public struct WholeBoard: Equatable, Sendable {
+        public let before: CanvasDocument
+        public let after: CanvasDocument
 
-    /// Changes whose records are equal before and after are left out.
-    public init(_ changes: [ShapeID: Change] = [:]) {
-        self.changes = changes.filter { $0.value.before != $0.value.after }
+        public init(before: CanvasDocument, after: CanvasDocument) {
+            self.before = before
+            self.after = after
+        }
     }
 
-    public var isEmpty: Bool { changes.isEmpty }
+    /// An entry of the file's `unreadableBoards` before and after (nil: not there). Never equal.
+    public struct UnreadableBoard: Equatable, Sendable {
+        public let before: JSONValue?
+        public let after: JSONValue?
+
+        public init(before: JSONValue?, after: JSONValue?) {
+            self.before = before
+            self.after = after
+        }
+    }
+
+    /// The board the step was made on, whose shapes `changes` are: the one it's undone and redone on.
+    public let board: BoardID
+    public private(set) var changes: [ShapeID: Change]
+    /// Every other board the step reached, whole, by its id: never `board`.
+    public private(set) var boards: [BoardID: WholeBoard]
+    /// The entries that didn't read as boards it took or replaced, by key.
+    public private(set) var unreadableBoards: [String: UnreadableBoard]
+
+    /// Changes whose sides are equal are left out.
+    public init(_ changes: [ShapeID: Change] = [:], on board: BoardID = .root, boards: [BoardID: WholeBoard] = [:],
+                unreadableBoards: [String: UnreadableBoard] = [:]) {
+        precondition(boards[board] == nil, "a delta's own board is changed shape by shape")
+        self.board = board
+        self.changes = changes.filter { $0.value.before != $0.value.after }
+        self.boards = boards.filter { $0.value.before != $0.value.after }
+        self.unreadableBoards = unreadableBoards.filter { $0.value.before != $0.value.after }
+    }
+
+    public var isEmpty: Bool { changes.isEmpty && boards.isEmpty && unreadableBoards.isEmpty }
+    /// The shapes it changed on its board.
     public var shapeIDs: Set<ShapeID> { Set(changes.keys) }
 
-    /// The same change the other way: each shape's `after` back to its `before`.
+    /// The same change the other way: each shape's `after` back to its `before`, each board's too.
     public var inverted: DocumentDelta {
-        DocumentDelta(changes.mapValues { Change(before: $0.after, after: $0.before) })
+        DocumentDelta(changes.mapValues { Change(before: $0.after, after: $0.before) }, on: board,
+                      boards: boards.mapValues { WholeBoard(before: $0.after, after: $0.before) },
+                      unreadableBoards: unreadableBoards.mapValues { UnreadableBoard(before: $0.after, after: $0.before) })
     }
 
     /// Collects a step as its commits happen: each shape's record from before the first commit that
-    /// touched it (constant time per shape a commit names), then, once the step is over, each one's
-    /// record as it ends (`delta(now:)`), leaving out those that end where they began. A shape added
-    /// and changed is added; added and deleted, not there; changed and changed back, not there;
-    /// changed and deleted, deleted from what it first was.
+    /// touched it (constant time per shape a commit names), and each other board as it was before
+    /// the first commit that reached it (a copy that costs nothing: a board is a value); then, once
+    /// the step is over, each one as it ends (`delta(now:)`), leaving out those that end where they
+    /// began. A shape added and changed is added; added and deleted, not there; changed and changed
+    /// back, not there; changed and deleted, deleted from what it first was. Boards likewise.
     public struct Builder: Sendable {
+        /// The board the step is made on.
+        public let board: BoardID
         /// Each touched shape's first record before, nil if it wasn't there.
         private var before: [ShapeID: AnyShapeRecord?] = [:]
+        /// Each other board reached, as it was before the first commit that reached it.
+        private var boardsBefore: [BoardID: CanvasDocument] = [:]
+        /// The file's entries that didn't read as boards, before the step's first commit.
+        private var unreadableBefore: [String: JSONValue]?
 
-        public init() {}
+        public init(board: BoardID = .root) { self.board = board }
 
-        /// A commit is about to take the document from `old` to what `changes` says: notes the
-        /// record of each shape it names that no earlier commit did.
-        public mutating func willCommit(_ changes: ChangeSet, from old: CanvasDocument) {
-            for id in changes.shapeIDs where before.index(forKey: id) == nil { before[id] = .some(old[id]) }
+        /// A commit on the builder's board is about to take the file from `old` to what `changes`
+        /// says: notes the record of each shape it names on the board, and each other board it names
+        /// (`boardsAdded`, `boardsRemoved`, `boardsChanged`), as no earlier commit did. (It takes the
+        /// file, never the board alone, so no step can leave out the boards it reached.)
+        public mutating func willCommit(_ changes: ChangeSet, from old: CanvasFile) {
+            let document = old[board]
+            for id in changes.shapeIDs where before.index(forKey: id) == nil { before[id] = .some(document[id]) }
+            for other in changes.boardsReached where boardsBefore.index(forKey: other) == nil {
+                precondition(other != board, "a commit reaches boards other than its own")
+                boardsBefore[other] = old[other]
+            }
+            if unreadableBefore == nil { unreadableBefore = old.unreadableBoards }
         }
 
-        /// Whether any commit has touched a shape.
-        public var isHolding: Bool { !before.isEmpty }
+        /// Whether any commit has touched a shape or reached a board.
+        public var isHolding: Bool { !before.isEmpty || !boardsBefore.isEmpty }
 
-        /// Whether any touched shape's record in `now` differs from its first: whether `delta(now:)`
-        /// would have a change. Stops at the first.
-        public func hasChanges(now: CanvasDocument) -> Bool {
-            before.contains { id, first in first != now[id] }
+        /// Whether `delta(now:)` would have a change: a touched shape's record, another board reached
+        /// or the entries that didn't read as boards differ from their first. Stops at the first.
+        public func hasChanges(now: CanvasFile) -> Bool {
+            let document = now[board]
+            return before.contains { id, first in first != document[id] }
+                || boardsBefore.contains { other, first in first != now[other] }
+                || unreadableBefore.map { $0 != now.unreadableBoards } == true
         }
 
-        /// Every touched shape's first record and its record in `now`, those that differ.
-        public func delta(now: CanvasDocument) -> DocumentDelta {
+        /// Every touched shape's first record and its record in `now`, those that differ, with each
+        /// other board reached, and the entries that didn't read as boards, that changed.
+        public func delta(now: CanvasFile) -> DocumentDelta {
+            var boards: [BoardID: WholeBoard] = [:]
+            for (other, first) in boardsBefore { boards[other] = WholeBoard(before: first, after: now[other]) }
+            var unreadable: [String: UnreadableBoard] = [:]
+            if let unreadableBefore, unreadableBefore != now.unreadableBoards {
+                for key in Set(unreadableBefore.keys).union(now.unreadableBoards.keys) {
+                    unreadable[key] = UnreadableBoard(before: unreadableBefore[key], after: now.unreadableBoards[key])
+                }
+            }
+            return DocumentDelta(shapeChanges(now: now[board]), on: board, boards: boards, unreadableBoards: unreadable)
+        }
+
+        private func shapeChanges(now: CanvasDocument) -> [ShapeID: Change] {
             var changes: [ShapeID: Change] = [:]
             for (id, first) in before {
                 let last = now[id]
                 if first != last { changes[id] = Change(before: first, after: last) }
             }
-            return DocumentDelta(changes)
+            return changes
         }
     }
 }
@@ -77,7 +148,9 @@ extension ChangeSet {
     /// What applying `delta` does: shapes that come are added, those that go removed, the rest
     /// changed (props, metadata, added values or stacking key); the stack changed if a shape came,
     /// went or changed its key. A changed shape whose box moved, and nothing else, is `moved`, as a
-    /// drag's commits say, so undoing or redoing a drag costs services what the drag did.
+    /// drag's commits say, so undoing or redoing a drag costs services what the drag did. A board
+    /// that comes whole is added, one that goes removed, the rest changed, and the shapes that differ
+    /// on them are `elsewhere`.
     public init(_ delta: DocumentDelta) {
         self.init()
         for (id, change) in delta.changes {
@@ -99,6 +172,17 @@ extension ChangeSet {
                 }
             case (nil, nil):
                 break
+            }
+        }
+        for (board, change) in delta.boards {
+            for record in change.after.shapes where change.before[record.id] != record { elsewhere.insert(record.id) }
+            for record in change.before.shapes where change.after[record.id] == nil { elsewhere.insert(record.id) }
+            if change.before.shapes.isEmpty {
+                boardsAdded.insert(board)
+            } else if change.after.shapes.isEmpty {
+                boardsRemoved.insert(board)
+            } else {
+                boardsChanged.insert(board)
             }
         }
     }

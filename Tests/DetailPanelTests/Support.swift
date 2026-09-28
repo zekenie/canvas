@@ -141,9 +141,9 @@ struct RenamingCards: CanvasPlugin {
 }
 
 /// Every plugin the gadget needs, then `more`.
-@MainActor func gadgetEditor(_ more: [any CanvasPlugin] = [], scheduler: any Scheduler = ManualScheduler()) throws -> CanvasEditor {
+@MainActor func gadgetEditor(_ more: [any CanvasPlugin] = [], file: CanvasFile = CanvasFile(), scheduler: any Scheduler = ManualScheduler()) throws -> CanvasEditor {
     CanvasEditor(registry: try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), GadgetsPlugin(), RemarksPlugin(), DetailPanelPlugin()] + more),
-                 scheduler: scheduler)
+                 file: file, scheduler: scheduler)
 }
 
 extension CanvasEditor {

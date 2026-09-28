@@ -119,6 +119,45 @@ public struct RenderContext {
     /// This shape's editing view is showing.
     public let isEditing: Bool
     public var zoom: CGFloat { shapes.zoom }
+    private let boardShapeCount: (ShapeID) -> Int
+    private let boardPreview: (ShapeID, CGRect, CGContext) -> Bool
+    private let fileShape: (ShapeID) -> AnyShapeRecord?
+
+    init(cg: CGContext, shapes: ShapeContext, isEditing: Bool, shapeCount: @escaping (ShapeID) -> Int,
+         preview: @escaping (ShapeID, CGRect, CGContext) -> Bool, fileShape: @escaping (ShapeID) -> AnyShapeRecord?) {
+        self.cg = cg
+        self.shapes = shapes
+        self.isEditing = isEditing
+        boardShapeCount = shapeCount
+        boardPreview = preview
+        self.fileShape = fileShape
+    }
+
+    /// A shape on any board of the file the editor can show: one on the board shown as
+    /// `shapes.shape(_:)` finds it (tracked), else one on another board, as it is now (nil for one
+    /// on a board it can't show, as `CanvasEditor.shape(inFile:)`). What a render that names shapes
+    /// (a mention's pill, which shows its shape's name) reads, so a name of a shape on another
+    /// board shows as that shape is called. Like `shapeCount(inBoardOwnedBy:)`, it's read as the shape is
+    /// drawn, and a write to a board that isn't shown redraws the canvas, so a name drawn is never
+    /// stale; nothing but a render can read another board.
+    public func shape(inFile id: ShapeID) -> AnyShapeRecord? { shapes.shape(id) ?? fileShape(id) }
+
+    /// How many shapes are on the board a shape owns (a `BoardOwning` kind's shape), not counting
+    /// those on boards under it: 0 for a board with none, or a shape that owns none. A render may
+    /// show it; nothing else can read another board, so a shape's geometry and hit testing never
+    /// depend on one. It's read as the shape is drawn, and a write to a board that isn't shown
+    /// (`transact(on:)`) redraws the canvas as any commit does, so a count drawn is never stale.
+    public func shapeCount(inBoardOwnedBy owner: ShapeID) -> Int { boardShapeCount(owner) }
+
+    /// Draws a rough picture of the board a shape owns into `rect` (world units), fitted: the
+    /// board's proportions kept, centered. Every shape there is a silhouette of its geometry, all in
+    /// one muted gray (none of their text or colors; a shape that owns a board is its outline), as
+    /// the minimap draws. Returns false, having drawn nothing, while the picture isn't ready, for a
+    /// board with nothing to show (none, or empty), and for a rect too small on screen to show one
+    /// (under 16 view points either way): draw something else then (a count). A picture
+    /// takes a few frames to build (the core builds them within a budget each frame, and redraws
+    /// until they're done), and one of a board as it was before an edit or an undo is never drawn.
+    public func drawBoardPreview(ofBoardOwnedBy owner: ShapeID, in rect: CGRect) -> Bool { boardPreview(owner, rect, cg) }
 
     /// The canvas's standard shape shadow. Shadows ignore the transform, so the blur is scaled by
     /// hand; the offset is zero because shadow offsets live in device space.

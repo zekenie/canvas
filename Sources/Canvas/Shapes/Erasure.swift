@@ -85,14 +85,24 @@ extension AnyShapeRecord {
     /// `context` doesn't have.
     @MainActor
     public func remappingReferences(_ map: (ShapeID) -> ShapeID?, in context: ShapeContext) -> AnyShapeRecord? {
+        remappingReferences(map, naming: map, in: context)
+    }
+
+    /// As `remappingReferences(_:in:)`, with bindings passed through `bind` and names through
+    /// `name`: what a copy of a shape on one board of a copied tree should be, whose bindings are
+    /// to shapes on its own board (copied with it, or let go) and whose names may be of shapes
+    /// copied with it on any board of the tree (renamed) or anywhere else (kept).
+    @MainActor
+    public func remappingReferences(_ bind: (ShapeID) -> ShapeID?, naming name: (ShapeID) -> ShapeID?,
+                                    in context: ShapeContext) -> AnyShapeRecord? {
         let names = context.registry.namingKinds.contains(kind) && !isOpaque
         var record = self
         if let definition = context.registry.definition(for: kind) as? any ShapeReferencing,
-           let remapped = definition.erasedRemappingReferences(of: self, map, in: context) {
+           let remapped = definition.erasedRemappingReferences(of: self, bind, in: context) {
             guard let props = remapped else { return nil }
             record.props = props
         }
-        if names { record.renameNamedShapes(map, in: context.registry) }
+        if names { record.renameNamedShapes(name, in: context.registry) }
         return record
     }
 

@@ -17,8 +17,9 @@ public enum UndoEvent: Sendable, Equatable {
     case began, discarded, closed, undid, redid, cleared
 }
 
-/// A board's undo and redo: one per editor, so one per board file. Every commit is recorded into
-/// the step that's open, and a step is what someone thinks of as one action:
+/// A file's undo and redo: one per editor, so one per board file, whatever board of it is shown.
+/// Every commit is recorded into the step that's open, and a step is what someone thinks of as one
+/// action:
 ///
 /// - an action: a press (from the press to the release, its whole drag), a key stroke on the
 ///   canvas, a command (`editor.perform`), or `group`; actions nest, and the outermost is the step;
@@ -33,10 +34,15 @@ public enum UndoEvent: Sendable, Equatable {
 /// (`editor.undo()`), below the rules transactions keep (nothing is read-only to them), and restore
 /// what `UndoParticipant`s kept (the selection). A step's name is its outermost named group's, else
 /// its first named transaction's (`transact("Move")`), else "Typing" for an editing step.
+///
+/// A step is made on one board, the one shown as it opens (`DocumentDelta.board`): showing another
+/// closes it, and isn't a step itself. Undoing or redoing a step made on another board shows that
+/// board first (`editor.undo()`).
 @MainActor
 public final class UndoHistory {
     struct Step {
         let name: String?
+        /// On the board it was made on (`delta.board`).
         let delta: DocumentDelta
         let before: [ObjectIdentifier: any Sendable]
         let after: [ObjectIdentifier: any Sendable]
@@ -56,7 +62,7 @@ public final class UndoHistory {
 
     private struct OpenStep {
         var holder: Holder
-        var builder = DocumentDelta.Builder()
+        var builder: DocumentDelta.Builder
         var groupName: String?
         var firstName: String?
         let before: [ObjectIdentifier: any Sendable]
@@ -90,15 +96,34 @@ public final class UndoHistory {
 
     // MARK: Reading
 
-    /// Whether there's a step to undo: one on the stack, or the open one, with changes.
-    var hasUndo: Bool { !undos.isEmpty || openHasChanges }
+    /// Whether there's a step to undo: the open one, with changes, or one on the stack whose board
+    /// can be shown.
+    var hasUndo: Bool { openHasChanges || canApply(undos.last) }
+
+    /// Whether there's a step to redo whose board can be shown.
+    var hasRedo: Bool { canApply(redos.last) }
+
+    /// The board the newest step to undo was made on (once the open one is closed, as undo closes it).
+    var undoBoard: BoardID? { undos.last?.delta.board }
+
+    /// The board the newest step to redo was made on.
+    var redoBoard: BoardID? { redos.last?.delta.board }
+
+    /// A step is undone and redone on the board it was made on, which is shown first if it isn't.
+    /// That board can always be shown, since steps come back last in, first out, and every change
+    /// to the file is one: the file is as the step left it. Were it ever not (`canShow`), the step
+    /// isn't undone or redone, and stays where it is.
+    private func canApply(_ step: Step?) -> Bool {
+        guard let step, let editor else { return false }
+        return CanvasEditor.canShow(step.delta.board, in: editor.storedFile, registry: editor.registry)
+    }
 
     /// Whether the open step has changed the board: it touched a shape that isn't as it was. (A
     /// run typed and typed back has touched shapes, but changed nothing: closing it drops it, and
     /// Undo would undo the step before it.) Costs the shapes it touched, at most.
     private var openHasChanges: Bool {
         guard let open, open.builder.isHolding, let editor else { return false }
-        return open.builder.hasChanges(now: editor.storedDocument)
+        return open.builder.hasChanges(now: editor.storedFile)
     }
 
     /// See `CanvasEditor.canUndo`, which also waits for a press's session and a transaction.
@@ -109,11 +134,11 @@ public final class UndoHistory {
     /// The name of the step undo would undo: nil for a plain "Undo".
     public var undoName: String? {
         if openHasChanges { return open?.name }
-        return undos.last?.name
+        return canApply(undos.last) ? undos.last?.name : nil
     }
 
     /// The name of the step redo would redo: nil for a plain "Redo".
-    public var redoName: String? { redos.last?.name }
+    public var redoName: String? { canApply(redos.last) ? redos.last?.name : nil }
 
     /// A press is under way and its step has changes: an autosave that can wait, waits, so it
     /// doesn't split the press.
@@ -201,7 +226,7 @@ public final class UndoHistory {
 
     /// A commit is about to take the document from `old`, as `changes` says: it goes into the step
     /// it's part of, which opens (and clears what there was to redo) if none is.
-    func willCommit(_ changes: ChangeSet, from old: CanvasDocument, name: String?, coalescing key: AnyHashable?, origin: Origin) {
+    func willCommit(_ changes: ChangeSet, from old: CanvasFile, name: String?, coalescing key: AnyHashable?, origin: Origin) {
         if depth > 0 {
             // An editing view's commit joins its session's step; anything else the action commits
             // ends that step and is the action's own.
@@ -230,6 +255,28 @@ public final class UndoHistory {
         open = step
     }
 
+    /// A commit on a board that isn't shown (`transact(on:)`), about to take the file from `old` as
+    /// `changes` (that board's) says: a step of its own, made on that board and named `name`, which
+    /// opens and closes around `commit` (the participants' snapshots before it and after services
+    /// hear it). It goes on the stack at once, under the step open on the board shown, if there's
+    /// one, which stays open and comes after it: the two are on different boards.
+    func recordStep(on board: BoardID, name: String?, changes: ChangeSet, from old: CanvasFile, _ commit: () -> Void) {
+        guard let editor else { return commit() }
+        var builder = DocumentDelta.Builder(board: board)
+        builder.willCommit(changes, from: old)
+        let before = snapshots()
+        redos = []
+        didChange?(.began)
+        commit()
+        let delta = builder.delta(now: editor.storedFile)
+        guard !delta.isEmpty else {
+            didChange?(.discarded)
+            return
+        }
+        undos.append(Step(name: name, delta: delta, before: before, after: snapshots()))
+        didChange?(.closed)
+    }
+
     /// Services have heard the commit: a step of one commit closes.
     func didCommit() {
         if open?.holder == .single { close() }
@@ -239,8 +286,9 @@ public final class UndoHistory {
     private var isEditingStepOpen: Bool { isEditing && open?.holder == .editing }
 
     private func openStep(_ holder: Holder) {
+        guard let editor else { return }
         redos = []
-        open = OpenStep(holder: holder, before: snapshots())
+        open = OpenStep(holder: holder, builder: DocumentDelta.Builder(board: editor.board), before: snapshots())
         didChange?(.began)
     }
 
@@ -248,7 +296,7 @@ public final class UndoHistory {
     func close() {
         guard let step = open, let editor else { return }
         open = nil
-        let delta = step.builder.delta(now: editor.storedDocument)
+        let delta = step.builder.delta(now: editor.storedFile)
         guard !delta.isEmpty else {
             didChange?(.discarded)
             return

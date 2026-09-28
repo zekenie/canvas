@@ -103,8 +103,18 @@ extension PluginRegistrar {
 
 /// Every shape's issues: on the first read, every shape's; after that, on the first read after a
 /// change, only those of the shapes it touched and of the shapes whose rules looked one of them up.
+/// It checks the board shown; what it found on the boards shown last is kept for going back to
+/// them, and taken back while those boards are as they were left (`BoardStash`).
 @MainActor
 public final class ValidationEngine {
+    /// What's kept of a board that isn't shown.
+    private struct Kept {
+        let cache: [ShapeID: ValidationResult]
+        let unchecked: Set<ShapeID>
+        let lookups: [ShapeID: Set<ShapeID>]
+        let lookedUpBy: [ShapeID: Set<ShapeID>]
+    }
+
     private unowned let editor: CanvasEditor
     /// Each kind's rules, found once: the registry is frozen.
     private var rules: [ShapeKind: [ValidationRule]] = [:]
@@ -120,6 +130,8 @@ public final class ValidationEngine {
     private var lookedUpBy: [ShapeID: Set<ShapeID>] = [:]
     /// What the schema rule found of each shape, so one that only moved isn't checked again.
     private let schemaVerdicts = SchemaVerdicts()
+    /// The boards shown last, as they were left.
+    private var kept = BoardStash<Kept>()
 
     init(editor: CanvasEditor) {
         self.editor = editor
@@ -207,6 +219,23 @@ extension ValidationEngine: EditorService {
             unchecked!.formUnion(lookedUpBy[id] ?? [])
         }
     }
+
+    /// Keeps what it found on the board left, if it has checked it, for going back to it.
+    public func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor) {
+        guard old != new, heardRevision == editor.revision, let unchecked else { return }
+        kept.keep(Kept(cache: cache, unchecked: unchecked, lookups: lookups, lookedUpBy: lookedUpBy), for: old, in: editor)
+    }
+
+    /// Checks the board shown: what it found there, if it's as it was left, and the shapes it hadn't
+    /// checked again yet; else every shape, on the next read.
+    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
+        let taken = kept.take(for: change.to, in: editor)
+        cache = taken?.cache ?? [:]
+        unchecked = taken?.unchecked
+        lookups = taken?.lookups ?? [:]
+        lookedUpBy = taken?.lookedUpBy ?? [:]
+        heardRevision = editor.revision
+    }
 }
 
 extension CanvasEditor {
@@ -283,8 +312,11 @@ final class SchemaVerdicts {
         return issues
     }
 
-    /// Drops the verdict of each shape the commit added, removed, or changed but by moving it.
+    /// Drops the verdict of each shape the commit added, removed, or changed but by moving it, and
+    /// of those it touched on other boards (kept by id, verdicts outlive a switch; a board taken back
+    /// as it was left keeps its shapes', and one checked afresh forgets them all).
     func documentDidChange(_ changes: ChangeSet) {
+        for id in changes.elsewhere { verdicts[id] = nil }
         for id in changes.added { verdicts[id] = nil }
         for id in changes.removed { verdicts[id] = nil }
         for id in changes.changed where !changes.moved.contains(id) { verdicts[id] = nil }

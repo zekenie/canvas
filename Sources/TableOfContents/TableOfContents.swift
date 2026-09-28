@@ -350,6 +350,9 @@ public struct TableOfContentsPlugin: CanvasPlugin {
 @MainActor
 enum ContentsStyle {
     static let badgeSpacing: CGFloat = 6
+    /// The header's: between the up button, the heading's symbol and its title; the up button's width.
+    static let headerSpacing: CGFloat = 4
+    static let upWidth: CGFloat = 16
     /// A mark's dot, and the square around it that its tooltip answers in.
     static let markSize: CGFloat = 6
     static let markTarget: CGFloat = 12

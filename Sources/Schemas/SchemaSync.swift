@@ -88,6 +88,12 @@ public struct SchemaSyncFailure: Equatable, Sendable {
 ///   that failed for want of one. A cancelled call says nothing. `NO_CHANGE` writes nothing. A
 ///   schema is written as the model wrote it (never laid out again: its order is the person's),
 ///   with `setSchema`, so the card's height follows.
+/// - It keeps every card of the file, on whatever board (ids are unique across it), so a card's
+///   sync goes on while another board is shown: a commit made as its board was left, its timer and
+///   its call. An answer for a card on a board that isn't shown is written there, without showing
+///   it (`transact(on:)`), as an undo step made on that board, so undoing it shows the card's
+///   board. A card whose board goes with its owner is dropped, with its call; one brought with a
+///   board (a paste, an undo) is seen. A whole file put in place takes every card afresh.
 /// - Its write is one undo step ("Update Schema", "Update Description"). Undo and redo are no edit
 ///   (`ChangeSet.restoredStep`): they start no sync, and a card whose sides they change drops its
 ///   call and its wait, since what was asked is no longer what the card says. The pair at the last
@@ -148,14 +154,15 @@ public final class SchemaSync {
     /// The cards an undo or redo just brought back or changed the sides of: the only ones whose
     /// pair at the last sync its participant's restore puts back.
     @ObservationIgnored private var restoring: Set<ShapeID> = []
-    /// The card this is writing, whose commit isn't the person's edit.
-    @ObservationIgnored private var writing: ShapeID?
+    /// The card this is writing, whose commit isn't the person's edit, and the pair its write
+    /// leaves in step, which it syncs as services hear the write (inside the write's undo step).
+    @ObservationIgnored private var writing: (id: ShapeID, pair: Sides)?
     @ObservationIgnored private var calls = 0
     @ObservationIgnored nonisolated(unsafe) private var keyObserver: (any NSObjectProtocol)?
 
     init(editor: CanvasEditor) {
         self.editor = editor
-        for record in editor.document.shapes { see(record) }
+        seeEveryCard(in: editor.file)
         keyObserver = NotificationCenter.default.addObserver(forName: .languageModelKeyDidChange, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.keyDidChange() }
         }
@@ -220,7 +227,7 @@ public final class SchemaSync {
 
     /// Asks the model for whichever side is behind, if one is and it may.
     private func start(_ id: ShapeID) {
-        guard let editor, cards[id] != nil, let last = synced[id], let record = editor.document[id], let now = Self.sides(of: record) else { return }
+        guard let editor, cards[id] != nil, let last = synced[id], let record = editor.file.record(id), let now = Self.sides(of: record) else { return }
         // A new try: an old failure no longer says where things are.
         setStatus(.idle, of: id)
         guard let model = editor.languageModel, !editor.registry.isReadOnly(record) else { return }
@@ -284,7 +291,7 @@ public final class SchemaSync {
         }
         // Locked while it was out: nothing is written, nothing is refused (no shake), and the pair
         // stays as it was, so what the person changed still syncs once it's unlocked.
-        guard let editor, let record = editor.document[id], let now = Self.sides(of: record), !editor.registry.isReadOnly(record) else { return .idle }
+        guard let editor, let record = editor.file.record(id), let now = Self.sides(of: record), !editor.registry.isReadOnly(record) else { return .idle }
         // The side it writes changed while it was out: the answer is to a question no longer asked.
         guard now[call.writes] == call.sent[call.writes] else { return .idle }
         switch SchemaPrompts.parse(response, call.direction) {
@@ -307,16 +314,17 @@ public final class SchemaSync {
 
     /// The sync's own write, which no sync follows, and the pair it leaves in step: one undo step,
     /// named for the side it writes, from before the pair changed to after, so undoing it puts back
-    /// the pair from before the answer and redoing it leaves the card in step. A write of what the
-    /// side already says commits nothing, and is no step.
+    /// the pair from before the answer and redoing it leaves the card in step. It's written on the
+    /// card's board, shown or not (`transact(on:)`): a step made there, which undo shows the board
+    /// for. A write of what the side already says commits nothing, and is no step.
     private func write(_ id: ShapeID, _ side: SchemaSide, inStep pair: Sides, _ change: (inout SchemaCard) -> Void) {
-        guard let editor else { return }
-        writing = id
+        guard let editor, let board = editor.file.board(containing: id) else { return }
+        writing = (id, pair)
         defer { writing = nil }
-        editor.undoHistory.group(side == .schema ? "Update Schema" : "Update Description") {
-            editor.transact { $0.update(id, as: SchemaCard.self) { change(&$0.props) } }
-            synced[id] = pair
+        let written: Void? = editor.transact(on: board, side == .schema ? "Update Schema" : "Update Description") {
+            $0.update(id, as: SchemaCard.self) { change(&$0.props) }
         }
+        if written != nil { synced[id] = pair }
     }
 
     /// Drops what's kept of a card, with its timer and its call.
@@ -390,33 +398,81 @@ extension SchemaSync: EditorService {
     /// are dropped, with their call; a card whose prompt or schema the person changed waits
     /// `idleDelay` for more; one whose sides undo or redo changed stops (`stop`). A card read again
     /// from disk shows what the file holds: its last reading that was a JSON object, from before, is
-    /// in no version of it, so it goes too (`SchemaReadings.forget`), as a deleted card's does.
+    /// in no version of it, so it goes too (`SchemaReadings.forget`), as a deleted card's does. The
+    /// same for the cards on other boards a commit reached (`ChangeSet.elsewhere`: a board taken with
+    /// its owner, brought by a paste or an undo, a card written where it isn't shown).
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
-        for id in changes.removed {
-            forget(id)
-            SchemaReadings.forget(id)
-        }
+        for id in changes.removed { forgetCard(id) }
         for id in changes.added {
             guard let record = editor.document[id] else { continue }
-            see(record)
-            if changes.restoredStep, cards[id] != nil { restoring.insert(id) }
+            came(record, changes)
         }
         for id in changes.changed {
-            guard let record = editor.document[id], let now = Self.sides(of: record) else { continue }
-            guard cards[id] != nil, !changes.replacedDocument else {
-                forget(id)
-                if changes.replacedDocument { SchemaReadings.forget(id) }
-                see(record)
+            guard let record = editor.document[id] else { continue }
+            changed(record, changes)
+        }
+        // Every shape of a board taken or brought back is here (10,000, say), and few are cards:
+        // what isn't a card, and wasn't one, is passed over before anything else.
+        guard !changes.elsewhere.isEmpty else { return }
+        let file = editor.file
+        for id in changes.elsewhere {
+            guard let record = file.record(id) else {
+                if cards[id] != nil || synced[id] != nil { forgetCard(id) }
                 continue
             }
-            guard cards[id]?.seen != now else { continue }
-            cards[id]?.seen = now
-            if changes.restoredStep {
-                stop(id)
-                restoring.insert(id)
-            } else if writing != id {
-                edited(id)
-            }
+            guard record.kind == SchemaCard.kind else { continue }
+            if cards[id] == nil { came(record, changes) } else { changed(record, changes) }
+        }
+    }
+
+    /// A card came into the file: seen for the first time.
+    private func came(_ record: AnyShapeRecord, _ changes: ChangeSet) {
+        see(record)
+        if changes.restoredStep, cards[record.id] != nil { restoring.insert(record.id) }
+    }
+
+    /// A card changed: if its sides did, an edit to follow, unless it's the sync's own write, a
+    /// board read again, or undo or redo.
+    private func changed(_ record: AnyShapeRecord, _ changes: ChangeSet) {
+        let id = record.id
+        guard let now = Self.sides(of: record) else { return }
+        guard cards[id] != nil, !changes.replacedDocument else {
+            forget(id)
+            if changes.replacedDocument { SchemaReadings.forget(id) }
+            see(record)
+            return
+        }
+        guard cards[id]?.seen != now else { return }
+        cards[id]?.seen = now
+        if changes.restoredStep {
+            stop(id)
+            restoring.insert(id)
+        } else if let writing, writing.id == id {
+            synced[id] = writing.pair
+        } else {
+            edited(id)
+        }
+    }
+
+    private func forgetCard(_ id: ShapeID) {
+        forget(id)
+        SchemaReadings.forget(id)
+    }
+
+    /// Another board is shown: every card of the file is still kept, its timer and call going on,
+    /// so nothing changes; but a whole file put in place with the switch takes every card afresh,
+    /// as a board read again does.
+    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
+        guard change.isFileReplaced else { return }
+        for id in Set(cards.keys).union(synced.keys) { forgetCard(id) }
+        seeEveryCard(in: editor.file)
+    }
+
+    /// Sees every card on every board of the file.
+    private func seeEveryCard(in file: CanvasFile) {
+        for record in file.root.shapes { see(record) }
+        for board in file.children.values {
+            for record in board.shapes { see(record) }
         }
     }
 }

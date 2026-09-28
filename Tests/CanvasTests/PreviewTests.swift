@@ -1,0 +1,288 @@
+import AppKit
+@_spi(Host) import Canvas
+import CanvasTesting
+import CoreGraphics
+import Geometry
+import TestKit
+
+/// A box that owns a board and draws its preview over all of itself, saying each time whether it
+/// could (`drawn`): what the editor's side of previews is tested with.
+struct Showcase: BoxShapeProps {
+    static let kind: ShapeKind = "showcase"
+    static let properties = Properties<Showcase> {
+        Property("frame", \.frame).required()
+    }
+    var frame: CGRect
+}
+
+extension Showcase {
+    init() { self.init(frame: .zero) }
+}
+
+@MainActor final class PreviewLog {
+    var drawn: [Bool] = []
+}
+
+struct ShowcaseDefinition {
+    let log: PreviewLog
+}
+
+extension ShowcaseDefinition: ShapeDefinition {
+    func render(_ shape: ShapeRecord<Showcase>, in context: RenderContext) {
+        log.drawn.append(context.drawBoardPreview(ofBoardOwnedBy: shape.id, in: shape.frame))
+    }
+}
+
+extension ShowcaseDefinition: BoardOwning {}
+
+@MainActor private func previewRegistry(log: PreviewLog = PreviewLog()) throws -> Registry {
+    try Registry(plugins: [FixturesPlugin(), PocketsPlugin(), Contributor(id: "showcases") { $0.shape(ShowcaseDefinition(log: log)) }])
+}
+
+private func box(_ rect: CGRect) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(Box(rect))) }
+
+/// A root holding a pocket for each list of boxes, in order, its board holding them.
+private func pocketFile(_ boards: [[CGRect]]) -> (file: CanvasFile, boards: [BoardID]) {
+    let pockets = boards.indices.map { i in ShapeRecord(Pocket(CGRect(x: CGFloat(i) * 300, y: 0, width: 240, height: 160))) }
+    var children: [ShapeID: CanvasDocument] = [:]
+    for (pocket, rects) in zip(pockets, boards) { children[pocket.id] = CanvasDocument(shapes: rects.map(box)) }
+    return (CanvasFile(root: CanvasDocument(shapes: pockets.map(AnyShapeRecord.init)), children: children), pockets.map { BoardID(owner: $0.id) })
+}
+
+/// `count` showcases, 40 points square, 50 apart in rows of `across` from (5, 5), each owning a
+/// board of one box; and an editor of them drawing into a canvas that shows them all.
+@MainActor private func showcases(_ count: Int, across: Int = 13, log: PreviewLog) throws -> (h: EditorHarness, owners: [ShapeID], size: CGSize) {
+    let owners = (0..<count).map { i in
+        ShapeRecord(Showcase(frame: CGRect(x: 5 + CGFloat(i % across) * 50, y: 5 + CGFloat(i / across) * 50, width: 40, height: 40)))
+    }
+    let file = CanvasFile(root: CanvasDocument(shapes: owners.map(AnyShapeRecord.init)),
+                          children: Dictionary(uniqueKeysWithValues: owners.map { ($0.id, CanvasDocument(shapes: [box(CGRect(x: 0, y: 0, width: 10, height: 10))])) }))
+    let registry = try previewRegistry(log: log)
+    let h = EditorHarness { CanvasEditor(registry: registry, file: file, scheduler: $0) }
+    h.editor.boardPreviews.frameBudget = .seconds(60)
+    return (h, owners.map(\.id), CGSize(width: across * 50 + 10, height: (count + across - 1) / across * 50 + 10))
+}
+
+/// Far enough off that a build finishes everything waiting.
+private var later: ContinuousClock.Instant { .now + .seconds(60) }
+/// Already past: a build does its one chunk.
+private var past: ContinuousClock.Instant { .now - .seconds(1) }
+
+/// Whether the mask is white (a silhouette) at a world point of its board.
+@MainActor private func isShape(_ preview: BoardPreviews.Preview, at point: CGPoint) throws -> Bool {
+    let mask = try require(preview.mask)
+    let data = try require(mask.dataProvider?.data as Data?)
+    let scale = CGFloat(mask.width) / preview.frame.width
+    let column = Int((point.x - preview.frame.minX) * scale), row = Int((point.y - preview.frame.minY) * scale)
+    return data[row * mask.bytesPerRow + column * mask.bitsPerPixel / 8] > 128
+}
+
+// What an owner draws of the board it holds (`RenderContext.drawBoardPreview`): the core's previews,
+// built a chunk at a time, kept by board and revision.
+@MainActor let previewTests = Suite("Previews", [
+    test("a board's preview is asked for, then built: its shapes' silhouettes, fitted into 256 pixels, and kept as its revision was") {
+        let (file, boards) = pocketFile([[CGRect(x: 0, y: 0, width: 100, height: 100), CGRect(x: 300, y: 0, width: 100, height: 100)]])
+        let previews = BoardPreviews(registry: try previewRegistry())
+        let key = BoardPreviews.Key(board: boards[0], revision: file.revision(of: boards[0]))
+        expect(previews.preview(of: boards[0], in: file) == nil, "none yet")
+        expectEqual(previews.waiting, [key])
+        expect(previews.build(in: file, until: later), "built")
+        expect(!previews.isPending)
+        let preview = try require(previews.preview(of: boards[0], in: file))
+        expectEqual(preview.key, key)
+        let mask = try require(preview.mask)
+        expect(mask.width <= 256 && mask.height <= 256 && max(mask.width, mask.height) >= 250, "\(mask.width) × \(mask.height)")
+        expect(abs(CGFloat(mask.width) / CGFloat(mask.height) - 4) < 0.3, "the board's proportions: \(mask.width) × \(mask.height)")
+        expect(preview.frame.contains(CGRect(x: 0, y: 0, width: 400, height: 100)), "\(preview.frame)")
+        expect(try isShape(preview, at: CGPoint(x: 50, y: 50)), "the first box")
+        expect(try isShape(preview, at: CGPoint(x: 350, y: 50)), "the second")
+        expect(try !isShape(preview, at: CGPoint(x: 200, y: 50)), "nothing between them")
+        expectEqual(previews.keptKeys, [key])
+        expect(previews.preview(of: boards[0], in: file) != nil, "kept")
+        expect(!previews.isPending, "and not asked for again")
+    },
+    test("an empty board has none, and asks for none") {
+        let (file, boards) = pocketFile([[]])
+        let previews = BoardPreviews(registry: try previewRegistry())
+        expect(previews.preview(of: boards[0], in: file) == nil)
+        expect(!previews.isPending)
+        expect(!previews.build(in: file, until: later))
+        expect(previews.keptKeys.isEmpty)
+    },
+    test("a board changed since its preview was built is never shown as it was: its revision is the key") {
+        let (file, boards) = pocketFile([[CGRect(x: 0, y: 0, width: 100, height: 100)]])
+        let previews = BoardPreviews(registry: try previewRegistry())
+        _ = previews.preview(of: boards[0], in: file)
+        previews.build(in: file, until: later)
+        let old = try require(previews.preview(of: boards[0], in: file))
+        var edited = file
+        edited.set(CanvasDocument(shapes: [box(CGRect(x: 500, y: 500, width: 10, height: 10))]), for: boards[0])
+        expect(previews.preview(of: boards[0], in: edited) == nil, "not the old one")
+        expect(!previews.keptKeys.contains(old.key), "which is dropped")
+        expectEqual(previews.waiting, [BoardPreviews.Key(board: boards[0], revision: edited.revision(of: boards[0]))])
+        // Asked for, then changed again before it's built: dropped unbuilt.
+        var again = edited
+        again.set(CanvasDocument(shapes: [box(CGRect(x: 0, y: 0, width: 10, height: 10))]), for: boards[0])
+        expect(!previews.build(in: again, until: later), "nothing built for a revision that's gone")
+        expect(!previews.isPending)
+        expect(previews.preview(of: boards[0], in: again) == nil)
+        previews.build(in: again, until: later)
+        expectEqual(try require(previews.preview(of: boards[0], in: again)).key.revision, again.revision(of: boards[0]))
+        // Emptied, it has none again.
+        var emptied = again
+        emptied.set(CanvasDocument(), for: boards[0])
+        expect(previews.preview(of: boards[0], in: emptied) == nil)
+        expect(previews.keptKeys.isEmpty && !previews.isPending)
+    },
+    test("after an undo the board has a new revision, so the preview built before the edit isn't taken back") {
+        let pocket = ShapeRecord(Pocket(CGRect(x: 0, y: 0, width: 240, height: 160)))
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(pocket)]),
+                              children: [pocket.id: CanvasDocument(shapes: [box(CGRect(x: 0, y: 0, width: 100, height: 100))])])
+        let h = try EditorHarness(plugins: [FixturesPlugin(), PocketsPlugin()], file: file)
+        let board = BoardID(owner: pocket.id), previews = h.editor.boardPreviews
+        _ = previews.preview(of: board, in: h.editor.file)
+        previews.build(in: h.editor.file, until: later)
+        let before = try require(previews.preview(of: board, in: h.editor.file))
+        expect(h.enter(pocket.id))
+        h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
+        h.editor.undo()
+        expect(h.editor.showBoard(.root))
+        expectEqual(h.editor.file[board], file[board], "the board as it was")
+        expect(h.editor.file.revision(of: board) != before.key.revision)
+        expect(previews.preview(of: board, in: h.editor.file) == nil, "built again, not taken back")
+    },
+    test("a file put in place keeps the previews of the boards it didn't change, and drops the others'") {
+        let square = [CGRect(x: 0, y: 0, width: 100, height: 100)]
+        let (file, boards) = pocketFile([square, square])
+        let h = try EditorHarness(plugins: [FixturesPlugin(), PocketsPlugin()], file: file)
+        let previews = h.editor.boardPreviews
+        for board in boards { _ = previews.preview(of: board, in: h.editor.file) }
+        previews.build(in: h.editor.file, until: later)
+        var reloaded = file
+        reloaded.set(CanvasDocument(shapes: [box(CGRect(x: 0, y: 0, width: 50, height: 50))]), for: boards[1])
+        h.editor.replaceFile(with: reloaded)
+        expect(previews.preview(of: boards[0], in: h.editor.file) != nil, "the board as it was: its preview kept")
+        expect(previews.preview(of: boards[1], in: h.editor.file) == nil, "the board changed: built again")
+    },
+    test("kept up to their number, the one drawn longest ago going first") {
+        let square = [CGRect(x: 0, y: 0, width: 100, height: 100)]
+        let (file, boards) = pocketFile([square, square, square])
+        let previews = BoardPreviews(registry: try previewRegistry(), capacity: 2)
+        let key = { (i: Int) in BoardPreviews.Key(board: boards[i], revision: file.revision(of: boards[i])) }
+        for i in 0..<2 {
+            _ = previews.preview(of: boards[i], in: file)
+            previews.build(in: file, until: later)
+        }
+        expectEqual(previews.keptKeys, [key(0), key(1)])
+        expect(previews.preview(of: boards[0], in: file) != nil, "the first drawn again")
+        expectEqual(previews.keptKeys, [key(1), key(0)])
+        _ = previews.preview(of: boards[2], in: file)
+        previews.build(in: file, until: later)
+        expectEqual(previews.keptKeys, [key(0), key(2)], "the second, drawn longest ago, went")
+        expect(previews.preview(of: boards[1], in: file) == nil, "and is asked for again")
+    },
+    test("built a chunk at a time: with no time left, a frame builds one chunk; the one asked for first is built first") {
+        let many = (0..<100).map { i in CGRect(x: CGFloat(i % 10) * 20, y: CGFloat(i / 10) * 20, width: 10, height: 10) }
+        let (file, boards) = pocketFile([many, many])
+        let previews = BoardPreviews(registry: try previewRegistry())
+        _ = previews.preview(of: boards[0], in: file)
+        _ = previews.preview(of: boards[1], in: file)
+        var frames = 0
+        while previews.preview(of: boards[0], in: file) == nil, frames < 100 {
+            expectEqual(previews.waiting.first?.board, boards[0], "the first asked for, first")
+            previews.build(in: file, until: past)
+            frames += 1
+        }
+        // 16 shapes a frame: their geometry in 7 frames, then their silhouettes in 7.
+        expectEqual(frames, 14, "frames to build 100 shapes")
+        expect(previews.preview(of: boards[1], in: file) == nil, "the second waits its turn")
+        expect(try isShape(try require(previews.preview(of: boards[0], in: file)), at: CGPoint(x: 185, y: 185)), "the last box")
+        expect(previews.build(in: file, until: later), "with time enough, a frame builds the rest")
+        expect(previews.preview(of: boards[1], in: file) != nil)
+    },
+    test("more owners in view than previews are kept: those drawn stay, the one left over shows none, and no frame is asked for after") {
+        let log = PreviewLog()
+        let (h, owners, size) = try showcases(65, log: log)
+        expectEqual(h.editor.boardPreviews.capacity, 64, "one more owner than are kept")
+        var frames: [[Bool]] = []
+        for _ in 0..<8 {
+            log.drawn = []
+            _ = renderBitmap(h.editor, size: size)
+            frames.append(log.drawn)
+            h.wait(0)
+        }
+        expect(frames.allSatisfy { $0.count == owners.count }, "every owner drawn in every frame")
+        for i in owners.indices {
+            let drawn = frames.map { $0[i] }
+            expect(!zip(drawn, drawn.dropFirst()).contains { $0 && !$1 }, "owner \(i) went back from its preview to none: \(drawn)")
+        }
+        let last = try require(frames.last)
+        expectEqual(last.filter { $0 }.count, 64, "as many as are kept")
+        expect(!h.editor.boardPreviews.isPending, "nothing waits: \(h.editor.boardPreviews.waiting.count)")
+        expectEqual(h.scheduler.pendingCount, 0, "no frame asked for")
+    },
+    test("a preview too small on screen asks for nothing: an owner under 16 points either way, or zoomed out") {
+        let log = PreviewLog()
+        let owner = ShapeRecord(Showcase(frame: CGRect(x: 20, y: 20, width: 200, height: 12)))
+        let big = ShapeRecord(Showcase(frame: CGRect(x: 20, y: 60, width: 100, height: 100)))
+        let inside = { CanvasDocument(shapes: [box(CGRect(x: 0, y: 0, width: 10, height: 10))]) }
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(owner), AnyShapeRecord(big)]),
+                              children: [owner.id: inside(), big.id: inside()])
+        let registry = try previewRegistry(log: log)
+        let h = EditorHarness { CanvasEditor(registry: registry, file: file, scheduler: $0) }
+        h.editor.camera = Camera(zoom: 0.1)
+        _ = renderBitmap(h.editor, size: CGSize(width: 240, height: 180))
+        expectEqual(log.drawn, [false, false])
+        expect(!h.editor.boardPreviews.isPending, "at 10%, neither is asked for")
+        expectEqual(h.scheduler.pendingCount, 0)
+        h.editor.camera = Camera()
+        _ = renderBitmap(h.editor, size: CGSize(width: 240, height: 180))
+        expectEqual(h.editor.boardPreviews.waiting.map(\.board), [BoardID(owner: big.id)], "at 100%, only the big one")
+    },
+    test("what no frame drew stops waiting: an owner scrolled away, or on a board left, builds nothing and asks for no frames") {
+        let log = PreviewLog()
+        let (h, owners, size) = try showcases(2, log: log)
+        h.editor.boardPreviews.frameBudget = .zero
+        _ = renderBitmap(h.editor, size: size)
+        expectEqual(h.editor.boardPreviews.waiting.count, 2)
+        h.editor.camera = Camera(origin: CGPoint(x: 5000, y: 5000))
+        _ = renderBitmap(h.editor, size: size)
+        expect(!h.editor.boardPreviews.isPending, "scrolled away")
+        h.wait(0)
+        expectEqual(h.scheduler.pendingCount, 0, "no more frames")
+        h.editor.camera = Camera()
+        _ = renderBitmap(h.editor, size: size)
+        expectEqual(h.editor.boardPreviews.waiting.count, 2, "back in view, asked for again")
+        expect(h.editor.showBoard(BoardID(owner: owners[0])))
+        expect(!h.editor.boardPreviews.isPending, "on another board, nothing waits")
+        h.wait(0)
+        _ = renderBitmap(h.editor, size: size)
+        expect(!h.editor.boardPreviews.isPending)
+        expectEqual(h.scheduler.pendingCount, 0)
+    },
+    test("the editor builds previews as it draws, asks for frames until they're done, and draws one fitted into the owner's rect") {
+        let log = PreviewLog()
+        let owner = ShapeRecord(Showcase(frame: CGRect(x: 20, y: 20, width: 200, height: 100)))
+        // A board twice as wide as tall, in a rect twice as wide as tall: a square in its top-left quarter.
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(owner)]),
+                              children: [owner.id: CanvasDocument(shapes: [box(CGRect(x: 0, y: 0, width: 50, height: 50)),
+                                                                           box(CGRect(x: 199, y: 99, width: 1, height: 1))])])
+        let registry = try previewRegistry(log: log)
+        let h = EditorHarness { CanvasEditor(registry: registry, file: file, scheduler: $0) }
+        let size = CGSize(width: 240, height: 140)
+        let first = renderBitmap(h.editor, size: size)
+        expectEqual(log.drawn, [false], "not built yet")
+        expect(h.scheduler.pendingCount > 0, "another frame asked for")
+        h.editor.boardPreviews.frameBudget = .seconds(60)
+        h.wait(0)
+        let second = renderBitmap(h.editor, size: size)
+        expectEqual(log.drawn, [false, true])
+        expectEqual(h.scheduler.pendingCount, 0, "none asked for once they're done")
+        let silhouette = pixel(second, at: CGPoint(x: 40, y: 40))
+        expect(silhouette != pixel(first, at: CGPoint(x: 40, y: 40)), "the square drawn: \(silhouette)")
+        expect(abs(silhouette[0] - silhouette[2]) < 20 && silhouette[0] < 200, "in one muted gray: \(silhouette)")
+        expectEqual(pixel(second, at: CGPoint(x: 160, y: 60)), pixel(first, at: CGPoint(x: 160, y: 60)), "nothing on the right")
+        expectEqual(pixel(second, at: CGPoint(x: 40, y: 100)), pixel(first, at: CGPoint(x: 40, y: 100)), "nor below the square: it's the right way up")
+        expectEqual(changedPixels(first, second, in: CGRect(x: 0, y: 0, width: 240, height: 18)), 0, "nothing outside the rect")
+    },
+])

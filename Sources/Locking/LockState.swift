@@ -29,12 +29,19 @@ enum LockStyle {
 @MainActor
 final class LockState {
     private unowned let editor: CanvasEditor
-    private var lockedIDs: Set<ShapeID>
+    private(set) var lockedIDs: Set<ShapeID> = []
     /// Shapes just unlocked, whose chip shows its lock open, where a click locks the shape again.
     private var opened: [ShapeID: OpenLock] = [:]
     /// Each shaking shape, and how many frames of its shake have played.
     private var shakes: [ShapeID: Int] = [:]
     private var nextFrame: ScheduledTask?
+    /// The locked shapes of boards shown lately, for going back to them without looking through
+    /// their shapes again.
+    private var kept = BoardStash<Set<ShapeID>>()
+    #if DEBUG
+    /// How many times a whole board has been looked through for its locked shapes (debug builds).
+    private(set) var boardsScanned = 0
+    #endif
 
     /// A chip showing its lock open: for `openLinger`, and on while the pointer's on it; then it
     /// fades away over `openFade`.
@@ -47,7 +54,14 @@ final class LockState {
 
     init(editor: CanvasEditor) {
         self.editor = editor
-        lockedIDs = Set(editor.document.shapes.lazy.filter(\.isLocked).map(\.id))
+        lockedIDs = locked(in: editor.document)
+    }
+
+    private func locked(in document: CanvasDocument) -> Set<ShapeID> {
+        #if DEBUG
+        boardsScanned += 1
+        #endif
+        return Set(document.shapes.lazy.filter(\.isLocked).map(\.id))
     }
 
     /// How opaque a just-unlocked shape's open lock is: fully until it starts to fade, then less
@@ -103,10 +117,13 @@ final class LockState {
 
     // MARK: Shaking
 
-    /// Shakes each locked shape of `ids`, unless it's shaking already: a try that comes while one
-    /// plays (the eraser dragged across it) doesn't start it over.
+    /// Shakes each shape of `ids` on the board shown, unless it's shaking already: a try that comes
+    /// while one plays (the eraser dragged across it) doesn't start it over. Locked or not: a shape
+    /// whose board (or a board under it) holds a locked shape isn't deleted either, and it's the one
+    /// tried, so it's the one that shakes.
     func shake(_ ids: Set<ShapeID>) {
-        let starting = ids.filter { lockedIDs.contains($0) && shakes[$0] == nil }
+        let document = editor.document
+        let starting = ids.filter { shakes[$0] == nil && document[$0] != nil }
         guard !starting.isEmpty else { return }
         for id in starting { shakes[id] = 0 }
         if nextFrame == nil { scheduleFrame() }
@@ -187,4 +204,30 @@ extension LockState: EditorService {
 
     /// A try to change locked shapes: they shake.
     func didRefuseChanges(to ids: Set<ShapeID>, in editor: CanvasEditor) { shake(ids) }
+
+    /// The board left's locked shapes are kept for when it's shown again.
+    func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor) {
+        guard old != new else { return }
+        kept.keep(lockedIDs, for: old, in: editor)
+    }
+
+    /// Another board is shown: its locked shapes are the ones with chips (as they were kept, if the
+    /// board hasn't changed since it was left, else looked for), and what was under way on the
+    /// board left (shakes, locks showing open, their frames) stops there.
+    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
+        lockedIDs = kept.take(for: change.to, in: editor) ?? locked(in: editor.document)
+        shakes = [:]
+        for id in Array(opened.keys) { _ = close(id) }
+        opened = [:]
+        nextFrame?.cancel()
+        nextFrame = nil
+    }
 }
+
+#if DEBUG
+extension CanvasEditor {
+    /// How many times Locking has looked through a whole board for its locked shapes (debug builds
+    /// only), so tests can hold going back to a board to taking back what was kept of it.
+    public var boardsScannedForLocks: Int { service(LockState.self)?.boardsScanned ?? 0 }
+}
+#endif

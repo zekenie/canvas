@@ -69,10 +69,14 @@ extension ProbeTool: Tool {
 }
 
 @MainActor func minimapEditor(document: CanvasDocument = CanvasDocument(), _ more: [any CanvasPlugin] = []) throws -> EditorHarness {
-    try EditorHarness(plugins: [FixturesPlugin(), Contributor(id: "minimap-kinds") {
+    try minimapEditor(file: CanvasFile(root: document), more)
+}
+
+@MainActor func minimapEditor(file: CanvasFile, _ more: [any CanvasPlugin] = []) throws -> EditorHarness {
+    try EditorHarness(plugins: [FixturesPlugin(), PocketsPlugin(), Contributor(id: "minimap-kinds") {
         $0.shape(FlagDefinition())
         $0.shape(StrokeDefinition())
-    }] + more, document: document)
+    }] + more, file: file)
 }
 
 /// A canvas 800 × 600 with its minimap, in an unshown window in the light appearance: the minimap is
@@ -462,6 +466,116 @@ func isAccent(_ p: [Int]) -> Bool { p[2] > p[0] + 60 }
         click(minimap, at: CGPoint(x: 100, y: 75))
         expect(window.firstResponder === editing, "the card keeps it")
         expectEqual(h.editor.editingShapeID, card)
+    },
+    test("on another board it starts a picture afresh, never from the board left's, and back there it shows the one it kept at once") {
+        func box(_ x: CGFloat, _ y: CGFloat) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(Box(CGRect(x: x, y: y, width: 400, height: 300)))) }
+        let p = ShapeID()
+        // Both boards have shapes in the same corners; only the root has one in the middle.
+        let root = CanvasDocument(shapes: [box(0, 0), box(800, 600), box(1600, 1200),
+                                           AnyShapeRecord(ShapeRecord(id: p, Pocket(CGRect(x: 1700, y: 0, width: 300, height: 200))))])
+        let h = try minimapEditor(file: CanvasFile(root: root, children: [p: CanvasDocument(shapes: [box(0, 0), box(1600, 1200)])]))
+        let (_, _, minimap) = try minimapped(h)
+        let onRoot = finished(minimap, h)
+        expect(isSilhouette(pixel(onRoot, at: onMinimap(CGPoint(x: 1000, y: 750), minimap))), "the root's middle box")
+
+        minimap.frameBudget = .zero                     // a tile a frame
+        expect(h.enter(p))
+        let first = drawn(minimap)
+        expect(h.scheduler.pendingCount > 0, "drawn over several frames")
+        let middle = pixel(first, at: onMinimap(CGPoint(x: 1000, y: 750), minimap))
+        expect(isBlank(middle), "nothing of the root's picture shows on P's: \(middle)")
+        minimap.frameBudget = .milliseconds(4)
+        let done = finished(minimap, h)
+        expect(isSilhouette(pixel(done, at: onMinimap(CGPoint(x: 200, y: 150), minimap))))
+        let fresh = freshMinimap(like: minimap)
+        expectEqual(differingPixels(done, finished(fresh, h)), 0, "P's picture is what a new minimap draws")
+        fresh.removeFromSuperview()
+
+        minimap.frameBudget = .zero
+        expect(h.editor.showBoard(.root))
+        let back = drawn(minimap)
+        expectEqual(differingPixels(back, onRoot), 0, "the root's picture, kept, in its first frame back")
+        let again = freshMinimap(like: minimap)
+        expectEqual(differingPixels(back, finished(again, h)), 0)
+        again.removeFromSuperview()
+
+        // A change made there after coming back is drawn into the picture kept, as ever.
+        _ = h.add(Box(CGRect(x: 1000, y: 100, width: 300, height: 300)))
+        minimap.frameBudget = .milliseconds(4)
+        let changed = finished(minimap, h)
+        let third = freshMinimap(like: minimap)
+        expectEqual(differingPixels(changed, finished(third, h)), 0)
+        third.removeFromSuperview()
+    },
+    test("back on a board whose picture it kept but the editor no longer did, it starts afresh, not from the one kept") {
+        func box(_ x: CGFloat, _ y: CGFloat) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(Box(CGRect(x: x, y: y, width: 400, height: 300)))) }
+        let p = ShapeID()
+        let pocket = AnyShapeRecord(ShapeRecord(id: p, Pocket(CGRect(x: 1700, y: 0, width: 300, height: 200))))
+        let corners = [box(0, 0), box(1600, 1200)], inside = CanvasDocument(shapes: [box(0, 0), box(1600, 1200)])
+        let h = try minimapEditor(file: CanvasFile(root: CanvasDocument(shapes: [corners[0], box(800, 600), corners[1], pocket]), children: [p: inside]))
+        let (_, _, minimap) = try minimapped(h)
+        expect(isSilhouette(pixel(finished(minimap, h), at: onMinimap(CGPoint(x: 1000, y: 750), minimap))), "the root's middle box")
+        expect(h.enter(p))
+        _ = finished(minimap, h)
+        // Reverted without the middle box: every board is the file's anew, the root's index isn't kept.
+        h.editor.replaceFile(with: CanvasFile(root: CanvasDocument(shapes: corners + [pocket]), children: [p: inside]))
+        minimap.frameBudget = .zero                     // a tile a frame
+        expect(h.editor.showBoard(.root))
+        let first = drawn(minimap)
+        let middle = pixel(first, at: onMinimap(CGPoint(x: 1000, y: 750), minimap))
+        expect(isBlank(middle), "nothing of the picture kept shows: \(middle)")
+        minimap.frameBudget = .milliseconds(4)
+        let done = finished(minimap, h)
+        let fresh = freshMinimap(like: minimap)
+        expectEqual(differingPixels(done, finished(fresh, h)), 0)
+        fresh.removeFromSuperview()
+    },
+    test("a board a deletion took, put back by undo, is drawn afresh, not from the picture it kept of the board") {
+        func box(_ x: CGFloat, _ y: CGFloat) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(Box(CGRect(x: x, y: y, width: 400, height: 300)))) }
+        let p = ShapeID()
+        let pocket = AnyShapeRecord(ShapeRecord(id: p, Pocket(CGRect(x: 1700, y: 0, width: 300, height: 200))))
+        let inside = CanvasDocument(shapes: [box(0, 0), box(800, 600), box(1600, 1200)])
+        let h = try minimapEditor(file: CanvasFile(root: CanvasDocument(shapes: [box(0, 0), box(1600, 1200), pocket]), children: [p: inside]))
+        let (_, _, minimap) = try minimapped(h)
+        _ = finished(minimap, h)
+        expect(h.enter(p))
+        expect(isSilhouette(pixel(finished(minimap, h), at: onMinimap(CGPoint(x: 1000, y: 750), minimap))), "the pocket's middle box")
+        expect(h.editor.showBoard(.root))
+        _ = finished(minimap, h)
+        h.editor.transact("Delete") { $0.delete([p]) }
+        h.editor.undo()
+        minimap.frameBudget = .zero                     // a tile a frame
+        expect(h.enter(p))
+        let first = drawn(minimap)
+        let middle = pixel(first, at: onMinimap(CGPoint(x: 1000, y: 750), minimap))
+        expect(isBlank(middle), "nothing of the picture kept shows: \(middle)")
+        minimap.frameBudget = .milliseconds(4)
+        let done = finished(minimap, h)
+        let fresh = freshMinimap(like: minimap)
+        expectEqual(differingPixels(done, finished(fresh, h)), 0)
+        fresh.removeFromSuperview()
+    },
+    test("it keeps the pictures of the boards above the one shown longest, as the editor keeps their indexes") {
+        func box(_ x: CGFloat, _ y: CGFloat) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(Box(CGRect(x: x, y: y, width: 400, height: 300)))) }
+        // The root holds pocket P, whose board holds pockets Q0…Q8, each with a box on its board.
+        let p = ShapeID(), qs = (0..<9).map { _ in ShapeID() }
+        var children = [p: CanvasDocument(shapes: qs.enumerated().map { AnyShapeRecord(ShapeRecord(id: $1, Pocket(CGRect(x: $0 * 200, y: 0, width: 100, height: 100)))) })]
+        for q in qs { children[q] = CanvasDocument(shapes: [box(0, 0)]) }
+        let root = CanvasDocument(shapes: [box(0, 0), box(800, 600), AnyShapeRecord(ShapeRecord(id: p, Pocket(CGRect(x: 1700, y: 0, width: 300, height: 200))))])
+        let h = try minimapEditor(file: CanvasFile(root: root, children: children))
+        let (_, _, minimap) = try minimapped(h)
+        let onRoot = finished(minimap, h)
+        minimap.frameBudget = .zero
+        expect(h.enter(p))
+        _ = drawn(minimap)
+        for q in qs {
+            expect(h.enter(q))
+            _ = drawn(minimap)
+            expect(h.editor.showBoard(BoardID(owner: p)))
+            _ = drawn(minimap)
+        }
+        expect(h.editor.showBoard(.root))
+        expectEqual(differingPixels(drawn(minimap), onRoot), 0, "the root's picture, kept past nine boards below it, in its first frame back")
     },
     test("hidden and shown again, it draws the board as it is now") {
         let h = try minimapEditor()

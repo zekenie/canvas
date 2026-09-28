@@ -145,9 +145,9 @@ let widgetFrame = CGRect(x: 1000, y: 1000, width: 100, height: 60)
     try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), WidgetsPlugin(), TableOfContentsPlugin()] + more)
 }
 
-/// An editor with `contentsRegistry(more)`, on an empty board.
-@MainActor func contentsEditor(_ more: [any CanvasPlugin] = [], scheduler: any Scheduler = ManualScheduler()) throws -> CanvasEditor {
-    CanvasEditor(registry: try contentsRegistry(more), scheduler: scheduler)
+/// An editor with `contentsRegistry(more)`, on `file` (an empty board).
+@MainActor func contentsEditor(_ more: [any CanvasPlugin] = [], file: CanvasFile = CanvasFile(), scheduler: any Scheduler = ManualScheduler()) throws -> CanvasEditor {
+    CanvasEditor(registry: try contentsRegistry(more), file: file, scheduler: scheduler)
 }
 
 extension CanvasEditor {

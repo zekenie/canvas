@@ -33,11 +33,13 @@ maps one onto the other.
 - [Locking](#locking)
 - [Ports](#ports)
 - [Mentions](#mentions)
+- [Boards](#boards)
 - [The command line](#the-command-line)
 - [Schema cards](#schema-cards)
 - [Language models](#language-models)
 - [Capabilities](#capabilities)
 - [The editor, the document, and drawing](#the-editor-the-document-and-drawing)
+- [Boards in a file](#boards-in-a-file)
 - [Undo](#undo)
 - [Boards on disk](#boards-on-disk)
 - [The registry](#the-registry)
@@ -241,9 +243,17 @@ Once one plugin works, the question is which piece the next feature needs.
 | Keep state per editor: an engine, a cache, a timer | `registrar.service`, an `EditorService`; redo what's kept per shape for the shapes each commit's `ChangeSet` names | [Validation](../Sources/Validation/Validation.swift)'s `ValidationEngine`, [TableOfContents](../Sources/TableOfContents/ContentsState.swift)' `ContentsState` |
 | Show something small on shapes, just outside them or on a corner (a pill, a tally, a lock), on kinds you define or not | An `Adornment` type; `x.adornment`, `registrar.adornment(_:on:)` or `registrar.adornmentForEveryShape(_:where:)`, returning an `AdornmentLabel` | [Adornments](#adornments), [Titles](#a-horizontal-plugin) |
 | Let the user put a flag on a shape, and show it | An added property, a menu item that sets it, and an adornment whose label reads it | [Something the user turns on](#something-the-user-turns-on) |
+| Keep a service's state for going back to a board | `EditorService.boardWillChange` and `boardDidChange`, with a `BoardStash` (else a switch is heard as a commit of every shape) | [Showing a board](#showing-a-board) |
+| Write to a shape on a board that isn't shown (an answer that lands late), as an undo step made there | `editor.transact(on: board, "Name") { … }`; services hear it in `ChangeSet.boardsChanged` and `elsewhere` | [Boards that aren't shown](#boards-that-arent-shown) |
 | Draw above every shape something that isn't one shape's adornment (a status outline, hints) | `registrar.overlay`, a `CanvasOverlay`; `editor.paintOrder(in: context.visibleRect)` | [Validation](../Sources/Validation/Validation.swift), [Arrows](../Sources/Arrows/ArrowDefinition.swift)' binding hints |
 | Act on shapes about to be deleted (delete what depends on them) | `registrar.willDelete` | [The document](#the-editor-the-document-and-drawing) |
 | Create a kind with a double-click on empty canvas | `x.createOnDoubleClick(place)` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
+| Give each shape of a kind a board of its own, saved, deleted and copied with it | `BoardOwning` on its definition, nothing to implement; `editor.showBoard(BoardID(owner:))` shows one | [Boards in a file](#boards-in-a-file) |
+| Make a double-click, Return or ⌘↓ on a kind's shape do something other than edit it (show its board) | `x.opens("Open") { shape, editor in ... }` (Selection's `ShapeOpening`) | [Selection](#selection) |
+| Make a kind's shapes open onto the boards they own: Open in its menu and panel, ⌘↑ back up, and a name on the path | `x.opensBoard(placeholder:systemImage:)` (Boards), on a `BoardOwning` kind | [Boards](#boards) |
+| Show where you are in a file's boards, and go up | `BoardPath(editor:rootName:)`, over the canvas; `editor.goUp(to:)`, `editor.name(of:root:)` | [Boards](#boards) |
+| Put a board inside the board | `SubboardsPlugin`: the Subboard tool (B) places a card that opens onto a board of its own | [Subboards](#subboards) |
+| Show on a shape what the board it owns holds | `context.drawBoardPreview(ofBoardOwnedBy:in:)` in its render: a rough picture, false until it's built | [Board previews](#the-cores-part-board-previews) |
 | Keep a kind from being selected | `x.unselectable()`, or `x.selectable { ... }` | [Selection](#selection) |
 | Go to shapes, as following a link does (select them, bring them into view, ⌘[ returns), or only bring them into view | Selection's `editor.goTo(_:)`, `editor.reveal(_:)` | [Selection](#selection) |
 | Keep a kind from being copied | `x.uncopyable()`, or `x.copyable { ... }` | [The clipboard](#the-clipboard) |
@@ -310,8 +320,11 @@ end on, while the plugin that owns a channel's meaning declares it. So is what's
 [Adornments](#adornments) lays out and draws what any plugin puts on them, a title's pill beside a
 lock, so none overlaps another. So are [mentions](#mentions): any kind can be mentioned, and any
 kind's text can hold mentions, while Mentions owns the stored form, the pills, the picker and what
-keeps them in step with the shapes they name. And a horizontal may declare no point at all and only lend
-something: [LanguageModels](#language-models) lends every editor the model plugins ask.
+keeps them in step with the shapes they name. So is getting around a file's [boards](#boards): any
+kind whose shapes own boards opts in with one line, and Boards owns opening them, going back up,
+what a board is called and the path that shows where you are, while the core only holds the boards
+and shows one. And a horizontal may declare no point at all and only lend something:
+[LanguageModels](#language-models) lends every editor the model plugins ask.
 
 Opting in goes in one of two directions:
 
@@ -352,8 +365,8 @@ Each target is one line, with its layer:
 | wire | wire | CanvasRPC (what the app and its [command line](#the-command-line) say to each other) |
 | foundation | foundation | Geometry, Canvas (the core) |
 | ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
-| horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Adornments, Checklists, Clipboard, Locking, Ports, Mentions, Automation, LanguageModels |
-| vertical | foundation, horizontal | Arrows, StickyNotes, Ellipses, TaskCards, Schemas, Rectangles, Polylines, Eraser, Reordering |
+| horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Adornments, Checklists, Clipboard, Locking, Ports, Mentions, Automation, LanguageModels, Boards |
+| vertical | foundation, horizontal | Arrows, StickyNotes, Ellipses, TaskCards, Schemas, Subboards, Rectangles, Polylines, Eraser, Reordering |
 | bridge | foundation, horizontal, vertical | EllipseTitles, ValidationDetails, ValidationContents, ArrowPorts |
 | composition | foundation, horizontal, vertical, bridge, wire | Composition (the shipped plugin list) |
 | app | foundation, ui, composition, wire | InfiniteCanvas |
@@ -581,7 +594,10 @@ The details:
   plugin may run one. A plugin claims each with `registrar.command`, or with Keyboard's
   `registrar.command(_:shortcuts:)`, which gives it its keys too, and may say when it can run
   (`isEnabled:`), which `editor.canPerform` asks for a menu item to enable it, and a key to take
-  the stroke; unclaimed, or unable to run, `perform` returns false.
+  the stroke; unclaimed, or unable to run, `perform` returns false. A view that asks it redraws as
+  what it read changes: `editor.session` is observed as a press starts and as it ends (not as one
+  session hands over to another), so a control enabled only between presses comes back once the
+  press that selected its shape is let go.
 - **The secondary click** (a right-click, or a Control-click) opens whatever menu the one plugin
   that claims it makes (`registrar.menuForSecondaryClick`), ContextMenus in the shipped app;
   unclaimed, or nil, the click does nothing. AppKit offers a Control-click to the menu first; with
@@ -855,7 +871,9 @@ The mechanics:
 - **Engines are services.** A horizontal with state (a cache, an index) registers an
   `EditorService`, made per editor, with `registrar.service { ValidationEngine(editor: $0) }`, and
   anyone finds it with `editor.service(ValidationEngine.self)`. Validation's engine recomputes when
-  `editor.revision` changes and is cached otherwise.
+  `editor.revision` changes and is cached otherwise. It checks the board shown, and keeps what it
+  found on the boards shown last in a `BoardStash`, so going back to one checks nothing
+  ([Showing a board](#showing-a-board)).
 - **Something small shown on a shape is an [adornment](#adornments)**, laid out with the rest so
   none overlaps another, as Titles' pill is. Anything else a horizontal draws (an outline around
   the shape, as Validation's) is an overlay, `registrar.overlay`, above every shape. World overlays
@@ -1030,9 +1048,10 @@ and `remaining` on `ShapeRecord<TaskCard>`).
 - **Writes that can't hold are dropped**, as a frame that isn't finite is: a value set on a kind
   that doesn't opt in, nil for a property with a default, and anything set on a value or a shape
   kept aside ([Boards on disk](#boards-on-disk)). Setting the value a shape has commits nothing.
-- **Defaults are filled in where shapes enter an editor**: an insert (placing, pasting),
-  `CanvasEditor.init`, `replaceDocument`, and reading a board. Filling them adds no commit of its
-  own and never marks a board edited: `init` commits nothing, `replaceDocument` (and so opening a
+- **Defaults are filled in where shapes enter an editor**: an insert (placing, pasting, with the
+  boards `insert(_:contents:)` brings), `CanvasEditor.init` and `replaceFile` (on every board of the
+  file), `replaceDocument`, and reading a board. Filling them adds no commit of its
+  own and never marks a board edited: `init` commits nothing, `replaceFile` (and so opening a
   board) makes its one commit with the defaults in it, which services hear but which doesn't mark
   the board edited, and an insert is an edit anyway. `registry.fillingDefaults(document)` does the
   same to a document.
@@ -1077,7 +1096,8 @@ it) ([`ShapeBinding`](#reading-and-writing-shapebinding)).
 `registry.schema(for: kind)` is a kind's properties as one JSON Schema (draft 2020-12): an object
 with each of its own properties, then each added property it opts into, marked with its owner
 (`x-canvas-owner`) and its default, if it has one; only properties marked `required()` are
-`required`, and nothing else is allowed.
+`required`, and nothing else is allowed. A kind whose shapes own boards (`BoardOwning`) is marked
+`"x-canvas-board" : true`.
 Shared definitions are under `$defs`, named after the modules that declare them (`core.rect`, `checklists.item`,
 `arrows.terminal`), and every `$ref` is local. The sticky note's, abbreviated (CompositionTests pins
 it whole):
@@ -1184,11 +1204,11 @@ concern, references between shapes. The first is bindings, the `ShapeReferencing
 |---|---|---|
 | Adopted by | a kind's definition | a value, wherever a shape keeps it |
 | For | an arrow's bound ends | a mention |
-| The shape it's bound to, or names | must be on the board | may be gone |
+| The shape it's bound to, or names | must be on the board | may be on any board of the file, or gone |
 | Deleting it | lets go of it, in the deleting transaction | changes nothing: no delete looks for names, so the name stays, and names the shape again if it comes back with its id |
 | Copying without it | lets go of it (an arrow's end stays where it's drawn) | keeps naming the original |
-| Copying with it | is bound to its copy | names its copy |
-| `canvas create` with one that isn't there | refused (`A tag can't be bound to shapes that aren't on this board: …`) | made, with a warning |
+| Copying with it | is bound to its copy | names its copy, on whatever board of the copied tree it is |
+| `canvas create` with one that isn't there | refused (`A tag can't be bound to shapes that aren't on this board: … isn't in the file`, or `… is on another board of it`) | made, with a warning if it's in no board of the file |
 
 ```swift
 /// A leaf: it holds the id itself (coded by hand, as the id), so it implements both.
@@ -1248,7 +1268,14 @@ that both binds and names.)
   its `ShapeReferencing` says (nil lets a binding go), then every name, for `namingKinds` (nil keeps
   a name). A definition remaps what it binds and leaves names to the core. Clipboard's copy and
   paste go through it, so a note pasted with the shape it mentions mentions the copy, and one
-  pasted alone mentions the original.
+  pasted alone mentions the original. `remappingReferences(bind, naming: name, in:)` passes the two
+  forms through two maps, for a copy of a tree of boards: a binding is to a shape on its own board,
+  copied with it or let go, while a name may be of a shape copied with it on any board of the tree
+  (Clipboard's paste renames it to that copy) or of one anywhere else (kept).
+- **Across boards.** Ids are unique across a file, so a name is of a shape wherever it is:
+  `editor.file.record(id)` finds it, and a name of a shape on another board is no missing name.
+  Only one that's in no board of the file is (`canvas create` warns about those alone). Bindings
+  stay on their board.
 - **Deleting.** A delete lets go only of bindings: it asks only the kinds that bind, never a kind
   that only names, so deleting a shape writes nothing into the shapes that name it. On a kind that
   does both (`CitingTag`), a delete lets its binding go and keeps its names.
@@ -1268,10 +1295,11 @@ any plugin can use.
 |---|---|
 | `registrar.defaultTool(.select)` | The editor starts in Select, Select leads the toolbar, and Escape and placing a shape come back to it. |
 | `registrar.outlines { ... }` | Each selected shape's outline, the box around several, and the hover's faint outline. The core strokes every plugin's outlines and the hint in one pass, over the faint ones. |
-| `registrar.command(.delete)`, `.selectAll` and `.goBack` (with their keys, through Keyboard) | Delete, and Edit › Delete, deletes the selection; ⌘A, and Edit › Select All, selects everything; ⌘[, and Go › Back (enabled while there's a step back), goes back to the previous selection. Return (a shortcut of its own) edits the only selected shape. |
+| `registrar.command(.delete)`, `.selectAll`, `.goBack` and `.openSelection` (with their keys, through Keyboard) | Delete, and Edit › Delete, deletes the selection; ⌘A, and Edit › Select All, selects everything; ⌘[, and Go › Back (enabled while there's a step back), goes back to the previous selection; ⌘↓ (enabled while the only selected shape can be opened and nothing is being edited, as ⌘↓ is then the text's) opens it. Return and Enter (shortcuts of their own, which always take the key) run `.openSelection` too. |
 | `Tool.cancel` | Escape in Select, with nothing under way, deselects. |
 | `Tool.ignoresPress` | The rest of a double-click whose first click, on a face, went somewhere (changed the selection or moved the camera) is ignored, so the camera goes on and nothing is placed or edited where it's brought. |
 | `EditorService.documentDidChange`, `didPlace` | Drops shapes that are gone (or no longer selectable) from the selection and the hover; selects a shape just placed. |
+| `EditorService.boardDidChange`, `editor.showBoard` | Another board shown: what was selected on the board left is a step back, and nothing is selected on arrival. |
 | `Session.draw(in:)` | The marquee draws itself. |
 | `TranslatingSession`, `editor.shape(at:where:)` | Dragging the selection moves it; presses and hover find the front-most selectable shape. |
 
@@ -1298,16 +1326,27 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   contents) redraws only when its own shape's hover does. Observation keeps observers by key path,
   and each shape has its own, `\.[hovering: id]`.
 - `goBack()` and `canGoBack` are data-canvas's selection history. Each change of the selection
-  puts the selection it leaves on a stack, with the camera as it is at that moment (or, while it
-  glides, `editor.cameraTarget`, where it's headed): a click, a row of the table of contents,
-  Escape, a deletion. Going back takes the last one off, selects its shapes (less any that are
-  gone) and animates the camera back over 200 ms, as data-canvas does. The detail panel's header
+  puts the selection it leaves on a stack, with its board and the camera as it is at that moment
+  (or, while it glides, `editor.cameraTarget`, where it's headed): a click, a row of the table of
+  contents, Escape, a deletion. Going back takes the last one off, selects its shapes (less any that
+  are gone) and animates the camera back over 200 ms, as data-canvas does. The detail panel's header
   has the back button, and Go › Back (⌘[) works whatever has the keyboard, but not mid-gesture.
   The stack holds 50 steps, skips a repeat of the step below, and going back skips a step that
   would change nothing: its shapes are all gone (unless it selected nothing, the board's list), or
   they're what's selected. `canGoBack` is true only when a step wouldn't be skipped, so after
   deleting the only shape selected there's no Back. It's per editor, so per window, and isn't
-  saved. Two differences from data-canvas: a press of the select tool and its drag
+  saved. Showing another board is a step too, even with nothing selected: the board left, what
+  was selected there and its camera (but not a file put in place, which no one took: a file opened
+  on the board left open, or a revert that took the board shown). Nothing is selected on the board shown (going back isn't
+  a step, nor is what the switch deselects), and the press, the hover, the hovered handle and
+  canvas button are let go. Going back to a step on another board shows that board, selects what's
+  left of the step's shapes there (even none: going there is the change), and puts the camera where
+  it was, at once, not gliding from another board's; a step on a board that can't be shown any more
+  (its owner deleted) is skipped, and `canGoBack` counts the steps on other boards. So ⌘[ after
+  opening a shape's board comes back to the board it's on, with it selected, as Finder's ⌘[ comes
+  back out of a folder. `showBoard(_:selecting:)` shows a board and selects there as one step (Back
+  returns to the board left, not to the board shown with nothing selected); on the board shown, it
+  only selects. Two differences from data-canvas: a press of the select tool and its drag
   are one step, so a marquee goes back to what was selected before the press, where data-canvas also
   keeps the moment the press on empty canvas deselected; and a step keeps the camera as the
   selection was left, not as it was made, so going back from a row's details returns to the list
@@ -1316,8 +1355,8 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   table of contents' rows, a mention followed out of text). `reveal` only moves the camera: it
   centers the shapes' bounds (`shapeContext.bounds(of:)`), zoomed to fit with 100 points of margin
   in all but no closer than 120%, over 200 ms, as data-canvas's table of contents does (tldraw's
-  zoomToBounds). It's what selecting rows does, and does nothing before the view has a size.
-  `goTo` goes to shapes as following a link to them does: it ends editing, selects those that can
+  zoomToBounds). It's what selecting rows does, only on the board shown, and does nothing before
+  the view has a size. `goTo` goes to shapes as following a link to them does: it ends editing, selects those that can
   be selected, and reveals them unless they're all in view already at a readable zoom. Selecting
   them is a step back when it changes the selection, so ⌘[ returns, camera and all; going to
   what's selected already, or to shapes none of which can be selected, leaves the selection as it
@@ -1326,11 +1365,18 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   `NSFont.smallSystemFontSize`, the smallest macOS sets text to be read at), or, for shapes too big
   to show whole at that, as close as fitting them would bring them, so going to a big shape that's
   all in view never zooms out to show what's shown. The camera is judged where it's headed
-  (`cameraTarget`). `goTo` does nothing mid-gesture, or when none of the shapes is on the board;
-  without `SelectionPlugin` it ends editing and reveals. data-canvas's navigateToShape always
-  zooms.
+  (`cameraTarget`). The shapes may be anywhere in the file (a mention names a shape on any
+  board): `goTo` goes to the board of the first of them on a board it can show (`canShow`), and to
+  those of them on that board, leaving the rest; on another board it shows that board and selects
+  them there as one step back (`showBoard(_:selecting:)`: ⌘[ returns to the board left, with its
+  selection), then reveals them from the camera the board was left with, or its first visit's.
+  `goTo` does nothing mid-gesture, or when none of the shapes is on a board it can show; without
+  `SelectionPlugin` it ends editing, shows their board and reveals. data-canvas's navigateToShape
+  always zooms.
+- `canOpen(_:)`, `open(_:)` and `openSelection()`: opening a shape, below.
 - `hoveredHandle`, `brush` (the marquee), `selectionBounds`, `isSelectable(_:)`, and the commands'
-  `selectAll()`, `deleteSelection()` and `editSelection()`.
+  `selectAll()`, `deleteSelection()` and `editSelection()` (editing alone, whatever opening would
+  do).
 
 **Opting out.** Every kind is selectable unless it says otherwise, for all its shapes or for some:
 
@@ -1363,6 +1409,16 @@ shakes them).
   finds, draws and hit-tests them; the definition says what a press and a drag do.
 - `BrushHitTesting` is Selection's capability for a kind that decides for itself whether the
   marquee touches it. The default is `ShapeGeometry.isHit(byBrush:)`, from its geometry.
+- `x.opens("Open") { shape, editor in … }` fills `ShapeOpening`: what opening one of the kind's
+  shapes does, in place of editing it, as a board-owning kind shows its board
+  (`editor.showBoard(BoardID(owner: shape.id))`); `registrar.opens(Kind.self, "Open") { … }` from a
+  bridge. At most one per kind, plus one for every kind, which a kind's own overrides. A
+  double-click on a shape, Return, Enter, ⌘↓ and `.openSelection` open it: `editor.open(id)` runs
+  its kind's opener, else edits an `Editable` shape (`beginEditing`). `editor.canOpen(id)` says
+  whether there's anything to do: a shape on the board shown whose kind has an opener or is
+  `Editable`; a read-only shape of an `Editable` kind counts, since opening it is refused and the
+  refusal shows (a locked note shakes), while an opener runs whatever the shape's lock (entering a
+  board changes nothing). The title names it where it's offered (a menu item).
 - Arrows (to select the arrow it draws, and for its handles), DetailPanel (to follow the selection),
   ContextMenus (the menu is for the selection), TableOfContents (to list and select shapes) and
   Ports (its dots are [canvas buttons](#canvas-buttons)) and Adornments (a clickable adornment is a
@@ -1378,10 +1434,12 @@ multi-selection's box, then the canvas.
   shape already selected, the press keeps the selection, so a drag past the 4-point threshold
   moves it all; released without a drag, it selects the shape under the release (⇧ or ⌘ toggles it
   instead). A lone box pressed without ⇧ or ⌘ follows the pointer from the press, with no
-  threshold. A double-click edits an `Editable` shape, selected alone.
+  threshold. A double-click opens a shape, selected alone: its kind's opener, else editing an
+  `Editable` one. The release that follows a double-click that showed another board finds no press,
+  and does nothing.
 - A plain press on a [face](#faces-clickable-parts-of-a-shape) (a mention's pill in a note) is
   still the shape's, but waits for the threshold, even on a lone box, so that a release within it
-  clicks the face; a double-click there is the face's too, in place of editing.
+  clicks the face; a double-click there is the face's too, in place of opening the shape.
 - A press on empty canvas deselects (not with ⇧ or ⌘); a drag from there is a marquee, the brush.
   It selects as it goes: whatever it touches, or with ⌘ only what it strictly encloses; ⇧ adds to
   the selection from before. ⇧ and ⌘ take effect as they're pressed or let go, and a ⌘-drag from a
@@ -1548,7 +1606,7 @@ hands each key pressed on the canvas to the one plugin that claims key strokes, 
 rectangle.tool(label: "Rectangle", systemImage: "rectangle", shortcut: "r", placing: place)            // Rectangles
 registrar.tool(ToolDescriptor(id: .select, label: "Select", systemImage: "cursorarrow"), shortcut: "v") { _ in SelectTool() }
 registrar.command(.delete, shortcuts: [.delete, .deleteForward]) { $0.deleteSelection() }                // Selection
-registrar.shortcut(.return, "Edit Selection") { $0.editSelection() }
+registrar.shortcut(.return, "Open Selection") { $0.perform(.openSelection) }
 registrar.shortcut("h", forTool: .hand)                                                                 // Keyboard itself
 registrar.shortcut(.escape, "Cancel") { $0.cancel() }
 registrar.shortcut(KeyChord("z", .command), forCommand: .undo, repeats: true)
@@ -1567,12 +1625,13 @@ What the shipped app's keys do:
 
 | Key | Does | Registered by |
 |---|---|---|
-| V, H, A, N, O, T, R, L, E | Switches to that tool | The tool's plugin; H by Keyboard, for the core's Hand |
+| V, H, A, N, O, T, B, S, R, L, E | Switches to that tool | The tool's plugin; H by Keyboard, for the core's Hand |
 | ⎋ (and ⌘.) | Cancels: the drag under way, else the tool's own Escape, else back to Select (`editor.cancel()`) | Keyboard |
 | ⌫ and ⌦ | Deletes the selection, as Edit › Delete does | Selection |
-| ↩ (and ⌤) | Edits the only selected shape | Selection |
+| ↩ (and ⌤), ⌘↓ | Opens the only selected shape: edits it, or its kind's own way (`ShapeOpening`); ↩ and ⌤ take the key even when there's nothing to open, ⌘↓ passes then | Selection |
 | ⌘A | Selects everything, as Edit › Select All does | Selection |
 | ⌘[ | Goes back to what was selected before, as Go › Back does (while there's somewhere to go) | Selection |
+| ⌘↑ | Goes up to the board above, with the shape whose board it left selected, as Go › Enclosing Board does (off the root) | Boards |
 | ⌘X, ⌘C, ⌘V | Cuts, copies and pastes shapes, as Edit › Cut, Copy and Paste do | Clipboard |
 | ⌘Z, ⇧⌘Z | Undoes and redoes, as Edit › Undo and Redo do (held, again and again) | Keyboard, for the core's `.undo` and `.redo` |
 
@@ -1674,7 +1733,10 @@ isn't built). A shape nothing contributes
 to (an arrow, today) gets its header, then "No Options". Without `DetailPanelPlugin` installed, the panel says
 "No Details". A read-only shape (a [locked](#locking) one) shows its whole panel, but nothing in it
 edits the shape: the panel disables its sections' content and header controls, and its header (a
-title field), and leaves going back, the tabs and collapsing as they were. It asks the registry
+title field), and leaves going back, the tabs and collapsing as they were. A section whose controls
+change nothing of the shape says so, `DetailSection(…) { … }.enabledWhileReadOnly()`, and keeps
+them working (Boards' Open: a locked shape's board is entered like any other's); whatever they
+write is refused there all the same. It asks the registry
 (`registry.isReadOnly(record)`), not the editor, so the panel doesn't read the document.
 
 Sections are stock SwiftUI plus a few primitives, and get the look by following these conventions:
@@ -1705,8 +1767,11 @@ Sections are stock SwiftUI plus a few primitives, and get the look by following 
   while `isBusy`, and link buttons under it
   (`DetailStatusAction("Retry") { … }`). Put it where it can't be collapsed away from the person
   (the schema card's sync puts it under the side they edited).
-  `DetailNumberText` formats and parses numbers with units ("240 pt"), in the user's locale ("2,5 h"
-  in German), as the number field does.
+  `DetailNumberText` formats and parses numbers with units ("240 pt"), in the user's locale ("2,5 h" in German), as the number field does. A
+  `DetailCommandButton("Open", systemImage: "arrow.down.right.square", command: .openSelection)`
+  runs a command a plugin registered (`editor.perform`), dimmed while it can't run
+  (`editor.canPerform`): the panel's counterpart of a menu item, borderless like the panel's other
+  buttons. It finds the editor in the environment the panel sets, so a section still never sees it.
 - **Sections.** A tab's first section may be untitled; use it for the main properties. Every
   titled section collapses. Titles are one or two nouns in Title Case.
 - **Header control.** At most one small control, acting on the whole section (Checklists' menu). A
@@ -2119,6 +2184,9 @@ When each control commits:
   hidden with it (View › Hide Inspector, which hides the panel without removing it).
   Otherwise the keyboard would land on the window, and shortcuts would stop. Collapsing an
   unrelated section leaves the field focused.
+- **A number being typed lands on its shape** before another board is shown: the panel hears
+  `boardWillChange` and commits the draft, as Return would, while its shape is still there to
+  write to. (Escape still drops it.)
 - **Inside the panel**, Tab moves between text fields (a `DetailTextArea` takes Tab as text, a
   `DetailCodeEditor` as two spaces), and Return commits a number and keeps the field; in the header's title field (`DetailHeaderField`),
   Return is done renaming, and gives the keyboard back to the canvas. Checkboxes don't take the
@@ -2416,7 +2484,8 @@ note.contentsRow { note in
 | `filter` | `when:` |
 | `getParentShapeId` | `nestedUnder:` |
 | `getZoomConfig` | The shape's geometry bounds, with 100 points of margin, for every kind |
-| `onClick`, `getGroupChildren` | Not built yet |
+| `onClick` | Return on a picked row opens its shape, as Return on the canvas does (Selection's `editor.open`); a double-click too, where the list stays on screen ([Opening a row](#whats-listed-and-selecting)) |
+| `getGroupChildren` | Not built yet |
 | The "other" row (type and id) | The placing tool's label and symbol |
 
 ### Rows read from more than their shape
@@ -2432,7 +2501,7 @@ with a service of its plugin's own that keeps which refs refer to each shape
 
 ```swift
 ref.contentsRow(affected: { changes, context in
-    context.service(RefIndex.self)?.refs(to: changes.shapeIDs) ?? []
+    context.service(RefIndex.self)?.refs(to: changes.shapeIDs.union(changes.elsewhere)) ?? []
 }) { ref, context in
     ContentsLabel("→ " + (context.service(RefIndex.self)?.name(of: ref.props.target) ?? "?"))
 }
@@ -2454,6 +2523,17 @@ ref.contentsRow(affected: { changes, context in
 - **Read before it hears of a commit** (by a service that hears first), the table of contents makes
   every kept row of a kind with `affected` again, as it reads every mark again, since only hearing
   of the commit says which it affects. That's rare: the list reads on the next turn.
+- **Other boards.** A row may read a shape on any board of the file (a mention of a shape inside a
+  subboard: `editor.file.record(id)` finds it). What a commit did beyond its board is in
+  `changes.elsewhere` (the shapes of the boards a deletion took or a paste brought, and those a
+  `transact(on:)` changed), so `affected` looks there too, as `RefIndex` does above: deleting a
+  subboard remakes the rows of the refs to what was inside it. The table of contents keeps each
+  board's rows for going back to it; on going back to a board as it was left, it hands `affected`
+  what changed on the other boards meanwhile, as `elsewhere` (on the next read, once every service
+  has followed the switch), so a row that reads a shape renamed, deleted or brought back by undo
+  there is made again, and the rest are taken back as they were. It keeps what was touched since
+  the board kept longest ago was left, a revision per shape, only while boards are kept and some
+  row or mark reads other shapes: a commit costs one more write per shape it touched.
 - **`when` and `nestedUnder` still read only the shape**, and `contentsTitle` still names the row:
   a name that isn't blank takes the place of the label's title (a titled note shows its title).
 - `registrar.contentsRow(OtherKind.self, affected:) { shape, context in ... }` is the same for
@@ -2535,6 +2615,25 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
   the list, or across the canvas, redraws the row the hover leaves and the row it reaches. A row
   that read `editor.hovered` instead would be asked for its view again on every hover change, as
   every other row would.
+- **The board shown.** It lists `editor.document`, so the board shown and nothing under it. Each
+  board's rows, and its listing of every row, are kept for the boards shown last (a `BoardStash`),
+  and taken back on the way back to one that hasn't changed since, so going back makes no row. A
+  scope pinned by selecting rows or Show All was the board left's, and goes. Another board's rows
+  replace this one's in one run, whatever's listed on either (the list's id is the board and the
+  scope, `ContentsListID`).
+- **The heading.** The header says "Board" over the whole board. Whoever places the list can name
+  the board instead: `TableOfContentsView(editor:onExit:heading:)` takes
+  `heading: (CanvasEditor) -> ContentsHeading?`, a title, a symbol before it, and `up`, a command
+  the header offers as a chevron button while it can run (`editor.canPerform`). The table of
+  contents doesn't know what a board is; the heading's maker does. Filtered, the header is
+  "Selection" with Show All, whatever the heading.
+- **Opening a row.** A double-click or Return on a row opens its shape, as Return on the canvas
+  does: `ContentsState.open(_:)`, the list's primary action, selects it and runs Selection's
+  `editor.open` (entering the board it owns, editing it, whatever its kind opens to; one row, that
+  `editor.canOpen`; several open nothing). A single click still selects and zooms. That's the list
+  on its own; in the app's panel, picking one row selects its shape, so the panel shows that
+  shape's panel in the list's place (the list is gone before a double-click's second click) and
+  hands the keyboard to the canvas, where Return opens it.
 - **Going back.** A row's click is a step in Selection's history like any other change of the
   selection, so the back button in the shape's header (or Go › Back, ⌘[) brings the list back,
   with the view as it was before the zoom, as data-canvas's back button does.
@@ -2544,8 +2643,9 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
 - **Headless**, `ContentsState` (`editor.tableOfContents`) is all of it: `entries` (the rows, a tree),
   `scope`, `select(_:)`, `showAll()`, and the rows' hover: `hover(_:)` and `endHover(_:)` as the
   pointer moves onto a row and off it, and `isHovered(_:)` for whether a row shows as hovered. Tests
-  read a row's text, symbol and badge through `entry.label`, and its marks through `entry.marks`.
-  In debug builds, `rowsRedrawn` counts how often the list has asked a row for its view.
+  read a row's text, symbol and badge through `entry.label`, and its marks through `entry.marks`;
+  `open(_:)` is a row's primary action. In debug builds, `rowsRedrawn` counts how often the list
+  has asked a row for its view, and `rowsMade` how many rows it has made.
 
 ### Hosting
 
@@ -2880,9 +2980,9 @@ Paste send), shape [metadata](#metadata), and the `ShapeReferencing` [capability
 
 | | Does |
 |---|---|
-| ⌘C, Edit › Copy, Copy | Puts copies of the selection's copyable shapes on the pasteboard, back to front. The board doesn't change. |
-| ⌘X, Edit › Cut, Cut | Copies, then deletes what it copied, in one transaction. What can't be copied stays, and so does a [locked](#locking) shape, copied all the same (it shakes, as with Delete). |
-| ⌘V, Edit › Paste, Paste | Puts the copies on top of the board, with new ids, and selects them. |
+| ⌘C, Edit › Copy, Copy | Puts copies of the selection's copyable shapes on the pasteboard, back to front, with what the boards they own hold. The board doesn't change. |
+| ⌘X, Edit › Cut, Cut | Copies, then deletes what it copied whole, in one transaction. What can't be copied stays, and so does a shape whose board holds one, and a [locked](#locking) shape, copied all the same (it shakes, as with Delete). |
+| ⌘V, Edit › Paste, Paste | Puts the copies on top of the board, with new ids all the way down, and selects them. |
 
 - **Copies get new ids, and remember their originals.** Each pasted shape's metadata names the
   shape it was copied from: `record.copiedFrom`, which is `meta[CopiedFrom.self]?.shape`, and its
@@ -2906,11 +3006,29 @@ Paste send), shape [metadata](#metadata), and the `ShapeReferencing` [capability
   shape its board keeps aside, or one a paste can't read) is left out, rather than copied wrong.
 - **Shapes that only name shapes** ([`ShapeNaming`](#values-that-name-shapes), a mention) go through
   the same call, `record.remappingReferences`, which renames their names too: a copy names the
-  copies of the shapes copied with it, and goes on naming the rest. Clipboard needs nothing of its
-  own for them.
+  copies of the shapes copied with it, and goes on naming the rest. Across a tree of boards a paste
+  passes names through the whole tree's map (`remappingReferences(_:naming:in:)`): a note at the top
+  pasted with a subboard mentions the copy of a shape two boards down, and a note inside mentions the
+  copy of the subboard it's in, while bindings stay on their own board.
+- **Shapes that own boards** (`BoardOwning`) are copied with what they hold, all the way down:
+  the board a copied shape owns, the boards its shapes own, and so on, read with
+  `editor.contents(of:)`. On each board, the shapes that can be copied go, letting go of those left
+  out on that board, and a shape left out takes the boards under it. A shape of a kind that owns no
+  board is copied without whatever board a file keeps under its id. A paste gives every shape on
+  every board a new id, from one map, so shapes inside stay bound to each other and name each
+  other (an arrow on a subboard stays bound), and each copy, nested ones included, names its
+  original. Each owner goes in with its boards, re-keyed by its copy's id
+  (`transaction.insert(_:contents:)`, one commit); only its top-level copies are moved into place
+  and selected. The new ids make a new tree, so a subboard pasted onto its own board is a copy
+  inside itself, never a loop. Cut deletes only the shapes copied whole: one whose boards held
+  something that couldn't be copied stays, as an uncopyable shape does, with everything under it.
 - **The pasteboard** holds a small board: `BoardCodec`'s JSON, each kind and added property at its version, under the
   app's own type. So one window can paste what another copied, a paste into a newer app migrates as
-  opening a board does, and a kind the board doesn't install is left out of a paste. Anything else
+  opening a board does, and a kind the board doesn't install is left out of a paste, on any board,
+  and with it the boards under it. With boards under the copied shapes it's a whole file,
+  `CanvasFile`, at format 4, the boards under their owners' original ids; without, it's written
+  as it always was, so an app that doesn't know boards pastes it, and one that doesn't know format
+  4 pastes nothing. A pasted shape whose kind owns no board in this app gets none. Anything else
   on the pasteboard (text, an image from another app) is left alone for now. ⌘V, Edit › Paste and
   Paste are there only when something would paste, so otherwise ⌘V's key goes on. The pasteboard is
   read again only when it's changed. `ClipboardPlugin(pasteboard:)` takes the pasteboard, the
@@ -3016,7 +3134,8 @@ extension LockChip: ClickableAdornment {                // a click on the chip
 - **Everything refuses a locked shape**, since everything changes shapes through a transaction.
   A drag leaves it where it is and moves the rest of the selection (a click, even one that jitters
   under the drag threshold, doesn't count as a try); Delete, Cut and the eraser leave it and take
-  the rest; Return and a double-click don't edit it; it shows no handles; Arrange doesn't restack it;
+  the rest; Return and a double-click don't edit it (a kind that opens some other way, into its
+  board, still opens); it shows no handles; Arrange doesn't restack it;
   a menu item that edits it changes nothing. Each of those shakes it.
 - **What isn't a change still works.** It's selected, hovered, outlined, copied, listed and bound
   to (an arrow may start or end on it) as any other shape. An arrow bound to a shape that moves
@@ -3031,7 +3150,14 @@ extension LockChip: ClickableAdornment {                // a click on the chip
 - **The shake** is a password field's: side to side, 5 points at most, 3 times over 360 ms, dying
   away, a frame every 16 ms on `editor.scheduler`. A try while it plays (the eraser dragged across)
   doesn't start it over. `LockState` hears the tries (`didRefuseChanges`), and moves how the shape
-  is drawn, never the shape: `editor.setDrawingOffset(_:for:)`.
+  is drawn, never the shape: `editor.setDrawingOffset(_:for:)`. Every refused shape shakes, locked
+  or not: a shape whose board holds a locked shape isn't deleted either, so it's the one that shakes.
+- **Another board shown** has its own locks: `LockState` takes back the locked shapes it kept for
+  the board when it was left (a `BoardStash`, while the board's revision is unchanged), else finds
+  them again (one pass, about a millisecond at 10,000, which going back to a board shown lately
+  never pays; `boardsScannedForLocks`, debug builds, counts the passes), and what was under way on
+  the board left, its shakes and the locks showing open, stops there. A locked shape that owns a board is entered like any other:
+  entering isn't a change to it.
 - **The chip** is an 18-point disc with a lock, the dark of a title's pill, at the right end of the
   row just above the shape, ending at its right edge. Its order is 300, a state that comes and
   goes, so it's farthest out of what's at that end, and a title's pill at the other end stops 4
@@ -3051,7 +3177,9 @@ which doesn't read the document) asks. The core holds them where every change go
 
 - **Transactions.** A read-only shape that was in the document before the transaction isn't
   changed (`update`), restacked (`bringToFront`, `move(_:above:)`, ...), moved (`translate`) or
-  deleted by it. The change is dropped, the rest of the transaction stands, and once it's done
+  deleted by it; nor is a shape whose board, or a board under it, holds a read-only shape (as the
+  Finder won't trash a folder holding a locked file), since deleting it would take that shape too.
+  The change is dropped, the rest of the transaction stands, and once it's done
   services hear every shape it refused: `EditorService.didRefuseChanges(to:in:)`. A change that
   leaves the shape no longer read-only goes through, whatever else it changes (unlocking, tldraw's
   rule too), and so does one that makes it read-only. A shape the transaction put in isn't held
@@ -3345,8 +3473,9 @@ only when its shape does:
 
 `registry.mentionAppearance(of:)` is how a shape shows (`MentionAppearance`), and
 `registry.mentionResolution(of:lookup:)` what a mention of an id shows now (`MentionResolution`):
-`.live` with its appearance, `.missing` for no such shape on the board, or `.unavailable` for one
-kept aside or whose kind can't be mentioned, which shows as missing.
+`.live` with its appearance, `.missing` for no such shape, or `.unavailable` for one kept aside,
+whose kind can't be mentioned, or on a board the app can't show, which shows as missing. A shape on
+another board of the file is live ([across boards](#mentions-across-boards)).
 
 ### Mention text and its stored form
 
@@ -3383,7 +3512,8 @@ Ask @[Ship the beta](shape:0A1B2C3D-4E5F-4061-8293-A4B5C6D7E8F9) first
   the shape writes nothing: its pills show the name they hold, dashed, and undoing the deletion,
   which puts the shape back as it was, id and all ([Undo](#undo)), brings them back to life;
   redoing it, they're missing again. A copy renames the mentions of shapes copied along and keeps the rest
-  (a note pasted on another board mentions a shape that isn't there, which shows as missing), and
+  (a note pasted into another file mentions a shape that isn't there, which shows as missing;
+  pasted on another board of its own file, it names a shape that is, which shows live), and
   `canvas create` makes a note that mentions a shape that isn't there, with a warning.
 - **The migration.** A note's text became `MentionText` in its third step,
   `PropsMigration("text may mention shapes")`, which escapes what would now read as a mention
@@ -3509,7 +3639,8 @@ is the note, and the text is its editor.
 - **A double-click** on an editable note's pill lands in the text view the click opened, which
   follows it. On a read-only shape the canvas's face follows it (`goTo`). A missing pill's does
   nothing.
-- **The pointer** over a live pill hovers the shape it names; over a missing one, its own shape.
+- **The pointer** over a live pill hovers the shape it names, if it's on the board shown; over a
+  missing one, or one naming a shape on another board, its own shape.
 
 Faces are Selection's, so a plugin list with Mentions needs `SelectionPlugin()` (and so
 `KeyboardPlugin()`).
@@ -3584,6 +3715,258 @@ func textDidChange(_ notification: Notification) {
 A note's render and its editor lay the pills out alike: each pill's frame in the editor is the
 canvas's (StickyNotesTests' `noteEditorTests`), so nothing moves when editing starts.
 
+### Mentions across boards
+
+Shape ids are unique across a file ([Boards in a file](#boards-in-a-file)), so a mention names a
+shape on any board of it, and shows it as it's called now, wherever it is:
+
+- **Its pills are live.** `resolve(_:)` looks on the board shown, then in the file
+  (`editor.shape(inFile:)`); the canvas draws a pill through `context.shape(inFile:)`, the core's
+  lookup for a render that names shapes (read as the shape is drawn: a write to another board
+  redraws the canvas, so a name drawn is never stale), and `editor.mentionPills(of:)` alike. A
+  shape in no board of the file is missing, as `canvas create` warns. So is one on a board the app
+  can't show (`canShow`: its owner kept aside, of a kind that owns none, or not in the file), which
+  the file keeps without the app using it: `resolve` calls it `.unavailable`, it's drawn by the
+  name the text holds, dashed, it isn't followed, and `canvas create` warns about it too.
+- **Its name follows the shape**, whatever board is shown when it changes. A commit that reaches
+  other boards names what it touched there (`ChangeSet.elsewhere`: the boards a deletion took with
+  their owner, a paste brought, a write to a board that isn't shown, `transact(on:)`, or an undo
+  put back), and `MentionState` resolves those it tracks again, telling observers, bumping their
+  revisions, and naming the mentioners' rows. A rename made while the mentioning board wasn't shown
+  leaves that board's revision as it was, so on going back to it, after taking back its index
+  (a `BoardStash`), `MentionState` resolves again every shape its mentions name on other boards,
+  and the table of contents hands `rowsAffected` what changed elsewhere meanwhile, so the rows of
+  the notes that mention them are made again ([rows read from more than their
+  shape](#rows-read-from-more-than-their-shape)). Undoing a rename made on another board shows that
+  board first ([Undo](#undo)); on going back, the name is as it was.
+- **A board deleted with its owner** takes its shapes' names with it: their pills show the name
+  they hold, dashed, and undoing the deletion, which brings the boards back with every id, makes
+  them live again.
+- **Following one** goes there: a double-click on its pill (the canvas's face, or the text view's)
+  or Go to “Name” runs `editor.goTo`, which shows the shape's board and selects it there as one
+  step back (`showBoard(_:selecting:)`: Back returns to the board left, with what was selected
+  there), then brings it into view. Hovering one only outlines a shape on the board shown.
+- **A copy of a tree of boards** mentions the copies of the shapes copied with it, on any board of
+  the tree (Clipboard's paste passes names through the whole tree's map), and goes on naming the
+  rest, wherever they are.
+- **Moving by cut and paste breaks mentions from outside what moved.** Cut and paste is the only
+  way to move shapes to another board, and a paste gives everything new ids, what a cut took
+  included: what moved mentions the copies moved with it, but a mention from elsewhere in the file
+  of a shape that moved names the shape cut, and shows missing (by the name it holds) until undo
+  brings it back (CompositionTests' `mentionsBoardsTests`; [Not built yet](#not-built-yet)). On one
+  board it was so before boards.
+- **The index, the catalog and the picker are the board shown's**, as data-canvas's were: the `@`
+  picker lists what's on the board being edited (the nearest shapes and the matches), so a shape on
+  another board is mentioned by pasting a mention of it, or writing one (`canvas create`), not
+  picked ([Not built yet](#not-built-yet)). Each board's index is kept for going back to it. A
+  board entered for the first time has its mention text read on the way in (the rows and pills
+  need who mentions whom), and its catalog on the scheduler's next turn, once the board is on
+  screen, or at the first `@` if that comes sooner: entering a board doesn't wait for what only the
+  picker reads.
+
+MentionsTests' `boardsTests` hold these on pockets (and a mention of a shape on a board the app
+can't show); CompositionTests' `mentionsBoardsTests` on
+the shipped notes in a subboard (rows across switches, renames there and their undo, the subboard
+deleted, a locked note's pill double-clicked, a subboard copied with the notes inside it and beside
+it, one cut and pasted, and `canvas create` naming a note two boards down); `SubboardFileTests` a saved file whose
+notes mention each other two boards apart (`nested-mentions-across.v4.json`).
+
+## Boards
+
+A file holds a tree of boards: the root, and one for each shape of a kind that owns one (the core's
+`BoardOwning`; [Boards in a file](#boards-in-a-file)). Boards
+([`Sources/Boards`](../Sources/Boards)) is the horizontal that gets you around them, whatever kind
+owns them. It builds on Selection (opening), ContextMenus (Open), DetailPanel (the Open button),
+Keyboard (⌘↑) and Titles (what a board is called), and none of them learns what a board is.
+
+A board-owning kind opts in with one line, on its own registrar
+([OpensBoard.swift](../Sources/Boards/OpensBoard.swift)):
+
+```swift
+registrar.shape(SubboardDefinition()) { sub in                 // SubboardDefinition: BoardOwning
+    sub.title(pill: false)                                        // Titles names its board
+    sub.opensBoard(placeholder: "Untitled Subboard", systemImage: "rectangle.stack")
+}
+```
+
+or, from a bridge, `registrar.opensBoard(Pocket.self, placeholder:systemImage:)`. The sugar
+contributes to Boards' `BoardKinds` point (at most one per kind; its report line reads
+`board → subboard "Untitled Subboard"`) and brings, in the same call:
+
+- **Opening**: Selection's `opens("Open")`, which shows the shape's board
+  (`editor.showBoard(BoardID(owner:))`), so a double-click, Return, Enter, ⌘↓ and Go › Open all
+  enter it ([opening a shape](#selection)), and so does its row in the table of contents: Return
+  once the row is picked (in the app's panel, the canvas's Return, since picking a row shows the
+  shape's panel and gives the canvas the keyboard), and a double-click only where the list stays
+  put, not in the app's panel ([opening a row](#the-table-of-contents)).
+- **Open** first in its context menu (`BoardsMenuGroup`, order 0, as Finder's Open is). With several
+  selected it opens the first, in selection order.
+- **A Board tab** in its panel (`BoardTab`, order 50, a horizontal's feature tab) with an Open button,
+  `DetailCommandButton("Open", …, command: .openSelection)`, in a section `enabledWhileReadOnly()`,
+  so a locked shape's is enabled too.
+
+`BoardKinds.check` refuses a kind whose definition isn't `BoardOwning` (a bridge's form can't say so
+in its types), and a contribution for every kind: only a kind that owns boards has one to open. So
+a plugin list with `opensBoard` in it needs Selection, ContextMenus and DetailPanel installed, as a
+list with `note.checklist()` needs DetailPanel and ContextMenus.
+
+`BoardsPlugin` itself ([Boards.swift](../Sources/Boards/Boards.swift)) is small:
+
+```swift
+registrar.service { BoardCrumbs(editor: $0) }                   // the path, kept for BoardPath
+registrar.command(.enclosingBoard, shortcuts: [KeyChord(KeyChord.upArrow.key, .command)],
+                  isEnabled: { !$0.board.isRoot && $0.session == nil && $0.editingShapeID == nil }) { $0.goToEnclosingBoard() }
+```
+
+- **Going up.** ⌘↑ (and Go › Enclosing Board) runs `editor.goToEnclosingBoard()`:
+  the board above, with the shape whose board it left selected there. It's
+  `editor.goUp(to: board)` for the parent: any board above the one shown (on `boardPath`), with the
+  owner of the board below it on the path selected, as one step back
+  (`showBoard(_:selecting:)`), so ⌘[ comes back down. Off the root only, never mid-press, and not
+  while a shape is being edited, where ⌘↑ is the text's; on the root its key passes.
+- **Names.** `editor.name(of: board, root:)` is what a board is called: its owner's title (Titles;
+  a blank one is none), else its kind's placeholder, else the label of the tool that places its
+  kind, else the kind; `root` for the root (the file's name). `editor.symbol(of:)` is its kind's
+  symbol (`opensBoard`'s, else its tool's), nil for the root. Composition's table-of-contents
+  heading and the path both read them.
+- **In the app** (Composition and the app's window): the table of contents' header names the
+  board shown, with its symbol and a chevron up (`ShippedPlugins.contentsHeading(for:)`, the board
+  shown's crumb as a `ContentsHeading` with `up: .enclosingBoard`; nil, so "Board", on the root);
+  the path is over the canvas (`ShippedPlugins.boardPath(editor:rootName:)`, the root's crumb the
+  file's display name, `BoardViewState.fileName`); and the Go menu has Back (⌘[), Enclosing Board
+  (⌘↑) and Open (⌘↓), sent to the board's window controller wherever the keyboard is, and dimmed
+  while text has it, where the menu bar leaves those keys to the text (`MenuBar`: AppKit's menus
+  take a disabled item's key and beep), so they move its caret. The file opens on the board left
+  open, with each board's camera as it was left (`BoardViewMemory`; below).
+
+### The path
+
+`BoardPath(editor:rootName:)` is where you are, as data-canvas shows it: a small capsule of
+crumbs over the top middle of the canvas, root first, the board shown last, in a material pill 8
+points below the canvas's top edge (`BoardsStyle`). The host places it with
+`.overlay(alignment: .top)`; only the pill takes clicks. It shows nothing on the root.
+
+```
+        ╭─────────────────────────────────────────────╮
+        │  Plans  ›  …  ›  Kitchen  ›  **Pantry**     │
+        ╰─────────────────────────────────────────────╯
+```
+
+- The root's crumb is `rootName` ("Board" when that's empty); the others are `name(of:)`. The
+  board shown is bold and isn't a button. Each crumb is at most 180 points wide, truncated past it.
+- More than four crumbs fold the middle into "…", a menu of the boards it hides, root side first:
+  root › … › parent › current (`BoardCrumbs.layout(rootName:)`).
+- A crumb, or an item of "…", runs `goUp(to:)`: it shows that board and selects there the shape the
+  path came through, as data-canvas's crumbs do, one step back.
+- **It redraws only when the path does.** The view reads only `BoardCrumbs.crumbs`, which the
+  service makes again when another board is shown, and when a commit changes a board above the one
+  shown (they hold the owners whose titles name the crumbs: a file put in place, say), checking
+  each one's revision, so a commit on the board shown (a drag's every event) costs a look at the
+  path's revisions and redraws nothing. A crumb's title changing is the path changing.
+
+data-canvas's crumbs also open, on hover, an outline of the parent board's contents for hopping
+sideways; that's in [Not built yet](#not-built-yet).
+
+### Subboards
+
+Subboards ([`Sources/Subboards`](../Sources/Subboards)) is the vertical with a board inside: the
+`subboard` kind, a card that opens onto a board of its own. It's a whole kind in a handful of lines,
+because everything it does is a horizontal's
+([Subboards.swift](../Sources/Subboards/Subboards.swift)):
+
+```swift
+registrar.shape(SubboardDefinition()) { sub in                     // SubboardDefinition: BoardOwning
+    let place = sub.placement(size: Subboard.defaultSize) { Subboard() }
+    sub.tool(label: "Subboard", systemImage: "rectangle.stack", shortcut: "b", placing: place)
+    sub.title(pill: false)                                          // Titles keeps its name; the card draws it
+    sub.opensBoard(placeholder: "Untitled Subboard", systemImage: "rectangle.stack")
+    sub.contentsRow { _ in ContentsLabel("", placeholder: "Untitled Subboard", systemImage: "rectangle.stack") }
+    sub.details(header: { $sub in TitleHeader($sub, placeholder: "Untitled Subboard", systemImage: "rectangle.stack") }) {}
+}
+```
+
+(The row and the header are in files of their own, `SubboardRow.swift` and `SubboardHeader.swift`,
+as SwiftUI sugar is.)
+
+- **Its props are its frame**, 240 × 160 placed: `Properties<Subboard>(title: "Subboard") {
+  Property("frame", \.frame).required() }`. What it's called is the title Titles adds (`title`,
+  marked `x-canvas-owner` in its schema), and its board is the core's, kept under its id, so its
+  props hold neither; its schema is marked `x-canvas-board`. Placing one keeps no board: a board
+  with no shapes isn't kept.
+- **B places one** where the canvas is pressed, following the pointer until release, as every box
+  tool does: one undo step, "Add Subboard".
+- **The card** (`SubboardDefinition.render`, `SubboardStyle`, world units) is a white card with a
+  10-point radius, the canvas's shadow and a 1.5-point indigo border, on two thin plates showing 4
+  points below it, each narrower, all inside the frame, so its extent is its box and the minimap
+  draws its frame. A 32-point header band, tinted indigo, holds the `rectangle.stack` symbol and the
+  title, 15-point semibold on one line (`registry.title(of:)`), or "Untitled Subboard" dimmed. The
+  body shows what its board holds: its preview, the core's rough picture of the board
+  (`context.drawBoardPreview(ofBoardOwnedBy:in:)`, fitted 12 points inside the body; every shape a
+  silhouette in one muted gray, as the minimap draws, a subboard inside just its rectangle); until
+  that's built, a few frames, and for an empty board, it says how many shapes, from
+  `context.shapeCount(inBoardOwnedBy:)`: "Empty", "1 shape", "12 shapes" (the shapes on its own
+  board, not those further down). A card too small for the plates is the whole frame. The count is
+  read as the card is drawn, and a preview is of one revision of its board, so neither is ever
+  stale: a write to the board while another is shown (`transact(on:)`) redraws the canvas as any
+  commit does.
+- **Opening it** is Boards': a double-click, Return, Enter or ⌘↓ with it the only one selected, Open
+  first in its menu, the Open button in its panel's Board tab, and Return once its row is picked (a
+  double-click on the row only where the list stays put, not in the app's panel). ⌘↑ comes back with it selected, and ⌘[ retraces. Its panel's header renames it, a run of
+  typing one undo step; its row is its symbol and its title, or "Untitled Subboard".
+- **Deleting it** deletes its board and every board under it, as one step, like any shape's;
+  undoing it brings them all back with every id.
+
+It ships after the task card (the toolbar's Subboard, B), with Boards after Titles, and its props
+have a fixture (`Fixtures/kinds/subboard.v0.json`) as every shipped kind's do; a whole file of
+boards nested two deep, with notes and a bound arrow on each, is
+`Fixtures/files/nested-mentions.v4.json`, read and written back byte for byte (written once notes'
+text could hold mentions, though its notes mention nothing); `nested.v4.json` is the same file from
+before sticky notes held mentions, read with each board's notes brought up to date; and
+`nested-mentions-across.v4.json` is the same file with a note on the root and one two boards down
+mentioning each other, read, shown live opened on either board, and written back byte for byte
+([Mentions across boards](#mentions-across-boards)).
+
+### The core's part: board previews
+
+A shape that owns a board can show what's on it: `context.drawBoardPreview(ofBoardOwnedBy: id, in:
+rect)`, in its render, draws a rough picture of that board into `rect` (world units), fitted (the
+board's proportions kept, centered), and returns true; or draws nothing and returns false, while the
+picture isn't built yet, for a board with nothing to show, and for a rect under 16 view points
+either way on screen (nothing to see, so a board zoomed out over many owners asks for none), and
+the render draws something else (the subboard card, its count):
+
+```swift
+if !context.drawBoardPreview(ofBoardOwnedBy: shape.id, in: SubboardStyle.preview(in: body)) {
+    drawCaption(context.shapeCount(inBoardOwnedBy: shape.id), in: body)
+}
+```
+
+The picture is the minimap's kind ([Silhouettes.swift](../Sources/Canvas/Rendering/Silhouettes.swift),
+the core's, host API, which the minimap draws with too): every shape on the board as a silhouette of
+its geometry (its outline filled, or stroked when it's open; its bounds when it's a few pixels
+across), all in one muted gray, and nothing of what a shape draws, no text and no colors, so a
+subboard inside is its rectangle, and a shape costs the same whatever its kind. It's the core's
+`BoardPreviews` ([BoardPreviews.swift](../Sources/Canvas/Rendering/BoardPreviews.swift), host API,
+`editor.boardPreviews`):
+
+- **Kept by board and revision.** A preview is of the board as one revision of the file had it
+  (`file.revision(of:)`), a mask at most 256 pixels on a side. Asked for once the board has changed,
+  by an edit or an undo (a revision never comes back), it's dropped, never drawn, and built again.
+  The 64 drawn last are kept, the one drawn longest ago going first, but never one the frame before
+  drew: with more owners in view than that, those past the number show their count until there's
+  room, instead of each frame building one by evicting another, and asking for another frame,
+  forever.
+- **Built a chunk at a time.** A board asked for waits its turn, those asked for longest ago first.
+  At the start of each frame the editor builds for 2 ms (`frameBudget`), a chunk of shapes at a time
+  (the shapes' geometry, from a `ShapeContext` with no index, then their silhouettes), as many as
+  fit at what shapes have cost so far, and at least one chunk (16 shapes); while any wait, it asks
+  for another frame (`editor.scheduler`). One finished at the start of a frame is drawn in it. One
+  whose board changed before it was built is dropped unbuilt, and so is one no shape asked for in
+  the frame just drawn (`endFrame()`: its owner scrolled away, or the board was left; showing
+  another board drops them all), so a frame builds only for what's in view. So ten subboards of
+  10,000 shapes in view fill in over sixty to a hundred frames, each one a frame's worth
+  (`./build.sh bench`).
+
 ## The command line
 
 `canvas` is the app's command line, for agents first and people too: it runs commands on the
@@ -3593,7 +3976,7 @@ app's to change.
 
 ```
 canvas status                           whether the app is running: its version, protocol and boards
-canvas boards                           the open boards: each one's id, name, file, and which is in front
+canvas boards                           the open boards: each one's id, name, file, which is in front, and what it shows
 canvas kinds [<kind>] [--schema]        the kinds of shape, what places each, and its properties
 canvas create <kind> [--at <x,y>] [--size <width,height>] [--set <name=value>]... [--props <json>] [--board <board>]
 canvas help [<command>]                 what a command takes (--format json: what the app says, schemas too)
@@ -3605,7 +3988,7 @@ Four modules, one job each:
 |---|---|---|
 | CanvasRPC | wire | What the app and `canvas` say to each other: JSON-RPC 2.0, a message a line, over a Unix-domain socket (`~/Library/Application Support/InfiniteCanvas/canvas.sock`, or `CANVAS_SOCKET`) only this user can reach; what a command is (`CommandSpec`, its params a JSON Schema) and how its params are spelled as arguments; the client, and the listener. Knows no canvas, plugin or AppKit. |
 | CanvasCLI | cli | `canvas`: reads its own options, asks the app what it runs (`describe`), reads the rest as one of those commands, runs it, and prints what comes back. Knows only the wire. |
-| CanvasUI's `CommandServer` | ui | The app's end: it listens, describes the app, and answers each request on the main actor. `status` and `boards` are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front. |
+| CanvasUI's `CommandServer` | ui | The app's end: it listens, describes the app, and answers each request on the main actor. `status` and `boards` are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows. |
 | Automation | horizontal | The commands plugins give the command line (`AutomationCommands`), and its own two, `create` and `kinds`. The app hands them to its server through Composition (`ShippedPlugins.commands(in:)`). |
 
 **The commands are the app's, so `canvas` never changes for one.** It knows no command but `help`:
@@ -3680,12 +4063,25 @@ other), and inserts it. A shape past its schema's bounds is made, with a warning
 any; a kind no tool places (an arrow, a line) starts from the properties it's given. What a shape's
 props are bound to (an arrow's ends, through `ShapeReferencing`) must be on its board: a shape bound
 to one that isn't would stay bound to it, and nothing would let go, so `create` refuses it and says
-which (`A tag can't be bound to shapes that aren't on this board: …`, hint: bind it only to shapes on
-the board the command works on).
+which (`A tag can't be bound to shapes that aren't on this board: … isn't in the file`, hint: bind
+it only to shapes on the board the command works on, the one its file's window shows).
 That's what the shape is bound to (`record.boundShapes(in:)`). What it only names
 ([`ShapeNaming`](#values-that-name-shapes), a mention) may be gone, as it may once the shape it
-names is deleted: the shape is made, and a warning for each property that names shapes not on the
-board says which (`lead names shapes that aren't on this board: …; they show as missing.`).
+names is deleted: the shape is made, and a warning for each property that names shapes that are on no
+board of the file says which (`lead names shapes that aren't in the file: …; they show as missing.`):
+a name of a shape on another board names a shape that's there, unless the app can't show that board
+(`lead names shapes on boards this app can't show: …; they show as missing.`). A binding to a shape on another
+board is refused too, as on another board (reason `shape_on_another_board`; one to a shape in no
+board is `unknown_shape`).
+
+**A file's boards.** A file can hold boards inside its shapes ([Boards in a file](#boards-in-a-file));
+a command works on the one its window shows, `editor.board`, as the window does: `document`,
+`transact` and the undo step its change makes are that board's. `canvas boards` says which, for
+each open file: `shows`, the board shown (`"root"`, or the id of the shape that owns it, as a
+`BoardID` is written), `showsPath`, the boards from the root down to it, and `shapes`, how many it
+holds; `canvas status` names the front file's as `frontmostShows`. Names for them (a board's
+owner's title) come once the command line reads shapes, and no command addresses another board of
+a file yet ([Not built yet](#not-built-yet)).
 
 The app that holds the socket's lock (`canvas.sock.lock`, beside it) is the one listening: a second
 copy of the app gives up and runs without the command line, and a socket that one that crashed left
@@ -3839,7 +4235,8 @@ description to say what it now holds. `SchemaSync`, the plugin's service, does i
   with `setSchema`, so the card fits it; the write is the sync's own, and starts none.
 - **Undo.** Typing in either side, or renaming the card, is one step a run ("Change Description",
   "Change JSON", "Change Schema"), and the sync's write is one of its own ("Update Schema",
-  "Update Description"), taken with the pair it leaves in step (`undoHistory.group`). Undo and redo
+  "Update Description"), taken with the pair it leaves in step (which it takes as it hears its own
+  write, inside the step). Undo and redo
   are no edit: their commit is marked `ChangeSet.restoredStep`, so they start no sync, and a card
   whose sides they change drops its timer and any call out (the answer would be to what the card
   no longer says), its status idle. The pair at the last sync goes back and forth with the steps
@@ -3850,6 +4247,15 @@ description to say what it now holds. `SchemaSync`, the plugin's service, does i
   synced, so a description typed since is still ahead. Only the cards a step brings back or
   changes the sides of get their pair back: another card keeps what its sync learned since (a
   `NO_CHANGE` that landed while another shape moved), which undoing the move doesn't change.
+- **Boards.** It keeps every card of the file, whichever board it's on (ids are unique across the
+  file), so a card's sync goes on while another board is shown: a commit that comes as its board is
+  left (the keyboard leaving the panel), its timer, its call out. The answer is written on the
+  card's board without showing it (`editor.transact(on:)`), as a step made there, so undoing it,
+  from anywhere, shows the card's board first, then puts back the pair from before the answer as on
+  any board. A card whose board goes with its owner (a subboard deleted) is dropped with its call,
+  and one that comes with a board (a paste, a deletion undone, `ChangeSet.elsewhere`) is seen, or
+  gets back what it last synced from the step. A whole file put in place takes every card afresh,
+  whichever board it shows after (`BoardChange.isFileReplaced`), as a board read again does.
 - **What it asks** is `SchemaPrompts`: the two system prompts (raw string literals, each its text
   byte for byte, which [`scripts/schema-prompts/evals.py`](../scripts/schema-prompts) reads out of
   the Swift, so the quick evals test exactly what ships), the user message (tagged blocks, each
@@ -3930,12 +4336,13 @@ it, the core or a horizontal.
 
 | Capability | For | Used by |
 |---|---|---|
-| `Editable` | Edited in place: an editing placement, or Selection's double-click and Return. Supplies an `NSView` laid over the shape; writes go through `EditContext.update`. | StickyNotes |
+| `Editable` | Edited in place: an editing placement, or opening it (Selection's double-click, Return and ⌘↓), unless its kind has an opener of its own. Supplies an `NSView` laid over the shape; writes go through `EditContext.update`. | StickyNotes |
 | `CustomTranslation` | Moving by its own rules instead of by its frame, when a `TranslatingSession` moves it (dragging the selection, a shape just placed). When a drag starts, `beginTranslation` gets the shape, every shape moving with it and the starting transaction (committed on its own, before the first move), and returns a `ShapeTranslation`: a closure run on every drag event with the pointer's delta, after the moving boxes have moved. A kind without a frame needs this to be movable at all. | Arrows (alone, bound ends slide on their shapes; with a shape they're bound to, they keep every binding); Polylines (every point by the delta) |
 | `HandleProviding` (Selection's) | Draggable handles on the only selected shape. The select tool finds, draws and hit-tests them; `pressHandle` returns `.drag` or `.consumed`, and `dragSession` does the dragging. | Arrows |
 | `BrushHitTesting` (Selection's) | Whether the marquee touches it, when the brush overlaps its bounds without containing them. Default: `ShapeGeometry.isHit(byBrush:)`. | Arrows (against the visible arc) |
 | `DerivedProps` | Props that hold something following from the rest, which the kind's setters keep in step. A shape made from properties written somewhere else, `registry.shape(_:properties:)` (the command line's `create`), goes through `derive(_:)` first, so it's as its setters would have left it; a board read (a shape is as saved), a paste, and what a person does don't. | Schemas (a card's height, from its schema; `--size` still wins) |
 | `PaintOrderAnchored` | Painted just above another shape, whatever its place in the document. The anchor follows from the shape's own props and the document's order, since the paint order is kept until one of those changes. | Arrows (above the shapes they join) |
+| `BoardOwning` | Each shape of the kind owns a board, a subboard, which the file keeps under the shape's id, never in its props (`CanvasFile`, `BoardID(owner:)`). Nothing to implement: deleting a shape takes its board and every board under it, a copy takes what it holds, a file saves every board ([format 4](#boards-on-disk)), and `editor.showBoard` shows one; Boards' `x.opensBoard(placeholder:systemImage:)` opens it. Its schema is marked `x-canvas-board`. [Boards in a file](#boards-in-a-file). | [Subboards](#subboards)' `Subboard`; CanvasTesting's `Pocket` |
 | `ShapeReferencing` | Props bound to other shapes: every kind whose props are adopts it, or it stays bound to a shape once it's gone. `remappingReferences(of:_:in:)` passes each through a map: bound to the shape it gives, or, for nil, let go of where it's drawn. Deleting a shape asks it of every shape bound to it (after `willDelete` handlers, before anything's removed), and copying asks it of each copy (`record.remappingReferences(_:in:)`). It returns nil when it can't let go of a shape it can't find: a deletion leaves it as it was, and a copy leaves it out. These are bindings, which must be on the board; a name that may outlive its shape (a mention) is a value instead, [`ShapeNaming`](#values-that-name-shapes). | Arrows (an end lets go where it's drawn, keeping the curve; a copy stays bound to the copies of its shapes); CanvasTesting's `Tag` |
 
 The rule of thumb: behavior intrinsic to a kind is a capability; behavior anyone can add, to any
@@ -3965,7 +4372,10 @@ double-click and a placement say nothing, and the view chooses, as it always has
   A transaction commits once, if anything changed, and bumps `editor.revision`. What it did goes
   with it, record by record: its `ChangeSet` names the shapes it added, changed and removed, and
   of those changed, the ones it only moved (`moveBox`, as a drag and `translate` do, and nothing
-  else), and says whether the stack changed. Transactions don't nest. A frame that isn't finite never gets in: such an insert or update is dropped, since a board
+  else), says whether the stack changed, and the boards it took out of the file or brought in
+  (`boardsRemoved`, `boardsAdded`: [Boards in a file](#the-editor-and-the-file)), or changed while another was shown (`boardsChanged`:
+  Delete Hidden Shapes, undoing it, and `transact(on:)`; `boardsReached` is all three), with the
+  shapes it touched on them (`elsewhere`). Transactions don't nest. A frame that isn't finite never gets in: such an insert or update is dropped, since a board
   must always save. An added value the shape's kind can't hold is dropped too, and an insert fills
   in the defaults of what its kind opts into. A read-only shape (a locked one,
   `registrar.readOnlyShapes`) keeps whatever a transaction does to it, unless the change leaves it
@@ -4033,7 +4443,9 @@ double-click and a placement say nothing, and the view chooses, as it always has
   its size, hosts the editing view over its shape, hands AppKit the menu for a secondary click, and draws the editor, all through the editor's `@_spi(Host)`
   API. It also hosts the minimap, in its bottom-left corner (`showsMinimap`; View › Show Minimap):
   every shape as a silhouette of its geometry, the part of the board the canvas shows outlined,
-  and the selection in the accent color. It moves the camera as tldraw's minimap does, and knows
+  and the selection in the accent color. It shows the board shown: on another board it starts a
+  picture afresh (never over the old board's), and back on a board whose picture it kept, it shows
+  that one at once. It moves the camera as tldraw's minimap does, and knows
   no shape or plugin. Only the app and tests can import CanvasUI, and no plugin can see the host
   API, so no plugin can reach around the editor.
 - **The views the canvas hosts have the pointer where they are.** Over the minimap or the editing
@@ -4046,6 +4458,202 @@ double-click and a placement say nothing, and the view chooses, as it always has
   `editor.pointerOverCanvas` is nil there (a note being edited hides its port dots while the
   pointer is over its text). The canvas leaves their cursor alone meanwhile. Once editing ends,
   where the editing view was is the canvas again, for the next move.
+
+## Boards in a file
+
+A file holds a tree of boards: the root, and a board for each shape of a kind that owns one, a
+subboard. Owning a board is a capability, `BoardOwning`, with nothing to implement: the core holds
+the boards, saves them, takes them out and brings them in with their owners, and shows one at a
+time;
+[Boards](#boards) gets you around them, whatever kind owns them; and [Subboards](#subboards) is the
+shipped kind, a card that opens onto its board.
+
+- **The file is a value.** `CanvasFile` is the root board (`root`, a `CanvasDocument`) and
+  `children`, a board for each owner, keyed by the owner's `ShapeID`. A board is named by a
+  `BoardID`: `.root`, or `BoardID(owner:)`, written "root" or the owner's id. Keying a board by its
+  owner makes the tree a function: a board's parent is whichever board holds its owner
+  (`parent(of:)`, `path(to:)`, root first), so a board has one owner, deleting the owner can take
+  its board, and a copy (a new id) has a board of its own; nothing done in the app can make a loop
+  or give two shapes one board, and only a file edited by hand can have them, which reading keeps
+  and reports ([Boards on disk](#boards-on-disk)). Shape ids are unique across the file
+  (`board(containing:)`, `record(_:)`). A board with no shapes isn't kept, so placing an owner
+  makes nothing but the shape. Walks over the tree (`path(to:)`, `subtree(ownedBy:)`) are loops that
+  stop at a board they've met.
+- **Each board has a revision** (`file.revision(of:)`) that changes with its shapes and never comes
+  back (a file put in place keeps it only for a board whose shapes are as they were). What's kept
+  about a board (its index, its rows, its issues, its locks, its preview) is taken back only while
+  its revision is the one it was kept at, so whatever writes a board, shown or not (an undo, a
+  model's answer, someday an agent or sync), nothing stale is used.
+- **The board is the owner's, never its props'.** A kind's props don't name its board, and its
+  schema is marked `x-canvas-board`.
+
+The smallest kind that owns boards is CanvasTesting's pocket, which core and horizontal tests nest
+boards with ([Pockets.swift](../Tests/CanvasTesting/Pockets.swift)):
+
+```swift
+public struct Pocket: BoxShapeProps {
+    public static let kind: ShapeKind = "pocket"
+    public static let properties = Properties<Pocket> { Property("frame", \.frame).required() }
+    public var frame: CGRect
+}
+
+struct PocketDefinition {}
+
+extension PocketDefinition: ShapeDefinition {
+    func render(_ shape: ShapeRecord<Pocket>, in context: RenderContext) {
+        context.fillWithShadow(CGPath(rect: shape.frame, transform: nil), .systemGray)
+    }
+}
+
+extension PocketDefinition: BoardOwning {}          // each pocket owns a board
+```
+
+That's all: a pocket deleted takes its board and every board under it, a pocket copied takes what
+it holds, the file saves them, and `editor.showBoard(BoardID(owner: pocket))` shows one. A
+double-click, Return and ⌘↓ opening it, Open in its menu and panel, ⌘↑ back up and a name on the
+path come from one more line, Boards' `x.opensBoard(placeholder:systemImage:)`.
+
+### The editor and the file
+
+One editor holds a whole file and shows one board of it, so every host that has `let editor` (a
+window, the command line's server, a test's harness) keeps it. The editor holds every board
+(`editor.file`) and shows one (`editor.board`; the root until another is shown, below):
+`document` is that board, what every tool, drawing, hit test and service works on, so read what's
+shown from `document`, and never list shapes from `file`. `editor.contents(of: board)` is any
+board's shapes, and `editor.owner(of:)` the shape that owns it, wherever it is.
+
+A transaction is on the board shown (`transaction.board`) and never holds the file: it reads it
+through the editor, so a commit, a drag's every event, costs what it changed, not the file. Two
+things reach past it, both in the one commit:
+
+- **Deleting a shape takes the board it owns, and every board under that** (the cascade), whatever
+  its kind, since the file keeps a board by its owner's id (`ChangeSet.boardsRemoved`), with no
+  handlers run inside them, as nothing outside a board is bound to a shape in it. It's one undo
+  step, and undoing it puts back every board under the shape, every id as it was. An owner whose
+  board, or a board under it, holds a read-only shape (a locked one) isn't deleted, and shakes
+  ([read-only shapes](#the-cores-part-read-only-shapes)).
+- **A shape can go in with its boards**, `transaction.insert(record, contents:)`, its board under
+  its id and those below under theirs (a paste; `boardsAdded`): a board it doesn't reach, or whose
+  owner can't go in (a frame that isn't finite, deleted in the same transaction), is left out.
+  `transaction.contents(ofBoardOwnedBy:)` is a board as the transaction leaves it.
+
+Shape ids are unique across the file: an insert's must be on no board (unless the transaction
+deleted it from its own). An undo step holds the boards a commit takes out or brings in, whole, as
+they were before the step and are after it ([Undo](#undo)).
+
+The host's whole-file operations are `replaceFile(with:showing:)`, `replaceDocument(with:)` (a file
+of that board alone) and `discardKeptAside(shapes:boards:)`. `replaceFile` is opening and
+reverting: it cancels a running session, ends editing and camera motion, fills in defaults on every
+board, gives every board a new revision (but one whose shapes are as they were: a reload after a
+change on disk keeps the previews of boards it didn't change) and clears the undo history, so it
+doesn't edit the file, nor does what the session, services or an editing view commit as they end,
+which goes to the file replaced. It stays on the board shown if the new file can show it, else goes
+to the nearest board above it, or the root, unless `showing:` names one it can show, as a switch
+does (and `CanvasEditor(registry:file:showing:)` opens on one). `discardKeptAside` is Delete Hidden
+Shapes: shapes kept aside wherever they are, with their boards, and the boards kept; one undo step,
+"Delete Hidden Shapes", whatever boards it took them from, whose undo puts back the file as it was.
+
+### Showing a board
+
+`editor.showBoard(board)` shows another board of the file: it becomes `document`, and
+`editor.boardPath` is the boards from the root down to it. It isn't an edit, nor an undo step (it
+closes the step under way), and it can't happen mid-press: it returns false while a session runs,
+and for a board `canShow` refuses (one whose owners, from the root down, aren't all in the file,
+each of a `BoardOwning` kind and none kept aside; the board itself may have no shapes). In order:
+
+1. Services hear `boardWillChange(from:to:)` while the old board is still shown: save what's its (a
+   draft, state kept per board).
+2. Editing ends, so an editing view that saves as it closes saves on its own board; the default
+   tool comes back (an armed tool doesn't carry over; a tool that wasn't in the middle of something
+   isn't cancelled); camera motion stops, and the old board keeps the camera it was headed to.
+3. The new board takes back the geometry, paint order, bounds and damage the editor worked out for
+   it, if its revision hasn't changed since (for the 8 boards shown last, those on the path kept
+   longest), and otherwise works them out afresh; `revision` bumps once; and the camera is the one
+   the board was left with, else the one the host remembers (`rememberedCameras`, host API, from
+   the view memory; `boardCameras` is every board's, to save), else, on a first visit, its shapes
+   fitted into view no closer than 100%, else `Camera()`.
+4. Services hear `boardDidChange(_ change: BoardChange)`: `from`, `to`, `leftCamera`,
+   `isFileReplaced` (a whole file was put in place as it went, `replaceFile`: what a service keeps
+   across the file by shape id it takes afresh, since what it keeps by a board's revision is no
+   longer taken back anyway), and `changes`, the switch as a commit's change set (every shape of
+   one board gone, every shape of the other come, the stack changed; a shape on both, which only a
+   file put in place can have, changed), worked out only if something reads it.
+5. The host hears `editorBoardDidChange`, and redraws.
+
+**Warm state.** By default a service hears the switch as `documentDidChange(change.changes)`, which
+is right for state kept per shape, at the cost of both boards' shapes. A service that keeps state
+per board overrides it with a `BoardStash<State>` (kept in `boardWillChange`, taken in
+`boardDidChange`, given back only while the board's revision is unchanged, at most 8 boards, the
+path's longest), and reads no other service there, since services hear it one by one. A service
+that keeps nothing per shape overrides it with nothing. In the shipped plugins, the table of
+contents, Validation and Locking keep each board's rows, issues and locked shapes in a stash (the
+table of contents drops its stash when a file put in place shows another board and some row reads
+other shapes, since that switch doesn't say what the file changed on the boards kept);
+Selection makes the board left a step back and lets go of the press, hover and buttons; Boards
+makes the path again; Adornments drops its labels (made again only for the shapes a frame draws,
+and a label kept would miss an open lock that Locking let go of); the schema cards' sync keeps
+every card of the file by id (and takes them afresh when `isFileReplaced`); Ports lets go of the
+dots it showed; the panel commits a number being typed in `boardWillChange`, and arrows stop aiming
+there; and the context menus, the keyboard, the clipboard and the language model keep nothing per
+shape. So no shipped service works out the change set (CompositionTests' BoardsTests hold them to
+it), and going back to a board shown lately costs the editor, the canvas and the services a frame
+(`./build.sh bench`). Not the panel's list: with the table of contents showing, a switch replaces
+every row of its `List`, which AppKit sizes one by one, some 120 ms at 1,000 rows and a second at
+10,000, however warm the board ([Not built yet](#not-built-yet)).
+
+Damage marks name the index they were taken on (`DamageMark`, `editor.isCurrent`), so a picture kept
+for a board (the minimap keeps 8) is current only while the editor kept that board's index, and a
+mark from another board's is damage everywhere. Of a kind's definition only its render reads another
+board: `context.shapeCount(inBoardOwnedBy:)` and `context.drawBoardPreview(ofBoardOwnedBy:in:)`
+([previews](#the-cores-part-board-previews)), and `context.shape(inFile:)`, a shape anywhere in the
+file on a board the editor can show (a mention's pill names one, [across
+boards](#mentions-across-boards); `editor.shape(inFile:)` outside a render), on `RenderContext`
+alone, so geometry and hit tests never depend on another board. The core names the commands
+`.openSelection` and `.enclosingBoard` for plugins to claim: Selection claims `.openSelection` (⌘↓;
+[opening a shape](#selection)), [Boards](#boards) claims `.enclosingBoard` (⌘↑), and going back
+crosses boards.
+
+### Boards that aren't shown
+
+A commit says what it did beyond the board it's on: `ChangeSet.elsewhere` is every shape of the
+boards it took or brought, and those it changed on a board it kept (and, for a file put in place
+over the board shown, the shapes its other boards don't have as they were). No shape there is the
+board shown's, so what a service keeps of the board shown needn't follow them; what reads shapes
+anywhere in the file does (a row showing the name of a shape on another board, gone with the board
+its owner took).
+
+Two things edit a board that isn't shown: Delete Hidden Shapes (`discardKeptAside`, [the editor
+and the file](#the-editor-and-the-file)), which takes shapes kept aside from whatever boards hold
+them, and `editor.transact(on: board, "Name") { … }`, for what lands after its board was left (the schema card's sync, whose answer comes back seconds later). On
+the board shown it's `transact`; on another, the transaction's `document` is that board's shapes as
+the file has them, and its commit changes that board in the file without showing it, as an undo
+step of its own made on that board, so undoing it from anywhere shows that board first. A step open
+on the board shown (a press, a field typed into) stays open and comes after it. Services hear it as
+a commit that changed that board (`boardsChanged`, its shapes in `elsewhere`), the board shown as it
+was, and the canvas redraws, so an owner's card on the board shown shows what it holds now. Nothing
+shows what it refused (a read-only shape isn't shown to shake), and a transaction that would take
+the board shown, or one above it, commits nothing. It returns nil for a board the editor can't
+show. Every other change to a board is made while it's shown, or with a shape on the board shown
+(a deletion takes the boards under it, a paste brings them).
+
+### Boards across the plugins
+
+Every plugin that reads `document` is local to the board shown with no code of its own: drawing,
+hit testing, Select All, the minimap, arrows, Reordering. What the others do with boards is with
+each of them:
+
+| Where | Boards |
+|---|---|
+| [Selection](#selection) | Opening a shape (`ShapeOpening`); Back crosses boards, and showing another board is a step; nothing is selected on arrival; `showBoard(_:selecting:)`; `goTo` goes to a shape on any board. |
+| [Boards](#boards) | Opening a kind's boards, ⌘↑, a board's name and symbol, and the path over the canvas. |
+| [The table of contents](#whats-listed-and-selecting) | Lists the board shown, keeps each board's rows, and takes its header from its placer (the board's crumb, in the app). A row may read shapes on other boards ([`elsewhere`](#rows-read-from-more-than-their-shape)). |
+| [Validation](#a-horizontal-plugin) | Checks the board shown, keeping each board's issues; a board never shown isn't checked. |
+| [Locking](#locking) | A shape whose board holds a locked shape isn't deleted; a locked owner is entered as any other. |
+| [Mentions](#mentions-across-boards) | A mention names a shape on any board, live and followed there (`goTo`); indexes the board shown, keeping each board's index; the `@` picker lists the board shown's shapes. |
+| [The clipboard](#the-clipboard) | Copies what a shape holds, all the way down, and pastes the tree with new ids. |
+| [Undo](#undo) | One history per file; a step holds every board it reached, and undoing one made on another board shows that board first. |
+| [Boards on disk](#boards-on-disk) | Format 4 saves every board, in one flat map; the camera on each board, and the board left open, are remembered per file on this Mac. |
+| [The command line](#the-command-line) | Commands work on the board a file's window shows. |
 
 ## Undo
 
@@ -4096,13 +4704,15 @@ the table of contents, validation, locks), but it isn't a transaction: nothing's
 shakes, and it's below the read-only rule. A locked shape goes back as it was too: undoing Lock
 unlocks it, and a locked arrow that let go of a deleted shape binds again. So no service may
 transact in `documentDidChange` (it would be a precondition failure while undo applies). The camera
-never moves, as in tldraw.
+never moves, as in tldraw (a board shown for a step made on it has the camera it was left with).
 
 **What else goes back.** A service whose state belongs with the steps adopts `UndoParticipant`: its
 snapshot is taken as a step opens and as it closes, and undoing restores the first, redoing the
 second. Selection's is the selection, as tldraw's: undoing Delete brings the shapes back selected,
 undoing a move leaves them selected, undoing a paste selects what was before it. The restore is an
-ordinary change of the selection, so Go › Back returns to what was selected before the undo.
+ordinary change of the selection, so Go › Back returns to what was selected before the undo; on a
+board undo has just shown for its step, the switch and the restore are one step back, as
+`showBoard(_:selecting:)` makes them, so Go › Back returns to the board Undo was pressed on.
 A service that acts on edits tells a step put back from an edit by its change set's `restoredStep`,
 and follows none: the schema card's sync keeps, as a participant, the pair of sides each card last
 synced, and starts no call for an undo ([`SchemaSync`](#keeping-the-description-and-the-schema-in-step-schemasync)).
@@ -4126,17 +4736,46 @@ save closes the open step (`breakStep`) before NSDocument takes the change count
 undo goes back to exactly what was saved, and a step that comes to nothing as it closes leaves the
 board unedited; a periodic autosave during a press waits for its release, and is scheduled again
 then ([Boards on disk](#boards-on-disk)). A new document, a board opened or reverted
-(`replaceDocument`) has nothing to undo.
+(`replaceFile`) has nothing to undo.
 
-**Once a file holds several boards**, a step will say which board it's on, and undoing one from
-another board shows it first: `DocumentDelta` is the one type that holds records before and after
-(it'll carry the board, and whole boards added or removed), and `CanvasEditor.apply(_:restoring:)`
-the one place a step is applied. Agents and sync can reuse it, with who made the change.
+**Boards.** A file has one history, whichever of its boards is shown. A step is made on the board
+shown as it opens (`DocumentDelta.board`): showing another board closes it, and isn't a step itself,
+so entering and leaving boards are never undone. Undoing or redoing a step made on another board
+shows that board first (`showBoard`, as any switch: services hear it, and the camera is the one the
+board was left with), then applies the step there and gives participants back what they kept, so
+the selection comes back on its own board, and one Go › Back returns to the board Undo was pressed on
+(the switch and the selection given back are one step).
+That board can always be shown: steps come back last in, first out, and every change to the file is
+a step's, so the file is as the step left it; `canUndo` and `canRedo` say no only while a press runs,
+as a switch can't happen then. What a service commits as a board is left (the panel commits a number
+being typed) is a step of its own on the board left, newer than the one Undo was going for: that
+Undo stops once the step's board is shown, and the next undoes the commit, on its board. A Redo
+from there shows the step's board too, and stops there with nothing left to redo: the commit is an
+edit like any other, which leaves nothing undone to redo. A commit on a board that isn't shown
+(`transact(on:)`: a sync's answer landing after its board was left) is a step of its own made on
+that board, pushed at once, under whatever step is open on the board shown: undoing it from anywhere
+shows its board, like any step made there.
+
+**A step is all it did to the file.** Besides its board's records, it holds every other board it
+reached, whole, as it was before the step and is after it (`DocumentDelta.boards`, copies that cost
+nothing, since a board is a value): the boards a deletion took with the shapes that owned them,
+every board under them; those a paste brought with its shapes (`insert(_:contents:)`); and those
+Delete Hidden Shapes deleted from, with the entries of the file it took that didn't read as boards
+(`unreadableBoards`). So undoing Delete of a shape that owns a board brings the shape back with
+everything under it, every id as it was, in one step, and redo takes it all again; undoing a paste
+takes its boards out with its shapes, leaving no board without its owner, and redo puts back the
+same ids. Services hear the boards in the change set (`boardsAdded`, `boardsRemoved`,
+`boardsChanged`), and each board the step changes gets a new revision, so nothing kept about one
+(the editor's index, the table of contents' rows, validation's issues, the minimap's picture) is
+taken for it: entering a board undo put back works it out afresh. `DocumentDelta` is the one type
+that holds records before and after (`CanvasFile.apply` puts one in place), and
+`CanvasEditor.apply(_:restoring:)` the one place a step is applied; agents and sync can reuse them,
+with who made the change.
 
 ## Boards on disk
 
-A board is a file (`.canvasboard`; `.board` is Freeform's), one per board, opened and autosaved in place by `BoardDocument`
-(CanvasUI, an `NSDocument`). `BoardCodec` (Canvas) reads and writes it: JSON, sorted and
+A board is a file (`.canvasboard`; `.board` is Freeform's), with every board inside it, opened and
+autosaved in place by `BoardDocument` (CanvasUI, an `NSDocument`). `BoardCodec` (Canvas) reads and writes it: JSON, sorted and
 pretty-printed, so a board diffs cleanly.
 
 ```json
@@ -4159,7 +4798,14 @@ Formats 1 and 2 give each kind's version in `schema`; format 3 in `versions`, be
 property's (`kinds` and `added`). A shape's `props` are its kind's own properties; the values of
 the properties plugins add to its kind are beside them, in `added`, by key. What a shape doesn't
 have is left out. The camera, the selection and whether the details and the minimap show aren't
-in it: they're remembered per file on this Mac, so panning never marks a board edited.
+in it: they're remembered per file on this Mac, so panning never marks a board edited. So are the
+camera on each of a file's boards and the board left open (`BoardViewMemory.View`'s `board` and
+`boards`, read with `decodeIfPresent`, so a view remembered before files had boards is the root's;
+saved for the boards the file can still show: the one shown and those above it, then those shown
+most lately, 50 in all, in `recent`'s order, the one shown last first, which `editor.boardsLeft`
+and the last session's `recent` give): the file opens on that board, if it can still show
+it, as a file put in place there (`replaceFile(with:showing:)`), so it isn't a step back, nor an
+edit; each board has its camera as it was left (`rememberedCameras`).
 
 **Edited, and saved.** A board is edited as a step begins, and counted back as a step comes to
 nothing or is undone ([Undo](#undo)): `BoardDocument` makes NSDocument's own change-count calls as
@@ -4233,6 +4879,44 @@ The rules:
   edit one. The registry's report shows each kind's version once it has one (`shape sticky-note
   v1`), and each property's.
 
+**A file holds every board.** A file with boards besides the root (`CanvasFile`, the boards shapes
+of a [`BoardOwning`](#boards-in-a-file) kind own) is format 4: the root's shapes stay in `shapes`, and
+every other board is in `boards`, under its owner's id, as an object with its own `shapes` (records
+exactly as the root's, stacking keys per board, `versions` covering them all; any other member a
+board comes to have needs a newer format, as a record's new members did, since this app would save
+the board without it). The map is flat
+whatever the boards' depth, so a file is no deeper than a board is and every walk over it is a loop;
+a board with no shapes isn't written, so a file whose other boards have emptied goes back to 3, 2
+or 1. `BoardCodec.encode(file)` writes it (`encode(document)` writes a file of that board alone),
+and `LoadedBoard.file` is what reading gives (`document` is its root): `BoardDocument` saves
+`editor.file` and opens a file with `replaceFile`. An older app refuses format 4 rather than open
+the root and save the other boards away.
+
+```json
+{
+  "boards" : {
+    "A1B2…" : { "shapes" : [ { "id" : "B0B0…", "index" : "a0", "kind" : "subboard", "props" : { … } } ] },
+    "B0B0…" : { "shapes" : [ { "id" : "…", "index" : "a0", "kind" : "sticky-note", "props" : { … } } ] }
+  },
+  "format" : 4,
+  "shapes" : [ { "added" : { "title" : "Plan" }, "id" : "A1B2…", "index" : "a0", "kind" : "subboard", "props" : { … } } ],
+  "versions" : { "added" : { "title" : 0 }, "kinds" : { "sticky-note" : 2, "subboard" : 0 } }
+}
+```
+
+Reading goes through the boards in tree order with one set of ids: the root, then the boards it
+reaches, breadth first, each board's in its shapes' order, then those it doesn't, by key. So a
+repeated id is the first holder's, with the board it owns, and a later holder gets a new id and
+owns nothing. A board the app can't show is still read, kept and written back, and
+`LoadReport.keptBoards` says why (`KeptBoard.Reason`): its owner is kept aside (`ownerKeptAside`:
+an app without the kind keeps every board of it), its owner's kind owns none (`ownerNotABoard`), it's
+inside a board kept for either (`insideKeptBoard`), going up from it never reaches the root
+(`unreachable`: an owner missing from the file, or owners holding each other's boards; kept, never
+repaired), or the entry isn't a board or its key isn't an id as the app writes one (`unreadable`,
+kept verbatim in `CanvasFile.unreadableBoards` until a board a shape comes to own takes its key;
+an entry that can't be kept as it was, a number JSON can't hold in it, stops the file opening).
+Shapes and values kept aside say which board they're on (`KeptShape.board`, `KeptValue.board`).
+
 **Opening never drops a shape.** What the app can't use is kept aside (`AnyShapeRecord.isOpaque`),
 in its place in the stack, and saved back as it was, with its own version (`v`): a kind no plugin
 installs, a newer version of a kind, or props that don't read (or don't migrate, or have a frame
@@ -4252,9 +4936,12 @@ It repairs ids that repeat or are missing, and stacking keys that don't rise, an
 metadata, or added or kept values, that aren't an object by key (a kept one with its version):
 those can't be anything's (`droppedMeta`, `droppedValues`), and the report says so.
 `LoadedBoard.report` says what was kept aside (`keptAside`, the shapes; `keptValues`, the values on
-shapes the app can use) and what was repaired; the window shows it, offering to delete the shapes
-kept aside but never to discard a value. Repairs mark the board edited, so saving keeps them. Only
-a file that isn't a board, or comes from a newer app, refuses to open (`BoardReadError`).
+shapes the app can use; `keptBoards`, the boards) and what was repaired; the window shows it,
+offering to delete the shapes kept aside and the boards kept (`BoardDocument.deleteHiddenShapes`,
+through `editor.discardKeptAside`, one undo step) but never to discard a value. Repairs mark the
+board edited, so saving keeps them. Only a file that isn't a board, or comes from a newer app,
+refuses to open (`BoardReadError`), or one whose `boards` holds an entry that can't be kept as it
+was.
 
 ## The registry
 
@@ -4313,11 +5000,12 @@ and a test checks it registers.
 ```
 core                 tool hand · command undo · command redo
 keyboard             service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo
-selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
+selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection
 arrows               shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay
 sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · channel note-link
 ellipses             shape ellipse · tool ellipse · shortcut O → tool ellipse
 task-cards           shape task-card v3 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · property title → task-card · ShapeTitles → task-card · ContentsTitles → task-card · ports task-link → task-card · mentionable → task-card · channel task-link
+subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard
 schemas              service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
 adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
@@ -4327,6 +5015,7 @@ table-of-contents    service ContentsState
 checklists           property checklist · adornment ChecklistChip → every shape
 titles               property title · adornment TitlePill → every shape
 mentions             service MentionState · overlay MentionFrames · ShapeFaces
+board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
 validation-details   DetailStatuses in Issues
 validation-contents  ContentsMarks
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
@@ -4413,6 +5102,26 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   target (`ShapeReferencing`) and naming another. `Citation` is the leaf, and `Citation.visits`
   counts how often any is walked or renamed, so a test can show something never looks at names (a
   delete).
+- **Boards in a file** without a real kind: `PocketsPlugin` (CanvasTesting) registers `Pocket`, a box
+  whose definition is `BoardOwning`, with no tool. It's apart from `FixturesPlugin`, so the reports
+  tests pin don't change. `EditorHarness(plugins:file:)` starts an editor on a file of several
+  boards, `h.file` is its file, and `h.enter(owner)` shows the board a shape owns; `openingPockets()`
+  (in SelectionTests, TableOfContentsTests and CompositionTests) makes pockets open onto their
+  boards (`registrar.opens(Pocket.self, …)`), for a double-click, Return or a row. BoardsTests
+  open pockets from a bridge (`registrar.opensBoard(Pocket.self, …)`) and a local `Drawer` kind
+  through its own sugar, and host `BoardPath` in an `NSHostingView` in an unshown window to click
+  its crumbs. SwiftUI draws a borderless button's title itself, so an `NSButton` there has no
+  `title`: a test reads the crumbs' titles headlessly (`editor.boardCrumbs`, `layout(rootName:)`)
+  and clicks the buttons by position, leading first. The "…" menu fills only while it's open,
+  on screen, so that test runs with `TEST_UI_MENUS=1`. SubboardsTests hold the real kind to it
+  all, with Boards, Titles, the panel and the table of contents installed: the card's pixels (the
+  title or its placeholder, the count, no pill), and its header typed into beside a `CanvasView`
+  in an unshown window. In the app's window, CompositionTests' `NestedWindow` opens a file of
+  subboards (`NestedFile`, `Fixtures/files/nested-mentions.v4.json`) in a `BoardDocument`'s own
+  window, as the app wires it: `crumbs` are the path's buttons over the canvas, `hit(_:)` what a
+  click would land on, and `goItems()` the app's menus with Go's items sent to its controller (an
+  unshown window isn't the key window); `SubboardFileTests` hold saving, reopening on the board
+  left open, the view memory, revert and Delete Hidden Shapes to files of subboards.
 - **Read-only shapes** without Locking: `FreezingPlugin(log:)` (CanvasTesting) declares `Frozen`, a
   flag every kind opts into, makes frozen shapes read-only, and logs the refusals services hear in
   its `RefusalLog`; `editor.freeze(ids)` sets it. CanvasTests, SelectionTests and DetailPanelTests
@@ -4508,7 +5217,10 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   asked a row for its view (`contents.rowsRedrawn`), so HoverTests holds a hover over a list of
   150 rows (a list of 200 or more logs `tableReentrancyWarning` as it first shows) to the one or
   two rows it changes. AffectedRowTests holds a drag of a shape other rows read to redrawing its
-  own row alone, and a rename of it to redrawing theirs too.
+  own row alone, and a rename of it to redrawing theirs too. `contents.rowsMade` counts the rows it
+  has made, so a test holds going back to a board to making none. The path counts its redraws the
+  same way (`boardCrumbs.pathRedrawn`), and how often its crumbs are made (`boardCrumbs.remade`), so
+  BoardsTests holds commits on the board shown to redrawing none, and to making none.
 - A test target is `Tests/<Name>Tests` with a `main.swift` that calls `runTests([...])`. Every
   `Suite` must be listed there (`test.sh` checks). `<M>Tests` may depend only on M, what M
   depends on, and the test-support and ui modules.
@@ -4521,17 +5233,35 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   `registry.fillingDefaults(document)`. CanvasTests read broken and scrambled boards (a seeded fuzz test), and CompositionTests'
   BoardDocumentTests open, save, revert and host boards with `BoardDocument.configuration` set as
   the app sets it. `./build.sh bench` builds BenchmarkTests in release and holds saving, opening
-  (Mentions' index and catalog, built as a board opens, among it), a hover and a drag frame
-  (titles' pills, checklists' tallies, locks and mentions' pills in view), a hover on a note's
-  port dot and a drag from it, a hover onto a title's pill and onto a mention's, reading the table
-  of contents' rows after a drag event, an insert, a delete and a restack, a keystroke in the `@`
-  picker (the `@` that opens it too), a rename of a task mentioned 100 times against one mentioned
-  by none, the minimap's first picture (a frame at a time) and a drag frame with it, and undoing
-  and redoing a drag (with its frame), a tenth of the board's move and deletion and every shape's
-  deletion (the steps alone), to their budgets on generated boards of 1,000 and 10,000 shapes
-  (three notes in ten mention a task and a shape that isn't there), and reports the first frame
-  and the next zoomed out to fit the board (at 10,000, as far as the 10% zoom goes); `./test.sh`
-  runs it small, in debug, and only reports.
+  (Mentions' index and catalog, built as a board opens, among it), validation's first read (every
+  shape, checked against its kind's schema too) and its reads after a drag event and after moving
+  every shape, a hover and a drag frame (titles' pills, checklists' tallies, locks and mentions'
+  pills in view), a hover on a note's port dot and a drag from it, a hover onto a title's pill and
+  onto a mention's, reading the table of contents' rows after a drag event, an insert, a delete and
+  a restack, a keystroke in the `@` picker (the `@` that opens it too), a rename of a task mentioned
+  100 times against one mentioned by none, the minimap's first picture (a frame at a time) and a
+  drag frame with it, ten subboards' previews filling in (the longest frame, and how many), and
+  undoing and redoing a drag (with its frame), a tenth of the board's move and deletion and every
+  shape's deletion (the steps alone), to their budgets on generated boards of 1,000 and 10,000
+  shapes (`generatedBoard`; three notes in ten mention a task and a shape that isn't there), and
+  reports the first frame and the next zoomed out to fit the board (at 10,000, as far as the 10%
+  zoom goes). Across boards, on files of them (`generatedFile(root:children:depth:)`, the shipped
+  subboards): opening one whose shapes are spread over nested boards (a tenth on the root, a tenth
+  in each of nine subboards, the last a chain ten deep) in the time a board of as many takes;
+  entering a subboard of 10,000 shapes cold, with ⌘↓ (the switch and the camera's first fit, with
+  Mentions' index of who mentions whom, a frame of notes with pills, the rows and validation's
+  first read, together, in 250 ms; the panel's list left out; Mentions' catalog, which only the
+  `@` picker reads, on the next turn, within its 50 ms), and going back up with ⌘↑ (and with the root
+  listed whole after it, the selection let go of) and
+  down again warm (the same four, in a frame); a hover, a drag and the rows after it on a root of
+  1,000 beside a subboard of 10,000, and inside a subboard of 10,000 while the root holds as many,
+  each as on one board, with the drag event's input alone (in 1 ms, and at most 3× what it costs on a file of that
+  board alone, since drawing would hide a commit's upkeep of the whole file); the minimap's picture of the board entered, a frame at a time; and deleting
+  a subboard whose boards hold 10,000 shapes (the commit and every board under it, in a frame), and
+  undoing and redoing that (with its frame). It only reports the inspector's list replaced on a
+  switch between boards of 10,000 (a `List` in an unshown window, against a 50 ms target), and a
+  chain of 1,000 boards written, read, walked (`path(to:)`) and shown. `./test.sh` runs it small, in
+  debug, and only reports.
 - **Undo.** `h.editor.undo()` and `redo()` headlessly, with `undoHistory.undoName` for the step's
   name, and `h.editor.undoHistory.seal()` where a user would click or type elsewhere between panel
   writes. A step's round trip is best checked with `==` on the document, and, for a board, its
@@ -4584,6 +5314,12 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   and the board's, to closing it; a deletion and a rename undone to pills as they were; and going
   to a mention to no step, with Back beside Undo. CommandLineTests `create`
   notes that mention shapes, on the board or not.
+- **Board previews.** CanvasTests' PreviewTests drive a `BoardPreviews` of their own over a
+  `CanvasFile` (`preview(of:in:)`, `build(in:until:)`: a deadline already past builds one chunk,
+  one far off everything; `waiting`, `keptKeys`, and the mask's pixels), and an editor's through
+  `renderBitmap`: the first frame asks, and with `editor.boardPreviews.frameBudget` lengthened, the
+  next (after `h.wait(0)`, the frame it asked for) draws them. SubboardsTests hold the card's
+  pixels the same way.
 - **Arrow behavior is pinned to the proof of concept.** CompositionTests replays 30 arrow
   scenarios through `CanvasView` with real events and compares where every arrow ends up, byte for
   byte, with a transcript recorded from the POC. It also compares nine renders pixel for pixel:
@@ -4621,6 +5357,11 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
 | `toolbarItems` with a decorative `kbd` | A key registered with the Keyboard horizontal (`shortcut:`), collision-checked, that the canvas answers and the tooltip names. |
 | `defineChannel({ id, color, ... })`, `registerHostChannel(type, channel)` | A `Channel` type (`id`, `color`) declared by the plugin that owns its meaning, `registrar.channel(C.self)`, and `x.ports(C.self, sides:role:)` on each kind that takes it (`role:` is a port's `end`), collision-checked; an arrow keeps its channel as an added property, `ChannelProperty` ([Ports](#ports)). |
 | `EdgeMidpointDots`, the port drag, and `canBind` refusing what a channel doesn't take | Ports' dots, Selection's canvas buttons, whose drag goes to the one connector (ArrowPorts: `editor.beginArrow`), and `registrar.arrowBindingRule`, Arrows' canBind, for arrows already drawn. Released on nothing, nothing is drawn. |
+| A subboard's `targetPageId`: a tldraw page per subboard, all in one store, the tree worked out from which page holds which subboard | A `BoardOwning` kind, whose board the file keeps under the shape's id (`CanvasFile`, `BoardID(owner:)`), never in its props, so the tree follows from where shapes are ([Boards in a file](#boards-in-a-file)). |
+| The page lifecycle's guards: duplicates, cycles, cascade delete, and the orphan sweep with its recovery shapes | Not needed: keyed by its owner, a board can't have two owners or be its own ancestor, deleting a shape takes every board under it in the same commit (one undo step), and a copy has a new id, so a board of its own. Only a file edited by hand breaks the tree, and reading keeps what it can't show, reports it and writes it back (`LoadReport.keptBoards`). |
+| `editor.setCurrentPage(targetPageId)`: entering and exiting | `editor.showBoard`, through Selection's opener (`x.opensBoard`: a double-click, Return, ⌘↓, the row, Open), and ⌘↑ (`goToEnclosingBoard`); never an undo step, and each board keeps its camera. |
+| `SubboardBreadcrumbs` | `BoardPath` (Boards), over the top middle of the canvas, hidden on the root; a crumb shows its board and selects there the shape the path came through. |
+| `generateBoardPreview` on the card | `context.drawBoardPreview(ofBoardOwnedBy:in:)`: every shape a silhouette in one gray, as the minimap draws, built a chunk a frame. |
 | `install*Lifecycle(editor)` side effects | `registrar.willDelete` inside transactions; `EditorService` for per-editor state. |
 | `module.json` + ESLint DAG + barrel `index.ts` | `Package.swift` with layers + `build.sh audit` + the compiler; `public` is the barrel. |
 | `plugins.config.ts` | `ShippedPlugins.plugins(pasteboard:model:)` in Composition. |
@@ -4639,15 +5380,19 @@ Each of these adds to the design without changing what plugins are written again
   lock); opening a board that isn't open; putting `canvas` on the PATH from the app (as editors
   install theirs); and other clients of the same socket (an MCP server, say, from the same
   command descriptions).
+- **Addressing a board of a file from the command line**: a command works on the board a file's
+  window shows (`canvas boards` says which); naming another (`--board 2/<owner id>`, or a path of
+  titles), and listing a file's boards with their owners' names, are still to come.
 - **An arrow end bound to a shape that isn't there** (deleted outside a transaction, or kept aside)
   is drawn at the origin; a binding should keep a point to fall back on.
 - **More of undo**: showing a change that's out of view as it's undone (the camera never moves
-  today); a limit to how many steps a board keeps (there's none); NSDocument's rollback of an
+  today); a limit to how many steps a file keeps (there's none); NSDocument's rollback of an
   autosave it can't finish, given up with the undo manager; text's undo falling through to the
   board's once the text has nothing left to undo (it's forgotten when the text loses the keyboard);
-  a step per board once a file holds several; agents' changes as steps of their own, with who
-  made them; and a change that lands on its own during a press (a model's answer the schema card's
-  sync writes) kept out of the press's step, which it joins today.
+  agents' changes as steps of their own, with who made them; and a change that lands on its own
+  during a press (a model's answer the schema card's sync writes) kept out of the press's step,
+  which it joins today on the board shown (one that lands on another board is a step of its own,
+  `transact(on:)`).
 - **More document hooks** (before/after create and change), and **document-scoped services** for
   several windows on one board.
 - **More of schema cards**: keeping the last sync in the card's metadata, so any card saved out of
@@ -4686,17 +5431,23 @@ Each of these adds to the design without changing what plugins are written again
   once; and keys the user remaps.
 - **More of the table of contents**: nested shapes (a shape's container as the default
   `nestedUnder`), with each row's disclosure remembered (every nested row starts collapsed today);
-  dragging rows to restack their shapes; per-kind zoom targets
-  and click actions (data-canvas's `getZoomConfig` and `onClick`); Return editing the selected
-  shape; arrow rows that name the shapes they join; and rows all of one height, which AppKit
+  dragging rows to restack their shapes; per-kind zoom targets (data-canvas's `getZoomConfig`);
+  a double-click on a row opening its shape in the app's panel, which shows the picked shape's
+  panel in the list's place before the second click; arrow rows that name the shapes they join; and rows all of one height, which AppKit
   never measures from inside a measurement, so it would stop logging its reentrancy warning
   ([What's listed](#whats-listed-and-selecting)): a list of our own, since a SwiftUI `List`'s rows
-  size themselves.
+  size themselves. The same would make a switch of board cheap with the panel showing the list:
+  today every row is replaced (its id is the board's), some 120 ms going into or out of a board of
+  1,000 shapes and a second at 10,000 (40 s or more the first time 10,000 show), where
+  `./build.sh bench` reports a 50 ms target it doesn't hold, and the budgets for entering a board
+  leave the list out.
 - **More of validation**: listing just the shapes with issues in the table of contents (a filter
   beside Show All), and going to the next one from anywhere (Xcode's ⌘'), for a board too big to
   look down for dots; an issue in the Issues tab going to the row it's about, which the panel would
-  mark (below); and rules that depend on the clock (a task overdue), which the engine, caching by
-  revision, can't keep up to date today.
+  mark (below); rules that depend on the clock (a task overdue), which the engine, caching by
+  revision, can't keep up to date today; and checking boards that haven't been shown: the engine
+  checks the board shown, so the issues on a board inside a shape (schema warnings included)
+  appear only once you enter it, and nothing on the shape that owns it sums them up.
 - **More of the clipboard**: pasting what other apps put on the pasteboard (text as a note, an
   image) and giving them a text or image version of copied shapes; pasting at the pointer
   (tldraw's preference, and ⌥); and Duplicate (⌘D) and ⌥-dragging a copy, on the same copying.
@@ -4718,6 +5469,22 @@ Each of these adds to the design without changing what plugins are written again
   channel; reading connections as data (what a note links to, for rules and agents); and, once
   ports draw every arrow a board needs, removing the arrow tool (the POC's transcript drives it
   today).
+- **More of boards**: moving shapes into a subboard, or up out of one (Move to Subboard), keeping
+  their ids, with a check that no shape goes into its own board; arrows across boards (an end bound
+  to a shape on another board: bindings stay on their board, and a copy lets go of the rest); the
+  selection remembered per board, so going back into a board selects what was selected there
+  (nothing is selected on arrival, and only Back returns to it); data-canvas's sideways hover menus
+  on the path's crumbs (the parent board's contents, as an outline, to hop into a sibling board);
+  renaming a board from inside it (the path's last crumb, or the table of contents' header), which
+  writes its owner's title on the board above, with `transact(on:)`; a mark on a shape's row (and
+  its card) for issues on the boards inside it, and validation and Find across a file's boards (the
+  engine checks the board shown: More of validation, above); two windows on different boards of one
+  file (one editor holds the file and shows one board, so a window is a file's: a store of boards,
+  each window's editor showing one, would keep every host's `let editor`); Open in a menu for
+  several shapes opening each, or only showing for one (a per-shape `when` can't see the
+  selection's size, so it opens the first); a line in the Board tab saying what the board holds; a
+  preview in another color, or sharper than 256 pixels when a card is shown large; and a board
+  addressed from outside the app (the command line's, above).
 - **More of properties**: a board's shapes checked against their schemas as it opens, in its report
   (the command line's `create` warns about what it makes, and `canvas kinds --schema` hands the
   schemas out); a projection of
@@ -4729,13 +5496,19 @@ Each of these adds to the design without changing what plugins are written again
 - **More of checking shapes against their schemas**: `unevaluatedProperties`, `dependentSchemas`
   and references to other documents, which no schema here writes; and checking only the parts of a
   shape its schema bounds, for the first read of a large board (10,000 shapes take about 30 ms).
-- **More of mentions**: mention text in the detail panel (a field for a task card's notes, a
-  panel text view shared with schema cards), in task cards' notes and checklist items, and on the
-  canvas where they're drawn; a text restricted to some kinds among the shipped ones (what may
-  block a task); a shape's backlinks ("Mentioned in"); validation of mentions that are missing or
-  outside their scope; mentions of shapes on other boards; the command line reading and listing
-  what can be mentioned; more kinds mentionable (through bridges); and making a shape from the
-  picker.
+- **More of mentions**: mention text in the detail panel (a field for a task card's notes, a panel
+  text view shared with schema cards), in task cards' notes and checklist items, and on the canvas
+  where they're drawn; a text restricted to some kinds among the shipped ones (what may block a
+  task); a shape's backlinks ("Mentioned in"); validation of mentions that are missing or outside
+  their scope; picking a shape on another board of the file from the `@` picker (it lists the board
+  shown's, as data-canvas's did; a mention of one, pasted or written, is live and followed there,
+  and the whole file's catalog would need a place of its own beside each board's index); a subboard
+  mentionable (a board by its name, going to it by entering it); moving shapes to another board
+  without breaking the mentions of them from outside what moves (a paste of what the last cut took
+  keeping its ids, or renaming the file's mentions of them to the copies), and a move that isn't a
+  cut and paste; the command line reading and
+  listing what can be mentioned; more kinds mentionable (through bridges); and making a shape from
+  the picker.
 - **More of the detail panel**: editing several selected shapes at once (it shows "N Shapes"
   today); every-shape sections over the record (there are every-box ones over the frame, and those
   over an added property), and every-box overrides such as an aspect lock;

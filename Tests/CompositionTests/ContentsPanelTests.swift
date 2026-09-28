@@ -135,6 +135,17 @@ extension NSTableView {
         w.window.spin { w.rows == 6 }
         expect(w.backButton == nil)
     },
+    test("in the panel, picking one row takes the list away and gives the canvas the keyboard, so Return opens its shape there") {
+        let w = try WelcomeWindow()
+        w.window.spin { w.rows == 6 }
+        w.window.makeFirstResponder(try require(w.contents))
+        w.window.settle()
+        w.window.press(String(UnicodeScalar(UInt16(NSDownArrowFunctionKey))!), code: 125, modifiers: [.numericPad, .function])
+        let note = try require(w.editor.selection, "↓ picks the first row")
+        w.window.spin { w.contents == nil && w.canvasHasKeyboard }     // the note's panel; the row's own Return can't be pressed
+        w.window.pressReturn()
+        w.window.spin { w.editor.editingShapeID == note }
+    },
     test("Escape in the list gives the keyboard back to the canvas, where tool shortcuts work again") {
         let w = try WelcomeWindow()
         w.window.spin { w.rows == 6 }

@@ -24,9 +24,9 @@ import ValidationDetails
     test("the shipped plugin list registers without conflicts") {
         _ = try ShippedPlugins.registry(model: ScriptedLanguageModel())
     },
-    test("the toolbar is Select V, Hand H, Arrow A, Note N, Ellipse O, Task T, Schema S, Rectangle R, Line L, Eraser E") {
+    test("the toolbar is Select V, Hand H, Arrow A, Note N, Ellipse O, Task T, Subboard B, Schema S, Rectangle R, Line L, Eraser E") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
-        expectEqual(registry.tools.map { ShippedPlugins.help(for: $0, in: registry) }, ["Select (V)", "Hand (H)", "Arrow (A)", "Note (N)", "Ellipse (O)", "Task (T)", "Schema (S)", "Rectangle (R)", "Line (L)", "Eraser (E)"])
+        expectEqual(registry.tools.map { ShippedPlugins.help(for: $0, in: registry) }, ["Select (V)", "Hand (H)", "Arrow (A)", "Note (N)", "Ellipse (O)", "Task (T)", "Subboard (B)", "Schema (S)", "Rectangle (R)", "Line (L)", "Eraser (E)"])
     },
     test("a plugin that needs the key asks for Settings with the action the app's menu item sends") {
         expectEqual(AnthropicSettingsView.showSettingsAction, BoardMenus.showSettings)
@@ -43,11 +43,12 @@ import ValidationDetails
         expectEqual(try ShippedPlugins.registry(model: ScriptedLanguageModel()).report, """
         core                 tool hand · command undo · command redo
         keyboard             service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo
-        selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
+        selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection
         arrows               shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay
         sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · channel note-link
         ellipses             shape ellipse · tool ellipse · shortcut O → tool ellipse
         task-cards           shape task-card v3 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · property title → task-card · ShapeTitles → task-card · ContentsTitles → task-card · ports task-link → task-card · mentionable → task-card · channel task-link
+        subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard
         schemas              service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link
         validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
         adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
@@ -57,6 +58,7 @@ import ValidationDetails
         checklists           property checklist · adornment ChecklistChip → every shape
         titles               property title · adornment TitlePill → every shape
         mentions             service MentionState · overlay MentionFrames · ShapeFaces
+        board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
         validation-details   DetailStatuses in Issues
         validation-contents  ContentsMarks
         clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
@@ -79,11 +81,11 @@ import ValidationDetails
         let end = try require(guide.range(of: "\n```", range: start..<guide.endIndex)).lowerBound
         expectEqual(String(guide[start..<end]), try ShippedPlugins.registry(model: ScriptedLanguageModel()).report)
     },
-    test("every placed kind has a panel: a note its Checklist and Arrange (and Issues, empty), a task and a schema their own tabs too, other boxes Arrange, an arrow only its header") {
+    test("every placed kind has a panel: a note its Checklist and Arrange (and Issues, empty), a task, a schema and a subboard their own tabs too, other boxes Arrange, an arrow only its header") {
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
         let state = try require(h.editor.detailPanel)
         var panels: [String] = []
-        for (shortcut, x) in [("o", 100.0), ("r", 400), ("a", 700), ("n", 1000), ("t", 1400), ("s", 1800)] {
+        for (shortcut, x) in [("o", 100.0), ("r", 400), ("a", 700), ("n", 1000), ("t", 1400), ("s", 1800), ("b", 2200)] {
             h.key(shortcut)
             h.press(at: CGPoint(x: x, y: 100))
             h.drag(to: CGPoint(x: x + 150, y: 300))
@@ -94,7 +96,7 @@ import ValidationDetails
         // A note's and a task's headers rename them: an untitled note's shows the placeholder. A
         // note placed is empty, which is a warning, so it has Issues until it's written in.
         expectEqual(panels, ["Ellipse: Arrange", "Rectangle: Arrange", "Arrow: ", "(Note): Checklist, Arrange, Issues",
-                             "New Task: Task, Checklist, Style, Arrange", "(Untitled): Schema, Arrange"])
+                             "New Task: Task, Checklist, Style, Arrange", "(Untitled): Schema, Arrange", "(Untitled Subboard): Board, Arrange"])
     },
     test("a long title's pill stays clear of the checklist chip: Adornments lays out both") {
         // A note with its checklist (the chip, on its top-right corner), its long title (the pill,

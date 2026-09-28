@@ -258,6 +258,10 @@ public final class CanvasView: NSView {
         cursor(editor.cursor).set()
     }
 
+    public func editorBoardDidChange(_ editor: CanvasEditor) {
+        minimap?.boardDidChange()
+    }
+
     public func editorEditingDidChange(_ editor: CanvasEditor) {
         if let old = editingView {
             window?.makeFirstResponder(self)

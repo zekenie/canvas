@@ -82,7 +82,11 @@ final class ShapeRow {
 /// Per editor (so per window): what the table of contents lists, and each shape's row, made again
 /// only when that shape changes. What a commit changed is all a read after it redoes: the rows of
 /// the shapes its change set names, and where those nest, and the rows and marks of the shapes
-/// whose rows and marks it may change though it doesn't change them (`affected`).
+/// whose rows and marks it may change though it doesn't change them (`affected`). It lists the
+/// board shown; the rows and the listing of every row of the boards shown last are kept for going
+/// back to them, and taken back while those boards are as they were left (`BoardStash`). What
+/// changed on other boards meanwhile is handed to `affected` on going back (as `ChangeSet.elsewhere`),
+/// so a row that reads a shape on another board that was renamed or deleted since is made again.
 @MainActor
 @Observable
 public final class ContentsState {
@@ -90,6 +94,16 @@ public final class ContentsState {
     private struct Pin {
         let scope: [ShapeID]?
         let selectionRevision: Int
+    }
+
+    /// What's kept of a board that isn't shown: its rows, the listing of all of them, which rows to
+    /// make again and whose marks to read again, and the editor's revision as it was left.
+    private struct Kept {
+        let rows: [ShapeID: ShapeRow]
+        let remakes: Set<ShapeID>
+        let remarks: Set<ShapeID>
+        let board: ContentsListing?
+        let revision: Int
     }
 
     /// How a kind's shapes get their rows.
@@ -134,11 +148,26 @@ public final class ContentsState {
     /// changes (`affected`).
     @ObservationIgnored private let rowAffected: [@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>]
     @ObservationIgnored private let markAffected: [@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>]
+    /// The boards shown last, as they were left.
+    @ObservationIgnored private var kept = BoardStash<Kept>()
+    /// While boards are kept and some rows or marks read more than their shapes: the editor's
+    /// revision as each shape was last touched on the board shown or elsewhere since the board kept
+    /// longest was left. Going back to a board, those touched after it was left are what changed
+    /// away from it.
+    @ObservationIgnored private var touchedAway: [ShapeID: Int] = [:]
+    /// The editor's revision as each board kept was left.
+    @ObservationIgnored private var leftAt: [BoardID: Int] = [:]
+    /// What changed on other boards while the board shown was away, still to hand the rows' and
+    /// the marks' `affected` (on the next read, once every service has followed the switch).
+    @ObservationIgnored private var missed: Set<ShapeID> = []
     private var pin: Pin?
     #if DEBUG
     /// How many times the list has asked a row for its view (debug builds only), so tests can hold
     /// a change to redrawing the rows it changes.
     @ObservationIgnored public var rowsRedrawn = 0
+    /// How many rows have been made (debug builds only): a kind asked for a shape's row. Going back
+    /// to a board as it was left makes none.
+    @ObservationIgnored public var rowsMade = 0
     #endif
 
     init(editor: CanvasEditor) {
@@ -170,6 +199,7 @@ public final class ContentsState {
     /// so a read after a commit costs what the commit changed.
     public var entries: [ContentsEntry] {
         catchUp()
+        catchUpAway()
         guard let scope else {
             if board == nil || !board!.update(row: row(of:)) { board = listing(of: nil) }
             return board!.entries
@@ -206,6 +236,15 @@ public final class ContentsState {
         filtered = nil
     }
 
+    /// After going back to a board: the rows and marks that read what changed on other boards
+    /// while it wasn't shown (`affected`, given those shapes as `elsewhere`) are made and read again.
+    private func catchUpAway() {
+        guard !missed.isEmpty else { return }
+        let changes = ChangeSet(elsewhere: missed)
+        missed = []
+        noteAffected(by: changes)
+    }
+
     // MARK: Selecting
 
     /// What selecting rows does (a click, ⌘- and ⇧-clicks, the arrow keys): selects their shapes,
@@ -219,6 +258,16 @@ public final class ContentsState {
         editor.selectedShapeIDs = ordered
         pin = Pin(scope: listed, selectionRevision: editor.selectionRevision)
         if isNew { editor.reveal(editor.selectedShapeIDs) }
+    }
+
+    /// A row's primary action (a double-click or Return on it): opens its shape as Return on the
+    /// canvas does (Selection's `editor.open`: entering the board it owns, editing it, whatever its
+    /// kind opens to), selecting it first if it isn't the only shape selected. Does nothing for
+    /// several rows, or a shape that can't be opened (`editor.canOpen`).
+    public func open(_ ids: Set<ShapeID>) {
+        guard ids.count == 1, let id = ids.first, editor.canOpen(id) else { return }
+        if editor.selectedShapeIDs != [id] { select(ids) }
+        editor.open(id)
     }
 
     /// Lists every shape, keeping the selection, until the selection next changes.
@@ -273,6 +322,9 @@ public final class ContentsState {
         guard let record = editor.document[id] else { return nil }
         let kind = kindRows(record.kind), contribution = kind.contribution
         let isListed = !record.isOpaque && (contribution?.isListed(record) ?? true)
+        #if DEBUG
+        rowsMade += 1
+        #endif
         let made = ShapeRow(record: record, isListed: isListed, parent: contribution?.parent?(record), row: resolvedRow(of: record, kind: kind),
                             symbol: kind.symbol, marks: marks(of: record, isListed: isListed, kind: kind))
         rows[id] = made
@@ -325,7 +377,21 @@ extension ContentsState: EditorService {
             }
             note(touched)
         }
-        guard !rowAffected.isEmpty || !markAffected.isEmpty else { return }
+        guard readsOtherShapes else { return }
+        if !kept.boards.isEmpty {
+            for id in touched { touchedAway[id] = editor.revision }
+            for id in changes.elsewhere { touchedAway[id] = editor.revision }
+        }
+        noteAffected(by: changes)
+    }
+
+    /// Whether some row or mark reads more than its shape (`affected`).
+    private var readsOtherShapes: Bool { !rowAffected.isEmpty || !markAffected.isEmpty }
+
+    /// Notes the shapes whose rows or marks `changes` may change though it doesn't touch them (as
+    /// the rows' and the marks' contributors say), for the next read to make their rows again or
+    /// read their marks again.
+    private func noteAffected(by changes: ChangeSet) {
         // A shape without a kept row gets its row and marks when its row is made.
         let context = ContentsContext(editor: editor)
         if !rowAffected.isEmpty {
@@ -339,6 +405,49 @@ extension ContentsState: EditorService {
             remarks.formUnion(remarked)
             note(remarked)
         }
+    }
+
+    /// Keeps the board left's rows, and its listing of every row, for going back to it.
+    public func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor) {
+        guard old != new else { return }            // a file put in place over the board shown
+        catchUp()
+        catchUpAway()
+        kept.keep(Kept(rows: rows, remakes: remakes, remarks: remarks, board: board, revision: editor.revision), for: old, in: editor)
+        leftAt[old] = editor.revision
+    }
+
+    /// Lists the board shown: what was kept of it, if it's as it was left (and, when some rows read
+    /// other shapes, no file was put in place since), else nothing yet (the next read makes its rows). A scope of some shapes pinned (`select`, `showAll`) and the last scope's
+    /// listing were the board left's, and go.
+    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
+        // A file put in place says nothing of what it changed on the boards kept, so rows that
+        // read other boards can't tell what they missed: they're made again.
+        if change.isFileReplaced, readsOtherShapes {
+            kept.removeAll()
+            touchedAway = [:]
+        }
+        let taken = kept.take(for: change.to, in: editor)
+        rows = taken?.rows ?? [:]
+        remakes = taken?.remakes ?? []
+        remarks = taken?.remarks ?? []
+        board = taken?.board
+        filtered = nil
+        if pin != nil { pin = nil }
+        heardRevision = editor.revision
+        missed = []
+        if let taken, readsOtherShapes {
+            missed = Set(touchedAway.lazy.filter { $0.value > taken.revision }.map(\.key))
+        }
+        forgetTouchedAway()
+    }
+
+    /// Keeps what was touched away only as far back as the board kept longest ago was left.
+    private func forgetTouchedAway() {
+        let boards = kept.boards
+        leftAt = leftAt.filter { boards.contains($0.key) }
+        guard !touchedAway.isEmpty else { return }
+        guard let oldest = leftAt.values.min() else { return touchedAway = [:] }
+        touchedAway = touchedAway.filter { $0.value > oldest }
     }
 
     /// Tells each scope's listing to look at these shapes' rows again on its next read.

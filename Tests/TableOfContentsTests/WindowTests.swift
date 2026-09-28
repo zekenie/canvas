@@ -22,14 +22,14 @@ final class ContentsWindow {
     /// How often the list handed the keyboard back.
     private(set) var exits = 0
 
-    init(_ editor: CanvasEditor) {
+    init(_ editor: CanvasEditor, heading: @escaping @MainActor (CanvasEditor) -> ContentsHeading? = { _ in nil }) {
         self.editor = editor
         canvas = CanvasView(editor: editor)
         canvas.frame = CGRect(x: listWidth, y: 0, width: 1000 - listWidth, height: 700)
-        let contents = TableOfContentsView(editor: editor) { [unowned self] in
+        let contents = TableOfContentsView(editor: editor, onExit: { [unowned self] in
             exits += 1
             window.makeFirstResponder(canvas)
-        }
+        }, heading: heading)
         hosting = NSHostingView(rootView: contents)
         hosting.frame = CGRect(x: 0, y: 0, width: listWidth, height: 700)
         let root = NSView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
@@ -43,6 +43,12 @@ final class ContentsWindow {
     /// The list's rows, less its header.
     var rows: Int { max(0, (table?.numberOfRows ?? 0) - 1) }
     var canvasHasKeyboard: Bool { window.firstResponder === canvas }
+    /// The buttons in the list's header (its first row).
+    var headerButtons: [NSButton] {
+        guard let table, table.numberOfRows > 0 else { return [] }
+        let header = table.rect(ofRow: 0)
+        return table.descendants(NSButton.self).filter { header.contains($0.convert($0.bounds, to: table)) }
+    }
 
     /// Gives the list the keyboard, as a click on a row does.
     func focusList() throws {

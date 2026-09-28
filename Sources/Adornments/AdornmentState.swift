@@ -144,6 +144,17 @@ extension AdornmentState: EditorService {
         heardRevision = editor.revision
         forget(changes.shapeIDs)
     }
+
+    /// Another board is shown: what the board left's shapes showed goes, and the shown board's
+    /// labels are made as they're asked for, as the first read of a board's makes them. Kept per board
+    /// on purpose, it would cost more than it saves: labels are made only for the shapes a frame
+    /// draws, so going back makes at most a frame's worth, and what a label reads beyond its shape
+    /// (Locking's lock, open and fading) is let go of on a switch without a word to Adornments, so a
+    /// label kept would come back stale.
+    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
+        heardRevision = editor.revision
+        kept = [:]
+    }
 }
 
 /// One adornment as a shape shows it: its label, made ready to lay out and draw (its text set in

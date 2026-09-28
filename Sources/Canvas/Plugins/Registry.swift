@@ -22,6 +22,8 @@ public struct Registry {
     /// added property they opt into. A copy renames the names of these kinds' shapes, and a plugin
     /// that follows names walks only these (`record.forEachNamingValue`); no other shape holds one.
     public let namingKinds: Set<ShapeKind>
+    /// Kinds whose shapes own boards (`BoardOwning`).
+    public let boardOwningKinds: Set<ShapeKind>
     /// Every plugin's rule for which shapes can't change (`registrar.readOnlyShapes`), found once:
     /// a transaction asks them about every shape it changes.
     private let readOnlyRules: [@MainActor (AnyShapeRecord) -> Bool]
@@ -61,6 +63,7 @@ public struct Registry {
             return (shape.kind, shape.definition)
         }, uniquingKeysWith: { first, _ in first })
         referencingKinds = Set(definitions.filter { $0.value is any ShapeReferencing }.keys)
+        boardOwningKinds = Set(definitions.filter { $0.value is any BoardOwning }.keys)
         readOnlyRules = (byPoint[ObjectIdentifier(CorePoints.ReadOnlyRules.self)] ?? []).map { $0.value as! CorePoints.ReadOnlyRules.Contribution }
         let declarations = byPoint[ObjectIdentifier(CorePoints.PropertyDeclarations.self)] ?? []
         let table = try PropertyTable(declarations: declarations,
@@ -173,10 +176,10 @@ public struct Registry {
     /// A kind's properties as one JSON Schema (draft 2020-12): an object with each of its own
     /// properties, then each added property it opts into (marked with its owner, `x-canvas-owner`),
     /// with their types, defaults and constraints; only those marked `required()` required, and nothing
-    /// else allowed. Shared definitions are under `$defs`, named after their modules (`core.rect`,
-    /// `checklists.item`), and every `$ref` is local. It describes a shape as one object, own and
-    /// added properties side by side (a board keeps the two apart). Nil for a kind no plugin
-    /// registers.
+    /// else allowed; a kind whose shapes own boards (`BoardOwning`) is marked `x-canvas-board`. Shared
+    /// definitions are under `$defs`, named after their modules (`core.rect`, `checklists.item`),
+    /// and every `$ref` is local. It describes a shape as one object, own and added properties side
+    /// by side (a board keeps the two apart). Nil for a kind no plugin registers.
     public func schema(for kind: ShapeKind) -> JSONSchema? { schemas[kind] }
 
     /// A kind's schema, as `schema(for:)` has it: its own properties and those it opts into, as an
@@ -193,6 +196,7 @@ public struct Registry {
             properties[key.rawValue] = .object(property)
         }
         json["properties"] = .object(properties)
+        if definition is any BoardOwning { json["x-canvas-board"] = true }
         if json["title"] == nil { json["title"] = .string(kind.rawValue) }
         json["$schema"] = .string(JSONSchema.dialect)
         json["$id"] = .string("tag:infinite-canvas,2026:kinds/\(kind)")
@@ -231,6 +235,13 @@ public struct Registry {
             if normalized != record { document.replace(at: index, with: normalized) }
         }
         return document
+    }
+
+    /// The file with every board's shapes as their kinds have them (`fillingDefaults(_:)` of each).
+    public func fillingDefaults(_ file: CanvasFile) -> CanvasFile {
+        var file = file
+        file.transformBoards { fillingDefaults($0) }
+        return file
     }
 
     /// The toolbar: the default tool, then the rest in plugin order (the core's Hand first).

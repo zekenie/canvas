@@ -203,7 +203,10 @@ final class KeyboardState {
     }
 }
 
-extension KeyboardState: EditorService {}
+extension KeyboardState: EditorService {
+    /// Nothing kept per shape, so nothing to follow to another board.
+    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
+}
 
 // MARK: The plugin
 

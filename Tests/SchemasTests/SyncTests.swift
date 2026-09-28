@@ -17,10 +17,10 @@ final class SyncBench {
     var editor: CanvasEditor { harness.editor }
     var scheduler: ManualScheduler { harness.scheduler }
 
-    init(document: CanvasDocument = CanvasDocument(), more: [any CanvasPlugin] = []) throws {
+    init(document: CanvasDocument = CanvasDocument(), file: CanvasFile? = nil, more: [any CanvasPlugin] = []) throws {
         let model = ScriptedLanguageModel()
         self.model = model
-        harness = try EditorHarness { scheduler in try schemaEditor(scheduler: scheduler, model: model, document: document, more: more) }
+        harness = try EditorHarness { scheduler in try schemaEditor(scheduler: scheduler, model: model, document: document, file: file, more: more) }
         sync = try require(harness.editor.schemaSync)
     }
 

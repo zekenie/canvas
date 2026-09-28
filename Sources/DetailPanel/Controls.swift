@@ -1,4 +1,5 @@
 import AppKit
+import Canvas
 import CoreGraphics
 import Foundation
 import SwiftUI
@@ -193,7 +194,7 @@ public struct DetailNumberField<V: BinaryFloatingPoint>: View where V.Stride: Bi
     /// What's typed is a draft only while it differs from what's shown.
     private func edit(_ text: String, shown: String) {
         draft = text == shown ? nil : text
-        if draft == nil { drafts?.pending = nil } else { drafts?.pending = { draft = nil } }
+        if draft == nil { drafts?.pending = nil } else { drafts?.pending = DraftTracker.Draft(revert: { draft = nil }, commit: commit) }
     }
 
     private func commit() {
@@ -223,15 +224,28 @@ public struct DetailNumberField<V: BinaryFloatingPoint>: View where V.Stride: Bi
     private func clamped(_ number: V) -> V { min(max(number, range.lowerBound), range.upperBound) }
 }
 
-/// The panel's one uncommitted number, so Escape can drop it before leaving the panel.
+/// The panel's one uncommitted number, so Escape can drop it before leaving the panel, and it's
+/// written to its shape before another board is shown.
 @MainActor
 final class DraftTracker {
-    var pending: (@MainActor () -> Void)?
+    struct Draft {
+        let revert: @MainActor () -> Void
+        let commit: @MainActor () -> Void
+    }
+
+    var pending: Draft?
 
     func revert() {
-        let revert = pending
+        let draft = pending
         pending = nil
-        revert?()
+        draft?.revert()
+    }
+
+    /// Writes the draft, as Return in its field does.
+    func commit() {
+        let draft = pending
+        pending = nil
+        draft?.commit()
     }
 }
 
@@ -243,6 +257,44 @@ extension EnvironmentValues {
     var detailDrafts: DraftTracker? {
         get { self[DraftTrackerKey.self] }
         set { self[DraftTrackerKey.self] = newValue }
+    }
+}
+
+/// A button that runs a command (`editor.perform`), dimmed while it can't run
+/// (`editor.canPerform`): the panel's counterpart of a menu item, another way to run what a plugin
+/// registered (`registrar.command`). Borderless, as the panel's other buttons are.
+public struct DetailCommandButton: View {
+    let title: String
+    let systemImage: String?
+    let command: CanvasCommand
+    @Environment(\.detailEditor) private var editor
+
+    public init(_ title: String, systemImage: String? = nil, command: CanvasCommand) {
+        self.title = title
+        self.systemImage = systemImage
+        self.command = command
+    }
+
+    public var body: some View {
+        Button {
+            editor?.perform(command)
+        } label: {
+            if let systemImage { Label(title, systemImage: systemImage) } else { Text(title) }
+        }
+        .buttonStyle(.borderless)
+        .disabled(!(editor?.canPerform(command) ?? false))
+    }
+}
+
+struct DetailEditorKey: EnvironmentKey {
+    static let defaultValue: CanvasEditor? = nil
+}
+
+extension EnvironmentValues {
+    /// The editor the panel shows, for a control that runs its commands.
+    var detailEditor: CanvasEditor? {
+        get { self[DetailEditorKey.self] }
+        set { self[DetailEditorKey.self] = newValue }
     }
 }
 

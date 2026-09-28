@@ -25,13 +25,33 @@ extension CanvasEditor {
         // Pad the visible area so shadows of shapes just offscreen still get drawn.
         let world = camera.toWorld(bounds)
         let offsets = drawingOffsets
+        let file = storedFile
+        let shapeCount = { (owner: ShapeID) in file.children[owner]?.shapes.count ?? 0 }
+        let registry = registry
+        let fileShape = { (id: ShapeID) in Self.shape(id, inFile: file, registry: registry) }
+        // Previews asked for in earlier frames first, so one finished now is drawn now.
+        let previews = boardPreviews, previewColor = Style.boardPreview.cgColor, zoom = camera.zoom
+        if previews.isPending { previews.build(in: file, until: .now + previews.frameBudget) }
+        let preview = { (owner: ShapeID, rect: CGRect, cg: CGContext) in
+            // Too small on screen to show anything (zoomed out, or no room): nothing asked for.
+            guard min(rect.width, rect.height) * zoom >= Style.previewSmallestSide else { return false }
+            return previews.preview(of: BoardID(owner: owner), in: file)?.draw(in: cg, fitting: rect, color: previewColor) ?? false
+        }
         for record in paintOrder(in: world.insetBy(dx: -40, dy: -40)) {
             guard let definition = registry.definition(for: record.kind) else { continue }
             drawIsolated(context) {
                 if !offsets.isEmpty, let offset = offsets[record.id] {
                     context.translateBy(x: offset.x / camera.zoom, y: offset.y / camera.zoom)
                 }
-                definition.erasedRender(record, in: RenderContext(cg: context, shapes: shapes, isEditing: record.id == editingShapeID))
+                definition.erasedRender(record, in: RenderContext(cg: context, shapes: shapes, isEditing: record.id == editingShapeID,
+                                                                  shapeCount: shapeCount, preview: preview, fileShape: fileShape))
+            }
+        }
+        previews.endFrame()
+        if previews.isPending, nextPreviewFrame == nil {
+            nextPreviewFrame = scheduler.schedule(after: .zero) { [weak self] in
+                self?.nextPreviewFrame = nil
+                self?.setNeedsDisplay()
             }
         }
         drawOutlines(in: context, shapes: shapes)
@@ -98,8 +118,15 @@ extension CanvasEditor {
     /// null with none. Kept as shapes change, so asking costs what changed.
     @_spi(Host) public var shapeBounds: CGRect { shapeIndex.bounds(in: shapeContext) }
 
-    /// Now, for `damage(since:)`: a picture brought up to date keeps it.
-    @_spi(Host) public var damageMark: Int { shapeIndex.mark(in: shapeContext) }
+    /// Now, for `damage(since:)`: a picture brought up to date keeps it. It's the shown board's: a
+    /// picture of another board (kept for when it's shown again) goes by `isCurrent`.
+    @_spi(Host) public var damageMark: DamageMark { shapeIndex.mark(in: shapeContext) }
+
+    /// Whether a mark was taken on what the editor keeps of the board shown now: a picture of this
+    /// board kept while another was shown is up to date as of it (and `damage(since:)` says what
+    /// changed since). False for a mark from another board, or from this board before the editor
+    /// last worked it out afresh (it wasn't kept warm, or the file was replaced).
+    @_spi(Host) public func isCurrent(_ mark: DamageMark) -> Bool { shapeIndex.isCurrent(mark) }
 
     /// Where shapes may be other than they were at `mark`, in world units: every shape a commit
     /// since then changed, added or removed, where it was and where it is, with every shape whose
@@ -107,8 +134,8 @@ extension CanvasEditor {
     /// `mark` is up to date once it draws there again, grown by however far past its shapes it draws.
     /// Not the paint order: a restack names the shapes it moved in the stack, but not one it carried
     /// along above its anchor. Null when nothing moved; infinite when the editor no longer knows (too
-    /// long ago), or a shape that could be anywhere changed.
-    @_spi(Host) public func damage(since mark: Int) -> CGRect { shapeIndex.damage(since: mark, in: shapeContext) }
+    /// long ago, or a mark that isn't current), or a shape that could be anywhere changed.
+    @_spi(Host) public func damage(since mark: DamageMark) -> CGRect { shapeIndex.damage(since: mark, in: shapeContext) }
 
     /// A fresh graphics state and an empty path (the current path isn't part of the graphics
     /// state), so nothing one plugin leaves behind reaches the next.

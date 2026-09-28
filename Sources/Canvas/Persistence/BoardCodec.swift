@@ -1,14 +1,19 @@
 import Foundation
 import Geometry
 
-/// Reads and writes boards. A board is JSON: an envelope around every shape, back to front.
+/// Reads and writes board files. A file is JSON: an envelope around the root board's shapes, back
+/// to front, and each other board's, by its owner's id.
 ///
 ///     {
-///       "format" : 3,
+///       "boards" : {
+///         "A1B2…" : { "shapes" : [ { "id" : "…", "index" : "a0", "kind" : "sticky-note", "props" : { … } } ] }
+///       },
+///       "format" : 4,
 ///       "shapes" : [
-///         { "added" : { "checklist" : [] }, "id" : "…", "index" : "a0", "kind" : "sticky-note", "props" : { … } }
+///         { "added" : { "checklist" : [] }, "id" : "…", "index" : "a0", "kind" : "sticky-note", "props" : { … } },
+///         { "id" : "A1B2…", "index" : "a1", "kind" : "folder", "props" : { … } }
 ///       ],
-///       "versions" : { "added" : { "checklist" : 0 }, "kinds" : { "arrow" : 0, "sticky-note" : 1 } }
+///       "versions" : { "added" : { "checklist" : 0 }, "kinds" : { "folder" : 0, "sticky-note" : 3 } }
 ///     }
 ///
 /// `format` versions the envelope and each record's own members. Format 1 has each kind's props
@@ -16,24 +21,31 @@ import Geometry
 /// (`AnyShapeRecord.meta`), in `meta`: an object for each plugin that keeps some, by its id. Format
 /// 3 added the values of the properties plugins add to a shape's kind (`ShapeProperty`), in
 /// `added`, by key, beside its props (which are only its kind's own); `versions` then gives each
-/// kind's version and each added property's. Members a shape doesn't have are left out.
+/// kind's version and each added property's. Format 4 added the boards shapes own (`CanvasFile`):
+/// `boards`, one flat map, never nested however deep the boards are, each an object with its
+/// `shapes`, records as the root's, under the same `versions`. Members a shape doesn't have are
+/// left out. As with a record's, a member a board entry doesn't have yet needs a newer format: this
+/// one reads only `shapes`, and would save a board without any other.
 ///
 /// Reading never drops a shape and never stops at one: it refuses only a file that isn't a board,
-/// or one in a newer format. A shape the app can't use is kept as it was, with its own version in
+/// or one in a newer format, or one with an entry in `boards` that isn't a board and can't be kept as
+/// it was (a number JSON can't hold). A shape the app can't use is kept as it was, with its own version in
 /// `v`: its kind isn't installed, it's from a newer version of its kind, or it didn't load. So is
 /// an added value it can't use (no installed plugin declares it, the kind doesn't opt in, it's
 /// from a newer version, or it didn't load), in the shape's `kept`, with its version, while the
-/// shape itself stays usable. What reading had to fix, and what it kept aside, is in the report.
+/// shape itself stays usable, and a board it can't show (`LoadReport.KeptBoard`), with its shapes.
+/// What reading had to fix, and what it kept aside, is in the report.
 public struct BoardCodec: Sendable {
-    /// The newest envelope this app reads. It writes the oldest that holds the board: 1, unless a
-    /// shape has metadata, which needs 2, or added values, which need 3. So an older app still
-    /// opens a board it would save back whole, and refuses one it would save without what it
-    /// doesn't know.
-    public static let format = 3
+    /// The newest envelope this app reads. It writes the oldest that holds the file: 1, unless a
+    /// shape has metadata, which needs 2, or added values, which need 3, or the file has a board
+    /// besides the root, which needs 4. So an older app still opens a file it would save back
+    /// whole, and refuses one it would save without what it doesn't know.
+    public static let format = 4
 
     private let kinds: [ShapeKind: KindCodec]
     private let properties: [PropertyKey: PropertyCodec]
     private let optIns: [ShapeKind: [PropertyKey]]
+    private let boardOwningKinds: Set<ShapeKind>
 
     /// For the kinds `registry` installs, and the properties they opt into. Build it once; it reads
     /// and writes off the main actor.
@@ -46,6 +58,7 @@ public struct BoardCodec: Sendable {
         self.kinds = kinds
         properties = registry.propertyTable.codecs
         optIns = registry.propertyTable.byKind
+        boardOwningKinds = registry.boardOwningKinds
     }
 
     /// An installed kind's version; nil for a kind that isn't installed.
@@ -56,14 +69,33 @@ public struct BoardCodec: Sendable {
 
     // MARK: Writing
 
+    /// A file of this board alone: its root.
     public func encode(_ document: CanvasDocument) throws -> Data {
+        try encode(root: document, children: [:], unreadable: [:])
+    }
+
+    /// Every board of the file, and what it keeps of `boards` that didn't read.
+    public func encode(_ file: CanvasFile) throws -> Data {
+        try encode(root: file.root, children: file.children, unreadable: file.unreadableBoards)
+    }
+
+    private func encode(root: CanvasDocument, children: [ShapeID: CanvasDocument], unreadable: [String: JSONValue]) throws -> Data {
         var versions = Versions()
-        for record in document.shapes where !record.isOpaque {
-            versions.kinds[record.kind.rawValue] = type(of: record.props).migrations.count
-            for key in record.added.keys { versions.added[key.rawValue] = properties[key]?.version ?? 0 }
+        for document in [root] + children.values {
+            for record in document.shapes where !record.isOpaque {
+                versions.kinds[record.kind.rawValue] = type(of: record.props).migrations.count
+                for key in record.added.keys { versions.added[key.rawValue] = properties[key]?.version ?? 0 }
+            }
         }
-        let format = document.shapes.contains { !$0.added.isEmpty } ? 3 : document.shapes.contains { !$0.meta.isEmpty } ? 2 : 1
-        return try Self.makeEncoder().encode(Envelope(format: format, versions: versions, shapes: document.shapes.map(Record.init)))
+        var boards: [String: BoardEntry]?
+        if !children.isEmpty || !unreadable.isEmpty {
+            // A board a shape owns takes the place of an entry that didn't read under its key.
+            var entries = unreadable.mapValues(BoardEntry.unreadable)
+            for (owner, document) in children { entries[owner.description] = .board(document.shapes.map(Record.init)) }
+            boards = entries
+        }
+        let format = boards != nil ? 4 : root.shapes.contains { !$0.added.isEmpty } ? 3 : root.shapes.contains { !$0.meta.isEmpty } ? 2 : 1
+        return try Self.makeEncoder().encode(Envelope(format: format, versions: versions, shapes: root.shapes.map(Record.init), boards: boards))
     }
 
     /// One shape's props, as a board writes them: for fixtures, and tools that edit props as JSON.
@@ -82,7 +114,7 @@ public struct BoardCodec: Sendable {
         } catch {
             throw .unreadable(Self.describe(error))
         }
-        return assemble(contents.records)
+        return assemble(contents)
     }
 
     /// One shape's props at `version` of `kind`, migrated to today's: for fixtures, and tools that
@@ -290,56 +322,119 @@ public struct BoardCodec: Sendable {
         return (ShapeMeta(json: kept), kept.count != members.count)
     }
 
-    /// The document, after the repairs a board may need: an id for each shape that has none or
-    /// repeats one (the first keeps it), and stacking keys that rise. A board written by this app
-    /// needs none.
-    private func assemble(_ read: [ReadRecord]) -> LoadedBoard {
+    /// The file, after the repairs it may need: an id for each shape that has none or repeats one
+    /// (the first keeps it, on whichever board), and stacking keys that rise on each board. A file
+    /// written by this app needs none.
+    ///
+    /// Boards are read in tree order, which decides who keeps a repeated id, and with it the board
+    /// that id owns: the root, then the boards it reaches, breadth first, each board's in its
+    /// shapes' order; then those it doesn't reach, by key, each with the boards it reaches. A board
+    /// that can't be shown is kept, and the report says why.
+    private func assemble(_ contents: Contents) -> LoadedBoard {
         var report = LoadReport()
         var seen = Set<ShapeID>()
-        var records: [AnyShapeRecord] = []
-        records.reserveCapacity(read.count)
-        for item in read {
-            let id: ShapeID
-            if let old = item.id, seen.insert(old).inserted {
-                id = old
-            } else {
-                id = ShapeID()
-                seen.insert(id)
-                report.repairs.append(.newID(old: item.id, new: id))
-            }
-            if let reason = item.keptAside { report.keptAside.append(LoadReport.KeptShape(id: id, kind: item.kind, reason: reason)) }
-            if item.dropped.contains(.meta) { report.repairs.append(.droppedMeta(id)) }
-            if item.dropped.contains(.values) { report.repairs.append(.droppedValues(id)) }
-            for (key, reason) in item.keptValues {
-                report.keptValues.append(LoadReport.KeptValue(id: id, kind: item.kind, key: key, reason: reason))
-            }
-            var record = AnyShapeRecord(id: id, kind: item.kind, props: item.props, stackingKey: item.key, meta: item.meta)
-            record.added = item.added
-            records.append(record)
-        }
-        if !CanvasDocument.keysRise(records) {
-            // Shapes with keys in key order, ties broken by id; each key that doesn't rise is
-            // replaced by one that does. Shapes without a key go on top, in the order they came.
-            let keyed = records.filter { $0.stackingKey != nil }.sorted {
-                ($0.stackingKey!, $0.id.rawValue.uuidString) < ($1.stackingKey!, $1.id.rawValue.uuidString)
-            }
-            var ordered: [AnyShapeRecord] = []
-            for (i, var record) in keyed.enumerated() {
-                if let previous = ordered.last?.stackingKey, record.stackingKey! <= previous {
-                    let next = keyed[(i + 1)...].lazy.compactMap(\.stackingKey).first { $0 > previous }
-                    record.stackingKey = .between(previous, next)
-                    report.repairs.append(.newStackingKey(record.id))
+        var unread = contents.boards
+        var children: [ShapeID: CanvasDocument] = [:]
+
+        /// One board's shapes, with ids unique across the file and keys that rise.
+        func place(_ read: [ReadRecord], on board: BoardID) -> [AnyShapeRecord] {
+            var records: [AnyShapeRecord] = []
+            records.reserveCapacity(read.count)
+            for item in read {
+                let id: ShapeID
+                if let old = item.id, seen.insert(old).inserted {
+                    id = old
+                } else {
+                    id = ShapeID()
+                    seen.insert(id)
+                    report.repairs.append(.newID(old: item.id, new: id))
                 }
-                ordered.append(record)
+                if let reason = item.keptAside {
+                    report.keptAside.append(LoadReport.KeptShape(id: id, kind: item.kind, reason: reason, board: board))
+                }
+                if item.dropped.contains(.meta) { report.repairs.append(.droppedMeta(id)) }
+                if item.dropped.contains(.values) { report.repairs.append(.droppedValues(id)) }
+                for (key, reason) in item.keptValues {
+                    report.keptValues.append(LoadReport.KeptValue(id: id, kind: item.kind, key: key, reason: reason, board: board))
+                }
+                var record = AnyShapeRecord(id: id, kind: item.kind, props: item.props, stackingKey: item.key, meta: item.meta)
+                record.added = item.added
+                records.append(record)
             }
-            for var record in records where record.stackingKey == nil {
-                record.stackingKey = .between(ordered.last?.stackingKey, nil)
-                report.repairs.append(.newStackingKey(record.id))
-                ordered.append(record)
-            }
-            records = ordered
+            return risingKeys(records, repairs: &report.repairs)
         }
-        return LoadedBoard(document: CanvasDocument(shapes: records), report: report)
+
+        /// The boards `records` own that are yet to be read, in their order, each with why it
+        /// can't be shown (nil if it can), on a board that can't be for `kept` (nil if it can).
+        func owned(by records: [AnyShapeRecord], kept: LoadReport.KeptBoard.Reason?) -> [(ShapeID, LoadReport.KeptBoard.Reason?)] {
+            records.compactMap { record in
+                guard unread[record.id] != nil else { return nil }
+                let reason: LoadReport.KeptBoard.Reason? = if record.isOpaque {
+                    .ownerKeptAside(record.kind)
+                } else if !boardOwningKinds.contains(record.kind) {
+                    .ownerNotABoard(record.kind)
+                } else if kept == .unreachable {
+                    .unreachable
+                } else if kept != nil {
+                    .insideKeptBoard
+                } else {
+                    nil
+                }
+                return (record.id, reason)
+            }
+        }
+
+        /// These boards, then the boards they own, and so on, breadth first.
+        func walk(_ boards: [(ShapeID, LoadReport.KeptBoard.Reason?)]) {
+            var queue = boards, next = 0
+            while next < queue.count {
+                let (owner, kept) = queue[next]
+                next += 1
+                guard let read = unread.removeValue(forKey: owner) else { continue }
+                let records = place(read, on: BoardID(owner: owner))
+                guard !records.isEmpty else { continue }
+                children[owner] = CanvasDocument(shapes: records)
+                if let kept { report.keptBoards.append(LoadReport.KeptBoard(key: owner.description, shapeCount: records.count, reason: kept)) }
+                queue += owned(by: records, kept: kept)
+            }
+        }
+
+        let root = place(contents.records, on: .root)
+        walk(owned(by: root, kept: nil))
+        for owner in unread.keys.sorted(by: { $0.description < $1.description }) where unread[owner] != nil {
+            walk([(owner, .unreachable)])
+        }
+        for (key, entry) in contents.unreadableBoards.sorted(by: { $0.key < $1.key }) {
+            report.keptBoards.append(LoadReport.KeptBoard(key: key, shapeCount: 0, reason: .unreadable(entry.why)))
+        }
+        var file = CanvasFile(root: CanvasDocument(shapes: root), children: children)
+        file.unreadableBoards = contents.unreadableBoards.mapValues(\.json)
+        return LoadedBoard(file: file, report: report)
+    }
+
+    /// The records, with keys that rise: those with keys in key order, ties broken by id, each key
+    /// that doesn't rise replaced by one that does; those without a key on top, in the order they
+    /// came.
+    private func risingKeys(_ records: [AnyShapeRecord], repairs: inout [LoadReport.Repair]) -> [AnyShapeRecord] {
+        guard !CanvasDocument.keysRise(records) else { return records }
+        let keyed = records.filter { $0.stackingKey != nil }.sorted {
+            ($0.stackingKey!, $0.id.rawValue.uuidString) < ($1.stackingKey!, $1.id.rawValue.uuidString)
+        }
+        var ordered: [AnyShapeRecord] = []
+        for (i, var record) in keyed.enumerated() {
+            if let previous = ordered.last?.stackingKey, record.stackingKey! <= previous {
+                let next = keyed[(i + 1)...].lazy.compactMap(\.stackingKey).first { $0 > previous }
+                record.stackingKey = .between(previous, next)
+                repairs.append(.newStackingKey(record.id))
+            }
+            ordered.append(record)
+        }
+        for var record in records where record.stackingKey == nil {
+            record.stackingKey = .between(ordered.last?.stackingKey, nil)
+            repairs.append(.newStackingKey(record.id))
+            ordered.append(record)
+        }
+        return ordered
     }
 
     // MARK: Settings
@@ -382,36 +477,43 @@ public struct BoardCodec: Sendable {
     }
 }
 
-/// A board, read: what to open, and what reading it took.
+/// A board file, read: what to open, and what reading it took.
 public struct LoadedBoard: Sendable {
-    public let document: CanvasDocument
+    public let file: CanvasFile
     public let report: LoadReport
+    /// The root board.
+    public var document: CanvasDocument { file.root }
 }
 
-/// What opening a board kept aside and repaired. Repairs are part of the document now, so the
-/// board should be marked edited; kept-aside shapes and values are saved back as they were.
+/// What opening a board file kept aside and repaired. Repairs are part of the file now, so it
+/// should be marked edited; kept-aside shapes, values and boards are saved back as they were.
 public struct LoadReport: Equatable, Sendable {
     public var keptAside: [KeptShape]
     public var keptValues: [KeptValue]
+    public var keptBoards: [KeptBoard]
     public var repairs: [Repair]
-    public var isEmpty: Bool { keptAside.isEmpty && keptValues.isEmpty && repairs.isEmpty }
+    public var isEmpty: Bool { keptAside.isEmpty && keptValues.isEmpty && keptBoards.isEmpty && repairs.isEmpty }
 
-    public init(keptAside: [KeptShape] = [], keptValues: [KeptValue] = [], repairs: [Repair] = []) {
+    public init(keptAside: [KeptShape] = [], keptValues: [KeptValue] = [], keptBoards: [KeptBoard] = [], repairs: [Repair] = []) {
         self.keptAside = keptAside
         self.keptValues = keptValues
+        self.keptBoards = keptBoards
         self.repairs = repairs
     }
 
-    /// A shape the board keeps but the app can't use (`AnyShapeRecord.isOpaque`).
+    /// A shape the file keeps but the app can't use (`AnyShapeRecord.isOpaque`).
     public struct KeptShape: Equatable, Sendable {
         public let id: ShapeID
         public let kind: ShapeKind
         public let reason: Reason
+        /// The board it's on.
+        public let board: BoardID
 
-        public init(id: ShapeID, kind: ShapeKind, reason: Reason) {
+        public init(id: ShapeID, kind: ShapeKind, reason: Reason, board: BoardID = .root) {
             self.id = id
             self.kind = kind
             self.reason = reason
+            self.board = board
         }
 
         public enum Reason: Equatable, Sendable {
@@ -431,12 +533,15 @@ public struct LoadReport: Equatable, Sendable {
         public let kind: ShapeKind
         public let key: PropertyKey
         public let reason: Reason
+        /// The board its shape is on.
+        public let board: BoardID
 
-        public init(id: ShapeID, kind: ShapeKind, key: PropertyKey, reason: Reason) {
+        public init(id: ShapeID, kind: ShapeKind, key: PropertyKey, reason: Reason, board: BoardID = .root) {
             self.id = id
             self.kind = kind
             self.key = key
             self.reason = reason
+            self.board = board
         }
 
         public enum Reason: Equatable, Sendable {
@@ -447,6 +552,38 @@ public struct LoadReport: Equatable, Sendable {
             /// Written by a newer version of the property's plugin.
             case newerVersion(file: Int, app: Int)
             /// It didn't load: a bad value, or a failed migration.
+            case unreadable(String)
+        }
+    }
+
+    /// A board the file keeps but the app can't show (`CanvasFile.children`, or, when it didn't
+    /// read, `CanvasFile.unreadableBoards`), with its shapes.
+    public struct KeptBoard: Equatable, Sendable {
+        /// Its key in the file's `boards`, as written: its owner's id, when it has one.
+        public let key: String
+        /// How many shapes are on it (not on the boards under it); 0 for one that didn't read.
+        public let shapeCount: Int
+        public let reason: Reason
+
+        public init(key: String, shapeCount: Int, reason: Reason) {
+            self.key = key
+            self.shapeCount = shapeCount
+            self.reason = reason
+        }
+
+        public enum Reason: Equatable, Sendable {
+            /// Its owner is kept aside (`KeptShape`): a kind no plugin installs, a newer version,
+            /// or it didn't load.
+            case ownerKeptAside(ShapeKind)
+            /// Its owner's kind owns no board (`BoardOwning`).
+            case ownerNotABoard(ShapeKind)
+            /// Its owner is on a board kept for one of these reasons, so it can't be reached.
+            case insideKeptBoard
+            /// Going up from it never reaches the root: its owner isn't in the file, or owners
+            /// hold each other's boards.
+            case unreachable
+            /// It isn't a board, an object with a list of shapes, or its key isn't a shape's id:
+            /// it's kept as it was, and nothing in it is read.
             case unreadable(String)
         }
     }
@@ -540,8 +677,10 @@ private struct Envelope: Encodable {
     let format: Int
     let versions: Versions
     let shapes: [Record]
+    /// From format 4.
+    let boards: [String: BoardEntry]?
 
-    private enum Keys: String, CodingKey { case format, schema, versions, shapes }
+    private enum Keys: String, CodingKey { case format, schema, versions, shapes, boards }
     private enum VersionKeys: String, CodingKey { case kinds, added }
 
     /// Before format 3, the kinds' versions are the envelope's `schema`.
@@ -556,6 +695,25 @@ private struct Envelope: Encodable {
             if !versions.added.isEmpty { try nested.encode(versions.added, forKey: .added) }
         }
         try container.encode(shapes, forKey: .shapes)
+        try container.encodeIfPresent(boards, forKey: .boards)
+    }
+}
+
+/// An entry of `boards`: a board's shapes, or what didn't read as a board, as it was.
+private enum BoardEntry: Encodable {
+    case board([Record])
+    case unreadable(JSONValue)
+
+    private enum Keys: String, CodingKey { case shapes }
+
+    func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .board(let shapes):
+            var container = encoder.container(keyedBy: Keys.self)
+            try container.encode(shapes, forKey: .shapes)
+        case .unreadable(let json):
+            try json.encode(to: encoder)
+        }
     }
 }
 
@@ -583,11 +741,17 @@ private struct Record: Encodable {
     }
 }
 
-/// The whole file, read in one pass: the envelope, then each shape.
+/// The whole file, read in one pass: the envelope, then each shape, on each board.
 private struct Contents: Decodable {
+    /// The root's.
     var records: [ReadRecord] = []
+    /// The boards in `boards` (from format 4), by owner.
+    var boards: [ShapeID: [ReadRecord]] = [:]
+    /// What's in `boards` that isn't a board, by key, and why.
+    var unreadableBoards: [String: (json: JSONValue, why: String)] = [:]
 
-    private enum Keys: String, CodingKey { case format, schema, versions, shapes }
+    private enum Keys: String, CodingKey { case format, schema, versions, shapes, boards }
+    private enum BoardKeys: String, CodingKey { case shapes }
     private enum VersionKeys: String, CodingKey { case kinds, added }
 
     init(from decoder: any Decoder) throws {
@@ -606,6 +770,28 @@ private struct Contents: Decodable {
         var shapes = try container.nestedUnkeyedContainer(forKey: .shapes)
         while !shapes.isAtEnd {
             records.append(codec.read(try shapes.superDecoder(), versions: versions))
+        }
+        guard format >= 4, container.contains(.boards) else { return }
+        guard let entries = try? container.nestedContainer(keyedBy: PropertyCodingKey.self, forKey: .boards) else {
+            throw BoardReadError.unreadable("its boards aren't an object")
+        }
+        for key in entries.allKeys {
+            // A key as this app writes it: the owner's id, in capitals.
+            let owner = BoardID(key.stringValue).flatMap { $0.description == key.stringValue ? $0.owner : nil }
+            if let owner, let board = try? entries.nestedContainer(keyedBy: BoardKeys.self, forKey: key),
+               var shapes = try? board.nestedUnkeyedContainer(forKey: .shapes) {
+                var read: [ReadRecord] = []
+                while !shapes.isAtEnd {
+                    read.append(codec.read(try shapes.superDecoder(), versions: versions))
+                }
+                boards[owner] = read
+            } else {
+                // Kept only to be written back, so kept whole, or the file isn't read: a save would lose it.
+                guard let json = try? entries.decode(JSONValue.self, forKey: key) else {
+                    throw BoardReadError.unreadable("boards.\(key.stringValue) isn't a board, and can't be kept as it is")
+                }
+                unreadableBoards[key.stringValue] = (json, owner == nil ? "its key isn't a shape's id" : "it isn't an object with a list of shapes")
+            }
         }
     }
 }

@@ -7,7 +7,9 @@ import SwiftUI
 ///
 /// It answers the menu commands that must reach the canvas whatever has the keyboard (the
 /// responder chain from a detail-panel field never passes through the canvas, but always reaches
-/// this controller): zooming, showing or hiding the details and the minimap, and going back. And
+/// this controller): zooming, showing or hiding the details and the minimap, going back, and going
+/// into and out of boards (Go › Open, ⌘↓, and Enclosing Board, ⌘↑, except in text, whose caret
+/// those keys move). And
 /// Edit › Cut, Copy and Paste, wherever the keyboard is (the canvas, the table of contents' list, a
 /// control in the panel), except in text, which takes them first: a note being edited, a field.
 /// Edit › Undo and Redo are its window's (`BoardWindow`), which splits them between text and the board.
@@ -44,6 +46,13 @@ public final class BoardWindowController: NSWindowController {
     /// Go › Back: the command a plugin claims (Selection's, back to the previous selection).
     @objc public func goBack(_ sender: Any?) { board?.editor.perform(.goBack) }
 
+    /// Go › Enclosing Board (⌘↑): the command a plugin claims (Boards', up to the board above).
+    @objc public func enclosingBoard(_ sender: Any?) { board?.editor.perform(.enclosingBoard) }
+
+    /// Go › Open (⌘↓): the command a plugin claims (Selection's, opening the selected shape: a
+    /// subboard shows its board).
+    @objc public func openSelection(_ sender: Any?) { board?.editor.perform(.openSelection) }
+
     // Edit › Cut, Copy and Paste: the commands a plugin claims (Clipboard's, on the selection).
     @objc public func cut(_ sender: Any?) { board?.editor.perform(.cut) }
     @objc public func copy(_ sender: Any?) { board?.editor.perform(.copy) }
@@ -51,8 +60,19 @@ public final class BoardWindowController: NSWindowController {
 
     /// The menu items that run a command, enabled while it can run.
     private static let commands: [Selector: CanvasCommand] = [
-        #selector(goBack(_:)): .goBack, #selector(cut(_:)): .cut, #selector(copy(_:)): .copy, #selector(paste(_:)): .paste,
+        #selector(goBack(_:)): .goBack, #selector(enclosingBoard(_:)): .enclosingBoard, #selector(openSelection(_:)): .openSelection,
+        #selector(cut(_:)): .cut, #selector(copy(_:)): .copy, #selector(paste(_:)): .paste,
     ]
+
+    /// The items whose keys text takes (⌘↑ and ⌘↓ move its caret): off while text has the keyboard,
+    /// so a disabled item leaves the key to it.
+    private static let textKeys: Set<Selector> = [#selector(enclosingBoard(_:)), #selector(openSelection(_:))]
+
+    /// The root's crumb on the path is the file's name, kept as the title is.
+    public override func synchronizeWindowTitleWithDocumentName() {
+        super.synchronizeWindowTitleWithDocumentName()
+        if let board, board.viewState.fileName != board.displayName { board.viewState.fileName = board.displayName }
+    }
 }
 
 extension BoardWindowController: NSMenuItemValidation {
@@ -63,6 +83,7 @@ extension BoardWindowController: NSMenuItemValidation {
         if item.action == #selector(toggleMinimap(_:)) {
             item.title = board?.viewState.showsMinimap == true ? "Hide Minimap" : "Show Minimap"
         }
+        if let action = item.action, Self.textKeys.contains(action), window?.firstResponder is NSText { return false }
         if let command = item.action.flatMap({ Self.commands[$0] }) { return board?.editor.canPerform(command) == true }
         return board != nil
     }

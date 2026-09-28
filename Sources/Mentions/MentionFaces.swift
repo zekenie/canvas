@@ -19,8 +19,10 @@ struct MentionFace: Hashable, Sendable {
 /// - a double-click on a live one goes to what it names (`goTo`), and Back comes back. On a shape
 ///   that's edited, the click before it opened the text view, which takes the second press, so
 ///   this is what a read-only shape's pill does. On one naming a shape that isn't there, nothing;
-/// - the pointer over a live one hovers what it names (its outline, its row), and over one that
-///   isn't, its shape.
+/// - a double-click on a live one naming a shape on another board of the file goes there too,
+///   showing its board first (`goTo`: Back returns to the board left);
+/// - the pointer over a live one hovers what it names (its outline, its row) if it's on the board
+///   shown, and over one that isn't, or names a shape on another board, its shape.
 @MainActor
 func registerMentionFaces(into registrar: inout PluginRegistrar) {
     registrar.shapeFaces(at: { editor, shape, point in MentionFace.find(at: point, on: shape, in: editor) },
@@ -30,7 +32,7 @@ func registerMentionFaces(into registrar: inout PluginRegistrar) {
                          doubleClick: { face, editor in
                              if face.isLive { editor.goTo([face.target]) }
                          },
-                         hovering: { face, _ in face.isLive ? face.target : nil })
+                         hovering: { face, editor in face.isLive && editor.document[face.target] != nil ? face.target : nil })
 }
 
 extension MentionFace {

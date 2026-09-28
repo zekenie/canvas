@@ -73,6 +73,8 @@ public final class DetailPanelState {
     @ObservationIgnored private var candidates: [ShapeKind: Candidates] = [:]
     private var chosenTabs: [ShapeKind: DetailTabID] = [:]
     private var collapsed: Set<DetailSectionKey> = []
+    /// The shown panel's number being typed, if any (`DetailPanelView` sets it).
+    @ObservationIgnored weak var drafts: DraftTracker?
 
     init(editor: CanvasEditor) { self.editor = editor }
 
@@ -169,7 +171,14 @@ public final class DetailPanelState {
     }
 }
 
-extension DetailPanelState: EditorService {}
+extension DetailPanelState: EditorService {
+    /// A number being typed for a shape of the board left is written to it while it's still there
+    /// to write to.
+    public func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor) { drafts?.commit() }
+
+    /// Nothing kept per shape.
+    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
+}
 
 extension CanvasEditor {
     /// The panel's state; nil without DetailPanelPlugin.

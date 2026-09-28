@@ -7,14 +7,14 @@ import TestKit
 /// Every commit of an editor, collected into a `DocumentDelta.Builder` as undo collects a step.
 @MainActor final class DeltaRecorder {
     var builder = DocumentDelta.Builder()
-    private var last: CanvasDocument
-    init(editor: CanvasEditor) { last = editor.document }
+    var last: CanvasFile
+    init(editor: CanvasEditor) { last = editor.file }
 }
 
 extension DeltaRecorder: EditorService {
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         builder.willCommit(changes, from: last)
-        last = editor.document
+        last = editor.file
     }
 }
 
@@ -25,10 +25,11 @@ extension DeltaRecorder: EditorService {
 /// What `body` did to the editor's document, as one delta, and the document before it.
 @MainActor func step(_ editor: CanvasEditor, _ body: () -> Void) throws -> (before: CanvasDocument, delta: DocumentDelta) {
     let recorder = try require(editor.service(DeltaRecorder.self))
-    recorder.builder = DocumentDelta.Builder()
+    recorder.builder = DocumentDelta.Builder(board: editor.board)
+    recorder.last = editor.file
     let before = editor.document
     body()
-    return (before, recorder.builder.delta(now: editor.document))
+    return (before, recorder.builder.delta(now: editor.file))
 }
 
 /// The delta takes `before` to the editor's document, and its inverse takes that back to `before`,
@@ -105,6 +106,28 @@ private func uuid(_ n: Int) -> ShapeID { ShapeID(UUID(uuidString: String(format:
             h.editor.transact { $0.update(a, as: Box.self) { $0.frame.origin.x = 0 } }
         }
         expect(nothing.isEmpty)
+    },
+    test("a step that takes a shape with boards under it holds them whole, and puts the file back and forth with them") {
+        let a = ShapeID(), p = ShapeID(), b = ShapeID(), q = ShapeID(), c = ShapeID()
+        let unit = CGRect(x: 0, y: 0, width: 10, height: 10)
+        func box(_ id: ShapeID) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(id: id, Box(unit))) }
+        func pocket(_ id: ShapeID) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(id: id, Pocket(unit))) }
+        let h = try EditorHarness(plugins: [FixturesPlugin(), PocketsPlugin(), recordingDeltas()],
+                                  file: CanvasFile(root: CanvasDocument(shapes: [box(a), pocket(p)]),
+                                                   children: [p: CanvasDocument(shapes: [box(b), pocket(q)]),
+                                                              q: CanvasDocument(shapes: [box(c)])]))
+        let before = h.file
+        let (_, delta) = try step(h.editor) { h.editor.transact { $0.delete([p]) } }
+        let after = h.file
+        expectEqual(after.children, [:])
+        expectEqual(delta.shapeIDs, [p])
+        expectEqual(Set(delta.boards.keys), [BoardID(owner: p), BoardID(owner: q)])
+        var file = after
+        file.apply(delta.inverted)
+        expectEqual(file, before, "every board back, every id")
+        expectEqual(file.board(containing: c), BoardID(owner: q))
+        file.apply(delta)
+        expectEqual(file, after)
     },
     test("inverting twice is the delta itself, and a change whose records are equal isn't one") {
         let a = AnyShapeRecord(ShapeRecord(Box(.zero))), b = AnyShapeRecord(ShapeRecord(Box(CGRect(x: 1, y: 1, width: 1, height: 1))))

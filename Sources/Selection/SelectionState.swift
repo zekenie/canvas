@@ -12,6 +12,8 @@ final class SelectionState {
     @ObservationIgnored private unowned let editor: CanvasEditor
     /// Each kind's rule (`ShapeSelectability`), found once: the registry is frozen.
     @ObservationIgnored private let rules: [ShapeKind: @MainActor (AnyShapeRecord) -> Bool]
+    /// Each kind's opener (`ShapeOpening`), found once.
+    @ObservationIgnored let openers: [ShapeKind: ShapeOpener]
     private(set) var selectedIDs: [ShapeID] = []
     /// +1 each time `selectedIDs` changes.
     private(set) var revision = 0
@@ -22,6 +24,9 @@ final class SelectionState {
     @ObservationIgnored private var press: Press?
     /// Going back, which records nothing.
     @ObservationIgnored private var isGoingBack = false
+    /// A board was just shown, and nothing has been selected or pressed there since: the arrival's
+    /// empty selection, which undo's restoring a selection there doesn't make a step of its own.
+    @ObservationIgnored private var hasJustArrived = false
     /// Observed whole through `hoveredID`, and a shape at a time through `isHovered`.
     @ObservationIgnored private var storedHover: ShapeID?
     var hoveredID: ShapeID? {
@@ -67,6 +72,7 @@ final class SelectionState {
     init(editor: CanvasEditor) {
         self.editor = editor
         rules = editor.registry.contributionByKind(to: ShapeSelectability.self)
+        openers = editor.registry.contributionByKind(to: ShapeOpening.self)
         buttonSources = editor.registry.contributions(to: CanvasButtons.self).map(\.value)
         decorationHits = editor.registry.contributions(to: DecorationHits.self).map(\.value).reversed()
         faceSources = editor.registry.contributions(to: ShapeFaces.self).map(\.value).reversed()
@@ -91,12 +97,13 @@ final class SelectionState {
     private func isSelectable(id: ShapeID) -> Bool { editor.document[id].map(isSelectable) ?? false }
 
     /// Drops what isn't there or isn't selectable, and repeats. Does nothing if that's what's
-    /// selected already.
-    func select(_ ids: [ShapeID]) {
+    /// selected already. Unless `recording` is false, the selection left is a step back.
+    func select(_ ids: [ShapeID], recording: Bool = true) {
         var seen = Set<ShapeID>()
         let kept = ids.filter { isSelectable(id: $0) && seen.insert($0).inserted }
         guard kept != selectedIDs else { return }
-        record(leaving: selectedIDs, for: kept)
+        hasJustArrived = false
+        if recording { record(leaving: selectedIDs, for: kept) }
         selectedIDs = kept
         revision += 1
         let only = kept.count == 1 ? kept[0] : nil
@@ -120,7 +127,10 @@ final class SelectionState {
     }
 
     /// The select tool calls these around its handling of a press.
-    func pressBegan() { press = Press() }
+    func pressBegan() {
+        press = Press()
+        hasJustArrived = false
+    }
     func pressEnded() { press?.isPressing = false }
 
     /// The selection is about to change from `previous` to `next`: `previous` goes on the stack,
@@ -131,30 +141,45 @@ final class SelectionState {
         if let current = press, !current.isPressing, editor.session == nil { press = nil }
         guard press?.isRecorded != true, Set(previous) != Set(next) else { return }
         press?.isRecorded = true
-        history.push(SelectionHistory.Entry(selection: previous, camera: editor.cameraTarget))
+        history.push(SelectionHistory.Entry(board: editor.board, selection: previous, camera: editor.cameraTarget))
     }
 
     /// What going back to `entry` selects: its shapes, less any that are gone or can no longer be
-    /// selected. Nil if it would change nothing: its shapes are all gone (unless it selected
-    /// nothing), or they're what's selected.
+    /// selected. On the board shown, nil if it would change nothing: its shapes are all gone
+    /// (unless it selected nothing), or they're what's selected. On another board, nil only if the
+    /// board can't be shown (its owner is gone); going there is a change, even to nothing selected.
     private func restoration(of entry: SelectionHistory.Entry) -> [ShapeID]? {
+        guard entry.board == editor.board else {
+            guard editor.canShow(entry.board) else { return nil }
+            let shapes = editor.contents(of: entry.board)
+            return entry.selection.filter { shapes[$0].map(isSelectable) ?? false }
+        }
         let kept = entry.selection.filter { isSelectable(id: $0) }
         guard entry.selection.isEmpty || !kept.isEmpty, Set(kept) != Set(selectedIDs) else { return nil }
         return kept
     }
 
-    /// Whether `goBack` would change the selection: some step on the stack would be restored.
+    /// Whether `goBack` would change the selection, or the board: some step on the stack would be
+    /// restored.
     var canGoBack: Bool { history.entries.reversed().contains { restoration(of: $0) != nil } }
 
-    /// Takes steps off the stack until one would change the selection, and restores it and its
-    /// camera (animated).
+    /// Takes steps off the stack until one would change the selection or the board, and restores
+    /// it: on the board shown, its selection and its camera (animated); on another, shows that
+    /// board, then selects there, with the camera where it was (set, not animated: gliding from
+    /// another board's camera means nothing).
     func goBack() {
         while let entry = history.pop() {
             guard let kept = restoration(of: entry) else { continue }
             isGoingBack = true
+            defer { isGoingBack = false }
+            guard entry.board != editor.board else {
+                select(kept)
+                editor.animateCamera(to: entry.camera, duration: SelectionStyle.goBackDuration)
+                return
+            }
+            guard editor.showBoard(entry.board) else { return }
             select(kept)
-            isGoingBack = false
-            editor.animateCamera(to: entry.camera, duration: SelectionStyle.goBackDuration)
+            editor.camera = entry.camera
             return
         }
     }
@@ -190,6 +215,31 @@ final class SelectionState {
 
 extension SelectionState: EditorService {
     func toolDidChange(from old: ToolID, to new: ToolID, in editor: CanvasEditor) {
+        clearPointerState()
+    }
+
+    /// Another board is shown: what was selected on the board left is a step back (even nothing
+    /// selected, so Back returns to that board), unless this is going back, or a file put in place
+    /// (opening one on the board left open, or a revert that took the board shown) came with the
+    /// switch, which no one took; nothing is selected on arrival, which isn't a step of its own; and
+    /// the press, the hover, the handle and the canvas buttons, all the board left's, are let go.
+    /// Keeps no state per board, so the switch's change set is never worked out.
+    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
+        if !isGoingBack && !change.isFileReplaced {
+            history.push(SelectionHistory.Entry(board: change.from, selection: selectedIDs, camera: change.leftCamera))
+        }
+        // Going back arrives at a step of its own, what it selects there.
+        hasJustArrived = !isGoingBack
+        clearPointerState()
+        guard !selectedIDs.isEmpty else { return }
+        selectedIDs = []
+        onlySelectedID = nil
+        revision += 1
+    }
+
+    /// What the pointer was doing: the press, the hover, the hovered handle and canvas button, the
+    /// pressed button, and where it was last seen.
+    private func clearPointerState() {
         press = nil
         clickWentElsewhere = false
         hover(nil)
@@ -214,12 +264,14 @@ extension SelectionState: EditorService {
 
 /// The selection goes back and forth with undo, as tldraw's does: undoing a step selects what was
 /// selected as it began (the shapes a Delete took, back selected), and redoing it what was as it
-/// ended. It's an ordinary change of the selection, a step back like any other.
+/// ended. It's an ordinary change of the selection, a step back like any other, except on a board
+/// just shown (the one undo shows for a step made there), where the switch and the selection are
+/// one step, as `showBoard(_:selecting:)` makes them: Back returns to the board left.
 extension SelectionState: UndoParticipant {
     func undoSnapshot(in editor: CanvasEditor) -> any Sendable { selectedIDs }
 
     func restoreUndoSnapshot(_ snapshot: any Sendable, in editor: CanvasEditor) {
-        if let ids = snapshot as? [ShapeID] { select(ids) }
+        if let ids = snapshot as? [ShapeID] { select(ids, recording: !hasJustArrived) }
     }
 }
 
@@ -336,7 +388,8 @@ extension CanvasEditor {
         hovered = nil                                   // and this, a hover over a shape that stays
     }
 
-    /// Return: edits the only selected shape if its kind is editable.
+    /// Edits the only selected shape if its kind is editable, whatever else opening it would do
+    /// (Return opens it: `openSelection`).
     public func editSelection() {
         if let selection { beginEditing(selection) }
     }
@@ -346,8 +399,11 @@ extension CanvasEditor {
     /// was headed, if it was moving), animated.
     /// Each change of the selection is a step back, however it came (a click, a row of the table of
     /// contents, Escape, a deletion), except that a press of the select tool and its drag are one
-    /// step, and going back isn't one. The stack holds the last 50 steps, skips repeats, and skips
-    /// a selection whose shapes have all gone. Ends editing; does nothing mid-gesture.
+    /// step, and going back isn't one. So is showing another board, even with nothing selected:
+    /// going back to a step on another board shows that board, then selects there, and puts the
+    /// camera where it was (not animated). The stack holds the last 50 steps, skips repeats, and
+    /// skips a selection whose shapes have all gone on the board shown, and a step on a board that
+    /// can't be shown (its owner deleted). Ends editing; does nothing mid-gesture.
     public func goBack() {
         guard session == nil, let state = selectionState else { return }
         endEditing()

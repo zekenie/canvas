@@ -122,6 +122,7 @@ public struct DetailSection<Value> {
     let isShown: @MainActor (Value) -> Bool
     let content: @MainActor (ShapeBinding<Value>) -> AnyView
     let accessory: (@MainActor (ShapeBinding<Value>) -> AnyView)?
+    private(set) var isEnabledWhileReadOnly = false
 
     /// `title == nil` is a headerless block that never collapses (the top of a tab). `id` defaults
     /// to the title, or "main"; it keys conflicts and remembered collapse. `when` hides the section
@@ -153,6 +154,20 @@ public struct DetailSection<Value> {
         self.isShown = isShown
         self.content = { AnyView(content($0)) }
         self.accessory = { AnyView(accessory($0)) }
+    }
+
+    /// The section, its controls working on a read-only shape (a locked one) too, where the panel
+    /// disables every other section's: for controls that change nothing of the shape, as Boards'
+    /// Open, which goes into it. What they write is refused there all the same.
+    ///
+    ///     DetailSection(in: BoardTab.self) { _ in
+    ///         DetailCommandButton("Open", command: .openSelection)
+    ///     }
+    ///     .enabledWhileReadOnly()
+    public func enabledWhileReadOnly() -> Self {
+        var section = self
+        section.isEnabledWhileReadOnly = true
+        return section
     }
 }
 
@@ -206,12 +221,14 @@ struct ErasedSection {
     let isShown: @MainActor (AnyShapeRecord) -> Bool
     let content: @MainActor (AnyShapeRecord, CanvasEditor) -> AnyView
     let accessory: (@MainActor (AnyShapeRecord, CanvasEditor) -> AnyView)?
+    let isEnabledWhileReadOnly: Bool
 
     init<Value>(_ section: DetailSection<Value>, value: @escaping @MainActor (AnyShapeRecord) -> Value?,
                 binding: @escaping @MainActor (AnyShapeRecord, CanvasEditor) -> ShapeBinding<Value>?) {
         tab = section.tab
         id = section.id
         title = section.title
+        isEnabledWhileReadOnly = section.isEnabledWhileReadOnly
         let shown = section.isShown, content = section.content
         isShown = { value($0).map(shown) ?? false }
         // Its writes are undo steps named for it; one without a title's, for the kind.

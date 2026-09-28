@@ -44,6 +44,37 @@ public enum Style {
     /// A slide frame's length.
     static let cameraSlideFrameMilliseconds: CGFloat = 16
     static var cameraSlideFrame: Duration { .milliseconds(Int(cameraSlideFrameMilliseconds)) }
+
+    /// A board shown for the first time fits its shapes with this much margin in all (half on each
+    /// side), no closer than 100%.
+    static let firstVisitInset: CGFloat = 64
+
+    // Pictures of boards: the minimap's, and boards' previews (`BoardPreviews`). Sizes in pixels.
+    /// A shape under this many pixels across is drawn as its bounds (`Silhouettes`).
+    static let detailedSilhouette: CGFloat = 4
+    /// A preview's silhouettes: one muted gray, as the minimap's are on a light canvas, for an
+    /// owner's light body.
+    static let boardPreview = NSColor(srgbRed: 0.6, green: 0.62, blue: 0.64, alpha: 1)
+    /// No preview is larger on either side; a board's longest side is drawn this long.
+    static let previewSide: CGFloat = 256
+    /// An open shape's line in a preview.
+    static let previewLineWidth: CGFloat = 1.5
+    /// How many previews are kept, the one drawn longest ago going first: 64 KB each at most.
+    static let keptPreviews = 64
+    /// A preview's rect narrower or shorter than this on screen, in view points, shows none: there's
+    /// nothing to see, and a board zoomed out over many owners asks for no builds.
+    static let previewSmallestSide: CGFloat = 16
+    /// How long building previews may take in a frame (as the minimap's tiles do); what doesn't fit
+    /// waits for the next. Ten cards in view cost a frame 6 to 10 ms on a loaded machine before any
+    /// build (most of it the canvas itself, drawn with nothing on it), so this leaves room under 16 ms.
+    static let previewFrameBudget: Duration = .milliseconds(2)
+    /// A frame builds at least this many shapes' worth, whatever it has left; a step builds at most
+    /// the other, so what a shape costs is measured often.
+    static let previewChunks: ClosedRange<Int> = 16...512
+    /// A guess at what a shape costs a preview, until previews have measured it, and how much each
+    /// step moves the guess toward what it took. Seconds.
+    static let initialPreviewCost = 2e-6
+    static let previewCostLearning = 0.25
 }
 
 extension NSAppearance {

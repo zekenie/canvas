@@ -26,6 +26,20 @@ public final class EditorHarness {
         self.init { CanvasEditor(registry: registry, document: document, scheduler: $0) }
     }
 
+    /// An editor of a file of several boards, showing its root.
+    public convenience init(plugins: [any CanvasPlugin], file: CanvasFile) throws {
+        let registry = try Registry(plugins: plugins)
+        self.init { CanvasEditor(registry: registry, file: file, scheduler: $0) }
+    }
+
+    /// Every board of the editor's file.
+    public var file: CanvasFile { editor.file }
+
+    /// Shows the board a shape owns (`editor.showBoard`), as opening it would; returns whether it's
+    /// shown.
+    @discardableResult
+    public func enter(_ owner: ShapeID) -> Bool { editor.showBoard(BoardID(owner: owner)) }
+
     @discardableResult
     public func add<P: ShapeProps>(_ props: P, id: ShapeID = ShapeID()) -> ShapeID { editor.add(props, id: id) }
 

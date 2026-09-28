@@ -58,6 +58,9 @@ public struct DetailPanelView: View {
         .toggleStyle(DetailCheckboxStyle())
         .environment(\.detailDrafts, drafts)
         .environment(\.detailExit, onExit)
+        .environment(\.detailEditor, editor)
+        // So a number being typed lands on its shape before another board is shown.
+        .onAppear { editor.detailPanel?.drafts = drafts }
         .onKeyPress(.escape) {
             // Leaves the panel, dropping a number being typed rather than committing it.
             drafts.revert()
@@ -407,7 +410,8 @@ struct TabStripLayout: Layout {
 }
 
 /// A section: its header (which collapses it, read-only shape or not), then its content. A
-/// read-only shape's content and header control are there to read, not to use.
+/// read-only shape's content and header control are there to read, not to use, unless the section
+/// says they change nothing of it (`enabledWhileReadOnly()`).
 struct SectionView: View, Equatable {
     let resolved: ResolvedSection
     let editor: CanvasEditor
@@ -420,6 +424,8 @@ struct SectionView: View, Equatable {
     nonisolated static func == (a: Self, b: Self) -> Bool {
         MainActor.assumeIsolated { a.resolved.key == b.resolved.key && a.record == b.record && a.isCollapsed == b.isCollapsed }
     }
+
+    private var isDisabled: Bool { isReadOnly && !resolved.section.isEnabledWhileReadOnly }
 
     var body: some View {
         VStack(alignment: .leading, spacing: DetailStyle.rowSpacing) {
@@ -437,13 +443,13 @@ struct SectionView: View, Equatable {
                     .buttonStyle(.plain)
                     .accessibilityLabel(title)
                     Spacer(minLength: DetailStyle.pairSpacing)
-                    resolved.section.accessory?(record, editor).disabled(isReadOnly)
+                    resolved.section.accessory?(record, editor).disabled(isDisabled)
                 }
                 .frame(height: DetailStyle.sectionHeaderHeight)
             }
             // A collapsed section's content isn't built.
             if !isCollapsed || resolved.section.title == nil {
-                resolved.section.content(record, editor).disabled(isReadOnly)
+                resolved.section.content(record, editor).disabled(isDisabled)
             }
         }
         .padding(.horizontal, DetailStyle.inset)

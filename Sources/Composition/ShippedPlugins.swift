@@ -3,6 +3,7 @@ import AppKit
 import ArrowPorts
 import Arrows
 import Automation
+import Boards
 import Canvas
 import CanvasRPC
 import Checklists
@@ -24,6 +25,7 @@ import Reordering
 import Schemas
 import Selection
 import StickyNotes
+import Subboards
 import SwiftUI
 import TableOfContents
 import TaskCards
@@ -49,11 +51,13 @@ public enum ShippedPlugins {
             // First: every key is registered with Keyboard; the others build on Selection, and its
             // handles draw below their view overlays.
             KeyboardPlugin(), SelectionPlugin(),
-            ArrowsPlugin(), StickyNotesPlugin(), EllipsesPlugin(), TaskCardsPlugin(), SchemasPlugin(),
+            ArrowsPlugin(), StickyNotesPlugin(), EllipsesPlugin(), TaskCardsPlugin(), SubboardsPlugin(), SchemasPlugin(),
             // After Validation: what's shown on shapes draws over its outline.
             ValidationPlugin(), AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin(), ChecklistsPlugin(), TitlesPlugin(),
             // After Titles, whose names its pills show, and the table of contents, whose rows it names.
             MentionsPlugin(),
+            // Getting around a file's boards (a subboard's): opening one, ⌘↑, the path.
+            BoardsPlugin(),
             ValidationDetailsPlugin(), ValidationContentsPlugin(), ClipboardPlugin(pasteboard: pasteboard),
             LockingPlugin(),
             // Ports, whose arrows the bridge draws. After Adornments: a shape's dots draw above its
@@ -89,11 +93,26 @@ public enum ShippedPlugins {
     /// The detail panel, for the app to place beside the canvas. It follows the editor's selection:
     /// one shape's details, or, with nothing or several selected, the table of contents (the whole
     /// board, or the selection), as data-canvas's details panel does. `onExit` must give the
-    /// keyboard back to the canvas.
+    /// keyboard back to the canvas. Inside a subboard, the list's header names its board, with
+    /// its symbol and a button up (⌘↑'s `.enclosingBoard`); on the root it's "Board".
     public static func detailPanel(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void) -> some View {
         DetailPanelView(editor: editor, onExit: onExit) {
-            TableOfContentsView(editor: editor, onExit: onExit)
+            TableOfContentsView(editor: editor, onExit: onExit, heading: { contentsHeading(for: $0) })
         }
+    }
+
+    /// The table of contents' heading in `detailPanel`: the board shown's crumb (Boards'), so it's
+    /// named as the path names it and redraws as the path does, with ⌘↑'s way up; nil on the root,
+    /// where it's the list's own, "Board".
+    public static func contentsHeading(for editor: CanvasEditor) -> ContentsHeading? {
+        editor.boardCrumbs?.crumbs.last.map { ContentsHeading($0.title, systemImage: $0.systemImage, up: .enclosingBoard) }
+    }
+
+    /// Where the board shown is in its file (Boards' `BoardPath`), for the app to place over the top
+    /// middle of the canvas (`.overlay(alignment: .top)`): a pill of crumbs, the root's named
+    /// `rootName` (the file's name), nothing on the root. Only the pill takes clicks.
+    public static func boardPath(editor: CanvasEditor, rootName: String) -> some View {
+        BoardPath(editor: editor, rootName: rootName)
     }
 
     /// A toolbar tool's tooltip, for the app's tool picker: its label, and the key that switches to

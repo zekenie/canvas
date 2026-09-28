@@ -35,10 +35,11 @@ extension RefDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<Ref>, in context: RenderContext) {}
 }
 
-/// Which refs refer to each shape, kept as the board changes, as a plugin's service keeps what it
-/// knows: what a ref's row reads besides the ref (the name of the shape it refers to), and which
-/// refs' rows a commit may change without changing them (those referring to a shape it changed),
-/// each commit's worth in what the commit changed.
+/// Which refs on the board shown refer to each shape, kept as the board changes, as a plugin's
+/// service keeps what it knows: what a ref's row reads besides the ref (the name of the shape it
+/// refers to, on any board of the file), and which refs' rows a commit may change without changing
+/// them (those referring to a shape it changed, on the board or elsewhere), each commit's worth in
+/// what the commit changed.
 @MainActor
 final class RefIndex {
     private unowned let editor: CanvasEditor
@@ -50,9 +51,9 @@ final class RefIndex {
         index(editor.document.shapes.map(\.id))
     }
 
-    /// The name of the widget `id` names, "nothing" for none.
+    /// The name of the widget `id` names, wherever it is in the file, "nothing" for none.
     func name(of id: ShapeID?) -> String {
-        id.flatMap { editor.document[$0]?.typed(as: Widget.self)?.props.name } ?? "nothing"
+        id.flatMap { editor.file.record($0)?.typed(as: Widget.self)?.props.name } ?? "nothing"
     }
 
     /// The refs that refer to any of `ids`.
@@ -85,7 +86,7 @@ struct RefsPlugin: CanvasPlugin {
     func register(into registrar: inout PluginRegistrar) {
         registrar.service { RefIndex(editor: $0) }
         let affected: @MainActor (ChangeSet, ContentsContext) -> Set<ShapeID> = { changes, context in
-            context.service(RefIndex.self)?.refs(to: changes.shapeIDs) ?? []
+            context.service(RefIndex.self)?.refs(to: changes.shapeIDs.union(changes.elsewhere)) ?? []
         }
         let row: @MainActor (ShapeRecord<Ref>, ContentsContext) -> ContentsLabel = { ref, context in
             refRowsMade += 1
@@ -100,10 +101,11 @@ struct RefsPlugin: CanvasPlugin {
 
 /// The keyboard, the selection, the fixtures, widgets, refs, then `more`, and the table of
 /// contents, so the refs' index hears of each commit before the table of contents does.
-@MainActor func refsEditor(bridged: Bool = false, _ more: [any CanvasPlugin] = [], scheduler: any Scheduler = ManualScheduler()) throws -> CanvasEditor {
+@MainActor func refsEditor(bridged: Bool = false, _ more: [any CanvasPlugin] = [], file: CanvasFile = CanvasFile(),
+                           scheduler: any Scheduler = ManualScheduler()) throws -> CanvasEditor {
     CanvasEditor(registry: try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), WidgetsPlugin(), RefsPlugin(bridged: bridged)]
                                             + more + [TableOfContentsPlugin()]),
-                 scheduler: scheduler)
+                 file: file, scheduler: scheduler)
 }
 
 @MainActor let affectedRowTests = Suite("Table of contents: rows read from more than their shape", [

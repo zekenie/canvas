@@ -112,3 +112,9 @@ public protocol ShapeReferencing: ShapeDefinition {
     /// as they were, and a copy leaves the shape out.
     func remappingReferences(of shape: ShapeRecord<Props>, _ map: (ShapeID) -> ShapeID?, in context: ShapeContext) -> Props?
 }
+
+/// Each shape of this kind owns a board, one under the board it's on: kept in the file under its id
+/// (`BoardID(owner:)`, `CanvasFile.children`), not in its props. The core keeps a board with the
+/// shape whose id keys it, whatever that shape's kind; this says which kinds' shapes own theirs, so
+/// which boards are there to show. Its schema says so (`x-canvas-board`).
+public protocol BoardOwning: ShapeDefinition {}

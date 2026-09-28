@@ -95,8 +95,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// A board window's content: the canvas (with the minimap in its corner), the tools in the toolbar,
-/// and the details in an inspector.
+/// A board window's content: the canvas (with the minimap in its corner, and, inside a subboard,
+/// the path over its top middle), the tools in the toolbar, and the details in an inspector.
 struct ContentView: View {
     let editor: CanvasEditor
     let focus: CanvasFocus
@@ -110,6 +110,8 @@ struct ContentView: View {
 
     var body: some View {
         CanvasRepresentable(editor: editor, focus: focus, showsMinimap: view.showsMinimap)
+            // Only the pill takes clicks: the rest of the canvas is the canvas's.
+            .overlay(alignment: .top) { ShippedPlugins.boardPath(editor: editor, rootName: view.fileName) }
             .frame(minWidth: 480, minHeight: 320)
             .toolbar {
                 ToolbarItem(placement: .principal) { ToolPicker(editor: editor, help: { ShippedPlugins.help(for: $0, in: editor.registry) }) }
