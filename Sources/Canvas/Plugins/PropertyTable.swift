@@ -24,7 +24,7 @@ extension PluginRegistrar {
 
 extension ShapeRegistrar {
     /// Opts this kind into an added property: its shapes hold a value for it, and its schema has
-    /// it. A horizontal calls this from its own sugar (`note.checklist()`), which brings the rest.
+    /// it. A horizontal calls this from its own sugar (`note.title()`), which brings the rest.
     public mutating func optIn<P: ShapeProperty>(to _: P.Type) {
         contribute(PropertyOptIn(key: P.key, appliesTo: nil), to: CorePoints.PropertyOptIns.self)
     }

@@ -79,7 +79,7 @@ extension InspectorWindow {
         let panel = try require(w.editor.detailPanel)
         expectEqual(panel.layout(for: try require(w.editor.document[groceries.id])).tabs.map(\.title).last, "Mentioned In")
         expectEqual(panel.layout(for: try require(w.editor.document[plans.id])).tabs.map(\.title).last, "Mentioned In")
-        expectEqual(panel.layout(for: try require(w.editor.document[ship.id])).tabs.map(\.title).last, "Arrange", "nothing mentions it")
+        expectEqual(panel.layout(for: try require(w.editor.document[ship.id])).tabs, [], "nothing mentions it")
 
         panel.choose(.of(MentionsTab.self), for: StickyNote.kind)
         w.editor.selection = groceries.id

@@ -18,13 +18,13 @@ public struct SchemaViolation: Hashable, Sendable, CustomStringConvertible {
         self.message = message
     }
 
-    /// The root's member it's in (`title`, `checklist`); nil for the root itself.
+    /// The root's member it's in (`title`, `frame`); nil for the root itself.
     public var property: String? {
         guard case .member(let name)? = path.first else { return nil }
         return name
     }
 
-    /// The path as a JSON Pointer (RFC 6901): "/checklist/2/text"; empty for the root.
+    /// The path as a JSON Pointer (RFC 6901): "/items/2/text"; empty for the root.
     public var pointer: String { path.map { "/\($0.pointerToken)" }.joined() }
 
     public var description: String { "\(pointer.isEmpty ? "/" : pointer) \(keyword): \(message)" }
@@ -532,7 +532,7 @@ private struct JSONTypes: OptionSet {
 }
 
 /// What a message calls a place in the value: its schema's title, else its path ("Title",
-/// "Checklist › item 3 › text"), else, at the root, "The value". Capitalized, to start a sentence.
+/// "Items › item 3 › text"), else, at the root, "The value". Capitalized, to start a sentence.
 private struct Naming: CustomStringConvertible {
     let path: [JSONPathComponent]
     let title: String?

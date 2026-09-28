@@ -484,7 +484,7 @@ struct Drawing {
             }
         }
         // What a restated shape already has isn't a change, though it's written without what reading
-        // it makes afresh (a checklist item's id): a script run again changes nothing.
+        // it makes afresh (the id of an item in a list): a script run again changes nothing.
         if let existing = item.existing {
             settings = settings.filter { key, value in !Self.alreadyHas(existing, key, value, in: registry) }
         }
@@ -619,7 +619,7 @@ struct Drawing {
     }
 
     /// Whether setting `key` to `value` would leave the shape as it is: what the value reads as is
-    /// what the shape has, but for what reading it makes afresh each time (the id a checklist item
+    /// what the shape has, but for what reading it makes afresh each time (the id an item in a list
     /// written without one gets), found by reading it twice.
     static func alreadyHas(_ record: AnyShapeRecord, _ key: String, _ value: JSONValue, in registry: Registry) -> Bool {
         guard let now = record.propertiesJSON?[key],

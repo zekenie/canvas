@@ -34,7 +34,7 @@ extension Pin: ClickableAdornment {
 /// The shapes a pin was clicked on, in order.
 @MainActor var clicked: [ShapeID] = []
 
-/// Text on the top-right corner, as a checklist's tally.
+/// Text on the top-right corner: a tally, "☑ 2/5".
 enum Count {}
 extension Count: Adornment {
     static var placement: AdornmentPlacement { .onTopRightCorner }

@@ -182,7 +182,7 @@ public struct Registry {
     /// properties, then each added property it opts into (marked with its owner, `x-canvas-owner`),
     /// with their types, defaults and constraints; only those marked `required()` required, and nothing
     /// else allowed; a kind whose shapes own boards (`BoardOwning`) is marked `x-canvas-board`. Shared
-    /// definitions are under `$defs`, named after their modules (`core.rect`, `checklists.item`),
+    /// definitions are under `$defs`, named after their modules (`core.rect`, `mentions.text`),
     /// and every `$ref` is local. It describes a shape as one object, own and added properties side
     /// by side (a board keeps the two apart). Nil for a kind no plugin registers.
     public func schema(for kind: ShapeKind) -> JSONSchema? { schemas[kind] }

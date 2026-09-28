@@ -172,24 +172,21 @@ Every other key is one of the kind's properties, named as its schema names it; `
 | one of a set | one of its words, bare or quoted | `status: blocked`, on a kind that has one |
 | a number | a bare number | `estimate: 6`, on a kind that has one |
 | true or false | `true` or `false` | `locked: true` |
-| an object or a list | JSON on one line, every member written | `checklist: [{"text": "Pick a time"}]` |
 | anything | `null`, which puts the property back to its default | `text: null` |
 
 The shipped kinds' attributes:
 
-- **sticky-note**: `text` (what it says), `checklist`, `locked`.
+- **sticky-note**: `text` (what it says), `locked`.
 - **schema-card**: `schema` (a JSON Schema, as text: its properties in the order written; the card grows to list them), `prompt` (what the schema should hold, in words), `locked`. What a script writes is taken as written: the Claude sync that rewrites one side when the user edits the other isn't asked, so write a prompt and a schema that agree, or leave the prompt out.
 - **rectangle**, **subboard**: `locked`.
 - **A note's `text`** is kept as written. In it, `@[label](shape:<id>)` is a mention of a shape, which the note shows as a live pill with that shape's name now. No id ever reaches a script, so write plain words: an `@`, or `@[…]` without `(shape:…)`, is only text. (The app writes a mention's form as plain text with `\@[`, which a script's string spells `\\@[`.) A mention of a shape that isn't in the file is kept, and warned about.
-- **`checklist`** is a list of items like `{"text": "Pick a time", "isDone": true}`, where `isDone` defaults to `false`. Writing a checklist replaces the whole list, so to tick one item you write them all.
-- **An object replaces the whole property**, as a list does: members it leaves out take their defaults, not what the shape had. `checklist: [{"text": "Pick a time"}]` on a note whose item was done leaves it not done. Write every member.
 - **`locked: true`** locks a shape, as the context menu's Lock does. A locked shape refuses every later change (`read_only`). Leave locking to the user.
 
-A value past a bound (a title over 80 characters, say) isn't refused. The shape is drawn and the bound comes back as a warning. A value of the wrong type is `invalid_value`, naming the attribute and what it takes, and so is one anywhere inside JSON (`checklist: Checklist › item 1 › text should be a string, not 5`). So is a member an object doesn't have, anywhere in it, with its members and a Did you mean (`checklist: done isn't a member of item 1 (it has isDone and text)`, hint `did you mean isDone?`): it's never dropped. So is a word outside a set, which also gets a Did you mean. A key the kind doesn't have is `unknown_attribute`, which lists what the kind takes and names the kinds that do have the key, if any.
+A value past a bound (a title over 80 characters, say) isn't refused. The shape is drawn and the bound comes back as a warning. A value of the wrong type is `invalid_value`, naming the attribute and what it takes. So is a word outside a set, which also gets a Did you mean. A key the kind doesn't have is `unknown_attribute`, which lists what the kind takes and names the kinds that do have the key, if any. A property that holds an object or a list (none of the shipped kinds has one) takes JSON on one line, which replaces the whole property, so write every member; a value of the wrong type anywhere inside it, or a member it doesn't have, is `invalid_value` too, never dropped.
 
 ```draw
 sticky-note "Backfill" below "Ingest" text: "Waiting on the vendor's March files"
-sticky-note "Nightly schedule" below "Load" checklist: [{"text": "Pick a time"}, {"text": "Add a timeout", "isDone": true}]
+sticky-note "Nightly schedule" below "Load" text: "Pick a time, and add a timeout"
 ```
 
 ### Keys that are refused
@@ -494,14 +491,14 @@ A statement whose title is already on the board updates that shape. It changes o
 - Re-running an old layout script moves its shapes back to where its placements put them, undoing whatever the user moved since, and draws its untitled shapes again. To add to a drawing, write only the new statements.
 
 ```draw
-sticky-note "Backfill" text: null checklist: [{"text": "Ask the vendor again"}]
+sticky-note "Backfill" text: null
 ```
 
 ```draw
 sticky-note "Runbook" left level with "Backfill"
 ```
 
-The first statement clears Backfill's text and gives it a checklist, without moving it. The second moves Runbook sideways, so its left edge lines up with Backfill's, and keeps its vertical position, since nothing speaks for that axis. Alerts, placed below Runbook in an earlier script, stays where it was.
+The first statement clears Backfill's text, without moving it. The second moves Runbook sideways, so its left edge lines up with Backfill's, and keeps its vertical position, since nothing speaks for that axis. Alerts, placed below Runbook in an earlier script, stays where it was.
 
 ### Renaming
 
@@ -605,8 +602,8 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | `syntax` | The line can't be read. `sticky-note: Web isn't quoted, and titles are in double quotes` · `edge: --> isn't an arrow` · `--> joins shapes only in an edge statement` · `titles and text are in straight double quotes: "Web"` · `sticky-note "A": rigth isn't a placement` · `# doesn't start a comment here` · `attributes are written key: value, without braces` · `an attribute is written key: value, not key = value` | Follow the hint, which names what to write. |
 | `unknown_kind` | The first word isn't a kind the app has. `node "Web"`, with the drawable kinds listed, and the one like it named (`note`: `did you mean sticky-note?`) | Use a kind from `build/canvas kinds`. |
 | `not_placeable` | The kind exists but no tool places it, like an arrow, or a line, whose tool draws one by hand. | Draw an arrow as `edge "A" -> "B"`. |
-| `unknown_attribute` | The key isn't one the kind takes. `"Backfill" is a sticky-note and has owner:, which isn't one of a sticky-note's attributes`, with the hint `a sticky-note takes size:, gap:, overlap:, style:, title:, checklist:, …` · a style that gives a shape nothing, or has a key nothing takes | Use one it takes (Did you mean), or drop it. |
-| `invalid_value` | The value doesn't fit the key. `locked: maybe isn't true or false` · `size: huge isn't a size` · `gap: wdie isn't a gap` · a size or gap over 100000 · `from: middle isn't a side` · `channel: note-lnk isn't a channel` · a JSON member the object doesn't have (`checklist: done isn't a member of item 1 (it has isDone and text)`), or a value of the wrong type in it · with `channel:` written, a side the kind has no port on (`from: top: a sticky-note has note-link ports on its left, right and bottom`) · another channel for an edge already drawn (`the edge from "A" to "B" is on note-link, not on schema-link`) | Write a value of the kind the hint names. |
+| `unknown_attribute` | The key isn't one the kind takes. `"Backfill" is a sticky-note and has owner:, which isn't one of a sticky-note's attributes`, with the hint `a sticky-note takes size:, gap:, overlap:, style:, title:, locked:, text:` · a style that gives a shape nothing, or has a key nothing takes | Use one it takes (Did you mean), or drop it. |
+| `invalid_value` | The value doesn't fit the key. `locked: maybe isn't true or false` · `size: huge isn't a size` · `gap: wdie isn't a gap` · a size or gap over 100000 · `from: middle isn't a side` · `channel: note-lnk isn't a channel` · a JSON member the object doesn't have, or a value of the wrong type in it · with `channel:` written, a side the kind has no port on (`from: top: a sticky-note has note-link ports on its left, right and bottom`) · another channel for an edge already drawn (`the edge from "A" to "B" is on note-link, not on schema-link`) | Write a value of the kind the hint names. |
 | `duplicate` | Something is written twice. `"locked" is written twice (true, false)` · a title stated on two lines (`written twice, here and on line 4`) · a rename to a title another shape has · two edges for one pair · a style defined twice | Keep one. |
 | `unknown_title` | No shape has that title. `right of "Injest"`, with up to 3 near titles · `board` on an empty board | Write the title exactly (`did you mean "Ingest"?`). On an empty board, leave one shape unplaced instead. |
 | `ambiguous_title` | Two or more shapes have the title, each listed with its kind and where it is. | Ask the user to rename one. Titles only work as names while each is used once. |
@@ -739,7 +736,7 @@ delete edge "Ingest" -> "Load"
 - `drawable`: whether a script can draw it, with the reason if not (`why`).
 - `names`: `named` (a title you give it), `derived` (worked out from what it is), or `none`.
 - `size`: what its tool places, like `"200x200"`.
-- `attributes`: each attribute a script can set, with a compact type. The types are a set's words joined by `|`, `true|false`, `number ≥ 0`, `integer`, `text`, `text (≤ 80)`, `date (YYYY-MM-DD or date-time)`, and JSON shapes like `JSON [{isDone, text}]` (members in alphabetical order; an id nobody writes, like a checklist item's, isn't listed). Keys a script can't set, like the frame, aren't listed.
+- `attributes`: each attribute a script can set, with a compact type. The types are a set's words joined by `|`, `true|false`, `number ≥ 0`, `integer`, `text`, `text (≤ 80)`, `date (YYYY-MM-DD or date-time)`, and JSON shapes like `JSON [{done, text}]` (members in alphabetical order; an id nobody writes, like a list item's, isn't listed). Keys a script can't set, like the frame, aren't listed.
 - `edges`: the channels an edge from it can take, by side.
 
 `--schema` adds each kind's full JSON Schema. As text, for a person at a terminal, each kind's attributes and edges are listed under its row.

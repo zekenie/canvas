@@ -2,7 +2,6 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
-import Checklists
 import Composition
 import DetailPanel
 import Foundation
@@ -11,6 +10,7 @@ import LanguageModels
 import Mentions
 import Selection
 import StickyNotes
+import Subboards
 import SwiftUI
 import TableOfContents
 import TestKit
@@ -316,39 +316,43 @@ let welcomeNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x:
         b.editor.undo()
         expectEqual(try b.board.data(ofType: boardType), before)
     },
-    test("from the table of contents' list and a panel's checkbox, Undo reaches the board's window; in a panel's field, it's the field's") {
+    test("from the table of contents' list and a panel's button, Undo reaches the board's window; in a panel's field, it's the field's") {
         let w = try InspectorWindow()
-        let shape = note(checklist: [ChecklistItem(text: "eggs")])
-        w.editor.transact("Add Note") { $0.insert(shape) }
+        var shape = ShapeRecord(Subboard(frame: CGRect(x: 100, y: 100, width: 240, height: 160)))
+        shape[TitleProperty.self] = "eggs"
+        w.editor.transact("Add Subboard") { $0.insert(shape) }
         w.window.settle()
         let contents = try require(w.host.descendants(NSTableView.self).first { $0.isTableOfContents }, "the panel shows the table of contents")
         w.window.makeFirstResponder(contents)
         expect(target(of: "undo:", from: w.window.firstResponder) === w.window)
-        w.click(CGPoint(x: 200, y: 200))
-        let checkbox = try require(w.buttons.first, "the checklist's checkbox")
-        expect(target(of: "undo:", from: checkbox) === w.window)
-        w.window.focus(try require(w.fields.first { $0.stringValue == "eggs" }))
+        w.click(CGPoint(x: 200, y: 180))
+        w.window.spin { w.titleField != nil && !w.buttons.isEmpty }
+        let open = try require(w.buttons.first, "the Board tab's Open")
+        expect(target(of: "undo:", from: open) === w.window)
+        let field = try require(w.titleField)
+        w.window.focus(field)
+        field.currentEditor()?.selectAll(nil)
         w.window.type("milk")
         w.window.settle()
-        expectEqual(w.editor.document[shape.id]?[ChecklistProperty.self]?.map(\.text), ["milk"])
+        expectEqual(w.editor.document[shape.id]?[TitleProperty.self], "milk")
         let item = NSMenuItem(title: "", action: #selector(BoardWindow.undo(_:)), keyEquivalent: "")
         expect(w.window.validateMenuItem(item))
         expectEqual(item.title, "Undo Typing")
         w.window.undo(nil)
         w.window.settle()
-        expect(w.editor.document[shape.id] != nil, "the board's Add Note wasn't undone")
-        expectEqual(w.editor.document[shape.id]?[ChecklistProperty.self]?.map(\.text), ["eggs"], "the text's undo, written through")
+        expect(w.editor.document[shape.id] != nil, "the board's Add Subboard wasn't undone")
+        expectEqual(w.editor.document[shape.id]?[TitleProperty.self], "eggs", "the text's undo, written through")
         w.window.makeFirstResponder(w.canvas)
         expect(w.window.validateMenuItem(item))
-        expectEqual(item.title, "Undo Add Note", "the field's run of writes came back to where it began: no step")
-        w.window.focus(try require(w.fields.first { $0.stringValue == "eggs" }))
+        expectEqual(item.title, "Undo Add Subboard", "the field's run of writes came back to where it began: no step")
+        w.window.focus(try require(w.titleField))
         w.window.type("ham")
         w.window.settle()
         w.window.makeFirstResponder(w.canvas)
         expect(w.window.validateMenuItem(item))
-        expectEqual(item.title, "Undo Change Items")
+        expectEqual(item.title, "Undo Change Subboard")
         w.window.undo(nil)
-        expectEqual(w.editor.document[shape.id]?[ChecklistProperty.self]?.map(\.text), ["eggs"], "the board's step for the field's typing")
+        expectEqual(w.editor.document[shape.id]?[TitleProperty.self], "eggs", "the board's step for the field's typing")
     },
 ])
 

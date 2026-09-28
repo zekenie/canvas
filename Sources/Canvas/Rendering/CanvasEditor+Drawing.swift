@@ -73,7 +73,7 @@ extension CanvasEditor {
 
     /// Draws a shape `offset` view points away from where it is, until it's set back to zero: for
     /// an animation that moves how a shape looks without changing it (Locking's shake). Its outline
-    /// goes with it, and so do the overlays that decorate it (a title's pill, a checklist's chip),
+    /// goes with it, and so do the overlays that decorate it (a title's pill, a lock),
     /// through `OverlayContext.worldDrawingOffset(of:)`. Everything else goes by where it is: hit
     /// testing, handles, arrows bound to it, pictures of the board. A shape that's deleted loses its
     /// offset.

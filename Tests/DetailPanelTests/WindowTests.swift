@@ -129,7 +129,7 @@ struct CountingPlugin: CanvasPlugin {
     var id: PluginID { "counting" }
     func register(into registrar: inout PluginRegistrar) {
         registrar.detailsForEveryBox {
-            DetailSection("Counted", in: ArrangeTab.self) { frame in
+            DetailSection("Counted", in: FrameTab.self) { frame in
                 let _ = (countedBuilds += 1)
                 Text(DetailNumberText.format(frame.wrappedValue.minX, unit: "pt"))
             }
@@ -292,7 +292,7 @@ extension ListTab: DetailTab { static var title: String { "List" } }
         let panel = PanelWindow(editor)
         editor.selection = editor.add(Box(gadgetFrame))
         panel.window.spin { !panel.fields.isEmpty }
-        expectEqual(try editor.layout(try require(editor.selection)).outline, ["Arrange: Size, Position"])
+        expectEqual(try editor.layout(try require(editor.selection)).outline, ["Frame: Size, Position"])
         expectEqual(hairlines(try panel.render()), 2, "one under the header, one between Size and Position")
     },
     test("a footer line tints its symbol, not its text") {
@@ -548,14 +548,14 @@ extension ListTab: DetailTab { static var title: String { "List" } }
         expectEqual(centers.map { $0.map { $0 > 200 } }, [[true, false, false], [true, true, true]])
     },
     test("the tab strip fits five short titles in the ideal width") {
-        // Checklist doesn't fit a fifth of the strip, so the tabs are sized to their titles: each
+        // A long title doesn't fit a fifth of the strip, so the tabs are sized to their titles: each
         // title is drawn as wide as in a panel with room to spare.
         @MainActor func titleWidths(panelWidth: CGFloat) throws -> [Int] {
             let editor = try gadgetEditor([Contributor(id: "more") { r in
                 r.details(Gadget.self) { DetailSection(in: ListTab.self) { _ in Text("List") } }
             }])
             editor.selection = editor.add(Gadget(gadgetFrame))
-            expectEqual(try editor.layout(try require(editor.selection)).tabs.map(\.title), ["Gadget", "List", "Remarks", "Style", "Arrange"])
+            expectEqual(try editor.layout(try require(editor.selection)).tabs.map(\.title), ["Gadget", "List", "Remarks", "Style", "Frame"])
             return try inkRuns(DetailPanelView(editor: editor), width: panelWidth, rows: 48...62)
         }
         let roomy = try titleWidths(panelWidth: 600)

@@ -21,7 +21,7 @@ struct RunButtonPlugin: CanvasPlugin {
     func register(into registrar: inout PluginRegistrar) {
         registrar.command(Self.run, isEnabled: { $0.document.shapes.count > 1 }) { [count] _ in count.runs += 1 }
         registrar.detailsForEveryBox {
-            DetailSection("Run", in: ArrangeTab.self) { _ in
+            DetailSection("Run", in: FrameTab.self) { _ in
                 DetailCommandButton("Run", systemImage: "play", command: Self.run)
             }
         }

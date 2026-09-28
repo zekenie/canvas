@@ -2,7 +2,6 @@ import Adornments
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
-import Checklists
 import Composition
 import CoreGraphics
 import Geometry
@@ -15,7 +14,7 @@ import TableOfContents
 import TestKit
 import Titles
 
-// What's shown on a shipped note (its title's pill, its checklist's tally, its lock) is laid out by
+// What's shown on a shipped note (its title's pill, its lock) is laid out by
 // Adornments, and pointing at any of it is pointing at the note: a press, a drag, a double-click, a
 // right-click and a hover. The lock alone is also a button.
 
@@ -40,18 +39,13 @@ extension CanvasEditor {
 private let onPill = CGPoint(x: 112, y: 82)
 
 @MainActor let adornmentTests = Suite("Adornments, as shipped", [
-    test("a locked, titled note with a checklist: the lock at the row's right end, the pill up to 4 points short of it, the tally on the corner") {
+    test("a locked, titled note: the lock at the row's right end, the pill up to 4 points short of it") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let (h, note) = titledNote(pasteboard, title: "A title much longer than the note is wide")
-        h.editor.transact { $0.update(note) { $0[ChecklistProperty.self] = [ChecklistItem(text: "oat milk")] } }
         h.editor.lock([note])
         expectEqual(try h.editor.rect(of: LockChip.self, on: note), CGRect(x: 282, y: 73, width: 18, height: 18))
         expectEqual(try h.editor.rect(of: TitlePill.self, on: note), CGRect(x: 100, y: 73, width: 178, height: 18))
-        let tally = try h.editor.rect(of: ChecklistChip.self, on: note)
-        expectEqual(tally.maxX, 306, "6 points past the right edge")
-        expectEqual(tally.midY, 100, "centered on the top edge")
-        expectEqual(tally.height, 16)
         h.editor.unlock([note])
         h.wait(2_000)                                                               // the open lock fades
         expectEqual(try h.editor.rect(of: TitlePill.self, on: note), CGRect(x: 100, y: 73, width: 200, height: 18), "unlocked, to the right edge")

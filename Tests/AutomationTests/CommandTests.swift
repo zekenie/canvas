@@ -66,8 +66,7 @@ extension Pinned: ShapeProperty {
     static var defaultValue: Bool? { nil }
 }
 
-/// A step of a tile's: what it says, and an id no one writes (a missing one reads as a new one), as
-/// a checklist item has.
+/// A step of a tile's: what it says, and an id no one writes (a missing one reads as a new one).
 struct Step: SchemaDefined, Equatable {
     static let properties = Properties<Step> {
         Property("id", \.id)

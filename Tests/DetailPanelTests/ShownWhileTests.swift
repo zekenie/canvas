@@ -82,7 +82,7 @@ extension CanvasEditor {
         let watchers = try require(editor.watchers)
         let id = editor.add(Gadget(gadgetFrame, name: "cog")), other = editor.add(Box(gadgetFrame))
         let state = try require(editor.detailPanel)
-        state.choose(.of(ArrangeTab.self), for: Gadget.kind)
+        state.choose(.of(FrameTab.self), for: Gadget.kind)
         editor.selection = id
         panel.window.spin { (try? panel.field("240 pt")) != nil }
         panel.window.settle()

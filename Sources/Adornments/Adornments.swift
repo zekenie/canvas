@@ -3,7 +3,7 @@ import CoreGraphics
 import Selection
 
 /// Adornments, as a plugin: the small things shown on a shape, just outside it or on its corner,
-/// from what the shape knows (a title's pill, a checklist's tally, a lock). Any plugin puts one on
+/// from what the shape knows (a title's pill, a lock). Any plugin puts one on
 /// any kind: its own, another plugin's, or every shape. This plugin lays them out, so none on a
 /// shape overlaps another, and draws them; a point on one is a point on its shape, for the select
 /// tool, hover and the context menu (Selection's `DecorationHits`), but a clickable one (the lock)
@@ -30,7 +30,7 @@ public protocol Adornment {
     /// Adornments in one place sort by this, then by first appearance (the kind's own, then every
     /// kind's, each in plugin order); the first is nearest the place's start. The bands, as the
     /// detail panel's tabs and the context menu's groups: 0 for a kind's own (the default), 50 for
-    /// one a horizontal's feature brings (a title's pill, a checklist's tally), 300 for a state of
+    /// one a horizontal's feature brings (a title's pill), 300 for a state of
     /// the shape that comes and goes (a lock), farthest out, so the others keep their places.
     static var order: Int { get }
 }
@@ -58,7 +58,7 @@ public enum AdornmentPlacement: Hashable, Sendable, CaseIterable {
     /// narrow for it. A lock.
     case aboveTopRight
     /// The top-right corner: centered on the top edge (16 points tall), reaching 6 points past the
-    /// right edge, then leftward along it; a point clear of the row. A checklist's tally.
+    /// right edge, then leftward along it; a point clear of the row. A tally, "☑ 2/5".
     case onTopRightCorner
 }
 
@@ -110,7 +110,7 @@ public struct AdornmentButton: Hashable, Sendable {
 public struct AdornmentLabel: Hashable, Sendable {
     public enum Tone: Hashable, Sendable {
         case neutral
-        /// Something finished: a checklist with every item done.
+        /// Something finished: a tally with every item done.
         case success
     }
 

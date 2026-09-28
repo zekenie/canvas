@@ -18,9 +18,15 @@ extension AlertsTab: DetailTab {
 
 // What the panel shows for a shape, resolved headlessly from the registry.
 @MainActor let layoutTests = Suite("Detail layout", [
-    test("a box nobody contributes to shows only Arrange: Size, then Position") {
+    test("the panel has no sections of its own: a box nobody contributes to shows only its header") {
+        let editor = CanvasEditor(registry: try Registry(plugins: [KeyboardPlugin(), FixturesPlugin(), DetailPanelPlugin()]), scheduler: ManualScheduler())
+        let layout = try editor.layout(editor.add(Box(gadgetFrame)))
+        expectEqual(layout.tabs, [])
+        expectEqual(layout.header, DetailHeader("box"))
+    },
+    test("every-box sections alone: a box with nothing else shows their tab") {
         let editor = try gadgetEditor()
-        expectEqual(try editor.layout(editor.add(Box(gadgetFrame))).outline, ["Arrange: Size, Position"])
+        expectEqual(try editor.layout(editor.add(Box(gadgetFrame))).outline, ["Frame: Size, Position"])
     },
     test("a kind without a frame has no tabs, and its header is its kind") {
         let editor = try gadgetEditor()
@@ -28,11 +34,11 @@ extension AlertsTab: DetailTab {
         expectEqual(layout.tabs, [])
         expectEqual(layout.header, DetailHeader("tag"))
     },
-    test("a kind's own tabs lead in first appearance; a feature tab, Style and Arrange trail by order") {
+    test("a kind's own tabs lead in first appearance; a feature tab, Style and Frame trail by order") {
         let editor = try gadgetEditor()
         // Remarks' tab is contributed first, but its order (50) puts it after the kind's own (0).
         expectEqual(try editor.layout(editor.add(Gadget(gadgetFrame, parts: [Gadget.Part()]))).outline, [
-            "Gadget: main, Count", "Parts: Items", "Remarks: main", "Style: Color", "Arrange: Size, Position",
+            "Gadget: main, Count", "Parts: Items", "Remarks: main", "Style: Color", "Frame: Size, Position",
         ])
     },
     test("opting into a horizontal brings its tab, and only to the kinds that opt in") {
@@ -55,15 +61,15 @@ extension AlertsTab: DetailTab {
             Contributor(id: "bridge") { r in
                 r.details(Gadget.self) {
                     DetailSection("Shade", in: StyleTab.self) { _ in Text("Shade") }
-                    DetailSection("Fit", in: ArrangeTab.self) { _ in Text("Fit") }
+                    DetailSection("Fit", in: FrameTab.self) { _ in Text("Fit") }
                 }
             },
-            Contributor(id: "grid") { r in r.detailsForEveryBox { DetailSection("Grid", in: ArrangeTab.self) { _ in Text("Grid") } } },
+            Contributor(id: "grid") { r in r.detailsForEveryBox { DetailSection("Grid", in: FrameTab.self) { _ in Text("Grid") } } },
         ])
         let layout = try editor.layout(editor.add(Gadget(gadgetFrame)))
-        expectEqual(layout.outline, ["Gadget: main, Count", "Remarks: main", "Style: Color, Shade", "Arrange: Fit, Size, Position, Grid"])
-        expectEqual(layout.sections(in: .of(ArrangeTab.self)).map(\.description), ["gadget Arrange/Fit", "* Arrange/Size", "* Arrange/Position", "* Arrange/Grid"])
-        expectEqual(try editor.layout(editor.add(Box(gadgetFrame))).outline, ["Arrange: Size, Position, Grid"])
+        expectEqual(layout.outline, ["Gadget: main, Count", "Remarks: main", "Style: Color, Shade", "Frame: Fit, Size, Position, Grid"])
+        expectEqual(layout.sections(in: .of(FrameTab.self)).map(\.description), ["gadget Frame/Fit", "* Frame/Size", "* Frame/Position", "* Frame/Grid"])
+        expectEqual(try editor.layout(editor.add(Box(gadgetFrame))).outline, ["Frame: Size, Position, Grid"])
     },
     test("`when` hides a section, and a tab it leaves empty") {
         let editor = try gadgetEditor()
@@ -81,12 +87,12 @@ extension AlertsTab: DetailTab {
     },
     test("one section id in two tabs, or for a kind and for every box, doesn't conflict") {
         let editor = try gadgetEditor([Contributor(id: "more") { r in
-            r.details(Gadget.self) { DetailSection("Color", in: ArrangeTab.self) { _ in Text("Color") } }
+            r.details(Gadget.self) { DetailSection("Color", in: FrameTab.self) { _ in Text("Color") } }
             r.detailsForEveryBox { DetailSection("Color", in: StyleTab.self) { _ in Text("Color") } }
         }])
         expectEqual(try editor.layout(editor.add(Gadget(gadgetFrame))).outline,
-                    ["Gadget: main, Count", "Remarks: main", "Style: Color, Color", "Arrange: Color, Size, Position"])
-        expectEqual(try editor.layout(editor.add(Box(gadgetFrame))).outline, ["Style: Color", "Arrange: Size, Position"])
+                    ["Gadget: main, Count", "Remarks: main", "Style: Color, Color", "Frame: Color, Size, Position"])
+        expectEqual(try editor.layout(editor.add(Box(gadgetFrame))).outline, ["Style: Color", "Frame: Size, Position"])
     },
     test("two headers for one kind conflict") {
         expectThrows(RegistryError.conflict(point: "ShapeDetails", key: "header for gadget", plugins: ["gadgets", "more"])) {
@@ -151,15 +157,15 @@ extension AlertsTab: DetailTab {
         }])
         let state = try require(editor.detailPanel)
         let box = editor.add(Box(gadgetFrame))
-        expectEqual(try editor.layout(box).tabs.map(\.title), ["Arrange"])
+        expectEqual(try editor.layout(box).tabs.map(\.title), ["Frame"])
         editor.transact { $0.update(box, as: Box.self) { $0.frame.size.width = 0 } }
         let layout = try editor.layout(box)
-        expectEqual(layout.tabs.map(\.title), ["Arrange", "Alerts"])
+        expectEqual(layout.tabs.map(\.title), ["Frame", "Alerts"])
         expectEqual(layout.statuses(in: .of(AlertsTab.self)), [DetailStatus("No width.", tone: .error)])
-        expectEqual(layout.statuses(in: .of(ArrangeTab.self)), [])
+        expectEqual(layout.statuses(in: .of(FrameTab.self)), [])
         expectEqual(state.statuses(for: try require(editor.document[box])), [DetailStatus("Footer.")])
         editor.transact { $0.update(box, as: Box.self) { $0.frame.size.width = 10 } }
-        expectEqual(try editor.layout(box).tabs.map(\.title), ["Arrange"])
+        expectEqual(try editor.layout(box).tabs.map(\.title), ["Frame"])
     },
     test("a tab can hold status lines and sections: the kind's lines, then every kind's; its sections as they were") {
         let editor = try gadgetEditor([Contributor(id: "notes") { r in
@@ -168,9 +174,9 @@ extension AlertsTab: DetailTab {
                          to: DetailStatuses.self, for: .kind(Gadget.kind))
         }])
         let layout = try editor.layout(editor.add(Gadget(gadgetFrame)))
-        expectEqual(layout.outline, ["Gadget: main, Count", "Remarks: main", "Style: Color", "Arrange: Size, Position"])
+        expectEqual(layout.outline, ["Gadget: main, Count", "Remarks: main", "Style: Color", "Frame: Size, Position"])
         expectEqual(layout.statuses(in: .of(RemarksTab.self)).map(\.text), ["A gadget.", "Every kind."])
-        expectEqual(try editor.layout(editor.add(Box(gadgetFrame))).tabs.map(\.title), ["Remarks", "Arrange"], "lines alone bring the tab")
+        expectEqual(try editor.layout(editor.add(Box(gadgetFrame))).tabs.map(\.title), ["Remarks", "Frame"], "lines alone bring the tab")
     },
     test("a status tab titled like another tab is refused, as a section's is") {
         expectThrows(RegistryError.invalid(point: "ShapeDetails", reason: "DetailPanel.StyleTab (from gadgets) and "
@@ -186,7 +192,7 @@ extension AlertsTab: DetailTab {
         expectEqual(registry.report, """
         core          tool hand · command undo · command redo
         fixtures      shape box · shape disc · shape tag
-        detail-panel  service DetailPanelState · ShapeDetails
+        detail-panel  service DetailPanelState
         p             DetailStatuses · DetailStatuses in Alerts
         """)
     },
@@ -195,13 +201,13 @@ extension AlertsTab: DetailTab {
             r.details(Box.self, header: { _ in DetailHeader("Box") }) {
                 DetailSection(in: StyleTab.self) { _ in Text("One") }
                 DetailSection("Two", in: StyleTab.self) { _ in Text("Two") }
-                DetailSection("Three", in: ArrangeTab.self) { _ in Text("Three") }
+                DetailSection("Three", in: FrameTab.self) { _ in Text("Three") }
             }
         }])
         expectEqual(registry.report, """
         core          tool hand · command undo · command redo
         fixtures      shape box · shape disc · shape tag
-        detail-panel  service DetailPanelState · ShapeDetails
+        detail-panel  service DetailPanelState
         p             ShapeDetails → box
         """)
     },

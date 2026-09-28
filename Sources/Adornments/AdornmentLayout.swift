@@ -20,7 +20,7 @@ public enum AdornmentLayout {
     // View points.
     /// The row's height: a title's pill's, a lock's disc.
     public static let rowHeight: CGFloat = 18
-    /// The corner's height: a checklist's tally.
+    /// The corner's height: a tally's.
     public static let cornerHeight: CGFloat = 16
     /// Between the row and the top edge: clear of the corner, which reaches half its height above it.
     public static let rowGap: CGFloat = cornerHeight / 2 + 1

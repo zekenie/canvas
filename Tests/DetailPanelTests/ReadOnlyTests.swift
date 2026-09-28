@@ -19,10 +19,10 @@ struct GoButtonPlugin: CanvasPlugin {
     func register(into registrar: inout PluginRegistrar) {
         registrar.command(Self.command) { [count] _ in count.runs += 1 }
         registrar.detailsForEveryBox {
-            DetailSection("Run", in: ArrangeTab.self) { _ in
+            DetailSection("Run", in: FrameTab.self) { _ in
                 DetailCommandButton("Run", command: Self.command)
             }
-            DetailSection("Go", in: ArrangeTab.self) { _ in
+            DetailSection("Go", in: FrameTab.self) { _ in
                 DetailCommandButton("Go", command: Self.command)
             }
             .enabledWhileReadOnly()
@@ -68,7 +68,7 @@ struct GoButtonPlugin: CanvasPlugin {
         let panel = PanelWindow(editor)
         let id = editor.add(Box(gadgetFrame))
         editor.selection = id
-        try require(editor.detailPanel).choose(.of(ArrangeTab.self), for: Box.kind)
+        try require(editor.detailPanel).choose(.of(FrameTab.self), for: Box.kind)
         panel.window.spin { panel.checkboxes.count >= 2 }
         let buttons = panel.checkboxes.suffix(2)
         let run = try require(buttons.first), go = try require(buttons.last)

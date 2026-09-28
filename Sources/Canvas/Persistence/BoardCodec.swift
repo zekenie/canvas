@@ -10,10 +10,10 @@ import Geometry
 ///       },
 ///       "format" : 4,
 ///       "shapes" : [
-///         { "added" : { "checklist" : [] }, "id" : "…", "index" : "a0", "kind" : "sticky-note", "props" : { … } },
+///         { "added" : { "title" : "Plans" }, "id" : "…", "index" : "a0", "kind" : "sticky-note", "props" : { … } },
 ///         { "id" : "A1B2…", "index" : "a1", "kind" : "folder", "props" : { … } }
 ///       ],
-///       "versions" : { "added" : { "checklist" : 0 }, "kinds" : { "folder" : 0, "sticky-note" : 3 } }
+///       "versions" : { "added" : { "title" : 0 }, "kinds" : { "folder" : 0, "sticky-note" : 3 } }
 ///     }
 ///
 /// `format` versions the envelope and each record's own members. Format 1 has each kind's props

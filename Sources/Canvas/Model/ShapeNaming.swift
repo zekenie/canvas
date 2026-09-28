@@ -8,7 +8,7 @@ import Foundation
 ///
 /// The core finds these values through property lists: a kind's props by their list, and a struct
 /// in them (or in an added value) that holds one adopts this too, in an extension, with nothing to
-/// write (`extension ChecklistItem: ShapeNaming {}`: its listed members that name shapes). The
+/// write (`extension Step: ShapeNaming {}`: its listed members that name shapes). The
 /// registry refuses a struct that holds names without adopting it, since its names would be copied
 /// unrenamed. Optionals, arrays, sets and dictionaries of names are names. A leaf, a type coded by
 /// hand that holds the ids itself, implements both requirements, and the registry can't look

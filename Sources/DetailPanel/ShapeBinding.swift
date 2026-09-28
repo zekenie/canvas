@@ -105,8 +105,8 @@ public struct ShapeBinding<Value> {
     public func holds<P: ShapeProperty>(_: P.Type) -> Bool { properties.contains(P.key) }
 
     /// Several changes in one transaction, applied to the live shape (read-modify-write belongs
-    /// here, not in a sequence of binding sets): `$items.update { $0.removeDone() }`. An undo step
-    /// of its own.
+    /// here, not in a sequence of binding sets): `$parts.update { $0.removeAll { $0.text.isEmpty } }`.
+    /// An undo step of its own.
     public func update(_ change: (inout Value) -> Void) {
         if let live = write(stepName, nil, change) { latest.value = live }
     }
@@ -154,7 +154,7 @@ extension CanvasEditor {
 
 extension ShapeBinding where Value: ShapeProps {
     /// The shape as the panel drew it: its props, and the added properties beside them
-    /// (`$note.shape[ChecklistProperty.self]`), for what a section or header shows from both.
+    /// (`$note.shape[TitleProperty.self]`), for what a section or header shows from both.
     public var shape: ShapeRecord<Value> {
         record.typed(as: Value.self) ?? ShapeRecord(id: record.id, value)
     }

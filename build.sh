@@ -376,7 +376,7 @@ audit_sources() {
     # already keeps a module from naming another's types; this keeps it from reaching that module's
     # shapes, tools, plugins, added properties, channels or edge types by string instead. A module owns
     # the ids its non-test code declares: as a static member (`static let kind: ShapeKind = "rectangle"`,
-    # `static let arrow: ToolID = "arrow"`, `static let key: PropertyKey = "checklist"`,
+    # `static let arrow: ToolID = "arrow"`, `static let key: PropertyKey = "title"`,
     # `static let id: ChannelID = "note-link"`, `static let id: EdgeTypeID = "mention"`) or as a
     # plugin's `id` (`var id: PluginID { "rectangles" }`). Test fixtures' ids
     # ("box", "card") are ordinary words, so they own nothing. Any other string literal is a use,

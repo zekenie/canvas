@@ -101,17 +101,17 @@ style <name> attribute { attribute }             a named set of attributes, for 
 
 | kind | size | attributes besides `size`, `gap`, `overlap`, `style`, `title` | edges |
 |---|---|---|---|
-| `sticky-note` | 200x200 | `text`, `checklist`, `locked` | `note-link`, on its left, right and bottom |
+| `sticky-note` | 200x200 | `text`, `locked` | `note-link`, on its left, right and bottom |
 | `rectangle` | 160x100 | `locked` | none: plain arrows |
 | `schema-card` | 240x67 | `schema` (a JSON Schema, as text: the card grows to list it), `prompt` (what it holds, in words), `locked` | `schema-link`, on all four sides |
 | `subboard` | 240x160 | `locked` | none: plain arrows |
 
-Arrows are what edges are; you don't draw one on its own. Values: text is quoted (`text: "Two words"`). `true` and `false` are bare words (`locked: true`). Lists are one-line JSON: `checklist: [{"text": "Write tests"}]`. A list replaces the whole property, and what an item leaves out takes its default, not what the shape had, so write every member. A member the property doesn't have (`"done"` for `"isDone"`) is refused, `invalid_value`, never dropped. `null` puts a property back to its default (but not a title: `title:` only renames). `size: 300x200` is in world units, up to 100000. A value past a bound, like a title over 80 characters, is kept and warned about.
+Arrows are what edges are; you don't draw one on its own. Values: text is quoted (`text: "Two words"`). `true` and `false` are bare words (`locked: true`). `null` puts a property back to its default (but not a title: `title:` only renames). `size: 300x200` is in world units, up to 100000. A value past a bound, like a title over 80 characters, is kept and warned about.
 
 A subboard is a card that holds a board of its own. `inside "Payments" top-left` puts a shape over its card, on the board you're drawing on, never onto its board, and deleting it deletes everything on its board too (the result warns how much). A schema card's `schema:` is JSON inside a quoted string, so escape each quote: `schema: "{\"title\": \"Order\", \"type\": \"object\"}"`; the card grows to list it. What you write on one is taken as written: the Claude sync that rewrites one side when the user edits the other isn't asked, so write a prompt and a schema that agree, or leave `prompt:` out.
 
 ```draw
-sticky-note "Ship v1" below "API" text: "Cut the release" checklist: [{"text": "Write tests"}, {"text": "Tag release"}]
+sticky-note "Ship v1" below "API" text: "Cut the release"
 ```
 
 ### Placements
@@ -196,10 +196,10 @@ sticky-note "Fix signup" below "Fix login" style: small text: "The form drops th
 
 ### Restating, renaming, deleting
 
-A statement about a title that's on the board updates that shape. Whatever it doesn't say stays as it was, and with no placements the shape stays where it is. Writing a checklist replaces the whole list.
+A statement about a title that's on the board updates that shape. Whatever it doesn't say stays as it was, and with no placements the shape stays where it is.
 
 ```draw
-sticky-note "Ship v1" checklist: [{"text": "Write tests", "isDone": true}, {"text": "Tag release", "isDone": true}]
+sticky-note "Ship v1" text: "Tests written, release tagged"
 ```
 
 With placements, a restated shape moves. An axis that none of its placements speaks for stays where it was, so this moves Risks sideways without changing its vertical position:
@@ -228,7 +228,7 @@ sticky-note "Auth service" right of "Sign-up form" text: "Creates the account"
 sticky-note "Welcome email" right of "Auth service" text: "Sent once the account exists"
 
 sticky-note "Rate-limit sign-ups" below "Auth service" style: work text: "Five a minute per address"
-sticky-note "Verify emails" below "Auth service" style: work checklist: [{"text": "Send a code"}, {"text": "Expire it after a day"}]
+sticky-note "Verify emails" below "Auth service" style: work text: "Send a code that expires after a day"
 sticky-note "Write the email copy" below "Welcome email" style: work text: "Short, and says what's next"
 
 edge "Sign-up form" -> "Auth service"

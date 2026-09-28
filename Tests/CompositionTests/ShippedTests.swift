@@ -3,7 +3,6 @@ import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
-import Checklists
 import Composition
 import CoreGraphics
 import DetailPanel
@@ -47,15 +46,14 @@ import ValidationDetails
         selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection
         topology             service TopologyIndex
         arrows               shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay
-        sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
+        sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
         subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard
         schemas              service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link · edge type schema-link
         validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
         adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
-        detail-panel         service DetailPanelState · ShapeDetails
+        detail-panel         service DetailPanelState
         context-menus        service ContextMenuState · secondary-click menu
         table-of-contents    service ContentsState
-        checklists           property checklist · adornment ChecklistChip → every shape
         titles               property title · adornment TitlePill → every shape
         mentions             service MentionState · edge type mention · edges → every shape · overlay MentionFrames · ShapeFaces · CanvasContextMenu
         board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
@@ -86,7 +84,7 @@ import ValidationDetails
         let end = try require(guide.range(of: "\n```", range: start..<guide.endIndex)).lowerBound
         expectEqual(String(guide[start..<end]), try ShippedPlugins.registry(model: ScriptedLanguageModel()).report)
     },
-    test("every placed kind has a panel: a note its Checklist and Arrange (and Issues, empty), a schema and a subboard their own tabs too, a rectangle Arrange, an arrow only its header; every nameable kind's header renames it") {
+    test("every placed kind has a panel: a note its header (and Issues, empty), a schema and a subboard their own tabs, a rectangle and an arrow only their headers; every nameable kind's header renames it") {
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
         let state = try require(h.editor.detailPanel)
         var panels: [String] = []
@@ -101,32 +99,7 @@ import ValidationDetails
         // Every header of a kind that can be named renames it: an untitled shape's shows the
         // placeholder. A note placed is empty, which is a warning, so it has Issues until it's
         // written in.
-        expectEqual(panels, ["(Rectangle): Arrange", "Arrow: ", "(Note): Checklist, Arrange, Issues", "(Untitled): Schema, Arrange",
-                             "(Untitled Subboard): Board, Arrange"])
-    },
-    test("a long title's pill stays clear of the checklist chip: Adornments lays out both") {
-        // A note with its checklist (the chip, on its top-right corner), its long title (the pill,
-        // above its top-left corner and as wide as the note), or neither; its text keeps it from
-        // being empty, and outlined.
-        @MainActor func render(checklist: Bool, title: Bool) -> NSBitmapImageRep {
-            var note = AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Buy milk")))
-            note[TitleProperty.self] = title ? "A title much longer than the note is wide" : nil
-            note[ChecklistProperty.self] = checklist ? [ChecklistItem(text: "oat milk")] : []
-            let editor = ShippedPlugins.makeEditor(document: CanvasDocument(shapes: [note]), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
-            return renderBitmap(editor, size: CGSize(width: 400, height: 340))
-        }
-        let plain = render(checklist: false, title: false)
-        let chip = render(checklist: true, title: false), pill = render(checklist: false, title: true)
-        expect(changedPixels(plain, chip, in: CGRect(x: 250, y: 90, width: 70, height: 20)) > 100, "the chip")
-        expect(changedPixels(plain, pill, in: CGRect(x: 100, y: 75, width: 190, height: 12)) > 1000, "the pill, to the note's right edge")
-        var both = 0
-        for y in 60..<130 {
-            for x in 90..<330 {
-                let point = CGPoint(x: x, y: y), under = pixel(plain, at: point)
-                if pixel(chip, at: point) != under && pixel(pill, at: point) != under { both += 1 }
-            }
-        }
-        expectEqual(both, 0, "no pixel is both the pill's and the chip's")
+        expectEqual(panels, ["(Rectangle): ", "Arrow: ", "(Note): Issues", "(Untitled): Schema", "(Untitled Subboard): Board"])
     },
     test("a line drawn with L is a Line in the panel, with nothing but its header") {
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }

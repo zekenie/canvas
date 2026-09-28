@@ -203,7 +203,7 @@ import Titles
         adornments         service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
         titles             property title · adornment TitlePill → every shape
         table-of-contents  service ContentsState
-        detail-panel       service DetailPanelState · ShapeDetails
+        detail-panel       service DetailPanelState
         rectangle-titles   property title → rectangle · ShapeTitles → rectangle · ContentsTitles → rectangle · ShapeDetails → rectangle
         """)
     },

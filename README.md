@@ -1,8 +1,8 @@
 # Infinite Canvas
 
 A native macOS infinite canvas: a small core, with everything on it (selecting, what each key does,
-sticky notes, arrows modeled on tldraw's, validation, checklists, a detail panel, a table of
-contents, ports to drag arrows from) added by plugins.
+sticky notes, arrows modeled on tldraw's, validation, a detail panel, a table of contents,
+ports to drag arrows from) added by plugins.
 The plugin system is a port, in Swift, of the one in data-canvas. Start with
 [docs/plugin-system.md](docs/plugin-system.md).
 
@@ -80,7 +80,6 @@ check before running it again). To run it as just `canvas`, put the link on your
 | See what's on the board | With nothing selected, the detail panel lists every shape, each arrow under the shape it starts from; with several selected, just those (Show All lists every shape again) |
 | Find a shape from the list | Click its row: it's selected and the canvas zooms to it. Pointing at a row outlines its shape faintly, and pointing at a shape tints its row |
 | Go back to the previous selection | The back button in the detail panel's header, or ⌘[ (Go › Back): what was selected before, and the view as it was then (from a row's details, the list) |
-| Add a checklist to a note | The panel's Checklist tab: + adds an item, − or Delete removes the selected one |
 | Name a note or a rectangle | Select it and click its title in the detail panel's header; Return or Escape goes back to the canvas |
 | Delete shapes or arrows | Select them and press Delete |
 | Cut, copy and paste shapes | ⌘X, ⌘C and ⌘V (Edit menu, or right-click a shape; right-click empty space to paste). A paste lands where the originals were if they're in view, else in the middle of the view; arrows copied with their shapes stay attached to the copies |
@@ -94,9 +93,9 @@ check before running it again). To run it as just `canvas`, put the link on your
 | Bend | Select the arrow and drag its middle handle |
 | Toggle an arrowhead | Double-click an end handle |
 
-An empty note (no text, no checklist) gets an orange outline (the validation plugin: red for an error, orange for a
+An empty note (no text, no title) gets an orange outline (the validation plugin: red for an error, orange for a
 warning), says why in an Issues tab of the detail panel (the validation-details bridge), and gets an orange dot on its
-row in the table of contents (the validation-contents bridge). A note with a checklist shows a done/total chip.
+row in the table of contents (the validation-contents bridge).
 A titled shape shows its title in a pill above its top-left corner, and in the table of contents (the titles plugin).
 Name a note or a rectangle in the detail panel's header (a rectangle's title is the rectangle-titles example). A title is
 part of its shape's schema, at most 80 characters: a longer one gets a warning, as does any value outside the
@@ -125,9 +124,8 @@ Sources/
   DetailPanel/          the detail panel horizontal: tabs, sections, bindings, the inspector view
   ContextMenus/         the context menu horizontal: right-click items, groups, the selection's menu
   TableOfContents/      the table of contents horizontal: a row per shape, in the detail panel
-  Adornments/           a horizontal: what's shown on a shape (a title's pill, a checklist's tally, a
-                        lock chip), placed by any plugin, laid out so none overlap, drawn in one overlay
-  Checklists/           a horizontal any kind opts into: a checklist, its panel tab, menu items, a chip
+  Adornments/           a horizontal: what's shown on a shape (a title's pill, a lock chip), placed by
+                        any plugin, laid out so none overlap, drawn in one overlay
   Clipboard/            the clipboard horizontal: cut, copy and paste, which kinds may opt out of
   Titles/               a horizontal any kind opts into: a title, a property it adds (or derived), in a pill
                         and the table of contents, and a header that renames it

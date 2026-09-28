@@ -6,7 +6,6 @@ import Boards
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
-import Checklists
 import Composition
 import CoreGraphics
 import DetailPanel
@@ -127,9 +126,8 @@ enum Budget {
 }
 
 /// Notes, subboards, rectangles and schema cards in a grid, with an arrow from every fourth note to
-/// the note after it. Every other note has a title, so frames draw pills, and every fourth a
-/// checklist of two, so they draw checklist chips and boards save and open added values; every
-/// subboard has a title, which its card draws (a subboard shows no pill), and an empty board, which
+/// the note after it. Every other note has a title, so frames draw pills and boards save and open
+/// added values; every subboard has a title, which its card draws (a subboard shows no pill), and an empty board, which
 /// the file doesn't keep; every rectangle is locked, so frames draw lock chips; every schema card
 /// has a schema of its own, so frames read no card's schema again however many different ones there
 /// are; and three notes in ten mention two shapes, so frames draw pills: a subboard (the first 100
@@ -170,7 +168,6 @@ enum Budget {
             notes += 1
             var note = ShapeRecord(StickyNote(frame: CGRect(origin: origin, size: StickyNote.defaultSize), text: text))
             note[TitleProperty.self] = i % 2 == 0 ? "Title \(i)" : nil
-            note[ChecklistProperty.self] = i % 4 == 3 ? [ChecklistItem(text: "Draft", isDone: true), ChecklistItem(text: "Send")] : []
             shapes.append(AnyShapeRecord(note))
             if let previousNote, i % 4 == 0, shapes.count < count {
                 let bound = { (id: ShapeID) in ArrowTerminal.bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)) }

@@ -58,25 +58,6 @@ import TestKit
 private let stickyNoteSchema = #"""
 {
   "$defs" : {
-    "checklists.item" : {
-      "additionalProperties" : false,
-      "properties" : {
-        "id" : {
-          "format" : "uuid",
-          "type" : "string"
-        },
-        "isDone" : {
-          "default" : false,
-          "type" : "boolean"
-        },
-        "text" : {
-          "default" : "",
-          "type" : "string"
-        }
-      },
-      "title" : "Checklist item",
-      "type" : "object"
-    },
     "core.point" : {
       "description" : "[x, y]",
       "items" : false,
@@ -129,16 +110,6 @@ private let stickyNoteSchema = #"""
   "$schema" : "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties" : false,
   "properties" : {
-    "checklist" : {
-      "default" : [
-
-      ],
-      "items" : {
-        "$ref" : "#/$defs/checklists.item"
-      },
-      "type" : "array",
-      "x-canvas-owner" : "checklists"
-    },
     "frame" : {
       "$ref" : "#/$defs/core.rect"
     },

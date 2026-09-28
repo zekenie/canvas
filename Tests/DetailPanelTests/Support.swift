@@ -95,7 +95,36 @@ struct GadgetsPlugin: CanvasPlugin {
     }
 }
 
-// A horizontal's opt-in, in miniature (Checklists' pattern): one line on a kind contributes to the
+/// A tab every box has here, after Style: its frame.
+enum FrameTab {}
+extension FrameTab: DetailTab {
+    static var title: String { "Frame" }
+    static var order: Int { 200 }
+}
+
+/// Every box's frame, in a tab of its own: Size, then Position. The panel has no sections of its
+/// own, so these stand in for any plugin's every-box sections, and give a box number fields.
+struct FramesPlugin: CanvasPlugin {
+    var id: PluginID { "frames" }
+    func register(into registrar: inout PluginRegistrar) {
+        registrar.detailsForEveryBox {
+            DetailSection("Size", in: FrameTab.self) { $frame in
+                DetailFields {
+                    DetailNumberField("Width", value: $frame.size.width, unit: "pt", in: 1...100_000)
+                    DetailNumberField("Height", value: $frame.size.height, unit: "pt", in: 1...100_000)
+                }
+            }
+            DetailSection("Position", in: FrameTab.self) { $frame in
+                DetailFields {
+                    DetailNumberField("X", value: $frame.origin.x, unit: "pt", in: -1_000_000...1_000_000)
+                    DetailNumberField("Y", value: $frame.origin.y, unit: "pt", in: -1_000_000...1_000_000)
+                }
+            }
+        }
+    }
+}
+
+// A horizontal's opt-in, in miniature: one line on a kind contributes to the
 // horizontal's own point and brings its tab, fully typed, to exactly the kinds that opt in.
 
 enum Remarks: KeyedExtensionPoint {
@@ -140,9 +169,9 @@ struct RenamingCards: CanvasPlugin {
     }
 }
 
-/// Every plugin the gadget needs, then `more`.
+/// Every plugin the gadget needs, and every box's frame (`FramesPlugin`), then `more`.
 @MainActor func gadgetEditor(_ more: [any CanvasPlugin] = [], file: CanvasFile = CanvasFile(), scheduler: any Scheduler = ManualScheduler()) throws -> CanvasEditor {
-    CanvasEditor(registry: try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), GadgetsPlugin(), RemarksPlugin(), DetailPanelPlugin()] + more),
+    CanvasEditor(registry: try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), GadgetsPlugin(), RemarksPlugin(), DetailPanelPlugin(), FramesPlugin()] + more),
                  file: file, scheduler: scheduler)
 }
 
