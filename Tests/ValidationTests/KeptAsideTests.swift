@@ -18,5 +18,7 @@ import Validation
         let document = try BoardCodec(registry: registry).decode(Data(json.utf8)).document
         let editor = CanvasEditor(registry: registry, document: document)
         expectEqual(Array(try require(editor.validation).results.keys), [box])
+        expectEqual(registry.validationIssues(of: try require(document[kept]), in: editor.shapeContext), [], "nor are they asked of one")
+        expectEqual(registry.validationIssues(of: try require(document[box]), in: editor.shapeContext).map(\.message), ["seen"])
     },
 ])

@@ -8,8 +8,9 @@ import Geometry
 import TestKit
 
 // The command line's own commands, run as the app's command server runs them, on an editor with
-// the fixtures' kinds (a box, a disc and a tag, which no tool places) and a card, which its tool
-// places at 100 × 60. No real kind: the commands know none.
+// the fixtures' kinds (a box, a disc and a tag, which no tool places; links, which no tool places
+// either), and a card and a tile, which their tools place at 100 × 60 and 120 × 80. No real kind:
+// the commands know none.
 
 /// A kind with no frame that moves by its own rules: a point.
 struct Dot: ShapeProps {
@@ -40,232 +41,172 @@ extension Nickname: ShapeProperty {
     static var keywords: PropertyKeywords<String> { PropertyKeywords().maxLength(3) }
 }
 
+/// When a card is due: a date and time.
+enum Due {}
+
+extension Due: ShapeProperty {
+    static let key: PropertyKey = "due"
+    static var defaultValue: Date? { nil }
+}
+
+/// A tile's rank, from 1.
+enum Rank {}
+
+extension Rank: ShapeProperty {
+    static let key: PropertyKey = "rank"
+    static var defaultValue: Int? { nil }
+    static var keywords: PropertyKeywords<Int> { PropertyKeywords().minimum(1) }
+}
+
+/// Whether a tile is pinned.
+enum Pinned {}
+
+extension Pinned: ShapeProperty {
+    static let key: PropertyKey = "pinned"
+    static var defaultValue: Bool? { nil }
+}
+
+/// A step of a tile's: what it says, and an id no one writes (a missing one reads as a new one), as
+/// a checklist item has.
+struct Step: SchemaDefined, Equatable {
+    static let properties = Properties<Step> {
+        Property("id", \.id)
+        Property("text", \.text)
+    }
+    var id = UUID()
+    var text = ""
+}
+
+/// A tile's steps.
+enum Steps {}
+
+extension Steps: ShapeProperty {
+    static let key: PropertyKey = "steps"
+    static var defaultValue: [Step]? { [] }
+}
+
 let extras = Contributor(id: "extras") { registrar in
+    registrar.declare(Steps.self)
+    registrar.optIn(Tile.self, to: Steps.self)
     registrar.shape(DotDefinition())
     registrar.declare(Nickname.self)
     registrar.optIn(Card.self, to: Nickname.self)
+    registrar.declare(Due.self)
+    registrar.optIn(Card.self, to: Due.self)
+    registrar.declare(Rank.self)
+    registrar.optIn(Tile.self, to: Rank.self)
+    registrar.declare(Pinned.self)
+    registrar.optIn(Tile.self, to: Pinned.self)
 }
 
-/// An editor 800 × 600 points, whose view's middle is (500, 400).
-@MainActor func makeEditor(_ plugins: [any CanvasPlugin] = []) throws -> CanvasEditor {
-    let editor = CanvasEditor(registry: try Registry(plugins: [AutomationPlugin(), FixturesPlugin(), CardsPlugin(), extras] + plugins))
-    editor.viewportDidResize(to: CGSize(width: 800, height: 600))
+/// An editor 800 × 600 points, whose view is (100, 100) to (900, 700), its middle (500, 400).
+@MainActor func makeEditor(_ plugins: [any CanvasPlugin] = [], viewport: CGSize = CGSize(width: 800, height: 600)) throws -> CanvasEditor {
+    let editor = CanvasEditor(registry: try Registry(plugins: [AutomationPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(), LinksPlugin(),
+                                                               extras] + plugins))
+    editor.viewportDidResize(to: viewport)
     editor.camera = Camera(origin: CGPoint(x: 100, y: 100))
     return editor
 }
 
-/// A command, as the command line spells it, run on `editor` as the app's server runs it.
-@MainActor func run(_ line: [String], on editor: CanvasEditor?, registry: Registry? = nil) throws -> Result<JSON, RPCError> {
+/// A command, as the command line spells it, run on `editor` as the app's server runs it; `input`
+/// is its standard input.
+@MainActor func run(_ line: [String], on editor: CanvasEditor?, registry: Registry? = nil, input: String = "") throws -> Result<JSON, RPCError> {
     let registry = try require(registry ?? editor?.registry)
     let spec = try require(registry.automationCommands.first { $0.name == line[0] })
-    let params = try spec.params(from: Array(line.dropFirst()), standardInput: { "" })
+    let params = try spec.params(from: Array(line.dropFirst()), standardInput: { input })
     return Result { () throws(RPCError) in try registry.runAutomationCommand(spec.name, params: .object(params), editor: editor) }
 }
 
-@MainActor func created(_ result: Result<JSON, RPCError>, in editor: CanvasEditor) throws -> AnyShapeRecord {
-    let json = try result.get()
-    let id = try require(json["id"]?.stringValue.flatMap(UUID.init(uuidString:)))
-    return try require(editor.document[ShapeID(id)])
-}
-
-@MainActor let createTests = Suite("create", [
-    test("it puts what the kind's tool places in the middle of the view, and says what and where") {
-        let editor = try makeEditor()
-        let result = try run(["create", "card"], on: editor)
-        let card = try created(result, in: editor)
-        expectEqual(card.box, CGRect(x: 450, y: 370, width: 100, height: 60))
-        expectEqual(try result.get()["kind"], "card")
-        expectEqual(try result.get()["bounds"], [[450, 370], [100, 60]])
-        expectEqual(try result.get()["warnings"], nil)
-        expectEqual(editor.document.shapes.count, 1)
-    },
-    test("--at puts its middle there, and --size sizes it") {
-        let editor = try makeEditor()
-        expectEqual(try created(run(["create", "card", "--at", "10,20"], on: editor), in: editor).box, CGRect(x: -40, y: -10, width: 100, height: 60))
-        expectEqual(try created(run(["create", "card", "--at", "10,20", "--size", "40,30"], on: editor), in: editor).box,
-                    CGRect(x: -10, y: 5, width: 40, height: 30))
-        expectEqual(try created(run(["create", "card", "--size", "40,30"], on: editor), in: editor).box, CGRect(x: 480, y: 385, width: 40, height: 30))
-    },
-    test("--set takes text as typed for a property of text, and JSON for any other; each is set over --props") {
-        let editor = try makeEditor()
-        let card = try created(run(["create", "card", "--set", "text=42", "--set", "nickname=Al"], on: editor), in: editor)
-        expectEqual(card.typed(as: Card.self)?.props.text, "42")
-        expectEqual(card[Nickname.self], "Al")
-        let box = try created(run(["create", "box", "--props", #"{"frame": [[0, 0], [10, 10]]}"#, "--set", "frame=[[1, 2], [3, 4]]"], on: editor),
-                              in: editor)
-        expectEqual(box.box, CGRect(x: 1, y: 2, width: 3, height: 4))
-    },
-    test("a kind no tool places starts from the properties given; one without a frame moves to --at by its own rules") {
-        let editor = try makeEditor()
-        let dot = try created(run(["create", "dot", "--set", "point=[5, 5]", "--at", "100,50"], on: editor), in: editor)
-        expectEqual(dot.typed(as: Dot.self)?.props.point, CGPoint(x: 100, y: 50))
-        guard case .failure(let error) = try run(["create", "box"], on: editor) else { return expect(false, "a box needs its frame") }
-        expectEqual(error.reason, "invalid_properties")
-        expect(error.message.contains("frame is missing"), error.message)
-        expectEqual(error.hint, "`canvas kinds box --schema` says what each property takes.")
-    },
-    test("a shape may be bound only to shapes on its board") {
-        let editor = try makeEditor()
-        let box = try created(run(["create", "box", "--set", "frame=[[0, 0], [10, 10]]"], on: editor), in: editor)
-        let tag = try created(run(["create", "tag", "--set", "target=\(box.id)"], on: editor), in: editor)
-        expectEqual(tag.typed(as: Tag.self)?.props.target, box.id)
-        let elsewhere = ShapeID()
-        guard case .failure(let error) = try run(["create", "tag", "--set", "target=\(elsewhere)"], on: editor) else {
-            return expect(false, "it was bound to a shape that isn't there")
-        }
-        expectEqual(error.reason, "unknown_shape")
-        expectEqual(error.message, "A tag can't be bound to shapes that aren't on this board: \(elsewhere) isn't in the file.")
-        expectEqual(error.hint, "Bind it only to shapes on the board the command works on, the one its file's window shows (`canvas boards` says which).")
-        expectEqual(editor.document.shapes.count, 2)
-    },
-    test("a shape may name shapes that aren't on its board (ShapeNaming): it's made, keeps naming them, and says which") {
-        let editor = try makeEditor([NamingPlugin()])
-        let box = try created(run(["create", "box", "--set", "frame=[[0, 0], [10, 10]]"], on: editor), in: editor)
-        let gone = ShapeID(), alsoGone = ShapeID()
-        let result = try run(["create", "memo", "--set", "frame=[[0, 0], [10, 10]]", "--set", "lead=\(gone)",
-                              "--props", #"{"sources": {"here": "\#(box.id)", "there": "\#(alsoGone)", "again": "\#(alsoGone)"}}"#], on: editor)
-        let memo = try created(result, in: editor)
-        expectEqual(memo.typed(as: Memo.self)?.props.lead, Citation(gone))
-        expectEqual(memo.typed(as: Memo.self)?.props.sources, ["here": Citation(box.id), "there": Citation(alsoGone), "again": Citation(alsoGone)])
-        expectEqual(try result.get()["warnings"], [
-            .string("lead names shapes that aren't in the file: \(gone); they show as missing."),
-            .string("sources names shapes that aren't in the file: \(alsoGone); they show as missing."),
-        ])
-        let named = try run(["create", "memo", "--set", "frame=[[0, 0], [10, 10]]", "--set", "lead=\(box.id)"], on: editor)
-        expectEqual(try named.get()["warnings"], nil, "every shape it names is there")
-    },
-    test("what a shape is bound to must still be on its board, though what it names needn't be") {
-        let editor = try makeEditor([NamingPlugin()])
-        let box = try created(run(["create", "box", "--set", "frame=[[0, 0], [10, 10]]"], on: editor), in: editor)
-        let gone = ShapeID(), alsoGone = ShapeID()
-        let cited = try run(["create", "citing-tag", "--set", "target=\(box.id)", "--set", "cite=\(gone)"], on: editor)
-        expectEqual(try created(cited, in: editor).typed(as: CitingTag.self)?.props, CitingTag(target: box.id, cite: Citation(gone)))
-        expectEqual(try cited.get()["warnings"], [.string("cite names shapes that aren't in the file: \(gone); they show as missing.")])
-        guard case .failure(let error) = try run(["create", "citing-tag", "--set", "target=\(alsoGone)", "--set", "cite=\(gone)"], on: editor) else {
-            return expect(false, "it was bound to a shape that isn't there")
-        }
-        expectEqual(error.reason, "unknown_shape")
-        expectEqual(error.message, "A citing-tag can't be bound to shapes that aren't on this board: \(alsoGone) isn't in the file.",
-                    "what it's bound to is refused, where what it names is only warned about")
-        expectEqual(editor.document.shapes.count, 2)
-    },
-    test("in a file of several boards, a name of a shape on another board names a shape that's there; a binding to one is refused as on another board") {
-        let pocket = ShapeID(), inside = ShapeID(), gone = ShapeID()
-        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: pocket, Pocket(CGRect(x: 0, y: 0, width: 10, height: 10))))]),
-                              children: [pocket: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: inside, Box(CGRect(x: 0, y: 0, width: 10, height: 10))))])])
-        let editor = try makeEditor([NamingPlugin(), PocketsPlugin()])
-        editor.replaceFile(with: file)
-        let named = try run(["create", "memo", "--set", "frame=[[0, 0], [10, 10]]", "--set", "lead=\(inside)"], on: editor)
-        expectEqual(try named.get()["warnings"], nil, "the shape it names is on the pocket's board")
-        let cited = try run(["create", "citing-tag", "--set", "target=\(pocket)", "--set", "cite=\(inside)"], on: editor)
-        expectEqual(try created(cited, in: editor).typed(as: CitingTag.self)?.props, CitingTag(target: pocket, cite: Citation(inside)))
-        expectEqual(try cited.get()["warnings"], nil)
-        guard case .failure(let away) = try run(["create", "tag", "--set", "target=\(inside)"], on: editor) else {
-            return expect(false, "it was bound to a shape on another board")
-        }
-        expectEqual(away.reason, "shape_on_another_board")
-        expectEqual(away.message, "A tag can't be bound to shapes that aren't on this board: \(inside) is on another board of it.")
-        guard case .failure(let both) = try run(["create", "citing-tag", "--set", "target=\(gone)", "--props", #"{"cite": "\#(gone)"}"#], on: editor),
-              case .failure(let mixed) = try run(["create", "tag", "--set", "target=\(gone)"], on: editor) else {
-            return expect(false, "bound to shapes that aren't in the file")
-        }
-        expectEqual(both.reason, "unknown_shape")
-        expectEqual(mixed.message, "A tag can't be bound to shapes that aren't on this board: \(gone) isn't in the file.")
-        expect(editor.showBoard(BoardID(owner: pocket)))
-        let there = try run(["create", "tag", "--set", "target=\(inside)"], on: editor)
-        expectEqual(try created(there, in: editor).typed(as: Tag.self)?.props.target, inside, "on the board the command works on now")
-        expectEqual(editor.file.root.shapes.count, 3)
-    },
-    test("a name of a shape on a board the app can't show (its owner not in the file, or of a kind that owns none) is made, with a warning") {
-        let orphan = ShapeID(), keeper = ShapeID(), unowned = ShapeID(), held = ShapeID()
-        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: keeper, Box(CGRect(x: 0, y: 0, width: 10, height: 10))))]),
-                              children: [ShapeID(): CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: orphan, Box(CGRect(x: 0, y: 0, width: 10, height: 10))))]),
-                                         keeper: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: held, Box(CGRect(x: 0, y: 0, width: 10, height: 10))))])])
-        let editor = try makeEditor([NamingPlugin(), PocketsPlugin()])
-        editor.replaceFile(with: file)
-        expect(editor.file.record(orphan) != nil && editor.file.record(held) != nil, "both are in the file")
-        let result = try run(["create", "memo", "--set", "frame=[[0, 0], [10, 10]]", "--set", "lead=\(orphan)",
-                              "--props", #"{"sources": {"here": "\#(held)", "gone": "\#(unowned)"}}"#], on: editor)
-        _ = try created(result, in: editor)
-        expectEqual(try result.get()["warnings"], [
-            .string("lead names shapes on boards this app can't show: \(orphan); they show as missing."),
-            .string("sources names shapes that aren't in the file: \(unowned); they show as missing."),
-            .string("sources names shapes on boards this app can't show: \(held); they show as missing."),
-        ])
-    },
-    test("a shape past its schema's bounds is made anyway, with a warning") {
-        let editor = try makeEditor()
-        let result = try run(["create", "card", "--set", "nickname=Robert"], on: editor)
-        let card = try created(result, in: editor)
-        expectEqual(card[Nickname.self], "Robert")
-        let warnings = try result.get()["warnings"]?.arrayValue ?? []
-        expectEqual(warnings.count, 1)
-        expect(warnings.first?.stringValue?.contains("at most 3") == true, "\(warnings)")
-    },
-    test("a kind or a property that isn't there says what there is, and what was probably meant") {
-        let editor = try makeEditor()
-        guard case .failure(let kind) = try run(["create", "crad"], on: editor) else { return expect(false, "there's no crad") }
-        expectEqual(kind.code, RPCError.failed)
-        expectEqual(kind.reason, "unknown_kind")
-        expectEqual(kind.message, "There's no kind of shape called crad.")
-        expectEqual(kind.hint, "Did you mean card? The kinds: box, card, disc, dot, tag.")
-        guard case .failure(let property) = try run(["create", "card", "--set", "txt=Hi"], on: editor) else { return expect(false, "no txt") }
-        expectEqual(property.reason, "unknown_property")
-        expectEqual(property.hint, "Did you mean text? Its properties: frame, nickname, text.")
-        guard case .failure(let json) = try run(["create", "card", "--props", #"{"colour": 1}"#], on: editor) else { return expect(false, "no colour") }
-        expectEqual(json.reason, "unknown_property")
-        expectEqual(editor.document.shapes.count, 0, "nothing was made")
-    },
-    test("a value that isn't one is refused as the params, before anything's made") {
-        let editor = try makeEditor()
-        for line in [["create", "card", "--set", "text"], ["create", "card", "--size", "0,10"], ["create", "card", "--set", "frame=nope"]] {
-            guard case .failure(let error) = try run(line, on: editor) else { return expect(false, "\(line)") }
-            expectEqual(error.code, RPCError.invalidParams, "\(line)")
-            expectEqual(error.reason, "invalid_params", "\(line)")
-        }
-        let registry = editor.registry
-        for params: JSON in [["kind": 3], ["kind": "card", "colour": 1], [:]] {
-            let result = Result { () throws(RPCError) in try registry.runAutomationCommand("create", params: params, editor: editor) }
-            guard case .failure(let error) = result else { return expect(false, "\(params)") }
-            expectEqual(error.code, RPCError.invalidParams, "\(params)")
-        }
-        expectEqual(editor.document.shapes.count, 0)
-    },
-    test("a board command with no board says so") {
-        let editor = try makeEditor()
-        guard case .failure(let error) = try run(["create", "card"], on: nil, registry: editor.registry) else { return expect(false, "no board") }
-        expectEqual(error.reason, "no_board")
-    },
-])
-
 @MainActor let kindsTests = Suite("kinds", [
-    test("it lists every kind, what places it and its properties; --schema adds the schema") {
-        let editor = try makeEditor()
+    test("it lists every kind: whether a script draws it, its names, size, attributes and edges; --schema adds the schema") {
+        let editor = try makeEditor(drawPlugins())
         let all = try run(["kinds"], on: nil, registry: editor.registry).get()
-        expectEqual(all.arrayValue?.compactMap { $0["kind"]?.stringValue }, ["box", "card", "disc", "dot", "tag"])
+        expectEqual(all.arrayValue?.compactMap { $0["kind"]?.stringValue }, ["box", "card", "disc", "dot", "link", "tag", "tile"])
         let card = try require(all.arrayValue?.first { $0["kind"] == "card" })
-        expectEqual(card, ["kind": "card", "title": "card", "tool": "Card", "size": [100, 60], "properties": ["frame", "nickname", "text"]])
+        expectEqual(card, ["kind": "card", "title": "card", "tool": "Card", "drawable": true, "names": "named", "size": "100x60",
+                           "attributes": ["due": "date (YYYY-MM-DD or date-time)", "text": "text"], "edges": ["bottom": ["cool"]]])
+        let tile = try require(all.arrayValue?.first { $0["kind"] == "tile" })
+        expectEqual(tile["attributes"], ["finish": "matte|glossy", "pinned": "true|false", "rank": "integer ≥ 1", "steps": "JSON [{text}]"])
+        expectEqual(tile["edges"], ["left": ["warm"], "right": ["warm", "cool"]])
         let box = try require(all.arrayValue?.first { $0["kind"] == "box" })
-        expectEqual(box["tool"], nil, "no tool places a box")
+        expectEqual(box["drawable"], false)
+        expectEqual(box["why"], "no tool places one")
+        expectEqual(box["names"], "none")
+        expectEqual(box["attributes"], [:], "its frame is where it is, which a script never says")
+        let link = try require(all.arrayValue?.first { $0["kind"] == "link" })
+        expectEqual(link["why"], #"it joins two shapes: write edge "A" -> "B""#)
         let one = try run(["kinds", "card", "--schema"], on: nil, registry: editor.registry).get()
         expectEqual(one.arrayValue?.count, 1)
         expectEqual(one.arrayValue?.first?["schema"]?["properties"]?["nickname"]?["maxLength"], 3)
         guard case .failure(let error) = try run(["kinds", "cards"], on: nil, registry: editor.registry) else { return expect(false, "no cards") }
         expectEqual(error.reason, "unknown_kind")
+        expectEqual(error.hint, "did you mean card? the kinds: box, card, disc, dot, link, tag, tile")
+    },
+    test("without a plugin that names shapes, a kind's naming property is an attribute, and a key the language keeps is marked") {
+        let editor = try makeEditor([Contributor(id: "sizes") { registrar in
+            registrar.declare(SizeWord.self)
+            registrar.optIn(Tile.self, to: SizeWord.self)
+        }])
+        let all = try run(["kinds"], on: nil, registry: editor.registry).get()
+        let card = try require(all.arrayValue?.first { $0["kind"] == "card" })
+        expectEqual(card["names"], "none")
+        expectEqual(card["attributes"]?["nickname"], "text (≤ 3)")
+        expectEqual(card["edges"], nil)
+        let tile = try require(all.arrayValue?.first { $0["kind"] == "tile" })
+        expectEqual(tile["attributes"]?["label"], "text")
+        expectEqual(tile["attributes"]?["size"], "text — can't be written: size: is one of the language's own keys")
+    },
+    test("a kind whose tool draws it by hand names the tool, and says a script can't place one") {
+        let editor = try makeEditor(drawPlugins() + [Contributor(id: "boxer") { registrar in
+            registrar.tool(ToolDescriptor(id: ToolID(placing: Box.kind), label: "Boxer", systemImage: "square")) { _ in NoTool() }
+        }])
+        let box = try require(run(["kinds", "box"], on: nil, registry: editor.registry).get().arrayValue?.first)
+        expectEqual(box["tool"], "Boxer")
+        expectEqual(box["drawable"], false)
+        expectEqual(box["why"], "its tool (Boxer) draws one by hand, so a script can't place one")
+        let placing = try refused("box", on: editor)
+        expectEqual(placing.reason, "not_placeable")
+        expectEqual(placing.message, "a box isn't drawn on its own: its tool (Boxer) draws one by hand, so a script can't place one")
+    },
+    test("a bound written beside a reference to a definition is what the attribute takes") {
+        let editor = try makeEditor([Contributor(id: "partners") { registrar in
+            registrar.declare(Partner.self)
+            registrar.optIn(Tile.self, to: Partner.self)
+        }])
+        let tile = try require(run(["kinds", "tile"], on: nil, registry: editor.registry).get().arrayValue?.first)
+        expectEqual(tile["attributes"]?["partner"], "text (≤ 36)")
     },
 ])
+
+/// A shape's partner, by id (the core's shape id, a definition referred to), with a bound beside it.
+enum Partner {}
+
+extension Partner: ShapeProperty {
+    static let key: PropertyKey = "partner"
+    static var defaultValue: ShapeID? { nil }
+    static var keywords: PropertyKeywords<ShapeID> { PropertyKeywords().maxLength(36) }
+}
+
+/// A property named like one of the language's keys.
+enum SizeWord {}
+
+extension SizeWord: ShapeProperty {
+    static let key: PropertyKey = "size"
+    static var defaultValue: String? { nil }
+}
 
 @MainActor let registrationTests = Suite("Registering commands", [
     test("each command is described for the command line: its scope, positionals and params' schema") {
         let registry = try makeEditor().registry
-        let create = try require(registry.automationCommands.first { $0.name == "create" })
-        expectEqual(create.scope, .board)
-        expectEqual(create.positionals, ["kind"])
-        expectEqual(create.params["required"], ["kind"])
-        expectEqual(create.params["properties"]?.objectValue.map { $0.keys.sorted() }, ["at", "kind", "props", "set", "size"])
-        expectEqual(create.usage(), "canvas create <kind> [--at <x,y>] [--props <json>] [--set <name=value>]... [--size <width,height>] [--board <board>]")
+        let draw = try require(registry.automationCommands.first { $0.name == "draw" })
+        expectEqual(draw.scope, .board)
+        expectEqual(draw.positionals, ["script"])
+        expectEqual(draw.params["required"], ["script"])
+        expectEqual(draw.params["properties"]?.objectValue.map { $0.keys.sorted() }, ["dryRun", "reveal", "script"])
+        expectEqual(draw.usage(), "canvas draw <script>|- [--dry-run] [--reveal] [--board <board>]")
+        expect(draw.arguments.first { $0.name == "script" }?.readsStandardInput == true)
         expectEqual(registry.automationCommands.first { $0.name == "kinds" }?.scope, .app)
-        expect(registry.report.contains("automation    command line create · command line kinds"), registry.report)
+        expect(registry.report.contains("automation    command line draw · command line kinds"), registry.report)
     },
     test("the registry refuses a command the command line couldn't type or spell, or two of one name") {
         let nothing: @MainActor (NoParams, AutomationContext) throws(AutomationError) -> String = { _, _ in "" }
@@ -279,9 +220,14 @@ let extras = Contributor(id: "extras") { registrar in
                     "AutomationCommands: command go: a param can't be named board, which canvas keeps for itself")
         expectEqual(refusal { $0.automationCommand("go", "", params: NoParams.self, positionals: ["what"], run: nothing) },
                     "AutomationCommands: command go: positional what isn't one of its params")
-        expectEqual(refusal { $0.automationCommand("create", "", params: NoParams.self, run: nothing) },
-                    "automation and more both claim command create in AutomationCommands")
+        expectEqual(refusal { $0.automationCommand("draw", "", params: NoParams.self, run: nothing) },
+                    "automation and more both claim command draw in AutomationCommands")
         expectEqual(refusal { $0.automationCommand("board list", "", params: NoParams.self, run: nothing) }, nil)
+    },
+    test("a board command with no board says so") {
+        let editor = try makeEditor()
+        guard case .failure(let error) = try run(["draw", "tile"], on: nil, registry: editor.registry) else { return expect(false, "no board") }
+        expectEqual(error.reason, "no_board")
     },
 ])
 

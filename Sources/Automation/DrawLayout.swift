@@ -1,0 +1,352 @@
+import Canvas
+import CoreGraphics
+import DrawScript
+import Geometry
+
+// Placing a script's shapes: the layout problem DrawScript solves, built from the board as the run
+// starts. The shapes that move are its free boxes (new shapes, and shapes restated with
+// placements); the boxes their placements name that stay put are fixed (board shapes, shapes
+// restated without placements, `board`, `view`); every closed board shape the script doesn't move
+// or delete is an obstacle. The obstacles are filed once a run (`ObstacleIndex`, a pass over the
+// board), and the solver asks for them by region, each answer kept: however many times it asks, a
+// question costs what's near the box it's about.
+
+extension Drawing {
+    /// Places every shape the script moves, or says why it can't (the solver's first problem), and
+    /// builds each shape as it will be.
+    mutating func place() throws(AutomationError) {
+        let editor = editor, context = editor.shapeContext, document = editor.document, registry = registry
+        for index in items.indices where !items[index].moves {
+            guard let box = items[index].existing?.box else { throw broken(items[index], "it has no frame") }
+            items[index].placed = CGRect(origin: box.origin, size: items[index].size)
+        }
+
+        // What's in the way: board shapes that stay, those restated in place at their new size.
+        var excluded = deleted
+        for item in items where item.moves { if let id = item.existing?.id { excluded.insert(id) } }
+        var resized: [ShapeID: CGRect] = [:]
+        for item in items where !item.moves {
+            if let existing = item.existing, let placed = item.placed, placed != existing.box, Drawing.obstacle(existing, in: context) != nil {
+                resized[existing.id] = placed
+            }
+        }
+        let filed = ObstacleIndex(editor.paintOrder(), document: document, context: context, excluding: excluded, resized: resized)
+        let obstacles: (CGRect) -> [LayoutProblem.Obstacle] = { area in filed.obstacles(in: area) }
+
+        // The boxes that move, in script order.
+        var free: [LayoutProblem.Free] = []
+        for index in items.indices where items[index].moves {
+            let item = items[index]
+            items[index].free = free.count
+            free.append(LayoutProblem.Free(line: item.statement.line, name: subject(of: item), size: item.size, gap: item.shape.gap,
+                                           overlapAllowed: item.shape.overlapAllowed, current: item.existing?.box))
+        }
+
+        // What their placements name.
+        var fixed: [LayoutProblem.Fixed] = []
+        var fixedNames: [String] = []
+        var fixedShapes: [ShapeID: Int] = [:]
+        var fixedWords: [PlaceWord: Int] = [:]
+        let needsBoard = items.contains { item in item.targets.joined().contains { if case .board = $0 { true } else { false } } }
+            || items.contains { $0.existing == nil && $0.shape.clauses.isEmpty }
+        let boardBounds = needsBoard ? filed.bounds : nil
+        func fixedShape(_ record: AnyShapeRecord, rect: CGRect, gap: Gap?) -> LayoutProblem.Ref {
+            if let at = fixedShapes[record.id] { return .fixed(at) }
+            let obstacle = Drawing.obstacle(record, in: context) != nil ? document.index(of: record.id) : nil
+            fixedShapes[record.id] = fixed.count
+            fixed.append(LayoutProblem.Fixed(rect: rect, gap: gap, obstacle: obstacle))
+            fixedNames.append(named(record))
+            return .fixed(fixed.count - 1)
+        }
+        func fixedWord(_ word: PlaceWord, rect: CGRect) -> LayoutProblem.Ref {
+            if let at = fixedWords[word] { return .fixed(at) }
+            fixedWords[word] = fixed.count
+            fixed.append(LayoutProblem.Fixed(rect: rect, word: word))
+            fixedNames.append(word.rawValue)
+            return .fixed(fixed.count - 1)
+        }
+
+        for index in items.indices {
+            guard let box = items[index].free else { continue }
+            let item = items[index]
+            var clauses: [LayoutProblem.ResolvedClause] = []
+            for (clause, found) in zip(item.shape.clauses, item.targets) {
+                var refs: [LayoutProblem.Ref] = []
+                var parts: [Int: CGRect] = [:]
+                for (place, (target, what)) in zip(clause.targets, found).enumerated() {
+                    // A corner on a shape's outline, when its outline isn't its bounds (an ellipse's).
+                    var outline: (points: [CGPoint], rect: CGRect)?
+                    switch what {
+                    case .item(let other):
+                        let them = items[other]
+                        if let theirs = them.free {
+                            refs.append(.free(theirs))
+                        } else if let existing = them.existing, let placed = them.placed {
+                            refs.append(fixedShape(existing, rect: placed, gap: them.shape.gap))
+                        }
+                        if target.part?.isCorner == true {
+                            outline = Drawing.outline(of: them.record, at: CGRect(origin: .zero, size: them.size), in: registry)
+                        }
+                    case .shape(let record):
+                        guard let geometry = context.geometry(of: record.id), !geometry.bounds.isNull, geometry.bounds.isFinite else {
+                            throw AutomationError(item.statement, .unsupported, "\(named(record)) has nothing drawn to be placed against",
+                                                  hint: "place \(subject(of: item)) against another shape")
+                        }
+                        let bounds = geometry.bounds
+                        refs.append(fixedShape(record, rect: bounds, gap: nil))
+                        if geometry.isClosed {
+                            outline = (geometry.outline.map { CGPoint(x: $0.x - bounds.minX, y: $0.y - bounds.minY) }, CGRect(origin: .zero, size: bounds.size))
+                        }
+                    case .board:
+                        guard let boardBounds else {
+                            throw AutomationError(item.statement, .unknownTitle, "\(subject(of: item)) is \(clause.written), and the board has nothing on it yet",
+                                                  hint: "leave the shape unplaced to draw it in view")
+                        }
+                        refs.append(fixedWord(.board, rect: boardBounds))
+                    case .view:
+                        guard let view else { throw AutomationError(item.statement, .noView, "the board isn't in a window") }
+                        refs.append(fixedWord(.view, rect: view))
+                    }
+                    if let part = target.part, part.isCorner, let outline, let corner = Self.corner(part, on: outline.points, in: outline.rect) {
+                        parts[place] = corner
+                    }
+                }
+                clauses.append(LayoutProblem.ResolvedClause(clause, refs: refs, partRects: parts))
+            }
+            free[box].clauses = clauses
+        }
+
+        // Solve.
+        let freeNames = free.map(\.name), names = fixedNames
+        let naming = self.naming, boardNames = self.names
+        let problem = LayoutProblem(
+            free: free, fixed: fixed, obstacles: obstacles, boardBounds: boardBounds,
+            viewMiddle: view.map { CGPoint(x: $0.midX, y: $0.midY) } ?? editor.camera.toWorld(CGPoint.zero), view: view,
+            name: { ref in
+                switch ref {
+                case .free(let box): return freeNames[box]
+                case .fixed(let box): return names[box]
+                case .obstacle(let id):
+                    guard document.shapes.indices.contains(id) else { return "a shape" }
+                    let record = document.shapes[id]
+                    return Drawing.title(of: record, names: boardNames, naming: naming, registry: registry).map(quoted)
+                        ?? Drawing.location(of: record, in: context)
+                }
+            })
+        let solution: LayoutSolution
+        do throws(ScriptError) {
+            solution = try problem.solve()
+        } catch {
+            throw AutomationError(error, statement: text(ofLine: error.line))
+        }
+
+        for index in items.indices {
+            guard let box = items[index].free else { continue }
+            var rect = solution.rects[box]
+            // Where it already is, but for what arithmetic in another order leaves over.
+            if let current = items[index].existing?.box, Self.isNearly(rect, current) { rect = current }
+            guard rect.isFinite, rect.width > 0, rect.height > 0 else { throw broken(items[index], "it was placed nowhere (\(rect))") }
+            items[index].placed = rect
+            items[index].zones = solution.zones[box].map { document.shapes[$0.id].id }
+        }
+        /// What a box was pushed past, as a row names it and as a message does.
+        func pushed(_ ref: LayoutProblem.Ref) -> (plain: String, quoted: String) {
+            switch ref {
+            case .free(let box):
+                let item = items.first { $0.free == box }!
+                let location = "\(item.kind) at \(point(CGPoint(x: item.placed!.midX, y: item.placed!.midY)))"
+                return (item.title ?? location, subject(of: item))
+            case .obstacle(let id):
+                let record = document.shapes[id], title = Drawing.title(of: record, names: boardNames, naming: naming, registry: registry)
+                let location = Drawing.location(of: record, in: context)
+                return (title ?? location, title.map(quoted) ?? location)
+            case .fixed(let box):
+                return (names[box], names[box])
+            }
+        }
+        // Every push is said. A shape pushed past another says so on its row (`pushedPast`) and in a
+        // warning, once for each thing it went past. One that only moved along with a shape that
+        // was (placed against it, or that one against it) was kept clear of nothing itself, and the
+        // placement to fix is the other's: its row has no `pushedPast` for it, and its warning
+        // names the shape it went with and what that one went past, once for each shape it went
+        // with and way it went. What it went past is said once for each way it went: a shape
+        // pushed past a wall isn't also said to have gone along past it with another, and one that
+        // went along past it with several (a list's members go as one, each pushed past it in
+        // turn) is said to have gone with the first in script order. They're said in script order.
+        struct Went: Hashable { var item: Int, leader: Int, way: Direction }
+        var said: [(item: Int, way: Direction, along: Int?, past: [String], holds: Bool)] = []
+        var went: [Went: Int] = [:]
+        var itemOf: [Int: Int] = [:]
+        for index in items.indices { if let box = items[index].free { itemOf[box] = index } }
+        for push in solution.pushes {
+            guard let index = itemOf[push.box] else { continue }
+            let past = pushed(push.past)
+            if let along = push.along {
+                guard let leader = itemOf[along] else { continue }
+                if let at = went[Went(item: index, leader: leader, way: push.way)] {
+                    if !said[at].past.contains(past.quoted) { said[at].past.append(past.quoted) }
+                } else {
+                    went[Went(item: index, leader: leader, way: push.way)] = said.count
+                    said.append((index, push.way, leader, [past.quoted], push.placementsHold))
+                }
+            } else if !items[index].pushedPast.contains(past.plain) {
+                items[index].pushedPast.append(past.plain)
+                said.append((index, push.way, nil, [past.quoted], push.placementsHold))
+            }
+        }
+        // What each shape went past each way: its own pushes first, then what it went along past,
+        // with the shapes it went with in script order.
+        struct Way: Hashable { var item: Int, way: Direction }
+        var told: [Way: Set<String>] = [:]
+        for push in said where push.along == nil { told[Way(item: push.item, way: push.way), default: []].formUnion(push.past) }
+        for at in said.indices.filter({ said[$0].along != nil }).sorted(by: { (said[$0].along!, $0) < (said[$1].along!, $1) }) {
+            let key = Way(item: said[at].item, way: said[at].way)
+            said[at].past.removeAll { told[key]?.contains($0) == true }
+            told[key, default: []].formUnion(said[at].past)
+        }
+        for push in said.indices.sorted(by: { (said[$0].item, $0) < (said[$1].item, $1) }).map({ said[$0] }) where !push.past.isEmpty {
+            notes.append(DrawWarning(line: items[push.item].statement.line,
+                                     pushMessage(items[push.item], past: push.past, way: push.way, along: push.along.map { items[$0] }, holds: push.holds)))
+        }
+        // A zone (a board shape that wholly holds the shape where it is now, what it's placed
+        // against, where it lands among other shapes, or the view it's placed against or drawn in)
+        // isn't in that shape's way, but doesn't keep it in either: one that hangs over its edge
+        // is said.
+        // What a shape is `inside` or `on` is no zone of it.
+        for index in items.indices where !items[index].shape.overlapAllowed {
+            let item = items[index]
+            guard let box = item.free, let placed = item.placed else { continue }
+            for zone in solution.zones[box] {
+                guard Self.overlaps(zone.rect, placed, by: Self.overhang), !zone.rect.insetBy(dx: -Self.overhang, dy: -Self.overhang).contains(placed) else { continue }
+                let record = document.shapes[zone.id]
+                notes.append(DrawWarning(line: item.statement.line,
+                                         "\(subject(of: item)) hangs over the edge of \(named(record)) — make \(named(record)) bigger, or place \(subject(of: item)) elsewhere"))
+            }
+        }
+
+        // Each shape as it'll be: where it goes, its title as it was (unless renamed), and changed
+        // only if it may be.
+        for index in items.indices {
+            let item = items[index]
+            var record = item.record
+            record.box = item.placed
+            guard record.box?.isFinite == true else { throw broken(item, "its frame isn't finite") }
+            if let title = item.title, item.existing != nil, item.rename == nil { try keepsName(record, title, item) }
+            if let existing = item.existing, record != existing, registry.isReadOnly(existing), registry.isReadOnly(record) {
+                throw AutomationError(item.statement, .readOnly, "\(subject(of: item)) is read-only (locked, say), so it stays as it is",
+                                      hint: "leave it out of the script, or ask the user to unlock it")
+            }
+            items[index].record = record
+            // Resized where it stays, over what's around it.
+            if let existing = item.existing, !item.moves, let placed = item.placed, placed.size != existing.box?.size, !item.shape.overlapAllowed {
+                let over = filed.entries(in: placed).map { filed.entries[$0] }.filter { other in
+                    other.record.id != existing.id && Self.overlaps(other.rect, placed) && !(other.rect.contains(placed) || placed.contains(other.rect))
+                }.map(\.record)
+                if let first = over.first {
+                    notes.append(DrawWarning(line: item.statement.line,
+                                              "\(subject(of: item)) was resized where it is, and now overlaps \(named(first)) — place it to move it clear"))
+                }
+            }
+        }
+    }
+
+    /// `"Why" was pushed right past "DB" to keep clear of it, so it no longer sits against "API"`,
+    /// or, for a shape that went along with one pushed, `"D" moved right along with "N", which was
+    /// pushed past "Q" to keep clear of it`. What it no longer sits against is said only when a
+    /// placement of its own was loosened (`holds` false): a push that would take a shape off its
+    /// centering or an alignment isn't made (it goes along the other axis, or it's `unordered`), so
+    /// only a direction's gap grows.
+    private func pushMessage(_ item: ShapeItem, past: [String], way: Direction, along leader: ShapeItem?, holds: Bool) -> String {
+        let how = switch way {
+        case .right: "right"
+        case .left: "left"
+        case .below: "down"
+        default: "up"
+        }
+        var so = ""
+        if !holds, let loosened = loosened(item, way) {
+            so = ", so \(leader == nil ? "it" : subject(of: item)) no longer sits against \(listed(loosened))"
+        }
+        guard let leader else {
+            return "\(subject(of: item)) was pushed \(how) past \(listed(past)) to keep clear of it\(so) — place it on another side, or say overlap: allow"
+        }
+        let them = past.count == 1 ? "it" : "them"
+        return "\(subject(of: item)) moved \(how) along with \(subject(of: leader)), which was pushed past \(listed(past)) to keep clear of \(them)\(so)"
+            + " — place \(subject(of: leader)) on another side, or give \(subject(of: leader)) overlap: allow"
+    }
+
+    /// What a push loosened: the targets of the shape's first placement that holds it from the side
+    /// it went away from (`right of` for a push right), whose gap is what grew.
+    private func loosened(_ item: ShapeItem, _ way: Direction) -> [String]? {
+        item.shape.clauses.first { clause in
+            guard let direction = clause.direction else { return false }
+            return way.horizontal != 0 ? direction.horizontal == way.horizontal : direction.vertical == way.vertical
+        }.map { $0.targets.map(\.written) }
+    }
+
+    private func broken(_ item: ShapeItem, _ why: String) -> AutomationError {
+        AutomationError(item.statement, .internal, "\(subject(of: item)) couldn't be drawn: \(why)")
+    }
+
+    /// The statement or style written on a line, as an error quotes it.
+    func text(ofLine line: Int) -> String? {
+        script.statements.first { $0.line == line }?.text ?? script.styles.first { $0.line == line }?.text
+    }
+
+    // MARK: Geometry
+
+    /// A board shape's bounds, if it's an obstacle: one with an inside, that the app can read.
+    static func obstacle(_ record: AnyShapeRecord, in context: ShapeContext) -> CGRect? {
+        guard !record.isOpaque, let geometry = context.geometry(of: record.id), geometry.isClosed else { return nil }
+        let bounds = geometry.bounds
+        guard !bounds.isNull, bounds.isFinite, bounds.width > 0, bounds.height > 0 else { return nil }
+        return bounds
+    }
+
+    /// A shape's outline, as it would be with its box at `rect` (in world units); nil for one
+    /// without an inside.
+    static func outline(of record: AnyShapeRecord, at rect: CGRect, in registry: Registry) -> (points: [CGPoint], rect: CGRect)? {
+        var placed = record
+        placed.box = rect
+        let context = ShapeContext(document: CanvasDocument(shapes: [placed]), registry: registry)
+        guard let geometry = context.geometry(of: placed.id), geometry.isClosed, geometry.outline.count >= 3 else { return nil }
+        return (geometry.outline, rect)
+    }
+
+    /// Where a corner of a box sits on an outline inside it: where the ray from the box's middle
+    /// toward the corner last crosses the outline, from the box's top-left. Nil where that's the
+    /// box's own corner (a rectangle's), or the outline doesn't cross.
+    static func corner(_ part: Part, on outline: [CGPoint], in rect: CGRect) -> CGRect? {
+        let local = part.rect(in: rect.size)
+        let target = CGPoint(x: rect.minX + local.minX, y: rect.minY + local.minY), middle = CGPoint(x: rect.midX, y: rect.midY)
+        guard let t = intersections(ofSegmentFrom: middle, to: target, withPolygon: outline).filter({ $0 >= 0 && $0 <= 1 + 1e-9 }).max() else {
+            return nil
+        }
+        let point = middle + (target - middle) * t
+        guard point.distance(to: target) > 1e-6 else { return nil }
+        return CGRect(origin: CGPoint(x: point.x - rect.minX, y: point.y - rect.minY), size: .zero)
+    }
+
+    static func overlaps(_ a: CGRect, _ b: CGRect, by least: CGFloat = 1e-6) -> Bool {
+        min(a.maxX, b.maxX) - max(a.minX, b.minX) > least && min(a.maxY, b.maxY) - max(a.minY, b.minY) > least
+    }
+
+    /// How far over a zone's edge a shape goes before it's said to hang over it, world units: less
+    /// is arithmetic.
+    static let overhang: CGFloat = 0.5
+
+    static func isNearly(_ a: CGRect, _ b: CGRect) -> Bool {
+        abs(a.minX - b.minX) < 1e-6 && abs(a.minY - b.minY) < 1e-6 && abs(a.width - b.width) < 1e-6 && abs(a.height - b.height) < 1e-6
+    }
+
+    /// What a board shape is called, if anything.
+    static func title(of record: AnyShapeRecord, names: BoardNames, naming: DrawNaming?, registry: Registry) -> String? {
+        names.name(of: record) ?? naming?.name(record, registry)
+    }
+
+    /// Where a shape is, for a message about one with no title: `card at 400,300`, its middle.
+    static func location(of record: AnyShapeRecord, in context: ShapeContext) -> String {
+        let bounds = context.geometry(of: record.id)?.bounds ?? record.box ?? .zero
+        return "\(record.kind) at \(point(CGPoint(x: bounds.midX, y: bounds.midY)))"
+    }
+}

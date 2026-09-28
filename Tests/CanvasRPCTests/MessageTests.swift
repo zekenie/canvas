@@ -78,7 +78,7 @@ import TestKit
         expectEqual(app.command(in: ["--board=2", "x", "board"])?.command.name, nil, "x isn't an option's value")
         expect(app.command(in: ["x", "board"]) == nil, "a word that isn't an option before the name")
         let text = try JSON(encoding: app).compactText
-        expect(text.contains(#""protocol":1"#), text)
+        expect(text.contains(#""protocol":2"#), text)
         expectEqual(try JSON(text: text).decode(AppDescription.self), app)
     },
 ])

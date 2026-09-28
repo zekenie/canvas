@@ -471,4 +471,22 @@ private func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
         expectEqual(try require(registry.schema(for: Pocket.kind)).json["x-canvas-board"], true)
         expectEqual(try require(registry.schema(for: Box.kind)).json["x-canvas-board"], nil)
     },
+    test("a default that varies from one init() to the next (a new id) isn't stated, though a missing member still reads as one") {
+        let properties = try require(Stub.jsonSchema.json["properties"]?.objectValue)
+        expectEqual(properties["id"], ["type": "string", "format": "uuid"])
+        expectEqual(properties["label"], ["type": "string", "default": "stub"])
+        expectEqual(Stub.jsonSchema.json["required"], nil)
+        let one = try decode(Stub.self, #"{"label": "a"}"#), another = try decode(Stub.self, #"{"label": "a"}"#)
+        expect(one.id != another.id, "each read without one gets its own")
+    },
 ])
+
+/// An item with an id of its own from the moment it's made, as a checklist's are.
+struct Stub: SchemaDefined, Equatable {
+    static let properties = Properties<Stub> {
+        Property("id", \.id)
+        Property("label", \.label)
+    }
+    var id = UUID()
+    var label = "stub"
+}

@@ -9,9 +9,12 @@ extension PluginID {
     public static let checklists: PluginID = "checklists"
 }
 
+/// One item: what it says, whether it's done, and an id of its own from the moment it's made. An
+/// item read without an id (one an agent writes, `[{"text": "Eggs"}]`) gets a new one, so the id
+/// isn't required, and its schema states no default: each item's is its own.
 public struct ChecklistItem: SchemaDefined, Equatable, Hashable, Identifiable {
     public static let properties = Properties<ChecklistItem>(title: "Checklist item", definition: "item") {
-        Property("id", \.id).required()
+        Property("id", \.id)
         Property("text", \.text)
         Property("isDone", \.isDone)
     }

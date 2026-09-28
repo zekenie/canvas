@@ -18,6 +18,10 @@ struct ContentsListing {
     private var namers: [ShapeID: Set<ShapeID>] = [:]
     /// The shapes changed since it was last brought up to date.
     var pending: Set<ShapeID> = []
+    /// Whether the last update brought rows in at more than one place: under two rows (or a row
+    /// and the top level), or at two places among one row's rows. A row that comes in under one
+    /// that comes in with it comes in with it. The list replaces its rows then, as for a new scope.
+    private(set) var isScattered = false
     /// Whether a loop keeps a row at the top though the shape it names is listed. Which row of a
     /// loop stays at the top follows from the order of the whole loop, so while there's one, any
     /// row that comes, goes or moves lists every row again. (No shipped kind makes a loop.)
@@ -87,6 +91,7 @@ struct ContentsListing {
     /// placed again with the rows under it. False when listing every row again is the better way:
     /// the caller does that instead.
     mutating func update(row: (ShapeID) -> ShapeRow?) -> Bool {
+        isScattered = false
         guard !pending.isEmpty else { return true }
         let changed = pending
         pending = []
@@ -108,6 +113,14 @@ struct ContentsListing {
             let keys = parent.map { path(to: $0) } ?? []
             Self.modify(&entries, under: keys[...]) { rows in rows.insert(entry, at: rows.slot(for: made.key)) }
         }
+        // Where they came in, by the row they came in under (nil: the top level).
+        let attached = Set(plan.attaching.map(\.row.id))
+        var places: [ShapeID?: [Int]] = [:]
+        for (made, parent) in plan.attaching where !(parent.map(attached.contains) ?? false) {
+            let keys = parent.map { path(to: $0) } ?? []
+            places[parent, default: []].append(Self.rows(entries, under: keys[...]).slot(for: made.key))
+        }
+        isScattered = places.count > 1 || places.values.contains { slots in slots.max()! - slots.min()! + 1 != slots.count }
         for made in plan.replacing {
             let id = made.id
             let old = nodes[id]!.row
@@ -193,6 +206,13 @@ struct ContentsListing {
             next = node.parent
         }
         return keys.reversed()
+    }
+
+    /// The rows nested under the row `path` leads to (keys from the top level down), or the
+    /// top-level rows when it's empty.
+    private static func rows(_ rows: [ContentsEntry], under path: ArraySlice<StackingKey>) -> [ContentsEntry] {
+        guard let key = path.first else { return rows }
+        return Self.rows(rows[rows.slot(for: key)].children ?? [], under: path.dropFirst())
     }
 
     /// Runs `body` on the rows nested under the row `path` leads to (keys from the top level

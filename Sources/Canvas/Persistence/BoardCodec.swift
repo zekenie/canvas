@@ -624,12 +624,19 @@ struct KindCodec: Sendable {
     let migrations: [PropsMigration]
     let decode: @Sendable (any Decoder) throws -> any ShapeProps
     let decodeData: @Sendable (Data) throws -> any ShapeProps
+    /// Props of this kind, with the members a JSON object has read over them
+    /// (`SchemaDefined.patching(_:with:)`).
+    let patchData: @Sendable (any ShapeProps, Data) throws -> any ShapeProps
     var version: Int { migrations.count }
 
     init<P: ShapeProps>(_: P.Type) {
         migrations = P.migrations
         decode = { try P(from: $0) }
         decodeData = { try BoardCodec.makeDecoder().decode(P.self, from: $0) }
+        patchData = { base, data in
+            guard let base = base as? P else { throw ReadProblem("these aren't \(P.kind) props") }
+            return try P.patching(base, with: data)
+        }
     }
 }
 

@@ -92,6 +92,31 @@ import Titles
             expectEqual(try violations(), [], "untitled: nothing to check")
         }
     },
+    test("titles fold as they read: whitespace runs to one space, trimmed; blank is none") {
+        expectEqual(TitleProperty.folded("  Front\n\ndesk\t"), "Front desk")
+        expectEqual(TitleProperty.folded("Lobby"), "Lobby")
+        expectEqual(TitleProperty.folded(" \n "), nil)
+        expectEqual(TitleProperty.folded(""), nil)
+        expectEqual(TitleProperty.folded(nil), nil)
+    },
+    test("a kind's title is derived when a bridge makes it from what the kind keeps; named only, or none, it isn't") {
+        let registry = try titleEditor([CardsPlugin(), CardTitlesPlugin(), Contributor(id: "disc-titles") { r in
+            // Named, and derived for the discs nobody named.
+            r.optIn(Disc.self, to: TitleProperty.self)
+            r.title(Disc.self) { TitleProperty.folded($0[TitleProperty.self]) ?? "Disc" }
+        }]).registry
+        expect(!registry.titleIsDerived(Plaque.kind), "named: title()")
+        expect(registry.titleIsDerived(Card.kind), "derived: title { … }")
+        expect(registry.titleIsDerived(Disc.kind), "both")
+        expect(!registry.titleIsDerived(Box.kind), "none")
+        expectEqual(registry.properties(for: Disc.kind), [TitleProperty.key], "a derived title that can be named too")
+        var disc = AnyShapeRecord(ShapeRecord(Disc(plaqueFrame)))
+        expectEqual(registry.title(of: disc), "Disc")
+        disc[TitleProperty.self] = "  Moon "
+        expectEqual(registry.title(of: disc), "Moon")
+        disc[TitleProperty.self] = " "
+        expectEqual(registry.title(of: disc), "Disc", "a blank name falls back to the derived one")
+    },
     test("a title is two lines in the report, its own and its row's name; without the row's, one") {
         let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), AdornmentsPlugin(), TitlesPlugin(),
                                               TableOfContentsPlugin(), Contributor(id: "fixture-titles") { r in

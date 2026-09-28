@@ -86,9 +86,6 @@ private let stickyNoteSchema = #"""
           "type" : "string"
         }
       },
-      "required" : [
-        "id"
-      ],
       "title" : "Checklist item",
       "type" : "object"
     },

@@ -52,6 +52,23 @@ import TestKit
         expect(!a.isDone)
         expect(a.id != b.id)
     },
+    test("an item written without an id (as an agent writes one) reads with a new one of its own; one with an id keeps it") {
+        let registry = try choreEditor().registry
+        let kept = UUID()
+        let shape = try registry.shape(Chore.kind, properties: [
+            "frame": [[0, 0], [100, 100]],
+            "checklist": [["text": "Eggs"], ["text": "Milk", "isDone": true], ["id": .string(kept.uuidString), "text": "Bread"]],
+        ])
+        let items = try require(shape[ChecklistProperty.self])
+        expectEqual(items.map(\.text), ["Eggs", "Milk", "Bread"])
+        expectEqual(items.map(\.isDone), [false, true, false])
+        expectEqual(Set(items.map(\.id)).count, 3, "each its own")
+        expectEqual(items[2].id, kept)
+        expectEqual(registry.schemaViolations(of: shape), [])
+        let item = try require(registry.schema(for: Chore.kind)?.json["$defs"]?["checklists.item"])
+        expectEqual(item["required"], nil)
+        expectEqual(item["properties"]?["id"], ["type": "string", "format": "uuid"], "no default: each item's is its own")
+    },
 ])
 
 /// A tab type titled like Checklists' own.

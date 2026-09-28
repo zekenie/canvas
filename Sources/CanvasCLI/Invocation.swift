@@ -46,6 +46,10 @@ struct Invocation {
             return .done
         }
         let path = options.socket ?? SocketPath.resolve(environment: environment)
+        // A closed standard input's descriptor would be the socket's once it's opened, and a script
+        // read from it the app's answer: hold it, with nothing to read, and say it's closed.
+        let inputIsClosed = fcntl(STDIN_FILENO, F_GETFD) == -1
+        if inputIsClosed { _ = open("/dev/null", O_RDONLY) }
         let client: RPCClient
         do {
             client = try RPCClient(path: path)
@@ -87,7 +91,7 @@ struct Invocation {
         }
         var params: [String: JSON]
         do {
-            params = try command.params(from: rest)
+            params = try command.params(from: rest, standardInput: inputIsClosed ? { throw StandardInputError.closed } : CommandSpec.readStandardInput)
         } catch {
             return fail(.usage, reason: "usage", error.message, hint: error.hint ?? "Usage: \(command.usage())", format: format)
         }
@@ -99,7 +103,7 @@ struct Invocation {
             print(TextOutput.render(result), format: format, json: result)
             return .done
         } catch .remote(let error) {
-            return fail(.failed, reason: error.reason ?? "failed", error.message, hint: error.hint, format: format)
+            return fail(.failed, remote: error, format: format)
         } catch {
             return fail(.unavailable, error, format: format)
         }
@@ -127,24 +131,52 @@ struct Invocation {
         case .unreachable:
             return fail(status, reason: "unreachable", error.description, hint: "A sandbox may be keeping \(RPC.commandName) from connecting to the socket.",
                         format: format)
-        case .timedOut: return fail(status, reason: "timed_out", error.description, hint: "--timeout waits longer.", format: format)
+        case .timedOut:
+            // The app still does what it was asked once it gets to it: running it again could do it twice.
+            return fail(status, reason: "timed_out", error.description,
+                        hint: "The app may still do it: check before running it again. --timeout waits longer.", format: format)
         case .connectionClosed: return fail(status, reason: "connection_closed", error.description, hint: nil, format: format)
         case .malformedRequest, .malformedResponse: return fail(status, reason: "malformed", error.description, hint: nil, format: format)
-        case .remote(let remote): return fail(.failed, reason: remote.reason ?? "failed", remote.message, hint: remote.hint, format: format)
+        case .remote(let remote): return fail(.failed, remote: remote, format: format)
         }
     }
 
-    /// Says what went wrong on standard error: as JSON (`{"error": {…}}`) or as text, with the hint.
-    private func fail(_ status: ExitStatus, reason: String, _ message: String, hint: String?, format: OutputFormat) -> ExitStatus {
+    /// An error the app sent: its reason, message and hint, and whatever else its data says (where in
+    /// a script it is, and every problem found there).
+    private func fail(_ status: ExitStatus, remote error: RPCError, format: OutputFormat) -> ExitStatus {
+        fail(status, reason: error.reason ?? "failed", error.message, hint: error.hint, details: error.data?.objectValue ?? [:], format: format)
+    }
+
+    /// Says what went wrong on standard error: as JSON (`{"error": {…}}`, with the members of
+    /// `details` beside its own) or as text, with the hint. A script's error says its line and the
+    /// statement written there, and then each of the other problems found in it, a line each.
+    private func fail(_ status: ExitStatus, reason: String, _ message: String, hint: String?, details: [String: JSON] = [:],
+                      format: OutputFormat) -> ExitStatus {
         switch format {
         case .json:
             var error: [String: JSON] = ["reason": .string(reason), "message": .string(message), "status": .number(Double(status.rawValue))]
             if let hint { error["hint"] = .string(hint) }
+            error.merge(details) { own, _ in own }
             write(JSON.object(["error": .object(error)]).prettyText, true)
         case .text:
-            write("\(RPC.commandName): \(message)" + (hint.map { "\nhint: \($0)" } ?? ""), true)
+            let line = details["line"]?.intValue
+            var lines = ["\(RPC.commandName): " + Self.located(message, line: line)]
+            if let statement = details["statement"]?.stringValue, !statement.isEmpty { lines.append("  " + statement) }
+            if let hint { lines.append("hint: \(hint)") }
+            for other in details["errors"]?.arrayValue ?? [] {
+                guard let text = other["message"]?.stringValue else { continue }
+                let at = other["line"]?.intValue
+                if text == message, at == line { continue }        // the error above
+                lines.append(Self.located(text, line: at))
+            }
+            write(lines.joined(separator: "\n"), true)
         }
         return status
+    }
+
+    /// `line 3: message`, or the message alone when it's about no line.
+    private static func located(_ message: String, line: Int?) -> String {
+        line.map { "line \($0): \(message)" } ?? message
     }
 
     // MARK: Boards named by their files

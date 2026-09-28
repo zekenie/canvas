@@ -1,10 +1,12 @@
 import Canvas
 import CanvasRPC
 import CoreGraphics
+import DrawScript
 import Foundation
 import Geometry
 
-// The command line's own commands: what any board can do whatever's installed. Other plugins add
+// The command line's own commands: what any board can do whatever's installed. `draw` puts shapes
+// on a board from a script; `kinds` says what a script can draw, and with what. Other plugins add
 // theirs with `registrar.automationCommand`.
 
 public struct AutomationPlugin: CanvasPlugin {
@@ -12,174 +14,48 @@ public struct AutomationPlugin: CanvasPlugin {
     public var id: PluginID { .automation }
 
     public func register(into registrar: inout PluginRegistrar) {
+        let canvas = RPC.commandName
         registrar.automationCommand(
-            "create", "Put a shape on a board.",
+            "draw", "Draw shapes on a board, and connect them, from a script.",
             discussion: """
-                The shape is what the kind's tool would place, with its middle at --at (or the middle of the board's \
-                view), and then --props, then each --set, then --size. A kind no tool places (an arrow, a line) starts \
-                from the properties given, and --at moves it. `\(RPC.commandName) kinds --schema` says what each kind's \
-                properties are. The shape isn't selected, so what's selected stays as it was.
+                A script is one statement a line: a shape (its kind, its title in double quotes, its attributes and \
+                where it goes against other shapes: right of "API"), an edge (edge "API" -> "DB"), a delete, or a \
+                style. A statement about a title the board has changes that shape; one about a title it doesn't \
+                makes a new one. It's applied all at once, as one step of the app's undo, or not at all, and the \
+                result says what each statement did and where its shape landed. It draws on the board its file's \
+                window shows, a subboard's if one is open (the result's board says which). The language is taught \
+                by the repository's canvas skill (.claude/skills/canvas); `\(canvas) kinds` lists what can be drawn, \
+                and with what.
                 """,
-            params: CreateShape.self, positionals: ["kind"],
+            params: DrawParams.self, positionals: ["script"],
             // No kind by name: this plugin knows none, and the kinds are whatever's installed.
             examples: [
-                CommandExample("\(RPC.commandName) create <kind>", "What the kind's tool places, in the middle of the board's view."),
-                CommandExample("\(RPC.commandName) create <kind> --at 400,300 --size 240,120", "One 240 wide and 120 high, its middle at (400, 300)."),
-                CommandExample("\(RPC.commandName) create <kind> --set text='Buy milk'", "One whose text property says Buy milk."),
-                CommandExample(#"\#(RPC.commandName) create <kind> --props '{"text": "Buy milk"}'"#, "The same, its properties as JSON."),
+                CommandExample(#"\#(canvas) draw '<kind> "API"'"#, "A shape titled API, as near the middle of the view as there's room."),
+                CommandExample(#"\#(canvas) draw '<kind> "DB" below "API"'"#, "Another, below it."),
+                CommandExample(#"\#(canvas) draw 'edge "API" -> "DB"'"#, "Connect the two."),
+                CommandExample(#"\#(canvas) draw 'delete "DB"'"#, "Delete one, and what connects to it."),
+                CommandExample("\(canvas) draw --dry-run - < plan.txt", "Read the script from standard input, and say what it would do."),
             ]
         ) { params, context throws(AutomationError) in
-            try create(params, in: context)
+            try draw(params, in: context)
         }
         registrar.automationCommand(
-            "kinds", "List the kinds of shape the app has, and their properties.",
-            discussion: "--schema adds each kind's JSON Schema (draft 2020-12): every property, what it takes, its default and its bounds.",
+            "kinds", "List the kinds of shape the app has: what a script can draw, and with what.",
+            discussion: """
+                For each kind: whether a script can draw it (and why not), whether its shapes have titles of their own \
+                (named), worked out from them (derived) or none, the size its tool places, each attribute a script can \
+                write and what it takes, and the sides an edge may leave it by, with what it may carry from each. \
+                --schema adds each kind's JSON Schema (draft 2020-12): every property, what it takes, its default and \
+                its bounds.
+                """,
             scope: .app, params: ListKinds.self, positionals: ["kind"],
             examples: [
-                CommandExample("\(RPC.commandName) kinds", "Every kind, what places it, and its properties."),
-                CommandExample("\(RPC.commandName) kinds <kind> --schema", "What each of the kind's properties takes."),
+                CommandExample("\(canvas) kinds", "Every kind, and what a script can write on it."),
+                CommandExample("\(canvas) kinds <kind> --schema", "One kind, with its JSON Schema."),
             ]
         ) { params, context throws(AutomationError) in
             try kinds(params, in: context.registry)
         }
-    }
-}
-
-// MARK: create
-
-struct CreateShape: SchemaDefined {
-    static let properties = Properties<CreateShape>(title: "create") {
-        Property("kind", \.kind).required().description("The kind of shape: one that `\(RPC.commandName) kinds` lists.")
-        Property("at", \.at).description("Where the shape's middle goes, in world units. Default: the middle of the board's view.")
-        Property("size", \.size).description("Its width and height, in world units, for a kind with a frame. Default: what its tool places.")
-        Property("set", \.set).keywords(["x-value-name": "name=value"])
-            .description("A property to set: text for a property that's text (text=Hello), JSON for any other (estimate=3).")
-        Property("props", \.props).description("Properties as one JSON object, which each --set is set over.")
-    }
-    var kind = ""
-    var at: CGPoint?
-    var size: CGSize?
-    var set: [String] = []
-    var props: JSONObjectParam?
-}
-
-/// What `create` made.
-struct Created: Encodable {
-    let id: String
-    let kind: String
-    /// Where it is: [[x, y], [width, height]], in world units.
-    let bounds: CGRect?
-    /// Where it breaks its kind's schema's bounds (a title too long): it's made anyway, as the app
-    /// makes anything, and validation warns about it too. And each property that names shapes
-    /// (`ShapeNaming`) that aren't in the file, on any board, or are on a board the app can't show,
-    /// which it keeps naming.
-    let warnings: [String]?
-}
-
-@MainActor
-func create(_ params: CreateShape, in context: AutomationContext) throws(AutomationError) -> Created {
-    let editor = try context.board(), registry = context.registry
-    let kind = ShapeKind(rawValue: params.kind)
-    guard registry.definition(for: kind) != nil else { throw unknownKind(params.kind, in: registry) }
-    let schema = registry.schema(for: kind)
-    let propertySchemas = schema?.json["properties"]?.objectValue ?? [:]
-    if let size = params.size, !(size.width > 0 && size.height > 0 && size.width.isFinite && size.height.isFinite) {
-        throw AutomationError("--size is a width and a height, both more than 0.", reason: "invalid_params", invalidParams: true)
-    }
-
-    // What the kind's tool places, with its middle where it's asked for.
-    let view = editor.camera.toWorld(CGRect(origin: .zero, size: editor.viewportSize))
-    var properties = registry.placement(for: kind)?.shape(at: params.at ?? CGPoint(x: view.midX, y: view.midY)).propertiesJSON ?? [:]
-    for (name, value) in params.props?.members ?? [:] { properties[name] = value }
-    for assignment in params.set {
-        guard let equals = assignment.firstIndex(of: "="), equals != assignment.startIndex else {
-            throw AutomationError("--set takes name=value, and \(assignment) isn't that.", reason: "invalid_params", invalidParams: true)
-        }
-        let name = String(assignment[..<equals]), text = String(assignment[assignment.index(after: equals)...])
-        guard let property = propertySchemas[name] else { throw unknownProperty(name, of: kind, among: propertySchemas.keys) }
-        properties[name] = try value(text, of: name, as: property, in: schema)
-    }
-
-    var record: AnyShapeRecord
-    do {
-        record = try registry.shape(kind, properties: properties)
-    } catch {
-        switch error {
-        case .unknownProperty(let name, _):
-            throw unknownProperty(name, of: kind, among: propertySchemas.keys)
-        case .unknownKind:
-            throw unknownKind(params.kind, in: registry)
-        case .unreadable(let why):
-            throw AutomationError("A \(kind) can't have those properties: \(why).", reason: "invalid_properties",
-                                  hint: "`\(RPC.commandName) kinds \(kind) --schema` says what each property takes.")
-        }
-    }
-    if let box = record.box, params.at != nil || params.size != nil {
-        record.box = CGRect(center: params.at ?? CGPoint(x: box.midX, y: box.midY), size: params.size ?? box.size)
-    }
-    // What its props are bound to must be on this board (an arrow's ends): a shape bound to one that
-    // isn't would stay bound to it, and nothing would ever let go of it; one on another board of the
-    // file is no better. What it only names (a mention) may be anywhere in the file, or gone, as it
-    // may once a shape it names is deleted: that's said, not refused.
-    let file = editor.file
-    let away = record.boundShapes(in: editor.shapeContext).filter { editor.document[$0] == nil }
-    if !away.isEmpty {
-        let missing = away.filter { file.record($0) == nil }, elsewhere = away.filter { file.record($0) != nil }
-        var why: [String] = []
-        if !missing.isEmpty { why.append("\(list(missing)) \(missing.count == 1 ? "isn't" : "aren't") in the file") }
-        if !elsewhere.isEmpty { why.append("\(list(elsewhere)) \(elsewhere.count == 1 ? "is" : "are") on another board of it") }
-        throw AutomationError("A \(kind) can't be bound to shapes that aren't on this board: \(why.joined(separator: "; ")).",
-                              reason: missing.isEmpty ? "shape_on_another_board" : "unknown_shape",
-                              hint: "Bind it only to shapes on the board the command works on, the one its file's window shows (`\(RPC.commandName) boards` says which).")
-    }
-    let id = record.id, inserted = record
-    editor.transact { transaction in
-        transaction.insert(inserted)
-        // A kind without a frame moves by its own rules (an arrow, a line), its middle to --at.
-        if inserted.box == nil, let at = params.at, let bounds = transaction.shapes.bounds(of: [id]) {
-            transaction.translate([id], by: CGPoint(x: at.x - bounds.midX, y: at.y - bounds.midY))
-        }
-    }
-    guard let placed = editor.document[id] else {
-        throw AutomationError("The \(kind) couldn't go on the board.", reason: "refused")
-    }
-    // Each names the property it's about ("Title is 95 characters long, and should be at most 80.").
-    var warnings = registry.schemaViolations(of: placed).map(\.message)
-    // A name of a shape on another board of the file names a shape that's there, if the app can
-    // show that board (not one it keeps without using, under an owner kept aside).
-    let now = editor.file
-    placed.forEachNamingValue(in: registry) { property, value in
-        var gone: [ShapeID] = [], hidden: [ShapeID] = []
-        value.forEachNamedShape { id in
-            guard !gone.contains(id), !hidden.contains(id) else { return }
-            if now.record(id) == nil { gone.append(id) } else if editor.shape(inFile: id) == nil { hidden.append(id) }
-        }
-        if !gone.isEmpty {
-            warnings.append("\(property) names shapes that aren't in the file: \(list(gone)); they show as missing.")
-        }
-        if !hidden.isEmpty {
-            warnings.append("\(property) names shapes on boards this app can't show: \(list(hidden)); they show as missing.")
-        }
-    }
-    return Created(id: id.description, kind: kind.rawValue, bounds: editor.shapeContext.bounds(of: [id]), warnings: warnings.isEmpty ? nil : warnings)
-}
-
-/// Ids as a message lists them.
-private func list(_ ids: [ShapeID]) -> String { ids.map(\.description).joined(separator: ", ") }
-
-/// A `--set` value: as typed for a property that's text (a string, or one of some strings), and
-/// read as JSON for any other (a number, a list, an object).
-private func value(_ text: String, of name: String, as property: JSONValue, in schema: JSONSchema?) throws(AutomationError) -> JSONValue {
-    // Read as the command line reads the property's schema: what it types as text is text.
-    let root = JSON(schema?.json ?? [:]), written = JSON(property)
-    if case .text = written.valueShape(in: root) { return .string(text) }
-    do {
-        return try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
-    } catch {
-        let resolved = written.resolvingReference(in: root)
-        let what = resolved["description"]?.stringValue ?? resolved["type"]?.stringValue ?? "JSON"
-        throw AutomationError("\(name) takes JSON (\(what)), and \(text) isn't JSON.", reason: "invalid_params",
-                              hint: "Quote it for the shell: --set '\(name)=…'.", invalidParams: true)
     }
 }
 
@@ -194,49 +70,73 @@ struct ListKinds: SchemaDefined {
     var schema = false
 }
 
-/// A kind, as `kinds` lists it.
+/// A kind, as `kinds` lists it: the language's vocabulary for it.
 struct KindSummary: Encodable {
     let kind: String
     let title: String?
-    /// The tool that places it, by its label.
+    /// The tool named for it (`ToolID(placing:)`), by its label: the one that places it, or draws
+    /// it by hand.
     let tool: String?
-    /// What its tool places: [width, height].
-    let size: CGSize?
-    /// Its own and added properties, by name.
-    let properties: [String]
+    /// Whether a script can draw it, and why not.
+    let drawable: Bool
+    let why: String?
+    /// Whether its shapes have titles: `named` (given one), `derived` (worked out), `none`.
+    let names: String
+    /// What its tool places: `200x200`.
+    let size: String?
+    /// What a script can write on it, and what each takes: `{"status": "todo|doing|blocked|done"}`.
+    let attributes: [String: String]
+    /// The sides an edge may leave it by, and what it may carry from each.
+    let edges: [String: [String]]?
     let schema: JSONValue?
+}
+
+/// Why a script can't place a kind no tool places: its tool draws one by hand (a line, by its
+/// drag), or it has none.
+@MainActor
+func unplaceable(_ kind: ShapeKind, in registry: Registry) -> String {
+    guard let tool = registry.tools.first(where: { $0.id == ToolID(placing: kind) }) else { return "no tool places one" }
+    return "its tool (\(tool.label)) draws one by hand, so a script can't place one"
 }
 
 @MainActor
 func kinds(_ params: ListKinds, in registry: Registry) throws(AutomationError) -> [KindSummary] {
     var kinds = registry.kinds.sorted { $0.rawValue < $1.rawValue }
     if let named = params.kind {
-        guard let kind = kinds.first(where: { $0.rawValue == named }) else { throw unknownKind(named, in: registry) }
+        guard let kind = kinds.first(where: { $0.rawValue == named }) else {
+            let all = kinds.map(\.rawValue)
+            throw AutomationError("there's no kind of shape called \(named)", reason: ScriptError.Reason.unknownKind.rawValue,
+                                  hint: (Suggestions.closest(to: named, among: all, limit: 1).first.map { "did you mean \($0)? " } ?? "")
+                                      + "the kinds: \(all.joined(separator: ", "))")
+        }
         kinds = [kind]
     }
+    let naming = registry.drawNaming, edging = registry.drawEdging, edgeKind = edging.flatMap { $0.kind(registry) }
     return kinds.map { kind in
-        let schema = registry.schema(for: kind)?.json ?? [:]
-        return KindSummary(kind: kind.rawValue, title: schema["title"]?.stringValue,
+        let vocabulary = KindVocabulary(kind, in: registry)
+        let placement = registry.placement(for: kind)
+        let why: String? = if Keyword(rawValue: kind.rawValue) != nil {
+            "its name is one of the language's words"
+        } else if kind == edgeKind {
+            "it joins two shapes: write edge \"A\" -> \"B\""
+        } else if placement == nil {
+            unplaceable(kind, in: registry)
+        } else {
+            nil
+        }
+        let names = if vocabulary.namingProperty != nil { "named" } else if naming?.isDerived(kind, registry) == true { "derived" } else { "none" }
+        var attributes: [String: String] = [:]
+        for name in vocabulary.attributes { attributes[name] = vocabulary.compactType(of: name) }
+        for name in vocabulary.collisions {
+            attributes[name] = "\(vocabulary.compactType(of: name)) — can't be written: \(name): is one of the language's own keys"
+        }
+        let sides = (edging?.sides(kind, registry) ?? [:]).filter { !$0.value.isEmpty }
+        return KindSummary(kind: kind.rawValue, title: vocabulary.root["title"]?.stringValue,
                            tool: registry.tools.first { $0.id == ToolID(placing: kind) }?.label,
-                           size: registry.placement(for: kind)?.size,
-                           properties: (schema["properties"]?.objectValue?.keys).map { $0.sorted() } ?? [],
-                           schema: params.schema ? .object(schema) : nil)
+                           drawable: why == nil, why: why, names: names,
+                           size: placement.map { Drawing.written($0.size) },
+                           attributes: attributes,
+                           edges: sides.isEmpty ? nil : Dictionary(uniqueKeysWithValues: sides.map { ($0.key.rawValue, $0.value) }),
+                           schema: params.schema ? .object(vocabulary.root) : nil)
     }
-}
-
-// MARK: Errors
-
-@MainActor
-private func unknownKind(_ name: String, in registry: Registry) -> AutomationError {
-    let kinds = registry.kinds.map(\.rawValue).sorted()
-    return AutomationError("There's no kind of shape called \(name).", reason: "unknown_kind",
-                           hint: (CommandSpec.closest(to: name, among: kinds).map { "Did you mean \($0)? " } ?? "")
-                               + "The kinds: \(kinds.joined(separator: ", ")).")
-}
-
-private func unknownProperty(_ name: String, of kind: ShapeKind, among names: some Collection<String>) -> AutomationError {
-    let names = names.sorted()
-    return AutomationError("\(kind) shapes have no property \(name).", reason: "unknown_property",
-                           hint: (CommandSpec.closest(to: name, among: names).map { "Did you mean \($0)? " } ?? "")
-                               + "Its properties: \(names.joined(separator: ", ")).")
 }

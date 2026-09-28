@@ -62,10 +62,12 @@ public struct ContentsHeading {
 }
 
 /// Which list the table of contents shows: one per board and scope, so a change of either replaces
-/// the rows rather than moving them.
+/// the rows rather than moving them; and a new one each time a commit brings rows in at several
+/// places at once (`ContentsState.replacements`), so those rows come in as one run too.
 struct ContentsListID: Hashable {
     let board: BoardID
     let scope: [ShapeID]?
+    let replacements: Int
 }
 
 /// The rows, under a header that says whether they're the whole board or the selection.
@@ -87,14 +89,16 @@ struct ContentsList: View {
                             .tag(entry.id)
                     }
                     // A new scope's rows replace the last scope's, rather than coming in around the
-                    // rows both list, so they arrive as one run under the header. Rows arriving in
+                    // rows both list, so they arrive as one run under the header; and so do the rows
+                    // after a commit that brings rows in at several places at once. Rows arriving in
                     // runs at several places, the last row among them, make AppKit measure the last
                     // row from inside measuring the first run (it resizes the table after each run),
                     // and log "a reentrant operation in its NSTableView delegate", a future assert.
                     // AppKit's own doing: a plain NSTableView whose rows size themselves does it too.
                     // Another board's rows replace this one's the same way, whatever the scopes: a
                     // file put in place can show a board holding some of the last one's shapes.
-                    .id(ContentsListID(board: editor.board, scope: state.scope))
+                    // Read after `entries`, which counts the replacements.
+                    .id(ContentsListID(board: editor.board, scope: state.scope, replacements: state.replacements))
                 } header: {
                     ContentsHeader(state: state, editor: editor, heading: heading)
                 }

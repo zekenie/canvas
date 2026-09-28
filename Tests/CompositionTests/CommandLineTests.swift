@@ -1,12 +1,15 @@
 import AppKit
+import Arrows
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
+import Checklists
 import Composition
 import Foundation
 import LanguageModels
 import Mentions
+import Ports
 import Schemas
 import StickyNotes
 import SwiftUI
@@ -28,10 +31,25 @@ import Titles
     return server
 }
 
-/// `canvas`, as built, asking `server`.
-@MainActor func canvas(_ server: CommandServer, _ arguments: [String]) throws -> ProcessOutput {
-    try run(builtExecutable("CanvasCLI"), ["--socket", server.path] + arguments)
+/// `canvas`, as built, asking `server`; `input` is its standard input.
+@MainActor func canvas(_ server: CommandServer, _ arguments: [String], input: String? = nil) throws -> ProcessOutput {
+    try run(builtExecutable("CanvasCLI"), ["--socket", server.path] + arguments, input: input)
 }
+
+/// Notes, tasks, a rectangle and an ellipse, joined: notes on their channel, tasks on theirs (from
+/// and to named sides), and two plain edges, one between kinds without ports and one across channels.
+let diagram = #"""
+sticky-note "Web" text: "Browser app"
+sticky-note "API" right of "Web" text: "Public API"
+task-card "Ship" below "API" status: doing priority: high due: 2026-10-15 checklist: [{"text": "Write tests"}]
+task-card "Test" right of "Ship" notes: "Before it ships"
+rectangle "Backend" below "Ship" size: 600x200
+ellipse "Cache" left of "Backend"
+edge "Web" -> "API"
+edge "Ship" -> "Test" from: right to: left
+edge "Backend" -> "Cache"
+edge "API" -> "Ship" channel: none
+"""#
 
 @MainActor func newBoard() -> BoardDocument {
     let board = BoardDocument()
@@ -40,83 +58,96 @@ import Titles
 }
 
 @MainActor let commandLineTests = Suite("Command line", [
-    test("canvas create puts a shape on the board in front, as its tool would, with what it's told; the board is edited") {
+    test("canvas draw puts shapes on the board in front, as their tools would, with what it's told; the board is edited") {
         try configureBoards()
         let board = newBoard()
         let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
-        let result = try canvas(server, ["create", "sticky-note", "--at", "100,100", "--set", "text=Hello", "--set", "title=Plan"])
+        let result = try canvas(server, ["draw", "sticky-note text: Hello"])
         expectEqual(result.status, 0, result.error)
-        let id = try require(try JSON(text: result.output)["id"]?.stringValue.flatMap(UUID.init(uuidString:)))
-        let note = try require(board.editor.document[ShapeID(id)])
+        let changes = try JSON(text: result.output)["changes"]?.arrayValue ?? []
+        expectEqual(changes.map { $0["did"] }, ["created"])
+        expectEqual(changes.first?["kind"], "sticky-note")
+        let note = try require(board.editor.document.shapes.first)
         expectEqual(note.typed(as: StickyNote.self)?.props.text, "Hello")
-        expectEqual(note[TitleProperty.self], "Plan")
-        expectEqual(note.box, CGRect(x: 0, y: 0, width: 200, height: 200))
+        // No window, so no view: a drawing with nothing to hang on is centered where the camera is.
+        expectEqual(note.box, CGRect(x: -100, y: -100, width: 200, height: 200))
         expect(board.isDocumentEdited)
-        let unknown = try canvas(server, ["create", "stickynote"])
+        let unknown = try canvas(server, ["draw", "stickynote"])
         expectEqual(unknown.status, 1)
         expectEqual(try JSON(text: unknown.error)["error"]?["reason"], "unknown_kind")
-        expect(try JSON(text: unknown.error)["error"]?["hint"]?.stringValue?.hasPrefix("Did you mean sticky-note?") == true, unknown.error)
+        expect(try JSON(text: unknown.error)["error"]?["hint"]?.stringValue?.hasPrefix("did you mean sticky-note?") == true, unknown.error)
+        expectEqual(try JSON(text: unknown.error)["error"]?["line"], 1)
         expectEqual(board.editor.document.shapes.count, 1)
     },
-    test("canvas create sticky-note --set text= takes plain text as it is, and mentions as written: of a task on the board, named as it is now") {
+    test("canvas draw sticky-note text: takes plain text as it is, and mentions as written: of a task on the board, named as it is now") {
         try configureBoards()
         let board = newBoard()
         let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
-        @MainActor func created(_ result: ProcessOutput) throws -> (record: AnyShapeRecord, warnings: JSON?) {
+        // What a draw made: the shape new to the board (the result names no ids), and what it said.
+        @MainActor func drew(_ script: String) throws -> (record: AnyShapeRecord, warnings: JSON?) {
+            let before = Set(board.editor.document.shapes.map(\.id))
+            let result = try canvas(server, ["draw", script])
             expectEqual(result.status, 0, result.error)
-            let json = try JSON(text: result.output)
-            let id = try require(json["id"]?.stringValue.flatMap(UUID.init(uuidString:)))
-            return (try require(board.editor.document[ShapeID(id)]), json["warnings"])
+            let made = try require(board.editor.document.shapes.first { !before.contains($0.id) })
+            return (made, try JSON(text: result.output)["warnings"])
         }
         @MainActor func text(_ record: AnyShapeRecord) throws -> MentionText { try require(record.typed(as: StickyNote.self)?.props.text) }
 
-        let plain = try created(canvas(server, ["create", "sticky-note", "--at", "100,100", "--set", #"text=a@b.c, @ [x] and C:\path"#]))
+        // A backslash in a script's string is written twice.
+        let plain = try drew(#"sticky-note text: "a@b.c, @ [x] and C:\\path""#)
         expectEqual(try text(plain.record).stored, #"a@b.c, @ [x] and C:\path"#)
         expectEqual(try text(plain.record).mentioned, [])
-        expectEqual(plain.warnings, nil)
+        expectEqual(plain.warnings, [])
 
-        let task = try created(canvas(server, ["create", "task-card", "--at", "500,100", "--set", "title=Ship it"])).record
+        let task = try drew(#"task-card "Ship it""#).record
         let written = "Ask @[Ship](shape:\(task.id.rawValue.uuidString)) first, then @[it](shape:\(task.id.rawValue.uuidString.lowercased()))"
-        let note = try created(canvas(server, ["create", "sticky-note", "--at", "100,400", "--set", "text=\(written)"]))
-        expectEqual(note.warnings, nil, "every shape it mentions is there")
+        let note = try drew(#"sticky-note text: "\#(written)""#)
+        expectEqual(note.warnings, [], "every shape it mentions is there")
         expectEqual(try text(note.record).stored, written, "kept as written, an agent's lowercase id too")
         expectEqual(try text(note.record).mentioned, [task.id, task.id])
         expectEqual(board.editor.mentions?.mentioners(of: task.id), [note.record.id])
         let row = board.editor.tableOfContents?.entries.first { $0.id == note.record.id }?.label?.text
         expectEqual(row, "Ask @Ship it first, then @Ship it", "each mention by the task's title now")
     },
-    test("canvas create sticky-note makes a note mentioning a shape that isn't in the file, and warns that it shows as missing") {
+    test("canvas draw makes a note mentioning a shape that isn't in the file, and warns that it shows as missing; restated as it is, it says nothing more") {
         try configureBoards()
         let board = newBoard()
         let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
         let gone = ShapeID()
-        let result = try canvas(server, ["create", "sticky-note", "--set", "text=See @[Old plan](shape:\(gone)) again"])
+        let script = #"sticky-note "Plan" text: "See @[Old plan](shape:\#(gone)) again""#
+        let result = try canvas(server, ["draw", script])
         expectEqual(result.status, 0, result.error)
         let json = try JSON(text: result.output)
-        expectEqual(json["warnings"], [.string("text names shapes that aren't in the file: \(gone); they show as missing.")])
-        let id = try require(json["id"]?.stringValue.flatMap(UUID.init(uuidString:)))
-        let note = try require(board.editor.document[ShapeID(id)]?.typed(as: StickyNote.self))
+        expectEqual(json["warnings"], [["line": 1, "message": .string(#""Plan": text names shapes that aren't in the file: \#(gone); they show as missing"#),
+                                        "severity": "warning", "attribute": "text"]])
+        let note = try require(board.editor.document.shapes.first?.typed(as: StickyNote.self))
         expectEqual(note.props.text.mentioned, [gone])
         expectEqual(board.editor.mentions?.resolve(gone), .missing)
-        expectEqual(board.editor.tableOfContents?.entries.first?.label?.text, "See @Old plan again", "by the name it holds")
+        let again = try JSON(text: canvas(server, ["draw", script]).output)
+        expectEqual(again["changes"]?.arrayValue?.map { $0["did"] }, ["unchanged"])
+        expectEqual(again["warnings"], [], "what it names hasn't changed")
     },
-    test("canvas create schema-card is as tall as the schema it's given, as the panel makes it; a --size is as asked") {
+    test("canvas draw schema-card is as tall as the schema it's given, as the panel makes it; a size: is as asked") {
         try configureBoards()
         let board = newBoard()
         let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
         let schema = #"{"type": "object", "properties": {"a": {}, "b": {}, "c": {}, "d": {}, "e": {}, "f": {}}}"#
-        for (arguments, size) in [([String](), CGSize(width: 240, height: try require(SchemaCard.height(for: schema)))),
-                                  (["--size", "300,100"], CGSize(width: 300, height: 100))] {
-            let result = try canvas(server, ["create", "schema-card", "--at", "0,0", "--set", "schema=\(schema)"] + arguments)
+        // In a script's string, each quote is escaped.
+        let written = schema.replacingOccurrences(of: "\"", with: "\\\"")
+        for (size, expected) in [("", CGSize(width: 240, height: try require(SchemaCard.height(for: schema)))),
+                                 (" size: 300x100", CGSize(width: 300, height: 100))] {
+            let before = Set(board.editor.document.shapes.map(\.id))
+            let result = try canvas(server, ["draw", #"schema-card schema: "\#(written)""# + size])
             expectEqual(result.status, 0, result.error)
-            let id = try require(try JSON(text: result.output)["id"]?.stringValue.flatMap(UUID.init(uuidString:)))
-            let card = try require(board.editor.document[ShapeID(id)]?.typed(as: SchemaCard.self)?.props)
+            let card = try require(board.editor.document.shapes.first { !before.contains($0.id) }?.typed(as: SchemaCard.self)?.props)
             expectEqual(card.schema, schema)
-            expectEqual(card.frame.size, size, "six rows: 177 high, where the placed card is 67")
+            expectEqual(card.frame.size, expected, "six rows: 177 high, where the placed card is 67")
+            let at = try JSON(text: result.output)["changes"]?.arrayValue?.first?["at"]?.arrayValue?.last
+            expectEqual(at, [.number(expected.width), .number(expected.height)], "placed as big as it is")
         }
     },
     test("canvas boards lists the open boards; --board picks one by its id, its file or its name") {
@@ -129,16 +160,129 @@ import Titles
         expectEqual(boards.compactMap { $0["id"]?.intValue }, [first.number, second.number])
         expectEqual(boards.last?["path"], "/tmp/Plans For Q4.canvasboard")
         expectEqual(boards.map { $0["frontmost"] }, [false, false])
-        let ambiguous = try canvas(server, ["create", "ellipse"])
+        let ambiguous = try canvas(server, ["draw", "ellipse"])
         expectEqual(ambiguous.status, 1)
         expectEqual(try JSON(text: ambiguous.error)["error"]?["reason"], "ambiguous_board")
-        expectEqual(try canvas(server, ["create", "ellipse", "--board", "\(second.number)"]).status, 0)
-        expectEqual(try canvas(server, ["create", "ellipse", "--board", "/tmp/Plans For Q4.canvasboard"]).status, 0)
-        expectEqual(try canvas(server, ["create", "ellipse", "--board", second.displayName]).status, 0)
+        expectEqual(try canvas(server, ["draw", "ellipse", "--board", "\(second.number)"]).status, 0)
+        expectEqual(try canvas(server, ["draw", "ellipse", "--board", "/tmp/Plans For Q4.canvasboard"]).status, 0)
+        expectEqual(try canvas(server, ["--board", second.displayName, "draw", "ellipse"]).status, 0)
         expectEqual(second.editor.document.shapes.count, 3)
         expectEqual(first.editor.document.shapes.count, 0)
-        let missing = try canvas(server, ["create", "ellipse", "--board", "Nope"])
+        let missing = try canvas(server, ["draw", "ellipse", "--board", "Nope"])
         expectEqual(try JSON(text: missing.error)["error"]?["reason"], "unknown_board")
+    },
+    test("a board command's result says which board it worked on, as boards lists it; an app command's doesn't") {
+        try configureBoards()
+        let first = newBoard(), second = newBoard()
+        let server = try startCommandServer(boards: [first, second], frontmost: first)
+        defer { server.stop() }
+        let listed = try JSON(text: canvas(server, ["boards"]).output).arrayValue ?? []
+        let front = try JSON(text: canvas(server, ["draw", "ellipse"]).output)
+        expectEqual(front["board"], ["id": .number(Double(first.number)), "name": .string(first.displayName), "shows": "root", "showsPath": ["root"]])
+        for key in ["id", "name", "shows", "showsPath"] { expectEqual(front["board"]?[key], listed.first?[key], key) }
+        let named = try JSON(text: canvas(server, ["draw", "ellipse", "--board", "\(second.number)"]).output)
+        expectEqual(named["board"]?["id"], .number(Double(second.number)))
+        expect(named["changes"] != nil && named["warnings"] != nil, "beside what the command said")
+        let kinds = try JSON(text: canvas(server, ["kinds", "ellipse"]).output)
+        expect(kinds.arrayValue != nil, "a list, which has no board")
+        let status = try JSON(text: canvas(server, ["status"]).output)
+        expectEqual(status["board"], nil)
+    },
+    test("canvas draw draws a diagram of the shipped kinds, titled, placed, and joined on their channels or plainly") {
+        try configureBoards()
+        let board = windowedBoard()
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        // As the skill writes it: the options between the command and its script, on standard input.
+        let result = try canvas(server, ["draw", "--board", "\(board.number)", "-"], input: diagram)
+        expectEqual(result.status, 0, result.error)
+        let said = try JSON(text: result.output)
+        let rows = said["changes"]?.arrayValue ?? []
+        expectEqual(rows.map { $0["did"] }, Array(repeating: "created", count: 6) + Array(repeating: "connected", count: 4))
+        expectEqual(rows.compactMap { $0["title"]?.stringValue }, ["Web", "API", "Ship", "Test", "Backend", "Cache"])
+        expectEqual(rows.filter { $0["from"] != nil }.map { $0["channel"] }, ["note-link", "task-link", nil, nil])
+        expectEqual(said["warnings"], [], "clear of each other, and valid")
+        expectEqual(said["dryRun"], nil)
+
+        let editor = board.editor, registry = editor.registry
+        @MainActor func shape(_ title: String) throws -> AnyShapeRecord { try require(editor.document.shapes.first { registry.title(of: $0) == title }, title) }
+        let web = try require(try shape("Web").box), api = try require(try shape("API").box)
+        expectEqual(api.minX, web.maxX + 80, "a normal gap")
+        expectEqual(api.midY, web.midY, "a lone direction centers the other axis")
+        let ship = try require(try shape("Ship").typed(as: TaskCard.self))
+        expectEqual(ship.props.status, .doing)
+        expectEqual(ship.props.due, Date(timeIntervalSince1970: 1_792_022_400), "2026-10-15, midnight UTC")
+        expectEqual(ship[ChecklistProperty.self]?.map(\.text), ["Write tests"])
+        expectEqual(try shape("Cache").kind, "ellipse")
+
+        let arrows = editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }
+        @MainActor func title(_ terminal: ArrowTerminal) -> String? { terminal.binding.flatMap { editor.document[$0.shapeID] }.flatMap { registry.title(of: $0) } }
+        expectEqual(arrows.map { "\(title($0.props.start) ?? "?") -> \(title($0.props.end) ?? "?") \($0[ChannelProperty.self]?.rawValue ?? "plain")" },
+                    ["Web -> API note-link", "Ship -> Test task-link", "Backend -> Cache plain", "API -> Ship plain"])
+        let aimed = try require(arrows.first { $0[ChannelProperty.self] == "task-link" })
+        expectEqual(aimed.props.start.binding?.normalizedAnchor, CGPoint(x: 1, y: 0.5), "from: right")
+        expectEqual(aimed.props.end.binding?.normalizedAnchor, CGPoint(x: 0, y: 0.5), "to: left")
+        expect(aimed.props.start.binding?.isPrecise == true && aimed.props.end.binding?.isPrecise == true)
+    },
+    test("canvas draw run again changes nothing: every row unchanged, no shape added; a named side that faces away is said") {
+        try configureBoards()
+        let board = windowedBoard()
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        expectEqual(try draw(diagram, on: board, server).status, 0)
+        let drawn = board.editor.document
+        let again = try draw(diagram, on: board, server)
+        expectEqual(again.status, 0, again.error)
+        let rows = try JSON(text: again.output)["changes"]?.arrayValue ?? []
+        expectEqual(rows.count, 10)
+        expectEqual(Set(rows.compactMap { $0["did"]?.stringValue }), ["unchanged"])
+        expectEqual(board.editor.document, drawn)
+        let away = try JSON(text: try draw(#"edge "Web" -> "API" from: left"#, on: board, server).output)
+        expectEqual(away["changes"]?.arrayValue?.map { $0["did"] }, ["reconnected"])
+        expectEqual(away["warnings"]?.arrayValue?.compactMap { $0["message"]?.stringValue },
+                    [#"from: left: "API" is right of "Web", so the line leaves "Web" by its right side — name a side that faces "API", or leave from: out"#])
+    },
+    test("canvas draw --dry-run says what it would do and commits nothing; a script can be the one argument") {
+        try configureBoards()
+        let board = windowedBoard()
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let dry = try draw(diagram, on: board, server, ["--dry-run"])
+        expectEqual(dry.status, 0, dry.error)
+        let said = try JSON(text: dry.output)
+        expectEqual(said["dryRun"], true)
+        expectEqual(said["changes"]?.arrayValue?.count, 10)
+        expectEqual(board.editor.document.shapes.count, 0)
+        expect(!board.isDocumentEdited)
+        let argument = try canvas(server, ["draw", #"rectangle "Zone" size: 400x200"#])
+        expectEqual(argument.status, 0, argument.error)
+        expectEqual(board.editor.document.shapes.map(\.kind), ["rectangle"])
+    },
+    test("a script canvas draw refuses changes nothing, and says why on standard error: each line's problem, the first leading") {
+        try configureBoards()
+        let board = windowedBoard()
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let result = try draw("""
+            sticky-note "A" text: "a"
+            task-card "B" right of "A" status: finished
+            ellipse "C" below "A" colr: red
+            """, on: board, server)
+        expectEqual(result.status, 1)
+        expectEqual(result.output, "")
+        let error = try require(try JSON(text: result.error)["error"])
+        expectEqual(error["reason"], "invalid_value")
+        expectEqual(error["line"], 2)
+        expectEqual(error["statement"], #"task-card "B" right of "A" status: finished"#)
+        expectEqual(error["hint"], "status: takes todo|doing|blocked|done")
+        expectEqual(error["status"], 1)
+        let each = error["errors"]?.arrayValue ?? []
+        expectEqual(each.map { $0["line"] }, [2, 3])
+        expectEqual(each.map { $0["reason"] }, ["invalid_value", "unknown_attribute"])
+        expectEqual(each.last?["statement"], #"ellipse "C" below "A" colr: red"#)
+        expectEqual(board.editor.document.shapes.count, 0)
+        let text = try draw(#"sticky-note "A" rigth of "B""#, on: board, server, ["--format", "text"])
+        expectEqual(text.error, "canvas: line 1: sticky-note \"A\": rigth isn't a placement\n  sticky-note \"A\" rigth of \"B\"\nhint: did you mean right?\n")
     },
     test("status, kinds and help describe the app the command line is talking to") {
         try configureBoards()
@@ -154,7 +298,58 @@ import Titles
         let note = try JSON(text: canvas(server, ["kinds", "sticky-note", "--schema"]).output).arrayValue?.first
         expectEqual(note?["schema"]?["properties"]?["title"]?["maxLength"], 80)
         let help = try canvas(server, ["help"]).output
-        for command in ["status", "boards", "create", "kinds"] { expect(help.contains("\n  \(command) "), help) }
+        for command in ["status", "boards", "draw", "kinds"] { expect(help.contains("\n  \(command) "), help) }
+    },
+    test("canvas draw holds the shipped kinds' JSON to their schemas, replaces an object whole, and says what a habit meant") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
+        // A member a checklist item or a color hasn't is refused, not dropped.
+        let done = try refusedInProcess(#"sticky-note "Shopping" checklist: [{"text": "Eggs", "done": true}]"#, on: editor)
+        expectEqual(done.reason, "invalid_value")
+        expectEqual(done.message, #""Shopping": checklist: done isn't a member of item 1 (it has isDone and text)"#)
+        expectEqual(done.hint, "did you mean isDone? checklist: takes JSON [{isDone, text}]")
+        let color = try refusedInProcess(#"task-card "T" color: {"r": 0.9, "g": 0.2, "b": 0.2}"#, on: editor)
+        expectEqual(color.reason, "invalid_value")
+        expectEqual(color.message, #""T": color: b isn't a member of color (it has blue, green and red)"#)
+        expectEqual(color.hint, "did you mean blue? color: takes JSON {blue, green, red: 0…1}")
+        expectEqual(editor.document.shapes.count, 0)
+        // An object replaces the whole property: what it leaves out takes its default, not the card's.
+        _ = try drawnInProcess(#"task-card "Backfill" shows: {"notes": true, "checklist": true, "progress": false}"#, on: editor)
+        _ = try drawnInProcess(#"task-card "Backfill" shows: {"notes": false}"#, on: editor)
+        let card = try require(editor.document.shapes.first { editor.registry.title(of: $0) == "Backfill" }?.typed(as: TaskCard.self))
+        expectEqual(card.props.shows, TaskDisplay(notes: false, checklist: true, progress: true))
+        // Another language's word for a shape is told the kind like it; its word for a connection, the edge.
+        let note = try refusedInProcess(#"note "Idea" text: "Try a cache""#, on: editor)
+        expectEqual(note.reason, "unknown_kind")
+        expectEqual(note.hint, #"did you mean sticky-note? the kinds drawn here: ellipse, rectangle, schema-card, sticky-note, subboard, task-card; a statement starts with its kind, as in sticky-note "A""#)
+        expectEqual(try refusedInProcess(#"link "A""#, on: editor).hint,
+                    #"to join two shapes, write edge "A" -> "B"; the kinds drawn here: ellipse, rectangle, schema-card, sticky-note, subboard, task-card"#)
+        // A kind its tool draws by hand.
+        let line = try refusedInProcess(#"polyline "Path""#, on: editor)
+        expectEqual(line.reason, "not_placeable")
+        expectEqual(line.message, "a polyline isn't drawn on its own: its tool (Line) draws one by hand, so a script can't place one")
+        // A delete takes an arrow that leaves the shape for empty canvas.
+        _ = try drawnInProcess(#"sticky-note "Old" right of "Backfill""#, on: editor)
+        let old = try require(editor.document.shapes.first { editor.registry.title(of: $0) == "Old" })
+        let arrow = AnyShapeRecord(ShapeRecord(Arrow(start: .bound(ArrowBinding(shapeID: old.id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false,
+                                                                                isExact: false)),
+                                                     end: .free(CGPoint(x: 5000, y: 5000)))))
+        editor.transact { $0.insert(arrow) }
+        let deleted = try drawnInProcess(#"delete "Old""#, on: editor)
+        expectEqual(deleted["changes"]?.arrayValue?.map { [$0["did"], $0["kind"]] }, [["deleted", "sticky-note"], ["deleted", "arrow"]])
+        expectEqual(editor.document[arrow.id], nil)
+    },
+    test("a hint that says what to write runs as written, and a script can't take a title away, however it says none") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
+        let braces = try refusedInProcess(#"task-card "Web" {"size": "300x200", "gap": "wide", "notes": "x"}"#, on: editor)
+        let hint = try require(braces.hint)
+        expectEqual(hint, #"write size: 300x200 gap: wide notes: "x""#)
+        let hinted = try drawnInProcess(#"task-card "Web" "# + hint.dropFirst("write ".count), on: editor)
+        expectEqual(hinted["changes"]?.arrayValue?.first?["at"], [[570, 350], [300, 200]])
+        for none in ["none", "nil", "null"] {
+            expectEqual(try refusedInProcess(#"task-card "Web" title: "# + none, on: editor).reason, "unsupported", none)
+        }
     },
     test("status and boards say which board inside each file its window shows, and a board command works there") {
         let pasteboard = NSPasteboard.withUniqueName()
@@ -181,8 +376,11 @@ import Titles
         let text = try canvas(server, ["boards", "--format", "text"]).output
         expect(text.contains("shows") && text.contains(q.id.description), text)
 
-        expectEqual(try canvas(server, ["create", "ellipse"]).status, 0)
+        let drawn = try canvas(server, ["draw", #"ellipse "E""#])
+        expectEqual(drawn.status, 0, drawn.error)
+        expectEqual(try JSON(text: drawn.output)["board"]?["shows"], .string(q.id.description), "it says where it drew")
         expectEqual(board.editor.document.shapes.count, 2, "on the board shown")
+        expectEqual(board.editor.undoHistory.undoName, "Draw")
         expectEqual(board.editor.file.root.shapes.map(\.id), [p.id])
         board.editor.showBoard(.root)
         board.editor.undo()
@@ -192,3 +390,21 @@ import Titles
         other.close()
     },
 ])
+
+/// `draw`, as the app's command server runs it, in this process, on `editor`.
+@MainActor func drawInProcess(_ script: String, on editor: CanvasEditor) -> Result<JSON, RPCError> {
+    let commands = ShippedPlugins.commands(in: editor.registry)
+    return Result { () throws(RPCError) in try commands.run("draw", ["script": .string(script)], editor) }
+}
+
+@MainActor func drawnInProcess(_ script: String, on editor: CanvasEditor) throws -> JSON {
+    try drawInProcess(script, on: editor).get()
+}
+
+@MainActor func refusedInProcess(_ script: String, on editor: CanvasEditor) throws -> RPCError {
+    guard case .failure(let error) = drawInProcess(script, on: editor) else {
+        expect(false, "\(script) should be refused")
+        return RPCError(RPCError.failed, reason: "", "")
+    }
+    return error
+}

@@ -144,6 +144,11 @@ public final class UndoHistory {
     /// doesn't split the press.
     @_spi(Host) public var isPressing: Bool { isInPress && open?.builder.isHolding == true }
 
+    /// A press is held, changes or not: from the press to its release, whatever commits is part of
+    /// its step, whoever commits it. What changes the board for someone else (the command line's
+    /// `draw`) waits for the release, so that its change is a step of its own.
+    public var isPressHeld: Bool { isInPress }
+
     // MARK: Grouping
 
     /// Everything `body` commits is one step, named `name` (unless a group it's in has a name); in

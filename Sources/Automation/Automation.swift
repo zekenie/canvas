@@ -6,9 +6,11 @@ import Foundation
 /// plugin that gives it its meaning, one plugin per name. A command is a name, what help says about
 /// it, its params (a list of properties, `SchemaDefined`, whose schema `canvas` reads its arguments
 /// by), and what it does, on the main actor, through transactions, as anything else changes a
-/// board. The app hands them to its command server (Composition's `commandSpecs(in:)` and
-/// `runCommand`), which does the talking: this plugin never sees a socket, and the core never sees
-/// a command.
+/// board. The app hands them to its command server (Composition's `ShippedPlugins.commands(in:)`,
+/// over `automationCommands` and `runAutomationCommand`), which does the talking: this plugin
+/// never sees a socket, and the core never sees a command. Its own are `draw` and `kinds`
+/// (Commands.swift); `draw` takes what it doesn't own (names, edges, checks) from the points in
+/// DrawPoints.swift, which bridges fill.
 extension PluginID {
     public static let automation: PluginID = "automation"
 }
@@ -49,7 +51,7 @@ extension AutomationCommands: KeyedExtensionPoint {
     }
 }
 
-/// A name, as the key a command claims: "command create" in a conflict.
+/// A name, as the key a command claims: "command draw" in a conflict.
 struct CommandKey: Hashable, CustomStringConvertible {
     let name: String
     var description: String { "command \(name)" }
@@ -84,25 +86,57 @@ public struct AutomationContext {
 }
 
 /// Why a command didn't do what it was asked: said for a person, with a reason an agent can branch
-/// on (`unknown_kind`) and a hint, often the command to run instead.
+/// on (`unknown_kind`) and a hint, often the command to run instead. A command that reads a script
+/// says where in it: the `line` (from 1) and the `statement` as written there; and one that finds
+/// several problems at once gives the first as itself and every one, the first too, in `errors`.
+/// The command line gets them all in the error's data (`line`, `statement`, and `errors`, each
+/// `{line, statement, reason, message, hint}`).
 public struct AutomationError: Error, Equatable, CustomStringConvertible {
     public let message: String
     public let reason: String
     public let hint: String?
     /// Whether the params were what's wrong, rather than what they asked for.
     public let isInvalidParams: Bool
+    /// The line of the script it's about, from 1.
+    public let line: Int?
+    /// That line as it's written (its comment left out, trimmed).
+    public let statement: String?
+    /// Every problem found, this one first; empty when it's the only one.
+    public let errors: [AutomationError]
 
-    public init(_ message: String, reason: String, hint: String? = nil, invalidParams: Bool = false) {
+    public init(_ message: String, reason: String, hint: String? = nil, invalidParams: Bool = false,
+                line: Int? = nil, statement: String? = nil, errors: [AutomationError] = []) {
         self.message = message
         self.reason = reason
         self.hint = hint
         isInvalidParams = invalidParams
+        self.line = line
+        self.statement = statement
+        self.errors = errors
     }
 
     public var description: String { message }
 
     var rpcError: RPCError {
-        isInvalidParams ? .invalidParams(message, reason: reason, hint: hint) : .failed(message, reason: reason, hint: hint)
+        var details = located
+        if !errors.isEmpty {
+            details["errors"] = .array(errors.map { error in
+                var entry = error.located
+                entry["reason"] = .string(error.reason)
+                entry["message"] = .string(error.message)
+                if let hint = error.hint { entry["hint"] = .string(hint) }
+                return .object(entry)
+            })
+        }
+        return RPCError(isInvalidParams ? RPCError.invalidParams : RPCError.failed, reason: reason, message, hint: hint, details: details)
+    }
+
+    /// Where it is, as the error's data says it.
+    private var located: [String: JSON] {
+        var data: [String: JSON] = [:]
+        if let line { data["line"] = .number(Double(line)) }
+        if let statement { data["statement"] = .string(statement) }
+        return data
     }
 }
 

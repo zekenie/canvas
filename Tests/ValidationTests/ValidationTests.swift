@@ -30,6 +30,14 @@ extension Tiny {
     init() { self.init(frame: .zero) }
 }
 
+/// What a box may say about itself, in at most 5 characters: a bound a shape can break.
+enum Motto {}
+extension Motto: ShapeProperty {
+    static let key: PropertyKey = "motto"
+    static var defaultValue: String? { nil }
+    static var keywords: PropertyKeywords<String> { PropertyKeywords().maxLength(5) }
+}
+
 @MainActor var calls = 0
 
 @MainActor let validationTests = Suite("Validation", [
@@ -143,6 +151,32 @@ extension Tiny {
         _ = engine.results
         expectEqual(engine.dependents(of: [box]), [])
         expectEqual(engine.dependents(of: [box, other]), [tag])
+    },
+    test("a shape's issues, as the engine finds them, for a shape on the board or not, against the shapes they're asked with") {
+        let h = try EditorHarness(plugins: [FixturesPlugin(), ValidationPlugin(), Rules { r in
+            r.declare(Motto.self)
+            r.optIn(Box.self, to: Motto.self)
+            r.validate(Box.self) { box, _ in box.frame.isEmpty ? [.warning("empty box")] : [] }
+            r.validate(Tag.self) { tag, context in
+                tag.props.target.flatMap { context.shape($0) } == nil ? [.error("dangling")] : []
+            }
+            r.validateEveryShape { _, _ in [.warning("every")] }
+        }])
+        let registry = h.editor.registry, engine = try require(h.editor.validation)
+        let box = h.add(Box(.zero))
+        h.editor.transact { $0.update(box) { $0[Motto.self] = "Carpe diem" } }
+        let onBoard = try require(h.editor.document[box])
+        let issues = registry.validationIssues(of: onBoard, in: h.editor.shapeContext)
+        expectEqual(issues.map(\.message), ["empty box", "Motto is 10 characters long, and should be at most 5.", "every"],
+                    "every rule for the kind, in order, the schema's too")
+        expectEqual(issues, engine.result(for: box)?.issues, "as the engine has them")
+        // A tag and the box it names, neither on the board: looked up in the shapes it's asked with.
+        let crate = AnyShapeRecord(ShapeRecord(Box(CGRect(x: 0, y: 0, width: 10, height: 10))))
+        let tag = AnyShapeRecord(ShapeRecord(Tag(target: crate.id)))
+        expectEqual(registry.validationIssues(of: tag, in: h.editor.shapeContext).map(\.message), ["dangling", "every"])
+        let planned = ShapeContext(document: CanvasDocument(shapes: h.editor.document.shapes + [crate, tag]), registry: registry)
+        expectEqual(registry.validationIssues(of: tag, in: planned).map(\.message), ["every"])
+        expectEqual(engine.dependents(of: [crate.id]), [], "the engine heard nothing of it")
     },
     test("contributing a rule without the validation plugin installed is an error") {
         expectThrows(RegistryError.ownerNotInstalled(point: "ValidationRules", owner: .validation, contributor: "rules")) {
