@@ -63,19 +63,23 @@ public struct DetailPanelView: View {
         .environment(\.detailEditor, editor)
         // So a number being typed lands on its shape before another board is shown.
         .onAppear { editor.detailPanel?.drafts = drafts }
-        .onKeyPress(.escape) { exitByKey() ? .handled : .ignored }
+        .onKeyPress(.escape, phases: [.down, .repeat]) { press in
+            exitByKey(withOption: press.modifiers.contains(.option)) ? .handled : .ignored
+        }
         // ⌘., which the window sends up the responder chain as `cancelOperation:` with no key
         // down: the panel's text views and fields leave it to their superviews.
-        .onExitCommand { _ = exitByKey() }
+        .onExitCommand { _ = exitByKey(withOption: false) }
         .onChange(of: editor.selectedShapeIDs) { reclaimSoon() }
         .inspectorColumnWidth(min: DetailStyle.minWidth, ideal: DetailStyle.idealWidth, max: DetailStyle.maxWidth)
     }
 
     /// Escape or ⌘.: leaves the panel, dropping a number being typed rather than committing it,
     /// unless a text view holding keys (a list it shows over its text) has the keyboard, whose key
-    /// it is (the panel hears keys before the view with the keyboard does). Whether it left.
-    private func exitByKey() -> Bool {
-        if (window.window?.firstResponder as? DetailTextView)?.holdsKeys == true { return false }
+    /// it is (the panel hears keys before the view with the keyboard does), or, for ⌥⎋, one that
+    /// completes what's typed (a code editor's `complete:`). Whether it left.
+    private func exitByKey(withOption: Bool) -> Bool {
+        let text = window.window?.firstResponder as? DetailTextView
+        if text?.holdsKeys == true || (withOption && text?.offersCompletions == true) { return false }
         drafts.revert()
         onExit()
         return true

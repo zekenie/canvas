@@ -5,9 +5,11 @@ import CanvasTesting
 import CanvasUI
 import Composition
 import CoreGraphics
+import DetailPanel
 import Foundation
 import Geometry
 import Mentions
+import Schemas
 import Selection
 import StickyNotes
 import TableOfContents
@@ -265,4 +267,73 @@ final class NestedWindow {
         w.move(to: CGPoint(x: crumb.midX, y: crumb.maxY + 60), time: 1.3)
         expectEqual(w.editor.hovered, under, "and back off it")
     },
+    test("⌃Space in a schema card's JSON, which no menu takes, opens its completions there") {
+        let w = try NestedWindow()
+        defer { w.board.close() }
+        let code = try w.schemaCode(caret: 1)
+        let controlSpace = w.window.keyEvent(" ", code: 49, modifiers: .control)
+        let (menus, _, _) = try w.goItems()
+        expect(!menus.main.performKeyEquivalent(with: controlSpace), "the menu bar leaves ⌃Space to the text")
+        w.window.sendEvent(controlSpace)
+        let list = try require(code.caretListWindow, "open")
+        expectEqual(list.list.highlightedItem?.title, "title", "keywords, where the root's first key goes")
+        expect(code.holdsKeys)
+        w.window.pressEscape()
+        expect(code.caretListWindow == nil)
+        expect(w.window.firstResponder === code, "Escape closed the list; the panel stays")
+    },
+    test("⌘↩ with a schema card's completions open, in the app's window, closes them and commits the JSON, as with them closed") {
+        let w = try NestedWindow()
+        defer { w.board.close() }
+        let code = try w.schemaCode(caret: 1)
+        w.window.sendEvent(w.window.keyEvent(" ", code: 49, modifiers: .control))
+        _ = try require(code.caretListWindow, "open")
+        let commandReturn = w.window.keyEvent("\r", code: 36, modifiers: .command)
+        expect(w.window.performKeyEquivalent(with: commandReturn), "the JSON's commit, before the menus")
+        expect(code.caretListWindow == nil && !code.holdsKeys, "closed")
+        expect(w.window.firstResponder === code, "the JSON keeps the keyboard")
+        expectEqual(code.string, SchemaCard.starter, "nothing picked, no new line")
+    },
+    test("a pick with the mouse, in the list's own window, is part of the typing: one Change JSON step on the board") {
+        let w = try NestedWindow()
+        defer { w.board.close() }
+        let code = try w.schemaCode(caret: 1)
+        w.window.type("\"ti")
+        w.window.sendEvent(w.window.keyEvent(" ", code: 49, modifiers: .control))
+        let list = try require(code.caretListWindow, "open")
+        expectEqual(list.list.highlightedItem?.title, "title")
+        // Shown, the list is a child of the board's window (an unshown one's never is, so it's put there),
+        // and a click in it is no click elsewhere: the window's watch for those leaves it alone.
+        w.window.addChildWindow(list, ordered: .above)
+        let rows = try require(list.contentView?.descendants.first { $0.accessibilityRole() == .list })
+        @MainActor func mouse(_ type: NSEvent.EventType) throws -> NSEvent {
+            try require(NSEvent.mouseEvent(with: type, location: rows.convert(CGPoint(x: 100, y: 10), to: nil), modifierFlags: [], timestamp: 1,
+                                           windowNumber: list.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        }
+        NSApp.sendEvent(try mouse(.leftMouseDown))
+        NSApp.sendEvent(try mouse(.leftMouseUp))
+        rows.mouseDown(with: try mouse(.leftMouseDown))       // an unshown window's clicks don't reach its views
+        expect(code.string.hasPrefix(#"{"title": ""#), code.string)
+        expect(code.caretListWindow == nil)
+        let id = try require(w.editor.selection)
+        expectEqual(w.editor.document[id]?.typed(as: SchemaCard.self)?.props.schema, code.string)
+        expectEqual(w.editor.undoHistory.undoName, "Change JSON")
+        w.editor.undo()
+        expectEqual(w.editor.document[id]?.typed(as: SchemaCard.self)?.props.schema, SchemaCard.starter, "the typing and the pick, one step")
+    },
 ])
+
+extension NestedWindow {
+    /// A new schema card on the root, selected, its JSON in the panel with the keyboard, the caret
+    /// at `caret`.
+    func schemaCode(caret: Int) throws -> DetailTextView {
+        editor.selection = editor.add(SchemaCard(frame: CGRect(x: 40, y: 400, width: 240, height: 67)))
+        let content = try require(window.contentView)
+        window.spin { content.descendants(NSTextView.self).contains { $0.font?.isFixedPitch == true } }
+        let code = try require(content.descendants(DetailTextView.self).first { $0.font?.isFixedPitch == true })
+        window.makeFirstResponder(code)
+        code.setSelectedRange(NSRange(location: caret, length: 0))
+        window.settle()
+        return code
+    }
+}

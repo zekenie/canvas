@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import DetailPanel
 import Observation
 import Selection
 import Titles
@@ -377,7 +378,7 @@ public final class MentionState {
     /// show, but those kept aside and those its kind gives no name (called by the "Untitled …"
     /// placeholder: a mention of one stays, but there's no point picking it). An empty query lists recent picks, then the shapes nearest the
     /// owner on the board shown and, while there's room, the shapes whose boards it's inside, the
-    /// board shown's own first; any other, one ranked list of the best matches (`MentionMatcher`'s
+    /// board shown's own first; any other, one ranked list of the best matches (`CaretListMatcher`'s
     /// tiers, then `MentionRanking`'s adjustments, nearness on the board shown among them; ties to
     /// the shorter label, then the front-most shape, the board shown's before any other's).
     public func candidates<S: MentionScope>(matching query: String, in scope: S.Type, for owner: ShapeID?) -> MentionCandidates {
@@ -395,7 +396,7 @@ public final class MentionState {
             return Double(hypot(bounds.midX - origin.x, bounds.midY - origin.y))
         }
 
-        let q = MentionMatcher.Query(query)
+        let q = CaretListMatcher.Query(query)
         guard !q.isEmpty else {
             let recentShown = Array(recent.lazy.filter { $0 != owner && self.catalog.contains($0) && admits($0) }
                 .prefix(MentionRanking.recentShown)).map { candidate($0, matched: []) }
@@ -409,27 +410,17 @@ public final class MentionState {
             return MentionCandidates(recent: recentShown, nearby: nearby.map { candidate($0, matched: []) }, matches: [])
         }
 
-        // Two linear passes over the catalog's keys: every tier but the typo's, then, if that found
-        // few, the typo's over the rest.
+        // Two linear passes over the catalog's keys, as every caret list matches (`rank`): every
+        // tier but the typo's, then, if that found few, the typo's over the rest.
         var found: [Found] = []
         q.withView { view in
             catalog.keys.withUnsafeBufferPointer { keys in
                 catalog.entries.withUnsafeBufferPointer { entries in
-                    var none: [Range<Int>] = []
-                    for slot in entries.indices {
+                    CaretListMatcher.rank(view, count: entries.count, wantSpans: false, label: { slot in
                         let entry = entries[slot]
-                        guard entry.id != owner, admits(entry.id) else { continue }
-                        let label = UnsafeBufferPointer(rebasing: keys[entry.start..<entry.start + entry.count])
-                        if let score = MentionMatcher.tier(view, label, &none, wantSpans: false) { found.append(Found(slot: slot, score: score)) }
-                    }
-                    guard found.count < MentionRanking.typoPassBelow, view.characterCount >= MentionRanking.typoMinimumQuery else { return }
-                    let matched = Set(found.map(\.slot))
-                    for slot in entries.indices where !matched.contains(slot) {
-                        let entry = entries[slot]
-                        guard entry.id != owner, admits(entry.id) else { continue }
-                        let label = UnsafeBufferPointer(rebasing: keys[entry.start..<entry.start + entry.count])
-                        if let score = MentionMatcher.typo(view, label, &none, wantSpans: false) { found.append(Found(slot: slot, score: score)) }
-                    }
+                        guard entry.id != owner, admits(entry.id) else { return nil }
+                        return UnsafeBufferPointer(rebasing: keys[entry.start..<entry.start + entry.count])
+                    }) { slot, score, _ in found.append(Found(slot: slot, score: score)) }
                 }
             }
         }
@@ -461,7 +452,7 @@ public final class MentionState {
         let matches = ranked.prefix(MentionRanking.maxMatches).map { found in
             let id = entries[found.slot].id
             let label = catalog.appearances[found.slot].label
-            return candidate(id, matched: MentionMatcher.match(q, in: MentionMatcher.Label(label))?.matched ?? [])
+            return candidate(id, matched: CaretListMatcher.match(q, in: CaretListMatcher.Label(label))?.matched ?? [])
         }
         return MentionCandidates(recent: [], nearby: [], matches: matches)
     }

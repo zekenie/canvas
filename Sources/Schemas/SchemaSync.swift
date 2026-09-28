@@ -67,7 +67,9 @@ public struct SchemaSyncFailure: Equatable, Sendable {
 ///   command line's `draw`), whose sides are taken as in step, as a card seen for the first time
 ///   is (a call out, or an edit waiting, stops). An edit syncs when it's committed (`commit`:
 ///   Return in the prompt, ⌘↩ in the schema, the keyboard leaving either), else `idleDelay` after
-///   the last one (`editor.scheduler`).
+///   the last one (`editor.scheduler`), but not while the person is choosing from the list at the
+///   caret in its JSON (`completing`): a pick that opens it again leaves a whole schema waiting
+///   for its value (`"type": ""`), so the idle wait starts once the list closes.
 /// - The prompt changed (and isn't empty): the model edits the schema, told the prompt at the last
 ///   sync. Else the schema changed in meaning (not only its layout): the model edits the prompt, told
 ///   the schema at the last sync. Both changed: the schema, from the edited one. A schema too long
@@ -139,6 +141,8 @@ public final class SchemaSync {
         /// Both sides as the document last said them, to tell a change to either from one to
         /// something else about the card (its frame, a lock).
         var seen: Sides
+        /// An edit is waiting to sync: on `timer`, or for the list at the caret to close.
+        var isWaiting = false
         var timer: ScheduledTask?
         var call: Call?
         /// A sync was asked for while the call was out: it runs once the call lands.
@@ -153,6 +157,9 @@ public final class SchemaSync {
     @ObservationIgnored private var synced: [ShapeID: Sides] = [:]
     /// Observed a card at a time (`status(of:)`); a card with none is idle.
     @ObservationIgnored private var statuses: [ShapeID: SchemaSyncStatus] = [:]
+    /// The cards whose JSON has a list open at the caret (`completing`): apart from `cards`, since
+    /// the list outlasts what a card's entry does (an agent's write takes the card afresh).
+    @ObservationIgnored private var completingCards: Set<ShapeID> = []
     /// The cards an undo or redo just brought back or changed the sides of: the only ones whose
     /// pair at the last sync its participant's restore puts back.
     @ObservationIgnored private var restoring: Set<ShapeID> = []
@@ -189,6 +196,15 @@ public final class SchemaSync {
     /// Tries the failed sync again.
     public func retry(_ id: ShapeID) { sync(id) }
 
+    /// The person is choosing from the list at the caret in the card's JSON (true), or has stopped
+    /// (false): meanwhile an edit waits for them, and once they stop, `idleDelay` more. A commit
+    /// syncs at once either way.
+    func completing(_ id: ShapeID, _ isCompleting: Bool) {
+        guard completingCards.contains(id) != isCompleting else { return }
+        if isCompleting { completingCards.insert(id) } else { completingCards.remove(id) }
+        wait(id)
+    }
+
     // MARK: Syncing
 
     /// Takes a card seen for the first time (or read again from disk) as its last sync: in step,
@@ -204,15 +220,25 @@ public final class SchemaSync {
     }
 
     private func edited(_ id: ShapeID) {
-        guard let editor else { return }
-        cards[id]?.timer?.cancel()
-        cards[id]?.timer = editor.scheduler.schedule(after: Self.idleDelay) { [weak self] in self?.sync(id) }
+        cards[id]?.isWaiting = true
+        wait(id)
+    }
+
+    /// Waits `idleDelay` from now for an edit waiting to sync, unless the person is choosing from
+    /// the list in the card's JSON.
+    private func wait(_ id: ShapeID) {
+        guard let editor, var card = cards[id] else { return }
+        card.timer?.cancel()
+        card.timer = card.isWaiting && !completingCards.contains(id)
+            ? editor.scheduler.schedule(after: Self.idleDelay) { [weak self] in self?.sync(id) } : nil
+        cards[id] = card
     }
 
     private func sync(_ id: ShapeID) {
         guard var card = cards[id] else { return }
         card.timer?.cancel()
         card.timer = nil
+        card.isWaiting = false
         card.wantsSync = card.call != nil
         cards[id] = card
         if card.call == nil { start(id) }
@@ -345,6 +371,7 @@ public final class SchemaSync {
         guard var card = cards[id] else { return }
         card.timer?.cancel()
         card.timer = nil
+        card.isWaiting = false
         card.call?.task.cancel()
         card.call = nil
         card.wantsSync = false

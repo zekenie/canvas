@@ -85,11 +85,12 @@ struct SchemaDescription: View {
     }
 }
 
-/// The JSON Schema as text; under it, what Validation finds wrong with it (in its words, each in
-/// its tone), and the sync's status when it's about the schema (the description being written
-/// from it, or why it couldn't be). What's typed in it,
-/// keystroke after keystroke, is one undo step ("Change JSON"), as the description's is
-/// ("Change Description").
+/// The JSON Schema as text, which ⌃Space completes (`SchemaCompletions`); under it, what
+/// Validation finds wrong with it (in its words, each in its tone), and the sync's status when it's
+/// about the schema (the description being written from it, or why it couldn't be). What's typed
+/// in it, keystroke after keystroke, picks included, is one undo step ("Change JSON"), as the
+/// description's is ("Change Description"). While its list is open the sync's idle wait waits too
+/// (`SchemaSync.completing`): the person is still choosing.
 struct SchemaCode: View {
     @ShapeBinding var card: SchemaCard
 
@@ -98,7 +99,10 @@ struct SchemaCode: View {
         let status = sync?.status(of: id) ?? .idle
         let schema = $card.schema
         DetailCodeEditor(Binding(get: { schema.wrappedValue }, set: { text in $card.update(\.schema) { $0.setSchema(text) } }),
-                         coloring: { text in SchemaCodeColors.spans(in: text, for: id) }, onCommit: { [weak sync] in sync?.commit(id) })
+                         coloring: { text in SchemaCodeColors.spans(in: text, for: id) },
+                         completions: { text, caret in SchemaCompletions.completions(in: text, at: caret).map(DetailCodeCompletions.init) },
+                         onCompleting: { [weak sync] isCompleting in sync?.completing(id, isCompleting) },
+                         onCommit: { [weak sync] in sync?.commit(id) })
             .detailUpdating(status == .updating(.schema))
         let issues = SchemaReadings.reading(of: card.schema, for: id).issues
         ForEach(issues.indices, id: \.self) { i in
@@ -146,6 +150,19 @@ struct SchemaSyncLine: View {
         case .key: return [DetailStatusAction(SchemaPanelText.openSettings) { AnthropicSettingsView.showSettings() }]
         case .editByHand: return []
         }
+    }
+}
+
+/// The card's completions as the code editor lists them: the same candidates, in the same order,
+/// every range already in UTF-16 (`SchemaCompletions`); the editor matches them against the query.
+extension DetailCodeCompletions {
+    init(_ completions: JSONCompletions) {
+        self.init(range: NSRange(location: completions.range.lowerBound, length: completions.range.count), query: completions.query,
+                  items: completions.items.map { item in
+                      DetailCodeCompletion(label: item.label, detail: item.detail, insert: item.insert,
+                                           selection: NSRange(location: item.selection.lowerBound, length: item.selection.count),
+                                           reopens: item.reopens, isRelevant: item.isRelevant)
+                  })
     }
 }
 

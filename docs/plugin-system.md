@@ -1837,13 +1837,14 @@ Sections are stock SwiftUI plus a few primitives, and get the look by following 
   new line, and the keyboard leaving commits too, a turn later if the text view left its window
   with the keyboard, so capture a service in `onCommit` weakly: the board may have gone), code a
   `DetailCodeEditor` (monospaced, typed exactly as keyed: smart quotes and dashes, text
-  replacement, autocorrect, spelling, completion, inline predictions, math results and Writing
-  Tools off; lines never wrap, so a line's indentation says where it is and line N of an error is
+  replacement, autocorrect, spelling, automatic completion, inline predictions, math results and
+  Writing Tools off; lines never wrap, so a line's indentation says where it is and line N of an error is
   the Nth on screen, and a long one scrolls sideways; as tall as its lines, from
   `DetailStyle.codeEditorHeight` (a text area's height, so a short text sits in a short box with
   what's said about it close under it) to what the panel shows, less room for its section's title; Tab
   two spaces, Return a new line as indented as the last, one step more after `{` or `[`; ⌘↩ and the
-  keyboard leaving call its `onCommit`; `isEditable: false` makes it read-only), a list a
+  keyboard leaving call its `onCommit`; `isEditable: false` makes it read-only; `coloring:` colors
+  its runs and `completions:` completes it, below), a list a
   `DetailList` (empty, it says No Items), a color `DetailSwatches` (named presets, the chosen one
   marked, then the color well; it spans the row, so it goes in a section of its own, not in a
   `LabeledContent`). `.detailUpdating(isUpdating)` marks a text box something else is writing just
@@ -1860,6 +1861,38 @@ Sections are stock SwiftUI plus a few primitives, and get the look by following 
   runs a command a plugin registered (`editor.perform`), dimmed while it can't run
   (`editor.canPerform`): the panel's counterpart of a menu item, borderless like the panel's other
   buttons. It finds the editor in the environment the panel sets, so a section still never sees it.
+- **Code's colors and completions.** A `DetailCodeEditor`'s language is its plugin's; the panel
+  colors it and completes it. `coloring: { text in … }` names the text's runs (`DetailCodeSpan`:
+  a name, a string, a number, a keyword, or what doesn't belong, red and underlined), asked for
+  the whole text at every keystroke, so a scan, not a parse. `completions: { text, caret in … }`
+  (a `DetailCodeCompleting`, the caret in UTF-16) says what can be typed at the caret, or nil: a
+  `DetailCodeCompletions`, the `range` a pick replaces (it holds the caret), what's typed so far
+  (`query`), and every candidate, as offered and unfiltered, each a `DetailCodeCompletion` (its
+  `label`, a `detail`, the `insert` that replaces the range, the `selection` within it a pick
+  leaves, the caret or what's to be typed over, `reopens` where that has completions of its own,
+  and `isRelevant`). ⌃Space opens the list (so does AppKit's `complete:`, ⌥⎋ and F5, since macOS
+  may keep ⌃Space for switching input sources) while the text can be written, where something's
+  offered: nothing opens elsewhere, and nothing beeps. It's the app's one caret list (Mentions' `@`
+  picker's, [below](#text-of-a-plugins-own-detailtextbox)), under what's typed, each row the label
+  in the code's font, what's typed matched in its semibold, then the detail, which takes what the label leaves (cut short with "…" past that),
+  VoiceOver saying both; no header, no footer. While it's open ↑ ↓ (⌃P ⌃N) and Page Up and Down
+  move through it, Return, Enter and Tab pick, Escape, ⌘., ⌃Space, ⌥⎋ and F5 close it (the panel
+  stays; a second Escape leaves it), ⌘↩ closes it and commits, as ever (the list's key is Return,
+  never ⌘↩), and every other key is the text's. After each keystroke and
+  move of the caret it asks again and ranks what's offered by what's typed, with
+  `CaretListMatcher`'s tiers (nothing typed: as offered; else the best tier first, then what
+  `isRelevant`, then as offered; what doesn't match is left out), and closes once nothing's left,
+  the caret leaves the place it opened for (the range starts elsewhere), the text is shown from
+  outside or can't be written (`detailUpdating`, a locked shape), the keyboard or the window goes,
+  the window stops being key, or what's typed scrolls out of view. A pick replaces the range with
+  its `insert`, one step of the text's undo that the box writes as typing (so it joins the field's
+  run of writes, and in a board's window a click in the list, a child window, doesn't end it), and
+  one that `reopens` opens the list again at once. `onCompleting: { isOpen in … }` hears the list
+  open and close (a pick that opens it again, not at all: it's still open), for what waits on the
+  person's choosing: text a pick leaves waiting for a value may already be whole (`"type": ""` is
+  JSON), so the schema card's sync holds its idle wait meanwhile. Without `completions`, F5 does
+  nothing and ⌥⎋ leaves the panel as Escape does: code gets no dictionary words. The schema card's JSON is the
+  shipped one ([Schema cards](#schema-cards)).
 - **Sections.** A tab's first section may be untitled; use it for the main properties. Every
   titled section collapses. Titles are one or two nouns in Title Case.
 - **Header control.** At most one small control, acting on the whole section (Checklists' menu). A
@@ -2302,16 +2335,52 @@ public var body: some View {
   `didChangeText`, since the box may call it while the board applies an undo step, when nothing
   may commit; then the box drops what typing registered with its undo. In a board's window, Edit
   › Undo is the text's own while it has the keyboard ([Undo](#undo)).
-- **Keys the view holds.** A view that shows something over its text whose keys Return and Escape
-  are (Mentions' `@` picker) says so: `override var holdsKeys: Bool { picker != nil }`. While it's
-  true, Return, ⌘↩ and Escape go to its `doCommand(by:)` as any text view's do, never to
-  `onCommit` or `onExit`. The panel's root hears Escape before the view with the keyboard does,
-  and leaves the panel, so it lets Escape through only to a `DetailTextView` holding keys: with the
-  picker open, Escape closes the picker, and a second leaves the panel. ⌘. comes as no key: the
-  window sends `cancelOperation:` up the responder chain from the view, which a `DetailTextView`
-  doesn't answer, so the panel's root hears it (`onExitCommand`) and leaves the panel as for
-  Escape, again unless a view holds keys (a `MentionTextView` answers it then, closing its
-  picker).
+- **Keys the view holds.** A view that shows a list at its caret (below: Mentions' `@` picker, a
+  code editor's completions) keeps its window and says so, `override var caretListWindow:
+  CaretListWindow? { pickerWindow }`, and `DetailTextView` does the rest, for every such list
+  alike. While one's open, the view `holdsKeys`: the list's commands (`CaretList.perform`) go to it
+  before the delegate's turn, a pick and a close through the window's `pickHighlighted()` and
+  `closeList()`, which run its owner's; Return and Escape are never `onCommit`'s or `onExit`'s, and
+  ⌘↩, where the text commits, closes the list and commits, as it does with none.
+  The panel's root hears Escape before the view with the keyboard does, and leaves the panel, so
+  it lets Escape through only to a `DetailTextView` holding keys: with the list open, Escape closes
+  it, and a second leaves the panel. ⌘. comes as no key: the window sends `cancelOperation:` up
+  the responder chain from the view, which closes an open list; with none, it goes on up as though
+  the view didn't answer it, so the panel's root hears it (`onExitCommand`) and leaves the panel as
+  for Escape. The keyboard leaving the view, the view leaving its window and its being made
+  read-only close the list too. What's left to the subclass is when a list opens, what it lists,
+  and what a pick puts in. A subclass that holds keys for something else says so, `override var
+  holdsKeys`. A view that `offersCompletions` (a code editor with completions, while it can be
+  written) has ⌥⎋ for its own too, list or not: the panel lets Escape with ⌥ through to it, for
+  AppKit's `complete:`, and leaves on it anywhere else. Tests read where a list is placed and what
+  it lists through `caretListWindow`.
+- **A list at the caret.** What such a view shows over its text is the app's one caret list,
+  DetailPanel's, whatever the text (Mentions' `@` picker and a code editor's completions are
+  built on it). Its model, `CaretList`, is headless: rows (`CaretListRow`: a header, an
+  item, or the one row an empty list shows), the highlight (the first item as rows are set; ↑ ↓
+  wrap, a page of `rowsShown` stops at the ends), and `perform(_:)`, which says what a text view
+  command does to it (↑ ↓ ⌃P ⌃N and Page Up and Down move, Return and Tab pick, but aren't taken
+  with nothing highlighted, Escape, ⌥⎋ and F5 close; every other command is the text's). An item
+  (`CaretListItem`) is what its row shows, one line: a title with its matched characters in
+  semibold (in the item's `font`, if it has one), a symbol in its tint before it, a
+  `trailingSymbol` after it (a read-only shape's lock), a `detail` at the trailing end, and what
+  VoiceOver says, the title and detail unless it says otherwise. Its size is its owner's
+  (`CaretListMetrics`: width, row height, rows shown, the offset below the anchor), its look
+  `DetailStyle`'s. `CaretListWindow(list, accessibilityLabel:over:anchor:pick:close:post:)` shows
+  it: a borderless child of the text's window that never takes the keyboard (not deferred, so a
+  click's events name it, shown or not; a board's window, which ends a run of panel writes on a
+  click in another window, leaves clicks in its children alone), under the anchor
+  range's `firstRect` (its rows' text under the anchor's start; above the line where there's no
+  room below; on screen), following every view the text is in as it moves or scales, and asking
+  its owner to `close` once the anchor leaves the text's visible rect or the window stops being
+  key; VoiceOver hears it change and go through `post`, which an owner may route (Mentions counts
+  what its picker says). The owner decides the rest: when it opens and closes, what the query is,
+  what it lists (`setRows`), and what a pick inserts (`pick` gets the row's index); it calls
+  `listDidChange()` after each change and `dismiss()` as it closes. Both lists rank typed text
+  alike, with `CaretListMatcher` (Mentions' tiers, `CaretListRanking`): `rank` is the two passes
+  every list makes, every tier but the typo's over the labels it gives (nil for one it leaves
+  out), then the typo's over the rest only when fewer than 8 matched, which Mentions' catalog
+  makes over its keys and `matches(_:in:)` over a list of labels.
 - **Enabled or dimmed.** A read-only shape, or `detailUpdating` (any `disabled` around the box),
   makes the view read-only, and the box asks `showEnabled(_:)` on every update: by default the
   text's color, the label's or the secondary label's. A view that colors its text itself says how
@@ -2334,7 +2403,7 @@ public var body: some View {
   edit the selected shape.
 - **The keyboard goes back to the canvas** on a click on the canvas; on Escape in the panel, which
   drops any number draft first (but for a text view that holds keys: Escape with the `@` picker
-  open closes the picker); and on its own when the panel removes the control that had the
+  or a code editor's completions open closes the list); and on its own when the panel removes the control that had the
   keyboard (switching tabs, collapsing its section, a `when` hiding it, or a new selection), or is
   hidden with it (View › Hide Inspector, which hides the panel without removing it).
   Otherwise the keyboard would land on the window, and shortcuts would stop. Collapsing an
@@ -3955,16 +4024,16 @@ follows undo and redo, during which nothing may):
   board shown (looked for in squares around it, grown until one holds enough, or holds as many
   shapes as the board has in the catalog, when reading those costs less: a board with few
   mentionable shapes reads them), then, while there's room, the shapes whose boards it's inside,
-  and for any other the best 50 matches. `MentionMatcher` scores the folded query (case and
-  diacritics ignored) against each name, each taking its best tier: exact 1000, a prefix 800, each
-  word a prefix of a word, in order, 600, a substring 400, a subsequence (fzf-style: word starts,
-  runs and the first character count, gaps cost) at most 300, and, for a query of 4 or more that
-  found fewer than 8 above, one typo (a Damerau edit of a word's prefix) 100; then recent picks and
-  nearness (on the board shown) add to the best, and ties go to the shorter name, then the shape
-  in front, the board shown's before another's. Two linear passes over the catalog's folded names
-  and a heap: a keystroke at 10,000 shapes, on one board or two (typed inside the subboard, the
-  catalog the whole file's), and the `@` that opens the picker among 10,000 of which 3 can be
-  mentioned, are held to 2 ms.
+  and for any other the best 50 matches. Every caret list's matcher (`CaretListMatcher`,
+  DetailPanel's) scores the folded query (case and diacritics ignored) against each name, each
+  taking its best tier: exact 1000, a prefix 800, each word a prefix of a word, in order, 600, a
+  substring 400, a subsequence (fzf-style: word starts, runs and the first character count, gaps
+  cost) at most 300, and, for a query of 4 or more that found fewer than 8 above, one typo (a
+  Damerau edit of a word's prefix) 100; then recent picks and nearness (on the board shown) add to
+  the best, and ties go to the shorter name, then the shape in front, the board shown's before
+  another's. Two linear passes over the catalog's folded names and a heap: a keystroke at 10,000
+  shapes, on one board or two (typed inside the subboard, the catalog the whole file's), and the
+  `@` that opens the picker among 10,000 of which 3 can be mentioned, are held to 2 ms.
 - **Going and hovering**: `follow(_:)` goes to a shape on the next turn of the scheduler
   (`editor.goTo`, or `goInto` for a kind followed by opening it: editing ends, the shape is selected and brought into view, and ⌘[ comes back;
   going is no undo step, so Undo after it takes back the edit before it, selecting what was
@@ -4055,7 +4124,9 @@ func textDidChange(_ notification: Notification) {
   Note"), or why it isn't live ("…, deleted"). Writing Tools leave pills alone.
 - **The picker.** `@` typed where a word starts (at the start, after whitespace or an opening
   bracket or quote, never in `name@example.com`) opens it: `textView.picker`, a `MentionPicker`,
-  the picker's model, headless, shown in a child window that never takes the keyboard. What's
+  the picker's model, headless, built on DetailPanel's caret list ([A list at the
+  caret](#text-of-a-plugins-own-detailtextbox): its `CaretList`, shown in a `CaretListWindow`, a
+  child window that never takes the keyboard, at the picker's own size). What's
   typed after the `@` is the query: Recent and Nearby for an empty one, else the matches, the
   matched characters semibold; "No matches" or "Nothing to mention" when there's none. ↑ and ↓
   move, Return and Tab pick, Escape (or ⌘.) closes, and so do the caret leaving the query, a line
@@ -4064,7 +4135,8 @@ func textDidChange(_ notification: Notification) {
   undo, which gives back the query as typed. Undo while it's open closes it: the text's, taking
   back the `@` typed, or the board's, ending editing. While it's open, the highlighted shape is hovered on the canvas,
   and autocorrection is off. VoiceOver hears its list change as the highlight moves (the row, or
-  the empty state, said) and go as it closes (`MentionAccessibility`).
+  the empty state, said) and go as it closes (`MentionAccessibility`, which the list's window
+  posts through).
 - **Where editing began.** `selectPill(at:)` selects the pill at a point in the view: the note
   calls it with `EditContext.startPoint`, so a click on a pill on the canvas has that pill
   selected in the editor, and a click anywhere else puts the caret where it always has.
@@ -5257,6 +5329,37 @@ registrar.channel(SchemaLink.self)
   (`editByHand`), for a schema too long to rewrite, or one cut off (`SchemaSync.tooLongMessage`).
   The side being written is read-only and dimmed. The sections' commits hold the sync weakly: a box
   that loses the keyboard as its window closes commits after the board has gone.
+- **Completing the JSON.** The JSON completes as VS Code completes a JSON Schema: ⌃Space (or ⌥⎋,
+  or F5) in the panel's JSON lists what can be typed at the caret, a keyword with its description
+  after it, a type's names, a `required` list's properties, and a pick writes it as it goes in,
+  opening the list again where it leaves the caret among more (picking `type` lists the type
+  names). The list and its keys are the code editor's
+  ([`completions:`](#anatomy-and-conventions)): what's typed ranks what's offered, a pick is
+  typing as far as the card knows (one step of its "Change JSON" run, which the sync hears as a
+  person's edit, syncing on a commit as ever, and not before the list closes otherwise: a pick
+  that opens it again leaves JSON waiting for a value, `"type": ""`), and while the model writes
+  the schema nothing opens. The card maps its completions to the editor's in `SchemaCode`
+  (`DetailCodeCompletions(_:)`), candidate for candidate.
+  `JSONCaret.at(_:in:)` reads the half-typed text leniently and says where the caret is: the path to
+  its object or array, a key, a value or an element, what's typed and what a pick replaces, the
+  members around it, a comma missing. `JSONCompleter`, generic over any JSON Schema, walks the
+  schema along that path (`$ref`s, read against the document; `properties` and the
+  `patternProperties` a name matches, as the validator reads their patterns, else
+  `additionalProperties`; `prefixItems`, `items`; `unevaluatedProperties` and `unevaluatedItems`
+  for what nothing else holds; every `allOf`/`anyOf`/`oneOf` branch) and offers the keys the
+  object's schemas list (in order, described, none deprecated or there already) or the values the
+  place's schemas give (consts, described or not, enums, examples, the type's `{}` `[]` `true`
+  `false` `null`, defaults), each written as it goes in: a key with a value to type into
+  (`"type": ""`, `"minLength": 0` selected, a number its bounds allow), commas where needed,
+  `reopens` where the caret lands among more. It matches nothing against what's typed; the list
+  does. What it knows of JSON Schema is data: `MetaSchema`, the 2020-12 meta-schema flattened, its
+  keywords in the order offered, each with a description, and `x-canvas-when`, the app's one
+  annotation (`minLength` matters only where `type` is or lists `string`: left out beside
+  `"type": "number"` until something's typed, then last).
+  `SchemaCompletions.completions(in:at:)` is the card's, in UTF-16, adding in code only what no
+  schema can say: a `required` list's names, the same object's `properties`; a `$ref`'s targets,
+  `#` and the root's definitions; and that `$vocabulary` goes only in the root and `$schema` only
+  in the root or a subschema with an `$id`.
 
 ### Keeping the description and the schema in step: `SchemaSync`
 
@@ -5272,7 +5375,10 @@ description to say what it now holds. `SchemaSync`, the plugin's service, does i
   call and timer dropped: an agent writes both sides as it means them, and never spends the
   person's key by writing one. A commit (Return in the
   description, ⌘↩ in the schema, the keyboard leaving either) syncs at once; otherwise it's
-  `SchemaSync.idleDelay` (3 s) after the last keystroke, on `editor.scheduler`.
+  `SchemaSync.idleDelay` (3 s) after the last keystroke, on `editor.scheduler`, but not while the
+  JSON's completion list is open (`SchemaSync.completing`, from the code editor's
+  `onCompleting:`): the person is still choosing, though the text a pick leaves may be whole
+  JSON already, so the wait starts once the list closes.
 - **Which way.** The description changed (and isn't empty): the schema is written from it, the
   model told the description at the last sync, so what was deleted from it is removed. Else the
   schema changed in meaning (a reformat or a reorder doesn't count): the description is written from
@@ -6338,7 +6444,22 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   logging the commands it gets, its `didChangeText`s and its `show`s): in the panel, a view that
   doesn't hold keys never hears Escape, which the panel's root takes first. `shownWhile` is held
   with a service of the test's own (`Watchers`), and a commit on another shape showing and hiding
-  the section, with its tab, while nothing else is built (`countedBuilds`).
+  the section, with its tab, while nothing else is built (`countedBuilds`). The caret list is held
+  without an owner of the app's (DetailPanelTests' Caret lists): its model and matcher headlessly,
+  its window over a plain `DetailTextView` in an unshown window (`ListedText`, whose list opens
+  under a range and counts what closes it and what VoiceOver hears), where it's placed but never
+  ordered in: read `frame`, call the rows view's mouse methods for a click, and render it with
+  `cacheDisplay`; and a subclass's list's keys and closing, which are `DetailTextView`'s
+  (`ListingTextView`). A code editor's completions are held in the panel (DetailPanelTests' Code
+  completions: `CodeBoxesPlugin`'s code editor completes fruit, `fruitCompletions`, with a basket
+  that reopens, a cherry whose count a pick selects, and a word after an x whose range is
+  elsewhere, and logs what `onCompleting` hears, `codeCompleting`; `BareCodePlugin`'s has none):
+  read the list through the text view's
+  `caretListWindow`, and press ⌃Space as `press(" ", code: 49, modifiers: .control)`, ⌥⎋ and F5
+  (`"\u{F708}"`, 96, `.function`) likewise; SchemasTests hold the card's (`panelCompletionTests`),
+  and CompositionTests the app's menus leaving ⌃Space alone, ⌘↩ with the list open committing,
+  and a mouse pick in a board's window (the list made the window's child, as it is shown) joining
+  the typing's step.
 - **Context menus.** `h.secondaryClick(at:)` (CanvasTesting) right-clicks through the host API and
   returns the `NSMenu`, or nil. `menu.outline` reads it a line per item ("(Brighter)" when dimmed,
   "✓ 1", "– 2" when mixed, "Level ▸" and its items indented, "—" between groups), and

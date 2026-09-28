@@ -1,6 +1,7 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import DetailPanel
 import Mentions
 import Selection
 import TestKit
@@ -394,6 +395,24 @@ final class NotificationCount: @unchecked Sendable {
         complete.textView.doCommand(by: #selector(NSResponder.complete(_:)))
         expect(complete.textView.picker == nil)
         expectEqual(complete.string, "@")
+    },
+
+    test("the picker is its view's list at the caret, as every caret list is: its window while it's open, closed as the view is made read-only") {
+        let session = try EditedJot("")
+        session.type("@")
+        let view: DetailTextView = session.textView
+        let list = try require(view.caretListWindow, "the list open at its caret")
+        expectEqual(list.frame, session.textView.pickerFrame)
+        expectEqual(list.list.rows.count, session.textView.picker?.rows.count, "the picker's rows")
+        expect(view.holdsKeys)
+        view.isEditable = false
+        expect(session.textView.picker == nil && view.caretListWindow == nil && !view.holdsKeys)
+        view.isEditable = true
+        session.type(" @")
+        expect(view.caretListWindow != nil)
+        session.window.pressEscape()
+        expect(session.textView.picker == nil && view.caretListWindow == nil)
+        expectEqual(session.string, "@ @")
     },
 
     test("Escape closes only the picker, and that @ stays closed; a second Escape reaches the host, which ends editing") {

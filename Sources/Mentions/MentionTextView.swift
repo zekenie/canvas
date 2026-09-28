@@ -22,9 +22,10 @@ extension NSPasteboard.PasteboardType {
 ///   Its release is the view's too, never the canvas's behind it. Pills aren't links. The pointer over a live one hovers its target on the canvas; over one
 ///   that isn't live, its tooltip says why ("Deleted"). Its menu adds Go to and Remove Mention.
 /// - `@` typed where a word starts opens the picker (`MentionPicker`, shown in a child window that
-///   never takes the keyboard): what's typed after it is the query, the keys that move and pick
-///   come here first (`doCommand(by:)`), and a pick puts the pill in the query's place, then a
-///   space, as one undoable change.
+///   never takes the keyboard: every caret list's, `CaretListWindow`, the view's `caretListWindow`):
+///   what's typed after it is the query, the keys that move and pick come to it first (as they do
+///   to every `DetailTextView`'s list), and a pick puts the pill in the query's place, then a space,
+///   as one undoable change.
 /// - Copy writes the stored form (`.mentionText`) and the plain one ("@Label"); paste reads the
 ///   stored form first, then plain text, where a whole `@[label](shape:UUID)` becomes a pill.
 /// - Each pill shows its target as it's called now: the view observes its targets
@@ -34,9 +35,10 @@ extension NSPasteboard.PasteboardType {
 ///   what it last reported, reports it (`didChangeText`), in any window. A board's window tells the
 ///   text it changed after its undo too; the text is reported by then, so the host writes once.
 /// - It's a `DetailTextView`, so the panel's boxes take it (`MentionTextArea`): while its picker is
-///   open it holds keys (`holdsKeys`), so Return, ⌘↩ and Escape are the picker's, not the box's
-///   commit or the panel's exit, and a box shows it text from outside with `show(_:)`. On the
-///   canvas, where nothing of the panel's is set, it's the text view it always was.
+///   open it holds keys (`holdsKeys`, every caret list's), so Return, ⌘↩ and Escape are the
+///   picker's, not the box's commit or the panel's exit, and a box shows it text from outside with
+///   `show(_:)`. On the canvas, where nothing of the panel's is set, it's the text view it always
+///   was.
 @MainActor
 public final class MentionTextView<Scope: MentionScope>: DetailTextView {
     /// The shape the text is on: never offered in its picker.
@@ -52,9 +54,9 @@ public final class MentionTextView<Scope: MentionScope>: DetailTextView {
     /// The view's Objective-C face: notifications, menu items, tooltips.
     private var helper: MentionTextViewHelper?
 
-    /// The open picker, and its window.
+    /// The open picker, and the window its list shows in.
     public private(set) var picker: MentionPicker?
-    private var pickerWindow: MentionPickerWindow?
+    private var pickerWindow: CaretListWindow?
     /// The substitutions the picker turned off while it's open, to put back as they were.
     private var substitutions: Substitutions?
     /// The target the picker's highlight hovers, and the one the pointer hovers.
@@ -66,14 +68,11 @@ public final class MentionTextView<Scope: MentionScope>: DetailTextView {
     /// view's too, so none of them reaches the canvas behind it.
     private var tookPillPress = false
 
-    /// While the picker is open, its keys (Return and Tab pick, Escape closes) are the view's own:
-    /// in the panel, neither the box's commit nor the panel's exit.
-    public override var holdsKeys: Bool { picker != nil }
-
-    /// Made read-only (a lock landing, something else writing the text), it closes its picker.
-    public override var isEditable: Bool {
-        didSet { if !isEditable { closePicker() } }
-    }
+    /// The picker's window, while it's open: the list at the caret, whose keys (Return and Tab
+    /// pick, Escape closes) are the view's own, as every `DetailTextView`'s are, and which closes
+    /// as the keyboard or the window goes, or the view is made read-only (a lock landing, something
+    /// else writing the text).
+    public override var caretListWindow: CaretListWindow? { pickerWindow }
 
     /// What the host last heard the text is, to tell after an undo whether it changed.
     private var reported: ScopedMentionText<Scope>?
@@ -497,19 +496,29 @@ public final class MentionTextView<Scope: MentionScope>: DetailTextView {
         openPicker(at: at)
     }
 
+    /// Opens the picker for the `@` at `location`: its list in a window under the `@` (every caret
+    /// list's, which follows the `@` as the view moves, and closes the picker once the `@` is out of
+    /// view or the window stops being key), what VoiceOver hears counted (`MentionAccessibility`).
     private func openPicker(at location: Int) {
         guard let mentions, style != nil, isEditable else { return }
         let picker = MentionPicker(at: location, mentions: mentions, scope: Scope.self, owner: owner)
         self.picker = picker
         substitutions = Substitutions(of: self)
         Substitutions.off.apply(to: self)
-        let window = MentionPickerWindow(picker: picker) { [weak self] candidate in self?.pick(candidate) }
-        window.rowsView.setAccessibilityParent(self)
-        pickerWindow = window
+        pickerWindow = CaretListWindow(picker.list, accessibilityLabel: MentionStyle.pickerAccessibilityLabel, over: self,
+                                       anchor: { [weak self] in self?.pickerAnchor },
+                                       pick: { [weak self] row in self?.pick(row: row) },
+                                       close: { [weak self] in self?.closePicker() },
+                                       post: MentionAccessibility.post)
         picker.onChange = { [weak self] in self?.pickerDidChange() }
-        observeAncestors()
         readPicker(isEdit: true)
         if self.picker != nil { pickerDidChange() }
+    }
+
+    /// Where the picker goes: under its `@`, while it's in the text.
+    private var pickerAnchor: NSRange? {
+        guard let picker, let storage = textStorage, picker.location < storage.length else { return nil }
+        return NSRange(location: picker.location, length: 1)
     }
 
     /// Reads the picker's query again after a change (or a move of the caret), and closes it if
@@ -527,19 +536,14 @@ public final class MentionTextView<Scope: MentionScope>: DetailTextView {
         picker = nil
         substitutions?.apply(to: self)
         substitutions = nil
-        helper?.stopObservingAncestors()
-        if let pickerWindow {
-            MentionAccessibility.post(element: pickerWindow.rowsView, notification: .uiElementDestroyed)
-            pickerWindow.parent?.removeChildWindow(pickerWindow)
-            pickerWindow.orderOut(nil)
-        }
+        pickerWindow?.dismiss()
         pickerWindow = nil
         if let pickerHover { mentions?.endHover(pickerHover) }
         pickerHover = nil
     }
 
-    /// The picker's rows or highlight changed: the window shows them, the highlighted shape is
-    /// hovered on the canvas, and VoiceOver hears it.
+    /// The picker's rows or highlight changed: the highlighted shape is hovered on the canvas, and
+    /// the window shows them (VoiceOver hears it).
     private func pickerDidChange() {
         guard let picker, let pickerWindow else { return }
         let target = picker.highlightedCandidate?.id
@@ -548,9 +552,7 @@ public final class MentionTextView<Scope: MentionScope>: DetailTextView {
             pickerHover = target
             if let target { mentions?.hover(target) }
         }
-        placePicker()
-        pickerWindow.reload()
-        announce(picker)
+        pickerWindow.listDidChange()
     }
 
     /// Where the picker's window is, in screen points, while it's open: shown or not, it's placed.
@@ -559,30 +561,10 @@ public final class MentionTextView<Scope: MentionScope>: DetailTextView {
     /// Whether the picker's window is on screen: never while the text's window isn't.
     public var isPickerShown: Bool { pickerWindow?.isVisible ?? false }
 
-    /// Puts the picker's window under its `@` (the window keeps its size at any zoom: the `@`'s
-    /// rect is in screen points), shown if the text's window is. Closes it if its `@` has left
-    /// what's visible of the view.
-    private func placePicker() {
-        guard let picker, let pickerWindow, let window, let storage = textStorage, picker.location < storage.length else { return }
-        let anchor = firstRect(forCharacterRange: NSRange(location: picker.location, length: 1), actualRange: nil)
-        let inView = convert(window.convertFromScreen(anchor), from: nil)
-        guard visibleRect.intersects(inView.insetBy(dx: -1, dy: -1)) else { return closePicker() }
-        pickerWindow.place(below: anchor, on: (window.screen ?? NSScreen.main)?.visibleFrame)
-        if window.isVisible, !pickerWindow.isVisible { window.addChildWindow(pickerWindow, ordered: .above) }
-    }
-
-    /// Re-anchors the picker whenever a view it's in moves or is scaled (the canvas moves the
-    /// editing view on every pan and zoom), and closes it when the window stops being key.
-    private func observeAncestors() {
-        guard let helper else { return }
-        var ancestors: [NSView] = []
-        var view: NSView? = self
-        while let next = view {
-            ancestors.append(next)
-            view = next.superview
-        }
-        helper.observe(ancestors, window: window, moved: { [weak self] in self?.placePicker() },
-                       resignedKey: { [weak self] in self?.closePicker() })
+    /// Picks the shape of a row clicked in the picker's list.
+    private func pick(row index: Int) {
+        guard let candidate = picker?.rows[index].candidate else { return }
+        pick(candidate)
     }
 
     /// Picks a shape: the pill in the place of `@query`, then a space unless what follows is
@@ -601,47 +583,12 @@ public final class MentionTextView<Scope: MentionScope>: DetailTextView {
         }
     }
 
-    /// The keys that move through the picker and pick from it come here before the host's
-    /// delegate; with the picker closed, every command is the text view's.
-    public override func doCommand(by selector: Selector) {
-        guard let picker else { return super.doCommand(by: selector) }
-        let (taken, action) = picker.perform(selector)
-        guard taken else { return super.doCommand(by: selector) }
-        switch action {
-        case .pick: if let candidate = picker.highlightedCandidate { pick(candidate) }
-        case .close: closePicker()
-        default: break
-        }
-    }
-
-    /// ⌘., which the window sends up the responder chain as this command with no key, closes the
-    /// picker, as Escape does. With it closed, the command goes on up as though the view didn't
-    /// answer it (in the panel, the panel leaves; on the canvas, it's the canvas's Cancel, which
-    /// leaves editing as it is).
-    public override func cancelOperation(_ sender: Any?) {
-        if picker != nil { return closePicker() }
-        _ = nextResponder?.tryToPerform(#selector(NSResponder.cancelOperation(_:)), with: sender)
-    }
-
+    /// The keyboard leaving ends the pointer's hover (and closes the picker, as it closes every
+    /// caret list).
     public override func resignFirstResponder() -> Bool {
         let resigned = super.resignFirstResponder()
-        if resigned {
-            closePicker()
-            endPointerHover()
-        }
+        if resigned { endPointerHover() }
         return resigned
-    }
-
-    /// Says the highlighted row, or an empty state, to VoiceOver.
-    private func announce(_ picker: MentionPicker) {
-        guard let pickerWindow else { return }
-        let rows = pickerWindow.rowsView
-        MentionAccessibility.post(element: rows, notification: .selectedChildrenChanged)
-        guard let index = picker.highlighted ?? picker.rows.indices.first else { return }
-        MentionAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-            .announcement: MentionPickerRowsView.spoken(picker, row: index),
-            .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
     }
 
     // MARK: Windows and undo
@@ -649,10 +596,10 @@ public final class MentionTextView<Scope: MentionScope>: DetailTextView {
     /// Leaving its window, it takes its steps of undo with it, and only its own (its text's and
     /// its own actions): they'd change a text no one sees (the window's undo manager outlives an
     /// editing view), and write nothing back. A board's window forgets its text's undo as the text
-    /// loses the keyboard anyway; any other window keeps what its undo manager holds.
+    /// loses the keyboard anyway; any other window keeps what its undo manager holds. (Its picker
+    /// closes, as every caret list does.)
     public override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil {
-            closePicker()
             endPointerHover()
             if let undoManager {
                 if let textStorage { undoManager.removeAllActions(withTarget: textStorage) }
@@ -924,13 +871,11 @@ extension HostlessTextDelegate: NSTextViewDelegate {
 }
 
 /// What a mention text view needs of Objective-C, kept off the generic view: the notifications
-/// it observes (undo, its ancestors moving, its window resigning key), its menu items' actions,
-/// and its tooltips.
+/// it observes (undo), its menu items' actions, and its tooltips. (Its picker's window follows the
+/// view by itself.)
 @MainActor
 final class MentionTextViewHelper: NSObject, NSViewToolTipOwner {
     private var undone: ((UndoManager) -> Void)?
-    private var moved: (() -> Void)?
-    private var resignedKey: (() -> Void)?
     var toolTip: ((CGPoint) -> String?)?
 
     func observeUndo(_ changed: @escaping (UndoManager) -> Void) {
@@ -952,32 +897,6 @@ final class MentionTextViewHelper: NSObject, NSViewToolTipOwner {
         guard let manager = notification.object as? UndoManager else { return }
         undone?(manager)
     }
-
-    func observe(_ views: [NSView], window: NSWindow?, moved: @escaping () -> Void, resignedKey: @escaping () -> Void) {
-        stopObservingAncestors()
-        self.moved = moved
-        self.resignedKey = resignedKey
-        let center = NotificationCenter.default
-        for view in views {
-            center.addObserver(self, selector: #selector(viewDidMove(_:)), name: NSView.frameDidChangeNotification, object: view)
-            center.addObserver(self, selector: #selector(viewDidMove(_:)), name: NSView.boundsDidChangeNotification, object: view)
-        }
-        if let window {
-            center.addObserver(self, selector: #selector(windowDidResignKey(_:)), name: NSWindow.didResignKeyNotification, object: window)
-        }
-    }
-
-    func stopObservingAncestors() {
-        let center = NotificationCenter.default
-        center.removeObserver(self, name: NSView.frameDidChangeNotification, object: nil)
-        center.removeObserver(self, name: NSView.boundsDidChangeNotification, object: nil)
-        center.removeObserver(self, name: NSWindow.didResignKeyNotification, object: nil)
-        moved = nil
-        resignedKey = nil
-    }
-
-    @objc private func viewDidMove(_ notification: Notification) { moved?() }
-    @objc private func windowDidResignKey(_ notification: Notification) { resignedKey?() }
 
     /// A menu item that runs `action`.
     func item(_ title: String, _ action: @escaping () -> Void) -> NSMenuItem {
@@ -1001,8 +920,8 @@ private final class MenuAction: NSObject {
     init(_ run: @escaping () -> Void) { self.run = run }
 }
 
-/// What Mentions posts to VoiceOver, posted, and in debug builds counted, so a test can hold the
-/// picker to what it says.
+/// What Mentions posts to VoiceOver (its picker's list posts through it too), posted, and in debug
+/// builds counted, so a test can hold the picker to what it says.
 @MainActor
 public enum MentionAccessibility {
     #if DEBUG

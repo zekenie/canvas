@@ -3,6 +3,95 @@
 Infinite Canvas includes work modified from the projects below. Each is listed with its source, its
 license, and the attribution its authors ask for.
 
+## JSON Schema's meta-schemas
+
+- Source: https://github.com/json-schema-org/json-schema-spec (the 2020-12 meta-schemas, published
+  at https://json-schema.org/draft/2020-12/schema and https://json-schema.org/draft/2020-12/meta/)
+- License: BSD 3-Clause License (the text follows). The project is licensed under either the BSD
+  3-clause license or the Academic Free License v3.0; Infinite Canvas takes the BSD license.
+
+The meta-schema the schema card's editor completes against (`MetaSchema`,
+`Sources/Schemas/MetaSchema.swift`) is modified from JSON Schema's 2020-12 meta-schema and its
+vocabularies' meta-schemas (core, applicator, unevaluated, validation, meta-data, format-annotation
+and content). The main changes: they're flattened into one document, their `$dynamicRef`s made
+`$ref`s; the keywords are listed in the order completion offers them, each with a description; the
+type names, the formats and the content encodings are listed as values with descriptions, and media
+types and the dialect's URI as examples; and one annotation of the app's own, `x-canvas-when`, says
+which types a keyword matters for.
+
+```
+Copyright (c) 2022 JSON Schema Specification Authors
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+1. Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+## vscode-json-languageservice
+
+- Source: https://github.com/microsoft/vscode-json-languageservice (version 6.0.0-next.4)
+- License: MIT License (the text follows)
+
+`MetaSchema` is flattened as this project flattens the 2020-12 meta-schemas
+(`src/services/schemas/draft-2020-12-flat.ts`), from which it's modified. The completion engine
+(`JSONCompleter`, `Sources/Schemas/JSONCompleter.swift`) follows this project's completion
+(`src/services/jsonCompletion.ts`): the schemas a place is held to, the values offered there, what a
+key is written with, and where commas go. The caret's reading of half-typed JSON (`JSONCaret`,
+`Sources/Schemas/JSONCaret.swift`) recovers from what's typed wrong as jsonc-parser does
+(https://github.com/microsoft/node-jsonc-parser, `src/impl/parser.ts`, which this project reads JSON
+with; MIT License, Copyright (c) Microsoft, the same text as below). Both are written anew in
+Swift; no code is copied.
+
+```
+The MIT License (MIT)
+
+Copyright (c) Microsoft
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+The rest of its LICENSE.md is the license of the glob matching it's based on, which nothing here
+uses.
+
 ## reladraw
 
 - Source: https://github.com/reladraw/reladraw (version 0.9.0)

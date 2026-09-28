@@ -655,6 +655,13 @@ enum ICUPattern {
     }
 }
 
+extension SchemaValidator {
+    /// A schema's pattern (`pattern`, a `patternProperties` name), ECMA-262's dialect, compiled to
+    /// match as the validator matches it (`ICUPattern`); nil for one ICU can't read. For code that
+    /// reads a schema's patterns beside the validator: completion's `patternProperties`.
+    public static func regex(for pattern: String) -> NSRegularExpression? { ICUPattern.regex(pattern) }
+}
+
 // MARK: Compiling
 
 /// One schema (or subschema), its keywords read out once. Filled while compiling, then never
