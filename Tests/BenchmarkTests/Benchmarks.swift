@@ -629,18 +629,13 @@ extension Duration {
         }
     },
     test("a keystroke in the @ picker, the @ that opens it included, costs what's near and what matches, not the board") {
-        for size in sizes {
-            let document = generatedBoard(shapes: size)
-            let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
-            let editor = CanvasEditor(registry: registry, document: document, scheduler: ManualScheduler())
-            let mentions = try require(editor.mentions)
-            let owner = try require(document.shapes.first { $0.kind == StickyNote.kind }?.id)
-            // The @ that opens it: recent picks (none yet) and the shapes nearest the note.
+        /// The @ that opens the picker on `owner` (recent picks, none yet, and the shapes nearest the
+        /// note), then each character of queries that match by each tier, and one that matches
+        /// nothing (the typo pass, over the whole catalog): the @'s time, and the slowest.
+        @MainActor func keystrokes(_ mentions: MentionState, owner: ShapeID) -> (opening: Double, worst: (query: String, ms: Double)) {
             let opening = median(runs: 21) { _ = MentionPicker(at: 0, mentions: mentions, scope: AnyMentionable.self, owner: owner) }
             let picker = MentionPicker(at: 0, mentions: mentions, scope: AnyMentionable.self, owner: owner)
             expect(picker.rows.contains { $0.candidate != nil }, "the nearest shapes")
-            // Then each character of queries that match by each tier, and one that matches nothing
-            // (the typo pass, over the whole catalog).
             var worst = (query: "@", ms: opening)
             for query in ["t", "ta", "tas", "task", "task 11", "tk11", "tsak 11", "title 40", "zzzzq"] {
                 let typed = "@" + query as NSString, before = "@" + query.dropLast() as NSString
@@ -653,6 +648,21 @@ extension Duration {
             }
             _ = picker.read("@task 11", selection: NSRange(location: 8, length: 0), isEdit: true)
             expectEqual(picker.highlightedCandidate?.appearance.label, "Task 11")
+            return (opening, worst)
+        }
+        for size in sizes {
+            let document = generatedBoard(shapes: size)
+            let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+            let editor = CanvasEditor(registry: registry, document: document, scheduler: ManualScheduler())
+            let (opening, worst) = keystrokes(try require(editor.mentions), owner: try require(document.shapes.first { $0.kind == StickyNote.kind }?.id))
+
+            // The same shapes spread over two boards, typed inside the subboard: the catalog is the
+            // whole file's, so a keystroke there matches as many.
+            let file = generatedFile(root: size / 2, children: [size / 2])
+            let child = BoardID(owner: try require(subboards(on: file.root).first))
+            let nestedEditor = CanvasEditor(registry: registry, file: file, showing: child, scheduler: ManualScheduler())
+            let nested = keystrokes(try require(nestedEditor.mentions),
+                                    owner: try require(nestedEditor.document.shapes.first { $0.kind == StickyNote.kind }?.id))
 
             // A board of few mentionable shapes among many that aren't: the @ finds its few
             // nearby without gathering the board square after square.
@@ -664,11 +674,14 @@ extension Duration {
             }
             let sparsePicker = MentionPicker(at: 0, mentions: sparseMentions, scope: AnyMentionable.self, owner: sparse.owner)
             expectEqual(Set(sparsePicker.rows.compactMap(\.candidate?.id)), Set(sparse.others), "the other mentionable shapes, nearby")
-            report(String(format: "%6d shapes, the @ picker: the @ %6.3f ms, the slowest keystroke %6.3f ms (\"%@\"); the @ among 3 mentionable shapes %6.3f ms (budget %.0f)",
-                          size, opening, worst.ms, worst.query, sparseOpening, Budget.pickerKeystroke))
+            report(String(format: "%6d shapes, the @ picker: the @ %6.3f ms, the slowest keystroke %6.3f ms (\"%@\"); on two boards, inside the subboard, %6.3f and %6.3f (\"%@\"); the @ among 3 mentionable shapes %6.3f ms (budget %.0f)",
+                          size, opening, worst.ms, worst.query, nested.opening, nested.worst.ms, nested.worst.query, sparseOpening, Budget.pickerKeystroke))
             if holdsToBudgets {
                 expect(opening < Budget.pickerKeystroke, "the @ that opens the picker over \(size) shapes took \(opening) ms")
                 expect(worst.ms < Budget.pickerKeystroke, "a keystroke in the picker (\(worst.query)) over \(size) shapes took \(worst.ms) ms")
+                expect(nested.opening < Budget.pickerKeystroke, "the @ that opens the picker over \(size) shapes on two boards took \(nested.opening) ms")
+                expect(nested.worst.ms < Budget.pickerKeystroke,
+                       "a keystroke in the picker (\(nested.worst.query)) over \(size) shapes on two boards took \(nested.worst.ms) ms")
                 expect(sparseOpening < Budget.pickerKeystroke, "the @ among 3 mentionable shapes of \(size) took \(sparseOpening) ms")
             }
         }

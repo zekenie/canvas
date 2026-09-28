@@ -1424,7 +1424,8 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   `open` there if it opens (`canOpen`), as one step back, to the board and selection it was
   followed from, whatever boards it went through (the selection state runs both as one step,
   `asOneStep`, in which no selection change or board shown records a step of its own). A shape
-  that doesn't open is only gone to; nothing mid-gesture.
+  that doesn't open is only gone to; nothing mid-gesture, nor for a shape whose own board is shown
+  (a subboard's mention followed from inside it), which is gone into already.
 - `canOpen(_:)`, `open(_:)` and `openSelection()`: opening a shape, below.
 - `hoveredHandle`, `brush` (the marquee), `selectionBounds`, `isSelectable(_:)`, and the commands'
   `selectAll()`, `deleteSelection()` and `editSelection()` (editing alone, whatever opening would
@@ -3594,7 +3595,8 @@ only when its shape does:
 
 - **Its name** is `label`, else the shape's title (Titles' `registry.title(of:)`, named or
   derived), else `untitled`, else "Untitled" and the kind's name ("Untitled Task"), each on one
-  line, blank counting as none. A note that isn't titled is called by the first line of its text
+  line, blank counting as none. A shape called by that placeholder has no name its kind gives it,
+  so the `@` picker leaves it out until it has one; a mention of it shows it, live. A note that isn't titled is called by the first line of its text
   with words in it (`firstLine`), each mention there "@…" ("See @… first"): it names no other
   shape, live or as its mentions hold them. A mention holds its target's name as it was written,
   and an untitled note's name is its first line, so if its mentions' names were in it, two notes
@@ -3742,8 +3744,9 @@ follows undo and redo, during which nothing may):
   text with live names (`context.plainText(_:)`), and names `MentionRows.affected` as its
   `affected:`, so a rename remakes only the rows of the notes that mention the renamed shape.
 - **The catalog**, what the picker searches: every mentionable shape on every board of the file
-  the editor can show but those kept aside ([across boards](#mentions-across-boards)), read again
-  at the next query for the shapes a commit changed. `candidates(matching:in:for:)` lists, for an
+  the editor can show but those kept aside ([across boards](#mentions-across-boards)) and those
+  its kind gives no name (called by the "Untitled …" placeholder: there's no point picking one; a
+  mention of one stays, live), read again at the next query for the shapes a commit changed. `candidates(matching:in:for:)` lists, for an
   empty query, the recent picks (`didPick(_:)`) and the shapes nearest the text's shape on the
   board shown (looked for in squares around it, grown until one holds enough, or holds as many
   shapes as the board has in the catalog, when reading those costs less: a board with few
@@ -3753,10 +3756,11 @@ follows undo and redo, during which nothing may):
   word a prefix of a word, in order, 600, a substring 400, a subsequence (fzf-style: word starts,
   runs and the first character count, gaps cost) at most 300, and, for a query of 4 or more that
   found fewer than 8 above, one typo (a Damerau edit of a word's prefix) 100; then recent picks and
-  nearness (on the board shown) add to the best, a placeholder name loses some, and ties go to the
-  shorter name, then the shape in front, the board shown's before another's. Two linear passes over the catalog's folded names and a heap: a keystroke at
-  10,000 shapes, and the `@` that opens the picker among 10,000 of which 3 can be mentioned, are
-  held to 2 ms.
+  nearness (on the board shown) add to the best, and ties go to the shorter name, then the shape
+  in front, the board shown's before another's. Two linear passes over the catalog's folded names
+  and a heap: a keystroke at 10,000 shapes, on one board or two (typed inside the subboard, the
+  catalog the whole file's), and the `@` that opens the picker among 10,000 of which 3 can be
+  mentioned, are held to 2 ms.
 - **Going and hovering**: `follow(_:)` goes to a shape on the next turn of the scheduler
   (`editor.goTo`: editing ends, the shape is selected and brought into view, and ⌘[ comes back;
   going is no undo step, so Undo after it takes back the edit before it, selecting what was
@@ -5832,7 +5836,8 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   every shape, a hover and a drag frame (titles' pills, checklists' tallies, locks and mentions'
   pills in view), a hover on a note's port dot and a drag from it, a hover onto a title's pill and
   onto a mention's, reading the table of contents' rows after a drag event, an insert, a delete and
-  a restack, a keystroke in the `@` picker (the `@` that opens it too), a rename of a task mentioned
+  a restack, a keystroke in the `@` picker (the `@` that opens it too, and on a file of two boards),
+  a rename of a task mentioned
   100 times against one mentioned by none, a `canvas draw` of 20 notes each pushed along its row of
   the grid (150 ms, time the window doesn't draw), the minimap's first picture (a frame at a time)
   and a drag frame with it, ten subboards' previews filling in (the longest frame, and how many), and

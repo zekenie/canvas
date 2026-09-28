@@ -17,7 +17,6 @@ struct MentionCatalog {
         var count: Int
         /// Its label's length in characters, for ties.
         var labelLength: Int
-        var isPlaceholder: Bool
         /// Where it is among the recent picks, the latest 0; -1 if it isn't one.
         var recentRank: Int
     }
@@ -31,8 +30,6 @@ struct MentionCatalog {
     private var counts: [BoardID: Int] = [:]
     /// Keys in `keys` no entry uses any longer.
     private var unused = 0
-
-    var count: Int { entries.count }
 
     /// How many entries are on `board`.
     func count(on board: BoardID) -> Int { counts[board] ?? 0 }
@@ -58,7 +55,6 @@ struct MentionCatalog {
                 entries[slot].start = start
                 entries[slot].count = keys.count - start
             }
-            entries[slot].isPlaceholder = appearance.isPlaceholder
             entries[slot].recentRank = recentRank
             appearances[slot] = appearance
         } else {
@@ -67,7 +63,7 @@ struct MentionCatalog {
             slots[id] = entries.count
             counts[board, default: 0] += 1
             entries.append(Entry(id: id, board: board, start: start, count: keys.count - start, labelLength: length,
-                                 isPlaceholder: appearance.isPlaceholder, recentRank: recentRank))
+                                 recentRank: recentRank))
             appearances.append(appearance)
         }
         packIfWasteful()

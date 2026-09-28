@@ -44,7 +44,8 @@ public final class MentionState {
     @ObservationIgnored private var observersByTarget: [ShapeID: Set<Int>] = [:]
     @ObservationIgnored private var nextObservation = 0
 
-    /// Every mentionable shape on every board the editor can show, ready to match.
+    /// Every mentionable shape on every board the editor can show that its kind names (not the
+    /// "Untitled …" placeholder), ready to match.
     @ObservationIgnored private var catalog = MentionCatalog()
     /// Those a commit changed since, on any board, to read again at the next query.
     @ObservationIgnored private var stale: Set<ShapeID> = []
@@ -206,7 +207,8 @@ public final class MentionState {
 
     /// What the `@` picker lists for `query` in text of `scope`, on `owner` (the text's shape, never
     /// listed): every mentionable shape the scope admits on any board of the file the editor can
-    /// show, but those kept aside. An empty query lists recent picks, then the shapes nearest the
+    /// show, but those kept aside and those its kind gives no name (called by the "Untitled …"
+    /// placeholder: a mention of one stays, but there's no point picking it). An empty query lists recent picks, then the shapes nearest the
     /// owner on the board shown and, while there's room, the shapes whose boards it's inside, the
     /// board shown's own first; any other, one ranked list of the best matches (`MentionMatcher`'s
     /// tiers, then `MentionRanking`'s adjustments, nearness on the board shown among them; ties to
@@ -267,7 +269,6 @@ public final class MentionState {
         let entries = catalog.entries
         for i in found.indices {
             let entry = entries[found[i].slot]
-            if entry.isPlaceholder { found[i].score -= MentionRanking.placeholderPenalty }
             if entry.recentRank >= 0 {
                 found[i].score += MentionRanking.recentBonus * (MentionRanking.recentKept - entry.recentRank) / MentionRanking.recentKept
             }
@@ -439,22 +440,20 @@ public final class MentionState {
     // MARK: The catalog
 
     /// Reads the catalog afresh: every mentionable shape on every board the editor can show, which
-    /// are the root and, from it down, the boards of the shapes of kinds that own boards and aren't
-    /// kept aside (`canShow`'s), each once.
+    /// are the root and, from it down, the boards whose owners own showable boards
+    /// (`registry.ownsShowableBoard`, what `canShow` asks of each owner on a path), each once.
     private func readCatalog() {
         catalog = MentionCatalog()
         stale = []
-        let file = editor.file, owning = registry.boardOwningKinds
+        let children = editor.file.children
         var boards: [BoardID] = [.root], met: Set<BoardID> = [.root], next = 0
         while next < boards.count {
             let board = boards[next]
             next += 1
-            for record in file[board].shapes {
+            for record in editor.contents(of: board).shapes {
                 readEntry(record, on: board)
                 let owned = BoardID(owner: record.id)
-                if owning.contains(record.kind), !record.isOpaque, file.children[record.id] != nil, met.insert(owned).inserted {
-                    boards.append(owned)
-                }
+                if children[record.id] != nil, registry.ownsShowableBoard(record), met.insert(owned).inserted { boards.append(owned) }
             }
         }
     }
@@ -476,9 +475,10 @@ public final class MentionState {
         stale = []
     }
 
-    /// A shape's catalog entry, read again: out of the catalog if it can't be mentioned.
+    /// A shape's catalog entry, read again: out of the catalog if it can't be mentioned, or its kind
+    /// gives it no name.
     private func readEntry(_ record: AnyShapeRecord, on board: BoardID) {
-        guard let appearance = appearance(of: record) else {
+        guard let appearance = appearance(of: record), !appearance.isPlaceholder else {
             catalog.remove(record.id)
             return
         }
