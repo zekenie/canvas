@@ -132,7 +132,7 @@ import TestKit
     },
     test("at 1,000 shapes and 1,000 bound arrows, hovering stays fast: finding a shape by id is constant time") {
         var shapes: [AnyShapeRecord] = []
-        let boxes = (0..<1000).map { i in
+        let boxes = (0..<1000).map { (i: Int) in
             ShapeRecord(Box(CGRect(x: CGFloat(i % 40) * 60, y: CGFloat(i / 40) * 60, width: 40, height: 40)))
         }
         shapes += boxes.map(AnyShapeRecord.init)
@@ -145,12 +145,12 @@ import TestKit
         }
         let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
         let h = EditorHarness { CanvasEditor(registry: registry, document: CanvasDocument(shapes: shapes), scheduler: $0) }
-        let clock = ContinuousClock()
-        let elapsed = clock.measure {
+        let elapsed = threadCPUTime {
             for i in 0..<10 { h.move(to: CGPoint(x: 20 + CGFloat(i) * 60, y: 20)) }
         }
-        // About 12 ms in a debug build; looking shapes up by scanning made it about 225 ms.
-        expect(elapsed / 10 < .milliseconds(80), "\(elapsed / 10) per move")
+        // About 2 ms of this thread's time a move in a debug build (what else runs doesn't count);
+        // looking shapes up by scanning made a move about 225 ms.
+        expect(elapsed / 10 < .milliseconds(25), "\(elapsed / 10) per move")
     },
     test("the hit margin is 3 view points beyond the stroke, at any zoom") {
         for zoom: CGFloat in [1, 4] {

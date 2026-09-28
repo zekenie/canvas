@@ -1,8 +1,9 @@
 #!/bin/zsh
 # Builds the module graph declared in Package.swift with swiftc directly (SwiftPM is broken on
-# this machine). Every module becomes a static library plus a .swiftmodule, compiled in
-# dependency order with only its own dependency closure on the include path. Every mode first
-# audits Package.swift and the sources, and stops if the real graph differs from the declared one.
+# this machine). Every module becomes a static library plus a .swiftmodule, compiled with only its
+# own dependency closure on the include path, as many at once as there are cores (BUILD_JOBS), and
+# only as far as a change reaches. Every mode first audits Package.swift and the sources, and stops
+# if the real graph differs from the declared one.
 #
 #   ./build.sh              build build/InfiniteCanvas.app (release), with the command line in it
 #                           (build/canvas links to it)
@@ -57,6 +58,10 @@ pick_sdk() {
     done
     rm -rf -- "${tmp:?}"; die "no installed SDK works with $(swiftc --version 2>&1 | head -1); set SDKROOT"
 }
+
+# Package.swift as it is before it's read: an audit's pass is kept by this, so an edit saved while
+# this script runs is audited the next time.
+MANIFEST_READ=$(stat -f '%Fm %z %N' -- Package.swift)
 
 # --- 1. Read the manifest's target table --------------------------------------------------------
 typeset -a NAMES
@@ -199,137 +204,85 @@ check_manifest() {
 check_manifest
 
 # --- 5. Audit the sources against the table ------------------------------------------------------
+# What the checks read of each module (its imports, and its code without comments) is kept in
+# build/audit, and read again only for a module whose sources changed, or when this script or the
+# compiler did. A pass is kept too, by every input's name, size and mtime, so auditing what already
+# passed costs one stat.
 AUDIT=$(mktemp -d -t build-audit)
-trap 'rm -rf -- "$AUDIT"' EXIT
-typeset -aU problems=()     # unique: two checks may report the same line
-
-# Each module's imports, as the compiler parses them: a grep misses `import A; import B`,
-# `@_spi(S) import B`, `import /* x */ B`, an import split over two lines, backticks... This is
-# parse-only (no SDK, no -I), so it's quick, and the modules run in parallel.
-typeset -A PARSING
-for name in $NAMES; do
-    swiftc -emit-imported-modules $DIR[$name]/**/*.swift(N) -o $AUDIT/$name.imports 2> $AUDIT/$name.errors &
-    PARSING+=($name $!)
-done
-typeset -a unparsed=()
-for name in $NAMES; do wait $PARSING[$name] || unparsed+=$name; done
-(( ${#unparsed} )) && die "${(j:, :)unparsed} doesn't parse:\n$(cat $AUDIT/${^unparsed}.errors)"
-
-# Every source line with its comments removed, as `file:line:code`. The checks below read this,
-# so a comment can neither trip them nor satisfy them. The same pass lists imports inside #if.
-SOURCES=(); for name in $NAMES; do SOURCES+=($DIR[$name]/**/*.swift(N)); done
-CODE=$AUDIT/code
-awk -v conditional=$AUDIT/conditional '
-    FNR == 1 { nested = 0; depth = 0 }
-    {
-        code = ""; bare = ""; quoted = 0          # bare: code without string contents
-        for (i = 1; i <= length($0); i++) {
-            c = substr($0, i, 1); two = substr($0, i, 2)
-            if (nested) {                         # inside /* */, which nests in Swift
-                if (two == "*/") { nested--; i++ } else if (two == "/*") { nested++; i++ }
-                continue
-            }
-            if (quoted) {
-                code = code c
-                if (c == "\\") { i++; code = code substr($0, i, 1) } else if (c == "\"") quoted = 0
-                continue
-            }
-            if (two == "//") break
-            if (two == "/*") { nested = 1; i++; continue }
-            if (c == "\"") quoted = 1
-            code = code c; bare = bare c
-        }
-        print FILENAME ":" FNR ":" code
-        if (bare ~ /^[ \t]*#if/) depth++
-        else if (bare ~ /^[ \t]*#endif/) depth--
-        else if (depth > 0 && bare ~ /(^|[^A-Za-z0-9_])import([^A-Za-z0-9_]|$)/) print FILENAME ":" FNR ":" $0 > conditional
-    }' $SOURCES > $CODE
-# Prints `file:line` of a `file:line:code` line.
-at() { print -r -- "${1%%:*}:${${1#*:}%%:*}" }
-# The lines of $CODE that match an extended regex.
-matching() { grep -E -- $1 $CODE || true }
-
-# The compiler's parse has no -I and no -D, so every import must be unconditional, and nothing
-# may ask whether a project module is on the include path.
-[[ -f $AUDIT/conditional ]] && for hit in ${(f)"$(<$AUDIT/conditional)"}; do
-    problems+="$hit  <- an import inside #if; imports must not depend on the build"
-done
-for hit in ${(f)"$(matching "canImport\([[:space:]]*(${(j:|:)NAMES})([^A-Za-z0-9_]|\$)")"}; do
-    problems+="$hit  <- canImport of a project module; depend on it in Package.swift instead"
-done
-for hit in ${(f)"$(matching '@(_exported|_implementationOnly|testable)([^A-Za-z0-9_]|$)')"}; do
-    problems+="$hit  <- this attribute hides or bends a dependency edge; use a plain import"
-done
-
-# Imports must be exactly the declared dependencies: none missing, none extra.
-import_site() {  # "file:line: " of module $1's import of $2 (or of a line that starts with $2)
-    local hits=(${(f)"$(matching "^$DIR[$1]/[^:]*:[0-9]+:((.*[^A-Za-z0-9_])?import([^A-Za-z0-9_].*)?[^A-Za-z0-9_]|[[:space:]\`]*)$2([^A-Za-z0-9_]|\$)")"})
-    (( ${#hits} )) || return 0
-    print -rn -- "$(at $hits[1]): "
+# However this script ends (an error, ^C, a TERM), what it started stops with it, compilers too, so
+# nothing goes on writing into build/ after it. (zsh runs the EXIT trap on a signal only if the
+# signal is trapped too.)
+typeset -A READING RUNNING  # the audit's reads, and the build's jobs, running: their processes
+stop_tree() {  # a process and every process under it
+    local child
+    for child in ${(f)"$(pgrep -P $1)"}; do [[ -n $child ]] && stop_tree $child; done
+    kill -TERM $1
 }
-for name in $ORDER; do
-    typeset -aU used=()
-    for imported in ${(f)"$(<$AUDIT/$name.imports)"}; do
-        (( ${+DEPS[$imported]} )) || continue                      # a system module
-        used+=$imported
-        (( ${${=DEPS[$name]}[(Ie)$imported]} )) ||
-            problems+="$(import_site $name $imported)$name imports $imported, but Package.swift doesn't list it as a dependency of $name"
-    done
-    for dep in ${=DEPS[$name]}; do
-        (( ${used[(Ie)$dep]} )) || problems+="$name lists $dep in Package.swift but never imports it"
-    done
+stop_all() {
+    setopt local_options no_err_exit no_unset
+    local pid
+    for pid in ${(v)READING} ${(v)RUNNING}; do stop_tree $pid; done 2> /dev/null
+    rm -rf -- "$AUDIT"
+}
+trap stop_all EXIT
+trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
+AUDITED=build/audit
+COMPILER=(${(f)"$(swiftc --version 2>&1)"})
+SOURCES=(); for name in $NAMES; do SOURCES+=($DIR[$name]/**/*.swift(N)); done
+READ_BY="$COMPILER[1]"$'\n'"$(stat -f '%Fm %z %N' -- $SELF)"
+typeset -A READS            # each module's sources, as stat prints them
+for line in ${(f)"$(stat -f '%Fm %z %N' -- $SOURCES)"}; do
+    file=${line#* * }
+    READS[${${file#*/}%%/*}]+=$'\n'$line
 done
+PASSED="$READ_BY"$'\n'"$MANIFEST_READ"
+for name in $NAMES; do PASSED+=$'\n'"$name$READS[$name]"; done
 
-SHADOWING="${(j:|:)NAMES}|${(j:|:)RESERVED_TYPE_NAMES}"
-for hit in ${(f)"$(matching "^[^:]+:[0-9]+:[[:space:]]*(@[A-Za-z]+[[:space:]]+)*(public|open)[[:space:]]+(final[[:space:]]+)?(struct|class|enum|protocol|actor|typealias)[[:space:]]+($SHADOWING)([^A-Za-z0-9_]|\$)")"}; do
-    [[ $hit =~ "(struct|class|enum|protocol|actor|typealias)[[:space:]]+($SHADOWING)" ]] || continue
-    [[ $match[2] == Task ]] && what="Swift's Task" || what="the module $match[2]"
-    problems+="$(at $hit): a public type named $match[2] shadows $what"
-done
-
-# Ids: a module may write another module's ShapeKind, PluginID, ToolID, PropertyKey or ChannelID
-# (Ports') as a string only if it depends on that module. The graph already keeps a module from
-# naming another's types; this keeps it from reaching that module's shapes, tools, plugins, added
-# properties or channels by string instead. A module owns the ids its non-test code declares: as a
-# static member (`static let kind: ShapeKind = "ellipse"`, `static let arrow: ToolID = "arrow"`,
-# `static let key: PropertyKey = "checklist"`, `static let id: ChannelID = "note-link"`) or as a
-# plugin's `id` (`var id: PluginID { "ellipses" }`). Test fixtures' ids
-# ("box", "card") are ordinary words, so they own nothing. Any other string literal is a use,
-# except an SF Symbol or asset name (the argument of systemImage:, systemName:, systemSymbolName:
-# or named:), which only looks like one, and a kind's own property's name (`Property("title", ...)`),
-# which is only that kind's; nor is a JSON member named by one of JSON Schema's keywords, which ids
-# may be too (Titles' `title`): a subscript's key (`json["title"]`), or a key before a colon where
-# a member's name can start (`["title": ...]`, `, "title": ...`, `"title" : ...` beginning a line
-# of JSON text), but never in a `case`'s patterns or its `where` (on its line, or the lines a
-# pattern list or a `where` goes on to) or a ternary's (after its `?`, on its line or the next).
-# Any other member's name is a use: a module can't read another's property out of a shape's JSON
-# (`json["locked"]`) without depending on it.
-ID_DECL='((let|var)[[:space:]]+id|static[[:space:]]+(let|var)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*)[[:space:]]*(:[[:space:]]*(ShapeKind|PluginID|ToolID|PropertyKey|ChannelID)[[:space:]]*(=|\{)|=[[:space:]]*(ShapeKind|PluginID|ToolID|PropertyKey|ChannelID)\((rawValue:)?)[[:space:]]*"[^"\\]+"'
-module_of() { print -r -- ${${1#*/}%%/*} }       # Sources/Canvas/Model/Identity.swift:3:... -> Canvas
-typeset -A ID_OWNERS
-for hit in ${(f)"$(matching $ID_DECL)"}; do
-    owner=$(module_of $hit)
-    [[ $LAYER[$owner] == test* ]] && continue
-    rest=${hit#*:*:}
-    while [[ $rest =~ $ID_DECL ]]; do
-        id=${${MATCH%\"}##*\"}
-        ID_OWNERS[$id]+=" $owner"
-        rest=${rest[MEND+1,-1]}
-    done
-done
 # JSON Schema's keywords (draft 2020-12, less those that start with `$`), which schemas write as members'
 # names wherever they're built or read.
 SCHEMA_KEYWORDS='(prefixItems|items|contains|additionalProperties|properties|patternProperties|dependentSchemas|propertyNames|if|then|else|allOf|anyOf|oneOf|not|unevaluatedItems|unevaluatedProperties|type|const|enum|multipleOf|maximum|exclusiveMaximum|minimum|exclusiveMinimum|maxLength|minLength|pattern|maxItems|minItems|uniqueItems|maxContains|minContains|maxProperties|minProperties|required|dependentRequired|title|description|default|deprecated|readOnly|writeOnly|examples|format|contentEncoding|contentMediaType|contentSchema)'
-if (( ${#ID_OWNERS} )); then
-    print -rl -- \"${(k)^ID_OWNERS}\" > $AUDIT/ids
-    # Not uses: symbols' and a kind's own properties' names. Then, for JSON members named by a schema
-    # keyword, the colons that can't follow a member's name become semicolons: all of a `case`'s,
-    # on its line and on the lines its pattern list (ending in a comma) or `where` goes on to, and
-    # those of a line after one ending in a ternary's `?`; and a ternary's on its own line. Last, a
-    # subscript's key, and a key before a colon where a member's name can start: the start of a
-    # line or of a raw string's JSON (`#"`), or after a `[`, a `{` or a comma.
+
+# Every source line of the files given with its comments removed, as `file:line:code`. The checks
+# below read this, so a comment can neither trip them nor satisfy them. The same pass lists imports
+# inside #if, in the file $1.
+strip_comments() {
+    awk -v conditional=$1 '
+        FNR == 1 { nested = 0; depth = 0 }
+        {
+            code = ""; bare = ""; quoted = 0          # bare: code without string contents
+            for (i = 1; i <= length($0); i++) {
+                c = substr($0, i, 1); two = substr($0, i, 2)
+                if (nested) {                         # inside /* */, which nests in Swift
+                    if (two == "*/") { nested--; i++ } else if (two == "/*") { nested++; i++ }
+                    continue
+                }
+                if (quoted) {
+                    code = code c
+                    if (c == "\\") { i++; code = code substr($0, i, 1) } else if (c == "\"") quoted = 0
+                    continue
+                }
+                if (two == "//") break
+                if (two == "/*") { nested = 1; i++; continue }
+                if (c == "\"") quoted = 1
+                code = code c; bare = bare c
+            }
+            print FILENAME ":" FNR ":" code
+            if (bare ~ /^[ \t]*#if/) depth++
+            else if (bare ~ /^[ \t]*#endif/) depth--
+            else if (depth > 0 && bare ~ /(^|[^A-Za-z0-9_])import([^A-Za-z0-9_]|$)/) print FILENAME ":" FNR ":" $0 > conditional
+        }' "${@:2}"
+}
+
+# Where the id check looks for uses (see Ids, below), from `file:line:code` lines on standard input.
+# Not uses: symbols' and a kind's own properties' names. Then, for JSON members named by a schema
+# keyword, the colons that can't follow a member's name become semicolons: all of a `case`'s, on its
+# line and on the lines its pattern list (ending in a comma) or `where` goes on to, and those of a
+# line after one ending in a ternary's `?`; and a ternary's on its own line. Last, a subscript's key,
+# and a key before a colon where a member's name can start: the start of a line or of a raw string's
+# JSON (`#"`), or after a `[`, a `{` or a comma.
+id_uses() {
     sed -E -e 's/(^|[^A-Za-z0-9_])(systemImage|systemName|systemSymbolName|named):[[:space:]]*"[^"]*"/\1\2: ""/g' \
-           -e 's/(^|[^A-Za-z0-9_])Property\([[:space:]]*"[^"]*"/\1Property(""/g' $CODE |
+           -e 's/(^|[^A-Za-z0-9_])Property\([[:space:]]*"[^"]*"/\1Property(""/g' |
     awk '{
         split($0, part, ":"); prefix = part[1] ":" part[2] ":"; code = substr($0, length(prefix) + 1)
         line = code; sub(/^[ \t]+/, "", line); sub(/[ \t]+$/, "", line)
@@ -342,27 +295,141 @@ if (( ${#ID_OWNERS} )); then
     }' |
     sed -E -e 's/(\?[[:space:]]*"[^"]*"[[:space:]]*):/\1;/g' \
            -e "s/([]A-Za-z0-9_)?!])\\[\"$SCHEMA_KEYWORDS\"\\]/\\1[\"\"]/g" \
-           -e "s/(^[^:]*:[0-9]+:[[:space:]]*|[[{,][[:space:]]*|#\")\"$SCHEMA_KEYWORDS\"[[:space:]]*:/\\1\"\":/g" > $AUDIT/uses
-    for hit in ${(f)"$(grep -F -f $AUDIT/ids $AUDIT/uses || true)"}; do
-        user=$(module_of $hit)
-        for id in ${(k)ID_OWNERS}; do
-            [[ ${hit#*:*:} == *\"$id\"* ]] || continue
-            for owner in ${=ID_OWNERS[$id]}; do
-                [[ $owner == $user ]] || (( ${${=CLOSURE[$user]}[(Ie)$owner]} )) ||
-                    problems+="$(at $hit): \"$id\" is $owner's id, but $user doesn't depend on $owner"
-            done
+           -e "s/(^[^:]*:[0-9]+:[[:space:]]*|[[{,][[:space:]]*|#\")\"$SCHEMA_KEYWORDS\"[[:space:]]*:/\\1\"\":/g"
+}
+
+# What the checks read of module $1, into build/audit/modules/$1.*: its imports, as the compiler
+# parses them (a grep misses `import A; import B`, `@_spi(S) import B`, `import /* x */ B`, an import
+# split over two lines, backticks...; this is parse-only, no SDK, no -I, so it's quick), its code
+# without comments, the imports inside #if, and where the id check looks for uses.
+read_module() {
+    local name=$1 read=$AUDITED/modules/$1 srcs=($DIR[$1]/**/*.swift(N))
+    rm -f -- $read.*(N)
+    swiftc -emit-imported-modules $srcs -o $read.imports 2> $read.errors || return 1
+    strip_comments $read.conditional $srcs > $read.code || return 1
+    id_uses < $read.code > $read.uses || return 1
+    print -r -- "$READ_BY$READS[$name]" > $read.read
+}
+
+# Prints `file:line` of a `file:line:code` line.
+at() { print -r -- "${1%%:*}:${${1#*:}%%:*}" }
+# The lines of $CODE that match an extended regex.
+matching() { grep -E -- $1 $CODE || true }
+
+audit_sources() {
+    typeset -aU problems=()     # unique: two checks may report the same line
+
+    # Read the modules that changed since they were last read, all at once.
+    mkdir -p $AUDITED/modules
+    for name in $NAMES; do
+        [[ -f $AUDITED/modules/$name.read && "$(<$AUDITED/modules/$name.read)" == "$READ_BY$READS[$name]" ]] && continue
+        read_module $name &
+        READING[$name]="$!"
+    done
+    typeset -a unparsed=()
+    for name in ${(k)READING}; do wait $READING[$name] || unparsed+=$name; done
+    READING=(); unparsed=(${NAMES:*unparsed})
+    (( ${#unparsed} )) && die "${(j:, :)unparsed} doesn't parse:\n$(cat $AUDITED/modules/${^unparsed}.errors)"
+    CODE=$AUDIT/code
+    cat -- $AUDITED/modules/${^NAMES}.code > $CODE
+
+    # The compiler's parse has no -I and no -D, so every import must be unconditional, and nothing
+    # may ask whether a project module is on the include path.
+    for hit in ${(f)"$(cat -- $AUDITED/modules/${^NAMES}.conditional(N) /dev/null)"}; do
+        problems+="$hit  <- an import inside #if; imports must not depend on the build"
+    done
+    for hit in ${(f)"$(matching "canImport\([[:space:]]*(${(j:|:)NAMES})([^A-Za-z0-9_]|\$)")"}; do
+        problems+="$hit  <- canImport of a project module; depend on it in Package.swift instead"
+    done
+    for hit in ${(f)"$(matching '@(_exported|_implementationOnly|testable)([^A-Za-z0-9_]|$)')"}; do
+        problems+="$hit  <- this attribute hides or bends a dependency edge; use a plain import"
+    done
+
+    # Imports must be exactly the declared dependencies: none missing, none extra.
+    import_site() {  # "file:line: " of module $1's import of $2 (or of a line that starts with $2)
+        local hits=(${(f)"$(matching "^$DIR[$1]/[^:]*:[0-9]+:((.*[^A-Za-z0-9_])?import([^A-Za-z0-9_].*)?[^A-Za-z0-9_]|[[:space:]\`]*)$2([^A-Za-z0-9_]|\$)")"})
+        (( ${#hits} )) || return 0
+        print -rn -- "$(at $hits[1]): "
+    }
+    for name in $ORDER; do
+        typeset -aU used=()
+        for imported in ${(f)"$(<$AUDITED/modules/$name.imports)"}; do
+            (( ${+DEPS[$imported]} )) || continue                      # a system module
+            used+=$imported
+            (( ${${=DEPS[$name]}[(Ie)$imported]} )) ||
+                problems+="$(import_site $name $imported)$name imports $imported, but Package.swift doesn't list it as a dependency of $name"
+        done
+        for dep in ${=DEPS[$name]}; do
+            (( ${used[(Ie)$dep]} )) || problems+="$name lists $dep in Package.swift but never imports it"
         done
     done
-fi
-# The core's host API (what CanvasView calls: input, cursor, drawing) is `@_spi(Host)`. Only the
-# hosting view and tests may `@_spi(Host) import` it; foundation modules declare it. No plugin may
-# use @_spi at all, so the host API stays out of every plugin's reach.
-for hit in ${(f)"$(matching '@_spi[[:space:]]*\(')"}; do
-    user=$(module_of $hit)
-    [[ $LAYER[$user] == (foundation|ui|testsupport|test) ]] ||
-        problems+="$hit  <- only the ui, testsupport and test layers may import SPI (the core's host API)"
-done
-(( ${#problems} )) && { print -u2 -l -- $problems; die "audit failed (${#problems} problems)" }
+
+    SHADOWING="${(j:|:)NAMES}|${(j:|:)RESERVED_TYPE_NAMES}"
+    for hit in ${(f)"$(matching "^[^:]+:[0-9]+:[[:space:]]*(@[A-Za-z]+[[:space:]]+)*(public|open)[[:space:]]+(final[[:space:]]+)?(struct|class|enum|protocol|actor|typealias)[[:space:]]+($SHADOWING)([^A-Za-z0-9_]|\$)")"}; do
+        [[ $hit =~ "(struct|class|enum|protocol|actor|typealias)[[:space:]]+($SHADOWING)" ]] || continue
+        [[ $match[2] == Task ]] && what="Swift's Task" || what="the module $match[2]"
+        problems+="$(at $hit): a public type named $match[2] shadows $what"
+    done
+
+    # Ids: a module may write another module's ShapeKind, PluginID, ToolID, PropertyKey or ChannelID
+    # (Ports') as a string only if it depends on that module. The graph already keeps a module from
+    # naming another's types; this keeps it from reaching that module's shapes, tools, plugins, added
+    # properties or channels by string instead. A module owns the ids its non-test code declares: as a
+    # static member (`static let kind: ShapeKind = "ellipse"`, `static let arrow: ToolID = "arrow"`,
+    # `static let key: PropertyKey = "checklist"`, `static let id: ChannelID = "note-link"`) or as a
+    # plugin's `id` (`var id: PluginID { "ellipses" }`). Test fixtures' ids
+    # ("box", "card") are ordinary words, so they own nothing. Any other string literal is a use,
+    # except an SF Symbol or asset name (the argument of systemImage:, systemName:, systemSymbolName:
+    # or named:), which only looks like one, and a kind's own property's name (`Property("title", ...)`),
+    # which is only that kind's; nor is a JSON member named by one of JSON Schema's keywords, which ids
+    # may be too (Titles' `title`): a subscript's key (`json["title"]`), or a key before a colon where
+    # a member's name can start (`["title": ...]`, `, "title": ...`, `"title" : ...` beginning a line
+    # of JSON text), but never in a `case`'s patterns or its `where` (on its line, or the lines a
+    # pattern list or a `where` goes on to) or a ternary's (after its `?`, on its line or the next).
+    # Any other member's name is a use: a module can't read another's property out of a shape's JSON
+    # (`json["locked"]`) without depending on it. (`id_uses`, above, finds where uses can be.)
+    ID_DECL='((let|var)[[:space:]]+id|static[[:space:]]+(let|var)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*)[[:space:]]*(:[[:space:]]*(ShapeKind|PluginID|ToolID|PropertyKey|ChannelID)[[:space:]]*(=|\{)|=[[:space:]]*(ShapeKind|PluginID|ToolID|PropertyKey|ChannelID)\((rawValue:)?)[[:space:]]*"[^"\\]+"'
+    typeset -A ID_OWNERS
+    for hit in ${(f)"$(matching $ID_DECL)"}; do
+        owner=${${hit#*/}%%/*}                  # Sources/Canvas/Model/Identity.swift:3:... -> Canvas
+        [[ $LAYER[$owner] == test* ]] && continue
+        rest=${hit#*:*:}
+        while [[ $rest =~ $ID_DECL ]]; do
+            id=${${MATCH%\"}##*\"}
+            ID_OWNERS[$id]+=" $owner"
+            rest=${rest[MEND+1,-1]}
+        done
+    done
+    if (( ${#ID_OWNERS} )); then
+        print -rl -- \"${(k)^ID_OWNERS}\" > $AUDIT/ids
+        for hit in ${(f)"$(cat -- $AUDITED/modules/${^NAMES}.uses | grep -F -f $AUDIT/ids || true)"}; do
+            user=${${hit#*/}%%/*}
+            for id in ${(k)ID_OWNERS}; do
+                [[ ${hit#*:*:} == *\"$id\"* ]] || continue
+                for owner in ${=ID_OWNERS[$id]}; do
+                    [[ $owner == $user ]] || (( ${${=CLOSURE[$user]}[(Ie)$owner]} )) ||
+                        problems+="$(at $hit): \"$id\" is $owner's id, but $user doesn't depend on $owner"
+                done
+            done
+        done
+    fi
+    # The core's host API (what CanvasView calls: input, cursor, drawing) is `@_spi(Host)`. Only the
+    # hosting view and tests may `@_spi(Host) import` it; foundation modules declare it. No plugin may
+    # use @_spi at all, so the host API stays out of every plugin's reach.
+    for hit in ${(f)"$(matching '@_spi[[:space:]]*\(')"}; do
+        user=${${hit#*/}%%/*}
+        [[ $LAYER[$user] == (foundation|ui|testsupport|test) ]] ||
+            problems+="$hit  <- only the ui, testsupport and test layers may import SPI (the core's host API)"
+    done
+    (( ${#problems} )) && { print -u2 -l -- $problems; die "audit failed (${#problems} problems)" }
+    print -r -- "$PASSED" > $AUDITED/passed
+}
+# One audit at a time reads and writes build/audit; builds of other configurations can run beside it.
+zmodload zsh/system
+mkdir -p $AUDITED; : >> $AUDITED/.lock
+zsystem flock -f AUDIT_LOCK $AUDITED/.lock
+[[ -f $AUDITED/passed && "$(<$AUDITED/passed)" == "$PASSED" ]] || audit_sources
+zsystem flock -u $AUDIT_LOCK
 
 # --- 6. Read-only modes ---------------------------------------------------------------------------
 MODE=${1:-app}
@@ -393,14 +460,16 @@ SDK=$(pick_sdk)
 ARCH=$(uname -m)
 CONFIG=release; [[ $MODE == (tests|api) ]] && CONFIG=debug
 OUT=build/$CONFIG
+: >> build/.$CONFIG.lock; zsystem flock build/.$CONFIG.lock    # one build of a configuration at a time
 SWIFTC=(swiftc -sdk $SDK -target $ARCH-apple-macosx14.0 -swift-version 6 -wmo -warnings-as-errors
         -enable-upcoming-feature MemberImportVisibility)
 [[ $CONFIG == release ]] && SWIFTC+=(-O) || SWIFTC+=(-Onone -g -D DEBUG)
 # Products built by another compiler, or with other flags, are stale.
-COMPILER=(${(f)"$(swiftc --version 2>&1)"})
 FLAGS="$COMPILER[1]: ${SWIFTC[*]}"
 mkdir -p $OUT
 [[ -f $OUT/.flags && "$(<$OUT/.flags)" == "$FLAGS" ]] || { rm -rf -- "${OUT:?}"; mkdir -p $OUT; print -r -- "$FLAGS" > $OUT/.flags }
+# Libraries with no dates in them, so a module rebuilt the same comes out byte for byte the same.
+export ZERO_AR_DATE=1
 
 typeset -aU WANTED=()
 case $MODE in
@@ -414,39 +483,216 @@ api)   target=${2:?usage: build.sh api MODULE}; (( ${+DEPS[$target]} )) || die "
        WANTED=($target ${=CLOSURE[$target]}) ;;
 esac
 
-typeset -a REBUILT=()
+# Whether the command `$@` last ran with exactly these inputs: the command, and the files in
+# INPUTS, by name, size and mtime (compared for equality, so a file added, removed, or restored with
+# an older mtime counts), as the file $STAMP keeps them. If not, forgets that it ran, and leaves
+# what $STAMP should say once it has in $RAN_WITH.
+typeset -a INPUTS
+up_to_date() {
+    RAN_WITH="${(j: :)${(q)@}}"$'\n'"$(stat -f '%Fm %z %N' -- $INPUTS)"
+    [[ -f $STAMP && "$(<$STAMP)" == "$RAN_WITH" ]] && return 0
+    rm -f -- $STAMP
+    return 1
+}
+
+# Moves the files a compile left in the directory $1 into the directory $2, but only those that
+# differ: a file that came out the same keeps its mtime, so whatever was built from it stays built.
+# With `only`, what $2 holds that $1 didn't make goes (an object of a source that's gone).
+keep_changed() {
+    local file
+    if [[ ${3:-} == only ]]; then
+        for file in $2/*(DN.); do [[ -e $1/${file:t} ]] || rm -f -- $file; done
+    fi
+    for file in $1/*(DN.); do cmp -s -- $file $2/${file:t} || mv -f -- $file $2/; done
+    rm -rf -- $1
+}
+
+# A module is built in up to three jobs, each run only if what it's built from changed:
+#   interface  its .swiftmodule, from its sources and its dependencies' interfaces: what compiling
+#              anything that imports it reads. The bodies of its functions are skipped (as in the
+#              job swiftc splits off itself), so it's quick, and what depends on the module starts
+#              compiling long before the module's own code is done. In release that's also why
+#              other modules can inline only what it keeps of the module (public static lets'
+#              values), never what cross-module optimization makes of its functions: nothing is
+#              @inlinable, and the benchmarks measured no difference.
+#   object     its code, from the same, an object per source (LLVM's work on them spread over
+#              OBJECT_THREADS threads) at fixed paths, so the same inputs make the same bytes; a
+#              library's are archived (lib<name>.a), in the order of its sources. In debug an
+#              executable's job emits its module too, which its link names for the debugger (as
+#              swiftc -g does when it compiles and links at once).
+#   link       an executable, from its objects and every library it depends on.
+# What comes out the same as before isn't replaced (keep_changed), so an edit that leaves a module's
+# interface as it was (inside a function) compiles none of the modules that depend on it, and one
+# that changes nothing it compiles to (a touch, a checkout) links nothing again either. Every
+# library links whole (-force_load), even one nothing references by symbol (say, a module that only
+# adds protocol conformances), so no code that nothing names is dropped (where `as? any Capability`
+# would then quietly fail). Each prints "compiled" or "linked" when it did.
+OBJECT_THREADS=4
+# Fails the job if module $1's sources ($2...) aren't as they were when this build began (READS): an
+# interface and an object compiled from different edits would link, and run wrong.
+as_begun() {
+    [[ $'\n'"$(stat -f '%Fm %z %N' -- ${@:2})" == "${READS[$1]:-}" ]] && return 0
+    print -u2 "build.sh: $1's sources changed while it built; build again"
+    return 1
+}
+build_job() {
+    local name=${1%:*} stage=${1##*:} dir=$OUT/${1%:*} dep src
+    [[ -n ${DIR[$name]:-} ]] || { print -u2 "build.sh: no module $name (job $1)"; return 1 }
+    local srcs=($DIR[$name]/**/*.swift(N)) includes=(${(@)${=CLOSURE[$name]}/#/-I$OUT/})
+    INPUTS=($srcs); for dep in ${=CLOSURE[$name]}; do INPUTS+=($OUT/$dep/$dep.swiftmodule); done
+    case $stage in
+    interface)
+        local emit=($SWIFTC -parse-as-library -emit-module -Xfrontend -experimental-skip-non-inlinable-function-bodies-without-types
+                    -module-name $name -emit-module-path $dir/interface/$name.swiftmodule $includes $srcs)
+        STAMP=$dir/.interface
+        [[ -e $dir/$name.swiftmodule ]] || rm -f -- $STAMP
+        up_to_date $emit && return 0
+        rm -rf -- $dir/interface; mkdir -p $dir/interface
+        $emit || return 1
+        as_begun $name $srcs || return 1
+        keep_changed $dir/interface $dir
+        print -r -- "$RAN_WITH" > $STAMP ;;
+    object)
+        local entry=(-parse-as-library) objects=() products=($dir/lib$name.a) module=()
+        if [[ $KIND[$name] != target ]]; then
+            products=($dir/objects)
+            [[ -n ${(M)srcs:#*/main.swift} ]] && entry=()
+            # In debug, the executable's own module too, for the debugger (the link says where it is).
+            if [[ $CONFIG == debug ]]; then
+                module=(-emit-module -emit-module-path $dir/object/module/$name.swiftmodule)
+                products+=($dir/$name.swiftmodule)
+            fi
+        fi
+        # Each source's object, named by its place in the list, so two sources of one name don't collide.
+        for src in $srcs; do objects+=$dir/object/$(( ${#objects} + 1 )).o; done
+        local compile=($SWIFTC $entry -c -num-threads $OBJECT_THREADS $module -module-name $name $includes
+                       -output-file-map $dir/object/objects.json $srcs)
+        STAMP=$dir/.object
+        local product; for product in $products; do [[ -e $product ]] || rm -f -- $STAMP; done
+        up_to_date $compile && return 0
+        rm -rf -- $dir/object; mkdir -p $dir/object
+        { print '{'; for src in $srcs; do print -r -- "  \"$src\": {\"object\": \"$objects[1]\"},"; shift objects; done; print '  "": {}'; print '}' } > $dir/object/objects.json
+        $compile || return 1
+        as_begun $name $srcs || return 1
+        rm -f -- $dir/object/objects.json
+        if [[ $KIND[$name] == target ]]; then
+            objects=($dir/object/*.o(Nn))
+            libtool -static -o $dir/object/lib$name.a $objects || return 1
+            rm -f -- $objects
+            keep_changed $dir/object $dir
+        else
+            [[ -d $dir/object/module ]] && keep_changed $dir/object/module $dir
+            mkdir -p $dir/objects
+            keep_changed $dir/object $dir/objects only
+        fi
+        print -r -- "$RAN_WITH" > $STAMP
+        print compiled ;;
+    link)
+        local libs=() objects=($dir/objects/*.o(Nn)) debugger=()
+        INPUTS=($objects)
+        if [[ $CONFIG == debug ]]; then
+            debugger=(-Xlinker -add_ast_path -Xlinker $dir/$name.swiftmodule)
+            INPUTS+=($dir/$name.swiftmodule)
+        fi
+        for dep in ${=CLOSURE[$name]}; do
+            libs+=(-Xlinker -force_load -Xlinker $OUT/$dep/lib$dep.a)
+            INPUTS+=($OUT/$dep/lib$dep.a)
+        done
+        local link=($SWIFTC $objects $libs $debugger -o $dir/$name)
+        STAMP=$dir/.linked
+        [[ -e $dir/$name ]] || rm -f -- $STAMP
+        up_to_date $link && return 0
+        $link || return 1
+        print -r -- "$RAN_WITH" > $STAMP
+        print linked ;;
+    esac
+    return 0
+}
+
+# The jobs, and what each waits for: a module's interface and object, its dependencies' interfaces;
+# an executable's link, its object and its dependencies' objects.
+typeset -A WAITING USERS     # a job: how many jobs it still waits for; the jobs that wait for it
+typeset -a READY=()
+add_job() {
+    local job=$1 dep; shift
+    WAITING[$job]=$#
+    for dep; do USERS[$dep]+=" $job"; done
+    (( $# )) || READY+=$job
+}
 for name in $ORDER; do
     (( ${WANTED[(Ie)$name]} )) || continue
-    dir=$OUT/$name; mkdir -p $dir
-    srcs=($DIR[$name]/**/*.swift(N))
-    includes=(${(@)${=CLOSURE[$name]}/#/-I$OUT/})
-    product=$dir/lib$name.a; [[ $KIND[$name] == executableTarget ]] && product=$dir/$name
-    # Rebuild unless it was last built from exactly these inputs (name, size and mtime, compared
-    # for equality, so a file added, removed, or restored with an older mtime counts): its
-    # sources, the manifest, this script, and its dependencies' products.
-    inputs=($srcs Package.swift ${SELF:t})
-    for dep in ${=CLOSURE[$name]}; do inputs+=($OUT/$dep/$dep.swiftmodule $OUT/$dep/lib$dep.a); done
-    stamp=$(stat -f '%Fm %z %N' -- $inputs)
-    [[ -e $product && -f $dir/.inputs && "$(<$dir/.inputs)" == "$stamp" ]] && continue
-    rm -f -- $dir/.inputs
+    # Braces around each name: `$name:link` would be $name lowercased (zsh's :l), then "ink". Arrays,
+    # so ${^...} of no dependencies is no jobs.
+    deps=(${=DEPS[$name]}); closure=(${=CLOSURE[$name]})
     if [[ $KIND[$name] == target ]]; then
-        $SWIFTC -parse-as-library -emit-library -static -emit-module -module-name $name \
-            -emit-module-path $dir/$name.swiftmodule $includes $srcs -o $product
+        add_job ${name}:interface ${^deps}:interface
+        add_job ${name}:object ${^deps}:interface
     else
-        # Two flags keep code that nothing names from being dropped at link time (where
-        # `as? any Capability` would then quietly fail): -wmo makes each module a single object,
-        # so a file nothing references still links whenever something in its module is
-        # referenced; -force_load links every module whole, even one nothing references by
-        # symbol (say, a module that only adds protocol conformances).
-        libs=()
-        for dep in ${=CLOSURE[$name]}; do libs+=(-Xlinker -force_load -Xlinker $OUT/$dep/lib$dep.a); done
-        entry=(); [[ -n ${(M)srcs:#*/main.swift} ]] || entry=(-parse-as-library)
-        $SWIFTC $entry -module-name $name $includes $srcs $libs -o $product
+        add_job ${name}:object ${^deps}:interface
+        add_job ${name}:link ${name}:object ${^closure}:object
     fi
-    print -r -- "$stamp" > $dir/.inputs
-    REBUILT+=$name
 done
-print -u2 "built ${${(j:, :)REBUILT}:-nothing (up to date)}"
+
+# Runs the jobs, as many at once as there are cores (BUILD_JOBS to change that), each as soon as
+# what it waits for is done, interfaces first (everything else waits for them). Each one's output is
+# printed once it's done; the first failure lets what's running finish, starts nothing more, and
+# fails the build.
+JOBS=${BUILD_JOBS:-$(sysctl -n hw.ncpu)}
+[[ $JOBS == <1-> ]] || die "BUILD_JOBS is how many jobs run at once, 1 or more; not '$JOBS'"
+mkfifo $AUDIT/done
+exec {DONE}<>$AUDIT/done    # each job writes "job status" here as it ends
+typeset -a COMPILED=() LINKED=()
+typeset -aU FAILED=()
+typeset -A SHOWN            # a module: the output of its jobs last printed (two often say the same)
+integer running=0 finished=0
+while true; do
+    if (( ! ${#FAILED} )); then
+        for job in ${(M)READY:#*:interface} ${READY:#*:interface}; do
+            (( running < JOBS )) || break
+            READY=(${READY:#${(b)job}}); running+=1
+            log=$OUT/${job%:*}/.${job##*:}; mkdir -p ${log:h}
+            # With errexit and nounset off, and the job in a subshell of its own, so it always says
+            # how it ended, even after an error zsh won't go on from.
+            ( unsetopt err_exit no_unset; ( build_job $job > $log.did 2> $log.log ); print -r -- "$job $?" >&$DONE ) &
+            RUNNING[$job]="$!"
+        done
+    fi
+    (( running )) || break
+    # A job says how it ended as its last act, so once none is left alive, what's to read is there.
+    until read -r -t 2 -u $DONE job rc; do
+        for pid in ${(v)RUNNING}; do kill -0 $pid 2> /dev/null && continue 2; done
+        read -r -t 1 -u $DONE job rc && break
+        die "${(j:, :)${(k)RUNNING}} ended without saying how (build.sh's own mistake)"
+    done
+    running+=-1; finished+=1; unset "RUNNING[$job]"
+    log=$OUT/${job%:*}/.${job##*:}
+    if [[ -s $log.log ]]; then
+        text=$(<$log.log)
+        [[ ${SHOWN[${job%:*}]:-} == "$text" ]] || print -u2 -r -- "$text"
+        SHOWN[${job%:*}]=$text
+    fi
+    if (( rc )); then
+        FAILED+=${job%:*}
+        continue
+    fi
+    case "$(<$log.did)" in
+    compiled) COMPILED+=${job%:*} ;;
+    linked) LINKED+=${job%:*} ;;
+    esac
+    for user in ${=USERS[$job]:-}; do
+        WAITING[$user]=$(( WAITING[$user] - 1 ))
+        (( WAITING[$user] )) || READY+=$user
+    done
+done
+exec {DONE}>&-
+(( ${#FAILED} )) && die "${(j:, :)FAILED} failed to build"
+(( finished == ${#WAITING} )) || die "$(( ${#WAITING} - finished )) jobs never ran (build.sh's own mistake)"
+COMPILED=(${ORDER:*COMPILED}); LINKED=(${ORDER:*LINKED})
+if (( ${#COMPILED} + ${#LINKED} )); then
+    print -u2 "built ${${(j:, :)COMPILED}:-nothing}${LINKED:+; linked ${(j:, :)LINKED}}"
+else
+    print -u2 "built nothing (up to date)"
+fi
 
 case $MODE in
 bench)
@@ -458,17 +704,25 @@ api)
     ;;
 app)
     APP=build/InfiniteCanvas.app
-    rm -rf -- "${APP:?}"; mkdir -p $APP/Contents/MacOS $APP/Contents/Helpers
-    cp $OUT/InfiniteCanvas/InfiniteCanvas $APP/Contents/MacOS/InfiniteCanvas
+    # The bundle changes only where its files do, each replaced by a new file (so a copy of the app
+    # that's running keeps its own): macOS checks an executable it hasn't seen the first time it
+    # runs, which costs a launch a quarter of a second, and an app that didn't change skips that.
+    typeset -a bundled=()
+    install_changed() {  # copies the file $1 to $2, in the bundle, if they differ
+        bundled+=$2
+        cmp -s -- $1 $2 || { cp -- $1 $2.new && mv -f -- $2.new $2 }
+    }
+    mkdir -p $APP/Contents/MacOS $APP/Contents/Helpers
+    install_changed $OUT/InfiniteCanvas/InfiniteCanvas $APP/Contents/MacOS/InfiniteCanvas
     # The command line goes with the app, so the two always speak the same protocol.
     typeset -a clis=()
     for name in $NAMES; do
         if [[ $LAYER[$name] == cli && $KIND[$name] == executableTarget ]]; then clis+=$name; fi
     done
     (( ${#clis} == 1 )) || die "the cli layer should have one executable, the command line; it has ${#clis}"
-    cp $OUT/$clis[1]/$clis[1] $APP/Contents/Helpers/$CLI_NAME
+    install_changed $OUT/$clis[1]/$clis[1] $APP/Contents/Helpers/$CLI_NAME
     ln -sf InfiniteCanvas.app/Contents/Helpers/$CLI_NAME build/$CLI_NAME
-    cat > $APP/Contents/Info.plist <<'PLIST'
+    cat > $AUDIT/Info.plist <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -529,6 +783,8 @@ app)
 </dict>
 </plist>
 PLIST
+    install_changed $AUDIT/Info.plist $APP/Contents/Info.plist
+    for file in $APP/**/*(.DN); do (( ${bundled[(Ie)$file]} )) || rm -f -- $file; done
     print "Built $APP, and build/$CLI_NAME (its command line)"
     ;;
 esac

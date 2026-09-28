@@ -215,11 +215,17 @@ func isAccent(_ p: [Int]) -> Bool { p[2] > p[0] + 60 }
         let b = h.add(Disc(CGRect(x: 600, y: 400, width: 300, height: 300)))
         let flag = h.add(Flag(host: a))
         let line = h.add(Stroke(points: [CGPoint(x: 100, y: 1500), CGPoint(x: 900, y: 1700), CGPoint(x: 1500, y: 1500)]))
+        // A board this small draws in a frame, but a busy machine can push a frame past its 4 ms
+        // and split the drawing between frames, which moves a diagonal edge's pixels by a shade
+        // (the line's): tiles drawn one by one don't antialias quite as a row of them at once. So
+        // each picture has as long as it takes, as it has on an idle machine.
         let (_, _, kept) = try minimapped(h)
+        kept.frameBudget = .seconds(60)
         _ = finished(kept, h)
         @MainActor func expectFresh(_ step: String) {
             let keptRep = finished(kept, h)
             let fresh = freshMinimap(like: kept)
+            fresh.frameBudget = .seconds(60)
             defer { fresh.removeFromSuperview() }
             expectEqual(differingPixels(keptRep, finished(fresh, h)), 0, step)
         }

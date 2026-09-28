@@ -96,6 +96,14 @@ public func awaitResult<T>(timeout: TimeInterval = 5, file: StaticString = #file
     var result: Result<T, any Error>?
 }
 
+/// How long `body` kept this thread running: what a test holding code to a time budget measures,
+/// since wall time counts whatever else the machine runs (the other test executables, run at once).
+public func threadCPUTime(_ body: () throws -> Void) rethrows -> Duration {
+    let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+    try body()
+    return .nanoseconds(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start)
+}
+
 /// Unwraps, or fails the test and stops it.
 @MainActor
 public func require<T>(_ value: T?, _ message: @autoclosure () -> String = "", file: StaticString = #fileID, line: UInt = #line) throws -> T {
@@ -108,18 +116,23 @@ public func require<T>(_ value: T?, _ message: @autoclosure () -> String = "", f
 
 /// Runs every test (TEST_FILTER=substring runs the matching ones; empty means all), prints failures
 /// with file:line, ends with "N passed, M failed" (test.sh reads it), and exits 1 if any failed.
+/// TEST_TIMES=1 writes each test's seconds to standard error ("0.123 Suite: test").
 @MainActor
 public func runTests(_ suites: [Suite]) -> Never {
-    // Line-buffered even into a pipe (test.sh tees this), so a crash doesn't swallow what came before.
+    // Line-buffered even into a file (test.sh sends this to one), so a crash doesn't swallow what came before.
     setvbuf(stdout, nil, _IOLBF, 0)
-    let filter = ProcessInfo.processInfo.environment["TEST_FILTER"].flatMap { $0.isEmpty ? nil : $0 }
+    let environment = ProcessInfo.processInfo.environment
+    let filter = environment["TEST_FILTER"].flatMap { $0.isEmpty ? nil : $0 }
+    let timed = environment["TEST_TIMES"] == "1"
     var passed = 0, failed = 0
     for suite in suites {
         for test in suite.tests {
             let name = "\(suite.name): \(test.name)"
             if let filter, !name.localizedCaseInsensitiveContains(filter) { continue }
             failures = []
+            let start = Date()
             do { try test.body() } catch is RequireFailed {} catch { failures.append("threw \(error)") }
+            if timed { FileHandle.standardError.write(Data((String(format: "%.3f ", Date().timeIntervalSince(start)) + name + "\n").utf8)) }
             if failures.isEmpty {
                 passed += 1
             } else {

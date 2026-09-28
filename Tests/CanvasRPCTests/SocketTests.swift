@@ -38,7 +38,8 @@ func rawListener(_ path: String) -> Int32 {
     return fd
 }
 
-/// Writes `text` to the socket at `path`, then reads until `lines` lines come back or a second passes.
+/// Writes `text` to the socket at `path`, then reads until `lines` lines come back or five seconds pass
+/// (long enough for a machine busy running every test executable at once).
 func rawExchange(_ path: String, _ text: String, lines: Int) -> [String] {
     let fd = socket(AF_UNIX, SOCK_STREAM, 0)
     defer { close(fd) }
@@ -47,7 +48,7 @@ func rawExchange(_ path: String, _ text: String, lines: Int) -> [String] {
     guard connected == 0 else { return ["connect failed: \(errno)"] }
     _ = text.withCString { write(fd, $0, strlen($0)) }
     var received = Data()
-    let deadline = Date(timeIntervalSinceNow: 1)
+    let deadline = Date(timeIntervalSinceNow: 5)
     while received.filter({ $0 == UInt8(ascii: "\n") }).count < lines, Date() < deadline {
         var descriptor = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
         guard poll(&descriptor, 1, 50) > 0 else { continue }
@@ -157,7 +158,7 @@ func rawServer(_ path: String, reply: String) -> Int32 {
         let started = Date()
         guard case .failure(.remote(let error)) = request(path, "echo", timeout: 5) else { return expect(false, "it waited, or took it for a result") }
         expectEqual(error.message, "Not a request.")
-        expect(Date().timeIntervalSince(started) < 2, "it didn't wait out the timeout")
+        expect(Date().timeIntervalSince(started) < 4, "it didn't wait out the timeout")
     },
     test("stopping removes the socket; its folder, made if missing, and the socket are this user's alone") {
         let folder = temporarySocketPath().replacingOccurrences(of: ".sock", with: "")

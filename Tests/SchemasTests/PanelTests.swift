@@ -13,12 +13,14 @@ import Titles
 import Validation
 
 /// The panel beside a canvas, in an unshown window, with real time (SwiftUI's updates and the
-/// panel's hand-back land as the main run loop runs), and a scripted model.
+/// panel's hand-back land as the main run loop runs), and a scripted model. The window is deferred,
+/// never given a place in the window server, so each turn lays its views out without drawing their
+/// layers, which nothing here looks at (a test that reads pixels draws the panel itself).
 @MainActor
 final class SchemaPanelWindow {
     let model = ScriptedLanguageModel()
     let editor: CanvasEditor
-    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1000, height: 800), styleMask: [.titled], backing: .buffered, defer: false)
+    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1000, height: 800), styleMask: [.titled], backing: .buffered, defer: true)
     let canvas: CanvasView
     let hosting: NSView
 

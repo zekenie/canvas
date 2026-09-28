@@ -148,7 +148,7 @@ final class PortState {
         where !shapes.contains(record.id) && hasDots(record.id) {
             shapes.append(record.id)
         }
-        let near = shapes.flatMap(dots(of:))
+        let near: [(dot: PortDot, distance: CGFloat)] = shapes.flatMap(dots(of:))
             .map { (dot: $0.dot, distance: camera.toView($0.center).distance(to: point)) }
             .filter { $0.distance <= PortStyle.hitRadius }
             .sorted { $0.distance < $1.distance }

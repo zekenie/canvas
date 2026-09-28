@@ -157,6 +157,6 @@ extension CanvasEditor {
 extension Array where Element == ContentsEntry {
     /// Each row's text, nested rows indented under theirs, which reads well in a failure.
     @MainActor var outline: [String] {
-        flatMap { entry in [entry.label?.text ?? "<view>"] + (entry.children ?? []).outline.map { "  " + $0 } }
+        flatMap { entry -> [String] in [entry.label?.text ?? "<view>"] + (entry.children ?? []).outline.map { "  " + $0 } }
     }
 }

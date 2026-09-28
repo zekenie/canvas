@@ -12,7 +12,8 @@ import Validation
 
 /// The panel alone in an unshown window. The editor keeps real time, so SwiftUI's updates land
 /// while the main run loop runs (`window.spin`, from CanvasTesting). Controls are found by their
-/// public AppKit superclass.
+/// public AppKit superclass. The window is deferred, never given a place in the window server, so
+/// each turn lays its views out without drawing their layers, which nothing here looks at.
 @MainActor
 final class TaskPanelWindow {
     let editor: CanvasEditor
@@ -21,7 +22,7 @@ final class TaskPanelWindow {
     let hosting: NSHostingView<DetailPanelView>
 
     init(_ task: ShapeRecord<TaskCard>, width: CGFloat = DetailStyle.idealWidth) throws {
-        window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: width, height: 700), styleMask: [.titled], backing: .buffered, defer: false)
+        window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: width, height: 700), styleMask: [.titled], backing: .buffered, defer: true)
         editor = try taskEditor(scheduler: TaskScheduler())
         id = editor.add(task)
         editor.selection = id

@@ -91,7 +91,10 @@ private let schemaLink = JSONValue.string(String(describing: SchemaLink.id))
         let resolved = color.usingColorSpace(.deviceRGB)!
         rgb = [resolved.redComponent, resolved.greenComponent, resolved.blueComponent]
     }
-    return (0..<3).map { Int((rgb[$0] * 255 * 0.6 + CGFloat(under[$0]) * 0.4).rounded()) }
+    return (0..<3).map { channel in
+        let mixed: CGFloat = rgb[channel] * 255 * 0.6 + CGFloat(under[channel]) * 0.4
+        return Int(mixed.rounded())
+    }
 }
 
 @MainActor private func expectNear(_ actual: [Int], _ expected: [Int], within tolerance: Int = 4, _ message: String, line: UInt = #line) {

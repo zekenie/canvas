@@ -14,8 +14,8 @@ The plugin system is a port, in Swift, of the one in data-canvas. Start with
 ```
 
 `build.sh` calls `swiftc` directly, so it only needs the Command Line Tools (and `jq`, which macOS
-includes from 15 on). It builds each module separately, in the order `Package.swift` declares, and
-refuses to build if the code and the manifest disagree. `./build.sh graph` prints the module graph,
+includes from 15 on). It builds each module separately, as many at once as there are cores, and
+only what changed, and refuses to build if the code and the manifest disagree. `./build.sh graph` prints the module graph,
 and `./build.sh audit` checks it without compiling.
 
 ## Boards

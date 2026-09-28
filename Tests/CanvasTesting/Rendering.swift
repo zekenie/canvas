@@ -114,6 +114,64 @@ public func pixel(_ rep: NSBitmapImageRep, at point: CGPoint, scale: CGFloat? = 
     return value
 }
 
+/// A bitmap's colors in device RGB, exactly as `colorAt(x:y:)?.usingColorSpace(.deviceRGB)` gives
+/// them, but each distinct pixel value converted once: read that way pixel by pixel, a panel's
+/// render takes seconds.
+@MainActor
+public final class DeviceRGBPixels {
+    public struct Color {
+        public let red: CGFloat, green: CGFloat, blue: CGFloat
+        /// The mean of the three.
+        public var gray: CGFloat { (red + green + blue) / 3 }
+    }
+
+    private let rep: NSBitmapImageRep
+    /// The pixels, when they're whole bytes in one plane (else each is converted as it's read).
+    private let bytes: UnsafeMutablePointer<UInt8>?
+    private let bytesPerRow: Int, bytesPerPixel: Int
+    private var converted: [UInt64: Color?] = [:]
+    /// The last pixel value read, and its color: neighbors are mostly alike.
+    private var last: (value: UInt64, color: Color?)?
+
+    public init(_ rep: NSBitmapImageRep) {
+        self.rep = rep
+        // The data first: a rep backed by a CGImage makes its bitmap, and so its layout, as it's asked for it.
+        let data = rep.bitmapData
+        bytesPerRow = rep.bytesPerRow
+        bytesPerPixel = rep.bitsPerPixel / 8
+        bytes = !rep.isPlanar && rep.bitsPerPixel % 8 == 0 && (1...8).contains(bytesPerPixel) ? data : nil
+    }
+
+    /// The color of the pixel at column `x`, row `y` from the top; nil where `colorAt` has none.
+    public subscript(x: Int, y: Int) -> Color? {
+        guard (0..<rep.pixelsWide).contains(x), (0..<rep.pixelsHigh).contains(y) else { return nil }
+        guard let bytes else { return convert(x, y) }
+        let pixel = UnsafeRawPointer(bytes + y * bytesPerRow + x * bytesPerPixel)
+        var value: UInt64
+        switch bytesPerPixel {
+        case 4: value = UInt64(pixel.loadUnaligned(as: UInt32.self))
+        case 8: value = pixel.loadUnaligned(as: UInt64.self)
+        default:
+            value = 0
+            for i in 0..<bytesPerPixel { value = value << 8 | UInt64(pixel.load(fromByteOffset: i, as: UInt8.self)) }
+        }
+        if let last, last.value == value { return last.color }
+        let color: Color?
+        if let known = converted[value] {
+            color = known
+        } else {
+            color = convert(x, y)
+            converted[value] = color
+        }
+        last = (value, color)
+        return color
+    }
+
+    private func convert(_ x: Int, _ y: Int) -> Color? {
+        rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB).map { Color(red: $0.redComponent, green: $0.greenComponent, blue: $0.blueComponent) }
+    }
+}
+
 /// How many points' pixels differ between two renders, within a rect of view points (at more than
 /// 1×, a point's first pixel stands for it).
 @MainActor

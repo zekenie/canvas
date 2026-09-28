@@ -17,6 +17,17 @@ import TestKit
 // Player feeds the same NSEvents to today's CanvasView, with the shipped plugins and a manual clock
 // for the timers; the text must match byte for byte.
 
+/// The shipped plugins, registered once for every scenario's board, as the app registers them once
+/// for all its boards: each board's editor has services of its own, and no scenario asks the model
+/// or the clipboard. (Registering them for each board took most of the transcript's time.)
+@MainActor let scenarioRegistry: Registry = {
+    do {
+        return try ShippedPlugins.registry(pasteboard: NSPasteboard.withUniqueName(), model: ScriptedLanguageModel())
+    } catch {
+        fatalError("The shipped plugins don't register: \(error)")
+    }
+}()
+
 /// Today's canvas set up for a scenario: two notes, and an arrow between their centers with this
 /// bend, if given.
 @MainActor
@@ -35,7 +46,7 @@ struct Board {
         var shapes = [AnyShapeRecord(a), AnyShapeRecord(b)]
         if let bend { shapes.append(AnyShapeRecord(ShapeRecord(Arrow(start: bound(a), end: bound(b), bend: bend)))) }
         let scheduler = ManualScheduler()
-        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(shapes: shapes), scheduler: scheduler, model: ScriptedLanguageModel())
+        let editor = CanvasEditor(registry: scenarioRegistry, document: CanvasDocument(shapes: shapes), scheduler: scheduler)
         let canvas = CanvasView(editor: editor)
         // CanvasView.init points this at NSEvent.modifierFlags, the real keyboard. The POC read that
         // in its timers too, and nobody held a key while it was recorded.
@@ -72,7 +83,7 @@ func describe(_ terminal: ArrowTerminal, _ ids: [ShapeID]) -> String {
         board.player.sleep(200)
         let editor = board.editor, ids = [board.a, board.b]
         let notes = editor.document.shapes.filter { $0.kind != Arrow.kind }
-            .map { s in "#\(ids.firstIndex(of: s.id).map(String.init) ?? "new")@\(s.box!)" }.joined(separator: " ")
+            .map { s -> String in "#\(ids.firstIndex(of: s.id).map { String($0) } ?? "new")@\(s.box!)" }.joined(separator: " ")
         lines.append("\(name): tool=\(editor.currentToolID.rawValue) camera=\(editor.camera.origin) shapes=[\(notes)]")
         for record in editor.document.shapes {
             guard let arrow = record.typed(as: Arrow.self)?.props else { continue }

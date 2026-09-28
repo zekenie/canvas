@@ -156,7 +156,9 @@ final class MinimapPicture {
         let clock = ContinuousClock()
         let order = staleSince.indices.filter { staleSince[$0] != 0 }.sorted { (staleSince[$0], $0) < (staleSince[$1], $1) }
         var next = 0, drawn = false
-        while next < order.count {
+        // Past the deadline, what's left of a frame is known without asking the board for a run's
+        // shapes (which goes through every shape): a tile if none is drawn yet, else nothing.
+        while next < order.count, !drawn || clock.now < deadline {
             let first = order[next]
             var count = 1
             while next + count < order.count, order[next + count] == first + count, (first + count) % columns != 0,
@@ -166,7 +168,7 @@ final class MinimapPicture {
             var run = rect(of: first).union(rect(of: first + count - 1))
             var shapes = editor.paintOrder(in: run.insetBy(dx: -reach, dy: -reach))
             while count > 1, Double(shapes.count) * costPerShape > (deadline - clock.now).seconds {
-                count = (count + 1) / 2
+                count = clock.now < deadline ? (count + 1) / 2 : 1
                 run = rect(of: first).union(rect(of: first + count - 1))
                 shapes = editor.paintOrder(in: run.insetBy(dx: -reach, dy: -reach))
             }

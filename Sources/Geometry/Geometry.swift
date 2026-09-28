@@ -137,13 +137,12 @@ public struct Arc: Sendable {
 
     /// The arc from `a` to `b` that passes through `c`, or nil if the points are (nearly) collinear.
     public init?(from a: CGPoint, through c: CGPoint, to b: CGPoint) {
-        let d = 2 * (a.x * (c.y - b.y) + c.x * (b.y - a.y) + b.x * (a.y - c.y))
+        let d: CGFloat = 2 * (a.x * (c.y - b.y) + c.x * (b.y - a.y) + b.x * (a.y - c.y))
         guard abs(d) > 1e-9 else { return nil }
         let (a2, b2, c2) = (a.dot(a), b.dot(b), c.dot(c))
-        let center = CGPoint(
-            x: (a2 * (c.y - b.y) + c2 * (b.y - a.y) + b2 * (a.y - c.y)) / d,
-            y: (a2 * (b.x - c.x) + c2 * (a.x - b.x) + b2 * (c.x - a.x)) / d
-        )
+        let x: CGFloat = (a2 * (c.y - b.y) + c2 * (b.y - a.y) + b2 * (a.y - c.y)) / d
+        let y: CGFloat = (a2 * (b.x - c.x) + c2 * (a.x - b.x) + b2 * (c.x - a.x)) / d
+        let center = CGPoint(x: x, y: y)
         let startAngle = (a - center).angle
         let toEnd = normalizedAngle((b - center).angle - startAngle)
         let toMiddle = normalizedAngle((c - center).angle - startAngle)
@@ -229,7 +228,8 @@ public func intersections(of arc: Arc, withPolygon polygon: [CGPoint]) -> [CGFlo
         let discriminant = b * b - 4 * a * c
         guard a > 0, discriminant >= 0 else { continue }
         let root = discriminant.squareRoot()
-        for u in [(-b - root) / (2 * a), (-b + root) / (2 * a)] where (0...1).contains(u) {
+        let roots: [CGFloat] = [(-b - root) / (2 * a), (-b + root) / (2 * a)]
+        for u in roots where (0...1).contains(u) {
             if let t = arc.parameter(of: p + d * u) {
                 result.append(t)
             }

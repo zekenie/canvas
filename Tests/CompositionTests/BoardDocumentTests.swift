@@ -36,6 +36,14 @@ struct MinimapHost: View {
     while !done(), Date() < deadline { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.005)) }
 }
 
+/// A few turns of the main run loop, as `NSWindow.settle()` runs it, for a test whose point is
+/// that nothing more happens: what a read sets off after it's over (a Task, an action scheduled
+/// after zero) lands in the first. Nothing a board does once it's read is on a timer, so waiting
+/// longer shows nothing more.
+@MainActor func settleRunLoop() {
+    for _ in 0..<5 { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.002)) }
+}
+
 @MainActor func scratchURL(_ name: String) -> URL {
     FileManager.default.temporaryDirectory.appendingPathComponent("BoardDocumentTests-\(UUID().uuidString)-\(name)")
 }
@@ -64,7 +72,7 @@ let boardType = "com.example.InfiniteCanvas.board"
         try reopened.read(from: data, ofType: boardType)
         expectEqual(reopened.editor.document, board.editor.document)
         expect(reopened.loadReport.isEmpty)
-        runLoop { false }
+        settleRunLoop()
         expect(!reopened.isDocumentEdited)
     },
     test("a board that needed repairs opens edited, and says what it kept aside") {
@@ -102,7 +110,7 @@ let boardType = "com.example.InfiniteCanvas.board"
         expectEqual(board.loadReport.keptValues.map(\.key), ["confetti"])
         expect(board.loadReport.keptAside.isEmpty, "the ellipse itself shows")
         expectEqual(board.editor.document[id]?.keptProperties, ["confetti"])
-        runLoop { false }
+        settleRunLoop()
         expect(!board.isDocumentEdited)
         let summary = try require(board.loadReport.summary)
         expectEqual(summary.message, "Some of this board can’t be used here.")
@@ -137,7 +145,7 @@ let boardType = "com.example.InfiniteCanvas.board"
         expect(board.isDocumentEdited)
         try board.revert(toContentsOf: url, ofType: boardType)
         expectEqual(board.editor.document, saved)
-        runLoop { false }
+        settleRunLoop()
         expect(!board.isDocumentEdited)
     },
     test("a board's window hosts its canvas, and the zoom, inspector and back commands reach it") {

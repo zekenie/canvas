@@ -10,7 +10,7 @@ extension Array where Element == ContentsEntry {
     /// Each row's shape, kind, text, badge and symbol, nested rows indented under theirs: all a
     /// row shows, and which shape it's for.
     @MainActor var tree: [String] {
-        flatMap { entry in
+        flatMap { entry -> [String] in
             let line = "\(entry.id) \(entry.kind) \(entry.label?.text ?? "<view>") \(entry.label?.badge ?? "-") \(entry.symbol)"
             return [entry.children?.isEmpty == true ? line + " (no children, but not nil)" : line] + (entry.children ?? []).tree.map { "  " + $0 }
         }

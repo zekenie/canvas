@@ -71,7 +71,7 @@ import TestKit
     },
     test("brushing across 1,000 boxes and 1,000 bound arrows stays within the hover test's budget") {
         var shapes: [AnyShapeRecord] = []
-        let boxes = (0..<1000).map { i in
+        let boxes = (0..<1000).map { (i: Int) in
             ShapeRecord(Box(CGRect(x: CGFloat(i % 40) * 60, y: CGFloat(i / 40) * 60, width: 40, height: 40)))
         }
         shapes += boxes.map(AnyShapeRecord.init)
@@ -85,14 +85,13 @@ import TestKit
         let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
         let h = EditorHarness { CanvasEditor(registry: registry, document: CanvasDocument(shapes: shapes), scheduler: $0) }
         h.press(at: CGPoint(x: 2500, y: 1600))
-        let clock = ContinuousClock()
-        let elapsed = clock.measure {
+        let elapsed = threadCPUTime {
             for i in 1...10 { h.drag(to: CGPoint(x: 2500 - CGFloat(i) * 250, y: 1600 - CGFloat(i) * 160)) }
         }
         expectEqual(h.editor.selectedShapeIDs.count, 2000)
         h.release()
-        // About 11 ms in a debug build.
-        expect(elapsed / 10 < .milliseconds(80), "\(elapsed / 10) per drag")
+        // About 2 ms of this thread's time a drag in a debug build (what else runs doesn't count).
+        expect(elapsed / 10 < .milliseconds(25), "\(elapsed / 10) per drag")
     },
 ])
 

@@ -35,7 +35,7 @@ let flags = Contributor(id: "flags") { r in
 
 extension Array where Element == ContentsEntry {
     /// Each row's marks' help, nested rows' after theirs.
-    @MainActor var marks: [[String]] { flatMap { [$0.marks.map(\.help)] + ($0.children ?? []).marks } }
+    @MainActor var marks: [[String]] { flatMap { entry -> [[String]] in [entry.marks.map(\.help)] + (entry.children ?? []).marks } }
 }
 
 @MainActor let markTests = Suite("Table of contents: marks", [

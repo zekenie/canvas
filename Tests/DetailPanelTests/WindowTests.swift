@@ -9,11 +9,13 @@ import TestKit
 
 /// The panel in an NSHostingView next to a canvas view, in an unshown window (CanvasTesting drives
 /// it: `spin`, `focus`, `type`). The editor keeps real time, so SwiftUI's updates and the panel's
-/// hand-back land while the main run loop runs.
+/// hand-back land while the main run loop runs. The window is deferred, never given a place in the
+/// window server, so each turn lays its views out without drawing their layers, which nothing here
+/// looks at (`render()` draws the panel itself) and which took a quarter of these tests' time.
 @MainActor
 final class PanelWindow {
     let editor: CanvasEditor
-    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1000, height: 700), styleMask: [.titled], backing: .buffered, defer: false)
+    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1000, height: 700), styleMask: [.titled], backing: .buffered, defer: true)
     let canvas: CanvasView
     private(set) var hosting: NSView!
     /// How often the panel handed the keyboard back.
@@ -437,11 +439,11 @@ extension ListTab: DetailTab { static var title: String { "List" } }
             let image = try require(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
             hosting.cacheDisplay(in: hosting.bounds, to: image)
             let scale = CGFloat(image.pixelsWide) / hosting.bounds.width
+            let pixels = DeviceRGBPixels(image)
             return stride(from: box.minY, to: box.maxY, by: 1).flatMap { y in
                 stride(from: box.minX, to: box.maxX, by: 1).map { CGPoint(x: $0, y: y) }
             }.filter { point in
-                let color = image.colorAt(x: Int(point.x * scale), y: Int(point.y * scale))?.usingColorSpace(.deviceRGB)
-                return (color.map { ($0.redComponent + $0.greenComponent + $0.blueComponent) / 3 } ?? 1) < 0.7
+                (pixels[Int(point.x * scale), Int(point.y * scale)]?.gray ?? 1) < 0.7
             }.count
         }
         expect(try ink([]) > 20, "No Items")
@@ -504,7 +506,7 @@ extension ListTab: DetailTab { static var title: String { "List" } }
         renderer.scale = 2
         let image = NSBitmapImageRep(cgImage: try require(renderer.cgImage))
         // 14-point swatches, 4 apart, centered in the row.
-        let centers = [0, 1].map { pixel(image, at: CGPoint(x: CGFloat($0) * 18 + 7, y: 10), scale: 2).prefix(3).map { $0 } }
+        let centers = [0, 1].map { (index: CGFloat) in pixel(image, at: CGPoint(x: index * 18 + 7, y: 10), scale: 2).prefix(3).map { $0 } }
         expectEqual(centers.map { $0.map { $0 > 200 } }, [[true, false, false], [true, true, true]])
     },
     test("the tab strip fits five short titles in the ideal width") {
@@ -559,11 +561,9 @@ extension ListTab: DetailTab { static var title: String { "List" } }
     let renderer = ImageRenderer(content: view.frame(width: width, height: 120).background(.white).environment(\.colorScheme, .light))
     renderer.scale = 2
     let image = NSBitmapImageRep(cgImage: try require(renderer.cgImage))
+    let pixels = DeviceRGBPixels(image)
     let inked = (0..<image.pixelsWide).map { x in
-        (rows.lowerBound * 2...rows.upperBound * 2).contains { y in
-            let pixel = image.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB)
-            return (pixel.map { ($0.redComponent + $0.greenComponent + $0.blueComponent) / 3 } ?? 1) < 0.5
-        }
+        (rows.lowerBound * 2...rows.upperBound * 2).contains { y in (pixels[x, y]?.gray ?? 1) < 0.5 }
     }
     var runs: [Int] = [], start: Int?, gap = 0
     for (x, isInked) in inked.enumerated() {
@@ -582,10 +582,8 @@ extension ListTab: DetailTab { static var title: String { "List" } }
 /// How many full-width hairlines (dividers) `image` has: runs of rows whose pixels, nearly all the
 /// way across, differ from the rows two pixels above and below.
 @MainActor func hairlines(_ image: NSBitmapImageRep) -> Int {
-    func gray(_ x: Int, _ y: Int) -> CGFloat {
-        let pixel = image.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB)
-        return pixel.map { ($0.redComponent + $0.greenComponent + $0.blueComponent) / 3 } ?? 1
-    }
+    let pixels = DeviceRGBPixels(image)
+    func gray(_ x: Int, _ y: Int) -> CGFloat { pixels[x, y]?.gray ?? 1 }
     let columns = Array(stride(from: 0, to: image.pixelsWide, by: 2))
     let lines = (2..<image.pixelsHigh - 2).filter { y in
         columns.filter { x in abs(gray(x, y) - gray(x, y - 2)) > 0.02 && abs(gray(x, y) - gray(x, y + 2)) > 0.02 }.count > columns.count * 9 / 10
@@ -596,11 +594,12 @@ extension ListTab: DetailTab { static var title: String { "List" } }
 /// How many square points of `panel`'s render are red, across `rows` (points from its top).
 @MainActor func redArea(_ image: NSBitmapImageRep, in panel: PanelWindow, rows: Range<Int>) -> CGFloat {
     let scale = CGFloat(image.pixelsWide) / panel.hosting.bounds.width
+    let pixels = DeviceRGBPixels(image)
     var red = 0
     for y in Int(CGFloat(rows.lowerBound) * scale)..<min(image.pixelsHigh, Int(CGFloat(rows.upperBound) * scale)) {
         for x in 0..<image.pixelsWide {
-            guard let pixel = image.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
-            if pixel.redComponent - max(pixel.greenComponent, pixel.blueComponent) > 0.3 { red += 1 }
+            guard let pixel = pixels[x, y] else { continue }
+            if pixel.red - max(pixel.green, pixel.blue) > 0.3 { red += 1 }
         }
     }
     return CGFloat(red) / (scale * scale)

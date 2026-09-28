@@ -19,11 +19,13 @@ import ValidationDetails
 /// The app's window (a `BoardWindow`), unshown: the canvas (through `CanvasRepresentable`) with the shipped detail
 /// panel in an `.inspector`, wired by a `CanvasFocus` as the app wires them. The editor keeps real
 /// time, so SwiftUI's updates and the panel's hand-back land while the main run loop runs
-/// (`window.spin`, from CanvasTesting).
+/// (`window.spin`, from CanvasTesting). The window is deferred, never given a place in the window
+/// server, so each turn lays its views out without drawing their layers, which nothing here looks
+/// at (`render()` draws the canvas itself).
 @MainActor
 final class InspectorWindow {
     let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: TaskScheduler(), model: ScriptedLanguageModel())
-    let window = BoardWindow(contentRect: CGRect(x: 0, y: 0, width: 1000, height: 700), styleMask: [.titled], backing: .buffered, defer: false)
+    let window = BoardWindow(contentRect: CGRect(x: 0, y: 0, width: 1000, height: 700), styleMask: [.titled], backing: .buffered, defer: true)
     let focus = CanvasFocus()
     let host: NSHostingView<InspectorHost>
     let canvas: CanvasView

@@ -18,11 +18,13 @@ public struct AnthropicModel: LanguageModel {
     /// Seconds to wait for an answer, at the least: a request that may be answered at length waits
     /// longer (`timeout(for:)`).
     public let timeout: TimeInterval
-    let session: URLSession
+    /// Nil for `URLSession.shared`, taken at the first call: the app makes its model as it starts,
+    /// and the launch needn't make a session nothing uses until a schema card asks Claude something.
+    let session: URLSession?
 
     /// `session` is for tests, which stub the network with a `URLProtocol`.
     public init(model: String = AnthropicModel.haiku, keys: AnthropicKeyStore = .standard, timeout: TimeInterval = 60,
-                session: URLSession = .shared) {
+                session: URLSession? = nil) {
         self.model = model
         self.keys = keys
         self.timeout = timeout
@@ -35,7 +37,7 @@ public struct AnthropicModel: LanguageModel {
         let urlRequest = self.urlRequest(for: request, key: key)
         let data: Data, response: URLResponse
         do {
-            (data, response) = try await session.data(for: urlRequest)
+            (data, response) = try await (session ?? .shared).data(for: urlRequest)
         } catch {
             throw Self.transportError(error)
         }
