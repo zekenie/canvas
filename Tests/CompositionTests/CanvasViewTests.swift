@@ -12,8 +12,8 @@ import Locking
 import Mentions
 import Selection
 import StickyNotes
+import Subboards
 import SwiftUI
-import TaskCards
 import TestKit
 import Titles
 import Validation
@@ -169,8 +169,8 @@ struct NotePill: Hashable, Sendable {
     test("a key typed on the canvas switches tools; typed in a note, it goes into the note") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let (window, canvas) = windowed(editor)
-        window.press("o")
-        expectEqual(editor.currentToolID, ToolID(placing: "ellipse"))
+        window.press("r")
+        expectEqual(editor.currentToolID, ToolID(placing: "rectangle"))
         window.press("v")
         expectEqual(editor.currentToolID, .select)
         canvas.mouseDown(with: window.mouse(.leftMouseDown, at: CGPoint(x: 300, y: 300), clicks: 2, time: 1))
@@ -393,18 +393,18 @@ struct NotePill: Hashable, Sendable {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
         let (window, canvas) = windowed(editor)
         editor.add(Arrow(start: .free(CGPoint(x: 40, y: 300)), end: .free(CGPoint(x: 340, y: 300))))
-        let task = editor.add(TaskCard(frame: CGRect(x: 400, y: 40, width: 240, height: 200)), title: "Ship")
+        let subboard = editor.add(Subboard(frame: CGRect(x: 400, y: 40, width: 240, height: 160)), title: "Ship")
         let arrow = CGPoint(x: 190, y: 300), card = CGPoint(x: 520, y: 140), empty = CGPoint(x: 190, y: 500)
         // Every shipped shape has something to offer (Cut, Copy and Paste, at least); empty canvas has nothing.
         expect(canvas.menu(for: window.mouse(.rightMouseDown, at: empty, time: 1)) == nil)
         let menu = try require(canvas.menu(for: window.mouse(.rightMouseDown, at: card, time: 2)))
-        expectEqual(menu.outline.first, "Status ▸")
-        expectEqual(editor.selectedShapeIDs, [task])
+        expectEqual(menu.outline.first, "Open")
+        expectEqual(editor.selectedShapeIDs, [subboard])
         // AppKit sends a Control-click to mouseDown only when menu(for:) has nothing: it isn't a press,
         // so it doesn't deselect.
         canvas.mouseDown(with: window.mouse(.leftMouseDown, at: empty, modifiers: .control, time: 3))
         canvas.mouseUp(with: window.mouse(.leftMouseUp, at: empty, modifiers: .control, time: 3.05))
-        expectEqual(editor.selectedShapeIDs, [task])
+        expectEqual(editor.selectedShapeIDs, [subboard])
         expect(canvas.menu(for: window.mouse(.leftMouseDown, at: card, modifiers: .control, time: 4)) != nil)
         // An arrow's menu is just the clipboard's (nothing to paste yet) and Lock: Arrange leaves out
         // what's painted by anchor.
@@ -417,7 +417,7 @@ struct NotePill: Hashable, Sendable {
     test("in the arrow tool, a Control-press is a press with ⌃: no menu, and the arrow it draws binds nothing") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let (window, canvas) = windowed(editor)
-        editor.add(TaskCard(frame: CGRect(x: 400, y: 40, width: 240, height: 200)), title: "Ship")
+        editor.add(Subboard(frame: CGRect(x: 400, y: 40, width: 240, height: 160)), title: "Ship")
         window.press("a")
         let down = window.mouse(.leftMouseDown, at: CGPoint(x: 520, y: 140), modifiers: .control, time: 1)
         expect(canvas.menu(for: down) == nil)

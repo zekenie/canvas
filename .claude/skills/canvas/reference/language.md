@@ -62,7 +62,7 @@ After a timeout the app may still draw the script: it doesn't drop what it was s
 - **`//` starts a comment**, at the start of a line or after a statement, anywhere outside a quoted string or a JSON value. `#` is an ordinary character, not a comment. `# Heading` is read as a statement, and it fails.
 - **Quoted strings** are in straight double quotes and end on the same line. Inside them, `\"` is a quote, `\\` a backslash, `\n` a new line and `\t` a tab. Any other backslash is refused. Curly quotes (“ ” ‘ ’) and single quotes are refused, with the straight-quoted spelling in the message. An apostrophe inside double quotes is just a character: `"the day's files"`.
 - **A bare word** runs to the next space, `"`, `(`, `)` or `//`. A comma at its end is a separator of its own.
-- **A key** is a bare word ending in a colon, like `status:`. Only a key opens an attribute, and it needs a space after the colon: `size:200x100` is refused, with `size: 200x100` as the fix.
+- **A key** is a bare word ending in a colon, like `text:`. Only a key opens an attribute, and it needs a space after the colon: `size:200x100` is refused, with `size: 200x100` as the fix.
 - **A JSON value** is a value, right after a key, that starts with `[` or `{`. It runs to its matching bracket, skipping over JSON strings, and must close on the same line.
 - **`(` and `)`** hold a placement's gap. **`,` and `and`** join the shapes a placement names, and the styles a shape takes.
 - **A value with spaces is quoted.** `text: hello world` is refused, and the fix is `text: "hello world"`. Quote any text value to be safe.
@@ -71,7 +71,7 @@ This first script puts a legend in the corner of the window, then draws a small 
 
 ```draw
 // A legend in the top-right corner of the window: view is the part of the board you can see.
-sticky-note "Legend" inside view top-right text: "Notes are steps; cards are the work"
+sticky-note "Legend" inside view top-right text: "Notes are steps; subboards hold the work"
 
 // Ingest says nothing about where it goes, so the pipeline lands in the window, clear of the legend.
 sticky-note "Ingest" text: "Pull the day's files"   // a comment after a statement
@@ -89,7 +89,7 @@ delete edge "<a>" -> "<b>"                       remove the connections from a t
 style <name> attribute { attribute }             a named set of attributes, for this script
 ```
 
-The first word decides the statement. `edge`, `delete` and `style` are the language's own words. Any other first word is a kind. After a shape's kind and title, attributes and placements come in any order: `task-card "A" status: doing below "B"` and `task-card "A" below "B" status: doing` are the same statement.
+The first word decides the statement. `edge`, `delete` and `style` are the language's own words. Any other first word is a kind. After a shape's kind and title, attributes and placements come in any order: `sticky-note "A" text: "Hi" below "B"` and `sticky-note "A" below "B" text: "Hi"` are the same statement.
 
 ## Shapes and titles
 
@@ -100,8 +100,6 @@ A kind is drawable when a tool places it. These are the shipped ones:
 | kind | size | named by | what it says | edges |
 |---|---|---|---|---|
 | `sticky-note` | 200x200 | its title, a pill above its top-left corner | `text:` | `note-link`, left, right and bottom |
-| `task-card` | 240x200 | its title, drawn as its headline | `notes:` and the rest (see [Attributes](#attributes)) | `task-link`, all four sides |
-| `ellipse` | 200x140 | its title if it has one, else its size: "Ellipse, 200 × 140" | nothing else | none |
 | `rectangle` | 160x100 | its title, a pill | nothing else | none |
 | `schema-card` | 240x67 | its schema's "title", drawn on the card: never a title of its own | `schema:` and `prompt:` | `schema-link`, all four sides |
 | `subboard` | 240x160 | its title, drawn on its card | nothing else: its board is its own | none |
@@ -115,7 +113,6 @@ A shape is referred to by its title and nothing else. There are no ids.
 - **A title is always quoted.** It's folded as the app folds titles: runs of spaces and new lines become one space, and the ends are trimmed. A title that folds to nothing is refused; leave it out for an untitled shape. Keep titles to one line. One longer than 80 characters is kept but warned about.
 - **Matching is exact** on the folded form, and case matters. `"deploy"` is not `"Deploy"`.
 - **Names are read as the board has them when the run starts**, plus the titles the script itself draws. A rename takes effect from the next run.
-- **An ellipse with no title of its own is called by its size**: "Ellipse, 200 × 140", with the multiplication sign ×. You can name it that way while it's the only shape with that name. Its name changes whenever its size does, and a script that would change it without saying so is refused (`renames`). Name it with `title:` instead.
 - **A schema card is called by its schema's `"title"`**, and can't be given a title of its own: `schema-card "Order"` is `untitlable`, and so is `title:` on one. Draw it untitled, with the title in `schema:`, and call it by that title from the next run on (not in the same script: another statement can't name a shape drawn without a title). Restated with a schema whose title is another, it's renamed (`did: "renamed"`, with `was`), held to the rules of a rename (`duplicate` for a title that's taken); a schema with no title left is `renames`, since a script can't take a title away.
 
 ```draw-error
@@ -131,23 +128,23 @@ A shape statement **with a title**:
 - If two or more shapes have that title, it's `ambiguous_title`. Titles only work as names while each is used once, so ask the user to rename one.
 - If no shape has it, the statement **creates** a shape with that title. If a title on the board is the same but for case, or nearly the same, the shape is still created, with a warning such as `created "deploy"; the board has "Deploy" — to change that one, write its title exactly`.
 
-A shape statement **without a title** always creates a new, untitled shape. Nothing can refer to it afterwards, so title anything you may touch again. An untitled task card gets the name its tool gives, "New Task", so it isn't drawn as an invalid, untitled task. But every untitled task card then shares that name.
+A shape statement **without a title** always creates a new, untitled shape. Nothing can refer to it afterwards, so title anything you may touch again.
 
 A new shape starts as what its kind's tool places. Then comes its title, then its attributes, then its size, then its position. A restated shape keeps everything the statement doesn't say, including its size and its position on any axis no placement speaks for.
 
 Two statements about one title in one script (two shape statements, or one and a rename to that title) is `duplicate`. A statement placed against its own title is `circular`. The exception is `delete "X"` followed by a shape statement for "X": deletes happen first, so that pair redraws a shape.
 
-This names nothing, so it makes an untitled ellipse, named for its size:
+This names nothing, so it makes a schema card with no title of its own, called by the title in its schema:
 
 ```draw
-ellipse left of "Ingest"
+schema-card left of "Ingest" schema: "{\"title\": \"Row\", \"type\": \"object\", \"properties\": {\"id\": {\"type\": \"string\"}}}"
 ```
 
-The board now has one shape called "Ellipse, 200 × 140". Resizing it would change that name, so a statement that tries is refused:
+From the next run on, the board has a shape called "Row". A schema with no title would take that name away, so a statement that gives it one is refused:
 
 ```draw-error
 // reason: renames
-ellipse "Ellipse, 200 × 140" size: 300x200
+schema-card "Row" schema: "{\"type\": \"object\"}"
 ```
 
 ## Attributes
@@ -170,30 +167,29 @@ Every other key is one of the kind's properties, named as its schema names it; `
 
 | the property is | write | for example |
 |---|---|---|
-| text | a quoted string, or a single bare word | `text: "Pull the day's files"`, `notes: later` |
-| a date and time | `YYYY-MM-DD` (midnight UTC), or a full date-time | `due: 2026-10-20`, `due: 2026-10-20T09:30:00Z` |
-| one of a set | one of its words, bare or quoted | `status: blocked`, `priority: high` |
-| a number | a bare number | `estimate: 6` |
+| text | a quoted string, or a single bare word | `text: "Pull the day's files"`, `text: later` |
+| a date and time | `YYYY-MM-DD` (midnight UTC), or a full date-time | `due: 2026-10-20`, `due: 2026-10-20T09:30:00Z`, on a kind that has one |
+| one of a set | one of its words, bare or quoted | `status: blocked`, on a kind that has one |
+| a number | a bare number | `estimate: 6`, on a kind that has one |
 | true or false | `true` or `false` | `locked: true` |
-| an object or a list | JSON on one line, every member written | `color: {"red": 0.2, "green": 0.7, "blue": 0.35}` |
-| anything | `null`, which puts the property back to its default | `notes: null` |
+| an object or a list | JSON on one line, every member written | `checklist: [{"text": "Pick a time"}]` |
+| anything | `null`, which puts the property back to its default | `text: null` |
 
 The shipped kinds' attributes:
 
 - **sticky-note**: `text` (what it says), `checklist`, `locked`.
-- **task-card**: `notes` (text), `status` (`todo`, `doing`, `blocked` or `done`; default `todo`), `priority` (`low`, `medium` or `high`; default `medium`), `estimate` (hours, at least 0), `due` (a date), `color` (`{"red", "green", "blue"}`, each 0 to 1), `shows` (what the card shows besides its title: `{"notes", "checklist", "progress"}`, each `true` or `false`, and `true` for one left out), `checklist`, `locked`.
 - **schema-card**: `schema` (a JSON Schema, as text: its properties in the order written; the card grows to list them), `prompt` (what the schema should hold, in words), `locked`. What a script writes is taken as written: the Claude sync that rewrites one side when the user edits the other isn't asked, so write a prompt and a schema that agree, or leave the prompt out.
-- **ellipse**, **rectangle**, **subboard**: `locked`.
+- **rectangle**, **subboard**: `locked`.
 - **A note's `text`** is kept as written. In it, `@[label](shape:<id>)` is a mention of a shape, which the note shows as a live pill with that shape's name now. No id ever reaches a script, so write plain words: an `@`, or `@[…]` without `(shape:…)`, is only text. (The app writes a mention's form as plain text with `\@[`, which a script's string spells `\\@[`.) A mention of a shape that isn't in the file is kept, and warned about.
 - **`checklist`** is a list of items like `{"text": "Pick a time", "isDone": true}`, where `isDone` defaults to `false`. Writing a checklist replaces the whole list, so to tick one item you write them all.
-- **An object replaces the whole property**, as a list does: members it leaves out take their defaults, not what the shape had. `shows: {"notes": false}` on a card that hid its progress shows the progress again. Write every member.
+- **An object replaces the whole property**, as a list does: members it leaves out take their defaults, not what the shape had. `checklist: [{"text": "Pick a time"}]` on a note whose item was done leaves it not done. Write every member.
 - **`locked: true`** locks a shape, as the context menu's Lock does. A locked shape refuses every later change (`read_only`). Leave locking to the user.
 
-A value past a bound (an estimate below 0, a title over 80 characters, a color component above 1) isn't refused. The shape is drawn and the bound comes back as a warning. A value of the wrong type is `invalid_value`, naming the attribute and what it takes, and so is one anywhere inside JSON (`checklist: Checklist › item 1 › text should be a string, not 5`). So is a member an object doesn't have, anywhere in it, with its members and a Did you mean (`checklist: done isn't a member of item 1 (it has isDone and text)`, hint `did you mean isDone?`): it's never dropped. So is a word outside a set, which also gets a Did you mean. A key the kind doesn't have is `unknown_attribute`, which lists what the kind takes and names the kinds that do have the key, if any.
+A value past a bound (a title over 80 characters, say) isn't refused. The shape is drawn and the bound comes back as a warning. A value of the wrong type is `invalid_value`, naming the attribute and what it takes, and so is one anywhere inside JSON (`checklist: Checklist › item 1 › text should be a string, not 5`). So is a member an object doesn't have, anywhere in it, with its members and a Did you mean (`checklist: done isn't a member of item 1 (it has isDone and text)`, hint `did you mean isDone?`): it's never dropped. So is a word outside a set, which also gets a Did you mean. A key the kind doesn't have is `unknown_attribute`, which lists what the kind takes and names the kinds that do have the key, if any.
 
 ```draw
-task-card "Backfill" below "Ingest" status: blocked priority: high estimate: 6 due: 2026-10-20 notes: "Waiting on the vendor's March files"
-task-card "Nightly schedule" below "Load" color: {"red": 0.2, "green": 0.7, "blue": 0.35} checklist: [{"text": "Pick a time"}, {"text": "Add a timeout", "isDone": true}] shows: {"notes": false, "checklist": true, "progress": true}
+sticky-note "Backfill" below "Ingest" text: "Waiting on the vendor's March files"
+sticky-note "Nightly schedule" below "Load" checklist: [{"text": "Pick a time"}, {"text": "Add a timeout", "isDone": true}]
 ```
 
 ### Keys that are refused
@@ -253,7 +249,7 @@ Both are fixed boxes, measured once when the script runs.
 | part | what it is |
 |---|---|
 | `top`, `bottom`, `left`, `right` | a side: a segment as long as the side, with no thickness |
-| `top-left`, `top-right`, `bottom-left`, `bottom-right` | a corner, on the shape's outline (so an ellipse's corners are on the ellipse) |
+| `top-left`, `top-right`, `bottom-left`, `bottom-right` | a corner, on the shape's outline (so a round shape's corners would be on its curve) |
 | `top-center`, `left-center`, `right-center`, `bottom-center`, `center` | a point: the middle of a side, or of the shape |
 
 A part narrows the target. `right of "A" top` is right of A's top side, so it's centered on the line of A's top edge. `text` isn't a part; a note's words are `text:`.
@@ -317,9 +313,9 @@ New or restated shapes whose placements are written identically form a list. "Id
 - For a flow with arrows between steps, a wider step gives the arrows room: give every member the same `gap:`.
 
 ```draw
-task-card "Monday" right of "Retry"
-task-card "Tuesday" right of "Retry"
-task-card "Wednesday" right of "Retry"
+subboard "Monday" right of "Retry"
+subboard "Tuesday" right of "Retry"
+subboard "Wednesday" right of "Retry"
 ```
 
 ```draw
@@ -335,7 +331,7 @@ Some pairs are allowed to overlap:
 
 - a shape and what it's `inside` or `on`;
 - a shape with `overlap: allow`, and anything;
-- a shape and a zone, an obstacle that wholly holds one of these: the shape where it already sat (a restated one), however snugly; a shape it's placed against, if the zone is at least twice that one's size (in area); the shape where it lands, if the zone holds other shapes too and is at least twice the shape's size; or the `view` it's placed against (the region you're zoomed into), or that the [drawing with nothing to hang on](#a-drawing-with-nothing-to-hang-on) is drawn in. A restated card lined up with one in the next column stays in its own, a shape placed against one on a much bigger shape isn't in the bigger one's way, and one that lands in a corner of a region that frames what's in it sits on that region. But what holds only the shape where it lands is in the way, however big: a rectangle that lands on an empty note is pushed past it, and so is a note that lands on an empty task card, or a shape moved onto either from elsewhere. So is a shape alone on the board, to one placed `inside board` over it. A note or a card that holds a shape of its own (a badge wholly inside it) is a zone like any other, though: a shape at most half its size that lands wholly on it sits on it, over its text (the badge is still in its way).
+- a shape and a zone, an obstacle that wholly holds one of these: the shape where it already sat (a restated one), however snugly; a shape it's placed against, if the zone is at least twice that one's size (in area); the shape where it lands, if the zone holds other shapes too and is at least twice the shape's size; or the `view` it's placed against (the region you're zoomed into), or that the [drawing with nothing to hang on](#a-drawing-with-nothing-to-hang-on) is drawn in. A restated card lined up with one in the next column stays in its own, a shape placed against one on a much bigger shape isn't in the bigger one's way, and one that lands in a corner of a region that frames what's in it sits on that region. But what holds only the shape where it lands is in the way, however big: a rectangle that lands on an empty note is pushed past it, and so is a note that lands on a subboard's card, or a shape moved onto either from elsewhere. So is a shape alone on the board, to one placed `inside board` over it. A note or a card that holds a shape of its own (a badge wholly inside it) is a zone like any other, though: a shape at most half its size that lands wholly on it sits on it, over its text (the badge is still in its way).
 
 A shape this script places counts as one a zone holds only when it's on the zone for a reason of its own, never just because another new shape is: it's placed `inside` or `on` the zone; the zone would hold it with no new shape counted (where it already sat, a shape on the board it's placed against, the view, or shapes on the board it lands among); or it's placed against a shape that counts. So two new shapes can't hold each other on an empty zone: a rectangle and the caption placed below it, landing together on the next note, are both pushed past it, and so are two legends landing on an empty frame. A shape placed `inside` an empty zone counts, whatever line it's on, and so, in turn, does what's placed against it.
 
@@ -374,13 +370,13 @@ rectangle "Warehouse" below board size: 1000x360
 ```
 
 ```draw
-task-card "Orders table" inside "Warehouse" top-left
-task-card "Customers table" right of "Orders table"
-ellipse "Badge" on "Warehouse" top-right size: 80x80
+sticky-note "Orders table" inside "Warehouse" top-left text: "One row per order"
+sticky-note "Customers table" right of "Orders table" text: "One row per customer"
+rectangle "Badge" on "Warehouse" top-right size: 80x80
 sticky-note "Archive" outside "Warehouse" bottom text: "Older than a year"
 ```
 
-A note stuck across two cards overlaps both on purpose. `on` exempts it from the one it's on, and `overlap: allow` from the other:
+A note stuck across two notes overlaps both on purpose. `on` exempts it from the one it's on, and `overlap: allow` from the other:
 
 ```draw
 sticky-note "Stamp" on "Orders table" right overlap: allow text: "Reviewed"
@@ -417,15 +413,14 @@ A channel is what kind of connection an edge is. Each kind has ports on some cha
 | kind | channel | sides |
 |---|---|---|
 | `sticky-note` | `note-link` | left, right, bottom |
-| `task-card` | `task-link` | top, right, bottom, left |
 | `schema-card` | `schema-link` | top, right, bottom, left |
-| `ellipse`, `rectangle`, `subboard` | none | none |
+| `rectangle`, `subboard` | none | none |
 
 `build/canvas kinds` lists each kind's channels by side, under `edges`. How an edge's channel is chosen:
 
 - **`channel: <id>`**: that channel. The start's kind must have ports on it, and the end's kind must accept it. Otherwise it's `no_channel`, and the message says what each end takes, side by side. A word that isn't a channel is `invalid_value`, and the hint lists the channels.
 - **`channel: none`**: a plain arrow, on no channel, between any two shapes, from and to any sides, as the arrow tool draws them.
-- **Unwritten**: the first of the start's channels (on the `from:` side, if named) that the end accepts (on the `to:` side, if named). If there's none, and neither kind has ports on any channel, it's a plain arrow. If there's none and either kind does have ports, it's `no_channel`: `"Ingest" and "Backfill" share no channel: a sticky-note connects on note-link, a task-card on task-link`, with the hint `channel: none draws a plain arrow between them anyway`.
+- **Unwritten**: the first of the start's channels (on the `from:` side, if named) that the end accepts (on the `to:` side, if named). If there's none, and neither kind has ports on any channel, it's a plain arrow, from and to any sides named. If there's none and either kind does have ports, it's `no_channel`: `"Ingest" and "Monday" share no channel: a sticky-note connects on note-link, a subboard has no ports`, with the hint `channel: none draws a plain arrow between them anyway`.
 - **A side a kind has no port on** is refused. With `channel:` written, it's `invalid_value`: `a sticky-note has note-link ports on its left, right and bottom`. With the channel unwritten, no channel fits that side, so it's `no_channel`.
 - **An edge from a shape to itself** on a channel is refused. With `channel: none` it's a short straight arrow inside the shape (from its middle, or between the sides named), not a loop around it. To show a loop, draw it through a second shape.
 
@@ -438,13 +433,13 @@ edge "Tuesday" <-> "Wednesday"
 ```
 
 ```draw
-edge "Backfill" -> "Nightly schedule" channel: task-link
+edge "Backfill" -> "Nightly schedule" channel: note-link
 edge "Nightly schedule" -> "Load" channel: none
 ```
 
 ```draw-error
 // reason: no_channel
-edge "Ingest" -> "Backfill"
+edge "Ingest" -> "Monday"
 ```
 
 ### Drawing one again
@@ -472,15 +467,15 @@ A style is a named set of attributes for the script it's in, used as `style: <na
 
 - It can hold any attribute, `size:`, `gap:` and `overlap:` included. It can't hold `style:` (a style can't take another) or `title:` (a title names one shape), and it can't hold a placement.
 - Of several styles, a later one wins. A shape's own attributes win over every style.
-- A style can serve several kinds. A key the shape's kind doesn't have is dropped for that shape. A style that gives a shape nothing at all is refused, and so is a style key that no drawable kind has (`style urgent has colr:, which is an attribute of nothing drawn here`, with the hint `did you mean color?`), both `unknown_attribute`. A style of only `size:`, `gap:` or `overlap:` gives every shape something.
+- A style can serve several kinds. A key the shape's kind doesn't have is dropped for that shape. A style that gives a shape nothing at all is refused, and so is a style key that no drawable kind has (`style urgent has txet:, which is an attribute of nothing drawn here`, with the hint `did you mean text?`), both `unknown_attribute`. A style of only `size:`, `gap:` or `overlap:` gives every shape something.
 - A style used but never defined, defined twice, or named twice on one shape is refused.
 - Edges take no style.
 
 ```draw
-style urgent priority: high status: doing
-style dated due: 2026-10-01
-task-card "Fix the loader" right of board style: urgent, dated gap: wide
-task-card "Backfill March" below "Fix the loader" style: urgent notes: "Rerun once the loader is fixed"
+style big size: 300x200
+style spaced gap: wide
+sticky-note "Fix the loader" right of board style: big, spaced text: "It drops rows with no date"
+sticky-note "Backfill March" below "Fix the loader" style: big text: "Rerun once the loader is fixed"
 ```
 
 "Backfill March" is 160 below "Fix the loader", because a placement's gap is the larger of the two shapes' `gap:`.
@@ -499,24 +494,21 @@ A statement whose title is already on the board updates that shape. It changes o
 - Re-running an old layout script moves its shapes back to where its placements put them, undoing whatever the user moved since, and draws its untitled shapes again. To add to a drawing, write only the new statements.
 
 ```draw
-task-card "Backfill" status: doing notes: null
+sticky-note "Backfill" text: null checklist: [{"text": "Ask the vendor again"}]
 ```
 
 ```draw
 sticky-note "Runbook" left level with "Backfill"
 ```
 
-The first statement changes Backfill's status and clears its notes without moving it. The second moves Runbook sideways, so its left edge lines up with Backfill's, and keeps its vertical position, since nothing speaks for that axis. Alerts, placed below Runbook in an earlier script, stays where it was.
+The first statement clears Backfill's text and gives it a checklist, without moving it. The second moves Runbook sideways, so its left edge lines up with Backfill's, and keeps its vertical position, since nothing speaks for that axis. Alerts, placed below Runbook in an earlier script, stays where it was.
 
 ### Renaming
 
 `title: "New"` on a restated shape renames it (`did: "renamed"`, with `was: "Old"`). The shape can move or change in the same statement. The new title must fold to something, and no other shape on the board or statement in the script may have it (`duplicate`). The kind must be nameable. Other lines in the same script still call the shape by its old title; the new title applies from the next run. `title:` on a new shape is refused: a new shape's title goes after its kind. `title: null` is refused too (`unsupported`), and so are `title: none` and `title: nil`: a script renames a shape, but can't take its title away. A title that really is "none" is quoted.
 
-A shape named for what it is, like an unnamed ellipse, can be given a title of its own this way:
-
 ```draw
-ellipse "Ellipse, 200 × 140" title: "Vendor"
-task-card "Nightly schedule" title: "Nightly run"
+sticky-note "Nightly schedule" title: "Nightly run"
 ```
 
 ### Deleting
@@ -536,7 +528,7 @@ delete "Archive"
 
 ```draw
 delete "Owner"
-task-card "Owner" above-left of "Ingest" notes: "The data team"
+subboard "Owner" above-left of "Ingest"
 ```
 
 ## How a run is applied
@@ -561,8 +553,8 @@ An illustration (not the board on this page):
 {"board": {"id": 2, "name": "Pipeline", "shows": "root", "showsPath": ["root"]},
  "changes": [
    {"line": 3, "did": "created", "kind": "sticky-note", "title": "Ingest", "at": [[400, 300], [200, 200]], "inView": true},
-   {"line": 4, "did": "moved", "kind": "task-card", "title": "Backfill", "at": [[380, 580], [240, 200]], "inView": true, "pushedPast": ["Vendor"]},
-   {"line": 5, "did": "renamed", "kind": "task-card", "title": "Nightly run", "was": "Nightly schedule", "at": [[940, 580], [240, 200]], "inView": false},
+   {"line": 4, "did": "moved", "kind": "sticky-note", "title": "Backfill", "at": [[380, 580], [200, 200]], "inView": true, "pushedPast": ["Vendor"]},
+   {"line": 5, "did": "renamed", "kind": "sticky-note", "title": "Nightly run", "was": "Nightly schedule", "at": [[940, 580], [200, 200]], "inView": false},
    {"line": 6, "did": "deleted", "kind": "sticky-note", "title": "Archive"},
    {"line": 7, "did": "connected", "kind": "arrow", "from": "Ingest", "to": "Clean", "channel": "note-link"},
    {"line": 8, "did": "unchanged", "kind": "sticky-note", "title": "Load"}
@@ -580,8 +572,8 @@ An illustration (not the board on this page):
 
 The run succeeds with these **warnings**, each with its `severity`, the `line` of the statement it's about (all but the count of shapes out of view have one), and the `attribute` it's about, when it's about one:
 
-- every validation issue on each shape made or changed, errors included, like `"Backfill": Blocked: say why in the notes.` or `"Inbox": This note is empty.` An `error` means the board outlines that shape in red;
-- every schema bound a value breaks, like a title over 80 characters or a negative estimate;
+- every validation issue on each shape made or changed, errors included, like `"Inbox": This note is empty.` or a schema card's `A schema must be a JSON object.` An `error` means the board outlines that shape in red;
+- every schema bound a value breaks, like a title over 80 characters;
 - every push;
 - sides that face away;
 - titles that nearly match one on the board;
@@ -604,7 +596,7 @@ When a run fails, nothing changes. The error goes to standard error:
                       {"line": 5, "statement": "edge \"Notes\" -> \"Laod\"", "reason": "unknown_title", "message": "…", "hint": "…"}]}}
 ```
 
-`reason` is what to branch on. `message` names the statement in its own words: its title, or `the task-card on line 3` for an untitled one, with placements quoted back as written. `hint` is usually the line to write instead. `line` is the line it's about, or the later of two. `statement` is that line as written, without its comment. `errors` is there only when more than one mistake was found (mistakes that don't depend on each other, found reading and resolving): the first leads, and `errors` lists them all, the first too. With one, read `line`, `statement` and `hint`. As text, it reads `canvas: line 3: <message>`, then the statement, then `hint: …`, then each further error.
+`reason` is what to branch on. `message` names the statement in its own words: its title, or `the rectangle on line 3` for an untitled one, with placements quoted back as written. `hint` is usually the line to write instead. `line` is the line it's about, or the later of two. `statement` is that line as written, without its comment. `errors` is there only when more than one mistake was found (mistakes that don't depend on each other, found reading and resolving): the first leads, and `errors` lists them all, the first too. With one, read `line`, `statement` and `hint`. As text, it reads `canvas: line 3: <message>`, then the statement, then `hint: …`, then each further error.
 
 The messages below are examples. The wording can differ, but the reason doesn't.
 
@@ -613,14 +605,14 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | `syntax` | The line can't be read. `sticky-note: Web isn't quoted, and titles are in double quotes` · `edge: --> isn't an arrow` · `--> joins shapes only in an edge statement` · `titles and text are in straight double quotes: "Web"` · `sticky-note "A": rigth isn't a placement` · `# doesn't start a comment here` · `attributes are written key: value, without braces` · `an attribute is written key: value, not key = value` | Follow the hint, which names what to write. |
 | `unknown_kind` | The first word isn't a kind the app has. `node "Web"`, with the drawable kinds listed, and the one like it named (`note`: `did you mean sticky-note?`) | Use a kind from `build/canvas kinds`. |
 | `not_placeable` | The kind exists but no tool places it, like an arrow, or a line, whose tool draws one by hand. | Draw an arrow as `edge "A" -> "B"`. |
-| `unknown_attribute` | The key isn't one the kind takes. `"Backfill" is a task-card and has owner:, which isn't one of a task-card's attributes`, with the hint `a task-card takes size:, gap:, overlap:, style:, title:, checklist:, …` · a style that gives a shape nothing, or has a key nothing takes | Use one it takes (Did you mean), or drop it. |
-| `invalid_value` | The value doesn't fit the key. `status: finished isn't one of todo, doing, blocked, done` · `size: huge isn't a size` · `gap: wdie isn't a gap` · a size or gap over 100000 · `from: middle isn't a side` · `channel: note-lnk isn't a channel` · a JSON member the object doesn't have (`checklist: done isn't a member of item 1 (it has isDone and text)`), or a value of the wrong type in it · with `channel:` written, a side the kind has no port on (`from: top: a sticky-note has note-link ports on its left, right and bottom`) · another channel for an edge already drawn (`the edge from "A" to "B" is on note-link, not on task-link`) | Write a value of the kind the hint names. |
-| `duplicate` | Something is written twice. `"priority" is written twice (high, low)` · a title stated on two lines (`written twice, here and on line 4`) · a rename to a title another shape has · two edges for one pair · a style defined twice | Keep one. |
+| `unknown_attribute` | The key isn't one the kind takes. `"Backfill" is a sticky-note and has owner:, which isn't one of a sticky-note's attributes`, with the hint `a sticky-note takes size:, gap:, overlap:, style:, title:, checklist:, …` · a style that gives a shape nothing, or has a key nothing takes | Use one it takes (Did you mean), or drop it. |
+| `invalid_value` | The value doesn't fit the key. `locked: maybe isn't true or false` · `size: huge isn't a size` · `gap: wdie isn't a gap` · a size or gap over 100000 · `from: middle isn't a side` · `channel: note-lnk isn't a channel` · a JSON member the object doesn't have (`checklist: done isn't a member of item 1 (it has isDone and text)`), or a value of the wrong type in it · with `channel:` written, a side the kind has no port on (`from: top: a sticky-note has note-link ports on its left, right and bottom`) · another channel for an edge already drawn (`the edge from "A" to "B" is on note-link, not on schema-link`) | Write a value of the kind the hint names. |
+| `duplicate` | Something is written twice. `"locked" is written twice (true, false)` · a title stated on two lines (`written twice, here and on line 4`) · a rename to a title another shape has · two edges for one pair · a style defined twice | Keep one. |
 | `unknown_title` | No shape has that title. `right of "Injest"`, with up to 3 near titles · `board` on an empty board | Write the title exactly (`did you mean "Ingest"?`). On an empty board, leave one shape unplaced instead. |
 | `ambiguous_title` | Two or more shapes have the title, each listed with its kind and where it is. | Ask the user to rename one. Titles only work as names while each is used once. |
 | `ambiguous_edge` | `"A" -> "B" is drawn 2 times` | Write `delete edge "A" -> "B"` above the line, then draw it once. |
 | `untitlable` | The kind can't be given a title: `a <kind>'s title is worked out from what it is`, or `a <kind> has no title` | Leave the title out, and don't plan to name it later. |
-| `renames` | The change would rename a shape whose name comes from what it is. `size: 300x200 would rename "Ellipse, 200 × 140" to "Ellipse, 300 × 200"` · a schema card's schema with no title left: `this would leave "Order" without a title` | Give it a title of its own first (`title:`), then change it; keep a schema card's title in its schema. |
+| `renames` | The change would take away the name of a shape whose name comes from what it is: a schema card's schema with no title left, `this would leave "Row" without a title` | Keep a schema card's title in its schema. |
 | `wrong_kind` | The title belongs to a shape of another kind. `"Ingest" is a sticky-note` | Use its kind, or change it with `delete "Ingest"` and a new statement in the same script. |
 | `read_only` | The shape or connection is locked, and the change would really change it. `"Ship" is read-only (locked, say), so it can't be deleted` · `one of "Ingest"'s connections is read-only (locked, say), so "Ingest" can't be deleted with it` · a subboard whose board holds a locked shape, deleted | Tell the user. Leave it, or ask them to unlock it. |
 | `unplaced` | Nothing says where a shape sits. `"Between" does not say where it sits vertically: right of "Ingest" and left of "Load" would put it in different places` · `exactly one new shape may say nothing about where it goes, but 2 do: "Idea one" and "Idea two"` · `"N" says nothing about where it sits horizontally` | Add a placement for that axis (the hint names one), or place all but one shape. |
@@ -628,7 +620,7 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | `no_room` | The placements can't all hold. `"Squeeze" is right of "Ingest" and left of "Clean", and there's no room between them` · `… clear of "Q"` · `"N" is inside "Z" top-left, and there's no room left in "Z"` | Drop or change a placement, or ask for a smaller gap. Shapes on the board don't move, so to make room, restate them with placements. |
 | `circular` | `"Loop" is placed against itself`, or two shapes wait on each other: `"N" is level with "A" and "B", but "B" is placed vertically against "N" in turn` | Place one of them against something else. |
 | `unordered` | Two shapes would overlap and nothing says which side of the other either sits on. `"North" and "Far north" overlap, and nothing says which side of the other either one sits on` · `"N" is on "P" and can't move, but it overlaps "Q"` | Place one against the other, place it elsewhere, or say `overlap: allow`. Held on an empty zone, the hint says so: place it elsewhere, or, if the zone is meant to hold shapes, put a first one `inside` it. |
-| `no_channel` | The edge's ends share no channel, on the sides named if any, or the channel written isn't one both ends take. `"Ingest" and "Backfill" share no channel: a sticky-note connects on note-link, a task-card on task-link` · `a connection on note-link can't end where it starts` | Connect like to like, name a side that has the port, or say `channel: none`. |
+| `no_channel` | The edge's ends share no channel, on the sides named if any, or the channel written isn't one both ends take. `"Ingest" and "Monday" share no channel: a sticky-note connects on note-link, a subboard has no ports` · `a connection on note-link can't end where it starts` | Connect like to like, name a side that has the port, or say `channel: none`. |
 | `cannot_connect` | The app won't connect that end at all, and the message names the end. | Connect a different shape. |
 | `no_edges` | No plugin in this app draws connections. | Draw shapes only. |
 | `no_names` | No plugin in this app names shapes, so titles can't be matched. | Titled statements can't work in this app. |
@@ -668,12 +660,12 @@ arrow right of "Ingest"
 
 ```draw-error
 // reason: unknown_attribute
-task-card "Backfill" owner: "Ann"
+sticky-note "Backfill" owner: "Ann"
 ```
 
 ```draw-error
 // reason: invalid_value
-task-card "Backfill" status: finished
+sticky-note "Backfill" locked: maybe
 ```
 
 ```draw-error
@@ -689,7 +681,7 @@ sticky-note "Notes" right of "Injest"
 
 ```draw-error
 // reason: wrong_kind
-task-card "Ingest"
+subboard "Ingest"
 ```
 
 ```draw-error
@@ -747,7 +739,7 @@ delete edge "Ingest" -> "Load"
 - `drawable`: whether a script can draw it, with the reason if not (`why`).
 - `names`: `named` (a title you give it), `derived` (worked out from what it is), or `none`.
 - `size`: what its tool places, like `"200x200"`.
-- `attributes`: each attribute a script can set, with a compact type. The types are `todo|doing|blocked|done` for a set of words, `number ≥ 0`, `integer`, `text`, `text (≤ 80)`, `true|false`, `date (YYYY-MM-DD or date-time)`, and JSON shapes like `JSON {blue, green, red: 0…1}` and `JSON [{isDone, text}]` (members in alphabetical order; an id nobody writes, like a checklist item's, isn't listed). Keys a script can't set, like the frame, aren't listed.
+- `attributes`: each attribute a script can set, with a compact type. The types are a set's words joined by `|`, `true|false`, `number ≥ 0`, `integer`, `text`, `text (≤ 80)`, `date (YYYY-MM-DD or date-time)`, and JSON shapes like `JSON [{isDone, text}]` (members in alphabetical order; an id nobody writes, like a checklist item's, isn't listed). Keys a script can't set, like the frame, aren't listed.
 - `edges`: the channels an edge from it can take, by side.
 
 `--schema` adds each kind's full JSON Schema. As text, for a person at a terminal, each kind's attributes and edges are listed under its row.
@@ -774,7 +766,7 @@ These are left out on purpose. What they protect is that the app never chooses a
 - **Groups and containers** that grow with what's in them, or that move as one. Zones are plain shapes, and their contents are placed once.
 - **Routing.** A line may cross shapes it has nothing to do with. There's no `between` or `below "X"` for edges yet.
 - **Extending a list** across runs, other than by restating every member.
-- **Naming shapes the user left untitled.** An untitled shape can't be named by a script, except by a size-derived name.
+- **Naming shapes the user left untitled.** An untitled shape can't be named by a script.
 - **Chains** (`edge "A" -> "B" -> "C"`).
 - **Commands from the plugins that own a concern.** Everything goes through `draw` for now.
 

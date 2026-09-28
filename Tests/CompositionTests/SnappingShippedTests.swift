@@ -95,7 +95,7 @@ import TestKit
         defer { pasteboard.releaseGlobally() }
         let a = note(CGRect(x: 400, y: 0, width: 200, height: 200))
         let h = shipped([a], pasteboard)
-        h.key("o")
+        h.key("r")
         h.press(at: CGPoint(x: 100, y: 650))
         let placed = try require(h.editor.selection)
         let frame = try require(h.editor.document[placed]?.box)

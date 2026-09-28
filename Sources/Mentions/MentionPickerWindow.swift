@@ -270,7 +270,7 @@ final class MentionPickerRowsView: NSView {
         }
     }
 
-    /// What VoiceOver says for a row: "Groceries, Task, 2 of 7"; an empty state's words.
+    /// What VoiceOver says for a row: "Groceries, Note, 2 of 7"; an empty state's words.
     static func spoken(_ picker: MentionPicker, row index: Int) -> String {
         switch picker.rows[index] {
         case .header(let title), .empty(let title): return title

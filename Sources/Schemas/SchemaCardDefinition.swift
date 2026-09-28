@@ -5,7 +5,7 @@ import Canvas
 @MainActor
 struct SchemaCardDefinition {}
 
-/// A white card like the task card: a `{}` mark and the schema's name, then a row per top-level
+/// A white card: a `{}` mark and the schema's name, then a row per top-level
 /// field (its name in a chip; inside it, its fields in braces or its values between bars; its type
 /// at the end), at most 7, then `+N more`, then the rules at the root. Nested fields show inside
 /// their parent's row, one level down (`{ address {…} · phone }`), so they never take a row. A
@@ -107,11 +107,11 @@ private extension NSAttributedString {
 }
 
 /// The card's look, in world units, beside `SchemaCardMetrics` (its vertical metrics). Fixed colors:
-/// like the task card and the sticky note, the card is the same in both appearances; only the
+/// like the sticky note and the subboard, the card is the same in both appearances; only the
 /// canvas around it changes.
 @MainActor
 enum SchemaStyle {
-    static let cornerRadius: CGFloat = 8               // TaskStyle.cornerRadius
+    static let cornerRadius: CGFloat = 8
     static let chipRadius: CGFloat = 5
     /// Text in a chip; `+N more` and the rules line line up with it.
     static let chipInset: CGFloat = 6
@@ -139,16 +139,16 @@ enum SchemaStyle {
     static let markBarWidth: CGFloat = 14
     static let markBarGap: CGFloat = 5
 
-    static let card = NSColor.white                                                        // TaskStyle.card
-    static let text = NSColor(srgbRed: 0.12, green: 0.12, blue: 0.12, alpha: 1)           // TaskStyle.text
-    static let secondaryText = NSColor(srgbRed: 0.45, green: 0.45, blue: 0.45, alpha: 1)  // TaskStyle.secondaryText
+    static let card = NSColor.white
+    static let text = NSColor(srgbRed: 0.12, green: 0.12, blue: 0.12, alpha: 1)
+    static let secondaryText = NSColor(srgbRed: 0.45, green: 0.45, blue: 0.45, alpha: 1)
     static let tertiaryText = NSColor(srgbRed: 0.62, green: 0.62, blue: 0.62, alpha: 1)
     static let chipFill = NSColor(srgbRed: 0.945, green: 0.945, blue: 0.945, alpha: 1)
     static let bar = NSColor(srgbRed: 0.80, green: 0.80, blue: 0.80, alpha: 1)
     /// The `{}` mark, and the row's symbol in the table of contents.
     static let accent = NSColor(srgbRed: 0.40, green: 0.36, blue: 0.86, alpha: 1)
 
-    static let titleFont = NSFont.systemFont(ofSize: 14, weight: .semibold)               // TaskStyle.titleFont
+    static let titleFont = NSFont.systemFont(ofSize: 14, weight: .semibold)
     static let markFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .semibold)
     static let nameFont = NSFont.systemFont(ofSize: 11, weight: .medium)
     static let patternFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)

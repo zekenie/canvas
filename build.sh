@@ -375,9 +375,9 @@ audit_sources() {
     # (Ports') as a string only if it depends on that module. The graph already keeps a module from
     # naming another's types; this keeps it from reaching that module's shapes, tools, plugins, added
     # properties or channels by string instead. A module owns the ids its non-test code declares: as a
-    # static member (`static let kind: ShapeKind = "ellipse"`, `static let arrow: ToolID = "arrow"`,
+    # static member (`static let kind: ShapeKind = "rectangle"`, `static let arrow: ToolID = "arrow"`,
     # `static let key: PropertyKey = "checklist"`, `static let id: ChannelID = "note-link"`) or as a
-    # plugin's `id` (`var id: PluginID { "ellipses" }`). Test fixtures' ids
+    # plugin's `id` (`var id: PluginID { "rectangles" }`). Test fixtures' ids
     # ("box", "card") are ordinary words, so they own nothing. Any other string literal is a use,
     # except an SF Symbol or asset name (the argument of systemImage:, systemName:, systemSymbolName:
     # or named:), which only looks like one, and a kind's own property's name (`Property("title", ...)`),

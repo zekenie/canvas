@@ -11,8 +11,8 @@ import SwiftUI
 ///
 /// That renames the title Titles keeps (`x.title()`). A title derived from what the kind keeps is
 /// renamed where it comes from, given that binding instead: a `String?`, nil while untitled, or a
-/// `String`, blank while untitled (`TitleHeader($card.text)`). One that can't be, such as an
-/// ellipse's size, isn't; such a kind shows it in a `DetailHeader`, if at all.
+/// `String`, blank while untitled (`TitleHeader($card.text)`). One that can't be, such as a name
+/// worked out from a shape's size, isn't; such a kind shows it in a `DetailHeader`, if at all.
 public struct TitleHeader: View {
     /// The title as the field shows it: empty while untitled.
     public let title: String

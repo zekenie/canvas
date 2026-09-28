@@ -53,7 +53,7 @@ public struct DetailTabID: Hashable, Sendable, CustomStringConvertible {
     let type: ObjectIdentifier
     public let title: String
     let order: Int
-    /// Module-qualified (`TaskCards.TaskTab`): stable across launches, for persisting later.
+    /// Module-qualified (`Schemas.SchemaTab`): stable across launches, for persisting later.
     public let name: String
 
     init<T: DetailTab>(_: T.Type) {
@@ -110,8 +110,8 @@ public struct DetailStatus: Hashable, Sendable {
 /// One section of a tab: an optional bold header (collapsible, with an optional control at its
 /// trailing end), then rows. `Value` is what it edits: a kind's props, or a box's frame.
 ///
-/// The content closure gets a `ShapeBinding`. Take it as `$task`: `task.notes` is the value,
-/// `$task.notes` a `Binding` that writes that one field in its own transaction.
+/// The content closure gets a `ShapeBinding`. Take it as `$card`: `card.prompt` is the value,
+/// `$card.prompt` a `Binding` that writes that one field in its own transaction.
 /// (The closure types are deliberately unannotated: annotated `@MainActor`, Swift 6.3 compiles a
 /// `$`-parameter body as nonisolated, and every view initializer in it fails.)
 @MainActor
@@ -179,7 +179,7 @@ public enum DetailSectionsBuilder<Value> {
 }
 
 /// Where a section is: which shapes, which tab, which section. The key a contribution claims, and
-/// what collapse is remembered by. Prints as "task-card Style/Color" (or "* Arrange/Size").
+/// what collapse is remembered by. Prints as "schema-card Schema/JSON" (or "* Arrange/Size").
 public struct DetailSectionKey: Hashable, Sendable, CustomStringConvertible {
     public let target: ShapeTarget
     public let tab: DetailTabID
@@ -351,9 +351,9 @@ extension ShapeRegistrar {
 
     /// This kind's header and sections, in one call:
     ///
-    ///     task.details(header: { $task in DetailHeader("Task", subtitle: $task.shape.summary) }) {
-    ///         DetailSection(in: TaskTab.self) { $task in LabeledContent("Notes") { TextField("Notes", text: $task.notes) } }
-    ///         DetailSection("Color", in: StyleTab.self) { $task in ... }
+    ///     schema.details(header: { $card in schemaHeader($card) }) {
+    ///         DetailSection("Description", in: SchemaTab.self) { $card in DetailTextArea($card.prompt) }
+    ///         DetailSection("JSON", in: SchemaTab.self) { $card in SchemaCode(card: $card) }
     ///     }
     ///
     /// The header is a view made from the shape's binding, as a section's content is: a

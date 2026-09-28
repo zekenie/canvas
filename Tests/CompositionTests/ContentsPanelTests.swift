@@ -154,7 +154,7 @@ extension NSTableView {
         expect(!w.canvasHasKeyboard)
         w.window.pressEscape()
         w.window.spin { w.canvasHasKeyboard }
-        w.window.press("o")
-        expectEqual(w.editor.currentToolID, ToolID(placing: "ellipse"))
+        w.window.press("r")
+        expectEqual(w.editor.currentToolID, ToolID(placing: "rectangle"))
     },
 ])

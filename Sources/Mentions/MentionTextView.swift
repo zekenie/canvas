@@ -703,7 +703,7 @@ public final class MentionTextView<Scope: MentionScope>: NSTextView {
     // holds U+FFFC there), so the value, the count and the selection agree; what VoiceOver reads for
     // a range, or the selection, says each pill as its name and kind.
 
-    /// The range as VoiceOver reads it: each pill its name and kind ("Groceries, Task"), or its name
+    /// The range as VoiceOver reads it: each pill its name and kind ("Groceries, Note"), or its name
     /// and why it isn't live ("Groceries, deleted").
     public override func accessibilityAttributedString(for range: NSRange) -> NSAttributedString? {
         NSAttributedString(string: spokenText(range, pill: MentionStyle.spoken))
@@ -734,7 +734,7 @@ extension MentionStyle {
     static func goTo(_ label: String) -> String { "Go to “\(label)”" }
     static let removeMention = "Remove Mention"
 
-    /// A pill as VoiceOver reads it: "Groceries, Task", or "Groceries, deleted".
+    /// A pill as VoiceOver reads it: "Groceries, Note", or "Groceries, deleted".
     static func spoken(_ pill: MentionAttachment) -> String {
         switch pill.resolution {
         case .live(let appearance): "\(appearance.label), \(appearance.kindName)"

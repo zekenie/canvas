@@ -315,7 +315,7 @@ func schemaIssues(of shape: AnyShapeRecord, in context: ValidationContext) -> [V
 
 /// The schema rule's issues for each shape, kept until a commit changes the shape in any way but
 /// moving it (`ChangeSet.moved`): a drag commits every shape it drags on every event, and checking
-/// a task card against its schema costs several microseconds, while where a shape is is nothing its
+/// a shape against its kind's schema costs microseconds, while where a shape is is nothing its
 /// schema checks. A box is the core's rect in every kind's schema, and moving one keeps it as finite
 /// as it was (a transaction refuses a box that isn't). And a shape checked again because a shape
 /// its rules looked up changed keeps its own.

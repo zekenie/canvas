@@ -11,8 +11,6 @@ import Clipboard
 import ContextMenus
 import CoreGraphics
 import DetailPanel
-import EllipseTitles
-import Ellipses
 import Eraser
 import Keyboard
 import LanguageModels
@@ -31,7 +29,6 @@ import StickyNotes
 import Subboards
 import SwiftUI
 import TableOfContents
-import TaskCards
 import TitleNames
 import Titles
 import Validation
@@ -56,7 +53,7 @@ public enum ShippedPlugins {
             // First: every key is registered with Keyboard; the others build on Selection, and its
             // handles draw below their view overlays.
             KeyboardPlugin(), SelectionPlugin(),
-            ArrowsPlugin(), StickyNotesPlugin(), EllipsesPlugin(), TaskCardsPlugin(), SubboardsPlugin(), SchemasPlugin(),
+            ArrowsPlugin(), StickyNotesPlugin(), SubboardsPlugin(), SchemasPlugin(),
             // After Validation: what's shown on shapes draws over its outline.
             ValidationPlugin(), AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin(), ChecklistsPlugin(), TitlesPlugin(),
             // After Titles, whose names its pills show, and the table of contents, whose rows it names.
@@ -76,7 +73,7 @@ public enum ShippedPlugins {
             // concern: titles for names, ports' connections for edges, and validity for its warnings.
             AutomationPlugin(), TitleNamesPlugin(), PortEdgesPlugin(), ValidationChecksPlugin(),
             // The examples (Examples/). Each is one line here; delete it to leave it out.
-            RectanglesPlugin(), PolylinesPlugin(), EraserPlugin(), EllipseTitlesPlugin(), RectangleTitlesPlugin(), ReorderingPlugin(),
+            RectanglesPlugin(), PolylinesPlugin(), EraserPlugin(), RectangleTitlesPlugin(), ReorderingPlugin(),
         ]
     }
 
@@ -147,7 +144,7 @@ public enum WelcomeBoard {
         "Double-click empty space to add a note. Drag a note to move it.",
         "Double-click a note (or select it and press Return) to edit it.",
         "Pinch to zoom, scroll with two fingers to pan. Press H for the hand tool; drag the background to select.",
-        "Press A for the arrow tool, then drag from one shape to another. Press O to place an ellipse.",
+        "Press A for the arrow tool, then drag from one shape to another.",
         "Pause inside a note while drawing to aim at that spot. Hold ⌥ to go all the way in, ⌘ to not attach.",
         "Select an arrow and drag its middle handle to bend it.",
     ]

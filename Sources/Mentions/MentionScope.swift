@@ -41,8 +41,8 @@ extension Only: MentionScope {
 }
 
 /// A scope any plugin declares (`registrar.mentionScope(S.self)`) and kinds join, from their own
-/// plugin or a bridge (`x.mentionable(in: S.self)`): what may block a task, say, which tasks and
-/// notes join though neither plugin knows the other. The type is the key, as a detail tab's is;
+/// plugin or a bridge (`x.mentionable(in: S.self)`): what a plan may depend on, say, which notes
+/// and subboards join though neither plugin knows the other. The type is the key, as a detail tab's is;
 /// its title only names it, and no two declared scopes share one. Nothing about a scope is saved
 /// in a board, so it has no id.
 public protocol DeclaredMentionScope: MentionScope {

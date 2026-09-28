@@ -9,19 +9,18 @@ import CanvasUI
 import Checklists
 import Composition
 import CoreGraphics
-import Ellipses
 import Foundation
 import Geometry
 import LanguageModels
 import Locking
 import Mentions
+import Rectangles
 import Schemas
 import Selection
 import Snapping
 import StickyNotes
 import Subboards
 import TableOfContents
-import TaskCards
 import TestKit
 import Titles
 import Validation
@@ -108,44 +107,44 @@ enum Budget {
     static let draw20 = 150.0
 }
 
-/// Notes, tasks, ellipses and schema cards in a grid, with an arrow from every fourth note to the
-/// note after it. Every other note has a title, so frames draw pills, and every fourth a checklist of
-/// two, so they draw checklist chips (a task shows none); every task has a checklist of three, so
-/// boards save and open added values; every ellipse is locked, so frames draw lock chips; every
-/// schema card has a schema of its own, so frames read no card's schema again however many
-/// different ones there are; and three notes in ten mention two shapes, so frames draw pills: a
-/// task (the first 100 of them the first task, `mentionedTask`, the rest the task before them) and a
-/// shape that isn't on the board, which shows as missing.
+/// Notes, subboards, rectangles and schema cards in a grid, with an arrow from every fourth note to
+/// the note after it. Every other note has a title, so frames draw pills, and every fourth a
+/// checklist of two, so they draw checklist chips and boards save and open added values; every
+/// subboard has a title, which its card draws (a subboard shows no pill), and an empty board, which
+/// the file doesn't keep; every rectangle is locked, so frames draw lock chips; every schema card
+/// has a schema of its own, so frames read no card's schema again however many different ones there
+/// are; and three notes in ten mention two shapes, so frames draw pills: a subboard (the first 100
+/// of them the first subboard, `mentionedSubboard`, the rest the subboard before them) and a shape
+/// that isn't on the board, which shows as missing.
 @MainActor func generatedBoard(shapes count: Int) -> CanvasDocument {
     var shapes: [AnyShapeRecord] = []
     let columns = Int(Double(count).squareRoot().rounded(.up))
     var previousNote: ShapeID?
-    var firstTask: ShapeID?, lastTask: ShapeID?
+    var firstSubboard: ShapeID?, lastSubboard: ShapeID?
     var notes = 0, mentioning = 0
     var i = 0
     while shapes.count < count {
         let origin = CGPoint(x: (i % columns) * 260, y: (i / columns) * 260)
         switch i % 10 {
         case 0, 1:
-            var task = AnyShapeRecord(ShapeRecord(TaskCard(frame: CGRect(origin: origin, size: TaskCard.defaultSize), status: .doing, estimate: 3)))
-            task[TitleProperty.self] = "Task \(i)"
-            task[ChecklistProperty.self] = [ChecklistItem(text: "Spec", isDone: true), ChecklistItem(text: "Build"), ChecklistItem(text: "Ship")]
-            shapes.append(task)
-            if firstTask == nil { firstTask = task.id }
-            lastTask = task.id
+            var subboard = AnyShapeRecord(ShapeRecord(Subboard(frame: CGRect(origin: origin, size: Subboard.defaultSize))))
+            subboard[TitleProperty.self] = "Plan \(i)"
+            shapes.append(subboard)
+            if firstSubboard == nil { firstSubboard = subboard.id }
+            lastSubboard = subboard.id
         case 2:
-            var ellipse = AnyShapeRecord(ShapeRecord(Ellipse(frame: CGRect(origin: origin, size: CGSize(width: 160, height: 120)))))
-            ellipse[LockedProperty.self] = true
-            shapes.append(ellipse)
+            var rectangle = AnyShapeRecord(ShapeRecord(Rectangle(frame: CGRect(origin: origin, size: CGSize(width: 160, height: 120)))))
+            rectangle[LockedProperty.self] = true
+            shapes.append(rectangle)
         case 9:
             var schema = SchemaCard(frame: CGRect(origin: origin, size: SchemaCard.defaultSize))
             schema.setSchema(#"{"title": "Record \#(i)", "type": "object", "properties": {"name": {"type": "string"}, "count\#(i)": {"type": "integer"}, "tags": {"type": "array", "items": {"type": "string"}}}, "required": ["name"]}"#)
             shapes.append(AnyShapeRecord(ShapeRecord(schema)))
         default:
             var text = MentionText(plain: "Note \(i): something to do")
-            if notes % 10 < 3, let firstTask, let lastTask {
-                let task = mentioning < 100 ? firstTask : lastTask
-                text = MentionText([.text("Note \(i): ask "), .mention(task, label: "Task"), .text(" about it, and "),
+            if notes % 10 < 3, let firstSubboard, let lastSubboard {
+                let subboard = mentioning < 100 ? firstSubboard : lastSubboard
+                text = MentionText([.text("Note \(i): ask "), .mention(subboard, label: "Plan"), .text(" about it, and "),
                                     .mention(ShapeID(), label: "Old note \(i)")])
                 mentioning += 1
             }
@@ -165,14 +164,14 @@ enum Budget {
     return CanvasDocument(shapes: shapes)
 }
 
-/// Ellipses in a grid, which can't be mentioned, and three notes that can: one at the top left
+/// Rectangles in a grid, which can't be mentioned, and three notes that can: one at the top left
 /// (`owner`), one in the middle and one at the bottom right (`others`).
 @MainActor func sparseBoard(shapes count: Int) -> (document: CanvasDocument, owner: ShapeID, others: [ShapeID]) {
     let columns = Int(Double(count).squareRoot().rounded(.up))
     var shapes: [AnyShapeRecord] = []
     for i in 0..<count - 3 {
         let origin = CGPoint(x: (i % columns) * 260, y: (i / columns) * 260)
-        shapes.append(AnyShapeRecord(ShapeRecord(Ellipse(frame: CGRect(origin: origin, size: CGSize(width: 160, height: 120))))))
+        shapes.append(AnyShapeRecord(ShapeRecord(Rectangle(frame: CGRect(origin: origin, size: CGSize(width: 160, height: 120))))))
     }
     let far = CGFloat(columns) * 260
     let notes = [CGPoint(x: -300, y: -300), CGPoint(x: far / 2, y: far / 2), CGPoint(x: far, y: far)].map { origin in
@@ -181,8 +180,8 @@ enum Budget {
     return (CanvasDocument(shapes: shapes + notes), notes[0].id, [notes[1].id, notes[2].id])
 }
 
-/// The task the first 100 mentioning notes of a generated board mention.
-@MainActor func mentionedTask(in document: CanvasDocument) -> ShapeID? { document.shapes.first { $0.kind == TaskCard.kind }?.id }
+/// The subboard the first 100 mentioning notes of a generated board mention.
+@MainActor func mentionedSubboard(in document: CanvasDocument) -> ShapeID? { document.shapes.first { $0.kind == Subboard.kind }?.id }
 
 /// Times what a plugin's services cost as an editor is made: a service of `start`'s, made just
 /// before them, reads the clock, and one of `end`'s, made just after, reads it again.
@@ -213,8 +212,8 @@ enum Budget {
 /// A file of generated boards (`generatedBoard`): a root of `root` shapes beside a subboard for each
 /// of `children` (in a row above the grid, out of the frames' view), whose board holds that many.
 /// The last is the top of a chain `depth` boards deep, the shapes shared among them, each board but
-/// the deepest holding the subboard of the next beside its share. A board's subboards aren't among
-/// its count.
+/// the deepest holding the subboard of the next beside its share. A board's subboards that own
+/// boards (`owners(in:)`) aren't among its count.
 @MainActor func generatedFile(root: Int, children: [Int], depth: Int = 1) -> CanvasFile {
     precondition(depth >= 1 && (depth == 1 || !children.isEmpty))
     var boards: [ShapeID: CanvasDocument] = [:]
@@ -240,8 +239,9 @@ enum Budget {
     return CanvasFile(root: CanvasDocument(shapes: generatedBoard(shapes: root).shapes + owners.map(AnyShapeRecord.init)), children: boards)
 }
 
-/// The board's subboards, in its order.
-func subboards(on document: CanvasDocument) -> [ShapeID] { document.shapes.filter { $0.kind == Subboard.kind }.map(\.id) }
+/// The root's subboards that own boards in the file, in its order: those `generatedFile` put there,
+/// not the empty ones a generated board holds.
+func owners(in file: CanvasFile) -> [ShapeID] { file.root.shapes.filter { file.children[$0.id] != nil }.map(\.id) }
 
 /// Every board with no shape locked (a locked shape inside a subboard keeps it from being deleted).
 func unlocked(_ file: CanvasFile) -> CanvasFile {
@@ -328,8 +328,8 @@ extension Duration {
             }
             let index = indexTimes.sorted()[indexTimes.count / 2]
             expectEqual(opened?.document, registry.fillingDefaults(document))
-            let task = try require(mentionedTask(in: document))
-            expectEqual(opened?.mentions?.mentioners(of: task).count, min(100, document.shapes.count { $0.kind == StickyNote.kind && $0.typed(as: StickyNote.self)?.props.text.mentioned.first == task }))
+            let subboard = try require(mentionedSubboard(in: document))
+            expectEqual(opened?.mentions?.mentioners(of: subboard).count, min(100, document.shapes.count { $0.kind == StickyNote.kind && $0.typed(as: StickyNote.self)?.props.text.mentioned.first == subboard }))
             report(String(format: "%6d shapes, %5.1f MB: save %7.1f ms, open %7.1f ms (budget %.0f), of which Mentions' index and catalog %5.1f (budget %.0f)",
                           size, Double(data.count) / 1e6, save, open, Budget.open10k, index, Budget.mentionIndex10k))
             if holdsToBudgets, size >= 10_000 {
@@ -369,7 +369,7 @@ extension Duration {
                 editor.transact { $0.update(note.id) { $0.box = $0.box?.offsetBy(dx: 1, dy: step) } }
             }) { _ = editor.validation?.results }
             // ⌘A, and a drag from a note, as a user moves the whole board: every shape moves on every
-            // drag event (but the locked ellipses, and the arrows with their notes).
+            // drag event (but the locked rectangles, and the arrows with their notes).
             let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
             _ = h.editor.validation?.results
             h.hold(.command)
@@ -448,8 +448,6 @@ extension Duration {
                 h.editor.adornmentFrames(of: record.id).first { $0.adornment == .of(TitlePill.self) }?.rect
             }
             let inView = CGRect(origin: .zero, size: viewport)
-            // Notes only: an ellipse's derived title shows a pill too, and comes first at 1,000 and
-            // 10,000 shapes.
             let titled = try require(h.editor.document.shapes.first {
                 $0.kind == StickyNote.kind && (pill(of: $0).map { inView.contains(h.editor.camera.toView($0)) } ?? false)
             }, "a titled note's pill in view")
@@ -460,7 +458,7 @@ extension Duration {
                 draw(h.editor, into: context, size: viewport)
             }
             expectEqual(h.editor.hovered, titled.id, "the pill is its note's")
-            // A hover onto a mention's pill in a note, a face that hovers the task it names.
+            // A hover onto a mention's pill in a note, a face that hovers the subboard it names.
             let mentioning = try require(h.editor.document.shapes.first {
                 $0.kind == StickyNote.kind && (h.editor.mentionPills(of: $0.id).first.map { inView.contains(h.editor.camera.toView($0.frame)) } ?? false)
             }, "a note's mention in view")
@@ -470,7 +468,7 @@ extension Duration {
                 h.move(to: h.view(CGPoint(x: mention.frame.minX + 4 + CGFloat(step % 7), y: mention.frame.midY)))
                 draw(h.editor, into: context, size: viewport)
             }
-            expectEqual(h.editor.hovered, mention.target, "the pill hovers the task it names")
+            expectEqual(h.editor.hovered, mention.target, "the pill hovers the subboard it names")
             // Zoomed out to fit the board (as far as the zoom goes), the first frame makes the labels of
             // every adorned shape in view, and the next draws what's kept. Reported, with no budget.
             h.editor.camera = Camera(fitting: h.editor.shapeBounds, in: viewport, inset: 0)
@@ -490,9 +488,9 @@ extension Duration {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let clock = ContinuousClock()
         for size in sizes {
-            // Ellipses 60 × 40, 96 apart in rows of 125: 10,000 fill 12,000 × 7,680, all in view at 10%.
+            // Rectangles 60 × 40, 96 apart in rows of 125: 10,000 fill 12,000 × 7,680, all in view at 10%.
             let shapes = (0..<size).map { i in
-                AnyShapeRecord(ShapeRecord(Ellipse(frame: CGRect(x: CGFloat(i % 125) * 96, y: CGFloat(i / 125) * 96, width: 60, height: 40))))
+                AnyShapeRecord(ShapeRecord(Rectangle(frame: CGRect(x: CGFloat(i % 125) * 96, y: CGFloat(i / 125) * 96, width: 60, height: 40))))
             }
             let h = EditorHarness { CanvasEditor(registry: registry, document: CanvasDocument(shapes: shapes), scheduler: $0) }
             h.editor.viewportDidResize(to: viewport)
@@ -550,7 +548,7 @@ extension Duration {
                 h.move(to: dot + CGPoint(x: CGFloat(step % 7) - 3, y: 0))
             }
             // Pressed there and dragged round a circle over the rows in view: notes, which take the
-            // arrow, and tasks and ellipses, which don't.
+            // arrow, and subboards, rectangles and schema cards, which don't.
             let around = { (turn: Int) in
                 CGPoint(x: 700 + 300 * cos(CGFloat(turn) * .pi / 21), y: 450 + 300 * sin(CGFloat(turn) * .pi / 21))
             }
@@ -637,7 +635,7 @@ extension Duration {
             let picker = MentionPicker(at: 0, mentions: mentions, scope: AnyMentionable.self, owner: owner)
             expect(picker.rows.contains { $0.candidate != nil }, "the nearest shapes")
             var worst = (query: "@", ms: opening)
-            for query in ["t", "ta", "tas", "task", "task 11", "tk11", "tsak 11", "title 40", "zzzzq"] {
+            for query in ["p", "pl", "pla", "plan", "plan 11", "pn11", "paln 11", "title 40", "zzzzq"] {
                 let typed = "@" + query as NSString, before = "@" + query.dropLast() as NSString
                 let ms = median(runs: 21, prepare: {
                     _ = picker.read(before, selection: NSRange(location: before.length, length: 0), isEdit: true)
@@ -646,8 +644,8 @@ extension Duration {
                 }
                 if ms > worst.ms { worst = ("@" + query, ms) }
             }
-            _ = picker.read("@task 11", selection: NSRange(location: 8, length: 0), isEdit: true)
-            expectEqual(picker.highlightedCandidate?.appearance.label, "Task 11")
+            _ = picker.read("@plan 11", selection: NSRange(location: 8, length: 0), isEdit: true)
+            expectEqual(picker.highlightedCandidate?.appearance.label, "Plan 11")
             return (opening, worst)
         }
         for size in sizes {
@@ -659,7 +657,7 @@ extension Duration {
             // The same shapes spread over two boards, typed inside the subboard: the catalog is the
             // whole file's, so a keystroke there matches as many.
             let file = generatedFile(root: size / 2, children: [size / 2])
-            let child = BoardID(owner: try require(subboards(on: file.root).first))
+            let child = BoardID(owner: try require(owners(in: file).first))
             let nestedEditor = CanvasEditor(registry: registry, file: file, showing: child, scheduler: ManualScheduler())
             let nested = keystrokes(try require(nestedEditor.mentions),
                                     owner: try require(nestedEditor.document.shapes.first { $0.kind == StickyNote.kind }?.id))
@@ -694,8 +692,8 @@ extension Duration {
             let mentions = try require(editor.mentions)
             let contents = try require(editor.tableOfContents)
             var rows = contents.entries
-            let mentioned = try require(mentionedTask(in: document))
-            let unmentioned = try require(document.shapes.last { $0.kind == TaskCard.kind && mentions.mentioners(of: $0.id).isEmpty }?.id)
+            let mentioned = try require(mentionedSubboard(in: document))
+            let unmentioned = try require(document.shapes.last { $0.kind == Subboard.kind && mentions.mentioners(of: $0.id).isEmpty }?.id)
             let mentioners = mentions.mentioners(of: mentioned).count
             var n = 0
             @MainActor func rename(_ id: ShapeID) {
@@ -708,13 +706,13 @@ extension Duration {
             let rowsOther = median(runs: 21, prepare: { rename(unmentioned) }) { rows = contents.entries }
             expectEqual(rowCount(rows), size)
             let first = try require(mentions.mentioners(of: mentioned).first)
-            expect(rows.first { $0.id == first }?.label?.text.contains("Renamed \(n - 21)") == true, "a mentioner's row names the task as it's called now")
-            report(String(format: "%6d shapes, renaming a task mentioned %d times: the commit %6.3f ms, %6.3f for one mentioned by none (budget: %.0f more); the rows after it %6.3f, %6.3f",
+            expect(rows.first { $0.id == first }?.label?.text.contains("Renamed \(n - 21)") == true, "a mentioner's row names the subboard as it's called now")
+            report(String(format: "%6d shapes, renaming a subboard mentioned %d times: the commit %6.3f ms, %6.3f for one mentioned by none (budget: %.0f more); the rows after it %6.3f, %6.3f",
                           size, mentioners, commitMentioned, commitOther, Budget.renameMentioned, rowsMentioned, rowsOther))
             if holdsToBudgets {
                 expectEqual(mentioners, 100)
                 expect(commitMentioned - commitOther < Budget.renameMentioned,
-                       "renaming a task mentioned \(mentioners) times over \(size) shapes took \(commitMentioned) ms, against \(commitOther)")
+                       "renaming a subboard mentioned \(mentioners) times over \(size) shapes took \(commitMentioned) ms, against \(commitOther)")
             }
         }
     },
@@ -724,7 +722,7 @@ extension Duration {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         for size in sizes {
             let file = generatedFile(root: size, children: [size])
-            let owner = try require(subboards(on: file.root).first)
+            let owner = try require(owners(in: file).first)
             let child = BoardID(owner: owner)
             var h = EditorHarness { CanvasEditor(registry: registry, file: file, scheduler: $0) }
             var rows: [ContentsEntry] = []
@@ -859,7 +857,7 @@ extension Duration {
             let file = generatedFile(root: size, children: [size])
             let inside = EditorHarness { CanvasEditor(registry: registry, file: file, scheduler: $0) }
             inside.editor.viewportDidResize(to: viewport)
-            expect(inside.enter(try require(subboards(on: file.root).first)), "entered the subboard")
+            expect(inside.enter(try require(owners(in: file).first)), "entered the subboard")
             inside.editor.camera = Camera()
             let child = try frames(inside)
             expectEqual(inside.file.shapeCount, file.shapeCount)
@@ -995,7 +993,7 @@ extension Duration {
             }
             draw(h.editor, into: context, size: viewport)
             let root = fill()
-            expect(h.enter(try require(subboards(on: file.root).first)), "entered the subboard")
+            expect(h.enter(try require(owners(in: file).first)), "entered the subboard")
             draw(h.editor, into: context, size: viewport)     // the first frame on the board entered
             let entered = fill()
             expectEqual(h.scheduler.pendingCount, 0, "the picture of the board entered is all drawn")
@@ -1108,7 +1106,7 @@ extension Duration {
             // A subboard on the root, among a few shapes: its board holds half the shapes and a
             // subboard whose board holds the other half, none locked (a locked shape inside keeps it).
             let file = unlocked(generatedFile(root: 20, children: [size], depth: 2))
-            let owner = try require(subboards(on: file.root).first)
+            let owner = try require(owners(in: file).first)
             let h = EditorHarness { CanvasEditor(registry: registry, file: file, scheduler: $0) }
             h.editor.viewportDidResize(to: viewport)
             let frame = { draw(h.editor, into: context, size: viewport) }

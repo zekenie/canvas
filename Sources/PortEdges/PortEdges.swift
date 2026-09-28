@@ -188,7 +188,7 @@ enum EdgeChannels {
     // MARK: Messages
 
     /// What some kinds connect on, as a message says it: `a sticky-note connects on note-link, a
-    /// task-card on task-link`; by side, `a sticky-note has note-link ports on its left, right and
+    /// schema-card on schema-link`; by side, `a sticky-note has note-link ports on its left, right and
     /// bottom`; `a rectangle has no ports`.
     static func described(_ kinds: [ShapeKind], sides: Bool, in registry: Registry) -> String {
         var said: [String] = []
@@ -218,7 +218,7 @@ enum EdgeChannels {
         registry.contributions(to: Channels.self).map(\.value.id)
     }
 
-    /// A kind with its article: `a sticky-note`, `an ellipse`.
+    /// A kind with its article: `a sticky-note`, `an arrow`.
     static func indefinite(_ kind: ShapeKind) -> String {
         (kind.rawValue.first.map { "aeiou".contains($0) } ?? false ? "an " : "a ") + kind.rawValue
     }

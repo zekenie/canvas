@@ -165,7 +165,7 @@ extension PluginRegistrar {
     /// Names shapes for `canvas draw`: `name` is what a shape is called (folded, as `fold` folds a
     /// title; nil for none, or blank), `namingProperty` the property of a kind's schema a title is
     /// written to (nil: its shapes can't be given one), `isDerived` whether the kind works a name out
-    /// by itself (an unnamed ellipse's "Ellipse, 200 × 140"), and `fold` how a title a script writes
+    /// by itself (a schema card's, from its schema's `"title"`), and `fold` how a title a script writes
     /// is folded before it's matched (nil: it's blank). At most one plugin names shapes.
     public mutating func drawNames(name: @escaping @MainActor (AnyShapeRecord, Registry) -> String?,
                                    namingProperty: @escaping @MainActor (ShapeKind, Registry) -> String?,

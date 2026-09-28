@@ -74,7 +74,7 @@ extension Drawing {
                 var refs: [LayoutProblem.Ref] = []
                 var parts: [Int: CGRect] = [:]
                 for (place, (target, what)) in zip(clause.targets, found).enumerated() {
-                    // A corner on a shape's outline, when its outline isn't its bounds (an ellipse's).
+                    // A corner on a shape's outline, when its outline isn't its bounds (a round shape's).
                     var outline: (points: [CGPoint], rect: CGRect)?
                     switch what {
                     case .item(let other):

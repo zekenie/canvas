@@ -13,15 +13,15 @@ import Selection
 import StickyNotes
 import SwiftUI
 import TableOfContents
-import TaskCards
 import TestKit
 import Titles
 
-// Mentions as shipped: notes that mention tasks, copied, pasted, cut, renamed and deleted around,
-// on the canvas, in the table of contents, and on the clipboard (a pasteboard of the test's own).
+// Mentions as shipped: notes that mention a titled note (the target), copied, pasted, cut, renamed
+// and deleted around, on the canvas, in the table of contents, and on the clipboard (a pasteboard of
+// the test's own).
 
 private let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
-private let taskFrame = CGRect(x: 400, y: 100, width: 240, height: 200)
+private let targetFrame = CGRect(x: 400, y: 100, width: 200, height: 200)
 
 /// An empty board as shipped, its clipboard on `pasteboard`.
 @MainActor private func emptyBoard(_ pasteboard: NSPasteboard, scheduler: (any Scheduler)? = nil) -> EditorHarness {
@@ -34,12 +34,13 @@ private let taskFrame = CGRect(x: 400, y: 100, width: 240, height: 200)
 }
 
 extension CanvasEditor {
-    /// A task titled `title`, where `taskFrame` is, in a transaction of its own.
-    fileprivate func addTask(_ title: String, at frame: CGRect = taskFrame) -> ShapeID {
-        var task = ShapeRecord(TaskCard(frame: frame))
-        task[TitleProperty.self] = title
-        transact { $0.insert(task) }
-        return task.id
+    /// A note titled `title`, where `targetFrame` is, in a transaction of its own: what the other
+    /// notes here mention.
+    fileprivate func addTarget(_ title: String, at frame: CGRect = targetFrame) -> ShapeID {
+        var target = ShapeRecord(StickyNote(frame: frame, text: "Details"))
+        target[TitleProperty.self] = title
+        transact { $0.insert(target) }
+        return target.id
     }
 
     /// A note saying "Ask ", a mention of `target` (named `label`), and " first".
@@ -56,23 +57,23 @@ extension CanvasEditor {
 }
 
 @MainActor let mentionsShippedTests = Suite("Mentions, as shipped", [
-    test("a note that mentions a task shows the task's title now in its row and on the canvas; deleted, the name it holds; undone, live again; redone, missing; a rename undone, the name before") {
+    test("a note that mentions a target shows the target's title now in its row and on the canvas; deleted, the name it holds; undone, live again; redone, missing; a rename undone, the name before") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let h = emptyBoard(pasteboard)
-        let task = h.editor.addTask("Ship it")
-        let note = h.editor.addNote(mentioning: task, as: "Ship")
+        let target = h.editor.addTarget("Ship it")
+        let note = h.editor.addNote(mentioning: target, as: "Ship")
         let stored = try require(h.editor.noteText(note))
         expectEqual(h.editor.row(note), "Ask @Ship it first")
         let size = CGSize(width: 700, height: 400)
         let live = renderBitmap(h.editor, size: size)
-        h.editor.transact { $0.update(task) { $0[TitleProperty.self] = "Launch the beta" } }
+        h.editor.transact { $0.update(target) { $0[TitleProperty.self] = "Launch the beta" } }
         expectEqual(h.editor.row(note), "Ask @Launch the beta first")
         let renamed = renderBitmap(h.editor, size: size)
         expect(changedPixels(live, renamed, in: noteFrame) > 50, "the pill shows the new title")
-        h.editor.transact { $0.delete([task]) }
+        h.editor.transact { $0.delete([target]) }
         expectEqual(h.editor.row(note), "Ask @Ship first", "the name the mention holds")
-        expectEqual(h.editor.mentions?.resolve(task), .missing)
+        expectEqual(h.editor.mentions?.resolve(target), .missing)
         let missing = renderBitmap(h.editor, size: size)
         expect(changedPixels(renamed, missing, in: noteFrame) > 50, "a missing pill, with the name it holds")
         h.editor.undo()
@@ -87,71 +88,71 @@ extension CanvasEditor {
         expectEqual(changedPixels(live, renderBitmap(h.editor, size: size), in: noteFrame), 0)
         expectEqual(h.editor.noteText(note), stored, "nothing wrote to the note")
     },
-    test("a note copied with the task it mentions mentions the task's copy; copied alone, the task it did") {
+    test("a note copied with the target it mentions mentions the target's copy; copied alone, the target it did") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let h = emptyBoard(pasteboard)
-        let task = h.editor.addTask("Ship it")
-        let note = h.editor.addNote(mentioning: task, as: "Ship it")
-        h.editor.selectedShapeIDs = [note, task]
+        let target = h.editor.addTarget("Ship it")
+        let note = h.editor.addNote(mentioning: target, as: "Ship it")
+        h.editor.selectedShapeIDs = [note, target]
         h.editor.copySelection()
         var before = h.editor.document
         h.editor.paste()
         let both = h.editor.shapes(since: before)
-        let noteCopy = try require(both.first { $0.kind == StickyNote.kind }?.id)
-        let taskCopy = try require(both.first { $0.kind == TaskCard.kind }?.id)
-        expectEqual(h.editor.noteText(noteCopy), MentionText([.text("Ask "), .mention(taskCopy, label: "Ship it"), .text(" first")]))
-        expectEqual(h.editor.noteText(note)?.mentioned, [task], "the original's as it was")
-        expectEqual(h.editor.mentions?.mentioners(of: taskCopy), [noteCopy])
+        let noteCopy = try require(both.first { $0[TitleProperty.self] == nil }?.id)
+        let targetCopy = try require(both.first { $0[TitleProperty.self] != nil }?.id)
+        expectEqual(h.editor.noteText(noteCopy), MentionText([.text("Ask "), .mention(targetCopy, label: "Ship it"), .text(" first")]))
+        expectEqual(h.editor.noteText(note)?.mentioned, [target], "the original's as it was")
+        expectEqual(h.editor.mentions?.mentioners(of: targetCopy), [noteCopy])
 
         h.editor.selection = note
         h.editor.copySelection()
         before = h.editor.document
         h.editor.paste()
         let alone = try require(h.editor.shapes(since: before).first?.id)
-        expectEqual(h.editor.noteText(alone), h.editor.noteText(note), "still the task it mentioned")
-        expectEqual(Set(h.editor.mentions?.mentioners(of: task) ?? []), [note, alone])
+        expectEqual(h.editor.noteText(alone), h.editor.noteText(note), "still the target it mentioned")
+        expectEqual(Set(h.editor.mentions?.mentioners(of: target) ?? []), [note, alone])
     },
-    test("pasted on another board, a note mentions a task that isn't there, which shows as missing, with the name it holds") {
+    test("pasted on another board, a note mentions a target that isn't there, which shows as missing, with the name it holds") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let h = emptyBoard(pasteboard)
-        let task = h.editor.addTask("Ship it")
-        let note = h.editor.addNote(mentioning: task, as: "Ship it")
+        let target = h.editor.addTarget("Ship it")
+        let note = h.editor.addNote(mentioning: target, as: "Ship it")
         h.editor.selection = note
         h.editor.copySelection()
         let other = emptyBoard(pasteboard)
         other.editor.paste()
         let pasted = try require(other.editor.document.shapes.first?.id)
-        expectEqual(other.editor.noteText(pasted)?.mentioned, [task])
-        expectEqual(other.editor.mentions?.resolve(task), .missing)
+        expectEqual(other.editor.noteText(pasted)?.mentioned, [target])
+        expectEqual(other.editor.mentions?.resolve(target), .missing)
         expectEqual(other.editor.row(pasted), "Ask @Ship it first")
     },
-    test("a note cut with the task it mentions, and pasted, mentions the pasted task, live") {
+    test("a note cut with the target it mentions, and pasted, mentions the pasted target, live") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let h = emptyBoard(pasteboard)
-        let task = h.editor.addTask("Ship it")
-        let note = h.editor.addNote(mentioning: task, as: "Ship it")
-        h.editor.selectedShapeIDs = [note, task]
+        let target = h.editor.addTarget("Ship it")
+        let note = h.editor.addNote(mentioning: target, as: "Ship it")
+        h.editor.selectedShapeIDs = [note, target]
         h.editor.cutSelection()
         expectEqual(h.editor.document.shapes.count, 0)
         h.editor.paste()
         let pasted = h.editor.document.shapes
-        let noteCopy = try require(pasted.first { $0.kind == StickyNote.kind }?.id)
-        let taskCopy = try require(pasted.first { $0.kind == TaskCard.kind }?.id)
-        expectEqual(h.editor.noteText(noteCopy)?.mentioned, [taskCopy])
-        expect(h.editor.mentions?.resolve(taskCopy).isLive == true)
+        let noteCopy = try require(pasted.first { $0[TitleProperty.self] == nil }?.id)
+        let targetCopy = try require(pasted.first { $0[TitleProperty.self] != nil }?.id)
+        expectEqual(h.editor.noteText(noteCopy)?.mentioned, [targetCopy])
+        expect(h.editor.mentions?.resolve(targetCopy).isLive == true)
         expectEqual(h.editor.row(noteCopy), "Ask @Ship it first")
     },
-    test("renaming a task redraws its row and the rows of the notes that mention it, and no other") {
+    test("renaming a target redraws its row and the rows of the notes that mention it, and no other") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let h = emptyBoard(pasteboard, scheduler: TaskScheduler())
-        let task = h.editor.addTask("Ship it")
-        let other = h.editor.addTask("Other", at: taskFrame.offsetBy(dx: 0, dy: 300))
-        h.editor.addNote(mentioning: task, as: "Ship it")
-        h.editor.addNote(mentioning: task, as: "Ship it", at: noteFrame.offsetBy(dx: 0, dy: 300))
+        let target = h.editor.addTarget("Ship it")
+        let other = h.editor.addTarget("Other", at: targetFrame.offsetBy(dx: 0, dy: 300))
+        h.editor.addNote(mentioning: target, as: "Ship it")
+        h.editor.addNote(mentioning: target, as: "Ship it", at: noteFrame.offsetBy(dx: 0, dy: 300))
         h.editor.addNote(mentioning: other, as: "Other", at: noteFrame.offsetBy(dx: 0, dy: 600))
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 300, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
         let hosting = NSHostingView(rootView: TableOfContentsView(editor: h.editor, onExit: {}))
@@ -161,18 +162,18 @@ extension CanvasEditor {
         window.spin { (hosting.descendants(NSTableView.self).first?.numberOfRows ?? 0) == 6 }
         window.settle()
         let before = contents.rowsRedrawn
-        h.editor.transact { $0.update(task) { $0[TitleProperty.self] = "Launch" } }
+        h.editor.transact { $0.update(target) { $0[TitleProperty.self] = "Launch" } }
         window.spin { contents.rowsRedrawn > before }
         window.settle()
-        expectEqual(contents.rowsRedrawn - before, 3, "the task's row and its two mentioners'")
+        expectEqual(contents.rowsRedrawn - before, 3, "the target's row and its two mentioners'")
         expectEqual(contents.entries.compactMap { $0.label?.text }, ["Launch", "Other", "Ask @Launch first", "Ask @Launch first", "Ask @Other first"])
     },
     test("in the app's canvas view, editing begun from a press on a pill puts the note's editor, with the keyboard, on that pill") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let h = emptyBoard(pasteboard)
-        let task = h.editor.addTask("Ship it")
-        let note = h.editor.addNote(mentioning: task, as: "Ship it")
+        let target = h.editor.addTarget("Ship it")
+        let note = h.editor.addNote(mentioning: target, as: "Ship it")
         let (window, _) = windowed(h.editor)
         expect(h.editor.beginEditing(note))
         let plain = try require(window.firstResponder as? MentionTextView<AnyMentionable>)
@@ -187,14 +188,14 @@ extension CanvasEditor {
         expect(h.editor.beginEditing(note, at: CGPoint(x: noteFrame.minX + 30, y: noteFrame.maxY - 20)))
         expectEqual((window.firstResponder as? NSTextView)?.selectedRange(), caret, "below the text: where the caret always goes")
     },
-    test("end to end in the app's canvas view: @ and a few letters pick a task; a rename shows in the editor, the row and the canvas; deleted, the pill is missing with its name; undone, live; a click on the pill edits the note from it, and a double-click goes to the task; locked, a click selects and a double-click goes; a pill copies and pastes; the text view's undo writes the note back") {
+    test("end to end in the app's canvas view: @ and a few letters pick a target; a rename shows in the editor, the row and the canvas; deleted, the pill is missing with its name; undone, live; a click on the pill edits the note from it, and a double-click goes to the target; locked, a click selects and a double-click goes; a pill copies and pastes; the text view's undo writes the note back") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let scheduler = ManualScheduler()
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: scheduler, pasteboard: pasteboard, model: ScriptedLanguageModel())
         let (window, canvas) = windowed(editor)
         let size = CGSize(width: 800, height: 600)
-        let task = editor.addTask("Launch checklist")
+        let target = editor.addTarget("Launch checklist")
         let note = editor.add(StickyNote(frame: noteFrame, text: "See "))
         var time: TimeInterval = 1
         /// A click (or the press and release of a double-click's second click) on the canvas, at a world point.
@@ -213,7 +214,7 @@ extension CanvasEditor {
             try require(window.firstResponder as? MentionTextView<AnyMentionable>, "the note's editor has the keyboard")
         }
 
-        // Typing "@" and part of the task's title opens the picker, on the task; Return picks it.
+        // Typing "@" and part of the target's title opens the picker, on the target; Return picks it.
         editor.selection = note
         expect(editor.beginEditing(note))
         var text = try textView()
@@ -221,31 +222,31 @@ extension CanvasEditor {
         window.type("@laun")
         let picker = try require(text.picker, "the picker is open")
         expectEqual(picker.query, "laun")
-        expectEqual(picker.highlightedCandidate?.id, task)
+        expectEqual(picker.highlightedCandidate?.id, target)
         window.pressReturn()
         expect(text.picker == nil, "a pick closes it")
-        let picked = MentionText([.text("See "), .mention(task, label: "Launch checklist"), .text(" ")])
+        let picked = MentionText([.text("See "), .mention(target, label: "Launch checklist"), .text(" ")])
         expectEqual(editor.noteText(note), picked)
-        expect(editor.noteText(note)?.stored.contains("@[Launch checklist](shape:\(task.rawValue.uuidString))") == true, "the canonical token")
+        expect(editor.noteText(note)?.stored.contains("@[Launch checklist](shape:\(target.rawValue.uuidString))") == true, "the canonical token")
 
         // A rename shows in the editor's pill, with no transaction of its own, and in the note's row.
         let revision = editor.revision
-        editor.transact { $0.update(task) { $0[TitleProperty.self] = "Ship the beta" } }
+        editor.transact { $0.update(target) { $0[TitleProperty.self] = "Ship the beta" } }
         expectEqual(editor.revision, revision + 1, "only the rename")
-        expectEqual(text.mentionText, MentionText([.text("See "), .mention(task, label: "Ship the beta"), .text(" ")]), "the editor's pill")
+        expectEqual(text.mentionText, MentionText([.text("See "), .mention(target, label: "Ship the beta"), .text(" ")]), "the editor's pill")
         expectEqual(editor.noteText(note), picked, "the note isn't written")
         expectEqual(editor.row(note)?.trimmingCharacters(in: .whitespaces), "See @Ship the beta")
         // And on the canvas, once editing ends.
         window.pressEscape()
         expectEqual(editor.editingShapeID, nil)
         let shipped = renderBitmap(editor, size: size)
-        editor.transact { $0.update(task) { $0[TitleProperty.self] = "Launch the beta to everyone" } }
+        editor.transact { $0.update(target) { $0[TitleProperty.self] = "Launch the beta to everyone" } }
         let renamed = renderBitmap(editor, size: size)
         expect(changedPixels(shipped, renamed, in: noteFrame) > 50, "the pill on the canvas shows the new title")
         expectEqual(editor.row(note)?.trimmingCharacters(in: .whitespaces), "See @Launch the beta to everyone")
 
         // Deleted, the pill shows the name the note holds, dashed, on the canvas and in the editor alike.
-        editor.transact { $0.delete([task]) }
+        editor.transact { $0.delete([target]) }
         expectEqual(editor.mentionPills(of: note).map(\.isLive), [false])
         expectEqual(editor.row(note)?.trimmingCharacters(in: .whitespaces), "See @Launch checklist")
         let missing = renderBitmap(editor, size: size)
@@ -272,7 +273,7 @@ extension CanvasEditor {
         expectEqual(editor.editingShapeID, note)
         text = try textView()
         expectEqual(text.selectedRange(), NSRange(location: 4, length: 1), "the pill's character")
-        // The double-click's second press lands in the text view: on the next turn, it goes to the task.
+        // The double-click's second press lands in the text view: on the next turn, it goes to the target.
         let screen = text.firstRect(forCharacterRange: NSRange(location: 4, length: 1), actualRange: nil)
         let inCanvas = canvas.convert(window.convertFromScreen(screen), from: nil)
         let camera = editor.camera
@@ -280,14 +281,14 @@ extension CanvasEditor {
         text.mouseDown(with: window.mouse(.leftMouseDown, at: CGPoint(x: inCanvas.midX, y: inCanvas.midY), clicks: 2, time: time))
         expectEqual(editor.editingShapeID, note, "not while the view is still handling the press")
         scheduler.advance(by: .milliseconds(1))
-        expectEqual(editor.selection, task)
+        expectEqual(editor.selection, target)
         expectEqual(editor.editingShapeID, nil)
         editor.goBack()
         expectEqual(editor.selection, note, "Back returns")
         expectEqual(editor.cameraTarget, camera, "and to where the camera was")
         scheduler.advance(by: .milliseconds(500))
 
-        // Locked: a click on the pill selects the note, and neither edits nor shakes it; a double-click goes to the task.
+        // Locked: a click on the pill selects the note, and neither edits nor shakes it; a double-click goes to the target.
         editor.lock([note])
         editor.selectedShapeIDs = []
         click(try pillCenter())
@@ -296,13 +297,13 @@ extension CanvasEditor {
         scheduler.advance(by: .milliseconds(16))
         expectEqual(editor.drawingOffset(of: note), .zero, "a click isn't a try to change it")
         click(try pillCenter(), clicks: 2)
-        expectEqual(editor.selection, task, "a double-click goes to the task")
+        expectEqual(editor.selection, target, "a double-click goes to the target")
         editor.goBack()
         expectEqual(editor.selection, note)
         scheduler.advance(by: .milliseconds(500))
         editor.unlock([note])
 
-        // A pill copied and pasted in the text view is another mention of the task.
+        // A pill copied and pasted in the text view is another mention of the target.
         expect(editor.beginEditing(note))
         text = try textView()
         text.setSelectedRange(NSRange(location: 4, length: 1))
@@ -311,8 +312,8 @@ extension CanvasEditor {
         expect(text.writeSelection(to: clipboard, types: text.writablePasteboardTypes))
         text.setSelectedRange(NSRange(location: text.textStorage?.length ?? 0, length: 0))
         expect(text.readSelection(from: clipboard))
-        expectEqual(editor.noteText(note)?.mentioned, [task, task])
-        expectEqual(editor.noteText(note)?.runs.filter { if case .mention = $0 { true } else { false } }.count, 2, "two pills of one task")
+        expectEqual(editor.noteText(note)?.mentioned, [target, target])
+        expectEqual(editor.noteText(note)?.runs.filter { if case .mention = $0 { true } else { false } }.count, 2, "two pills of one target")
 
         // Undo in the text view, after a pick, writes the note back. Each step's events end with a
         // turn of the run loop, which closes the undo group they made.
@@ -334,8 +335,8 @@ extension CanvasEditor {
         let scheduler = ManualScheduler()
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: scheduler, pasteboard: pasteboard, model: ScriptedLanguageModel())
         let (window, canvas) = windowed(editor)
-        let task = editor.addTask("Launch")
-        let note = editor.addNote(mentioning: task, as: "Launch")
+        let target = editor.addTarget("Launch")
+        let note = editor.addNote(mentioning: target, as: "Launch")
         editor.selection = note
         expect(editor.beginEditing(note))
         let text = try require(window.firstResponder as? MentionTextView<AnyMentionable>)
@@ -346,17 +347,17 @@ extension CanvasEditor {
         canvas.mouseMoved(with: window.mouse(.mouseMoved, at: pill, clicks: 0, time: time))
         text.mouseMoved(with: window.mouse(.mouseMoved, at: pill, clicks: 0, time: time))
         expect(editor.pointerOverCanvas == nil, "over the editing view")
-        expectEqual(editor.hovered, task, "the pill hovers its task")
+        expectEqual(editor.hovered, target, "the pill hovers its target")
         for clicks in [1, 2] {
             time += 0.2
             text.mouseDown(with: window.mouse(.leftMouseDown, at: pill, clicks: clicks, time: time))
             text.mouseUp(with: window.mouse(.leftMouseUp, at: pill, clicks: clicks, time: time + 0.05))
             expectEqual(text.selectedRange(), NSRange(location: 4, length: 1))
             expect(editor.pointerOverCanvas == nil, "still not over the canvas, after \(clicks) click(s)")
-            expectEqual(editor.hovered, task, "the note being edited isn't hovered, after \(clicks) click(s)")
+            expectEqual(editor.hovered, target, "the note being edited isn't hovered, after \(clicks) click(s)")
         }
         scheduler.advance(by: .milliseconds(1))
-        expectEqual(editor.selection, task, "the double-click went to the task")
+        expectEqual(editor.selection, target, "the double-click went to the target")
     },
     test("in the app's canvas view, ⌘Z in a note's editor undoes only what this editing did: an earlier editing's steps go with its view") {
         let pasteboard = NSPasteboard.withUniqueName()
@@ -392,7 +393,7 @@ extension CanvasEditor {
     test("in a board's window, a session begun by a click on a pill, with a pick, Remove Mention, a paste and typing, is one Typing step; in the text, Undo gives back the @query a pick took, and each undo or redo writes the note once") {
         let b = try mentionWindow()
         defer { b.board.close() }
-        let (note, task) = (b.note, b.task)
+        let (note, target) = (b.note, b.target)
         let before = b.board.editor.document
         let original = try require(b.board.editor.noteText(note))
         let pill = try require(b.board.editor.mentionPills(of: note).first)
@@ -409,11 +410,11 @@ extension CanvasEditor {
         // A pick, undone in the text, gives back the @query as typed; redone, the pill. One write each.
         b.board.window.type(" @laun")
         b.board.window.settle()
-        expectEqual(text.picker?.highlightedCandidate?.id, task)
+        expectEqual(text.picker?.highlightedCandidate?.id, target)
         b.board.window.pressReturn()
         b.board.window.settle()
         let picked = try require(b.board.editor.noteText(note))
-        expectEqual(picked.mentioned, [task, task])
+        expectEqual(picked.mentioned, [target, target])
         expect(!b.board.menuItem("undo:").hasPrefix("("), "the text's own undo")
         var revision = b.board.editor.revision
         b.board.window.undo(nil)
@@ -437,7 +438,7 @@ extension CanvasEditor {
         b.board.window.type("!")
         b.board.window.settle()
         let typed = try require(b.board.editor.noteText(note))
-        expectEqual(typed.mentioned, [task, task], "the first pill made text, a pick and a paste")
+        expectEqual(typed.mentioned, [target, target], "the first pill made text, a pick and a paste")
         expect(typed.plainText().hasPrefix("Ask Launch checklist first"), "\(typed.plainText())")
         expect(typed.plainText().hasSuffix("!"))
 
@@ -464,13 +465,13 @@ extension CanvasEditor {
         let note = try require(editor.editingShapeID, "the note tool places a note to edit")
         b.board.window.type("Ask @laun")
         b.board.window.settle()
-        expectEqual(try b.text().picker?.highlightedCandidate?.id, b.task)
+        expectEqual(try b.text().picker?.highlightedCandidate?.id, b.target)
         b.board.window.pressReturn()
         b.board.window.settle()
         b.board.endEditing()
         expectEqual(editor.editingShapeID, nil)
         let written = try require(editor.noteText(note))
-        expectEqual(written.mentioned, [b.task])
+        expectEqual(written.mentioned, [b.target])
         expectEqual(b.board.menuItem("undo:"), "Undo Add Note", "the editing joins the placing that began it")
         b.board.window.undo(nil)
         expectEqual(editor.document, before, "the note goes, with what was typed")
@@ -482,7 +483,7 @@ extension CanvasEditor {
     test("in a board's window, Undo while the picker is open: in the text, the typed @query goes and the picker closes; the board's, which ends editing, closes it too, ends its hover, and lets the picker go") {
         let b = try mentionWindow()
         defer { b.board.close() }
-        let (note, task) = (b.note, b.task)
+        let (note, target) = (b.note, b.target)
         let original = try require(b.board.editor.noteText(note))
         b.board.editor.selection = note
         expect(b.board.editor.beginEditing(note))
@@ -492,12 +493,12 @@ extension CanvasEditor {
             let text = try b.text()
             text.setSelectedRange(NSRange(location: text.textStorage?.length ?? 0, length: 0))
             b.board.window.type(" @laun")
-            expectEqual(text.picker?.highlightedCandidate?.id, task)
-            expectEqual(b.board.editor.hovered, task, "the highlighted task is hovered")
+            expectEqual(text.picker?.highlightedCandidate?.id, target)
+            expectEqual(b.board.editor.hovered, target, "the highlighted target is hovered")
             let revision = b.board.editor.revision
             b.board.window.undo(nil)
             expect(text.picker == nil, "the @ undone: the picker closes")
-            expect(b.board.editor.hovered != task, "and its hover ends")
+            expect(b.board.editor.hovered != target, "and its hover ends")
             expectEqual(b.board.editor.noteText(note), original)
             expectEqual(b.board.editor.revision, revision + 1, "one write")
             expectEqual(b.board.editor.editingShapeID, note)
@@ -506,22 +507,22 @@ extension CanvasEditor {
             b.board.window.type(" @laun")
             weakPicker = text.picker
             expect(weakPicker != nil)
-            expectEqual(b.board.editor.hovered, task)
+            expectEqual(b.board.editor.hovered, target)
         }
         // The board's Undo (⌘Z where the canvas has the keyboard, or from any plugin) ends editing first.
         autoreleasepool { expect(b.board.editor.perform(.undo)) }
         expectEqual(b.board.editor.editingShapeID, nil)
         expectEqual(b.board.editor.noteText(note), original, "the session's typing undone")
-        expect(b.board.editor.hovered != task, "the picker's hover ended")
+        expect(b.board.editor.hovered != target, "the picker's hover ended")
         b.board.window.settle()
         expect(weakPicker == nil, "the picker is let go (NSTextView supports no weak reference, so the view itself can't be checked this way)")
         expect(b.board.window.childWindows?.isEmpty ?? true, "no picker window left")
     },
 
-    test("in a board's window, Undo in the text that puts back a pill whose task went meanwhile shows it missing, and writes the note once") {
+    test("in a board's window, Undo in the text that puts back a pill whose target went meanwhile shows it missing, and writes the note once") {
         let b = try mentionWindow()
         defer { b.board.close() }
-        let (note, task) = (b.note, b.task)
+        let (note, target) = (b.note, b.target)
         let editor = b.board.editor
         editor.selection = note
         expect(editor.beginEditing(note))
@@ -529,25 +530,25 @@ extension CanvasEditor {
         try require(text.menu(for: b.mouse(.rightMouseDown, onCharacter: 4, of: text))).choose("Remove Mention")
         b.board.window.settle()
         expectEqual(editor.noteText(note), "Ask Launch checklist first")
-        editor.transact { $0.delete([task]) }         // an agent's, say: the note's editor keeps the keyboard
+        editor.transact { $0.delete([target]) }       // an agent's, say: the note's editor keeps the keyboard
         expectEqual(editor.editingShapeID, note)
         let revision = editor.revision
         b.board.window.undo(nil)
         let pill = text.textStorage.flatMap { $0.attribute(.attachment, at: 4, effectiveRange: nil) as? MentionAttachment }
-        expectEqual(pill?.resolution, .missing, "the pill as its task is now")
-        expectEqual(editor.noteText(note), MentionText([.text("Ask "), .mention(task, label: "Launch checklist"), .text(" first")]))
+        expectEqual(pill?.resolution, .missing, "the pill as its target is now")
+        expectEqual(editor.noteText(note), MentionText([.text("Ask "), .mention(target, label: "Launch checklist"), .text(" first")]))
         expectEqual(editor.revision, revision + 1, "one write")
         expectEqual(editor.mentionPills(of: note).map(\.isLive), [false])
     },
 
-    test("in a board's window, deleting a mentioned task and Undo makes its pills live again on the canvas, in the row and in the editor; Redo, missing; a rename undone gives back every pill's name") {
+    test("in a board's window, deleting a mentioned target and Undo makes its pills live again on the canvas, in the row and in the editor; Redo, missing; a rename undone gives back every pill's name") {
         let b = try mentionWindow()
         defer { b.board.close() }
-        let (note, task) = (b.note, b.task)
+        let (note, target) = (b.note, b.target)
         let editor = b.board.editor
         let size = CGSize(width: 700, height: 400)
         let live = renderBitmap(editor, size: size)
-        editor.selection = task
+        editor.selection = target
         b.board.window.makeFirstResponder(b.board.canvas)
         expect(editor.perform(.delete))
         expectEqual(editor.row(note), "Ask @Launch checklist first")
@@ -558,7 +559,7 @@ extension CanvasEditor {
         b.board.window.undo(nil)
         expectEqual(editor.mentionPills(of: note).map(\.isLive), [true])
         expectEqual(changedPixels(live, renderBitmap(editor, size: size), in: noteFrame), 0, "live again")
-        expectEqual(editor.selection, task, "and selected, as it was")
+        expectEqual(editor.selection, target, "and selected, as it was")
         expect(editor.beginEditing(note))
         var shown = try b.text().textStorage.flatMap { $0.attribute(.attachment, at: 4, effectiveRange: nil) as? MentionAttachment }
         expect(shown?.resolution.isLive == true, "the editor's pill")
@@ -576,8 +577,8 @@ extension CanvasEditor {
 
         // A rename, undone: every pill's name as it was (nothing selected, so every row is listed).
         editor.selectedShapeIDs = []
-        let second = editor.addNote(mentioning: task, as: "Launch checklist", at: noteFrame.offsetBy(dx: 0, dy: 250))
-        editor.transact("Rename") { $0.update(task) { $0[TitleProperty.self] = "Ship the beta" } }
+        let second = editor.addNote(mentioning: target, as: "Launch checklist", at: noteFrame.offsetBy(dx: 0, dy: 250))
+        editor.transact("Rename") { $0.update(target) { $0[TitleProperty.self] = "Ship the beta" } }
         expectEqual([editor.row(note), editor.row(second)], ["Ask @Ship the beta first", "Ask @Ship the beta first"])
         b.board.window.undo(nil)
         expectEqual([editor.row(note), editor.row(second)], ["Ask @Launch checklist first", "Ask @Launch checklist first"])
@@ -586,10 +587,10 @@ extension CanvasEditor {
         expectEqual([editor.row(note), editor.row(second)], ["Ask @Ship the beta first", "Ask @Ship the beta first"])
     },
 
-    test("in a board's window, a double-click on a pill in the text goes to the task, which is no step: Undo takes back the typing before it and selects the note, and Back returns to the task") {
+    test("in a board's window, a double-click on a pill in the text goes to the target, which is no step: Undo takes back the typing before it and selects the note, and Back returns to the target") {
         let b = try mentionWindow()
         defer { b.board.close() }
-        let (note, task) = (b.note, b.task)
+        let (note, target) = (b.note, b.target)
         let editor = b.board.editor
         let original = try require(editor.noteText(note))
         editor.selection = note
@@ -599,7 +600,7 @@ extension CanvasEditor {
         b.board.window.type("So: ")
         b.board.window.settle()
         text.mouseDown(with: b.mouse(.leftMouseDown, onCharacter: 8, of: text, clicks: 2))
-        b.board.window.spin { editor.selection == task }
+        b.board.window.spin { editor.selection == target }
         expectEqual(editor.editingShapeID, nil)
         expectEqual(b.board.menuItem("undo:"), "Undo Typing")
         b.board.window.undo(nil)
@@ -607,7 +608,7 @@ extension CanvasEditor {
         expectEqual(editor.selection, note, "selected as when the typing began")
         expect(editor.canGoBack)
         editor.goBack()
-        expectEqual(editor.selection, task, "Back: where the pill went")
+        expectEqual(editor.selection, target, "Back: where the pill went")
     },
 ])
 
@@ -626,11 +627,11 @@ extension CanvasEditor {
     return found.map { $0.offsetBy(dx: view.textContainerOrigin.x, dy: view.textContainerOrigin.y) }
 }
 
-/// A board's window (the app's `BoardWindow`, through `UndoBoard`) showing a task, "Launch
+/// A board's window (the app's `BoardWindow`, through `UndoBoard`) showing a titled note, "Launch
 /// checklist", and a note that mentions it ("Ask ⟨Launch checklist⟩ first"), with nothing to undo.
 @MainActor private struct MentionWindow {
     let board: UndoBoard
-    let task: ShapeID
+    let target: ShapeID
     let note: ShapeID
 
     /// The note's editor, with the keyboard.
@@ -651,10 +652,10 @@ extension CanvasEditor {
     let pasteboard = NSPasteboard.withUniqueName()
     defer { pasteboard.releaseGlobally() }
     let h = emptyBoard(pasteboard)
-    let task = h.editor.addTask("Launch checklist")
-    let note = h.editor.addNote(mentioning: task, as: "Launch checklist")
+    let target = h.editor.addTarget("Launch checklist")
+    let note = h.editor.addNote(mentioning: target, as: "Launch checklist")
     let board = try UndoBoard()
     board.editor.replaceDocument(with: h.editor.document)
     board.window.makeFirstResponder(board.canvas)
-    return MentionWindow(board: board, task: task, note: note)
+    return MentionWindow(board: board, target: target, note: note)
 }

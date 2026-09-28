@@ -10,11 +10,12 @@ import DetailPanel
 import Geometry
 import LanguageModels
 import Mentions
+import Schemas
 import Selection
 import StickyNotes
+import Subboards
 import SwiftUI
 import TableOfContents
-import TaskCards
 import TestKit
 import Titles
 import ValidationDetails
@@ -69,13 +70,13 @@ final class InspectorWindow {
         return state.layout(for: record).statuses(in: .of(IssuesTab.self)).map(\.text)
     }
 
-    /// The task tool's shortcut on the canvas, then a click: places a task there, selected.
-    func placeTask(at point: CGPoint) throws -> ShapeRecord<TaskCard> {
-        window.makeFirstResponder(canvas)
-        window.press("t")
-        click(point)
-        window.spin { titleField?.placeholderString == "Untitled Task" }
-        return try require(editor.selection.flatMap { editor.document[$0]?.typed(as: TaskCard.self) }, "T, then a click, places a task")
+    /// The selected shape's Arrange tab, chosen: its fields, the width, the height, x and y.
+    func arrangeFields() throws -> [NSTextField] {
+        let record = try require(editor.selection.flatMap { editor.document[$0] }, "a shape is selected")
+        try require(editor.detailPanel).choose(.of(ArrangeTab.self), for: record.kind)
+        window.spin { fields.count == 4 }
+        let found = fields
+        return try require(found.count == 4 ? found : nil, "the Arrange tab's four fields: \(found.map(\.stringValue))")
     }
 
     /// A press on the canvas, at a view point: AppKit gives the canvas the keyboard first, as
@@ -188,7 +189,7 @@ let chipPoint = CGPoint(x: 303, y: 100)
         w.editor.transact { $0.insert(shape) }
         w.click(CGPoint(x: 200, y: 200))
         w.window.focus(try require(w.fields.first { $0.stringValue == "eggs" }))
-        w.window.type("anev")     // the arrow, note, ellipse and select shortcuts, on the canvas
+        w.window.type("anev")     // the arrow, note, eraser and select shortcuts, on the canvas
         expectEqual(w.editor.document[shape.id]?[ChecklistProperty.self]?.map(\.text), ["anev"])
         expectEqual(w.editor.currentToolID, .select)
         expectEqual(w.editor.selection, shape.id)
@@ -210,21 +211,27 @@ let chipPoint = CGPoint(x: 303, y: 100)
     },
     test("hiding the inspector while a panel field has the keyboard hands it to the canvas, keeping the draft") {
         let w = try InspectorWindow()
-        let task = try w.placeTask(at: CGPoint(x: 300, y: 300))
-        let field = try require(w.fields.first { $0.stringValue.hasSuffix(" h") }, "the Estimate field")
-        w.window.focus(field)
+        let shape = note("Shopping")
+        w.editor.transact { $0.insert(shape) }
+        w.click(CGPoint(x: 200, y: 200))
+        let fields = try w.arrangeFields()
+        expectEqual(fields.map(\.stringValue), ["200 pt", "200 pt", "100 pt", "100 pt"])
+        w.window.focus(fields[2])
         w.window.type("7")
         expect(!w.canvasHasKeyboard)
+        expectEqual(w.editor.document[shape.id]?.box?.minX, 100, "a draft, while it's typed")
         w.showsDetails = false
         w.window.spin { w.canvasHasKeyboard }
         expect(w.canvasHasKeyboard, "not the window: \(String(describing: w.window.firstResponder))")
-        expectEqual(w.editor.document[task.id]?.typed(as: TaskCard.self)?.props.estimate, 7)
+        expectEqual(w.editor.document[shape.id]?.box?.minX, 7)
         w.window.type("a")
         expectEqual(w.editor.currentToolID, .arrow)
     },
     test("a selection change that removes the focused field hands the keyboard to the canvas") {
         let w = try InspectorWindow()
-        _ = try w.placeTask(at: CGPoint(x: 300, y: 300))
+        w.editor.transact { $0.insert(note("Buy milk")) }
+        w.click(CGPoint(x: 200, y: 200))
+        w.window.spin { w.titleField != nil }
         w.window.focus(try require(w.titleField))
         w.editor.selection = nil
         w.window.spin { w.canvasHasKeyboard }
@@ -256,6 +263,42 @@ let chipPoint = CGPoint(x: 303, y: 100)
         expectEqual(layout.tabs, [])
         expectEqual(w.fields.count, 0)
         expectEqual(w.tables.count, 0)
+    },
+    test("at its narrowest and its ideal width, each tab of a note's, a schema card's and a subboard's panel fits the column, none pushing it wider") {
+        // What widens a tab most: a note's long title and its checklist, a schema whose one line runs
+        // far past the column, a subboard's name.
+        var titled = note("Buy milk and bread", checklist: ["oat milk", "sourdough", "eggs"].map { ChecklistItem(text: $0) })
+        titled[TitleProperty.self] = "Groceries for the week, and the party on Saturday"
+        let schema = #"{"title": "Order", "type": "object", "properties": {"reference": {"type": "string", "description": "What the customer quotes when they call about this order, however long that takes"}}}"#
+        let card = ShapeRecord(SchemaCard(frame: CGRect(x: 400, y: 100, width: 240, height: 67), schema: schema))
+        var sub = ShapeRecord(Subboard(frame: CGRect(x: 700, y: 100, width: 240, height: 160)))
+        sub[TitleProperty.self] = "Payments"
+        let panels: [(id: ShapeID, kind: ShapeKind, tabs: [any DetailTab.Type])] = [
+            (titled.id, StickyNote.kind, [ChecklistTab.self, ArrangeTab.self]),
+            (card.id, SchemaCard.kind, [SchemaTab.self, ArrangeTab.self]),
+            (sub.id, Subboard.kind, [BoardTab.self, ArrangeTab.self]),
+        ]
+        @MainActor func choose<Tab: DetailTab>(_ tab: Tab.Type, for kind: ShapeKind, in editor: CanvasEditor) throws {
+            try require(editor.detailPanel).choose(.of(tab), for: kind)
+        }
+        for width in [DetailStyle.minWidth, DetailStyle.idealWidth] {
+            let editor = ShippedPlugins.makeEditor(document: CanvasDocument(shapes: [AnyShapeRecord(titled), AnyShapeRecord(card), AnyShapeRecord(sub)]),
+                                                   scheduler: TaskScheduler(), model: ScriptedLanguageModel())
+            let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: width, height: 700), styleMask: [.titled], backing: .buffered, defer: true)
+            let hosting = NSHostingView(rootView: DetailPanelView(editor: editor))
+            window.contentView = hosting
+            for panel in panels {
+                editor.selection = panel.id
+                window.settle()
+                for tab in panel.tabs {
+                    try choose(tab, for: panel.kind, in: editor)
+                    window.settle()
+                    // The panel's own scroll view, the outermost.
+                    let frame = try require(hosting.descendants(NSScrollView.self).first.map { $0.convert($0.bounds, to: hosting) })
+                    expectEqual([hosting.bounds.width, frame.minX, frame.width], [width, 0, width], "\(panel.kind) \(tab.title) at \(width)")
+                }
+            }
+        }
     },
     test("naming a note in its header puts a pill over it and names its row; Return hands the keyboard to the canvas") {
         let w = try InspectorWindow()
@@ -294,73 +337,40 @@ let chipPoint = CGPoint(x: 303, y: 100)
         expectEqual(state.layout(for: try require(w.editor.document[written.id])).tabs.map(\.title), ["Checklist", "Arrange"])
         expectEqual(w.issues, [])
     },
-    test("T places a task, which the panel shows with its tabs: Task, Checklist, Style, Arrange") {
+    test("typing a subboard's name in the panel's header redraws its card, and keeps Select") {
         let w = try InspectorWindow()
-        let task = try w.placeTask(at: CGPoint(x: 300, y: 300))
-        expectEqual(task.title, "New Task")
-        expectEqual(w.editor.currentToolID, .select)
-        let layout = try require(w.editor.detailPanel).layout(for: AnyShapeRecord(task))
-        expectEqual(layout.headerText, "New Task")
-        expectEqual(layout.tabs.map(\.title), ["Task", "Checklist", "Style", "Arrange"])
-        expectEqual(w.titleField?.stringValue, "New Task", "the header renames it")
-        expectEqual(w.fields.map(\.stringValue), ["0 h"], "the Task tab is showing: its Estimate")
-        expectEqual(w.issues, [])
-    },
-    test("typing a task's title in the panel's header redraws the card, clears its error, and keeps Select") {
-        let w = try InspectorWindow()
-        let task = try w.placeTask(at: CGPoint(x: 300, y: 300))
-        w.window.focus(try require(w.titleField))
-        w.window.pressDelete()
-        expectEqual(w.editor.document[task.id]?[TitleProperty.self], nil, "cleared, it's untitled, not titled \"\"")
-        expectEqual(w.issues, ["A task needs a title."])
+        w.window.makeFirstResponder(w.canvas)
+        w.window.press("b")
+        w.click(CGPoint(x: 300, y: 300))
+        w.window.spin { w.titleField?.placeholderString == "Untitled Subboard" }
+        let id = try require(w.editor.selection, "B, then a click, places a subboard")
+        let frame = try require(w.editor.document[id]?.box)
         let untitled = w.render()
-
-        w.window.type("tea")     // t is the task tool's shortcut, on the canvas
-        expectEqual(w.editor.document[task.id]?[TitleProperty.self], "tea")
-        expectEqual(w.issues, [])
+        w.window.focus(try require(w.titleField))
+        w.window.type("base")     // b, a, s and e are tools' shortcuts, on the canvas
+        expectEqual(w.editor.document[id]?[TitleProperty.self], "base")
         expectEqual(w.editor.currentToolID, .select)
-        expectEqual(w.editor.selection, task.id)
-        // The title's line, left of the status pill.
-        let title = CGRect(x: task.frame.minX + 17, y: task.frame.minY + 12, width: 130, height: 16)
-        expect(changedPixels(untitled, w.render(), in: title) > 20, "the card draws the new title")
-    },
-    test("a task's checklist, edited in its Checklist tab, draws on the card and gets no chip") {
-        let w = try InspectorWindow()
-        let task = try w.placeTask(at: CGPoint(x: 300, y: 300))
-        try require(w.editor.detailPanel).choose(.of(ChecklistTab.self), for: TaskCard.kind)
-        w.window.spin { !w.tables.isEmpty }
-        let corner = CGPoint(x: task.frame.maxX + 3, y: task.frame.minY)
-        let before = w.render()
-        expect(pixel(before, at: corner)[0..<3].allSatisfy { $0 > 200 }, "nothing at the corner yet: \(pixel(before, at: corner))")
-
-        let buttons = w.buttons
-        expectEqual(buttons.map(\.isEnabled), [true, false], "the list's + and −")
-        try require(buttons.first).performClick(nil)
-        w.window.spin { w.fields.contains { $0.placeholderString == "Item" } }
-        w.window.focus(try require(w.fields.first { $0.placeholderString == "Item" }))
-        w.window.type("milk")
-        expectEqual(w.editor.document[task.id]?[ChecklistProperty.self]?.map(\.text), ["milk"])
-
-        let after = w.render()
-        // Below the title and the meta line, above the progress bar.
-        let rows = CGRect(x: task.frame.minX + 17, y: task.frame.minY + 50, width: 200, height: 80)
-        expect(changedPixels(before, after, in: rows) > 20, "the card draws the item")
-        expect(pixel(after, at: corner)[0..<3].allSatisfy { $0 > 200 }, "no chip: the card opted in with badge: false: \(pixel(after, at: corner))")
+        expectEqual(w.editor.selection, id)
+        // The name's line, in the header band right of the symbol.
+        let name = CGRect(x: frame.minX + 36, y: frame.minY + 6, width: 150, height: 20)
+        expect(changedPixels(untitled, w.render(), in: name) > 20, "the card draws the new name")
     },
     test("a number being typed in the panel lands on its shape, on its board, before a crumb shows another") {
         let nest = NestedFile()
         let w = try InspectorWindow(file: nest.file)
         expect(w.editor.showBoard(nest.sBoard))
         w.editor.camera = Camera()
-        let task = try w.placeTask(at: CGPoint(x: 500, y: 330))
-        w.window.focus(try require(w.fields.first { $0.stringValue.hasSuffix(" h") }, "the Estimate field"))
+        let shape = ShapeRecord(StickyNote(frame: CGRect(x: 400, y: 300, width: 200, height: 200), text: "Budget"))
+        w.editor.transact { $0.insert(shape) }
+        w.click(CGPoint(x: 500, y: 400))
+        w.window.focus(try w.arrangeFields()[2])
         w.window.type("7")
-        expectEqual(w.editor.document[task.id]?.typed(as: TaskCard.self)?.props.estimate, 0, "a draft, while it's typed")
+        expectEqual(w.editor.document[shape.id]?.box?.minX, 400, "a draft, while it's typed")
         w.window.spin { w.crumbs.count == 1 }
         try require(w.crumbs.first).performClick(nil)
         w.window.settle()
         expectEqual(w.editor.board, .root)
-        expectEqual(w.editor.contents(of: nest.sBoard)[task.id]?.typed(as: TaskCard.self)?.props.estimate, 7)
+        expectEqual(w.editor.contents(of: nest.sBoard)[shape.id]?.box?.minX, 7)
         w.window.spin { w.canvasHasKeyboard }
     },
     test("inside a subboard, with nothing selected, the overview lists its board under its name, with a way up") {

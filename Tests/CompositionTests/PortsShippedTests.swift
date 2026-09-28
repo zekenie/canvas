@@ -13,13 +13,11 @@ import Mentions
 import Schemas
 import Selection
 import StickyNotes
-import TaskCards
 import TestKit
 import Titles
 import Validation
 
-// Ports as shipped, on real notes, task cards and schema cards: a note links to a note, a task to a
-// task, a schema to a schema. This target doesn't import Ports, so it reads an arrow's channel where
+// Ports as shipped, on real notes and schema cards: a note links to a note, a schema to a schema. This target doesn't import Ports, so it reads an arrow's channel where
 // the board keeps it (its added values, as BoardCodec writes them), and finds the dots by where
 // they're drawn: 12 points out from the middle of a side, at zoom 1.
 
@@ -48,13 +46,6 @@ private func around(_ point: CGPoint, _ radius: CGFloat = 6) -> CGRect {
     AnyShapeRecord(ShapeRecord(StickyNote(frame: frame, text: MentionText(plain: text))))
 }
 
-/// Titled, so it has no issues and no red outline.
-@MainActor private func task(_ frame: CGRect, title: String = "Ship it") -> AnyShapeRecord {
-    var task = AnyShapeRecord(ShapeRecord(TaskCard(frame: frame)))
-    task[TitleProperty.self] = title
-    return task
-}
-
 /// Named, so it's clear which is which; as tall as an empty card.
 @MainActor private func schemaCard(_ frame: CGRect, title: String) -> AnyShapeRecord {
     var card = SchemaCard(frame: frame)
@@ -80,9 +71,8 @@ private func around(_ point: CGPoint, _ radius: CGFloat = 6) -> CGRect {
     return try JSONDecoder().decode(JSONValue.self, from: data)["shapes"]?.arrayValue?.first?["added"]?["channel"]
 }
 
-/// What the stickies' and the tasks' channels are called on a board.
+/// What the stickies' and the schema cards' channels are called on a board.
 private let noteLink = JSONValue.string(String(describing: NoteLink.id))
-private let taskLink = JSONValue.string(String(describing: TaskLink.id))
 private let schemaLink = JSONValue.string(String(describing: SchemaLink.id))
 
 /// A resting dot's middle: its channel's color at 60% over what's under it, in the renders' device RGB.
@@ -115,15 +105,15 @@ extension EditorHarness {
 }
 
 @MainActor let portsShippedTests = Suite("Ports, as shipped", [
-    test("hovering a note shows its dots on the left, right and bottom, none on top; a task's on all four; each in its channel's color, with the open hand") {
+    test("hovering a note shows its dots on the left, right and bottom, none on top; a schema card's on all four; each in its channel's color, with the open hand") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
-        let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200), taskFrame = CGRect(x: 440, y: 100, width: 240, height: 200)
-        let h = shipped([note(noteFrame), task(taskFrame)], pasteboard)
+        let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200), cardFrame = CGRect(x: 440, y: 100, width: 240, height: 89)
+        let h = shipped([note(noteFrame), schemaCard(cardFrame, title: "Customer")], pasteboard)
         let size = CGSize(width: 740, height: 360)
         let rest = renderBitmap(h.editor, size: size)
         for (frame, sides, color, name) in [(noteFrame, [Side.right, .bottom, .left], NoteLink.color, "note"),
-                                            (taskFrame, Side.allCases, TaskLink.color, "task")] {
+                                            (cardFrame, Side.allCases, SchemaLink.color, "card")] {
             h.move(to: center(frame))
             let hovered = renderBitmap(h.editor, size: size)
             for side in Side.allCases {
@@ -163,64 +153,42 @@ extension EditorHarness {
         expect(changedPixels(rest, after, in: around(Side.right.dot(of: bFrame))) > 40, "the other note's right dot")
         expectEqual(changedPixels(rest, after, in: around(Side.left.dot(of: aFrame))), 0, "the first note's left dot")
     },
-    test("a drag from a note's dot, over a task card, doesn't bind or outline the task, which the other note is; released there, nothing is drawn") {
+    test("a drag from a note's dot, over a schema card, doesn't bind or outline the card, which the other note is; released there, nothing is drawn") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
-        let aFrame = CGRect(x: 100, y: 100, width: 200, height: 200), taskFrame = CGRect(x: 500, y: 100, width: 240, height: 200)
+        let aFrame = CGRect(x: 100, y: 100, width: 200, height: 200), cardFrame = CGRect(x: 500, y: 100, width: 240, height: 200)
         let bFrame = CGRect(x: 100, y: 500, width: 200, height: 200)
-        let h = shipped([note(aFrame), task(taskFrame), note(bFrame)], pasteboard)
+        let h = shipped([note(aFrame), schemaCard(cardFrame, title: "Customer"), note(bFrame)], pasteboard)
         let before = h.editor.document
         let size = CGSize(width: 800, height: 760)
         let rest = renderBitmap(h.editor, size: size)
-        h.connect(from: .right, of: aFrame, to: center(taskFrame), release: false)
+        h.connect(from: .right, of: aFrame, to: center(cardFrame), release: false)
         let drawn = try require(arrows(h).first, "the arrow being drawn")
-        expectEqual(drawn.props.end.binding, nil, "its end is free over the task")
-        expectEqual(h.editor.hintedShapeID, nil, "the task isn't hinted")
+        expectEqual(drawn.props.end.binding, nil, "its end is free over the card")
+        expectEqual(h.editor.hintedShapeID, nil, "the card isn't hinted")
         let drawing = renderBitmap(h.editor, size: size)
-        // Just outside the other note's left side, and the task's, well away from the arrow.
+        // Just outside the other note's left side, and the card's, well away from the arrow.
         expect(pixel(drawing, at: CGPoint(x: 99, y: 620)) != pixel(rest, at: CGPoint(x: 99, y: 620)), "the other note, which could take it, is outlined")
-        expectEqual(pixel(drawing, at: CGPoint(x: 499, y: 270)), pixel(rest, at: CGPoint(x: 499, y: 270)), "the task, which couldn't, isn't")
+        expectEqual(pixel(drawing, at: CGPoint(x: 499, y: 270)), pixel(rest, at: CGPoint(x: 499, y: 270)), "the card, which couldn't, isn't")
         h.release()
         expectEqual(h.editor.document, before)
     },
-    test("a drag from a note's dot to where a task covers another note binds the note beneath, seeing through the task") {
+    test("a drag from a note's dot to where a schema card covers another note binds the note beneath, seeing through the card") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let aFrame = CGRect(x: 100, y: 100, width: 200, height: 200), bFrame = CGRect(x: 500, y: 100, width: 200, height: 200)
         let b = note(bFrame)
-        let h = shipped([note(aFrame), b, task(CGRect(x: 560, y: 60, width: 240, height: 200))], pasteboard)
+        let h = shipped([note(aFrame), b, schemaCard(CGRect(x: 560, y: 60, width: 240, height: 200), title: "Customer")], pasteboard)
         h.connect(from: .right, of: aFrame, to: CGPoint(x: 620, y: 200))
         expectEqual(arrows(h).first?.props.end.binding?.shapeID, b.id)
     },
-    test("a drag from a task's dot to a note draws nothing") {
-        let pasteboard = NSPasteboard.withUniqueName()
-        defer { pasteboard.releaseGlobally() }
-        let taskFrame = CGRect(x: 100, y: 100, width: 240, height: 200), noteFrame = CGRect(x: 500, y: 100, width: 200, height: 200)
-        let h = shipped([task(taskFrame), note(noteFrame)], pasteboard)
-        let before = h.editor.document
-        h.connect(from: .right, of: taskFrame, to: center(noteFrame))
-        expectEqual(h.editor.document, before)
-    },
-    test("a drag from a task's dot to another task draws an arrow on the task-link channel, bound to both") {
-        let pasteboard = NSPasteboard.withUniqueName()
-        defer { pasteboard.releaseGlobally() }
-        let aFrame = CGRect(x: 100, y: 100, width: 240, height: 200), bFrame = CGRect(x: 100, y: 440, width: 240, height: 200)
-        let a = task(aFrame), b = task(bFrame, title: "Test it")
-        let h = shipped([a, b], pasteboard)
-        h.connect(from: .bottom, of: aFrame, to: center(bFrame))
-        let arrow = try require(arrows(h).first)
-        expectEqual(arrows(h).count, 1)
-        expectEqual(arrow.props.start.binding?.shapeID, a.id)
-        expectEqual(arrow.props.end.binding?.shapeID, b.id)
-        expectEqual(try channel(of: arrow.id, in: h.editor), taskLink)
-    },
-    test("a schema card's dots are on all four sides, in its accent; a drag from one to another card draws an arrow on the schema-link channel, bound to both, and to a task nothing") {
+    test("a schema card's dots are on all four sides, in its accent; a drag from one to another card draws an arrow on the schema-link channel, bound to both, and to a note nothing") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let aFrame = CGRect(x: 100, y: 100, width: 240, height: 89), bFrame = CGRect(x: 100, y: 400, width: 240, height: 89)
-        let taskFrame = CGRect(x: 500, y: 100, width: 240, height: 200)
+        let noteFrame = CGRect(x: 500, y: 100, width: 200, height: 200)
         let a = schemaCard(aFrame, title: "Customer"), b = schemaCard(bFrame, title: "Order")
-        let h = shipped([a, b, task(taskFrame)], pasteboard)
+        let h = shipped([a, b, note(noteFrame)], pasteboard)
         let size = CGSize(width: 800, height: 560)
         let rest = renderBitmap(h.editor, size: size)
         h.move(to: center(aFrame))
@@ -231,8 +199,8 @@ extension EditorHarness {
             expectNear(pixel(hovered, at: dot), restingDot(SchemaLink.color, over: pixel(rest, at: dot)), "the card's \(side) dot")
         }
         let before = h.editor.document
-        h.connect(from: .right, of: aFrame, to: center(taskFrame))
-        expectEqual(h.editor.document, before, "a card links to no task")
+        h.connect(from: .right, of: aFrame, to: center(noteFrame))
+        expectEqual(h.editor.document, before, "a card links to no note")
         h.connect(from: .bottom, of: aFrame, to: center(bFrame))
         let arrow = try require(arrows(h).first)
         expectEqual(arrows(h).count, 1)
@@ -283,17 +251,14 @@ extension EditorHarness {
             expectEqual(both, 0, "with the \(side) dot lit, no pixel is both a dot's and a decoration's")
         }
     },
-    test("a locked task with a checklist shows all four dots whole, clear of its chips") {
+    test("a locked schema card shows all four dots whole, clear of its lock") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let frame = CGRect(x: 100, y: 100, width: 240, height: 200)
         let size = CGSize(width: 440, height: 340)
         @MainActor func renders(decorated: Bool) -> (rest: NSBitmapImageRep, lit: [Side: NSBitmapImageRep]) {
-            var record = task(frame)
-            if decorated {
-                record[ChecklistProperty.self] = [ChecklistItem(text: "Spec"), ChecklistItem(text: "Build")]
-                record[LockedProperty.self] = true
-            }
+            var record = schemaCard(frame, title: "Customer")
+            if decorated { record[LockedProperty.self] = true }
             let h = shipped([record], pasteboard)
             let rest = renderBitmap(h.editor, size: size)
             var lit: [Side: NSBitmapImageRep] = [:]
@@ -309,7 +274,7 @@ extension EditorHarness {
         for side in Side.allCases {
             let plainLit = try require(plain.lit[side]), lit = try require(decorated.lit[side])
             for dot in Side.allCases.map({ $0.dot(of: frame) }) {
-                expectEqual(changedPixels(plainLit, lit, in: around(dot, 13)), 0, "with the \(side) dot lit, every dot as a plain task's")
+                expectEqual(changedPixels(plainLit, lit, in: around(dot, 13)), 0, "with the \(side) dot lit, every dot as an unlocked card's")
             }
             var both = 0
             for y in 50..<340 {
@@ -318,7 +283,7 @@ extension EditorHarness {
                     if pixel(lit, at: point) != under && pixel(plain.rest, at: point) != under { both += 1 }
                 }
             }
-            expectEqual(both, 0, "with the \(side) dot lit, no pixel is both a dot's and a chip's")
+            expectEqual(both, 0, "with the \(side) dot lit, no pixel is both a dot's and the lock's")
         }
     },
     test("in the arrow tool a note shows no dots, and a drag from where one would be draws the arrow tool's arrow, with no channel") {
@@ -349,13 +314,13 @@ extension EditorHarness {
         h.move(to: center(aFrame))
         expect(changedPixels(rest, renderBitmap(h.editor, size: size), in: around(Side.left.dot(of: aFrame))) > 40, "the left dot")
     },
-    test("a board with an arrow drawn from a note's dot saves its channel, in format 3, and opens with it: re-aimed, it binds to a note but not to a task") {
+    test("a board with an arrow drawn from a note's dot saves its channel, in format 3, and opens with it: re-aimed, it binds to a note but not to a schema card") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let aFrame = CGRect(x: 100, y: 100, width: 200, height: 200), bFrame = CGRect(x: 500, y: 100, width: 200, height: 200)
-        let cFrame = CGRect(x: 500, y: 460, width: 200, height: 200), taskFrame = CGRect(x: 100, y: 460, width: 240, height: 200)
+        let cFrame = CGRect(x: 500, y: 460, width: 200, height: 200), cardFrame = CGRect(x: 100, y: 460, width: 240, height: 200)
         let c = note(cFrame)
-        let h = shipped([note(aFrame), note(bFrame), c, task(taskFrame)], pasteboard)
+        let h = shipped([note(aFrame), note(bFrame), c, schemaCard(cardFrame, title: "Customer")], pasteboard)
         h.connect(from: .right, of: aFrame, to: center(bFrame))
         let arrow = try require(arrows(h).first).id
         let codec = BoardCodec(registry: h.editor.registry)
@@ -368,13 +333,13 @@ extension EditorHarness {
         let loaded = try codec.decode(data)
         expectEqual(loaded.report, LoadReport())
         expectEqual(loaded.document, h.editor.document)
-        // Opened, the arrow keeps to its channel: its end, dragged onto the task, binds to nothing;
+        // Opened, the arrow keeps to its channel: its end, dragged onto the card, binds to nothing;
         // onto a note, to the note.
         let opened = shipped(loaded.document.shapes, pasteboard)
         expectEqual(try channel(of: arrow, in: opened.editor), noteLink)
         opened.click(at: CGPoint(x: 400, y: 200))
         expectEqual(opened.editor.selection, arrow)
-        for (target, bound) in [(taskFrame, nil as ShapeID?), (cFrame, c.id)] {
+        for (target, bound) in [(cardFrame, nil as ShapeID?), (cFrame, c.id)] {
             let end = opened.view(try require(opened.editor.arrowGeometry(of: arrow)).endHandle)
             opened.move(to: end)
             opened.press()
@@ -383,12 +348,12 @@ extension EditorHarness {
             expectEqual(opened.editor.document[arrow]?.typed(as: Arrow.self)?.props.end.binding?.shapeID, bound)
         }
     },
-    test("arrows drawn with the arrow tool keep no channel: between ellipses the board writes format 1, as the app without arrow-ports does, byte for byte") {
+    test("arrows drawn with the arrow tool keep no channel: between rectangles the board writes format 1, as the app without arrow-ports does, byte for byte") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let h = shipped([], pasteboard)
         for x in [200.0, 600] {
-            h.key("o")
+            h.key("r")
             h.click(at: CGPoint(x: x, y: 200))
         }
         h.key("a")

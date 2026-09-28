@@ -61,7 +61,7 @@ import Validation
         editor.transact { $0.update(order, as: SchemaCard.self) { $0.props.setTitle("Purchase") } }
         expectEqual(editor.registry.title(of: try require(editor.document[order])), "Purchase")
     },
-    test("the card draws its name itself, so it shows no pill above it, as a task card doesn't") {
+    test("the card draws its name itself, so it shows no pill above it, as a subboard doesn't") {
         let editor = try schemaEditor()
         let order = editor.add(card(fixture(6)))
         expectEqual(editor.registry.title(of: try require(editor.document[order])), "Order")

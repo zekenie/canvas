@@ -1,6 +1,6 @@
 # The plugin system
 
-Everything on the canvas comes from a plugin: sticky notes, ellipses, arrows, task cards,
+Everything on the canvas comes from a plugin: sticky notes, arrows, schema cards, subboards,
 validation, checklists, titles, the pills and chips shown on shapes (adornments), the detail panel
 and the table of contents beside the canvas, selecting itself, copying and pasting, locking, the
 ports arrows are dragged from, snapping what's dragged to the shapes around it, what each key does, what the command line can do, the language model plugins ask, even the examples.
@@ -135,7 +135,7 @@ compiling, and says what's wrong in a line:
 ```
 Examples/Rectangles/Rectangles.swift:3: Rectangles imports Geometry, but Package.swift doesn't list it as a dependency of Rectangles
 Rectangles lists Geometry in Package.swift but never imports it
-build.sh: Rectangles (vertical) may not depend on Ellipses (vertical); vertical may use: foundation horizontal
+build.sh: Rectangles (vertical) may not depend on StickyNotes (vertical); vertical may use: foundation horizontal
 build.sh: Examples/Stars isn't a target in Package.swift
 ```
 
@@ -221,18 +221,18 @@ Once one plugin works, the question is which piece the next feature needs.
 | Bound a property (a length, a range), so a shape outside the bounds gets a validation warning | A modifier: `Property("text", \.text).maxLength(200)`, or an added property's `keywords`; Validation checks every shape against its kind's schema | [Checking shapes](#checking-shapes-against-their-schemas) |
 | Add a shape without a frame (a line, a path) | `ShapeProps`; `geometry`, `hitTest` (with its `hitMargin`) and `CustomTranslation`; a tool that inserts it | [Polylines](#a-shape-without-a-frame) |
 | Work out a kind's geometry from other shapes (a connector) | Look them up through the `ShapeContext`: `shape(_:)`, `geometry(of:)`, `hitTest(_:shape:)` | [Arrows](../Sources/Arrows/Connectables.swift) |
-| Hit or outline a shape more exactly than its frame | Override `geometry`, `hitTest` or `indicatorPath` | [Ellipses](../Sources/Ellipses/Ellipses.swift) |
+| Hit or outline a shape more exactly than its frame | Override `geometry`, `hitTest` or `indicatorPath` | [Polylines](#a-shape-without-a-frame), [StickyNotes](../Sources/StickyNotes/StickyNotes.swift)' rounded outline |
 | Edit a shape in place, as text | `Editable`, and an `editingPlacement` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
 | Add a tool that makes no shape | `registrar.tool`, a `Tool` and a `Session` | [Eraser](#tools-and-sessions) |
 | Give a tool its key | `shortcut:` on the call that registers the tool (Keyboard's) | [Rectangles](#your-first-plugin) |
 | Make a key do something, or give a menu's command its key | `registrar.shortcut(chord, "Title") { ... }`, `registrar.command(_:shortcuts:)` | [Keyboard shortcuts](#keyboard-shortcuts) |
 | Give a shape handles to drag | Selection's `HandleProviding` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
-| Edit a kind's properties beside the canvas | `x.details { DetailSection(...) }` | [TaskCards](#the-full-showcase-taskcards) |
-| Add items to a kind's right-click menu | `x.contextMenu { MenuItem(...) }` | [TaskCards](#contributing) |
+| Edit a kind's properties beside the canvas | `x.details { DetailSection(...) }` | [Schemas](#the-full-showcase-schema-cards) |
+| Add items to a kind's right-click menu | `x.contextMenu { MenuItem(...) }` | [Boards](#contributing) |
 | Add a right-click item to every shape, or every kind with a capability | `registrar.contextMenuForEveryShape(where:)` | [Reordering](#every-shape-reordering) |
 | Say how a kind's shapes appear in the table of contents | `x.contentsRow { ContentsLabel(...) }` | [StickyNotes](#the-table-of-contents) |
 | Show in a kind's row what other shapes say (the names of the shapes it mentions), kept up to date | `x.contentsRow(affected: { changes, context in ... }) { shape, context in ContentsLabel(...) }` | [Rows read from more than their shape](#rows-read-from-more-than-their-shape) |
-| Give a kind a title: a `title` in its schema, a pill on the canvas, and its row's name | `x.title()`, which Titles keeps (1 to 80 characters); or `x.title { ... }`, derived; or both, derived for the shapes nobody named | [Titles](#a-horizontal-plugin), [EllipseTitles](#a-horizontal-plugin) |
+| Give a kind a title: a `title` in its schema, a pill on the canvas, and its row's name | `x.title()`, which Titles keeps (1 to 80 characters); or `x.title { ... }`, derived; or both, derived for the shapes nobody named | [Titles](#a-horizontal-plugin), [Schemas](#schema-cards) (derived) |
 | Rename a shape in the detail panel's header | `x.details(header: { $x in TitleHeader($x) }) {}` | [StickyNotes](#renaming-in-the-header-titleheader) |
 | Name a kind's rows in the table of contents from another plugin | `x.contentsTitle { ... }` | [Titles](#a-horizontal-plugin) |
 | Add a concern any kind can opt into | An `ExtensionPoint`, sugar on `ShapeRegistrar`, and whatever reads the point | [Titles](#a-horizontal-plugin), [Validation](../Sources/Validation/Validation.swift) |
@@ -240,7 +240,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Give that concern a tab on the kinds that opt in | A `DetailTab` at order 50, contributed from the same sugar | [Checklists](#a-horizontals-feature-tab-checklists) |
 | Give that concern menu items on the kinds that opt in | A `MenuGroup` at order 50, and `contextMenu` from the same sugar | [Checklists](#a-feature-that-comes-with-menu-items-checklists) |
 | Edit an added property in the panel, or from the menu | `details(of: P.self) { DetailSection ... }`, `contextMenu(of: P.self) { MenuItem ... }` | [Checklists](#a-horizontals-feature-tab-checklists) |
-| Opt another plugin's kind into a concern | A bridge, which imports both; `registrar.optIn(Kind.self, to:)` for an added property | [EllipseTitles](#a-horizontal-plugin), [ValidationDetails](#a-tab-of-status-lines-from-a-bridge-validationdetails) |
+| Opt another plugin's kind into a concern | A bridge, which imports both; `registrar.optIn(Kind.self, to:)` for an added property | [RectangleTitles](#a-horizontal-plugin), [ValidationDetails](#a-tab-of-status-lines-from-a-bridge-validationdetails) |
 | Keep state per editor: an engine, a cache, a timer | `registrar.service`, an `EditorService`; redo what's kept per shape for the shapes each commit's `ChangeSet` names | [Validation](../Sources/Validation/Validation.swift)'s `ValidationEngine`, [TableOfContents](../Sources/TableOfContents/ContentsState.swift)' `ContentsState` |
 | Show something small on shapes, just outside them or on a corner (a pill, a tally, a lock), on kinds you define or not | An `Adornment` type; `x.adornment`, `registrar.adornment(_:on:)` or `registrar.adornmentForEveryShape(_:where:)`, returning an `AdornmentLabel` | [Adornments](#adornments), [Titles](#a-horizontal-plugin) |
 | Let the user put a flag on a shape, and show it | An added property, a menu item that sets it, and an adornment whose label reads it | [Something the user turns on](#something-the-user-turns-on) |
@@ -295,8 +295,7 @@ definition adopts; behavior any plugin can add to any kind is an extension point
 ## Horizontal and vertical
 
 A **vertical** plugin is a feature: a shape kind and the tool that places it, or a tool on its own.
-Sticky notes, ellipses, arrows, task cards, schema cards, rectangles, polylines and the eraser are
-verticals.
+Sticky notes, arrows, schema cards, subboards, rectangles, polylines and the eraser are verticals.
 
 A **horizontal** plugin is a concern that cuts across kinds. It declares an extension point, and any
 kind can take part by contributing to it. Validity is the canonical example: *a shape can be valid
@@ -335,10 +334,10 @@ Opting in goes in one of two directions:
 
 - **The vertical imports the horizontal** and contributes from inside its own `register`.
   StickyNotes does this for Validation: `note.validate { ... }`.
-- **A bridge imports both**, and neither knows the other. `EllipseTitles` gives ellipses a title,
-  though Ellipses has never heard of titles and Titles has never heard of ellipses. A bridge may
-  join two horizontals: `ValidationDetails` shows each shape's validation issues in an Issues tab
-  of the detail panel, and `ValidationContents` marks their rows in the table of contents, though
+- **A bridge imports both**, and neither knows the other. `RectangleTitles` gives rectangles a
+  title, though Rectangles has never heard of titles and Titles has never heard of rectangles. A
+  bridge may join two horizontals: `ValidationDetails` shows each shape's validation issues in an
+  Issues tab of the detail panel, and `ValidationContents` marks their rows in the table of contents, though
   Validation has never heard of either, nor either of validity. `TitleNames`, `PortEdges` and
   `ValidationChecks` give [`canvas draw`](#the-command-line) its names, edges and warnings, though
   Automation has never heard of titles, ports or validity. `ArrowPorts` makes arrows what a
@@ -364,7 +363,7 @@ Each target is one line, with its layer:
 
 ```swift
 .target(name: "StickyNotes", dependencies: ["Canvas", "Checklists", "DetailPanel", "Keyboard", "Selection", "TableOfContents", "Titles", "Validation"]), // layer: vertical
-.target(name: "EllipseTitles", dependencies: ["Canvas", "DetailPanel", "Ellipses", "Titles"], path: "Examples/EllipseTitles"), // layer: bridge
+.target(name: "RectangleTitles", dependencies: ["Canvas", "DetailPanel", "Rectangles", "Titles"], path: "Examples/RectangleTitles"), // layer: bridge
 ```
 
 | Layer | May depend on | Modules |
@@ -373,8 +372,8 @@ Each target is one line, with its layer:
 | foundation | foundation | Geometry, Canvas (the core), and pure libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, and its solver) |
 | ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
 | horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Adornments, Checklists, Clipboard, Locking, Ports, Mentions, Automation, LanguageModels, Boards |
-| vertical | foundation, horizontal | Arrows, StickyNotes, Ellipses, TaskCards, Schemas, Subboards, Rectangles, Polylines, Eraser, Reordering |
-| bridge | foundation, horizontal, vertical | EllipseTitles, RectangleTitles, ValidationDetails, ValidationContents, ArrowPorts, TitleNames, PortEdges, ValidationChecks |
+| vertical | foundation, horizontal | Arrows, StickyNotes, Schemas, Subboards, Rectangles, Polylines, Eraser, Reordering |
+| bridge | foundation, horizontal, vertical | RectangleTitles, ValidationDetails, ValidationContents, ArrowPorts, TitleNames, PortEdges, ValidationChecks |
 | composition | foundation, horizontal, vertical, bridge, wire | Composition (the shipped plugin list) |
 | app | foundation, ui, composition, wire | InfiniteCanvas |
 | cli | wire | CanvasCLI (`canvas`, an executable: it knows the wire, never the app) |
@@ -439,11 +438,12 @@ is compiled by `./test.sh`, even before anything depends on it.
 
   `geometry` is the one source of truth. Override it and hit testing, the outline, the marquee,
   arrows and the minimap (which draws each shape as a silhouette of its outline) all follow.
-  Override `hitTest` or `indicatorPath` only when you can do better; Ellipses does both (an
-  exact hit test, a smooth outline). A `hitTest` that reaches past the outline (a
-  stroke, a few points of slop) says how far in `hitMargin`: the editor asks it only about points
-  that near. A kind that knows better than its geometry whether the marquee touches it (Arrows,
-  against its arc) adopts Selection's `BrushHitTesting`.
+  Override `hitTest` or `indicatorPath` only when you can do better: a sticky note outlines its
+  rounded corners (`indicatorPath`), and a line is hit only near its stroke (Polylines' `hitTest`).
+  A `hitTest` that reaches past the outline (a stroke, a few points of slop) says how far in
+  `hitMargin`: the editor asks it only about points that near. A kind that knows better than its
+  geometry whether the marquee touches it (Arrows, against its arc) adopts Selection's
+  `BrushHitTesting`.
 - **Other shapes come through the context.** The editor keeps each shape's geometry from frame to
   frame, until the shape changes or a shape its definition looked up while working it out does. So
   a definition that looks at other shapes (Arrows, at the shapes they join) does it through its
@@ -827,37 +827,24 @@ Titles says what a title is: a string of 1 to 80 characters. A blank one is no t
 empty title, is untitled. Nothing stops a longer one (a pasted paragraph):
 [Validation](#checking-shapes-against-their-schemas) checks every shape against its kind's schema,
 so the shape gets a warning, "Title is 95 characters long, and should be at most 80.", with the
-title kept as it is. A kind that stores a title of its own would have none of that, so notes and
-tasks hand theirs over ([Boards on disk](#boards-on-disk)).
+title kept as it is. A kind that stores a title of its own would have none of that, so notes hand
+theirs over ([Boards on disk](#boards-on-disk)).
 
 A title may be derived instead, from what the kind keeps itself: then it isn't data, and isn't in
-the schema. A kind may be both: named, and derived for the shapes nobody named. The bridge that
-gives ellipses titles, [`Examples/EllipseTitles`](../Examples/EllipseTitles/EllipseTitles.swift),
-opts them into the title Titles keeps, and calls an ellipse nobody named by its size, though
-Ellipses has never heard of titles:
+the schema. A [schema card](#schema-cards)'s is its schema's `"title"`
+(`schema.title(pill: false) { … }`), so there's one place to say it. A kind may be both: a bridge
+opts it into the title Titles keeps and derives one for the shapes nobody named,
+`TitleProperty.folded(shape[TitleProperty.self]) ?? what it derives` (TitlesTests' discs; no
+shipped kind is both).
 
-```swift
-registrar.optIn(Ellipse.self, to: TitleProperty.self)       // an ellipse can be named, as a note is
-registrar.title(Ellipse.self) { ellipse in                  // and one nobody named is called by its size
-    TitleProperty.folded(ellipse[TitleProperty.self]) ?? Self.sized(ellipse.props)
-}
-registrar.details(Ellipse.self, header: Self.header) {}     // renamed in the panel's header, as a note is
-
-static func header(_ ellipse: ShapeBinding<Ellipse>) -> TitleHeader {
-    TitleHeader(ellipse, placeholder: sized(ellipse.wrappedValue))     // "Ellipse, 200 × 140" while unnamed
-}
-```
-
-The header is a function, not a closure: a closure would be built by SwiftUI's `ViewBuilder`, and
-a file that imports SwiftUI to have it sees SwiftUI's own `Ellipse` and `Rectangle` beside the
-kinds.
-
-`registry.titleIsDerived(kind)` tells the two apart: true for a kind titled by `title { … }` (an
-ellipse), false for one titled only by `title()` (a note) or not at all; a kind that can be named
-opts into `TitleProperty`, so `registry.properties(for: kind)` has its key. The smallest bridge,
-[`Examples/RectangleTitles`](../Examples/RectangleTitles/RectangleTitles.swift), is one line,
-`registrar.title(Rectangle.self)`: rectangles can be named, and an unnamed one has no title; a
-second puts `TitleHeader` in the detail panel's header. Every kind a tool places in the app can be
+`registry.titleIsDerived(kind)` tells the two apart: true for a kind titled by `title { … }` (a
+schema card), false for one titled only by `title()` (a note) or not at all; a kind that can be
+named opts into `TitleProperty`, so `registry.properties(for: kind)` has its key. The smallest
+bridge, [`Examples/RectangleTitles`](../Examples/RectangleTitles/RectangleTitles.swift), is one
+line, `registrar.title(Rectangle.self)`: rectangles can be named, and an unnamed one has no title;
+a second puts `TitleHeader` in the detail panel's header. The header is a function, not a
+closure: a closure would be built by SwiftUI's `ViewBuilder`, and a file that imports SwiftUI to
+have it sees SwiftUI's own `Rectangle` beside the kind. Every kind a tool places in the app can be
 named, which is what [`canvas draw`](#draw) needs, since titles are the only names it has, and
 renamed or cleared by a person in the panel, since a name a script gave is theirs to change too.
 
@@ -877,7 +864,7 @@ folds the titles a script writes the same way). What a title brings:
   screen, shrinking with the shapes below 25% zoom, goes where its shape is drawn (it shakes with a
   locked shape), and is its shape's for the pointer: a click on it selects the shape, a drag moves
   it, and a double-click edits a note. A kind that draws its title itself leaves it out:
-  `task.title(pill: false)`.
+  `sub.title(pill: false)`.
 - **Its row's name** in [the table of contents](#the-table-of-contents), through TableOfContents'
   `ContentsTitles`, which names a kind's rows without replacing them: a titled note is listed by
   its title, with its checklist's tally; an untitled one by its text, as before. `contents: false`
@@ -932,7 +919,7 @@ The mechanics:
 [Validation](../Sources/Validation/Validation.swift) is the full-size version of the same pattern:
 per-kind rules, rules for another plugin's kind, rules for every kind, an engine, and an overlay.
 Its model is ESLint's: a rule finds issues on a shape, each an error or a warning, two channels of
-one thing (`.error("A task needs a title.")`, `.warning("This note is empty.")`). An error makes
+one thing (`.error("A schema must be a JSON object.")`, `.warning("This note is empty.")`). An error makes
 the shape invalid; a warning only flags it. Validation has one rule of its own, for every kind:
 each place a shape breaks its kind's schema is a warning, about the property it's in
 ([Checking shapes](#checking-shapes-against-their-schemas)). The overlay outlines a shape with issues in its worst
@@ -993,16 +980,16 @@ the two never disagree:
 - **Modifiers** add JSON Schema keywords: `title`, `description`, `minimum`, `maximum`,
   `minLength`, `maxLength` (both in code points, as JSON Schema counts), `pattern`, `minItems`,
   `maxItems`, `examples`, `deprecated()`, `readOnly()`, and `keywords([...])` for any other
-  (`.keywords(["multipleOf": 0.5])`). A task's estimate is
-  `Property("estimate", \.estimate).minimum(0).description("Hours.")`. A bound says what a shape's
-  value should be, not what it can be: nothing refuses a value outside it, and Validation warns
-  about the shape ([Checking shapes](#checking-shapes-against-their-schemas)). The modifiers are
+  (`.keywords(["multipleOf": 0.5])`). A schema card's `schema` property ends in
+  `.keywords(["contentMediaType": .string("application/schema+json")])`, and Titles bounds a title
+  with its property's `keywords`, `.minLength(1).maxLength(80)`. A bound says what a shape's value
+  should be, not what it can be: nothing refuses a value outside it, and Validation warns about the
+  shape ([Checking shapes](#checking-shapes-against-their-schemas)). The modifiers are
   `PropertyModifiers`, which an added property's `keywords` take too.
-- **A string enum** adopts `SchemaCases` and titles its cases: its schema is `oneOf` a `const` per
-  case, with its title. TaskCards' `TaskStatus` titles its cases with their labels ("To Do", "In
-  Progress").
-- **A struct in the props** is `SchemaDefined` too, with a list of its own (TaskCards' `TaskColor`
-  and `TaskDisplay`, Arrows' `ArrowBinding`), written out where it's used. Given a name, it's a
+- **A string enum** adopts `SchemaCases` and titles its cases (`schemaTitle`): its schema is
+  `oneOf` a `const` per case, with its title.
+- **A struct in the props** is `SchemaDefined` too, with a list of its own (Arrows'
+  `ArrowBinding`), written out where it's used. Given a name, it's a
   shared definition instead, which each use refers to: `Properties<ChecklistItem>(title: "Checklist
   item", definition: "item")` is `checklists.item` in a schema, named after the module that
   declares the type, so a type has one name wherever it's described, and two modules' definitions
@@ -1077,7 +1064,7 @@ of three ways:
 ```swift
 registrar.declare(ChecklistProperty.self)                   // the owner, ChecklistsPlugin; one plugin per key
 note.optIn(to: ChecklistProperty.self)                      // a kind, inside registrar.shape { note in ... }
-registrar.optIn(Ellipse.self, to: ChecklistProperty.self)   // another plugin's kind, from a bridge
+registrar.optIn(Rectangle.self, to: ChecklistProperty.self) // another plugin's kind, from a bridge
 registrar.optInEveryShape(to: P.self, where: { !($0 is any PaintOrderAnchored) })   // every kind, or those a definition picks
 ```
 
@@ -1091,8 +1078,7 @@ the note in, then contributes the chip flag, the Checklist tab and the bulk acti
 changes as the props do, in a transaction:
 `tx.update(id) { $0[ChecklistProperty.self]?.append(item) }`. What a kind derives from both goes on
 its record: a note is empty with no text, no title and no items (`isEmpty` on
-`ShapeRecord<StickyNote>`), and a task's summary and remaining hours count its checklist (`summary`
-and `remaining` on `ShapeRecord<TaskCard>`).
+`ShapeRecord<StickyNote>`).
 
 - **Writes that can't hold are dropped**, as a frame that isn't finite is: a value set on a kind
   that doesn't opt in, nil for a property with a default, and anything set on a value or a shape
@@ -1105,8 +1091,9 @@ and `remaining` on `ShapeRecord<TaskCard>`).
   the board edited, and an insert is an edit anyway. `registry.fillingDefaults(document)` does the
   same to a document.
 - **Copies keep them**: `record.copy(as:)` takes the values along, as it does the metadata.
-- **A placement can set one** on what it places: TaskCards' tool places a task titled "New Task"
-  with `task.placement(size: size) { TaskCard() }.setting(TitleProperty.self, to: "New Task")`.
+- **A placement can set one** on what it places:
+  `placement(size: size) { Rectangle() }.setting(TitleProperty.self, to: "Zone")` would name every
+  rectangle its tool places "Zone".
 
 **The registry** refuses an opt-in to a property no installed plugin declares, two declarations of
 one key, a kind opted in twice (by one plugin or two), and a kind opting into a property named like
@@ -1136,8 +1123,8 @@ property's value:
 A section gets a `ShapeBinding` of the value (`$items`, a `ShapeBinding<[ChecklistItem]>`), and
 each write is one transaction on that shape's value; an item edits it in place
 (`{ action.apply(to: &$0) }`). A kind's own sections and header read an added value through the
-shape the panel drew: `$task.shape[ChecklistProperty.self]`, and bind one, nil while the shape has
-none, with `$task[TitleProperty.self]` (a `Binding<String?>`: `TitleHeader($task)` renames through
+shape the panel drew: `$note.shape[ChecklistProperty.self]`, and bind one, nil while the shape has
+none, with `$note[TitleProperty.self]` (a `Binding<String?>`: `TitleHeader($note)` renames through
 it) ([`ShapeBinding`](#reading-and-writing-shapebinding)).
 
 ### A kind's schema
@@ -1748,20 +1735,23 @@ core has never heard of it.
 
 ```
 ┌─ inspector column: 248 to 340 pt, 260 ideal ────────┐
-│ ‹ ☑  Write the spec                                 │ header: back, symbol, title (here a
-│      Done · 2 of 5 · Due Sep 30                     │   field: the task is renamed there)
-│ ⟦ Task ⟧  Checklist  Style  Arrange  Issues         │ tab strip, hidden with one tab
+│ ‹ {}  Customer                                      │ header: back, symbol, title (here a
+│       2 fields                                      │   field: the card is renamed there)
+│ ⟦ Schema ⟧  Arrange  Issues                         │ tab strip, hidden with one tab
 ├─────────────────────────────────────────────────────┤
-│     Status  [ ● Done               ⌄ ]              │ a tab's first section: untitled,
-│   Priority  [ Low | Med | High ]                    │   never collapses; rows: label
-│                                                     │   column, then control
+│ ⌄ Description                                       │ a titled section collapses, and may
+│   ┌─────────────────────────────────────────────┐   │   have one header control; its rows
+│   │ A customer of the shop                      │   │   are stock SwiftUI and the panel's
+│   └─────────────────────────────────────────────┘   │   primitives, here a text area
 ├─────────────────────────────────────────────────────┤
-│ › Notes                                             │ a titled section collapses,
-├─────────────────────────────────────────────────────┤
-│ ⌄ Schedule                                          │   and may have one header control
-│        Due  ☑ [ 9/30/2026 ]⇅                        │
-│   Estimate  [   4 h ]⇅                              │
-│  Remaining  0 h                                     │ a read-only row
+│ ⌄ JSON                                              │
+│   ┌─────────────────────────────────────────────┐   │ code, monospaced, as tall as its lines
+│   │ { "title": "Customer",                      │   │
+│   │   "required": ["email"],                    │   │
+│   │   "properties": { "name": {}, "phone": {} } │   │
+│   │ }                                           │   │
+│   └─────────────────────────────────────────────┘   │
+│   ⚠ “email” is required, but isn’t a property.      │ a status line of the section's own
 │                        (scrolls)                    │
 ├─────────────────────────────────────────────────────┤
 │ (footer)                                            │ footer: status lines, on every tab,
@@ -1775,7 +1765,7 @@ The panel owns all of the chrome, and plugins fill it in:
 | The header's frame, and its back button (Selection's `goBack`, shown while there's a step back) | The header: a `DetailHeader` (title, subtitle, symbol), or a view built on `DetailHeaderLabel` (Titles' `TitleHeader`) |
 | The tab strip, the tab order, and the tab remembered per kind | Which tab each section goes in |
 | Section chrome: the header, chevron, header-control slot, insets, dividers, collapsing, and remembered collapse | Section titles, ids and order, and at most one header control per section |
-| Scrolling, the footer, and the empty states | The rows in a section, and status lines: the footer's, or a tab's (the Issues tab above, while the task has any) |
+| Scrolling, the footer, and the empty states | The rows in a section, and status lines: the footer's, or a tab's (the Issues tab above, while the card has any) |
 | Fonts, control size, the label column and checkbox toggles, all through the environment | |
 | Focus: what gives the keyboard back to the canvas | |
 
@@ -1794,9 +1784,9 @@ write is refused there all the same. It asks the registry
 
 Sections are stock SwiftUI plus a few primitives, and get the look by following these conventions:
 
-- **Rows.** A labeled control is `LabeledContent("Due") { control }`; the panel lines every label
+- **Rows.** A labeled control is `LabeledContent("Status") { control }`; the panel lines every label
   up in one 72 pt column and hides the control's own label (its placeholder stays). A read-only
-  value is `LabeledContent("Remaining", value: ...)`. A toggle stands alone, drawn as a checkbox
+  value is `LabeledContent("Fields", value: ...)`. A toggle stands alone, drawn as a checkbox
   with its label after it; in a row, it's a bare box.
 - **Primitives.** A number is a `DetailNumberField`, and a pair of them (Width and Height) goes in
   `DetailFields`. Multiline text is a `DetailTextArea` (with a `placeholder:` shown while it's
@@ -1828,7 +1818,8 @@ Sections are stock SwiftUI plus a few primitives, and get the look by following 
 - **Sections.** A tab's first section may be untitled; use it for the main properties. Every
   titled section collapses. Titles are one or two nouns in Title Case.
 - **Header control.** At most one small control, acting on the whole section (Checklists' menu). A
-  switch for one row goes in that row, beside what it governs (the task's Due checkbox).
+  switch for one row goes in that row, beside what it governs (a due date's checkbox, beside the
+  date).
 - **No styling of your own.** No fonts, sizes, padding or backgrounds.
 - **Writes** go only through the section's `ShapeBinding`. Sections never see the editor; one that
   shows a plugin's own state about its shape reads that plugin's service, `$x.service(S.self)` (the
@@ -1852,7 +1843,7 @@ it. Tabs sort by `order`, then by first appearance, in these bands:
 
 | Order | Tabs |
 |---|---|
-| 0 (the default) | A kind's own tabs (Task) |
+| 0 (the default) | A kind's own tabs (Schema) |
 | 50 | Feature tabs a horizontal brings to the kinds that opt into it (Checklist) |
 | 100 | `StyleTab`: appearance, shared by every kind |
 | 200 | `ArrangeTab`: position and size, which the panel fills for every box shape |
@@ -1946,7 +1937,7 @@ its own ([TitleHeader.swift](../Sources/Titles/TitleHeader.swift)). The kind put
 
 ```swift
 note.details(header: { $note in TitleHeader($note) }) {}
-task.details(header: { $task in TitleHeader($task, placeholder: "Untitled Task", subtitle: $task.shape.summary) }) { ... }
+sub.details(header: { $sub in TitleHeader($sub, placeholder: "Untitled Subboard", systemImage: "rectangle.stack") }) {}
 ```
 
 It's a `DetailHeaderLabel` whose title is a `DetailHeaderField`. Each keystroke renames the shape
@@ -1957,12 +1948,11 @@ only spaces in it, sets nil, since Titles keeps no blank title; anything else is
 one past 80 characters is kept, and warned about. A title derived from what the kind keeps is
 renamed where it comes from, given that binding instead: a `String?`, or a `String` blank while
 untitled (`TitleHeader($card.text)`). While there's no title it shows its placeholder,
-dimmed: the kind's name ("Note"), unless the kind gives one ("Untitled Task", or an unnamed
-ellipse's size, "Ellipse, 200 × 140", which EllipseTitles gives). `isEnabled: false` dims it while
-something else writes the title (a schema card's model); `isRenamable: false` shows it as text, at
-full strength, while it can't be written at all (a schema card's text that isn't a JSON object). A
-derived title that can't ever be renamed (a kind's that nothing names) isn't; a kind with one keeps
-a `DetailHeader`, if it has a header at all.
+dimmed: the kind's name ("Note"), unless the kind gives one ("Untitled Subboard").
+`isEnabled: false` dims it while something else writes the title (a schema card's model);
+`isRenamable: false` shows it as text, at full strength, while it can't be written at all (a schema
+card's text that isn't a JSON object). A derived title that can't ever be renamed (a kind's that
+nothing names) isn't; a kind with one keeps a `DetailHeader`, if it has a header at all.
 
 Opting into titles doesn't place it: the header is the kind's, which may want its own subtitle,
 placeholder or symbol, or no rename in the panel at all.
@@ -2013,10 +2003,10 @@ extension ShapeRegistrar {
 }
 ```
 
-- **Opting in.** Sticky notes write `note.checklist()`, task cards `task.checklist(badge: false)`,
-  since a card draws its own list. Neither kind declares anything: every note and every task has a
-  checklist, empty until someone adds an item, and reads it as `shape[ChecklistProperty.self]`
-  where it shows it (a note's row, a task's summary).
+- **Opting in.** Sticky notes write `note.checklist()`; a kind that draws its own list writes
+  `checklist(badge: false)`. The kind declares nothing: every note has a checklist, empty until
+  someone adds an item, and reads it as `shape[ChecklistProperty.self]` where it shows it (its
+  row's tally).
 - **The chip** is Checklists' to place, not the kind's: `ChecklistsPlugin` puts it on every shape
   of the kinds that opted in without `badge: false` (its `where` reads `ShapeChecklists`), and it
   shows only on a shape with items, "☑ 2/5" on the top-right corner, green once every item is done:
@@ -2093,80 +2083,60 @@ service, as this one reads validation's engine. Without Validation installed the
 no lines, and no tab. So an empty sticky note has an Issues tab that says "This note is empty.",
 and StickyNotes didn't change.
 
-### The full showcase: TaskCards
+### The full showcase: schema cards
 
-[TaskCards](../Sources/TaskCards) is a vertical whose panel is its only editor: task cards aren't
-`Editable`. Press T to place one. Every field in the panel changes how the card draws.
+[Schemas](#schema-cards) is a vertical whose cards' panel is their only editor: schema cards
+aren't `Editable`. Press S to place one. `schemaPanel()` (in
+[SchemaPanel.swift](../Sources/Schemas/SchemaPanel.swift)) is one `details` call:
 
 ```swift
-registrar.shape(TaskCardDefinition()) { task in
-    let place = task.placement(size: TaskStyle.size) { TaskCard() }.setting(TitleProperty.self, to: "New Task")
-    task.tool(label: "Task", systemImage: "checklist", shortcut: "t", placing: place)
-    task.validate { shape, _ in shape.issues }
-    task.taskPanel()                                  // below
-    task.checklist(badge: false)                      // a checklist, and its tab, without the chip
-    task.title(pill: false)                           // a title (its row's name), without the pill
+details(header: { $card in schemaHeader($card) }) {
+    DetailSection("Description", in: SchemaTab.self) { $card in SchemaDescription(card: $card) }
+    DetailSection("JSON", in: SchemaTab.self) { $card in SchemaCode(card: $card) }
 }
 ```
 
-A task's title is Titles' (`shape.title` on its record reads it), which the card draws, and which
-must be there: `shape.issues` makes an untitled task an error, beside the warning Titles' schema
-gives a title that's too long.
-
-`taskPanel()` (in [TaskCardPanel.swift](../Sources/TaskCards/TaskCardPanel.swift)) is one
-`details` call, here abbreviated:
+Each section is a view of its own, declaring `@ShapeBinding var card: SchemaCard`, so it can show
+what the plugin's service keeps about the card (`$card.service(SchemaSync.self)`, the sync's
+status) and redraw alone when that changes:
 
 ```swift
-details(header: { $task in TitleHeader($task, placeholder: "Untitled Task", subtitle: $task.shape.summary) }) {
-    DetailSection(in: TaskTab.self) { $task in
-        LabeledContent("Status") { StatusPicker(status: $task.status) }
-        LabeledContent("Priority") { ... }
+struct SchemaDescription: View {
+    @ShapeBinding var card: SchemaCard
+
+    var body: some View {
+        let sync = $card.service(SchemaSync.self), id = $card.shape.id
+        let status = sync?.status(of: id) ?? .idle
+        DetailTextArea($card.prompt, placeholder: ..., onCommit: { [weak sync] in sync?.commit(id) })
+            .detailUpdating(status == .updating(.prompt))
+        SchemaSyncLine(status: status, under: .prompt, sync: sync, id: id)
     }
-    DetailSection("Notes", in: TaskTab.self) { $task in
-        DetailTextArea($task.notes)
-    }
-    DetailSection("Schedule", in: TaskTab.self) { $task in
-        LabeledContent("Due") {
-            HStack {
-                Toggle("Has due date", isOn: $task.hasDue)
-                if task.hasDue {
-                    DatePicker("Due", selection: $task.dueDate, displayedComponents: .date).datePickerStyle(.stepperField)
-                } else {
-                    Text("None").foregroundStyle(.secondary)
-                }
-            }
-        }
-        LabeledContent("Estimate") { DetailNumberField(value: $task.estimate, unit: "h", in: 0...999, step: 0.5) }
-        LabeledContent("Remaining", value: DetailNumberText.format($task.shape.remaining, unit: "h"))
-    }
-    DetailSection("Color", in: StyleTab.self) { $task in ... }
-    DetailSection("On the Card", in: StyleTab.self) { $task in ... }
 }
 ```
 
-The summary and the hours remaining count the task's checklist, which isn't in its props: they're
-read from `$task.shape`, the shape the panel drew, with its added values. The title isn't in its
-props either: the header binds it (`$task[TitleProperty.self]`).
+The JSON is a `DetailCodeEditor` whose writes go through the card's `setSchema`, which fits its
+height, as one run of undo (`$card.update(\.schema) { $0.setSchema(text) }`), with the card's
+Validation issues under it, a `DetailStatusLine` each. The header renames the schema's `"title"`
+alone (`setTitle`), dimmed while the model writes the schema (`isEnabled: false`), and shown as
+text while the text isn't a JSON object (`isRenamable: false`).
 
-Five plugins fill one card's panel:
+Four plugins fill one card's panel:
 
 | Part | Holds | From |
 |---|---|---|
-| Header | the title, renamed in place ("Untitled Task", dimmed, while there's none), over a summary: "Done · 2 of 5 · Due Sep 30" | TaskCards, with Titles' `TitleHeader` |
-| Task (0) | an untitled section (Status, Priority), Notes, Schedule | TaskCards |
-| Checklist (50) | Items, and Progress once there are items | Checklists, through `task.checklist` |
-| Style (100) | Color, On the Card | TaskCards |
+| Header | the name, renamed in place ("Untitled", dimmed, while there's none), over how many fields the card shows: "2 fields" | Schemas, with Titles' `TitleHeader` |
+| Schema (0) | Description, and JSON with its issues, each with the sync's status under it when it's about that side | Schemas |
 | Arrange (200) | Size, Position | DetailPanel, for every box |
-| Issues (300) | the task's issues, worst first ("A task needs a title."), while it has any | ValidationDetails |
+| Issues (300) | the card's issues, worst first ("A schema must be a JSON object."), while it has any | ValidationDetails |
 
 ### Reading and writing: `ShapeBinding`
 
 A section's content closure gets a `ShapeBinding`. Take it as a `$` parameter, as with
 `ForEach($items) { $item in }`:
 
-- **`task.notes` reads the snapshot** the panel drew with. Nothing in a section reads
+- **`card.prompt` reads the snapshot** the panel drew with. Nothing in a section reads
   `editor.document`, so a section isn't rebuilt when other shapes change.
-- **`$task.notes` is a `Binding`.** Each set writes that one key path into the *live* shape, in its
+- **`$card.prompt` is a `Binding`.** Each set writes that one key path into the *live* shape, in its
   own `editor.transact`. A move made after the snapshot survives a rename, two writes in one action
   both land, and setting the value the shape already has commits nothing. After a write, the
   binding reads what it made of the shape, before the panel draws again, as SwiftUI expects of a
@@ -2179,14 +2149,14 @@ A section's content closure gets a `ShapeBinding`. Take it as a `$` parameter, a
 - **Bind the narrowest key path.** A collection's binding (`$items[dynamicMember: \.self]`, and the
   row bindings `ForEach` derives from it) writes the whole collection, rebuilt from what the binding read (the
   snapshot, or its last write). Use `update` for list operations.
-- **`$task.shape` is the whole shape** the snapshot came from, a `ShapeRecord<TaskCard>`: its props
-  and its [added properties](#added-properties)' values, for what a section or a header shows from
-  both (`$task.shape.summary`, `$task.shape[ChecklistProperty.self]`). It only reads; writes go
+- **`$note.shape` is the whole shape** the snapshot came from, a `ShapeRecord<StickyNote>`: its
+  props and its [added properties](#added-properties)' values, for what a section or a header shows
+  from both (`$note.shape[ChecklistProperty.self]`, `$card.shape.id`). It only reads; writes go
   through the binding.
-- **`$task[TitleProperty.self]` binds an added property** of the shape, a `Binding<String?>`: nil
+- **`$note[TitleProperty.self]` binds an added property** of the shape, a `Binding<String?>`: nil
   while the shape has none, each write one transaction on the live shape, nil removing it (for a
   property whose default is nil). It reads back its last write, as the key paths' bindings do.
-  `TitleHeader($task)` renames through it.
+  `TitleHeader($note)` renames through it.
 - **Three kinds of binding, three write paths.** A kind's own sections get its props, typed, only
   from contributing for the kind: from its own plugin, a horizontal it opts into, or a bridge.
   Every-box sections get a `ShapeBinding<CGRect>`, the frame, whatever the kind. Sections over an
@@ -2199,8 +2169,8 @@ A section's content closure gets a `ShapeBinding`. Take it as a `$` parameter, a
   Checklists' Progress), and a larger section can be a View declaring
   `@ShapeBinding var items: [ChecklistItem]`, passed `$items` (Checklists' `ChecklistMenu`).
 - **Undo steps.** A write is named for its section, "Change" and the section's title ("Undo Change
-  Color"); in the header, or a section without a title, "Change" and the kind's name ("Undo Change
-  Task", the label of the tool that places it). Writes to one field of one shape, one after
+  Description"); in the header, or a section without a title, "Change" and the kind's name ("Undo
+  Change Schema", the label of the tool that places it). Writes to one field of one shape, one after
   another, are one step, however many keystrokes (a field typed into, a slider or a color
   dragged): a run under the key `[shape, key path]` (for the frame's too), or `[shape, property
   key]` for an added property's binding and `$x[P.self]`, until anything else happens: a write to
@@ -2212,7 +2182,7 @@ A section's content closure gets a `ShapeBinding`. Take it as a `$` parameter, a
   fits the card to it), and its header's rename `update(\.schema) { $0.setTitle(name) }`, so what's
   typed is one step, as `$card.prompt`'s is.
 
-Tests and tools reach the same bindings with `editor.shapeBinding(id, as: TaskCard.self)`,
+Tests and tools reach the same bindings with `editor.shapeBinding(id, as: SchemaCard.self)`,
 `editor.frameBinding(id)` and `editor.propertyBinding(id, ChecklistProperty.self)`.
 
 Two compiler rules come with this:
@@ -2298,13 +2268,11 @@ heavy goes in a service, kept per shape and redone for the shapes each commit's 
 A right-click on a shape (or a Control-click) opens a menu of what can be done to it. It's a
 horizontal ([`Sources/ContextMenus`](../Sources/ContextMenus)) like the detail panel: it declares one
 extension point, kinds and other plugins fill it, and the core only passes the click along. A
-right-click on a task card with one of its three items checked:
+right-click on a sticky note with one of its three checklist items checked:
 
 ```
 ┌─────────────────────────┐
-│ Status                ▸ │  the kind's own (TaskCards): a submenu, ✓ by the task's status
-├─────────────────────────┤
-│ Check All               │  a feature's (Checklists, through task.checklist): only the
+│ Check All               │  a feature's (Checklists, through note.checklist): only the
 │ Uncheck All             │    actions with something to do
 │ Remove Checked          │
 ├─────────────────────────┤
@@ -2318,7 +2286,8 @@ right-click on a task card with one of its three items checked:
 └─────────────────────────┘
 ```
 
-A shape nothing offers anything has no menu: the right-click does nothing. As shipped, every
+A subboard's menu starts with Open, in a group of its own above the rest (Boards'). A shape
+nothing offers anything has no menu: the right-click does nothing. As shipped, every
 shape has Lock (or Unlock), and every copyable shape Cut and Copy, items for the canvas, which are
 in every menu with shapes; an arrow's menu is those alone, since Arrange leaves it out. On empty
 canvas the menu is the canvas's items that apply there alone: Paste, once there's something to
@@ -2334,14 +2303,12 @@ paste.
 | `registrar.contextMenuForEveryShape(where:) { items }` | Every shape, over `AnyShapeRecord`. `where:` picks kinds by their definition, and so by capability (`{ !($0 is any PaintOrderAnchored) }`); `when:` picks shapes (`{ $0.box != nil }` for those with a frame). |
 | `registrar.contextMenuForCanvas { items }` | Items that aren't one shape's (Cut, Copy, Paste), over the menu's `MenuSubject`: its shapes (none on empty canvas) and the editor. In every menu, after the shapes' own in their groups' order, and alone on empty canvas. Each is asked once per menu, not per shape. |
 
-TaskCards' own, in [TaskCardMenu.swift](../Sources/TaskCards/TaskCardMenu.swift):
+Boards' Open, which a board-owning kind's opt-in brings it ([OpensBoard.swift](../Sources/Boards/OpensBoard.swift)):
 
 ```swift
-task.contextMenu {
-    Submenu("Status") {
-        for status in TaskStatus.allCases {
-            MenuItem(status.label, isChecked: { $0.status == status }) { $0.status = status }
-        }
+contextMenu {
+    MenuItem("Open", in: BoardsMenuGroup.self) { ids, editor in
+        if let first = ids.first { editor.open(first) }
     }
 }
 ```
@@ -2443,9 +2410,9 @@ ends editing. A right-click opens the menu in any tool; a Control-click only in 
 since other tools may read ⌃ as a modifier.
 
 With several shapes, an item shows when every one of them shows it: the same group and id, whichever
-plugin contributed it for each kind, so a note and a task selected together share Check All. It's
-enabled when it is for any of them, and runs on those: each kind's own `edit`, all in one
-transaction, then each contribution's `perform` once, with its shapes. It's checked (✓) when every
+plugin contributed it for each kind, so two kinds that opt into checklists, selected together,
+share Check All. It's enabled when it is for any of them, and runs on those: each kind's own
+`edit`, all in one transaction, then each contribution's `perform` once, with its shapes. It's checked (✓) when every
 shape checks it and mixed (–) when some do; a kind whose item has no `isChecked` counts as
 unchecked. A submenu holds what its items resolve to. In a group, a kind's own items come first,
 then every shape's, each in plugin and builder order, then the canvas's. A shape's own item with a
@@ -2480,10 +2447,10 @@ system's rows, selection, disclosure triangles and keyboard.
 │     ↗ Arrow                         │   an arrow, under the shape it starts from
 │   ▤ Shopping list              1/2  │ a note's checklist tally
 │   ▤ Groceries                       │ a titled note: its title (Titles), not its text
-│   ◐ Write the spec             1/3  │ a task: its status as a symbol, in the pill's color
-│   ○ Untitled Task                 ● │   a blank title shows the placeholder, dimmed; the dot, red: its error (ValidationContents)
+│   {} Customer                    2  │ a schema card: its name, and how many fields
+│   {} Untitled                     ● │   no name: the placeholder, dimmed; the dot, red: its error (ValidationContents)
 │   ▭ Rectangle                       │ a kind with no row: its tool's label and symbol
-│   ◯ Ellipse, 200 × 140              │   or its title, here EllipseTitles' derived one
+│   ▭ Server room                     │   or its title, here RectangleTitles'
 │   ↗ Arrow                           │ an arrow that starts on nothing, at the top
 └─────────────────────────────────────┘
 ```
@@ -2501,7 +2468,7 @@ note.contentsRow { note in
 - **The row is a view the kind builds**, usually a `ContentsLabel`: a title on one line (each run of
   whitespace folds into a space), a placeholder shown dimmed when the title is blank, an SF Symbol
   (the placing tool's, unless the row gives one) with an optional color, and a badge of a few
-  characters at the trailing end ("2/5", "Sep 30"). The list owns everything around it: row
+  characters at the trailing end ("2/5", "12"). The list owns everything around it: row
   height, indentation, disclosure triangles, selection, the header. Any view works, but
   `ContentsLabel` is what keeps rows from different plugins alike; use it unless a row really needs
   something else.
@@ -2519,7 +2486,7 @@ note.contentsRow { note in
   nest under the shape they start from, as data-canvas's edges do under their start node. Once
   shapes can contain shapes, a shape's container will be the default.
 - **Without a row**, a kind is listed by the label and symbol of the tool that places it ("Arrow",
-  "Ellipse"), else by its kind, the fallback the detail panel's header uses. A kind can keep that
+  "Rectangle"), else by its kind, the fallback the detail panel's header uses. A kind can keep that
   row and still say where it's listed and what it nests under, as Arrows does:
 
   ```swift
@@ -2819,7 +2786,7 @@ extension SizeBadge: Adornment {
     public static var placement: AdornmentPlacement { .onTopRightCorner }
 }
 
-registrar.adornment(SizeBadge.self, on: Ellipse.self) { ellipse in AdornmentLabel("\(Int(ellipse.frame.width)) pt") }
+registrar.adornment(SizeBadge.self, on: Rectangle.self) { rectangle in AdornmentLabel("\(Int(rectangle.frame.width)) pt") }
 ```
 
 ### Places
@@ -3281,7 +3248,7 @@ Deleting a shape drops its offset.
 Ports are data-canvas's: dots just outside the sides of the shape the pointer is over, from which a
 drag draws an arrow to another shape. Not to any shape: each port is on a channel, a kind of
 connection, and the arrow may end only on a shape that takes its channel, so a note links to a note
-and a task to a task, never one to the other. It's a horizontal ([`Sources/Ports`](../Sources/Ports))
+and a schema card to a schema card, never one to the other. It's a horizontal ([`Sources/Ports`](../Sources/Ports))
 any kind opts into, built on Selection, whose [canvas buttons](#canvas-buttons) the dots are; the
 core has never heard of a port, and Ports has never heard of an arrow: a bridge,
 [ArrowPorts](#the-connector-arrowports), makes arrows what a drag from a port draws. The same
@@ -3324,10 +3291,10 @@ registrar.shape(StickyNoteDefinition()) { note in
 registrar.channel(NoteLink.self)                       // which this plugin declares
 ```
 
-Task cards do the same with `TaskLink` (`task-link`, purple), on all four sides, since a card draws
-its title inside and nothing sits above it ([TaskCardLinks.swift](../Sources/TaskCards/TaskCardLinks.swift)),
-and so do [schema cards](#schema-cards), with `SchemaLink`. The channels say nothing more yet: a
-channel is where a connection's meaning would go (one task blocking another, say).
+[Schema cards](#schema-cards) do the same with `SchemaLink` (`schema-link`, the card's accent), on
+all four sides, since a card draws its name inside and nothing sits above it
+([SchemaLinks.swift](../Sources/Schemas/SchemaLinks.swift)). The channels say nothing more yet: a
+channel is where a connection's meaning would go (one schema referring to another, say).
 
 ### Channels
 
@@ -3336,8 +3303,8 @@ channel is where a connection's meaning would go (one task blocking another, say
   default). The plugin that owns what a connection on it means declares it,
   `registrar.channel(C.self)` (the `Channels` point: a channel declared twice is a `conflict`), and
   kinds have ports on it by its type, so a plugin that gives a kind ports on another's channel
-  imports that plugin's module. StickyNotes declares `NoteLink` for its notes, TaskCards
-  `TaskLink` for its tasks, and Schemas `SchemaLink` for its cards; a channel that joins kinds of several plugins would be declared by the
+  imports that plugin's module. StickyNotes declares `NoteLink` for its notes, and Schemas
+  `SchemaLink` for its cards; a channel that joins kinds of several plugins would be declared by the
   horizontal whose meaning it is (data-canvas's `registerHostChannel` calls come from such a
   feature), and given to their kinds by bridges.
 - **The id never changes once shipped**, since connections keep it. The id audit holds a
@@ -3554,17 +3521,17 @@ would draw nothing, so one moves off it by 0.05, as the arrow tool moves an end.
 the shapes its two bindings name. An arrow made this way is an arrow like any other: re-aimed,
 moved and kept to its channel as the rest are.
 
-Ports are the part of data-canvas's that notes and tasks need to prove the API; the rest is in
+Ports are the part of data-canvas's that notes and schema cards need to prove the API; the rest is in
 [Not built yet](#not-built-yet).
 
 ## Mentions
 
 Mentions ([`Sources/Mentions`](../Sources/Mentions)) lets text mention other shapes: `@` in a
-note, a few letters of a task's title, Return, and the note says "Ask ⟨▢ Ship the beta⟩ first",
-the mention an inline pill with the task's symbol and name. It's a horizontal on Selection, the
-table of contents and Titles, and three kinds opt in: sticky notes, whose text holds mentions and
-which can be mentioned, and task cards and subboards, which can be mentioned (following a mention
-of a subboard enters it). The core knows no mention; what
+note, a few letters of another note's title, Return, and the note says "Ask ⟨▤ Ship the beta⟩
+first", the mention an inline pill with the note's symbol and name. It's a horizontal on
+Selection, the table of contents and Titles, and two kinds opt in: sticky notes, whose text holds
+mentions and which can be mentioned, and subboards, which can be mentioned (following a mention of
+one enters it). The core knows no mention; what
 Mentions needs of it is generic: [names](#values-that-name-shapes) of shapes that may outlive them,
 [faces](#faces-clickable-parts-of-a-shape), [going to shapes](#selection), and
 [rows read from more than their shape](#rows-read-from-more-than-their-shape).
@@ -3577,9 +3544,6 @@ registrar.shape(StickyNoteDefinition()) { note in
     note.mentionText { $0.mentionTexts }                         // where its text, with pills, is drawn
     note.mentionable(untitled: { $0.props.text.firstLine })     // called by its title, else its first line
 }
-
-// In TaskCardsPlugin.register:
-task.mentionable(symbol: { $0.props.status.symbol })            // called by its title; its symbol its status's
 
 // In SubboardsPlugin.register:
 sub.mentionable(following: .opens)                              // called by its title; followed, it's entered
@@ -3594,7 +3558,7 @@ own takes the place of). Every closure reads only the shape, as a title does, so
 only when its shape does:
 
 - **Its name** is `label`, else the shape's title (Titles' `registry.title(of:)`, named or
-  derived), else `untitled`, else "Untitled" and the kind's name ("Untitled Task"), each on one
+  derived), else `untitled`, else "Untitled" and the kind's name ("Untitled Subboard"), each on one
   line, blank counting as none. A shape called by that placeholder has no name its kind gives it,
   so the `@` picker leaves it out until it has one; a mention of it shows it, live. A note that isn't titled is called by the first line of its text
   with words in it (`firstLine`), each mention there "@…" ("See @… first"): it names no other
@@ -3670,7 +3634,7 @@ admits a shape, and what its schema says of it (`x-canvas-mentions`, beside the 
 - A **declared scope** (`DeclaredMentionScope`, with a `title`), which the plugin that owns its
   meaning declares, `registrar.mentionScope(Blockers.self)` (the `MentionScopes` point; no two
   titled alike), and kinds join from their own plugin or a bridge, `x.mentionable(in:
-  Blockers.self)` or `registrar.mentionable(TaskCard.self, in: Blockers.self)` (a kind must be
+  Blockers.self)` or `registrar.mentionable(Subboard.self, in: Blockers.self)` (a kind must be
   mentionable to join, and the scope declared).
 
 A scope limits what the picker offers, and the schema says it. It never refuses a mention that's
@@ -3838,7 +3802,7 @@ func textDidChange(_ notification: Notification) {
 - **Accessibility.** Every range is the text's own, a pill one character, so its value (with
   U+FFFC for each pill, as the text holds it), its count and its selection agree; the strings
   VoiceOver reads for a range, or the selection, say a pill as its name and kind ("Ship the beta,
-  Task"), or why it isn't live ("…, deleted"). Writing Tools leave pills alone.
+  Note"), or why it isn't live ("…, deleted"). Writing Tools leave pills alone.
 - **The picker.** `@` typed where a word starts (at the start, after whitespace or an opening
   bracket or quote, never in `name@example.com`) opens it: `textView.picker`, a `MentionPicker`,
   the picker's model, headless, shown in a child window that never takes the keyboard. What's
@@ -4071,7 +4035,7 @@ as SwiftUI sugar is.)
 - **Deleting it** deletes its board and every board under it, as one step, like any shape's;
   undoing it brings them all back with every id.
 
-It ships after the task card (the toolbar's Subboard, B), with Boards after Titles, and its props
+It ships after the sticky note (the toolbar's Subboard, B), with Boards after Titles, and its props
 have a fixture (`Fixtures/kinds/subboard.v0.json`) as every shipped kind's do; a whole file of
 boards nested two deep, with notes and a bound arrow on each, is
 `Fixtures/files/nested-mentions.v4.json`, read and written back byte for byte (written once notes'
@@ -4250,7 +4214,7 @@ at coordinates, and the app works out only the distances.
 ```
 sticky-note "Web" text: "Browser app"
 sticky-note "API" right of "Web" text: "Public HTTP API"
-task-card "Ship v1" below "API" status: blocked
+subboard "Payments" below "API"
 edge "Web" -> "API"
 ```
 
@@ -4297,8 +4261,8 @@ steps, the first three against the board as the run starts:
    it only names (`ShapeNaming`, a note's mentions) needn't be. A kind whose titles are only
    derived (a schema card's, from its schema's `"title"`) takes no title in its statement
    (`untitlable`), and a restated one whose derived title changes is renamed (`renamed`, held to a
-   rename's rules), where one that's named too keeps its derived title or is refused (`renames`: an
-   unnamed ellipse resized). Problems that don't depend on one another are all reported, up to 20,
+   rename's rules), where one that's named too (no shipped kind is) keeps its derived title or is
+   refused (`renames`). Problems that don't depend on one another are all reported, up to 20,
    each statement's first.
 3. **Place** (DrawScript's `LayoutProblem.solve()`, from a problem built in DrawLayout.swift): the
    shapes that move are free boxes (new ones, and those restated with placements); what their
@@ -4309,7 +4273,7 @@ steps, the first three against the board as the run starts:
    push, mostly about boxes that haven't moved, so however often it asks, a question costs what's
    near the box it's about (`./build.sh bench` holds a draw of 20 notes, each pushed along a row
    of the 10,000-shape board to its end, to 150 ms). DrawScript
-   knows only boxes: a part on an outline (an ellipse's corner) is worked out by Automation from
+   knows only boxes: a part on an outline (a round shape's corner) is worked out by Automation from
    the shape's `ShapeGeometry`, and handed over as a rect. The solver's first problem is the one
    reported. A zone isn't in a box's way (`Solver.isZone`): an obstacle that wholly holds a
    restated box where it already sat, however snug; a shape the box is placed against, at twice
@@ -4434,8 +4398,8 @@ registrar.drawChecks { record, shapes in
 
 - **Names are titles.** A kind is named when it opts into the title Titles keeps (`title()`, or a
   bridge's `registrar.title(K.self)`), derived when Titles works its titles out (`title { … }`),
-  and may be both, as an ellipse is: a derived name ("Ellipse, 200 × 140") names a shape only while
-  it's the only one so called, and a statement that would change it is refused (`renames`). The
+  and may be both (no shipped kind is): a derived name names a shape only while it's the only one
+  so called, and a statement that would change it is refused (`renames`). The
   board's names are read once a run, from the shapes that aren't kept aside. None of the bridges
   writes another module's id: TitleNames reaches `title` through `TitleProperty.key`, and PortEdges
   `channel` through `ChannelProperty.key`.
@@ -4473,7 +4437,7 @@ connection runs only from a shape with a dot on its channel to one that takes it
   draws.
 - **Unwritten**, it's the first of the start's dot channels (on `from:`'s side, if named; else all
   its dots', in the table's order) that the end takes as a target (on `to:`'s side, if named).
-  With none, it's plain if neither kind has ports on anything (rectangles, ellipses), and
+  With none, it's plain if neither kind has ports on anything (rectangles, subboards), and
   otherwise `no_channel`, whose hint says `channel: none` draws one anyway; a named side narrows
   the channels, so one without a port leaves none.
 - **A connection on a channel never ends where it starts**: a shape joined to itself on one is
@@ -4523,7 +4487,7 @@ new shape from its kind's placement, and sets every shape's attributes with `sha
 
 - **`registry.placement(for: kind)`**, what the kind's tool places: `placement.size`, and
   `placement.shape(at:)`, the shape it puts down with its middle on a point, in no document yet. So
-  a new shape starts as the tool's would, a task's "New Task" title with it.
+  a new shape starts as the tool's would, with whatever its placement sets (`setting(_:to:)`).
 - **`registry.shape(kind, properties:)`**, a shape from its properties as one JSON object, own and
   added side by side as its kind's schema describes them: the inverse of `record.propertiesJSON`.
 - **`registry.shape(record, setting:)`**, some of a shape's properties set from one JSON object,
@@ -4560,8 +4524,8 @@ properties were written in, which the card shows, and a schema being typed isn't
 Nothing restricts what it says; the card reads the keywords most schemas use, and the rest stays in
 the text. Its name is its own root `"title"`, so there's one place to say it: a title Titles
 derives (`schema.title(pill: false) { … }`), never the `TitleProperty` Titles keeps for notes and
-tasks, so the kind's schema has no `title` of its own; `setTitle` rewrites just that member. The
-card draws its name inside, as a task card does, so Titles places no pill ([adornment](#adornments))
+subboards, so the kind's schema has no `title` of its own; `setTitle` rewrites just that member. The
+card draws its name inside, as a subboard does, so Titles places no pill ([adornment](#adornments))
 on it; what other plugins show on shapes still shows on it (a locked card's lock, at the right end
 of the row above).
 
@@ -4630,7 +4594,7 @@ registrar.channel(SchemaLink.self)
   ("“ninteger” in birthYear isn’t a JSON Schema type.").
   Validation's own rule checks a card against its kind's schema, as it does every shape: `schema`
   and `prompt` are strings without bounds, so no text breaks it.
-- **Ports.** As notes and tasks do, a card has ports on a channel of its own: `SchemaLink`
+- **Ports.** As notes do, a card has ports on a channel of its own: `SchemaLink`
   (`schema-link`, the card's accent), on all four sides, since the card draws its name inside
   ([SchemaLinks.swift](../Sources/Schemas/SchemaLinks.swift)). A schema links only to a schema,
   and the link says nothing more yet.
@@ -4834,8 +4798,8 @@ registrar.translationAdjuster { editor, start in SnapDrag(start, in: editor) }  
   the secondary click.) A key pressed or let go mid-drag takes effect at once, where the pointer is,
   and one let go counts as held for 150 ms (`editor.effectiveModifiers`), so letting go of ⌘ with
   the mouse leaves what moved where the pointer put it.
-- **Kinds with a frame** (`BoxShapeProps`: notes, tasks, ellipses, schema cards, subboards,
-  rectangles) snap and are snapped to, locked shapes too (they stay put, and don't count in what
+- **Kinds with a frame** (`BoxShapeProps`: notes, schema cards, subboards, rectangles) snap and
+  are snapped to, locked shapes too (they stay put, and don't count in what
   moves). Kinds without one neither snap nor are snapped to: arrows, whose geometry follows the
   shapes they join (tldraw's arrows can't be snapped to either, `canSnap`), and lines.
 - **Only shapes in view**: the view's world rect when the drag first snaps, read again once the
@@ -5333,9 +5297,9 @@ pretty-printed, so a board diffs cleanly.
   "shapes" : [
     { "added" : { "checklist" : [] }, "id" : "…", "index" : "a0", "kind" : "sticky-note", "props" : { "frame" : [[80, 80], [200, 200]], "text" : "…" } },
     { "added" : { "checklist" : [ … ] }, "id" : "…", "index" : "a1", "kind" : "sticky-note", "meta" : { "clipboard" : { "copiedFrom" : { "shape" : "…" } } }, "props" : { … } },
-    { "id" : "…", "index" : "a2", "kept" : { "confetti" : { "v" : 0, "value" : { "velocity" : 240 } } }, "kind" : "ellipse", "props" : { … } }
+    { "id" : "…", "index" : "a2", "kept" : { "confetti" : { "v" : 0, "value" : { "velocity" : 240 } } }, "kind" : "rectangle", "props" : { … } }
   ],
-  "versions" : { "added" : { "checklist" : 0 }, "kinds" : { "ellipse" : 0, "sticky-note" : 1 } }
+  "versions" : { "added" : { "checklist" : 0 }, "kinds" : { "rectangle" : 0, "sticky-note" : 1 } }
 }
 ```
 
@@ -5384,10 +5348,6 @@ public struct StickyNote: BoxShapeProps {
 }
 ```
 
-A task card took one more step between the two, since it wrote a blank title for an untitled task,
-which Titles keeps as none: `PropsMigration("a blank title is none") { props in ... }` drops it
-before `handOver("title", ...)` hands the rest over.
-
 A step is one of three:
 
 - **`PropsMigration("…") { props in ... }`** rewrites one shape's props as JSON (`JSONObject`), since
@@ -5401,9 +5361,9 @@ A step is one of three:
   member's value from `props` to `added`, as the property's value at the version the step names
   (`version:`, the property's version when the step is written; it defaults to 0, so pass it if the
   property already has steps. Pinned, it stays right as the property takes steps of its own), then
-  migrates it by the property's history. Sticky notes and
-  task cards took this step at version 1, when Checklists moved onto `ChecklistProperty`, and again
-  when their titles moved onto Titles' `TitleProperty` (a note's version 2, a task's 3).
+  migrates it by the property's history. Sticky notes took this step at version 1, when Checklists
+  moved onto `ChecklistProperty`, and again at version 2, when their titles moved onto Titles'
+  `TitleProperty`.
 
 The rules:
 
@@ -5532,11 +5492,11 @@ does (`shortcut V → tool select`).
 
 It runs once per point that has contributions, in the order of each point's first contribution,
 and may read any point's contributions. `ShapeDetails` uses it to refuse two tab types with one
-title, which would show as two identical tabs. Had TaskCards kept a Checklist tab of its own next to
-the one Checklists brings:
+title, which would show as two identical tabs. Had Subboards declared a Checklist tab of its own
+beside the one Checklists brings notes:
 
 ```
-ShapeDetails: Checklists.ChecklistTab (from sticky-notes) and TaskCards.ChecklistTab (from task-cards) are both tabs titled "Checklist"; share one, or retitle one
+ShapeDetails: Checklists.ChecklistTab (from sticky-notes) and Subboards.ChecklistTab (from subboards) are both tabs titled "Checklist"; share one, or retitle one
 ```
 
 The hook is generic: the core runs it without knowing what any point checks.
@@ -5552,8 +5512,6 @@ keyboard             service KeyboardState · key strokes · shortcut H → tool
 selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection
 arrows               shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay
 sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · channel note-link
-ellipses             shape ellipse · tool ellipse · shortcut O → tool ellipse
-task-cards           shape task-card v3 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · property title → task-card · ShapeTitles → task-card · ContentsTitles → task-card · ports task-link → task-card · mentionable → task-card · channel task-link
 subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails → subboard
 schemas              service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
@@ -5580,18 +5538,15 @@ validation-checks    draw checks
 rectangles           shape rectangle · tool rectangle · shortcut R → tool rectangle
 polylines            shape polyline · tool polyline · shortcut L → tool polyline
 eraser               tool eraser · shortcut E → tool eraser
-ellipse-titles       property title → ellipse · ShapeTitles → ellipse · ContentsTitles → ellipse · ShapeDetails → ellipse
 rectangle-titles     property title → rectangle · ShapeTitles → rectangle · ContentsTitles → rectangle · ShapeDetails → rectangle
 reordering           ShapeContextMenus
 ```
 
 A horizontal's opt-in shows as what it contributes: `note.checklist()` is the opt-in to the property
 checklists declares (`property checklist → sticky-note`), then a `ShapeChecklists` entry, a
-`ShapeDetails` entry and a `ShapeContextMenus` entry, which is why task-cards has two of each of the
-last two (its own panel and menu, then the checklist's). `v3` on sticky-note and on task-card
-are the versions of their props: each handed its checklist and its title over (a task's title in
-two steps: a blank one was an untitled task's, and is dropped first), and a note's text became
-mention text ("text may mention shapes", which escapes what would now read as a mention).
+`ShapeDetails` entry and a `ShapeContextMenus` entry. `v3` on sticky-note is the version of its
+props: it handed its checklist and its title over, and its text became mention text ("text may
+mention shapes", which escapes what would now read as a mention).
 `note.title()` is the opt-in to the property titles declares (`property title → sticky-note`), a
 `ShapeTitles` entry and a `ContentsTitles` entry (the title naming the row); the `ShapeDetails`
 entry after them is the note's header, where it's renamed. Validation's `ValidationRules`, for
@@ -5601,7 +5556,7 @@ core. `ports note-link → sticky-note` is a note's ports and `channel note-link
 StickyNotes declares for them; arrow-ports' `connector → arrow` makes arrows what ports draw, and
 brings the opt-in before it (`property channel → arrow`). `mention text → sticky-note` and
 `mentionable → sticky-note` are Mentions' opt-ins: a note's text shows pills (`note.mentionText`),
-and text may mention a note (`note.mentionable`), as it may a task (`mentionable → task-card`);
+and text may mention a note (`note.mentionable`), as it may a subboard (`mentionable → subboard`);
 `mentions` keeps who mentions whom (`MentionState`), tells the text it keeps drawn
 (`MentionTextMemo`) where each frame ends (`MentionFrames`, an overlay that draws nothing), and
 makes pills answer clicks (`ShapeFaces`).
@@ -5609,8 +5564,8 @@ Titles places its pill on every shape whose kind's title shows one (`adornment T
 and Locking its lock; `adornments` lends them their layout and drawing, a canvas button
 (`CanvasButtons`) and their hits (`DecorationHits`), and places none of its own. The automation
 line is its commands (`command line draw`, `command line kinds`), and the three after it are the
-bridges that fill its draw points, one each; ellipse-titles and rectangle-titles opt their kinds
-into Titles' property (`property title → ellipse`) before titling them.
+bridges that fill its draw points, one each; rectangle-titles opts rectangles into Titles' property
+(`property title → rectangle`) before titling them.
 
 ## Testing plugins
 
@@ -5766,7 +5721,7 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   snap to. `editor.snapGuides` is what shows. ⌘ and ⌃ are `h.hold`, and a key let go counts as held
   until `h.wait(150)`. CanvasTests' TranslationAdjusterTests hold the core's hook with a fixture
   adjuster (x on a grid of 10), and CompositionTests' SnappingShippedTests the shipped pieces through
-  the select tool: notes, an arrow, an ellipse placed with its tool.
+  the select tool: notes, an arrow, a rectangle placed with its tool.
 - **The command line.** A test listens on a socket of its own (`temporarySocketPath()`, TestKit),
   never the app's. The app answers on the main actor, so a test that's also the client makes its
   request off the main thread while the main run loop turns (`offMain`), or runs `canvas` as it's
@@ -5779,7 +5734,7 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   configures them.
 - **`canvas draw`.** AutomationTests hold `draw` over fixtures, with test plugins in the bridges'
   places (DrawSupport.swift): `namesPlugin` names a tile by its label and a card by its nickname (an
-  unnamed one "Card, 100 × 60", worked out from its size, as an ellipse's is), `edgesPlugin` makes
+  unnamed one "Card, 100 × 60", worked out from its size), `edgesPlugin` makes
   links, with a tone and heads as added properties, and logs each request (`EdgeLog`), and
   `checksPlugin` warns about a card that says nothing and calls a glossy tile an error. `drawEditor`
   installs them with Automation and the fixtures in an 800 × 600 view; `drawn(script, on:)` is what
@@ -5837,13 +5792,13 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   pills in view), a hover on a note's port dot and a drag from it, a hover onto a title's pill and
   onto a mention's, reading the table of contents' rows after a drag event, an insert, a delete and
   a restack, a keystroke in the `@` picker (the `@` that opens it too, and on a file of two boards),
-  a rename of a task mentioned
+  a rename of a subboard mentioned
   100 times against one mentioned by none, a `canvas draw` of 20 notes each pushed along its row of
   the grid (150 ms, time the window doesn't draw), the minimap's first picture (a frame at a time)
   and a drag frame with it, ten subboards' previews filling in (the longest frame, and how many), and
   undoing and redoing a drag (with its frame), a tenth of the board's move and deletion and every
   shape's deletion (the steps alone), to their budgets on generated boards of 1,000 and 10,000
-  shapes (`generatedBoard`; three notes in ten mention a task and a shape that isn't there), and
+  shapes (`generatedBoard`; three notes in ten mention a subboard and a shape that isn't there), and
   reports the first frame and the next zoomed out to fit the board (at 10,000, as far as the 10%
   zoom goes). Across boards, on files of them (`generatedFile(root:children:depth:)`, the shipped
   subboards): opening one whose shapes are spread over nested boards (a tenth on the root, a tenth
@@ -5904,7 +5859,7 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   alike and the pills' pixels are within a quarter; at 60%, string drawing draws a pill part way
   into a pixel and TextKit 2 on the nearest, so there only the pixels off the pills are held).
   CompositionTests' `mentionsShippedTests` hold the shipped pieces together in a `CanvasView`: a
-  task picked with `@`, renamed (the editor, the row and the canvas), deleted and undone; the
+  titled note picked with `@`, renamed (the editor, the row and the canvas), deleted and undone; the
   pill clicked on the canvas and double-clicked in the text; a locked note's pill; copying and
   pasting a pill; and the text view's undo written back to the note. In a board's window
   (`UndoBoard`, whose `BoardWindow` gives Edit › Undo to the text with the keyboard), they hold a
@@ -6063,7 +6018,7 @@ Each of these adds to the design without changing what plugins are written again
 - **More of validation**: listing just the shapes with issues in the table of contents (a filter
   beside Show All), and going to the next one from anywhere (Xcode's ⌘'), for a board too big to
   look down for dots; an issue in the Issues tab going to the row it's about, which the panel would
-  mark (below); rules that depend on the clock (a task overdue), which the engine, caching by
+  mark (below); rules that depend on the clock (a deadline passed), which the engine, caching by
   revision, can't keep up to date today; and checking boards that haven't been shown: the engine
   checks the board shown, so the issues on a board inside a shape (schema warnings included)
   appear only once you enter it, and nothing on the shape that owns it sums them up.
@@ -6108,17 +6063,16 @@ Each of these adds to the design without changing what plugins are written again
   (`canvas draw` warns about what it draws, and `canvas kinds --schema` hands the
   schemas out); a projection of
   a schema for LLM tool calling, whose strict modes reject `prefixItems` and `oneOf` (a rect, a
-  task's status); panel controls made from a schema, a title's field counting down to its
+  string enum); panel controls made from a schema, a title's field counting down to its
   `maxLength`; bounds a kind sets on an added property (Titles' 80 characters are every kind's);
   sections and menu items that turn on a property whose default is nil (they show only once it's
   set today); and discarding a kept value.
 - **More of checking shapes against their schemas**: `unevaluatedProperties`, `dependentSchemas`
   and references to other documents, which no schema here writes; and checking only the parts of a
   shape its schema bounds, for the first read of a large board (10,000 shapes take about 30 ms).
-- **More of mentions**: mention text in the detail panel (a field for a task card's notes, a panel
-  text view shared with schema cards), in task cards' notes and checklist items, and on the canvas
-  where they're drawn; a text restricted to some kinds among the shipped ones (what may block a
-  task); a shape's backlinks ("Mentioned in"); validation of mentions that are missing or outside
+- **More of mentions**: mention text in the detail panel (a panel text view shared with schema
+  cards), in checklist items, and on the canvas where they're drawn; a text restricted to some kinds
+  among the shipped ones; a shape's backlinks ("Mentioned in"); validation of mentions that are missing or outside
   their scope; saying in the `@` picker which board a shape on another board is on; moving
   shapes to another board
   without breaking the mentions of them from outside what moves (a paste of what the last cut took

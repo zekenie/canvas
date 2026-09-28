@@ -103,7 +103,7 @@ enum SubboardStyle {
         return style
     }
 
-    /// A line's height as the card lays text out (as TaskCards measures it).
+    /// A line's height as the card lays text out: string drawing's, rounded up.
     private static func lineHeight(of font: NSFont) -> CGFloat {
         NSAttributedString(string: "X", attributes: [.font: font])
             .boundingRect(with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude), options: .usesLineFragmentOrigin)

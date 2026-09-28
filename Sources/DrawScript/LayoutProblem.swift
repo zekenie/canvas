@@ -88,7 +88,7 @@ public struct LayoutProblem {
         public var ref: Ref
         public var part: Part?
         /// The part, from the box's top-left, when it isn't where `Part.rect(in:)` puts it in the
-        /// box's bounds (a corner on an ellipse's outline). Nil: `part` in the bounds, or the whole
+        /// box's bounds (a corner on a round shape's outline). Nil: `part` in the bounds, or the whole
         /// box.
         public var partRect: CGRect?
         /// As written, for messages: `"Hub" top`.

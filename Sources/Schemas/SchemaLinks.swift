@@ -3,8 +3,8 @@ import Canvas
 import Ports
 
 /// What a schema card's ports draw: a link from a schema to a schema, the only connection a card
-/// takes, as notes and tasks each have their own. It says nothing more yet; a channel is where a
-/// connection's meaning would go (one schema referring to another, say).
+/// takes, as a note's is a note's. It says nothing more yet; a channel is where a connection's
+/// meaning would go (one schema referring to another, say).
 public enum SchemaLink {}
 
 extension SchemaLink: Channel {
