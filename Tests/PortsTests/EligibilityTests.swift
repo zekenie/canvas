@@ -7,6 +7,7 @@ import Keyboard
 import Ports
 import Selection
 import TestKit
+import Topology
 
 // Where a connection drawn from a port may end: on a shape whose kind takes one of its channels
 // (`editor.channel(of:endingAt:)`), which the overlay outlines faintly while it's drawn. The box
@@ -74,7 +75,7 @@ let discTop = CGRect(x: discFrame.midX - 15, y: discFrame.minY - 3, width: 30, h
     test("ports that only take connections take them, but give the kind no dot on their channel") {
         let wiredDiscs = Contributor(id: "wired-discs") { $0.ports(Disc.self, on: Wire.self, role: .target) }
         let connections = Connections()
-        let board = try EligibilityBoard(connections, plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), PortsPlugin(),
+        let board = try EligibilityBoard(connections, plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin(),
                                                                 channelsPlugin(), connectorPlugin(connections), wiredDiscs])
         let connection = try board.startConnecting()
         expectEqual(try board.channel(connection, endingAt: board.disc), Wire.id)
@@ -98,7 +99,7 @@ let discTop = CGRect(x: discFrame.midX - 15, y: discFrame.minY - 3, width: 30, h
     test("a side with ports on two channels begins connections on both, in plugin order, each drawn on the first its end takes") {
         let pipedBoxes = Contributor(id: "piped-boxes") { $0.ports(Box.self, on: Pipe.self, sides: [.right]) }
         let connections = Connections()
-        let board = try EligibilityBoard(connections, plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), PortsPlugin(),
+        let board = try EligibilityBoard(connections, plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin(),
                                                                 channelsPlugin(), connectorPlugin(connections), pipedBoxes])
         let plain = render(board.h)
         let right = try board.startConnecting()
@@ -115,7 +116,7 @@ let discTop = CGRect(x: discFrame.midX - 15, y: discFrame.minY - 3, width: 30, h
     test("plugin order decides which channel comes first: ports on the pipe given before the wire's put it first") {
         let pipesFirst = Contributor(id: "pipes-first") { $0.ports(Box.self, on: Pipe.self, sides: [.right]) }
         let connections = Connections()
-        let board = try EligibilityBoard(connections, plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), PortsPlugin(),
+        let board = try EligibilityBoard(connections, plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin(),
                                                                 pipesFirst, channelsPlugin(), connectorPlugin(connections)])
         let right = try board.startConnecting()
         expectEqual(right.channels, [Pipe.id, Wire.id])

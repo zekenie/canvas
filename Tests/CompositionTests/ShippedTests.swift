@@ -45,10 +45,11 @@ import ValidationDetails
         core                 tool hand · command undo · command redo
         keyboard             service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo
         selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection
+        topology             service TopologyIndex
         arrows               shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay
-        sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link
+        sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
         subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard
-        schemas              service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link
+        schemas              service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link · edge type schema-link
         validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
         adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
         detail-panel         service DetailPanelState · ShapeDetails
@@ -56,7 +57,7 @@ import ValidationDetails
         table-of-contents    service ContentsState
         checklists           property checklist · adornment ChecklistChip → every shape
         titles               property title · adornment TitlePill → every shape
-        mentions             service MentionState · overlay MentionFrames · ShapeFaces · CanvasContextMenu
+        mentions             service MentionState · edge type mention · edges → every shape · overlay MentionFrames · ShapeFaces · CanvasContextMenu
         board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
         validation-details   DetailStatuses in Issues
         validation-contents  ContentsMarks
@@ -65,7 +66,7 @@ import ValidationDetails
         locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · CanvasContextMenu
         snapping             service SnapState · translation adjuster
         ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
-        arrow-ports          property channel → arrow · connector → arrow · ArrowBindingRules
+        arrow-ports          property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowBindingRules
         language-models      service LanguageModelState
         automation           command line draw · command line kinds
         title-names          draw names

@@ -10,6 +10,7 @@ import Selection
 import TableOfContents
 import TestKit
 import Titles
+import Topology
 
 // Fixtures only: CanvasTesting's kinds (a `Box` can't be mentioned) and a few kinds of this
 // target's own, so every test here shows Mentions knows no real kind. C's and E's tests use these
@@ -258,11 +259,12 @@ struct MentionFixturesPlugin: CanvasPlugin {
     }
 }
 
-/// The standard list: the keyboard and the selection first, CanvasTesting's fixtures (boxes, discs,
-/// tags), this target's, adornments (Titles' pills), the detail panel, the context menu (where
-/// Mentions puts Show What Mentions), the table of contents, titles, then Mentions, then `more`.
+/// The standard list: the keyboard, the selection and Topology first, CanvasTesting's fixtures
+/// (boxes, discs, tags), this target's, adornments (Titles' pills), the detail panel, the context
+/// menu (where Mentions puts Show What Mentions), the table of contents, titles, then Mentions, then
+/// `more`.
 @MainActor func mentionPlugins(_ more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
-    [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), MentionFixturesPlugin(), AdornmentsPlugin(), DetailPanelPlugin(),
+    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), MentionFixturesPlugin(), AdornmentsPlugin(), DetailPanelPlugin(),
      ContextMenusPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin()] + more
 }
 

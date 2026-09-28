@@ -664,7 +664,7 @@ final class NotificationCount: @unchecked Sendable {
         expectEqual(Array(outline.prefix(2)), ["Remove Mention", "—"], "a missing pill can't be gone to")
     },
 
-    test("a live pill's menu shows what mentions its target, once the editing it ends is over: this jot, and any other shape on the board") {
+    test("a live pill's menu shows what mentions its target, once the editing it ends is over: this jot, and any other shape that mentions it, on any board") {
         var other: ShapeID?
         let session = try EditedJot(groceries) { editor in
             other = editor.add(Jot(CGRect(x: 0, y: 300, width: 200, height: 200), text: MentionText([.mention(idA, label: "Groceries")])), titled: "Other")
@@ -677,7 +677,9 @@ final class NotificationCount: @unchecked Sendable {
         session.h.editor.goBack()
         expectEqual(session.h.editor.selectedShapeIDs, [session.jot])
 
-        // Not for a pill whose target is on another board: what mentions it is read where it is.
+        // A pill whose target is on another board too (the user chose file-wide backlinks when
+        // Topology took over the index): this jot mentions it, and is on the board shown, so it
+        // stays here.
         let pocket = ShapeID(), inside = ShapeID()
         let elsewhere = try EditedJot(MentionText([.text("See "), .mention(inside, label: "Inside")]), plugins: [PocketsPlugin()]) { editor in
             var plate = ShapeRecord(id: inside, Plate(CGRect(x: 0, y: 0, width: 120, height: 80)))
@@ -686,7 +688,11 @@ final class NotificationCount: @unchecked Sendable {
                                         contents: [pocket: CanvasDocument(shapes: [AnyShapeRecord(plate)])]) }
         }
         let menu = try require(elsewhere.textView.menu(for: elsewhere.mouse(.rightMouseDown, at: elsewhere.point(of: 4))))
-        expectEqual(Array(menu.outline.prefix(3)), ["Go to “Inside”", "Remove Mention", "—"])
+        expectEqual(Array(menu.outline.prefix(4)), ["Go to “Inside”", "Show What Mentions “Inside”", "Remove Mention", "—"])
+        try menu.choose("Show What Mentions “Inside”")
+        elsewhere.h.scheduler.advance(by: .zero)
+        expectEqual(elsewhere.h.editor.board, .root)
+        expectEqual(elsewhere.h.editor.selectedShapeIDs, [elsewhere.jot])
     },
 
     // MARK: Copy and paste

@@ -130,8 +130,8 @@ extension ShapeRegistrar {
     /// name out of it (`firstLine`, where each mention is "@…"): a mention holds its target's name
     /// as written, so names made of names would take each other in and grow.
     ///
-    /// It brings the kind's Mentioned In tab (`MentionsTab`) to its panel, shown while something
-    /// on the board shown mentions the shape, so the list needs `DetailPanelPlugin()`.
+    /// It brings the kind's Mentioned In tab (`MentionsTab`) to its panel, shown while another
+    /// shape, on any board, mentions the shape, so the list needs `DetailPanelPlugin()`.
     ///
     ///     note.mentionable(untitled: { $0.props.text.firstLine })
     ///     sub.mentionable(following: .opens)

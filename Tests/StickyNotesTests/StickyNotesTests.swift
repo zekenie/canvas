@@ -13,11 +13,12 @@ import TableOfContents
 import StickyNotes
 import TestKit
 import Titles
+import Topology
 import Validation
 
 /// The note, every plugin it opts into, and Adornments, which lays out what Titles shows on it.
 @MainActor var notePlugins: [any CanvasPlugin] {
-    [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), AdornmentsPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
+    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), ValidationPlugin(), AdornmentsPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
      ContextMenusPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin()]
 }
 
@@ -71,7 +72,7 @@ extension ShapeRecord where Props == StickyNote {
                                        ContextMenusPlugin(), TableOfContentsPlugin(), TitlesPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "MentionTexts", owner: .mentions, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), ValidationPlugin(), ChecklistsPlugin(), DetailPanelPlugin(),
                                        ContextMenusPlugin(), TableOfContentsPlugin(), TitlesPlugin(), PortsPlugin()])
         }
     },

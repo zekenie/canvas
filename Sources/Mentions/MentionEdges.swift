@@ -1,0 +1,29 @@
+import Canvas
+import Topology
+
+/// A mention, as an edge in Topology's graph: from the shape whose text holds it to the shape it
+/// names, in the slot of the property the text is in, counted once for each time the text mentions
+/// it. A root: nothing else is a kind of mention.
+public enum MentionEdge {}
+
+extension MentionEdge: EdgeType {
+    public static let id: EdgeTypeID = "mention"
+}
+
+/// Mentions' edges: every mention in the mention text of every kind whose shapes can hold names
+/// (`registry.namingKinds`), wherever a shape keeps it (a property's value, or in a struct, list, set
+/// or dictionary there), in text order. Only the record is read, so a commit's upkeep is its own.
+@MainActor
+func registerMentionEdges(into registrar: inout PluginRegistrar) {
+    registrar.edgeType(MentionEdge.self)
+    registrar.edgesForEveryShape(where: { kind, registry in registry.namingKinds.contains(kind) }) { record, registry, sink in
+        record.forEachNamingValue(in: registry) { property, value in
+            value.forEachNamingLeaf { leaf in
+                guard let text = leaf as? any MentionTextHolding else { return }
+                text.forEachMentionRun { run in
+                    if case .mention(let id, _) = run { sink.emit(MentionEdge.id, from: record.id, to: id, slot: property) }
+                }
+            }
+        }
+    }
+}

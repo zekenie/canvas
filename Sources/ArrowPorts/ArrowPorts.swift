@@ -2,9 +2,19 @@ import Arrows
 import Canvas
 import CoreGraphics
 import Ports
+import Topology
 
 extension PluginID {
     public static let arrowPorts: PluginID = "arrow-ports"
+}
+
+/// The family of edges arrows drawn between shapes are: a plain arrow's type, and every channel's
+/// parent. Its id is the arrow kind's name, `arrow`, taken from the kind rather than written again:
+/// the build's id audit gives a string one owner to depend on, and that's Arrows.
+public enum ArrowEdge {}
+
+extension ArrowEdge: EdgeType {
+    public static let id = EdgeTypeID(rawValue: Arrow.kind.rawValue)
 }
 
 /// Arrows are what ports draw, though neither plugin has heard of the other: a drag from a port
@@ -14,13 +24,14 @@ extension PluginID {
 /// shapes that take its channel, at that end; one without (the arrow tool's), or with a channel no
 /// installed plugin declares, binds wherever an arrow can. Without a drag (`registry.connection`),
 /// an arrow is made bound at both ends (`ArrowConnections`), and its ends are the shapes it's bound
-/// to.
+/// to. An arrow bound at both ends is an edge (Topology's) of the `arrow` family, or of its
+/// channel's type, under it.
 public struct ArrowPortsPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .arrowPorts }
 
     public func register(into registrar: inout PluginRegistrar) {
-        registrar.connects(Arrow.self, canConnect: { id, shapes in shapes.canBindArrow(to: id) },
+        registrar.connects(Arrow.self, edgeType: ArrowEdge.self, canConnect: { id, shapes in shapes.canBindArrow(to: id) },
                            make: { request, existing, shapes in ArrowConnections.arrow(for: request, existing: existing, in: shapes) },
                            ends: { ArrowConnections.ends(of: $0) }) { connection, editor in
             editor.beginArrow(from: connection.shape, at: connection.origin,

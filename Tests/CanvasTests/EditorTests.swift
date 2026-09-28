@@ -118,6 +118,23 @@ import TestKit
         h.editor.setTool(ToolID(placing: Card.kind))
         expect(changed.isSet)
     },
+    test("the document and the file read within withoutObservingDocument observe nothing; read outside, they're observed") {
+        let h = try EditorHarness(plugins: [CardsPlugin()])
+        let unobserved = Flag(), observed = Flag()
+        withObservationTracking {
+            let count = h.editor.withoutObservingDocument {
+                h.editor.document.shapes.count + h.editor.file.root.shapes.count + h.editor.contents(of: .root).shapes.count
+            }
+            expectEqual(count, 0)
+        } onChange: { unobserved.set() }
+        withObservationTracking {
+            _ = h.editor.withoutObservingDocument { h.editor.withoutObservingDocument { h.editor.file } }
+            _ = h.editor.document
+        } onChange: { observed.set() }
+        h.editor.transact { $0.insert(ShapeRecord(Card(CGRect(x: 0, y: 0, width: 10, height: 10)))) }
+        expect(!unobserved.isSet)
+        expect(observed.isSet, "nested, it ends with the outermost")
+    },
     test("Escape: the session's, else the tool's own, else back to the default tool") {
         let log = ServiceLog()
         let h = try EditorHarness(plugins: [CardsPlugin(), Contributor(id: "escapes") {

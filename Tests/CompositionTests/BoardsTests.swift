@@ -15,6 +15,7 @@ import StickyNotes
 import TableOfContents
 import TestKit
 import Titles
+import Topology
 import Validation
 
 // The shipped plugins on a file with boards, until a kind of their own owns one: CanvasTesting's
@@ -87,7 +88,7 @@ extension ChangeSetWatcher: EditorService {
         expectEqual(watch.workedOut, [false, false])
         #endif
     },
-    test("mentions are indexed on the board shown, a board's index is taken back on going back to it, and the picker finds shapes on every board") {
+    test("mentions are indexed for the whole file, as it opens (no board's mention text is read on entering it), and the picker finds shapes on every board") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         func note(_ x: CGFloat, _ text: MentionText) -> ShapeRecord<StickyNote> {
@@ -102,19 +103,21 @@ extension ChangeSetWatcher: EditorService {
         let h = try shippedWithPockets(file, pasteboard: pasteboard)
         let mentions = try require(h.editor.mentions)
         expectEqual(mentions.mentioners(of: target.id), [outer.id])
+        expectEqual(mentions.mentioners(of: deep.id), [inner.id], "the pocket's note, before its board is ever shown")
+        #if DEBUG
+        let read = try require(h.editor.topology).recordsRead
+        #endif
         h.editor.showBoard(BoardID(owner: pocket.id))
         expectEqual(mentions.mentioners(of: deep.id), [inner.id])
-        expectEqual(mentions.mentions(in: outer.id), [], "only the board shown is indexed")
+        expectEqual(mentions.mentions(in: outer.id), [target.id],
+                    "the root's note, with another board shown: the index is Topology's, the file's (it was the board shown's alone)")
         expectEqual(mentions.candidates(matching: "Deep", in: AnyMentionable.self, for: nil).matches.map(\.id), [deep.id])
         expectEqual(mentions.candidates(matching: "Target", in: AnyMentionable.self, for: nil).matches.map(\.id), [target.id], "on the root")
-        #if DEBUG
-        let read = mentions.textsRead
-        #endif
         h.editor.showBoard(.root)
         expectEqual(mentions.mentions(in: outer.id), [target.id])
         expectEqual(mentions.candidates(matching: "Target", in: AnyMentionable.self, for: nil).matches.map(\.id), [target.id])
         #if DEBUG
-        expectEqual(mentions.textsRead, read, "the root's index is taken back, not read again")
+        expectEqual(try require(h.editor.topology).recordsRead, read, "no mention text read on going in or back")
         #endif
     },
     test("what main's services keep of a board comes back with it as it was left, and no switch works out a change set") {

@@ -7,6 +7,7 @@ import Keyboard
 import Mentions
 import Selection
 import TestKit
+import Topology
 
 // The stored form: `synth-probe/grammar.swift` as tests, the escaper of the migration step, the
 // schema, and names through the core.
@@ -372,7 +373,7 @@ private struct LinesDefinition: ShapeDefinition {
             registrar.shape(BoundedDefinition()) { $0.mentionable() }
         }
         do {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), MentionsPlugin(), bounded])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), MentionsPlugin(), bounded])
             expect(false, "a bounded mention text should be refused")
         } catch let error as RegistryError {
             guard case .invalid(let point, let reason) = error else { return expect(false, "\(error)") }
@@ -383,7 +384,7 @@ private struct LinesDefinition: ShapeDefinition {
             registrar.shape(LinesDefinition()) { $0.mentionText { _ in [] } }
         }
         do {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), MentionsPlugin(), lines])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), MentionsPlugin(), lines])
             expect(false, "a patterned mention text in a list should be refused")
         } catch let error as RegistryError {
             guard case .invalid(let point, let reason) = error else { return expect(false, "\(error)") }

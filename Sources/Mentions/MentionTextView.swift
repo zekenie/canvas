@@ -448,11 +448,10 @@ public final class MentionTextView<Scope: MentionScope>: DetailTextView {
     // MARK: The pill's menu
 
     /// The text view's menu, with Go to, Show What Mentions and Remove Mention first on a pill
-    /// (which it selects). Show What Mentions is for a live pill whose target is on the board shown,
-    /// which is what its mentioners are read from, and that something there mentions: this text's
-    /// shape does, unless it's the target. Like Go to, it acts on the scheduler's next turn, once
-    /// the editing it ends is over. Remove Mention is for text that can be edited (not a locked
-    /// shape's in the panel).
+    /// (which it selects). Show What Mentions is for a live pill whose target another shape
+    /// mentions, on any board: this text's shape does, unless it's the target (whose own mention
+    /// doesn't count). Like Go to, it acts on the scheduler's next turn, once the editing it ends is
+    /// over. Remove Mention is for text that can be edited (not a locked shape's in the panel).
     public override func menu(for event: NSEvent) -> NSMenu? {
         let menu = super.menu(for: event)
         guard let range = pillRange(at: convert(event.locationInWindow, from: nil)), let pill = pill(at: range.location), let helper else {
@@ -464,7 +463,7 @@ public final class MentionTextView<Scope: MentionScope>: DetailTextView {
         if pill.resolution.isLive {
             let target = pill.target
             items.append(helper.item(MentionStyle.goTo(pill.shownLabel)) { [weak self] in self?.mentions?.follow(target) })
-            if let mentions, mentions.isShown(target), owner != target || mentions.isMentioned(target) {
+            if let mentions, owner != target || mentions.isMentioned(target) {
                 items.append(helper.item(MentionStyle.showWhatMentions(pill.shownLabel)) { [weak self] in
                     self?.mentions?.showWhatMentions([target])
                 })

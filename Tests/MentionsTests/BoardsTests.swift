@@ -7,12 +7,13 @@ import Selection
 import TableOfContents
 import TestKit
 import Titles
+import Topology
 
 // Mentions in a file of several boards, with CanvasTesting's pockets: a mention names a shape
 // anywhere in the file, and shows it as it's called now, on the canvas, in the rows and in the
 // state; a double-click on its pill shows its board first; a board deleted with its owner takes
-// its shapes' names with it until undo brings them back. The index is the board shown's; the
-// picker's catalog is the file's.
+// its shapes' names with it until undo brings them back. Who mentions whom (Topology's index) and
+// the picker's catalog are the file's.
 
 /// A file whose root holds a pocket, holding plate "Groceries" on its board, and a jot at (20, 20)
 /// whose text mentions the plate (by the name "Old name") and token "Milk", on the root, far off;
@@ -219,13 +220,17 @@ import Titles
         expectEqual(h.editor.selectedShapeIDs, [jot])
     },
 
-    test("the catalog is the file's, read as the editor opens: entering a board reads its mention text and none of the catalog, nor does the turn after, the first @, or going back") {
+    test("who mentions whom and the catalog are the file's, read as the editor opens: entering a board reads no mention text and none of the catalog, nor does the turn after, the first @, or going back") {
         #if DEBUG
         let b = try PocketBoard()
-        let entries = b.state.entriesRead, texts = b.state.textsRead
+        let topology = try require(b.editor.topology)
+        let entries = b.state.entriesRead, texts = topology.recordsRead
         expectEqual(entries, 3, "every shape of the file with a name, on either board: the root's jot, the token and the plate (the pocket's jot holds only a mention, so it has none)")
+        expectEqual(texts, 2, "both jots' text, on either board, as the editor opens")
+        expectEqual(b.state.mentioners(of: b.milk), [b.jot, b.inner], "the board shown's first, then the pocket's")
         expect(b.editor.showBoard(b.pocketBoard))
-        expect(b.state.textsRead > texts, "the mention text is read on the way in")
+        expectEqual(topology.recordsRead, texts, "no mention text read on the way in: the index is the file's, where it used to be the board shown's")
+        expectEqual(b.state.mentioners(of: b.milk), [b.inner, b.jot], "the board shown's first, then the root's")
         expectEqual(b.state.mentions(in: b.inner), [b.milk])
         expectEqual(b.row(b.inner), "@Milk")
         b.h.wait(0)
@@ -234,6 +239,7 @@ import Titles
         expect(b.editor.showBoard(b.pocketBoard))
         b.h.wait(0)
         expectEqual(b.state.entriesRead, entries, "no entry read again")
+        expectEqual(topology.recordsRead, texts, "nor any text")
         #endif
     },
 

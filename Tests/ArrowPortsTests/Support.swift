@@ -8,6 +8,7 @@ import Keyboard
 import Ports
 import Selection
 import TableOfContents
+import Topology
 
 // Fixture shapes only, with channels of the tests' own, so nothing here imports a real vertical but
 // Arrows: boxes take the wire channel, discs the pipe. Boxes A and B sit where the POC's first two
@@ -56,7 +57,7 @@ struct PortBoard {
             registrar.ports(Box.self, on: Wire.self)
             registrar.ports(Disc.self, on: Pipe.self)
         }
-        return [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin(),
+        return [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin(),
                 PortsPlugin(), ArrowPortsPlugin(), channels] + more
     }
 

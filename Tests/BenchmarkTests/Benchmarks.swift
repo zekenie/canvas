@@ -24,6 +24,7 @@ import Subboards
 import TableOfContents
 import TestKit
 import Titles
+import Topology
 import Validation
 
 // The persistence plan's budgets, for boards of generated shapes: saving and opening (Mentions'
@@ -77,9 +78,13 @@ enum Budget {
     /// Also undoing or redoing the deletion of a shape whose boards hold 10,000, with the frame after
     /// it.
     static let undoEveryShape = 100.0
-    /// Mentions' index (who mentions whom) and catalog (what the `@` picker searches, the whole
-    /// file's), built as a board opens: part of opening it.
+    /// Topology's index of the file's edges (who mentions whom among them, and what arrows join) and
+    /// Mentions' catalog (what the `@` picker searches, the whole file's), built as a file opens:
+    /// part of opening it. The budget Mentions' own index of who mentions whom had.
     static let mentionIndex10k = 50.0
+    /// What's connected to a shape with 100 edges, and how (`topology.neighbors(of:)`): what it
+    /// returns, never the board.
+    static let neighbors100 = 1.0
     /// A keystroke in the `@` picker, the `@` that opens it (recent picks and nearby shapes) included.
     static let pickerKeystroke = 2.0
     /// What renaming a shape mentioned 100 times adds to the commit, over renaming one mentioned
@@ -93,10 +98,10 @@ enum Budget {
     /// of contents' rows and validation's read, together.
     static let warmReturn = frame
     /// Entering a board of 10,000 shapes for the first time: the switch (the camera's first fit
-    /// with it, Mentions' index of who mentions whom, which the rows and pills read), the first
-    /// frame (three notes in ten drawing pills), the table of contents' rows and validation's first
-    /// read, together. Once a board, like opening a file. Mentions' catalog is the file's, read as
-    /// it opens, so entering a board reads none of it.
+    /// with it), the first frame (three notes in ten drawing pills), the table of contents' rows and
+    /// validation's first read, together. Once a board, like opening a file. Who mentions whom
+    /// (Topology's index) and Mentions' catalog are the file's, read as it opens, so entering a
+    /// board reads none of them.
     static let enterCold = 250.0
     /// Deleting a shape whose boards hold 10,000 shapes: the commit, and every board under it taken
     /// with it.
@@ -209,12 +214,16 @@ enum Budget {
     init(_ watch: Stopwatch) { watch.ended = ContinuousClock.now }
 }
 
-/// The shipped plugins, with a stopwatch around Mentions' service: the index and the catalog it
-/// builds from the board it's given.
+/// The shipped plugins, with a stopwatch around Topology's service and Mentions': Topology's index
+/// of the file's edges (the mentions among them) and Mentions' catalog, built from the file each is
+/// given. Topology is moved to just before Mentions, so nothing else is made between them: where it
+/// is changes only when its service is made, and Mentions' is made after it wherever it is.
 @MainActor func pluginsTimingMentions(_ watch: Stopwatch) -> [any CanvasPlugin] {
     var plugins = ShippedPlugins.plugins(model: ScriptedLanguageModel())
+    let topology = plugins.remove(at: plugins.firstIndex { $0.id == .topology }!)
     let at = plugins.firstIndex { $0.id == .mentions }!
     plugins.insert(Contributor(id: "bench-stopwatch-end") { r in r.service { _ in StopwatchEnd(watch) } }, at: at + 1)
+    plugins.insert(topology, at: at)
     plugins.insert(Contributor(id: "bench-stopwatch-start") { r in r.service { _ in StopwatchStart(watch) } }, at: at)
     return plugins
 }
@@ -327,7 +336,8 @@ extension Duration {
             let document = generatedBoard(shapes: size)
             var data = Data()
             let save = try median(runs: 5) { data = try codec.encode(document) }
-            // Opened with a stopwatch around Mentions' service, which builds its index and catalog.
+            // Opened with a stopwatch around Topology's service and Mentions', which build the index of
+            // who mentions whom and the catalog.
             let watch = Stopwatch()
             let timed = try Registry(plugins: pluginsTimingMentions(watch))
             var opened: CanvasEditor?
@@ -340,11 +350,11 @@ extension Duration {
             expectEqual(opened?.document, registry.fillingDefaults(document))
             let subboard = try require(mentionedSubboard(in: document))
             expectEqual(opened?.mentions?.mentioners(of: subboard).count, min(100, document.shapes.count { $0.kind == StickyNote.kind && $0.typed(as: StickyNote.self)?.props.text.mentioned.first == subboard }))
-            report(String(format: "%6d shapes, %5.1f MB: save %7.1f ms, open %7.1f ms (budget %.0f), of which Mentions' index and catalog %5.1f (budget %.0f)",
+            report(String(format: "%6d shapes, %5.1f MB: save %7.1f ms, open %7.1f ms (budget %.0f), of which Topology's index and Mentions' catalog %5.1f (budget %.0f)",
                           size, Double(data.count) / 1e6, save, open, Budget.open10k, index, Budget.mentionIndex10k))
             if holdsToBudgets, size >= 10_000 {
                 expect(open < Budget.open10k, "opening \(size) shapes took \(open) ms")
-                expect(index < Budget.mentionIndex10k, "Mentions' index and catalog of \(size) shapes took \(index) ms")
+                expect(index < Budget.mentionIndex10k, "Topology's index and Mentions' catalog of \(size) shapes took \(index) ms")
             }
             // The same shapes spread across boards: a tenth on the root, a tenth in each of nine
             // subboards, the last of them the top of a chain ten boards deep.
@@ -789,6 +799,28 @@ extension Duration {
                 expectEqual(mentioners.count, 100)
                 expect(afterDrag < Budget.panelAfterCommit, "the panel of a subboard mentioned 100 times, after a drag event over \(size) shapes, took \(afterDrag) ms")
                 expect(afterRename < Budget.panelAfterCommit, "the panel of a subboard mentioned 100 times, after a mentioner's rename over \(size) shapes, took \(afterRename) ms")
+            }
+        }
+    },
+    test("what's connected to a shape with 100 edges, and how, costs what it returns, not the board") {
+        for size in sizes {
+            let document = generatedBoard(shapes: size)
+            let editor = CanvasEditor(registry: try ShippedPlugins.registry(model: ScriptedLanguageModel()), document: document,
+                                      scheduler: ManualScheduler())
+            let topology = try require(editor.topology)
+            let mentioned = try require(mentionedSubboard(in: document))
+            var found: [EdgeTypeID: [ShapeID]] = [:]
+            let all = median(runs: 21) { found = topology.neighbors(of: mentioned) }
+            let degree = found.values.reduce(0) { $0 + $1.count }
+            let mentioners = median(runs: 21) { found = topology.neighbors(of: mentioned, .incoming, types: .only(MentionEdge.id)) }
+            let arrows = median(runs: 21) { found = topology.neighbors(of: mentioned, types: .within(EdgeTypeID(rawValue: Arrow.kind.rawValue))) }
+            expectEqual(found, [:], "no arrow ends at a subboard")
+            report(String(format: "%6d shapes, what's connected to a subboard with %d edges: %6.3f ms, its mentioners alone %6.3f, its arrows (none) %6.3f (budget %.0f)",
+                          size, degree, all, mentioners, arrows, Budget.neighbors100))
+            if holdsToBudgets {
+                expectEqual(degree, 100)
+                expect(all < Budget.neighbors100, "what's connected to a shape with \(degree) edges, of \(size) shapes, took \(all) ms")
+                expect(mentioners < Budget.neighbors100, "a shape's \(degree) mentioners, of \(size) shapes, took \(mentioners) ms")
             }
         }
     },

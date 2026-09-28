@@ -37,7 +37,7 @@ public final class CanvasEditor {
     /// The board shown: the shapes you're looking at, which every tool, drawing, hit testing and
     /// service works on. Changes only through `transact`.
     public var document: CanvasDocument {
-        access(keyPath: \.document)
+        if unobservedReads == 0 { access(keyPath: \.document) }
         return storedDocument
     }
     /// Observed through `document`, which a commit sets with `withMutation`: the macro's setter
@@ -53,12 +53,26 @@ public final class CanvasEditor {
     /// bringing some) or the whole file's replacement. Read what's shown from `document`, never from
     /// here. Observed through `document`.
     public var file: CanvasFile {
-        access(keyPath: \.document)
+        if unobservedReads == 0 { access(keyPath: \.document) }
         return storedFile
     }
     /// Kept as each commit leaves it, never copied while it changes (a transaction reads it through
     /// closures), so a commit's upkeep of it costs what the commit changed.
     @ObservationIgnored private(set) var storedFile: CanvasFile
+    /// How deep `withoutObservingDocument` is.
+    @ObservationIgnored private var unobservedReads = 0
+
+    /// Runs `body` with `document` and `file`, and what reads through them (`contents(of:)`,
+    /// `owner(of:)`, `shape(inFile:)`), read without observing them: for a service that reads the
+    /// file for a view that observes a revision the service keeps (Mentions' backlinks), so the view
+    /// redraws as that says rather than on every commit. What it reads is for the call: a copy of the
+    /// file kept until the next commit would make that commit copy the file's tables, whatever it
+    /// changed.
+    public func withoutObservingDocument<T>(_ body: () throws -> T) rethrows -> T {
+        unobservedReads += 1
+        defer { unobservedReads -= 1 }
+        return try body()
+    }
     /// +1 per transaction that changed something.
     public private(set) var revision = 0
     /// Setting it stops the camera's slide or animation (CanvasEditor+Camera.swift).

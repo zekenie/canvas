@@ -3,42 +3,36 @@ import Canvas
 import Observation
 import Selection
 import Titles
+import Topology
 
-/// What Mentions knows about an editor's board, one per editor: who mentions whom (both ways), and
-/// so what mentions each shape (`backlinks(of:)`); how each mentioned shape shows now; the catalog
-/// of shapes that can be mentioned (what the `@` picker searches), and this editor's recent picks.
-/// It never transacts: it follows the document.
+/// What Mentions knows about an editor's file, one per editor: how each mentioned shape shows now,
+/// what mentions each shape, on any board (`backlinks(of:)`), the catalog of shapes that can be
+/// mentioned (what the `@` picker searches), and this editor's recent picks. It never transacts: it
+/// follows the file.
 ///
-/// The index is built as the board opens (an editor made with a document, in `init`; one given a
-/// board, through `replaceDocument`'s commit), walking only the kinds whose shapes can hold names
-/// (`registry.namingKinds`). Each commit then costs what it changed: the mention text of the shapes
-/// it added or changed is read again, and the shapes it touched that are mentioned are resolved
-/// again; only a resolution that changed tells its observers, bumps its `labelRevision`, and names
-/// its mentioners' rows (`rowsAffected`); and the backlinks of what the text it added, changed or
-/// removed mentions, and of what those rows mention, change (`backlinkRevision`). A commit that
-/// only moved shapes (a drag) changes no text and no name, so it costs nothing here.
-///
-/// In a file of several boards, the index is the board shown's (what mentions a shape is what
-/// mentions it there), kept for the boards shown lately; a board entered for the first time has its
-/// mention text read on the way in. The catalog is the file's (the `@` picker lists what's on any
+/// Who mentions whom is Topology's: each mention is an edge of type `mention` (`MentionEdge`), from
+/// the shape whose text holds it, which Mentions' source reads out of the mention text (of a kind
+/// whose shapes can hold names, `registry.namingKinds`), in the index Topology keeps of the whole
+/// file (`editor.topology`). This service reads it: `mentions(in:)`, `mentioners(of:)`, and which
+/// shapes are mentioned, whose resolutions it keeps. Each commit costs what it changed: the shapes
+/// it touched that are mentioned (or observed) are resolved again, on any board, and only a
+/// resolution that changed tells its observers, bumps its `labelRevision`, and names its
+/// mentioners' rows (`rowsAffected`); and the backlinks of what the shapes it added, changed or
+/// removed mention, and of what those rows mention, change (`backlinkRevision`). A commit that only
+/// moved shapes (a drag) changes no text and no name, so it costs nothing here; nor does showing
+/// another board (but that every shape's backlinks are listed in another order, that board's
+/// first), since the index and the resolutions are the file's, kept up to date by each commit, the
+/// shapes it changed on other boards (`ChangeSet.elsewhere`: the boards a deletion took or a paste
+/// brought, a write to a board that isn't shown) included. The catalog is the file's too (the `@` picker lists what's on any
 /// board the editor can show): read whole as the editor opens, or a file or board is put in place,
-/// and kept up to date by each commit, the shapes it changed on other boards (`ChangeSet.elsewhere`)
-/// included, so showing another board reads none of it. A mention names a shape anywhere in the
-/// file, and shows it as it's called now: what a commit changes on other boards (the boards a
-/// deletion took or a paste brought, a write to a board that isn't shown) is resolved again, and
-/// so, on going back to a board, is every shape its mentions name on the others, which may have
-/// changed while it wasn't shown.
+/// and kept up to date the same way.
 @MainActor
 @Observable
 public final class MentionState {
     @ObservationIgnored private unowned let editor: CanvasEditor
     public var registry: Registry { editor.registry }
 
-    /// Each mentioning shape's targets, in text order, each once.
-    @ObservationIgnored private var forward: [ShapeID: [ShapeID]] = [:]
-    /// Each mentioned shape's mentioners, kept while they mention it, whether it's on the board or not.
-    @ObservationIgnored private var backward: [ShapeID: Set<ShapeID>] = [:]
-    /// How each shape that's mentioned or observed shows now.
+    /// How each shape that's mentioned (anywhere in the file) or observed shows now.
     @ObservationIgnored private var resolutions: [ShapeID: MentionResolution] = [:]
     /// +1 for a target each time its resolution changes, observed a target at a time.
     @ObservationIgnored private var revisions: [ShapeID: Int] = [:]
@@ -47,7 +41,8 @@ public final class MentionState {
     /// tell, so a commit tells no one else.
     @ObservationIgnored private var backlinkRevisions: [ShapeID: Int] = [:]
     @ObservationIgnored private var backlinksRead: Set<ShapeID> = []
-    /// +1 each time another board is shown, where every shape's mentioners are another board's.
+    /// +1 each time another board is shown, where every shape's mentioners are listed that board's
+    /// first.
     @ObservationIgnored private var boardsShown = 0
 
     /// Each observation's targets and closure, by its key, and the keys observing each target.
@@ -65,22 +60,21 @@ public final class MentionState {
     /// This editor's picks, the latest first; never saved.
     @ObservationIgnored private var recent: [ShapeID] = []
 
-    /// The revision the index is up to date with, and the rows its last commit affected: the table
-    /// of contents hears each commit first, and asks (`rowsAffected`) before this service hears it.
+    /// The revision the resolutions are up to date with, and the rows its last commit affected: the
+    /// table of contents hears each commit first, and asks (`rowsAffected`) before this service
+    /// hears it.
     @ObservationIgnored private var heardRevision: Int
     @ObservationIgnored private var lastAffected: Set<ShapeID> = []
-    /// The board shown, as of the commit the index is up to date with: what `backlinks(of:)` reads
-    /// its mentioners from, so a view of a shape's backlinks observes only them (`backlinkRevision`),
-    /// never every commit, as reading the editor's document would have it.
-    @ObservationIgnored private var heardDocument: CanvasDocument
+    /// Mentions, as Topology's edges: made once, as a filter's types are a set.
+    @ObservationIgnored private let mentionEdges = EdgeTypeFilter.only(MentionEdge.id)
 
-    /// The index of boards shown lately, for going back to them (`BoardStash`).
-    @ObservationIgnored private var kept = BoardStash<Kept>()
+    /// Who mentions whom: Topology's index, made before this service (so it hears each commit
+    /// first), and brought up to date when this one is asked about a commit first (`catchUp`).
+    @ObservationIgnored private let topology: TopologyIndex?
 
     #if DEBUG
-    /// How many shapes' mention text has been read, and how many catalog entries (debug builds), so
-    /// tests can hold a commit to what it changed.
-    @ObservationIgnored public private(set) var textsRead = 0
+    /// How many catalog entries have been read (debug builds), so tests can hold a commit to what it
+    /// changed. The mention text read is Topology's (`recordsRead`).
     @ObservationIgnored public private(set) var entriesRead = 0
     /// What each panel's Mentioned In list last showed, by the shape it's in, each time it draws
     /// (debug builds): its lines are drawn by SwiftUI, which a test can't read. A test clears it to
@@ -90,60 +84,120 @@ public final class MentionState {
 
     init(editor: CanvasEditor) {
         self.editor = editor
+        topology = editor.topology
         heardRevision = editor.revision
-        heardDocument = editor.document
-        index(editor.document)
+        trackMentioned()
         readCatalog()
     }
 
-    /// Indexes the board shown: every shape's mention text (who mentions whom, for the rows and the
-    /// pills).
-    private func index(_ document: CanvasDocument) {
-        for record in document.shapes { reindex(record.id, record) }
+    /// Resolves every shape that's mentioned anywhere in the file.
+    private func trackMentioned() {
+        for edge in topology?.edges(ofType: mentionEdges) ?? [] { track(edge.target) }
     }
 
     // MARK: Reading
 
-    /// The shapes that mention `target`, in document order, each once. It needn't be on the board.
+    /// The shapes that mention `target`, each once, on any board of the file the editor can show:
+    /// those on the board shown in document order, then those on the other boards in the file's
+    /// order (a board's in its order, each board where its owner is, depth first). `target` needn't
+    /// be anywhere.
     public func mentioners(of target: ShapeID) -> [ShapeID] {
-        guard let ids = backward[target] else { return [] }
-        let document = editor.document
-        return ids.compactMap { id in document.index(of: id).map { (id, $0) } }.sorted { $0.1 < $1.1 }.map(\.0)
+        ordered(mentionerSet(of: target), shown: editor.document, in: editor.file)
+    }
+
+    /// Shapes of the file in `mentioners(of:)`'s order: those on `document` (the board shown) in its
+    /// order, then the others in the file's.
+    private func ordered(_ ids: Set<ShapeID>, shown document: CanvasDocument, in file: CanvasFile) -> [ShapeID] {
+        guard !ids.isEmpty else { return [] }
+        var shown: [(id: ShapeID, index: Int)] = [], away: [(id: ShapeID, place: [Int])] = []
+        for id in ids {
+            if let index = document.index(of: id) {
+                shown.append((id, index))
+            } else {
+                away.append((id, place(of: id, in: file)))
+            }
+        }
+        return shown.sorted { $0.index < $1.index }.map(\.id) + away.sorted { $0.place.lexicographicallyPrecedes($1.place) }.map(\.id)
+    }
+
+    /// Where a shape is in the file's order: the indices, root first, of each owner on the way down
+    /// to it, then its own on its board.
+    private func place(of id: ShapeID, in file: CanvasFile) -> [Int] {
+        var place: [Int] = [], current = id, met: Set<ShapeID> = []
+        while met.insert(current).inserted, let board = file.board(containing: current), let index = file[board].index(of: current) {
+            place.append(index)
+            guard let owner = board.owner else { break }
+            current = owner
+        }
+        return place.reversed()
+    }
+
+    /// The shapes whose mention text mentions `target`, in no order.
+    private func mentionerSet(of target: ShapeID) -> Set<ShapeID> {
+        guard let topology else { return [] }
+        return Set(topology.edges(of: target, .incoming, types: mentionEdges).lazy.map(\.carrier))
+    }
+
+    /// Whether any shape's mention text mentions `target`, anywhere in the file, its own included:
+    /// whether its resolution is kept.
+    private func isMentionedAnywhere(_ target: ShapeID) -> Bool {
+        topology?.hasEdges(of: target, .incoming, types: mentionEdges) ?? false
     }
 
     /// The shapes a shape's mention text mentions, in text order, each once.
-    public func mentions(in shape: ShapeID) -> [ShapeID] { forward[shape] ?? [] }
+    public func mentions(in shape: ShapeID) -> [ShapeID] {
+        var seen: Set<ShapeID> = []
+        return (topology?.edges(carriedBy: shape) ?? []).compactMap { edge in
+            edge.type == MentionEdge.id && seen.insert(edge.target).inserted ? edge.target : nil
+        }
+    }
 
     // MARK: What mentions a shape
 
-    /// Whether another shape on the board shown mentions `target` (a shape's mention of itself
-    /// doesn't count). One lookup.
+    /// Whether another shape mentions `target`, on any board of the file the editor can show (a
+    /// shape's mention of itself doesn't count). It reads the target's own mentions, never a board.
+    /// It stops at the first, and makes nothing: it's the Mentioned In section's `shownWhile`, asked
+    /// on every commit (a drag's every event).
     public func isMentioned(_ target: ShapeID) -> Bool {
-        guard let mentioners = backward[target] else { return false }
-        return mentioners.count > 1 || !mentioners.contains(target)
+        topology?.hasEdges(of: target, .incoming, types: mentionEdges) { $0.carrier != target } ?? false
     }
 
-    /// What mentions `target` on the board shown, in document order, the target itself left out:
-    /// each mentioner as it's called where it's mentioned (else its title, else its kind), and its
-    /// text around its first mention of the target, with the names its mentions show now. It reads
-    /// only what this state keeps (the board as of the last commit it heard, and how each shape
-    /// the board mentions shows), never the editor's observed document, so a view that reads it
-    /// redraws only as `backlinkRevision` says.
+    /// The shapes whose mention text mentions any of `targets`, but the targets themselves (their
+    /// mentions of themselves), each once, in no order.
+    private func mentionersOfAny(_ targets: [ShapeID]) -> Set<ShapeID> {
+        var found: Set<ShapeID> = []
+        for target in targets {
+            for edge in topology?.edges(of: target, .incoming, types: mentionEdges) ?? [] where edge.carrier != target {
+                found.insert(edge.carrier)
+            }
+        }
+        return found
+    }
+
+    /// What mentions `target`, on any board of the file the editor can show, in `mentioners(of:)`'s
+    /// order (the board shown's first), the target itself left out: each mentioner as it's called
+    /// where it's mentioned (else its title, else its kind), and its text around its first mention
+    /// of the target, with the names its mentions show now. It reads the target's own edges, how
+    /// each shape the file mentions shows, and its mentioners' records, from the board shown and the
+    /// file without observing them (`withoutObservingDocument`), so a view that reads it redraws
+    /// only as `backlinkRevision` says, never on every commit; and it keeps no copy of the file, which
+    /// would make the next commit that adds or removes shapes copy its table of where each is.
     public func backlinks(of target: ShapeID) -> [MentionBacklink] {
-        guard let ids = backward[target] else { return [] }
-        let document = heardDocument
-        let ordered = ids.compactMap { id in id == target ? nil : document.index(of: id).map { (id, $0) } }.sorted { $0.1 < $1.1 }
-        return ordered.compactMap { id, _ in
-            guard let record = document[id] else { return nil }
-            let name = backlinkName(of: record)
-            return MentionBacklink(id: id, label: name.label, systemImage: name.systemImage, quote: quote(of: record, around: target) ?? "")
+        editor.withoutObservingDocument {
+            let document = editor.document, file = editor.file
+            return ordered(mentionersOfAny([target]), shown: document, in: file).compactMap { id in
+                guard let record = document[id] ?? file.record(id) else { return nil }
+                let name = backlinkName(of: record)
+                return MentionBacklink(id: id, label: name.label, systemImage: name.systemImage, quote: quote(of: record, around: target) ?? "")
+            }
         }
     }
 
     /// A target's backlinks' revision: it changes each time `backlinks(of:)` or `isMentioned` may
-    /// read differently: a commit that adds, changes or removes a shape that mentions it, or mentioned
-    /// it (not one that only moves it: a drag costs nothing), or that changes a name one of its
-    /// mentioners' quotes shows; and a switch of board. Reading it observes only that target, so a
+    /// read differently: a commit that adds, changes or removes a shape that mentions it, or
+    /// mentioned it, on any board (not one that only moves it: a drag costs nothing), or that
+    /// changes a name one of its mentioners' quotes shows; and a switch of board, after which the
+    /// new board's mentioners come first. Reading it observes only that target, so a
     /// SwiftUI view of one shape's backlinks redraws when they change, as `labelRevision` does.
     public func backlinkRevision(of target: ShapeID) -> Int {
         backlinksRead.insert(target)
@@ -156,23 +210,27 @@ public final class MentionState {
     private subscript(backlinks target: ShapeID) -> Int { backlinkRevisions[target] ?? 0 }
     private var boardsShownKey: Int { boardsShown }
 
-    /// Selects what mentions `targets` on the board shown (their mentioners, each target's own
-    /// mention of itself left out), as following a mention goes to its target (`editor.goTo`: one
-    /// step back, and the camera brings them into view), on the scheduler's next turn: from a
-    /// menu in text being edited, going ends the editing that menu's view is part of. Nothing, if
-    /// nothing mentions them.
+    /// Goes to what mentions `targets` (their mentioners, each target's own mention of itself left
+    /// out) as following a mention goes to its target (`editor.goTo`: one step back, and the camera
+    /// brings them into view): those on the board shown, if any are, else those on the board of the
+    /// first in `mentioners(of:)`'s order, which it shows. On the scheduler's next turn: from a menu
+    /// in text being edited, going ends the editing that menu's view is part of. Nothing, if nothing
+    /// mentions them.
     public func showWhatMentions(_ targets: [ShapeID]) {
         _ = editor.scheduler.schedule(after: .zero) { [weak self] in self?.goToMentioners(of: targets) }
     }
 
     private func goToMentioners(of targets: [ShapeID]) {
         editor.endEditing()                                     // what the text saves as it closes, indexed first
-        var found: Set<ShapeID> = []
-        for target in targets { found.formUnion((backward[target] ?? []).subtracting([target])) }
-        let document = editor.document
-        let ordered = found.compactMap { id in document.index(of: id).map { (id, $0) } }.sorted { $0.1 < $1.1 }.map(\.0)
-        guard !ordered.isEmpty else { return }
-        editor.goTo(ordered)
+        let mentioners = ordered(mentionersOfAny(targets), shown: editor.document, in: editor.file)
+        guard !mentioners.isEmpty else { return }
+        editor.goTo(mentioners)
+    }
+
+    /// Goes to a mentioner (`editor.goTo`: its board shown first, if it's on another; one step
+    /// back) on the scheduler's next turn, as a Mentioned In line does.
+    func goToMentioner(_ id: ShapeID) {
+        _ = editor.scheduler.schedule(after: .zero) { [weak editor] in editor?.goTo([id]) }
     }
 
     /// How a mentioner is named in a backlink: as it's mentioned, if it can be; else by its title,
@@ -194,7 +252,7 @@ public final class MentionState {
                 guard quote == nil, let text = leaf as? any MentionTextHolding else { return }
                 var runs: [MentionRun] = []
                 text.forEachMentionRun { runs.append($0) }
-                // Every shape the board mentions is tracked, so its name is kept.
+                // Every shape the file mentions is tracked, so its name is kept.
                 quote = MentionQuote.quote(runs, around: target, length: MentionStyle.quoteLength) {
                     (resolutions[$0] ?? resolve($0)).appearance?.label
                 }
@@ -278,7 +336,7 @@ public final class MentionState {
         }
         guard !changes.elsewhere.isEmpty else { return lastAffected }
         var affected = lastAffected
-        for id in changes.elsewhere { affected.formUnion(backward[id] ?? []) }
+        for id in changes.elsewhere { affected.formUnion(mentionerSet(of: id)) }
         return affected
     }
 
@@ -447,35 +505,51 @@ public final class MentionState {
 
     // MARK: Following the document
 
-    /// What a commit changed, applied: the index, the resolutions, the catalog; then the observers
-    /// of the targets whose resolution changed, and the rows it affects.
+    /// What a commit changed, applied: what's mentioned (Topology's index, brought up to date with
+    /// it first), the resolutions, the catalog; then the observers of the targets whose resolution
+    /// changed, and the rows it affects.
     private func hear(_ changes: ChangeSet) {
         heardRevision = editor.revision
-        let document = editor.document
-        heardDocument = document
-        // The targets whose backlinks the commit may change: what each shape it removed, added or
-        // changed mentioned before and mentions now, but itself (a shape's own text is none of its
-        // backlinks).
+        // The targets whose backlinks the commit may change (`backlinkRevision`): the shapes whose
+        // mentions it added or removed, and what the shapes it added or changed mention, on any
+        // board (an edit that keeps a mention changes its quote, and no edge).
         var backlinksChanged: Set<ShapeID> = []
+        if let topology {
+            topology.catchUp(changes)
+            // The shapes whose mentions it changed, at either end (another type's edges, an arrow
+            // bound to a mentioned shape, change none of what mentions it): those mentioned now are
+            // tracked, and those no longer mentioned (nor observed) aren't. Those mentioned before
+            // (so tracked) or by another shape now may read other backlinks; `touched` doesn't say
+            // which mentions changed, so one mentioned before only by itself counts too, though a
+            // shape's own text is none of its backlinks.
+            for id in topology.touched(types: mentionEdges) {
+                let isTracked = resolutions[id] != nil
+                let isMentioned = isMentionedAnywhere(id)
+                if isTracked || (isMentioned && self.isMentioned(id)) { backlinksChanged.insert(id) }
+                guard observersByTarget[id] == nil else { continue }
+                if isMentioned, !isTracked {
+                    resolutions[id] = resolve(id)
+                } else if !isMentioned, isTracked {
+                    resolutions[id] = nil
+                }
+            }
+            for id in changes.added where !changes.moved.contains(id) { noteTargets(of: id, into: &backlinksChanged) }
+            for id in changes.changed where !changes.moved.contains(id) { noteTargets(of: id, into: &backlinksChanged) }
+            for id in changes.elsewhere { noteTargets(of: id, into: &backlinksChanged) }
+        }
         for id in changes.removed {
-            noteTargets(of: id, into: &backlinksChanged)
-            reindex(id, nil)
             catalog.remove(id)
             stale.remove(id)
         }
-        for id in changes.added.union(changes.changed) where !changes.moved.contains(id) {
-            noteTargets(of: id, into: &backlinksChanged)
-            reindex(id, document[id])
-            noteTargets(of: id, into: &backlinksChanged)
-            stale.insert(id)
-        }
+        for id in changes.added where !changes.moved.contains(id) { stale.insert(id) }
+        for id in changes.changed where !changes.moved.contains(id) { stale.insert(id) }
         var changedTargets: Set<ShapeID> = []
         for id in changes.shapeIDs where !changes.moved.contains(id) { resolveAgain(id, into: &changedTargets) }
         // Shapes on other boards it reached: those a deletion took with a board, or a paste
         // brought, or a write to a board that isn't shown changed.
         for id in changes.elsewhere { resolveAgain(id, into: &changedTargets) }
         stale.formUnion(changes.elsewhere)
-        lastAffected = changedTargets.reduce(into: Set<ShapeID>()) { $0.formUnion(backward[$1] ?? []) }
+        lastAffected = changedTargets.reduce(into: Set<ShapeID>()) { $0.formUnion(mentionerSet(of: $1)) }
         // A mentioner whose mentions show another name now quotes it.
         for mentioner in lastAffected { noteTargets(of: mentioner, into: &backlinksChanged) }
         if changes.replacedDocument { readCatalog() }                   // a board or file put in place: read now, not at the first `@`
@@ -483,9 +557,11 @@ public final class MentionState {
         bumpBacklinks(backlinksChanged)
     }
 
-    /// Notes the targets a shape mentions now, but itself.
+    /// Notes what a shape's mention text mentions now, but itself.
     private func noteTargets(of id: ShapeID, into targets: inout Set<ShapeID>) {
-        for target in forward[id] ?? [] where target != id { targets.insert(target) }
+        for edge in topology?.edges(carriedBy: id) ?? [] where edge.type == MentionEdge.id && edge.target != id {
+            targets.insert(edge.target)
+        }
     }
 
     /// Bumps the targets' backlink revisions, telling only the observers of those read since they
@@ -500,11 +576,10 @@ public final class MentionState {
         }
     }
 
-    /// Resolves a tracked target again (or takes what it shows now, `shown`), noting it in
-    /// `changed` if that changed.
-    private func resolveAgain(_ id: ShapeID, as shown: @autoclosure () -> MentionResolution? = nil, into changed: inout Set<ShapeID>) {
+    /// Resolves a tracked target again, noting it in `changed` if what it shows changed.
+    private func resolveAgain(_ id: ShapeID, into changed: inout Set<ShapeID>) {
         guard let before = resolutions[id] else { return }
-        let now = shown() ?? resolve(id)
+        let now = resolve(id)
         if now != before {
             resolutions[id] = now
             changed.insert(id)
@@ -528,50 +603,12 @@ public final class MentionState {
         }
     }
 
-    /// Reads a shape's mention text again (nil: it's gone), and keeps both directions in step.
-    private func reindex(_ id: ShapeID, _ record: AnyShapeRecord?) {
-        let new = record.map(targets(of:)) ?? []
-        let old = forward[id] ?? []
-        guard new != old else { return }
-        forward[id] = new.isEmpty ? nil : new
-        let newSet = Set(new), oldSet = Set(old)
-        for target in oldSet.subtracting(newSet) {
-            backward[target]?.remove(id)
-            if backward[target]?.isEmpty == true { backward[target] = nil }
-            untrackIfUnused(target)
-        }
-        for target in newSet.subtracting(oldSet) {
-            backward[target, default: []].insert(id)
-            track(target)
-        }
-    }
-
-    /// The shapes a record's mention text mentions, in text order, each once, wherever the record
-    /// keeps it (a property's value, or in a struct, list, set or dictionary there): only kinds that
-    /// can hold names are read.
-    private func targets(of record: AnyShapeRecord) -> [ShapeID] {
-        guard registry.namingKinds.contains(record.kind), !record.isOpaque else { return [] }
-        #if DEBUG
-        textsRead += 1
-        #endif
-        var seen: Set<ShapeID> = [], ordered: [ShapeID] = []
-        record.forEachNamingValue(in: registry) { _, value in
-            value.forEachNamingLeaf { leaf in
-                guard let text = leaf as? any MentionTextHolding else { return }
-                text.forEachMentionRun { run in
-                    if case .mention(let id, _) = run, seen.insert(id).inserted { ordered.append(id) }
-                }
-            }
-        }
-        return ordered
-    }
-
     private func track(_ target: ShapeID) {
         if resolutions[target] == nil { resolutions[target] = resolve(target) }
     }
 
     private func untrackIfUnused(_ target: ShapeID) {
-        if backward[target] == nil, observersByTarget[target] == nil { resolutions[target] = nil }
+        if observersByTarget[target] == nil, !isMentionedAnywhere(target) { resolutions[target] = nil }
     }
 
     // MARK: The catalog
@@ -646,54 +683,23 @@ extension MentionState: EditorService {
         hear(changes)
     }
 
-    /// Keeps the board left's index, as it is, for going back to it.
-    public func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor) {
-        guard old != new, heardRevision == editor.revision else { return }
-        kept.keep(Kept(forward: forward, backward: backward, resolutions: resolutions), for: old, in: editor)
-    }
-
-    /// Takes back the shown board's index, if it's as it was left, or indexes it as it opens. Only
-    /// the board shown is indexed, but its mentions of shapes on other boards show them live: taken
-    /// back, what they name on other boards is resolved again, since a rename there (or a deletion,
-    /// or its undo) while the board wasn't shown leaves its revision as it was, and those whose
-    /// resolution changed bump their revisions and tell their observers, and their mentioners are
-    /// the rows it affects (`rowsAffected`). The catalog is the file's, so it stays, but for a file
-    /// put in place with the switch, whose catalog is read afresh. Recent picks and observations
-    /// stay (the views observing pills of the board left go with it).
+    /// Nothing, but for a file put in place with the switch: what's mentioned, how each shows, and
+    /// the catalog are the file's, kept up to date by every commit, whatever board it was on, so
+    /// showing another board reads no mention text and resolves nothing. A file put in place has
+    /// what it mentions resolved and its catalog read afresh. Recent picks and observations stay
+    /// (the views observing pills of the board left go with it).
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
         heardRevision = editor.revision
-        heardDocument = editor.document
         lastAffected = []
-        // Every shape's mentioners are now the new board's.
+        // Every shape's backlinks list the new board's mentioners first.
         withMutation(keyPath: \.boardsShownKey) { boardsShown += 1 }
         backlinksRead = []
-        var changedTargets: Set<ShapeID> = []
-        if let taken = kept.take(for: change.to, in: editor) {
-            forward = taken.forward
-            backward = taken.backward
-            resolutions = taken.resolutions
-            // A change to a target on this board would have changed its revision, so those are as
-            // kept; those elsewhere may not be.
-            let document = editor.document, file = editor.file
-            for id in Array(resolutions.keys) where document[id] == nil { resolveAgain(id, as: resolve(elsewhere: id, in: file), into: &changedTargets) }
-            lastAffected = changedTargets.reduce(into: Set<ShapeID>()) { $0.formUnion(backward[$1] ?? []) }
-        } else {
-            forward = [:]
-            backward = [:]
-            resolutions = [:]
-            index(editor.document)
-        }
-        if change.isFileReplaced { readCatalog() }
+        guard change.isFileReplaced else { return }
+        resolutions = [:]
+        trackMentioned()
         for target in observersByTarget.keys { track(target) }
-        tell(changedTargets)
+        readCatalog()
     }
-}
-
-/// A board's index, kept while another board is shown.
-private struct Kept {
-    let forward: [ShapeID: [ShapeID]]
-    let backward: [ShapeID: Set<ShapeID>]
-    let resolutions: [ShapeID: MentionResolution]
 }
 
 extension CanvasEditor {
