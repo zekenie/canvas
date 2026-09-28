@@ -128,8 +128,9 @@ enum ContextMenuItems {
         }
         let state: NSControl.StateValue? = checks.allSatisfy { $0 == nil } ? nil
             : checks.allSatisfy { $0 == true } ? .on : checks.contains(true) ? .mixed : .off
+        // Whatever the item does, over every shape, is one undo step, named by the item.
         return ResolvedEntry(title: entry.title, key: entry.key, content: .item(isEnabled: !enabled.isEmpty, state: state) {
-            perform(enabled, in: editor)
+            editor.undoHistory.group(entry.title) { perform(enabled, in: editor) }
         })
     }
 
@@ -148,8 +149,10 @@ enum ContextMenuItems {
                     edit(&subject)
                 }
                 }
+                let title = entry.title, editor = subject.editor
+                let step: @MainActor () -> Void = { editor.undoHistory.group(title, run) }
                 let state: NSControl.StateValue? = isChecked.map { $0(subject) ? .on : .off }
-                return ResolvedEntry(title: entry.title, key: key, content: .item(isEnabled: isEnabled(subject), state: state, perform: run))
+                return ResolvedEntry(title: entry.title, key: key, content: .item(isEnabled: isEnabled(subject), state: state, perform: step))
             case .submenu(let entries):
                 let items = resolve(entries, for: subject)
                 return items.isEmpty ? nil : ResolvedEntry(title: entry.title, key: key, content: .submenu(items))

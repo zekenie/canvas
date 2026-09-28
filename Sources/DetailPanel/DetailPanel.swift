@@ -214,6 +214,9 @@ struct ErasedSection {
         title = section.title
         let shown = section.isShown, content = section.content
         isShown = { value($0).map(shown) ?? false }
+        // Its writes are undo steps named for it; one without a title's, for the kind.
+        let stepName = section.title.map { "Change \($0)" }
+        let binding = { @MainActor (record: AnyShapeRecord, editor: CanvasEditor) in binding(record, editor)?.named(stepName) }
         self.content = { record, editor in binding(record, editor).map(content) ?? AnyView(EmptyView()) }
         if let accessory = section.accessory {
             self.accessory = { record, editor in binding(record, editor).map(accessory) ?? AnyView(EmptyView()) }

@@ -59,7 +59,7 @@ extension PointingWithArrowToolSession {
     private func createArrow(from origin: CGPoint, to pointer: CGPoint, modifiers: Modifiers, in editor: CanvasEditor) {
         targeting.cancelPreciseTimer()
         let arrow = ShapeRecord(Arrow(start: .free(origin), end: .free(origin)))
-        editor.transact { $0.insert(arrow) }
+        editor.transact("Add Arrow") { $0.insert(arrow) }
         editor.selection = arrow.id
 
         // The start binds where the press happened: to the shape's center, unless the user dwelt
@@ -169,7 +169,7 @@ extension ArrowHandleDragSession {
             // of the ends; sideways motion does nothing.
             let geometry = targeting.geometry(of: arrow)
             let midpoint = (geometry.startHandle + geometry.endHandle) / 2
-            targeting.updateArrow(arrowID) { $0.bend = (point - midpoint).dot(geometry.bendAxis) }
+            targeting.updateArrow(arrowID, named: "Bend Arrow") { $0.bend = (point - midpoint).dot(geometry.bendAxis) }
 
         case .terminal(let end):
             if modifiers.contains(.shift) {

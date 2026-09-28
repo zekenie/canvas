@@ -259,6 +259,8 @@ Once one plugin works, the question is which piece the next feature needs.
 | Keep what a kind's props are bound to right as shapes are deleted and copied (a connector) | `ShapeReferencing` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
 | Hold names of shapes that may outlive them (a mention), renamed when copied with them | A value that adopts `ShapeNaming`; `registry.namingKinds` and `record.forEachNamingValue(in:)` to read them | [Values that name shapes](#values-that-name-shapes) |
 | Put an editing view's selection where the press that began editing was | `editor.beginEditing(id, at: point)`, read as `EditContext.startPoint` | [Capabilities](#capabilities) |
+| Name an undo step, or make several changes one | `editor.transact("Name") { ... }`; `editor.undoHistory.group("Name") { ... }`; `transact(coalescing:)` for a run of writes | [Undo](#undo) |
+| Put a service's state back with undo (a selection) | `UndoParticipant` | [Undo](#undo) |
 | Keep something about any shape beside its props (where it came from) | A `ShapeMetaKey`, and `record.meta[Key.self]` | [Metadata](#metadata) |
 | Add a right-click item that isn't one shape's, in every menu and on empty canvas | `registrar.contextMenuForCanvas { ... }` | [The clipboard](#the-clipboard) |
 | Show a shape's state in the panel: at its foot, or in a tab that shows while there's something to say | `registrar.detailStatusForEveryShape`, with `in: SomeTab.self` for a tab | [ValidationDetails](#a-tab-of-status-lines-from-a-bridge-validationdetails) |
@@ -1154,7 +1156,7 @@ engine checks a shape when it changes, as it does every rule, and reads every sh
 first frame after a board opens: `./build.sh bench` holds that to 100 ms for 10,000 shapes. A shape
 keeps what its schema said until a commit changes it other than by moving it (`ChangeSet.moved`),
 since where a shape is is nothing its schema checks: a drag that moves 10,000 shapes redoes their
-rules, not their schemas.
+rules, not their schemas, and so does undoing or redoing it.
 
 ### Properties and metadata
 
@@ -1539,6 +1541,7 @@ registrar.command(.delete, shortcuts: [.delete, .deleteForward]) { $0.deleteSele
 registrar.shortcut(.return, "Edit Selection") { $0.editSelection() }
 registrar.shortcut("h", forTool: .hand)                                                                 // Keyboard itself
 registrar.shortcut(.escape, "Cancel") { $0.cancel() }
+registrar.shortcut(KeyChord("z", .command), forCommand: .undo, repeats: true)
 ```
 
 | Sugar | For |
@@ -1547,6 +1550,7 @@ registrar.shortcut(.escape, "Cancel") { $0.cancel() }
 | `registrar.tool(descriptor, shortcut:) { ... }` | Any tool, and its key. |
 | `registrar.shortcut(chord, forTool:)` | A key for a tool registered elsewhere: Keyboard gives the core's Hand its H this way. |
 | `registrar.command(command, shortcuts: [...]) { ... }` | A command (what a menu item runs) and the keys that run it, so the menu and the keys do one thing. |
+| `registrar.shortcut(chord, forCommand:, repeats:)` | A key for a command claimed elsewhere: Keyboard gives the core's undo and redo ⌘Z and ⇧⌘Z this way. |
 | `registrar.shortcut(chord, "Title", when:, repeats:) { editor in ... }` | A key that does something of its own. |
 
 What the shipped app's keys do:
@@ -1560,6 +1564,7 @@ What the shipped app's keys do:
 | ⌘A | Selects everything, as Edit › Select All does | Selection |
 | ⌘[ | Goes back to what was selected before, as Go › Back does (while there's somewhere to go) | Selection |
 | ⌘X, ⌘C, ⌘V | Cuts, copies and pastes shapes, as Edit › Cut, Copy and Paste do | Clipboard |
+| ⌘Z, ⇧⌘Z | Undoes and redoes, as Edit › Undo and Redo do (held, again and again) | Keyboard, for the core's `.undo` and `.redo` |
 
 - **A chord** (`KeyChord`) is a key and the modifiers held with it. A character literal is a key
   alone (`"v"`), and a letter's case doesn't count; `KeyChord("a", .command)` is ⌘A, and the keys
@@ -1567,7 +1572,7 @@ What the shipped app's keys do:
   `.tab`, `.space`, the arrows). It describes itself as menus do: `⇧⌘G`, `⌫`.
 - **One shortcut per chord.** Two plugins wanting one key are `RegistryError.conflict`
   (`keyboard and clash both claim shortcut H in KeyboardShortcuts`), and a key for a tool no plugin
-  registers is `invalid`. A plugin with a key imports Keyboard, so a plugin list with Selection or
+  registers, or a command none claims, is `invalid`. A plugin with a key imports Keyboard, so a plugin list with Selection or
   any shipped tool needs `KeyboardPlugin()` too (`ownerNotInstalled` otherwise).
 - **⇧ counts when a chord asks for it.** A key held with ⇧ answers its ⇧ chord if one is
   registered, and else, where ⇧ may be only what typed it, the chord without ⇧: with ⇧ alone, since
@@ -1592,8 +1597,9 @@ What the shipped app's keys do:
   note or a panel field, it's text, and a control in the panel that has the keyboard answers its own
   keys. What they do is still the same registered thing: Delete in the table of contents' list runs
   the `.delete` command, as Delete on the canvas and Edit › Delete do, and Escape anywhere in the
-  panel gives the keyboard back to the canvas. The menu bar's other key equivalents (⌘S, ⌘Z, the
-  View menu's zoom) belong to their items and work wherever the keyboard is.
+  panel gives the keyboard back to the canvas. The menu bar's other key equivalents (⌘S, the View
+  menu's zoom) belong to their items and work wherever the keyboard is; with text or a panel's
+  control focused, ⌘Z is the menu's, whose Undo is the text's own there and the board's elsewhere.
 - **A key no shortcut takes** goes on to AppKit's key bindings, as any view's would. The standard
   actions they send that have a key of their own come back to the shortcuts as that key:
   `deleteBackward:` as ⌫, `deleteForward:` as ⌦, `insertNewline:` as ↩ and `cancelOperation:` as ⎋.
@@ -2053,6 +2059,19 @@ A section's content closure gets a `ShapeBinding`. Take it as a `$` parameter, a
 - **Other forms.** A plain parameter works too (`items.wrappedValue` is the snapshot, as in
   Checklists' Progress), and a larger section can be a View declaring
   `@ShapeBinding var items: [ChecklistItem]`, passed `$items` (Checklists' `ChecklistMenu`).
+- **Undo steps.** A write is named for its section, "Change" and the section's title ("Undo Change
+  Color"); in the header, or a section without a title, "Change" and the kind's name ("Undo Change
+  Task", the label of the tool that places it). Writes to one field of one shape, one after
+  another, are one step, however many keystrokes (a field typed into, a slider or a color
+  dragged): a run under the key `[shape, key path]` (for the frame's too), or `[shape, property
+  key]` for an added property's binding and `$x[P.self]`, until anything else happens: a write to
+  another field, any other change, an action, or the host sealing the run as the user clicks or
+  types somewhere else (`editor.undoHistory.seal()`, which the board's window calls). Each `update`
+  is a step of its own (Checklists' bulk actions). A field whose writes go through a method of the
+  value, because more follows from them, runs as the field does with `update(\.field) { ... }`:
+  the schema card's JSON Schema, typed, is `$card.update(\.schema) { $0.setSchema(text) }` (which
+  fits the card to it), and its header's rename `update(\.schema) { $0.setTitle(name) }`, so what's
+  typed is one step, as `$card.prompt`'s is.
 
 Tests and tools reach the same bindings with `editor.shapeBinding(id, as: TaskCard.self)`,
 `editor.frameBinding(id)` and `editor.propertyBinding(id, ChecklistProperty.self)`.
@@ -2189,6 +2208,8 @@ task.contextMenu {
   on the live value, all of them in one transaction, as the panel's `update` does. For what editing
   props can't do (reordering, deleting, selecting), the other form, `{ ids, editor in ... }`, gets
   the shapes, in selection order, and the editor, and changes the document with `editor.transact`.
+  Whatever an item does, over however many shapes and transactions, is one undo step, named by its
+  title ("Undo Bring to Front").
 - **`when` leaves an item out; `isEnabled` dims it.** A context menu shows only what applies, so
   reach for `when`. `isChecked` checks it (✓ for every shape, – for some). An item for the canvas
   asks these of its `MenuSubject`, so it can depend on more than a shape (Clipboard's Paste is
@@ -2881,6 +2902,9 @@ Paste send), shape [metadata](#metadata), and the `ShapeReferencing` [capability
   Elsewhere the menu has them: the board's window controller answers Edit › Cut, Copy and Paste
   wherever the keyboard is, the table of contents' list included, except in text (a note being
   edited, a panel's field), which takes them first. Cut and Paste don't run mid-gesture; Copy does.
+- **Undo.** Cut and Paste are one step each, "Cut" and "Paste", by key, menu or context menu.
+  Undoing a cut brings the shapes back selected; undoing a paste selects what was before it, and
+  redoing it brings back the same copies (the same ids, `copiedFrom` and all).
 - **In the context menu**, Cut, Copy and Paste are items for the canvas
   (`registrar.contextMenuForCanvas`), in `ClipboardMenuGroup` (order 100, before Arrange), asked
   once per menu. Cut and Copy show when some of the menu's shapes can be copied, and act on those;
@@ -2982,6 +3006,11 @@ extension LockChip: ClickableAdornment {                // a click on the chip
   follows it, locked or not, since its props don't change; and a locked arrow still lets go of a
   shape that's deleted (`ShapeReferencing`), which keeps it where it's drawn. The detail panel shows
   a locked shape's details, disabled.
+- **Undo.** Each lock and unlock is a step of its own, "Lock" or "Unlock" (from the menu or the
+  chip). Undo is below the read-only rule, so undoing Lock unlocks the shape without a shake (its
+  chip shows open, as for any unlock), redoing it locks it again, and undoing a chip's Unlock locks
+  it. A try a lock refuses (a drag, Delete) changes nothing, so it records nothing: the next ⌘Z
+  undoes the step before it.
 - **The shake** is a password field's: side to side, 5 points at most, 3 times over 360 ms, dying
   away, a frame every 16 ms on `editor.scheduler`. A try while it plays (the eraser dragged across)
   doesn't start it over. `LockState` hears the tries (`didRefuseChanges`), and moves how the shape
@@ -3478,6 +3507,19 @@ description to say what it now holds. `SchemaSync`, the plugin's service, does i
   schema is written as the model wrote it, never laid out again (its order is the model's, which
   keeps the person's; the prompt asks for two spaces, a member per line, plain arrays on one line),
   with `setSchema`, so the card fits it; the write is the sync's own, and starts none.
+- **Undo.** Typing in either side, or renaming the card, is one step a run ("Change Description",
+  "Change JSON Schema", "Change Schema"), and the sync's write is one of its own ("Update Schema",
+  "Update Description"), taken with the pair it leaves in step (`undoHistory.group`). Undo and redo
+  are no edit: their commit is marked `ChangeSet.restoredStep`, so they start no sync, and a card
+  whose sides they change drops its timer and any call out (the answer would be to what the card
+  no longer says), its status idle. The pair at the last sync goes back and forth with the steps
+  (`SchemaSync` is an `UndoParticipant`, its pairs a dictionary apart from the rest, copied on
+  write): undoing the sync's write leaves the card as before the answer, its description ahead of
+  its schema, until the person edits or commits it, when the model is asked as it was the first
+  time; redoing it leaves the card in step; a card's deletion undone brings back what it last
+  synced, so a description typed since is still ahead. Only the cards a step brings back or
+  changes the sides of get their pair back: another card keeps what its sync learned since (a
+  `NO_CHANGE` that landed while another shape moved), which undoing the move doesn't change.
 - **What it asks** is `SchemaPrompts`: the two system prompts (raw string literals, each its text
   byte for byte, which [`scripts/schema-prompts/evals.py`](../scripts/schema-prompts) reads out of
   the Swift, so the quick evals test exactly what ships), the user message (tagged blocks, each
@@ -3586,8 +3628,10 @@ double-click and a placement say nothing, and the view chooses, as it always has
   in the defaults of what its kind opts into. A read-only shape (a locked one,
   `registrar.readOnlyShapes`) keeps whatever a transaction does to it, unless the change leaves it
   no longer read-only, and services hear it was refused ([read-only
-  shapes](#the-cores-part-read-only-shapes)). Undo (not built yet) will group commits: everything
-  from a press to its release, and everything while a shape is being edited, will be one step.
+  shapes](#the-cores-part-read-only-shapes)). Every commit goes into an [undo step](#undo)
+  (`editor.undoHistory`): everything from a press to its release, a key, a command or a group is
+  one step, and so is everything while a shape is being edited; `transact("Move")` names it, and
+  `editor.undo()` and `editor.redo()` put a step's records back exactly.
 - **`willDelete`** handlers run inside the deleting transaction, before anything is removed, and
   see every shape as it was, so a plugin can act on shapes about to disappear (delete what depends
   on them). They may delete more, and change what they must, read-only shapes included; each
@@ -3606,7 +3650,9 @@ double-click and a placement say nothing, and the view chooses, as it always has
   does). `replaceDocument` (a board read again: a revert, a reload after the file changed on disk)
   sends one too, marked `replacedDocument`: its shapes are as saved, not as anyone changed them, so
   a service that acts on edits takes them as shapes seen for the first time (the schema card's sync
-  does). What's selected is [Selection's](#selection).
+  does). Undo and redo send theirs marked `restoredStep`: the shapes are as a step began or ended,
+  so such a service follows none of it as an edit, and puts back what it kept as it was then, as an
+  [`UndoParticipant`](#undo). What's selected is [Selection's](#selection).
 - **What the editor keeps.** Each shape's geometry and extent (its geometry's bounds, with its
   box), and the paint order, from one frame to the next, so a frame costs what's in view and what
   changed rather than what's on the board. A shape's geometry is kept until the shape changes or a
@@ -3659,6 +3705,92 @@ double-click and a placement say nothing, and the view chooses, as it always has
   pointer is over its text). The canvas leaves their cursor alone meanwhile. Once editing ends,
   where the editing view was is the canvas again, for the next move.
 
+## Undo
+
+Undo is the core's ([`UndoHistory.swift`](../Sources/Canvas/Editor/UndoHistory.swift),
+[`CanvasEditor+Undo.swift`](../Sources/Canvas/Editor/CanvasEditor+Undo.swift)), since every change
+already goes through `transact`: each commit is recorded, as the records it touched were before it
+and are after, into the step it's part of. A plugin does nothing to be undone. It only names its
+steps, and says what one gesture is when the editor can't see it. It's tldraw's model, not
+`NSUndoManager`'s: a board's history is its editor's (`editor.undoHistory`), one per board file.
+
+**A step is one action.** Commits go into the step that's open, which opens with the first of them:
+
+| What | Its step |
+|---|---|
+| A press on the canvas: from the press to the release, its whole drag (a place and its follow or editing, a translate, a handle, a lock chip's click) | One. |
+| A key on the canvas; a command (`editor.perform`: every menu item's, ⌘Z's and Delete's); `editor.undoHistory.group("Name") { ... }` | One each. These actions nest; the outermost is the step. |
+| An editing session (a note typed into): its view's commits (`EditContext`) until editing ends, with what the view saves as it closes | One, "Typing"; with the action that began it, if one did (placing a note and typing into it are one step, as tldraw's one mark). |
+| A run of commits under one key at no action's depth: `transact(coalescing: key)` (a panel field typed into, a slider dragged) | One, until another commit, an action, or `editor.undoHistory.seal()`. |
+| Any other commit | One. |
+
+Any other commit while a shape is being edited closes the editing step first; an action that
+commits nothing of its own (Undo itself) leaves it open, so Undo, from a key or a menu, ends editing
+and undoes the whole session, what the view saves as it closes included. Opening a step clears
+what there was to redo. A step whose records all end where they began (a drag put back with Escape,
+an arrow drawn and cancelled, a field typed into and undone) is dropped, and so is a transaction
+all of whose changes were refused: nothing's recorded. Selecting, hovering, the camera and Go Back
+aren't changes, and make no step.
+
+**Naming.** A step takes its outermost named group's name, else its first named transaction's
+(`editor.transact("Move") { ... }`), else "Typing" for an editing step; Edit › Undo shows it
+("Undo Move"), or plain "Undo"; while the open step has come back to where it began, Undo names,
+and undoes, the step before it. The core names placing ("Add" and the placing tool's label, "Add
+Note"), moving ("Move") and typing; Selection "Delete"; ContextMenus every item by its title;
+Clipboard "Cut" and "Paste"; Locking "Lock" and "Unlock"; Arrows "Add Arrow", "Move Arrow End",
+"Bend Arrow" and "Toggle Arrowhead"; the eraser "Erase", polylines "Draw Line"; the detail panel
+"Change" and the section's title ([`ShapeBinding`](#reading-and-writing-shapebinding)); the schema
+card's sync "Update Schema" and "Update Description", however long after the edit it lands. Name a
+transaction a user would think of as one thing, and wrap several in `group` when they're one action
+the editor doesn't already see as one.
+
+**Undoing** (`editor.undo()`, `editor.redo()`; `canUndo` and `canRedo`, false while a press's
+session runs) ends editing, closes the open step, and puts back the step's records exactly: ids,
+kinds, props, stacking keys (so the order), metadata, added and kept values, shapes kept aside. It's
+exact because every commit is recorded, one step is open at a time, and steps come back last in,
+first out, so the document always holds what a step left. It's applied as an ordinary commit with
+an exact `ChangeSet`, so services hear it (`documentDidChange`: the index and the minimap's damage,
+the table of contents, validation, locks), but it isn't a transaction: nothing's refused, nothing
+shakes, and it's below the read-only rule. A locked shape goes back as it was too: undoing Lock
+unlocks it, and a locked arrow that let go of a deleted shape binds again. So no service may
+transact in `documentDidChange` (it would be a precondition failure while undo applies). The camera
+never moves, as in tldraw.
+
+**What else goes back.** A service whose state belongs with the steps adopts `UndoParticipant`: its
+snapshot is taken as a step opens and as it closes, and undoing restores the first, redoing the
+second. Selection's is the selection, as tldraw's: undoing Delete brings the shapes back selected,
+undoing a move leaves them selected, undoing a paste selects what was before it. The restore is an
+ordinary change of the selection, so Go › Back returns to what was selected before the undo.
+A service that acts on edits tells a step put back from an edit by its change set's `restoredStep`,
+and follows none: the schema card's sync keeps, as a participant, the pair of sides each card last
+synced, and starts no call for an undo ([`SchemaSync`](#keeping-the-description-and-the-schema-in-step-schemasync)).
+
+**Keys and menus.** The core claims the `.undo` and `.redo` commands (its plugin's, as Hand is),
+Keyboard gives them ⌘Z and ⇧⌘Z (`registrar.shortcut(chord, forCommand:, repeats: true)`, held again
+and again), and Edit › Undo and Redo run the same commands. The host splits them with text: the
+board's window (`BoardWindow`, CanvasUI) answers `undo:` and `redo:`, and while text has the
+keyboard (a note being edited, a panel's field) they're the text's own, through the window's text
+undo manager (or a field's), never falling through to the board; once the text loses the keyboard
+what it could undo is forgotten, and the board's step for the typing is what's left. Anywhere else
+(the canvas, the table of contents' list, a checkbox) they're the board's, named. The window seals a
+run on a click, on a key where neither text nor the canvas has the keyboard, and when the keyboard
+moves, since the editor sees none of those; and every board's window seals on a click in a window
+that isn't a board's (the color panel a color well opens, whose picks are panel writes).
+
+**Counting and saving** is the host's: `BoardDocument` has no undo manager, and counts its changes
+by the history's events as they happen (`undoHistory.didChange`, host API: a step began, came to
+nothing, was undone or redone), so undoing to what was saved reads unedited, and past it edited. A
+save closes the open step (`breakStep`) before NSDocument takes the change count it marks saved, so
+undo goes back to exactly what was saved, and a step that comes to nothing as it closes leaves the
+board unedited; a periodic autosave during a press waits for its release, and is scheduled again
+then ([Boards on disk](#boards-on-disk)). A new document, a board opened or reverted
+(`replaceDocument`) has nothing to undo.
+
+**Once a file holds several boards**, a step will say which board it's on, and undoing one from
+another board shows it first: `DocumentDelta` is the one type that holds records before and after
+(it'll carry the board, and whole boards added or removed), and `CanvasEditor.apply(_:restoring:)`
+the one place a step is applied. Agents and sync can reuse it, with who made the change.
+
 ## Boards on disk
 
 A board is a file (`.canvasboard`; `.board` is Freeform's), one per board, opened and autosaved in place by `BoardDocument`
@@ -3686,6 +3818,16 @@ property's (`kinds` and `added`). A shape's `props` are its kind's own propertie
 the properties plugins add to its kind are beside them, in `added`, by key. What a shape doesn't
 have is left out. The camera, the selection and whether the details and the minimap show aren't
 in it: they're remembered per file on this Mac, so panning never marks a board edited.
+
+**Edited, and saved.** A board is edited as a step begins, and counted back as a step comes to
+nothing or is undone ([Undo](#undo)): `BoardDocument` makes NSDocument's own change-count calls as
+the history's events come, at once, rather than through an undo manager (it has none). So undoing
+to what was saved reads unedited, undoing past it edited, and redoing edited again. Every save
+closes the step under way, so what was saved is a step boundary, and what's typed after it is a
+step the save didn't see, which marks the board edited again: a long typing session may split at
+an autosave, as TextEdit's does. A periodic autosave that comes during a press (a drag) gives way
+(`CocoaError.userCancelled`, which NSDocument doesn't show) and runs once the press is over;
+`BoardDocument.snapshot(implicitlyCancellable:)` is what a save writes.
 
 **A kind versions its own props.** Its migrations sit beside `static let kind`, and their count
 is the version boards record. The sticky note's steps handed its checklist over to Checklists, then
@@ -3827,8 +3969,8 @@ and a test checks it registers.
 `registry.report` prints who contributes what: the runtime half of the graph, pinned by a test.
 
 ```
-core                 tool hand
-keyboard             service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
+core                 tool hand · command undo · command redo
+keyboard             service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo
 selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
 arrows               shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay
 sticky-notes         shape sticky-note v2 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · channel note-link
@@ -4032,11 +4174,19 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   the app sets it. `./build.sh bench` builds BenchmarkTests in release and holds saving, opening,
   a hover and a drag frame (titles' pills, checklists' tallies and locks in view), a hover on a
   note's port dot and a drag from it, a hover onto a title's pill, reading the table of contents'
-  rows after a drag event, an insert, a delete and a restack, and the minimap's first picture (a
-  frame at a time) and a drag frame with it, to their budgets on generated boards of 1,000 and
-  10,000 shapes, and reports the first frame and the next zoomed out to fit the board (at 10,000,
-  as far as the 10% zoom goes); `./test.sh` runs it small,
-  in debug, and only reports.
+  rows after a drag event, an insert, a delete and a restack, the minimap's first picture (a frame
+  at a time) and a drag frame with it, and undoing and redoing a drag (with its frame), a tenth of
+  the board's move and deletion and every shape's deletion (the steps alone), to their budgets on
+  generated boards of 1,000 and 10,000 shapes, and reports the first frame and the next zoomed out
+  to fit the board (at 10,000, as far as the 10% zoom goes); `./test.sh` runs it small, in debug,
+  and only reports.
+- **Undo.** `h.editor.undo()` and `redo()` headlessly, with `undoHistory.undoName` for the step's
+  name, and `h.editor.undoHistory.seal()` where a user would click or type elsewhere between panel
+  writes. A step's round trip is best checked with `==` on the document, and, for a board, its
+  `BoardCodec` bytes. `BoardDocument` counts changes as the steps come, so `isDocumentEdited` needs
+  no turn of the run loop. For Edit › Undo, use a `BoardWindow` (CanvasUI), `window.editor` set:
+  `validateMenuItem` gives the item's title and whether it's enabled, and `window.undo(nil)` runs it
+  wherever the keyboard is (CanvasUITests' BoardWindowTests, CompositionTests' UndoTests).
 - **The minimap.** CanvasUITests put a `CanvasView` with `showsMinimap` in an unshown window, drive
   `canvas.minimap` with mouse events, and hold its picture, kept through every kind of edit, to a
   new `MinimapView`'s, every pixel. A test that needs a board drawn in one frame lengthens the
@@ -4099,8 +4249,9 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
 Each of these adds to the design without changing what plugins are written against.
 
 - **More of change sets:** each commit already says what it added, changed and removed
-  (`ChangeSet`, which services get with `documentDidChange`); what's left is who made it (the user,
-  an agent through the command line) and the records before and after. Undo and sync build on them.
+  (`ChangeSet`, which services get with `documentDidChange`), and undo keeps the records before and
+  after (`DocumentDelta`); what's left is who made it (the user, an agent through the command line).
+  Sync builds on them.
 - **More of the command line**: reading a board (its shapes, in a form for agents), and changing
   and deleting shapes; who each change is from (an agent's name on its commits, and its cursor on
   the canvas); commands contributed by the plugins that own a concern (a title, a checklist, a
@@ -4109,11 +4260,13 @@ Each of these adds to the design without changing what plugins are written again
   command descriptions).
 - **An arrow end bound to a shape that isn't there** (deleted outside a transaction, or kept aside)
   is drawn at the origin; a binding should keep a point to fall back on.
-- **Undo.** `transact` is already the one mutation path. The editor will open an undo group on
-  each press and when editing begins, close it on release and when editing ends, and register each
-  group's before and after with `UndoManager`. Panel edits are one transaction per keystroke or
-  step today; grouping them (per focused field, per stepper or color drag) hooks into
-  `ShapeBinding`'s three write paths.
+- **More of undo**: showing a change that's out of view as it's undone (the camera never moves
+  today); a limit to how many steps a board keeps (there's none); NSDocument's rollback of an
+  autosave it can't finish, given up with the undo manager; text's undo falling through to the
+  board's once the text has nothing left to undo (it's forgotten when the text loses the keyboard);
+  a step per board once a file holds several; agents' changes as steps of their own, with who
+  made them; and a change that lands on its own during a press (a model's answer the schema card's
+  sync writes) kept out of the press's step, which it joins today.
 - **More document hooks** (before/after create and change), and **document-scoped services** for
   several windows on one board.
 - **More of schema cards**: keeping the last sync in the card's metadata, so any card saved out of
@@ -4121,7 +4274,8 @@ Each of these adds to the design without changing what plugins are written again
   no fields; a patch in place of the whole schema, so a big schema can be edited from its
   description (and a long one answered sooner); streaming, for answers longer than a request that
   doesn't stream should wait for; and schemas that type or check other shapes.
-- **An editing view hearing about outside changes** to its shape (needed once undo exists).
+- **An editing view hearing about outside changes** to its shape (undo ends editing first, but an
+  agent's or another window's change won't).
 - **Canvas features**: resize and rotate handles on the selection box; snapping; ⇧ locking a move
   to an axis; ⌥-drag to clone; the scribble brush; arrow-key nudging; a long press starting a drag;
   the "move" cursor while moving shapes; and hierarchical tool states once the select tool has more
@@ -4164,8 +4318,7 @@ Each of these adds to the design without changing what plugins are written again
   revision, can't keep up to date today.
 - **More of the clipboard**: pasting what other apps put on the pasteboard (text as a note, an
   image) and giving them a text or image version of copied shapes; pasting at the pointer
-  (tldraw's preference, and ⌥); Duplicate (⌘D) and ⌥-dragging a copy, on the same copying; and
-  undo grouping a cut or a paste into one step.
+  (tldraw's preference, and ⌥); and Duplicate (⌘D) and ⌥-dragging a copy, on the same copying.
 - **More of the context menu**: more items for the canvas (Select All, on empty canvas); key
   equivalents and symbols on items; and the items everyone expects, such as Delete
   and Duplicate, once a plugin owns them.

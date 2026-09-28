@@ -34,6 +34,25 @@ import TestKit
         h.hold([])
         expectEqual(h.editor.currentToolID, .hand)
     },
+    test("⌘Z undoes and ⇧⌘Z redoes, again and again while held; with nothing to undo or redo, they pass") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), FixturesPlugin()])
+        let a = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
+        let b = h.add(Box(CGRect(x: 20, y: 0, width: 10, height: 10)))
+        h.hold(.command)
+        expect(h.key("z"))
+        expectEqual(h.editor.document.shapes.map(\.id), [a])
+        expect(h.key("z", isRepeat: true), "a held ⌘Z undoes again")
+        expectEqual(h.editor.document.shapes, [])
+        expect(!h.key("z", isRepeat: true), "nothing left to undo: the key goes on, and the Mac beeps")
+        h.hold([.shift, .command])
+        expect(h.key("Z"))
+        expect(h.key("Z", isRepeat: true))
+        expectEqual(h.editor.document.shapes.map(\.id), [a, b])
+        expect(!h.key("Z"), "⇧⌘Z with nothing to redo passes, and isn't ⌘Z")
+        expectEqual(h.editor.document.shapes.map(\.id), [a, b])
+        h.hold([])
+        expect(!h.key("z"), "Z alone isn't undo")
+    },
     test("a command's keys run it, as the menu item that sends it does") {
         let log = KeyLog()
         let h = try EditorHarness(plugins: [KeyboardPlugin(), Contributor(id: "stamps") { r in
@@ -65,7 +84,7 @@ import TestKit
             r.shortcut(KeyChord("d", .shift), "Shift D") { _ in log.events.append("⇧d") }
             r.shortcut("e", "E") { _ in log.events.append("e") }
             r.shortcut("?", "Help") { _ in log.events.append("?") }
-            r.shortcut(KeyChord("z", .command), "Undo") { _ in log.events.append("⌘z") }
+            r.shortcut(KeyChord("j", .command), "Jump") { _ in log.events.append("⌘j") }
         }])
         h.key("d")
         h.hold(.shift)
@@ -73,13 +92,13 @@ import TestKit
         h.key("E")
         h.key("?")                              // ⇧/, on a US keyboard
         h.hold([.shift, .command])
-        expect(!h.key("Z"), "⇧⌘Z isn't ⌘Z")
+        expect(!h.key("J"), "⇧⌘J isn't ⌘J")
         h.hold(.command)
-        h.key("z")
+        h.key("j")
         h.hold(.option)
         expect(!h.key("e"), "⌥E isn't E")
         h.hold([])
-        expectEqual(log.events, ["d", "⇧d", "e", "?", "⌘z"])
+        expectEqual(log.events, ["d", "⇧d", "e", "?", "⌘j"])
     },
     test("⇧ that types punctuation, a symbol or a digit is implied with ⌘ (⌘? is ⇧⌘/); with a key that types no character, it counts") {
         let log = KeyLog()
@@ -143,10 +162,14 @@ import TestKit
                                        Contributor(id: "b") { $0.command("b", shortcuts: [KeyChord("K", .command)]) { _ in } }])
         }
     },
-    test("a key for a tool no plugin registers is invalid; a key registered without Keyboard installed is an error") {
+    test("a key for a tool no plugin registers, or a command none claims, is invalid; a key registered without Keyboard installed is an error") {
         expectThrows(RegistryError.invalid(point: "KeyboardShortcuts", reason: "Z switches to tool zap, which no plugin registers")) {
             _ = try Registry(plugins: [KeyboardPlugin(), Contributor(id: "x") { $0.shortcut("z", forTool: "zap") }])
         }
+        expectThrows(RegistryError.invalid(point: "KeyboardShortcuts", reason: "⌘K runs command stamp, which no plugin claims")) {
+            _ = try Registry(plugins: [KeyboardPlugin(), Contributor(id: "x") { $0.shortcut(KeyChord("k", .command), forCommand: "stamp") }])
+        }
+        _ = try Registry(plugins: [KeyboardPlugin(), Contributor(id: "x") { $0.shortcut(KeyChord("k", .command), forCommand: .undo) }])
         expectThrows(RegistryError.ownerNotInstalled(point: "KeyboardShortcuts", owner: "keyboard", contributor: "zaps")) {
             _ = try Registry(plugins: [Contributor(id: "zaps") {
                 $0.tool(ToolDescriptor(id: "zap", label: "Zap", systemImage: "bolt"), shortcut: "z") { _ in NoTool() }
@@ -169,11 +192,11 @@ import TestKit
             r.command("stamp", shortcuts: [KeyChord("s", .command)]) { _ in }
             r.shortcut(.space, "Pan") { _ in }
         }])
-        expectEqual(registry.shortcuts.map(\.action), [.tool(.hand), .custom("Cancel"), .custom("Cancel"), .tool(ToolID(placing: Disc.kind)),
-                                                       .tool("zap"), .command("stamp"), .custom("Pan")])
+        expectEqual(registry.shortcuts.map(\.action), [.tool(.hand), .custom("Cancel"), .custom("Cancel"), .command(.undo), .command(.redo),
+                                                       .tool(ToolID(placing: Disc.kind)), .tool("zap"), .command("stamp"), .custom("Pan")])
         expectEqual(registry.report, """
-        core          tool hand
-        keyboard      service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
+        core          tool hand · command undo · command redo
+        keyboard      service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo
         discs         shape disc · tool disc · shortcut D → tool disc · tool zap · shortcut Z → tool zap · command stamp · shortcut ⌘S → command stamp · shortcut Space → Pan
         """)
     },

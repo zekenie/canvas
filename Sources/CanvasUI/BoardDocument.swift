@@ -40,8 +40,19 @@ public final class BoardViewState {
 }
 
 /// A board as a Mac document: one file per board, autosaved in place, with versions (File ›
-/// Revert To). Its editor is the canvas's; any transaction that changes the document marks the
-/// board edited, while the camera, the selection and the details don't touch it.
+/// Revert To). Its editor is the canvas's; any change to the document marks the board edited, while
+/// the camera, the selection and the details don't touch it.
+///
+/// The board's undo is its editor's (`editor.undoHistory`), not an `NSUndoManager`: the document has
+/// none, and counts its changes as the history's steps come and go, as NSDocument would from a
+/// manager's, but at once. A step that begins marks the board edited; one that comes to nothing,
+/// or is undone, takes its change back; one redone puts it back. So undoing to what was saved reads
+/// unedited, and undoing past it edited. Text's own undo (a field, a note being typed into) is the
+/// board's window's (`BoardWindow`), and isn't counted: what the typing wrote is the board's step.
+///
+/// A save closes the step under way (`breakStep`), so what's typed after it is a step of its own that
+/// the save didn't see, and undo goes back to exactly what was saved. A periodic autosave during a
+/// press (a drag) waits for its release instead of splitting it, and runs once it's over.
 ///
 /// Opening never drops a shape: what the board keeps aside and what it repaired is in `loadReport`,
 /// shown when the window first shows; repairs mark the board edited, so the next save keeps them.
@@ -65,6 +76,13 @@ public final class BoardDocument: NSDocument {
     public var viewMemory = BoardViewMemory(defaults: .standard)
     nonisolated let codec: BoardCodec
     private var hasShownLoadReport = false
+    /// An autosave gave way to a press: it's scheduled again once the press's step is over.
+    private var autosaveWaited = false
+    #if DEBUG
+    /// How often an autosave has been scheduled (debug builds, for tests): by NSDocument, or again
+    /// once a press an autosave gave way to is over.
+    public private(set) var autosavesScheduled = 0
+    #endif
 
     public override init() {
         guard let configuration = Self.configuration else { preconditionFailure("set BoardDocument.configuration before any board opens") }
@@ -73,10 +91,32 @@ public final class BoardDocument: NSDocument {
         Self.numbered += 1
         number = Self.numbered
         super.init()
-        editor.didCommitTransaction = { [weak self] _ in self?.updateChangeCount(.changeDone) }
+        hasUndoManager = false
+        editor.undoHistory.didChange = { [weak self] event in self?.historyDidChange(event) }
+    }
+
+    /// Counts the board's changes by its history's steps, as NSDocument counts an undo manager's.
+    private func historyDidChange(_ event: UndoEvent) {
+        switch event {
+        case .began: updateChangeCount(.changeDone)
+        case .discarded, .undid: updateChangeCount(.changeUndone)
+        case .redid: updateChangeCount(.changeRedone)
+        case .closed, .cleared: break
+        }
+        if event == .closed || event == .discarded, autosaveWaited {
+            autosaveWaited = false
+            scheduleAutosaving()
+        }
     }
 
     public nonisolated override class var autosavesInPlace: Bool { true }
+
+    public override func scheduleAutosaving() {
+        #if DEBUG
+        autosavesScheduled += 1
+        #endif
+        super.scheduleAutosaving()
+    }
 
     /// A new board's shapes: the welcome board, say. The board isn't edited by them.
     public func start(with document: CanvasDocument) {
@@ -86,7 +126,37 @@ public final class BoardDocument: NSDocument {
     // MARK: Reading and writing
 
     public override func data(ofType typeName: String) throws -> Data {
-        try codec.encode(editor.document)
+        try snapshot(implicitlyCancellable: autosavingIsImplicitlyCancellable)
+    }
+
+    /// A save takes the change count it'll mark saved before it writes: the step under way closes
+    /// first, so a step that comes to nothing as it closes (a field typed into and back) takes its
+    /// change back before the count is taken, and the board reads unedited once saved. (Not for an
+    /// autosave that gives way to a press: it won't write.)
+    public override func changeCountToken(for saveOperation: NSDocument.SaveOperationType) -> Any {
+        if !(autosavingIsImplicitlyCancellable && editor.undoHistory.isPressing) { editor.undoHistory.breakStep() }
+        return super.changeCountToken(for: saveOperation)
+    }
+
+    /// What a save writes: the board as it is, with the step under way closed there, so undo can go
+    /// back to exactly what was saved. A save that may give way (a periodic autosave) does, during a
+    /// press, rather than split its step: it throws `userCancelled`, which NSDocument doesn't show,
+    /// and it's scheduled again once the press is over.
+    public func snapshot(implicitlyCancellable: Bool) throws -> Data {
+        if implicitlyCancellable, editor.undoHistory.isPressing {
+            autosaveWaited = true
+            throw CocoaError(.userCancelled)
+        }
+        editor.undoHistory.breakStep()
+        return try codec.encode(editor.document)
+    }
+
+    /// Deletes what the board keeps aside, as the load report's Delete Hidden Shapes does: one undo
+    /// step, "Delete Hidden Shapes".
+    public func deleteHiddenShapes() {
+        let keptAside = Set(loadReport.keptAside.map(\.id)).filter { editor.document[$0] != nil }
+        guard !keptAside.isEmpty else { return }
+        editor.transact("Delete Hidden Shapes") { $0.delete(keptAside) }
     }
 
     public nonisolated override func read(from data: Data, ofType typeName: String) throws {
@@ -178,7 +248,7 @@ public final class BoardDocument: NSDocument {
         if !keptAside.isEmpty { alert.addButton(withTitle: "Delete Hidden Shapes") }
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertSecondButtonReturn else { return }
-            MainActor.assumeIsolated { _ = self?.editor.transact { $0.delete(keptAside) } }
+            MainActor.assumeIsolated { self?.deleteHiddenShapes() }
         }
     }
 }

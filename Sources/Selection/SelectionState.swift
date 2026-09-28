@@ -212,6 +212,17 @@ extension SelectionState: EditorService {
     func didPlace(_ id: ShapeID, in editor: CanvasEditor) { select([id]) }
 }
 
+/// The selection goes back and forth with undo, as tldraw's does: undoing a step selects what was
+/// selected as it began (the shapes a Delete took, back selected), and redoing it what was as it
+/// ended. It's an ordinary change of the selection, a step back like any other.
+extension SelectionState: UndoParticipant {
+    func undoSnapshot(in editor: CanvasEditor) -> any Sendable { selectedIDs }
+
+    func restoreUndoSnapshot(_ snapshot: any Sendable, in editor: CanvasEditor) {
+        if let ids = snapshot as? [ShapeID] { select(ids) }
+    }
+}
+
 /// The shape the select tool presses at a point: on the shape itself, or on something a plugin draws
 /// for it outside it (`DecorationHits`).
 struct SelectableHit {
@@ -321,7 +332,7 @@ extension CanvasEditor {
     public func deleteSelection() {
         let ids = selectedShapeIDs
         guard !ids.isEmpty else { return }
-        transact { $0.delete(Set(ids)) }         // the commit drops them from the selection
+        transact("Delete") { $0.delete(Set(ids)) }   // the commit drops them from the selection
         hovered = nil                                   // and this, a hover over a shape that stays
     }
 

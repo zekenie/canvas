@@ -181,11 +181,12 @@ private let frame = CGRect(x: 0, y: 0, width: 100, height: 100)
         let first = ShapeRecord(Box(frame)), second = ShapeRecord(Box(frame))
         let editor = CanvasEditor(registry: registry, document: CanvasDocument(shapes: [AnyShapeRecord(first)]), scheduler: ManualScheduler())
         expectEqual(editor.document[first.id]?[Stars.self], 0)
-        var edits = 0
-        editor.didCommitTransaction = { _ in edits += 1 }
+        expect(!editor.canUndo)
+        let events = UndoEvents(editor)
         editor.replaceDocument(with: CanvasDocument(shapes: [AnyShapeRecord(second)]))
         expectEqual(editor.document[second.id]?[Stars.self], 0)
-        expectEqual(edits, 0)
+        expect(!editor.canUndo)
+        expectEqual(events.events, [.cleared], "no step began")
         expectEqual(registry.fillingDefaults(CanvasDocument(shapes: [AnyShapeRecord(first)])), CanvasDocument(shapes: [AnyShapeRecord(first)]).filled(with: registry))
     },
     test("a copy keeps its added values, and its meta") {
@@ -220,7 +221,7 @@ private let frame = CGRect(x: 0, y: 0, width: 100, height: 100)
     test("the report shows who declares a property, and who opts which kind in") {
         let registry = try Registry(plugins: [FixturesPlugin(), ratings { $0.optInEveryShape(to: Ribbons.self) }])
         expectEqual(registry.report, """
-        core          tool hand
+        core          tool hand · command undo · command redo
         fixtures      shape box · shape disc · shape tag
         ratings       property stars · property sticker · property ribbons · property stars → box · property sticker → box · property ribbons → every shape
         """)

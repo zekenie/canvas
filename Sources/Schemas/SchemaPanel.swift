@@ -56,6 +56,7 @@ enum SchemaPanelText {
 
 /// The name, which is the schema's `"title"`: renamed in place, which rewrites that member alone
 /// (`setTitle`). It can't be while the text isn't a JSON object, nor while the model writes it.
+/// Renaming is a write to the schema, so a name typed is one undo step ("Change Schema").
 @MainActor
 func schemaHeader(_ card: ShapeBinding<SchemaCard>) -> TitleHeader {
     let id = card.shape.id
@@ -64,7 +65,7 @@ func schemaHeader(_ card: ShapeBinding<SchemaCard>) -> TitleHeader {
     // Read from the text the last rename made, so a field typed ahead of the panel keeps it.
     let schema = card.schema
     return TitleHeader(Binding(get: { SchemaReadings.reading(of: schema.wrappedValue, for: id).document.title ?? "" },
-                               set: { name in card.update { $0.setTitle(name) } }),
+                               set: { name in card.update(\.schema) { $0.setTitle(name) } }),
                        placeholder: SchemaPanelText.untitled, subtitle: SchemaPanelText.subtitle(document),
                        isEnabled: document.isObject && !isUpdating)
 }
@@ -88,7 +89,9 @@ struct SchemaDescription: View {
 }
 
 /// The JSON Schema as text, what's wrong with it while it isn't one, and the sync's status when
-/// it's about the schema (the description being written from it, or why it couldn't be).
+/// it's about the schema (the description being written from it, or why it couldn't be). What's
+/// typed in it, keystroke after keystroke, is one undo step ("Change JSON Schema"), as the
+/// description's is ("Change Description").
 struct SchemaCode: View {
     @ShapeBinding var card: SchemaCard
 
@@ -96,7 +99,7 @@ struct SchemaCode: View {
         let sync = $card.service(SchemaSync.self), id = $card.shape.id
         let status = sync?.status(of: id) ?? .idle
         let schema = $card.schema
-        DetailCodeEditor(Binding(get: { schema.wrappedValue }, set: { text in $card.update { $0.setSchema(text) } }),
+        DetailCodeEditor(Binding(get: { schema.wrappedValue }, set: { text in $card.update(\.schema) { $0.setSchema(text) } }),
                          coloring: { text in SchemaCodeColors.spans(in: text, for: id) }, onCommit: { [weak sync] in sync?.commit(id) })
             .detailUpdating(status == .updating(.schema))
         if let problem = SchemaPanelText.problem(SchemaReadings.reading(of: card.schema, for: id).document) {

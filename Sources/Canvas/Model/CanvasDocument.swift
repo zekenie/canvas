@@ -84,6 +84,85 @@ public struct CanvasDocument: Equatable, Sendable {
         reindex(from: first)
     }
 
+    /// Puts each change's `after` record in place of its `before` (removing it where `after` is nil,
+    /// adding it where `before` is), in the order of the records' stacking keys, exactly as they
+    /// are: ids, keys, props, metadata, added and kept values, opaque records. What undo and redo do,
+    /// so none of a transaction's rules apply (no normalizing, nothing read-only, nothing refused).
+    /// The document must hold every `before` (debug builds check it).
+    ///
+    /// A delta that keeps every shape and its key (a move, an edit, a lock) replaces records where
+    /// they are, in time proportional to the changes; one that adds, removes or restacks shapes
+    /// takes one pass over the stack.
+    public mutating func apply(_ delta: DocumentDelta) {
+        #if DEBUG
+        for (id, change) in delta.changes {
+            assert(self[id] == change.before, "applying a delta to a document that doesn't hold its record before for \(id)")
+        }
+        #endif
+        var leaving = Set<ShapeID>()
+        var arriving: [AnyShapeRecord] = []
+        var lowest = shapes.count
+        for (id, change) in delta.changes {
+            if let before = change.before, let after = change.after, before.stackingKey == after.stackingKey, let index = indices[id] {
+                shapes[index] = after
+                continue
+            }
+            if change.before != nil, let index = indices[id] {
+                leaving.insert(id)
+                lowest = min(lowest, index)
+            }
+            if let after = change.after { arriving.append(after) }
+        }
+        guard !leaving.isEmpty || !arriving.isEmpty else { return }
+        if !leaving.isEmpty {
+            shapes.removeAll { leaving.contains($0.id) }
+            for id in leaving { indices[id] = nil }
+        }
+        if !arriving.isEmpty {
+            // A record always has a key once in a document; one without (impossible) goes on top.
+            arriving.sort { a, b in
+                guard let b = b.stackingKey else { return a.stackingKey != nil }
+                return a.stackingKey.map { $0 < b } ?? false
+            }
+            let start = insertionIndex(for: arriving[0].stackingKey)
+            lowest = min(lowest, start)
+            var merged: [AnyShapeRecord] = []
+            merged.reserveCapacity(shapes.count - start + arriving.count)
+            var i = start, j = 0
+            while i < shapes.count || j < arriving.count {
+                let takeArriving: Bool
+                if i == shapes.count { takeArriving = true }
+                else if j == arriving.count { takeArriving = false }
+                else if let key = arriving[j].stackingKey, let existing = shapes[i].stackingKey { takeArriving = key < existing }
+                else { takeArriving = false }
+                var record = takeArriving ? arriving[j] : shapes[i]
+                if takeArriving { j += 1 } else { i += 1 }
+                // A board must always save: a key that doesn't rise (impossible while undo and redo
+                // take the steps in order) gets one of its own, between its neighbors.
+                if let previous = merged.last?.stackingKey, record.stackingKey.map({ !(previous < $0) }) ?? true {
+                    assertionFailure("applying a delta put two shapes at stacking key \(previous)")
+                    let next = i < shapes.count ? shapes[i].stackingKey : j < arriving.count ? arriving[j].stackingKey : nil
+                    record.stackingKey = StackingKey.between(previous, next.flatMap { previous < $0 ? $0 : nil })
+                }
+                merged.append(record)
+            }
+            shapes.replaceSubrange(start..., with: merged)
+        }
+        reindex(from: lowest)
+        assert(Self.keysRise(shapes), "applying a delta left the stack out of order")
+    }
+
+    /// Where a record with `key` goes: the index of the first shape above it (by binary search).
+    private func insertionIndex(for key: StackingKey?) -> Int {
+        guard let key else { return shapes.count }
+        var low = 0, high = shapes.count
+        while low < high {
+            let mid = (low + high) / 2
+            if let other = shapes[mid].stackingKey, other < key { low = mid + 1 } else { high = mid }
+        }
+        return low
+    }
+
     private mutating func reindex(from start: Int) {
         for index in start..<shapes.count { indices[shapes[index].id] = index }
     }

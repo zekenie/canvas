@@ -284,7 +284,7 @@ let petSchema = """
         b.sync.commit(id)
         spinRunLoop(until: { b.model.waiting == 1 })
         let edits = Counter()
-        b.editor.didCommitTransaction = { _ in edits.count += 1 }
+        b.editor.undoHistory.didChange = { event in if event != .cleared { edits.count += 1 } }
         b.editor.replaceDocument(with: saved)
         expectEqual(b.status(id), .idle)
         spinRunLoop(until: { b.model.answered == 2 })
@@ -298,6 +298,7 @@ let petSchema = """
         b.settle()
         expectEqual(b.model.requests.count, 2, "nor does it sync after: it's in step as it was saved")
         expectEqual(edits.count, 0, "so the board read again isn't marked edited")
+        expect(!b.editor.canUndo, "and nothing since is a step to undo")
     },
     test("a board read again with other text starts no sync, and drops an edit waiting for its 3 s; the next edit syncs from what was read") {
         let b = try SyncBench()

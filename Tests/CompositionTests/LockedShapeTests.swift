@@ -71,6 +71,7 @@ import Titles
         let arrow = try require(h.editor.document.shapes.first { $0.typed(as: Arrow.self)?.props.end.binding?.shapeID == notes[1] }?.id)
         let drawn = try require(h.editor.arrowGeometry(of: arrow)).bodyPath.boundingBoxOfPath
         h.editor.lock([arrow])
+        let locked = h.editor.document
         h.editor.selection = notes[1]
         h.editor.perform(.delete)
         expectEqual(h.editor.document[notes[1]], nil)
@@ -81,6 +82,16 @@ import Titles
         expectClose(after.maxX, drawn.maxX, within: 0.5)
         h.wait(16)
         expectEqual(h.editor.drawingOffset(of: arrow), .zero)
+        let deleted = h.editor.document
+        // Undo goes below the lock: the locked arrow is bound again, exactly as it was, and redo lets go again.
+        h.editor.undo()
+        expectEqual(h.editor.document, locked)
+        expectEqual(h.editor.document[arrow]?.typed(as: Arrow.self)?.props.end.binding?.shapeID, notes[1])
+        expect(h.editor.isLocked(arrow))
+        h.editor.redo()
+        expectEqual(h.editor.document, deleted)
+        h.wait(16)
+        expectEqual(h.editor.drawingOffset(of: arrow), .zero, "nothing was refused")
     },
     test("a locked arrow shows no handles: a press where its end's would be presses the arrow, and dragging it shakes it") {
         let h = emptyBoard()

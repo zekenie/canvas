@@ -10,6 +10,13 @@ import SwiftUI
 ///
 /// Reads never touch `editor.document`, so a section isn't re-rendered when other shapes change.
 /// For a larger section, write a View with `@ShapeBinding var task: TaskCard` and pass `$task`.
+///
+/// Writes are undo steps named for the section ("Change Color"; "Change" and the kind's name, "Change
+/// Task", in the header or a section without a title). Writes to one field of one shape, one after
+/// another, are one step (a field typed into, a slider or a color dragged), until anything else
+/// happens: another field, a click or a key elsewhere (the host seals the run), any other change.
+/// `update` is a step of its own; `update(\.field)`, a write to a field through a method, runs
+/// together as the field's binding does.
 @MainActor @propertyWrapper @dynamicMemberLookup
 public struct ShapeBinding<Value> {
     private let value: Value
@@ -21,10 +28,16 @@ public struct ShapeBinding<Value> {
     private let latest: Latest
     /// The added properties the shape's kind opts into: the only ones it can hold.
     private let properties: [PropertyKey]
-    /// Changes the live shape, and returns what it is then; nil if it's gone.
-    private let write: @MainActor (_ change: (inout Value) -> Void) -> Value?
+    /// Changes the live shape, in a step named `name` (nil: the kind's) that writes to one field run
+    /// together under `key` (nil: a step of its own), and returns what it is then; nil if it's gone.
+    private let write: @MainActor (_ name: String?, _ key: AnyHashable?, _ change: (inout Value) -> Void) -> Value?
     /// The same, for the whole record: what an added property's binding writes through.
-    private let edit: @MainActor (_ change: (inout AnyShapeRecord) -> Void) -> AnyShapeRecord?
+    private let edit: @MainActor (_ name: String?, _ key: AnyHashable?, _ change: (inout AnyShapeRecord) -> Void) -> AnyShapeRecord?
+    /// What names its writes' undo steps: its section's "Change Color"; nil for the kind's.
+    private var stepName: String?
+    /// The added property whose value this binds, if it does: its writes run together under the
+    /// property, rather than the key path.
+    private let property: PropertyKey?
     /// For `service`.
     private weak var editor: CanvasEditor?
 
@@ -43,30 +56,44 @@ public struct ShapeBinding<Value> {
     public var projectedValue: ShapeBinding<Value> { self }
     public init(projectedValue: ShapeBinding<Value>) { self = projectedValue }
 
-    private init(value: Value, record: AnyShapeRecord, in editor: CanvasEditor,
-                 write: @escaping @MainActor (_ change: (inout Value) -> Void) -> Value?) {
+    private init(value: Value, record: AnyShapeRecord, property: PropertyKey? = nil, in editor: CanvasEditor,
+                 write: @escaping @MainActor (_ name: String?, _ key: AnyHashable?, _ change: (inout Value) -> Void) -> Value?) {
         self.value = value
         self.record = record
+        self.property = property
         latest = Latest(value, record)
         properties = editor.registry.properties(for: record.kind)
         self.write = write
         self.editor = editor
         let id = record.id
-        edit = { [weak editor] change in
+        edit = { [weak editor] name, key, change in
             guard let editor else { return nil }
-            editor.transact { $0.update(id, change) }
+            editor.transact(name ?? editor.changeName(of: id), coalescing: key) { $0.update(id, change) }
             return editor.document[id]
         }
     }
 
+    /// The same binding, its writes named `name` in undo ("Change Color").
+    func named(_ name: String?) -> ShapeBinding {
+        var named = self
+        named.stepName = name
+        return named
+    }
+
     /// `$task.notes`: reads the snapshot, or what its last write made of the shape; writes the key
     /// path into the live shape. Bind the narrowest key path: a collection's binding writes the
-    /// whole collection.
+    /// whole collection. Writes to one key path of one shape, one after another, are one undo step.
     public subscript<T>(dynamicMember keyPath: WritableKeyPath<Value, T>) -> Binding<T> {
-        let latest = latest, write = write
+        let latest = latest, write = write, name = stepName, key = runKey(keyPath)
         return Binding(get: { latest.value[keyPath: keyPath] }, set: { new in
-            if let live = write({ $0[keyPath: keyPath] = new }) { latest.value = live }
+            if let live = write(name, key, { $0[keyPath: keyPath] = new }) { latest.value = live }
         })
+    }
+
+    /// What the writes to one field of the shape run together under: the shape and the key path,
+    /// or the property for an added property's value.
+    private func runKey(_ keyPath: AnyKeyPath) -> AnyHashable {
+        AnyHashable(property.map { [AnyHashable(record.id), AnyHashable($0)] } ?? [AnyHashable(record.id), AnyHashable(keyPath)])
     }
 
     /// Whether the shape's kind opts into an added property, so the shape can hold one: a section
@@ -75,9 +102,19 @@ public struct ShapeBinding<Value> {
     public func holds<P: ShapeProperty>(_: P.Type) -> Bool { properties.contains(P.key) }
 
     /// Several changes in one transaction, applied to the live shape (read-modify-write belongs
-    /// here, not in a sequence of binding sets): `$items.update { $0.removeDone() }`.
+    /// here, not in a sequence of binding sets): `$items.update { $0.removeDone() }`. An undo step
+    /// of its own.
     public func update(_ change: (inout Value) -> Void) {
-        if let live = write(change) { latest.value = live }
+        if let live = write(stepName, nil, change) { latest.value = live }
+    }
+
+    /// A write to one field that goes through the value's own method, since it changes what follows
+    /// from the field too (`$card.update(\.schema) { $0.setSchema(text) }`, which fits the card to
+    /// its schema): applied to the live shape, as `update` is, but one after another they run
+    /// together into one undo step, with the field's own binding's writes (`$card.schema`), as
+    /// typing in a field does.
+    public func update<T>(_ field: WritableKeyPath<Value, T>, _ change: (inout Value) -> Void) {
+        if let live = write(stepName, runKey(field), change) { latest.value = live }
     }
 
     /// An added property of the shape, nil while it has none: `$note[TitleProperty.self]`. Each
@@ -86,10 +123,12 @@ public struct ShapeBinding<Value> {
     /// this makes read what the last write through any of them made of the shape, until the panel
     /// redraws, as the key paths' bindings do. A shape whose kind doesn't opt into the property
     /// never holds it: the binding reads nil, and drops what's written (`holds(_:)` says which).
+    /// Writes one after another are one undo step.
     public subscript<P: ShapeProperty>(_: P.Type) -> Binding<P.Value?> {
-        let latest = latest, edit = edit
+        let latest = latest, edit = edit, name = stepName
+        let key = AnyHashable([AnyHashable(record.id), AnyHashable(P.key)])
         return Binding(get: { latest.record[P.self] }, set: { new in
-            if let live = edit({ $0[P.self] = new }) { latest.record = live }
+            if let live = edit(name, key, { $0[P.self] = new }) { latest.record = live }
         })
     }
 
@@ -97,6 +136,17 @@ public struct ShapeBinding<Value> {
     /// sync in progress), as `DetailContext.service` is for status lines; nil if it isn't
     /// installed. A view that reads observable state from it redraws on its own when that changes.
     public func service<S: EditorService>(_: S.Type) -> S? { editor?.service(S.self) }
+}
+
+extension CanvasEditor {
+    /// What a panel write names its undo step when its section has no title (the header, say):
+    /// "Change" and the kind's name, the label of the tool that places it ("Change Task"), else the
+    /// kind.
+    func changeName(of id: ShapeID) -> String {
+        guard let kind = document[id]?.kind else { return "Change" }
+        let tool = ToolID(placing: kind)
+        return "Change \(registry.tools.first { $0.id == tool }?.label ?? kind.rawValue)"
+    }
 }
 
 extension ShapeBinding where Value: ShapeProps {
@@ -114,9 +164,9 @@ extension ShapeBinding where Value: ShapeProps {
     static func props(of record: AnyShapeRecord, in editor: CanvasEditor) -> ShapeBinding? {
         guard let shape = record.typed(as: Value.self) else { return nil }
         let id = record.id
-        return ShapeBinding(value: shape.props, record: record, in: editor) { [weak editor] change in
+        return ShapeBinding(value: shape.props, record: record, in: editor) { [weak editor] name, key, change in
             guard let editor else { return nil }
-            editor.transact { $0.update(id, as: Value.self) { change(&$0.props) } }
+            editor.transact(name ?? editor.changeName(of: id), coalescing: key) { $0.update(id, as: Value.self) { change(&$0.props) } }
             return editor.document[id]?.typed(as: Value.self)?.props
         }
     }
@@ -127,9 +177,9 @@ extension ShapeBinding {
     static func property<P: ShapeProperty>(_: P.Type, of record: AnyShapeRecord, in editor: CanvasEditor) -> ShapeBinding? where P.Value == Value {
         guard let value = record[P.self] else { return nil }
         let id = record.id
-        return ShapeBinding(value: value, record: record, in: editor) { [weak editor] change in
+        return ShapeBinding(value: value, record: record, property: P.key, in: editor) { [weak editor] name, key, change in
             guard let editor else { return nil }
-            editor.transact {
+            editor.transact(name ?? editor.changeName(of: id), coalescing: key) {
                 $0.update(id) { record in
                     guard var value = record[P.self] else { return }
                     change(&value)
@@ -145,9 +195,9 @@ extension ShapeBinding where Value == CGRect {
     static func box(of record: AnyShapeRecord, in editor: CanvasEditor) -> ShapeBinding? {
         guard let frame = record.box else { return nil }
         let id = record.id
-        return ShapeBinding(value: frame, record: record, in: editor) { [weak editor] change in
+        return ShapeBinding(value: frame, record: record, in: editor) { [weak editor] name, key, change in
             guard let editor else { return nil }
-            editor.transact {
+            editor.transact(name ?? editor.changeName(of: id), coalescing: key) {
                 $0.update(id) { record in
                     guard var frame = record.box else { return }
                     change(&frame)

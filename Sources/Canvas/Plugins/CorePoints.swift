@@ -126,10 +126,12 @@ struct ServiceRegistration {
     }
 }
 
-/// Installed ahead of every plugin list.
+/// Installed ahead of every plugin list: the Hand, and undo and redo (whose keys Keyboard gives).
 struct CorePlugin: CanvasPlugin {
     var id: PluginID { .core }
     func register(into registrar: inout PluginRegistrar) {
         registrar.tool(ToolDescriptor(id: .hand, label: "Hand", systemImage: "hand.raised")) { _ in HandTool() }
+        registrar.command(.undo, isEnabled: { $0.canUndo }) { $0.undo() }
+        registrar.command(.redo, isEnabled: { $0.canRedo }) { $0.redo() }
     }
 }

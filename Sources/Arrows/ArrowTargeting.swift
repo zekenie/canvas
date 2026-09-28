@@ -36,8 +36,9 @@ final class ArrowTargeting {
 
     func arrow(_ id: ShapeID) -> Arrow? { editor.document[id]?.typed(as: Arrow.self)?.props }
 
-    func updateArrow(_ id: ShapeID, _ change: (inout Arrow) -> Void) {
-        editor.transact { $0.update(id, as: Arrow.self) { change(&$0.props) } }
+    /// `name` names the undo step, unless the press has already (drawing a new arrow is "Add Arrow").
+    func updateArrow(_ id: ShapeID, named name: String = "Move Arrow End", _ change: (inout Arrow) -> Void) {
+        editor.transact(name) { $0.update(id, as: Arrow.self) { change(&$0.props) } }
     }
 
     // MARK: - Targeting

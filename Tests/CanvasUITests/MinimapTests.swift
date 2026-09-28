@@ -240,6 +240,31 @@ func isAccent(_ p: [Int]) -> Bool { p[2] > p[0] + 60 }
         h.editor.hintedShapeID = b
         expectFresh("a shape outlined")
     },
+    test("its picture keeps up with undo and redo: after each it's what a new minimap draws") {
+        let h = try minimapEditor()
+        _ = h.add(Box(CGRect(x: 0, y: 0, width: 50, height: 50)))
+        _ = h.add(Box(CGRect(x: 2950, y: 2250, width: 50, height: 50)))
+        let a = h.add(Box(CGRect(x: 400, y: 300, width: 300, height: 200)))
+        let flag = h.add(Flag(host: a))
+        let (_, _, kept) = try minimapped(h)
+        _ = finished(kept, h)
+        @MainActor func expectFresh(_ step: String) {
+            let keptRep = finished(kept, h)
+            let fresh = freshMinimap(like: kept)
+            defer { fresh.removeFromSuperview() }
+            expectEqual(differingPixels(keptRep, finished(fresh, h)), 0, step)
+        }
+        h.editor.transact("Move") { $0.update(a, as: Box.self) { $0.frame.origin = CGPoint(x: 1800, y: 1200) } }
+        expectFresh("moved, with the flag off its corner")
+        h.editor.undo()
+        expectFresh("the move undone")
+        h.editor.redo()
+        expectFresh("the move redone")
+        h.editor.transact { $0.delete([a, flag]) }
+        expectFresh("deleted")
+        h.editor.undo()
+        expectFresh("the delete undone")
+    },
     test("a board too big to draw in one frame is drawn over several, and ends up as one drawn at once") {
         var shapes: [AnyShapeRecord] = []
         for i in 0..<20_000 {

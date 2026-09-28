@@ -97,7 +97,7 @@ extension DrawingSession: Session {
             editor.transact { $0.update(id, as: Polyline.self) { $0.props.points.append(pointer.world) } }
         } else {
             let line = ShapeRecord(Polyline(points: [start, pointer.world]))
-            editor.transact { $0.insert(line) }
+            editor.transact("Draw Line") { $0.insert(line) }
             id = line.id
         }
     }

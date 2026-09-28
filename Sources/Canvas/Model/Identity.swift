@@ -77,4 +77,7 @@ public struct CanvasCommand: Hashable, Sendable, ExpressibleByStringLiteral, Cus
     public static let cut: CanvasCommand = "cut"
     public static let copy: CanvasCommand = "copy"
     public static let paste: CanvasCommand = "paste"
+    /// Edit › Undo and Redo: the core's own (`editor.undo()`, `editor.redo()`).
+    public static let undo: CanvasCommand = "undo"
+    public static let redo: CanvasCommand = "redo"
 }

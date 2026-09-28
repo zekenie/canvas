@@ -23,13 +23,18 @@ extension KeyboardShortcuts: KeyedExtensionPoint {
 
     public static func summary(of shortcut: Shortcut, for _: ShapeTarget) -> String { "shortcut \(shortcut.chord) → \(shortcut.action)" }
 
-    /// A shortcut's tool must be registered: a key that would do nothing is a mistake. (A command's
-    /// keys come with the command, so it's always claimed.)
+    /// A shortcut's tool must be registered, and its command claimed: a key that would do nothing
+    /// is a mistake.
     public static func check(_ registry: Registry) throws(RegistryError) {
         let tools = Set(registry.tools.map(\.id))
         for shortcut in registry.shortcuts {
-            if case .tool(let id) = shortcut.action, !tools.contains(id) {
+            switch shortcut.action {
+            case .tool(let id) where !tools.contains(id):
                 throw .invalid(point: "KeyboardShortcuts", reason: "\(shortcut.chord) switches to tool \(id), which no plugin registers")
+            case .command(let command) where !registry.claims(command):
+                throw .invalid(point: "KeyboardShortcuts", reason: "\(shortcut.chord) runs command \(command), which no plugin claims")
+            default:
+                break
             }
         }
     }
@@ -48,7 +53,7 @@ public struct Shortcut {
 
     enum Effect {
         case tool(ToolID)
-        case command(CanvasCommand)
+        case command(CanvasCommand, repeats: Bool)
         case custom(title: String, when: @MainActor (CanvasEditor) -> Bool, repeats: Bool, perform: @MainActor (CanvasEditor) -> Void)
     }
 
@@ -56,7 +61,7 @@ public struct Shortcut {
     public var action: Action {
         switch effect {
         case .tool(let id): .tool(id)
-        case .command(let command): .command(command)
+        case .command(let command, _): .command(command)
         case .custom(let title, _, _, _): .custom(title)
         }
     }
@@ -85,21 +90,24 @@ extension Shortcut {
     @MainActor func applies(in editor: CanvasEditor) -> Bool {
         switch effect {
         case .tool: true
-        case .command(let command): editor.canPerform(command)
+        case .command(let command, _): editor.canPerform(command)
         case .custom(_, let when, _, _): when(editor)
         }
     }
 
-    /// Whether a held key's repeats run it again: only a custom shortcut's that asks.
+    /// Whether a held key's repeats run it again: only a command's or a custom shortcut's that asks
+    /// (⌘Z undoes again and again, as a menu's key does).
     var repeats: Bool {
-        guard case .custom(_, _, let repeats, _) = effect else { return false }
-        return repeats
+        switch effect {
+        case .tool: false
+        case .command(_, let repeats), .custom(_, _, let repeats, _): repeats
+        }
     }
 
     @MainActor func run(in editor: CanvasEditor) {
         switch effect {
         case .tool(let id): editor.setTool(id)
-        case .command(let command): editor.perform(command)
+        case .command(let command, _): editor.perform(command)
         case .custom(_, _, _, let perform): perform(editor)
         }
     }
@@ -121,6 +129,13 @@ extension PluginRegistrar {
         contribute(Shortcut(chord: chord, effect: .custom(title: title, when: when, repeats: repeats, perform: perform)), to: KeyboardShortcuts.self)
     }
 
+    /// A key that runs a command another plugin (or the core) claims, as its menu item does: the
+    /// core's undo and redo, say. While the command can't run, the key goes on as if there were no
+    /// shortcut. A held key's repeats run it again only with `repeats`.
+    public mutating func shortcut(_ chord: KeyChord, forCommand command: CanvasCommand, repeats: Bool = false) {
+        contribute(Shortcut(chord: chord, effect: .command(command, repeats: repeats)), to: KeyboardShortcuts.self)
+    }
+
     /// A toolbar tool (`tool(_:_:)`), and the key that switches to it.
     public mutating func tool(_ descriptor: ToolDescriptor, shortcut: KeyChord, _ make: @escaping @MainActor (CanvasEditor) -> any Tool) {
         tool(descriptor, make)
@@ -134,7 +149,7 @@ extension PluginRegistrar {
                                  _ run: @escaping @MainActor (CanvasEditor) -> Void) {
         self.command(command, isEnabled: isEnabled, run)
         for chord in shortcuts {
-            contribute(Shortcut(chord: chord, effect: .command(command)), to: KeyboardShortcuts.self)
+            contribute(Shortcut(chord: chord, effect: .command(command, repeats: false)), to: KeyboardShortcuts.self)
         }
     }
 }
@@ -192,8 +207,8 @@ extension KeyboardState: EditorService {}
 
 // MARK: The plugin
 
-/// Claims key strokes, and gives the core's own actions their keys: H for the Hand, and Escape (⌘.
-/// too, as anywhere on the Mac) to cancel.
+/// Claims key strokes, and gives the core's own actions their keys: H for the Hand, Escape (⌘.
+/// too, as anywhere on the Mac) to cancel, and ⌘Z and ⇧⌘Z to undo and redo (held, again and again).
 public struct KeyboardPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .keyboard }
@@ -204,5 +219,7 @@ public struct KeyboardPlugin: CanvasPlugin {
         registrar.shortcut("h", forTool: .hand)
         registrar.shortcut(.escape, "Cancel") { $0.cancel() }
         registrar.shortcut(KeyChord(".", .command), "Cancel") { $0.cancel() }
+        registrar.shortcut(KeyChord("z", .command), forCommand: .undo, repeats: true)
+        registrar.shortcut(KeyChord("z", [.command, .shift]), forCommand: .redo, repeats: true)
     }
 }

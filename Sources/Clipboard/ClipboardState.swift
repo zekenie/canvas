@@ -87,7 +87,7 @@ final class ClipboardState {
     func cut(_ ids: [ShapeID]) {
         let copied = copy(ids)
         guard !copied.isEmpty else { return }
-        editor.transact { $0.delete(Set(copied)) }
+        editor.transact("Cut") { $0.delete(Set(copied)) }
         editor.hovered = nil
     }
 
@@ -118,7 +118,7 @@ final class ClipboardState {
         guard !shapes.isEmpty else { return }
         editor.endEditing()
         let copies = Dictionary(uniqueKeysWithValues: shapes.map { ($0.id, ShapeID()) })
-        let pasted = editor.transact { transaction -> [ShapeID] in
+        let pasted = editor.transact("Paste") { transaction -> [ShapeID] in
             for record in carry(shapes, renaming: { copies[$0]! }, in: transaction.shapes) {
                 var copy = record.copy(as: copies[record.id]!)
                 copy.meta[CopiedFrom.self] = CopySource(shape: record.id)

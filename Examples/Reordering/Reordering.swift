@@ -21,7 +21,7 @@ public struct ReorderingPlugin: CanvasPlugin {
             Submenu("Arrange", in: ReorderMenuGroup.self) {
                 MenuItem("Bring to Front") { ids, editor in
                     let ordered = backToFront(ids, in: editor.document)
-                    editor.transact { transaction in
+                    editor.transact("Bring to Front") { transaction in
                         for id in ordered { transaction.bringToFront(id) }
                     }
                 }
@@ -29,7 +29,7 @@ public struct ReorderingPlugin: CanvasPlugin {
                 MenuItem("Send Backward") { ids, editor in step(ids, forward: false, in: editor) }
                 MenuItem("Send to Back") { ids, editor in
                     let ordered = backToFront(ids, in: editor.document)
-                    editor.transact { transaction in
+                    editor.transact("Send to Back") { transaction in
                         for id in ordered.reversed() { transaction.sendToBack(id) }
                     }
                 }
@@ -52,7 +52,7 @@ private func step(_ ids: [ShapeID], forward: Bool, in editor: CanvasEditor) {
     let context = editor.shapeContext
     let moving = Set(ids)
     func bounds(_ id: ShapeID) -> CGRect? { context.geometry(of: id)?.bounds }
-    editor.transact { transaction in
+    editor.transact(forward ? "Bring Forward" : "Send Backward") { transaction in
         let ordered = backToFront(ids, in: transaction.document)
         for id in forward ? ordered.reversed() : ordered {
             guard let index = transaction.document.index(of: id), let mine = bounds(id) else { continue }

@@ -77,7 +77,7 @@ extension CanvasEditor {
     test("the bridge is one line in the report, and contributes to Validation nothing") {
         let registry = try Registry(plugins: [ValidationPlugin(), TableOfContentsPlugin(), ValidationContentsPlugin()])
         expectEqual(registry.report, """
-        core                 tool hand
+        core                 tool hand · command undo · command redo
         validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
         table-of-contents    service ContentsState
         validation-contents  ContentsMarks

@@ -33,9 +33,10 @@ public struct EditContext<Props: BoxShapeProps> {
         self.editor = editor
     }
 
-    /// Changes the shape in a transaction. Does nothing once the shape is gone.
+    /// Changes the shape in a transaction. Does nothing once the shape is gone. While the shape is
+    /// being edited, what it commits is the editing session's undo step ("Typing").
     public func update(_ change: (inout Props) -> Void) {
-        editor?.transact { $0.update(shapeID, as: Props.self) { change(&$0.props) } }
+        editor?.transact(nil, coalescing: nil, origin: .editing) { $0.update(shapeID, as: Props.self) { change(&$0.props) } }
     }
 
     public func end() { editor?.endEditing() }

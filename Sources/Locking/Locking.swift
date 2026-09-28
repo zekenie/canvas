@@ -33,16 +33,16 @@ extension CanvasEditor {
     /// Whether the shape is there and locked.
     public func isLocked(_ id: ShapeID) -> Bool { document[id]?.isLocked ?? false }
 
-    /// Locks these shapes, in one transaction.
+    /// Locks these shapes, in one transaction (an undo step "Lock", unless it's part of another).
     public func lock(_ ids: [ShapeID]) {
-        transact { transaction in
+        transact("Lock") { transaction in
             for id in ids { transaction.update(id) { $0[LockedProperty.self] = true } }
         }
     }
 
-    /// Unlocks these shapes, in one transaction: the one change a locked shape takes.
+    /// Unlocks these shapes, in one transaction: the one change a locked shape takes ("Unlock").
     public func unlock(_ ids: [ShapeID]) {
-        transact { transaction in
+        transact("Unlock") { transaction in
             for id in ids { transaction.update(id) { $0[LockedProperty.self] = nil } }
         }
     }

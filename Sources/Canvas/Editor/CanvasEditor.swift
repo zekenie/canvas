@@ -34,7 +34,7 @@ public final class CanvasEditor {
     }
     /// Observed through `document`, which a commit sets with `withMutation`: the macro's setter
     /// would first compare the old document with the new one, every shape of it, on every commit.
-    @ObservationIgnored private var storedDocument: CanvasDocument
+    @ObservationIgnored private(set) var storedDocument: CanvasDocument
     /// +1 per transaction that changed something.
     public private(set) var revision = 0
     /// Setting it stops the camera's slide or animation (CanvasEditor+Camera.swift).
@@ -76,16 +76,17 @@ public final class CanvasEditor {
     /// The keyboard's modifiers right now. Set by the hosting view (`NSEvent.modifierFlags`) and
     /// by test harnesses; plugins read `effectiveModifiers`.
     @_spi(Host) @ObservationIgnored public var liveModifiers: @MainActor () -> Modifiers = { [] }
-    /// Called after every transaction that changed the document, once everything has heard of it:
-    /// the board it belongs to has been edited. (Not for `replaceDocument`.)
-    @_spi(Host) @ObservationIgnored public var didCommitTransaction: (@MainActor (CanvasEditor) -> Void)?
+    /// The board's undo and redo: every commit goes into a step (CanvasEditor+Undo.swift).
+    @ObservationIgnored public let undoHistory = UndoHistory()
 
     @ObservationIgnored private var tools: [ToolID: any Tool] = [:]
     @ObservationIgnored private let serviceRegistrations: [ObjectIdentifier: ServiceRegistration]
     @ObservationIgnored private var services: [ObjectIdentifier: any EditorService] = [:]
     @ObservationIgnored private var serviceOrder: [any EditorService] = []
     @ObservationIgnored private var resolvingServices: Set<ObjectIdentifier> = []
-    @ObservationIgnored private var isTransacting = false
+    @ObservationIgnored private(set) var isTransacting = false
+    /// Undo or redo is putting a step's records back: nothing may transact.
+    @ObservationIgnored var isApplying = false
     /// Each shape's geometry and extent, and the paint order, kept from frame to frame.
     @ObservationIgnored let shapeIndex = ShapeIndex()
     /// Shapes drawn away from where they are, in view points (`setDrawingOffset`).
@@ -115,6 +116,8 @@ public final class CanvasEditor {
         // Services first, so tools can look them up; each resolves the services it asks for.
         for registration in registry.services { _ = resolveService(registration.type) }
         for (id, make) in registry.toolFactories { tools[id] = make(self) }
+        undoHistory.editor = self
+        undoHistory.participants = serviceOrder.compactMap { $0 as? any UndoParticipant }
     }
 
     public func service<S: EditorService>(_ type: S.Type) -> S? { resolveService(ObjectIdentifier(S.self)) as? S }
@@ -146,8 +149,21 @@ public final class CanvasEditor {
 
     /// The only way to change the document. Commits once, if anything changed. Transactions don't
     /// nest: code that runs inside one (a `willDelete` handler) edits the transaction it's given.
+    ///
+    /// What it commits goes into the undo step it's part of (`UndoHistory`): the action it's in (a
+    /// press, a key, a command, a group), or an editing session's; outside those, a step of its own,
+    /// or, with a `coalescing` key, part of a run of commits under that key (a panel field typed
+    /// into) until something else happens. `name` names the step, if nothing it's in has named it:
+    /// "Move", "Delete", as a menu says Undo Move.
     @discardableResult
-    public func transact<T>(_ body: (inout Transaction) throws -> T) rethrows -> T {
+    public func transact<T>(_ name: String? = nil, coalescing key: AnyHashable? = nil, _ body: (inout Transaction) throws -> T) rethrows -> T {
+        try transact(name, coalescing: key, origin: .ordinary, body)
+    }
+
+    /// `origin` says whether an editing view commits (`EditContext`), whose commits are its session's step.
+    func transact<T>(_ name: String?, coalescing key: AnyHashable?, origin: UndoHistory.Origin,
+                     _ body: (inout Transaction) throws -> T) rethrows -> T {
+        precondition(!isApplying, "nothing may transact while undo or redo puts a step back (a service's documentDidChange, say)")
         precondition(!isTransacting, "transactions don't nest; use the one you were given")
         isTransacting = true
         var transaction = Transaction(document: document, registry: registry, camera: camera, keys: stackingKeys)
@@ -159,8 +175,9 @@ public final class CanvasEditor {
         // Committing can end editing, and an editing view may save as it closes: outside the
         // transaction, so it can.
         if transaction.didChange {
+            undoHistory.willCommit(transaction.changes, from: storedDocument, name: name, coalescing: key, origin: origin)
             commit(transaction.document, changes: transaction.changes)
-            didCommitTransaction?(self)
+            undoHistory.didCommit()
         }
         if !transaction.refused.isEmpty { refuseChanges(to: transaction.refused) }
         return result
@@ -180,7 +197,7 @@ public final class CanvasEditor {
 
     /// Puts a whole other document in place: opening a board, reverting it, reloading it after it
     /// changed on disk. Ends any press and any editing, then commits as a transaction does, except
-    /// that the board isn't edited by it (`didCommitTransaction` isn't called).
+    /// that it isn't an undo step: it clears the history, so the board isn't edited by it.
     @_spi(Host) public func replaceDocument(with newDocument: CanvasDocument) {
         precondition(!isTransacting, "a document can't be replaced inside a transaction")
         for record in newDocument.shapes {
@@ -191,9 +208,11 @@ public final class CanvasEditor {
         endEditing()
         let newDocument = registry.fillingDefaults(newDocument)
         commit(newDocument, changes: ChangeSet(from: storedDocument, to: newDocument))
+        undoHistory.clear()
     }
 
-    private func commit(_ newDocument: CanvasDocument, changes: ChangeSet) {
+    /// Where every change of the document lands: a transaction's, `replaceDocument`'s, and undo's.
+    func commit(_ newDocument: CanvasDocument, changes: ChangeSet) {
         withMutation(keyPath: \.document) { storedDocument = newDocument }
         revision += 1
         shapeIndex.documentDidChange(changes, in: newDocument, registry: registry)
@@ -222,9 +241,12 @@ public final class CanvasEditor {
     /// default tool comes back, services hear `didPlace` (the selection selects it), and the shape
     /// follows the pointer or is edited. (Other tools create shapes with
     /// `transact { $0.insert(...) }`, as the arrow tool does.)
+    /// The insert names its undo step "Add" and the placing tool's label ("Add Note").
     public func place(_ placement: Placement, at point: CGPoint) {
         let record = placement.shape(at: point)
-        transact { $0.insert(record) }
+        let tool = ToolID(placing: placement.kind)
+        let label = registry.tools.first { $0.id == tool }?.label
+        transact("Add \(label ?? "Shape")") { $0.insert(record) }
         setTool(registry.defaultTool)
         for service in serviceOrder { service.didPlace(record.id, in: self) }
         switch placement.completion {
@@ -249,11 +271,11 @@ public final class CanvasEditor {
 
     /// Runs the command a plugin claimed, if it can run now: from a menu item (the canvas view
     /// forwards Edit › Delete and Edit › Select All, the board's window Go › Back), a key, or any
-    /// plugin. Returns false if no plugin claims it, or it can't.
+    /// plugin. Returns false if no plugin claims it, or it can't. What it commits is one undo step.
     @discardableResult
     public func perform(_ command: CanvasCommand) -> Bool {
         guard let registration = registry.command(command), registration.isEnabled(self) else { return false }
-        registration.run(self)
+        undoHistory.group { registration.run(self) }
         return true
     }
 
@@ -291,17 +313,20 @@ public final class CanvasEditor {
         }
         editingStartPoint = point
         editingShapeID = id
+        undoHistory.editingBegan()
         delegate?.editorEditingDidChange(self)
         setNeedsDisplay()
         return true
     }
 
+    /// What the editing view saves as it closes is part of the session's undo step.
     public func endEditing() {
         guard editingShapeID != nil else { return }
         editingShapeID = nil
         editingStartPoint = nil
         delegate?.editorEditingDidChange(self)
         setNeedsDisplay()
+        undoHistory.editingEnded()
     }
 
     // MARK: Hit testing and order

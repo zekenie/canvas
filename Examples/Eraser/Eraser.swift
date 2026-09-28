@@ -52,6 +52,6 @@ extension ErasingSession: Session {
             }
         }
         guard !hits.isEmpty else { return }
-        editor.transact { $0.delete(hits) }
+        editor.transact("Erase") { $0.delete(hits) }
     }
 }

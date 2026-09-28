@@ -128,6 +128,31 @@ extension ShapeRecord where Props == StickyNote {
         textView.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
         expectEqual(h.editor.editingShapeID, nil)
     },
+    test("typing into a note's editor is one undo step; placing the note and typing into it are one too") {
+        let h = try EditorHarness(plugins: notePlugins)
+        let id = h.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200)))
+        h.editor.replaceDocument(with: h.editor.document)
+        h.editor.selection = id
+        expect(h.key("\r"))
+        let textView = try require(h.editor.makeEditingView()?.firstResponder as? NSTextView)
+        for word in ["Hello", ",", " world"] { textView.insertText(word, replacementRange: NSRange(location: textView.string.count, length: 0)) }
+        textView.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
+        expectEqual(h.editor.document[id]?.typed(as: StickyNote.self)?.props.text, "Hello, world")
+        expectEqual(h.editor.undoHistory.undoName, "Typing")
+        h.editor.undo()
+        expectEqual(h.editor.document[id]?.typed(as: StickyNote.self)?.props.text, "")
+        expect(!h.editor.canUndo)
+
+        h.key("n")
+        h.press(at: CGPoint(x: 600, y: 300)); h.release()
+        let note = try require(h.editor.editingShapeID)
+        let placed = try require(h.editor.makeEditingView()?.firstResponder as? NSTextView)
+        placed.insertText("Hi", replacementRange: NSRange(location: 0, length: 0))
+        h.editor.endEditing()
+        expectEqual(h.editor.undoHistory.undoName, "Add Note")
+        h.editor.undo()
+        expectEqual(h.editor.document[note], nil, "one undo takes the note and its text")
+    },
     test("a note has no title until it's named; then a pill above its top-left corner shows it, and its row is called by it") {
         let editor = CanvasEditor(registry: try Registry(plugins: notePlugins), scheduler: ManualScheduler())
         let note = ShapeRecord(StickyNote(frame: CGRect(x: 40, y: 60, width: 200, height: 200), text: "Buy milk"))

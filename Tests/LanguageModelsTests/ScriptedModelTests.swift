@@ -65,7 +65,7 @@ import TestKit
     },
     test("its registry line") {
         expectEqual(try Registry(plugins: [LanguageModelsPlugin(model: ScriptedLanguageModel())]).report, """
-        core             tool hand
+        core             tool hand · command undo · command redo
         language-models  service LanguageModelState
         """)
     },

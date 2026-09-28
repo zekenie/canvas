@@ -16,14 +16,14 @@ import TestKit
 import Titles
 import ValidationDetails
 
-/// The app's window, unshown: the canvas (through `CanvasRepresentable`) with the shipped detail
+/// The app's window (a `BoardWindow`), unshown: the canvas (through `CanvasRepresentable`) with the shipped detail
 /// panel in an `.inspector`, wired by a `CanvasFocus` as the app wires them. The editor keeps real
 /// time, so SwiftUI's updates and the panel's hand-back land while the main run loop runs
 /// (`window.spin`, from CanvasTesting).
 @MainActor
 final class InspectorWindow {
     let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: TaskScheduler(), model: ScriptedLanguageModel())
-    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1000, height: 700), styleMask: [.titled], backing: .buffered, defer: false)
+    let window = BoardWindow(contentRect: CGRect(x: 0, y: 0, width: 1000, height: 700), styleMask: [.titled], backing: .buffered, defer: false)
     let focus = CanvasFocus()
     let host: NSHostingView<InspectorHost>
     let canvas: CanvasView
@@ -36,6 +36,7 @@ final class InspectorWindow {
     init() throws {
         host = NSHostingView(rootView: InspectorHost(editor: editor, focus: focus, showsDetails: true))
         host.frame = CGRect(x: 0, y: 0, width: 1000, height: 700)
+        window.editor = editor
         window.contentView = host
         host.layoutSubtreeIfNeeded()
         canvas = try require(focus.canvas, "the representable hands its canvas view to the focus")

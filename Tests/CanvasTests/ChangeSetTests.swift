@@ -35,6 +35,7 @@ extension ChangeRecorder: EditorService {
         expectEqual(log.changes.map(\.removed), [[], [], [], [b.id]])
         expectEqual(log.changes.map(\.reordered), [true, false, true, true])
         expectEqual(log.changes.map(\.replacedDocument), [false, false, false, false], "edits, not a replacement")
+        expectEqual(log.changes.map(\.restoredStep), [false, false, false, false], "nor a step undone or redone")
     },
     test("in one transaction, a shape added stays added however it changes, and one added and deleted isn't named") {
         let log = ChangeLog()
@@ -93,6 +94,31 @@ extension ChangeRecorder: EditorService {
         expectEqual(log.changes.last?.moved, [], "an added shape is added")
         h.editor.replaceDocument(with: CanvasDocument())
         expectEqual(log.changes.last?.moved, [], "a replaced document says nothing moved")
+    },
+    test("undoing and redoing a move names the shapes it only moved, as the move did; a step that changed them otherwise doesn't") {
+        let log = ChangeLog()
+        let h = try EditorHarness(plugins: [FixturesPlugin(), recordingChanges(log)])
+        let a = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
+        let b = h.add(Box(CGRect(x: 20, y: 0, width: 10, height: 10)))
+        h.editor.transact("Move") { $0.translate([a, b], by: CGPoint(x: 5, y: 5)) }
+        expectEqual(log.changes.last?.moved, [a, b])
+        h.editor.undo()
+        expectEqual(log.changes.last?.changed, [a, b])
+        expectEqual(log.changes.last?.moved, [a, b], "undone, they only moved back")
+        h.editor.redo()
+        expectEqual(log.changes.last?.moved, [a, b], "redone, they only moved again")
+        h.editor.transact("Nudge and Widen") { tx in
+            tx.translate([a, b], by: CGPoint(x: 1, y: 0))
+            tx.update(b, as: Box.self) { $0.frame.size.width = 5 }
+        }
+        h.editor.undo()
+        expectEqual(log.changes.last?.moved, [a], "b was widened too")
+        h.editor.transact("Nudge and Restack") { tx in
+            tx.translate([a], by: CGPoint(x: 1, y: 0))
+            tx.bringToFront(a)
+        }
+        h.editor.undo()
+        expectEqual(log.changes.last?.moved, [], "a went back in the stack too")
     },
     test("a drag names the shapes it moves as only moved, every event; Escape, putting them back, doesn't") {
         let log = ChangeLog()

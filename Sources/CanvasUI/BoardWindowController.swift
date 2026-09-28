@@ -10,13 +10,15 @@ import SwiftUI
 /// this controller): zooming, showing or hiding the details and the minimap, and going back. And
 /// Edit › Cut, Copy and Paste, wherever the keyboard is (the canvas, the table of contents' list, a
 /// control in the panel), except in text, which takes them first: a note being edited, a field.
+/// Edit › Undo and Redo are its window's (`BoardWindow`), which splits them between text and the board.
 @MainActor
 public final class BoardWindowController: NSWindowController {
     public init(board: BoardDocument) {
         guard let configuration = BoardDocument.configuration else { preconditionFailure("set BoardDocument.configuration before any board opens") }
         let host = NSHostingController(rootView: configuration.content(BoardWindowContent(editor: board.editor, focus: board.focus, view: board.viewState)))
         host.sceneBridgingOptions = [.toolbars]
-        let window = NSWindow(contentViewController: host)
+        let window = BoardWindow(contentViewController: host)
+        window.editor = board.editor
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.toolbarStyle = .unified
         window.setContentSize(NSSize(width: 1200, height: 800))

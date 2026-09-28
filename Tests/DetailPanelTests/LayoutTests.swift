@@ -184,7 +184,7 @@ extension AlertsTab: DetailTab {
             r.detailStatusForEveryShape(in: AlertsTab.self) { _, _ in [] }
         }])
         expectEqual(registry.report, """
-        core          tool hand
+        core          tool hand · command undo · command redo
         fixtures      shape box · shape disc · shape tag
         detail-panel  service DetailPanelState · ShapeDetails
         p             DetailStatuses · DetailStatuses in Alerts
@@ -199,7 +199,7 @@ extension AlertsTab: DetailTab {
             }
         }])
         expectEqual(registry.report, """
-        core          tool hand
+        core          tool hand · command undo · command redo
         fixtures      shape box · shape disc · shape tag
         detail-panel  service DetailPanelState · ShapeDetails
         p             ShapeDetails → box

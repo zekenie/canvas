@@ -24,9 +24,10 @@ import Validation
 // The persistence plan's budgets, for boards of generated shapes: saving and opening, validation's
 // first read (every shape checked, against its kind's schema too) and its read after moving them
 // all, and one hover and one drag frame (the input, then drawing the whole canvas, and the minimap
-// with it), on a note, from a note's port and onto a title's pill, at 60 fps. `./build.sh bench`
-// runs these in a release build and holds them to the budgets; `./test.sh` runs them debug and
-// small, so they keep working, and only reports.
+// with it), on a note, from a note's port and onto a title's pill, at 60 fps; and undo and redo, a
+// drag's in a frame and a tenth of the board's moved or deleted too. `./build.sh bench` runs these
+// in a release build and holds them to the budgets; `./test.sh` runs them debug and small, so they
+// keep working, and only reports.
 #if DEBUG
 let sizes = [300]
 let holdsToBudgets = false
@@ -38,6 +39,8 @@ let holdsToBudgets = true
 /// Milliseconds.
 enum Budget {
     static let open10k = 1_000.0
+    /// A frame; also undoing or redoing a drag with its frame, and a tenth of the board's move or
+    /// deletion (the step alone).
     static let frame = 16.0
     /// Reading the table of contents' rows after a commit that changed a shape or two.
     static let contentsRows = 1.0
@@ -50,6 +53,8 @@ enum Budget {
     /// moved shape's rules run again, but not its schema check, which moving a shape can't change
     /// (with it, some 30 ms). The drag event's own commit, before it, costs more than a frame.
     static let validationAfterMovingAll10k = 16.0
+    /// Undoing or redoing every shape's deletion, with the frame after it: 10,000 shapes back or gone.
+    static let undoEveryShape = 100.0
 }
 
 /// Notes, tasks, ellipses and schema cards in a grid, with an arrow from every fourth note to the
@@ -133,6 +138,20 @@ extension Duration {
     context.translateBy(x: 0, y: size.height * scale)
     context.scaleBy(x: scale, y: -scale)
     return context
+}
+
+/// The median times of undoing and redoing the step just made (the newest), each with `frame` after
+/// it; the step is left done.
+@MainActor func undoAndRedo(_ editor: CanvasEditor, runs: Int, frame: () -> Void) -> (undo: Double, redo: Double) {
+    let undo = median(runs: runs, prepare: { if editor.canRedo { editor.redo() } }) {
+        editor.undo()
+        frame()
+    }
+    let redo = median(runs: runs, prepare: { if !editor.canRedo { editor.undo() } }) {
+        editor.redo()
+        frame()
+    }
+    return (undo, redo)
 }
 
 @MainActor let benchmarks = Suite("Benchmarks", [
@@ -421,6 +440,59 @@ extension Duration {
             if holdsToBudgets {
                 expect(longest < Budget.frame, "a frame of the minimap's first picture of \(size) shapes took \(longest) ms")
                 expect(drag < Budget.frame, "a drag over \(size) shapes, with the minimap, took \(drag) ms")
+            }
+        }
+    },
+    test("undo and redo cost what their step changed: a drag's is a frame's worth, whatever the board") {
+        let viewport = CGSize(width: 1200, height: 800)
+        let context = try bitmapContext(viewport)
+        for size in sizes {
+            let document = generatedBoard(shapes: size)
+            let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+            let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
+            let frame = { draw(h.editor, into: context, size: viewport) }
+            frame()
+            // A note dragged, as the select tool drags it: one step, Move, undone and redone with the
+            // frame after each.
+            let note = try require(document.shapes.first { $0.kind == StickyNote.kind })
+            let center = CGPoint(x: try require(note.box).midX, y: try require(note.box).midY)
+            h.press(at: center)
+            for step in 1...10 { h.drag(to: center + CGPoint(x: CGFloat(step * 4), y: CGFloat(step * 2))) }
+            h.release()
+            expectEqual(h.editor.undoHistory.undoName, "Move")
+            let drag = undoAndRedo(h.editor, runs: 21, frame: frame)
+            // A tenth of the board moved and deleted at once (none of it locked, which would refuse),
+            // each step timed as made too; and every shape deleted, once every lock is off. These
+            // time the steps alone, without a frame: the frame after one draws the shapes it brought
+            // into view afresh, whatever brought them, as the frame after the step itself does.
+            let tenth = Set(document.shapes.filter { !$0.isLocked }.prefix(size / 10).map(\.id))
+            var moved = 0.0
+            let move = median(runs: 11) {
+                moved += 1
+                h.editor.transact("Move") { $0.translate(tenth, by: CGPoint(x: 5, y: moved)) }
+            }
+            let moveUndo = undoAndRedo(h.editor, runs: 11) {}
+            let delete = median(runs: 11, prepare: { if h.editor.document[tenth.first!] == nil { h.editor.undo() } }) {
+                h.editor.transact("Delete") { $0.delete(tenth) }
+            }
+            let deleteUndo = undoAndRedo(h.editor, runs: 11) {}
+            h.editor.undo()
+            h.editor.unlock(h.editor.document.shapes.filter(\.isLocked).map(\.id))
+            let every = Set(h.editor.document.shapes.map(\.id))
+            h.editor.transact("Delete") { $0.delete(every) }
+            expectEqual(h.editor.document.shapes.count, 0, "every shape deleted")
+            let all = undoAndRedo(h.editor, runs: 5) {}
+            h.editor.undo()
+            expectEqual(h.editor.document.shapes.count, size, "every shape back")
+            report(String(format: "%6d shapes, undo and redo: a note's drag, with a frame, %5.1f and %5.1f ms (budget %.0f); %d shapes moved %5.1f and %5.1f (moving them %5.1f), deleted %5.1f and %5.1f (deleting them %5.1f), budget %.0f, without a frame; every shape (%d) deleted %5.1f and %5.1f (budget %.0f)",
+                          size, drag.undo, drag.redo, Budget.frame, tenth.count, moveUndo.undo, moveUndo.redo, move, deleteUndo.undo, deleteUndo.redo, delete,
+                          Budget.frame, every.count, all.undo, all.redo, Budget.undoEveryShape))
+            if holdsToBudgets {
+                for (what, times, budget) in [("a drag, with a frame,", drag, Budget.frame), ("\(tenth.count) shapes' move", moveUndo, Budget.frame),
+                                              ("\(tenth.count) shapes' deletion", deleteUndo, Budget.frame),
+                                              ("the deletion of \(every.count) shapes", all, Budget.undoEveryShape)] {
+                    expect(times.undo < budget && times.redo < budget, "undoing and redoing \(what) on \(size) shapes took \(times) ms")
+                }
             }
         }
     },

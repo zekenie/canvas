@@ -13,6 +13,7 @@ extension CanvasEditor {
     /// The view's new size, in view points.
     @_spi(Host) public func viewportDidResize(to size: CGSize) { viewportSize = size }
 
+    /// A press begins an undo step: everything it commits, through its release, is one.
     @_spi(Host) public func pointerDown(_ event: PointerEvent) {
         var pointer = sample(event)
         pointer.isControlClick = event.modifiers.contains(.control)
@@ -20,6 +21,7 @@ extension CanvasEditor {
         tracker.resetVelocity()
         stopCameraMotion()
         endEditing()
+        undoHistory.pressBegan()
         currentTool.pointerDown(pointer, in: self)
         refreshCursor()
     }
@@ -38,6 +40,7 @@ extension CanvasEditor {
         }
         // The session may have switched tools; the current one picks up the hover.
         if session == nil { currentTool.pointerMoved(pointer, in: self) }
+        undoHistory.pressEnded()
         refreshCursor()
     }
 
@@ -82,9 +85,11 @@ extension CanvasEditor {
     }
 
     /// A key pressed on the canvas: the plugin that claims key strokes (`registrar.keyStrokes`) says
-    /// what it does. False if none does anything with it; the view then gives it to AppKit.
+    /// what it does. False if none does anything with it; the view then gives it to AppKit. What it
+    /// commits is one undo step.
     @_spi(Host) public func keyDown(_ stroke: KeyStroke) -> Bool {
-        registry.keyStrokeHandler?(self, stroke) ?? false
+        guard let handle = registry.keyStrokeHandler else { return false }
+        return undoHistory.group { handle(self, stroke) }
     }
 
     /// The editing view for the shape being edited (the view asks when `editingShapeID` changes).

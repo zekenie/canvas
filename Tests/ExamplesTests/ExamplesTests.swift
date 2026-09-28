@@ -108,6 +108,41 @@ import Titles
         expect(start.binding == nil, "the arrow let go of the erased rectangle")
         expectEqual(h.editor.currentToolID, .eraser)
     },
+    test("Eraser: a stroke is one step, however many shapes it takes as it goes; undoing it puts them back where they were, and the arrow bound again") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), RectanglesPlugin(), EraserPlugin()])
+        let a = h.add(Rectangle(frame: CGRect(x: 0, y: 0, width: 100, height: 100)))
+        let b = h.add(Rectangle(frame: CGRect(x: 200, y: 0, width: 100, height: 100)))
+        h.add(Rectangle(frame: CGRect(x: 400, y: 0, width: 100, height: 100)))
+        let bound = ArrowBinding(shapeID: b, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)
+        h.add(Arrow(start: .bound(bound), end: .free(CGPoint(x: 250, y: 300))))
+        h.editor.replaceDocument(with: h.editor.document)
+        let before = h.editor.document
+        expect(h.key("e"))
+        h.press(at: CGPoint(x: 50, y: 50))
+        h.drag(to: CGPoint(x: 150, y: 50))
+        expectEqual(h.editor.document[a], nil, "gone mid-stroke")
+        h.drag(to: CGPoint(x: 250, y: 50))
+        h.release()
+        expectEqual(h.editor.document[b], nil)
+        expectEqual(h.editor.undoHistory.undoName, "Erase")
+        h.editor.undo()
+        expectEqual(h.editor.document, before)
+        expect(!h.editor.canUndo, "one step")
+    },
+    test("Polylines: a line is one step, Draw Line, from its first point to its last") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), PolylinesPlugin()])
+        expect(h.key("l"))
+        h.press(at: CGPoint(x: 100, y: 100))
+        h.drag(to: CGPoint(x: 150, y: 120)); h.drag(to: CGPoint(x: 200, y: 100)); h.drag(to: CGPoint(x: 250, y: 140))
+        h.release()
+        let line = try require(h.editor.document.shapes.first)
+        expectEqual(h.editor.undoHistory.undoName, "Draw Line")
+        h.editor.undo()
+        expect(h.editor.document.shapes.isEmpty)
+        expect(!h.editor.canUndo)
+        h.editor.redo()
+        expectEqual(h.editor.document.shapes, [line])
+    },
     test("Eraser: a quick stroke erases what it crosses between two events, even a thin arrow") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), RectanglesPlugin(), EraserPlugin()])
         let arrow = h.add(Arrow(start: .free(CGPoint(x: 100, y: 300)), end: .free(CGPoint(x: 300, y: 300))))
@@ -150,8 +185,8 @@ import Titles
         let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), RectanglesPlugin(), EraserPlugin(), PolylinesPlugin(), EllipsesPlugin(),
                                               AdornmentsPlugin(), TitlesPlugin(), TableOfContentsPlugin(), EllipseTitlesPlugin()])
         expectEqual(registry.report, """
-        core               tool hand
-        keyboard           service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
+        core               tool hand · command undo · command redo
+        keyboard           service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo
         selection          service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
         rectangles         shape rectangle · tool rectangle · shortcut R → tool rectangle
         eraser             tool eraser · shortcut E → tool eraser
@@ -210,5 +245,27 @@ import Titles
         expectEqual(order(), [c, d, a, b], "each past d, the next it overlaps, a still below b")
         try choose("Send Backward")
         expectEqual(order(), [c, a, b, d])
+    },
+    test("Reordering: each Arrange item is one step, and undoing it puts back the order and every stacking key") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), RectanglesPlugin(), ReorderingPlugin()])
+        let a = h.add(Rectangle(frame: CGRect(x: 0, y: 0, width: 100, height: 100)))
+        let b = h.add(Rectangle(frame: CGRect(x: 50, y: 0, width: 100, height: 100)))
+        h.add(Rectangle(frame: CGRect(x: 60, y: 0, width: 100, height: 100)))
+        h.editor.selectedShapeIDs = [b, a]
+        var documents = [h.editor.document]
+        for title in ["Bring to Front", "Send Backward", "Send to Back", "Bring Forward"] {
+            try require(h.secondaryClick(at: CGPoint(x: 10, y: 50))).choose("Arrange", title)
+            expectEqual(h.editor.undoHistory.undoName, title)
+            documents.append(h.editor.document)
+        }
+        for expected in documents.dropLast().reversed() {
+            h.editor.undo()
+            expectEqual(h.editor.document, expected)
+            expectEqual(h.editor.document.shapes.map(\.stackingKey), expected.shapes.map(\.stackingKey))
+        }
+        for expected in documents.dropFirst() {
+            h.editor.redo()
+            expectEqual(h.editor.document, expected)
+        }
     },
 ])

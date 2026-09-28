@@ -208,7 +208,7 @@ extension ShapeRegistrar {
                                                   r.contribute("x", to: Described.self)
                                               }])
         expectEqual(registry.report, """
-        core          tool hand
+        core          tool hand · command undo · command redo
         fixtures      shape box · shape disc · shape tag
         cards         shape card · tool card
         stamps        \("")

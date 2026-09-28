@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([validationTests, schemaRuleTests, keptAsideValidationTests])
+runTests([validationTests, schemaRuleTests, keptAsideValidationTests, undoTests])

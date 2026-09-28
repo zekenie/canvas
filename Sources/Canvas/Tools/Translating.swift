@@ -28,7 +28,7 @@ public final class TranslatingSession {
         var custom: Set<ShapeID> = []
         // Every begin in one transaction, committed before the first move. For boxes alone
         // nothing changes, so nothing commits.
-        let moves = editor.transact { tx in
+        let moves = editor.transact("Move") { tx in
             before.compactMap { record -> (@MainActor (CGPoint, inout Transaction) -> Void)? in
                 if let definition = registry.definition(for: record.kind) as? any CustomTranslation {
                     custom.insert(record.id)
@@ -58,7 +58,7 @@ extension TranslatingSession: Session {
         }
         guard !before.isEmpty else { return }
         let delta = pointer.world - origin
-        editor.transact { tx in
+        editor.transact("Move") { tx in
             // `pointer.world − grabOffset`, not `start + delta`: the two differ in the last bit
             // for some fractional points. This is the POC's box drag, and Characterization pins it.
             for (id, grabOffset) in frames { tx.moveBox(id, to: pointer.world - grabOffset) }
@@ -71,7 +71,7 @@ extension TranslatingSession: Session {
     /// card's sync does); a kind moved by its own rules, its whole record from before
     /// `beginTranslation`, which may change more than where it is (an arrow's precise ends).
     public func cancel(in editor: CanvasEditor) -> Bool {
-        editor.transact { tx in
+        editor.transact("Move") { tx in
             for record in before {
                 if custom.contains(record.id) {
                     tx.update(record.id) { $0 = record }

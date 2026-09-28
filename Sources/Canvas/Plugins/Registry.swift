@@ -262,6 +262,9 @@ public struct Registry {
     func command(_ command: CanvasCommand) -> CommandRegistration? {
         contributions(to: CorePoints.Commands.self).first { $0.value.command == command }?.value
     }
+
+    /// Whether a plugin (or the core) claims the command, so `editor.perform` can run it.
+    public func claims(_ command: CanvasCommand) -> Bool { self.command(command) != nil }
     var secondaryClickMenu: (@MainActor (CanvasEditor, Pointer) -> NSMenu?)? {
         contributions(to: CorePoints.SecondaryClickMenu.self).first?.value
     }

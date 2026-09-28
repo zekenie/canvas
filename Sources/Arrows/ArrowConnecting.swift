@@ -60,7 +60,7 @@ extension CanvasEditor {
         targeting.cancelPreciseTimer()
         let start = ArrowBinding(shapeID: shape, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)
         let arrow = ShapeRecord(Arrow(start: .bound(start), end: .free(origin)))
-        transact { $0.insert(arrow) }
+        transact("Add Arrow") { $0.insert(arrow) }
         return ArrowHandleDragSession(arrowID: arrow.id, handle: .terminal(.end), isCreating: true, handleOffset: .zero, isPrecise: false,
                                       targeting: targeting, connecting: ArrowConnecting(canBind: canBind, complete: complete))
     }

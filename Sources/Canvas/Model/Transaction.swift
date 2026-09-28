@@ -2,8 +2,8 @@ import CoreGraphics
 import Geometry
 
 /// The only way to change a document: `editor.transact { tx in ... }`. Everything in one
-/// transaction commits together. (Undo, when it comes, will group every commit from a press to its
-/// release, and every commit while a shape is being edited, into one step.)
+/// transaction commits together, into the undo step it's part of (`UndoHistory`: every commit from
+/// a press to its release is one step, and so is every commit while a shape is being edited).
 ///
 /// A board must always save, so a shape's frame stays finite: a shape inserted with a frame that
 /// isn't (a NaN, an infinity) isn't inserted, and a change that would make one so is dropped.

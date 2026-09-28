@@ -78,7 +78,7 @@ extension ArrowDefinition: HandleProviding {
 
     func pressHandle(_ handle: ArrowHandle, of shape: ShapeRecord<Arrow>, at pointer: Pointer, in editor: CanvasEditor) -> HandlePress {
         if pointer.clickCount == 2, case .terminal(let end) = handle {
-            editor.transact { $0.update(shape.id, as: Arrow.self) { $0.props.toggleArrowhead(at: end) } }
+            editor.transact("Toggle Arrowhead") { $0.update(shape.id, as: Arrow.self) { $0.props.toggleArrowhead(at: end) } }
             return .consumed
         }
         // Pressing a bound end outlines the shape it's bound to.

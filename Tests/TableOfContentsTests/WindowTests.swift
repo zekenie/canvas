@@ -129,6 +129,10 @@ final class ContentsWindow {
         w.window.pressDelete()
         w.window.spin { editor.document[b] == nil }
         expectEqual(editor.document.shapes.map(\.id), [a, c])
+        expectEqual(editor.undoHistory.undoName, "Delete", "the .delete command's step, as on the canvas")
+        editor.undo()
+        expectEqual(editor.document.shapes.map(\.id), [a, b, c])
+        expectEqual(editor.selectedShapeIDs, [b])
     },
     test("hiding the list while it has the keyboard gives the keyboard back to the canvas") {
         let editor = try contentsEditor(scheduler: TaskScheduler())

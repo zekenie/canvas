@@ -87,6 +87,13 @@ public struct SchemaSyncFailure: Equatable, Sendable {
 ///   that failed for want of one. A cancelled call says nothing. `NO_CHANGE` writes nothing. A
 ///   schema is written as the model wrote it (never laid out again: its order is the person's),
 ///   with `setSchema`, so the card's height follows.
+/// - Its write is one undo step ("Update Schema", "Update Description"). Undo and redo are no edit
+///   (`ChangeSet.restoredStep`): they start no sync, and a card whose sides they change drops its
+///   call and its wait, since what was asked is no longer what the card says. The pair at the last
+///   sync goes back and forth with the steps (`UndoParticipant`), for the cards a step brings back
+///   or changes the sides of: undoing the sync's write leaves the card as it was before the
+///   answer, the prompt ahead of its schema, and it syncs again only once the person edits or
+///   commits; redoing it leaves it in step. A card the step doesn't touch keeps its pair.
 @MainActor
 @Observable
 public final class SchemaSync {
@@ -95,7 +102,7 @@ public final class SchemaSync {
     /// What a card whose schema is too long to write whole says when its prompt changes.
     public static let tooLongMessage = "The schema is too long for Claude to write again from the description. Edit the JSON Schema by hand, and the description follows."
 
-    private struct Sides: Equatable {
+    private struct Sides: Equatable, Sendable {
         var prompt: String
         var schema: String
 
@@ -119,8 +126,6 @@ public final class SchemaSync {
     }
 
     private struct Card {
-        /// Both sides at the last sync: what each says of the other.
-        var synced: Sides
         /// Both sides as the document last said them, to tell a change to either from one to
         /// something else about the card (its frame, a lock).
         var seen: Sides
@@ -128,21 +133,19 @@ public final class SchemaSync {
         var call: Call?
         /// A sync was asked for while the call was out: it runs once the call lands.
         var wantsSync = false
-
-        /// A card seen for the first time: in step, unless its prompt was never answered (a prompt
-        /// over a schema that's JSON with no fields), which makes the prompt ahead.
-        init(firstSeen sides: Sides, document: SchemaDocument) {
-            synced = sides
-            seen = sides
-            if document.error == nil, document.fields.isEmpty, !SchemaSync.trimmed(sides.prompt).isEmpty { synced.prompt = "" }
-        }
     }
 
     // Weak: a panel's text view may commit after its window, and the editor, went.
     @ObservationIgnored private weak var editor: CanvasEditor?
     @ObservationIgnored private var cards: [ShapeID: Card] = [:]
+    /// Each card's sides at its last sync: what each says of the other. Apart from `cards`, so an
+    /// undo step keeps it as it was (`UndoParticipant`) for the cost of a copy on write.
+    @ObservationIgnored private var synced: [ShapeID: Sides] = [:]
     /// Observed a card at a time (`status(of:)`); a card with none is idle.
     @ObservationIgnored private var statuses: [ShapeID: SchemaSyncStatus] = [:]
+    /// The cards an undo or redo just brought back or changed the sides of: the only ones whose
+    /// pair at the last sync its participant's restore puts back.
+    @ObservationIgnored private var restoring: Set<ShapeID> = []
     /// The card this is writing, whose commit isn't the person's edit.
     @ObservationIgnored private var writing: ShapeID?
     @ObservationIgnored private var calls = 0
@@ -177,10 +180,16 @@ public final class SchemaSync {
 
     // MARK: Syncing
 
-    /// Takes a card seen for the first time (or read again from disk) as its last sync.
+    /// Takes a card seen for the first time (or read again from disk) as its last sync: in step,
+    /// unless its prompt was never answered (a prompt over a schema that's JSON with no fields),
+    /// which makes the prompt ahead.
     private func see(_ record: AnyShapeRecord) {
         guard let sides = Self.sides(of: record) else { return }
-        cards[record.id] = Card(firstSeen: sides, document: SchemaReadings.reading(of: sides.schema, for: record.id).document)
+        let document = SchemaReadings.reading(of: sides.schema, for: record.id).document
+        var pair = sides
+        if document.error == nil, document.fields.isEmpty, !Self.trimmed(sides.prompt).isEmpty { pair.prompt = "" }
+        cards[record.id] = Card(seen: sides)
+        synced[record.id] = pair
     }
 
     private func edited(_ id: ShapeID) {
@@ -209,22 +218,22 @@ public final class SchemaSync {
 
     /// Asks the model for whichever side is behind, if one is and it may.
     private func start(_ id: ShapeID) {
-        guard let editor, let card = cards[id], let record = editor.document[id], let now = Self.sides(of: record) else { return }
+        guard let editor, cards[id] != nil, let last = synced[id], let record = editor.document[id], let now = Self.sides(of: record) else { return }
         // A new try: an old failure no longer says where things are.
         setStatus(.idle, of: id)
         guard let model = editor.languageModel, !editor.registry.isReadOnly(record) else { return }
         let document = SchemaReadings.reading(of: now.schema, for: id).document
         guard document.error == nil, let root = document.root, root.isObject else { return }
         let prompt = Self.trimmed(now.prompt)
-        let promptAhead = !prompt.isEmpty && prompt != Self.trimmed(card.synced.prompt)
+        let promptAhead = !prompt.isEmpty && prompt != Self.trimmed(last.prompt)
         let tooLong = now.schema.utf8.count > SchemaPrompts.toSchemaMaxLength
         let request: ModelRequest, writes: SchemaSide
         if promptAhead, !tooLong {
-            request = SchemaPrompts.toSchema(previousPrompt: card.synced.prompt, prompt: now.prompt, schema: now.schema)
+            request = SchemaPrompts.toSchema(previousPrompt: last.prompt, prompt: now.prompt, schema: now.schema)
             writes = .schema
-        } else if !Self.means(root, card.synced.schema) {
+        } else if !Self.means(root, last.schema) {
             guard !(document.fields.isEmpty && prompt.isEmpty) else { return }
-            request = SchemaPrompts.toPrompt(prompt: now.prompt, previousSchema: card.synced.schema, schema: now.schema)
+            request = SchemaPrompts.toPrompt(prompt: now.prompt, previousSchema: last.schema, schema: now.schema)
             writes = .prompt
         } else if promptAhead {
             // Too long to write whole: the person edits it, and the prompt follows that edit.
@@ -232,7 +241,7 @@ public final class SchemaSync {
             return
         } else {
             // In step: a schema laid out anew says what it said.
-            if now.schema != card.synced.schema, prompt == Self.trimmed(card.synced.prompt) { cards[id]?.synced.schema = now.schema }
+            if now.schema != last.schema, prompt == Self.trimmed(last.prompt) { synced[id]?.schema = now.schema }
             return
         }
         calls += 1
@@ -282,33 +291,52 @@ public final class SchemaSync {
             let cutOff = response.stopReason == .maxTokens && call.writes == .schema
             return .failed(SchemaSyncFailure(writing: call.writes, reason, remedy: cutOff ? .editByHand : .retry))
         case .noChange:
-            cards[id]?.synced = call.sent
+            synced[id] = call.sent
         case let .text(text):
             switch call.writes {
             case .schema:
-                if text != now.schema { write(id) { $0.setSchema(text) } }
-                cards[id]?.synced = Sides(prompt: call.sent.prompt, schema: text)
+                write(id, .schema, inStep: Sides(prompt: call.sent.prompt, schema: text)) { if text != now.schema { $0.setSchema(text) } }
             case .prompt:
-                if text != now.prompt { write(id) { $0.prompt = text } }
-                cards[id]?.synced = Sides(prompt: text, schema: call.sent.schema)
+                write(id, .prompt, inStep: Sides(prompt: text, schema: call.sent.schema)) { if text != now.prompt { $0.prompt = text } }
             }
         }
         return .idle
     }
 
-    /// The sync's own write, which no sync follows.
-    private func write(_ id: ShapeID, _ change: (inout SchemaCard) -> Void) {
+    /// The sync's own write, which no sync follows, and the pair it leaves in step: one undo step,
+    /// named for the side it writes, from before the pair changed to after, so undoing it puts back
+    /// the pair from before the answer and redoing it leaves the card in step. A write of what the
+    /// side already says commits nothing, and is no step.
+    private func write(_ id: ShapeID, _ side: SchemaSide, inStep pair: Sides, _ change: (inout SchemaCard) -> Void) {
         guard let editor else { return }
         writing = id
         defer { writing = nil }
-        editor.transact { $0.update(id, as: SchemaCard.self) { change(&$0.props) } }
+        editor.undoHistory.group(side == .schema ? "Update Schema" : "Update Description") {
+            editor.transact { $0.update(id, as: SchemaCard.self) { change(&$0.props) } }
+            synced[id] = pair
+        }
     }
 
     /// Drops what's kept of a card, with its timer and its call.
     private func forget(_ id: ShapeID) {
+        synced.removeValue(forKey: id)
         guard let card = cards.removeValue(forKey: id) else { return }
         card.timer?.cancel()
         card.call?.task.cancel()
+        setStatus(.idle, of: id)
+    }
+
+    /// Undo or redo changed the card's sides: no edit to follow, and no answer to write, since
+    /// what the call asked about is no longer what the card says. It stays as undo left it until
+    /// the person edits or commits.
+    private func stop(_ id: ShapeID) {
+        guard var card = cards[id] else { return }
+        card.timer?.cancel()
+        card.timer = nil
+        card.call?.task.cancel()
+        card.call = nil
+        card.wantsSync = false
+        cards[id] = card
         setStatus(.idle, of: id)
     }
 
@@ -358,14 +386,16 @@ public final class SchemaSync {
 extension SchemaSync: EditorService {
     /// Cards that came, or were read again from disk, are seen for the first time; cards that went
     /// are dropped, with their call; a card whose prompt or schema the person changed waits
-    /// `idleDelay` for more.
+    /// `idleDelay` for more; one whose sides undo or redo changed stops (`stop`).
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         for id in changes.removed {
             forget(id)
             SchemaReadings.forget(id)
         }
         for id in changes.added {
-            if let record = editor.document[id] { see(record) }
+            guard let record = editor.document[id] else { continue }
+            see(record)
+            if changes.restoredStep, cards[id] != nil { restoring.insert(id) }
         }
         for id in changes.changed {
             guard let record = editor.document[id], let now = Self.sides(of: record) else { continue }
@@ -376,8 +406,28 @@ extension SchemaSync: EditorService {
             }
             guard cards[id]?.seen != now else { continue }
             cards[id]?.seen = now
-            if writing != id { edited(id) }
+            if changes.restoredStep {
+                stop(id)
+                restoring.insert(id)
+            } else if writing != id {
+                edited(id)
+            }
         }
+    }
+}
+
+/// The pairs at the last sync go back and forth with undo: a step puts back what each card it
+/// brought back, or whose sides it changed, said of the other as the step began (undone) or ended
+/// (redone), after the change, whose cards stopped. The other cards keep theirs: what a card's sync
+/// learned since without a step of its own (an answer of `NO_CHANGE` that landed while another
+/// step was made) still holds of its sides, which the step didn't touch.
+extension SchemaSync: UndoParticipant {
+    public func undoSnapshot(in editor: CanvasEditor) -> any Sendable { synced }
+
+    public func restoreUndoSnapshot(_ snapshot: any Sendable, in editor: CanvasEditor) {
+        defer { restoring = [] }
+        guard let pairs = snapshot as? [ShapeID: Sides] else { return }
+        for id in restoring { if let pair = pairs[id] { synced[id] = pair } }
     }
 }
 

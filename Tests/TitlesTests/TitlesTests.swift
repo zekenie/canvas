@@ -99,8 +99,8 @@ import Titles
             r.title(Disc.self, pill: false, contents: false) { _ in "Disc" }
         }])
         expectEqual(registry.report, """
-        core               tool hand
-        keyboard           service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel
+        core               tool hand · command undo · command redo
+        keyboard           service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo
         selection          service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · shortcut ↩ → Edit Selection · shortcut ⌤ → Edit Selection
         fixtures           shape box · shape disc · shape tag
         adornments         service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
