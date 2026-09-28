@@ -10,11 +10,13 @@ public final class CanvasView: NSView {
     private var editingView: EditingView?
     /// The minimap, in the bottom-left corner, over everything else; nil while it's hidden.
     public private(set) var minimap: MinimapView?
-    /// Where the pointer is, as the canvas last heard it: on the canvas, or over a view it hosts that
-    /// has the pointer there (the minimap, the editing view), where the tool has been told it left.
+    /// Where the pointer is, as the canvas last heard it: on the canvas, or over a view that has the
+    /// pointer there, where the tool has been told it left: one it hosts (the minimap, the editing
+    /// view), or one the host puts over it (`covered`: the path over a subboard's canvas, and its
+    /// menus).
     private var pointerPlace = PointerPlace.canvas
 
-    private enum PointerPlace { case canvas, minimap, editingView }
+    private enum PointerPlace { case canvas, minimap, editingView, covered }
 
     /// Whether the minimap shows. Off unless the host turns it on (the app does, per board).
     public var showsMinimap = false {
@@ -68,16 +70,31 @@ public final class CanvasView: NSView {
     private func isOnMinimap(_ point: CGPoint) -> Bool { minimap?.frame.contains(point) ?? false }
 
     /// Where a point (view points) is: on the minimap (which is over everything), on the editing
-    /// view (which takes the pointer where it is: its text, its cursor), or on the canvas.
+    /// view (which takes the pointer where it is: its text, its cursor), under a view the host put
+    /// over the canvas, or on the canvas.
     private func place(of point: CGPoint) -> PointerPlace {
         if isOnMinimap(point) { return .minimap }
         if editingView?.view.frame.contains(point) == true { return .editingView }
+        if isCovered(point) { return .covered }
         return .canvas
     }
 
-    /// The pointer is over a view the canvas hosts: the tool hears that it left, unless it has.
+    /// Whether a view that isn't the canvas's is over it at a point (view points): what the host
+    /// puts over the canvas, which takes a click there (the path's pill, a crumb's menu), and so
+    /// the pointer. AppKit still tells the canvas the pointer moved there (its tracking area covers
+    /// it), as it does over the views the canvas hosts.
+    private func isCovered(_ point: CGPoint) -> Bool {
+        guard let content = window?.contentView, let frame = content.superview else { return false }
+        guard let hit = content.hitTest(frame.convert(convert(point, to: nil), from: nil)) else { return false }
+        return hit !== self && !hit.isDescendant(of: self)
+    }
+
+    /// The pointer is over a view the canvas hosts, or one over it: the tool hears that it left,
+    /// unless it has. Under a view over the canvas the cursor is the arrow (the views it hosts set
+    /// their own).
     private func pointerLeftCanvas(for place: PointerPlace) {
         if pointerPlace == .canvas { editor.pointerExited() }
+        if place == .covered, pointerPlace != .covered { NSCursor.arrow.set() }
         pointerPlace = place
     }
 
@@ -136,9 +153,11 @@ public final class CanvasView: NSView {
         let place = place(of: pointer.location)
         if place != .canvas { pointerLeftCanvas(for: place) }
     }
-    /// Over the minimap or the editing view the pointer isn't over the canvas, though AppKit still
-    /// tells the canvas (its tracking area covers them): the tool hears that it left, once, so it
-    /// doesn't hover a shape under the minimap, or the one being edited under its text.
+    /// Over the minimap, the editing view or a view over the canvas (the path, a crumb's menu) the
+    /// pointer isn't over the canvas, though AppKit still tells the canvas (its tracking area covers
+    /// them): the tool hears that it left, once, so it doesn't hover a shape under the minimap, the
+    /// one being edited under its text, or one under the path. Under a view over the canvas the
+    /// cursor is the arrow, and back on the canvas the tool's again.
     public override func mouseMoved(with event: NSEvent) {
         let pointer = pointerEvent(event)
         let place = place(of: pointer.location)
@@ -146,6 +165,7 @@ public final class CanvasView: NSView {
             pointerLeftCanvas(for: place)
             return
         }
+        if pointerPlace == .covered { cursor(editor.cursor).set() }
         pointerPlace = .canvas
         editor.pointerMoved(pointer)
     }
@@ -153,7 +173,9 @@ public final class CanvasView: NSView {
         pointerPlace = .canvas
         editor.pointerExited()
     }
-    public override func cursorUpdate(with event: NSEvent) { cursor(editor.cursor).set() }
+    public override func cursorUpdate(with event: NSEvent) {
+        (pointerPlace == .covered ? NSCursor.arrow : cursor(editor.cursor)).set()
+    }
     public override func flagsChanged(with event: NSEvent) { editor.modifiersChanged(held: Modifiers(event.modifierFlags)) }
 
     /// A right-click or a Control-click (AppKit asks for both, and shows what this returns): the

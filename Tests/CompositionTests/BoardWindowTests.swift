@@ -6,9 +6,11 @@ import CanvasUI
 import Composition
 import CoreGraphics
 import Foundation
+import Geometry
 import Mentions
 import Selection
 import StickyNotes
+import TableOfContents
 import TestKit
 import Titles
 
@@ -35,9 +37,30 @@ final class NestedWindow {
 
     /// The path's crumbs that are buttons, over the canvas, leading first.
     var crumbs: [NSButton] {
-        (window.contentView?.descendants(NSButton.self) ?? []).filter { !($0 is NSPopUpButton) && overCanvas($0) }
+        (window.contentView?.descendants(NSButton.self) ?? []).filter { !($0 is NSPopUpButton) && overCanvas($0) && onCanvas($0).minY < Self.pathBottom }
             .sorted { $0.convert($0.bounds, to: nil).minX < $1.convert($1.bounds, to: nil).minX }
     }
+
+    /// The buttons of the crumb's menu that shows, over the canvas below the path, top first: each
+    /// row's, and a disclosure triangle's before a row with rows under it.
+    var menuButtons: [NSButton] {
+        (window.contentView?.descendants(NSButton.self) ?? []).filter { overCanvas($0) && onCanvas($0).minY >= Self.pathBottom }
+            .sorted { (onCanvas($0).minY, onCanvas($0).minX) < (onCanvas($1).minY, onCanvas($1).minX) }
+    }
+
+    /// Where a view is on the canvas, in view points from its top left.
+    func onCanvas(_ view: NSView) -> CGRect { canvas.convert(view.bounds, from: view) }
+
+    /// The pointer moved to `point` on the canvas (view points), as AppKit tells the canvas wherever
+    /// it is over it, even under a view over it.
+    func move(to point: CGPoint, time: TimeInterval) {
+        let event = NSEvent.mouseEvent(with: .mouseMoved, location: canvas.convert(point, to: nil), modifierFlags: [], timestamp: time,
+                                       windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 1)!
+        canvas.mouseMoved(with: event)
+    }
+
+    /// Below the path, which is 8 points down and about 26 tall.
+    static let pathBottom: CGFloat = 40
 
     /// The panel header's text field (Titles' `TitleHeader`), beside the canvas.
     var titleField: NSTextField? {
@@ -197,5 +220,49 @@ final class NestedWindow {
         expectEqual(w.editor.board, w.nest.tBoard)
         expect(w.editor.document[added] != nil)
         expect(w.board.isDocumentEdited)
+    },
+    test("a crumb's menu shows over the canvas, its board's rows as the table of contents lists them, and takes clicks; a row picked goes there") {
+        let w = try NestedWindow()
+        defer { w.board.close() }
+        expect(w.editor.showBoard(w.nest.sBoard))
+        expect(w.editor.showBoard(w.nest.tBoard))
+        w.window.spin { w.crumbs.count == 2 }
+        let crumbs = try require(w.editor.boardCrumbs)
+        let rows = try require(w.editor.tableOfContents).outline(of: w.nest.sBoard)
+        expectEqual(rows.map { $0.label?.text }, ["Plans, first", "Plans, second", "Untitled Subboard"])
+        expectEqual(rows.first?.children?.map(\.id), [w.nest.arrow(on: 2)], "the arrow, under the note it starts from")
+        crumbs.pointerEntered(crumb: w.nest.sBoard)
+        w.window.spin { w.menuButtons.count == 4 }
+        // Plans, first's disclosure triangle and its row; Plans, second's; and the subboard's, the way you came.
+        let way = w.onCanvas(try require(w.menuButtons.last))
+        expect(!w.isCanvas(w.hit(CGPoint(x: way.midX, y: way.midY))), "the menu takes a click on it")
+        w.menuButtons[1].performClick(nil)
+        w.window.spin { w.editor.board == w.nest.sBoard }
+        expectEqual(w.editor.selectedShapeIDs, [w.nest.notes(on: 2).0], "the note, gone to")
+        w.editor.goBack()
+        expectEqual(w.editor.board, w.nest.tBoard, "one step back")
+        w.window.spin { w.crumbs.count == 2 }
+        crumbs.pointerEntered(crumb: .root)
+        w.window.spin { w.menuButtons.count == 4 }
+        // The root's: Root, first (and its arrow's triangle), Root, second, and Plans, the way you came.
+        try require(w.menuButtons.last).performClick(nil)
+        w.window.spin { w.editor.board == w.nest.sBoard }
+        expectEqual(w.editor.selectedShapeIDs, [], "into Plans")
+    },
+    test("the pointer over the path doesn't hover what's under it on the canvas") {
+        let w = try NestedWindow()
+        defer { w.board.close() }
+        expect(w.editor.showBoard(w.nest.sBoard))
+        w.window.spin { w.crumbs.count == 1 }
+        let crumb = w.onCanvas(try require(w.crumbs.first))
+        let under = w.editor.add(StickyNote(frame: w.editor.camera.toWorld(CGRect(x: crumb.midX - 150, y: 0, width: 300, height: 200)), text: "Under"))
+        w.move(to: CGPoint(x: crumb.midX, y: crumb.maxY + 60), time: 1)
+        expectEqual(w.editor.hovered, under, "below the path, the note")
+        w.move(to: CGPoint(x: crumb.midX, y: crumb.midY), time: 1.1)
+        expectEqual(w.editor.hovered, nil, "on the path, not the note under it")
+        w.move(to: CGPoint(x: crumb.midX + 2, y: crumb.midY), time: 1.2)
+        expectEqual(w.editor.hovered, nil)
+        w.move(to: CGPoint(x: crumb.midX, y: crumb.maxY + 60), time: 1.3)
+        expectEqual(w.editor.hovered, under, "and back off it")
     },
 ])

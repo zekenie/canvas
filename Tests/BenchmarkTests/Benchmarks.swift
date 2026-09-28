@@ -38,10 +38,11 @@ import Validation
 // times; and undo and redo, a drag's in a frame and a tenth of the board's moved or deleted too, and
 // deleting a subboard whose boards hold as many shapes, and its undo and redo; ten subboards in
 // view, each holding as many, their previews filling in; and a `canvas draw` whose shapes are
-// pushed along the grid. `./build.sh bench` runs these in a release build and holds them to the
-// budgets; `./test.sh` runs them debug and small, so they keep working, and only reports. Reported
-// alone: the inspector's list replaced on a switch (InspectorBenchmarks.swift), and a chain of
-// 1,000 boards.
+// pushed along the grid; and the root crumb's menu inside a subboard, the root's rows after a
+// move and a rename on the board shown. `./build.sh bench` runs these in a release build and holds
+// them to the budgets; `./test.sh` runs them debug and small, so they keep working, and only
+// reports. Reported alone: the inspector's list replaced on a switch, and a crumb's menu shown in
+// the window (InspectorBenchmarks.swift), a chain of 1,000 boards, and a crumb's menu's first read.
 #if DEBUG
 let sizes = [300]
 let holdsToBudgets = false
@@ -1162,5 +1163,41 @@ extension Duration {
         expectEqual(editor?.boardPath.count, levels, "⌘↑ goes up one")
         report(String(format: "a chain of %d boards, %.1f MB: save %.1f ms, open %.1f ms, the path to the deepest %.3f ms, an editor showing it %.1f ms (reported)",
                       levels, Double(data.count) / 1e6, save, open, walk, show))
+    },
+    test("the root crumb's menu inside a subboard: the root's rows, the first time, after a commit on the board shown, and again") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        for size in sizes {
+            let file = generatedFile(root: size, children: [size])
+            let child = BoardID(owner: try require(owners(in: file).first))
+            var h = EditorHarness { CanvasEditor(registry: registry, file: file, scheduler: $0) }
+            var rows: [ContentsEntry] = []
+            // What the root's crumb's menu lists: the root's rows.
+            let menu = { rows = try require(h.editor.tableOfContents).outline(of: .root) }
+            // Cold: a new editor each run, inside the subboard, its own rows listed.
+            let first = try median(runs: 3, prepare: {
+                h = EditorHarness { CanvasEditor(registry: registry, file: file, showing: child, scheduler: $0) }
+                _ = h.editor.tableOfContents?.entries
+            }, menu)
+            expectEqual(rowCount(rows), size + 1, "every shape of the root, the subboard's too")
+            // A note on the board shown moved (a drag's event), which names nothing anew; renamed,
+            // which may rename what a note up there mentions: every note's row up there is made again.
+            let note = try require(h.editor.document.shapes.first { $0.kind == StickyNote.kind }).id
+            var step = 0
+            let afterMove = try median(runs: 21, prepare: {
+                step += 1
+                h.editor.transact("Move") { $0.translate([note], by: CGPoint(x: step % 2 == 0 ? 1 : -1, y: 0)) }
+            }, menu)
+            let afterRename = try median(runs: 21, prepare: {
+                step += 1
+                h.editor.transact("Rename") { $0.update(note) { $0[TitleProperty.self] = "Renamed \(step)" } }
+            }, menu)
+            let again = try median(runs: 21, menu)
+            report(String(format: "%6d shapes on the root, inside its subboard: a crumb's menu, the root's rows, first %6.1f ms (reported); after a move on the board shown %6.3f (budget %.0f), a rename %6.2f (budget %.0f); again %6.3f",
+                          size, first, afterMove, Budget.contentsRows, afterRename, Budget.frame, again))
+            if holdsToBudgets {
+                expect(afterMove < Budget.contentsRows, "the rows of a crumb's menu over \(size) shapes after a move took \(afterMove) ms")
+                expect(afterRename < Budget.frame, "the rows of a crumb's menu over \(size) shapes after a rename took \(afterRename) ms")
+            }
+        }
     },
 ])

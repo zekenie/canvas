@@ -71,7 +71,7 @@ let package = Package(
         .target(name: "Automation", dependencies: ["Canvas", "CanvasRPC", "DrawScript", "Geometry"]), // layer: horizontal
         .target(name: "LanguageModels", dependencies: ["Canvas"]),                            // layer: horizontal
         .target(name: "Mentions", dependencies: ["Canvas", "Selection", "TableOfContents", "Titles"]), // layer: horizontal
-        .target(name: "Boards", dependencies: ["Canvas", "ContextMenus", "DetailPanel", "Keyboard", "Selection", "Titles"]), // layer: horizontal
+        .target(name: "Boards", dependencies: ["Canvas", "ContextMenus", "DetailPanel", "Keyboard", "Selection", "TableOfContents", "Titles"]), // layer: horizontal
         .target(name: "Snapping", dependencies: ["Canvas", "Geometry"]),                      // layer: horizontal
 
         .target(name: "Arrows", dependencies: ["Canvas", "Geometry", "Keyboard", "Selection", "TableOfContents"]), // layer: vertical
@@ -124,7 +124,7 @@ let package = Package(
         .executableTarget(name: "PortsTests", dependencies: ["Canvas", "CanvasTesting", "Geometry", "Keyboard", "Ports", "Selection", "TestKit"], path: "Tests/PortsTests"), // layer: test
         .executableTarget(name: "ArrowPortsTests", dependencies: ["ArrowPorts", "Arrows", "Canvas", "CanvasTesting", "Geometry", "Keyboard", "Ports", "Selection", "TableOfContents", "TestKit"], path: "Tests/ArrowPortsTests"), // layer: test
         .executableTarget(name: "MentionsTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "Geometry", "Keyboard", "Mentions", "Selection", "TableOfContents", "TestKit", "Titles"], path: "Tests/MentionsTests"), // layer: test
-        .executableTarget(name: "BoardsTests", dependencies: ["Adornments", "Boards", "Canvas", "CanvasTesting", "ContextMenus", "DetailPanel", "Keyboard", "Selection", "TestKit", "Titles"], path: "Tests/BoardsTests"), // layer: test
+        .executableTarget(name: "BoardsTests", dependencies: ["Adornments", "Boards", "Canvas", "CanvasTesting", "ContextMenus", "DetailPanel", "Keyboard", "Selection", "TableOfContents", "TestKit", "Titles"], path: "Tests/BoardsTests"), // layer: test
         .executableTarget(name: "SubboardsTests", dependencies: ["Adornments", "Boards", "Canvas", "CanvasTesting", "CanvasUI", "ContextMenus", "DetailPanel", "Keyboard", "Mentions", "Selection", "Subboards", "TableOfContents", "TestKit", "Titles"], path: "Tests/SubboardsTests"), // layer: test
         .executableTarget(name: "SnappingTests", dependencies: ["Canvas", "CanvasTesting", "Geometry", "Snapping", "TestKit"], path: "Tests/SnappingTests"), // layer: test
         .executableTarget(name: "AutomationTests", dependencies: ["Automation", "Canvas", "CanvasRPC", "CanvasTesting", "Geometry", "TestKit"], path: "Tests/AutomationTests"), // layer: test
