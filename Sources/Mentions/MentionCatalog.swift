@@ -1,15 +1,17 @@
 import Canvas
 
-/// Every mentionable shape on a board, ready for the picker to match: each shape's appearance, and
-/// its label folded once (`MentionMatcher.Label`), the keys of every label back to back in one
-/// buffer, so a keystroke reads them in two linear passes with nothing to retain or allocate per
-/// shape. A renamed shape's new keys go at the end; the buffer is packed again once half of it is
-/// keys no shape uses.
+/// Every mentionable shape on the boards of a file the editor can show, ready for the picker to
+/// match: each shape's appearance and board, and its label folded once (`MentionMatcher.Label`),
+/// the keys of every label back to back in one buffer, so a keystroke reads them in two linear
+/// passes with nothing to retain or allocate per shape. A renamed shape's new keys go at the end;
+/// the buffer is packed again once half of it is keys no shape uses.
 @MainActor
 struct MentionCatalog {
     /// One shape's place in the catalog: plain values only, so reading one costs nothing more.
     struct Entry {
         let id: ShapeID
+        /// The board it's on.
+        var board: BoardID
         /// Its label's keys in `keys`.
         var start: Int
         var count: Int
@@ -25,10 +27,15 @@ struct MentionCatalog {
     private(set) var appearances: [MentionAppearance] = []
     private(set) var keys: [UInt32] = []
     private var slots: [ShapeID: Int] = [:]
+    /// How many entries are on each board.
+    private var counts: [BoardID: Int] = [:]
     /// Keys in `keys` no entry uses any longer.
     private var unused = 0
 
     var count: Int { entries.count }
+
+    /// How many entries are on `board`.
+    func count(on board: BoardID) -> Int { counts[board] ?? 0 }
 
     func slot(of id: ShapeID) -> Int? { slots[id] }
 
@@ -37,8 +44,13 @@ struct MentionCatalog {
     func appearance(of id: ShapeID) -> MentionAppearance? { slots[id].map { appearances[$0] } }
 
     /// Puts a shape in, or updates it: its label's keys are folded again only if its label changed.
-    mutating func set(_ id: ShapeID, _ appearance: MentionAppearance, recentRank: Int) {
+    mutating func set(_ id: ShapeID, _ appearance: MentionAppearance, on board: BoardID, recentRank: Int) {
         if let slot = slots[id] {
+            if entries[slot].board != board {
+                counts[entries[slot].board]? -= 1
+                counts[board, default: 0] += 1
+                entries[slot].board = board
+            }
             if appearances[slot].label != appearance.label {
                 unused += entries[slot].count
                 let start = keys.count
@@ -53,7 +65,8 @@ struct MentionCatalog {
             let start = keys.count
             let length = MentionMatcher.appendKeys(of: appearance.label, to: &keys)
             slots[id] = entries.count
-            entries.append(Entry(id: id, start: start, count: keys.count - start, labelLength: length,
+            counts[board, default: 0] += 1
+            entries.append(Entry(id: id, board: board, start: start, count: keys.count - start, labelLength: length,
                                  isPlaceholder: appearance.isPlaceholder, recentRank: recentRank))
             appearances.append(appearance)
         }
@@ -64,6 +77,7 @@ struct MentionCatalog {
     mutating func remove(_ id: ShapeID) {
         guard let slot = slots.removeValue(forKey: id) else { return }
         unused += entries[slot].count
+        counts[entries[slot].board]? -= 1
         let last = entries.count - 1
         if slot != last {
             entries[slot] = entries[last]

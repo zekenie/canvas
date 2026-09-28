@@ -1415,6 +1415,11 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   `goTo` does nothing mid-gesture, or when none of the shapes is on a board it can show; without
   `SelectionPlugin` it ends editing, shows their board and reveals. data-canvas's navigateToShape
   always zooms.
+- `goInto(_:)` follows a link into what it names (a mention of a subboard enters it): `goTo`, then
+  `open` there if it opens (`canOpen`), as one step back, to the board and selection it was
+  followed from, whatever boards it went through (the selection state runs both as one step,
+  `asOneStep`, in which no selection change or board shown records a step of its own). A shape
+  that doesn't open is only gone to; nothing mid-gesture.
 - `canOpen(_:)`, `open(_:)` and `openSelection()`: opening a shape, below.
 - `hoveredHandle`, `brush` (the marquee), `selectionBounds`, `isSelectable(_:)`, and the commands'
   `selectAll()`, `deleteSelection()` and `editSelection()` (editing alone, whatever opening would
@@ -3551,8 +3556,9 @@ Ports are the part of data-canvas's that notes and tasks need to prove the API; 
 Mentions ([`Sources/Mentions`](../Sources/Mentions)) lets text mention other shapes: `@` in a
 note, a few letters of a task's title, Return, and the note says "Ask ⟨▢ Ship the beta⟩ first",
 the mention an inline pill with the task's symbol and name. It's a horizontal on Selection, the
-table of contents and Titles, and two kinds opt in: sticky notes, whose text holds mentions and
-which can be mentioned, and task cards, which can be mentioned. The core knows no mention; what
+table of contents and Titles, and three kinds opt in: sticky notes, whose text holds mentions and
+which can be mentioned, and task cards and subboards, which can be mentioned (following a mention
+of a subboard enters it). The core knows no mention; what
 Mentions needs of it is generic: [names](#values-that-name-shapes) of shapes that may outlive them,
 [faces](#faces-clickable-parts-of-a-shape), [going to shapes](#selection), and
 [rows read from more than their shape](#rows-read-from-more-than-their-shape).
@@ -3568,11 +3574,14 @@ registrar.shape(StickyNoteDefinition()) { note in
 
 // In TaskCardsPlugin.register:
 task.mentionable(symbol: { $0.props.status.symbol })            // called by its title; its symbol its status's
+
+// In SubboardsPlugin.register:
+sub.mentionable(following: .opens)                              // called by its title; followed, it's entered
 ```
 
 ### Mentionable kinds
 
-A kind opts into being mentioned with `x.mentionable(label:untitled:symbol:detail:tint:)`, one per
+A kind opts into being mentioned with `x.mentionable(label:untitled:symbol:detail:tint:following:)`, one per
 kind (the `ShapeMentions` point; `registrar.mentionable(K.self, …)` from a bridge, and
 `registrar.mentionableEveryShape(where:)` for a composition that wants every kind, which a kind's
 own takes the place of). Every closure reads only the shape, as a title does, so a pill changes
@@ -3588,6 +3597,11 @@ only when its shape does:
   either was written.
 - **Its symbol** is `symbol`, else its placing tool's; `detail` is said beside the name in the
   picker (the kind's name by default), and `tint` colors the symbol where the surface is neutral.
+- **Following one** (a double-click on its pill, Go to in the text's menu) is `following`:
+  `.goesTo`, the default, goes to the shape (Selection's `goTo`: selects it and brings it into
+  view); `.opens` goes into it (`goInto`: goes to it, then opens it, as a double-click on it would,
+  one step back in all), for a kind that's opened rather than looked at: a subboard shows its
+  board.
 
 `registry.mentionAppearance(of:)` is how a shape shows (`MentionAppearance`), and
 `registry.mentionResolution(of:lookup:)` what a mention of an id shows now (`MentionResolution`):
@@ -3722,18 +3736,20 @@ follows undo and redo, during which nothing may):
   `rowsAffected(by:)` names the shapes that mention what changed, for rows: a note's row reads its
   text with live names (`context.plainText(_:)`), and names `MentionRows.affected` as its
   `affected:`, so a rename remakes only the rows of the notes that mention the renamed shape.
-- **The catalog**, what the picker searches: every mentionable shape on the board but those kept
-  aside, read again at the next query for the shapes a commit changed. `candidates(matching:in:for:)`
-  lists, for an empty query, the recent picks (`didPick(_:)`) and the shapes nearest the text's
-  shape (looked for in squares around it, grown until one holds enough, or holds as many shapes as
-  the catalog, when reading the catalog costs less: a board with few mentionable shapes reads
-  them), and for any other the best 50 matches. `MentionMatcher` scores the folded query (case and
+- **The catalog**, what the picker searches: every mentionable shape on every board of the file
+  the editor can show but those kept aside ([across boards](#mentions-across-boards)), read again
+  at the next query for the shapes a commit changed. `candidates(matching:in:for:)` lists, for an
+  empty query, the recent picks (`didPick(_:)`) and the shapes nearest the text's shape on the
+  board shown (looked for in squares around it, grown until one holds enough, or holds as many
+  shapes as the board has in the catalog, when reading those costs less: a board with few
+  mentionable shapes reads them), then, while there's room, the shapes whose boards it's inside,
+  and for any other the best 50 matches. `MentionMatcher` scores the folded query (case and
   diacritics ignored) against each name, each taking its best tier: exact 1000, a prefix 800, each
   word a prefix of a word, in order, 600, a substring 400, a subsequence (fzf-style: word starts,
   runs and the first character count, gaps cost) at most 300, and, for a query of 4 or more that
   found fewer than 8 above, one typo (a Damerau edit of a word's prefix) 100; then recent picks and
-  nearness add to the best, a placeholder name loses some, and ties go to the shorter name, then
-  the shape in front. Two linear passes over the catalog's folded names and a heap: a keystroke at
+  nearness (on the board shown) add to the best, a placeholder name loses some, and ties go to the
+  shorter name, then the shape in front, the board shown's before another's. Two linear passes over the catalog's folded names and a heap: a keystroke at
   10,000 shapes, and the `@` that opens the picker among 10,000 of which 3 can be mentioned, are
   held to 2 ms.
 - **Going and hovering**: `follow(_:)` goes to a shape on the next turn of the scheduler
@@ -3755,8 +3771,8 @@ is the note, and the text is its editor.
   followed on a single click. A read-only shape (a locked one) isn't asked to: a refused edit is a
   try to change it, which Locking shakes, and a click isn't one.
 - **A double-click** on an editable note's pill lands in the text view the click opened, which
-  follows it. On a read-only shape the canvas's face follows it (`goTo`). A missing pill's does
-  nothing.
+  follows it. On a read-only shape the canvas's face follows it (`goTo`, or `goInto` for a kind
+  followed by opening it). A missing pill's does nothing.
 - **The pointer** over a live pill hovers the shape it names, if it's on the board shown; over a
   missing one, or one naming a shape on another board, its own shape.
 
@@ -3863,7 +3879,10 @@ shape on any board of it, and shows it as it's called now, wherever it is:
 - **Following one** goes there: a double-click on its pill (the canvas's face, or the text view's)
   or Go to “Name” runs `editor.goTo`, which shows the shape's board and selects it there as one
   step back (`showBoard(_:selecting:)`: Back returns to the board left, with what was selected
-  there), then brings it into view. Hovering one only outlines a shape on the board shown.
+  there), then brings it into view. A kind followed by opening it (`following: .opens`) runs
+  `editor.goInto` instead: a mention of a subboard enters its board, through the board it's on if
+  that's another, and Back returns to where it was followed from in one step. Hovering one only
+  outlines a shape on the board shown.
 - **A copy of a tree of boards** mentions the copies of the shapes copied with it, on any board of
   the tree (Clipboard's paste passes names through the whole tree's map), and goes on naming the
   rest, wherever they are.
@@ -3873,14 +3892,19 @@ shape on any board of it, and shows it as it's called now, wherever it is:
   of a shape that moved names the shape cut, and shows missing (by the name it holds) until undo
   brings it back (CompositionTests' `mentionsBoardsTests`; [Not built yet](#not-built-yet)). On one
   board it was so before boards.
-- **The index, the catalog and the picker are the board shown's**, as data-canvas's were: the `@`
-  picker lists what's on the board being edited (the nearest shapes and the matches), so a shape on
-  another board is mentioned by pasting a mention of it, or writing one (`canvas draw`'s `text:`), not
-  picked ([Not built yet](#not-built-yet)). Each board's index is kept for going back to it. A
-  board entered for the first time has its mention text read on the way in (the rows and pills
-  need who mentions whom), and its catalog on the scheduler's next turn, once the board is on
-  screen, or at the first `@` if that comes sooner: entering a board doesn't wait for what only the
-  picker reads.
+- **The picker lists the whole file.** Its catalog is every mentionable shape on every board the
+  editor can show (the root, and from it down the boards of owners that aren't kept aside, of kinds
+  that own boards: `canShow`'s), read whole as the editor opens, or a file or a board is put in
+  place (`replaceFile`, `replaceDocument`), and kept up to date by each commit: the shapes it names
+  on the board shown, and those it changed elsewhere (`ChangeSet.elsewhere`: a board deleted with
+  its owner, a paste's boards, a write to a board that isn't shown, an undo that reaches another
+  board), read again at the next query, so showing another board reads none of it. A match on the
+  board shown gets nearness, and wins a tie; an empty `@` lists what's near the text on the board
+  shown, then the boards it's inside (the board shown's owner first), so a subboard can be
+  mentioned from inside itself. data-canvas's picker listed the board shown's shapes only.
+- **The index is the board shown's**: who mentions whom, which the rows and pills need. Each
+  board's is kept for going back to it, and a board entered for the first time has its mention
+  text read on the way in.
 
 MentionsTests' `boardsTests` hold these on pockets (and a mention of a shape on a board the app
 can't show); CompositionTests' `mentionsBoardsTests` on
@@ -3998,6 +4022,7 @@ registrar.shape(SubboardDefinition()) { sub in                     // SubboardDe
     sub.tool(label: "Subboard", systemImage: "rectangle.stack", shortcut: "b", placing: place)
     sub.title(pill: false)                                          // Titles keeps its name; the card draws it
     sub.opensBoard(placeholder: "Untitled Subboard", systemImage: "rectangle.stack")
+    sub.mentionable(following: .opens)                              // Mentions: by its title; followed, it's entered
     sub.contentsRow { _ in ContentsLabel("", placeholder: "Untitled Subboard", systemImage: "rectangle.stack") }
     sub.details(header: { $sub in TitleHeader($sub, placeholder: "Untitled Subboard", systemImage: "rectangle.stack") }) {}
 }
@@ -4031,6 +4056,9 @@ as SwiftUI sugar is.)
   first in its menu, the Open button in its panel's Board tab, and Return once its row is picked (a
   double-click on the row only where the list stays put, not in the app's panel). ⌘↑ comes back with it selected, and ⌘[ retraces. Its panel's header renames it, a run of
   typing one undo step; its row is its symbol and its title, or "Untitled Subboard".
+- **Mentioning it** is Mentions': a note's `@` picker offers it by its title, or "Untitled
+  Subboard", with its symbol, and a double-click on its pill (or Go to) enters it
+  (`following: .opens`, Selection's `goInto`), from its board or another, one step back.
 - **Deleting it** deletes its board and every board under it, as one step, like any shape's;
   undoing it brings them all back with every id.
 
@@ -5442,7 +5470,7 @@ arrows               shape arrow · ContentsRows → arrow · service ArrowTarge
 sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · channel note-link
 ellipses             shape ellipse · tool ellipse · shortcut O → tool ellipse
 task-cards           shape task-card v3 · tool task-card · shortcut T → tool task-card · ValidationRules → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · ContentsRows → task-card · property checklist → task-card · ShapeChecklists → task-card · ShapeDetails → task-card · ShapeContextMenus → task-card · property title → task-card · ShapeTitles → task-card · ContentsTitles → task-card · ports task-link → task-card · mentionable → task-card · channel task-link
-subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard
+subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails → subboard
 schemas              service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
 adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
@@ -5726,8 +5754,8 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   in each of nine subboards, the last a chain ten deep) in the time a board of as many takes;
   entering a subboard of 10,000 shapes cold, with ⌘↓ (the switch and the camera's first fit, with
   Mentions' index of who mentions whom, a frame of notes with pills, the rows and validation's
-  first read, together, in 250 ms; the panel's list left out; Mentions' catalog, which only the
-  `@` picker reads, on the next turn, within its 50 ms), and going back up with ⌘↑ (and with the root
+  first read, together, in 250 ms; the panel's list left out; Mentions' catalog is the file's, read
+  as it opens, so entering reads none of it), and going back up with ⌘↑ (and with the root
   listed whole after it, the selection let go of) and
   down again warm (the same four, in a frame); a hover, a drag and the rows after it on a root of
   1,000 beside a subboard of 10,000, and inside a subboard of 10,000 while the root holds as many,
@@ -5986,10 +6014,8 @@ Each of these adds to the design without changing what plugins are written again
   text view shared with schema cards), in task cards' notes and checklist items, and on the canvas
   where they're drawn; a text restricted to some kinds among the shipped ones (what may block a
   task); a shape's backlinks ("Mentioned in"); validation of mentions that are missing or outside
-  their scope; picking a shape on another board of the file from the `@` picker (it lists the board
-  shown's, as data-canvas's did; a mention of one, pasted or written, is live and followed there,
-  and the whole file's catalog would need a place of its own beside each board's index); a subboard
-  mentionable (a board by its name, going to it by entering it); moving shapes to another board
+  their scope; saying in the `@` picker which board a shape on another board is on; moving
+  shapes to another board
   without breaking the mentions of them from outside what moves (a paste of what the last cut took
   keeping its ids, or renaming the file's mentions of them to the copies), and a move that isn't a
   cut and paste; the command line reading and

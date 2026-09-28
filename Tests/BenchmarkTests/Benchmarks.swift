@@ -71,9 +71,8 @@ enum Budget {
     /// Also undoing or redoing the deletion of a shape whose boards hold 10,000, with the frame after
     /// it.
     static let undoEveryShape = 100.0
-    /// Mentions' index (who mentions whom) and catalog (what the `@` picker searches), built as a
-    /// board opens: part of opening it. Also the catalog alone of a board entered for the first
-    /// time, read on the turn after.
+    /// Mentions' index (who mentions whom) and catalog (what the `@` picker searches, the whole
+    /// file's), built as a board opens: part of opening it.
     static let mentionIndex10k = 50.0
     /// A keystroke in the `@` picker, the `@` that opens it (recent picks and nearby shapes) included.
     static let pickerKeystroke = 2.0
@@ -86,8 +85,8 @@ enum Budget {
     /// Entering a board of 10,000 shapes for the first time: the switch (the camera's first fit
     /// with it, Mentions' index of who mentions whom, which the rows and pills read), the first
     /// frame (three notes in ten drawing pills), the table of contents' rows and validation's first
-    /// read, together. Once a board, like opening a file. Mentions' catalog, which only the `@`
-    /// picker reads, is left for the scheduler's next turn, and held to `mentionIndex10k`.
+    /// read, together. Once a board, like opening a file. Mentions' catalog is the file's, read as
+    /// it opens, so entering a board reads none of it.
     static let enterCold = 250.0
     /// Deleting a shape whose boards hold 10,000 shapes: the commit, and every board under it taken
     /// with it.
@@ -693,9 +692,6 @@ extension Duration {
             }
             expectEqual(h.editor.board, child, "⌘↓ entered the subboard")
             expectEqual(rowCount(rows), size)
-            // Mentions' catalog (what the @ picker searches), left for the scheduler's next turn,
-            // once the board is on screen.
-            let catalog = ContinuousClock().measure { h.wait(0) }.milliseconds
             let fitted = h.editor.camera.zoom
             // As the root's, and the frame benchmark's: the first visit fitted every shape into view,
             // and a frame of them all is a frame of 10,000 shapes, whatever board they're on.
@@ -727,12 +723,11 @@ extension Duration {
             }
             expect(h.editor.board.isRoot, "⌘↑ went up")
             expectEqual(rowCount(rows), size + 1, "every shape of the root listed, the subboard's too")
-            report(String(format: "%6d shapes on each board: entering the subboard, cold, %6.1f ms (budget %.0f; fitted at %.0f%%), Mentions' catalog on the next turn %5.1f (budget %.0f); going back up to the root %5.1f ms (listing it all %5.1f), down again %5.1f (budget %.0f)",
-                          size, cold, Budget.enterCold, fitted * 100, catalog, Budget.mentionIndex10k, up, upListed, down, Budget.warmReturn))
+            report(String(format: "%6d shapes on each board: entering the subboard, cold, %6.1f ms (budget %.0f; fitted at %.0f%%); going back up to the root %5.1f ms (listing it all %5.1f), down again %5.1f (budget %.0f)",
+                          size, cold, Budget.enterCold, fitted * 100, up, upListed, down, Budget.warmReturn))
             if holdsToBudgets {
                 if size >= 10_000 {
                     expect(cold < Budget.enterCold, "entering a subboard of \(size) shapes, cold, took \(cold) ms")
-                    expect(catalog < Budget.mentionIndex10k, "Mentions' catalog of a subboard of \(size) shapes took \(catalog) ms")
                 }
                 expect(up < Budget.warmReturn, "going back up to a board of \(size) shapes took \(up) ms")
                 expect(upListed < Budget.warmReturn, "going back up to a board of \(size) shapes and listing it all took \(upListed) ms")

@@ -19,8 +19,19 @@ extension ShapeMentions: KeyedExtensionPoint {
     public static func check(_ registry: Registry) throws { try MentionTextFormat.checkBounds(in: registry) }
 }
 
+/// What following a mention of a kind's shape does: a double-click on its pill, on the canvas or in
+/// the text, and Go to in the text's menu.
+public enum MentionFollowing: Sendable {
+    /// Goes to the shape: shows its board, selects it and brings it into view (`goTo`).
+    case goesTo
+    /// Goes into it: goes to it, then opens it, as a double-click on it would (`goInto`): a
+    /// subboard shows its board. One step back either way.
+    case opens
+}
+
 /// What `ShapeMentions` keeps for a kind: how its shapes are called, and with what symbol, detail
-/// and tint; for every kind, which kinds (`where`). Only the sugar below makes one.
+/// and tint, and what following a mention of one does; for every kind, which kinds (`where`). Only
+/// the sugar below makes one.
 @MainActor
 public struct MentionContribution {
     let applies: (@MainActor (any ShapeDefinition) -> Bool)?
@@ -29,11 +40,13 @@ public struct MentionContribution {
     let symbol: (@MainActor (AnyShapeRecord) -> String?)?
     let detail: (@MainActor (AnyShapeRecord) -> String?)?
     let tint: (@MainActor (AnyShapeRecord) -> NSColor?)?
+    let following: MentionFollowing
 
     init<P: ShapeProps>(_: P.Type, label: (@MainActor (ShapeRecord<P>) -> String?)?, untitled: (@MainActor (ShapeRecord<P>) -> String?)?,
                         symbol: (@MainActor (ShapeRecord<P>) -> String?)?, detail: (@MainActor (ShapeRecord<P>) -> String?)?,
-                        tint: (@MainActor (ShapeRecord<P>) -> NSColor?)?) {
+                        tint: (@MainActor (ShapeRecord<P>) -> NSColor?)?, following: MentionFollowing) {
         applies = nil
+        self.following = following
         self.label = Self.erased(label)
         self.untitled = Self.erased(untitled)
         self.symbol = Self.erased(symbol)
@@ -54,6 +67,7 @@ public struct MentionContribution {
         symbol = nil
         detail = nil
         tint = nil
+        following = .goesTo
     }
 }
 
@@ -109,18 +123,23 @@ extension ShapeRegistrar {
     /// changes only when its shape does. The label is `label`, else the shape's title (Titles'
     /// `registry.title(of:)`, named or derived), else `untitled`, else "Untitled" and the placing
     /// tool's label ("Untitled Note"), each on one line, blank counting as none. `symbol` defaults
-    /// to the placing tool's, `detail` to the kind's name, `tint` to none. An `untitled` that reads
+    /// to the placing tool's, `detail` to the kind's name, `tint` to none. `following` says what
+    /// following a mention does: go to the shape, or into it (`.opens`: a subboard enters its
+    /// board). An `untitled` that reads
     /// the shape's own mention text leaves every other shape's name out of it (`firstLine`, where
     /// each mention is "@…"): a mention holds its target's name as written, so names made of
     /// names would take each other in and grow.
     ///
     ///     note.mentionable(untitled: { $0.props.text.firstLine })
+    ///     sub.mentionable(following: .opens)
     public mutating func mentionable(label: (@MainActor (ShapeRecord<Definition.Props>) -> String?)? = nil,
                                      untitled: (@MainActor (ShapeRecord<Definition.Props>) -> String?)? = nil,
                                      symbol: (@MainActor (ShapeRecord<Definition.Props>) -> String?)? = nil,
                                      detail: (@MainActor (ShapeRecord<Definition.Props>) -> String?)? = nil,
-                                     tint: (@MainActor (ShapeRecord<Definition.Props>) -> NSColor?)? = nil) {
-        contribute(MentionContribution(Definition.Props.self, label: label, untitled: untitled, symbol: symbol, detail: detail, tint: tint),
+                                     tint: (@MainActor (ShapeRecord<Definition.Props>) -> NSColor?)? = nil,
+                                     following: MentionFollowing = .goesTo) {
+        contribute(MentionContribution(Definition.Props.self, label: label, untitled: untitled, symbol: symbol, detail: detail, tint: tint,
+                                       following: following),
                    to: ShapeMentions.self)
     }
 }
@@ -132,8 +151,10 @@ extension PluginRegistrar {
                                                     untitled: (@MainActor (ShapeRecord<P>) -> String?)? = nil,
                                                     symbol: (@MainActor (ShapeRecord<P>) -> String?)? = nil,
                                                     detail: (@MainActor (ShapeRecord<P>) -> String?)? = nil,
-                                                    tint: (@MainActor (ShapeRecord<P>) -> NSColor?)? = nil) {
-        contribute(MentionContribution(P.self, label: label, untitled: untitled, symbol: symbol, detail: detail, tint: tint),
+                                                    tint: (@MainActor (ShapeRecord<P>) -> NSColor?)? = nil,
+                                                    following: MentionFollowing = .goesTo) {
+        contribute(MentionContribution(P.self, label: label, untitled: untitled, symbol: symbol, detail: detail, tint: tint,
+                                       following: following),
                    to: ShapeMentions.self, for: .kind(P.kind))
     }
 

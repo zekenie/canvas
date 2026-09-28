@@ -87,7 +87,7 @@ extension ChangeSetWatcher: EditorService {
         expectEqual(watch.workedOut, [false, false])
         #endif
     },
-    test("mentions are indexed on the board shown, and a board's index is taken back on going back to it") {
+    test("mentions are indexed on the board shown, a board's index is taken back on going back to it, and the picker finds shapes on every board") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         func note(_ x: CGFloat, _ text: MentionText) -> ShapeRecord<StickyNote> {
@@ -106,7 +106,7 @@ extension ChangeSetWatcher: EditorService {
         expectEqual(mentions.mentioners(of: deep.id), [inner.id])
         expectEqual(mentions.mentions(in: outer.id), [], "only the board shown is indexed")
         expectEqual(mentions.candidates(matching: "Deep", in: AnyMentionable.self, for: nil).matches.map(\.id), [deep.id])
-        expectEqual(mentions.candidates(matching: "Target", in: AnyMentionable.self, for: nil).matches.map(\.id), [])
+        expectEqual(mentions.candidates(matching: "Target", in: AnyMentionable.self, for: nil).matches.map(\.id), [target.id], "on the root")
         #if DEBUG
         let read = mentions.textsRead
         #endif

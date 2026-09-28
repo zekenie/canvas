@@ -2,6 +2,7 @@ import Boards
 import Canvas
 import CoreGraphics
 import Keyboard
+import Mentions
 import Titles
 
 extension PluginID {
@@ -34,8 +35,9 @@ extension Subboard {
 
 /// Subboards: the Subboard tool (B), which places a card that opens onto a board of its own. It
 /// opts into Boards (opening it: a double-click, Return, ⌘↓, Open in its menu and panel), Titles
-/// (its name, drawn on the card, so no pill), the table of contents (a row Titles names) and the
-/// detail panel (a header that renames it). Going back up, and the path, are Boards'.
+/// (its name, drawn on the card, so no pill), Mentions (by its name; following a mention enters
+/// it), the table of contents (a row Titles names) and the detail panel (a header that renames it).
+/// Going back up, and the path, are Boards'.
 public struct SubboardsPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .subboards }
@@ -46,6 +48,7 @@ public struct SubboardsPlugin: CanvasPlugin {
             sub.tool(label: "Subboard", systemImage: Subboard.systemImage, shortcut: "b", placing: place)
             sub.title(pill: false)                         // Titles keeps its name; the card draws it
             sub.opensBoard(placeholder: Subboard.placeholder, systemImage: Subboard.systemImage)
+            sub.mentionable(following: .opens)             // by its name, else "Untitled Subboard"; followed, it's entered
             sub.subboardRow()                              // the table of contents, named by Titles
             sub.subboardHeader()                           // renamed in the panel's header
         }

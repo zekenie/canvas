@@ -15,12 +15,13 @@ import Selection
 /// its mentioners' rows (`rowsAffected`). A commit that only moved shapes (a drag) changes no text
 /// and no name, so it costs nothing here.
 ///
-/// In a file of several boards, the index and the catalog are the board shown's (the `@` picker
-/// lists what's on it), kept for the boards shown lately; a board entered for the first time has
-/// its mention text read on the way in, and its catalog on the scheduler's next turn, once it's on
-/// screen (or at the first `@`, if that comes first). A mention names a shape anywhere in the
-/// file, and shows it as it's called now: what a commit changes on other boards
-/// (`ChangeSet.elsewhere`: the boards a deletion took or a paste brought, a write to a board that
+/// In a file of several boards, the index is the board shown's, kept for the boards shown lately;
+/// a board entered for the first time has its mention text read on the way in. The catalog is the
+/// file's (the `@` picker lists what's on any board the editor can show): read whole as the editor
+/// opens, or a file or board is put in place, and kept up to date by each commit, the shapes it
+/// changed on other boards (`ChangeSet.elsewhere`) included, so showing another board reads none of
+/// it. A mention names a shape anywhere in the file, and shows it as it's called now: what a commit
+/// changes on other boards (the boards a deletion took or a paste brought, a write to a board that
 /// isn't shown) is resolved again, and so, on going back to a board, is every shape its mentions
 /// name on the others, which may have changed while it wasn't shown.
 @MainActor
@@ -43,15 +44,10 @@ public final class MentionState {
     @ObservationIgnored private var observersByTarget: [ShapeID: Set<Int>] = [:]
     @ObservationIgnored private var nextObservation = 0
 
-    /// Every mentionable shape on the board, ready to match.
+    /// Every mentionable shape on every board the editor can show, ready to match.
     @ObservationIgnored private var catalog = MentionCatalog()
-    /// Those a commit changed since, to read again at the next query.
+    /// Those a commit changed since, on any board, to read again at the next query.
     @ObservationIgnored private var stale: Set<ShapeID> = []
-    /// False while the catalog of a board entered for the first time isn't read yet: the next
-    /// query reads it whole, or the scheduler's next turn after the switch (`catalogTurn`), once the
-    /// board is on screen, so entering a board doesn't wait for what only the `@` picker needs.
-    @ObservationIgnored private var catalogIsRead = true
-    @ObservationIgnored private var catalogTurn: ScheduledTask?
     @ObservationIgnored private var kindDefaults: [ShapeKind: MentionKindDefaults] = [:]
 
     /// This editor's picks, the latest first; never saved.
@@ -62,7 +58,7 @@ public final class MentionState {
     @ObservationIgnored private var heardRevision: Int
     @ObservationIgnored private var lastAffected: Set<ShapeID> = []
 
-    /// The index and catalog of boards shown lately, for going back to them (`BoardStash`).
+    /// The index of boards shown lately, for going back to them (`BoardStash`).
     @ObservationIgnored private var kept = BoardStash<Kept>()
 
     #if DEBUG
@@ -76,27 +72,13 @@ public final class MentionState {
         self.editor = editor
         heardRevision = editor.revision
         index(editor.document)
+        readCatalog()
     }
 
-    /// Indexes a board as it opens: every shape's mention text, and every mentionable shape.
+    /// Indexes the board shown: every shape's mention text (who mentions whom, for the rows and the
+    /// pills).
     private func index(_ document: CanvasDocument) {
-        for record in document.shapes {
-            reindex(record.id, record)
-            readEntry(record)
-        }
-    }
-
-    /// Indexes a board entered for the first time: every shape's mention text now (who mentions
-    /// whom, for the rows and the pills), and the catalog on the scheduler's next turn, or at the
-    /// first query if that comes first.
-    private func indexEntered(_ document: CanvasDocument) {
         for record in document.shapes { reindex(record.id, record) }
-        catalogIsRead = false
-        catalogTurn?.cancel()
-        catalogTurn = editor.scheduler.schedule(after: .zero) { [weak self] in
-            self?.catalogTurn = nil
-            self?.refreshStale()
-        }
     }
 
     // MARK: Reading
@@ -192,11 +174,11 @@ public final class MentionState {
 
     // MARK: Going to and hovering
 
-    /// Goes to the target on the next turn of the scheduler (`editor.goTo`: ends editing, selects
-    /// it, brings it into view; ⌘[ comes back): a click inside the text being edited is still being
-    /// tracked by the view that going ends.
+    /// Follows a mention of the target on the next turn of the scheduler (`editor.followMention`:
+    /// ends editing, goes to it or into it; ⌘[ comes back): a click inside the text being edited is
+    /// still being tracked by the view that going ends.
     public func follow(_ target: ShapeID) {
-        _ = editor.scheduler.schedule(after: .zero) { [weak editor] in editor?.goTo([target]) }
+        _ = editor.scheduler.schedule(after: .zero) { [weak editor] in editor?.followMention(of: target) }
     }
 
     /// Hovers the target (`editor.hovered`): outlined faintly on the canvas, its row tinted. Only
@@ -223,17 +205,19 @@ public final class MentionState {
     }
 
     /// What the `@` picker lists for `query` in text of `scope`, on `owner` (the text's shape, never
-    /// listed): every mentionable shape on the board the scope admits, but those kept aside. An
-    /// empty query lists recent picks and the shapes nearest the owner; any other, one ranked list
-    /// of the best matches (`MentionMatcher`'s tiers, then `MentionRanking`'s adjustments; ties to
-    /// the shorter label, then the front-most shape).
+    /// listed): every mentionable shape the scope admits on any board of the file the editor can
+    /// show, but those kept aside. An empty query lists recent picks, then the shapes nearest the
+    /// owner on the board shown and, while there's room, the shapes whose boards it's inside, the
+    /// board shown's own first; any other, one ranked list of the best matches (`MentionMatcher`'s
+    /// tiers, then `MentionRanking`'s adjustments, nearness on the board shown among them; ties to
+    /// the shorter label, then the front-most shape, the board shown's before any other's).
     public func candidates<S: MentionScope>(matching query: String, in scope: S.Type, for owner: ShapeID?) -> MentionCandidates {
         refreshStale()
-        let document = editor.document, registry = registry
+        let document = editor.document, file = editor.file, registry = registry
         let admitsAll = S.self == AnyMentionable.self
         /// Whether the scope admits a shape in the catalog: every one, for `AnyMentionable`.
         func admits(_ id: ShapeID) -> Bool {
-            admitsAll || document[id].map { S.admits($0, in: registry) } ?? false
+            admitsAll || (document[id] ?? file.record(id)).map { S.admits($0, in: registry) } ?? false
         }
         let shapes = editor.shapeContext
         let origin = owner.flatMap { shapes.geometry(of: $0)?.bounds }.map { CGPoint(x: $0.midX, y: $0.midY) }
@@ -248,7 +232,11 @@ public final class MentionState {
                 .prefix(MentionRanking.recentShown)).map { candidate($0, matched: []) }
             var taken = Set(recentShown.map(\.id))
             if let owner { taken.insert(owner) }
-            let nearby = origin.map { nearest(to: $0, excluding: taken, admits: admits, distance: distance) } ?? []
+            var nearby = origin.map { nearest(to: $0, excluding: taken, admits: admits, distance: distance) } ?? []
+            taken.formUnion(nearby)
+            for inside in editor.boardPath.reversed().lazy.compactMap(\.owner) where nearby.count < MentionRanking.nearbyShown {
+                if !taken.contains(inside), catalog.contains(inside), admits(inside) { nearby.append(inside) }
+            }
             return MentionCandidates(recent: recentShown, nearby: nearby.map { candidate($0, matched: []) }, matches: [])
         }
 
@@ -310,12 +298,13 @@ public final class MentionState {
         return MentionCandidates(recent: [], nearby: [], matches: matches)
     }
 
-    /// The shapes in the catalog nearest `origin` the scope admits, up to `nearbyShown`, nearest
-    /// first: looked for in a square around it, grown until it holds enough, so a board of many
-    /// mentionable shapes costs what's around the text; else in the whole catalog. A square's shapes
-    /// are gathered from the whole board, so once one holds as many shapes as the catalog, reading
-    /// the catalog costs less than growing it again: a board with few mentionable shapes, or few the
-    /// scope admits, reads its catalog after at most one square that holds them all.
+    /// The shapes in the catalog on the board shown nearest `origin` the scope admits, up to
+    /// `nearbyShown`, nearest first: looked for in a square around it, grown until it holds enough,
+    /// so a board of many mentionable shapes costs what's around the text; else in the board's
+    /// entries of the catalog. A square's shapes are gathered from the whole board, so once one
+    /// holds as many shapes as the board has in the catalog, reading those costs less than growing
+    /// it again: a board with few mentionable shapes, or few the scope admits, reads its entries
+    /// after at most one square that holds them all.
     private func nearest(to origin: CGPoint, excluding taken: Set<ShapeID>, admits: (ShapeID) -> Bool,
                          distance: (ShapeID) -> Double?) -> [ShapeID] {
         let wanted = MentionRanking.nearbyShown
@@ -326,22 +315,23 @@ public final class MentionState {
             }
             return heap.sorted()
         }
-        // A catalog of no more than the shapes it could list, and those it leaves out, is read whole.
-        let searchesSquares = catalog.count > wanted + taken.count
+        // A board of no more than the shapes it could list, and those it leaves out, is read whole.
+        let board = editor.board, onBoard = catalog.count(on: board)
+        let searchesSquares = onBoard > wanted + taken.count
         var half: CGFloat = MentionStyle.nearbySearch
         for _ in 0..<MentionStyle.nearbySearchSteps where searchesSquares {
             let square = CGRect(x: origin.x - half, y: origin.y - half, width: 2 * half, height: 2 * half)
             let shapes = editor.paintOrder(in: square)
             let found = best(of: shapes.lazy.map(\.id))
             if found.count == wanted, found[wanted - 1].distance <= Double(half) { return found.map(\.id) }
-            if shapes.count >= catalog.count { break }
+            if shapes.count >= onBoard { break }
             half *= 4
         }
-        return best(of: catalog.entries.lazy.map(\.id)).map(\.id)
+        return best(of: catalog.entries.lazy.filter { $0.board == board }.map(\.id)).map(\.id)
     }
 
     private func candidate(_ id: ShapeID, matched: [Range<Int>]) -> MentionCandidate {
-        let isReadOnly = editor.document[id].map(registry.isReadOnly) ?? false
+        let isReadOnly = (editor.document[id] ?? editor.file.record(id)).map(registry.isReadOnly) ?? false
         return MentionCandidate(id: id, appearance: catalog.appearance(of: id)!, isReadOnly: isReadOnly, matched: matched)
     }
 
@@ -366,8 +356,9 @@ public final class MentionState {
         // Shapes on other boards it reached: those a deletion took with a board, or a paste
         // brought, or a write to a board that isn't shown changed.
         for id in changes.elsewhere { resolveAgain(id, into: &changedTargets) }
+        stale.formUnion(changes.elsewhere)
         lastAffected = changedTargets.reduce(into: Set<ShapeID>()) { $0.formUnion(backward[$1] ?? []) }
-        if changes.replacedDocument { refreshStale() }                  // a board opened: read now, not at the first `@`
+        if changes.replacedDocument { readCatalog() }                   // a board or file put in place: read now, not at the first `@`
         tell(changedTargets)
     }
 
@@ -447,23 +438,46 @@ public final class MentionState {
 
     // MARK: The catalog
 
-    private func refreshStale() {
-        guard catalogIsRead else {
-            for record in editor.document.shapes { readEntry(record) }
-            catalogIsRead = true
-            stale = []
-            return
+    /// Reads the catalog afresh: every mentionable shape on every board the editor can show, which
+    /// are the root and, from it down, the boards of the shapes of kinds that own boards and aren't
+    /// kept aside (`canShow`'s), each once.
+    private func readCatalog() {
+        catalog = MentionCatalog()
+        stale = []
+        let file = editor.file, owning = registry.boardOwningKinds
+        var boards: [BoardID] = [.root], met: Set<BoardID> = [.root], next = 0
+        while next < boards.count {
+            let board = boards[next]
+            next += 1
+            for record in file[board].shapes {
+                readEntry(record, on: board)
+                let owned = BoardID(owner: record.id)
+                if owning.contains(record.kind), !record.isOpaque, file.children[record.id] != nil, met.insert(owned).inserted {
+                    boards.append(owned)
+                }
+            }
         }
+    }
+
+    /// Reads again the entries commits made stale, wherever they are: out of the catalog if they're
+    /// on no board the editor can show.
+    private func refreshStale() {
         guard !stale.isEmpty else { return }
-        let document = editor.document
+        let document = editor.document, board = editor.board, file = editor.file
         for id in stale {
-            if let record = document[id] { readEntry(record) } else { catalog.remove(id) }
+            if let record = document[id] {
+                readEntry(record, on: board)
+            } else if let record = editor.shape(inFile: id), let elsewhere = file.board(containing: id) {
+                readEntry(record, on: elsewhere)
+            } else {
+                catalog.remove(id)
+            }
         }
         stale = []
     }
 
     /// A shape's catalog entry, read again: out of the catalog if it can't be mentioned.
-    private func readEntry(_ record: AnyShapeRecord) {
+    private func readEntry(_ record: AnyShapeRecord, on board: BoardID) {
         guard let appearance = appearance(of: record) else {
             catalog.remove(record.id)
             return
@@ -471,7 +485,7 @@ public final class MentionState {
         #if DEBUG
         entriesRead += 1
         #endif
-        catalog.set(record.id, appearance, recentRank: recent.firstIndex(of: record.id) ?? -1)
+        catalog.set(record.id, appearance, on: board, recentRank: recent.firstIndex(of: record.id) ?? -1)
     }
 
     /// How a shape shows where it's mentioned, with its kind's defaults found once.
@@ -495,22 +509,20 @@ extension MentionState: EditorService {
         hear(changes)
     }
 
-    /// Keeps the board left's index and catalog, as they are, for going back to it.
+    /// Keeps the board left's index, as it is, for going back to it.
     public func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor) {
         guard old != new, heardRevision == editor.revision else { return }
-        kept.keep(Kept(forward: forward, backward: backward, resolutions: resolutions, catalog: catalog, stale: stale,
-                       catalogIsRead: catalogIsRead, recent: recent),
-                  for: old, in: editor)
+        kept.keep(Kept(forward: forward, backward: backward, resolutions: resolutions), for: old, in: editor)
     }
 
-    /// Takes back the shown board's index and catalog, if it's as it was left, or indexes it as it
-    /// opens (its catalog a turn later, `indexEntered`). Only the board shown is indexed (the picker lists what's on it), but its mentions of
-    /// shapes on other boards show them live: taken back, what they name on other boards is resolved
-    /// again, since a rename there (or a deletion, or its undo) while the board wasn't shown leaves
-    /// its revision as it was, and those whose resolution changed bump their revisions and tell
-    /// their observers, and their mentioners are the rows it affects (`rowsAffected`). Recent picks
-    /// and observations stay (the picker lists only what's in the catalog; the views observing
-    /// pills of the board left go with it).
+    /// Takes back the shown board's index, if it's as it was left, or indexes it as it opens. Only
+    /// the board shown is indexed, but its mentions of shapes on other boards show them live: taken
+    /// back, what they name on other boards is resolved again, since a rename there (or a deletion,
+    /// or its undo) while the board wasn't shown leaves its revision as it was, and those whose
+    /// resolution changed bump their revisions and tell their observers, and their mentioners are
+    /// the rows it affects (`rowsAffected`). The catalog is the file's, so it stays, but for a file
+    /// put in place with the switch, whose catalog is read afresh. Recent picks and observations
+    /// stay (the views observing pills of the board left go with it).
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
         heardRevision = editor.revision
         lastAffected = []
@@ -519,10 +531,6 @@ extension MentionState: EditorService {
             forward = taken.forward
             backward = taken.backward
             resolutions = taken.resolutions
-            catalog = taken.catalog
-            stale = taken.stale
-            catalogIsRead = taken.catalogIsRead
-            catalog.markRecent(recent, previous: taken.recent)
             // A change to a target on this board would have changed its revision, so those are as
             // kept; those elsewhere may not be.
             let document = editor.document, file = editor.file
@@ -532,30 +540,31 @@ extension MentionState: EditorService {
             forward = [:]
             backward = [:]
             resolutions = [:]
-            catalog = MentionCatalog()
-            stale = []
-            indexEntered(editor.document)
+            index(editor.document)
         }
+        if change.isFileReplaced { readCatalog() }
         for target in observersByTarget.keys { track(target) }
         tell(changedTargets)
     }
 }
 
-/// A board's index and catalog, kept while another board is shown.
+/// A board's index, kept while another board is shown.
 private struct Kept {
     let forward: [ShapeID: [ShapeID]]
     let backward: [ShapeID: Set<ShapeID>]
     let resolutions: [ShapeID: MentionResolution]
-    let catalog: MentionCatalog
-    let stale: Set<ShapeID>
-    let catalogIsRead: Bool
-    /// The recent picks then, which the catalog's ranks follow.
-    let recent: [ShapeID]
 }
 
 extension CanvasEditor {
     /// Mentions' state; nil without MentionsPlugin.
     public var mentions: MentionState? { service(MentionState.self) }
+
+    /// Follows a mention of `target`, wherever it is in the file, as its kind has it
+    /// (`MentionFollowing`): into it (`goInto`: a subboard shows its board), or to it (`goTo`).
+    func followMention(of target: ShapeID) {
+        let following = file.record(target).flatMap { registry.mentionContribution(for: $0.kind) }?.following
+        if following == .opens { goInto(target) } else { goTo([target]) }
+    }
 }
 
 /// An observation of targets (`MentionState.observe`): it lasts until it's cancelled, or let go of.
