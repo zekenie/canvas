@@ -113,7 +113,7 @@ import Titles
         b.settle()
         expectEqual(b.model.requests.count, 1, "nor does redoing it")
     },
-    test("typing the JSON Schema is one step, Change JSON Schema, keystroke after keystroke") {
+    test("typing the JSON is one step, Change JSON, keystroke after keystroke") {
         let panel = try SchemaPanelWindow()
         let id = panel.show(blankCard)
         let code = try require(panel.code)
@@ -121,7 +121,7 @@ import Titles
         panel.window.type(#""a": {}"#)
         let typed = try require(panel.card(id)?.schema)
         expect(typed != SchemaCard.starter)
-        expectEqual(panel.editor.undoHistory.undoName, "Change JSON Schema")
+        expectEqual(panel.editor.undoHistory.undoName, "Change JSON")
         panel.editor.undo()
         expectEqual(panel.card(id)?.schema, SchemaCard.starter, "every keystroke, undone at once")
         panel.editor.redo()

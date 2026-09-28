@@ -26,11 +26,11 @@ public struct SchemasPlugin: CanvasPlugin {
             let place = schema.placement(size: SchemaCard.defaultSize) { SchemaCard() }
             schema.tool(label: "Schema", systemImage: "curlybraces", shortcut: "s", placing: place)
             schema.validate { shape, _ in SchemaReadings.reading(of: shape).issues }
-            schema.title(pill: false) { SchemaReadings.reading(of: $0).document.title }
+            schema.title(pill: false) { SchemaReadings.reading(of: $0).shown.title }
             schema.contentsRow { shape in
-                let document = SchemaReadings.reading(of: shape).document
-                return ContentsLabel(document.title ?? "", placeholder: "Untitled Schema", systemImage: "curlybraces",
-                                     color: Color(nsColor: SchemaStyle.accent), badge: document.fields.isEmpty ? nil : "\(document.fields.count)")
+                let shown = SchemaReadings.reading(of: shape).shown
+                return ContentsLabel(shown.title ?? "", placeholder: SchemaCard.untitled, systemImage: "curlybraces",
+                                     color: Color(nsColor: SchemaStyle.accent), badge: shown.fields.isEmpty ? nil : "\(shown.fields.count)")
             }
             schema.schemaPanel()
             schema.schemaLinks()
@@ -50,27 +50,47 @@ public struct SchemasPlugin: CanvasPlugin {
 /// card's text changes (typing replaces the card's reading, never adds one). So a frame of cards
 /// that didn't change parses and measures nothing, however many are in view, and however many
 /// texts they have between them. A reading costs what its text's length does. The readings of
-/// cards that went are dropped (`forget`, which the sync calls), and past `capacity` those used
-/// longest ago.
+/// cards that went, or were read again from disk, are dropped (`forget`, which the sync calls), and
+/// past `capacity` those used longest ago.
+///
+/// While a card's text isn't a JSON object (a keystroke in the middle of a member breaks it), what
+/// the card shows stays what its last one said (`shown`): its rows and name on the card, its row in
+/// the table of contents, its title, its panel's header. So typing doesn't make the card flicker;
+/// Validation's outline says it's broken. What acts on the text (Validation's rules, the sync, the
+/// editor's colors, a rename) reads the text itself (`document`).
 @MainActor
 final class SchemaReadings {
     /// The text read, to tell whether a card's text is still this one: the record's own string
     /// compares at once (the same storage), another with the same text once, and is kept after.
     private(set) var text: String
     let document: SchemaDocument
-    /// The layouts of the last few sizes asked (a card being resized), the latest last.
+    /// While `document` isn't a JSON object, the card's last reading that was, this session.
+    private let lastObject: SchemaDocument?
+    /// The layouts of the last few sizes asked (a card being resized), the latest last: of `shown`.
     private var layouts: [(size: CGSize, layout: SchemaCardLayout)] = []
     private(set) lazy var issues: [ValidationIssue] = SchemaReadings.issues(of: document)
     /// When it was last asked for, counted in lookups.
     private var used = 0
 
-    private init(_ text: String) {
+    private init(_ text: String, after previous: SchemaReadings?) {
         self.text = text
-        document = SchemaDocument(text)
+        let document = SchemaDocument(text)
+        self.document = document
+        if document.isObject {
+            lastObject = nil
+        } else {
+            lastObject = previous.flatMap { $0.document.isObject ? $0.document : $0.lastObject }
+            // The same reading shown: its layouts still hold.
+            if lastObject != nil, let previous { layouts = previous.layouts }
+        }
         #if DEBUG
         Self.made += 1
         #endif
     }
+
+    /// What the card shows: the text's reading while it's a JSON object, else its last one that was
+    /// (none: the text's, which says why there are no rows).
+    var shown: SchemaDocument { lastObject ?? document }
 
     private static var kept: [ShapeID: SchemaReadings] = [:]
     private static var lookups = 0
@@ -88,12 +108,13 @@ final class SchemaReadings {
     /// is still this one, else read now and kept in its place.
     static func reading(of text: String, for id: ShapeID) -> SchemaReadings {
         lookups += 1
-        if let reading = kept[id], reading.text == text {
-            reading.text = text
-            reading.used = lookups
-            return reading
+        let previous = kept[id]
+        if let previous, previous.text == text {
+            previous.text = text
+            previous.used = lookups
+            return previous
         }
-        let reading = SchemaReadings(text)
+        let reading = SchemaReadings(text, after: previous)
         reading.used = lookups
         kept[id] = reading
         if kept.count > capacity {
@@ -102,45 +123,62 @@ final class SchemaReadings {
         return reading
     }
 
-    /// Drops the reading of a card that went.
+    /// Drops the reading of a card that went, or was read again from disk, and the last one it
+    /// showed.
     static func forget(_ id: ShapeID) { kept[id] = nil }
 
-    /// What a card of `size` shows.
+    /// What a card of `size` shows: `shown`, laid out.
     func layout(size: CGSize) -> SchemaCardLayout {
         if let kept = layouts.last(where: { $0.size == size }) { return kept.layout }
-        let layout = SchemaCardLayout(document, size: size)
+        let layout = SchemaCardLayout(shown, size: size)
         if layouts.count >= 4 { layouts.removeFirst() }
         layouts.append((size, layout))
         return layout
     }
 
-    /// Validation's rules: a text that isn't JSON is an error at its line and column, as is a root
-    /// that isn't an object; `required` naming a property the object doesn't have is a warning.
+    /// Validation's rules, about the text itself: a text that isn't JSON is an error at its line
+    /// and column, as is a root that isn't an object; `required` naming a property the object
+    /// doesn't have is a warning, as is a `type` that isn't one of JSON Schema's. The panel shows
+    /// them under the JSON too, in these words.
     static func issues(of document: SchemaDocument) -> [ValidationIssue] {
         if let error = document.error {
             let reason = error.message.prefix(1).lowercased() + error.message.dropFirst()
-            return [.error("Invalid JSON at line \(error.line), column \(error.column): \(reason).", field: "schema")]
+            return [.error("Invalid JSON: \(reason) at line \(error.line), column \(error.column).", field: "schema")]
         }
         guard let root = document.root, root.isObject else {
             return [.error("A schema must be a JSON object.", field: "schema")]
         }
         var issues: [ValidationIssue] = []
         SchemaWalk.schemas(in: root) { schema, path in
-            guard issues.count < maxRequiredIssues, schema["patternProperties"] == nil,
-                  let properties = schema["properties"]?.members, let required = schema["required"]?.elements else { return }
+            guard issues.count < maxWarnings else { return }
+            for name in unknownTypes(of: schema) {
+                guard issues.count < maxWarnings else { return }
+                let place = path.isEmpty ? "" : " in \(path)"
+                issues.append(.warning("“\(name)”\(place) isn’t a JSON Schema type.", field: "schema"))
+            }
+            guard schema["patternProperties"] == nil, let properties = schema["properties"]?.members,
+                  let required = schema["required"]?.elements else { return }
             let names = Set(properties.map(\.key))
             var seen: Set<String> = []
             for name in required.compactMap(\.string) where !names.contains(name) && seen.insert(name).inserted {
-                guard issues.count < maxRequiredIssues else { return }
+                guard issues.count < maxWarnings else { return }
                 let place = path.isEmpty ? "" : " of \(path)"
-                issues.append(.warning("“\(name)” is required, but isn't a property\(place).", field: "schema"))
+                issues.append(.warning("“\(name)” is required, but isn’t a property\(place).", field: "schema"))
             }
         }
         return issues
     }
 
-    /// At most this many warnings about `required`, however many names a schema gets wrong.
-    static let maxRequiredIssues = 20
+    /// The names a schema's `type` gives that aren't JSON Schema's (`"ninteger"`), each once.
+    private static func unknownTypes(of schema: JSONNode) -> [String] {
+        guard let type = schema["type"] else { return [] }
+        let names = type.string.map { [$0] } ?? type.elements?.compactMap(\.string) ?? []
+        var seen: Set<String> = []
+        return names.filter { !SchemaFieldType.jsonTypes.contains($0) && seen.insert($0).inserted }
+    }
+
+    /// At most this many warnings, however many names a schema gets wrong.
+    static let maxWarnings = 20
 }
 
 /// Goes through every place in a schema that holds a schema, with a path a person can read

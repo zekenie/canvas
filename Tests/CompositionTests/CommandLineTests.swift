@@ -67,7 +67,7 @@ import Titles
             let id = try require(try JSON(text: result.output)["id"]?.stringValue.flatMap(UUID.init(uuidString:)))
             let card = try require(board.editor.document[ShapeID(id)]?.typed(as: SchemaCard.self)?.props)
             expectEqual(card.schema, schema)
-            expectEqual(card.frame.size, size, "six rows: 177 high, where the placed card is 89")
+            expectEqual(card.frame.size, size, "six rows: 177 high, where the placed card is 67")
         }
     },
     test("canvas boards lists the open boards; --board picks one by its id, its file or its name") {

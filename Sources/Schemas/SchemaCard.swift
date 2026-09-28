@@ -40,9 +40,11 @@ public struct SchemaCard: BoxShapeProps {
 
     public init() { self.init(frame: .zero) }
 
-    /// Sets the schema's text and, if it's JSON, the card's height to what it lists, keeping its
-    /// top-left corner and width (so the card grows and shrinks downward, in the same transaction).
-    /// A text that isn't JSON leaves the frame as it was: a typo doesn't make the card jump.
+    /// Sets the schema's text and, if it's a JSON object, the card's height to what it lists, keeping
+    /// its top-left corner and width (so the card grows and shrinks downward, in the same
+    /// transaction). A text that isn't a JSON object leaves the frame as it was: a typo doesn't make
+    /// the card jump, and the card goes on showing its last reading that was one
+    /// (`SchemaReadings.shown`), which that frame still fits.
     public mutating func setSchema(_ text: String) {
         schema = text
         if let height = SchemaCard.height(for: text) { frame.size.height = height }
@@ -56,14 +58,19 @@ public struct SchemaCard: BoxShapeProps {
         setSchema(text)
     }
 
-    /// The height a card's content sets: 45 and 22 a row (at most 7 fields, and the rules line), or
-    /// the empty card's 89 for a schema with no fields. Nil for a text that isn't JSON. Arithmetic
-    /// only: no text is measured, and the width never matters.
+    /// The height a card's content sets: 45 and 22 a row (at most 7 fields, and the rules line), at
+    /// least one row (67), where a schema with no fields says so. Nil for a text that isn't a JSON
+    /// object (not JSON, or `[1]`): it has no rows of its own to fit. Arithmetic only: no text is
+    /// measured, and the width never matters.
     public static func height(for schema: String) -> CGFloat? {
         let document = SchemaDocument(schema)
-        guard document.error == nil else { return nil }
+        guard document.error == nil, document.isObject else { return nil }
         return SchemaCardMetrics.height(rows: SchemaCardMetrics.rows(for: document))
     }
+
+    /// What an untitled card is called: on the card, in its panel's header and in its row. The
+    /// `{}` beside it says what it is.
+    public static let untitled = "Untitled"
 }
 
 extension SchemaCard {
@@ -108,23 +115,21 @@ public enum SchemaCardMetrics {
     /// A chip, and the gap under it.
     public static let rowHeight: CGFloat = 22
     public static let rowGap: CGFloat = rowHeight - chipHeight
-    /// The empty, invalid and not-an-object states' box.
-    public static let stateHeight: CGFloat = 40
     /// At most this many field rows: 8 fields or more show 6 and "+N more".
     public static let maxRows = 7
-    /// A card with no rows (a state).
-    public static let emptyHeight = height(rows: 0)
+    /// A card of one row: the least, where a card with no fields says so ("No fields").
+    public static let emptyHeight = height(rows: 1)
 
-    /// How tall a card of `rows` rows is (field rows, "+N more", the rules line); 0 is a state.
+    /// How tall a card of `rows` rows is (field rows, "+N more", the rules line), at least one.
     public static func height(rows: Int) -> CGFloat {
-        let body = rows == 0 ? stateHeight : CGFloat(rows) * rowHeight - rowGap
-        return padding + titleLineHeight + headerGap + body + padding
+        padding + titleLineHeight + headerGap + CGFloat(max(rows, 1)) * rowHeight - rowGap + padding
     }
 
     /// The rows a schema's content wants: its top-level fields, at most `maxRows`, and the rules
-    /// line if it has rules. 0 for a text that isn't a JSON object, or has no fields.
+    /// line if it has rules; one for a schema with no fields (the line that says so), or a text
+    /// that isn't a JSON object (which `SchemaCard.height(for:)` doesn't fit).
     public static func rows(for document: SchemaDocument) -> Int {
-        guard document.isObject, !document.fields.isEmpty else { return 0 }
+        guard document.isObject, !document.fields.isEmpty else { return 1 }
         return min(document.fields.count, maxRows) + (document.rules.isEmpty ? 0 : 1)
     }
 }

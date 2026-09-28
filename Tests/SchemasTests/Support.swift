@@ -28,7 +28,7 @@ import Validation
 }
 
 /// A card at `origin`, `width` wide, as tall as its schema makes it (the empty card's height for a
-/// text that isn't JSON).
+/// text that isn't a JSON object).
 func card(_ schema: String, at origin: CGPoint = CGPoint(x: 40, y: 40), width: CGFloat = 240) -> SchemaCard {
     var card = SchemaCard(frame: CGRect(origin: origin, size: CGSize(width: width, height: SchemaCard.defaultSize.height)))
     card.setSchema(schema)
@@ -50,8 +50,8 @@ extension CanvasEditor {
 
 /// What a card of `size` shows for `schema`, each row as it reads.
 @MainActor func rows(_ schema: String, size: CGSize? = nil) -> [String] {
-    let layout = SchemaCardLayout(SchemaDocument(schema), size: size ?? CGSize(width: 240, height: SchemaCard.height(for: schema) ?? 89))
-    return layout.rows.map(\.text) + (layout.more > 0 ? ["+\(layout.more) more"] : []) + (layout.rules.map { ["Rules  \($0)"] } ?? [])
+    let layout = SchemaCardLayout(SchemaDocument(schema), size: size ?? CGSize(width: 240, height: SchemaCard.height(for: schema) ?? 67))
+    return layout.rows.map(\.text) + (layout.more > 0 ? ["+\(layout.more) more"] : []) + (layout.rules.map { ["Rules \($0)"] } ?? [])
 }
 
 /// Whether any pixel in `rect` (view points) is about `color`.
@@ -63,10 +63,10 @@ extension CanvasEditor {
     }
 }
 
-/// Whether any pixel in `rect` is text-dark.
-@MainActor func hasInk(_ bitmap: NSBitmapImageRep, in rect: CGRect) -> Bool {
+/// Whether any pixel in `rect` is text-dark (every channel below `below`).
+@MainActor func hasInk(_ bitmap: NSBitmapImageRep, in rect: CGRect, below: Int = 140) -> Bool {
     stride(from: rect.minY, to: rect.maxY, by: 1).contains { y in
-        stride(from: rect.minX, to: rect.maxX, by: 1).contains { x in pixel(bitmap, at: CGPoint(x: x, y: y)).prefix(3).allSatisfy { $0 < 140 } }
+        stride(from: rect.minX, to: rect.maxX, by: 1).contains { x in pixel(bitmap, at: CGPoint(x: x, y: y)).prefix(3).allSatisfy { $0 < below } }
     }
 }
 
@@ -75,6 +75,5 @@ enum Palette {
     static let card = [255, 255, 255]
     static let chip = [241, 241, 241]
     static let accent = [102, 92, 219]
-    static let required = [230, 92, 61]
     static let bar = [204, 204, 204]
 }

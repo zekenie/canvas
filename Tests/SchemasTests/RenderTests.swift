@@ -27,8 +27,10 @@ func isAbout(_ color: [Int], within tolerance: Int = 14) -> ([Int]) -> Bool {
 func isInk(_ pixel: [Int]) -> Bool { pixel.prefix(3).allSatisfy { $0 < 120 } }
 /// Indigo, as the `{}` mark is: blue well above red and green.
 func isAccent(_ pixel: [Int]) -> Bool { pixel[2] > pixel[0] + 60 && pixel[2] > pixel[1] + 60 }
-/// The required star's red-orange: red well above blue.
-func isRequiredColor(_ pixel: [Int]) -> Bool { pixel[0] > pixel[2] + 90 && pixel[0] > 150 }
+/// Any hue at all: a channel well apart from another.
+func isColorful(_ pixel: [Int]) -> Bool { pixel.prefix(3).max()! - pixel.prefix(3).min()! > 40 }
+/// Muted text: darker than the card, lighter than ink.
+func isMuted(_ pixel: [Int]) -> Bool { pixel.prefix(3).allSatisfy { $0 < 200 && $0 >= 120 } }
 /// Validation's red outline: red, with little green or blue.
 func isRed(_ pixel: [Int]) -> Bool { pixel[0] > 180 && pixel[1] < 110 && pixel[2] < 110 }
 
@@ -69,7 +71,7 @@ private let titleBand = CGRect(x: 52, y: 52, width: 216, height: 17)
         _ = renderBitmap(editor, size: size)
         expect(SchemasPlugin.schemasRead - typed <= 1, "only the typed card's, if that: \(SchemasPlugin.schemasRead - typed)")
     },
-    test("a card: white, the {} mark in indigo and its name in ink, a gray chip per field, a red-orange star when required") {
+    test("a card: white, the {} mark in indigo and its name in ink, a gray chip per field, a gray star when required") {
         let bitmap = try render([card(fixture(6))])
         expect(isAbout(Palette.card)(pixel(bitmap, at: CGPoint(x: 150, y: 45))), "the card's body")
         expect(any(bitmap, in: CGRect(x: 52, y: 52, width: 16, height: 17), isAccent), "the {} mark")
@@ -79,21 +81,51 @@ private let titleBand = CGRect(x: 52, y: 52, width: 216, height: 17)
             expect(any(bitmap, in: rowBand(i), isInk), "row \(i)'s name")
         }
         expect(!any(bitmap, in: rowBand(6), isInk), "six rows, no seventh")
-        // id*, customer*, items* and status* are required; shippingAddress and createdAt aren't.
-        expectEqual((0..<6).map { any(bitmap, in: rowBand($0), isRequiredColor) }, [true, true, true, false, true, false])
+        expect(!any(bitmap, in: CGRect(x: 52, y: 77, width: 216, height: 128), isColorful), "no hue in the rows")
         // Below the card: canvas.
         expect(!isAbout(Palette.card, within: 3)(pixel(bitmap, at: CGPoint(x: 150, y: 40 + 177 + 8))))
+        // The star, by difference: the same card with nothing required differs only in the required
+        // field's row, and in no hue (the card's one hue is its {}).
+        let required = try render([card(#"{"properties": {"a": {}, "b": {}}, "required": ["a"]}"#)])
+        let optional = try render([card(#"{"properties": {"a": {}, "b": {}}}"#)])
+        let starred = changedPixels(optional, required, in: rowBand(0))
+        expect(starred > 0, "a star drawn")
+        expectEqual(changedPixels(optional, required, in: CGRect(x: 20, y: 20, width: 300, height: 130)), starred, "only in a's row")
+        expectEqual(changedPixels(optional, required, in: rowBand(1)), 0)
+        expect(!any(required, in: rowBand(0), isColorful), "gray")
     },
-    test("the empty card draws its dashed box; a broken one its gray box, outlined red by Validation") {
+    test("a required name cut short still ends in its star: …*") {
+        let name = "primaryAccountManagerEmailAddress"
+        let text = #"{"properties": {"\#(name)": {"type": "string"}}, "required": ["\#(name)"]}"#
+        let row = try require(SchemaCardLayout(SchemaDocument(text), size: CGSize(width: 240, height: 67)).rows.first)
+        let chip = row.chip
+        expect(row.frame.maxX - chip.maxX < 50, "the chip runs up to `string`: the name is cut short")
+        let required = try render([card(text)])
+        let optional = try render([card(#"{"properties": {"\#(name)": {"type": "string"}}}"#)])
+        // The chip's text ends 6 points in from its right; the star is the last thing in it.
+        let end = CGRect(x: 40 + chip.maxX - 6 - 8, y: rowBand(0).minY, width: 8, height: 18)
+        expect(changedPixels(optional, required, in: end) > 0, "the star, where the cut name ends")
+        expect(!any(required, in: rowBand(0), isColorful), "gray")
+    },
+    test("a card with no fields says so in one muted line, where its first row would be; one that was never a schema too, outlined red") {
         let empty = try render([card(SchemaCard.starter)])
-        let box = CGRect(x: 52, y: 77, width: 216, height: 40)
-        expect(any(empty, in: CGRect(x: 52, y: 77, width: 216, height: 2), isAbout(Palette.bar, within: 30)), "the dashed top edge")
-        expect(isAbout(Palette.card)(pixel(empty, at: CGPoint(x: 55, y: 110))), "no fill")
-        expect(any(empty, in: box, { $0.prefix(3).allSatisfy { $0 < 150 } }), "its invitation")
+        let line = CGRect(x: 58, y: 77, width: 200, height: 18)
+        expect(any(empty, in: line, isMuted), "No fields")
+        expect(!any(empty, in: line, isInk), "muted, not ink")
+        // No box around it (the old one's corners), no chip under it (where one's fill would show left of its text).
+        for point in [CGPoint(x: 53, y: 78), CGPoint(x: 53, y: 94), CGPoint(x: 266, y: 78), CGPoint(x: 266, y: 94), CGPoint(x: 150, y: 78),
+                      CGPoint(x: 55, y: 86)] {
+            expect(isAbout(Palette.card, within: 2)(pixel(empty, at: point)), "the card's white at \(point)")
+        }
+        expect(!isAbout(Palette.card, within: 3)(pixel(empty, at: CGPoint(x: 150, y: 40 + 67 + 8))), "67 tall: canvas below")
         expect(!any(empty, in: CGRect(x: 20, y: 20, width: 300, height: 140), isRed), "valid: no outline")
 
         let broken = try render([card(fixture(10))])
-        expect(isAbout(Palette.chip)(pixel(broken, at: CGPoint(x: 55, y: 110))), "a gray box")
+        expect(any(broken, in: line, isMuted), "Invalid JSON")
+        expect(!any(broken, in: line, isRed), "never red on the card")
+        for point in [CGPoint(x: 53, y: 78), CGPoint(x: 266, y: 94), CGPoint(x: 55, y: 86)] {
+            expect(isAbout(Palette.card, within: 2)(pixel(broken, at: point)), "no box: the card's white at \(point)")
+        }
         expect(any(broken, in: CGRect(x: 30, y: 30, width: 20, height: 100), isRed), "Validation's outline")
         expect(any(broken, in: CGRect(x: 70, y: 52, width: 60, height: 17), isInk), "still named: Invoice")
     },
@@ -108,6 +140,12 @@ private let titleBand = CGRect(x: 52, y: 52, width: 216, height: 17)
         // The title's bar is the secondary gray (115); text would be darker.
         expect(!any(farther, in: CGRect(x: 6, y: 6, width: 36, height: 27), { $0.prefix(3).allSatisfy { $0 < 100 } }), "no text at all")
         expect(any(farther, in: CGRect(x: 7.8, y: 7.8, width: 3, height: 2.6), isAccent), "the mark's bar")
+        // The rules line (fixture 9's sixth row, from y 56.1) is a bar too, as `+N more` is.
+        let rules = try render([card(fixture(9))], zoom: 0.3, size: CGSize(width: 120, height: 90))
+        expect(any(rules, in: CGRect(x: 17, y: 56.1, width: 40, height: 5.4), isAbout(Palette.bar, within: 20)), "the rules' bar")
+        // A card's line saying it has none isn't a field: no bar for it.
+        let empty = try render([card(SchemaCard.starter)], zoom: 0.3, size: CGSize(width: 120, height: 90))
+        expect(!any(empty, in: CGRect(x: 15.6, y: 23.2, width: 64.8, height: 5.4), { $0.prefix(3).allSatisfy { $0 < 230 } }), "a blank row")
     },
     test("a card draws what its schema says now: a write redraws it, a same-sized card of other text draws other text") {
         let editor = try schemaEditor()

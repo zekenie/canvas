@@ -10,6 +10,7 @@ import Selection
 import SwiftUI
 import TestKit
 import Titles
+import Validation
 
 /// The panel beside a canvas, in an unshown window, with real time (SwiftUI's updates and the
 /// panel's hand-back land as the main run loop runs), and a scripted model.
@@ -74,6 +75,34 @@ final class SchemaPanelWindow {
     /// The spinners showing (a busy status line's), where they are.
     var spinners: [CGRect] { hosting.descendants(NSProgressIndicator.self).filter { !$0.isHiddenOrHasHiddenAncestor }.map(frame(of:)) }
 
+    /// The status lines under the JSON Schema's box, top to bottom, as they draw (SwiftUI draws
+    /// them, so there's no view to read): each one's symbol, by its tone, where there are words
+    /// beside it.
+    func statusMarks() throws -> [StatusMark] {
+        guard let box = codeBox else { return [] }
+        let image = try snapshot()
+        let scale = CGFloat(image.pixelsWide) / hosting.bounds.width
+        var marks: [StatusMark] = []
+        var tones: [StatusMark: Int] = [:], top = 0
+        for y in Int(box.maxY * scale)..<image.pixelsHigh {
+            var row: [StatusMark: Int] = [:]
+            for x in 0..<Int(DetailStyle.idealWidth / 3 * scale) {
+                guard let color = image.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB), let tone = StatusMark(color) else { continue }
+                row[tone, default: 0] += 1
+            }
+            if !row.isEmpty {
+                if tones.isEmpty { top = y }
+                tones.merge(row, uniquingKeysWith: +)
+            } else if let tone = tones.max(by: { $0.value < $1.value })?.key {
+                // Words beside it: ink to its right, on its rows.
+                let rows = CGRect(x: 36, y: CGFloat(top) / scale, width: 150, height: CGFloat(y - top) / scale)
+                if hasInk(image, in: rows, below: 120) { marks.append(tone) }
+                tones = [:]
+            }
+        }
+        return marks
+    }
+
     /// The panel as it draws, a pixel a point.
     func snapshot() throws -> NSBitmapImageRep {
         let image = try require(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
@@ -108,30 +137,44 @@ final class SettingsCatcher: NSObject, NSApplicationDelegate {
     @objc func showSettings(_ sender: Any?) { shown += 1 }
 }
 
-let blankCard = SchemaCard(frame: CGRect(x: 40, y: 40, width: 240, height: 89))
+let blankCard = SchemaCard(frame: CGRect(x: 40, y: 40, width: 240, height: 67))
 
 @MainActor let panelTests = Suite("Schema card panel", [
-    test("a card's panel: the name in the header, the Schema tab (Description over the JSON Schema), then Arrange") {
+    test("a card's panel: the name in the header, the Schema tab (Description over the JSON), then Arrange") {
         let editor = try schemaEditor()
         let order = editor.add(card(fixture(6)))
         let layout = try require(editor.detailPanel?.layout(for: try require(editor.document[order])))
         expectEqual(layout.tabs.map(\.title), ["Schema", "Arrange"])
-        expectEqual(layout.sections(in: .of(SchemaTab.self)).map(\.section), ["Description", "JSON Schema"])
+        expectEqual(layout.sections(in: .of(SchemaTab.self)).map(\.section), ["Description", "JSON"])
         let header = try require(layout.header(as: TitleHeader.self))
-        expectEqual([header.title, header.placeholder, header.subtitle], ["Order", "Untitled Schema", "6 fields"])
-        for (text, subtitle) in [(SchemaCard.starter, "No fields"), (fixture(10), "Invalid JSON"), ("[1]", "Not an object schema"),
-                                 (#"{"properties": {"a": {}}}"#, "1 field")] {
+        expectEqual([header.title, header.placeholder, header.subtitle], ["Order", "Untitled", "6 fields"])
+        expectEqual([header.isEnabled, header.isRenamable], [true, true])
+        // How many fields it shows; nothing where it shows none (the card says so).
+        for (text, subtitle) in [(SchemaCard.starter, nil), (fixture(10), nil), ("[1]", nil), (#"{"properties": {"a": {}}}"#, "1 field")] as [(String, String?)] {
             let id = editor.add(card(text))
             let header = try require(editor.detailPanel?.layout(for: try require(editor.document[id])).header(as: TitleHeader.self))
-            expectEqual(header.subtitle, subtitle)
+            expectEqual(header.subtitle, subtitle, text)
         }
+    },
+    test("while the text isn't a JSON object, the header shows the card's last name and count at full strength, and can't rename it") {
+        let editor = try schemaEditor()
+        let id = editor.add(card(fixture(6)))
+        @MainActor func header() throws -> TitleHeader {
+            try require(editor.detailPanel?.layout(for: try require(editor.document[id])).header(as: TitleHeader.self))
+        }
+        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.setSchema(String(fixture(6).dropLast(3))) } }
+        let broken = try header()
+        expectEqual([broken.title, broken.subtitle], ["Order", "6 fields"])
+        expectEqual([broken.isEnabled, broken.isRenamable], [true, false], "not dimmed, not a field")
+        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.setSchema(fixture(6)) } }
+        expectEqual(try header().isRenamable, true)
     },
     test("the header renames the schema: only its title member changes, the rest byte for byte") {
         let panel = try SchemaPanelWindow()
         let written = "{ \"type\":\"object\",\n\t\"properties\" : { \"a\" : {} } }"
         let id = panel.show(card(written))
         let field = try require(panel.headerField)
-        expectEqual(field.placeholderString, "Untitled Schema")
+        expectEqual(field.placeholderString, "Untitled")
         panel.window.focus(field)
         panel.window.type("Pet")
         expectEqual(panel.card(id)?.schema, "{ \"title\": \"Pet\", \"type\":\"object\",\n\t\"properties\" : { \"a\" : {} } }")
@@ -139,10 +182,14 @@ let blankCard = SchemaCard(frame: CGRect(x: 40, y: 40, width: 240, height: 89))
         expectEqual(panel.card(id)?.schema, "{ \"title\": \"Pets\", \"type\":\"object\",\n\t\"properties\" : { \"a\" : {} } }")
         expectEqual(panel.editor.registry.title(of: try require(panel.editor.document[id])), "Pets")
     },
-    test("the header can't rename a schema that isn't a JSON object") {
+    test("the header can't rename a schema that isn't a JSON object: its name is text, not a field") {
         let panel = try SchemaPanelWindow()
-        _ = panel.show(card(fixture(10)))
-        expectEqual(panel.headerField?.isEnabled, false)
+        let id = panel.show(card(fixture(10)))
+        expect(panel.headerField == nil, "no field to type in")
+        expect(try hasInk(panel.snapshot(), in: CGRect(x: 40, y: 8, width: 60, height: 20)), "Invoice, in ink")
+        panel.editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.setSchema(fixture(6)) } }
+        panel.window.spin { panel.headerField != nil }
+        expectEqual(panel.headerField?.stringValue, "Order")
     },
     test("Return in the description asks for the schema at once; ⇧↩ is a new line") {
         let panel = try SchemaPanelWindow()
@@ -254,12 +301,15 @@ let blankCard = SchemaCard(frame: CGRect(x: 40, y: 40, width: 240, height: 89))
         let code = try require(panel.code)
         panel.focus(code, caret: (petSchema as NSString).range(of: "\"integer\"").location + 1)
         panel.window.type("n")
-        panel.model.queue(.noKey)
+        panel.model.queue(.overloaded)
         panel.window.press("\r", code: 36, modifiers: .command)
-        panel.window.spin { panel.buttons.count == 2 }
+        panel.window.spin { panel.buttons.count == 1 }
         let box = try require(panel.codeBox)
-        expect(panel.buttons.allSatisfy { panel.frame(of: $0).minY >= box.maxY }, "Open Settings… and Retry, under the JSON Schema")
-        expectEqual(panel.editor.schemaSync?.status(of: id), .failed(SchemaSyncFailure(writing: .prompt, "Add your Anthropic API key in Settings…", remedy: .key)))
+        expect(panel.buttons.allSatisfy { panel.frame(of: $0).minY >= box.maxY }, "Retry, under the JSON")
+        expectEqual(panel.editor.schemaSync?.status(of: id), .failed(SchemaSyncFailure(writing: .prompt, "Anthropic overloaded")))
+        // "ninteger" isn't a type (Validation's warning), then the failure: both in the warning's tone,
+        // since red is only the schema's own errors.
+        expectEqual(try panel.statusMarks(), [.orange, .orange])
     },
     test("closing the board while a box has the keyboard commits nothing after the board's gone") {
         weak var weakEditor: CanvasEditor?
@@ -297,7 +347,12 @@ let blankCard = SchemaCard(frame: CGRect(x: 40, y: 40, width: 240, height: 89))
         let lines = fixture(2).split(separator: "\n", omittingEmptySubsequences: false).count
         expectEqual(rows, lines, "a row a line, so line N of an error is the Nth on screen")
         expect(layout.usedRect(for: container).width > code.enclosingScrollView?.contentSize.width ?? 0, "a long line runs past the box, and scrolls sideways")
-        expectEqual(panel.codeBox?.height, DetailStyle.codeEditorHeight - 8, "a short schema: the least height")
+        expect(try require(panel.codeBox).height > DetailStyle.codeEditorHeight, "a dozen lines: taller than the least")
+        panel.editor.transact { $0.update(try! require(panel.editor.selection), as: SchemaCard.self) { $0.props.setSchema(#"{"type": "object"}"#) } }
+        panel.window.spin { code.string == #"{"type": "object"}"# }
+        panel.window.settle()
+        expectEqual(panel.codeBox?.height, DetailStyle.codeEditorHeight - 8, "a short schema: the least height, a text area's")
+        expectEqual(DetailStyle.codeEditorHeight, DetailStyle.textAreaHeight)
         panel.editor.transact { $0.update(try! require(panel.editor.selection), as: SchemaCard.self) { $0.props.setSchema(fixture(5)) } }
         panel.window.spin { code.string == fixture(5) }
         panel.window.settle()
@@ -316,28 +371,45 @@ let blankCard = SchemaCard(frame: CGRect(x: 40, y: 40, width: 240, height: 89))
         expect(full.height < panelScroll.frame.height, "never taller than the panel shows (\(full.height) of \(panelScroll.frame.height)), so its top and bottom can both be in view")
         expect(full.height < layout.usedRect(for: container).height, "past that it scrolls")
     },
-    test("with no key, the status says to add one, and Open Settings… asks the app for Settings") {
+    test("with no key, the status says so, and Open Settings… (its one button) asks the app for Settings; a key saved there tries again") {
         let panel = try SchemaPanelWindow()
         let id = panel.show(blankCard)
         panel.model.queue(.noKey)
         panel.focus(try require(panel.prompt))
         panel.window.type("a pet")
         panel.window.pressReturn()
-        panel.window.spin { panel.buttons.count == 2 }
-        expectEqual(panel.editor.schemaSync?.status(of: id), .failed(SchemaSyncFailure(writing: .schema, "Add your Anthropic API key in Settings…", remedy: .key)))
+        panel.window.spin { panel.buttons.count == 1 }
+        expectEqual(panel.editor.schemaSync?.status(of: id), .failed(SchemaSyncFailure(writing: .schema, "No API key", remedy: .key)))
         panel.render("no-key")
         // The responder chain ends at the app's delegate: stand in for it.
         let catcher = SettingsCatcher(), delegate = NSApplication.shared.delegate
         NSApplication.shared.delegate = catcher
         defer { NSApplication.shared.delegate = delegate }
-        let retry = panel.buttons[1]
         panel.buttons[0].performClick(nil)       // Open Settings…
         expectEqual(catcher.shown, 1)
         panel.model.queue(petSchema)
-        retry.performClick(nil)
+        NotificationCenter.default.post(name: .languageModelKeyDidChange, object: nil)       // what Settings' Save says
         panel.window.spin { panel.card(id)?.schema != SchemaCard.starter }
         expectEqual(panel.model.requests.count, 2)
         panel.window.spin { panel.buttons.isEmpty }
+    },
+    test("the description's placeholder, an example, only while the schema is an object with no fields") {
+        let panel = try SchemaPanelWindow()
+        let id = panel.show(blankCard)
+        let box = try require(panel.promptBox).insetBy(dx: 2, dy: 2)
+        expect(hasInk(try panel.snapshot(), in: box, below: 220), "e.g. a pet in my household")
+        panel.editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.setSchema(petSchema) } }
+        panel.window.spin { panel.code?.string == petSchema }
+        panel.window.settle()
+        expect(!hasInk(try panel.snapshot(), in: try require(panel.promptBox).insetBy(dx: 2, dy: 2), below: 220),
+               "fields: the description is written from them, and says nothing till then")
+        // Never an object this session: nothing syncs from the description, and an invoice isn't a pet.
+        for text in [fixture(10), "[1]"] {
+            _ = panel.show(card(text))
+            panel.window.spin { panel.code?.string == text }
+            panel.window.settle()
+            expect(!hasInk(try panel.snapshot(), in: try require(panel.promptBox).insetBy(dx: 2, dy: 2), below: 220), text)
+        }
     },
     test("the JSON Schema is colored: names alike, values by kind, punctuation plain, past text that isn't ASCII") {
         let panel = try SchemaPanelWindow()
@@ -374,28 +446,29 @@ let blankCard = SchemaCard(frame: CGRect(x: 40, y: 40, width: 240, height: 89))
         panel.window.spin { code.string == "{\"type\": " }
         expect(!(0..<(code.string as NSString).length).contains { underlined($0) }, "a text cut short is being typed: nothing to mark")
     },
-    test("under the JSON Schema: where it stops being JSON, while it isn't") {
+    test("under the JSON: what Validation finds, a line each in its tone (the words are Validation's, from one reading); nothing once it's fixed") {
         let panel = try SchemaPanelWindow()
-        _ = panel.show(card(fixture(10)))
+        let id = panel.show(card(fixture(10)))
         panel.render("invalid")
-        let image = try require(panel.hosting.bitmapImageRepForCachingDisplay(in: panel.hosting.bounds))
-        panel.hosting.cacheDisplay(in: panel.hosting.bounds, to: image)
-        let code = try require(panel.code?.enclosingScrollView)
-        let below = code.convert(code.bounds, to: panel.hosting).maxY + 4
-        expect(redPixels(image, in: panel.hosting, rows: Int(below)..<Int(below) + 30) > 10, "the error's symbol")
+        expectEqual(try panel.statusMarks(), [.red], "Invalid JSON: expected a property name at line 6, column 35.")
+        expectEqual(panel.editor.issues(id).map(\.severity), [.error])
+        let warned = #"{"properties": {"a": {"type": "ninteger"}}, "required": ["fax"]}"#
+        panel.editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.setSchema(warned) } }
+        panel.window.spin { panel.code?.string == warned }
+        panel.window.settle()
+        expectEqual(panel.editor.issues(id).map(\.message), ["“fax” is required, but isn’t a property.", "“ninteger” in a isn’t a JSON Schema type."])
+        expectEqual(try panel.statusMarks(), [.orange, .orange], "both warnings, each a line")
+        panel.editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.setSchema(fixture(6)) } }
+        panel.window.spin { (try? panel.statusMarks()) == [] }
     },
 ])
 
-/// How many pixels of `image` (drawn from `view`) are red, across `rows` (points from its top).
-@MainActor func redPixels(_ image: NSBitmapImageRep, in view: NSView, rows: Range<Int>) -> Int {
-    let scale = CGFloat(image.pixelsWide) / view.bounds.width
-    var red = 0
-    for y in Int(CGFloat(rows.lowerBound) * scale)..<min(image.pixelsHigh, Int(CGFloat(rows.upperBound) * scale)) {
-        for x in 0..<image.pixelsWide {
-            guard let pixel = image.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
-            if pixel.redComponent - max(pixel.greenComponent, pixel.blueComponent) > 0.3 { red += 1 }
-        }
-    }
-    return red
-}
+/// A status line's symbol, by its tone's color.
+enum StatusMark: Hashable {
+    case red, orange
 
+    init?(_ color: NSColor) {
+        guard color.alphaComponent > 0.5, color.redComponent > 0.7, color.blueComponent < 0.45 else { return nil }
+        if color.greenComponent < 0.45 { self = .red } else if color.greenComponent < 0.8 { self = .orange } else { return nil }
+    }
+}

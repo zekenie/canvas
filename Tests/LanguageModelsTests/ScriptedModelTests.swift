@@ -92,7 +92,8 @@ import TestKit
             expectEqual(keys.read(), testKey)
             expectEqual(settings.draft, "")
             expect(settings.hasKey)
-            expectEqual(settings.statusText, "Saved.")
+            expectEqual(settings.status, .saved)
+            expectEqual(settings.statusText, nil, "the field's prompt says it's saved")
         }
     },
     test("remove removes it") {
@@ -103,7 +104,8 @@ import TestKit
             settings.remove()
             expect(!settings.hasKey)
             expectEqual(keys.read(), nil)
-            expectEqual(settings.statusText, "Removed.")
+            expectEqual(settings.status, .removed)
+            expectEqual(settings.statusText, nil, "the field's prompt, and Remove dimmed, say it's gone")
         }
     },
     test("saving and removing a key say so to whoever waits for one; a save that fails doesn't") {
@@ -126,7 +128,10 @@ import TestKit
             defer { NotificationCenter.default.removeObserver(blockedObserver) }
             blocked.draft = testKey
             blocked.save()
-            guard case .failed = blocked.status else { return expect(false, "the save should fail") }
+            guard case let .failed(message, detail) = blocked.status else { return expect(false, "the save should fail") }
+            expectEqual(message, "Couldn’t save")
+            expectEqual(blocked.statusText, "Couldn’t save")
+            expect(detail != nil && blocked.statusHelp == detail, "the system's words, in the status's tooltip")
             expectEqual(heard.statuses.count, 2)
         }
     },
@@ -145,7 +150,7 @@ import TestKit
             model.release()
             spinRunLoop(until: { settings.status != .testing })
             expectEqual(settings.status, .works)
-            expectEqual(settings.statusText, "The key works.")
+            expectEqual(settings.statusText, "Works")
         }
     },
     test("a failed test says why") {
@@ -157,6 +162,8 @@ import TestKit
             settings.test()
             spinRunLoop(until: { settings.status != .testing })
             expectEqual(settings.status, .failed(LanguageModelError.unauthorized.message))
+            expectEqual(settings.statusText, "API key rejected")
+            expectEqual(settings.statusHelp, "API key rejected")
         }
     },
     test("test saves what's typed first, so it tests that key") {
@@ -178,4 +185,109 @@ import TestKit
             expect(model.requests.isEmpty)
         }
     },
+    test("a new key typed whose save fails: Test says so, and doesn't test the key saved before") {
+        try withTemporaryStore { keys in
+            try keys.write(testKey)
+            let model = ScriptedLanguageModel(answers: ["OK"])
+            let settings = AnthropicKeySettings(keys: keys, model: model)
+            // The key's folder, read-only: the new key can't be written beside the old one.
+            let folder = keys.url.deletingLastPathComponent()
+            try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
+            defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path) }
+            settings.draft = "sk-ant-test-new"
+            settings.test()
+            guard case .failed("Couldn’t save", _) = settings.status else { return expect(false, "\(settings.status)") }
+            settings.settleTest()
+            guard case .failed("Couldn’t save", _) = settings.status else { return expect(false, "\(settings.status)") }
+            expect(model.requests.isEmpty, "nothing sent")
+            expectEqual(keys.read(), testKey)
+            expectEqual(settings.draft, "sk-ant-test-new", "kept, to save again")
+        }
+    },
+    test("Remove waits for a test to finish") {
+        try withTemporaryStore { keys in
+            try keys.write(testKey)
+            let model = ScriptedLanguageModel(answers: ["OK"])
+            model.holdsAnswers = true
+            let settings = AnthropicKeySettings(keys: keys, model: model)
+            expect(settings.canRemove)
+            settings.test()
+            expect(!settings.canRemove)
+            settings.remove()
+            expectEqual(keys.read(), testKey, "not removed")
+            expectEqual(settings.status, .testing)
+            spinRunLoop(until: { model.waiting == 1 })
+            model.release()
+            spinRunLoop(until: { settings.status != .testing })
+            expect(settings.canRemove)
+            settings.remove()
+            expectEqual(keys.read(), nil)
+        }
+    },
+    test("typing another key clears what a test or a failure said; not a test under way") {
+        try withTemporaryStore { keys in
+            try keys.write(testKey)
+            let model = ScriptedLanguageModel(answers: ["OK"])
+            let settings = AnthropicKeySettings(keys: keys, model: model)
+            settings.test()
+            spinRunLoop(until: { settings.status != .testing })
+            expectEqual(settings.status, .works)
+            settings.draft = "s"
+            expectEqual(settings.status, .idle)
+            expectEqual(settings.statusText, nil)
+            settings.draft = ""
+            model.queue(.unauthorized)
+            settings.test()
+            spinRunLoop(until: { settings.status != .testing })
+            expectEqual(settings.status, .failed("API key rejected"))
+            settings.draft = "sk"
+            expectEqual(settings.status, .idle)
+            model.holdsAnswers = true
+            model.queue("OK")
+            settings.draft = ""
+            settings.test()
+            settings.draft = "x"
+            expectEqual(settings.status, .testing)
+            spinRunLoop(until: { model.waiting == 1 })
+            model.release()
+            spinRunLoop(until: { settings.status != .testing })
+        }
+    },
+    test("a test that finds no key (its file removed while Settings was open) says so, and so do the field and Remove") {
+        try withTemporaryStore { keys in
+            try keys.write(testKey)
+            let model = ScriptedLanguageModel()
+            let settings = AnthropicKeySettings(keys: keys, model: model)
+            expect(settings.hasKey && settings.canRemove)
+            try keys.remove()           // by hand, or by another window
+            model.queue(.noKey)         // as the app's model finds it: it reads the file at every call
+            settings.test()
+            spinRunLoop(until: { settings.status != .testing })
+            expectEqual(settings.statusText, "No API key")
+            expect(!settings.hasKey, "the field's prompt is back to sk-ant-…, not Saved")
+            expect(!settings.canRemove && !settings.canTest)
+        }
+    },
+    test("a new one reads the store as it is and says nothing (the Settings window makes one each time it opens)") {
+        try withTemporaryStore { keys in
+            let first = AnthropicKeySettings(keys: keys, model: ScriptedLanguageModel(answers: ["OK"]))
+            first.draft = testKey
+            first.test()
+            spinRunLoop(until: { first.status != .testing })
+            expectEqual(first.status, .works)
+            try keys.remove()           // by hand, or by another window
+            let again = AnthropicKeySettings(keys: keys, model: ScriptedLanguageModel())
+            expectEqual(again.status, .idle)
+            expectEqual(again.statusText, nil)
+            expectEqual(again.draft, "")
+            expect(!again.hasKey, "read from the file, as it is now")
+        }
+    },
 ])
+
+extension AnthropicKeySettings {
+    /// Turns the run loop a few times, for a test that may have started.
+    func settleTest() {
+        for _ in 0..<5 { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01)) }
+    }
+}

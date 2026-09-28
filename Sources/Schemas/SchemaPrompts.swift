@@ -80,28 +80,29 @@ public enum SchemaPrompts {
     /// last; anything else is a failure. A prompt must not be empty, loses one pair of quotes around
     /// it, and mustn't read as something other than the prompt (`isNotAPrompt`). The text is as it
     /// came back, never laid out again: its order is the model's, which keeps the person's.
+    ///
+    /// A failure says what went wrong in a fragment, as the model's errors do: a schema cut off is
+    /// too long to rewrite (`SchemaSync.tooLongMessage`: the person edits it by hand); a refusal is
+    /// Claude declining; anything else (cut off, stopped early, empty, not what was asked) is an
+    /// unusable answer, in the words of one that couldn't be read (`malformedResponse`).
     public static func parse(_ response: ModelResponse, _ direction: Direction) -> Answer {
+        let unusable = Answer.failure(LanguageModelError.malformedResponse.message)
         switch response.stopReason {
         case .endTurn: break
-        case .maxTokens:
-            return .failure(direction == .toSchema ? "Claude's schema was too long, and was cut off. Edit the JSON Schema by hand, and the description follows."
-                                                   : "Claude's answer was too long, and was cut off.")
-        case .refusal: return .failure("Claude declined to answer.")
-        default: return .failure("Claude stopped before it finished (\(response.stopReason)).")
+        case .maxTokens: return direction == .toSchema ? .failure(SchemaSync.tooLongMessage) : unusable
+        case .refusal: return .failure("Claude declined")
+        default: return unusable
         }
         let text = unwrap(response.text.trimmingCharacters(in: .whitespacesAndNewlines),
                           tag: direction == .toSchema ? "schema" : "prompt")
         if saysNoChange(text) { return .noChange }
         switch direction {
         case .toSchema:
-            guard text.hasPrefix("{"), text.hasSuffix("}"), let root = try? JSONReader.read(text), root.isObject else {
-                return .failure("Claude's answer wasn't a JSON Schema.")
-            }
+            guard text.hasPrefix("{"), text.hasSuffix("}"), let root = try? JSONReader.read(text), root.isObject else { return unusable }
             return .text(text)
         case .toPrompt:
             let prompt = unquoted(text)
-            guard !prompt.isEmpty else { return .failure("Claude's answer was empty.") }
-            guard !isNotAPrompt(prompt) else { return .failure("Claude's answer wasn't a description.") }
+            guard !prompt.isEmpty, !isNotAPrompt(prompt) else { return unusable }
             return .text(prompt)
         }
     }

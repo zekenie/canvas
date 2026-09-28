@@ -85,7 +85,7 @@ import ValidationDetails
         // A note's and a task's headers rename them: an untitled note's shows the placeholder. A
         // note placed is empty, which is a warning, so it has Issues until it's written in.
         expectEqual(panels, ["Ellipse: Arrange", "Rectangle: Arrange", "Arrow: ", "(Note): Checklist, Arrange, Issues",
-                             "New Task: Task, Checklist, Style, Arrange", "(Untitled Schema): Schema, Arrange"])
+                             "New Task: Task, Checklist, Style, Arrange", "(Untitled): Schema, Arrange"])
     },
     test("a long title's pill stays clear of the checklist chip: Adornments lays out both") {
         // A note with its checklist (the chip, on its top-right corner), its long title (the pill,

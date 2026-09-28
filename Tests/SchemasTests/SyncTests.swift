@@ -461,7 +461,7 @@ let petSchema = """
         b.model.queue(.overloaded)
         b.sync.commit(id)
         spinRunLoop(until: { b.status(id) != .updating(.schema) })
-        expectEqual(b.status(id), .failed(SchemaSyncFailure(writing: .schema, "Anthropic is overloaded. Try again in a moment.")))
+        expectEqual(b.status(id), .failed(SchemaSyncFailure(writing: .schema, "Anthropic overloaded")))
         expectEqual(b.card(id)?.prompt, "a pet in my household")
         expectEqual(b.card(id)?.schema, SchemaCard.starter)
         b.model.queue(petSchema)
@@ -471,7 +471,7 @@ let petSchema = """
         expectEqual(b.model.requests[1], b.model.requests[0])
         expectEqual(b.card(id)?.schema, petSchema)
     },
-    test("with no key saved, or one refused, the failure says to see Settings") {
+    test("with no key saved, or one refused, the failure says so, and its remedy is Settings") {
         let b = try SyncBench()
         let id = b.place()
         b.typePrompt(id, "a pet in my household")
@@ -481,7 +481,7 @@ let petSchema = """
             spinRunLoop(until: { !b.isUpdating(id) })
             expectEqual(b.status(id), .failed(SchemaSyncFailure(writing: .schema, error.message, remedy: .key)))
         }
-        expectEqual(b.status(id), .failed(SchemaSyncFailure(writing: .schema, "Anthropic didn't accept the API key. Check it in Settings…", remedy: .key)))
+        expectEqual(b.status(id), .failed(SchemaSyncFailure(writing: .schema, "API key rejected", remedy: .key)))
     },
     test("a cancelled call says nothing, changes nothing, and the edit still syncs on the next commit") {
         let b = try SyncBench()
@@ -496,26 +496,26 @@ let petSchema = """
         expectEqual(b.model.requests.count, 2)
         expectEqual(b.card(id)?.schema, petSchema)
     },
-    test("an answer that can't be used is a failure, and changes nothing: cut off (edit it by hand), not a schema (retry)") {
+    test("an answer that can't be used is a failure, and changes nothing: a schema cut off (too long to rewrite, by hand), not a schema (retry)") {
         let b = try SyncBench()
         let id = b.place()
         b.typePrompt(id, "a pet in my household")
         b.model.queue(ModelResponse(text: String(petSchema.prefix(40)), stopReason: .maxTokens))
         b.sync.commit(id)
         spinRunLoop(until: { !b.isUpdating(id) })
-        expectEqual(b.status(id), .failed(SchemaSyncFailure(writing: .schema, "Claude's schema was too long, and was cut off. Edit the JSON Schema by hand, and the description follows.",
-                                                            remedy: .editByHand)))
+        expectEqual(b.status(id), .failed(SchemaSyncFailure(writing: .schema, SchemaSync.tooLongMessage, remedy: .editByHand)))
+        expectEqual(SchemaSync.tooLongMessage, "Schema too long to rewrite")
         b.model.queue("Sure! Here's a schema for a pet.")
         b.sync.retry(id)
         spinRunLoop(until: { !b.isUpdating(id) })
-        expectEqual(b.status(id), .failed(SchemaSyncFailure(writing: .schema, "Claude's answer wasn't a JSON Schema.")))
+        expectEqual(b.status(id), .failed(SchemaSyncFailure(writing: .schema, "Unusable answer")))
         expectEqual(b.card(id)?.schema, SchemaCard.starter)
         b.typeSchema(id, petSchema)
         b.typePrompt(id, "")
         b.model.queue(ModelResponse(text: "Here's the updated prompt: a pet", stopReason: .endTurn))
         b.sync.commit(id)
         spinRunLoop(until: { !b.isUpdating(id) })
-        expectEqual(b.status(id), .failed(SchemaSyncFailure(writing: .prompt, "Claude's answer wasn't a description.")))
+        expectEqual(b.status(id), .failed(SchemaSyncFailure(writing: .prompt, "Unusable answer")))
         expectEqual(b.card(id)?.prompt, "", "never written over the person's prompt")
     },
     test("NO_CHANGE writes nothing, and the sync is done") {
@@ -596,14 +596,14 @@ let petSchema = """
         // A line of a tag alone at either end is a wrapper, whatever the tag.
         expectEqual(parse("{\"type\": \"object\"}\n</output>"), .text("{\"type\": \"object\"}"))
         expectEqual(parse("<answer>\nemail required\n</answer>", .toPrompt), .text("email required"))
-        expectEqual(parse("NO_CHANGES"), .failure("Claude's answer wasn't a JSON Schema."))
-        expectEqual(parse("NO_CHANGE_X", .toPrompt), .failure("Claude's answer wasn't a description."))
+        expectEqual(parse("NO_CHANGES"), .failure("Unusable answer"))
+        expectEqual(parse("NO_CHANGE_X", .toPrompt), .failure("Unusable answer"))
         // A prompt loses one pair of quotes around it, and isn't written if it reads as something else.
         expectEqual(parse("\"email required, phone\"", .toPrompt), .text("email required, phone"))
         expectEqual(parse("“a pet, with its weight”", .toPrompt), .text("a pet, with its weight"))
         expectEqual(parse("\"a\" and \"b\"", .toPrompt), .text("\"a\" and \"b\""))
         for answer in ["Here's the updated prompt: a pet", "Updated prompt: a pet", "Sure! a pet", "a pet (NO_CHANGE to the rest)", "a pet ```"] {
-            expectEqual(parse(answer, .toPrompt), .failure("Claude's answer wasn't a description."), answer)
+            expectEqual(parse(answer, .toPrompt), .failure("Unusable answer"), answer)
         }
         expectEqual(parse("Heretic saints: name, feast day", .toPrompt), .text("Heretic saints: name, feast day"))
         expectEqual(parse("```json\n{\"type\": \"object\"}\n```"), .text("{\"type\": \"object\"}"))
@@ -616,16 +616,18 @@ let petSchema = """
         expectEqual(parse("<prompt>\nNO_CHANGE\n</prompt>", .toPrompt), .noChange)
         expectEqual(parse("<prompt>\nemail required, phone\n</prompt>", .toPrompt), .text("email required, phone"))
         expectEqual(parse("<schema>email</schema>", .toPrompt), .text("<schema>email</schema>"))
-        expectEqual(parse("<prompt>{}</prompt>"), .failure("Claude's answer wasn't a JSON Schema."))
-        expectEqual(parse("```\n```", .toPrompt), .failure("Claude's answer was empty."))
-        expectEqual(parse("Here it is: {\"type\": \"object\"}"), .failure("Claude's answer wasn't a JSON Schema."))
-        expectEqual(parse("[{}]"), .failure("Claude's answer wasn't a JSON Schema."))
-        expectEqual(parse("{\"type\": }"), .failure("Claude's answer wasn't a JSON Schema."))
-        expectEqual(parse("{}", stop: .refusal), .failure("Claude declined to answer."))
-        expectEqual(parse("a pet", .toPrompt, stop: .maxTokens), .failure("Claude's answer was too long, and was cut off."))
-        expectEqual(parse("{}", stop: StopReason(rawValue: "pause_turn")), .failure("Claude stopped before it finished (pause_turn)."))
+        expectEqual(parse("<prompt>{}</prompt>"), .failure("Unusable answer"))
+        expectEqual(parse("```\n```", .toPrompt), .failure("Unusable answer"))
+        expectEqual(parse("Here it is: {\"type\": \"object\"}"), .failure("Unusable answer"))
+        expectEqual(parse("[{}]"), .failure("Unusable answer"))
+        expectEqual(parse("{\"type\": }"), .failure("Unusable answer"))
+        expectEqual(parse("{}", stop: .refusal), .failure("Claude declined"))
+        expectEqual(parse("a pet", .toPrompt, stop: .maxTokens), .failure("Unusable answer"), "a description cut off")
+        expectEqual(parse("{", stop: .maxTokens), .failure(SchemaSync.tooLongMessage), "a schema cut off")
+        expectEqual(parse("{}", stop: StopReason(rawValue: "pause_turn")), .failure("Unusable answer"), "no stop reason a person has to read")
+        expectEqual(LanguageModelError.malformedResponse.message, "Unusable answer", "the same words, whatever made it so")
         expectEqual(parse("  email required, phone \n", .toPrompt), .text("email required, phone"))
-        expectEqual(parse(" \n", .toPrompt), .failure("Claude's answer was empty."))
+        expectEqual(parse(" \n", .toPrompt), .failure("Unusable answer"))
     },
     test("the system prompts name the blocks the requests send and the no-change answer, and end in one line break") {
         for (system, tags) in [(SchemaPrompts.toSchemaSystem, ["<previous_prompt>", "<prompt>", "<schema>"]),

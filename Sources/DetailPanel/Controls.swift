@@ -29,12 +29,16 @@ public enum DetailStyle {
     static let pairSpacing: CGFloat = 8
     /// Between small things: a chevron and its title, footer lines, swatches.
     static let smallSpacing: CGFloat = 4
+    /// A status line's symbol or spinner: one width, so its text starts in one place whichever
+    /// it shows.
+    static let statusIconWidth: CGFloat = 16
     /// Between a number field and its stepper, and its caption.
     static let fieldSpacing: CGFloat = 2
     static let numberWidth: CGFloat = 60
     public static let textAreaHeight: CGFloat = 76
-    /// A code editor's least height: a dozen lines. It grows with its lines.
-    public static let codeEditorHeight: CGFloat = 280
+    /// A code editor's least height: a text area's, so a short text sits in a short box with what's
+    /// said about it close under it. It grows with its lines.
+    public static let codeEditorHeight: CGFloat = textAreaHeight
     /// What a code editor leaves of the panel's height when it's as tall as it gets: room for its
     /// section's title and a line under it.
     static let codeEditorMargin: CGFloat = 64
@@ -74,11 +78,11 @@ public enum DetailStyle {
     static let error = Color.red
 
     /// A code editor's colors, a role at a time (`DetailCodeSpan`): an editor's, adapting to the
-    /// appearance.
+    /// appearance. Red is only what doesn't belong, as it's only an error elsewhere.
     static func codeColor(_ role: DetailCodeSpan.Role) -> NSColor {
         switch role {
         case .name: .systemBlue
-        case .string: .systemRed
+        case .string: .systemBrown
         case .number: .systemGreen
         case .keyword: .systemPurple
         case .invalid: .systemRed

@@ -9,9 +9,11 @@ struct SchemaCardDefinition {}
 /// field (its name in a chip; inside it, its fields in braces or its values between bars; its type
 /// at the end), at most 7, then `+N more`, then the rules at the root. Nested fields show inside
 /// their parent's row, one level down (`{ address {…} · phone }`), so they never take a row. A
-/// schema with no fields, or a text that isn't one, draws a box saying so; Validation outlines
-/// the wrong ones red. Far out, rows are bars (below 35%), then the title too (below 20%). Colors
-/// are the same in both appearances, as every shape's body is.
+/// schema with no fields, or a text that isn't one (with nothing better to show: see
+/// `SchemaReadings.shown`), says so in one muted line where the first row would be ("No fields",
+/// "Invalid JSON", "Not an object"); Validation outlines the wrong ones. Far out, rows are bars
+/// (below 35%), then the title too (below 20%). Colors are the same in both appearances, as every
+/// shape's body is; the card's one hue is its accent `{}`.
 extension SchemaCardDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<SchemaCard>, in context: RenderContext) {
         let frame = shape.frame, cg = context.cg, zoom = context.zoom
@@ -26,22 +28,19 @@ extension SchemaCardDefinition: ShapeDefinition {
         guard let inner = layout.inner else { return }
         let bars = zoom < SchemaStyle.rowTextZoom
         drawTitle(layout, inner: inner, asBars: zoom < SchemaStyle.titleTextZoom, cg: cg)
-        if let box = layout.stateBox {
-            drawState(layout, box: box, bars: bars, cg: cg)
-            return
-        }
+        // A state's line isn't a field: no bar stands for it.
+        if let state = layout.stateRow, !bars { state.text.drawLine(in: state.rect) }
         for row in layout.rows {
             bars ? drawBars(row, width: inner.width, cg: cg) : drawRow(row, cg: cg)
         }
-        if let more = layout.moreRow {
+        for line in [layout.moreRow, layout.rulesRow].compactMap({ $0 }) {
             if bars {
-                bar(CGRect(x: more.row.minX, y: more.row.midY - SchemaStyle.barHeight / 2,
-                           width: CGFloat(more.text.length) * SchemaStyle.barAdvance, height: SchemaStyle.barHeight), cg: cg)
+                bar(CGRect(x: line.row.minX, y: line.row.midY - SchemaStyle.barHeight / 2,
+                           width: min(CGFloat(line.text.length) * SchemaStyle.barAdvance, line.row.width), height: SchemaStyle.barHeight), cg: cg)
             } else {
-                more.text.drawLine(in: more.rect)
+                line.text.drawLine(in: line.rect)
             }
         }
-        if let rules = layout.rulesRow, !bars { rules.text.drawLine(in: rules.rect) }
     }
 
     func indicatorPath(of shape: ShapeRecord<SchemaCard>, in context: ShapeContext) -> CGPath {
@@ -62,32 +61,13 @@ extension SchemaCardDefinition: ShapeDefinition {
             cg: cg, color: SchemaStyle.secondaryText)
     }
 
-    /// A box of two lines under the title: the empty card's (dashed, an invitation) or a broken
-    /// one's (filled and gray, as Validation's red outline already says it's wrong).
-    private func drawState(_ layout: SchemaCardLayout, box: CGRect, bars: Bool, cg: CGContext) {
-        let path = SchemaStyle.rounded(layout.state == .empty ? box.insetBy(dx: 0.5, dy: 0.5) : box, SchemaStyle.stateRadius)
-        cg.addPath(path)
-        if layout.state == .empty {
-            cg.saveGState()
-            cg.setStrokeColor(SchemaStyle.emptyStroke.cgColor)
-            cg.setLineWidth(1)
-            cg.setLineDash(phase: 0, lengths: SchemaStyle.emptyDash)
-            cg.strokePath()
-            cg.restoreGState()
-        } else {
-            cg.setFillColor(SchemaStyle.chipFill.cgColor)
-            cg.fillPath()
-        }
-        guard !bars else { return }
-        for line in layout.stateTexts { line.text.drawLine(in: line.rect) }
-    }
-
     private func drawRow(_ row: SchemaCardLayout.Row, cg: CGContext) {
         if let type = row.typeText { type.drawLine(in: row.typeRect) }
         cg.addPath(SchemaStyle.rounded(row.chip, SchemaStyle.chipRadius))
         cg.setFillColor(SchemaStyle.chipFill.cgColor)
         cg.fillPath()
         row.nameText.drawLine(in: row.nameRect)
+        if let star = row.starText { star.drawLine(in: row.starRect) }
         if let tray = row.trayText { tray.drawLine(in: row.trayRect) }
     }
 
@@ -145,12 +125,6 @@ enum SchemaStyle {
     static let typeGap: CGFloat = 8
     /// The type label's most, of the inner width.
     static let typeShare: CGFloat = 0.42
-    static let stateRadius: CGFloat = 6
-    static let stateInset: CGFloat = 10
-    /// The state box's two lines, from its top: what it is (11 points), then what to do (10).
-    static let stateTitleTop: CGFloat = 6
-    static let stateNoteTop: CGFloat = 21
-    static let emptyDash: [CGFloat] = [3, 3]
     /// Below this zoom the rows draw as bars, no text (11-point text is under 4 points on screen);
     /// below `titleTextZoom` the title does too (14 points, under 3).
     static let rowTextZoom: CGFloat = 0.35
@@ -170,9 +144,7 @@ enum SchemaStyle {
     static let secondaryText = NSColor(srgbRed: 0.45, green: 0.45, blue: 0.45, alpha: 1)  // TaskStyle.secondaryText
     static let tertiaryText = NSColor(srgbRed: 0.62, green: 0.62, blue: 0.62, alpha: 1)
     static let chipFill = NSColor(srgbRed: 0.945, green: 0.945, blue: 0.945, alpha: 1)
-    static let emptyStroke = NSColor(srgbRed: 0.80, green: 0.80, blue: 0.80, alpha: 1)
     static let bar = NSColor(srgbRed: 0.80, green: 0.80, blue: 0.80, alpha: 1)
-    static let required = NSColor(srgbRed: 0.90, green: 0.36, blue: 0.24, alpha: 1)
     /// The `{}` mark, and the row's symbol in the table of contents.
     static let accent = NSColor(srgbRed: 0.40, green: 0.36, blue: 0.86, alpha: 1)
 
@@ -183,6 +155,8 @@ enum SchemaStyle {
     static let typeFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
     static let childFont = NSFont.systemFont(ofSize: 10)
     static let noteFont = NSFont.systemFont(ofSize: 10)
+    /// What's said about the rows rather than in one: `+N more`, and why there are none.
+    static let metaFont = NSFont.systemFont(ofSize: 11)
     /// Every character of a type label is this wide: fitting one is counting.
     static let typeAdvance = NSAttributedString(string: "0", attributes: [.font: typeFont]).size().width
 
@@ -199,6 +173,21 @@ enum SchemaStyle {
             attributes[.paragraphStyle] = paragraph
         }
         return NSAttributedString(string: string, attributes: attributes)
+    }
+
+    /// `text` whole if it fits `width`, else as much of it as fits with `…` after it: cut where
+    /// it's measured, so what follows it (a required field's `*`) can follow it closely.
+    static func cut(_ text: NSAttributedString, to width: CGFloat) -> NSAttributedString {
+        guard text.length > 0, text.size().width > width else { return text }
+        let characters = Array(text.string)
+        let attributes = text.attributes(at: 0, effectiveRange: nil)
+        func kept(_ count: Int) -> NSAttributedString { NSAttributedString(string: String(characters.prefix(count)) + "…", attributes: attributes) }
+        var low = 0, high = characters.count - 1
+        while low < high {
+            let mid = (low + high + 1) / 2
+            if kept(mid).size().width <= width { low = mid } else { high = mid - 1 }
+        }
+        return kept(low)
     }
 
     /// Where one line of `text` draws from `origin`, no wider than `width`.

@@ -149,17 +149,38 @@ import TestKit
             expect(StubProtocol.received.isEmpty)
         }
     },
-    test("every error has a short message for a person, and says which may pass") {
+    test("a refused request's message is kept whole; the key is taken out of it, were the service to say it") {
+        let credit = "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."
+        try withStubbedModel(answering: .http(status: 400, body: errorBody("invalid_request_error", credit))) { model in
+            expectEqual(try outcome(of: model), .failure(.server(status: 400, message: credit)))
+        }
+        try withStubbedModel(answering: .http(status: 400, body: errorBody("invalid_request_error", "Key \(testKey) can't do that. Twice: \(testKey)"))) { model in
+            let result = try outcome(of: model)
+            expectEqual(result, .failure(.server(status: 400, message: "Key … can't do that. Twice: …")))
+            guard case let .failure(error) = result else { return expect(false, "it answered") }
+            expect(!error.message.contains(testKey) && !error.localizedDescription.contains(testKey))
+        }
+    },
+    test("every error has a short message for a person, a fragment that names what went wrong, and says which may pass") {
         let all: [LanguageModelError] = [.noKey, .unauthorized, .rateLimited, .overloaded, .server(status: 500, message: "Boom"),
                                          .server(status: 400, message: ""), .network("The Internet connection appears to be offline."),
                                          .timedOut, .malformedResponse, .cancelled]
         for error in all {
-            expect(!error.message.isEmpty && error.message.count < 120, "\(error)")
+            expect(!error.message.isEmpty && error.message.count < 40, "\(error)")
+            expect(!error.message.hasSuffix(".") && !error.message.contains("Settings") && !error.message.contains("'"), error.message)
             expectEqual(error.localizedDescription, error.message)
         }
-        expectEqual(LanguageModelError.noKey.message, "Add your Anthropic API key in Settings…")
-        expectEqual(LanguageModelError.server(status: 500, message: "Boom").message, "Anthropic answered with an error (500): Boom")
+        expectEqual(all.map(\.message), ["No API key", "API key rejected", "Rate limited", "Anthropic overloaded", "Anthropic error 500",
+                                         "Anthropic error 400", "Can’t reach Anthropic", "Timed out", "Unusable answer", "Cancelled"])
         expectEqual(all.filter(\.isTransient), [.rateLimited, .overloaded, .server(status: 500, message: "Boom"),
                                                 .network("The Internet connection appears to be offline."), .timedOut])
+    },
+    test("the service's failure says its status; a request it refused, the first sentence of why") {
+        let credit = "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."
+        expectEqual(LanguageModelError.server(status: 400, message: credit).message, "Your credit balance is too low to access the Anthropic API")
+        expectEqual(LanguageModelError.server(status: 403, message: " Not allowed. ").message, "Not allowed")
+        expectEqual(LanguageModelError.server(status: 400, message: "max_tokens: must be positive").message, "max_tokens: must be positive")
+        expectEqual(LanguageModelError.server(status: 404, message: " . ").message, "Anthropic error 404")
+        expectEqual(LanguageModelError.server(status: 502, message: "Bad gateway. Try later.").message, "Anthropic error 502")
     },
 ])

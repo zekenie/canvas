@@ -80,8 +80,9 @@ public struct ModelResponse: Equatable, Sendable {
     }
 }
 
-/// Why a model didn't answer. `message` says so in a line a person can read (a status line, an
-/// alert); none of them ever holds the key.
+/// Why a model didn't answer. `message` names it in a few words a person reads beside what can be
+/// done about it (a status line with Retry or Open Settings…, Settings' Test); none of them ever
+/// holds the key.
 public enum LanguageModelError: Error, Equatable, Sendable {
     /// No API key is saved (Settings…).
     case noKey
@@ -93,7 +94,8 @@ public enum LanguageModelError: Error, Equatable, Sendable {
     case overloaded
     /// Any other error status, with the service's own message (possibly empty).
     case server(status: Int, message: String)
-    /// The service couldn't be reached (offline, no route), with the system's description.
+    /// The service couldn't be reached (offline, no route), with the system's description, which
+    /// `message` leaves out.
     case network(String)
     /// No answer came in the time allowed (`AnthropicModel`'s, which grows with `maxTokens`).
     case timedOut
@@ -102,20 +104,33 @@ public enum LanguageModelError: Error, Equatable, Sendable {
     /// The task asking was cancelled.
     case cancelled
 
-    /// A short line for a person.
+    /// What went wrong, in a fragment with no period: the state, never what to do about it (the
+    /// button beside it says that). The service's failure is its status (a 5xx says nothing a person
+    /// can use); a request it refused (another 4xx) is its message's first sentence, which says why
+    /// (a credit balance too low), or its status when it sent none.
     public var message: String {
         switch self {
-        case .noKey: "Add your Anthropic API key in Settings…"
-        case .unauthorized: "Anthropic didn't accept the API key. Check it in Settings…"
-        case .rateLimited: "Too many requests to Anthropic just now. Try again in a moment."
-        case .overloaded: "Anthropic is overloaded. Try again in a moment."
+        case .noKey: "No API key"
+        case .unauthorized: "API key rejected"
+        case .rateLimited: "Rate limited"
+        case .overloaded: "Anthropic overloaded"
         case let .server(status, message):
-            message.isEmpty ? "Anthropic answered with an error (\(status))." : "Anthropic answered with an error (\(status)): \(message)"
-        case let .network(description): description.isEmpty ? "Couldn't reach Anthropic." : "Couldn't reach Anthropic. \(description)"
-        case .timedOut: "Anthropic took too long to answer. Try again in a moment."
-        case .malformedResponse: "Anthropic's answer couldn't be read."
-        case .cancelled: "Cancelled."
+            status < 500 ? Self.firstSentence(of: message) ?? "Anthropic error \(status)" : "Anthropic error \(status)"
+        case .network: "Can’t reach Anthropic"
+        case .timedOut: "Timed out"
+        case .malformedResponse: "Unusable answer"
+        case .cancelled: "Cancelled"
         }
+    }
+
+    /// `text` up to its first sentence's end (`. `), trimmed, without a period at its end; nil if
+    /// that leaves nothing.
+    static func firstSentence(of text: String) -> String? {
+        var sentence = text.range(of: ". ").map { String(text[..<$0.lowerBound]) } ?? text
+        sentence = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+        while sentence.hasSuffix(".") { sentence.removeLast() }
+        sentence = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+        return sentence.isEmpty ? nil : sentence
     }
 
     /// Whether the same request may well work if tried again later: too many requests, overloaded,

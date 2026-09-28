@@ -37,8 +37,8 @@ public struct SchemaSyncFailure: Equatable, Sendable {
     public enum Remedy: Equatable, Sendable {
         /// Retry: the next try may go (the service was busy, the answer was unusable).
         case retry
-        /// Open Settings…, for a key none is saved or one refused, and Retry. Saving a key in
-        /// Settings tries again by itself.
+        /// Open Settings…, for a key none is saved or one refused: saving a key there tries again
+        /// by itself, so there's no Retry.
         case key
         /// Nothing to try again: the schema is too long for the model to write whole, so the person
         /// edits it by hand (and the description follows).
@@ -70,7 +70,8 @@ public struct SchemaSyncFailure: Equatable, Sendable {
 ///   sync. Else the schema changed in meaning (not only its layout): the model edits the prompt, told
 ///   the schema at the last sync. Both changed: the schema, from the edited one. A schema too long
 ///   for the model to write whole (`SchemaPrompts.toSchemaMaxLength`) is never asked for: the
-///   status says to edit it by hand, and once the person has, the prompt follows it.
+///   status says it's too long to rewrite (no Retry), and once the person edits it by hand, the
+///   prompt follows it.
 /// - Never while the schema isn't a JSON object (the person is halfway through it), for a read-only
 ///   (locked) card, for a new card with neither fields nor a prompt, or without a model.
 /// - A card seen for the first time (on a board opened or read again, pasted, placed) is taken as in
@@ -83,7 +84,7 @@ public struct SchemaSyncFailure: Equatable, Sendable {
 ///   answer is dropped. Edits to the other side wait, and sync once it lands. A card deleted, or
 ///   read again from disk, meanwhile drops it.
 /// - A failure leaves both sides as they are and says why; Retry (or the next commit) tries again,
-///   and so does a key saved in Settings (`Notification.Name.languageModelKeyDidChange`) for a card
+///   and a key saved in Settings (`Notification.Name.languageModelKeyDidChange`) does for a card
 ///   that failed for want of one. A cancelled call says nothing. `NO_CHANGE` writes nothing. A
 ///   schema is written as the model wrote it (never laid out again: its order is the person's),
 ///   with `setSchema`, so the card's height follows.
@@ -99,8 +100,9 @@ public struct SchemaSyncFailure: Equatable, Sendable {
 public final class SchemaSync {
     /// How long after the last keystroke an edit syncs by itself.
     public static let idleDelay: Duration = .seconds(3)
-    /// What a card whose schema is too long to write whole says when its prompt changes.
-    public static let tooLongMessage = "The schema is too long for Claude to write again from the description. Edit the JSON Schema by hand, and the description follows."
+    /// What a card whose schema is too long to write whole says when its prompt changes, or when
+    /// the model's schema was cut off: no Retry (it would be again), so the person edits the JSON.
+    public nonisolated static let tooLongMessage = "Schema too long to rewrite"
 
     private struct Sides: Equatable, Sendable {
         var prompt: String
@@ -386,7 +388,9 @@ public final class SchemaSync {
 extension SchemaSync: EditorService {
     /// Cards that came, or were read again from disk, are seen for the first time; cards that went
     /// are dropped, with their call; a card whose prompt or schema the person changed waits
-    /// `idleDelay` for more; one whose sides undo or redo changed stops (`stop`).
+    /// `idleDelay` for more; one whose sides undo or redo changed stops (`stop`). A card read again
+    /// from disk shows what the file holds: its last reading that was a JSON object, from before, is
+    /// in no version of it, so it goes too (`SchemaReadings.forget`), as a deleted card's does.
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         for id in changes.removed {
             forget(id)
@@ -401,6 +405,7 @@ extension SchemaSync: EditorService {
             guard let record = editor.document[id], let now = Self.sides(of: record) else { continue }
             guard cards[id] != nil, !changes.replacedDocument else {
                 forget(id)
+                if changes.replacedDocument { SchemaReadings.forget(id) }
                 see(record)
                 continue
             }

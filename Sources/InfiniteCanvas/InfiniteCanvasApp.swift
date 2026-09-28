@@ -43,7 +43,7 @@ enum InfiniteCanvasApp {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let hasShownWelcomeBoard = "hasShownWelcomeBoard"
-    private let settings = SettingsWindow()
+    private let settings = SettingsWindow { ShippedPlugins.settings() }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -67,8 +67,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         InfiniteCanvasApp.commandServer?.stop()
     }
 
-    /// Infinite Canvas › Settings… (⌘,; `BoardMenus.showSettings`): the one Settings window, made the
-    /// first time and brought back after.
+    /// Infinite Canvas › Settings… (⌘,; `BoardMenus.showSettings`): the one Settings window, its
+    /// content made afresh each time it opens.
     @objc func showSettings(_ sender: Any?) {
         settings.show()
     }
@@ -123,28 +123,5 @@ struct ContentView: View {
                         }
                     }
             }
-    }
-}
-
-/// The Settings window: one for the app, hosting `ShippedPlugins.settings()`. Closing it only hides
-/// it, so it comes back as it was left.
-@MainActor
-final class SettingsWindow {
-    private var window: NSWindow?
-
-    func show() {
-        let window = self.window ?? make()
-        self.window = window
-        window.makeKeyAndOrderFront(nil)
-    }
-
-    private func make() -> NSWindow {
-        let window = NSWindow(contentViewController: NSHostingController(rootView: ShippedPlugins.settings()))
-        window.title = "Settings"
-        window.styleMask = [.titled, .closable]
-        window.isReleasedWhenClosed = false
-        window.center()
-        window.setFrameAutosaveName("Settings")
-        return window
     }
 }

@@ -266,22 +266,34 @@ public struct DetailHeaderLabel<Title: View>: View {
 /// `TitleHeader`): borderless, so it reads as the title until it's clicked. It writes as you type,
 /// as the panel's other text fields do; Return, like Escape anywhere in the panel, gives the
 /// keyboard back to the canvas. While it's empty it shows `placeholder`, dimmed: by default what
-/// the panel calls the shape's kind ("Note").
+/// the panel calls the shape's kind ("Note"). `isEditable: false`, for a title that can't be
+/// written just now, shows it as text in the field's place, as it reads in the field: at full
+/// strength, unlike a disabled field (dimmed, for a while something else writes it).
 public struct DetailHeaderField: View {
     @Binding var text: String
     let placeholder: String?
+    let isEditable: Bool
     @Environment(\.detailKindName) private var kindName
     @Environment(\.detailExit) private var exit
+    @Environment(\.isEnabled) private var isEnabled
 
-    public init(_ text: Binding<String>, placeholder: String? = nil) {
+    public init(_ text: Binding<String>, placeholder: String? = nil, isEditable: Bool = true) {
         _text = text
         self.placeholder = placeholder
+        self.isEditable = isEditable
     }
 
     public var body: some View {
-        TextField(placeholder ?? kindName, text: $text)
-            .textFieldStyle(.plain)
-            .onSubmit { exit() }
+        if isEditable {
+            TextField(placeholder ?? kindName, text: $text)
+                .textFieldStyle(.plain)
+                .onSubmit { exit() }
+        } else if text.isEmpty {
+            Text(placeholder ?? kindName).foregroundStyle(Color(nsColor: .placeholderTextColor))
+        } else {
+            // Dimmed as the field would be where the panel is read-only (a locked shape).
+            Text(text).foregroundStyle(Color(nsColor: isEnabled ? .labelColor : .disabledControlTextColor))
+        }
     }
 }
 

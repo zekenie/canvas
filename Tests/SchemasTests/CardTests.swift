@@ -13,35 +13,40 @@ func flat(_ count: Int, extra: String = "") -> String {
     test("each fixture's card, at its own height and 240 wide, as the spec's renders show it") {
         expectEqual(rows(fixture(1)), [])
         expectEqual(rows(fixture(2)), ["email* email", "phone* string", "description string"])
-        expectEqual(rows(fixture(3)), ["name* string", "species* dog | cat | bird | fish | +1 enum", "birthYear integer", "coatColor string",
+        expectEqual(rows(fixture(3)), ["name* string", "species* dog | cat | bird | fish | other", "birthYear integer", "coatColor string",
                                        "vaccinated boolean"])
         expectEqual(rows(fixture(4)), ["title* string", "author* string", "isbn string", "pages integer", "publishedOn date",
-                                       "genre fiction | nonfiction | +2 enum", "inPrint boolean"])
+                                       "genre fiction | nonfiction | poetry | drama", "inPrint boolean"])
         expectEqual(rows(fixture(5)), ["id* uuid", "firstName* string", "lastName* string", "email* email", "phone string", "company string",
                                        "+14 more"])
         expectEqual(rows(fixture(6)), ["id* string", "customer* { name · email }", "items* [ sku · quantity · price ]",
-                                       "shippingAddress { street · city · +2 }", "status* pending | paid | +3 enum", "createdAt date-time"])
+                                       "shippingAddress { street · city · +2 }", "status* pending | paid | shipped | +2", "createdAt date-time"])
         expectEqual(rows(fixture(7)), ["name* string", "headquarters { address {…} · phone }", "founded integer", "tags string[]"])
         expectEqual(rows(fixture(8)), ["primaryAccountManagerEmailAddress* email", "annualContractValueInUnitedStatesDollars* number",
-                                       "numberOfSeatsRequestedForNextBillingPeriod integer", "preferredInvoiceDeliveryMethodAndSchedule 4 values enum",
+                                       "numberOfSeatsRequestedForNextBillingPeriod integer", "preferredInvoiceDeliveryMethodAndSchedule enum",
                                        "hasSignedTheUpdatedDataProcessingAgreement boolean"])
-        expectEqual(rows(fixture(9)), ["total* { amount · currency } → money", "method* Card | +2 one of", "country string", "vatNumber string",
-                                       "/^x-/ string", "Rules  if/then"])
+        expectEqual(rows(fixture(9)), ["total* { amount · currency } → money", "method* Card | Bank transfer | Wallet", "country string", "vatNumber string",
+                                       "/^x-/ string", "Rules if/then"])
         expectEqual(rows(fixture(10)), [])
     },
-    test("the states: empty, invalid at its line and column, not an object; each title as the root says it") {
-        @MainActor func layout(_ text: String) -> SchemaCardLayout { SchemaCardLayout(SchemaDocument(text), size: CGSize(width: 240, height: 89)) }
+    test("the states: no fields, invalid at its line and column, not an object, each a line; each title as the root says it") {
+        @MainActor func layout(_ text: String) -> SchemaCardLayout { SchemaCardLayout(SchemaDocument(text), size: CGSize(width: 240, height: 67)) }
         expectEqual(layout(fixture(1)).state, .empty)
-        expectEqual(layout(fixture(1)).stateLines, ["Describe it in the details panel", "“A pet: name, species, birth year…”"])
-        expectEqual([layout(fixture(1)).title, layout(SchemaCard.starter).title], ["Untitled Schema", "Untitled Schema"])
+        expectEqual(layout(fixture(1)).stateLine, "No fields")
+        expectEqual([layout(fixture(1)).title, layout(SchemaCard.starter).title], ["Untitled", "Untitled"])
+        expectEqual(SchemaCard.untitled, "Untitled")
         expectEqual(layout(fixture(1)).isUntitled, true)
+        expectEqual(layout(#"{"title": "Pet", "properties": {}}"#).stateLine, "No fields", "named, or described: still no fields, and no more said")
         expectEqual(layout(fixture(10)).state, .invalid(line: 6, column: 35))
-        expectEqual(layout(fixture(10)).stateLines, ["Invalid JSON · line 6, column 35", "Fix it in the details panel"])
+        expectEqual(layout(fixture(10)).stateLine, "Invalid JSON", "where it is is the panel's to say")
         expectEqual(layout(fixture(10)).title, "Invoice")
         expectEqual(layout("[1, 2]").state, .notObject)
-        expectEqual(layout("[1, 2]").stateLines, ["Not an object schema", "Fix it in the details panel"])
+        expectEqual(layout("[1, 2]").stateLine, "Not an object")
         expectEqual(layout(fixture(6)).state, .fields)
+        expectEqual(layout(fixture(6)).stateLine, nil)
         expectEqual(layout(fixture(6)).title, "Order")
+        expectEqual(SchemaCardLayout(SchemaDocument(fixture(1)), size: CGSize(width: 240, height: 50)).stateLine, "No fields",
+                    "said, if not drawn, where there's no room for a row")
     },
     test("the overflow rule: 1 to 7 fields show all; 8 or more show 6 and how many more, never +1") {
         for count in 1...7 {
@@ -62,14 +67,16 @@ func flat(_ count: Int, extra: String = "") -> String {
         expectEqual(rows(deep), ["level39 { level38 {…} · sibling }", "sibling any"])
         expectEqual(SchemaCard.height(for: deep), 89, "two rows")
     },
-    test("heights: 45 and 22 a row, at most 7 rows and the rules line; a state is 89") {
-        expectEqual(fixtures.map { SchemaCard.height(for: $0.json) }, [89, 111, 155, 199, 199, 177, 133, 155, 177, nil])
-        expectEqual((0...9).map { SchemaCardMetrics.height(rows: $0) }, [89, 67, 89, 111, 133, 155, 177, 199, 221, 243])
+    test("heights: 45 and 22 a row, at most 7 rows and the rules line; at least a row, where no fields is said: 67") {
+        expectEqual(fixtures.map { SchemaCard.height(for: $0.json) }, [67, 111, 155, 199, 199, 177, 133, 155, 177, nil])
+        expectEqual((0...9).map { SchemaCardMetrics.height(rows: $0) }, [67, 67, 89, 111, 133, 155, 177, 199, 221, 243])
+        expectEqual(SchemaCardMetrics.emptyHeight, 67)
         expectEqual(SchemaCard.height(for: flat(7, extra: #", "allOf": []"#)), 221, "7 fields and the rules")
-        expectEqual(rows(flat(7, extra: #", "allOf": []"#)).last, "Rules  allOf")
-        expectEqual(rows(flat(8, extra: #", "if": {}, "then": {}, "not": {}"#)).suffix(2), ["+2 more", "Rules  if/then, not"])
-        expectEqual(SchemaCard.height(for: "[1]"), 89)
+        expectEqual(rows(flat(7, extra: #", "allOf": []"#)).last, "Rules allOf")
+        expectEqual(rows(flat(8, extra: #", "if": {}, "then": {}, "not": {}"#)).suffix(2), ["+2 more", "Rules if/then · not"])
+        expectEqual(SchemaCard.height(for: #"{"properties": {}, "allOf": []}"#), 67, "rules, but no fields: the line that says so")
         expectEqual(SchemaCard.height(for: "{ oops"), nil)
+        expectEqual(["[1]", "\"x\"", "null"].map(SchemaCard.height(for:)), [nil, nil, nil], "JSON, but no object: no rows of its own to fit")
     },
     test("a frame the content didn't size shows what fits, by the same rule; a tiny one draws nothing inside") {
         expectEqual(rows(fixture(5), size: CGSize(width: 240, height: 130)), ["id* uuid", "firstName* string", "+18 more"])
@@ -84,27 +91,48 @@ func flat(_ count: Int, extra: String = "") -> String {
     },
     test("widths: trays give way to counts, then to the type; names end in … inside their chips") {
         expectEqual(rows(fixture(6), size: CGSize(width: 180, height: 177)), [
-            "id* string", "customer* { name · email }", "items* [ sku · quantity · +1 ]", "shippingAddress { 4 fields }",
-            "status* pending | +4 enum", "createdAt date-time",
+            "id* string", "customer* { name · email }", "items* [ sku · quantity · +1 ]", "shippingAddress object",
+            "status* pending | paid | +3", "createdAt date-time",
         ])
         expectEqual(rows(fixture(6), size: CGSize(width: 360, height: 177)), [
             "id* string", "customer* { name · email }", "items* [ sku · quantity · price ]",
-            "shippingAddress { street · city · postalCode · country }", "status* pending | paid | shipped | delivered | cancelled enum",
+            "shippingAddress { street · city · postalCode · country }", "status* pending | paid | shipped | delivered | cancelled",
             "createdAt date-time",
         ])
-        // Too narrow for a tray: an object says so at the end instead (in the columns it has).
-        expectEqual(rows(fixture(6), size: CGSize(width: 120, height: 177))[1...2], ["customer* object", "items* objec…"])
+        // Too narrow for a tray: an object says so at the end instead, in a word if need be (in the columns it has).
+        expectEqual(rows(fixture(6), size: CGSize(width: 120, height: 177))[1...2], ["customer* object", "items* array"])
+        expectEqual(rows(fixture(6), size: CGSize(width: 120, height: 177))[4], "status* enum", "values with no room: the label's back")
         let long = SchemaCardLayout(SchemaDocument(fixture(8)), size: CGSize(width: 240, height: 155)).rows
         expect(long.allSatisfy { $0.chip.maxX <= $0.frame.maxX }, "every chip in its row")
-        expect(long[3].frame.maxX - long[3].chip.maxX >= 6 + 56, "the name leaves the tray its least")
+        // A tray that could say only how many values: none, and the name has the room up to the label.
+        expectEqual([long[3].tray, long[3].type], [nil, "enum"])
+        expect((31...34).contains(long[3].frame.maxX - long[3].chip.maxX), "up to the label, `enum` and its gap: \(long[3].frame.maxX - long[3].chip.maxX)")
+        // A tray that shows what's in it keeps its least, though the name is cut.
+        let named = SchemaCardLayout(SchemaDocument(#"{"properties": {"aVeryLongFieldNameThatNeedsCuttingShort": {"properties": {"a": {}, "b": {}}}}}"#),
+                                     size: CGSize(width: 240, height: 67)).rows[0]
+        expectEqual(named.tray, "{ a · b }")
+        expect(named.frame.maxX - named.chip.maxX >= 6 + 56, "the name leaves the tray its least")
+        expectEqual(named.chip.width, 216 - 6 - 56, "cut")
     },
-    test("type labels are cut to their columns, by characters") {
-        let text = #"{ "properties": { "when": { "type": "string", "format": "a-very-long-format-name" } } }"#
-        let cut = try require(rows(text).first)
-        expect(cut.hasPrefix("when a-very-long-f") && cut.hasSuffix("…") && cut.count <= "when ".count + 15, cut)
-        expectEqual(rows(text, size: CGSize(width: 480, height: 67)), ["when a-very-long-format-name"])
+    test("type labels too long for their columns say the type in a word; only a word too long is cut, by characters") {
+        let format = #"{ "properties": { "when": { "type": "string", "format": "a-very-long-format-name" } } }"#
+        expectEqual(rows(format), ["when string"])
+        expectEqual(rows(format, size: CGSize(width: 480, height: 67)), ["when a-very-long-format-name"])
+        let ref = ##"{ "properties": { "when": { "$ref": "#/$defs/aVeryLongDefinitionName" } } }"##
+        let cut = try require(rows(ref).first)
+        expect(cut.hasPrefix("when → aVeryLongDe") && cut.hasSuffix("…") && cut.count <= "when ".count + 15, cut)
+        expectEqual(rows(ref, size: CGSize(width: 480, height: 67)), ["when → aVeryLongDefinitionName"])
     },
-    test("setSchema fits the height to the content in the same write, keeping the corner and width; not for a typo") {
+    test("a choice's options say what it is: no label, but JSON Schema's word where there's no room for them") {
+        let choice = #"{ "properties": { "pay": { "anyOf": [{ "title": "Card" }, { "title": "Cash" }] }, "p": { "allOf": [{ "title": "A" }] } } }"#
+        expectEqual(rows(choice), ["pay Card | Cash", "p A"])
+        expectEqual(rows(choice, size: CGSize(width: 100, height: 89)), ["pay anyOf", "p allOf"])
+    },
+    test("a type that isn't one reads as written, not as any; true, {} and no type are any") {
+        let text = #"{ "properties": { "birthYear": { "type": "ninteger" }, "a": true, "b": {}, "c": { "description": "x" }, "d": { "type": ["string", "nul"] } } }"#
+        expectEqual(rows(text), ["birthYear ninteger", "a any", "b any", "c any", "d string|nul"])
+    },
+    test("setSchema fits the height to the content in the same write, keeping the corner and width; not for a typo, nor JSON that isn't an object") {
         var card = SchemaCard(frame: CGRect(x: 10, y: 20, width: 300, height: 400))
         card.setSchema(fixture(6))
         expectEqual(card.frame, CGRect(x: 10, y: 20, width: 300, height: 177))
@@ -113,14 +141,16 @@ func flat(_ count: Int, extra: String = "") -> String {
         expectEqual(card.frame.height, 177, "a text that isn't JSON leaves the frame")
         expectEqual(card.schema, fixture(10))
         card.setSchema("[]")
-        expectEqual(card.frame.height, 89)
+        expectEqual(card.frame.height, 177, "nor does JSON that isn't an object: the card shows its last reading that was one")
+        card.setSchema(SchemaCard.starter)
+        expectEqual(card.frame.height, 67)
         card.prompt = "a pet"
-        expectEqual(card.frame.height, 89)
+        expectEqual(card.frame.height, 67)
     },
-    test("a new card: the starter schema, 240 × 89, the empty card's height") {
-        expectEqual(SchemaCard.defaultSize, CGSize(width: 240, height: 89))
+    test("a new card: the starter schema, 240 × 67, the empty card's height") {
+        expectEqual(SchemaCard.defaultSize, CGSize(width: 240, height: 67))
         expectEqual(SchemaCard().schema, SchemaCard.starter)
-        expectEqual(SchemaCard.height(for: SchemaCard.starter), 89)
+        expectEqual(SchemaCard.height(for: SchemaCard.starter), 67)
         expectEqual(SchemaCard().prompt, "")
     },
     test("setTitle renames the schema, changing nothing else in its text") {

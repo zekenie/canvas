@@ -10,25 +10,38 @@ extension Notification.Name {
     public static let languageModelKeyDidChange = Notification.Name("LanguageModels.keyDidChange")
 }
 
-/// What the Settings window's Anthropic section does, apart from its view (so tests drive it
+/// What the Settings window's Anthropic key does, apart from its view (so tests drive it
 /// headlessly): save the key typed, remove the saved one, and test it with a tiny real call. Saving
-/// and removing post `languageModelKeyDidChange`.
+/// and removing post `languageModelKeyDidChange`. Its status speaks only of a test and of what
+/// failed: the field's prompt says whether a key is saved.
 @MainActor
 @Observable
 public final class AnthropicKeySettings {
     public enum Status: Equatable, Sendable {
         case idle
+        /// Saved, or removed: said by the field (its prompt) and Remove (enabled or not), not by the
+        /// status, which has nothing to say (`statusText` is nil).
         case saved
         case removed
         case testing
         /// The test call was answered.
         case works
-        /// Saving, removing or the test call failed, and why.
-        case failed(String)
+        /// Saving, removing or the test call failed: what went wrong, in a fragment, and the
+        /// system's own words for it, if any, for the status's tooltip.
+        case failed(String, detail: String? = nil)
     }
 
     /// What's typed in the field; cleared once saved. Never shown: the field is a secure one.
-    public var draft = ""
+    /// Typing another clears what a test or a failure said: that was about the key before.
+    public var draft = "" {
+        didSet {
+            guard draft != oldValue else { return }
+            switch status {
+            case .works, .failed: status = .idle
+            case .idle, .saved, .removed, .testing: break
+            }
+        }
+    }
     /// Whether a key is saved.
     public private(set) var hasKey: Bool
     public private(set) var status: Status = .idle
@@ -50,6 +63,9 @@ public final class AnthropicKeySettings {
 
     public var canSave: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     public var canTest: Bool { (hasKey || canSave) && status != .testing }
+    /// Not while a test runs: a key removed then can't be had back (Anthropic shows one only when
+    /// it's made).
+    public var canRemove: Bool { hasKey && status != .testing }
 
     /// Saves what's typed (trimmed) in place of the saved key, and clears the field.
     public func save() {
@@ -60,28 +76,34 @@ public final class AnthropicKeySettings {
             draft = ""
             status = .saved
         } catch {
-            status = .failed("Couldn't save the key: \(error.localizedDescription)")
+            status = .failed("Couldn’t save", detail: error.localizedDescription)
         }
         hasKey = keys.hasKey
         if status == .saved { NotificationCenter.default.post(name: .languageModelKeyDidChange, object: self) }
     }
 
-    /// Removes the saved key.
+    /// Removes the saved key; nothing while a test runs (`canRemove`).
     public func remove() {
-        cancelTest()
+        guard canRemove else { return }
         do {
             try keys.remove()
             status = .removed
         } catch {
-            status = .failed("Couldn't remove the key: \(error.localizedDescription)")
+            status = .failed("Couldn’t remove", detail: error.localizedDescription)
         }
         hasKey = keys.hasKey
         if status == .removed { NotificationCenter.default.post(name: .languageModelKeyDidChange, object: self) }
     }
 
-    /// Saves what's typed, if anything, then asks the model something tiny with the saved key.
+    /// Saves what's typed, if anything, then asks the model something tiny with the saved key. A
+    /// save that fails stops it there: the failure stays, and the key saved before isn't tested in
+    /// its place. Whether a key is saved is read again with the outcome: a test that finds none
+    /// (its file removed while Settings was open) leaves the field and Remove saying so too.
     public func test() {
-        if canSave { save() }
+        if canSave {
+            save()
+            guard status == .saved else { return }
+        }
         guard hasKey, status != .testing else { return }
         status = .testing
         let model = model
@@ -95,6 +117,7 @@ public final class AnthropicKeySettings {
             }
             guard !Task.isCancelled else { return }
             status = outcome
+            hasKey = keys.hasKey
             testing = nil
         }
     }
@@ -105,16 +128,22 @@ public final class AnthropicKeySettings {
         if status == .testing { status = .idle }
     }
 
-    /// The status, as the line under the field says it; nil when there's nothing to say.
+    /// The status, as the line beside Test says it; nil when there's nothing to say (idle, and
+    /// after a save or a removal, which the field says).
     public var statusText: String? {
         switch status {
-        case .idle: nil
-        case .saved: "Saved."
-        case .removed: "Removed."
+        case .idle, .saved, .removed: nil
         case .testing: "Testing…"
-        case .works: "The key works."
-        case let .failed(message): message
+        case .works: "Works"
+        case let .failed(message, _): message
         }
+    }
+
+    /// The status's tooltip: the system's words for a failure to save or remove, else its text
+    /// (which one line may cut short).
+    public var statusHelp: String? {
+        guard case let .failed(message, detail) = status else { return statusText }
+        return detail ?? message
     }
 }
 
@@ -126,12 +155,15 @@ enum SettingsStyle {
     static let buttonSpacing: CGFloat = 8
     /// The least room between the buttons and the status.
     static let statusGap: CGFloat = 12
-    /// Between the footer's lines, and the status's spinner and text.
+    /// Between the status's symbol (or spinner) and its text.
     static let smallSpacing: CGFloat = 6
+    /// The status's symbol or spinner: one width, so its text starts in one place.
+    static let statusIconWidth: CGFloat = 16
 }
 
-/// The Settings window's content: the Anthropic API key (a secure field, Save, Remove, Test),
-/// where to make one, and where it's kept. The app hosts it (Infinite Canvas › Settings…, ⌘,).
+/// The Settings window's content: the Anthropic API key (a secure field, Save, Remove, Test), and
+/// where to get one. Where it's kept is the field's tooltip. The app hosts it (Infinite Canvas ›
+/// Settings…, ⌘,), afresh each time the window opens.
 public struct AnthropicSettingsView: View {
     @State private var settings: AnthropicKeySettings
 
@@ -155,34 +187,32 @@ public struct AnthropicSettingsView: View {
         NSApplication.shared.sendAction(showSettingsAction, to: nil, from: nil)
     }
 
+    /// The field's tooltip: where the key is kept (the path, never anything read from the file).
+    static func storageHelp(_ keys: AnthropicKeyStore) -> String {
+        "Saved in \((keys.url.path as NSString).abbreviatingWithTildeInPath)"
+    }
+
     public var body: some View {
         @Bindable var settings = settings
         Form {
             Section {
-                SecureField("API key", text: $settings.draft,
-                            prompt: Text(settings.hasKey ? "Saved (paste another to replace it)" : "sk-ant-…"))
+                SecureField("Anthropic API key", text: $settings.draft, prompt: Text(settings.hasKey ? "Saved" : "sk-ant-…"))
                     .onSubmit { settings.save() }
+                    .help(Self.storageHelp(settings.keys))
                 HStack(spacing: SettingsStyle.buttonSpacing) {
                     Button("Save") { settings.save() }
                         .disabled(!settings.canSave)
                     Button("Remove") { settings.remove() }
-                        .disabled(!settings.hasKey)
+                        .disabled(!settings.canRemove)
                     Spacer(minLength: SettingsStyle.statusGap)
                     statusLine
                     Button("Test") { settings.test() }
                         .disabled(!settings.canTest)
-                        .help("Send Claude a tiny request with the saved key")
+                        .help("Send a test request")
                 }
-            } header: {
-                Text("Anthropic API key")
             } footer: {
-                VStack(alignment: .leading, spacing: SettingsStyle.smallSpacing) {
-                    Text("The app sends this key, with what it asks Claude, only to api.anthropic.com. It's saved in \((settings.keys.url.path as NSString).abbreviatingWithTildeInPath), which only you can read.")
-                        .foregroundStyle(.secondary)
-                    Link("Create a key at console.anthropic.com", destination: Self.consoleURL)
-                }
-                .font(.caption)
-                .fixedSize(horizontal: false, vertical: true)
+                Link("Get a key", destination: Self.consoleURL)
+                    .font(.caption)
             }
         }
         .formStyle(.grouped)
@@ -190,24 +220,28 @@ public struct AnthropicSettingsView: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
+    /// A test's progress or outcome, or a failure: its symbol (only the symbol takes the tone, as
+    /// the detail panel's status lines do), then its text, on one line.
     @ViewBuilder private var statusLine: some View {
         if let text = settings.statusText {
             HStack(spacing: SettingsStyle.smallSpacing) {
-                if settings.status == .testing { ProgressView().controlSize(.small) }
+                Group {
+                    switch settings.status {
+                    case .testing: ProgressView().controlSize(.small)
+                    case .works: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    // The warning's tone, as the detail panel shows the same failures: red is kept
+                    // for what's wrong in what someone made (a schema's errors).
+                    default: Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    }
+                }
+                .frame(width: SettingsStyle.statusIconWidth)
                 Text(text)
-                    .lineLimit(2)
+                    .lineLimit(1)
                     .truncationMode(.tail)
-                    .foregroundStyle(statusColor)
+                    .foregroundStyle(.secondary)
             }
             .font(.callout)
-        }
-    }
-
-    private var statusColor: Color {
-        switch settings.status {
-        case .works: .green
-        case .failed: .red
-        default: .secondary
+            .help(settings.statusHelp ?? text)
         }
     }
 }

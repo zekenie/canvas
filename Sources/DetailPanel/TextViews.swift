@@ -102,8 +102,9 @@ extension View {
 }
 
 /// A status line of a section's own, laid out as the panel's footer and tab lines are (its tone's
-/// symbol, then its text), with a spinner in place of the symbol while `isBusy`, and buttons under
-/// the text for what can be done about it ("Retry").
+/// symbol, then its text), with a spinner in place of the symbol while `isBusy` (as wide, so the
+/// text doesn't move when one takes the other's place), and buttons under the text for what can be
+/// done about it ("Retry").
 public struct DetailStatusLine: View {
     let status: DetailStatus
     let isBusy: Bool
@@ -133,11 +134,14 @@ public struct DetailStatusLine: View {
                 }
             }
         } icon: {
-            if isBusy {
-                ProgressView().controlSize(.mini)
-            } else {
-                Image(systemName: status.tone.symbol).foregroundStyle(status.tone.color)
+            Group {
+                if isBusy {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(systemName: status.tone.symbol).foregroundStyle(status.tone.color)
+                }
             }
+            .frame(width: DetailStyle.statusIconWidth)
         }
     }
 }

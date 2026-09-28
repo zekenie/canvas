@@ -41,7 +41,7 @@ public struct AnthropicModel: LanguageModel {
         }
         if Task.isCancelled { throw .cancelled }
         guard let http = response as? HTTPURLResponse else { throw .malformedResponse }
-        guard (200..<300).contains(http.statusCode) else { throw Self.error(status: http.statusCode, body: data) }
+        guard (200..<300).contains(http.statusCode) else { throw Self.error(status: http.statusCode, body: data, key: key) }
         return try Self.decode(data)
     }
 
@@ -131,16 +131,23 @@ public struct AnthropicModel: LanguageModel {
                              inputTokens: reply.usage?.inputTokens ?? 0, outputTokens: reply.usage?.outputTokens ?? 0)
     }
 
-    /// An error status as a `LanguageModelError`, with the service's message where it says one.
-    static func error(status: Int, body: Data) -> LanguageModelError {
+    /// An error status as a `LanguageModelError`, with the service's message where it says one:
+    /// shown to a person (`LanguageModelError.message`), so the key, were the service ever to say
+    /// it, is taken out first.
+    static func error(status: Int, body: Data, key: String) -> LanguageModelError {
         let detail = (try? decoder.decode(ErrorReply.self, from: body))?.error
         if detail?.type == "overloaded_error" { return .overloaded }
         switch status {
         case 401: return .unauthorized
         case 429: return .rateLimited
         case 529: return .overloaded
-        default: return .server(status: status, message: detail?.message ?? "")
+        default: return .server(status: status, message: scrubbed(detail?.message ?? "", key: key))
         }
+    }
+
+    /// `text` with every occurrence of `key` replaced by `…`.
+    static func scrubbed(_ text: String, key: String) -> String {
+        key.isEmpty ? text : text.replacingOccurrences(of: key, with: "…")
     }
 
     static func transportError(_ error: any Error) -> LanguageModelError {

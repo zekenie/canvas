@@ -4,8 +4,9 @@ import Foundation
 import LanguageModels
 import SwiftUI
 import Titles
+import Validation
 
-/// The card's own tab: what it holds, in words and as JSON Schema.
+/// The card's own tab: what it holds, in words and as JSON.
 public enum SchemaTab {}
 extension SchemaTab: DetailTab {
     public static var title: String { "Schema" }
@@ -13,13 +14,13 @@ extension SchemaTab: DetailTab {
 
 extension ShapeRegistrar where Definition == SchemaCardDefinition {
     /// The card's panel, its only editor: the header, where it's renamed (its `"title"`), and the
-    /// Schema tab: the description (the prompt) over the JSON Schema, each rewritten from the other
-    /// by `SchemaSync`, whose status shows under the side the person edited. Arrange comes from the
+    /// Schema tab: the description (the prompt) over the JSON, each rewritten from the other by
+    /// `SchemaSync`, whose status shows under the side the person edited. Arrange comes from the
     /// panel itself.
     mutating func schemaPanel() {
         details(header: { $card in schemaHeader($card) }) {
             DetailSection("Description", in: SchemaTab.self) { $card in SchemaDescription(card: $card) }
-            DetailSection("JSON Schema", in: SchemaTab.self) { $card in SchemaCode(card: $card) }
+            DetailSection("JSON", in: SchemaTab.self) { $card in SchemaCode(card: $card) }
         }
     }
 }
@@ -27,47 +28,41 @@ extension ShapeRegistrar where Definition == SchemaCardDefinition {
 /// What the panel says about schema cards.
 @MainActor
 enum SchemaPanelText {
-    static let untitled = "Untitled Schema"
-    static let promptPlaceholder = "Describe what it holds: “a pet in my household”, or “email required, phone required, notes”"
+    /// Only while the schema is an object with no fields: once it has fields, the description is
+    /// written from them; while it isn't an object (never one this session), nothing syncs, and
+    /// whatever it holds isn't a pet.
+    static let promptPlaceholder = "e.g. a pet in my household"
     static let updatingSchema = "Updating schema…"
     static let updatingPrompt = "Updating description…"
     static let openSettings = "Open Settings…"
     static let retry = "Retry"
 
-    /// Under the name: how many fields, or why there are none to count.
-    static func subtitle(_ document: SchemaDocument) -> String {
-        if document.error != nil { return "Invalid JSON" }
-        guard document.isObject else { return "Not an object schema" }
-        switch document.fields.count {
-        case 0: return "No fields"
-        case 1: return "1 field"
-        case let count: return "\(count) fields"
+    /// Under the name: how many fields the card shows; nothing when it shows none (the card says
+    /// so).
+    static func subtitle(_ shown: SchemaDocument) -> String? {
+        switch shown.fields.count {
+        case 0: nil
+        case 1: "1 field"
+        case let count: "\(count) fields"
         }
-    }
-
-    /// Under the JSON Schema while it isn't one; nil while it is.
-    static func problem(_ document: SchemaDocument) -> String? {
-        if let error = document.error {
-            return "Line \(error.line), column \(error.column): \(error.message.prefix(1).lowercased() + error.message.dropFirst())."
-        }
-        return document.isObject ? nil : "A schema must be a JSON object."
     }
 }
 
-/// The name, which is the schema's `"title"`: renamed in place, which rewrites that member alone
-/// (`setTitle`). It can't be while the text isn't a JSON object, nor while the model writes it.
+/// The name, which is the schema's `"title"`, as the card shows it: renamed in place, which
+/// rewrites that member alone (`setTitle`). Not while the text isn't a JSON object (the name shows,
+/// as the card's last reading has it, but takes no typing), nor while the model writes it (dimmed).
 /// Renaming is a write to the schema, so a name typed is one undo step ("Change Schema").
 @MainActor
 func schemaHeader(_ card: ShapeBinding<SchemaCard>) -> TitleHeader {
     let id = card.shape.id
-    let document = SchemaReadings.reading(of: card.wrappedValue.schema, for: id).document
+    let reading = SchemaReadings.reading(of: card.wrappedValue.schema, for: id)
     let isUpdating = card.service(SchemaSync.self)?.status(of: id) == .updating(.schema)
     // Read from the text the last rename made, so a field typed ahead of the panel keeps it.
     let schema = card.schema
-    return TitleHeader(Binding(get: { SchemaReadings.reading(of: schema.wrappedValue, for: id).document.title ?? "" },
+    return TitleHeader(Binding(get: { SchemaReadings.reading(of: schema.wrappedValue, for: id).shown.title ?? "" },
                                set: { name in card.update(\.schema) { $0.setTitle(name) } }),
-                       placeholder: SchemaPanelText.untitled, subtitle: SchemaPanelText.subtitle(document),
-                       isEnabled: document.isObject && !isUpdating)
+                       placeholder: SchemaCard.untitled, subtitle: SchemaPanelText.subtitle(reading.shown),
+                       isEnabled: !isUpdating, isRenamable: reading.document.isObject)
 }
 
 // The sections' commits hold the sync weakly: a text view that loses the keyboard as its window
@@ -82,16 +77,19 @@ struct SchemaDescription: View {
     var body: some View {
         let sync = $card.service(SchemaSync.self), id = $card.shape.id
         let status = sync?.status(of: id) ?? .idle
-        DetailTextArea($card.prompt, placeholder: SchemaPanelText.promptPlaceholder, onCommit: { [weak sync] in sync?.commit(id) })
+        let shown = SchemaReadings.reading(of: card.schema, for: id).shown
+        DetailTextArea($card.prompt, placeholder: shown.isObject && shown.fields.isEmpty ? SchemaPanelText.promptPlaceholder : nil,
+                       onCommit: { [weak sync] in sync?.commit(id) })
             .detailUpdating(status == .updating(.prompt))
         SchemaSyncLine(status: status, under: .prompt, sync: sync, id: id)
     }
 }
 
-/// The JSON Schema as text, what's wrong with it while it isn't one, and the sync's status when
-/// it's about the schema (the description being written from it, or why it couldn't be). What's
-/// typed in it, keystroke after keystroke, is one undo step ("Change JSON Schema"), as the
-/// description's is ("Change Description").
+/// The JSON Schema as text; under it, what Validation finds wrong with it (in its words, each in
+/// its tone), and the sync's status when it's about the schema (the description being written
+/// from it, or why it couldn't be). What's typed in it,
+/// keystroke after keystroke, is one undo step ("Change JSON"), as the description's is
+/// ("Change Description").
 struct SchemaCode: View {
     @ShapeBinding var card: SchemaCard
 
@@ -102,8 +100,9 @@ struct SchemaCode: View {
         DetailCodeEditor(Binding(get: { schema.wrappedValue }, set: { text in $card.update(\.schema) { $0.setSchema(text) } }),
                          coloring: { text in SchemaCodeColors.spans(in: text, for: id) }, onCommit: { [weak sync] in sync?.commit(id) })
             .detailUpdating(status == .updating(.schema))
-        if let problem = SchemaPanelText.problem(SchemaReadings.reading(of: card.schema, for: id).document) {
-            DetailStatusLine(DetailStatus(problem, tone: .error))
+        let issues = SchemaReadings.reading(of: card.schema, for: id).issues
+        ForEach(issues.indices, id: \.self) { i in
+            DetailStatusLine(DetailStatus(issues[i].message, tone: issues[i].severity == .error ? .error : .warning))
         }
         SchemaSyncLine(status: status, under: .schema, sync: sync, id: id)
     }
@@ -111,8 +110,9 @@ struct SchemaCode: View {
 
 /// Where the sync is, under the side the person edited (`SchemaSyncStatus.source`): so it's under
 /// the text they just committed, and in view whichever section is collapsed. Updating, with a
-/// spinner (the side being written is dimmed and read-only), or why it failed, with what can be
-/// done: Retry, and for want of a key Open Settings… too; nothing for a schema too long to write.
+/// spinner (the side being written is dimmed and read-only), or why it failed (the warning's tone:
+/// red is the schema's own errors), with what can be done: Retry, or for want of a key Open
+/// Settings… (saving one there tries again by itself); nothing for a schema too long to rewrite.
 struct SchemaSyncLine: View {
     let status: SchemaSyncStatus
     let side: SchemaSide
@@ -134,17 +134,16 @@ struct SchemaSyncLine: View {
             case let .updating(writing):
                 DetailStatusLine(DetailStatus(writing == .schema ? SchemaPanelText.updatingSchema : SchemaPanelText.updatingPrompt), isBusy: true)
             case let .failed(failure):
-                DetailStatusLine(DetailStatus(failure.message, tone: .error), actions: actions(for: failure.remedy))
+                DetailStatusLine(DetailStatus(failure.message, tone: .warning), actions: actions(for: failure.remedy))
             }
         }
     }
 
     private func actions(for remedy: SchemaSyncFailure.Remedy) -> [DetailStatusAction] {
         let id = id
-        let retry = DetailStatusAction(SchemaPanelText.retry) { [weak sync] in sync?.retry(id) }
         switch remedy {
-        case .retry: return [retry]
-        case .key: return [DetailStatusAction(SchemaPanelText.openSettings) { AnthropicSettingsView.showSettings() }, retry]
+        case .retry: return [DetailStatusAction(SchemaPanelText.retry) { [weak sync] in sync?.retry(id) }]
+        case .key: return [DetailStatusAction(SchemaPanelText.openSettings) { AnthropicSettingsView.showSettings() }]
         case .editByHand: return []
         }
     }

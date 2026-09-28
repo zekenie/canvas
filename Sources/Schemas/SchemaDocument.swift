@@ -87,6 +87,9 @@ public struct SchemaField: Sendable {
 public indirect enum SchemaFieldType: Equatable, Sendable {
     /// No constraint: `true`, `{}`, or keywords this doesn't read.
     case any
+    /// A `type` that isn't one of JSON Schema's seven (`"ninteger"`), as written: it says something,
+    /// just not what the writer meant, so it isn't `any` (Validation warns about it).
+    case unknown(String)
     /// Nothing is valid: `false`.
     case never
     case string, number, integer, boolean, null
@@ -144,9 +147,13 @@ public indirect enum SchemaFieldType: Equatable, Sendable {
         case "array":
             guard schema["prefixItems"] == nil, let items = schema["items"], items.elements == nil else { return .array(of: nil) }
             return .array(of: read(items, depth: depth + 1))
-        default: return .any
+        case let name?: return .unknown(name)
+        case nil: return .any
         }
     }
+
+    /// JSON Schema's seven types: a `type` names one of these, or a list of them.
+    public static let jsonTypes: Set<String> = ["string", "number", "integer", "boolean", "null", "object", "array"]
 
     /// `"string"` or `["string", "null"]`; nil for anything else.
     private static func typeNames(_ type: JSONNode) -> [String]? {
@@ -156,10 +163,12 @@ public indirect enum SchemaFieldType: Equatable, Sendable {
     }
 
     /// How the card says it at a row's end: `string`, `email`, `string|null`, `enum`, `= DE`,
-    /// `object`, `string[]`, `object[]`, `array`, `→ money`, `one of`, `any`, `never`.
+    /// `object`, `string[]`, `object[]`, `array`, `→ money`, `oneOf`, `any`, `never`, and a type
+    /// that isn't one as it's written (`ninteger`).
     public var label: String {
         switch self {
         case .any: "any"
+        case .unknown(let name): name
         case .never: "never"
         case .string: "string"
         case .number: "number"
@@ -176,19 +185,23 @@ public indirect enum SchemaFieldType: Equatable, Sendable {
         case .choice(let combinator, _): combinator.label
         }
     }
+
+    /// The type `label` says, in a word, for a row with no room for it: an array's `array`, a
+    /// format's `string`; nil where there's no shorter word (the label is one already).
+    public var baseLabel: String? {
+        switch self {
+        case .array(of: .some): "array"
+        case .format: "string"
+        default: nil
+        }
+    }
 }
 
 public enum SchemaCombinator: String, CaseIterable, Sendable {
     case oneOf, anyOf, allOf
 
-    /// `one of`, `any of`, `all of`.
-    public var label: String {
-        switch self {
-        case .oneOf: "one of"
-        case .anyOf: "any of"
-        case .allOf: "all of"
-        }
-    }
+    /// JSON Schema's own word, as the rules line says it: `oneOf`, `anyOf`, `allOf`.
+    public var label: String { rawValue }
 }
 
 /// Reads fields out of a schema, following `$ref`s within the document (`#`, `#/$defs/x`, any JSON

@@ -1682,7 +1682,8 @@ Sections are stock SwiftUI plus a few primitives, and get the look by following 
   replacement, autocorrect, spelling, completion, inline predictions, math results and Writing
   Tools off; lines never wrap, so a line's indentation says where it is and line N of an error is
   the Nth on screen, and a long one scrolls sideways; as tall as its lines, from
-  `DetailStyle.codeEditorHeight` to what the panel shows, less room for its section's title; Tab
+  `DetailStyle.codeEditorHeight` (a text area's height, so a short text sits in a short box with
+  what's said about it close under it) to what the panel shows, less room for its section's title; Tab
   two spaces, Return a new line as indented as the last, one step more after `{` or `[`; ⌘↩ and the
   keyboard leaving call its `onCommit`; `isEditable: false` makes it read-only), a list a
   `DetailList` (empty, it says No Items), a color `DetailSwatches` (named presets, the chosen one
@@ -1690,7 +1691,8 @@ Sections are stock SwiftUI plus a few primitives, and get the look by following 
   `LabeledContent`). `.detailUpdating(isUpdating)` marks a text box something else is writing just
   now (a model): read-only, and so dimmed; nothing is drawn over its text. What's writing it says
   so in words where the person is: a status line of a section's own, a `DetailStatusLine`, drawn
-  as the footer's, with a spinner while `isBusy`, and link buttons under it
+  as the footer's (only its symbol takes the tone), with a spinner in the symbol's place, as wide,
+  while `isBusy`, and link buttons under it
   (`DetailStatusAction("Retry") { … }`). Put it where it can't be collapsed away from the person
   (the schema card's sync puts it under the side they edited).
   `DetailNumberText` formats and parses numbers with units ("240 pt"), in the user's locale ("2,5 h"
@@ -1800,7 +1802,9 @@ gadget.details(header: { $gadget in DetailHeader(gadget.name, subtitle: gadget.m
   `DetailHeaderField(text, placeholder:)` is the title as a field, for a header that renames its
   shape in place: borderless, in the header's font, writing as you type (as the panel's text
   fields do), with the kind's name as its placeholder by default. Return, like Escape anywhere in
-  the panel, gives the keyboard back to the canvas.
+  the panel, gives the keyboard back to the canvas. `isEditable: false` shows the title as text
+  in its place, at full strength, for a title that can't be written just now; `disabled` dims the
+  field, for a while something else writes it.
 - **A header without a symbol** shows its kind's: the panel hands a header view its kind's name
   and symbol through the environment, as the table of contents hands a row its symbol.
 - **Headless**, `layout.header` is the header when it's a `DetailHeader` (with its kind's symbol
@@ -1825,9 +1829,11 @@ only spaces in it, sets nil, since Titles keeps no blank title; anything else is
 one past 80 characters is kept, and warned about. A title derived from what the kind keeps is
 renamed where it comes from, given that binding instead: a `String?`, or a `String` blank while
 untitled (`TitleHeader($card.text)`). While there's no title it shows its placeholder,
-dimmed: the kind's name ("Note"), unless the kind gives one ("Untitled Task"). A derived title that
-can't be renamed (an ellipse's size) isn't; a kind with one keeps a `DetailHeader`, if it has a
-header at all.
+dimmed: the kind's name ("Note"), unless the kind gives one ("Untitled Task"). `isEnabled: false`
+dims it while something else writes the title (a schema card's model); `isRenamable: false` shows
+it as text, at full strength, while it can't be written at all (a schema card's text that isn't a
+JSON object). A derived title that can't ever be renamed (an ellipse's size) isn't; a kind with one
+keeps a `DetailHeader`, if it has a header at all.
 
 Opting into titles doesn't place it: the header is the kind's, which may want its own subtitle,
 placeholder or symbol, or no rename in the panel at all.
@@ -3408,10 +3414,10 @@ of the row above).
 ```swift
 registrar.service { SchemaSync(editor: $0) }                                           // below
 registrar.shape(SchemaCardDefinition()) { schema in
-    let place = schema.placement(size: SchemaCard.defaultSize) { SchemaCard() }        // 240 × 89, empty
+    let place = schema.placement(size: SchemaCard.defaultSize) { SchemaCard() }        // 240 × 67, empty
     schema.tool(label: "Schema", systemImage: "curlybraces", shortcut: "s", placing: place)
     schema.validate { shape, _ in SchemaReadings.reading(of: shape).issues }
-    schema.title(pill: false) { SchemaReadings.reading(of: $0).document.title }
+    schema.title(pill: false) { SchemaReadings.reading(of: $0).shown.title }
     schema.contentsRow { shape in ContentsLabel(…, systemImage: "curlybraces", badge: "6") }  // top-level fields
     schema.schemaPanel()                                                               // the header and the Schema tab
     schema.schemaLinks()                                                               // ports: a schema to a schema
@@ -3426,25 +3432,47 @@ registrar.channel(SchemaLink.self)
   first), its top-level fields (`properties`, then `patternProperties`), and the rules at its root
   (`if/then`, `allOf`, …). A `SchemaField` reads its type (`SchemaFieldType`: `format` in place of
   `string`, `enum`, `const`, `$ref`, `oneOf`/`anyOf`/`allOf`, type lists, boolean schemas, arrays of
-  anything) and its own fields a level at a time, following `$ref`s within the document, each step
-  bounded, so a `$ref` in a circle ends.
+  anything, and a type that isn't one of JSON Schema's seven as written, `unknown("ninteger")`,
+  never `any`) and its own fields a level at a time, following `$ref`s within the document, each
+  step bounded, so a `$ref` in a circle ends.
 - **The card** is the schema's overview: a row per top-level field, at most 7, its name in a chip
-  (`*` if required), then what's in it (an object's fields in braces, an array of objects' in
-  brackets, anything deeper `{…}`; an enum's values between bars), and its type at the end. Nested
-  fields never take a row, so they never count toward the cap: 8 fields or more show 6 and
-  `+N more`. `SchemaCardLayout` decides all that for a size (tests read it); the definition draws it.
-  The height is the content's, set in the same transaction as the schema: `setSchema` sets the text
-  and `SchemaCard.height(for:)`, 45 and 22 a row (89 empty), arithmetic with no fonts; a text that
-  isn't JSON leaves the frame alone. The width is the person's.
+  (a gray `*` if required, after the name even when it's cut short, `…*`: the card's one hue is its
+  `{}`), then what's in it (an object's fields in braces, an array of objects' in brackets,
+  anything deeper `{…}`; an enum's values or a choice's options between bars), and its type at the end, in JSON Schema's words (`oneOf`), unless the tray
+  already says it (braces, bars); a label with no room says the type in a word (`array`, `string`)
+  before it's cut. A tray that could say only how many it holds (`{ 4 fields }`) never cuts the
+  name short: the name gets the room. Nested fields never take a row, so they never count toward
+  the cap: 8 fields or more show 6 and `+N more`, then `Rules if/then · allOf`. A card with none
+  says so in one muted line where the first row would be ("No fields"), and nothing else: no box,
+  no advice. `SchemaCardLayout` decides all that for a size (tests read it, and
+  `SchemaCardLayout(card)` is what a card shows now); the definition draws it. The height is the
+  content's, set in the same transaction as the schema: `setSchema` sets the text and
+  `SchemaCard.height(for:)`, 45 and 22 a row, at least one (67), arithmetic with no fonts; a text
+  that isn't a JSON object (not JSON, or `[1]`) leaves the frame alone, so it still fits the last
+  reading the card shows (below). The width is the person's. An untitled card is
+  `SchemaCard.untitled` ("Untitled") on the card, in its header and in its row.
 - **Cost.** A card's text is read once: `SchemaReadings` keeps a reading per card (and its
   layouts), compared with the card's text by identity (the record's own string) before anything,
   and read again only when that text changes, so typing replaces one reading and a frame parses
-  and measures nothing, however many different schemas are in view. Readings of deleted cards are
-  dropped (the sync hears it), and past 4,096 the quarter used longest ago; debug builds count
-  reads (`SchemasPlugin.schemasRead`). Far out, rows are bars (below 35%), then the title (below
-  20%). A card made from properties (`canvas create`) is as tall as its schema (`DerivedProps`).
-- **Rules.** A text that isn't JSON is an error at its line and column, as is a root that isn't an
-  object; `required` naming a property its object doesn't have is a warning.
+  and measures nothing, however many different schemas are in view. Readings of deleted cards, and
+  of cards on a board read again, are dropped (the sync hears it), and past 4,096 the quarter used
+  longest ago; debug builds count
+  reads (`SchemasPlugin.schemasRead`). Far out, rows, `+N more` and the rules are bars (below
+  35%), then the title (below 20%); a line saying there are none isn't a field, so no bar stands
+  for it. A card made from properties (`canvas create`) is as tall as its schema (`DerivedProps`).
+- **Typing through a broken text.** A keystroke in the middle of a member leaves the text not JSON
+  for a moment, so while a card's text isn't a JSON object, what it shows stays what its last one
+  that was said (`SchemaReadings.shown`, kept this session, and dropped with the card, or when its
+  board is read again from disk, since it's in no version of the file): its rows and name on the
+  card, its row and badge in the table of contents, its title, its panel's header. The card
+  doesn't flicker; Validation's red outline says it's broken. What acts on the text reads the text
+  itself (`document`): Validation's rules, the sync, the editor's colors, a rename. A card that
+  was never a JSON object since its board was read (opened so) says why in the "No fields" line's
+  place: "Invalid JSON" or "Not an object", muted, never red.
+- **Rules.** A text that isn't JSON is an error at its line and column ("Invalid JSON: expected a
+  property name at line 6, column 34."), as is a root that isn't an object; `required` naming a
+  property its object doesn't have is a warning, as is a `type` that isn't one of JSON Schema's
+  ("“ninteger” in birthYear isn’t a JSON Schema type.").
   Validation's own rule checks a card against its kind's schema, as it does every shape: `schema`
   and `prompt` are strings without bounds, so no text breaks it.
 - **Ports.** As notes and tasks do, a card has ports on a channel of its own: `SchemaLink`
@@ -3452,19 +3480,25 @@ registrar.channel(SchemaLink.self)
   ([SchemaLinks.swift](../Sources/Schemas/SchemaLinks.swift)). A schema links only to a schema,
   and the link says nothing more yet.
 - **The panel** is the card's only editor. Its header is a `TitleHeader` over the root `"title"`,
-  with the field count under it (renaming rewrites that member alone, so it's off while the text
-  isn't a JSON object, and while the model writes the schema); its Schema tab has the
-  **description** (the `prompt`, a `DetailTextArea` that commits, its placeholder saying what to
-  write: "a pet in my household") over the **JSON Schema** (a `DetailCodeEditor`, colored by
-  `JSONReader.tokens`, the token where it stops being JSON underlined, with the line and column
-  under it). The sync's status shows under the side the person edited (`SchemaSyncStatus.source`),
-  where they are and in view whichever section is collapsed: "Updating schema…" under the
-  description, "Updating description…" under the JSON Schema, with a spinner, or why it failed,
-  with what to do (`SchemaSyncFailure.remedy`): Retry; Open Settings… and Retry, for want of a key
-  (Open Settings… sends `AnthropicSettingsView.showSettingsAction`, `BoardMenus.showSettings`'s
-  selector, up the responder chain for the app to answer); nothing (`editByHand`), for a schema too
-  long to write whole, or one cut off. The side being written is read-only and dimmed. The sections' commits hold the sync
-  weakly: a box that loses the keyboard as its window closes commits after the board has gone.
+  with the field count the card shows under it ("6 fields"; nothing where it shows none). Renaming
+  rewrites that member alone, so it can't while the text isn't a JSON object (the name shows, at
+  full strength, as text: `isRenamable: false`), and while the model writes the schema it's dimmed.
+  Its Schema tab has the **description** (the `prompt`, a `DetailTextArea` that commits; while the
+  schema is an object with no fields, its placeholder is an example, "e.g. a pet in my household";
+  none while it isn't an object, which nothing syncs from) over the **JSON** (a
+  `DetailCodeEditor`, colored by `JSONReader.tokens`, the token where it stops being JSON
+  underlined), and under the JSON what Validation finds, a status line each, in its words and
+  tone (the line and column say where, since lines don't wrap). The sync's status shows under the
+  side the person edited (`SchemaSyncStatus.source`), where they are and in view whichever section
+  is collapsed: "Updating schema…" under the description, "Updating description…" under the JSON,
+  with a spinner, or why it failed, in a fragment ("Anthropic overloaded", "Unusable answer"), in
+  the warning's tone (red is the schema's own errors), with what to do
+  (`SchemaSyncFailure.remedy`): Retry; Open Settings… alone, for want of a key, since saving one
+  tries again by itself (it sends `AnthropicSettingsView.showSettingsAction`,
+  `BoardMenus.showSettings`'s selector, up the responder chain for the app to answer); nothing
+  (`editByHand`), for a schema too long to rewrite, or one cut off (`SchemaSync.tooLongMessage`).
+  The side being written is read-only and dimmed. The sections' commits hold the sync weakly: a box
+  that loses the keyboard as its window closes commits after the board has gone.
 
 ### Keeping the description and the schema in step: `SchemaSync`
 
@@ -3483,8 +3517,9 @@ description to say what it now holds. `SchemaSync`, the plugin's service, does i
   schema changed in meaning (a reformat or a reorder doesn't count): the description is written from
   it, told the schema at the last sync. Both: the schema, from the one edited by hand. The schema is
   written whole however small the edit, so one past `SchemaPrompts.toSchemaMaxLength` (34 KB, which
-  might not fit the answer's 16,000 tokens) is never sent: the status says to edit it by hand, and
-  once the person has, the description is written from that edit.
+  might not fit the answer's 16,000 tokens) is never sent: the status says it's too long to
+  rewrite, with no Retry, and once the person edits it by hand, the description is written from
+  that edit.
 - **Never** while the schema isn't a JSON object (someone's halfway through it, or it's blank), for
   a read-only (locked) card, for a new card with no fields and no description, for a description
   cleared (it says nothing about the schema) or only respaced, or without a model. A card seen for
@@ -3508,7 +3543,7 @@ description to say what it now holds. `SchemaSync`, the plugin's service, does i
   keeps the person's; the prompt asks for two spaces, a member per line, plain arrays on one line),
   with `setSchema`, so the card fits it; the write is the sync's own, and starts none.
 - **Undo.** Typing in either side, or renaming the card, is one step a run ("Change Description",
-  "Change JSON Schema", "Change Schema"), and the sync's write is one of its own ("Update Schema",
+  "Change JSON", "Change Schema"), and the sync's write is one of its own ("Update Schema",
   "Update Description"), taken with the pair it leaves in step (`undoHistory.group`). Undo and redo
   are no edit: their commit is marked `ChangeSet.restoredStep`, so they start no sync, and a card
   whose sides they change drops its timer and any call out (the answer would be to what the card
@@ -3528,7 +3563,9 @@ description to say what it now holds. `SchemaSync`, the plugin's service, does i
   description, temperature 0, no prefill or stop sequences, and `parse` (the answer trimmed, then
   unwrapped of any code-fence line and its own block's tags, from either end, until none is left:
   the model sometimes adds them though the prompts ask for neither; a stop other than the end of its
-  turn is a failure, as is a schema that isn't a JSON object from its first character to its last;
+  turn is a failure, as is a schema that isn't a JSON object from its first character to its last,
+  said in three fragments: a schema cut off is too long to rewrite, a refusal is "Claude declined",
+  and anything else an "Unusable answer", as `LanguageModelError.malformedResponse` says it;
   an answer whose first word is `NO_CHANGE` is no change, whatever follows it, and so is one whose
   last line is; a line of a tag alone at either end, `</output>`, is dropped; a description loses
   one pair of quotes around it, and isn't written if it reads as something else: `NO_CHANGE` inside
@@ -3552,7 +3589,7 @@ let request = ModelRequest(system: "Answer with JSON only.", messages: [.user(pr
 do throws(LanguageModelError) {
     let response = try await model.respond(to: request)     // response.text, .stopReason
 } catch {
-    status = error.message                                   // "Add your Anthropic API key in Settings…"
+    status = error.message                                   // "No API key"
 }
 ```
 
@@ -3561,8 +3598,12 @@ do throws(LanguageModelError) {
   `ModelResponse` (its text, `stopReason`, token counts) out, or a `LanguageModelError` (no key,
   unauthorized, rate limited, overloaded, another status with the service's message, the network, a
   malformed answer, no answer in time, cancelled), each with a short `message` for a person and
-  `isTransient` for whether trying again later may work. Cancelling the task asking throws
-  `.cancelled`.
+  `isTransient` for whether trying again later may work. A message names what went wrong in a
+  fragment, never what to do about it, which the button beside it says: "No API key", "API key
+  rejected", "Rate limited", "Anthropic overloaded", "Anthropic error 500", "Can’t reach
+  Anthropic", "Timed out", "Unusable answer"; a request the service refused (a 4xx) is its message's
+  first sentence ("Your credit balance is too low to access the Anthropic API"), with the key taken
+  out, were it ever in it. Cancelling the task asking throws `.cancelled`.
 - **The app's model.** `AnthropicModel` calls Anthropic's Messages API from the app, with
   URLSession (no SDK, no streaming, no retries), Claude Haiku 4.5 by default. Nothing streams, so
   the answer comes whole, all at once: it waits a minute, and a second more for every 100 tokens
@@ -3574,8 +3615,14 @@ do throws(LanguageModelError) {
   `~/Library/Application Support/InfiniteCanvas/anthropic-api-key`: the key and nothing else, mode
   0600, written whole and renamed into place; a missing file is no key. Not the Keychain: the app
   isn't signed, so each build would be a new app to it. Infinite Canvas › Settings… (⌘,) shows
-  `AnthropicSettingsView` (a secure field, Save, Remove, and Test, a five-token call), which
-  Composition hands the app as `ShippedPlugins.settings()`. A plugin that finds no key offers to
+  `AnthropicSettingsView` (a secure field, "Anthropic API key", whose prompt says whether one is
+  saved and whose tooltip says where; Save, Remove, and Test, a five-token call; a status only for
+  a test and for what failed, a symbol in its tone then the words, as the panel's status lines are,
+  a failure in the warning's tone, as the panel shows the same failures; and a link, "Get a key"),
+  which Composition hands the app as `ShippedPlugins.settings()`, in its `SettingsWindow`: made
+  afresh each time the window opens, and sized before it goes in, so the window opens where it was
+  left. A test that can't save the key typed stops there, a test's outcome reads again whether a
+  key is saved (its file may have gone meanwhile), and Remove waits for a test to finish. A plugin that finds no key offers to
   open it: `AnthropicSettingsView.showSettings()` sends `showSettings:` up the responder chain,
   which the app's delegate answers (the same selector as `BoardMenus.showSettings`).
 - **Tests** pass a `ScriptedLanguageModel` ([Testing plugins](#testing-plugins)), never the network.

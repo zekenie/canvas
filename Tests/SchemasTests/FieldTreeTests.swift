@@ -32,7 +32,7 @@ func lines(_ text: String) -> [String] { SchemaDocument(text).fields.map(line) }
         ])
         expectEqual(lines(fixture(7)), ["name*: string", "headquarters: object { address {…}, phone }", "founded: integer", "tags: string[]"])
         expectEqual(lines(fixture(8)).map { $0.split(separator: ":").last.map(String.init) }, [" email", " number", " integer", " enum", " boolean"])
-        expectEqual(lines(fixture(9)), ["total*: → money { amount*, currency* }", "method*: one of", "country: string", "vatNumber: string",
+        expectEqual(lines(fixture(9)), ["total*: → money { amount*, currency* }", "method*: oneOf", "country: string", "vatNumber: string",
                                         "/^x-/: string"])
         expectEqual(lines(fixture(10)), [])
     },
@@ -74,7 +74,7 @@ func lines(_ text: String) -> [String] { SchemaDocument(text).fields.map(line) }
             .constant("DE"),
             .choice(.oneOf, []),
         ])
-        expectEqual(fields.map(\.type.label), ["enum", "any of", "all of", "= DE", "one of"])
+        expectEqual(fields.map(\.type.label), ["enum", "anyOf", "allOf", "= DE", "oneOf"], "JSON Schema's words, as the rules line says them")
     },
     test("types JSON Schema can say: lists, booleans, formats without a type, arrays of anything, tuples, and nothing") {
         let text = #"""
@@ -94,14 +94,20 @@ func lines(_ text: String) -> [String] { SchemaDocument(text).fields.map(line) }
             "implied": { "properties": { "a": {} } },
             "list": { "items": { "type": "boolean" } },
             "map": { "type": "object", "additionalProperties": { "type": "string" } },
-            "weird": 42
+            "weird": 42,
+            "typo": { "type": "ninteger" },
+            "typos": { "type": ["nul"] }
         } }
         """#
         expectEqual(SchemaDocument(text).fields.map { "\($0.name) \($0.type.label)" }, [
             "maybe string|null", "single integer", "yes any", "no never", "open any", "mail email", "count integer", "emails email[]",
             "grid number[][]", "choices enum[]", "refs → thing[]", "anything array", "pair array", "oldPair array", "implied object",
-            "list boolean[]", "map object", "weird any",
+            "list boolean[]", "map object", "weird any", "typo ninteger", "typos nul",
         ])
+        let types = SchemaDocument(text).fields.map(\.type)
+        expectEqual(types.suffix(2), [.unknown("ninteger"), .unknown("nul")], "a type that isn't one, as written: not any")
+        expectEqual(types.map(\.baseLabel).compactMap { $0 }, ["string", "array", "array", "array", "array", "array"],
+                    "in a word: a format's string (mail's; count's int64 is an integer's), an array's array")
     },
     test("$ref: into $defs, definitions or any pointer in the document; outside it, a name without fields; circles end") {
         let text = #"""
