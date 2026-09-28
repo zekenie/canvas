@@ -67,6 +67,14 @@ enum CorePoints {
         static var owner: PluginID { .core }
         static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["key strokes"] }
     }
+
+    /// Where a drag that moves shapes puts them (`TranslationAdjuster`). One plugin may claim it;
+    /// otherwise they follow the pointer.
+    enum TranslationAdjusters: KeyedExtensionPoint {
+        typealias Contribution = @MainActor (CanvasEditor, TranslationStart) -> (any TranslationAdjuster)?
+        static var owner: PluginID { .core }
+        static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["the translation adjuster"] }
+    }
 }
 
 extension CorePoints.DefaultTool: KeyedExtensionPoint {

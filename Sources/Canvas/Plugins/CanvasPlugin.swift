@@ -86,6 +86,15 @@ public struct PluginRegistrar {
         contribute(make, to: CorePoints.SecondaryClickMenu.self)
     }
 
+    /// Where a drag that moves shapes (a `TranslatingSession`: the selection dragged, a shape just
+    /// placed) puts them: `begin` gets the drag as it begins, and returns what each of its events
+    /// asks how far to move them, and what draws while it runs (`TranslationAdjuster`), or nil to
+    /// leave them following the pointer. At most one plugin may claim it (Snapping, in the shipped
+    /// app); otherwise shapes always follow the pointer.
+    public mutating func translationAdjuster(_ begin: @escaping @MainActor (CanvasEditor, TranslationStart) -> (any TranslationAdjuster)?) {
+        contribute(begin, to: CorePoints.TranslationAdjusters.self)
+    }
+
     /// Runs inside the deleting transaction, before the shapes are removed. It may change other
     /// shapes, and delete more (their handlers run too), read-only ones included: what it does keeps
     /// the board whole, which a lock doesn't stand in the way of. Each shape's handlers run once per

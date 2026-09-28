@@ -282,6 +282,9 @@ public struct Registry {
     var keyStrokeHandler: (@MainActor (CanvasEditor, KeyStroke) -> Bool)? {
         contributions(to: CorePoints.KeyStrokes.self).first?.value
     }
+    var translationAdjuster: (@MainActor (CanvasEditor, TranslationStart) -> (any TranslationAdjuster)?)? {
+        contributions(to: CorePoints.TranslationAdjusters.self).first?.value
+    }
 
     /// Who contributes what, where: the runtime counterpart of Package.swift. A test pins it.
     public var report: String {
@@ -357,6 +360,7 @@ struct RawContribution {
             case is CorePoints.DefaultTool.Type: "default tool \(value)"
             case is CorePoints.SecondaryClickMenu.Type: "secondary-click menu"
             case is CorePoints.KeyStrokes.Type: "key strokes"
+            case is CorePoints.TranslationAdjusters.Type: "translation adjuster"
             default: P.summary(of: value, for: target)
             }
         }

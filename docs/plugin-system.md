@@ -3,7 +3,7 @@
 Everything on the canvas comes from a plugin: sticky notes, ellipses, arrows, task cards,
 validation, checklists, titles, the pills and chips shown on shapes (adornments), the detail panel
 and the table of contents beside the canvas, selecting itself, copying and pasting, locking, the
-ports arrows are dragged from, what each key does, what the command line can do, the language model plugins ask, even the examples.
+ports arrows are dragged from, snapping what's dragged to the shapes around it, what each key does, what the command line can do, the language model plugins ask, even the examples.
 The core (`Sources/Canvas`) knows how to hold shapes, run tools, draw, and wire plugins together,
 and nothing about any particular shape or concern. Its one built-in tool is tldraw's Hand, which
 pans (a flung release slides on). Select, which selects (a click, ⇧-click, or a marquee dragged
@@ -37,6 +37,7 @@ maps one onto the other.
 - [The command line](#the-command-line)
 - [Schema cards](#schema-cards)
 - [Language models](#language-models)
+- [Snapping](#snapping)
 - [Capabilities](#capabilities)
 - [The editor, the document, and drawing](#the-editor-the-document-and-drawing)
 - [Boards in a file](#boards-in-a-file)
@@ -269,6 +270,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Let `canvas draw` name shapes, draw edges, or warn about what it draws, from the plugin that owns the concern | A bridge: `registrar.drawNames`, `drawEdges` or `drawChecks` | [TitleNames, PortEdges, ValidationChecks](#what-draw-takes-from-other-plugins) |
 | Make or change a shape without the pointer: what a kind's tool places, a shape from its JSON, or some of a shape's properties set from JSON | `registry.placement(for:)`, `placement.shape(at:)`; `registry.shape(_:properties:)`, `registry.shape(_:setting:)` | [The command line](#making-and-changing-shapes-without-the-pointer) |
 | Draw a shape away from where it is, for an animation (a shake) | `editor.setDrawingOffset(_:for:)`; adornments follow by themselves, and an overlay with `context.worldDrawingOffset(of:)` | [Locking](#locking) |
+| Change where a drag puts the shapes it moves (snap them, keep them on a grid), and draw while it does | `registrar.translationAdjuster { editor, start in … }`, a `TranslationAdjuster`: Snapping claims it | [The translation adjuster](#the-cores-part-the-translation-adjuster) |
 | Ask Claude something (and test it without the network) | `editor.languageModel?.respond(to: ModelRequest(...))`; `ScriptedLanguageModel` in tests | [Language models](#language-models) |
 | Keep what a kind's props are bound to right as shapes are deleted and copied (a connector) | `ShapeReferencing` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
 | Let a kind's shapes be mentioned in text, as pills | `x.mentionable(untitled:symbol:…)` (Mentions) | [Mentions](#mentionable-kinds) |
@@ -577,6 +579,9 @@ The details:
   the tool (`cancel`), else back to the default tool. Escape while shapes move with the pointer
   (`TranslatingSession`) puts every one back where it was when the drag began (tldraw's behavior):
   a lone box, a selection, an arrow (its precise ends included) or a shape just placed.
+- **Where a drag puts what it moves** is under the pointer, unless a plugin claims the [translation
+  adjuster](#the-cores-part-the-translation-adjuster): Snapping, in the shipped app, snaps it to the
+  shapes in view, and draws its guides with the session.
 - **Input**: tools see `Pointer` values, never `NSEvent`s. A `Pointer` has `view` (view points)
   and `world` (world units) locations, `modifiers` and `clickCount`. `editor.pointerSpeed` is
   smoothed like tldraw's. `editor.effectiveModifiers` counts a key released in the last 150 ms as
@@ -4786,6 +4791,81 @@ do throws(LanguageModelError) {
   which the app's delegate answers (the same selector as `BoardMenus.showSettings`).
 - **Tests** pass a `ScriptedLanguageModel` ([Testing plugins](#testing-plugins)), never the network.
 
+## Snapping
+
+What a drag moves snaps to the shapes around it, as it does in Keynote and Freeform: its edges and
+its middle line up with theirs, and it keeps the spaces between them even, centered between two or
+as far from one as the space beside it, while guides show what lines up. It's a horizontal
+([`Sources/Snapping`](../Sources/Snapping)) with no extension point of its own: every kind with a
+frame takes part, and the core lends one hook, the [translation
+adjuster](#the-cores-part-the-translation-adjuster), which Snapping claims
+([Snapping.swift](../Sources/Snapping/Snapping.swift)):
+
+```swift
+registrar.service { _ in SnapState() }                                          // the drag under way, told of others' writes
+registrar.translationAdjuster { editor, start in SnapDrag(start, in: editor) }   // nil for a drag that moves no frame
+```
+
+- **What snaps** is everything a `TranslatingSession` moves: the selection dragged with the select
+  tool, and a shape just placed, which follows the pointer until the release. It snaps as one rect
+  (the frames it moves, together, as they were when the drag began) to the frames of the shapes in
+  view but its own, along each axis on its own, to the nearest within 8 view points whatever the
+  zoom (tldraw's `snapThreshold`) of: one of its edges or its middle onto one of theirs (tldraw's
+  snap points, the corners and the center); its middle onto the middle of the space between two
+  neighbors, if it fits there; its far edge onto where a space as long as the one between two
+  neighbors would begin before them, or its near edge onto where it would end after them. Ties go
+  to edges and middles before spaces, and to the near edge first. Along an axis where it snaps it
+  lands exactly on the line; along the other it follows the pointer exactly, as without Snapping.
+- **Guides** show while the drag lasts, in tldraw's snap red (hsl(0, 76%, 60%), light and dark
+  alike), a view point wide: for every line it's on exactly, snapped there or not, a line through
+  the corners and centers on it, a ✕ at each; for every space it makes as long as one between
+  neighbors, the spaces of that length side by side with ticks at their edges and middles, those
+  in a row before and after them too (tldraw's). `editor.snapGuides` is what shows (`SnapGuide`:
+  `.alignment(axis, at:, points:)`, `.spacing(axis, gaps:)`), none once the drag is over.
+- **Always on**, unlike tldraw's (on only while ⌘ is held, or in its snap mode), but only once the
+  pointer is past the drag threshold from the press, so a click, whose lone box follows the pointer
+  from the press, moves it no more than the pointer does. ⌘ or ⌃ held once the drag is under way
+  lets what moves follow the pointer exactly: Keynote's ⌘, and ⌃ too, as either lets an arrow's end
+  bind to nothing. (At the press they're the select tool's: ⌘ on a shape starts a marquee, and ⌃ is
+  the secondary click.) A key pressed or let go mid-drag takes effect at once, where the pointer is,
+  and one let go counts as held for 150 ms (`editor.effectiveModifiers`), so letting go of ⌘ with
+  the mouse leaves what moved where the pointer put it.
+- **Kinds with a frame** (`BoxShapeProps`: notes, tasks, ellipses, schema cards, subboards,
+  rectangles) snap and are snapped to, locked shapes too (they stay put, and don't count in what
+  moves). Kinds without one neither snap nor are snapped to: arrows, whose geometry follows the
+  shapes they join (tldraw's arrows can't be snapped to either, `canSnap`), and lines.
+- **Only shapes in view**: the view's world rect when the drag first snaps, read again once the
+  camera moves or a shape the drag doesn't move changes (a plugin's write, an agent's). With no view
+  (`editor.viewportSize` zero, as in a headless editor), nothing is in view, and nothing snaps.
+- **Only neighbors' spaces count**: each frame's nearest past its far edge along the axis that
+  overlaps it across the axis, and its nearest short of its near edge, so a third frame between two
+  keeps their space out, and a frame has at most two where tldraw compares every pair in view. What
+  moves must share the stretch across the axis that the two share by more than the threshold
+  (tldraw's asks for any of it), so snapping along the other axis never takes it out of that
+  stretch, where the space's guide wouldn't show.
+- **Cost.** `SnapTargets` (pure: world units in and out) keeps the frames' edges and middles along
+  each axis in order, and their neighbors. It's made when a drag first snaps, from what's in view,
+  some 6 ms with 10,000 shapes in view (at 10%, where a frame takes over 100 ms to draw them); each
+  event after is a binary search for each edge and a pass over the neighbors' spaces, 0.12 ms with
+  10,000 in view, and a drag at 100% costs what it did without Snapping. `./build.sh bench` holds
+  the first event to a frame and the rest to a drag event's input budget.
+- **Undo** is as without it: the drag is one step, Move, and Escape puts everything back.
+
+### The core's part: the translation adjuster
+
+`registrar.translationAdjuster { editor, start in … }` lets one plugin decide where a
+`TranslatingSession` puts what it moves. It gets the drag as it begins (`TranslationStart`: what it
+moves, read-only shapes left out, and where it was pressed, in world units) and returns a
+`TranslationAdjuster`, kept for the drag, or nil to leave it following the pointer. On each drag
+event the session asks `adjust(_:for:in:)` how far to move the shapes, given how far the pointer has
+come from the press, and moves them by that: along an axis it gives back as it came, a box follows
+the pointer exactly as with no adjuster (the POC's `pointer.world − grabOffset`, which the
+characterization tests pin); along one it changes, each box moves by exactly what it says from where
+it began, so an edge snapped to a line lands on it; and a `CustomTranslation` kind's move gets what
+it says. When held keys change mid-drag, the session asks again with the same pointer, and moves
+again. `draw(in:)` draws with the session, above the world overlays, so what it shows goes when the
+drag does. At most one plugin may claim it; the report shows it as `translation adjuster`.
+
 ## Capabilities
 
 Some behavior belongs to a kind itself rather than to a concern others can join. That's a
@@ -4795,7 +4875,7 @@ it, the core or a horizontal.
 | Capability | For | Used by |
 |---|---|---|
 | `Editable` | Edited in place: an editing placement, or opening it (Selection's double-click, Return and ⌘↓), unless its kind has an opener of its own. Supplies an `NSView` laid over the shape; writes go through `EditContext.update`. | StickyNotes |
-| `CustomTranslation` | Moving by its own rules instead of by its frame, when a `TranslatingSession` moves it (dragging the selection, a shape just placed). When a drag starts, `beginTranslation` gets the shape, every shape moving with it and the starting transaction (committed on its own, before the first move), and returns a `ShapeTranslation`: a closure run on every drag event with the pointer's delta, after the moving boxes have moved. A kind without a frame needs this to be movable at all. | Arrows (alone, bound ends slide on their shapes; with a shape they're bound to, they keep every binding); Polylines (every point by the delta) |
+| `CustomTranslation` | Moving by its own rules instead of by its frame, when a `TranslatingSession` moves it (dragging the selection, a shape just placed). When a drag starts, `beginTranslation` gets the shape, every shape moving with it and the starting transaction (committed on its own, before the first move), and returns a `ShapeTranslation`: a closure run on every drag event with the drag's delta (the pointer's, or what the [translation adjuster](#the-cores-part-the-translation-adjuster) made of it: Snapping's snap), after the moving boxes have moved. A kind without a frame needs this to be movable at all. | Arrows (alone, bound ends slide on their shapes; with a shape they're bound to, they keep every binding); Polylines (every point by the delta) |
 | `HandleProviding` (Selection's) | Draggable handles on the only selected shape. The select tool finds, draws and hit-tests them; `pressHandle` returns `.drag` or `.consumed`, and `dragSession` does the dragging. | Arrows |
 | `BrushHitTesting` (Selection's) | Whether the marquee touches it, when the brush overlaps its bounds without containing them. Default: `ShapeGeometry.isHit(byBrush:)`. | Arrows (against the visible arc) |
 | `DerivedProps` | Props that hold something following from the rest, which the kind's setters keep in step. A shape made from properties written somewhere else, `registry.shape(_:properties:)`, or given some of its own that way, `registry.shape(_:setting:)` (the command line's `draw`), goes through `derive(_:)` first, so it's as its setters would have left it; a board read (a shape is as saved), a paste, and what a person does don't. | Schemas (a card's height, from its schema; `draw`'s `size:` still wins) |
@@ -4893,7 +4973,7 @@ double-click and a placement say nothing, and the view chooses, as it always has
   plugin's outlines (`registrar.outlines`: selection, the box around several; none while the
   session `hidesOutlines`) and the hint, in one stroke at a constant screen width, over the faint
   ones (`Outlines.faintShapes`: the hover), stroked first, wider and lighter; world overlays;
-  the running session's `draw(in:)` (the marquee); view overlays (Selection's handles first). Each
+  the running session's `draw(in:)` (the marquee, Snapping's guides); view overlays (Selection's handles first). Each
   shape, overlay and session draws with a fresh graphics state. Sizes meant as view points are
   divided by `zoom` in world space.
 - **The camera** is `editor.camera`, which anyone may set; setting it stops any camera motion
@@ -5485,6 +5565,7 @@ validation-details   DetailStatuses in Issues
 validation-contents  ContentsMarks
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
 locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · CanvasContextMenu
+snapping             service SnapState · translation adjuster
 ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
 arrow-ports          property channel → arrow · connector → arrow · ArrowBindingRules
 language-models      service LanguageModelState
@@ -5672,6 +5753,16 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   `Wire`, and a disc C below B taking `Pipe`; `board.connect(to:speed:release:)` hovers A and drags
   from its right dot (`aRightDot`), `fast` or `slow`, and `board.arrows` are the arrows drawn, with
   their bindings and `ChannelProperty`.
+- **Snapping.** SnappingTests hold `SnapTargets` pure (a rect moved by a delta: where it snaps, and
+  its guides), and drags on CanvasTesting's boxes with a move tool of their own, since they can't
+  use Selection: `snapHarness` installs the fixtures, Snapping and `movePlugin(moves)`, whose press
+  starts a `TranslatingSession` from the press (the select tool's lone box) of what `moves.ids`
+  names, else of the shape pressed, in a 1000 × 800 view at 100%, so view points are world units.
+  A test that snaps gives the editor a view (`viewportDidResize`): with none, nothing is in view to
+  snap to. `editor.snapGuides` is what shows. ⌘ and ⌃ are `h.hold`, and a key let go counts as held
+  until `h.wait(150)`. CanvasTests' TranslationAdjusterTests hold the core's hook with a fixture
+  adjuster (x on a grid of 10), and CompositionTests' SnappingShippedTests the shipped pieces through
+  the select tool: notes, an arrow, an ellipse placed with its tool.
 - **The command line.** A test listens on a socket of its own (`temporarySocketPath()`, TestKit),
   never the app's. The app answers on the main actor, so a test that's also the client makes its
   request off the main thread while the main run loop turns (`offMain`), or runs `canvas` as it's
@@ -5839,7 +5930,9 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   Where a scenario ends differently on purpose, `intendedDeviations` in TranscriptTests replaces
   the golden's line with the app's, and says why; the fixture stays as recorded. There's one: the
   POC brought a pressed shape to the front and the app doesn't, so "move shape" lists its two notes
-  in the other order.
+  in the other order. The replay runs with Snapping, in its 1000 × 800 view: no scenario moves a
+  note within 8 points of lining up with the other, so none snaps, and one appended that did would
+  be an intended deviation.
 
 ## Coming from data-canvas
 
@@ -5916,10 +6009,17 @@ Each of these adds to the design without changing what plugins are written again
   doesn't stream should wait for; and schemas that type or check other shapes.
 - **An editing view hearing about outside changes** to its shape (undo ends editing first, but an
   agent's or another window's change won't).
-- **Canvas features**: resize and rotate handles on the selection box; snapping; ⇧ locking a move
+- **Canvas features**: resize and rotate handles on the selection box; ⇧ locking a move
   to an axis; ⌥-drag to clone; the scribble brush; arrow-key nudging; a long press starting a drag;
   the "move" cursor while moving shapes; and hierarchical tool states once the select tool has more
   than a handful of sessions.
+- **More of snapping**: resize handles snapping as they're dragged, once there are any (tldraw's
+  `snapResizeShapes`), and arrows' ends and other handles (tldraw's handle snapping); a grid; a
+  setting that turns snapping off, or makes it tldraw's (only while ⌘ is held); kinds saying what
+  they snap by (tldraw's `getBoundsSnapGeometry`: points of their own, or none), which only having
+  a frame decides today; guides for shapes the size of what moves (Freeform's); a frame's neighbors
+  when the nearest is past the next 64 frames along the axis, which a board zoomed far out over
+  thousands of shapes can miss; and shapes just out of view.
 - **More panning**: the space bar, and middle- or right-button drags, through a host entry point of
   their own (not `setTool`, which resets arrow targeting); the canvas scrolling at its edges while
   brushing or moving, hit-testing again as the camera moves (a scroll mid-brush waits for the next

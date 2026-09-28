@@ -63,6 +63,7 @@ import ValidationDetails
         validation-contents  ContentsMarks
         clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
         locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · CanvasContextMenu
+        snapping             service SnapState · translation adjuster
         ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
         arrow-ports          property channel → arrow · connector → arrow · ArrowBindingRules
         language-models      service LanguageModelState
