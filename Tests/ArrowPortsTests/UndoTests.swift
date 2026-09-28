@@ -7,8 +7,8 @@ import Geometry
 import Ports
 import TestKit
 
-// A connection drawn from a port is one undo step, as an arrow drawn with the arrow tool is: named
-// for what it adds, and none at all when nothing's drawn.
+// A connection drawn from a port is one undo step, named for what it adds, and none at all when
+// nothing's drawn.
 
 @MainActor let connectionUndoTests = Suite("Connections and undo", [
     test("a connection drawn from a port is one step, Add Arrow; undoing it takes the arrow away, redoing it brings it back exactly") {

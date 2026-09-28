@@ -143,7 +143,7 @@ let sideMiddles: [(side: PortSide, anchor: CGPoint)] = [(.top, CGPoint(x: 0.5, y
         expectEqual(made.props.end, binding(drawn.id, CGPoint(x: 0.5, y: 0), precise: true))
         expectEqual(made[ChannelProperty.self], Wire.id)
     },
-    test("an arrow from a shape to itself moves the end off an anchor the start has, as the arrow tool does, inward from the right side") {
+    test("an arrow from a shape to itself moves the end off an anchor the start has, as a dragged end does, inward from the right side") {
         let board = try PortBoard()
         let centered = try require(board.madeArrow(ConnectionRequest(from: board.a, to: board.a, channel: Wire.id)))
         expectEqual(centered.start, binding(board.a))

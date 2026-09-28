@@ -143,6 +143,13 @@ public struct ShapeRegistrar<Definition: ShapeDefinition> {
         contributions.append(RawContribution(ToolRegistration(descriptor: descriptor, placement: placement) { _ in PlaceShapeTool(placement) },
                                              to: CorePoints.Tools.self, for: .any, from: pluginID))
     }
+
+    /// What the kind is called, and its symbol, wherever a shape is shown by its kind (a panel's
+    /// header, a row, a message): for a kind no tool places (an arrow, drawn from a port), which is
+    /// otherwise called by its id. `registry.label(of:)` reads it.
+    public mutating func label(_ name: String, systemImage: String) {
+        contribute(KindLabel(name: name, systemImage: systemImage), to: CorePoints.KindLabels.self)
+    }
 }
 
 // Placements, gated by the type system: only box shapes can be placed, and only editable ones can
@@ -171,6 +178,19 @@ public struct ToolDescriptor: Identifiable, Sendable {
     public init(id: ToolID, label: String, systemImage: String) {
         self.id = id
         self.label = label
+        self.systemImage = systemImage
+    }
+}
+
+/// What a kind is called, and its symbol, wherever a shape is shown by its kind:
+/// `registry.label(of:)`.
+public struct KindLabel: Hashable, Sendable {
+    public var name: String
+    /// An SF Symbol; nil for a kind that has none.
+    public var systemImage: String?
+
+    public init(name: String, systemImage: String?) {
+        self.name = name
         self.systemImage = systemImage
     }
 }

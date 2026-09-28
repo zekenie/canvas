@@ -80,9 +80,9 @@ public struct MentionAppearance: Hashable, Sendable {
     public var label: String
     /// Whether `label` is "Untitled" and the kind's name, which says nothing of the shape.
     public var isPlaceholder: Bool
-    /// An SF Symbol: the kind's `symbol`, else its tool's.
+    /// An SF Symbol: the kind's `symbol`, else its label's (`registry.label(of:)`).
     public var systemImage: String
-    /// What the kind is called: its tool's label ("Note").
+    /// What the kind is called: its label ("Note", `registry.label(of:)`).
     public var kindName: String
     /// Said beside the label in the picker: the kind's `detail`, else its name.
     public var detail: String
@@ -122,9 +122,9 @@ public enum MentionResolution: Hashable, Sendable {
 extension ShapeRegistrar {
     /// Its shapes can be mentioned. Each closure reads only the shape, as a title does, so a pill
     /// changes only when its shape does. The label is `label`, else the shape's title (Titles'
-    /// `registry.title(of:)`, named or derived), else `untitled`, else "Untitled" and the placing
-    /// tool's label ("Untitled Note"), each on one line, blank counting as none. `symbol` defaults
-    /// to the placing tool's, `detail` to the kind's name, `tint` to none. `following` says what
+    /// `registry.title(of:)`, named or derived), else `untitled`, else "Untitled" and the kind's
+    /// label ("Untitled Note"), each on one line, blank counting as none. `symbol` defaults to the
+    /// kind's label's, `detail` to the kind's name, `tint` to none. `following` says what
     /// following a mention does: go to the shape, or into it (`.opens`: a subboard enters its
     /// board). An `untitled` that reads the shape's own mention text leaves every other shape's
     /// name out of it (`firstLine`, where each mention is "@…"): a mention holds its target's name
@@ -174,7 +174,7 @@ extension PluginRegistrar {
 // MARK: Reading it
 
 /// How a kind is mentioned: its contribution (nil for a kind that isn't mentionable), and what its
-/// shapes default to, its tool's label and symbol. Worked out once per kind by whoever asks often
+/// shapes default to, its kind's label and symbol. Worked out once per kind by whoever asks often
 /// (`MentionState`).
 struct MentionKindDefaults {
     let contribution: MentionContribution?
@@ -184,9 +184,9 @@ struct MentionKindDefaults {
     @MainActor
     init(_ kind: ShapeKind, in registry: Registry) {
         contribution = registry.mentionContribution(for: kind)
-        let tool = contribution == nil ? nil : registry.tools.first { $0.id == ToolID(placing: kind) }
-        name = tool?.label ?? kind.rawValue
-        symbol = tool?.systemImage ?? "square.dashed"
+        let label = contribution == nil ? nil : registry.label(of: kind)
+        name = label?.name ?? kind.rawValue
+        symbol = label?.systemImage ?? "square.dashed"
     }
 }
 

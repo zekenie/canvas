@@ -148,8 +148,8 @@ public enum WelcomeBoard {
         "Double-click empty space to add a note. Drag a note to move it.",
         "Double-click a note (or select it and press Return) to edit it.",
         "Pinch to zoom, scroll with two fingers to pan. Press H for the hand tool; drag the background to select.",
-        "Press A for the arrow tool, then drag from one shape to another.",
-        "Pause inside a note while drawing to aim at that spot. Hold ⌥ to go all the way in, ⌘ to not attach.",
+        "Point at a note, then drag one of its dots to another note to link them.",
+        "Pause inside a note while linking to aim at that spot. Hold ⌥ to go all the way in.",
         "Select an arrow and drag its middle handle to bend it.",
     ]
 

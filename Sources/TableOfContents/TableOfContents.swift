@@ -14,8 +14,8 @@ extension PluginID {
 // MARK: The extension point
 
 /// How a kind's shapes appear in the table of contents. At most one contribution per kind: two
-/// are `RegistryError.conflict` at startup. A kind with none is listed with the label and symbol
-/// of the tool that places it. A row reads only its shape, unless it also names, with `affected`,
+/// are `RegistryError.conflict` at startup. A kind with none is listed with its label and symbol
+/// (`registry.label(of:)`). A row reads only its shape, unless it also names, with `affected`,
 /// the shapes each commit may change the rows of without changing them: their rows are made again,
 /// and kept unless their labels changed.
 public enum ContentsRows {}
@@ -26,7 +26,7 @@ extension ContentsRows: KeyedExtensionPoint {
     public static func uniqueKeys(of _: ContentsContribution, for target: ShapeTarget) -> [AnyHashable] { [target] }
 }
 
-/// What `ContentsRows` stores for a kind: its row (nil for the tool's label and symbol), which
+/// What `ContentsRows` stores for a kind: its row (nil for the kind's label and symbol), which
 /// shapes are listed and under what, and, for a row read from more than its shape, which shapes'
 /// rows a commit may change besides the shapes it changes. Only the sugar below makes one.
 @MainActor
@@ -40,7 +40,7 @@ public struct ContentsContribution {
 /// What a shape's row is called, when a plugin other than the one that draws the row says: a
 /// horizontal that names shapes (Titles) names them here, and the kind keeps its row. At most one
 /// per kind, plus one for every kind: two are `RegistryError.conflict` at startup. A name that
-/// isn't blank takes the place of a `ContentsLabel` row's title (the kind's own row, or the tool's
+/// isn't blank takes the place of a `ContentsLabel` row's title (the kind's own row, or the kind's
 /// label a kind without one gets), which keeps its symbol, color and badge; nil or blank leaves the
 /// row as it is. A row that isn't a plain `ContentsLabel` is its kind's own view, and stays so.
 public enum ContentsTitles {}
@@ -129,7 +129,7 @@ extension ContentsContribution {
                   affected: affected)
     }
 
-    /// Without `row`, the tool's label and symbol.
+    /// Without `row`, the kind's label and symbol (`registry.label(of:)`).
     init<P: ShapeProps>(_: P.Type, isListed: @escaping @MainActor (ShapeRecord<P>) -> Bool, parent: (@MainActor (ShapeRecord<P>) -> ShapeID?)?,
                         row: (@MainActor (AnyShapeRecord, ContentsContext) -> ResolvedRow)? = nil,
                         affected: (@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>)? = nil) {
@@ -196,7 +196,7 @@ extension ShapeRegistrar {
                    to: ContentsRows.self)
     }
 
-    /// This kind's shapes with the row a kind without one gets (its tool's label and symbol),
+    /// This kind's shapes with the row a kind without one gets (its label and symbol),
     /// listed where `when` says and nested where `nestedUnder` says, as above:
     ///
     ///     arrow.contentsRow(nestedUnder: { $0.props.start.binding?.shapeID })
@@ -265,7 +265,7 @@ extension PluginRegistrar {
 
 /// The row most kinds want, as a Mac source list shows one: a symbol, a title on one line, and a count
 /// or short note at the trailing end. A blank title shows `placeholder`, dimmed. Without a symbol
-/// of its own, the row shows the one of the tool that places its kind.
+/// of its own, the row shows its kind's (`registry.label(of:)`).
 public struct ContentsLabel: View {
     public let title: String
     public let placeholder: String?
@@ -325,7 +325,7 @@ public struct ContentsLabel: View {
     }
 }
 
-/// The symbol of the tool that places the row's kind, which a `ContentsLabel` without its own shows.
+/// The symbol of the row's kind (`registry.label(of:)`), which a `ContentsLabel` without its own shows.
 struct ContentsSymbolKey: EnvironmentKey {
     static let defaultValue = "square.dashed"
 }
@@ -340,7 +340,7 @@ extension EnvironmentValues {
 // MARK: The plugin
 
 /// The table of contents' state. Contributes no rows of its own: a kind nobody describes is listed
-/// by its tool's label and symbol.
+/// by its label and symbol (`registry.label(of:)`).
 public struct TableOfContentsPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .tableOfContents }

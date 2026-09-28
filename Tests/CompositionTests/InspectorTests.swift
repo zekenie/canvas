@@ -154,7 +154,7 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         expectEqual(w.editor.currentToolID, .select)
         expectEqual(w.editor.selection, shape.id)
     },
-    test("Escape in the panel hands the keyboard to the canvas, and its next key picks the arrow tool") {
+    test("Escape in the panel hands the keyboard to the canvas, and its next key picks a tool") {
         let w = try InspectorWindow()
         let shape = note("Shopping")
         w.editor.transact { $0.insert(shape) }
@@ -166,8 +166,8 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         w.window.spin { w.canvasHasKeyboard }
         expect(w.canvasHasKeyboard)
         expectEqual(w.editor.selection, shape.id, "Escape in the panel isn't Escape on the canvas")
-        w.window.type("a")
-        expectEqual(w.editor.currentToolID, .arrow)
+        w.window.type("b")
+        expectEqual(w.editor.currentToolID, ToolID(placing: Subboard.kind))
         expectEqual(w.editor.document[shape.id]?[TitleProperty.self], nil)
     },
     test("hiding the inspector while a panel field has the keyboard hands it to the canvas, keeping what was typed") {
@@ -183,8 +183,8 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         w.window.spin { w.canvasHasKeyboard }
         expect(w.canvasHasKeyboard, "not the window: \(String(describing: w.window.firstResponder))")
         expectEqual(w.editor.document[shape.id]?[TitleProperty.self], "List")
-        w.window.type("a")
-        expectEqual(w.editor.currentToolID, .arrow)
+        w.window.type("b")
+        expectEqual(w.editor.currentToolID, ToolID(placing: Subboard.kind))
     },
     test("a selection change that removes the focused field hands the keyboard to the canvas") {
         let w = try InspectorWindow()

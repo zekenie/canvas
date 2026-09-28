@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([arrowToolTests, handleTests, arrowShapeTests, arrowCharacterizationTests, arrowTranslateTests, arrowBrushTests, arrowUndoTests, arrowBoardTests])
+runTests([bindingTests, handleTests, arrowShapeTests, arrowCharacterizationTests, arrowTranslateTests, arrowBrushTests, arrowUndoTests, arrowBoardTests])

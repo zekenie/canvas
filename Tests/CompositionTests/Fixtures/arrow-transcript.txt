@@ -1,28 +1,3 @@
-fast A to B: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
-    bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.500000,0.500000,imprecise) bend=0.000000 heads=false,true
-slow into B: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
-    bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.200000,0.200000,precise) bend=0.000000 heads=false,true
-dwell in B: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
-    bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.200000,0.200000,precise) bend=0.000000 heads=false,true
-hover then press: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
-    bound(#0,0.250000,0.250000,precise) -> bound(#1,0.500000,0.500000,imprecise) bend=0.000000 heads=false,true
-press and hold: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
-    bound(#0,0.250000,0.250000,precise) -> bound(#1,0.500000,0.500000,imprecise) bend=0.000000 heads=false,true
-option: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
-    bound(#0,0.500000,0.500000,precise,exact) -> bound(#1,0.200000,0.200000,precise,exact) bend=0.000000 heads=false,true
-command: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
-    free(180.000000,180.000000) -> free(500.000000,120.000000) bend=0.000000 heads=false,true
-shift: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
-    bound(#0,0.500000,0.500000,imprecise) -> free(375.346409,232.342913) bend=0.000000 heads=false,true
-release option with mouse: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
-    bound(#0,0.500000,0.500000,precise,exact) -> bound(#1,0.200000,0.200000,precise,exact) bend=0.000000 heads=false,true
-release option alone: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
-    bound(#0,0.500000,0.500000,precise,exact) -> bound(#1,0.200000,0.200000,precise) bend=0.000000 heads=false,true
-back into own shape: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
-    bound(#0,0.250000,0.250000,precise) -> bound(#0,0.300000,0.250000,precise) bend=0.000000 heads=false,true
-center snap: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
-    bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.500000,0.500000,precise) bend=0.000000 heads=false,true
-escape mid-drag: tool=arrow camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
 bend: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
     bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.500000,0.500000,imprecise) bend=80.000000 heads=false,true
 toggle head: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
@@ -39,11 +14,6 @@ delete bent: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0)
     bound(#0,0.500000,0.500000,imprecise) -> free(448.749185,239.213543) bend=34.337871 heads=false,true
 move shape: tool=select camera=(0.0, 0.0) shapes=[#1@(460.0, 80.0, 200.0, 200.0) #0@(130.0, 150.0, 200.0, 200.0)]
     bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.500000,0.500000,imprecise) bend=0.000000 heads=false,true
-pan: tool=select camera=(-40.0, -30.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
-    bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.500000,0.500000,imprecise) bend=0.000000 heads=false,true
-    bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.500000,0.500000,imprecise) bend=0.000000 heads=false,true
-slow into B, quick release: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
-    bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.100000,0.200000,precise) bend=0.000000 heads=false,true
 translate arrow off and back: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
     bound(#0,0.500000,0.650000,precise) -> bound(#1,0.500000,0.650000,precise) bend=0.000000 heads=false,true
 translate arrow, fractional: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
@@ -58,3 +28,29 @@ move bound shape: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 2
     bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.500000,0.500000,imprecise) bend=0.000000 heads=false,true
 translate arrow with a free end: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
     bound(#0,0.600000,0.700000,precise) -> free(780.000000,440.000000) bend=0.000000 heads=false,true
+re-aim: fast into B: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
+    bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.500000,0.500000,imprecise) bend=0.000000 heads=false,true
+re-aim: slow into B: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
+    bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.200000,0.200000,precise) bend=0.000000 heads=false,true
+re-aim: dwell in B: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
+    bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.200000,0.200000,precise) bend=0.000000 heads=false,true
+re-aim: slow into B, quick release: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
+    bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.100000,0.200000,precise) bend=0.000000 heads=false,true
+re-aim: option: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
+    bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.200000,0.200000,precise,exact) bend=0.000000 heads=false,true
+re-aim: command: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
+    bound(#0,0.500000,0.500000,imprecise) -> free(500.000000,120.000000) bend=0.000000 heads=false,true
+re-aim: shift: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
+    bound(#0,0.500000,0.500000,imprecise) -> free(375.346409,232.342913) bend=0.000000 heads=false,true
+re-aim: release option with mouse: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
+    bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.200000,0.200000,precise,exact) bend=0.000000 heads=false,true
+re-aim: release option alone: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
+    bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.200000,0.200000,precise) bend=0.000000 heads=false,true
+re-aim: center snap: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
+    bound(#0,0.500000,0.500000,imprecise) -> bound(#1,0.500000,0.500000,precise) bend=0.000000 heads=false,true
+re-aim: escape mid-drag: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
+    bound(#0,0.500000,0.500000,imprecise) -> free(300.000000,180.000000) bend=0.000000 heads=false,true
+re-aim: back into the start's shape: tool=select camera=(0.0, 0.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
+    bound(#0,0.250000,0.250000,precise) -> bound(#0,0.300000,0.250000,precise) bend=0.000000 heads=false,true
+pan, then re-aim: tool=select camera=(-40.0, -30.0) shapes=[#0@(80.0, 80.0, 200.0, 200.0) #1@(460.0, 80.0, 200.0, 200.0)]
+    bound(#0,0.500000,0.500000,imprecise) -> free(760.000000,400.000000) bend=0.000000 heads=false,true

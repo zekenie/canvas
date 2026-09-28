@@ -18,11 +18,12 @@ extension ArrowEdge: EdgeType {
 }
 
 /// Arrows are what ports draw, though neither plugin has heard of the other: a drag from a port
-/// draws an arrow, its end binding (by tldraw's rules, as the arrow tool's does) only to shapes that
+/// draws an arrow, its end binding (by tldraw's rules, as a re-aimed end does) only to shapes that
 /// take one of the port's channels, and an arrow so drawn keeps its channel (`ChannelProperty`).
 /// Released on nothing, nothing is drawn. An arrow with a channel, re-aimed or moved, binds only to
-/// shapes that take its channel, at that end; one without (the arrow tool's), or with a channel no
-/// installed plugin declares, binds wherever an arrow can. Without a drag (`registry.connection`),
+/// shapes that take its channel, at that end; one without (`canvas draw`'s `channel: none`, a
+/// board's from before ports), or with a channel no installed plugin declares, binds wherever an
+/// arrow can. Without a drag (`registry.connection`),
 /// an arrow is made bound at both ends (`ArrowConnections`), and its ends are the shapes it's bound
 /// to. An arrow bound at both ends is an edge (Topology's) of the `arrow` family, or of its
 /// channel's type, under it.
@@ -50,7 +51,7 @@ public struct ArrowPortsPlugin: CanvasPlugin {
 
 /// Arrows made without a drag, as a connection request says: bound at both ends, each aimed at the
 /// middle of the side it names (precise, not exact, so it stops at the outline with its head's gap,
-/// as an end the arrow tool binds slowly does) or, with none, at the shape's center (imprecise, as
+/// as an end bound slowly does) or, with none, at the shape's center (imprecise, as
 /// a port's drag starts one). Where a named side faces away from the other shape, the arrow still
 /// leaves from the side facing it: an end is clipped where the line first crosses the outline
 /// (tldraw's).
@@ -81,7 +82,7 @@ enum ArrowConnections {
             rebound.insert(end)
         }
         // Both ends on one shape at one anchor would draw nothing: an end bound here (the end, if
-        // both were) moves off it, as the arrow tool moves the end it binds, but inward from a
+        // both were) moves off it, as a dragged end moves off the other, but inward from a
         // right side (x = 1), past which it'd be held to the side and still meet the other end.
         if let start = arrow.props.start.binding, let end = arrow.props.end.binding, start.shapeID == end.shapeID,
            start.normalizedAnchor == end.normalizedAnchor, let moved = [ArrowEnd.end, .start].first(where: rebound.contains) {

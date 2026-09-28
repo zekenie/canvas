@@ -18,7 +18,7 @@ import Topology
 
 private let noteLink = EdgeTypeID(rawValue: NoteLink.id.rawValue), schemaLink = EdgeTypeID(rawValue: SchemaLink.id.rawValue)
 
-/// An arrow bound at both ends, imprecisely, at the centers, on `channel` (nil: as the arrow tool draws).
+/// An arrow bound at both ends, imprecisely, at the centers, on `channel` (nil: on none).
 private func arrow(_ from: ShapeID, _ to: ShapeID, on channel: ChannelID?) -> AnyShapeRecord {
     func bound(_ id: ShapeID) -> ArrowTerminal {
         .bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))

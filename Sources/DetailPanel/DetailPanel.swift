@@ -71,7 +71,7 @@ public struct DetailTabID: Hashable, Sendable, CustomStringConvertible {
 public struct DetailHeader: Equatable, Sendable {
     public var title: String
     public var subtitle: String?
-    /// An SF Symbol. Nil: the symbol of the tool that places this kind.
+    /// An SF Symbol. Nil: this kind's (`registry.label(of:)`).
     public var systemImage: String?
 
     public init(_ title: String, subtitle: String? = nil, systemImage: String? = nil) {

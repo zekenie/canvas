@@ -18,15 +18,24 @@ import TestKit
     test("arrows bind to any closed shape, analytic hit tests included, and never to arrows") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
         let disc = h.add(Disc(CGRect(x: 460, y: 80, width: 200, height: 140)))
-        h.add(Box(boxA))
-        h.key("a"); h.move(to: boxA.center); h.press()
+        let a = h.add(Box(boxA))
+        let arrow = h.add(Arrow(start: .bound(ArrowBinding(shapeID: a, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)),
+                                end: .free(CGPoint(x: 400, y: 400))))
+        h.editor.selection = arrow
+        h.move(to: CGPoint(x: 400, y: 400)); h.press()               // its free end's handle
         h.drag(to: CGPoint(x: 465, y: 85), speed: fast)            // inside the disc's box, outside the disc
         expectEqual(h.editor.hintedShapeID, nil)
         h.drag(to: CGPoint(x: 560, y: 150), speed: fast)
         h.release()
-        expectEqual(h.editor.document.shapes.last?.typed(as: Arrow.self)?.props.end.binding?.shapeID, disc)
-        h.key("a"); h.move(to: CGPoint(x: 370, y: 150))              // on the first arrow's body
+        expectEqual(h.editor.document[arrow]?.typed(as: Arrow.self)?.props.end.binding?.shapeID, disc)
+        let body = try require(h.editor.arrowGeometry(of: arrow)).middle
+        let other = h.add(Arrow(start: .free(CGPoint(x: 300, y: 500)), end: .free(CGPoint(x: 400, y: 500))))
+        h.editor.selection = other
+        h.move(to: CGPoint(x: 400, y: 500)); h.press()
+        h.drag(to: body, speed: fast)                               // on the first arrow's body
         expectEqual(h.editor.hintedShapeID, nil)
+        h.release()
+        expectEqual(h.editor.document[other]?.typed(as: Arrow.self)?.props.end, .free(body))
     },
     test("moving an arrow keeps its ends bound (made precise) while they stay on their shapes") {
         let board = try Board(arrow: 0)
@@ -100,8 +109,7 @@ import TestKit
     test("an arrow paints just above the highest shape it's bound to; unbound arrows paint on top") {
         let board = try Board(arrow: 0)
         let c = board.h.add(Box(CGRect(x: 0, y: 600, width: 50, height: 50)))
-        board.drawArrow(from: CGPoint(x: 700, y: 700), to: CGPoint(x: 800, y: 800))   // unbound
-        let loose = try require(board.arrowIDs.last)
+        let loose = board.h.add(Arrow(start: .free(CGPoint(x: 700, y: 700)), end: .free(CGPoint(x: 800, y: 800))))   // unbound
         expectEqual(board.h.editor.paintOrder().map(\.id), [board.a, board.b, try require(board.arrow), c, loose])
         board.h.editor.transact { $0.bringToFront(board.a) }       // raising A carries nothing; B is still higher
         expectEqual(board.h.editor.paintOrder().map(\.id), [board.b, c, board.a, try require(board.arrow), loose])
@@ -109,13 +117,12 @@ import TestKit
     test("in the table of contents an arrow is listed under the shape it starts from, and at the top when that shape isn't listed") {
         let board = try Board(arrow: 0)
         let contents = try require(board.h.editor.tableOfContents)
-        board.drawArrow(from: CGPoint(x: 700, y: 700), to: CGPoint(x: 800, y: 800))   // starts free
-        let loose = try require(board.arrowIDs.last)
+        let loose = board.h.add(Arrow(start: .free(CGPoint(x: 700, y: 700)), end: .free(CGPoint(x: 800, y: 800))))   // starts free
         board.h.editor.selectedShapeIDs = []
         let entries = contents.entries
         expectEqual(entries.map(\.id), [board.a, board.b, loose])
         expectEqual(entries.first?.children?.map(\.id), [try require(board.arrow)])
-        expectEqual(entries.first?.children?.first?.label?.text, "Arrow", "the arrow tool's label")
+        expectEqual(entries.first?.children?.first?.label?.text, "Arrow", "the kind's label")
         expectEqual(entries.first?.children?.first?.symbol, "arrow.up.right")
         board.h.editor.selectedShapeIDs = [try require(board.arrow), board.b]
         expectEqual(contents.entries.map(\.id), [board.b, try require(board.arrow)], "its start isn't selected, so it's at the top")

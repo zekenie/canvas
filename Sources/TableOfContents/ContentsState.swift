@@ -11,7 +11,7 @@ public struct ContentsEntry: Identifiable {
     public var kind: ShapeKind { row.record.kind }
     /// The row, when it's a plain `ContentsLabel` (as most are); nil for any other view.
     public var label: ContentsLabel? { row.label }
-    /// The symbol of the tool that places the kind, which a `ContentsLabel` without its own shows.
+    /// The kind's symbol (`registry.label(of:)`), which a `ContentsLabel` without its own shows.
     public var symbol: String { row.symbol }
     /// The dots at the row's trailing end (`ContentsMarks`), in contribution order.
     public var marks: [ContentsMark] { row.marks }
@@ -124,7 +124,7 @@ public final class ContentsState {
         let title: ContentsTitles.Contribution?
         /// What marks its rows (`ContentsMarks`): the kind's own, then every kind's.
         let marks: [ContentsMarkContribution]
-        /// The label and symbol of the tool that places the kind, else its name and a dashed square.
+        /// The kind's label and symbol (`registry.label(of:)`), a dashed square for a kind without one.
         let name: String
         let symbol: String
 
@@ -409,7 +409,7 @@ public final class ContentsState {
 
     // MARK: Rows
 
-    /// The shape's row: its kind's, else its tool's label; called what `ContentsTitles` names it, if
+    /// The shape's row: its kind's, else its kind's label; called what `ContentsTitles` names it, if
     /// it's a `ContentsLabel`; with its marks. Made again after the shape changes; made again when a
     /// commit may change it without changing the shape (`affected`), and kept unless its label
     /// changed; and copied with new marks when a commit changes them without changing the shape; nil
@@ -449,7 +449,7 @@ public final class ContentsState {
                         symbol: kind.symbol, marks: marked ? marks(of: record, isListed: isListed, kind: kind) : [])
     }
 
-    /// The shape's row as its kind makes it, else its tool's label, called what `ContentsTitles`
+    /// The shape's row as its kind makes it, else its kind's label, called what `ContentsTitles`
     /// names it if it's a `ContentsLabel`.
     private func resolvedRow(of record: AnyShapeRecord, kind: KindRows) -> ResolvedRow {
         let row = kind.contribution?.row?(record, ContentsContext(editor: editor)) ?? ResolvedRow(ContentsLabel(kind.name))
@@ -469,11 +469,11 @@ public final class ContentsState {
     private func kindRows(_ kind: ShapeKind) -> KindRows {
         if let found = kinds[kind] { return found }
         let registry = editor.registry
-        let tool = registry.tools.first { $0.id == ToolID(placing: kind) }
+        let label = registry.label(of: kind)
         let found = KindRows(contribution: registry.contributions(to: ContentsRows.self, for: kind).first,
                              title: registry.contributions(to: ContentsTitles.self, for: kind).first,
                              marks: registry.contributions(to: ContentsMarks.self, for: kind),
-                             name: tool?.label ?? kind.rawValue, symbol: tool?.systemImage ?? ContentsSymbolKey.defaultValue)
+                             name: label.name, symbol: label.systemImage ?? ContentsSymbolKey.defaultValue)
         kinds[kind] = found
         return found
     }

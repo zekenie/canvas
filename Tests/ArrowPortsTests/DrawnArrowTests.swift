@@ -9,8 +9,8 @@ import TestKit
 
 // Rules for arrows already drawn: an arrow on a channel some plugin declares binds, at each end,
 // only to shapes that take it there (its start to one that can start one, its end to one that can
-// end one), looking through the rest, re-aimed or moved; one without a channel (the arrow tool's),
-// or on a channel nobody declares, binds wherever an arrow can.
+// end one), looking through the rest, re-aimed or moved; one without a channel (`canvas draw`'s
+// `channel: none`), or on a channel nobody declares, binds wherever an arrow can.
 
 /// A disc over B's center, in front of it: where a connection's end, moved down 30, lands.
 let discOverBCenter = CGRect(x: 500, y: 140, width: 120, height: 120)
@@ -116,21 +116,13 @@ let discOverBCenter = CGRect(x: 500, y: 140, width: 120, height: 120)
             expectEqual(moved[ChannelProperty.self], channel)
         }
     },
-    test("an arrow drawn with the arrow tool binds to a shape no channel lets a connection end on, and to the shape in front") {
+    test("an arrow without a channel, re-aimed, binds to the shape in front") {
         let board = try PortBoard()
         let disc = board.h.add(Disc(discOverB))
-        board.h.key("a")
-        board.h.move(to: boxA.center)
-        board.h.press()
-        board.h.drag(to: discC.center, speed: fast)
-        board.h.release()
-        board.h.key("a")
-        board.h.move(to: boxA.center)
-        board.h.press()
-        board.h.drag(to: CGPoint(x: 490, y: 130), speed: fast)
-        board.h.release()
-        expectEqual(board.arrows.map(\.props.end), [binding(board.c), binding(disc)])
-        expectEqual(board.arrows.map { $0[ChannelProperty.self] }, [nil, nil])
+        let arrow = board.addArrow(channel: nil)
+        board.reaim(arrow, from: boxB.center, to: CGPoint(x: 490, y: 130))
+        expectEqual(board.arrow(arrow)?.props.end, binding(disc))
+        expectEqual(board.arrow(arrow)?[ChannelProperty.self], nil)
     },
     test("an arrow without a channel re-aimed binds to any shape") {
         let board = try PortBoard()

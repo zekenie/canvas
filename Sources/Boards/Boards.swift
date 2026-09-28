@@ -96,23 +96,19 @@ extension CanvasEditor {
     }
 
     /// What a board is called: its owner's title (Titles), else its kind's placeholder
-    /// (`opensBoard`), else what the tool that places the kind is called, else the kind; `root` for
-    /// the root (the file's name, say).
+    /// (`opensBoard`), else the kind's label (`registry.label(of:)`); `root` for the root (the
+    /// file's name, say).
     public func name(of board: BoardID, root: String) -> String {
         guard let owner = owner(of: board) else { return board.isRoot ? root : "Board" }
         if let title = registry.title(of: owner) { return title }
         if let kind = registry.contributions(to: BoardKinds.self, for: owner.kind).first { return kind.placeholder }
-        return placingTool(of: owner.kind)?.label ?? owner.kind.rawValue
+        return registry.label(of: owner.kind).name
     }
 
-    /// A board's symbol: its owner's kind's (`opensBoard`), else its placing tool's; nil for the root.
+    /// A board's symbol: its owner's kind's (`opensBoard`), else its kind's label's; nil for the root.
     public func symbol(of board: BoardID) -> String? {
         guard let owner = owner(of: board) else { return nil }
         if let kind = registry.contributions(to: BoardKinds.self, for: owner.kind).first { return kind.systemImage }
-        return placingTool(of: owner.kind)?.systemImage
-    }
-
-    private func placingTool(of kind: ShapeKind) -> ToolDescriptor? {
-        registry.tools.first { $0.id == ToolID(placing: kind) }
+        return registry.label(of: owner.kind).systemImage
     }
 }

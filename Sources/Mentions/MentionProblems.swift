@@ -54,10 +54,8 @@ extension Registry {
         return problems
     }
 
-    /// What a kind is called: its placing tool's label ("Arrow"), else its id.
-    private func kindName(of kind: ShapeKind) -> String {
-        tools.first { $0.id == ToolID(placing: kind) }?.label ?? kind.rawValue
-    }
+    /// What a kind is called ("Arrow", `label(of:)`).
+    private func kindName(of kind: ShapeKind) -> String { label(of: kind).name }
 }
 
 /// The problems' words: short sentences with periods, each name in curly quotes.

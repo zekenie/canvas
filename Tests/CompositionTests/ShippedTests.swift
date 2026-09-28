@@ -24,9 +24,9 @@ import ValidationDetails
     test("the shipped plugin list registers without conflicts") {
         _ = try ShippedPlugins.registry(model: ScriptedLanguageModel())
     },
-    test("the toolbar is Select V, Hand H, Arrow A, Note N, Subboard B, Schema S, Rectangle R, Line L, Eraser E") {
+    test("the toolbar is Select V, Hand H, Note N, Subboard B, Schema S, Rectangle R, Line L, Eraser E: arrows are drawn from ports") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
-        expectEqual(registry.tools.map { ShippedPlugins.help(for: $0, in: registry) }, ["Select (V)", "Hand (H)", "Arrow (A)", "Note (N)", "Subboard (B)", "Schema (S)", "Rectangle (R)", "Line (L)", "Eraser (E)"])
+        expectEqual(registry.tools.map { ShippedPlugins.help(for: $0, in: registry) }, ["Select (V)", "Hand (H)", "Note (N)", "Subboard (B)", "Schema (S)", "Rectangle (R)", "Line (L)", "Eraser (E)"])
     },
     test("a plugin that needs the key asks for Settings with the action the app's menu item sends") {
         expectEqual(AnthropicSettingsView.showSettingsAction, BoardMenus.showSettings)
@@ -45,7 +45,7 @@ import ValidationDetails
         keyboard             service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo
         selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection
         topology             service TopologyIndex
-        arrows               shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay
+        arrows               shape arrow · label Arrow → arrow · ContentsRows → arrow · service ArrowTargeting · overlay BindingHintsOverlay
         sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
         subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard
         schemas              service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link · edge type schema-link
@@ -88,7 +88,7 @@ import ValidationDetails
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
         let state = try require(h.editor.detailPanel)
         var panels: [String] = []
-        for (shortcut, x) in [("r", 400.0), ("a", 700), ("n", 1000), ("s", 1800), ("b", 2200)] {
+        for (shortcut, x) in [("r", 400.0), ("n", 1000), ("s", 1800), ("b", 2200)] {
             h.key(shortcut)
             h.press(at: CGPoint(x: x, y: 100))
             h.drag(to: CGPoint(x: x + 150, y: 300))
@@ -96,10 +96,14 @@ import ValidationDetails
             let layout = state.layout(for: try require(h.editor.selection.flatMap { h.editor.document[$0] }))
             panels.append("\(layout.headerText): \(layout.tabs.map(\.title).joined(separator: ", "))")
         }
+        // No tool places an arrow (a port's drag draws one): its header is its kind's label.
+        let arrow = h.add(Arrow(start: .free(CGPoint(x: 700, y: 100)), end: .free(CGPoint(x: 850, y: 300))))
+        let layout = state.layout(for: try require(h.editor.document[arrow]))
+        panels.append("\(layout.headerText): \(layout.tabs.map(\.title).joined(separator: ", "))")
         // Every header of a kind that can be named renames it: an untitled shape's shows the
         // placeholder. A note placed is empty, which is a warning, so it has Issues until it's
         // written in.
-        expectEqual(panels, ["(Rectangle): ", "Arrow: ", "(Note): Issues", "(Untitled): Schema", "(Untitled Subboard): Board"])
+        expectEqual(panels, ["(Rectangle): ", "(Note): Issues", "(Untitled): Schema", "(Untitled Subboard): Board", "Arrow: "])
     },
     test("a line drawn with L is a Line in the panel, with nothing but its header") {
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
@@ -179,14 +183,15 @@ import ValidationDetails
         expectEqual(editor.document.shapes.filter { $0.kind == Arrow.kind }.count, 3)
         expectEqual(editor.validation?.results.count, 0)
     },
-    test("the shipped welcome board differs from the POC's only in the third note, which mentions H and no longer says dragging the background pans, and the fourth, which no longer places an ellipse") {
+    test("the shipped welcome board differs from the POC's only in the third note, which mentions H and no longer says dragging the background pans, and the fourth and fifth, which link notes from their dots, the arrow tool gone") {
         let shipped = WelcomeBoard.texts
         expectEqual(shipped.count, pocWelcomeTexts.count)
-        expectEqual(shipped.indices.filter { shipped[$0] != pocWelcomeTexts[$0] }, [2, 3])
+        expectEqual(shipped.indices.filter { shipped[$0] != pocWelcomeTexts[$0] }, [2, 3, 4])
         expect(shipped[2].contains("Press H"))
         expect(!shipped[2].contains("pans too"))
-        expect(pocWelcomeTexts[3].hasPrefix(shipped[3]), "the arrow tool, as the POC says it")
+        expect(!shipped[3].contains("Press A") && shipped[3].contains("dots"))
         expect(!shipped[3].contains("Press O"))
+        expect(!shipped[4].contains("⌘"), "a connection released on nothing isn't drawn, so there's nothing not to attach")
         let notes = WelcomeBoard.document().shapes.compactMap { $0.typed(as: StickyNote.self)?.props.text.stored }
         expectEqual(notes, shipped)
     },

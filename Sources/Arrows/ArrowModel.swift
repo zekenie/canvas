@@ -127,10 +127,6 @@ public enum ArrowHandle: Hashable, Sendable {
     case middle
 }
 
-extension ToolID {
-    public static let arrow: ToolID = "arrow"
-}
-
 extension PluginID {
     public static let arrows: PluginID = "arrows"
 }

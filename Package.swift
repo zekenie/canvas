@@ -75,7 +75,7 @@ let package = Package(
         .target(name: "Snapping", dependencies: ["Canvas", "Geometry"]),                      // layer: horizontal
         .target(name: "Topology", dependencies: ["Canvas"]),                                  // layer: horizontal
 
-        .target(name: "Arrows", dependencies: ["Canvas", "Geometry", "Keyboard", "Selection", "TableOfContents"]), // layer: vertical
+        .target(name: "Arrows", dependencies: ["Canvas", "Geometry", "Selection", "TableOfContents"]), // layer: vertical
         .target(name: "StickyNotes", dependencies: ["Canvas", "DetailPanel", "Keyboard", "Mentions", "Ports", "Selection", "TableOfContents", "Titles", "Validation"]), // layer: vertical
         .target(name: "Schemas", dependencies: ["Canvas", "DetailPanel", "Keyboard", "LanguageModels", "Ports", "TableOfContents", "Titles", "Validation"]), // layer: vertical
         .target(name: "Subboards", dependencies: ["Boards", "Canvas", "DetailPanel", "Keyboard", "Mentions", "TableOfContents", "Titles"]), // layer: vertical

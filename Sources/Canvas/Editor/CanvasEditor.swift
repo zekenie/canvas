@@ -638,7 +638,7 @@ public final class CanvasEditor {
     /// Where place tools (and any plugin with a `Placement`) create shapes: the shape goes in, the
     /// default tool comes back, services hear `didPlace` (the selection selects it), and the shape
     /// follows the pointer or is edited. (Other tools create shapes with
-    /// `transact { $0.insert(...) }`, as the arrow tool does.)
+    /// `transact { $0.insert(...) }`, as a port's drag does.)
     /// The insert names its undo step "Add" and the placing tool's label ("Add Note").
     public func place(_ placement: Placement, at point: CGPoint) {
         let record = placement.shape(at: point)

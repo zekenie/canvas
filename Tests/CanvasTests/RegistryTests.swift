@@ -114,6 +114,20 @@ extension ShapeRegistrar {
                                        Contributor(id: "b") { $0.contribute("B", to: Titles.self, for: .kind(Box.kind)) }])
         }
     },
+    test("a kind is called what it declares, else its placing tool's label and symbol, else its id; a second label for it conflicts") {
+        let registry = try Registry(plugins: [CardsPlugin { card, _ in card.label("Index Card", systemImage: "menucard") }, discTools(),
+                                              Contributor(id: "boxes") { $0.shape(BoxDefinitionForTests()) }])
+        expectEqual(registry.label(of: Card.kind), KindLabel(name: "Index Card", systemImage: "menucard"), "declared, over its tool's")
+        expectEqual(registry.label(of: Disc.kind), KindLabel(name: "Disc", systemImage: "circle"), "its tool's")
+        expectEqual(registry.label(of: Box.kind), KindLabel(name: "box", systemImage: nil), "its id")
+        expect(registry.report.contains("label Index Card → card"), registry.report)
+        expectThrows(RegistryError.conflict(point: "KindLabels", key: "the label of card", plugins: ["cards", "cards"])) {
+            _ = try Registry(plugins: [CardsPlugin { card, _ in
+                card.label("Index Card", systemImage: "menucard")
+                card.label("Card", systemImage: "rectangle")
+            }])
+        }
+    },
     test("the toolbar is the core's Hand tool, then each plugin's tools in plugin order") {
         let registry = try Registry(plugins: [CardsPlugin(), Contributor(id: "x") {
             $0.tool(ToolDescriptor(id: "zap", label: "Zap", systemImage: "bolt")) { _ in NoTool() }

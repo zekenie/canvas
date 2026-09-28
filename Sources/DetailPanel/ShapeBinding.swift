@@ -143,12 +143,10 @@ public struct ShapeBinding<Value> {
 
 extension CanvasEditor {
     /// What a panel write names its undo step when its section has no title (the header, say):
-    /// "Change" and the kind's name, the label of the tool that places it ("Change Schema"), else the
-    /// kind.
+    /// "Change" and the kind's label ("Change Schema", `registry.label(of:)`).
     func changeName(of id: ShapeID) -> String {
         guard let kind = document[id]?.kind else { return "Change" }
-        let tool = ToolID(placing: kind)
-        return "Change \(registry.tools.first { $0.id == tool }?.label ?? kind.rawValue)"
+        return "Change \(registry.label(of: kind).name)"
     }
 }
 

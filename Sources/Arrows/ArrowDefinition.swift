@@ -1,7 +1,6 @@
 import AppKit
 import Canvas
 import Geometry
-import Keyboard
 import Selection
 import TableOfContents
 
@@ -95,7 +94,7 @@ extension ArrowDefinition: HandleProviding {
         if case .terminal(let end) = handle, let binding = arrow[end].binding {
             isPrecise = binding.isPrecise
         }
-        let drag = ArrowHandleDragSession(arrowID: shape.id, handle: handle, isCreating: false,
+        let drag = ArrowHandleDragSession(arrowID: shape.id, handle: handle,
                                           handleOffset: targeting.geometry(of: arrow).point(for: handle) - origin,
                                           isPrecise: isPrecise, targeting: targeting)
         if case .terminal(let end) = handle, arrow[end].binding != nil, !isPrecise {
@@ -289,13 +288,12 @@ public struct ArrowsPlugin: CanvasPlugin {
     public var id: PluginID { .arrows }
     public func register(into registrar: inout PluginRegistrar) {
         registrar.shape(ArrowDefinition()) { arrow in
+            // No tool places one (a port's drag draws it, ArrowPorts'), so it names itself.
+            arrow.label("Arrow", systemImage: "arrow.up.right")
             // In the table of contents, under the shape it starts from (as data-canvas's edges).
             arrow.contentsRow(nestedUnder: { $0.props.start.binding?.shapeID })
         }
         registrar.service { ArrowTargeting(editor: $0) }
-        registrar.tool(ToolDescriptor(id: .arrow, label: "Arrow", systemImage: "arrow.up.right"), shortcut: "a") { editor in
-            ArrowTool(targeting: editor.service(ArrowTargeting.self)!)
-        }
         registrar.overlay(BindingHintsOverlay())
         // Arrows let go of shapes as they're deleted through `ShapeReferencing`, which the core asks.
     }
