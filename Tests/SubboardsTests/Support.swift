@@ -14,12 +14,13 @@ import SwiftUI
 import TableOfContents
 import TestKit
 import Titles
+import Topology
 
 /// Every plugin a subboard contributes to (Boards, and through it Selection, ContextMenus and the
 /// panel; Titles, Mentions, the table of contents and the keys), and CanvasTesting's fixtures, for
 /// boxes.
 @MainActor func subboardPlugins() -> [any CanvasPlugin] {
-    [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), SubboardsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
+    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), SubboardsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
      TableOfContentsPlugin(), AdornmentsPlugin(), TitlesPlugin(), MentionsPlugin(), BoardsPlugin()]
 }
 

@@ -7,6 +7,7 @@ import Geometry
 import Keyboard
 import Ports
 import Selection
+import Topology
 
 // Fixtures only (CanvasTesting's boxes, discs and tags), so every test here shows the horizontal
 // knows no real kind, and no arrow: connections are tags, drawn by a connector that only records.
@@ -21,6 +22,13 @@ extension Wire: Channel {
 enum Pipe {}
 extension Pipe: Channel {
     static let id: ChannelID = "pipe"
+}
+
+/// The family of connections the tests' connectors draw, as Topology's edge type: each channel's
+/// edge type is under it.
+enum Hookup {}
+extension Hookup: EdgeType {
+    static let id: EdgeTypeID = "hookup"
 }
 
 /// What the test connector saw: each connection begun, and each drag its session got.
@@ -47,7 +55,7 @@ extension RecordingSession: Session {
 /// A connector: tags are what connections are, and it records what it's asked to draw.
 @MainActor func connectorPlugin(_ connections: Connections) -> Contributor {
     Contributor(id: "tag-connector") { registrar in
-        registrar.connects(Tag.self, canConnect: { id, _ in connections.canConnect(id) }) { connection, _ in
+        registrar.connects(Tag.self, edgeType: Hookup.self, canConnect: { id, _ in connections.canConnect(id) }) { connection, _ in
             guard connections.draws else { return nil }
             connections.begun.append(connection)
             return RecordingSession(connections)
@@ -68,7 +76,7 @@ extension RecordingSession: Session {
 /// What the app has around Ports: the keys, the selection, the fixtures, the channels and a connector.
 @MainActor func portsHarness(_ connections: Connections = Connections(), boxSides: [PortSide] = PortSide.allCases,
                              boxRole: PortRole = .both, discRole: PortRole = .both, more: [any CanvasPlugin] = []) throws -> EditorHarness {
-    try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), PortsPlugin(),
+    try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin(),
                                 channelsPlugin(boxSides: boxSides, boxRole: boxRole, discRole: discRole), connectorPlugin(connections)] + more)
 }
 
@@ -165,7 +173,7 @@ extension DialDefinition: ShapeDefinition, HandleProviding {
 /// An editor like `portsHarness`'s, whose board also holds a box it keeps aside (its props don't
 /// read), returned with it.
 @MainActor func harnessKeepingABoxAside(_ connections: Connections) throws -> (h: EditorHarness, kept: ShapeID) {
-    let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), PortsPlugin(), channelsPlugin(),
+    let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin(), channelsPlugin(),
                                           connectorPlugin(connections)])
     let kept = ShapeID()
     let json = """

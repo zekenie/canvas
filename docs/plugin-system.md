@@ -3,7 +3,7 @@
 Everything on the canvas comes from a plugin: sticky notes, arrows, schema cards, subboards,
 validation, checklists, titles, the pills and chips shown on shapes (adornments), the detail panel
 and the table of contents beside the canvas, selecting itself, copying and pasting, locking, the
-ports arrows are dragged from, text's mentions of shapes, snapping what's dragged to the shapes around it, what each key does, what the command line can do, the language model plugins ask, even the examples.
+ports arrows are dragged from, text's mentions of shapes, the graph of what connects to what, snapping what's dragged to the shapes around it, what each key does, what the command line can do, the language model plugins ask, even the examples.
 The core (`Sources/Canvas`) knows how to hold shapes, run tools, draw, and wire plugins together,
 and nothing about any particular shape or concern. Its one built-in tool is tldraw's Hand, which
 pans (a flung release slides on). Select, which selects (a click, ⇧-click, or a marquee dragged
@@ -33,6 +33,7 @@ maps one onto the other.
 - [Locking](#locking)
 - [Ports](#ports)
 - [Mentions](#mentions)
+- [Topology](#topology)
 - [Boards](#boards)
 - [The command line](#the-command-line)
 - [Schema cards](#schema-cards)
@@ -281,6 +282,9 @@ Once one plugin works, the question is which piece the next feature needs.
 | Go to what mentions a shape | `mentions.backlinks(of:)`, `showWhatMentions(_:)`; Show What Mentions in the context menu | [What mentions a shape](#what-mentions-a-shape) |
 | Restrict what a text may mention to some kinds | `ScopedMentionText<Only<Kind>>`, or a declared scope: `registrar.mentionScope(S.self)` and `x.mentionable(in: S.self)` | [Scopes](#scopes-what-a-text-may-mention) |
 | Hold names of shapes that may outlive them (a mention), renamed when copied with them | A value that adopts `ShapeNaming`; `registry.namingKinds` and `record.forEachNamingValue(in:)` to read them | [Values that name shapes](#values-that-name-shapes) |
+| Ask what's connected to a shape, and how (arrows, mentions), anywhere in the file | `editor.topology?.neighbors(of:)`, `edges(of:_:types:)` with an `EdgeTypeFilter` | [Topology](#the-index-topologyindex) |
+| Say that a kind's shapes connect others: a new kind of edge | An `EdgeType`, `registrar.edgeType(T.self)`, and a source: `x.edges { … }`, `registrar.edges(K.self)`, or `registrar.edges(in: P.self, as: T.self)` over an added property that names shapes | [Topology](#sources) |
+| Ask which shape a shape is inside (the owner of its board, at any depth) | `editor.topology?.parent(of:)`, `ancestors(of:)`, `isInside(_:_:)` | [Containment](#containment) |
 | Put an editing view's selection where the press that began editing was | `editor.beginEditing(id, at: point)`, read as `EditContext.startPoint` | [Capabilities](#capabilities) |
 | Name an undo step, or make several changes one | `editor.transact("Name") { ... }`; `editor.undoHistory.group("Name") { ... }`; `transact(coalescing:)` for a run of writes | [Undo](#undo) |
 | Put a service's state back with undo (a selection) | `UndoParticipant` | [Undo](#undo) |
@@ -328,7 +332,10 @@ end on, while the plugin that owns a channel's meaning declares it. So is what's
 [Adornments](#adornments) lays out and draws what any plugin puts on them, a title's pill beside a
 lock, so none overlaps another. So are [mentions](#mentions): any kind can be mentioned, and any
 kind's text can hold mentions, while Mentions owns the stored form, the pills, the picker, what
-mentions each shape and what keeps them in step with the shapes they name. So is getting around a
+mentions each shape and what keeps them in step with the shapes they name. So is what connects and contains what:
+[Topology](#topology) keeps the file's graph of edges (an arrow bound at both ends, a mention),
+typed by the plugins that own what each means and read out of the shapes that carry them, while
+Ports and Mentions only say what their shapes carry. So is getting around a
 file's [boards](#boards): any kind whose shapes own boards opts in with one line, and Boards owns
 opening them, going back up,
 what a board is called and the path that shows where you are, while the core only holds the boards
@@ -347,8 +354,9 @@ Opting in goes in one of two directions:
   `ValidationChecks` give [`canvas draw`](#the-command-line) its names, edges and warnings, though
   Automation has never heard of titles, ports or validity, and `MentionValidation` warns
   about mentions that can't work, though Mentions has never heard of validation, nor Validation of
-  mentions. `ArrowPorts` makes arrows what a drag from a port draws, though Arrows has never heard
-  of a channel, nor Ports of an arrow.
+  mentions. `ArrowPorts` makes arrows what a drag from a port draws, and names their family of edges, though Arrows has never heard
+  of a
+  channel or an edge, nor Ports of an arrow.
 
 Either way the edge is visible in `Package.swift`, and the dependency always points from the
 vertical (or bridge) to the horizontal, never back.
@@ -378,7 +386,7 @@ Each target is one line, with its layer:
 | wire | wire | CanvasRPC (what the app and its [command line](#the-command-line) say to each other) |
 | foundation | foundation | Geometry, Canvas (the core), and pure libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, and its solver) |
 | ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
-| horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Adornments, Checklists, Clipboard, Locking, Ports, Mentions, Automation, LanguageModels, Boards, Snapping |
+| horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Adornments, Checklists, Clipboard, Locking, Ports, Mentions, Topology, Automation, LanguageModels, Boards, Snapping |
 | vertical | foundation, horizontal | Arrows, StickyNotes, Schemas, Subboards, Rectangles, Polylines, Eraser, Reordering |
 | bridge | foundation, horizontal, vertical | RectangleTitles, ValidationDetails, ValidationContents, MentionValidation, ArrowPorts, TitleNames, PortEdges, ValidationChecks |
 | composition | foundation, horizontal, vertical, bridge, wire | Composition (the shipped plugin list) |
@@ -396,10 +404,13 @@ What `./build.sh audit` enforces:
   `@_exported`, `@_implementationOnly` and `@testable` are banned, since each hides an edge, and
   so are imports inside `#if`.
 - **No other module's ids as literals.** A module that writes another module's kind, plugin, tool,
-  added property or channel id as a string literal (`kind == "sticky-note"`) without depending on
-  it fails. An id is a module's when it declares it as a static `ShapeKind`, `ToolID`, `PluginID`,
-  `PropertyKey` or `ChannelID` (`static let id: ChannelID = "note-link"`), or as its plugin's
-  `id`. A kind's own property names (`Property("title", ...)`) are only that kind's, so they're
+  added property, channel or edge type id as a string literal (`kind == "sticky-note"`) without
+  depending on it fails. An id is a module's when it declares it as a static `ShapeKind`, `ToolID`,
+  `PluginID`, `PropertyKey`, `ChannelID` or `EdgeTypeID` (`static let id: ChannelID =
+  "note-link"`), or as its plugin's `id`. A string two modules declare is both of theirs, so a
+  module that writes it depends on both: an id that must equal another module's takes it from that
+  module's constant rather than declaring it again (`ArrowEdge.id` is the arrow kind's name,
+  [Topology](#types)). A kind's own property names (`Property("title", ...)`) are only that kind's, so they're
   exempt, and so is a JSON member named by one of JSON Schema's keywords, which schemas write
   wherever they're built or read, and which ordinary words, and so ids, may also be (Titles'
   `title` property): a subscript's key (`json["title"]`) or a key before a colon where a member's
@@ -1327,6 +1338,8 @@ that both binds and names.)
   each value with `value.forEachNamingLeaf { leaf in … }`: each leaf wherever it is in the value (a
   struct's listed members, a list, an optional, a set, a dictionary), a leaf being its own one, so
   it finds its leaves however deep a kind keeps them.
+  A relation kept as names in an added property is an edge of [Topology](#sources)'s graph with
+  one line, `registrar.edges(in: P.self, as: T.self)`.
 - **Copying.** `record.remappingReferences(map, in:)` does both forms: first what the kind binds, as
   its `ShapeReferencing` says (nil lets a binding go), then every name, for `namingKinds` (nil keeps
   a name). A definition remaps what it binds and leaves names to the core. Clipboard's copy and
@@ -2406,8 +2419,8 @@ A subboard's menu starts with Open, in a group of its own above the rest (Boards
 nothing offers anything has no menu: the right-click does nothing. As shipped, every
 shape has Lock (or Unlock), and every copyable shape Cut and Copy, items for the canvas, which are
 in every menu with shapes; an arrow's menu is those alone, since Arrange leaves it out. A shape
-something on the board mentions has Show What Mentions too, after its own items (Mentions', for
-the canvas, in `MentionsMenuGroup`, order 50), which selects what mentions it
+something mentions has Show What Mentions too, after its own items (Mentions', for the canvas, in
+`MentionsMenuGroup`, order 50), which goes to what mentions it
 ([What mentions a shape](#what-mentions-a-shape)). On empty
 canvas the menu is the canvas's items that apply there alone: Paste, once there's something to
 paste.
@@ -3435,7 +3448,9 @@ any kind opts into, built on Selection, whose [canvas buttons](#canvas-buttons) 
 core has never heard of a port, and Ports has never heard of an arrow: a bridge,
 [ArrowPorts](#the-connector-arrowports), makes arrows what a drag from a port draws. The same
 rules hold for a connection made by name, with no drag ([Connecting without a
-drag](#connecting-without-a-drag)), as `canvas draw`'s edges are. Ports itself
+drag](#connecting-without-a-drag)), as `canvas draw`'s edges are. Ports builds on
+[Topology](#topology) too: a connection bound at both ends is an edge of the file's graph, of its
+channel's type. Ports itself
 ([Ports.swift](../Sources/Ports/Ports.swift)):
 
 ```swift
@@ -3476,7 +3491,8 @@ registrar.channel(NoteLink.self)                       // which this plugin decl
 [Schema cards](#schema-cards) do the same with `SchemaLink` (`schema-link`, the card's accent), on
 all four sides, since a card draws its name inside and nothing sits above it
 ([SchemaLinks.swift](../Sources/Schemas/SchemaLinks.swift)). The channels say nothing more yet: a
-channel is where a connection's meaning would go (one schema referring to another, say).
+channel is where a connection's meaning would go (one schema referring to another, say), and it's
+already what a connection is in Topology's graph: its edge type.
 
 ### Channels
 
@@ -3489,6 +3505,11 @@ channel is where a connection's meaning would go (one schema referring to anothe
   `SchemaLink` for its cards; a channel that joins kinds of several plugins would be declared by the
   horizontal whose meaning it is (data-canvas's `registerHostChannel` calls come from such a
   feature), and given to their kinds by bridges.
+- **A channel is an edge type too.** `registrar.channel(C.self)` also declares Topology's edge type
+  of the same name (`note-link`), under the family of edges the connector draws (`arrow`,
+  [below](#the-connector-arrowports)), a root without a connector: so a query for every arrow
+  (`.within("arrow")`) finds those on every channel, and one for a channel finds its own. A
+  channel's id that's another edge type's is a `conflict`, as two channels of one id are.
 - **The id never changes once shipped**, since connections keep it. The id audit holds a
   `ChannelID` literal to the module that declares it, as it does a kind
   ([The module graph](#the-module-graph)).
@@ -3601,18 +3622,27 @@ one shape at a time, the host, as data-canvas's show on the hovered shape:
 ### The connector: ArrowPorts
 
 Ports never learns what a connection is. One plugin draws them, the connector
-(`registrar.connects(K.self, canConnect:make:ends:begin:)`, the `Connectors` point, at most one).
-`K` is what connections are, and opts into `ChannelProperty`; `canConnect` says which shapes one
+(`registrar.connects(K.self, edgeType: F.self, canConnect:make:ends:begin:)`, the `Connectors`
+point, at most one). `K` is what connections are, and opts into `ChannelProperty`; `F` is the
+family of edges they are in Topology's graph (an `EdgeType`, which this declares, and every
+channel's type is under); `canConnect` says which shapes one
 may start from and end on, in the `ShapeContext` it's given (the editor's, for the dots; a
 transaction's, for a connection asked for by name); `make` and `ends`, both optional, connect
 shapes [without a drag](#connecting-without-a-drag); and `begin`, given the drag's `Connection`
 (the port's shape and side, the dot's channels in the port table's order, and where it was
 pressed, in world units), returns the session that draws it, which the dot's press hands the drag
 to, or nil to draw nothing. The bridge ([ArrowPorts.swift](../Sources/ArrowPorts/ArrowPorts.swift))
-makes arrows the connector, though Arrows has never heard of a channel:
+makes arrows the connector, though Arrows has never heard of a channel, and names their family of
+edges:
 
 ```swift
-registrar.connects(Arrow.self, canConnect: { id, shapes in shapes.canBindArrow(to: id) },
+public enum ArrowEdge {}
+
+extension ArrowEdge: EdgeType {
+    public static let id = EdgeTypeID(rawValue: Arrow.kind.rawValue)    // "arrow"
+}
+
+registrar.connects(Arrow.self, edgeType: ArrowEdge.self, canConnect: { id, shapes in shapes.canBindArrow(to: id) },
                    make: { request, existing, shapes in ArrowConnections.arrow(for: request, existing: existing, in: shapes) },
                    ends: { ArrowConnections.ends(of: $0) }) { connection, editor in
     editor.beginArrow(from: connection.shape, at: connection.origin,
@@ -3643,6 +3673,15 @@ registrar.arrowBindingRule { query in
   deleted, where tldraw's keeps a free end; its start binds the port's shape at its center,
   imprecise, with none of the arrow tool's hover and press timers; and the selection and the tool
   are left as they were, where the arrow tool selects its arrow and goes back to Select.
+- **An arrow bound at both ends is an edge** ([Topology](#sources)): `connects` gives the
+  connector's kind an edge source when it has `ends`, one edge from the shape it starts on to the
+  one it ends on, typed by its channel (`note-link`) or, drawn on none (the arrow tool's), by the
+  family, `ArrowEdge` (`arrow`). An arrow with a free end carries none; one on a channel nobody
+  declares carries an edge of that type, kept as written, unless it's another edge type's id (a
+  file whose arrow says `mention`): a connection is never an edge of a type that isn't a channel's,
+  so that one is the family's, and Mentions never takes an arrow for a mention. `ArrowEdge.id` is
+  the arrow kind's name, taken from `Arrow.kind` rather than written again, since the id audit
+  gives `"arrow"` to Arrows. A connector without `ends` carries no edges.
 
 What Arrows lends, it lends any plugin, and it knows no channel
 ([ArrowConnecting.swift](../Sources/Arrows/ArrowConnecting.swift)):
@@ -3711,10 +3750,11 @@ Ports are the part of data-canvas's that notes and schema cards need to prove th
 Mentions ([`Sources/Mentions`](../Sources/Mentions)) lets text mention other shapes: `@` in a
 note, a few letters of another note's title, Return, and the note says "Ask ⟨▤ Ship the beta⟩
 first", the mention an inline pill with the note's symbol and name. It's a horizontal on
-Selection, the context menu, the detail panel, the table of contents and Titles, and two kinds opt
+Selection, the context menu, the detail panel, the table of contents, Titles and [Topology](#topology) (each mention is an edge of the
+file's graph), and two kinds opt
 in: sticky notes, whose text holds mentions and which can be mentioned, and subboards, which can
 be mentioned (following a mention of one enters it). A mentioned shape's panel lists what mentions
-it, and its context menu selects what does. The core knows no mention; what Mentions needs of it
+it, and its context menu goes to what does. The core knows no mention; what Mentions needs of it
 is generic: [names](#values-that-name-shapes) of shapes that may outlive them,
 [faces](#faces-clickable-parts-of-a-shape), [going to shapes](#selection),
 [rows read from more than their shape](#rows-read-from-more-than-their-shape), and the panel's
@@ -3879,19 +3919,29 @@ func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
 
 ### The service: `MentionState`
 
-`MentionState` (`editor.mentions`) is what Mentions knows about a board, and never transacts (so it
+`MentionState` (`editor.mentions`) is what Mentions knows about a file, and never transacts (so it
 follows undo and redo, during which nothing may):
 
-- **The index**: who mentions whom, both ways (`mentioners(of:)`, `mentions(in:)`), and how each
-  mentioned shape shows now (`resolve(_:)`), from mention text wherever a shape keeps it (a
-  property, or a struct, list, set or dictionary in one: `forEachNamingLeaf`). It's built as a
-  board opens, walking only the kinds that can hold names (`registry.namingKinds`), and each
-  commit costs what it changed: the text of the shapes it added or changed is read again, and the
-  mentioned shapes it touched are resolved again. A commit that only moved shapes costs nothing.
-  Undo and redo are commits too, with exact change sets (`restoredStep`), so the state follows a
-  step undone as any other: a rename undone gives every pill, row and editor its name back, and a
-  deletion undone makes its pills live. A board opened again (`replaceDocument`) is read afresh,
-  with nothing to undo.
+- **Who mentions whom** is [Topology](#topology)'s: each mention is an edge of type `mention`
+  (`MentionEdge`, a root), from the shape whose text holds it to the shape it names, in the slot of
+  the property the text is in, counted once for each time the text names it. Mentions' source
+  reads it out of mention text wherever a shape keeps it (a property, or a struct, list, set or
+  dictionary in one: `forEachNamingLeaf`), on the kinds that can hold names
+  (`registry.namingKinds`), and Topology keeps the index, both ways, for the whole file.
+  `mentions(in:)` is what a shape mentions, in text order, each once; `mentioners(of:)` who
+  mentions a shape, anywhere in the file: those on the board shown in document order, then those
+  on other boards in the file's order (each board where its owner is, depth first).
+- **How each mentioned shape shows now** (`resolve(_:)`) is Mentions': it resolves every shape
+  mentioned anywhere in the file, and each commit costs what it changed: the mentioned shapes it
+  touched (Topology's `touched`, and what it changed on other boards) are resolved again. A commit
+  that only moved shapes costs nothing, and showing another board reads no mention text and
+  resolves nothing. It asks Topology to catch up with a commit before reading it
+  (`topology.catchUp`), in case it hears the commit first, and looks Topology's service up as it's
+  made, so that one is made, and hears each commit, before it. Undo and redo are commits too, with
+  exact change sets (`restoredStep`), so the state follows a step undone as any other: a rename
+  undone gives every pill, row and editor its name back, and a deletion undone makes its pills
+  live. A file or board put in place (`replaceFile`, `replaceDocument`) is read afresh, with
+  nothing to undo.
 - **Following changes**: `observe(_:_:)` tells an AppKit view which of its targets' resolutions a
   commit changed (the text view's pills), `labelRevision(of:)` observes one target for SwiftUI, and
   `rowsAffected(by:)` names the shapes that mention what changed, for rows: a note's row reads its
@@ -3922,8 +3972,9 @@ follows undo and redo, during which nothing may):
   since a click in the text being edited is still being handled by the view that going ends;
   `hover(_:)` and `endHover(_:)` set `editor.hovered`, so the shape is outlined faintly and its row
   tinted, the one hover every plugin shares.
-- **What mentions each shape**, read from the index: `isMentioned(_:)`, `backlinks(of:)`,
-  `backlinkRevision(of:)` and `showWhatMentions(_:)` ([What mentions a shape](#what-mentions-a-shape)).
+- **What mentions each shape**, on any board, read from Topology's edges into it:
+  `isMentioned(_:)`, `backlinks(of:)`, `backlinkRevision(of:)` and `showWhatMentions(_:)` ([What
+  mentions a shape](#what-mentions-a-shape)).
 
 ### On the canvas: faces
 
@@ -3971,9 +4022,9 @@ func textDidChange(_ notification: Notification) {
   (`MentionState.follow`), and on a missing one keeps it selected. Such a press is the view's to
   its release: its drags and its release never reach the canvas behind, which would take them for
   the pointer over it and hover the note. It's not a link: no pointing hand. Its menu adds Go to
-  “Name” (a live one), Show What Mentions “Name” (a live one whose shape is on the board shown,
-  unless the text is that shape's own and nothing else mentions it; on the scheduler's next turn,
-  as Go to is) and Remove Mention, which leaves its name as text.
+  “Name” (a live one), Show What Mentions “Name” (a live one, unless the text is that shape's own
+  and nothing else mentions it; on the scheduler's next turn, as Go to is) and Remove Mention,
+  which leaves its name as text.
 - **Copy and paste** write the stored form under a type of the app's own (`.mentionText`) and the
   plain form ("@Ship the beta") as a string; a paste reads the stored form first, then plain text,
   where a whole `@[name](shape:UUID)` becomes a pill. So ⌘C and ⌘V on a pill make another mention
@@ -4069,38 +4120,49 @@ DetailSection("Text", in: FieldsTab.self) { $jot in
 
 ### What mentions a shape
 
-The index is kept both ways, so what mentions a shape is one lookup: its backlinks. Mentions reads
-them on the board shown, as its index is ([across boards](#mentions-across-boards)):
+Topology keeps each shape's edges both ways, so what mentions a shape is its `mention` edges in:
+its backlinks, which cost what the shape's own edges do, never the board. They're the file's, as
+the index is ([across boards](#mentions-across-boards)):
 
-- **`isMentioned(_:)`**: whether another shape on the board shown mentions it. A shape's mention
-  of itself doesn't count.
-- **`backlinks(of:)`**: a `MentionBacklink` per mentioner, in document order, the shape itself left
-  out. Each is named as it's mentioned (`mentionAppearance`), else by its title, else its tool's
-  label, with its symbol, and carries a quote: about 60 characters (`MentionStyle.quoteLength`) of
+- **`isMentioned(_:)`**: whether another shape, on any board the editor can show, mentions it. A
+  shape's mention of itself doesn't count.
+- **`backlinks(of:)`**: a `MentionBacklink` per mentioner, in `mentioners(of:)`'s order (the board
+  shown's in document order, then the other boards' in the file's), the shape itself left out.
+  Each is named as it's mentioned (`mentionAppearance`), else by its title, else its tool's label,
+  with its symbol, and carries a quote: about 60 characters (`MentionStyle.quoteLength`) of
   its text as plain text around its first mention of the shape, each mention "@" and the name it
   shows now, on one line, the mention whole and the rest shared half and half on each side (room
   one side doesn't use goes to the other), cut between words with "…" where text is left out. It
-  reads the board as the state last heard it, never the editor's observed document, so a SwiftUI
-  view that reads it redraws only as its revision says.
+  reads each mentioner's record wherever it is, from the board shown and the file read without
+  observing them (the core's `editor.withoutObservingDocument { … }`), so a SwiftUI view that
+  reads it redraws only as its revision says; and it keeps no copy of the file, which would make
+  the next commit that adds or removes shapes copy the file's table of where each shape is.
 - **`backlinkRevision(of:)`** is observed per shape, as `labelRevision` is: it changes when a commit
-  adds, changes or removes a shape that mentions the shape or did (never when it only moves one: a
-  drag costs nothing), when a name a mentioner's quote shows changes, and on a switch of board.
+  adds, changes or removes a shape that mentions the shape or did, on any board (never when it
+  only moves one: a drag costs nothing), when a name a mentioner's quote shows changes, and on a
+  switch of board, which puts that board's mentioners first. Topology says which shapes' mentions a
+  commit changed (`touched(types:)`, so an arrow bound to a mentioned shape changes nothing
+  here), and Mentions adds what each shape the commit added or changed, or
+  touched on another board (`elsewhere`), mentions now, since an edit that keeps a mention changes
+  its quote and no edge.
   Only shapes whose revision was read since it last changed tell observers, so a rename of a
   subboard 100 notes mention tells no one who isn't looking.
-- **`showWhatMentions(_:)`** selects what mentions the shapes (their mentioners, each one's mention
-  of itself left out) and brings them into view (`editor.goTo`: one step back), on the scheduler's
-  next turn, since from a menu in text it ends the editing that menu's view is part of; nothing if
-  nothing mentions them.
+- **`showWhatMentions(_:)`** goes to what mentions the shapes (their mentioners, each one's
+  mention of itself left out) and brings them into view (`editor.goTo`: one step back): the board
+  shown's first, so it stays if any are there, else it shows the first one's board and selects
+  those there; on the scheduler's next turn, since from a menu in text it ends the editing that
+  menu's view is part of; nothing if nothing mentions them.
 
 Two places show them:
 
 - **The Mentioned In tab** (`MentionsTab`, order 300: a tab of the shape's state that comes and
   goes, as Issues is) comes with a kind's opt-in, `x.mentionable` or `registrar.mentionable(K.self)`.
-  Its one section is shown while the shape `isMentioned` (`shownWhile`, asked on every commit, one
-  lookup), so the tab shows only then. A line per mentioner, its symbol, its name and its quote
-  under it; the pointer on a line hovers the mentioner (`editor.hovered`: outlined on the canvas,
-  its row tinted), and a click goes to it (`follow`: ⌘[ comes back). The list observes the shape's
-  `backlinkRevision` alone, so a mentioner renamed, added or removed redraws it though the shape
+  Its one section is shown while the shape `isMentioned` (`shownWhile`, asked on every commit, the
+  shape's own edges), so the tab shows only then. A line per mentioner, its symbol, its name and its quote
+  under it; the pointer on a line hovers the mentioner if it's on the board shown (`editor.hovered`:
+  outlined on the canvas, its row tinted), and a click goes to it (`editor.goTo`, on the
+  scheduler's next turn: its board shown first if it's on another; ⌘[ comes back). The list
+  observes the shape's `backlinkRevision` alone, so a mentioner renamed, added or removed redraws it though the shape
   itself didn't change, and a drag redraws nothing. Its lines work on a read-only shape too
   (`enabledWhileReadOnly`): going to what mentions a locked shape changes nothing of it. In debug
   builds `MentionState.backlinksShown` records what each list last drew, for tests.
@@ -4176,11 +4238,11 @@ shape on any board of it, and shows it as it's called now, wherever it is:
   their owner, a paste brought, a write to a board that isn't shown, `transact(on:)`, or an undo
   put back), and `MentionState` resolves those it tracks again, telling observers, bumping their
   revisions, and naming the mentioners' rows. A rename made while the mentioning board wasn't shown
-  leaves that board's revision as it was, so on going back to it, after taking back its index
-  (a `BoardStash`), `MentionState` resolves again every shape its mentions name on other boards,
-  and the table of contents hands `rowsAffected` what changed elsewhere meanwhile, so the rows of
-  the notes that mention them are made again ([rows read from more than their
-  shape](#rows-read-from-more-than-their-shape)). Undoing a rename made on another board shows that
+  leaves that board's revision as it was, so on going back to it the table of contents takes back
+  its rows and hands `rowsAffected` what changed elsewhere meanwhile, and the rows of the notes
+  that mention them are made again ([rows read from more than their
+  shape](#rows-read-from-more-than-their-shape)); the pills, resolved as the rename landed, are
+  already right. Undoing a rename made on another board shows that
   board first ([Undo](#undo)); on going back, the name is as it was.
 - **A board deleted with its owner** takes its shapes' names with it: their pills show the name
   they hold, dashed, and undoing the deletion, which brings the boards back with every id, makes
@@ -4213,14 +4275,16 @@ shape on any board of it, and shows it as it's called now, wherever it is:
   board shown gets nearness, and wins a tie; an empty `@` lists what's near the text on the board
   shown, then the boards it's inside (the board shown's owner first), so a subboard can be
   mentioned from inside itself. data-canvas's picker listed the board shown's shapes only.
-- **The index is the board shown's**: who mentions whom, which the rows and pills need. Each
-  board's is kept for going back to it, and a board entered for the first time has its mention
-  text read on the way in.
-- **So are backlinks and warnings.** What mentions a shape is read from the index, so the Mentioned
-  In tab and Show What Mentions list the mentioners on the board shown, not those on other boards,
-  and a pill's Show What Mentions shows only for a shape on the board shown. MentionValidation
-  looks a mention's target up on the board shown, so a mention of a shape on another board is
-  checked no more than a missing one is (both are [Not built yet](#not-built-yet) across boards).
+- **Who mentions whom is the file's** (Topology's), as is what each mentioned shape shows: read as
+  the editor opens, and kept up to date by every commit, whatever board it's on. So entering a
+  board, even for the first time, reads no mention text, and `mentioners(of:)` lists a shape's
+  mentioners on every board.
+- **So are backlinks.** The Mentioned In tab and Show What Mentions list the mentioners on every
+  board, the board shown's first; a line goes to its mentioner's board, and so does Show What
+  Mentions when none is on the board shown.
+- **But not warnings.** MentionValidation looks a mention's target up on the board shown, so a
+  mention of a shape on another board is checked no more than a missing one is
+  ([Not built yet](#not-built-yet) across boards).
 
 MentionsTests' `boardsTests` hold these on pockets (and a mention of a shape on a board the app
 can't show); CompositionTests' `mentionsBoardsTests` on
@@ -4229,6 +4293,191 @@ deleted, a locked note's pill double-clicked, a subboard copied with the notes i
 it, one cut and pasted with every id kept, a note cut inside one and pasted on the root, and
 `canvas draw` naming a note two boards down); `SubboardFileTests` a saved file whose
 notes mention each other two boards apart (`nested-mentions-across.v4.json`).
+
+## Topology
+
+Topology ([`Sources/Topology`](../Sources/Topology)) is what connects and contains what, whatever
+is where: edges, a typed graph (an arrow bound at both ends, a mention), and containment, a tree
+(which board a shape is on, and so which shape it's inside). Spatial relations (a note that
+happens to sit within a rectangle's bounds) aren't part of it; they're geometry. It's a horizontal
+on the core alone: the plugins that own what a connection means (Ports, through its connector, and
+Mentions) say what their shapes carry, and any plugin asks what's connected to a shape, and how,
+without knowing arrows or mentions.
+
+```swift
+guard let topology = editor.topology else { return }                   // nil without TopologyPlugin
+topology.neighbors(of: note)                                            // ["note-link": [a, b], "mention": [c]]
+topology.edges(of: note, .incoming, types: .only(MentionEdge.id))       // who mentions it, anywhere in the file
+topology.edges(ofType: .within(ArrowEdge.id))                           // every arrow bound at both ends, on any channel
+topology.isInside(note, subboard)                                       // on its board, or on a board under it
+```
+
+### The shapes are the system of record
+
+An edge is carried by a shape, its **carrier**: an arrow's record (its two bound ends, and its
+channel, `added.channel`) is its edge, and a note's text is its mentions. Topology's index is
+derived from the records, for the whole file, in memory, and never saved: nothing goes in props,
+metadata or the file, so nothing can disagree with the shapes, and whatever already works on shapes
+(undo, copy and paste, a deletion's cascade, migrations, `canvas draw`, a board from an older app)
+works on edges with nothing more.
+
+tldraw keeps bindings as records of their own beside the shapes (an arrow's binding to a shape is
+a record from the arrow to the shape), which its store keeps in step with both. Here that would be
+a second truth about each connection: records to copy, delete with either end, migrate and undo,
+kept in step with the carrier they describe. And a mention outlives the shape it names, which a
+binding can't. So the carrier holds a connection once ([Values that name
+shapes](#values-that-name-shapes)), and the index is a way to read it.
+
+### Edges
+
+An `Edge` goes from `source` to `target`, of `type` (its most specific), carried by `carrier` in
+`slot` ("" for the carrier itself, as an arrow is; else the name of the property that holds it, a
+kind's own or an added property's key: a note's mentions are in `text`), `count` times there (a note
+that mentions a shape twice: 2; an arrow: 1). Its identity is its carrier, slot, type and ends;
+`count` is a value. Its ends needn't be there: a mention outlives what it names, so how an end is
+now is asked when it's read (`end(_:)`, below).
+
+Only a connection bound at both ends is an edge: an arrow with a free end carries none. A shape
+kept aside (`record.isOpaque`) carries none, nor does a shape on a board the editor can't show.
+
+### Types
+
+- **An edge type is a type** (`EdgeType`: `static let id: EdgeTypeID`, and `static var parent`,
+  nil by default), declared by the plugin that owns what it means (`registrar.edgeType(T.self)`;
+  the `EdgeTypes` point, one declaration per id: two are a `conflict`). The id audit holds an
+  `EdgeTypeID` literal to the module that declares it, as it does a channel's.
+- **Types are a tree.** Each is under at most one parent, which some installed plugin must declare,
+  and none is under itself (`EdgeTypes.check`):
+
+  ```
+  EdgeTypes: more declares edge type spark under fire, which no installed plugin declares
+  EdgeTypes: more declares edge type spark under itself: spark → flame → spark
+  ```
+- **Shipped:** `arrow` (`ArrowEdge`, ArrowPorts'), a plain arrow's type, and under it each channel's,
+  `note-link` and `schema-link`; and `mention` (`MentionEdge`, Mentions'), a root. A channel is an
+  edge type of the same name, which `registrar.channel(C.self)` declares with it
+  ([Channels](#channels)), under the family the connector names (`connects(_:edgeType:…)`), so its
+  parent follows from the registry as built: `registrar.edgeType(_:parent:)` is that form, the
+  parent a closure over the frozen registry. `ArrowEdge.id` is `EdgeTypeID(rawValue:
+  Arrow.kind.rawValue)`: the audit gives a string to every module that declares it, so a second
+  declaration of `"arrow"` would have Arrows, which writes it, depend on ArrowPorts.
+- **An edge reports its most specific type**, and a query names types with an `EdgeTypeFilter`:
+  `.all`; `.within(t, …)`, those types and every type under them (`.within(ArrowEdge.id)` is every
+  arrow, plain or on a channel); `.only(t, …)`, exactly those (`.only(ArrowEdge.id)` is plain
+  arrows alone).
+- **A type nobody declares** (an arrow's channel from a newer app, or from a plugin that isn't
+  installed) is kept as written: it's the edge's type, `types.isDeclared(t)` is false, and it has no
+  parent, so only `.all` and a filter that names it match it. A channel that names a type declared
+  as something else (`mention`) is the connector's family instead, so no source's edges pass for
+  another's.
+- **The tree** is `registry.edgeTypes`, worked out on each call, or an editor's `topology.types`,
+  kept (`EdgeTypeTree`: `declared`, in plugin order, `isDeclared(_:)`, `plugin(declaring:)`,
+  `parent(of:)`, `children(of:)`, `ancestors(of:)`, parent first, and `descendants(of:)`).
+
+### Sources
+
+What a record carries is said by sources (the `EdgeSources` point), which add up: a kind's shapes
+carry what each of its sources emits, in plugin order, with no precedence.
+
+```swift
+// A kind's own, typed:
+x.edges { shape, registry, sink in … }
+// A kind another plugin registers (a bridge's, or a horizontal's over a kind it's given):
+registrar.edges(K.self) { record, registry, sink in … }
+// Every kind `where` picks, asked once per kind:
+registrar.edgesForEveryShape(where: { kind, registry in registry.namingKinds.contains(kind) }) { record, registry, sink in … }
+// Every shape a value of an added property names, from the shape that holds it:
+registrar.edges(in: BlockedByProperty.self, as: BlockedByEdge.self)
+```
+
+- **A source is pure** (`EdgeEmitter`): a function of one record and the frozen registry. It never
+  reads other shapes, geometry, services, the camera or the time, and never depends on where a box
+  is. That's what lets the index follow a commit by reading only the records it changed, skip those
+  it only moved (`ChangeSet.moved`), and have undo put edges back exactly. Nothing checks it: a
+  source that reads more goes stale.
+- **`sink.emit(type, from:to:slot:)`** says one edge. Emitting the same type, ends and slot again
+  counts it again; edges keep the order they were first emitted in (a text's order).
+- **Ports' source** is the connector's: `connects(K.self, edgeType: F.self, …, ends:)` emits one
+  edge for a connection `ends` finds bound at both ends, typed by its channel or, drawn on none, by
+  `F` ([ArrowPorts](#the-connector-arrowports)). **Mentions'** is over the kinds that can hold
+  names: each mention in mention text wherever a shape keeps it (`record.forEachNamingValue(in:)`,
+  then `forEachNamingLeaf`), in the slot of the property it's in.
+- **The property rule**, `registrar.edges(in: P.self, as: T.self)` for an added property whose
+  value names shapes (`P.Value: ShapeNaming`), is for a relation nobody draws or writes in text
+  (what a task is blocked by): every shape a value of `P` names is an edge of type `T` from the
+  shape that holds it, in the slot `P`'s key names, on every kind that opts into `P`. It doesn't
+  declare `T`: `edgeType` does. Nothing shipped uses it yet.
+- **`registry.edges(of: record)`** is what one record carries, as its kind's sources say, pure: for
+  code that holds a record the index doesn't (a transaction's), and for tests.
+
+The registry's report shows `edge type mention` on the declarer's line, and `edges → every shape`
+or `edges → arrow` on the line of the plugin that contributes the source ([The
+registry](#the-registry)).
+
+### The index: `TopologyIndex`
+
+`editor.topology` (nil without `TopologyPlugin`) is the file's edges, one index per editor, by
+carrier, by each end and by type. It never transacts, and isn't an undo participant: it follows the
+file. Every query costs what it returns, never a board:
+
+| Query | Is |
+|---|---|
+| `edges(of: id, direction, types:)` | Every edge touching a shape, anywhere in the file: `.outgoing`, `.incoming` or `.either` (the default), of the types the filter admits (`.all` by default). By carrier, in the order the carriers came (those read as the editor opened in the file's order, root first; those one commit brings, a paste's or an undo's, in no order among themselves), each carrier's in the order it emits them. An edge from a shape to itself is there once. `hasEdges(of:_:types:where:)` stops at the first (that `where` takes), and makes nothing: cheap enough for what's asked on every commit (Mentions' `isMentioned`). |
+| `neighbors(of: id, direction, types:)` | The shapes at the other ends, by each edge's type, each once per type, in the order its first edge comes: what's connected to a shape, and how. The shape itself, for an edge from it to itself. |
+| `edges(ofType: filter)` | Every edge in the file of the types the filter admits: type by type (declared ones in plugin order, then the rest by name), each by carrier. |
+| `edges(carriedBy: carrier)` | What a shape carries, in the order it emits them. |
+| `end(id)` | How a shape at an end of an edge is now (`EdgeEnd`): `.live(board)` on a board the editor can show, `.unavailable` in the file on a board it can't (under an owner kept aside), `.missing` in no board of the file. |
+| `revision(of: id)`, `touched` | A shape's revision, +1 each time its edges (at either end) change, from the first time it's read: reading it observes only that shape (a key path per shape, as Mentions' `labelRevision`), so a SwiftUI view of one shape's connections redraws when they change. `touched` is the shapes whose edges the last commit changed (none after a switch of board), and `touched(types:)` those whose edges of some types it changed (Mentions reads its own). |
+
+### Containment
+
+The board tree read as containment, the same for every kind that owns boards: `parent(of:)` is the
+owner of the board a shape is on (nil on the root), `children(of:)` the shapes on the board it owns,
+in document order, `ancestors(of:)` those it's inside, the nearest first, and `isInside(a, b)`
+whether `a` is inside `b` at any depth (never inside itself; O(`a`'s depth)). It needs no index: the
+core knows where every shape is. As with edges, only shapes on boards the editor can show count
+(nil, none, or false for the rest). Containers that aren't boards (frames, groups) would each be a
+source of containment, a point Topology doesn't have yet.
+
+### What it costs
+
+- **As the editor opens**, every board it can show is read (the root, then down through the owners
+  of boards it can show, as `canShow` has it: `registry.ownsShowableBoard`), each record's sources
+  asked; a kind with none costs a lookup. A file or a board put in place (`replaceFile`,
+  `replaceDocument`) is read again, and only the carriers whose edges changed touch anything.
+- **Each commit** costs what it changed: the records it removed, touched on other boards
+  (`ChangeSet.elsewhere`: the boards a deletion took or a paste brought, a write to a board that
+  isn't shown), added, or changed other than by moving, each read again from the file as it is now
+  (a shape on no board the editor can show carries nothing). Undo and redo are commits like any
+  other. Showing another board reads nothing: the index is the file's (`boardDidChange` does
+  nothing but for a file put in place).
+- **Heard first.** A service that reads the index as it hears a commit must find it up to date.
+  The shipped list has `TopologyPlugin()` right after `SelectionPlugin()`, so its service is made,
+  and hears each commit, before those that read it; one that may hear a commit first calls
+  `topology.catchUp(changes)` with the commit it holds, which does nothing once the index has heard
+  it (MentionState does, and looks up `editor.topology` as it's made, so Topology's service is made
+  first).
+- **Held.** `./build.sh bench`: Topology's index and Mentions' catalog of 10,000 shapes, built as
+  the file opens, within 50 ms (the budget Mentions' own index had); `neighbors(of:)` of a shape
+  with 100 edges within 1 ms; and a drag's input, a subboard of 10,000 deleted in a frame, and its
+  undo in 100 ms, with Topology hearing them. `recordsRead` (debug builds) counts the records
+  sources read, so tests hold a commit to what it changed.
+
+Every plugin list with a plugin that contributes to Topology's points (Ports, Mentions) needs
+`TopologyPlugin()`, as one with Selection needs `KeyboardPlugin()`: a contribution to a point whose
+owner isn't installed is `ownerNotInstalled`.
+
+### What it doesn't do
+
+- **Loose edges.** An arrow with a free end isn't an edge; there's no query for connections
+  half-made.
+- **Spatial relations.** A shape that happens to lie within another's bounds isn't inside it;
+  that's geometry (`editor.paintOrder(in:)`, `shapeContext.bounds(of:)`).
+- **Agents reading it.** `canvas` has no command that reads the graph (how agents read a board is
+  still to design), and `canvas draw` matches an edge it restates by its ends, not by its type.
+- **Showing it.** Nothing in the app shows a shape's connections in general yet (a Connections
+  section of its panel); what mentions a shape is shown, Mentions' Mentioned In tab and Show What
+  Mentions.
 
 ## Boards
 
@@ -5493,7 +5742,9 @@ other shapes, since that switch doesn't say what the file changed on the boards 
 Selection makes the board left a step back and lets go of the press, hover and buttons; Boards
 makes the path again; Adornments drops its labels (made again only for the shapes a frame draws,
 and a label kept would miss an open lock that Locking let go of); the schema cards' sync keeps
-every card of the file by id (and takes them afresh when `isFileReplaced`); Ports lets go of the
+every card of the file by id (and takes them afresh when `isFileReplaced`), and Topology's index
+and Mentions' resolutions and catalog are the file's, so a switch changes nothing for them (a file
+put in place is read afresh); Ports lets go of the
 dots it showed; the panel commits a number being typed in `boardWillChange`, and arrows stop aiming
 there; and the context menus, the keyboard, the clipboard and the language model keep nothing per
 shape. So no shipped service works out the change set (CompositionTests' BoardsTests hold them to
@@ -5550,7 +5801,8 @@ each of them:
 | [The table of contents](#whats-listed-and-selecting) | Lists the board shown, keeps each board's rows, and takes its header from its placer (the board's crumb, in the app). A row may read shapes on other boards ([`elsewhere`](#rows-read-from-more-than-their-shape)). |
 | [Validation](#a-horizontal-plugin) | Checks the board shown, keeping each board's issues; a board never shown isn't checked, and a rule's lookups (MentionValidation's targets) find shapes there alone. |
 | [Locking](#locking) | A shape whose board holds a locked shape isn't deleted; a locked owner is entered as any other. |
-| [Mentions](#mentions-across-boards) | A mention names a shape on any board, live and followed there (`goTo`, or `goInto` for a kind followed by opening it: a subboard); indexes the board shown, keeping each board's index; the `@` picker lists the whole file (the board shown's first on a tie), while the Mentioned In tab and Show What Mentions read the board shown. |
+| [Mentions](#mentions-across-boards) | A mention names a shape on any board, live and followed there (`goTo`, or `goInto` for a kind followed by opening it: a subboard); who mentions whom (Topology's), what each mentioned shape shows and the `@` picker's catalog are the file's (the board shown's first on a tie), so showing another board reads no mention text; so are the Mentioned In tab's and Show What Mentions' mentioners, the board shown's first. |
+| [Topology](#topology) | The file's edges, and containment (a shape's parent is its board's owner), whatever board is shown; showing another board reads nothing. |
 | [The clipboard](#the-clipboard) | Copies what a shape holds, all the way down, and pastes the tree with new ids; what a cut took, onto any board, under the ids it had (a move). |
 | [Undo](#undo) | One history per file; a step holds every board it reached, and undoing one made on another board shows that board first. |
 | [Boards on disk](#boards-on-disk) | Format 4 saves every board, in one flat map; the camera on each board, and the board left open, are remembered per file on this Mac. |
@@ -5903,10 +6155,11 @@ and a test checks it registers.
 core                 tool hand · command undo · command redo
 keyboard             service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo
 selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection
+topology             service TopologyIndex
 arrows               shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay
-sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link
+sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
 subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard
-schemas              service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link
+schemas              service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link · edge type schema-link
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
 adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
 detail-panel         service DetailPanelState · ShapeDetails
@@ -5914,7 +6167,7 @@ context-menus        service ContextMenuState · secondary-click menu
 table-of-contents    service ContentsState
 checklists           property checklist · adornment ChecklistChip → every shape
 titles               property title · adornment TitlePill → every shape
-mentions             service MentionState · overlay MentionFrames · ShapeFaces · CanvasContextMenu
+mentions             service MentionState · edge type mention · edges → every shape · overlay MentionFrames · ShapeFaces · CanvasContextMenu
 board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
 validation-details   DetailStatuses in Issues
 validation-contents  ContentsMarks
@@ -5923,7 +6176,7 @@ clipboard            service ClipboardState · command cut · shortcut ⌘X → 
 locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · CanvasContextMenu
 snapping             service SnapState · translation adjuster
 ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
-arrow-ports          property channel → arrow · connector → arrow · ArrowBindingRules
+arrow-ports          property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowBindingRules
 language-models      service LanguageModelState
 automation           command line draw · command line kinds
 title-names          draw names
@@ -5947,13 +6200,17 @@ entry after them is the note's header, where it's renamed. Validation's `Validat
 every kind, is its schema rule ([Checking shapes](#checking-shapes-against-their-schemas)). Locking opts
 every kind in itself (`property locked → every shape`), and `read-only shapes` is its rule for the
 core. `ports note-link → sticky-note` is a note's ports and `channel note-link` the channel
-StickyNotes declares for them; arrow-ports' `connector → arrow` makes arrows what ports draw, and
-brings the opt-in before it (`property channel → arrow`). `mention text → sticky-note` and
+StickyNotes declares for them, with its edge type (`edge type note-link`); arrow-ports' `connector →
+arrow` makes arrows what ports draw, and brings the opt-in before it (`property channel → arrow`),
+the family's edge type (`edge type arrow`) and the arrows' edges (`edges → arrow`). `topology` is
+the index of them all (`TopologyIndex`), right after Selection, so it hears each commit first. `mention text → sticky-note` and
 `mentionable → sticky-note` are Mentions' opt-ins: a note's text shows pills (`note.mentionText`),
 and text may mention a note (`note.mentionable`), which brings the `ShapeDetails` entry after it,
 the Mentioned In tab. A subboard is mentionable with its tab too (`mentionable → subboard`: called
 by its title, and following a mention of one enters it).
-`mentions` keeps who mentions whom (`MentionState`), tells the text it keeps drawn
+`mentions` declares the `mention` edge type and says what mention text carries (`edge type
+mention`, `edges → every shape`: every kind it picks, the ones that can hold names), keeps how
+each mentioned shape shows (`MentionState`), tells the text it keeps drawn
 (`MentionTextMemo`) where each frame ends (`MentionFrames`, an overlay that draws nothing), makes
 pills answer clicks (`ShapeFaces`), and puts Show What Mentions in the context menu
 (`CanvasContextMenu`); `mention-validation`'s `ValidationRules`, for every kind, is its warnings
@@ -6113,17 +6370,36 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   run loop until it has (TestKit's `spinRunLoop(until:)`, `awaitResult { … }`). LanguageModelsTests
   stub the network itself with a `URLProtocol`.
 - **Ports.** PortsTests hold the horizontal without an arrow: `portsHarness` installs Keyboard,
-  Selection, the fixtures, Ports, `channelsPlugin` (boxes have ports on its `Wire` channel, with the
+  Selection, Topology, the fixtures, Ports, `channelsPlugin` (boxes have ports on its `Wire` channel, with the
   `sides:` and `role:` a test asks for, and discs on `Pipe`) and a connector over CanvasTesting's
   `Tag` that only records (`connectorPlugin(Connections())`: `begun` lists each `Connection`, its
-  session appends each drag to `drags`, and `canConnect` and `draws` make it refuse). A 200 × 100
+  session appends each drag to `drags`, and `canConnect` and `draws` make it refuse; its family of
+  edges is `Hookup`, and its `edgeTests` hold connections as edges over CanvasTesting's `Link`: a
+  channel's type, the family's, none half-bound, an undeclared channel kept as written, one named
+  like another plugin's edge type the family's, and none from a connector without `ends`). A 200 × 100
   box at (100, 100), `boxFrame`, has its dots at `topDot`, `rightDot`, `bottomDot` and `leftDot`, at
   zoom 1. A test moves onto a dot before pressing, as a user does (`h.hoverDot` comes from the
   shape's middle): dots draw only while `editor.pointerOverCanvas` is set. ArrowPortsTests draw real
   arrows on a `PortBoard`: boxes A and B where the POC's first two welcome notes are, taking
   `Wire`, and a disc C below B taking `Pipe`; `board.connect(to:speed:release:)` hovers A and drags
   from its right dot (`aRightDot`), `fast` or `slow`, and `board.arrows` are the arrows drawn, with
-  their bindings and `ChannelProperty`.
+  their bindings and `ChannelProperty` (and `arrowEdgeTests`, their edges).
+- **Topology.** TopologyTests hold it over fixtures only, never Ports, Mentions or a shipped kind:
+  `GraphPlugin` declares edge types (`wire`, `hot-wire` under it, `quote`, `cite`) and sources over
+  CanvasTesting's kinds (a `Link` bound at both ends is a wire, a `CitingTag`'s target a hot wire, a
+  `Tag`'s a `tether` nobody declares, a `Memo`'s own names quotes in their property's slot, and its
+  `CitationsProperty` cites, through the property rule), and `graph(file)` opens a harness on it
+  with `PocketsPlugin` for boards (`Nest`: pockets two deep, with links across them;
+  `hiddenFile()`: a board the app can't show; `signalsPlugin()`, a source that reads only a disc's
+  id, over `newerDiscsFile()`'s discs, kept aside). They hold the registry's checks, the tree and
+  its filters, emission (order, counts, slots, an edge to itself once, none for a shape kept
+  aside), every way a commit comes (an insert, a change, a removal, a move that reads nothing,
+  `recordsRead`; `transact(on:)`, a pocket's deletion and its undo, a paste with boards,
+  `replaceFile`, `replaceDocument`, Delete Hidden Shapes undone, a switch that reads nothing),
+  `end(_:)`, containment, `revision(of:)` and
+  `touched`, and `catchUp` from a service made before the index's. CompositionTests'
+  `topologyShippedTests` hold the shipped graph: note-link, schema-link and plain arrows, and
+  mentions across a subboard, by type, `.within` against `.only`.
 - **Snapping.** SnappingTests hold `SnapTargets` pure (a rect moved by a delta: where it snaps, and
   its guides), and drags on CanvasTesting's boxes with a move tool of their own, since they can't
   use Selection: `snapHarness` installs the fixtures, Snapping and `movePlugin(moves)`, whose press
@@ -6198,7 +6474,7 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   `registry.fillingDefaults(document)`. CanvasTests read broken and scrambled boards (a seeded fuzz test), and CompositionTests'
   BoardDocumentTests open, save, revert and host boards with `BoardDocument.configuration` set as
   the app sets it. `./build.sh bench` builds BenchmarkTests in release and holds saving, opening
-  (Mentions' index and catalog, built as a board opens, among it), validation's first read (every
+  (Topology's index of the file's edges and Mentions' catalog, built as the file opens, among it), validation's first read (every
   shape, checked against its kind's schema too) and its reads after a drag event, after a drag
   event of a subboard 100 notes mention (whose mention rule looked it up, and ignores moves) and
   after moving every shape, a hover and a drag frame (titles' pills, checklists' tallies, locks and
@@ -6209,7 +6485,8 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   subboard mentioned 100 times against one mentioned by none (its commit, and validation's read
   after it), the panel's layout of that subboard, its Mentioned In tab showing, after a drag event
   of another note and after a mentioner's rename (`Budget.panelAfterCommit`, 1 ms; the tab's lines,
-  `backlinks(of:)`, only reported), a `canvas draw` of 20 notes each pushed along its row of the
+  `backlinks(of:)`, only reported), what's connected to a shape with 100 edges
+  (`topology.neighbors(of:)`, 1 ms), a `canvas draw` of 20 notes each pushed along its row of the
   grid (150 ms, time the window doesn't draw), the minimap's first picture (a frame at a time) and
   a drag frame with it, ten subboards' previews filling in (the longest frame, and how many), and
   undoing and redoing a drag (with its frame), a tenth of the board's move and deletion and every
@@ -6219,10 +6496,10 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   zoom goes). Across boards, on files of them (`generatedFile(root:children:depth:)`, the shipped
   subboards): opening one whose shapes are spread over nested boards (a tenth on the root, a tenth
   in each of nine subboards, the last a chain ten deep) in the time a board of as many takes;
-  entering a subboard of 10,000 shapes cold, with ⌘↓ (the switch and the camera's first fit, with
-  Mentions' index of who mentions whom, a frame of notes with pills, the rows and validation's
-  first read, together, in 250 ms; the panel's list left out; Mentions' catalog is the file's, read
-  as it opens, so entering reads none of it), and going back up with ⌘↑ (and with the root
+  entering a subboard of 10,000 shapes cold, with ⌘↓ (the switch and the camera's first fit, a
+  frame of notes with pills, the rows and validation's first read, together, in 250 ms; the panel's
+  list left out; who mentions whom, Topology's, and Mentions' catalog are the file's, read as it
+  opens, so entering reads none of them), and going back up with ⌘↑ (and with the root
   listed whole after it, the selection let go of) and
   down again warm (the same four, in a frame); a hover, a drag and the rows after it on a root of
   1,000 beside a subboard of 10,000, and inside a subboard of 10,000 while the root holds as many,
@@ -6259,9 +6536,11 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
 - **Mentions.** MentionsTests use fixtures only (`MentionFixturesPlugin`: `Jot`, a box of mention
   text with a `MentionTextView` editor, and `Plate`, `Token`, `Endpoint` and `Brief`, with the
   `Blockers` scope; `mentionPlugins` installs the detail panel and the context menu, for the tab
-  and Show What Mentions, and `mentionHarness` puts Keyboard and Selection first). They fuzz the stored
-  grammar, hold scopes and their registry checks, names, `MentionState`'s index, observations and
-  rows (`textsRead` counts the texts a commit reads, in debug builds), the matcher's tiers, and the
+  and Show What Mentions, and `mentionHarness` puts Keyboard, Selection and Topology first). They fuzz the stored
+  grammar, hold scopes and their registry checks, names, mention edges (slot, count, order, a
+  service made before Topology's catching it up), `MentionState`'s resolutions, observations and
+  rows (Topology's `recordsRead` counts the records a commit reads, in debug builds: in these
+  fixture lists only Mentions' source reads any), the matcher's tiers, and the
   pill's images; drawing, pixel for pixel against string drawing, and each pill's pixels within
   its `mentionPills` frame (`MentionDrawingCounts`, in debug builds, counts what's built); faces,
   through `EditorHarness`; the text view in an unshown window (`EditedJot`: typing, the picker's
@@ -6271,9 +6550,11 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   `redo()`: never a record inserted again in undo's place); and the picker's model, headless. AppKit closes an undo group at the end of a turn of the run loop,
   so a test that undoes steps one at a time settles the window (`window.settle()`) between them.
   They hold backlinks too (`backlinkTests`: order and names, quotes cut at either end, the canvas's
-  menu item and its one Back step, the board shown's alone, and a quoted name changed on another
-  board, by `transact(on:)`, a pocket's deletion and its undo, telling the revision's observers;
-  the revision's bumps and non-bumps, a drag, a self-mention, undo and redo, with the state's
+  menu item and its one Back step, file-wide (a mentioner on another board listed and quoted after
+  the board shown's, the menu item showing its board, a switch putting the new board's first), a
+  drag bumping no revision, a mentioner's text changed on another board, and a quoted name changed
+  on another board, by `transact(on:)`, a pocket's deletion and its undo, telling the revision's
+  observers; the revision's bumps and non-bumps, a drag, a self-mention, undo and redo, with the state's
   tests). Mention text in the panel
   (`panelTests`): `MentionPanel` hosts a `DetailPanelView` in an unshown window with the real
   `TaskScheduler`, and `MentionFieldsPlugin` gives `Jot` a Text field and `Brief` one that commits;
@@ -6284,8 +6565,8 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   and the picker under its `@` as the panel scrolls. In an unshown window the picker has no parent window, so a test picks with the mouse by
   clicking its rows (CanvasUITests hold a board's child window to not sealing). The Mentioned In
   tab (`mentionedInTests`) is read through `backlinksShown`, since SwiftUI draws its lines: shown
-  while mentioned, the lines in order, a click and Back, redrawn by a mentioner's change and not by
-  a drag. A line's hover goes untested: SwiftUI's `.onHover` doesn't answer synthesized events.
+  while mentioned, the lines in order, a click and Back, a line for a mentioner on another board
+  (its quote, and a click showing its board), redrawn by a mentioner's change and not by a drag. A line's hover goes untested: SwiftUI's `.onHover` doesn't answer synthesized events.
   StickyNotesTests hold a note's text (its third migration, its row, what it's called) and its
   editor to its render with pills (`noteEditorTests`: each pill's frame in the editor, TextKit 2's
   for its attachment, is the canvas's; at a whole number of pixels to a point, the lines start
@@ -6486,7 +6767,8 @@ Each of these adds to the design without changing what plugins are written again
   precise start at a side's midpoint means nothing without it, since tldraw's clipping starts an
   arrow where it crosses its shape's edge toward the other end, whichever side that is); a
   channel's title, and a legend of the channels; a line in an arrow's detail panel naming its
-  channel; reading connections as data (what a note links to, for rules and agents); and, once
+  channel; rules that read connections (which Topology's index can answer: a schema's links, say);
+  and, once
   ports draw every arrow a board needs, removing the arrow tool (the POC's transcript drives it
   today).
 - **More of boards**: moving shapes into a subboard, or up out of one (Move to Subboard), keeping
@@ -6506,6 +6788,11 @@ Each of these adds to the design without changing what plugins are written again
   selection's size, so it opens the first); a line in the Board tab saying what the board holds; a
   preview in another color, or sharper than 256 pixels when a card is shown large; and a board
   addressed from outside the app (the command line's, above).
+- **More of topology**: containers that aren't boards (frames, groups) as sources of containment,
+  a point of their own; `canvas draw` matching an edge it restates by its type as well as its ends;
+  reading the graph from the command line, once how agents read a board is designed; showing a
+  shape's connections of every type in the app (a Connections section of its panel, beside
+  Mentions' Mentioned In); and edges on the boards the app can't show, which carry none today.
 - **More of properties**: a board's shapes checked against their schemas as it opens, in its report
   (`canvas draw` warns about what it draws, and `canvas kinds --schema` hands the
   schemas out); a projection of
@@ -6519,9 +6806,8 @@ Each of these adds to the design without changing what plugins are written again
   shape its schema bounds, for the first read of a large board (10,000 shapes take about 30 ms).
 - **More of mentions**: a shipped text in the panel that holds mentions (`MentionTextArea` is
   there for one); mention text in checklist items; saying in the `@` picker which board a shape on
-  another board is on; backlinks and validation across boards (the Mentioned In tab and Show What
-  Mentions list the mentioners on the board shown, and MentionValidation checks a mention of a
-  shape on another board no more than a missing one); a text restricted to some kinds among the
+  another board is on; validation across boards (MentionValidation checks a mention of a shape on
+  another board no more than a missing one); a text restricted to some kinds among the
   shipped ones; a move that isn't a cut and paste (Move to Subboard, below), keeping ids as a cut's
   paste does, so mentions stay live; the command line reading and listing what can be mentioned,
   and helpers for writing mentions; more kinds mentionable (through bridges); and making a shape

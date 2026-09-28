@@ -32,6 +32,7 @@ import SwiftUI
 import TableOfContents
 import TitleNames
 import Titles
+import Topology
 import Validation
 import ValidationChecks
 import ValidationContents
@@ -54,6 +55,9 @@ public enum ShippedPlugins {
             // First: every key is registered with Keyboard; the others build on Selection, and its
             // handles draw below their view overlays.
             KeyboardPlugin(), SelectionPlugin(),
+            // What connects to what (arrows, mentions), for the whole file: its index hears each
+            // commit before the services that read it (the table of contents', Mentions').
+            TopologyPlugin(),
             ArrowsPlugin(), StickyNotesPlugin(), SubboardsPlugin(), SchemasPlugin(),
             // After Validation: what's shown on shapes draws over its outline.
             ValidationPlugin(), AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin(), ChecklistsPlugin(), TitlesPlugin(),

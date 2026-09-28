@@ -7,6 +7,7 @@ import Keyboard
 import Ports
 import Selection
 import TestKit
+import Topology
 
 // A shape's dots show while the pointer is on it (or near it) in the select tool: a dot of radius 4
 // (5 lit), 12 points out from the middle of each side its ports list. Each is checked in its middle,
@@ -49,7 +50,7 @@ import TestKit
         expectEqual(h.editor.hoveredButton, nil)
     },
     test("without a connector no shape has dots") {
-        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), PortsPlugin(), channelsPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin(), channelsPlugin()])
         h.add(Box(boxFrame))
         let plain = render(h)
         h.move(to: boxMiddle)
@@ -272,7 +273,7 @@ import TestKit
     },
     test("a channel without a color of its own draws gray, and a side on two channels draws in the first's") {
         let pipesFirst = Contributor(id: "pipes-first") { $0.ports(Box.self, on: Pipe.self, sides: [.right]) }
-        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), PortsPlugin(), pipesFirst, channelsPlugin(),
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin(), pipesFirst, channelsPlugin(),
                                             connectorPlugin(Connections())])
         h.add(Box(boxFrame))
         h.hoverDot(rightDot)

@@ -6,6 +6,7 @@ import Keyboard
 import Ports
 import Selection
 import TestKit
+import Topology
 
 /// Declares the wire channel once more, under another type.
 enum Cable {}
@@ -19,12 +20,18 @@ extension Rope: Channel {
     static let id: ChannelID = "rope"
 }
 
+/// A second connector's family of connections: another type, so only the connectors conflict.
+enum Strand {}
+extension Strand: EdgeType {
+    static let id: EdgeTypeID = "strand"
+}
+
 @MainActor let registryTests = Suite("Channels and ports in the registry", [
     test("channels, ports and the connector are what their plugins declare, and the report names each") {
         let registry = try portsHarness().editor.registry
         expectEqual(registry.contributions(to: Channels.self).map(\.value.id), [Wire.id, Pipe.id])
-        expectEqual(reportLine(registry, "channels"), "channel wire · channel pipe · ports wire → box · ports pipe → disc")
-        expectEqual(reportLine(registry, "tag-connector"), "property channel → tag · connector → tag")
+        expectEqual(reportLine(registry, "channels"), "channel wire · edge type wire · channel pipe · edge type pipe · ports wire → box · ports pipe → disc")
+        expectEqual(reportLine(registry, "tag-connector"), "property channel → tag · edge type hookup · connector → tag")
         expectEqual(reportLine(registry, .ports), "property channel · service PortState · overlay PortOverlay · CanvasButtons")
     },
     test("a kind's ports given through its own registrar are its plugin's, in the report too") {
@@ -61,7 +68,7 @@ extension Rope: Channel {
     },
     test("there's one connector at most") {
         let another = Contributor(id: "disc-connector") { registrar in
-            registrar.connects(Disc.self, canConnect: { _, _ in true }) { _, _ in nil }
+            registrar.connects(Disc.self, edgeType: Strand.self, canConnect: { _, _ in true }) { _, _ in nil }
         }
         expectThrows(RegistryError.conflict(point: "Connectors", key: "the connector", plugins: ["tag-connector", "disc-connector"])) {
             _ = try portsHarness(more: [another])
@@ -73,7 +80,7 @@ extension Rope: Channel {
         }
     },
     test("without a connector the list is fine, and no kind has the channel property") {
-        let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), PortsPlugin(), channelsPlugin()])
+        let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin(), channelsPlugin()])
         expect(registry.declaredProperties.contains(ChannelProperty.key))
         for kind in registry.kinds { expectEqual(registry.properties(for: kind), [], "\(kind)") }
     },
@@ -144,7 +151,7 @@ extension Rope: Channel {
         expect(registry.declares(Wire.id))
         expect(registry.declares(Pipe.id))
         expect(!registry.declares(Rope.id))
-        let without = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), PortsPlugin()])
+        let without = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin()])
         expect(!without.declares(Wire.id))
     },
 ])

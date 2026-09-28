@@ -8,6 +8,7 @@ import Selection
 import TableOfContents
 import TestKit
 import Titles
+import Topology
 
 // MentionState: the index both ways, resolutions, observers, rows, following and hovering.
 
@@ -156,13 +157,14 @@ extension OutlineDefinition: ShapeDefinition {
     test("only kinds that can hold names are read, and a commit reads only the shapes it changed, but not those it only moved") {
         let b = try Board()
         #if DEBUG
-        let read = b.state.textsRead
+        let topology = try require(b.editor.topology)
+        let read = topology.recordsRead
         b.editor.rename(b.groceries, "Food")
-        expectEqual(b.state.textsRead, read, "a plate holds no names")
+        expectEqual(topology.recordsRead, read, "a plate holds no names")
         b.editor.setText(b.jot, MentionText([.mention(b.milk, label: "Milk")]))
-        expectEqual(b.state.textsRead, read + 1)
+        expectEqual(topology.recordsRead, read + 1)
         b.editor.transact { $0.translate([b.jot, b.groceries, b.milk], by: CGPoint(x: 10, y: 10)) }
-        expectEqual(b.state.textsRead, read + 1, "a drag reads nothing")
+        expectEqual(topology.recordsRead, read + 1, "a drag reads nothing")
         #endif
     },
 
@@ -258,7 +260,7 @@ extension OutlineDefinition: ShapeDefinition {
         expectEqual(b.state.labelRevision(of: b.groceries), before + 1)
     },
 
-    test("isMentioned: by another shape on the board; a shape's mention of itself doesn't count, and a deleted shape is still mentioned") {
+    test("isMentioned: by another shape; a shape's mention of itself doesn't count, and a deleted shape is still mentioned") {
         let b = try Board()
         expect(b.state.isMentioned(b.groceries))
         expect(b.state.isMentioned(b.milk))

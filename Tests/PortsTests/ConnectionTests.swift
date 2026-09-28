@@ -8,6 +8,7 @@ import Keyboard
 import Ports
 import Selection
 import TestKit
+import Topology
 
 // Ports without a drag: the port table as the registry's lookups read it (one order, the one a drag
 // from a dot goes by), what the connector says it can connect in the document it's given, and
@@ -21,7 +22,7 @@ import TestKit
 /// port.
 @MainActor func linkConnectorPlugin() -> Contributor {
     Contributor(id: "link-connector") { registrar in
-        registrar.connects(Link.self, canConnect: { id, shapes in shapes.geometry(of: id)?.isClosed == true },
+        registrar.connects(Link.self, edgeType: Hookup.self, canConnect: { id, shapes in shapes.geometry(of: id)?.isClosed == true },
                            make: { request, existing, shapes in
                                guard shapes.shape(request.from) != nil, shapes.shape(request.to) != nil else { return nil }
                                var link = existing?.typed(as: Link.self) ?? ShapeRecord(Link())
@@ -41,7 +42,7 @@ import TestKit
 
 /// The keys, the selection, the fixtures and links, the tests' channels, and the link connector.
 @MainActor func linksHarness(boxSides: [PortSide] = PortSide.allCases, boxRole: PortRole = .both) throws -> EditorHarness {
-    try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), LinksPlugin(), PortsPlugin(),
+    try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), LinksPlugin(), PortsPlugin(),
                                 channelsPlugin(boxSides: boxSides, boxRole: boxRole), linkConnectorPlugin()])
 }
 
@@ -57,7 +58,7 @@ func endsList(_ ends: (from: ShapeID, to: ShapeID)?) -> [ShapeID]? { ends.map { 
     test("the port table has one order, plugin order: the lookups, a drag's channels and where it ends agree") {
         for pipesFirst in [true, false] {
             let connections = Connections()
-            let plugins: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), PortsPlugin()]
+            let plugins: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin()]
                 + (pipesFirst ? [pipedBoxesPlugin(), channelsPlugin()] : [channelsPlugin(), pipedBoxesPlugin()]) + [connectorPlugin(connections)]
             let h = try EditorHarness(plugins: plugins)
             let registry = h.editor.registry
@@ -116,7 +117,7 @@ func endsList(_ ends: (from: ShapeID, to: ShapeID)?) -> [ShapeID]? { ends.map { 
         let tags = try portsHarness().editor.registry
         expectEqual(tags.connectorKind, Tag.kind)
         expect(!tags.makesConnections, "the tag connector only draws from a port")
-        let none = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), PortsPlugin(), channelsPlugin()])
+        let none = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin(), channelsPlugin()])
         expectEqual(none.connectorKind, nil)
         expect(!none.makesConnections)
     },
@@ -136,7 +137,7 @@ func endsList(_ ends: (from: ShapeID, to: ShapeID)?) -> [ShapeID]? { ends.map { 
         }
         expect(inTransaction, "in the transaction's document")
         expect(!inEditor, "not yet in the editor's")
-        let none = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), PortsPlugin(), channelsPlugin()])
+        let none = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin(), channelsPlugin()])
         expect(!none.canConnect(box, in: ShapeContext(document: h.editor.document, registry: none)), "no connector")
     },
     test("a shape the board keeps aside can't be connected, whatever the connector says") {
@@ -145,9 +146,9 @@ func endsList(_ ends: (from: ShapeID, to: ShapeID)?) -> [ShapeID]? { ends.map { 
     },
     test("the dots ask the connector in the editor's document, as it is now") {
         let wide = Contributor(id: "wide-connector") { registrar in
-            registrar.connects(Tag.self, canConnect: { id, shapes in shapes.shape(id)?.box == boxFrame }) { _, _ in nil }
+            registrar.connects(Tag.self, edgeType: Hookup.self, canConnect: { id, shapes in shapes.shape(id)?.box == boxFrame }) { _, _ in nil }
         }
-        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), PortsPlugin(), channelsPlugin(), wide])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin(), channelsPlugin(), wide])
         let box = h.add(Box(boxFrame))
         h.hoverDot(rightDot)
         expectEqual(h.editor.hoveredButton?.base as? PortDot, PortDot(shape: box, side: .right))

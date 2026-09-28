@@ -9,6 +9,7 @@ import PortEdges
 import Ports
 import Selection
 import TestKit
+import Topology
 
 // `canvas draw`'s edges as Ports' connections, over fixtures: tiles (named by their label) have
 // ports on the wire, on every side; cards (named by their text) on the pipe, on their right and
@@ -25,6 +26,12 @@ extension Wire: Channel {
 enum Pipe {}
 extension Pipe: Channel {
     static let id: ChannelID = "pipe"
+}
+
+/// The family of connections links are, as Topology's edge type.
+enum Hookup {}
+extension Hookup: EdgeType {
+    static let id: EdgeTypeID = "hookup"
 }
 
 /// Where a link's ends aim, as the requests that made it named them: `right`, `-` for none.
@@ -73,10 +80,10 @@ extension BothHeads: ShapeProperty {
             shapes.geometry(of: id)?.isClosed == true && shapes.shape(id)?.typed(as: Tile.self)?.props.finish != .glossy
         }
         guard makes else {
-            registrar.connects(Link.self, canConnect: canConnect) { _, _ in nil }
+            registrar.connects(Link.self, edgeType: Hookup.self, canConnect: canConnect) { _, _ in nil }
             return
         }
-        registrar.connects(Link.self, canConnect: canConnect, make: { request, existing, shapes in
+        registrar.connects(Link.self, edgeType: Hookup.self, canConnect: canConnect, make: { request, existing, shapes in
             requests.made.append(request)
             guard shapes.shape(request.from) != nil, shapes.shape(request.to) != nil else { return nil }
             var link = existing?.typed(as: Link.self) ?? ShapeRecord(Link())
@@ -122,7 +129,7 @@ let fixtureNames = Contributor(id: "fixture-names") { registrar in
 /// An editor 800 × 600 points with the fixtures, Ports, the channels, the link connector, names
 /// and the bridge (unless not).
 @MainActor func edgesEditor(_ requests: Requests = Requests(), cards: Bool = true, makes: Bool = true, bridge: Bool = true) throws -> CanvasEditor {
-    let plugins: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), AutomationPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(),
+    let plugins: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), AutomationPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(),
                                        LinksPlugin(), PortsPlugin(), channelsPlugin(cards: cards), linkConnector(requests, makes: makes),
                                        fixtureNames] + (bridge ? [PortEdgesPlugin()] : [])
     let editor = CanvasEditor(registry: try Registry(plugins: plugins))

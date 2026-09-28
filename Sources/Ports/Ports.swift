@@ -1,15 +1,18 @@
 import AppKit
 import Canvas
 import Selection
+import Topology
 
 /// Ports, as a plugin (data-canvas's): drag targets just outside the sides of a hovered shape, each a
 /// dot, from which a drag draws a connection (an arrow) that may end only on a shape that takes its
 /// channel. A channel is a kind of connection, declared by the plugin that owns what it means
 /// (`registrar.channel(NoteLink.self)`); a kind has ports on the channels it opts into
 /// (`note.ports(NoteLink.self)`), and a connection drawn on one keeps it (`ChannelProperty`). What a
-/// connection is, is the connector's business: one plugin draws them (`registrar.connects(Arrow.self)
-/// { … }`, a bridge's), and this one never learns what an arrow is. The dots are canvas buttons
-/// (Selection's `CanvasButtons`), dragged rather than clicked.
+/// connection is, is the connector's business: one plugin draws them (`registrar.connects(Arrow.self,
+/// edgeType: ArrowEdge.self) { … }`, a bridge's), and this one never learns what an arrow is. A
+/// connection bound at both ends is an edge in Topology's graph, of its channel's type (each channel
+/// is an edge type, under the family the connector names), or the family's without one. The dots
+/// are canvas buttons (Selection's `CanvasButtons`), dragged rather than clicked.
 extension PluginID {
     public static let ports: PluginID = "ports"
 }
@@ -24,6 +27,11 @@ public struct ChannelID: RawRepresentable, Hashable, Codable, Sendable, Expressi
     public init(rawValue: String) { self.rawValue = rawValue }
     public init(stringLiteral value: String) { rawValue = value }
     public var description: String { rawValue }
+}
+
+extension EdgeTypeID {
+    /// A channel's edge type: the same name, so a connection's type is the channel it keeps.
+    init(_ channel: ChannelID) { self.init(rawValue: channel.rawValue) }
 }
 
 extension ChannelID: SchemaDescribed {
@@ -199,6 +207,8 @@ public struct ConnectorContribution {
     let make: (@MainActor (ConnectionRequest, AnyShapeRecord?, ShapeContext) -> AnyShapeRecord?)?
     let ends: (@MainActor (AnyShapeRecord) -> (from: ShapeID, to: ShapeID)?)?
     let begin: @MainActor (Connection, CanvasEditor) -> (any Session)?
+    /// The family of edges its connections are (Topology's): each channel's edge type is under it.
+    let edgeType: EdgeTypeID
 }
 
 /// Who draws connections: at most one plugin. Without one, no shape shows ports.
@@ -224,9 +234,12 @@ extension ShapeRegistrar {
 }
 
 extension PluginRegistrar {
-    /// Declares a channel this plugin owns, so kinds can have ports on it.
+    /// Declares a channel this plugin owns, so kinds can have ports on it, and its edge type
+    /// (Topology's, of the same name), under the family of edges the connector draws (a root
+    /// without a connector): a connection drawn on it is an edge of that type.
     public mutating func channel<C: Channel>(_ channel: C.Type) {
         contribute(ChannelDeclaration(id: C.id, color: C.color), to: Channels.self)
+        edgeType(EdgeTypeID(C.id), parent: { $0.connector?.edgeType })
     }
 
     /// Ports on `channel` for a kind another plugin registers (bridges), as `ports` on a kind's own
@@ -245,14 +258,32 @@ extension PluginRegistrar {
     /// any rule; or, given an existing connection, changes it: only the sides the request names, and
     /// its heads, keeping the rest (its channel, its curve); nil if it can't. And `ends` reads which
     /// shapes a connection starts and ends on (nil unless both). Without them, a connection is only
-    /// ever drawn from a port.
-    public mutating func connects<K: ShapeProps>(_ kind: K.Type, canConnect: @escaping @MainActor (ShapeID, ShapeContext) -> Bool,
-                                                 make: (@MainActor (ConnectionRequest, AnyShapeRecord?, ShapeContext) -> AnyShapeRecord?)? = nil,
-                                                 ends: (@MainActor (AnyShapeRecord) -> (from: ShapeID, to: ShapeID)?)? = nil,
-                                                 begin: @escaping @MainActor (Connection, CanvasEditor) -> (any Session)?) {
+    /// ever drawn from a port. `F` is the family of edges its connections are (Topology's), which
+    /// this declares: a connection `ends` finds bound at both ends is one edge from the one to the
+    /// other, of its channel's type (`F`'s child) or, drawn on none, of `F`; one without `ends`
+    /// carries none. A channel no plugin declares (a file from a newer app) is kept as written, its
+    /// type one nobody declares, unless it's another edge type's id (`mention`): a connection is
+    /// never an edge of a type that isn't a channel's, so it's then of `F`.
+    public mutating func connects<K: ShapeProps, F: EdgeType>(_ kind: K.Type, edgeType family: F.Type,
+                                                              canConnect: @escaping @MainActor (ShapeID, ShapeContext) -> Bool,
+                                                              make: (@MainActor (ConnectionRequest, AnyShapeRecord?, ShapeContext) -> AnyShapeRecord?)? = nil,
+                                                              ends: (@MainActor (AnyShapeRecord) -> (from: ShapeID, to: ShapeID)?)? = nil,
+                                                              begin: @escaping @MainActor (Connection, CanvasEditor) -> (any Session)?) {
         optIn(K.self, to: ChannelProperty.self)
-        contribute(ConnectorContribution(kind: K.kind, canConnect: canConnect, make: make, ends: ends, begin: begin), to: Connectors.self,
-                   for: .kind(K.kind))
+        edgeType(F.self)
+        contribute(ConnectorContribution(kind: K.kind, canConnect: canConnect, make: make, ends: ends, begin: begin, edgeType: F.id),
+                   to: Connectors.self, for: .kind(K.kind))
+        guard let ends else { return }
+        let familyID = F.id
+        edges(K.self) { record, registry, sink in
+            guard let (from, to) = ends(record) else { return }
+            var type = familyID
+            if let channel = record[ChannelProperty.self] {
+                let named = EdgeTypeID(channel)
+                if registry.declares(channel) || !registry.declaresEdgeType(named) { type = named }
+            }
+            sink.emit(type, from: from, to: to)
+        }
     }
 }
 

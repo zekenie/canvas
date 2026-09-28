@@ -12,6 +12,7 @@ import Selection
 import TableOfContents
 import TestKit
 import Titles
+import Topology
 import Validation
 
 // Fixtures only, so these tests show the bridge knows no real kind: two kinds that can be
@@ -139,11 +140,12 @@ struct ValidationFixturesPlugin: CanvasPlugin {
     }
 }
 
-/// The keyboard and the selection first, CanvasTesting's fixtures (boxes; pockets, whose boards
-/// nest; frozen shapes), this target's, the pieces Mentions builds on (the context menu, where it
-/// puts Show What Mentions, among them), Mentions, Validation, then the bridge.
+/// The keyboard, the selection and Topology (whose edges Mentions' are) first, CanvasTesting's
+/// fixtures (boxes; pockets, whose boards nest; frozen shapes), this target's, the pieces Mentions
+/// builds on (the context menu, where it puts Show What Mentions, among them), Mentions,
+/// Validation, then the bridge.
 @MainActor func validationPlugins(_ more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
-    [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), PocketsPlugin(), FreezingPlugin(), ValidationFixturesPlugin(),
+    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PocketsPlugin(), FreezingPlugin(), ValidationFixturesPlugin(),
      AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), ValidationPlugin(),
      MentionValidationPlugin()] + more
 }

@@ -11,10 +11,11 @@ import Selection
 import TableOfContents
 import TestKit
 import Titles
+import Topology
 
 // What mentions a shape: `backlinks(of:)`, each mentioner named and quoted around its mention, on
-// the board shown; and Show What Mentions, in the canvas's context menu, selecting what mentions
-// the shapes the menu is for.
+// any board, the board shown's first; and Show What Mentions, in the canvas's context menu, going
+// to what mentions the shapes the menu is for.
 
 /// Plates "Groceries" and "Errands", token "Milk", then, in this order: a jot that asks for the
 /// groceries and the milk; a brief (a kind that can't be mentioned, with no title and no tool)
@@ -26,8 +27,8 @@ private struct Mentioned {
     var editor: CanvasEditor { h.editor }
     var state: MentionState { h.editor.mentionState }
 
-    init() throws {
-        h = try mentionHarness()
+    init(_ more: [any CanvasPlugin] = []) throws {
+        h = try mentionHarness(more)
         groceries = h.editor.add(Plate(CGRect(x: 400, y: 0, width: 120, height: 80)), titled: "Groceries")
         errands = h.editor.add(Plate(CGRect(x: 400, y: 200, width: 120, height: 80)), titled: "Errands")
         milk = h.add(Token(CGRect(x: 600, y: 0, width: 60, height: 60), caption: "Milk"))
@@ -46,8 +47,24 @@ private struct Mentioned {
     }
 }
 
+/// An edge of another type than a mention: a tag's to what it's on, as an arrow bound at both ends is
+/// an edge of its own.
+enum TieEdge {}
+extension TieEdge: EdgeType {
+    static let id: EdgeTypeID = "tie"
+}
+
+/// Tags carry ties.
+let tiesPlugin = Contributor(id: "ties") { registrar in
+    registrar.edgeType(TieEdge.self)
+    registrar.edges(Tag.self) { record, _, sink in
+        guard let target = (record.props as? Tag)?.target else { return }
+        sink.emit(TieEdge.id, from: record.id, to: target)
+    }
+}
+
 @MainActor let backlinkTests = Suite("Backlinks", [
-    test("what mentions a shape, on the board shown, in document order, the shape itself left out: each named and marked as it's mentioned, else by its title or its kind") {
+    test("what mentions a shape, the board shown's in document order, the shape itself left out: each named and marked as it's mentioned, else by its title or its kind") {
         let b = try Mentioned()
         let links = b.state.backlinks(of: b.groceries)
         expectEqual(links.map(\.id), [b.ask, b.brief, b.plan])
@@ -95,7 +112,7 @@ private struct Mentioned {
         expectEqual(b.quote(b.ask, of: b.groceries), "Ask @Food and @Milk, then @Food again")
     },
 
-    test("Show What Mentions, in the context menu of a shape something on the board mentions, selects what mentions it on the next turn, one step back") {
+    test("Show What Mentions, in the context menu of a shape something mentions, selects what mentions it on the next turn, one step back") {
         let b = try Mentioned()
         expect(b.h.secondaryClick(at: CGPoint(x: 460, y: 240)) == nil, "nothing mentions the errands, and they have no other item")
         let menu = try require(b.h.secondaryClick(at: CGPoint(x: 460, y: 40)))
@@ -122,12 +139,14 @@ private struct Mentioned {
 
     test("a list with Mentions needs ContextMenus, for Show What Mentions") {
         expectThrows(RegistryError.ownerNotInstalled(point: "CanvasContextMenu", owner: .contextMenus, contributor: .mentions)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), MentionFixturesPlugin(), AdornmentsPlugin(),
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), MentionFixturesPlugin(), AdornmentsPlugin(),
                                        DetailPanelPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin()])
         }
     },
 
-    test("what mentions a shape is read on the board shown: a mentioner on another board isn't listed, and showing another board changes every backlinkRevision") {
+    // The user chose file-wide backlinks when Topology took over the index of who mentions whom:
+    // main's per-board list followed only from its per-board index, not from a decision.
+    test("what mentions a shape is the file's: a mentioner on another board is listed after the board shown's, and showing another board changes every backlinkRevision, its own coming first") {
         let groceries = ShapeID(), pocket = ShapeID(), outer = ShapeID(), inner = ShapeID()
         var plate = ShapeRecord(id: groceries, Plate(CGRect(x: 400, y: 0, width: 120, height: 80)))
         plate[TitleProperty.self] = "Groceries"
@@ -138,17 +157,120 @@ private struct Mentioned {
         let h = try EditorHarness(plugins: mentionPlugins([PocketsPlugin()]),
                                   file: CanvasFile(root: CanvasDocument(shapes: root), children: [pocket: CanvasDocument(shapes: inside)]))
         let state = h.editor.mentionState
-        expectEqual(state.backlinks(of: groceries).map(\.id), [outer])
+        expectEqual(state.backlinks(of: groceries).map(\.id), [outer, inner], "the board shown's first (the user chose file-wide backlinks)")
         let flag = Flag()
         let revision = state.backlinkRevision(of: groceries)
         withObservationTracking { _ = state.backlinkRevision(of: groceries) } onChange: { flag.fired = true }
         expect(h.enter(pocket))
         expect(flag.fired)
         expect(state.backlinkRevision(of: groceries) != revision)
-        expectEqual(state.backlinks(of: groceries), [MentionBacklink(id: inner, label: "Buy @…", systemImage: "note.text", quote: "Buy @Groceries")],
-                    "what mentions it here, though it's on the root")
+        let line = MentionBacklink(id: inner, label: "Buy @…", systemImage: "note.text", quote: "Buy @Groceries")
+        expectEqual(state.backlinks(of: groceries), [line, MentionBacklink(id: outer, label: "Buy @…", systemImage: "note.text", quote: "Buy @Groceries")],
+                    "what mentions it here first, though it's on the root")
         expect(h.editor.showBoard(.root))
-        expectEqual(state.backlinks(of: groceries).map(\.id), [outer])
+        expectEqual(state.backlinks(of: groceries).map(\.id), [outer, inner])
+    },
+
+    test("over Topology's file-wide index, a mentioner on another board counts, with its quote, and Show What Mentions goes there; a shape's mention of itself is none of it, but keeps what it mentions resolved") {
+        let groceries = ShapeID(), pocket = ShapeID(), own = ShapeID(), inner = ShapeID()
+        var plate = ShapeRecord(id: groceries, Plate(CGRect(x: 400, y: 0, width: 120, height: 80)))
+        plate[TitleProperty.self] = "Groceries"
+        let root = [AnyShapeRecord(plate), AnyShapeRecord(ShapeRecord(id: pocket, Pocket(CGRect(x: 600, y: 0, width: 100, height: 100)))),
+                    AnyShapeRecord(ShapeRecord(id: own, Jot(CGRect(x: 0, y: 0, width: 200, height: 200),
+                                                            text: MentionText([.text("Me: "), .mention(own, label: "Me")]))))]
+        let inside = [AnyShapeRecord(ShapeRecord(id: inner, Jot(CGRect(x: 0, y: 0, width: 200, height: 200),
+                                                                text: MentionText([.text("Buy "), .mention(groceries, label: "Groceries")]))))]
+        let h = try EditorHarness(plugins: mentionPlugins([PocketsPlugin()]),
+                                  file: CanvasFile(root: CanvasDocument(shapes: root), children: [pocket: CanvasDocument(shapes: inside)]))
+        let state = h.editor.mentionState
+        expectEqual(state.mentioners(of: groceries), [inner])
+        expect(state.isMentioned(groceries), "mentioned on the pocket's board, which the user chose to count")
+        expectEqual(state.backlinks(of: groceries), [MentionBacklink(id: inner, label: "Buy @…", systemImage: "note.text", quote: "Buy @Groceries")],
+                    "read where it is")
+        expect(!state.isMentioned(own), "its own mention")
+        expectEqual(state.backlinks(of: own), [])
+
+        // Both are mentioned, so how each shows is kept: a change to it tells its pills.
+        let label = state.labelRevision(of: groceries), itsOwn = state.labelRevision(of: own)
+        h.editor.rename(groceries, "Food")
+        expectEqual(state.labelRevision(of: groceries), label + 1, "mentioned from another board")
+        expectEqual(state.backlinks(of: groceries).first?.quote, "Buy @Food")
+        h.editor.setText(own, MentionText([.text("Myself: "), .mention(own, label: "Me")]))
+        expectEqual(state.labelRevision(of: own), itsOwn + 1, "mentioned by itself")
+
+        // Show What Mentions shows the mentioner's board, and selects it there, one step back.
+        let menu = try require(h.secondaryClick(at: CGPoint(x: 460, y: 40)))
+        expectEqual(menu.outline, ["Show What Mentions"])
+        try menu.choose("Show What Mentions")
+        h.wait(0)
+        expectEqual(h.editor.board, BoardID(owner: pocket))
+        expectEqual(h.editor.selectedShapeIDs, [inner])
+        h.editor.goBack()
+        expectEqual(h.editor.board, .root)
+        expectEqual(h.editor.selectedShapeIDs, [groceries])
+    },
+
+    test("a mentioner's text changed on another board, keeping its mention, tells backlinkRevision's observers and quotes what it says now") {
+        let groceries = ShapeID(), pocket = ShapeID(), inner = ShapeID()
+        var plate = ShapeRecord(id: groceries, Plate(CGRect(x: 400, y: 0, width: 120, height: 80)))
+        plate[TitleProperty.self] = "Groceries"
+        let root = [AnyShapeRecord(plate), AnyShapeRecord(ShapeRecord(id: pocket, Pocket(CGRect(x: 600, y: 0, width: 100, height: 100))))]
+        let inside = [AnyShapeRecord(ShapeRecord(id: inner, Jot(CGRect(x: 0, y: 0, width: 200, height: 200),
+                                                                text: MentionText([.text("Buy "), .mention(groceries, label: "Groceries")]))))]
+        let h = try EditorHarness(plugins: mentionPlugins([PocketsPlugin()]),
+                                  file: CanvasFile(root: CanvasDocument(shapes: root), children: [pocket: CanvasDocument(shapes: inside)]))
+        let state = h.editor.mentionState
+        expectEqual(state.backlinks(of: groceries).first?.quote, "Buy @Groceries")
+        let flag = Flag()
+        withObservationTracking { _ = state.backlinkRevision(of: groceries) } onChange: { flag.fired = true }
+        h.editor.transact(on: BoardID(owner: pocket), "Edit") {
+            $0.update(inner, as: Jot.self) { $0.props.text = MentionText([.text("Sell "), .mention(groceries, label: "Groceries")]) }
+        }
+        expectEqual(h.editor.board, .root, "written where it isn't shown")
+        expect(flag.fired, "its quote changed, and no edge")
+        expectEqual(state.backlinks(of: groceries).first?.quote, "Sell @Groceries")
+    },
+
+    test("an edge of another type to or from a mentioned shape (a tie, as an arrow bound to it) tells no backlinkRevision observer and bumps no revision") {
+        let b = try Mentioned([tiesPlugin])
+        let topology = try require(b.editor.topology)
+        let revision = b.state.backlinkRevision(of: b.groceries)
+        let flag = Flag()
+        withObservationTracking { _ = b.state.backlinkRevision(of: b.groceries) } onChange: { flag.fired = true }
+        let tag = ShapeID()
+        b.editor.transact { $0.insert(ShapeRecord(id: tag, Tag(target: b.groceries))) }
+        expect(topology.hasEdges(of: b.groceries, .incoming, types: .only(TieEdge.id)), "tied")
+        expect(topology.touched.contains(b.groceries))
+        b.editor.transact { $0.update(tag, as: Tag.self) { $0.props.target = b.errands } }
+        b.editor.transact { $0.update(tag, as: Tag.self) { $0.props.target = b.groceries } }
+        b.editor.delete(tag)
+        b.editor.undo()
+        expect(!flag.fired)
+        expectEqual(b.state.backlinkRevision(of: b.groceries), revision)
+        expect(b.state.isMentioned(b.groceries))
+        expect(!b.state.isMentioned(tag), "a tie isn't a mention")
+        b.editor.transact { $0.update(tag, as: Tag.self) { $0.props.target = b.errands } }
+        expect(!b.state.isMentioned(b.errands), "a tie isn't a mention")
+    },
+
+    test("a drag, of a mentioner or of what it mentions, tells no backlinkRevision observer and bumps no revision") {
+        let b = try Mentioned()
+        let revision = b.state.backlinkRevision(of: b.groceries)
+        let flag = Flag()
+        withObservationTracking { _ = b.state.backlinkRevision(of: b.groceries) } onChange: { flag.fired = true }
+        b.h.move(to: CGPoint(x: 100, y: 100))
+        b.h.press()
+        b.h.drag(to: CGPoint(x: 160, y: 140))
+        b.h.drag(to: CGPoint(x: 220, y: 180))
+        b.h.release()
+        expectEqual(b.editor.document[b.ask]?.box?.origin, CGPoint(x: 120, y: 80), "the asking jot dragged")
+        b.h.move(to: CGPoint(x: 460, y: 40))
+        b.h.press()
+        b.h.drag(to: CGPoint(x: 500, y: 40))
+        b.h.release()
+        expectEqual(b.editor.document[b.groceries]?.box?.origin, CGPoint(x: 440, y: 0), "the groceries dragged")
+        expect(!flag.fired)
+        expectEqual(b.state.backlinkRevision(of: b.groceries), revision)
     },
 
     test("a name a quote shows changing on another board tells backlinkRevision's observers: a write there, its board deleted, and the deletion undone") {

@@ -29,7 +29,7 @@ extension CanvasEditor {
 }
 
 @MainActor let mentionedInTests = Suite("Mentioned In", [
-    test("the tab shows while another shape on the board mentions the shape, last among the tabs; not for its own mention, nor once the last mention goes") {
+    test("the tab shows while another shape mentions the shape, last among the tabs; not for its own mention, nor once the last mention goes") {
         let h = try mentionHarness()
         h.editor.add(Plate(CGRect(x: 300, y: 0, width: 120, height: 80)), titled: "Groceries", id: idA)
         expect(!h.editor.tabs(idA).contains("Mentioned In"), "\(h.editor.tabs(idA))")
@@ -79,6 +79,31 @@ extension CanvasEditor {
         panel.lines[1].performClick(nil)
         panel.window.spin { panel.editor.selectedShapeIDs == [note] }
         panel.editor.goBack()
+        expectEqual(panel.editor.selectedShapeIDs, [idA])
+    },
+
+    test("a line for a mentioner on another board comes after the board shown's, quoting it; a click shows its board and selects it there, and Back returns") {
+        let panel = try MentionPanel(plugins: [PocketsPlugin()])
+        let plan = panel.editor.add(Jot(planFrame, text: MentionText([.text("Ask "), .mention(idA, label: "Groceries"), .text(" first")])), titled: "Plan")
+        let pocket = ShapeID(), far = ShapeID()
+        let inside = ShapeRecord(id: far, Jot(CGRect(x: 0, y: 0, width: 200, height: 200),
+                                             text: MentionText([.text("Buy "), .mention(idA, label: "Groceries"), .text(" there")])))
+        panel.editor.transact {
+            $0.insert(AnyShapeRecord(ShapeRecord(id: pocket, Pocket(CGRect(x: 600, y: 300, width: 100, height: 100)))),
+                      contents: [pocket: CanvasDocument(shapes: [AnyShapeRecord(inside)])])
+        }
+        let mentions = panel.editor.mentionState
+        try require(panel.editor.detailPanel).choose(.of(MentionsTab.self), for: Plate.kind)
+        panel.editor.selection = idA
+        panel.window.spin { mentions.backlinksShown[idA]?.count == 2 }
+        let shown = try require(mentions.backlinksShown[idA])
+        expectEqual(shown.map(\.id), [plan, far], "the board shown's first, then the pocket's: the user chose file-wide backlinks")
+        expectEqual(shown.last?.quote, "Buy @Groceries there")
+        panel.window.spin { panel.lines.count == 2 }
+        panel.lines[1].performClick(nil)
+        panel.window.spin { panel.editor.board == BoardID(owner: pocket) && panel.editor.selectedShapeIDs == [far] }
+        panel.editor.goBack()
+        expectEqual(panel.editor.board, .root)
         expectEqual(panel.editor.selectedShapeIDs, [idA])
     },
 

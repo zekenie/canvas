@@ -11,6 +11,7 @@ import Selection
 import TableOfContents
 import TestKit
 import Titles
+import Topology
 import Validation
 
 /// Every plugin a schema card contributes to (validation, the table of contents, titles, the detail
@@ -18,7 +19,7 @@ import Validation
 /// Adornments, which Titles places its pill with, and the language model its sync asks: a scripted
 /// one, so no test reaches the network.
 @MainActor func schemaPlugins(model: any LanguageModel = ScriptedLanguageModel()) -> [any CanvasPlugin] {
-    [KeyboardPlugin(), SelectionPlugin(), SchemasPlugin(), ValidationPlugin(), AdornmentsPlugin(), TableOfContentsPlugin(), TitlesPlugin(),
+    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), SchemasPlugin(), ValidationPlugin(), AdornmentsPlugin(), TableOfContentsPlugin(), TitlesPlugin(),
      DetailPanelPlugin(), PortsPlugin(), LanguageModelsPlugin(model: model)]
 }
 
