@@ -20,6 +20,18 @@ enum SelectionStyle {
     static let brushStrokeWidth: CGFloat = 1
     /// Going back moves the camera this long (data-canvas's).
     static let goBackDuration: Duration = .milliseconds(200)
+    /// Bringing shapes into view (`reveal`), as selecting a row of data-canvas's table of contents
+    /// does (its zoom config, and tldraw's zoomToBounds): 100 points of margin in all, no closer
+    /// than 120%, over 200 ms.
+    static let revealInset: CGFloat = 100
+    static let revealMaxZoom: CGFloat = 1.2
+    static let revealDuration: Duration = .milliseconds(200)
+    /// Going to shapes (`goTo`) leaves the camera where it is when they're all in view at this zoom
+    /// or closer. Text on the canvas is set for 100%, a note's at 16 points: at 70% that's 11.2
+    /// points on screen, just over the 11 of `NSFont.smallSystemFontSize`, the smallest size macOS
+    /// sets text to be read at. Further out the shapes are there but can't be read, so going to them
+    /// brings them closer.
+    static let readableZoom: CGFloat = 0.7
 }
 
 extension NSAppearance {

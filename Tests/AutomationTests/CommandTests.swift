@@ -104,17 +104,49 @@ let extras = Contributor(id: "extras") { registrar in
         expect(error.message.contains("frame is missing"), error.message)
         expectEqual(error.hint, "`canvas kinds box --schema` says what each property takes.")
     },
-    test("a shape may name only shapes on its board") {
+    test("a shape may be bound only to shapes on its board") {
         let editor = try makeEditor()
         let box = try created(run(["create", "box", "--set", "frame=[[0, 0], [10, 10]]"], on: editor), in: editor)
         let tag = try created(run(["create", "tag", "--set", "target=\(box.id)"], on: editor), in: editor)
         expectEqual(tag.typed(as: Tag.self)?.props.target, box.id)
         let elsewhere = ShapeID()
         guard case .failure(let error) = try run(["create", "tag", "--set", "target=\(elsewhere)"], on: editor) else {
-            return expect(false, "it named a shape that isn't there")
+            return expect(false, "it was bound to a shape that isn't there")
         }
         expectEqual(error.reason, "unknown_shape")
-        expectEqual(error.message, "A tag can't name shapes that aren't on this board: \(elsewhere).")
+        expectEqual(error.message, "A tag can't be bound to shapes that aren't on this board: \(elsewhere).")
+        expectEqual(error.hint, "Bind it only to shapes on the board the command works on (--board).")
+        expectEqual(editor.document.shapes.count, 2)
+    },
+    test("a shape may name shapes that aren't on its board (ShapeNaming): it's made, keeps naming them, and says which") {
+        let editor = try makeEditor([NamingPlugin()])
+        let box = try created(run(["create", "box", "--set", "frame=[[0, 0], [10, 10]]"], on: editor), in: editor)
+        let gone = ShapeID(), alsoGone = ShapeID()
+        let result = try run(["create", "memo", "--set", "frame=[[0, 0], [10, 10]]", "--set", "lead=\(gone)",
+                              "--props", #"{"sources": {"here": "\#(box.id)", "there": "\#(alsoGone)", "again": "\#(alsoGone)"}}"#], on: editor)
+        let memo = try created(result, in: editor)
+        expectEqual(memo.typed(as: Memo.self)?.props.lead, Citation(gone))
+        expectEqual(memo.typed(as: Memo.self)?.props.sources, ["here": Citation(box.id), "there": Citation(alsoGone), "again": Citation(alsoGone)])
+        expectEqual(try result.get()["warnings"], [
+            .string("lead names shapes that aren't on this board: \(gone); they show as missing."),
+            .string("sources names shapes that aren't on this board: \(alsoGone); they show as missing."),
+        ])
+        let named = try run(["create", "memo", "--set", "frame=[[0, 0], [10, 10]]", "--set", "lead=\(box.id)"], on: editor)
+        expectEqual(try named.get()["warnings"], nil, "every shape it names is there")
+    },
+    test("what a shape is bound to must still be on its board, though what it names needn't be") {
+        let editor = try makeEditor([NamingPlugin()])
+        let box = try created(run(["create", "box", "--set", "frame=[[0, 0], [10, 10]]"], on: editor), in: editor)
+        let gone = ShapeID(), alsoGone = ShapeID()
+        let cited = try run(["create", "citing-tag", "--set", "target=\(box.id)", "--set", "cite=\(gone)"], on: editor)
+        expectEqual(try created(cited, in: editor).typed(as: CitingTag.self)?.props, CitingTag(target: box.id, cite: Citation(gone)))
+        expectEqual(try cited.get()["warnings"], [.string("cite names shapes that aren't on this board: \(gone); they show as missing.")])
+        guard case .failure(let error) = try run(["create", "citing-tag", "--set", "target=\(alsoGone)", "--set", "cite=\(gone)"], on: editor) else {
+            return expect(false, "it was bound to a shape that isn't there")
+        }
+        expectEqual(error.reason, "unknown_shape")
+        expectEqual(error.message, "A citing-tag can't be bound to shapes that aren't on this board: \(alsoGone).",
+                    "what it's bound to is refused, where what it names is only warned about")
         expectEqual(editor.document.shapes.count, 2)
     },
     test("a shape past its schema's bounds is made anyway, with a warning") {

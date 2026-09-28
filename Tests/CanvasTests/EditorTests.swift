@@ -117,6 +117,43 @@ import TestKit
         expectEqual(h.editor.editingShapeID, nil)
         expect(h.editor.makeEditingView() == nil)
     },
+    test("where editing began is the editing view's to read, and is kept only while it lasts") {
+        let h = try EditorHarness(plugins: [CardsPlugin()])
+        let card = h.add(Card(CGRect(x: 0, y: 0, width: 100, height: 60)))
+        expect(h.editor.beginEditing(card, at: CGPoint(x: 30, y: 20)))
+        expectEqual(h.editor.editingStartPoint, CGPoint(x: 30, y: 20))
+        expectEqual(try require(h.editor.makeEditingView()?.view as? CardField).context.startPoint, CGPoint(x: 30, y: 20))
+        expect(h.editor.beginEditing(card, at: CGPoint(x: 70, y: 40)), "begun again, from another press")
+        expectEqual(try require(h.editor.makeEditingView()?.view as? CardField).context.startPoint, CGPoint(x: 70, y: 40))
+        h.editor.endEditing()
+        expectEqual(h.editor.editingStartPoint, nil)
+        expect(h.editor.beginEditing(card))
+        expectEqual(h.editor.editingStartPoint, nil, "a beginning that doesn't say leaves the view to choose")
+        expectEqual(try require(h.editor.makeEditingView()?.view as? CardField).context.startPoint, nil)
+        expect(h.editor.beginEditing(card, at: CGPoint(x: 10, y: 10)))
+        h.editor.transact { $0.delete([card]) }
+        expectEqual(h.editor.editingShapeID, nil)
+        expectEqual(h.editor.editingStartPoint, nil, "gone with the shape, as editing is")
+    },
+    test("a beginning that's refused keeps no point") {
+        let h = try EditorHarness(plugins: [CardsPlugin(), FixturesPlugin(), FreezingPlugin()])
+        let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 60)))
+        let frozen = h.add(Card(CGRect(x: 200, y: 0, width: 100, height: 60)))
+        h.editor.freeze([frozen])
+        expect(!h.editor.beginEditing(box, at: CGPoint(x: 5, y: 5)))
+        expect(!h.editor.beginEditing(frozen, at: CGPoint(x: 205, y: 5)))
+        expectEqual(h.editor.editingStartPoint, nil)
+    },
+    test("an editing view's context lends the editor's services, as the panel's and the table of contents' do") {
+        let log = ServiceLog()
+        let h = try EditorHarness(plugins: [CardsPlugin(), Contributor(id: "log") { $0.service { _ in LoggingService(log: log) } }])
+        let card = h.add(Card(CGRect(x: 0, y: 0, width: 100, height: 60)))
+        expect(h.editor.beginEditing(card))
+        let context = try require(h.editor.makeEditingView()?.view as? CardField).context
+        expect(context.service(LoggingService.self) === h.editor.service(LoggingService.self))
+        expect(context.service(LoggingService.self) != nil)
+        expect(context.service(ChangeRecorder.self) == nil, "one no plugin registers")
+    },
     test("only an editable kind can be edited") {
         let h = try EditorHarness(plugins: [FixturesPlugin()])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 60)))

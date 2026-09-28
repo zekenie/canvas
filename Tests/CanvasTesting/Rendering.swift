@@ -1,5 +1,6 @@
 import AppKit
 @_spi(Host) import Canvas
+import Geometry
 
 /// Draws an editor offscreen, as the canvas view would, and returns the bitmap.
 @MainActor
@@ -19,6 +20,78 @@ public func renderBitmap(_ editor: CanvasEditor, size: CGSize, scale: CGFloat = 
         NSGraphicsContext.restoreGraphicsState()
     }
     return rep
+}
+
+/// Draws an editor as `renderBitmap(_:size:scale:)` does, then `editing`, the editing view of the
+/// shape being edited (`editor.makeEditingView()`), over it, laid out as `CanvasView` lays it out:
+/// its frame in view points, its bounds in world units, so AppKit scales it by the zoom. It's drawn
+/// at the bitmap's scale from an unshown window, and taken out of it again, so a test can go on
+/// typing into it. Only the editor's drawing, when no shape is being edited.
+@MainActor
+public func renderBitmap(_ editor: CanvasEditor, size: CGSize, scale: CGFloat = 1, editing: EditingView) -> NSBitmapImageRep {
+    let rep = renderBitmap(editor, size: size, scale: scale)
+    guard let id = editor.editingShapeID, let box = editor.document[id]?.box else { return rep }
+    let host = FlippedView(frame: CGRect(origin: .zero, size: size))
+    let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: true)
+    window.appearance = NSAppearance(named: .aqua)
+    window.contentView = host
+    host.addSubview(editing.view)
+    defer { editing.view.removeFromSuperview() }
+    editing.view.frame = editor.camera.toView(box)
+    editing.view.bounds = CGRect(origin: .zero, size: box.size)
+    host.layoutSubtreeIfNeeded()
+    let overlay = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: rep.pixelsWide, pixelsHigh: rep.pixelsHigh,
+                                   bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                   colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+    overlay.size = size                                   // so the view draws at the bitmap's scale
+    host.cacheDisplay(in: host.bounds, to: overlay)
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    overlay.draw(in: CGRect(x: 0, y: 0, width: rep.pixelsWide, height: rep.pixelsHigh), from: .zero,
+                 operation: .sourceOver, fraction: 1, respectFlipped: false, hints: nil)
+    NSGraphicsContext.restoreGraphicsState()
+    return rep
+}
+
+private final class FlippedView: NSView {
+    override var isFlipped: Bool { true }
+}
+
+/// Where each line of text starts, in view points: the top of each run of rows in which `rep`
+/// differs from `background` (the same drawing without the text) by more than a quarter in any
+/// channel, within `rect`. Every pixel counts; `scale` is pixels per point, as for `pixel`.
+@MainActor
+public func lineTops(_ rep: NSBitmapImageRep, over background: NSBitmapImageRep, in rect: CGRect, scale: CGFloat? = nil) -> [CGFloat] {
+    let scale = scale ?? CGFloat(rep.pixelsWide) / rep.size.width
+    var p = [Int](repeating: 0, count: 4), q = [Int](repeating: 0, count: 4)
+    var tops: [CGFloat] = []
+    var previous = Int.min
+    for y in Int(rect.minY * scale)..<Int(rect.maxY * scale) {
+        let inked = (Int(rect.minX * scale)..<Int(rect.maxX * scale)).contains { x in
+            rep.getPixel(&p, atX: x, y: y); background.getPixel(&q, atX: x, y: y)
+            return zip(p, q).contains { abs($0 - $1) > 64 }
+        }
+        guard inked else { continue }
+        if y != previous + 1 { tops.append(CGFloat(y) / scale) }
+        previous = y
+    }
+    return tops
+}
+
+/// The largest difference in any channel (0...255) between two bitmaps of one size, over every
+/// pixel within a rect of view points (`scale` as for `pixel`).
+@MainActor
+public func largestDifference(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep, in rect: CGRect, scale: CGFloat? = nil) -> Int {
+    let scale = scale ?? CGFloat(a.pixelsWide) / a.size.width
+    var p = [Int](repeating: 0, count: 4), q = [Int](repeating: 0, count: 4)
+    var largest = 0
+    for y in Int(rect.minY * scale)..<Int(rect.maxY * scale) {
+        for x in Int(rect.minX * scale)..<Int(rect.maxX * scale) {
+            a.getPixel(&p, atX: x, y: y); b.getPixel(&q, atX: x, y: y)
+            largest = max(largest, zip(p, q).map { abs($0 - $1) }.max() ?? 0)
+        }
+    }
+    return largest
 }
 
 /// Draws a view as it is now, in its window (unshown will do), at the window's scale, with its

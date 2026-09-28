@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([selectionTests, selectToolTests, brushTests, translateTests, characterizationTests, editorTests, drawingTests, handTests, selectabilityTests, keptAsideTests, historyTests, readOnlyTests, buttonTests, draggedButtonTests, pointerOverCanvasTests, decorationHitsTests])
+runTests([selectionTests, selectToolTests, brushTests, translateTests, characterizationTests, editorTests, drawingTests, handTests, selectabilityTests, keptAsideTests, historyTests, readOnlyTests, buttonTests, draggedButtonTests, pointerOverCanvasTests, decorationHitsTests, goToTests, faceTests])

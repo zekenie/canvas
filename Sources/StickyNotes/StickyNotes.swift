@@ -94,11 +94,26 @@ enum NoteStyle {
     static let cornerRadius: CGFloat = 4
     static let padding: CGFloat = 16
     static let color = NSColor(srgbRed: 1.0, green: 0.87, blue: 0.45, alpha: 1)
+    /// Every line of a note's text is this tall, in the render and the editor alike. It's string
+    /// drawing's own pitch for the font, so the render is as it was; TextKit 2, which lays out the
+    /// editor, would set lines a point closer, so the text moved when editing started.
+    static let lineHeight: CGFloat = 19
     /// Shared by the renderer and the editor so text doesn't shift when editing starts.
     static let textAttributes: [NSAttributedString.Key: Any] = [
         .font: NSFont.systemFont(ofSize: 16),
         .foregroundColor: NSColor(white: 0.12, alpha: 1),
+        .paragraphStyle: fixedLines(lineHeight),
     ]
+    /// Where the editor's text starts in the note. At the same line height, TextKit 2 sets a line's
+    /// glyphs a point lower in it than string drawing does, so the editor's text starts a point
+    /// higher than the render's and its lines fall exactly on the render's.
+    static let editorInset = NSSize(width: padding, height: padding - 1)
+    private static func fixedLines(_ height: CGFloat) -> NSParagraphStyle {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.minimumLineHeight = height
+        paragraph.maximumLineHeight = height
+        return paragraph
+    }
     static func path(_ frame: CGRect) -> CGPath {
         CGPath(roundedRect: frame, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
     }
@@ -118,7 +133,7 @@ final class NoteEditor: NSView, NSTextViewDelegate {
         textView.allowsUndo = true
         textView.drawsBackground = false
         textView.focusRingType = .none
-        textView.textContainerInset = NSSize(width: NoteStyle.padding, height: NoteStyle.padding)
+        textView.textContainerInset = NoteStyle.editorInset
         textView.textContainer?.lineFragmentPadding = 0
         textView.typingAttributes = NoteStyle.textAttributes
         textView.textStorage?.setAttributedString(NSAttributedString(string: text, attributes: NoteStyle.textAttributes))

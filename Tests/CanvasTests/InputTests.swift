@@ -1,12 +1,37 @@
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
+import Geometry
 import TestKit
 
 final class ModifierLog: Tool {
     var seen: [Modifiers] = []
     func pointerDown(_ pointer: Pointer, in editor: CanvasEditor) {}
     func modifiersChanged(_ modifiers: Modifiers, in editor: CanvasEditor) { seen.append(modifiers) }
+}
+
+/// A tool that ignores every press with a click count of 2 or more (`ignoresPress`), and logs the
+/// click counts of the presses it's given, each of which starts a session that logs its drags.
+final class PressLog {
+    var presses: [Int] = []
+    var drags = 0
+}
+
+extension PressLog: Tool {
+    func ignoresPress(_ pointer: Pointer, in editor: CanvasEditor) -> Bool { pointer.clickCount >= 2 }
+    func pointerDown(_ pointer: Pointer, in editor: CanvasEditor) {
+        presses.append(pointer.clickCount)
+        editor.session = DragLog(log: self)
+    }
+}
+
+final class DragLog {
+    let log: PressLog
+    init(log: PressLog) { self.log = log }
+}
+
+extension DragLog: Session {
+    func drag(_ pointer: Pointer, in editor: CanvasEditor) { log.drags += 1 }
 }
 
 @MainActor let inputTests = Suite("Input", [
@@ -42,6 +67,37 @@ final class ModifierLog: Tool {
         expectClose(h.editor.pointerVelocity, CGPoint(x: 0.5 / 32, y: 0))   // just over 0.01: kept
         h.move(to: CGPoint(x: 80, y: -64), after: 16)
         expectEqual(h.editor.pointerVelocity, .zero)
+    },
+    test("a press the tool ignores passes as though it never came: the camera goes on moving, editing goes on, and nothing is pressed or dragged") {
+        var log: PressLog?
+        let h = try EditorHarness(plugins: [CardsPlugin(), Contributor(id: "log") {
+            $0.tool(ToolDescriptor(id: "log", label: "Log", systemImage: "list.bullet")) { _ in let t = PressLog(); log = t; return t }
+        }])
+        h.editor.setTool("log")
+        let card = h.add(Card(CGRect(x: 0, y: 0, width: 100, height: 60)))
+        expect(h.editor.beginEditing(card))
+        let target = Camera(origin: CGPoint(x: 500, y: 0))
+        h.editor.animateCamera(to: target, duration: .milliseconds(200))
+        h.wait(48)
+        h.press(at: CGPoint(x: 10, y: 10), clickCount: 2, after: 0)
+        h.drag(to: CGPoint(x: 60, y: 10))
+        h.release()
+        expectEqual(log?.presses, [])
+        expectEqual(log?.drags, 0)
+        expectEqual(h.editor.editingShapeID, card)
+        h.wait(200)
+        expectEqual(h.editor.camera, target, "it went on")
+        h.editor.animateCamera(to: Camera(), duration: .milliseconds(200))
+        h.wait(48)
+        h.press(at: CGPoint(x: 10, y: 10), after: 0)
+        let pressed = h.editor.camera
+        h.drag(to: CGPoint(x: 60, y: 10))
+        h.release()
+        expectEqual(log?.presses, [1])
+        expectEqual(log?.drags, 1)
+        expectEqual(h.editor.editingShapeID, nil, "a press it takes ends editing")
+        h.wait(300)
+        expectEqual(h.editor.camera, pressed, "and stops the camera")
     },
     test("a released modifier stays held for 150 ms, then the release is dispatched") {
         var log: ModifierLog?

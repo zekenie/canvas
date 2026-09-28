@@ -1,6 +1,5 @@
 import Canvas
 import CoreGraphics
-import Geometry
 import Observation
 import Selection
 import SwiftUI
@@ -59,13 +58,19 @@ final class ShapeRow {
         key = record.stackingKey!
     }
 
-    /// `row` with other marks, for a shape whose marks changed while it didn't.
-    init(_ row: ShapeRow, marks: [ContentsMark]) {
+    /// `row` made again (`resolved`, nil to keep its view) with other marks, for a shape whose row or
+    /// marks changed while it didn't.
+    init(_ row: ShapeRow, resolved: ResolvedRow?, marks: [ContentsMark]) {
         record = row.record
         isListed = row.isListed
         parent = row.parent
-        view = row.view
-        label = row.label
+        if let resolved {
+            view = resolved.view
+            label = resolved.label
+        } else {
+            view = row.view
+            label = row.label
+        }
         symbol = row.symbol
         self.marks = marks
         key = row.key
@@ -76,8 +81,8 @@ final class ShapeRow {
 
 /// Per editor (so per window): what the table of contents lists, and each shape's row, made again
 /// only when that shape changes. What a commit changed is all a read after it redoes: the rows of
-/// the shapes its change set names, and where those nest, and the marks of the shapes whose marks
-/// it may change though it doesn't change them (`affected`).
+/// the shapes its change set names, and where those nest, and the rows and marks of the shapes
+/// whose rows and marks it may change though it doesn't change them (`affected`).
 @MainActor
 @Observable
 public final class ContentsState {
@@ -97,6 +102,10 @@ public final class ContentsState {
         /// The label and symbol of the tool that places the kind, else its name and a dashed square.
         let name: String
         let symbol: String
+
+        /// Whether its rows read more than their shapes, so a commit may change them without
+        /// changing their shapes (`affected`).
+        var readsOtherShapes: Bool { contribution?.affected != nil }
     }
 
     @ObservationIgnored private unowned let editor: CanvasEditor
@@ -107,16 +116,23 @@ public final class ContentsState {
     /// Shapes whose rows are kept but whose marks may have changed (only shapes with a row here):
     /// the next read of each reads its marks again, and keeps the row object unless they changed.
     @ObservationIgnored private var remarks: Set<ShapeID> = []
+    /// Shapes whose rows are kept but read more than their shapes, which a commit may have changed
+    /// (only shapes with a row here): the next read of each makes its row again, and keeps the row
+    /// object unless its label changed.
+    @ObservationIgnored private var remakes: Set<ShapeID> = []
     /// What's listed for the whole board, and for the last scope of some shapes: each kept, and
     /// brought up to date as it's read.
     @ObservationIgnored private var board: ContentsListing?
     @ObservationIgnored private var filtered: ContentsListing?
     /// The revision the rows and listings are up to date with. Read before this service hears of
     /// a commit (by a service that hears first), it keeps the rows whose shapes are as they were
-    /// and lists them again, reading their marks again when a mark's contributor names what a
-    /// commit affects, since only hearing of the commit says which.
+    /// and lists them again, making again the rows of kinds whose rows name what a commit affects,
+    /// and reading their marks again when a mark's contributor does, since only hearing of the
+    /// commit says which.
     @ObservationIgnored private var heardRevision: Int
-    /// What the marks' contributors say a commit affects besides the shapes it changes (`affected`).
+    /// What the rows' and the marks' contributors say a commit affects besides the shapes it
+    /// changes (`affected`).
+    @ObservationIgnored private let rowAffected: [@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>]
     @ObservationIgnored private let markAffected: [@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>]
     private var pin: Pin?
     #if DEBUG
@@ -128,6 +144,7 @@ public final class ContentsState {
     init(editor: CanvasEditor) {
         self.editor = editor
         heardRevision = editor.revision
+        rowAffected = editor.registry.contributions(to: ContentsRows.self).compactMap(\.value.affected)
         markAffected = editor.registry.contributions(to: ContentsMarks.self).compactMap(\.value.affected)
     }
 
@@ -175,13 +192,15 @@ public final class ContentsState {
     }
 
     /// After a commit this service hasn't heard of: keeps the rows whose shapes are as they were,
-    /// and lists them again. Reading the revision also ties whoever reads `entries` to every
-    /// commit, as reading the document would.
+    /// and lists them again, making again those that read more than their shapes. Reading the
+    /// revision also ties whoever reads `entries` to every commit, as reading the document would.
     private func catchUp() {
         guard heardRevision != editor.revision else { return }
         heardRevision = editor.revision
         let document = editor.document
         rows = rows.filter { document[$0.key] == $0.value.record }
+        remakes = rowAffected.isEmpty ? remakes.filter { rows[$0] != nil }
+            : Set(rows.lazy.filter { self.kindRows($0.value.record.kind).readsOtherShapes }.map(\.key))
         remarks = markAffected.isEmpty ? remarks.filter { rows[$0] != nil } : Set(rows.keys)
         board = nil
         filtered = nil
@@ -190,29 +209,21 @@ public final class ContentsState {
     // MARK: Selecting
 
     /// What selecting rows does (a click, ⌘- and ⇧-clicks, the arrow keys): selects their shapes,
-    /// in document order, and brings them into view, zoomed to fit (no closer than 120%). What's
-    /// listed stays as it was. Selecting what's already selected moves nothing.
+    /// in document order, and brings them into view, zoomed to fit (no closer than 120%; Selection's
+    /// `editor.reveal`). What's listed stays as it was. Selecting what's already selected moves
+    /// nothing.
     public func select(_ ids: Set<ShapeID>) {
         let listed = scope
         let ordered = inDocumentOrder(ids)
         let isNew = Set(ordered) != Set(editor.selectedShapeIDs)
         editor.selectedShapeIDs = ordered
         pin = Pin(scope: listed, selectionRevision: editor.selectionRevision)
-        if isNew { reveal(editor.selectedShapeIDs) }
+        if isNew { editor.reveal(editor.selectedShapeIDs) }
     }
 
     /// Lists every shape, keeping the selection, until the selection next changes.
     public func showAll() {
         pin = Pin(scope: nil, selectionRevision: editor.selectionRevision)
-    }
-
-    /// Centers the shapes' bounds in the view, zoomed to fit with a margin but no closer than 120%,
-    /// animated (data-canvas's click-to-zoom). Does nothing before the view has a size.
-    func reveal(_ ids: [ShapeID]) {
-        let size = editor.viewportSize
-        guard let bounds = editor.shapeContext.bounds(of: ids), size.width > 0, size.height > 0 else { return }
-        editor.animateCamera(to: Camera(fitting: bounds, in: size, inset: ContentsStyle.zoomInset, maxZoom: ContentsStyle.maxZoom),
-                             duration: ContentsStyle.zoomDuration)
     }
 
     // MARK: Hovering
@@ -237,29 +248,45 @@ public final class ContentsState {
     // MARK: Rows
 
     /// The shape's row: its kind's, else its tool's label; called what `ContentsTitles` names it, if
-    /// it's a `ContentsLabel`; with its marks. Made again only after the shape changes, and copied
-    /// with new marks when a commit changes them without changing the shape; nil once it's gone. A
-    /// shape the board keeps aside isn't listed, whatever its kind: nothing on the canvas sees it.
+    /// it's a `ContentsLabel`; with its marks. Made again after the shape changes; made again when a
+    /// commit may change it without changing the shape (`affected`), and kept unless its label
+    /// changed; and copied with new marks when a commit changes them without changing the shape; nil
+    /// once it's gone. A shape the board keeps aside isn't listed, whatever its kind: nothing on the
+    /// canvas sees it.
     private func row(of id: ShapeID) -> ShapeRow? {
         if let made = rows[id] {
-            guard remarks.remove(id) != nil else { return made }
-            let marks = marks(of: made.record, isListed: made.isListed, kind: kindRows(made.record.kind))
-            guard marks != made.marks else { return made }
-            let remarked = ShapeRow(made, marks: marks)
-            rows[id] = remarked
-            return remarked
+            let remake = remakes.remove(id) != nil, remark = remarks.remove(id) != nil
+            guard remake || remark else { return made }
+            let kind = kindRows(made.record.kind)
+            var remade: ResolvedRow?
+            if remake {
+                let row = resolvedRow(of: made.record, kind: kind)
+                let isSame = if let label = row.label, let old = made.label { label.showsSame(as: old) } else { false }
+                if !isSame { remade = row }
+            }
+            let marks = remark ? marks(of: made.record, isListed: made.isListed, kind: kind) : made.marks
+            guard remade != nil || marks != made.marks else { return made }
+            let replaced = ShapeRow(made, resolved: remade, marks: marks)
+            rows[id] = replaced
+            return replaced
         }
         guard let record = editor.document[id] else { return nil }
         let kind = kindRows(record.kind), contribution = kind.contribution
-        var row = contribution?.row?(record) ?? ResolvedRow(ContentsLabel(kind.name))
-        if let label = row.label, let title = kind.title?(record), !title.allSatisfy(\.isWhitespace) {
-            row = ResolvedRow(label.retitled(title))
-        }
         let isListed = !record.isOpaque && (contribution?.isListed(record) ?? true)
-        let made = ShapeRow(record: record, isListed: isListed, parent: contribution?.parent?(record), row: row, symbol: kind.symbol,
-                            marks: marks(of: record, isListed: isListed, kind: kind))
+        let made = ShapeRow(record: record, isListed: isListed, parent: contribution?.parent?(record), row: resolvedRow(of: record, kind: kind),
+                            symbol: kind.symbol, marks: marks(of: record, isListed: isListed, kind: kind))
         rows[id] = made
         return made
+    }
+
+    /// The shape's row as its kind makes it, else its tool's label, called what `ContentsTitles`
+    /// names it if it's a `ContentsLabel`.
+    private func resolvedRow(of record: AnyShapeRecord, kind: KindRows) -> ResolvedRow {
+        let row = kind.contribution?.row?(record, ContentsContext(editor: editor)) ?? ResolvedRow(ContentsLabel(kind.name))
+        if let label = row.label, let title = kind.title?(record), !title.allSatisfy(\.isWhitespace) {
+            return ResolvedRow(label.retitled(title))
+        }
+        return row
     }
 
     /// The marks of a shape's row: none for a shape that isn't listed.
@@ -284,25 +311,34 @@ public final class ContentsState {
 
 extension ContentsState: EditorService {
     /// Forgets the rows of the shapes the commit touched, for the next read to make again and
-    /// place, and notes the shapes whose marks it may change though it doesn't touch them (as the
-    /// marks' contributors say), for the next read to read their marks again. Each scope's listing
-    /// notes both.
+    /// place, and notes the shapes whose rows or marks it may change though it doesn't touch them
+    /// (as the rows' and the marks' contributors say), for the next read to make their rows again
+    /// or read their marks again. Each scope's listing notes them all.
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         let touched = changes.shapeIDs
         if heardRevision != editor.revision {          // else read since, and caught up
             heardRevision = editor.revision
             for id in touched {
                 rows[id] = nil
+                remakes.remove(id)
                 remarks.remove(id)
             }
             note(touched)
         }
-        guard !markAffected.isEmpty else { return }
-        // A shape without a kept row gets its marks when its row is made.
+        guard !rowAffected.isEmpty || !markAffected.isEmpty else { return }
+        // A shape without a kept row gets its row and marks when its row is made.
         let context = ContentsContext(editor: editor)
-        let remarked = markAffected.reduce(into: Set<ShapeID>()) { $0.formUnion($1(changes, context)) }.filter { rows[$0] != nil }
-        remarks.formUnion(remarked)
-        note(remarked)
+        if !rowAffected.isEmpty {
+            let remade = rowAffected.reduce(into: Set<ShapeID>()) { $0.formUnion($1(changes, context)) }
+                .filter { id in rows[id].map { kindRows($0.record.kind).readsOtherShapes } ?? false }
+            remakes.formUnion(remade)
+            note(remade)
+        }
+        if !markAffected.isEmpty {
+            let remarked = markAffected.reduce(into: Set<ShapeID>()) { $0.formUnion($1(changes, context)) }.filter { rows[$0] != nil }
+            remarks.formUnion(remarked)
+            note(remarked)
+        }
     }
 
     /// Tells each scope's listing to look at these shapes' rows again on its next read.

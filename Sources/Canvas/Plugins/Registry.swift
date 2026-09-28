@@ -15,8 +15,13 @@ public struct Registry {
     private let forAnyKind: [ObjectIdentifier: [RawContribution]]
     private let all: [RawContribution]
     private let definitions: [ShapeKind: any ShapeDefinition]
-    /// Kinds whose props name other shapes (`ShapeReferencing`): what a deletion asks to let go.
+    /// Kinds whose props are bound to other shapes (`ShapeReferencing`): what a deletion asks to
+    /// let go. Not the kinds that only name shapes (`namingKinds`).
     let referencingKinds: Set<ShapeKind>
+    /// Kinds whose shapes can hold names of shapes (`ShapeNaming`): in their own props, or in an
+    /// added property they opt into. A copy renames the names of these kinds' shapes, and a plugin
+    /// that follows names walks only these (`record.forEachNamingValue`); no other shape holds one.
+    public let namingKinds: Set<ShapeKind>
     /// Every plugin's rule for which shapes can't change (`registrar.readOnlyShapes`), found once:
     /// a transaction asks them about every shape it changes.
     private let readOnlyRules: [@MainActor (AnyShapeRecord) -> Bool]
@@ -58,10 +63,14 @@ public struct Registry {
         referencingKinds = Set(definitions.filter { $0.value is any ShapeReferencing }.keys)
         readOnlyRules = (byPoint[ObjectIdentifier(CorePoints.ReadOnlyRules.self)] ?? []).map { $0.value as! CorePoints.ReadOnlyRules.Contribution }
         let declarations = byPoint[ObjectIdentifier(CorePoints.PropertyDeclarations.self)] ?? []
-        propertyTable = try PropertyTable(declarations: declarations,
-                                          optIns: byPoint[ObjectIdentifier(CorePoints.PropertyOptIns.self)] ?? [],
-                                          definitions: definitions,
-                                          kinds: shapes.map { ($0.value as! ShapeRegistration).kind })
+        let table = try PropertyTable(declarations: declarations,
+                                      optIns: byPoint[ObjectIdentifier(CorePoints.PropertyOptIns.self)] ?? [],
+                                      definitions: definitions,
+                                      kinds: shapes.map { ($0.value as! ShapeRegistration).kind })
+        propertyTable = table
+        namingKinds = Set(definitions.filter { kind, definition in
+            definition.propsNameShapes || (table.byKind[kind] ?? []).contains { table.codecs[$0]?.naming != nil }
+        }.keys)
         // Every declared property's schema, and every kind's, is described and compiled once now, so
         // that what can't be described (two types under one name, a struct that holds itself in
         // place), a member some struct doesn't list (which a board would never save), and a schema
@@ -87,7 +96,8 @@ public struct Registry {
             var described = SchemaDefinitions()
             let schema = Self.schema(of: shape.kind, defined: shape.definition, properties: propertyTable, in: &described)
             let validator = SchemaValidator(schema)
-            if let problem = Self.problems(of: described).first ?? validator.problems.first.map({ "its schema is broken: \($0)" }) {
+            if let problem = Self.problems(of: described, props: shape.definition.propsType).first
+                ?? validator.problems.first.map({ "its schema is broken: \($0)" }) {
                 throw .invalid(point: c.pointName, reason: "\(shape.kind) (from \(c.pluginID)): \(problem)")
             }
             schemas[shape.kind] = schema
@@ -191,9 +201,13 @@ public struct Registry {
     }
 
     /// What describing found wrong, then what's wrong with the list of each struct it described, in
-    /// the order it met them (a kind's own props first).
-    private static func problems(of described: SchemaDefinitions) -> [String] {
-        described.problems + described.described.flatMap { propertyListProblems(of: $0) }
+    /// the order it met them (a kind's own props first), and whether one that holds names of shapes
+    /// doesn't adopt `ShapeNaming`: every struct but the kind's `props`, which is walked by its list.
+    private static func problems(of described: SchemaDefinitions, props: (any ShapeProps.Type)? = nil) -> [String] {
+        described.problems + described.described.flatMap { type in
+            let isProps = props.map { ObjectIdentifier($0) == ObjectIdentifier(type) } ?? false
+            return propertyListProblems(of: type) + (isProps ? [] : namingProblems(of: type))
+        }
     }
 
     /// The added properties installed plugins declare.

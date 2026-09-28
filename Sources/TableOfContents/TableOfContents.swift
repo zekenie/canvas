@@ -15,7 +15,9 @@ extension PluginID {
 
 /// How a kind's shapes appear in the table of contents. At most one contribution per kind: two
 /// are `RegistryError.conflict` at startup. A kind with none is listed with the label and symbol
-/// of the tool that places it.
+/// of the tool that places it. A row reads only its shape, unless it also names, with `affected`,
+/// the shapes each commit may change the rows of without changing them: their rows are made again,
+/// and kept unless their labels changed.
 public enum ContentsRows {}
 
 extension ContentsRows: KeyedExtensionPoint {
@@ -24,13 +26,15 @@ extension ContentsRows: KeyedExtensionPoint {
     public static func uniqueKeys(of _: ContentsContribution, for target: ShapeTarget) -> [AnyHashable] { [target] }
 }
 
-/// What `ContentsRows` stores for a kind: its row (nil for the tool's label and symbol), and which
-/// shapes are listed and under what. Only the sugar below makes one.
+/// What `ContentsRows` stores for a kind: its row (nil for the tool's label and symbol), which
+/// shapes are listed and under what, and, for a row read from more than its shape, which shapes'
+/// rows a commit may change besides the shapes it changes. Only the sugar below makes one.
 @MainActor
 public struct ContentsContribution {
     let isListed: @MainActor (AnyShapeRecord) -> Bool
     let parent: (@MainActor (AnyShapeRecord) -> ShapeID?)?
-    let row: (@MainActor (AnyShapeRecord) -> ResolvedRow)?
+    let row: (@MainActor (AnyShapeRecord, ContentsContext) -> ResolvedRow)?
+    let affected: (@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>)?
 }
 
 /// What a shape's row is called, when a plugin other than the one that draws the row says: a
@@ -89,7 +93,8 @@ public struct ContentsMark: Hashable, Sendable {
     }
 }
 
-/// What a mark contributor may read besides the shape: services, read-only.
+/// What a mark contributor, or a row read from more than its shape, may read besides the shape:
+/// services, read-only.
 @MainActor
 public struct ContentsContext {
     let editor: CanvasEditor
@@ -112,12 +117,22 @@ extension ContentsContribution {
     init<P: ShapeProps, Row: View>(_: P.Type, isListed: @escaping @MainActor (ShapeRecord<P>) -> Bool,
                                    parent: (@MainActor (ShapeRecord<P>) -> ShapeID?)?, row: @escaping (ShapeRecord<P>) -> Row) {
         self.init(P.self, isListed: isListed, parent: parent,
-                  row: { record in record.typed(as: P.self).map { ResolvedRow(row($0)) } ?? ResolvedRow(EmptyView()) })
+                  row: { record, _ in record.typed(as: P.self).map { ResolvedRow(row($0)) } ?? ResolvedRow(EmptyView()) })
+    }
+
+    /// A row read from more than its shape, with the shapes a commit may change the rows of.
+    init<P: ShapeProps>(_: P.Type, isListed: @escaping @MainActor (ShapeRecord<P>) -> Bool, parent: (@MainActor (ShapeRecord<P>) -> ShapeID?)?,
+                        affected: @escaping @MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>,
+                        row: @escaping @MainActor (ShapeRecord<P>, ContentsContext) -> ContentsLabel) {
+        self.init(P.self, isListed: isListed, parent: parent,
+                  row: { record, context in record.typed(as: P.self).map { ResolvedRow(row($0, context)) } ?? ResolvedRow(EmptyView()) },
+                  affected: affected)
     }
 
     /// Without `row`, the tool's label and symbol.
     init<P: ShapeProps>(_: P.Type, isListed: @escaping @MainActor (ShapeRecord<P>) -> Bool, parent: (@MainActor (ShapeRecord<P>) -> ShapeID?)?,
-                        row: (@MainActor (AnyShapeRecord) -> ResolvedRow)? = nil) {
+                        row: (@MainActor (AnyShapeRecord, ContentsContext) -> ResolvedRow)? = nil,
+                        affected: (@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>)? = nil) {
         self.isListed = { $0.typed(as: P.self).map(isListed) ?? false }
         if let parent {
             self.parent = { $0.typed(as: P.self).flatMap(parent) }
@@ -125,6 +140,7 @@ extension ContentsContribution {
             self.parent = nil
         }
         self.row = row
+        self.affected = affected
     }
 }
 
@@ -147,6 +163,34 @@ extension ShapeRegistrar {
         @ViewBuilder _ row: @escaping (ShapeRecord<Definition.Props>) -> Row
     ) {
         contribute(ContentsContribution(Definition.Props.self, isListed: isListed, parent: parent, row: row), to: ContentsRows.self)
+    }
+
+    /// This kind's row, read from more than this shape: the builder gets what `ContentsContext`
+    /// lends (the editor's services) besides the shape, and returns a `ContentsLabel`, so rows can be
+    /// compared. `affected`, given each commit's change set, names the shapes the commit doesn't
+    /// change whose rows it may. A ref's row that shows the name of the shape it refers to, with a
+    /// service of its plugin's own that keeps which refs refer to each shape:
+    ///
+    ///     ref.contentsRow(affected: { changes, context in
+    ///         context.service(RefIndex.self)?.refs(to: changes.shapeIDs) ?? []
+    ///     }) { ref, context in
+    ///         ContentsLabel("→ " + (context.service(RefIndex.self)?.name(of: ref.props.target) ?? "?"))
+    ///     }
+    ///
+    /// Those rows are made again on the next read, and replaced (so redrawn) only if their labels
+    /// changed; the shapes the commit changes get new rows, as always. `affected` runs on every
+    /// commit, listed or not, so it must cost what the commit changed, never the board: a service
+    /// that keeps who reads what answers it. Read before it hears of a commit, the table of contents
+    /// makes every kept row of such a kind again, since only hearing of the commit says which it
+    /// affects. `when` and `nestedUnder` read only the shape, as above.
+    public mutating func contentsRow(
+        when isListed: @escaping @MainActor (ShapeRecord<Definition.Props>) -> Bool = { _ in true },
+        nestedUnder parent: (@MainActor (ShapeRecord<Definition.Props>) -> ShapeID?)? = nil,
+        affected: @escaping @MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>,
+        _ row: @escaping @MainActor (ShapeRecord<Definition.Props>, ContentsContext) -> ContentsLabel
+    ) {
+        contribute(ContentsContribution(Definition.Props.self, isListed: isListed, parent: parent, affected: affected, row: row),
+                   to: ContentsRows.self)
     }
 
     /// This kind's shapes with the row a kind without one gets (its tool's label and symbol),
@@ -178,6 +222,19 @@ extension PluginRegistrar {
         @ViewBuilder _ row: @escaping (ShapeRecord<P>) -> Row
     ) {
         contribute(ContentsContribution(P.self, isListed: isListed, parent: parent, row: row), to: ContentsRows.self, for: .kind(P.kind))
+    }
+
+    /// The row, read from more than its shape, for a kind another plugin registers (bridges), as
+    /// `ShapeRegistrar`'s `contentsRow(when:nestedUnder:affected:_:)`.
+    public mutating func contentsRow<P: ShapeProps>(
+        _: P.Type,
+        when isListed: @escaping @MainActor (ShapeRecord<P>) -> Bool = { _ in true },
+        nestedUnder parent: (@MainActor (ShapeRecord<P>) -> ShapeID?)? = nil,
+        affected: @escaping @MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>,
+        _ row: @escaping @MainActor (ShapeRecord<P>, ContentsContext) -> ContentsLabel
+    ) {
+        contribute(ContentsContribution(P.self, isListed: isListed, parent: parent, affected: affected, row: row),
+                   to: ContentsRows.self, for: .kind(P.kind))
     }
 
     /// What the rows of a kind another plugin registers are called (bridges), as above.
@@ -239,6 +296,12 @@ public struct ContentsLabel: View {
         ContentsLabel(title, placeholder: placeholder, systemImage: systemImage, color: color, badge: badge)
     }
 
+    /// Whether `other` shows what this does: the same title, placeholder, symbol, color and badge.
+    func showsSame(as other: ContentsLabel) -> Bool {
+        title == other.title && placeholder == other.placeholder && systemImage == other.systemImage && color == other.color
+            && badge == other.badge
+    }
+
     public var body: some View {
         HStack(spacing: ContentsStyle.badgeSpacing) {
             Label {
@@ -295,9 +358,4 @@ enum ContentsStyle {
     static let hoverOpacity: CGFloat = 0.14
     static let highlightInset: CGFloat = 10
     static let highlightRadius: CGFloat = 8
-    /// Selecting rows brings their shapes into view as data-canvas's TOC does (its zoom config, and
-    /// tldraw's zoomToBounds): 100 points of margin in all, no closer than 120%, over 200 ms.
-    static let zoomInset: CGFloat = 100
-    static let maxZoom: CGFloat = 1.2
-    static let zoomDuration: Duration = .milliseconds(200)
 }

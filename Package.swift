@@ -59,7 +59,7 @@ let package = Package(
         .target(name: "Validation", dependencies: ["Canvas"]),                                // layer: horizontal
         .target(name: "DetailPanel", dependencies: ["Canvas", "Selection"]),                  // layer: horizontal
         .target(name: "ContextMenus", dependencies: ["Canvas", "Selection"]),                 // layer: horizontal
-        .target(name: "TableOfContents", dependencies: ["Canvas", "Geometry", "Selection"]),  // layer: horizontal
+        .target(name: "TableOfContents", dependencies: ["Canvas", "Selection"]),              // layer: horizontal
         .target(name: "Adornments", dependencies: ["Canvas", "Geometry", "Selection"]),       // layer: horizontal
         .target(name: "Checklists", dependencies: ["Adornments", "Canvas", "ContextMenus", "DetailPanel"]), // layer: horizontal
         .target(name: "Clipboard", dependencies: ["Canvas", "ContextMenus", "Geometry", "Keyboard", "Selection"]), // layer: horizontal
@@ -109,7 +109,7 @@ let package = Package(
         .executableTarget(name: "ClipboardTests", dependencies: ["Canvas", "CanvasTesting", "Clipboard", "ContextMenus", "Geometry", "Keyboard", "Selection", "TestKit"], path: "Tests/ClipboardTests"), // layer: test
         .executableTarget(name: "ChecklistsTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "Checklists", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "Selection", "TestKit"], path: "Tests/ChecklistsTests"), // layer: test
         .executableTarget(name: "TaskCardsTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "Checklists", "ContextMenus", "DetailPanel", "Keyboard", "Ports", "Selection", "TableOfContents", "TaskCards", "TestKit", "Titles", "Validation"], path: "Tests/TaskCardsTests"), // layer: test
-        .executableTarget(name: "StickyNotesTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "Checklists", "ContextMenus", "DetailPanel", "Keyboard", "Ports", "Selection", "StickyNotes", "TableOfContents", "TestKit", "Titles", "Validation"], path: "Tests/StickyNotesTests"), // layer: test
+        .executableTarget(name: "StickyNotesTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "Checklists", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "Ports", "Selection", "StickyNotes", "TableOfContents", "TestKit", "Titles", "Validation"], path: "Tests/StickyNotesTests"), // layer: test
         .executableTarget(name: "LockingTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "ContextMenus", "Geometry", "Keyboard", "Locking", "Selection", "TestKit"], path: "Tests/LockingTests"), // layer: test
         .executableTarget(name: "SchemasTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "CanvasUI", "DetailPanel", "Geometry", "Keyboard", "LanguageModels", "Ports", "Schemas", "Selection", "TableOfContents", "TestKit", "Titles", "Validation"], path: "Tests/SchemasTests"), // layer: test
         .executableTarget(name: "LanguageModelsTests", dependencies: ["Canvas", "CanvasTesting", "LanguageModels", "TestKit"], path: "Tests/LanguageModelsTests"), // layer: test

@@ -8,6 +8,7 @@ import CoreGraphics
 import Geometry
 import Keyboard
 import LanguageModels
+import Locking
 import Selection
 import StickyNotes
 import SwiftUI
@@ -42,6 +43,40 @@ final class ActionLog: NSView {
     override func moveRight(_ sender: Any?) { actions.append("moveRight:") }
 }
 
+/// A pill in a note's text, as Mentions' will be: a face (Selection's `ShapeFaces`) 60 × 20, 10 in
+/// from the note's top-left corner, naming `PillBoard.target`. It carries where it is, since a face's
+/// click isn't given the press.
+struct NotePill: Hashable, Sendable {
+    let note: ShapeID
+    let rect: CGRect
+    let target: ShapeID
+}
+
+/// The shape every note's pill names.
+@MainActor final class PillBoard {
+    var target: ShapeID?
+}
+
+/// Pills in notes: the pointer over one hovers what it names, a click edits the note from the pill
+/// (`beginEditing(_:at:)`), and a double-click goes to what it names (`goTo`), as Mentions' will. A
+/// click on a read-only note's pill (a locked one) doesn't try to edit it: a refused edit is a try
+/// to change it, which Locking shakes, and a click isn't one.
+@MainActor func pillsPlugin(_ board: PillBoard) -> Contributor {
+    Contributor(id: "pills") { r in
+        let find: @MainActor (CanvasEditor, AnyShapeRecord, CGPoint) -> NotePill? = { _, shape, point in
+            guard shape.kind == StickyNote.kind, let frame = shape.box, let target = board.target else { return nil }
+            let rect = CGRect(x: frame.minX + 10, y: frame.minY + 10, width: 60, height: 20)
+            return rect.contains(point) ? NotePill(note: shape.id, rect: rect, target: target) : nil
+        }
+        r.shapeFaces(at: find,
+                     click: { pill, editor in
+                         if !editor.isReadOnly(pill.note) { editor.beginEditing(pill.note, at: CGPoint(x: pill.rect.midX, y: pill.rect.midY)) }
+                     },
+                     doubleClick: { pill, editor in editor.goTo([pill.target]) },
+                     hovering: { pill, _ in pill.target })
+    }
+}
+
 // The AppKit shell, in an unshown window: NSEvents in, the editing view's life cycle out.
 @MainActor let canvasViewTests = Suite("Canvas view", [
     test("double-click makes a note whose editor takes focus, follows the camera, and hands focus back") {
@@ -63,6 +98,72 @@ final class ActionLog: NSView {
         window.firstResponder?.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
         expect(window.firstResponder === canvas)
         expect(canvas.subviews.isEmpty)
+    },
+    test("a note being edited isn't hovered under its text, released or moved there; on the canvas, what's under the pointer is, and it too once editing ends") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        let (window, canvas) = windowed(editor)
+        let other = editor.add(StickyNote(frame: CGRect(x: 500, y: 100, width: 200, height: 200), text: "Other"))
+        @MainActor func move(to point: CGPoint, at time: TimeInterval) {
+            canvas.mouseMoved(with: window.mouse(.mouseMoved, at: point, clicks: 0, time: time))
+        }
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: CGPoint(x: 300, y: 300), clicks: 2, time: 1))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: CGPoint(x: 300, y: 300), clicks: 2, time: 1.05))
+        let note = try require(editor.editingShapeID)
+        expectEqual(editor.hovered, nil, "released over its text")
+        move(to: CGPoint(x: 310, y: 300), at: 1.1)
+        expectEqual(editor.hovered, nil, "moved over its text")
+        move(to: CGPoint(x: 600, y: 200), at: 1.2)
+        expectEqual(editor.hovered, other)
+        move(to: CGPoint(x: 300, y: 300), at: 1.3)
+        expectEqual(editor.hovered, nil, "back over its text")
+        expect(!editor.isHovered(note) && !editor.isHovered(other))
+        window.firstResponder?.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
+        expectEqual(editor.editingShapeID, nil)
+        move(to: CGPoint(x: 310, y: 300), at: 1.4)
+        expectEqual(editor.hovered, note)
+    },
+    test("a pill in a note, a face: the pointer over it hovers what it names; a click edits the note from the pill, and the note isn't hovered under its text; locked, a click only selects it (it doesn't shake), a double-click goes to what it names, and Back returns") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let board = PillBoard()
+        let registry = try Registry(plugins: ShippedPlugins.plugins(pasteboard: pasteboard, model: ScriptedLanguageModel()) + [pillsPlugin(board)])
+        let scheduler = ManualScheduler()
+        let editor = CanvasEditor(registry: registry, document: CanvasDocument(), scheduler: scheduler)
+        let (window, canvas) = windowed(editor)
+        let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "See the other"))
+        let far = CGRect(x: 2000, y: 1500, width: 200, height: 200)
+        let target = editor.add(StickyNote(frame: far, text: "The other"))
+        board.target = target
+        @MainActor func click(clicks: Int, at time: TimeInterval) {
+            let pill = CGPoint(x: 130, y: 120)                  // on the pill: 110 to 170 across, 110 to 130 down
+            canvas.mouseDown(with: window.mouse(.leftMouseDown, at: pill, clicks: clicks, time: time))
+            canvas.mouseUp(with: window.mouse(.leftMouseUp, at: pill, clicks: clicks, time: time + 0.05))
+        }
+        canvas.mouseMoved(with: window.mouse(.mouseMoved, at: CGPoint(x: 130, y: 120), clicks: 0, time: 1))
+        expectEqual(editor.hovered, target, "the pill hovers what it names")
+        click(clicks: 1, at: 1.1)
+        expectEqual(editor.selection, note)
+        expectEqual(editor.editingShapeID, note, "a click on the pill edits the note")
+        expectEqual(editor.editingStartPoint, CGPoint(x: 140, y: 120), "from the pill, which says where it is")
+        expectEqual(editor.hovered, nil, "released over the note's text, which has the pointer")
+        window.firstResponder?.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
+        expectEqual(editor.editingShapeID, nil)
+        expectEqual(editor.editingStartPoint, nil)
+
+        editor.lock([note])
+        click(clicks: 1, at: 2)
+        expectEqual(editor.editingShapeID, nil, "a locked note isn't edited")
+        expectEqual(editor.selection, note)
+        scheduler.advance(by: .milliseconds(16))
+        expectEqual(editor.drawingOffset(of: note), .zero, "a click isn't a try to change it, so it doesn't shake")
+        click(clicks: 2, at: 2.2)
+        expectEqual(editor.selection, target, "a double-click goes to what the pill names")
+        scheduler.advance(by: .milliseconds(16))
+        expectEqual(editor.drawingOffset(of: note), .zero, "nor does a double-click")
+        let shown = editor.cameraTarget.toWorld(CGRect(origin: .zero, size: editor.viewportSize))
+        expect(shown.contains(far), "brought into view: \(shown)")
+        editor.goBack()
+        expectEqual(editor.selection, note, "and Back returns to the note")
     },
     test("a key typed on the canvas switches tools; typed in a note, it goes into the note") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())

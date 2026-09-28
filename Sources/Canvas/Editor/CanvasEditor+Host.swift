@@ -16,6 +16,7 @@ extension CanvasEditor {
     @_spi(Host) public func pointerDown(_ event: PointerEvent) {
         var pointer = sample(event)
         pointer.isControlClick = event.modifiers.contains(.control)
+        guard !currentTool.ignoresPress(pointer, in: self) else { return }
         tracker.resetVelocity()
         stopCameraMotion()
         endEditing()

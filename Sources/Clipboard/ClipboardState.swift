@@ -44,9 +44,10 @@ final class ClipboardState {
         ids.contains { id in editor.document[id].map(isCopyable) ?? false }
     }
 
-    /// `records`, each shape they name renamed by `rename` if it's one of them, and let go of
-    /// otherwise (`ShapeReferencing`). A record whose kind can't let go of a shape it names (one
-    /// `context` doesn't have) is left out, and then so may be those that name it.
+    /// `records`, each shape they're bound to (`ShapeReferencing`) or name (`ShapeNaming`) renamed
+    /// by `rename` if it's one of them; otherwise a binding is let go of, and a name is kept. A
+    /// record whose kind can't let go of a shape it's bound to (one `context` doesn't have) is left
+    /// out, and then so may be those bound to it.
     private func carry(_ records: [AnyShapeRecord], renaming rename: (ShapeID) -> ShapeID,
                        in context: ShapeContext) -> [AnyShapeRecord] {
         var kept = Set(records.map(\.id))

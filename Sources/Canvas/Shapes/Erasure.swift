@@ -8,6 +8,8 @@ extension ShapeDefinition {
     var kindCodec: KindCodec { KindCodec(Props.self) }
     var propsType: any ShapeProps.Type { Props.self }
     var ownPropertyNames: [String] { Props.properties.names }
+    /// Whether its props have a member that names shapes (`ShapeNaming`).
+    var propsNameShapes: Bool { !Props.properties.namingProperties.isEmpty }
 
     /// The kind's own properties, as an object schema.
     func propsSchema(in definitions: inout SchemaDefinitions) -> JSONObject {
@@ -33,7 +35,9 @@ extension ShapeDefinition {
 
 extension Editable {
     func erasedEditingView(for record: AnyShapeRecord, editor: CanvasEditor) -> EditingView? {
-        record.typed(as: Props.self).map { makeEditingView(for: $0, context: EditContext(shapeID: record.id, editor: editor)) }
+        record.typed(as: Props.self).map {
+            makeEditingView(for: $0, context: EditContext(shapeID: record.id, startPoint: editor.editingStartPoint, editor: editor))
+        }
     }
 }
 
@@ -72,17 +76,37 @@ extension ShapeReferencing {
 }
 
 extension AnyShapeRecord {
-    /// This shape with every shape its props name passed through `map` (see `ShapeReferencing`):
-    /// what a copy of it should be, once `map` gives each copied shape its copy's id and nil for the
-    /// rest. Itself for a kind whose props name no shape, or one no installed plugin defines. Nil
-    /// if its kind can't let go of a shape `map` drops, one `context` doesn't have.
+    /// This shape with every shape it names passed through `map`: what a copy of it should be, once
+    /// `map` gives each copied shape its copy's id and nil for the rest. First what its kind binds
+    /// (`ShapeReferencing`), as the kind says: nil lets a binding go. Then every name in its props
+    /// and added values (`ShapeNaming`, for `registry.namingKinds`): nil keeps a name as it is, since
+    /// a name may outlive its shape. Itself for a kind that names no shape, one no installed plugin
+    /// defines, or a shape kept aside. Nil if its kind can't let go of a shape `map` drops, one
+    /// `context` doesn't have.
     @MainActor
     public func remappingReferences(_ map: (ShapeID) -> ShapeID?, in context: ShapeContext) -> AnyShapeRecord? {
-        guard let definition = context.registry.definition(for: kind) as? any ShapeReferencing,
-              let remapped = definition.erasedRemappingReferences(of: self, map, in: context) else { return self }
-        guard let props = remapped else { return nil }
+        let names = context.registry.namingKinds.contains(kind) && !isOpaque
         var record = self
-        record.props = props
+        if let definition = context.registry.definition(for: kind) as? any ShapeReferencing,
+           let remapped = definition.erasedRemappingReferences(of: self, map, in: context) {
+            guard let props = remapped else { return nil }
+            record.props = props
+        }
+        if names { record.renameNamedShapes(map, in: context.registry) }
         return record
+    }
+
+    /// The shapes it's bound to (`ShapeReferencing`): those that must be on its board, as an
+    /// arrow's ends must. Not those it only names (`ShapeNaming`), which may be gone. Each once, in
+    /// the order its kind meets them; none for a kind that binds nothing, or a shape kept aside.
+    @MainActor
+    public func boundShapes(in context: ShapeContext) -> [ShapeID] {
+        guard let definition = context.registry.definition(for: kind) as? any ShapeReferencing else { return [] }
+        var bound: [ShapeID] = []
+        _ = definition.erasedRemappingReferences(of: self, { id in
+            if !bound.contains(id) { bound.append(id) }
+            return id
+        }, in: context)
+        return bound
     }
 }

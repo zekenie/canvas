@@ -226,6 +226,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Add items to a kind's right-click menu | `x.contextMenu { MenuItem(...) }` | [TaskCards](#contributing) |
 | Add a right-click item to every shape, or every kind with a capability | `registrar.contextMenuForEveryShape(where:)` | [Reordering](#every-shape-reordering) |
 | Say how a kind's shapes appear in the table of contents | `x.contentsRow { ContentsLabel(...) }` | [StickyNotes](#the-table-of-contents) |
+| Show in a kind's row what other shapes say (the names of the shapes it mentions), kept up to date | `x.contentsRow(affected: { changes, context in ... }) { shape, context in ContentsLabel(...) }` | [Rows read from more than their shape](#rows-read-from-more-than-their-shape) |
 | Give a kind a title: a `title` in its schema, a pill on the canvas, and its row's name | `x.title()`, which Titles keeps (1 to 80 characters); or `x.title { ... }`, derived | [Titles](#a-horizontal-plugin), [EllipseTitles](#a-horizontal-plugin) |
 | Rename a shape in the detail panel's header | `x.details(header: { $x in TitleHeader($x) }) {}` | [StickyNotes](#renaming-in-the-header-titleheader) |
 | Name a kind's rows in the table of contents from another plugin | `x.contentsTitle { ... }` | [Titles](#a-horizontal-plugin) |
@@ -242,10 +243,12 @@ Once one plugin works, the question is which piece the next feature needs.
 | Act on shapes about to be deleted (delete what depends on them) | `registrar.willDelete` | [The document](#the-editor-the-document-and-drawing) |
 | Create a kind with a double-click on empty canvas | `x.createOnDoubleClick(place)` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
 | Keep a kind from being selected | `x.unselectable()`, or `x.selectable { ... }` | [Selection](#selection) |
+| Go to shapes, as following a link does (select them, bring them into view, ⌘[ returns), or only bring them into view | Selection's `editor.goTo(_:)`, `editor.reveal(_:)` | [Selection](#selection) |
 | Keep a kind from being copied | `x.uncopyable()`, or `x.copyable { ... }` | [The clipboard](#the-clipboard) |
 | Keep some shapes from changing (a lock), and say why when something tries | `registrar.readOnlyShapes { ... }`; `EditorService.didRefuseChanges` | [Locking](#locking) |
 | Put a button on the canvas that a click does something with (a chip), or a drag starts something from (a port's dot) | Selection's `registrar.canvasButtons(at:click:)` or `canvasButtons(at:drag:)`, drawn in an overlay with `editor.hoveredButton` and `editor.pressedButton`; or make an adornment a `ClickableAdornment` | [Canvas buttons](#canvas-buttons), [Locking](#locking), [Ports](#ports) |
 | Make what you draw for a shape outside it count as the shape (a press, a hover, a right-click) | Selection's `registrar.decorationHits`; adornments already do | [DecorationHits](#drawn-for-a-shape-decorationhits) |
+| Make part of a shape's content answer a click without taking the shape's press (a mention's pill, a link, a checkbox) | Selection's `registrar.shapeFaces(at:click:doubleClick:hovering:)` | [Faces](#faces-clickable-parts-of-a-shape) |
 | Connect shapes with arrows: dots beside a kind's sides, dragged to another shape | `x.ports(C.self, sides:role:)`, on a channel; ArrowPorts draws the arrow | [Ports](#a-kinds-ports), [ArrowPorts](#the-connector-arrowports) |
 | Declare a channel: a kind of connection, and which kinds take it | A `Channel` type, `registrar.channel(C.self)`; `ports` on each kind that takes it | [Channels](#channels) |
 | Say what an arrow's end may bind to (tldraw's canBind) | Arrows' `registrar.arrowBindingRule { query in ... }` | [ArrowPorts](#the-connector-arrowports) |
@@ -253,7 +256,9 @@ Once one plugin works, the question is which piece the next feature needs.
 | Make a shape without the pointer: what a kind's tool places, or a shape from its JSON | `registry.placement(for:)`, `placement.shape(at:)`; `registry.shape(_:properties:)` | [The command line](#the-command-line) |
 | Draw a shape away from where it is, for an animation (a shake) | `editor.setDrawingOffset(_:for:)`; adornments follow by themselves, and an overlay with `context.worldDrawingOffset(of:)` | [Locking](#locking) |
 | Ask Claude something (and test it without the network) | `editor.languageModel?.respond(to: ModelRequest(...))`; `ScriptedLanguageModel` in tests | [Language models](#language-models) |
-| Keep what a kind's props name right as shapes are deleted and copied (a connector) | `ShapeReferencing` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
+| Keep what a kind's props are bound to right as shapes are deleted and copied (a connector) | `ShapeReferencing` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
+| Hold names of shapes that may outlive them (a mention), renamed when copied with them | A value that adopts `ShapeNaming`; `registry.namingKinds` and `record.forEachNamingValue(in:)` to read them | [Values that name shapes](#values-that-name-shapes) |
+| Put an editing view's selection where the press that began editing was | `editor.beginEditing(id, at: point)`, read as `EditContext.startPoint` | [Capabilities](#capabilities) |
 | Keep something about any shape beside its props (where it came from) | A `ShapeMetaKey`, and `record.meta[Key.self]` | [Metadata](#metadata) |
 | Add a right-click item that isn't one shape's, in every menu and on empty canvas | `registrar.contextMenuForCanvas { ... }` | [The clipboard](#the-clipboard) |
 | Show a shape's state in the panel: at its foot, or in a tab that shows while there's something to say | `registrar.detailStatusForEveryShape`, with `in: SomeTab.self` for a tab | [ValidationDetails](#a-tab-of-status-lines-from-a-bridge-validationdetails) |
@@ -446,6 +451,15 @@ registrar.shape(StickyNoteDefinition()) { note in
 }
 ```
 
+The note's render draws its text with string drawing (`NSAttributedString.draw`), and its editing
+view is a TextKit 2 `NSTextView` laid over it, which the canvas scales by the zoom; the two must
+put the text on the same lines, or it moves when editing starts. Both take
+`NoteStyle.textAttributes`, whose paragraph fixes every line at 19 points (`NoteStyle.lineHeight`):
+string drawing's own pitch for the font, so the render is as it was, where TextKit 2 would set the
+lines 18 points apart. At the same height TextKit 2 sets a line's glyphs a point lower in it, so the
+editor's text starts a point higher, 15 points down (`NoteStyle.editorInset`), and its lines fall
+on the render's, pixel for pixel but anti-aliasing, as typed text does too (StickyNotesTests).
+
 ## Tools and sessions
 
 A **tool** handles what happens before a press: hover, the press itself, and which cursor to
@@ -518,6 +532,11 @@ The details:
 - **`Tool`**: `pointerDown` (may start a session), `pointerMoved` (hover, with no session
   running), `pointerExited`, `modifiersChanged`, `cursor(in:)`, `cancel` (Escape; return true if
   you handled it). All but `pointerDown` have defaults.
+  `ignoresPress` (default false) is asked first of every press: true lets it pass as though it
+  never came, so the camera goes on moving, editing goes on, `pointerDown` isn't called and no
+  session starts (its drags do nothing, and its release only hovers). It's for the rest of a click
+  the tool has already acted on: the select tool ignores the second press of a double-click whose
+  first click, on a [face](#faces-clickable-parts-of-a-shape), went to a shape.
 - **`Session`**: `drag`, `end`, `cancel` (Escape; return true if you cancelled), `modifiersChanged`,
   `cursor(in:)`, `hidesOutlines` (plugins' outlines aren't drawn while it runs, for a drag that
   reshapes a shape its outline would crowd, like an arrow's handle), `draw(in:)` (what it shows
@@ -913,8 +932,13 @@ the two never disagree:
   declares the type, so a type has one name wherever it's described, and two modules' definitions
   never collide. A struct that holds itself (a tree) needs a name, and its definition then refers to
   itself.
+- **A dictionary keyed by strings** is an object whose members, named anything, are each its
+  value's type (`additionalProperties`).
 - **A type that codes itself by hand** writes its schema by hand, as a `SchemaDescribed`: Arrows'
   `ArrowTerminal`, an object with one member, `free` or `bound`, is `oneOf` the two.
+- **A value that names shapes** (`ShapeNaming`, a mention) is found through the lists: a struct
+  that holds one adopts `ShapeNaming` too, and the registry refuses one that doesn't ([Values that
+  name shapes](#values-that-name-shapes)).
 - **Every list holds up.** A property is named after its member. As it's built, the registry
   describes every kind's schema and every added property's, and refuses a list, of any struct those
   reach (a kind's props, a struct inside them or behind a hand-written schema, an added property's
@@ -1140,6 +1164,86 @@ anything that reads or writes shapes. [Metadata](#metadata) (`ShapeMeta`) is wha
 owner's key, but in no schema, and unversioned. Something the shape says is a property; something
 said about it is metadata.
 
+### Values that name shapes
+
+Some values name other shapes: a mention in a note's text names the shape it mentions. The core
+keeps them right without knowing what they are, through `ShapeNaming`, the second form of one
+concern, references between shapes. The first is bindings, the `ShapeReferencing`
+[capability](#capabilities). Both go through one entry, `record.remappingReferences(_:in:)`.
+
+| | Bindings (`ShapeReferencing`) | Names (`ShapeNaming`) |
+|---|---|---|
+| Adopted by | a kind's definition | a value, wherever a shape keeps it |
+| For | an arrow's bound ends | a mention |
+| The shape it's bound to, or names | must be on the board | may be gone |
+| Deleting it | lets go of it, in the deleting transaction | changes nothing: no delete looks for names, so the name stays, and names the shape again if it comes back with its id |
+| Copying without it | lets go of it (an arrow's end stays where it's drawn) | keeps naming the original |
+| Copying with it | is bound to its copy | names its copy |
+| `canvas create` with one that isn't there | refused (`A tag can't be bound to shapes that aren't on this board: …`) | made, with a warning |
+
+```swift
+/// A leaf: it holds the id itself (coded by hand, as the id), so it implements both.
+public struct Citation: Hashable, Sendable, Codable, SchemaDescribed {
+    public var shape: ShapeID
+    ...
+}
+extension Citation: ShapeNaming {
+    public func forEachNamedShape(_ body: (ShapeID) -> Void) { body(shape) }
+    public func renamingShapes(_ rename: (ShapeID) -> ShapeID?) -> Citation { Citation(rename(shape) ?? shape) }
+}
+
+/// A struct that holds names adopts it too, with nothing to write: its listed members' names.
+public struct MemoNote: SchemaDefined, Hashable {
+    public static let properties = Properties<MemoNote>(definition: "memo-note") {
+        Property("text", \.text)
+        Property("cites", \.cites)
+    }
+    public var text: String
+    public var cites: [Citation]
+}
+extension MemoNote: ShapeNaming {}
+```
+
+(These are CanvasTesting's fixtures, with `NamingPlugin`: a `Memo` kind holding names in a struct in
+a list, an optional, a dictionary and an added property, `CitationsProperty`, and a `CitingTag`
+that both binds and names.)
+
+- **Found through property lists.** A kind's props are walked by their list, so they needn't adopt
+  `ShapeNaming`: a property whose member's type is `ShapeNaming` names shapes. The list finds out
+  once, with a runtime check like the one it makes for optionals, so a property that names nothing
+  carries nothing, and a kind with no names costs nothing. A struct in the props (or in an added
+  value) adopts `ShapeNaming` in an extension, with nothing to write. Optionals, arrays, sets
+  (renaming rebuilds the set) and dictionaries keyed by strings of names are names, and so is an
+  added property's value, whatever kinds opt in. A leaf, a type coded by hand, implements
+  `forEachNamedShape` (each id, repeats included) and `renamingShapes` (pure; nil keeps a name).
+- **What the registry refuses.** A struct that holds names without adopting `ShapeNaming`, in a
+  kind's props or an added property's value, since nothing could find its names and a copy would go
+  on naming the originals:
+
+  ```
+  Shapes: annotated (from kinds): Footnote.cite names shapes (ShapeNaming), so Footnote must adopt ShapeNaming too (extension Footnote: ShapeNaming {}), or a copy would go on naming the originals
+  ```
+
+  It can't look inside a type coded by hand, as it can't check its list.
+- **Reading them.** `registry.namingKinds` are the kinds whose props, or the added properties they
+  opt into, can hold names; no other shape holds one, so a plugin that follows names (backlinks)
+  walks only those. `record.forEachNamingValue(in: registry) { property, value in
+  value.forEachNamedShape { id in … } }` is each value in a shape that names shapes, with the
+  property it's in: the kind's own in list order, then its added ones. A shape kept aside has none,
+  and neither has an added value kept aside (a newer version's), which a copy doesn't rename either:
+  it goes on naming the originals.
+- **Copying.** `record.remappingReferences(map, in:)` does both forms: first what the kind binds, as
+  its `ShapeReferencing` says (nil lets a binding go), then every name, for `namingKinds` (nil keeps
+  a name). A definition remaps what it binds and leaves names to the core. Clipboard's copy and
+  paste go through it, so a note pasted with the shape it mentions mentions the copy, and one
+  pasted alone mentions the original.
+- **Deleting.** A delete lets go only of bindings: it asks only the kinds that bind, never a kind
+  that only names, so deleting a shape writes nothing into the shapes that name it. On a kind that
+  does both (`CitingTag`), a delete lets its binding go and keeps its names.
+- **Bound, or named.** `record.boundShapes(in:)` is what a shape is bound to, what must be on its
+  board, each once; the shapes it only names aren't in it. [`canvas create`](#the-command-line)
+  checks it.
+
 ## Selection
 
 Selecting is a horizontal ([`Sources/Selection`](../Sources/Selection)), and the one most others
@@ -1154,6 +1258,7 @@ any plugin can use.
 | `registrar.outlines { ... }` | Each selected shape's outline, the box around several, and the hover's faint outline. The core strokes every plugin's outlines and the hint in one pass, over the faint ones. |
 | `registrar.command(.delete)`, `.selectAll` and `.goBack` (with their keys, through Keyboard) | Delete, and Edit › Delete, deletes the selection; ⌘A, and Edit › Select All, selects everything; ⌘[, and Go › Back (enabled while there's a step back), goes back to the previous selection. Return (a shortcut of its own) edits the only selected shape. |
 | `Tool.cancel` | Escape in Select, with nothing under way, deselects. |
+| `Tool.ignoresPress` | The rest of a double-click whose first click, on a face, went somewhere (changed the selection or moved the camera) is ignored, so the camera goes on and nothing is placed or edited where it's brought. |
 | `EditorService.documentDidChange`, `didPlace` | Drops shapes that are gone (or no longer selectable) from the selection and the hover; selects a shape just placed. |
 | `Session.draw(in:)` | The marquee draws itself. |
 | `TranslatingSession`, `editor.shape(at:where:)` | Dragging the selection moves it; presses and hover find the front-most selectable shape. |
@@ -1195,6 +1300,23 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   keeps the moment the press on empty canvas deselected; and a step keeps the camera as the
   selection was left, not as it was made, so going back from a row's details returns to the list
   as it was before the zoom. There's no forward.
+- `reveal(_:)` and `goTo(_:)` are the one way to bring shapes into view, for every plugin (the
+  table of contents' rows, a mention followed out of text). `reveal` only moves the camera: it
+  centers the shapes' bounds (`shapeContext.bounds(of:)`), zoomed to fit with 100 points of margin
+  in all but no closer than 120%, over 200 ms, as data-canvas's table of contents does (tldraw's
+  zoomToBounds). It's what selecting rows does, and does nothing before the view has a size.
+  `goTo` goes to shapes as following a link to them does: it ends editing, selects those that can
+  be selected, and reveals them unless they're all in view already at a readable zoom. Selecting
+  them is a step back when it changes the selection, so ⌘[ returns, camera and all; going to
+  what's selected already, or to shapes none of which can be selected, leaves the selection as it
+  is, takes no step, and only moves the camera. Readable is 70% or closer
+  (`SelectionStyle.readableZoom`: a note's 16-point text reads at 11.2 points there, just over
+  `NSFont.smallSystemFontSize`, the smallest macOS sets text to be read at), or, for shapes too big
+  to show whole at that, as close as fitting them would bring them, so going to a big shape that's
+  all in view never zooms out to show what's shown. The camera is judged where it's headed
+  (`cameraTarget`). `goTo` does nothing mid-gesture, or when none of the shapes is on the board;
+  without `SelectionPlugin` it ends editing and reveals. data-canvas's navigateToShape always
+  zooms.
 - `hoveredHandle`, `brush` (the marquee), `selectionBounds`, `isSelectable(_:)`, and the commands'
   `selectAll()`, `deleteSelection()` and `editSelection()`.
 
@@ -1245,6 +1367,9 @@ multi-selection's box, then the canvas.
   moves it all; released without a drag, it selects the shape under the release (⇧ or ⌘ toggles it
   instead). A lone box pressed without ⇧ or ⌘ follows the pointer from the press, with no
   threshold. A double-click edits an `Editable` shape, selected alone.
+- A plain press on a [face](#faces-clickable-parts-of-a-shape) (a mention's pill in a note) is
+  still the shape's, but waits for the threshold, even on a lone box, so that a release within it
+  clicks the face; a double-click there is the face's too, in place of editing.
 - A press on empty canvas deselects (not with ⇧ or ⌘); a drag from there is a marquee, the brush.
   It selects as it goes: whatever it touches, or with ⌘ only what it strictly encloses; ⇧ adds to
   the selection from before. ⇧ and ⌘ take effect as they're pressed or let go, and a ⌘-drag from a
@@ -1292,7 +1417,7 @@ registrar.canvasButtons(at: { editor, viewPoint in state.dot(atViewPoint: viewPo
   pressed, and the canvas redraws as they change; a drag that's handed over clears both.
 - **Where the pointer is.** `editor.pointerOverCanvas` is where the pointer is over the canvas in
   the select tool, in view points, as it last moved with nothing under way: nil once it's left the
-  canvas or gone over the minimap, while another tool is current, and once Escape lets go of a
+  canvas or gone over the minimap or the editing view, while another tool is current, and once Escape lets go of a
   dragged button's press, until the pointer moves again (the select tool doesn't see a held press
   move). A plugin whose buttons show
   only while the pointer is near them goes by it (a port's dots).
@@ -1333,6 +1458,72 @@ registrar.decorationHits { editor, point, include in editor.adornmentState?.shap
   through a pill) go by the shapes alone, and the hand tool pans over it.
 - **Keep it cheap**: the select tool asks it as the pointer moves. Adornments looks in a thin strip
   around the point, through `editor.paintOrder(in:)`.
+
+### Faces: clickable parts of a shape
+
+Some of a shape's content answers a click, yet mustn't take the shape's press: a mention's pill in a
+note's text, a link, a checkbox drawn on a card. A canvas button would take the press, so the note
+couldn't be selected or dragged by its pill. A face is Selection's answer (the `ShapeFaces` point): a
+press on one is the shape's, and only the click, the double-click and the hover are the face's. A
+plugin says where its faces are on a shape and what they do:
+
+```swift
+registrar.shapeFaces(at: { editor, shape, point in pills.pill(in: shape, at: point) },    // any Hashable, or nil
+                     click: { pill, editor in
+                         if !editor.isReadOnly(pill.shape) { editor.beginEditing(pill.shape, at: pill.center) }
+                     },
+                     doubleClick: { pill, editor in editor.goTo([pill.target]) },           // optional
+                     hovering: { pill, _ in pill.target })                                  // optional: the shape to hover
+```
+
+- **Asked only on a plain press, on the shape.** The select tool asks `at` only for a plain press
+  (no ⇧, ⌘ or ⌥; a Control-click presses nothing), and only about the shape it would press there
+  (`editor.selectableShape(at:)`), selected or not, with a world point on that shape itself: a point
+  on [something drawn for a shape](#drawn-for-a-shape-decorationhits) (a title's pill, over this
+  shape's face or another's) is that drawing's shape, and no face's. Canvas buttons and handles come
+  first, as for any press. With ⇧, ⌘ or ⌥ held, a press on a face is the shape's, as anywhere on
+  it: ⇧ adds the shape, ⌘ toggles it.
+- **Keep `at` cheap**, and to the one shape it's given: the select tool asks it as the pointer moves
+  over any shape. With no plugin's faces, nothing is asked.
+- **The press is the shape's.** It selects the shape as any press does (a member of several keeps
+  them all). Past the drag threshold it moves the selection from the press, as the shape's own press
+  would. On a lone box, which a press anywhere else moves at once, a press on a face waits for the
+  threshold, so that a click there doesn't nudge it: an intended difference from the select tool's
+  lone box, which SelectionTests pin.
+- **A click** is a press released within the threshold: the shape is selected alone, and `click`
+  runs. Escape before the release lets go of the press, and nothing is clicked. The press is over
+  as `click` runs, so it may go to shapes (`editor.goTo`) or back, which do nothing mid-gesture, and
+  what it selects is a step back of its own. `click` isn't given the press, so a face that needs a
+  point keeps where it is in its value: a pill edits its shape from there
+  (`editor.beginEditing(id, at:)`, which the editing view reads as `EditContext.startPoint`).
+- **A read-only shape's face clicks too** (a locked note's pill): the press selects the shape, as
+  any press on it does, and `click` runs. A face that edits its shape checks `editor.isReadOnly`
+  first, as the example does: editing a read-only shape is refused, and a refusal is a try to
+  change it, which services hear (`didRefuseChanges`, which Locking answers with a shake), while a
+  click on a locked shape is no try. CompositionTests' `pillsPlugin` does the same, and its test
+  holds a locked note still through a click on its pill and a double-click.
+- **A click that goes somewhere** (it changes the selection, or moves the camera: a link's `goTo`)
+  makes the rest of its double-click its own. The select tool ignores each press after it with a
+  click count of 2 or more (`Tool.ignoresPress`), until one with a count of 1: the camera goes on
+  to where the click sent it, and nothing the moving camera has brought under the pointer is placed
+  (a double-click on empty canvas), edited, pressed or brushed. So a link is followed once, however
+  it's clicked. A click that goes nowhere (a pill's, which edits its note, or does nothing on a
+  locked one) leaves the double-click to the face's `doubleClick`, as below.
+- **A double-click** whose press lands on a face selects the shape alone and runs `doubleClick`, in
+  place of what a double-click does to the shape (editing an `Editable` one); it runs on a read-only
+  shape too (a locked note's pill), where editing would be refused. Without `doubleClick`, a
+  double-click there edits an `Editable` shape, and is otherwise one more click on the face. Where
+  `click` begins editing, the double-click's second press lands in the editing view the click
+  opened, not on the canvas, so the view answers it; `doubleClick` runs where editing was refused.
+- **Hover.** The pointer over a face, in the select tool, hovers the shape `hovering` names
+  (`editor.hovered`: outlined faintly, its row tinted in the table of contents), in the face's
+  shape's place (a pill's target); nil, a shape that isn't there or can't be selected, or no
+  `hovering`, hovers the face's shape. It's asked whatever keys are held. The cursor stays the arrow:
+  a face isn't a button. A `click` that begins editing leaves the pointer over the editing view,
+  which has it ([the views the canvas hosts](#the-editor-the-document-and-drawing)), so the hover
+  ends with the release.
+- **Where to draw them** is the plugin's: a face is found where the shape's render (or an overlay)
+  draws it. Several plugins' faces are asked the last plugin's first.
 
 ## Keyboard shortcuts
 
@@ -2151,7 +2342,8 @@ note.contentsRow { note in
   height, indentation, disclosure triangles, selection, the header. Any view works, but
   `ContentsLabel` is what keeps rows from different plugins alike; use it unless a row really needs
   something else.
-- **A row reads only its shape**, as `when`, `nestedUnder` and `contentsTitle` do. The table of
+- **A row reads only its shape**, as `when`, `nestedUnder` and `contentsTitle` do, unless it names,
+  with `affected`, the shapes whose rows a commit may change ([below](#rows-read-from-more-than-their-shape)). The table of
   contents keeps each shape's row, and where it's listed, from one commit to the next, and redoes
   only those of the shapes the commit's change set names (and the rows nested under a shape that
   came or went). So dragging a shape costs its own row, however big the board: well under a
@@ -2189,6 +2381,46 @@ note.contentsRow { note in
 | `getZoomConfig` | The shape's geometry bounds, with 100 points of margin, for every kind |
 | `onClick`, `getGroupChildren` | Not built yet |
 | The "other" row (type and id) | The placing tool's label and symbol |
+
+### Rows read from more than their shape
+
+A row may show what other shapes say: a note's row will show its text with the names of the
+shapes it mentions, as they're named now, so renaming a shape changes the rows of the notes that
+mention it. Such a row is built from the shape and a `ContentsContext` (the editor's services, as
+a mark's is), returns a `ContentsLabel`, and names, with `affected`, the shapes each commit may
+change the rows of without changing them. A ref that shows the name of the shape it refers to,
+with a service of its plugin's own that keeps which refs refer to each shape
+([AffectedRowTests](../Tests/TableOfContentsTests/AffectedRowTests.swift)):
+
+```swift
+ref.contentsRow(affected: { changes, context in
+    context.service(RefIndex.self)?.refs(to: changes.shapeIDs) ?? []
+}) { ref, context in
+    ContentsLabel("→ " + (context.service(RefIndex.self)?.name(of: ref.props.target) ?? "?"))
+}
+```
+
+- **The rows `affected` names are made again** on the next read, and replaced (so redrawn) only if
+  their labels changed: the same title, placeholder, symbol, color and badge keep the row, as a
+  mark's `affected` keeps it unless its marks changed. So dragging a shape the refs refer to makes
+  their rows again and redraws none of them; renaming it redraws theirs. The shapes a commit
+  changes get new rows as always, and a row `affected` names that hasn't been made yet is made
+  when it's first listed.
+- **`affected` runs on every commit**, whether the list shows or not, so it must cost what the
+  commit changed, never the board: a service that keeps who reads what (an index kept up to date
+  commit by commit, per shape) answers it. It's asked as the table of contents hears the commit,
+  so a service installed before `TableOfContentsPlugin` has heard it already. One installed after
+  hasn't, and answers from the commit before: that names the right rows as long as what a row
+  reads follows from its own shape, since a commit that changes that changes the shape, whose row
+  is made again anyway.
+- **Read before it hears of a commit** (by a service that hears first), the table of contents makes
+  every kept row of a kind with `affected` again, as it reads every mark again, since only hearing
+  of the commit says which it affects. That's rare: the list reads on the next turn.
+- **`when` and `nestedUnder` still read only the shape**, and `contentsTitle` still names the row:
+  a name that isn't blank takes the place of the label's title (a titled note shows its title).
+- `registrar.contentsRow(OtherKind.self, affected:) { shape, context in ... }` is the same for
+  another plugin's kind (bridges). The row that reads only its shape keeps its forms,
+  `x.contentsRow { ... }` and `x.contentsRow(when:nestedUnder:)`.
 
 ### Marks: ValidationContents
 
@@ -2249,7 +2481,8 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
   rows come out from under it.
 - **Selecting rows** (a click, ⌘- and ⇧-clicks, the arrow keys) selects their shapes and brings
   them into view: centered, zoomed to fit with 100 points of margin but no closer than 120%, over
-  200 ms (data-canvas's click-to-zoom, and tldraw's zoomToBounds). A click on one row selects one
+  200 ms (data-canvas's click-to-zoom, and tldraw's zoomToBounds): Selection's `editor.reveal`,
+  the one way any plugin brings shapes into view ([Selection](#selection)). A click on one row selects one
   shape, so its details replace the list, as in data-canvas. ⌘- and ⇧-clicks leave several
   selected, and the list keeps listing what it listed, so rows can be added and taken out without
   the rest going away. That holds until the selection next changes some other way, which
@@ -2291,7 +2524,8 @@ public static func detailPanel(editor: CanvasEditor, onExit: @escaping @MainActo
 }
 ```
 
-Bringing shapes into view takes two generic things from the core: `editor.viewportSize`, which
+Bringing shapes into view is Selection's `editor.reveal`, which the table of contents calls. It
+takes two generic things from the core: `editor.viewportSize`, which
 `CanvasView` reports as it's resized, and `editor.animateCamera(to:duration:)`, eased like
 tldraw's camera moves and stopped by any other camera change, as the hand tool's slide is.
 `Camera(fitting:in:inset:maxZoom:)` (Geometry) does the fit.
@@ -2625,13 +2859,17 @@ Paste send), shape [metadata](#metadata), and the `ShapeReferencing` [capability
   in place lies exactly over its originals, as in tldraw and Figma. Moving them is
   `transaction.translate(ids, by:)`, which moves every kind as dragging would: boxes by their frame,
   others by their `CustomTranslation`.
-- **Shapes that name shapes.** A kind whose props name other shapes (an arrow's bound ends) adopts
-  the core's `ShapeReferencing`, which deleting a shape asks too. Copying asks it to let go of the
-  shapes left out of the copy, and pasting asks it to name the copies of those copied with it. So
+- **Shapes bound to shapes.** A kind whose props are bound to other shapes (an arrow's bound ends)
+  adopts the core's `ShapeReferencing`, which deleting a shape asks too. Copying asks it to let go
+  of the shapes left out of the copy, and pasting asks it to bind the copies of those copied with it. So
   two notes and the arrow between them paste as two notes and an arrow between the copies, and an
   arrow copied alone pastes free, ending where it was drawn, as it would if its notes were deleted.
   tldraw's copy does the same. A shape that can't let go of one it can't find (an arrow bound to a
   shape its board keeps aside, or one a paste can't read) is left out, rather than copied wrong.
+- **Shapes that only name shapes** ([`ShapeNaming`](#values-that-name-shapes), a mention) go through
+  the same call, `record.remappingReferences`, which renames their names too: a copy names the
+  copies of the shapes copied with it, and goes on naming the rest. Clipboard needs nothing of its
+  own for them.
 - **The pasteboard** holds a small board: `BoardCodec`'s JSON, each kind and added property at its version, under the
   app's own type. So one window can paste what another copied, a paste into a newer app migrates as
   opening a board does, and a kind the board doesn't install is left out of a paste. Anything else
@@ -3110,8 +3348,14 @@ starts from what the kind's tool would place (a task's "New Task" title with it)
 told over that (`--props`, then each `--set`: as typed for a property that's text, as JSON for any
 other), and inserts it. A shape past its schema's bounds is made, with a warning, as the app makes
 any; a kind no tool places (an arrow, a line) starts from the properties it's given. What a shape's
-props name (an arrow's ends, through `ShapeReferencing`) must be on its board: a shape that named one
-that isn't would keep naming it, and nothing would let go, so `create` refuses it and says which.
+props are bound to (an arrow's ends, through `ShapeReferencing`) must be on its board: a shape bound
+to one that isn't would stay bound to it, and nothing would let go, so `create` refuses it and says
+which (`A tag can't be bound to shapes that aren't on this board: …`, hint: bind it only to shapes on
+the board the command works on).
+That's what the shape is bound to (`record.boundShapes(in:)`). What it only names
+([`ShapeNaming`](#values-that-name-shapes), a mention) may be gone, as it may once the shape it
+names is deleted: the shape is made, and a warning for each property that names shapes not on the
+board says which (`lead names shapes that aren't on this board: …; they show as missing.`).
 
 The app that holds the socket's lock (`canvas.sock.lock`, beside it) is the one listening: a second
 copy of the app gives up and runs without the command line, and a socket that one that crashed left
@@ -3308,12 +3552,20 @@ it, the core or a horizontal.
 | `BrushHitTesting` (Selection's) | Whether the marquee touches it, when the brush overlaps its bounds without containing them. Default: `ShapeGeometry.isHit(byBrush:)`. | Arrows (against the visible arc) |
 | `DerivedProps` | Props that hold something following from the rest, which the kind's setters keep in step. A shape made from properties written somewhere else, `registry.shape(_:properties:)` (the command line's `create`), goes through `derive(_:)` first, so it's as its setters would have left it; a board read (a shape is as saved), a paste, and what a person does don't. | Schemas (a card's height, from its schema; `--size` still wins) |
 | `PaintOrderAnchored` | Painted just above another shape, whatever its place in the document. The anchor follows from the shape's own props and the document's order, since the paint order is kept until one of those changes. | Arrows (above the shapes they join) |
-| `ShapeReferencing` | Props that name other shapes: every kind whose props do adopts it, or it keeps naming a shape once it's gone. `remappingReferences(of:_:in:)` passes each through a map: named as the shape it gives, or, for nil, let go of where it's drawn. Deleting a shape asks it of every shape that names it (after `willDelete` handlers, before anything's removed), and copying asks it of each copy (`record.remappingReferences(_:in:)`). It returns nil when it can't let go of a shape it can't find: a deletion leaves it as it was, and a copy leaves it out. | Arrows (an end lets go where it's drawn, keeping the curve; a copy stays bound to the copies of its shapes); CanvasTesting's `Tag` |
+| `ShapeReferencing` | Props bound to other shapes: every kind whose props are adopts it, or it stays bound to a shape once it's gone. `remappingReferences(of:_:in:)` passes each through a map: bound to the shape it gives, or, for nil, let go of where it's drawn. Deleting a shape asks it of every shape bound to it (after `willDelete` handlers, before anything's removed), and copying asks it of each copy (`record.remappingReferences(_:in:)`). It returns nil when it can't let go of a shape it can't find: a deletion leaves it as it was, and a copy leaves it out. These are bindings, which must be on the board; a name that may outlive its shape (a mention) is a value instead, [`ShapeNaming`](#values-that-name-shapes). | Arrows (an end lets go where it's drawn, keeping the curve; a copy stays bound to the copies of its shapes); CanvasTesting's `Tag` |
 
 The rule of thumb: behavior intrinsic to a kind is a capability; behavior anyone can add, to any
 kind, from any plugin, is an extension point. What a kind shows in the detail panel is an extension
 point, not a capability: the kind's own plugin, a horizontal it opts into, and a bridge can all add
 to it.
+
+An editing view's `EditContext` is its way back into the editor: `update` changes the shape in a
+transaction, and `end()` ends editing. `service(_:)` lends it the editor's services (a completion
+list's candidates), as the detail panel's, the table of contents' and adornments' contexts do.
+`startPoint` is where the press that began editing was, in world units, when whatever began it said
+so (`editor.beginEditing(id, at: point)`), for the view to put its selection there (the character
+pressed); the editor keeps it as `editingStartPoint` while editing lasts. Return, Selection's
+double-click and a placement say nothing, and the view chooses, as it always has.
 
 ## The editor, the document, and drawing
 
@@ -3339,8 +3591,9 @@ to it.
 - **`willDelete`** handlers run inside the deleting transaction, before anything is removed, and
   see every shape as it was, so a plugin can act on shapes about to disappear (delete what depends
   on them). They may delete more, and change what they must, read-only shapes included; each
-  shape's handlers run once. Then every shape that names one of them, and stays, lets go of it, as
-  its kind's `ShapeReferencing` says (arrows bake their curve there).
+  shape's handlers run once. Then every shape bound to one of them, and stays, lets go of it, as
+  its kind's `ShapeReferencing` says (arrows bake their curve there). Names of them
+  ([`ShapeNaming`](#values-that-name-shapes), a mention) are never looked at, and stay.
 - **Lookups.** `editor.shapeContext` looks up the editor's shapes (and keeps their geometry from
   frame to frame), `transaction.shapes` a transaction's as it is so far, and
   `ShapeContext(document:registry:)` a document of your own (what's on the pasteboard).
@@ -3395,6 +3648,16 @@ to it.
   and the selection in the accent color. It moves the camera as tldraw's minimap does, and knows
   no shape or plugin. Only the app and tests can import CanvasUI, and no plugin can see the host
   API, so no plugin can reach around the editor.
+- **The views the canvas hosts have the pointer where they are.** Over the minimap or the editing
+  view the pointer isn't over the canvas, though AppKit tells the canvas it moved (its tracking
+  area covers them): the tool hears it leave (`pointerExited`), once, as it moves there or is
+  released there (the press that began editing: a double-click, or a click on a face that edits
+  its shape), and nothing more until it moves
+  back onto the canvas. So the select tool hovers no shape under them (over a note's text,
+  `editor.hovered` is only what another plugin sets, a table of contents row's), and
+  `editor.pointerOverCanvas` is nil there (a note being edited hides its port dots while the
+  pointer is over its text). The canvas leaves their cursor alone meanwhile. Once editing ends,
+  where the editing view was is the canvas again, for the next move.
 
 ## Boards on disk
 
@@ -3653,6 +3916,12 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   LockingTests and PortsTests import no real vertical (only these fixtures, and local test kinds),
   which proves those plugins are shape-agnostic. ArrowPortsTests import one real vertical, Arrows,
   and join fixtures with its arrows.
+- **Names of shapes** without a real kind that holds them: `NamingPlugin()` (CanvasTesting) registers
+  `Memo`, whose props name shapes in a struct in a list (`MemoNote`), an optional and a dictionary,
+  and which opts into `CitationsProperty`, an added set of names; and `CitingTag`, bound to its
+  target (`ShapeReferencing`) and naming another. `Citation` is the leaf, and `Citation.visits`
+  counts how often any is walked or renamed, so a test can show something never looks at names (a
+  delete).
 - **Read-only shapes** without Locking: `FreezingPlugin(log:)` (CanvasTesting) declares `Frozen`, a
   flag every kind opts into, makes frozen shapes read-only, and logs the refusals services hear in
   its `RefusalLog`; `editor.freeze(ids)` sets it. CanvasTests, SelectionTests and DetailPanelTests
@@ -3662,6 +3931,15 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   the way a user does installs `KeyboardPlugin()` and `SelectionPlugin()` first, as the app does.
 - Tests drive the editor's host API, so they `@_spi(Host) import Canvas`.
 - `renderBitmap(editor, size:)`, `pixel(_:at:)` and `changedPixels(_:_:in:)` check what's drawn.
+- **An editing view against its render.** `renderBitmap(editor, size:scale:editing:)` draws the
+  canvas, then an editing view from `editor.makeEditingView()` over the shape being edited, laid out
+  as `CanvasView` lays it out (its frame in view points, its bounds in world units), at the bitmap's
+  scale, and takes it out of its window again, so the test can type into it and draw it again.
+  `lineTops(_:over:in:scale:)` is where each line of text starts: the top of each run of rows that
+  differs from the same drawing without the text (the canvas leaves a note's text to its editing
+  view), by more than a quarter in a channel. `largestDifference(_:_:in:scale:)` is the most any
+  pixel differs in a rect, every pixel counted. StickyNotesTests' `noteEditorTests` hold the
+  note's editor to its render with them, at 1× and 2×, zoomed in and out.
 - `Contributor(id:) { registrar in ... }` is a plugin written inline, and `editor.add(props)`
   inserts a shape in a transaction of its own.
 - **The detail panel.** `editor.detailPanel?.layout(for:)` resolves a shape's header, tabs and
@@ -3738,7 +4016,8 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   shape's hover). In a window, the table of contents counts, in debug builds, how often the list has
   asked a row for its view (`contents.rowsRedrawn`), so HoverTests holds a hover over a list of
   150 rows (a list of 200 or more logs `tableReentrancyWarning` as it first shows) to the one or
-  two rows it changes.
+  two rows it changes. AffectedRowTests holds a drag of a shape other rows read to redrawing its
+  own row alone, and a rename of it to redrawing theirs too.
 - A test target is `Tests/<Name>Tests` with a `main.swift` that calls `runTests([...])`. Every
   `Suite` must be listed there (`test.sh` checks). `<M>Tests` may depend only on M, what M
   depends on, and the test-support and ui modules.
@@ -3762,6 +4041,18 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   `canvas.minimap` with mouse events, and hold its picture, kept through every kind of edit, to a
   new `MinimapView`'s, every pixel. A test that needs a board drawn in one frame lengthens the
   minimap's `frameBudget`, and one that watches it fill in shortens it to a tile a frame.
+- **The pointer over hosted views.** CanvasUITests' Pointer suite sends a `CanvasView` holding an
+  editing view (CanvasTesting's card) synthesized moves and releases, and reads what a probe tool
+  heard (`PointerLog`: moved, exited); CompositionTests' canvas view tests hold the shipped select
+  tool to it, `editor.hovered` nil over a note being edited.
+- **Faces with editing and going to shapes.** CompositionTests' canvas view tests put a pill-like
+  face in the shipped notes (`pillsPlugin`, a 60 × 20 face naming one shape) and hold the pieces
+  Mentions will use to working together through `CanvasView`: the pointer over the pill hovers what
+  it names, a click edits the note from the pill (`editingStartPoint`) and leaves nothing hovered
+  under its text, and on a locked note a double-click goes to what it names, which Back undoes.
+  The locked note doesn't shake through the click or the double-click. SelectionTests' Going to
+  shapes clicks a link-like face and presses again with a click count of 2 while the camera glides:
+  nothing is placed, and the camera arrives.
 - **Arrow behavior is pinned to the proof of concept.** CompositionTests replays 30 arrow
   scenarios through `CanvasView` with real events and compares where every arrow ends up, byte for
   byte, with a transcript recorded from the POC. It also compares nine renders pixel for pixel:

@@ -13,9 +13,10 @@ public struct JSONSchema: Hashable, Sendable {
     public static let dialect = "https://json-schema.org/draft/2020-12/schema"
 }
 
-/// A type whose JSON form a schema describes. The scalars, the core's geometry, arrays, sets and
-/// optionals already are; a struct lists its properties (`SchemaDefined`); a string enum titles its
-/// cases (`SchemaCases`); a type that codes itself by hand writes its schema by hand.
+/// A type whose JSON form a schema describes. The scalars, the core's geometry, arrays, sets,
+/// optionals and dictionaries keyed by strings already are; a struct lists its properties
+/// (`SchemaDefined`); a string enum titles its cases (`SchemaCases`); a type that codes itself by
+/// hand writes its schema by hand.
 public protocol SchemaDescribed {
     /// This type's schema, as it's written where it's used. Definitions it shares (a nested type
     /// with a `definition` name, the core's `rect`) go in `definitions`, and the result refers to
@@ -169,6 +170,13 @@ extension Array: SchemaDescribed where Element: SchemaDescribed {
 extension Set: SchemaDescribed where Element: SchemaDescribed {
     public static func schema(in definitions: inout SchemaDefinitions) -> JSONObject {
         ["type": "array", "items": .object(Element.schema(in: &definitions)), "uniqueItems": true]
+    }
+}
+
+/// An object whose members, named anything, are each a value.
+extension Dictionary: SchemaDescribed where Key == String, Value: SchemaDescribed {
+    public static func schema(in definitions: inout SchemaDefinitions) -> JSONObject {
+        ["type": "object", "additionalProperties": .object(Value.schema(in: &definitions))]
     }
 }
 

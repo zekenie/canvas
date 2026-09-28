@@ -61,7 +61,8 @@ public struct AnyShapeRecord: Identifiable, Equatable, Sendable {
     }
 
     /// The same shape under another id: its kind, props, added properties and meta, with no place
-    /// in a stack yet. Props that name other shapes still name them (see `remappingReferences`).
+    /// in a stack yet. The shapes its props are bound to or name are left as they are (see
+    /// `remappingReferences`).
     public func copy(as id: ShapeID = ShapeID()) -> AnyShapeRecord {
         var copy = AnyShapeRecord(id: id, kind: kind, props: props, stackingKey: nil)
         copy.meta = meta

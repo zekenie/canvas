@@ -80,6 +80,8 @@ struct PropertyCodec: Sendable {
     let schema: @Sendable (inout SchemaDefinitions) -> JSONObject
     /// Its value is an optional, or holds optionals, which a schema can't say.
     let holdsOptionals: Bool
+    /// Set only when its value names shapes (`ShapeNaming`).
+    let naming: AddedNaming?
 
     init<P: ShapeProperty>(_: P.Type) {
         key = P.key
@@ -94,7 +96,23 @@ struct PropertyCodec: Sendable {
         let keywords = P.keywords.json
         schema = { P.Value.schema(in: &$0).merging(keywords) { _, keyword in keyword } }
         holdsOptionals = P.Value.self is any OptionalValue.Type || Canvas.holdsOptionals(P.Value.self)
+        naming = P.Value.self is any ShapeNaming.Type ? AddedNaming(
+            value: { ($0 as? Boxed<P.Value>)?.value as? any ShapeNaming },
+            rename: { value, rename in
+                guard let names = (value as? Boxed<P.Value>)?.value as? any ShapeNaming,
+                      let renamed = names.renamingShapes(rename) as? P.Value else { return value }
+                return Boxed(value: renamed)
+            }) : nil
     }
+}
+
+/// How an added property's value that names shapes is walked and renamed, as a property's
+/// (`PropertyNaming`).
+struct AddedNaming: Sendable {
+    /// The value, as the names it holds.
+    let value: @Sendable (any AddedValue) -> (any ShapeNaming)?
+    /// The value with its names renamed (`ShapeNaming.renamingShapes`).
+    let rename: @Sendable (any AddedValue, (ShapeID) -> ShapeID?) -> any AddedValue
 }
 
 /// Which kinds opt into which added properties, worked out when the registry is built. Each kind's

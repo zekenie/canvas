@@ -66,6 +66,9 @@ public final class CanvasEditor {
     /// Starts as the registry's default tool.
     public private(set) var currentToolID: ToolID
     public private(set) var editingShapeID: ShapeID?
+    /// While a shape is edited, where the press that began it was, in world units
+    /// (`beginEditing(_:at:)`); nil if none said, and once editing ends.
+    public private(set) var editingStartPoint: CGPoint?
     /// The press-drag-release in progress, if any. Tools start sessions; a session may hand over
     /// to another by setting this.
     @ObservationIgnored public var session: (any Session)? { didSet { setNeedsDisplay() } }
@@ -274,15 +277,19 @@ public final class CanvasEditor {
     // MARK: Editing
 
     /// Edits a shape of an `Editable` kind in place. Returns false for any other shape, and for a
-    /// read-only one, which is refused (services hear it, `didRefuseChanges`).
+    /// read-only one, which is refused (services hear it, `didRefuseChanges`). `point`, in world
+    /// units, is where the press that began it was, if one did: the editing view reads it
+    /// (`EditContext.startPoint`) to put its selection there. Nil (Return, Selection's double-click,
+    /// a placement) leaves the view to choose.
     @discardableResult
-    public func beginEditing(_ id: ShapeID) -> Bool {
+    public func beginEditing(_ id: ShapeID, at point: CGPoint? = nil) -> Bool {
         endEditing()
         guard let record = document[id], !record.isOpaque, registry.definition(for: record.kind) is any Editable else { return false }
         guard !registry.isReadOnly(record) else {
             refuseChanges(to: [id])
             return false
         }
+        editingStartPoint = point
         editingShapeID = id
         delegate?.editorEditingDidChange(self)
         setNeedsDisplay()
@@ -292,6 +299,7 @@ public final class CanvasEditor {
     public func endEditing() {
         guard editingShapeID != nil else { return }
         editingShapeID = nil
+        editingStartPoint = nil
         delegate?.editorEditingDidChange(self)
         setNeedsDisplay()
     }

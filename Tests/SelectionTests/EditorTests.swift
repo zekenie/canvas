@@ -80,6 +80,22 @@ import TestKit
         h.editor.selection = card; h.editor.editSelection()
         expectEqual(h.editor.editingShapeID, card)
     },
+    test("a double-click, Return and a placement begin editing without saying where: the editing view chooses, as it always has") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), CardsPlugin()])
+        let card = h.add(Card(CGRect(x: 200, y: 0, width: 100, height: 100)))
+        h.press(at: CGPoint(x: 250, y: 50), clickCount: 2); h.release()
+        expectEqual(h.editor.editingShapeID, card)
+        expectEqual(h.editor.editingStartPoint, nil)
+        h.editor.endEditing()
+        h.editor.selection = card; h.editor.editSelection()
+        expectEqual(h.editor.editingShapeID, card)
+        expectEqual(h.editor.editingStartPoint, nil)
+        h.editor.endEditing()
+        h.editor.setTool(ToolID(placing: Card.kind))
+        h.press(at: CGPoint(x: 100, y: 300)); h.release()
+        expect(h.editor.editingShapeID != nil && h.editor.editingShapeID != card)
+        expectEqual(h.editor.editingStartPoint, nil)
+    },
     test("a double-click press straight onto a member of a multi-selection edits it, selected alone: what's edited is selected") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), CardsPlugin()])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))

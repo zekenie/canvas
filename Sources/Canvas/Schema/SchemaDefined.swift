@@ -35,6 +35,9 @@ public struct Properties<Root: SchemaDefined>: Sendable {
     /// to; otherwise it's written out where it's used.
     public let definition: String?
     let list: [AnyProperty<Root>]
+    /// Those whose members name shapes (`ShapeNaming`), in list order: all that walking or
+    /// renaming the type's names looks at, none for most types.
+    let namingProperties: [AnyProperty<Root>]
 
     public init(title: String? = nil, description: String? = nil, definition: String? = nil,
                 @PropertyListBuilder<Root> _ properties: () -> [AnyProperty<Root>]) {
@@ -42,6 +45,7 @@ public struct Properties<Root: SchemaDefined>: Sendable {
         self.description = description
         self.definition = definition
         list = properties()
+        namingProperties = list.filter { $0.naming != nil }
     }
 
     /// The properties' names, in order: the keys a board writes.
@@ -127,6 +131,13 @@ public struct Property<Root, Value: Codable & SchemaDescribed & Sendable>: Prope
         let name = name, keyPath = keyPath, keywords = keywords, examples = examples, isRequired = isRequired
         let isOptional = Value.self is any OptionalValue.Type
         let isNil: @Sendable (Value) -> Bool = { isOptional && ($0 as? any OptionalValue)?.isNil == true }
+        // Found by a check like an optional's, once: a member that names no shape carries nil, and
+        // walking or renaming names never looks at it.
+        let naming: PropertyNaming<Root>? = Value.self is any ShapeNaming.Type ? PropertyNaming(
+            value: { $0[keyPath: keyPath] as! any ShapeNaming },
+            rename: { root, rename in
+                root[keyPath: keyPath] = (root[keyPath: keyPath] as! any ShapeNaming).renamingShapes(rename) as! Value
+            }) : nil
         return AnyProperty(
             name: name,
             isRequired: isRequired,
@@ -134,6 +145,7 @@ public struct Property<Root, Value: Codable & SchemaDescribed & Sendable>: Prope
             keyPath: keyPath,
             isOptional: isOptional,
             isNil: { isNil($0[keyPath: keyPath]) },
+            naming: naming,
             encode: { root, container in
                 let value = root[keyPath: keyPath]
                 guard !isNil(value) else { return }
@@ -170,10 +182,21 @@ public struct AnyProperty<Root>: Sendable {
     let isOptional: Bool
     /// Whether it's a nil optional in `root`.
     let isNil: @Sendable (Root) -> Bool
+    /// Set only when its member names shapes (`ShapeNaming`).
+    let naming: PropertyNaming<Root>?
     let encode: @Sendable (Root, inout KeyedEncodingContainer<PropertyCodingKey>) throws -> Void
     let decode: @Sendable (KeyedDecodingContainer<PropertyCodingKey>, inout Root) throws -> Void
     /// Its schema, with its default read off `prototype`.
     let schema: @Sendable (_ prototype: Root, inout SchemaDefinitions) -> JSONObject
+}
+
+/// How a property whose member names shapes is walked and renamed: pure, so a list's `@Sendable`
+/// closures can call it anywhere.
+struct PropertyNaming<Root>: Sendable {
+    /// The member, as the names it holds.
+    let value: @Sendable (Root) -> any ShapeNaming
+    /// Renames the member's names in `root`, as `ShapeNaming.renamingShapes` does.
+    let rename: @Sendable (inout Root, (ShapeID) -> ShapeID?) -> Void
 }
 
 @resultBuilder
@@ -244,6 +267,10 @@ extension Set: SchemaContainer {
     static var elementType: Any.Type { Element.self }
 }
 
+extension Dictionary: SchemaContainer {
+    static var elementType: Any.Type { Value.self }
+}
+
 extension Optional: SchemaContainer {
     static var elementType: Any.Type { Wrapped.self }
 }
@@ -296,6 +323,15 @@ func propertyListProblems<T: SchemaDefined>(of _: T.Type) -> [String] {
         }
     }
     return problems
+}
+
+/// A struct that holds names of shapes (a member that's `ShapeNaming`) without adopting
+/// `ShapeNaming` itself: whatever holds it can't find those names, so a copy would go on naming
+/// the originals. A kind's props needn't adopt it, since the core walks them by their list.
+func namingProblems<T: SchemaDefined>(of _: T.Type) -> [String] {
+    guard !(T.self is any ShapeNaming.Type), let member = T.properties.namingProperties.first?.name else { return [] }
+    let name = String(describing: T.self)
+    return ["\(name).\(member) names shapes (ShapeNaming), so \(name) must adopt ShapeNaming too (extension \(name): ShapeNaming {}), or a copy would go on naming the originals"]
 }
 
 /// Whether a collection (or optional) holds optionals, at any depth.

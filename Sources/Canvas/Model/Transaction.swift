@@ -171,9 +171,10 @@ public struct Transaction {
     }
 
     /// First, while the shapes still exist, every plugin's `willDelete` handlers run, in this
-    /// transaction, seeing every shape as it was; then every shape that names one of them, and
+    /// transaction, seeing every shape as it was; then every shape bound to one of them, and
     /// stays, lets go of it, as its kind says (`ShapeReferencing`: an arrow's end stays where it's
-    /// drawn). Handlers may delete more shapes (a shape's dependents): each shape's handlers run and
+    /// drawn). Names of them (`ShapeNaming`, a mention) are never looked at: they stay as they
+    /// were. Handlers may delete more shapes (a shape's dependents): each shape's handlers run and
     /// it's let go of once, and everything is removed together when the outermost `delete` returns.
     /// Read-only shapes asked for stay, and the others go without them; but what the handlers and
     /// letting go do, to keep the board whole, goes through, read-only or not: a read-only dependent
@@ -200,10 +201,11 @@ public struct Transaction {
         didChange = true
     }
 
-    /// Every shape that names one of `ids`, and isn't being deleted too, lets go of it, read-only
-    /// or not (`delete` runs this cascading): letting go keeps it as it's drawn, and a shape can't go
-    /// on naming one that's gone. One whose kind can't (it names a shape it can't find) is left as it
-    /// was.
+    /// Every shape bound to one of `ids`, and isn't being deleted too, lets go of it, read-only or
+    /// not (`delete` runs this cascading): letting go keeps it as it's drawn, and a shape can't stay
+    /// bound to one that's gone. One whose kind can't (it's bound to a shape it can't find) is left as
+    /// it was. Only the kinds that bind are asked (`referencingKinds`); names (`ShapeNaming`) are
+    /// never looked at.
     private mutating func letGo(of ids: Set<ShapeID>) {
         let kinds = registry.referencingKinds
         guard !kinds.isEmpty else { return }

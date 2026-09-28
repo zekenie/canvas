@@ -40,6 +40,8 @@ final class SelectionState {
     /// What plugins draw for shapes outside them (`DecorationHits`), found once: the last plugin's
     /// first, as its drawing is over the others'.
     @ObservationIgnored let decorationHits: [DecorationHits.Contribution]
+    /// Every plugin's faces (`ShapeFaces`), found once: the last plugin's first.
+    @ObservationIgnored let faceSources: [ShapeFaceSource]
     /// The button under the pointer, with its plugin's buttons, which say what the cursor is.
     @ObservationIgnored var hoveredButton: ButtonHit? {
         didSet {
@@ -51,6 +53,10 @@ final class SelectionState {
     @ObservationIgnored var pressedButton: AnyHashable? {
         didSet { if pressedButton != oldValue { editor.setNeedsDisplay() } }
     }
+    /// The select tool's last click was on a face, and went somewhere: it changed the selection or
+    /// moved the camera (a link's `goTo`). The rest of its double-click is that click's
+    /// (`SelectTool.ignoresPress`), until a press that isn't.
+    @ObservationIgnored var clickWentElsewhere = false
     /// Where the pointer was last seen over the canvas in the select tool, in view points: where to
     /// look for a button again when buttons change under a pointer that's still.
     @ObservationIgnored var lastPointer: CGPoint? {
@@ -63,6 +69,7 @@ final class SelectionState {
         rules = editor.registry.contributionByKind(to: ShapeSelectability.self)
         buttonSources = editor.registry.contributions(to: CanvasButtons.self).map(\.value)
         decorationHits = editor.registry.contributions(to: DecorationHits.self).map(\.value).reversed()
+        faceSources = editor.registry.contributions(to: ShapeFaces.self).map(\.value).reversed()
     }
 
     /// The button under the pointer, looked for again: in the select tool, with nothing under way. A
@@ -184,6 +191,7 @@ final class SelectionState {
 extension SelectionState: EditorService {
     func toolDidChange(from old: ToolID, to new: ToolID, in editor: CanvasEditor) {
         press = nil
+        clickWentElsewhere = false
         hover(nil)
         hoveredHandle = nil
         hoveredButton = nil
@@ -202,6 +210,13 @@ extension SelectionState: EditorService {
 
     /// A placed shape is the only one selected.
     func didPlace(_ id: ShapeID, in editor: CanvasEditor) { select([id]) }
+}
+
+/// The shape the select tool presses at a point: on the shape itself, or on something a plugin draws
+/// for it outside it (`DecorationHits`).
+struct SelectableHit {
+    let id: ShapeID
+    let isOnShape: Bool
 }
 
 extension CanvasEditor {
@@ -279,12 +294,15 @@ extension CanvasEditor {
     /// The front-most selectable shape under a world point, counting what's drawn for a shape outside
     /// it (`DecorationHits`: above every shape, so asked first): what the select tool presses and
     /// hovers, and what a right-click's menu is for. Nil without the Selection plugin.
-    public func selectableShape(at point: CGPoint) -> ShapeID? {
+    public func selectableShape(at point: CGPoint) -> ShapeID? { selectableHit(at: point)?.id }
+
+    /// `selectableShape(at:)`, and whether the point is on the shape itself.
+    func selectableHit(at point: CGPoint) -> SelectableHit? {
         guard let state = selectionState else { return nil }
         for hits in state.decorationHits {
-            if let id = hits(self, point, { state.isSelectable($0) }) { return id }
+            if let id = hits(self, point, { state.isSelectable($0) }) { return SelectableHit(id: id, isOnShape: false) }
         }
-        return shape(at: point) { state.isSelectable($0) }
+        return shape(at: point) { state.isSelectable($0) }.map { SelectableHit(id: $0, isOnShape: true) }
     }
 
     // MARK: Commands

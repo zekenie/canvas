@@ -8,6 +8,11 @@ public protocol Tool: AnyObject {
     func cursor(in editor: CanvasEditor) -> CanvasCursor
     /// May start a session (`editor.session = ...`).
     func pointerDown(_ pointer: Pointer, in editor: CanvasEditor)
+    /// Asked first of every press: true lets it pass as though it never came. The camera goes on
+    /// moving, editing goes on, `pointerDown` isn't called and no session starts, so its drags do
+    /// nothing and its release only hovers. For the rest of a click the tool has already acted on
+    /// (the select tool's: the second press of a double-click whose first click went to a shape).
+    func ignoresPress(_ pointer: Pointer, in editor: CanvasEditor) -> Bool
     /// The pointer moved with no session running: hover. Also called right after a session ends.
     func pointerMoved(_ pointer: Pointer, in editor: CanvasEditor)
     /// The pointer left the canvas with no session running.
@@ -21,6 +26,7 @@ public protocol Tool: AnyObject {
 
 extension Tool {
     public func cursor(in editor: CanvasEditor) -> CanvasCursor { .crosshair }
+    public func ignoresPress(_ pointer: Pointer, in editor: CanvasEditor) -> Bool { false }
     public func pointerMoved(_ pointer: Pointer, in editor: CanvasEditor) {}
     public func pointerExited(in editor: CanvasEditor) {}
     public func modifiersChanged(_ modifiers: Modifiers, in editor: CanvasEditor) {}

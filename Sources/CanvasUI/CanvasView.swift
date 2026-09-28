@@ -10,8 +10,11 @@ public final class CanvasView: NSView {
     private var editingView: EditingView?
     /// The minimap, in the bottom-left corner, over everything else; nil while it's hidden.
     public private(set) var minimap: MinimapView?
-    /// The pointer is over the minimap: the tool has been told it left the canvas.
-    private var pointerIsOnMinimap = false
+    /// Where the pointer is, as the canvas last heard it: on the canvas, or over a view it hosts that
+    /// has the pointer there (the minimap, the editing view), where the tool has been told it left.
+    private var pointerPlace = PointerPlace.canvas
+
+    private enum PointerPlace { case canvas, minimap, editingView }
 
     /// Whether the minimap shows. Off unless the host turns it on (the app does, per board).
     public var showsMinimap = false {
@@ -25,7 +28,7 @@ public final class CanvasView: NSView {
             } else {
                 minimap?.removeFromSuperview()
                 minimap = nil
-                pointerIsOnMinimap = false
+                if pointerPlace == .minimap { pointerPlace = .canvas }
             }
         }
     }
@@ -63,6 +66,20 @@ public final class CanvasView: NSView {
 
     /// Whether a point (view points) is on the minimap, which takes its own clicks.
     private func isOnMinimap(_ point: CGPoint) -> Bool { minimap?.frame.contains(point) ?? false }
+
+    /// Where a point (view points) is: on the minimap (which is over everything), on the editing
+    /// view (which takes the pointer where it is: its text, its cursor), or on the canvas.
+    private func place(of point: CGPoint) -> PointerPlace {
+        if isOnMinimap(point) { return .minimap }
+        if editingView?.view.frame.contains(point) == true { return .editingView }
+        return .canvas
+    }
+
+    /// The pointer is over a view the canvas hosts: the tool hears that it left, unless it has.
+    private func pointerLeftCanvas(for place: PointerPlace) {
+        if pointerPlace == .canvas { editor.pointerExited() }
+        pointerPlace = place
+    }
 
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -107,27 +124,33 @@ public final class CanvasView: NSView {
     /// A Control-click comes here only when `menu(for:)` had nothing for it; the tool decides
     /// whether it's a click (`Pointer.isControlClick`).
     public override func mouseDown(with event: NSEvent) {
-        pointerIsOnMinimap = false
+        pointerPlace = .canvas
         editor.pointerDown(pointerEvent(event))
     }
     public override func mouseDragged(with event: NSEvent) { editor.pointerDragged(pointerEvent(event)) }
-    public override func mouseUp(with event: NSEvent) { editor.pointerUp(pointerEvent(event)) }
-    /// Over the minimap the pointer isn't over the canvas, though AppKit still tells the canvas: the
-    /// tool hears that it left, so it doesn't hover a shape under the minimap.
+    /// A release over the editing view (the press began editing: a double-click) leaves the pointer
+    /// there, off the canvas, as a move there would; so does one over the minimap.
+    public override func mouseUp(with event: NSEvent) {
+        let pointer = pointerEvent(event)
+        editor.pointerUp(pointer)
+        let place = place(of: pointer.location)
+        if place != .canvas { pointerLeftCanvas(for: place) }
+    }
+    /// Over the minimap or the editing view the pointer isn't over the canvas, though AppKit still
+    /// tells the canvas (its tracking area covers them): the tool hears that it left, once, so it
+    /// doesn't hover a shape under the minimap, or the one being edited under its text.
     public override func mouseMoved(with event: NSEvent) {
         let pointer = pointerEvent(event)
-        guard !isOnMinimap(pointer.location) else {
-            if !pointerIsOnMinimap {
-                pointerIsOnMinimap = true
-                editor.pointerExited()
-            }
+        let place = place(of: pointer.location)
+        guard place == .canvas else {
+            pointerLeftCanvas(for: place)
             return
         }
-        pointerIsOnMinimap = false
+        pointerPlace = .canvas
         editor.pointerMoved(pointer)
     }
     public override func mouseExited(with event: NSEvent) {
-        pointerIsOnMinimap = false
+        pointerPlace = .canvas
         editor.pointerExited()
     }
     public override func cursorUpdate(with event: NSEvent) { cursor(editor.cursor).set() }
@@ -229,8 +252,9 @@ public final class CanvasView: NSView {
         layoutEditingView()
     }
 
+    /// Over a view the canvas hosts, that view's cursor stands.
     public func editorCursorDidChange(_ editor: CanvasEditor) {
-        guard !pointerIsOnMinimap else { return }
+        guard pointerPlace == .canvas else { return }
         cursor(editor.cursor).set()
     }
 
@@ -239,6 +263,8 @@ public final class CanvasView: NSView {
             window?.makeFirstResponder(self)
             old.view.removeFromSuperview()
             editingView = nil
+            // Where it was is the canvas again; the tool hears the pointer when it next moves.
+            if pointerPlace == .editingView { pointerPlace = .canvas }
         }
         guard let new = editor.makeEditingView() else { return }
         addSubview(new.view, positioned: .below, relativeTo: minimap)

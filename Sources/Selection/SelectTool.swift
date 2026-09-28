@@ -7,13 +7,29 @@ import Geometry
 /// then empty space inside a multi-selection's box; then the canvas, where a drag brushes. ⇧ adds to
 /// the selection or takes away from it, and ⌘ (tldraw's accel) does too, without selecting on the
 /// press. A lone box pressed without ⇧ or ⌘ follows the pointer from the press, with no drag
-/// threshold.
+/// threshold, unless the press is on a face (`ShapeFaces`), which is still the shape's press but
+/// waits for the threshold, so that a release within it can click the face. A click on a face that
+/// goes somewhere makes the rest of its double-click the click's (`ignoresPress`).
 final class SelectTool {}
 
 extension SelectTool: Tool {
     func cursor(in editor: CanvasEditor) -> CanvasCursor {
         if let button = editor.selectionState?.hoveredButton { return button.source.cursor }
         return editor.hoveredHandle != nil ? .openHand : .standard
+    }
+
+    /// The rest of a double-click (a press whose click count is 2 or more) whose first click, on a
+    /// face, went somewhere: to another selection or another view (a link's `goTo`). It's that
+    /// click's, not a press of whatever the moving camera has brought under the pointer, so the
+    /// camera goes on to where the click sent it, and nothing is placed, edited, pressed or brushed.
+    /// A press that isn't (a click count of 1) ends that.
+    func ignoresPress(_ pointer: Pointer, in editor: CanvasEditor) -> Bool {
+        guard let state = editor.selectionState, state.clickWentElsewhere else { return false }
+        guard pointer.clickCount >= 2 else {
+            state.clickWentElsewhere = false
+            return false
+        }
+        return true
     }
 
     func pointerDown(_ pointer: Pointer, in editor: CanvasEditor) {
@@ -38,7 +54,7 @@ extension SelectTool: Tool {
         // tldraw ignores double clicks while adding to or toggling the selection.
         let isDoubleClick = pointer.clickCount == 2 && !shift && !command
         let insideSelection = editor.isInSelectionBox(pointer.world)
-        guard let id = editor.selectableShape(at: pointer.world), let record = editor.document[id],
+        guard let hit = editor.selectableHit(at: pointer.world), let record = editor.document[hit.id],
               let definition = editor.registry.definition(for: record.kind) else {
             if isDoubleClick, let placement = editor.registry.contributions(to: DoubleClickPlacement.self).first?.value {
                 editor.selection = nil
@@ -51,6 +67,10 @@ extension SelectTool: Tool {
             }
             return
         }
+        let id = hit.id
+        // A face in the shape's content, asked only for a plain press.
+        let isPlain = pointer.modifiers.isDisjoint(with: [.shift, .command, .option])
+        let face = isPlain ? editor.faceHit(on: hit, at: pointer.world) : nil
         // tldraw's PointingShape: not selected on the press with ⌘, when already selected, or
         // inside a multi-selection's box; otherwise ⇧ adds it, and a plain press selects just it.
         let keepsSelection = command || editor.isSelected(id) || insideSelection
@@ -59,9 +79,20 @@ extension SelectTool: Tool {
         }
         // A press never restacks: the shape keeps its place in the paint order (as in tldraw; the
         // POC brought it to the front).
+        if isDoubleClick, let face, let doubleClick = face.source.doubleClick {
+            editor.selection = id
+            doubleClick(face.face, editor)
+            return
+        }
         if isDoubleClick, definition is any Editable {
             editor.selection = id
             editor.beginEditing(id)
+            return
+        }
+        // A face waits for the drag threshold, even on a lone box: released within it, it clicks.
+        if let face {
+            editor.session = PointingShapeSession(shapeID: id, press: pointer.view, didSelectOnPress: !keepsSelection,
+                                                  brushesOnDrag: false, face: face)
             return
         }
         // A lone box follows the pointer from the press, with no drag threshold.
@@ -87,7 +118,7 @@ extension SelectTool: Tool {
         } else {
             state?.hoveredButton = nil
             editor.hoveredHandle = nil
-            editor.hovered = editor.selectableShape(at: pointer.world)
+            editor.hovered = editor.shapeToHover(at: pointer.world)
         }
     }
 
@@ -107,18 +138,20 @@ extension SelectTool: Tool {
 
 /// A shape was pressed (tldraw's PointingShape). Past the drag threshold the selection moves, or,
 /// if ⌘ was held at the press, a brush starts from the press. Released without a drag, it settles
-/// the selection.
+/// the selection, or, pressed on a face, selects the shape alone and clicks the face.
 @MainActor
 final class PointingShapeSession {
     let shapeID: ShapeID
     let press: CGPoint                 // view points
     let didSelectOnPress: Bool
     let brushesOnDrag: Bool
-    init(shapeID: ShapeID, press: CGPoint, didSelectOnPress: Bool, brushesOnDrag: Bool) {
+    let face: FaceHit?
+    init(shapeID: ShapeID, press: CGPoint, didSelectOnPress: Bool, brushesOnDrag: Bool, face: FaceHit? = nil) {
         self.shapeID = shapeID
         self.press = press
         self.didSelectOnPress = didSelectOnPress
         self.brushesOnDrag = brushesOnDrag
+        self.face = face
     }
 }
 
@@ -138,8 +171,20 @@ extension PointingShapeSession: Session {
     }
 
     /// tldraw's PointingShape.onPointerUp: the release point is hit-tested again. ⇧ or ⌘ toggles
-    /// the shape there; otherwise it becomes the only selected shape.
+    /// the shape there; otherwise it becomes the only selected shape. A click on a face is the
+    /// face's, on its shape: that shape is selected alone, whatever's under the release, and the
+    /// press is over before the face is clicked, so the click may go to shapes (`goTo`) or back,
+    /// which do nothing mid-gesture, and what it selects is a step of its own. If it changes the
+    /// selection or moves the camera, the rest of its double-click is its (`ignoresPress`).
     func end(_ pointer: Pointer, in editor: CanvasEditor) {
+        if let face {
+            editor.selection = shapeID
+            editor.session = nil
+            let revision = editor.selectionRevision, camera = editor.cameraTarget
+            face.click(in: editor)
+            editor.selectionState?.clickWentElsewhere = editor.selectionRevision != revision || editor.cameraTarget != camera
+            return
+        }
         guard !didSelectOnPress else { return }
         let hit = editor.selectableShape(at: pointer.world) ?? shapeID
         let additive = !pointer.modifiers.isDisjoint(with: [.shift, .command])

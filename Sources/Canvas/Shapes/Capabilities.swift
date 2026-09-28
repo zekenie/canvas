@@ -21,10 +21,15 @@ public struct EditingView {
 @MainActor
 public struct EditContext<Props: BoxShapeProps> {
     public let shapeID: ShapeID
+    /// Where editing began, in world units: the press `editor.beginEditing(_:at:)` was given, so a
+    /// view can put its selection there (the character pressed). Nil when what began it didn't say
+    /// (Return, Selection's double-click, a placement): the view chooses, as it always has.
+    public let startPoint: CGPoint?
     weak var editor: CanvasEditor?
 
-    init(shapeID: ShapeID, editor: CanvasEditor) {
+    init(shapeID: ShapeID, startPoint: CGPoint?, editor: CanvasEditor) {
         self.shapeID = shapeID
+        self.startPoint = startPoint
         self.editor = editor
     }
 
@@ -34,6 +39,13 @@ public struct EditContext<Props: BoxShapeProps> {
     }
 
     public func end() { editor?.endEditing() }
+}
+
+extension EditContext {
+    /// One of the editor's services, as the detail panel's, the table of contents' and adornments'
+    /// contexts lend them: what an editing view needs besides its own shape (a completion list's
+    /// candidates). Nil if no installed plugin registers it, or the editor is gone.
+    public func service<S: EditorService>(_: S.Type) -> S? { editor?.service(S.self) }
 }
 
 /// Moved by its own rules instead of by its frame when a `TranslatingSession` moves it (a kind
@@ -81,14 +93,17 @@ public protocol PaintOrderAnchored: ShapeDefinition {
     func paintAnchor(of shape: ShapeRecord<Props>, in document: CanvasDocument) -> ShapeID?
 }
 
-/// Props that name other shapes (a connector's ends, a label's host). Every kind whose props name
-/// a shape adopts it, since the core and plugins keep those names right through it: deleting a
-/// shape lets go of it in every shape that names it, and a copy names the copies of the shapes its
-/// original named and lets go of the rest (pasting). A kind that names shapes without it keeps
-/// naming a shape once it's gone, and a copy keeps naming the original. A kind whose props name no
-/// shape needs nothing.
+/// Props bound to other shapes (a connector's ends, a label's host). Every kind whose props are
+/// bound to a shape adopts it, since the core and plugins keep those bindings right through it:
+/// deleting a shape lets go of it in every shape bound to it, and a copy is bound to the copies of
+/// the shapes its original was bound to and lets go of the rest (pasting). A binding's shape must
+/// be on the board. A name that may outlive its shape (a mention in text) is a value instead,
+/// `ShapeNaming`, which a copy renames and a deletion never looks for; a kind whose props only
+/// name shapes doesn't adopt this. A kind that holds shapes' ids with neither goes on holding one
+/// once its shape is gone, and a copy goes on holding the original's. A kind whose props hold no
+/// shape's id needs nothing.
 public protocol ShapeReferencing: ShapeDefinition {
-    /// The props, with every shape they name passed through `map`: named as the shape `map`
+    /// The props, with every shape they're bound to passed through `map`: bound to the shape `map`
     /// returns instead, or, where it returns nil, let go of as though that shape were being deleted
     /// (an arrow's end stays where it's drawn: where it is in `context`, which still has the shape).
     /// Nil when it can't let go of one: a shape `context` doesn't have, which it can't tell how to

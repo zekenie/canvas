@@ -70,7 +70,8 @@ struct Created: Encodable {
     /// Where it is: [[x, y], [width, height]], in world units.
     let bounds: CGRect?
     /// Where it breaks its kind's schema's bounds (a title too long): it's made anyway, as the app
-    /// makes anything, and validation warns about it too.
+    /// makes anything, and validation warns about it too. And each property that names shapes
+    /// (`ShapeNaming`) that aren't on the board, which it keeps naming.
     let warnings: [String]?
 }
 
@@ -115,17 +116,13 @@ func create(_ params: CreateShape, in context: AutomationContext) throws(Automat
     if let box = record.box, params.at != nil || params.size != nil {
         record.box = CGRect(center: params.at ?? CGPoint(x: box.midX, y: box.midY), size: params.size ?? box.size)
     }
-    // What its props name must be on this board (an arrow's ends): a shape that names one that isn't
-    // would keep naming it, and nothing would ever let go of it.
-    var missing: [ShapeID] = []
-    _ = record.remappingReferences({ id in
-        guard editor.document[id] == nil else { return id }
-        missing.append(id)
-        return nil
-    }, in: editor.shapeContext)
+    // What its props are bound to must be on this board (an arrow's ends): a shape bound to one that
+    // isn't would stay bound to it, and nothing would ever let go of it. What it only names (a
+    // mention) may be gone, as it may once a shape it names is deleted: that's said, not refused.
+    let missing = record.boundShapes(in: editor.shapeContext).filter { editor.document[$0] == nil }
     if !missing.isEmpty {
-        throw AutomationError("A \(kind) can't name shapes that aren't on this board: \(missing.map(\.description).joined(separator: ", ")).",
-                              reason: "unknown_shape", hint: "Name shapes on the board the command works on (--board).")
+        throw AutomationError("A \(kind) can't be bound to shapes that aren't on this board: \(missing.map(\.description).joined(separator: ", ")).",
+                              reason: "unknown_shape", hint: "Bind it only to shapes on the board the command works on (--board).")
     }
     let id = record.id, inserted = record
     editor.transact { transaction in
@@ -139,7 +136,15 @@ func create(_ params: CreateShape, in context: AutomationContext) throws(Automat
         throw AutomationError("The \(kind) couldn't go on the board.", reason: "refused")
     }
     // Each names the property it's about ("Title is 95 characters long, and should be at most 80.").
-    let warnings = registry.schemaViolations(of: placed).map(\.message)
+    var warnings = registry.schemaViolations(of: placed).map(\.message)
+    placed.forEachNamingValue(in: registry) { property, value in
+        var gone: [ShapeID] = []
+        value.forEachNamedShape { id in
+            if editor.document[id] == nil, !gone.contains(id) { gone.append(id) }
+        }
+        guard !gone.isEmpty else { return }
+        warnings.append("\(property) names shapes that aren't on this board: \(gone.map(\.description).joined(separator: ", ")); they show as missing.")
+    }
     return Created(id: id.description, kind: kind.rawValue, bounds: editor.shapeContext.bounds(of: [id]), warnings: warnings.isEmpty ? nil : warnings)
 }
 
