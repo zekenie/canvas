@@ -223,7 +223,7 @@ import Titles
         #if DEBUG
         let b = try PocketBoard()
         let entries = b.state.entriesRead, texts = b.state.textsRead
-        expectEqual(entries, 4, "every mentionable shape of the file, on either board: the jots, the token and the plate")
+        expectEqual(entries, 3, "every shape of the file with a name, on either board: the root's jot, the token and the plate (the pocket's jot holds only a mention, so it has none)")
         expect(b.editor.showBoard(b.pocketBoard))
         expect(b.state.textsRead > texts, "the mention text is read on the way in")
         expectEqual(b.state.mentions(in: b.inner), [b.milk])
@@ -264,11 +264,40 @@ import Titles
     },
 
     test("an empty @ lists what's nearby on the board shown, then the boards it's inside, the board shown's own first") {
-        let mentionablePockets = Contributor(id: "mentionable-pockets") { $0.mentionable(Pocket.self) }
+        let mentionablePockets = Contributor(id: "mentionable-pockets") { $0.mentionable(Pocket.self, label: { _ in "Pouch" }) }
         let b = try PocketBoard(more: [mentionablePockets])
         expect(b.editor.showBoard(b.pocketBoard))
         let found = b.state.candidates(matching: "", in: AnyMentionable.self, for: b.inner)
         expectEqual(found.nearby.map(\.id), [b.groceries, b.pocket], "the plate beside it, then the pocket it's in")
+    },
+
+    test("a file put in place takes the catalog afresh, whether the board shown stays or the file can't show it") {
+        @MainActor func plate(_ title: String) -> ShapeRecord<Plate> {
+            var plate = ShapeRecord(Plate(CGRect(x: 0, y: 0, width: 120, height: 80)))
+            plate[TitleProperty.self] = title
+            return plate
+        }
+        let chores = plate("Chores"), laundry = plate("Laundry"), sack = ShapeRecord(Pocket(CGRect(x: 300, y: 0, width: 100, height: 100)))
+        let other = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(chores), AnyShapeRecord(sack)]),
+                               children: [sack.id: CanvasDocument(shapes: [AnyShapeRecord(laundry)])])
+        let find = { (b: PocketBoard, query: String) in b.state.candidates(matching: query, in: AnyMentionable.self, for: nil).matches.map(\.id) }
+
+        // On the root, which the new file shows too.
+        let b = try PocketBoard()
+        b.editor.replaceFile(with: other)
+        expectEqual(b.editor.board, .root)
+        expectEqual(find(b, "Groceries"), [], "the old file's shapes are gone")
+        expectEqual(find(b, "Milk"), [])
+        expectEqual(find(b, "Chores"), [chores.id])
+        expectEqual(find(b, "Laundry"), [laundry.id], "and the new file's other boards are in")
+
+        // Inside the pocket, which the new file doesn't have: it goes to the root with the file.
+        let c = try PocketBoard()
+        expect(c.editor.showBoard(c.pocketBoard))
+        c.editor.replaceFile(with: other)
+        expectEqual(c.editor.board, .root)
+        expectEqual(find(c, "Groceries"), [])
+        expectEqual(find(c, "Laundry"), [laundry.id])
     },
 
     test("the catalog follows commits on every board: a rename written to another board is found by its new name, a board deleted with its owner takes its shapes out, and undo brings them back") {

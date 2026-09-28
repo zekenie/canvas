@@ -95,8 +95,8 @@ final class MentionPickerWindow: NSPanel {
 }
 
 /// The picker's rows, drawn: a shape's symbol in its tint, its label with the matched characters
-/// in semibold (a placeholder label in italic, secondary), a lock after a read-only shape's, and
-/// its detail at the trailing end; a header's words small and secondary; an empty state secondary.
+/// in semibold, a lock after a read-only shape's, and its detail at the trailing end; a header's
+/// words small and secondary; an empty state secondary.
 /// The pointer over a shape's row highlights it, and a click picks it.
 @MainActor
 final class MentionPickerRowsView: NSView {
@@ -214,7 +214,7 @@ final class MentionPickerRowsView: NSView {
         detail.draw(with: CGRect(x: detailX, y: row.midY - detailHeight / 2, width: detailWidth, height: detailHeight),
                     options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
 
-        let label = Self.label(candidate, color: appearance.isPlaceholder ? secondary : primary)
+        let label = Self.label(candidate, color: primary)
         let lock = candidate.isReadOnly
             ? NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil)?
                 .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: MentionStyle.pickerDetailSize, weight: .regular)
@@ -232,12 +232,10 @@ final class MentionPickerRowsView: NSView {
         }
     }
 
-    /// A shape's label, its matched characters in semibold; a placeholder's in italic.
+    /// A shape's label, its matched characters in semibold.
     static func label(_ candidate: MentionCandidate, color: NSColor) -> NSAttributedString {
         let text = candidate.appearance.label
-        var font = NSFont.systemFont(ofSize: MentionStyle.pickerLabelSize)
-        if candidate.appearance.isPlaceholder,
-           let italic = NSFont(descriptor: font.fontDescriptor.withSymbolicTraits(.italic), size: font.pointSize) { font = italic }
+        let font = NSFont.systemFont(ofSize: MentionStyle.pickerLabelSize)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
         let string = NSMutableAttributedString(string: text, attributes: [.font: font, .foregroundColor: color, .paragraphStyle: paragraph])

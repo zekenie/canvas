@@ -510,8 +510,7 @@ public final class CanvasEditor {
         guard !target.isRoot else { return true }
         guard let path = file.path(to: target) else { return false }
         return path.dropFirst().allSatisfy { board in
-            guard let owner = board.owner.flatMap(file.record) else { return false }
-            return !owner.isOpaque && registry.boardOwningKinds.contains(owner.kind)
+            board.owner.flatMap(file.record).map(registry.ownsShowableBoard) ?? false
         }
     }
 

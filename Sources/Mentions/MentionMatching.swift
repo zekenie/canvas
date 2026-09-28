@@ -33,8 +33,6 @@ public enum MentionRanking {
     /// The typo pass runs only when the other tiers found fewer than this many shapes.
     public static let typoPassBelow = 8
 
-    /// Taken off a placeholder label ("Untitled Task").
-    public static let placeholderPenalty = 50
     /// Added for a recent pick: this for the latest, less for each pick back.
     public static let recentBonus = 100
     /// Added for nearness to the text's shape: this at no distance, half at `nearnessScale` world

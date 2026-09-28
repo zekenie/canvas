@@ -129,6 +129,15 @@ private struct Pocketed {
         h.editor.goBack()
         expectEqual(h.editor.board, .root)
         expectEqual(h.editor.selectedShapeIDs, [boards.p])
+
+        // Inside P, going into P is gone into already: nothing, not up to the root and back.
+        expect(h.enter(boards.p))
+        h.editor.selection = boards.b
+        let steps = h.editor.canGoBack
+        h.editor.goInto(boards.p)
+        expectEqual(h.editor.board, boards.pBoard)
+        expectEqual(h.editor.selectedShapeIDs, [boards.b], "the selection as it was")
+        expectEqual(h.editor.canGoBack, steps)
     },
     test("going into a shape that opens by editing edits it, selected; one that doesn't open is only gone to; none while a press runs") {
         let boards = PocketBoards()

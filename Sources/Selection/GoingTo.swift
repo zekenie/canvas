@@ -50,10 +50,11 @@ extension CanvasEditor {
     /// Goes into a shape, as following a link to a shape that's opened rather than looked at does (a
     /// mention of a subboard enters its board): goes to it (`goTo`), then opens it there (`open`),
     /// as one step back, to the board and selection it was followed from, whatever boards it went
-    /// through. A shape that doesn't open (`canOpen`) is only gone to. Does nothing mid-gesture, or
-    /// when the shape isn't on a board it can show.
+    /// through. A shape that doesn't open (`canOpen`) is only gone to. Does nothing mid-gesture,
+    /// when the shape isn't on a board it can show, or when its own board is the one shown (a
+    /// subboard's mention followed from inside it): it's gone into already.
     public func goInto(_ id: ShapeID) {
-        guard session == nil else { return }
+        guard session == nil, board != BoardID(owner: id) else { return }
         let go = { [self] in
             goTo([id])
             if canOpen(id) { open(id) }

@@ -164,6 +164,11 @@ public struct Registry {
 
     public func definition(for kind: ShapeKind) -> (any ShapeDefinition)? { definitions[kind] }
 
+    /// Whether a shape's board can be shown wherever the shape's own board can: it isn't kept
+    /// aside, and its kind owns boards (`BoardOwning`). What `canShow` asks of every owner on a
+    /// board's path, so what walks a file's boards from the root down asks it too.
+    public func ownsShowableBoard(_ shape: AnyShapeRecord) -> Bool { !shape.isOpaque && boardOwningKinds.contains(shape.kind) }
+
     /// Whether a plugin's rule says the shape can't change (`registrar.readOnlyShapes`). A view
     /// that has the shape asks this rather than the editor, so it doesn't read the document.
     public func isReadOnly(_ shape: AnyShapeRecord) -> Bool {

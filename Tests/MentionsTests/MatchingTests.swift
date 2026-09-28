@@ -64,14 +64,12 @@ private func plateFrame(_ i: Int) -> CGRect { CGRect(x: i * 150, y: 0, width: 12
     },
 
     test("a subsequence never outranks a prefix, whatever the adjustments") {
-        // Every tier's floor and ceiling, with the largest bonuses a subsequence could get and the
-        // penalty a prefix could.
+        // Every tier's floor and ceiling, with the largest bonuses a subsequence could get.
         let subsequenceBest = MentionRanking.subsequence + MentionRanking.recentBonus + MentionRanking.nearnessBonus
-        let prefixWorst = MentionRanking.prefix - MentionRanking.placeholderPenalty
-        expect(subsequenceBest < prefixWorst)
+        expect(subsequenceBest < MentionRanking.prefix)
         let h = try mentionHarness()
         let owner = h.editor.add(Plate(plateFrame(0)), titled: "Owner")
-        let prefix = h.add(Token(plateFrame(20)))                            // "Untitled Token": a placeholder, far away
+        let prefix = h.add(Token(plateFrame(20), caption: "Unto the hills"))  // far away
         let subsequence = h.add(Token(plateFrame(1), caption: "Under a nice tree"))  // right beside the owner
         let state = h.editor.mentionState
         state.didPick(subsequence)
@@ -118,6 +116,22 @@ private func plateFrame(_ i: Int) -> CGRect { CGRect(x: i * 150, y: 0, width: 12
         expectEqual(candidates.recent, [])
         expectEqual(candidates.nearby, [])
         expectEqual(candidates.matches.first?.appearance.label, "Item 9", "shorter labels first, then the front-most")
+    },
+
+    test("a shape its kind gives no name, called by the \"Untitled …\" placeholder, isn't listed until it has one; a mention of it stays live") {
+        let h = try mentionHarness()
+        let owner = h.editor.add(Plate(plateFrame(0)), titled: "Owner")
+        let token = h.add(Token(plateFrame(1)))                              // "Untitled Token"
+        let state = h.editor.mentionState
+        expectEqual(state.resolve(token).appearance?.isPlaceholder, true)
+        expectEqual(state.candidates(matching: "untitled", in: AnyMentionable.self, for: owner).matches.map(\.id), [])
+        expect(!state.candidates(matching: "", in: AnyMentionable.self, for: owner).all.map(\.id).contains(token), "nor nearby")
+        h.editor.transact { $0.update(token, as: Token.self) { $0.props.caption = "Milk" } }
+        expectEqual(state.candidates(matching: "milk", in: AnyMentionable.self, for: owner).matches.map(\.id), [token])
+        expect(state.candidates(matching: "", in: AnyMentionable.self, for: owner).nearby.map(\.id).contains(token))
+        h.editor.transact { $0.update(token, as: Token.self) { $0.props.caption = "" } }
+        expectEqual(state.candidates(matching: "milk", in: AnyMentionable.self, for: owner).matches.map(\.id), [], "out again once it has none")
+        expect(state.resolve(token).isLive, "a mention of it shows it, by the placeholder")
     },
 
     test("never the text's own shape, a shape kept aside, or one that can't be mentioned") {
