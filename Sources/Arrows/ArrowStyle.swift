@@ -17,10 +17,8 @@ enum ArrowStyle {
     /// The bend handle hides when it's this close to an end handle, in view points.
     static let middleHandleMinDistance: CGFloat = 24
 
-    /// Hovering one shape this long with the arrow tool makes the next arrow start precisely there.
-    static let hoverPreciseDelay: Duration = .milliseconds(600)
-    /// Holding still this long after pressing, or while dragging an arrow end over a shape, binds
-    /// precisely to the pointer instead of the shape's center.
+    /// Holding still this long while dragging an arrow end over a shape binds precisely to the
+    /// pointer instead of the shape's center.
     static let pressPreciseDelay: Duration = .milliseconds(320)
     /// Entering a shape slower than this (view points per millisecond) binds precisely right away.
     static let slowPointerSpeed: CGFloat = 0.5

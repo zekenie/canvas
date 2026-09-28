@@ -416,7 +416,7 @@ A channel is what kind of connection an edge is. Each kind has ports on some cha
 `build/canvas kinds` lists each kind's channels by side, under `edges`. How an edge's channel is chosen:
 
 - **`channel: <id>`**: that channel. The start's kind must have ports on it, and the end's kind must accept it. Otherwise it's `no_channel`, and the message says what each end takes, side by side. A word that isn't a channel is `invalid_value`, and the hint lists the channels.
-- **`channel: none`**: a plain arrow, on no channel, between any two shapes, from and to any sides, as the arrow tool draws them.
+- **`channel: none`**: a plain arrow, on no channel, between any two shapes, from and to any sides.
 - **Unwritten**: the first of the start's channels (on the `from:` side, if named) that the end accepts (on the `to:` side, if named). If there's none, and neither kind has ports on any channel, it's a plain arrow, from and to any sides named. If there's none and either kind does have ports, it's `no_channel`: `"Ingest" and "Monday" share no channel: a sticky-note connects on note-link, a subboard has no ports`, with the hint `channel: none draws a plain arrow between them anyway`.
 - **A side a kind has no port on** is refused. With `channel:` written, it's `invalid_value`: `a sticky-note has note-link ports on its left, right and bottom`. With the channel unwritten, no channel fits that side, so it's `no_channel`.
 - **An edge from a shape to itself** on a channel is refused. With `channel: none` it's a short straight arrow inside the shape (from its middle, or between the sides named), not a loop around it. To show a loop, draw it through a second shape.
@@ -510,7 +510,7 @@ sticky-note "Nightly schedule" title: "Nightly run"
 
 ### Deleting
 
-`delete "X"` removes the shape and every connection with an end on it, each reported as its own `deleted` row: one to another shape with `from` and `to`, and one whose other end is free (as the arrow tool can leave one) with neither. `delete edge "A" -> "B"` removes the connections from A to B, and `delete edge "A" <-> "B"` removes them either way round.
+`delete "X"` removes the shape and every connection with an end on it, each reported as its own `deleted` row: one to another shape with `from` and `to`, and one whose other end is free (re-aimed off every shape) with neither. `delete edge "A" -> "B"` removes the connections from A to B, and `delete edge "A" <-> "B"` removes them either way round.
 
 - An unknown title is `unknown_title`. `delete edge` with nothing to delete is `nothing_to_delete`. A locked shape or connection is `read_only`.
 - A shape that holds a board (a subboard) takes its board with it, and every board under that, with everything on them. That isn't refused: a warning says how much went (`"Payments" held a board, and 1 more under it: the 4 shapes on them are deleted with it`), and Undo brings it all back. One whose board, or a board under it, holds a locked shape isn't deleted (`read_only`: `"Payments" holds a read-only shape (locked, say) on its board, so it can't be deleted`).

@@ -62,8 +62,8 @@ extension Channel {
 }
 
 /// What a connection drawn on a channel knows: which it is. An added property the connector's kind
-/// opts into (`registrar.connects`), with no default, so a connection drawn any other way (an arrow
-/// from the arrow tool) has none, and binds wherever it's let to.
+/// opts into (`registrar.connects`), with no default, so a connection made any other way (`canvas
+/// draw`'s `channel: none`) has none, and binds wherever it's let to.
 public enum ChannelProperty {}
 
 extension ChannelProperty: ShapeProperty {

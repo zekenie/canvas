@@ -14,6 +14,13 @@ enum CorePoints {
         static func uniqueKeys(of c: ToolRegistration, for _: ShapeTarget) -> [AnyHashable] { [ToolKey(id: c.descriptor.id)] }
     }
 
+    /// What a kind is called, and its symbol (`ShapeRegistrar.label`). One per kind.
+    enum KindLabels: KeyedExtensionPoint {
+        typealias Contribution = KindLabel
+        static var owner: PluginID { .core }
+        static func uniqueKeys(of _: KindLabel, for target: ShapeTarget) -> [AnyHashable] { [KindLabelKey(target: target)] }
+    }
+
     enum Services: KeyedExtensionPoint {
         typealias Contribution = ServiceRegistration
         static var owner: PluginID { .core }
@@ -93,6 +100,11 @@ extension CorePoints.DefaultTool: KeyedExtensionPoint {
 struct ToolKey: Hashable, CustomStringConvertible {
     let id: ToolID
     var description: String { "tool \(id)" }
+}
+
+struct KindLabelKey: Hashable, CustomStringConvertible {
+    let target: ShapeTarget
+    var description: String { "the label of \(target)" }
 }
 
 struct ShapeRegistration {

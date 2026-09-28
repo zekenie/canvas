@@ -45,8 +45,9 @@ import TestKit
 }
 
 /// The POC's welcome board text (804db97), verbatim. The shipped board's third note says how the
-/// hand tool and the marquee work instead, and its fourth no longer places an ellipse; the goldens
-/// come only from the POC, so the welcome renders use these.
+/// hand tool and the marquee work instead, and its fourth and fifth how notes are linked from their
+/// ports (no arrow tool, and no ellipse); the goldens come only from the POC, so the welcome renders
+/// use these.
 let pocWelcomeTexts = [
     "Double-click empty space to add a note. Drag a note to move it.",
     "Double-click a note (or select it and press Return) to edit it.",

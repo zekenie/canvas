@@ -70,11 +70,10 @@ extension CanvasEditor {
     /// (`ShapeContext.canBindArrow(to:)`, of the editor's document).
     public func canBindArrow(to id: ShapeID) -> Bool { shapeContext.canBindArrow(to: id) }
 
-    /// An arrow drawn from `shape` for another plugin's gesture (a port's drag), as the arrow tool
-    /// draws one once past the drag threshold: its start bound to the shape, aiming at its center
-    /// (imprecise), and its end at `origin` (world units), then following the pointer and binding by
-    /// tldraw's rules, as the tool's does, but only to shapes `canBind` accepts, looking through the
-    /// rest. Released bound, `complete` finishes it (in the transaction that does, with the shape
+    /// An arrow drawn from `shape` for another plugin's gesture (a port's drag): its start bound to
+    /// the shape, aiming at its center (imprecise), and its end at `origin` (world units), then
+    /// following the pointer and binding by tldraw's rules, as a re-aimed end does, but only to
+    /// shapes `canBind` accepts, looking through the rest. Released bound, `complete` finishes it (in the transaction that does, with the shape
     /// its end is bound to); released free, or on Escape, it's deleted, so nothing is drawn. The
     /// selection and the tool are left alone. Returns the session that drags it, for the caller to
     /// hand the drag to; nil if an arrow can't bind to `shape`.
@@ -85,7 +84,7 @@ extension CanvasEditor {
         let start = ArrowBinding(shapeID: shape, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)
         let arrow = ShapeRecord(Arrow(start: .bound(start), end: .free(origin)))
         transact("Add Arrow") { $0.insert(arrow) }
-        return ArrowHandleDragSession(arrowID: arrow.id, handle: .terminal(.end), isCreating: true, handleOffset: .zero, isPrecise: false,
+        return ArrowHandleDragSession(arrowID: arrow.id, handle: .terminal(.end), handleOffset: .zero, isPrecise: false,
                                       targeting: targeting, connecting: ArrowConnecting(canBind: canBind, complete: complete))
     }
 }

@@ -79,8 +79,8 @@ struct PortBoard {
         if release { h.release() }
     }
 
-    /// An arrow from A's center to B's, both ends imprecise, on `channel`; nil, on none, as the
-    /// arrow tool draws them.
+    /// An arrow from A's center to B's, both ends imprecise, on `channel`; nil, on none, as `canvas
+    /// draw`'s `channel: none` makes them.
     @discardableResult
     func addArrow(channel: ChannelID?) -> ShapeID {
         var record = ShapeRecord(Arrow(start: .bound(ArrowBinding(shapeID: a, normalizedAnchor: center, isPrecise: false, isExact: false)),

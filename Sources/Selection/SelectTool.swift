@@ -34,7 +34,7 @@ extension SelectTool: Tool {
 
     func pointerDown(_ pointer: Pointer, in editor: CanvasEditor) {
         // A Control-click is the Mac's secondary click: whatever menu it has, AppKit already showed.
-        // It doesn't press. (Tools that read ⌃ as a modifier, like the arrow tool's, still get it.)
+        // It doesn't press. (Other tools still get it, as a press with ⌃ held.)
         guard !pointer.isControlClick else { return }
         // Whatever this press does to the selection, through the end of its drag, is one step back.
         editor.selectionState?.pressBegan()

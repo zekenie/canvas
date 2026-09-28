@@ -8,7 +8,8 @@ import Selection
 import TestKit
 
 // How a connection's ends bind as it's drawn from a port: the start at its shape's center, always;
-// the end by tldraw's rules, as the arrow tool's (ArrowToolTests), only onto shapes that take it.
+// the end by tldraw's rules, as a re-aimed end's (ArrowsTests' BindingTests), only onto shapes that
+// take it.
 @MainActor let connectionBindingTests = Suite("Connection binding", [
     test("the start binds the port's shape at its center, imprecisely; arriving fast binds the end to the target's center") {
         let board = try PortBoard()
@@ -119,7 +120,7 @@ import TestKit
         board.h.release()                                                 // 16 ms later
         expectEqual(board.arrows.first?.props.end.binding?.isExact, true)
     },
-    test("letting go of ⌘ over the target binds the end 150 ms later, as the arrow tool's does") {
+    test("letting go of ⌘ over the target binds the end 150 ms later, as a re-aimed end's does") {
         let board = try PortBoard()
         board.pressDot()
         board.h.hold(.command)

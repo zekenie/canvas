@@ -790,7 +790,7 @@ struct Drawing {
         }
     }
 
-    /// The connections that don't join two shapes (an end left free, as the arrow tool leaves one),
+    /// The connections that don't join two shapes (an end left free, re-aimed off every shape),
     /// by each shape they're bound to (`ShapeReferencing`), in document order.
     static func looseConnections(in context: ShapeContext, kind: ShapeKind, edging: DrawEdging) -> [ShapeID: [AnyShapeRecord]] {
         var found: [ShapeID: [AnyShapeRecord]] = [:]

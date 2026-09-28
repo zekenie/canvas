@@ -30,8 +30,7 @@ public struct PortEdgesPlugin: CanvasPlugin {
 /// - `channel: <id>`: that channel, one some plugin declares; the start's kind has a dot on it (on
 ///   `from:`'s side, if named), and the end's kind takes it as a target (on `to:`'s side, if
 ///   named). A named side without such a port is `invalid_value`; a kind without one, `no_channel`.
-/// - `channel: none`: a plain connection, on no channel, from and to any side (as the arrow tool
-///   draws one).
+/// - `channel: none`: a plain connection, on no channel, from and to any side.
 /// - Unwritten: the first of the start's dot channels (on `from:`'s side, if named; else all its
 ///   dots', in the port table's order) that the end takes as a target (on `to:`'s side, if named).
 ///   With none, a plain connection if neither kind has ports on anything, else `no_channel`.

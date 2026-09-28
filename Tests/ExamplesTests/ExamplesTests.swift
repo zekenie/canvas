@@ -83,12 +83,13 @@ import Titles
     test("Polylines: arrows don't bind to a line, since it's open") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), PolylinesPlugin()])
         h.add(Polyline(points: [CGPoint(x: 100, y: 100), CGPoint(x: 300, y: 100)]))
-        expect(h.key("a"))
-        h.press(at: CGPoint(x: 200, y: 300))
+        let id = h.add(Arrow(start: .free(CGPoint(x: 200, y: 500)), end: .free(CGPoint(x: 200, y: 300))))
+        h.editor.selection = id
+        h.press(at: CGPoint(x: 200, y: 300))                            // its end's handle
         h.drag(to: CGPoint(x: 200, y: 101))
         h.release()
-        let arrow = try require(h.editor.document.shapes.last?.typed(as: Arrow.self))
-        expect(arrow.props.end.binding == nil, "the end stays free")
+        let arrow = try require(h.editor.document[id]?.typed(as: Arrow.self))
+        expectEqual(arrow.props.end, .free(CGPoint(x: 200, y: 101)), "the end stays free")
     },
     test("Eraser: dragging across shapes deletes them, and an arrow lets go of what was erased") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), RectanglesPlugin(), EraserPlugin()])

@@ -10,14 +10,11 @@ import Geometry
 /// aims at the exact spot under the pointer ("precise"). Holding ⌥ runs the arrow all the way to
 /// that spot ("exact"), and holding ⌘ keeps it from binding at all.
 ///
-/// One per editor. The precise timer is a single slot shared by the hover (600 ms), press (320 ms)
-/// and drag (320 ms) timers, so a press replaces the hover timer, as in the POC.
+/// One per editor, with one precise timer (320 ms): holding still over a shape while dragging an
+/// end, as in the POC.
 @MainActor
 final class ArrowTargeting {
     unowned let editor: CanvasEditor
-    /// Set by dwelling with the arrow tool (hovering one shape, or holding still after pressing).
-    /// Makes a new arrow's start bind precisely where it was pressed.
-    var arrowToolIsPrecise = false
     private var preciseTimer: ScheduledTask?
     /// Every plugin's rules for what an end may bind to (`ArrowBindingRules`), found once.
     let rules: [ArrowBindingRules.Contribution]
@@ -64,29 +61,10 @@ final class ArrowTargeting {
         }
     }
 
-    /// Before pressing, the arrow tool outlines the shape it would start from. Hovering one shape
-    /// long enough means the user is aiming, so the arrow will start precisely where they press.
-    func updateArrowToolTarget(at point: CGPoint, modifiers: Modifiers) {
-        let target = arrowTarget(at: point, modifiers: modifiers)?.id
-        guard target != editor.hintedShapeID else { return }
-        editor.hintedShapeID = target
-        arrowToolIsPrecise = false
-        if target != nil {
-            startPreciseTimer(after: ArrowStyle.hoverPreciseDelay) { $0.arrowToolIsPrecise = true }
-        } else {
-            cancelPreciseTimer()
-        }
-    }
-
-    func resetArrowToolTargeting() {
+    /// Stops the precise timer and lets go of the shape an end was aiming at.
+    func resetTargeting() {
         cancelPreciseTimer()
-        arrowToolIsPrecise = false
         editor.hintedShapeID = nil
-    }
-
-    func restartArrowToolTargeting() {
-        resetArrowToolTargeting()
-        updateArrowToolTarget(at: editor.pointerWorldLocation, modifiers: editor.effectiveModifiers)
     }
 
     /// Binds one end of an arrow to the shape at `point`, or frees it if there's none. This is
@@ -156,13 +134,13 @@ final class ArrowTargeting {
 extension ArrowTargeting: EditorService {
     /// Every tool switch resets targeting, even mid-drag (the POC's `tool.didSet`).
     func toolDidChange(from old: ToolID, to new: ToolID, in editor: CanvasEditor) {
-        resetArrowToolTargeting()
+        resetTargeting()
     }
 
     /// Showing another board resets targeting too, whatever the tool: nothing aimed at on this
     /// board is there on the next.
     func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor) {
-        resetArrowToolTargeting()
+        resetTargeting()
     }
 
     /// Nothing kept per shape: `boardWillChange` reset it all.

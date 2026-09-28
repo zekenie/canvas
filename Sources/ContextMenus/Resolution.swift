@@ -22,8 +22,8 @@ final class ContextMenuState {
     /// through, and what's drawn for a shape outside it is the shape); otherwise the canvas, whose
     /// menu is only its own items. With a menu to show, editing ends and a shape that wasn't
     /// selected becomes the selection, as in Keynote and tldraw. Without one (nothing applies),
-    /// nothing changes. A Control-click counts only in the select tool: other tools read ⌃ as a
-    /// modifier (the arrow tool's binds nothing), so it's a press there.
+    /// nothing changes. A Control-click counts only in the select tool: other tools get it as a
+    /// press with ⌃ held.
     func menu(for pointer: Pointer) -> NSMenu? {
         if pointer.isControlClick, editor.currentToolID != .select { return nil }
         let hit = editor.selectableShape(at: pointer.world)

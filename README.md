@@ -83,11 +83,9 @@ check before running it again). To run it as just `canvas`, put the link on your
 | Name a note or a rectangle | Select it and click its title in the detail panel's header; Return or Escape goes back to the canvas |
 | Delete shapes or arrows | Select them and press Delete |
 | Cut, copy and paste shapes | ⌘X, ⌘C and ⌘V (Edit menu, or right-click a shape; right-click empty space to paste). A paste lands where the originals were if they're in view, else in the middle of the view; arrows copied with their shapes stay attached to the copies |
-| Arrow tool | A (V or Escape to go back to select) |
-| Draw an arrow | Drag from one shape to another with the arrow tool. Arriving quickly aims at a shape's center; arriving slowly, or pausing inside the shape, aims at that exact spot |
-| Link a note to a note, or a schema card to a schema card | With the select tool, point at one: dots show just outside its sides (a note has none on top; zoomed out below 25%, none show). Drag from a dot to another of its kind: those it could link to are outlined faintly as you drag, and released anywhere else, nothing is drawn |
-| Aim into a shape | Hold ⌥ while drawing or dragging an end: the arrow runs all the way to the spot |
-| Don't attach | Hold ⌘ while drawing or dragging an end |
+| Link a note to a note, or a schema card to a schema card | With the select tool, point at one: dots show just outside its sides (a note has none on top; zoomed out below 25%, none show). Drag from a dot to another of its kind: those it could link to are outlined faintly as you drag, and released anywhere else, nothing is drawn. The link is an arrow; there's no arrow tool. Arriving quickly aims at the shape's center; arriving slowly, or pausing inside the shape, aims at that exact spot |
+| Aim into a shape | Hold ⌥ while linking or dragging an end: the arrow runs all the way to the spot |
+| Don't attach | Hold ⌘ while dragging an end |
 | Snap angle | Hold ⇧ while dragging an end (15° steps) |
 | Re-aim an end | Select the arrow and drag its end handle |
 | Bend | Select the arrow and drag its middle handle |

@@ -21,7 +21,7 @@ private func type(_ channel: ChannelID) -> EdgeTypeID { EdgeTypeID(rawValue: cha
         expectEqual(types.plugin(declaring: ArrowEdge.id), .arrowPorts)
     },
 
-    test("an arrow drawn from a port is an edge of the channel it's drawn on; the arrow tool's, of the family; a free end, none") {
+    test("an arrow drawn from a port is an edge of the channel it's drawn on; one on none, of the family; a free end, none") {
         let board = try PortBoard()
         let topology = try require(board.h.editor.topology)
         board.connect(to: CGPoint(x: 560, y: 180))

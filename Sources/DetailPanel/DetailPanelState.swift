@@ -18,8 +18,8 @@ public struct DetailLayout {
     let sectionsByTab: [DetailTabID: [ResolvedSection]]
     let statusesByTab: [DetailTabID: [DetailStatus]]
 
-    /// The header when it's a `DetailHeader` (the kind's own, or the tool's label a kind without
-    /// one gets), as shown: without a symbol of its own, with its kind's. Nil for a header of
+    /// The header when it's a `DetailHeader` (the kind's own, or the kind's label a kind without
+    /// one gets, `registry.label(of:)`), as shown: without a symbol of its own, with its kind's. Nil for a header of
     /// another type, which `header(as:)` reads.
     public var header: DetailHeader? {
         guard var header = header(as: DetailHeader.self) else { return nil }
@@ -92,11 +92,10 @@ public final class DetailPanelState {
         var firstSeen: [DetailTabID] = []
         for tab in shown.map(\.key.tab) + statuses.map(\.tab) where !firstSeen.contains(tab) { firstSeen.append(tab) }
         let tabs = firstSeen.enumerated().sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }.map(\.element)
-        // The kind's header, else the label of the tool that places the kind, else the kind.
-        let tool = placingTool(of: record.kind)
-        let name = tool?.label ?? record.kind.rawValue
-        let header = all.headers.lazy.compactMap { [editor] in $0(record, editor) }.first ?? ResolvedHeader(DetailHeader(name))
-        return DetailLayout(resolvedHeader: header, kindName: name, kindSymbol: tool?.systemImage, tabs: tabs,
+        // The kind's header, else the kind's label (`registry.label(of:)`).
+        let label = editor.registry.label(of: record.kind)
+        let header = all.headers.lazy.compactMap { [editor] in $0(record, editor) }.first ?? ResolvedHeader(DetailHeader(label.name))
+        return DetailLayout(resolvedHeader: header, kindName: label.name, kindSymbol: label.systemImage, tabs: tabs,
                             sectionsByTab: Dictionary(grouping: shown, by: \.key.tab),
                             statusesByTab: Dictionary(uniqueKeysWithValues: statuses.map { ($0.tab, $0.lines) }))
     }
@@ -132,19 +131,15 @@ public final class DetailPanelState {
     }
 
     /// The header shown when several shapes are selected: "N Shapes", with each kind's name once,
-    /// in selection order ("Sticky Note, Arrow"), and stacked squares. A kind's name is the label
-    /// of the tool that places it, else the kind.
+    /// in selection order ("Note, Arrow"), and stacked squares. A kind's name is its label
+    /// (`registry.label(of:)`).
     public func selectionSummary(of records: [AnyShapeRecord]) -> DetailHeader {
         var names: [String] = []
         for record in records {
-            let name = placingTool(of: record.kind)?.label ?? record.kind.rawValue
+            let name = editor.registry.label(of: record.kind).name
             if !names.contains(name) { names.append(name) }
         }
         return DetailHeader("\(records.count) Shapes", subtitle: names.joined(separator: ", "), systemImage: "square.on.square")
-    }
-
-    private func placingTool(of kind: ShapeKind) -> ToolDescriptor? {
-        editor.registry.tools.first { $0.id == ToolID(placing: kind) }
     }
 
     /// The footer's lines: the kind's contributions, then every kind's, each in plugin order. A

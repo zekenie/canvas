@@ -52,6 +52,12 @@ import Validation
                                   windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clicks, pressure: 1)!
     }
 
+    /// The pointer moved to `to`, no button down.
+    func move(to: CGPoint) {
+        window.makeFirstResponder(canvas)
+        canvas.mouseMoved(with: event(.mouseMoved, at: to))
+    }
+
     /// A press at `from`, dragged to `to` in a few moves, released there.
     func drag(from: CGPoint, to: CGPoint) {
         window.makeFirstResponder(canvas)
@@ -428,9 +434,11 @@ let welcomeNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x:
             b.drag(from: CGPoint(x: 800, y: 520), to: CGPoint(x: 1080, y: 520))
             b.window.press("v")
         }
-        try step("draw an arrow") {
-            b.window.press("a")
-            b.drag(from: CGPoint(x: 700, y: 760), to: welcomeNotes[3])
+        try step("connect two notes") {
+            let leftDot = CGPoint(x: 588, y: 760)                           // the placed note's
+            b.move(to: CGPoint(x: 700, y: 760))
+            b.move(to: leftDot)
+            b.drag(from: leftDot, to: welcomeNotes[3])
         }
         try step("delete hidden shapes") { b.board.deleteHiddenShapes() }
         expectEqual(names, ["Move", "Add Note", "Change Note", "Lock", "Paste", "Delete", "Bring to Front", "Erase", "Add Arrow",

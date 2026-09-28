@@ -2,6 +2,7 @@ import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
+import Geometry
 import Keyboard
 import Selection
 import TableOfContents
@@ -18,12 +19,15 @@ struct Board {
     let a: ShapeID
     let b: ShapeID
     let arrow: ShapeID?
+    /// Where B is.
+    let second: CGRect
 
     /// Two boxes, optionally with an arrow between their centers.
     init(arrow bend: CGFloat? = nil, second: CGRect = boxB) throws {
         h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
         a = h.add(Box(boxA))
         b = h.add(Box(second))
+        self.second = second
         if let bend {
             let arrow = Arrow(start: .bound(ArrowBinding(shapeID: a, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)),
                               end: .bound(ArrowBinding(shapeID: b, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)),
@@ -37,11 +41,19 @@ struct Board {
     var arrows: [Arrow] { h.editor.document.shapes.compactMap { $0.typed(as: Arrow.self)?.props } }
     var arrowIDs: [ShapeID] { h.editor.document.shapes.filter { $0.kind == Arrow.kind }.map(\.id) }
 
-    /// Presses at `from` with the arrow tool and drags to `to` at `speed`.
-    func drawArrow(from: CGPoint, to: CGPoint, speed: CGFloat = fast, release: Bool = true) {
-        h.key("a")
-        h.move(to: from)
+    /// Selects the arrow and presses its end's handle, where the end is bound: B's center.
+    func pressEnd() {
+        h.editor.selection = arrow
+        h.move(to: h.view(second.center))
         h.press()
+    }
+
+    /// Re-aims the arrow's end, the drag a port's connection is drawn with too: presses the end's
+    /// handle (`pressEnd`), drags it off B at `fast` to `via`, empty canvas, where it lets go, then
+    /// on to `to` at `speed`. Points are the view's.
+    func reaimEnd(via: CGPoint = CGPoint(x: 400, y: 120), to: CGPoint, speed: CGFloat = fast, release: Bool = true) {
+        pressEnd()
+        h.drag(to: via, speed: fast)
         h.drag(to: to, speed: speed)
         if release { h.release() }
     }

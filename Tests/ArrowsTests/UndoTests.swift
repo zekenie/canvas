@@ -12,43 +12,25 @@ extension Board {
 }
 
 @MainActor let arrowUndoTests = Suite("Arrows and undo", [
-    test("drawing a bound arrow, a precise timer firing mid-drag, is one step; undone it's gone, redone it's the same record") {
-        let board = try Board()
+    test("re-aiming an end, a precise timer firing mid-drag, is one step; undone it's as it was, redone it's the same record") {
+        let board = try Board(arrow: 0)
+        let id = try require(board.arrow)
         board.forget()
-        board.drawArrow(from: CGPoint(x: 180, y: 180), to: CGPoint(x: 540, y: 170), speed: slow, release: false)
+        let before = try require(board.h.editor.document[id])
+        board.reaimEnd(via: CGPoint(x: 400, y: 170), to: CGPoint(x: 540, y: 170), speed: slow, release: false)
         board.h.wait(1000)                                          // the end, dwelling, turns precise
         board.h.drag(to: CGPoint(x: 541, y: 171))
         board.h.release()
-        let id = try require(board.arrowIDs.first)
         let drawn = try require(board.h.editor.document[id])
         expectEqual(drawn.typed(as: Arrow.self)?.props.end.binding?.shapeID, board.b)
-        expectEqual(board.h.editor.undoHistory.undoName, "Add Arrow")
+        expectEqual(drawn.typed(as: Arrow.self)?.props.end.binding?.isPrecise, true)
+        expectEqual(board.h.editor.undoHistory.undoName, "Move Arrow End")
         board.h.editor.undo()
-        expectEqual(board.arrowIDs, [])
-        expect(!board.h.editor.canUndo, "the whole drawing was one step")
+        expectEqual(board.h.editor.document[id], before)
+        expect(!board.h.editor.canUndo, "the whole drag was one step")
         board.h.editor.redo()
         expectEqual(board.h.editor.document[id], drawn)
         expectEqual(board.h.editor.selectedShapeIDs, [id])
-    },
-    test("Escape while drawing an arrow comes to nothing: no step") {
-        let board = try Board()
-        board.forget()
-        board.drawArrow(from: CGPoint(x: 180, y: 180), to: CGPoint(x: 540, y: 170), release: false)
-        board.h.escape()
-        board.h.release()
-        expectEqual(board.arrowIDs, [])
-        expect(!board.h.editor.canUndo)
-    },
-    test("a click with the arrow tool, without a drag, draws nothing and records nothing") {
-        let board = try Board()
-        board.forget()
-        board.h.key("a")
-        board.h.move(to: CGPoint(x: 180, y: 180))
-        board.h.click()
-        board.h.move(to: CGPoint(x: 800, y: 600))
-        board.h.click()
-        expectEqual(board.arrowIDs, [])
-        expect(!board.h.editor.canUndo)
     },
     test("dragging an end, bending and toggling an arrowhead are a step each, named for what they did") {
         let board = try Board(arrow: 0)

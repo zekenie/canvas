@@ -261,9 +261,21 @@ public struct Registry {
     public var defaultTool: ToolID { contributions(to: CorePoints.DefaultTool.self).first?.value ?? .hand }
 
     /// What the kind's tool places (the first tool's, if several place it): its size and its
-    /// props. Nil for a kind no tool places, one a tool draws instead (an arrow, a line).
+    /// props. Nil for a kind no tool places (an arrow), or one a tool draws instead (a line).
     public func placement(for kind: ShapeKind) -> Placement? {
         contributions(to: CorePoints.Tools.self).lazy.compactMap(\.value.placement).first { $0.kind == kind }
+    }
+
+    /// What a kind is called, and its symbol, wherever a shape is shown by its kind (a panel's
+    /// header, a row, a message): what it declares (`ShapeRegistrar.label`), else its placing
+    /// tool's label and symbol ("Note"), else its id, with no symbol.
+    public func label(of kind: ShapeKind) -> KindLabel {
+        if let declared = contributions(to: CorePoints.KindLabels.self, for: kind).first { return declared }
+        let placing = ToolID(placing: kind)
+        if let tool = contributions(to: CorePoints.Tools.self).first(where: { $0.value.descriptor.id == placing })?.value.descriptor {
+            return KindLabel(name: tool.label, systemImage: tool.systemImage)
+        }
+        return KindLabel(name: kind.rawValue, systemImage: nil)
     }
 
     var toolFactories: [(ToolID, @MainActor (CanvasEditor) -> any Tool)] {
@@ -357,6 +369,7 @@ struct RawContribution {
         case let declaration as PropertyDeclaration:
             "property \(declaration.codec.key)" + (declaration.codec.version > 0 ? " v\(declaration.codec.version)" : "")
         case let optIn as PropertyOptIn: "property \(optIn.key) → \(target == .any ? "every shape" : "\(target)")"
+        case let label as KindLabel: "label \(label.name) → \(target)"
         default:
             switch P.self {
             case is CorePoints.WillDelete.Type: "willDelete"

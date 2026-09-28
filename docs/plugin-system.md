@@ -476,8 +476,8 @@ is compiled by `./test.sh`, even before anything depends on it.
   `placement(size:props:)` centers a new shape on the press, brings back the default tool (Select,
   which selects the new shape), and lets it follow the pointer until release. `editingPlacement`
   opens it for editing instead, and exists only for `Editable` kinds, a restriction the compiler
-  checks. Any tool can also insert a shape itself, with `editor.transact { $0.insert(record) }`, as
-  the arrow tool does.
+  checks. Any tool or gesture can also insert a shape itself, with
+  `editor.transact { $0.insert(record) }`, as a port's drag does its arrow.
 
 What a real vertical adds on top ([StickyNotes](../Sources/StickyNotes/StickyNotes.swift)):
 
@@ -508,8 +508,7 @@ on the render's, pixel for pixel but anti-aliasing, as typed text does too (Stic
 A **tool** handles what happens before a press: hover, the press itself, and which cursor to
 show. It's a class with one instance per editor, so it can keep state. A **session** owns one
 press-drag-release. It lives on the editor, not the tool, so it outlives tool switches. A place tool
-switches back to the default tool and keeps dragging its new shape; the arrow tool drags first and
-switches after.
+switches back to the default tool and keeps dragging its new shape.
 
 [`Examples/Eraser`](../Examples/Eraser/Eraser.swift) is a tool with no shape:
 
@@ -627,7 +626,7 @@ The details:
   unclaimed, or nil, the click does nothing. AppKit offers a Control-click to the menu first; with
   none, it reaches the tool as a press with `pointer.isControlClick` set (exact, unlike `modifiers`,
   which count ⌃ let go in the last 150 ms). The select tool ignores it, since it's the secondary
-  click there; a tool that reads ⌃ as a modifier (the arrow tool binds nothing) takes the press.
+  click there; any other tool takes it as a press with ⌃ held (the hand tool pans).
   See [context menus](#context-menus).
 
 ## A shape without a frame
@@ -735,8 +734,8 @@ extension DrawingSession: Session {
 ```
 
 The tool stays current after a line, as the eraser does. Its id is the kind's,
-`ToolID(placing: Polyline.kind)`, as a place tool's is, so the detail panel names a selected line
-after the tool: "Line", with the tool's symbol.
+`ToolID(placing: Polyline.kind)`, as a place tool's is, so a line is called after the tool
+(`registry.label(of:)`): "Line", with the tool's symbol, in the detail panel's header and its row.
 
 [Arrows](../Sources/Arrows/ArrowDefinition.swift) is the full-size version: a kind without a frame
 that also has handles (`HandleProviding`), an exact marquee test (`BrushHitTesting`), a paint order
@@ -744,7 +743,17 @@ of its own (`PaintOrderAnchored`), and a translation that keeps its bindings. It
 plugins two things, and knows nothing of why ([ArrowConnecting.swift](../Sources/Arrows/ArrowConnecting.swift)):
 rules for what an arrow's end may bind to (`ArrowBindingRules`, tldraw's canBind), and an arrow
 drawn for a gesture of theirs (`editor.beginArrow`), which is how [ports](#the-connector-arrowports)
-draw theirs.
+draw theirs, the only way a person draws one. No tool places an arrow, so it says what its kind is
+called itself:
+
+```swift
+arrow.label("Arrow", systemImage: "arrow.up.right")
+```
+
+`registry.label(of: kind)` is what a kind is called, and its symbol, wherever a shape is shown by
+its kind (the detail panel's header, a row in the table of contents, “Arrow” can’t be mentioned.):
+what the kind declares (`ShapeRegistrar.label`, one per kind), else its placing tool's label and
+symbol ("Note"), else its id, with no symbol.
 
 ## A horizontal plugin
 
@@ -1598,8 +1607,8 @@ registrar.decorationHits { editor, point, include in editor.adornmentState?.shap
   press and the hover, so a clickable adornment (the lock) is clicked, and anything else drawn for
   a shape is the shape. A right-click asks no button, so on the lock it opens its shape's menu.
 - **Only what the select tool and the menu see.** The core's `editor.shape(at:)` is as it was, so
-  the marquee and ⌘A (which go by geometry), the eraser and the arrow tool (an arrow never binds
-  through a pill) go by the shapes alone, and the hand tool pans over it.
+  the marquee and ⌘A (which go by geometry), the eraser and an arrow's end (it never binds through
+  a pill) go by the shapes alone, and the hand tool pans over it.
 - **Keep it cheap**: the select tool asks it as the pointer moves. Adornments looks in a thin strip
   around the point, through `editor.paintOrder(in:)`.
 
@@ -1699,7 +1708,7 @@ What the shipped app's keys do:
 
 | Key | Does | Registered by |
 |---|---|---|
-| V, H, A, N, O, T, B, S, R, L, E | Switches to that tool | The tool's plugin; H by Keyboard, for the core's Hand |
+| V, H, N, B, S, R, L, E | Switches to that tool | The tool's plugin; H by Keyboard, for the core's Hand |
 | ⎋ (and ⌘.) | Cancels: the drag under way, else the tool's own Escape, else back to Select (`editor.cancel()`) | Keyboard |
 | ⌫ and ⌦ | Deletes the selection, as Edit › Delete does | Selection |
 | ↩ (and ⌤), ⌘↓ | Opens the only selected shape: edits it, or its kind's own way (`ShapeOpening`); ↩ and ⌤ take the key even when there's nothing to open, ⌘↓ passes then | Selection |
@@ -1983,7 +1992,7 @@ How it resolves, per shape:
 | Sections in a tab | The kind's own (from its vertical, a horizontal it opts into, or a bridge), in plugin order and builder order; then every kind's (every-box sections, and those over an added property on every shape that has it), in plugin order. |
 | Tabs | By `order`, then first appearance over the same sequence, then status lines'. A tab with no shown section (by `when` and `shownWhile`) and no status line is dropped. |
 | Status lines, the footer's and each tab's | The kind's, then every kind's, each in plugin order. |
-| Header | The kind's own; else the label and symbol of the tool that places the kind; else the kind's name. A header without a symbol takes the tool's. |
+| Header | The kind's own; else the kind's label and symbol (`registry.label(of:)`: what the kind declares, else its placing tool's, else its id). A header without a symbol takes the kind's. |
 
 `DetailPanelState` (`editor.detailPanel`) gathers each kind's contributions once, since the
 registry is frozen, and resolves the selected shape's layout (running `when` and the headers) as
@@ -2000,7 +2009,8 @@ gadget.details(header: { $gadget in DetailHeader(gadget.name, subtitle: gadget.m
 ```
 
 - **`DetailHeader`** is the stock header: a symbol, then a title on one line over a subtitle, as the
-  panel lays them out. A kind without a header of its own gets one with its tool's label.
+  panel lays them out. A kind without a header of its own gets one with its label
+  (`registry.label(of:)`).
 - **A header of the kind's own** builds on `DetailHeaderLabel(subtitle:systemImage:) { title }`,
   that layout with any view as its title, so it looks like every other header.
   `DetailHeaderField(text, placeholder:)` is the title as a field, for a header that renames its
@@ -2235,7 +2245,7 @@ A section's content closure gets a `ShapeBinding`. Take it as a `$` parameter, a
   schema card's `SchemaDescription`, above).
 - **Undo steps.** A write is named for its section, "Change" and the section's title ("Undo Change
   Description"); in the header, or a section without a title, "Change" and the kind's name ("Undo
-  Change Schema", the label of the tool that places it). Writes to one field of one shape, one after
+  Change Schema", its label). Writes to one field of one shape, one after
   another, are one step, however many keystrokes (a field typed into, a slider or a color
   dragged): a run under the key `[shape, key path]` (for the frame's too), or `[shape, property
   key]` for an added property's binding and `$x[P.self]`, until anything else happens: a write to
@@ -2604,7 +2614,7 @@ system's rows, selection, disclosure triangles and keyboard.
 │   ▤ Groceries                       │ a titled note: its title (Titles), not its text
 │   {} Customer                    2  │ a schema card: its name, and how many fields
 │   {} Untitled                     ● │   no name: the placeholder, dimmed; the dot, red: its error (ValidationContents)
-│   ▭ Rectangle                       │ a kind with no row: its tool's label and symbol
+│   ▭ Rectangle                       │ a kind with no row: its label and symbol
 │   ▭ Server room                     │   or its title, here RectangleTitles'
 │   ↗ Arrow                           │ an arrow that starts on nothing, at the top
 └─────────────────────────────────────┘
@@ -2622,7 +2632,7 @@ note.contentsRow(affected: MentionRows.affected) { note, context in
 
 - **The row is a view the kind builds**, usually a `ContentsLabel`: a title on one line (each run of
   whitespace folds into a space), a placeholder shown dimmed when the title is blank, an SF Symbol
-  (the placing tool's, unless the row gives one) with an optional color, and a badge of a few
+  (the kind's, unless the row gives one) with an optional color, and a badge of a few
   characters at the trailing end ("12"). The list owns everything around it: row
   height, indentation, disclosure triangles, selection, the header. Any view works, but
   `ContentsLabel` is what keeps rows from different plugins alike; use it unless a row really needs
@@ -2640,8 +2650,8 @@ note.contentsRow(affected: MentionRows.affected) { note, context in
   shapes do, collapsed under a disclosure triangle; a loop keeps the later shape at the top. Arrows
   nest under the shape they start from, as data-canvas's edges do under their start node. Once
   shapes can contain shapes, a shape's container will be the default.
-- **Without a row**, a kind is listed by the label and symbol of the tool that places it ("Arrow",
-  "Rectangle"), else by its kind, the fallback the detail panel's header uses. A kind can keep that
+- **Without a row**, a kind is listed by its label and symbol (`registry.label(of:)`: "Arrow",
+  which Arrows declares, "Rectangle", its tool's), the fallback the detail panel's header uses. A kind can keep that
   row and still say where it's listed and what it nests under, as Arrows does:
 
   ```swift
@@ -2666,7 +2676,7 @@ note.contentsRow(affected: MentionRows.affected) { note, context in
 | `getZoomConfig` | The shape's geometry bounds, with 100 points of margin, for every kind |
 | `onClick` | Return on a picked row opens its shape, as Return on the canvas does (Selection's `editor.open`); a double-click too, where the list stays on screen ([Opening a row](#whats-listed-and-selecting)) |
 | `getGroupChildren` | Not built yet |
-| The "other" row (type and id) | The placing tool's label and symbol |
+| The "other" row (type and id) | The kind's label and symbol (`registry.label(of:)`) |
 
 ### Rows read from more than their shape
 
@@ -3535,8 +3545,8 @@ already what a connection is in Topology's graph: its edge type.
 - **What a connection knows is its channel**: `ChannelProperty` (key `channel`), an [added
   property](#added-properties) Ports declares and the connector's kind opts into. It has no
   default, so only a connection drawn on a channel has one, from a port or by name
-  (`"added" : { "channel" : "note-link" }`), and an arrow drawn with the arrow tool, or by
-  `canvas draw` with `channel: none`, has none. In the arrow's schema it's a string of at least
+  (`"added" : { "channel" : "note-link" }`), and an arrow drawn by `canvas draw` with `channel:
+  none` has none. In the arrow's schema it's a string of at least
   one character, since the channels are whatever plugins declare; its fixture is
   `Fixtures/added/channel.v0.json`.
 
@@ -3678,23 +3688,26 @@ registrar.arrowBindingRule { query in
 ```
 
 - **A drag from a dot draws an arrow.** Its start is bound to the port's shape, aiming at its
-  center, and its end follows the pointer, binding by tldraw's rules as the arrow tool's does
+  center, and its end follows the pointer, binding by tldraw's rules as a re-aimed end does
   (arriving fast, it aims at a shape's center; arriving slowly, or after a 320 ms pause, at the
   spot; ⌥ runs all the way to it, ⌘ or ⌃ binds nothing, ⇧ snaps the angle), but only to a shape
   that takes one of the port's channels, looking through the rest to the shapes behind. Released
   on one, the arrow keeps the channel it's drawn on; released anywhere else, or on Escape, it's
-  deleted, and nothing is drawn. Its binding hints are the arrow tool's.
+  deleted, and nothing is drawn. Its binding hints are a re-aimed end's.
 - **A drawn arrow keeps to its channel** (the rule): re-aimed or moved, each end binds only to a
   shape that takes the channel at that end, the start as a source and the end as a target,
-  looking through the rest. An arrow without a channel (the arrow tool's), or with one no installed
-  plugin declares (a board from an app with another plugin), binds wherever an arrow can.
-- **It differs from tldraw** on three counts, as data-canvas's does: released free, the arrow is
-  deleted, where tldraw's keeps a free end; its start binds the port's shape at its center,
-  imprecise, with none of the arrow tool's hover and press timers; and the selection and the tool
-  are left as they were, where the arrow tool selects its arrow and goes back to Select.
+  looking through the rest. An arrow without a channel (`canvas draw`'s `channel: none`), or with
+  one no installed plugin declares (a board from an app with another plugin), binds wherever an arrow can.
+- **It differs from tldraw's arrow tool** on three counts, as data-canvas's does: released free,
+  the arrow is deleted, where tldraw's keeps a free end; its start binds the port's shape at its
+  center, imprecise, with none of tldraw's hover and press timers; and the selection and the tool
+  are left as they were, where tldraw selects its arrow and goes back to Select. The app had
+  tldraw's arrow tool (A) too, until ports became the way to connect; it's gone, and a person
+  draws arrows from ports alone, so kinds without ports (rectangles, subboards) are connected only
+  by `canvas draw`, on no channel.
 - **An arrow bound at both ends is an edge** ([Topology](#sources)): `connects` gives the
   connector's kind an edge source when it has `ends`, one edge from the shape it starts on to the
-  one it ends on, typed by its channel (`note-link`) or, drawn on none (the arrow tool's), by the
+  one it ends on, typed by its channel (`note-link`) or, drawn on none (`channel: none`), by the
   family, `ArrowEdge` (`arrow`). An arrow with a free end carries none; one on a channel nobody
   declares carries an edge of that type, kept as written, unless it's another edge type's id (a
   file whose arrow says `mention`): a connection is never an edge of a type that isn't a channel's,
@@ -3708,14 +3721,14 @@ What Arrows lends, it lends any plugin, and it knows no channel
 - **`ArrowBindingRules`** (`registrar.arrowBindingRule { query in ... }`, a list) is tldraw's
   canBind: an end binds only to a shape every rule allows, looking through the rest. A rule gets an
   `ArrowBindingQuery`: the arrow as it is (its props and added values), the end, a shape under the
-  end, and the registry. It's asked wherever an end binds: drawn, re-aimed (the precise timer and a
-  modifier's change included) or moved alone (`beginTranslation`'s probe), and only of the shapes
+  end, and the registry. It's asked wherever an end binds: drawn from a port, re-aimed (the precise
+  timer and a modifier's change included) or moved alone (`beginTranslation`'s probe), and only of the shapes
   the point hits, but as the pointer moves, so keep it cheap. With no rule nothing is filtered,
   and arrows behave as they did before.
 - **`shapes.canBindArrow(to:)`**, on any `ShapeContext` (and `editor.canBindArrow(to:)`, on the
   editor's), is whether an arrow can bind to a shape: it's there, it's closed, and it isn't an
   arrow. **`registry.arrowMayBind(arrow, end, to: shape)`** is whether the binding rules let an
-  end bind to a shape, the same check the tool's targeting and a lone arrow's translation make
+  end bind to a shape, the same check a dragged end's targeting and a lone arrow's translation make
   (`ArrowBindingQuery.isAllowed`), for an arrow made without a pointer.
 - **`editor.beginArrow(from:at:canBind:complete:)`** draws an arrow for another plugin's gesture:
   it inserts one, its start bound to the shape (imprecise) and its end at `origin`, and returns the
@@ -3723,7 +3736,7 @@ What Arrows lends, it lends any plugin, and it knows no channel
   shape). Released bound, `complete` gets the arrow's record and the shape its end is bound to, in
   the transaction that finishes it.
 - **`BindingHintsOverlay`** draws the hints of the arrow being dragged, else the selected arrow's,
-  so an arrow drawn from a port, which leaves the selection alone, hints as the tool's does.
+  so an arrow drawn from a port, which leaves the selection alone, hints as a re-aimed one does.
 
 ### Connecting without a drag
 
@@ -3732,7 +3745,7 @@ A connection can be asked for by name, as
 `registry.connection(request, existing:, in: shapes)`, which the connector's `make` answers. A
 `ConnectionRequest` says from which shape to which, aimed at which of their sides (none: where the
 connector aims by itself, an arrow at the shape's center), on which channel (none: a plain
-connection, as the arrow tool draws), and whether it has a head at its start too. Ports only
+connection), and whether it has a head at its start too. Ports only
 passes it on: the caller picks the channel, as a drag from a port would (`dotChannels`, `takes`),
 and asks `canConnect` of both ends first (`registry.canConnect(_:in:)`). What comes back:
 
@@ -3751,13 +3764,12 @@ connector's `ends`: nil for anything else, or one not bound at both ends.
 
 ArrowPorts' `make` (`ArrowConnections`) binds both ends: an end with no side named at its shape's
 center, imprecise, as a port's drag starts one, and a named side at its middle, precise but not
-exact, so the arrow stops at the outline with its head's gap, as an end the arrow tool binds slowly
-does. Where a named side faces away from the other shape, the arrow still leaves by the side facing
+exact, so the arrow stops at the outline with its head's gap, as an end dragged in slowly does. Where a named side faces away from the other shape, the arrow still leaves by the side facing
 it: an end is clipped where the line first crosses the outline, as tldraw's is. A changed arrow
 rebinds only the ends the request names a side for (or whose shape isn't the one it's bound to).
 A new one's channel is set first, so the binding rules, asked of both ends
 (`registry.arrowMayBind`), see the channel it's drawn on; both ends on one shape at one anchor
-would draw nothing, so one moves off it by 0.05, as the arrow tool moves an end. Its `ends` are
+would draw nothing, so one moves off it by 0.05, as a dragged end moves off the other. Its `ends` are
 the shapes its two bindings name. An arrow made this way is an arrow like any other: re-aimed,
 moved and kept to its channel as the rest are.
 
@@ -3810,7 +3822,7 @@ only when its shape does:
   and an untitled note's name is its first line, so if its mentions' names were in it, two notes
   that mention each other would each take in the other's name, and their own with it, every time
   either was written.
-- **Its symbol** is `symbol`, else its placing tool's; `detail` is said beside the name in the
+- **Its symbol** is `symbol`, else its kind's (`registry.label(of:)`); `detail` is said beside the name in the
   picker (the kind's name by default), and `tint` colors the symbol where the surface is neutral.
 - **Following one** (a double-click on its pill, Go to in the text's menu) is `following`:
   `.goesTo`, the default, goes to the shape (Selection's `goTo`: selects it and brings it into
@@ -4150,7 +4162,7 @@ the index is ([across boards](#mentions-across-boards)):
   shape's mention of itself doesn't count.
 - **`backlinks(of:)`**: a `MentionBacklink` per mentioner, in `mentioners(of:)`'s order (the board
   shown's in document order, then the other boards' in the file's), the shape itself left out.
-  Each is named as it's mentioned (`mentionAppearance`), else by its title, else its tool's label,
+  Each is named as it's mentioned (`mentionAppearance`), else by its title, else its kind's label,
   with its symbol, and carries a quote: about 60 characters (`MentionStyle.quoteLength`) of
   its text as plain text around its first mention of the shape, each mention "@" and the name it
   shows now, on one line, the mention whole and the rest shared half and half on each side (room
@@ -4556,9 +4568,9 @@ registrar.command(.enclosingBoard, shortcuts: [KeyChord(KeyChord.upArrow.key, .c
   (`showBoard(_:selecting:)`), so ⌘[ comes back down. Off the root only, never mid-press, and not
   while a shape is being edited, where ⌘↑ is the text's; on the root its key passes.
 - **Names.** `editor.name(of: board, root:)` is what a board is called: its owner's title (Titles;
-  a blank one is none), else its kind's placeholder, else the label of the tool that places its
-  kind, else the kind; `root` for the root (the file's name). `editor.symbol(of:)` is its kind's
-  symbol (`opensBoard`'s, else its tool's), nil for the root. Composition's table-of-contents
+  a blank one is none), else its kind's placeholder, else its kind's label (`registry.label(of:)`);
+  `root` for the root (the file's name). `editor.symbol(of:)` is its kind's symbol (`opensBoard`'s,
+  else its label's), nil for the root. Composition's table-of-contents
   heading and the path both read them.
 - **In the app** (Composition and the app's window): the table of contents' header names the
   board shown, with its symbol and a chevron up (`ShippedPlugins.contentsHeading(for:)`, the board
@@ -5094,8 +5106,7 @@ connection runs only from a shape with a dot on its channel to one that takes it
   `invalid_value`, listing the channels). The start's kind must have a dot on it, and the end's
   kind take it as a target (else `no_channel`, saying what each end has, by side); a side named
   without such a port is `invalid_value`.
-- **`channel: none`** is a plain connection, on no channel, from and to any side, as the arrow tool
-  draws.
+- **`channel: none`** is a plain connection, on no channel, from and to any side.
 - **Unwritten**, it's the first of the start's dot channels (on `from:`'s side, if named; else all
   its dots', in the table's order) that the end takes as a target (on `to:`'s side, if named).
   With none, it's plain if neither kind has ports on anything (rectangles, subboards), and
@@ -6211,7 +6222,7 @@ core                 tool hand · command undo · command redo
 keyboard             service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo
 selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection
 topology             service TopologyIndex
-arrows               shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay
+arrows               shape arrow · label Arrow → arrow · ContentsRows → arrow · service ArrowTargeting · overlay BindingHintsOverlay
 sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
 subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard
 schemas              service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link · edge type schema-link
@@ -6670,18 +6681,24 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   `renderBitmap`: the first frame asks, and with `editor.boardPreviews.frameBudget` lengthened, the
   next (after `h.wait(0)`, the frame it asked for) draws them. SubboardsTests hold the card's
   pixels the same way.
-- **Arrow behavior is pinned to the proof of concept.** CompositionTests replays 30 arrow
+- **Arrow behavior is pinned to the proof of concept.** CompositionTests replays 28 arrow
   scenarios through `CanvasView` with real events and compares where every arrow ends up, byte for
-  byte, with a transcript recorded from the POC. It also compares nine renders pixel for pixel:
-  the welcome board, hover and target outlines, binding hints mid-drag, handles and their halos,
-  zoomed out. The same replay code (`Tests/CompositionTests/Replay.swift`) drives the POC when
-  recording and the app when testing. The recordings come only from the POC:
+  byte, with a transcript recorded from the POC. It also compares eight renders pixel for pixel:
+  the welcome board, target outlines, binding hints mid-drag, handles and their halos, zoomed out.
+  The same replay code (`Tests/CompositionTests/Replay.swift`) drives the POC when recording and
+  the app when testing. The recordings come only from the POC:
   `scripts/record-poc-fixtures.sh` rebuilds them from commit 804db97, and re-running it should
   change nothing. Never regenerate them from the app to make a change pass. Scenarios are only
-  ever appended, and recorded from the POC. Where the app differs on purpose, the replay says so:
-  the "pan" scenario presses H and holds still 100 ms before the release (both do nothing in the
-  POC, whose select tool panned), and the welcome renders use the POC's note text
-  (`pocWelcomeTexts`), since the shipped board's third note describes the hand tool and the marquee.
+  ever appended, and recorded from the POC, with one exception: retiring the arrow tool took the
+  scenarios and renders that drew with it, and in their place came re-aims of an arrow's end the
+  same ways (the drag a port's connection is drawn with), appended and recorded. The POC's timers
+  run on real time, so keep an event well clear of the moment one fires (50 ms or more): a
+  scenario that releases 44 ms after the 320 ms timer is due records either way. Where the app
+  differs on purpose, the replay says so: the "pan, then re-aim" scenario presses H and holds still
+  100 ms before the release (both do nothing in the POC, whose select tool panned), and the welcome
+  renders use the POC's note text
+  (`pocWelcomeTexts`), since the shipped board's third note describes the hand tool and the
+  marquee, and its fourth and fifth linking notes from their ports.
   Where a scenario ends differently on purpose, `intendedDeviations` in TranscriptTests replaces
   the golden's line with the app's, and says why; the fixture stays as recorded. There's one: the
   POC brought a pressed shape to the front and the app doesn't, so "move shape" lists its two notes
@@ -6836,10 +6853,9 @@ Each of these adds to the design without changing what plugins are written again
   precise start at a side's midpoint means nothing without it, since tldraw's clipping starts an
   arrow where it crosses its shape's edge toward the other end, whichever side that is); a
   channel's title, and a legend of the channels; a line in an arrow's detail panel naming its
-  channel; rules that read connections (which Topology's index can answer: a schema's links, say);
-  and, once
-  ports draw every arrow a board needs, removing the arrow tool (the POC's transcript drives it
-  today).
+  channel; and rules that read connections (which Topology's index can answer: a schema's links,
+  say). Rectangles and subboards have no ports, so a person can't connect them (`canvas draw` still
+  can, on no channel).
 - **More of boards**: moving shapes into a subboard, or up out of one (Move to Subboard), keeping
   their ids as a cut and its paste do, in one step, with a check that no shape goes into its own
   board; arrows across boards (an end bound

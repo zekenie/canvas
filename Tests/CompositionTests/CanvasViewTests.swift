@@ -181,8 +181,8 @@ struct NotePill: Hashable, Sendable {
         expectEqual(editor.document[note]?.typed(as: StickyNote.self)?.props.text, "a")
         expectEqual(editor.currentToolID, .select)
         window.makeFirstResponder(canvas)
-        window.press("a")
-        expectEqual(editor.currentToolID, .arrow)
+        window.press("b")
+        expectEqual(editor.currentToolID, ToolID(placing: Subboard.kind))
     },
     test("CanvasFocus.take makes the canvas first responder again, after a panel's field took it") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
@@ -202,8 +202,8 @@ struct NotePill: Hashable, Sendable {
         expect(window.firstResponder is NSTextView, "the field is editing")
         focus.take()
         expect(window.firstResponder === canvas)
-        window.press("a")
-        expectEqual(editor.currentToolID, .arrow)
+        window.press("b")
+        expectEqual(editor.currentToolID, ToolID(placing: Subboard.kind))
         expectEqual(field.stringValue, "")
     },
     test("⌘A, Return, Delete and Escape typed on the canvas are Keyboard's shortcuts; Edit › Select All and Edit › Delete run the same commands") {
@@ -414,18 +414,18 @@ struct NotePill: Hashable, Sendable {
                                                context: nil, characters: "m", charactersIgnoringModifiers: "m", isARepeat: false, keyCode: 46))
         expect(canvas.menu(for: key) == nil)
     },
-    test("in the arrow tool, a Control-press is a press with ⌃: no menu, and the arrow it draws binds nothing") {
+    test("in the hand tool, a Control-press is a press with ⌃: no menu, and its drag pans") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let (window, canvas) = windowed(editor)
         editor.add(Subboard(frame: CGRect(x: 400, y: 40, width: 240, height: 160)), title: "Ship")
-        window.press("a")
+        window.press("h")
         let down = window.mouse(.leftMouseDown, at: CGPoint(x: 520, y: 140), modifiers: .control, time: 1)
         expect(canvas.menu(for: down) == nil)
+        let origin = editor.camera.origin
         canvas.mouseDown(with: down)
         canvas.mouseDragged(with: window.mouse(.leftMouseDragged, at: CGPoint(x: 700, y: 400), modifiers: .control, time: 1.2))
         canvas.mouseUp(with: window.mouse(.leftMouseUp, at: CGPoint(x: 700, y: 400), modifiers: .control, time: 1.3))
-        let arrow = try require(editor.document.shapes.lazy.compactMap { $0.typed(as: Arrow.self)?.props }.first)
-        expect(arrow.start.binding == nil)
-        expect(arrow.end.binding == nil)
+        expect(editor.camera.origin != origin, "it panned")
+        expectEqual(editor.selectedShapeIDs, [])
     },
 ])

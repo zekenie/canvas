@@ -63,7 +63,7 @@ private func around(_ point: CGPoint, _ radius: CGFloat = 6) -> CGRect {
     h.editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }
 }
 
-/// The channel a shape was drawn on, as its board saves it: nil for an arrow the arrow tool drew.
+/// The channel a shape was drawn on, as its board saves it: nil for an arrow on none.
 @MainActor private func channel(of id: ShapeID, in editor: CanvasEditor) throws -> JSONValue? {
     let record = try require(editor.document[id])
     let data = try BoardCodec(registry: editor.registry).encode(CanvasDocument(shapes: [record]))
@@ -283,7 +283,7 @@ extension EditorHarness {
             expectEqual(both, 0, "with the \(side) dot lit, no pixel is both a dot's and the lock's")
         }
     },
-    test("in the arrow tool a note shows no dots, and a drag from where one would be draws the arrow tool's arrow, with no channel") {
+    test("in another tool a note shows no dots, and back in the select tool they show again") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let aFrame = CGRect(x: 100, y: 100, width: 200, height: 200), bFrame = CGRect(x: 500, y: 100, width: 200, height: 200)
@@ -291,7 +291,7 @@ extension EditorHarness {
         let h = shipped([note(aFrame), b], pasteboard)
         let size = CGSize(width: 760, height: 360)
         let rest = renderBitmap(h.editor, size: size)
-        h.key("a")
+        h.key("h")
         h.move(to: center(aFrame))
         h.move(to: Side.right.dot(of: aFrame))
         expectEqual(h.editor.hoveredButton, nil)
@@ -300,12 +300,6 @@ extension EditorHarness {
         for side in Side.allCases {
             expectEqual(changedPixels(rest, hovered, in: around(side.dot(of: aFrame), 13)), 0, "no \(side) dot")
         }
-        h.press()
-        h.drag(to: center(bFrame), speed: 3)
-        h.release()
-        let arrow = try require(arrows(h).first)
-        expectEqual(arrow.props.end.binding?.shapeID, b.id)
-        expectEqual(try channel(of: arrow.id, in: h.editor), nil)
         // Back in the select tool, the dots show again as the pointer comes over the note.
         h.key("v")
         h.move(to: center(aFrame))
@@ -345,7 +339,7 @@ extension EditorHarness {
             expectEqual(opened.editor.document[arrow]?.typed(as: Arrow.self)?.props.end.binding?.shapeID, bound)
         }
     },
-    test("arrows drawn with the arrow tool keep no channel: between rectangles the board writes format 1, as the app without arrow-ports does, byte for byte") {
+    test("arrows on no channel keep none: between rectangles the board writes format 1, as the app without arrow-ports does, byte for byte") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let h = shipped([], pasteboard)
@@ -353,12 +347,12 @@ extension EditorHarness {
             h.key("r")
             h.click(at: CGPoint(x: x, y: 200))
         }
-        h.key("a")
-        h.press(at: CGPoint(x: 200, y: 200))
-        h.drag(to: CGPoint(x: 600, y: 200), speed: 3)
-        h.release()
-        let arrow = try require(arrows(h).first)
-        expect(arrow.props.start.binding != nil && arrow.props.end.binding != nil, "bound at both ends")
+        let rectangles = h.editor.document.shapes.map(\.id)
+        expectEqual(rectangles.count, 2)
+        func bound(_ id: ShapeID) -> ArrowTerminal {
+            .bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))
+        }
+        h.add(Arrow(start: bound(rectangles[0]), end: bound(rectangles[1])))
         let data = try BoardCodec(registry: h.editor.registry).encode(h.editor.document)
         let json = try JSONDecoder().decode(JSONValue.self, from: data)
         expectEqual(json["format"], 1)
