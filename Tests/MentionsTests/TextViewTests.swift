@@ -646,7 +646,7 @@ final class NotificationCount: @unchecked Sendable {
         let session = try EditedJot(groceries)
         let point = session.point(of: 4)
         let menu = try require(session.textView.menu(for: session.mouse(.rightMouseDown, at: point)))
-        expectEqual(Array(menu.outline.prefix(3)), ["Go to “Groceries”", "Remove Mention", "—"])
+        expectEqual(Array(menu.outline.prefix(4)), ["Go to “Groceries”", "Show What Mentions “Groceries”", "Remove Mention", "—"])
         expectEqual(session.textView.selectedRange(), NSRange(location: 4, length: 1))
         try menu.choose("Remove Mention")
         expectEqual(session.string, "Buy Groceries today")
@@ -662,6 +662,31 @@ final class NotificationCount: @unchecked Sendable {
         missing.h.editor.delete(idA)
         let outline = try require(missing.textView.menu(for: missing.mouse(.rightMouseDown, at: missing.point(of: 4)))).outline
         expectEqual(Array(outline.prefix(2)), ["Remove Mention", "—"], "a missing pill can't be gone to")
+    },
+
+    test("a live pill's menu shows what mentions its target, once the editing it ends is over: this jot, and any other shape on the board") {
+        var other: ShapeID?
+        let session = try EditedJot(groceries) { editor in
+            other = editor.add(Jot(CGRect(x: 0, y: 300, width: 200, height: 200), text: MentionText([.mention(idA, label: "Groceries")])), titled: "Other")
+        }
+        try require(session.textView.menu(for: session.mouse(.rightMouseDown, at: session.point(of: 4)))).choose("Show What Mentions “Groceries”")
+        expectEqual(session.h.editor.editingShapeID, session.jot, "not yet")
+        session.h.scheduler.advance(by: .zero)
+        expectEqual(session.h.editor.editingShapeID, nil)
+        expectEqual(session.h.editor.selectedShapeIDs, [try require(other), session.jot])
+        session.h.editor.goBack()
+        expectEqual(session.h.editor.selectedShapeIDs, [session.jot])
+
+        // Not for a pill whose target is on another board: what mentions it is read where it is.
+        let pocket = ShapeID(), inside = ShapeID()
+        let elsewhere = try EditedJot(MentionText([.text("See "), .mention(inside, label: "Inside")]), plugins: [PocketsPlugin()]) { editor in
+            var plate = ShapeRecord(id: inside, Plate(CGRect(x: 0, y: 0, width: 120, height: 80)))
+            plate[TitleProperty.self] = "Inside"
+            editor.transact { $0.insert(AnyShapeRecord(ShapeRecord(id: pocket, Pocket(CGRect(x: 600, y: 0, width: 100, height: 100)))),
+                                        contents: [pocket: CanvasDocument(shapes: [AnyShapeRecord(plate)])]) }
+        }
+        let menu = try require(elsewhere.textView.menu(for: elsewhere.mouse(.rightMouseDown, at: elsewhere.point(of: 4))))
+        expectEqual(Array(menu.outline.prefix(3)), ["Go to “Inside”", "Remove Mention", "—"])
     },
 
     // MARK: Copy and paste

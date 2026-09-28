@@ -123,6 +123,7 @@ public struct DetailSection<Value> {
     let content: @MainActor (ShapeBinding<Value>) -> AnyView
     let accessory: (@MainActor (ShapeBinding<Value>) -> AnyView)?
     private(set) var isEnabledWhileReadOnly = false
+    private(set) var isShownWhile: (@MainActor (AnyShapeRecord, DetailContext) -> Bool)?
 
     /// `title == nil` is a headerless block that never collapses (the top of a tab). `id` defaults
     /// to the title, or "main"; it keys conflicts and remembered collapse. `when` hides the section
@@ -167,6 +168,22 @@ public struct DetailSection<Value> {
     public func enabledWhileReadOnly() -> Self {
         var section = self
         section.isEnabledWhileReadOnly = true
+        return section
+    }
+
+    /// The section, shown only while `isShown` says so (and `when` too, which reads only the
+    /// value): of the shape and what the editor's services keep about it, for a section of the
+    /// shape's state that comes and goes (whether other shapes link to it, say). A tab shows only
+    /// while it has a section shown (or status lines). It's asked on every commit, as status lines
+    /// are, whatever the commit changed (a drag of another shape), so it must cost O(1): read a
+    /// service's cached state. A view in the section that shows more of that state observes it
+    /// itself: the section is built again only when its shape changes.
+    ///
+    ///     DetailSection(in: LinksTab.self) { $x in … }
+    ///         .shownWhile { shape, context in context.service(Links.self)?.isLinked(shape.id) == true }
+    public func shownWhile(_ isShown: @escaping @MainActor (AnyShapeRecord, DetailContext) -> Bool) -> Self {
+        var section = self
+        section.isShownWhile = isShown
         return section
     }
 }
@@ -222,6 +239,8 @@ struct ErasedSection {
     let content: @MainActor (AnyShapeRecord, CanvasEditor) -> AnyView
     let accessory: (@MainActor (AnyShapeRecord, CanvasEditor) -> AnyView)?
     let isEnabledWhileReadOnly: Bool
+    /// `shownWhile`'s, asked apart from `isShown`: on every commit, beside the status lines.
+    let isShownWhile: (@MainActor (AnyShapeRecord, DetailContext) -> Bool)?
 
     init<Value>(_ section: DetailSection<Value>, value: @escaping @MainActor (AnyShapeRecord) -> Value?,
                 binding: @escaping @MainActor (AnyShapeRecord, CanvasEditor) -> ShapeBinding<Value>?) {
@@ -229,6 +248,7 @@ struct ErasedSection {
         id = section.id
         title = section.title
         isEnabledWhileReadOnly = section.isEnabledWhileReadOnly
+        isShownWhile = section.isShownWhile
         let shown = section.isShown, content = section.content
         isShown = { value($0).map(shown) ?? false }
         // Its writes are undo steps named for it; one without a title's, for the kind.

@@ -206,4 +206,24 @@ private func chain(_ count: Int) -> (file: CanvasFile, owners: [ShapeID]) {
             expectEqual(again.revision(of: board), filled.revision(of: board), "filling what's filled stamps nothing")
         }
     },
+    test("an id is unused while no shape on any board has it and nothing is kept under it: a board whose owner isn't here, or an entry under its key that isn't a board") {
+        let nest = Nest()
+        var file = nest.file
+        for id in [nest.a, nest.p, nest.r, nest.b, nest.q, nest.c] { expect(!file.isUnused(id), "\(id) is a shape's") }
+        expect(file.isUnused(ShapeID()))
+        file.set(board(), for: nest.qBoard)
+        expect(file.isUnused(nest.c), "its shape is gone")
+
+        let orphan = ShapeID()
+        expect(!CanvasFile(root: board(box()), children: [orphan: board(box())]).isUnused(orphan), "a board is kept under it")
+
+        let kept = ShapeID(), lowercase = ShapeID()
+        let json = """
+        { "format" : 4, "shapes" : [], "boards" : { "\(kept)" : 7, "\(lowercase.description.lowercased())" : 7 } }
+        """
+        let loaded = try BoardCodec(registry: Registry(plugins: [FixturesPlugin(), PocketsPlugin()])).decode(Data(json.utf8))
+        expectEqual(loaded.file.unreadableBoards.count, 2)
+        expect(!loaded.file.isUnused(kept), "an entry is kept under the key its board would be written under")
+        expect(loaded.file.isUnused(lowercase), "a key as this app never writes one is no shape's")
+    },
 ])

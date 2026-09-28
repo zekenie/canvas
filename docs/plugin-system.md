@@ -3,7 +3,7 @@
 Everything on the canvas comes from a plugin: sticky notes, arrows, schema cards, subboards,
 validation, checklists, titles, the pills and chips shown on shapes (adornments), the detail panel
 and the table of contents beside the canvas, selecting itself, copying and pasting, locking, the
-ports arrows are dragged from, snapping what's dragged to the shapes around it, what each key does, what the command line can do, the language model plugins ask, even the examples.
+ports arrows are dragged from, text's mentions of shapes, snapping what's dragged to the shapes around it, what each key does, what the command line can do, the language model plugins ask, even the examples.
 The core (`Sources/Canvas`) knows how to hold shapes, run tools, draw, and wire plugins together,
 and nothing about any particular shape or concern. Its one built-in tool is tldraw's Hand, which
 pans (a flung release slides on). Select, which selects (a click, ⇧-click, or a marquee dragged
@@ -236,10 +236,13 @@ Once one plugin works, the question is which piece the next feature needs.
 | Rename a shape in the detail panel's header | `x.details(header: { $x in TitleHeader($x) }) {}` | [StickyNotes](#renaming-in-the-header-titleheader) |
 | Name a kind's rows in the table of contents from another plugin | `x.contentsTitle { ... }` | [Titles](#a-horizontal-plugin) |
 | Add a concern any kind can opt into | An `ExtensionPoint`, sugar on `ShapeRegistrar`, and whatever reads the point | [Titles](#a-horizontal-plugin), [Validation](../Sources/Validation/Validation.swift) |
+| Warn about something on a shape, without running again on every drag event | A validation rule, `x.validate(ignoringMoves: true) { … }` (or `validateEveryShape`), for one that reads what shapes are, never where | [Validation](#a-horizontal-plugin), [MentionValidation](#warnings-mentionvalidation) |
 | Give the shapes of the kinds that opt in something to hold (a checklist) | A `ShapeProperty`, `registrar.declare`, and `optIn(to:)` from the concern's sugar | [Checklists](#added-properties) |
 | Give that concern a tab on the kinds that opt in | A `DetailTab` at order 50, contributed from the same sugar | [Checklists](#a-horizontals-feature-tab-checklists) |
 | Give that concern menu items on the kinds that opt in | A `MenuGroup` at order 50, and `contextMenu` from the same sugar | [Checklists](#a-feature-that-comes-with-menu-items-checklists) |
 | Edit an added property in the panel, or from the menu | `details(of: P.self) { DetailSection ... }`, `contextMenu(of: P.self) { MenuItem ... }` | [Checklists](#a-horizontals-feature-tab-checklists) |
+| Show a section in the panel only while a service says so (what mentions the shape) | `DetailSection(…).shownWhile { shape, context in … }`, at order 300 for a tab that comes and goes | [Contributing](#contributing-two-points-and-their-sugar), [Mentions](#what-mentions-a-shape) |
+| Edit text that isn't a string in the panel, with a text view of your own | A `DetailTextView` subclass adopting `DetailTextContent`, in a `DetailTextBox` | [Text of a plugin's own](#text-of-a-plugins-own-detailtextbox) |
 | Opt another plugin's kind into a concern | A bridge, which imports both; `registrar.optIn(Kind.self, to:)` for an added property | [RectangleTitles](#a-horizontal-plugin), [ValidationDetails](#a-tab-of-status-lines-from-a-bridge-validationdetails) |
 | Keep state per editor: an engine, a cache, a timer | `registrar.service`, an `EditorService`; redo what's kept per shape for the shapes each commit's `ChangeSet` names | [Validation](../Sources/Validation/Validation.swift)'s `ValidationEngine`, [TableOfContents](../Sources/TableOfContents/ContentsState.swift)' `ContentsState` |
 | Show something small on shapes, just outside them or on a corner (a pill, a tally, a lock), on kinds you define or not | An `Adornment` type; `x.adornment`, `registrar.adornment(_:on:)` or `registrar.adornmentForEveryShape(_:where:)`, returning an `AdornmentLabel` | [Adornments](#adornments), [Titles](#a-horizontal-plugin) |
@@ -273,8 +276,9 @@ Once one plugin works, the question is which piece the next feature needs.
 | Change where a drag puts the shapes it moves (snap them, keep them on a grid), and draw while it does | `registrar.translationAdjuster { editor, start in … }`, a `TranslationAdjuster`: Snapping claims it | [The translation adjuster](#the-cores-part-the-translation-adjuster) |
 | Ask Claude something (and test it without the network) | `editor.languageModel?.respond(to: ModelRequest(...))`; `ScriptedLanguageModel` in tests | [Language models](#language-models) |
 | Keep what a kind's props are bound to right as shapes are deleted and copied (a connector) | `ShapeReferencing` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
-| Let a kind's shapes be mentioned in text, as pills | `x.mentionable(untitled:symbol:…)` (Mentions) | [Mentions](#mentionable-kinds) |
-| Let a kind's text mention shapes, drawn with pills and edited with a picker | A `MentionText` property; `x.mentionText { … }` and `context.drawMentionText`; a `MentionTextView` editor | [Mentions](#mention-text-and-its-stored-form) |
+| Let a kind's shapes be mentioned in text, as pills, with a tab listing what mentions each | `x.mentionable(untitled:symbol:…)` (Mentions), or `registrar.mentionable(K.self)` from a bridge | [Mentions](#mentionable-kinds) |
+| Let a kind's text mention shapes, drawn with pills and edited with a picker | A `MentionText` property; `x.mentionText { … }` and `context.drawMentionText`; a `MentionTextView` editor, or `MentionTextArea` in the panel | [Mentions](#mention-text-and-its-stored-form), [In the panel](#in-the-panel-mentiontextarea) |
+| Go to what mentions a shape | `mentions.backlinks(of:)`, `showWhatMentions(_:)`; Show What Mentions in the context menu | [What mentions a shape](#what-mentions-a-shape) |
 | Restrict what a text may mention to some kinds | `ScopedMentionText<Only<Kind>>`, or a declared scope: `registrar.mentionScope(S.self)` and `x.mentionable(in: S.self)` | [Scopes](#scopes-what-a-text-may-mention) |
 | Hold names of shapes that may outlive them (a mention), renamed when copied with them | A value that adopts `ShapeNaming`; `registry.namingKinds` and `record.forEachNamingValue(in:)` to read them | [Values that name shapes](#values-that-name-shapes) |
 | Put an editing view's selection where the press that began editing was | `editor.beginEditing(id, at: point)`, read as `EditContext.startPoint` | [Capabilities](#capabilities) |
@@ -323,9 +327,10 @@ kind can have them, on the channels it takes, and Ports owns the dots and what a
 end on, while the plugin that owns a channel's meaning declares it. So is what's shown on shapes:
 [Adornments](#adornments) lays out and draws what any plugin puts on them, a title's pill beside a
 lock, so none overlaps another. So are [mentions](#mentions): any kind can be mentioned, and any
-kind's text can hold mentions, while Mentions owns the stored form, the pills, the picker and what
-keeps them in step with the shapes they name. So is getting around a file's [boards](#boards): any
-kind whose shapes own boards opts in with one line, and Boards owns opening them, going back up,
+kind's text can hold mentions, while Mentions owns the stored form, the pills, the picker, what
+mentions each shape and what keeps them in step with the shapes they name. So is getting around a
+file's [boards](#boards): any kind whose shapes own boards opts in with one line, and Boards owns
+opening them, going back up,
 what a board is called and the path that shows where you are, while the core only holds the boards
 and shows one. And a horizontal may declare no point at all and only lend something:
 [LanguageModels](#language-models) lends every editor the model plugins ask.
@@ -340,8 +345,10 @@ Opting in goes in one of two directions:
   Issues tab of the detail panel, and `ValidationContents` marks their rows in the table of contents, though
   Validation has never heard of either, nor either of validity. `TitleNames`, `PortEdges` and
   `ValidationChecks` give [`canvas draw`](#the-command-line) its names, edges and warnings, though
-  Automation has never heard of titles, ports or validity. `ArrowPorts` makes arrows what a
-  drag from a port draws, though Arrows has never heard of a channel, nor Ports of an arrow.
+  Automation has never heard of titles, ports or validity, and `MentionValidation` warns
+  about mentions that can't work, though Mentions has never heard of validation, nor Validation of
+  mentions. `ArrowPorts` makes arrows what a drag from a port draws, though Arrows has never heard
+  of a channel, nor Ports of an arrow.
 
 Either way the edge is visible in `Package.swift`, and the dependency always points from the
 vertical (or bridge) to the horizontal, never back.
@@ -371,9 +378,9 @@ Each target is one line, with its layer:
 | wire | wire | CanvasRPC (what the app and its [command line](#the-command-line) say to each other) |
 | foundation | foundation | Geometry, Canvas (the core), and pure libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, and its solver) |
 | ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
-| horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Adornments, Checklists, Clipboard, Locking, Ports, Mentions, Automation, LanguageModels, Boards |
+| horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Adornments, Checklists, Clipboard, Locking, Ports, Mentions, Automation, LanguageModels, Boards, Snapping |
 | vertical | foundation, horizontal | Arrows, StickyNotes, Schemas, Subboards, Rectangles, Polylines, Eraser, Reordering |
-| bridge | foundation, horizontal, vertical | RectangleTitles, ValidationDetails, ValidationContents, ArrowPorts, TitleNames, PortEdges, ValidationChecks |
+| bridge | foundation, horizontal, vertical | RectangleTitles, ValidationDetails, ValidationContents, MentionValidation, ArrowPorts, TitleNames, PortEdges, ValidationChecks |
 | composition | foundation, horizontal, vertical, bridge, wire | Composition (the shipped plugin list) |
 | app | foundation, ui, composition, wire | InfiniteCanvas |
 | cli | wire | CanvasCLI (`canvas`, an executable: it knows the wire, never the app) |
@@ -913,8 +920,10 @@ The mechanics:
   ([Properties](#added-properties)). Its extension point then holds only how the kind takes part:
   `ShapeChecklists` says whether the canvas shows the chip.
 - **Contracts should be pure.** Validation rules read the document only through
-  `ValidationContext`, so dependency tracking can replace full recomputation later without
-  changing any rule. Design your contexts the same way.
+  `ValidationContext`: `shape(_:)`, a lookup the engine notes, so a change to a shape checks again
+  only that shape and those whose rules looked it up; and `registry`, which never changes, so
+  reading it (which kinds can hold names, which can be mentioned) is no lookup. Design your
+  contexts the same way.
 
 [Validation](../Sources/Validation/Validation.swift) is the full-size version of the same pattern:
 per-kind rules, rules for another plugin's kind, rules for every kind, an engine, and an overlay.
@@ -928,11 +937,27 @@ all. Two bridges show the issues elsewhere, though Validation has never heard of
 detail panel lists a shape's issues in an Issues tab
 ([ValidationDetails](#a-tab-of-status-lines-from-a-bridge-validationdetails)), and the table of
 contents puts a dot of the same color on the row of each shape with issues, so the board's are
-found at a glance and a click goes to one ([ValidationContents](#marks-validationcontents)).
-Outside the engine, `registry.validationIssues(of: record, in: shapes)` runs every rule for a
+found at a glance and a click goes to one ([ValidationContents](#marks-validationcontents)). A
+third adds rules: [MentionValidation](#warnings-mentionvalidation) warns about mentions that can't
+work. Outside the engine, `registry.validationIssues(of: record, in: shapes)` runs every rule for a
 shape's kind against any `ShapeContext`, a transaction's mid-way included (the rules look other
 shapes up in it): it's how [`canvas draw`](#what-draw-takes-from-other-plugins) warns about what
-it's drawing before it commits (ValidationChecks, a third bridge).
+it's drawing before it commits (ValidationChecks, a fourth bridge).
+
+A drag commits every shape it drags, on every event, so a rule whose issues follow from what
+shapes are, never where, says so, and a drag doesn't run it:
+
+```swift
+registrar.validateEveryShape(ignoringMoves: true) { shape, context in ... }   // x.validate(ignoringMoves:), registrar.validate(P.self, ignoringMoves:)
+```
+
+A commit that only moves shapes (`ChangeSet.moved`: `Transaction.moveBox`, which a drag and
+`translate` use) runs such a rule for none of them, neither the shapes it moved nor those whose
+rule looked one of them up, and each keeps what the rule found last (the engine keeps it per shape
+and per rule, so a shape's issues stay in its rules' order); the other rules run as they always
+do. Validation's schema rule ignores moves, and so does MentionValidation's, so a drag of a
+subboard 100 notes mention checks none of them again. A rule that measures distances, or finds overlaps,
+must not.
 
 ## Properties
 
@@ -1215,10 +1240,12 @@ about the property it's in (`ValidationIssue.field`). So a bound is a guideline 
 break and still work: it's outlined orange, listed in its Issues tab, and dotted in the table of
 contents, and it saves as it is. A rule that should refuse a shape is the kind's, as an error. The
 engine checks a shape when it changes, as it does every rule, and reads every shape once, on the
-first frame after a board opens: `./build.sh bench` holds that to 100 ms for 10,000 shapes. A shape
-keeps what its schema said until a commit changes it other than by moving it (`ChangeSet.moved`),
-since where a shape is is nothing its schema checks: a drag that moves 10,000 shapes redoes their
-rules, not their schemas, and so does undoing or redoing it.
+first frame after a board opens: `./build.sh bench` holds that to 100 ms for 10,000 shapes. Where
+a shape is is nothing its schema checks, so the rule [ignores moves](#a-horizontal-plugin): a
+commit that only moves shapes (`ChangeSet.moved`) doesn't run it, and a shape checked again because
+a shape its other rules looked up changed keeps what its schema said until it changes itself,
+other than by moving. A drag that moves 10,000 shapes redoes the rules that read where shapes are,
+not their schemas, and so does undoing or redoing it.
 
 ### Properties and metadata
 
@@ -1243,6 +1270,7 @@ concern, references between shapes. The first is bindings, the `ShapeReferencing
 | Deleting it | lets go of it, in the deleting transaction | changes nothing: no delete looks for names, so the name stays, and names the shape again if it comes back with its id |
 | Copying without it | lets go of it (an arrow's end stays where it's drawn) | keeps naming the original |
 | Copying with it | is bound to its copy | names its copy, on whatever board of the copied tree it is |
+| Cutting it, then pasting it (a move: [the clipboard](#the-clipboard)) | lets go of it at the cut, as a delete does; the paste doesn't bind it again | names it again once it's pasted, on whatever board, since it keeps its id |
 | `canvas draw` with one that isn't there | refused (`invalid_value`: `the pin on line 1 is bound to a shape that isn't on this board`, or `… on another board of the file`) | made, with a warning if it's in no board of the file (or the script deletes it), or on a board the app can't show |
 
 ```swift
@@ -1306,7 +1334,9 @@ that both binds and names.)
   pasted alone mentions the original. `remappingReferences(bind, naming: name, in:)` passes the two
   forms through two maps, for a copy of a tree of boards: a binding is to a shape on its own board,
   copied with it or let go, while a name may be of a shape copied with it on any board of the tree
-  (Clipboard's paste renames it to that copy) or of one anywhere else (kept).
+  (Clipboard's paste renames it to that copy) or of one anywhere else (kept). A paste of what a
+  cut took maps each id the file doesn't use to itself (a move), in the same map, so a moved
+  shape's names stay as they are, and so do the names of it anywhere else in the file.
 - **Across boards.** Ids are unique across a file, so a name is of a shape wherever it is:
   `editor.file.record(id)` finds it, and a name of a shape on another board is no missing name.
   Only one that's in no board of the file is (`canvas draw` warns about those, and about names of shapes on boards the app can't show). Bindings
@@ -1809,7 +1839,9 @@ Sections are stock SwiftUI plus a few primitives, and get the look by following 
   as the footer's (only its symbol takes the tone), with a spinner in the symbol's place, as wide,
   while `isBusy`, and link buttons under it
   (`DetailStatusAction("Retry") { … }`). Put it where it can't be collapsed away from the person
-  (the schema card's sync puts it under the side they edited).
+  (the schema card's sync puts it under the side they edited). Text that isn't a string (mentions
+  of shapes) goes in a box as a text area's, over a text view of the plugin's own
+  ([`DetailTextBox`](#text-of-a-plugins-own-detailtextbox)): Mentions' `MentionTextArea` is one.
   `DetailNumberText` formats and parses numbers with units ("240 pt"), in the user's locale ("2,5 h" in German), as the number field does. A
   `DetailCommandButton("Open", systemImage: "arrow.down.right.square", command: .openSelection)`
   runs a command a plugin registered (`editor.perform`), dimmed while it can't run
@@ -1847,7 +1879,7 @@ it. Tabs sort by `order`, then by first appearance, in these bands:
 | 50 | Feature tabs a horizontal brings to the kinds that opt into it (Checklist) |
 | 100 | `StyleTab`: appearance, shared by every kind |
 | 200 | `ArrangeTab`: position and size, which the panel fills for every box shape |
-| 300 | A tab of the shape's state that comes and goes with it (ValidationDetails' `IssuesTab`): last, so the others keep their order |
+| 300 | A tab of the shape's state that comes and goes with it (ValidationDetails' `IssuesTab`, Mentions' `MentionsTab`): last, so the others keep their order |
 
 Use the shared `StyleTab` and `ArrangeTab` rather than near-duplicates. Two tab types with one title
 would show as two identical tabs, so they're a registry error (`invalid`, below), whether sections
@@ -1891,12 +1923,31 @@ registrar.detailsForEveryBox {
 }
 ```
 
+`when` reads only the value. A section of the shape's state that a service knows (whether other
+shapes mention it) says when it shows with `shownWhile`, over the record and a `DetailContext`, as
+Mentions' Mentioned In does:
+
+```swift
+DetailSection(in: MentionsTab.self, id: "mentioned-in") { $x in
+    MentionedInList(target: $x.shapeID, mentions: $x.service(MentionState.self))   // the shape, whatever the value
+}
+    .shownWhile { shape, context in context.service(MentionState.self)?.isMentioned(shape.id) == true }
+    .enabledWhileReadOnly()
+```
+
+It's asked on every commit, whatever the commit changed (a drag of another shape), as status
+lines are, so it must cost O(1): read a service's cached state. Only the sections that have one
+are asked (found once per kind), so a kind without any costs nothing. A section it hides takes its
+tab with it when the tab has nothing else to show, and the shape's panel is built again only when
+what it hides changes; a view in the section that shows more of that state observes it itself,
+since the section is built again only when its shape changes.
+
 How it resolves, per shape:
 
 | What | Order |
 |---|---|
 | Sections in a tab | The kind's own (from its vertical, a horizontal it opts into, or a bridge), in plugin order and builder order; then every kind's (every-box sections, and those over an added property on every shape that has it), in plugin order. |
-| Tabs | By `order`, then first appearance over the same sequence, then status lines'. A tab with no shown section and no status line is dropped. |
+| Tabs | By `order`, then first appearance over the same sequence, then status lines'. A tab with no shown section (by `when` and `shownWhile`) and no status line is dropped. |
 | Status lines, the footer's and each tab's | The kind's, then every kind's, each in plugin order. |
 | Header | The kind's own; else the label and symbol of the tool that places the kind; else the kind's name. A header without a symbol takes the tool's. |
 
@@ -2197,9 +2248,71 @@ When each control commits:
 
 | Control | Commits |
 |---|---|
-| Text fields, `DetailTextArea`, `DetailCodeEditor`, `DetailHeaderField` | On every keystroke, so the canvas follows as you type. With `onCommit:`, a text area also says when it's done (Return, the keyboard leaving), and a code editor too (⌘↩, the keyboard leaving) |
+| Text fields, `DetailTextArea`, `DetailCodeEditor`, a `DetailTextBox` (`MentionTextArea`), `DetailHeaderField` | On every keystroke, so the canvas follows as you type. With `onCommit:`, a text area or a box also says when it's done (Return, ⌘↩, the keyboard leaving), and a code editor too (⌘↩, the keyboard leaving) |
 | Pickers, toggles, steppers, dates, swatches, the color well, list add, remove, move and edit | On change |
 | `DetailNumberField` | A draft: on Return, Tab, leaving the field, or the field going away, in one transaction, clamped to its range. Escape drops the draft. Stepping writes at once. A draft lands on its own shape even if the selection moves first. |
+
+### Text of a plugin's own: `DetailTextBox`
+
+`DetailTextArea` and `DetailCodeEditor` edit a string. Text a plugin keeps in a form of its own
+(mention text, which holds pills) edits in a `DetailTextBox`: the same box, laid out, bordered and
+scrolling as a text area is, over a text view the plugin makes. Mentions' `MentionTextArea` is one
+([In the panel](#in-the-panel-mentiontextarea)):
+
+```swift
+public var body: some View {
+    let text = shape.wrappedValue[keyPath: field]
+    DetailTextBox(shape[dynamicMember: field], height: height, placeholder: placeholder, onCommit: onCommit) {
+        MentionTextView<Scope>(frame: .zero, text: text, style: MentionStyle.panelText,
+                               owner: shape.shapeID, mentions: shape.service(MentionState.self))
+    }
+}
+```
+
+- **The view** is a subclass of `DetailTextView` (an open `NSTextView`) that adopts
+  `DetailTextContent`: its `value`, of a type of its own (`ScopedMentionText`), and `show(_:)`.
+  Adopt it on the subclass: `DetailTextView` adopting it would fix every subclass's `Value`. The
+  panel's own boxes (`DetailCodeEditor`, and a `DetailTextArea` with `onCommit:`) are the same,
+  over an internal `PlainTextView` whose value is a string, on TextKit 1 as they always were; a
+  `DetailTextArea` without `onCommit:` is SwiftUI's `TextEditor`.
+- **What it adds does nothing until it's set**, so the same class outside the panel is a plain
+  text view (a note's editor on the canvas is a `MentionTextView` with none of it set):
+  `onCommit` (⌘↩, the keyboard leaving, and the view leaving its window with the keyboard, a turn
+  later; without it ⌘↩ goes on as any key does), `commitsOnReturn` (with `onCommit`, Return
+  commits and ⇧↩ is a new line), `onExit` (Escape: the panel's hand-back to the canvas) and
+  `placeholder`. The box sets them from its arguments.
+- **The binding.** The box writes `value` to the binding after every change the view reports, so a
+  field's run of writes is one undo step, as a text area's is. It calls `show(_:)` only when the
+  binding changed from outside (an undo of the board, another plugin's write), never for a change
+  it wrote, so a keystroke typed before the panel draws again is never lost. `show` changes the
+  storage alone (the caret stays where it was, as far as the new text reaches) and never calls
+  `didChangeText`, since the box may call it while the board applies an undo step, when nothing
+  may commit; then the box drops what typing registered with its undo. In a board's window, Edit
+  › Undo is the text's own while it has the keyboard ([Undo](#undo)).
+- **Keys the view holds.** A view that shows something over its text whose keys Return and Escape
+  are (Mentions' `@` picker) says so: `override var holdsKeys: Bool { picker != nil }`. While it's
+  true, Return, ⌘↩ and Escape go to its `doCommand(by:)` as any text view's do, never to
+  `onCommit` or `onExit`. The panel's root hears Escape before the view with the keyboard does,
+  and leaves the panel, so it lets Escape through only to a `DetailTextView` holding keys: with the
+  picker open, Escape closes the picker, and a second leaves the panel. ⌘. comes as no key: the
+  window sends `cancelOperation:` up the responder chain from the view, which a `DetailTextView`
+  doesn't answer, so the panel's root hears it (`onExitCommand`) and leaves the panel as for
+  Escape, again unless a view holds keys (a `MentionTextView` answers it then, closing its
+  picker).
+- **Enabled or dimmed.** A read-only shape, or `detailUpdating` (any `disabled` around the box),
+  makes the view read-only, and the box asks `showEnabled(_:)` on every update: by default the
+  text's color, the label's or the secondary label's. A view that colors its text itself says how
+  (`MentionTextView` fades whole, text and pills, by its `alphaValue`). The box is dimmed by its
+  view alone, and SwiftUI sees it enabled, since SwiftUI takes every click over a disabled
+  representable: so read-only text can still be selected and copied, and its view still hears
+  clicks (a pill's double-click follows it).
+- **TextKit 2.** AppKit gives a text view whose class overrides `draw(_:)` TextKit 1, so
+  `DetailTextView` draws its placeholder in `drawBackground(in:)`, and a subclass that needs TextKit
+  2 (pills are attachments, laid out as the canvas lays them out) keeps it. The box builds its
+  scroll view by hand around the view `make` returns: `scrollableTextView()` would make the class
+  with `init(frame:)`, and a plugin's view may need more to be made.
+- **The font** is `DetailStyle.textFont`, the panel's text (11 pt), which a plugin's style takes
+  (`MentionStyle.panelText`).
 
 ### Focus and hosting
 
@@ -2207,7 +2320,8 @@ When each control commits:
   canvas, so "n" typed into a title is text, and Delete and Return in a panel field never delete or
   edit the selected shape.
 - **The keyboard goes back to the canvas** on a click on the canvas; on Escape in the panel, which
-  drops any number draft first; and on its own when the panel removes the control that had the
+  drops any number draft first (but for a text view that holds keys: Escape with the `@` picker
+  open closes the picker); and on its own when the panel removes the control that had the
   keyboard (switching tabs, collapsing its section, a `when` hiding it, or a new selection), or is
   hidden with it (View › Hide Inspector, which hides the panel without removing it).
   Otherwise the keyboard would land on the window, and shortcuts would stop. Collapsing an
@@ -2255,13 +2369,15 @@ CanvasRepresentable(editor: editor, focus: canvasFocus)
 ### Performance
 
 The document changes on every drag event, so the panel does little per change. It re-reads the
-selected shape and its status lines, and rebuilds the shape's panel only if either changed;
-dragging another shape costs one comparison. A section is rebuilt only when its own shape changes.
+selected shape, its status lines and what `shownWhile` hides, and rebuilds the shape's panel only
+if any of them changed; dragging another shape costs one comparison (`./build.sh bench` holds the
+layout of a subboard 100 notes mention, its Mentioned In tab showing, to 1 ms after a drag event
+of another note and after a mentioner's rename). A section is rebuilt only when its own shape changes.
 Only the current tab is built, a collapsed section's content isn't, and each kind's contributions
 are gathered once.
-For your part: sections read only their binding, `when` and status lines stay cheap, and anything
-heavy goes in a service, kept per shape and redone for the shapes each commit's change set names
-(`documentDidChange`), as `ValidationEngine` does.
+For your part: sections read only their binding, `when`, `shownWhile` and status lines stay cheap,
+and anything heavy goes in a service, kept per shape and redone for the shapes each commit's change
+set names (`documentDidChange`), as `ValidationEngine` does.
 
 ## Context menus
 
@@ -2289,7 +2405,10 @@ right-click on a sticky note with one of its three checklist items checked:
 A subboard's menu starts with Open, in a group of its own above the rest (Boards'). A shape
 nothing offers anything has no menu: the right-click does nothing. As shipped, every
 shape has Lock (or Unlock), and every copyable shape Cut and Copy, items for the canvas, which are
-in every menu with shapes; an arrow's menu is those alone, since Arrange leaves it out. On empty
+in every menu with shapes; an arrow's menu is those alone, since Arrange leaves it out. A shape
+something on the board mentions has Show What Mentions too, after its own items (Mentions', for
+the canvas, in `MentionsMenuGroup`, order 50), which selects what mentions it
+([What mentions a shape](#what-mentions-a-shape)). On empty
 canvas the menu is the canvas's items that apply there alone: Paste, once there's something to
 paste.
 
@@ -2301,7 +2420,7 @@ paste.
 | `registrar.contextMenu(P.self) { items }` | Another plugin's kind, typed as its own (bridges). |
 | `x.contextMenu(of: P.self) { items }`, `registrar.contextMenu(of: P.self) { items }` | An [added property](#added-properties), over its value: on this kind's shapes that have one, or on every shape that has one. |
 | `registrar.contextMenuForEveryShape(where:) { items }` | Every shape, over `AnyShapeRecord`. `where:` picks kinds by their definition, and so by capability (`{ !($0 is any PaintOrderAnchored) }`); `when:` picks shapes (`{ $0.box != nil }` for those with a frame). |
-| `registrar.contextMenuForCanvas { items }` | Items that aren't one shape's (Cut, Copy, Paste), over the menu's `MenuSubject`: its shapes (none on empty canvas) and the editor. In every menu, after the shapes' own in their groups' order, and alone on empty canvas. Each is asked once per menu, not per shape. |
+| `registrar.contextMenuForCanvas { items }` | Items that aren't one shape's (Cut, Copy, Paste; Show What Mentions, since whether a shape is mentioned is what a service knows), over the menu's `MenuSubject`: its shapes (none on empty canvas) and the editor. In every menu, after the shapes' own in their groups' order, and alone on empty canvas. Each is asked once per menu, not per shape. |
 
 Boards' Open, which a board-owning kind's opt-in brings it ([OpensBoard.swift](../Sources/Boards/OpensBoard.swift)):
 
@@ -2322,7 +2441,9 @@ contextMenu {
 - **`when` leaves an item out; `isEnabled` dims it.** A context menu shows only what applies, so
   reach for `when`. `isChecked` checks it (✓ for every shape, – for some). An item for the canvas
   asks these of its `MenuSubject`, so it can depend on more than a shape (Clipboard's Paste is
-  `when: { $0.editor.canPaste }`), and takes the `perform` form, which gets the subject's shapes.
+  `when: { $0.editor.canPaste }`, Mentions' Show What Mentions `when: { subject in
+  subject.shapes.contains(where: mentions.isMentioned) }`), and takes the `perform` form, which
+  gets the subject's shapes.
 - **`Submenu(title) { items }`** shows when any of its items does.
 - **Groups are types**, like tabs: a separator falls between groups, which sort by `order`, then by
   first appearance, in the tabs' bands. An item names its group with `in:`; the default is
@@ -2331,7 +2452,7 @@ contextMenu {
   | Order | Groups |
   |---|---|
   | 0 (the default) | A kind's own items (`ShapeMenuGroup`) |
-  | 50 | A horizontal's feature, on the kinds that opt in (`ChecklistMenuGroup`) |
+  | 50 | A horizontal's feature, on the kinds that opt in (`ChecklistMenuGroup`), or on the shapes it knows something of (`MentionsMenuGroup`) |
   | 100 and up | Shared by every kind (`ClipboardMenuGroup`, 100; `ReorderMenuGroup`, 200; `LockMenuGroup`, 300) |
 
 - **Keyed.** Each item claims its target, group and `id` (the title by default), and an item in a
@@ -3044,23 +3165,42 @@ one line, `note.flaggable()`, as `note.checklist()` does. What that gives:
 Cut, copy and paste are a horizontal ([`Sources/Clipboard`](../Sources/Clipboard)) built on three
 others: Selection (what's copied, and what's selected after a paste), Keyboard (⌘X, ⌘C and ⌘V) and
 ContextMenus (Cut, Copy and Paste in every context menu). The core has never heard of a clipboard. It
-lends three generic things: commands (`.cut`, `.copy` and `.paste`, which Edit › Cut, Copy and
-Paste send), shape [metadata](#metadata), and the `ShapeReferencing` [capability](#capabilities).
+lends four generic things: commands (`.cut`, `.copy` and `.paste`, which Edit › Cut, Copy and
+Paste send), shape [metadata](#metadata), the `ShapeReferencing` [capability](#capabilities), and
+`CanvasFile.isUnused(_:)`, whether anything in the file goes by an id, which a paste asks before
+giving a shape back the id it had.
 
 | | Does |
 |---|---|
 | ⌘C, Edit › Copy, Copy | Puts copies of the selection's copyable shapes on the pasteboard, back to front, with what the boards they own hold. The board doesn't change. |
-| ⌘X, Edit › Cut, Cut | Copies, then deletes what it copied whole, in one transaction. What can't be copied stays, and so does a shape whose board holds one, and a [locked](#locking) shape, copied all the same (it shakes, as with Delete). |
-| ⌘V, Edit › Paste, Paste | Puts the copies on top of the board, with new ids all the way down, and selects them. |
+| ⌘X, Edit › Cut, Cut | Copies, marked as a cut's, then deletes what it copied whole, in one transaction. What can't be copied stays, and so does a shape whose board holds one, and a [locked](#locking) shape, copied all the same (it shakes, as with Delete). |
+| ⌘V, Edit › Paste, Paste | Puts what's on the pasteboard on top of the board, and selects it: what a copy put there as copies, with new ids all the way down; what a cut put there moved, under the ids it had. |
 
-- **Copies get new ids, and remember their originals.** Each pasted shape's metadata names the
-  shape it was copied from: `record.copiedFrom`, which is `meta[CopiedFrom.self]?.shape`, and its
-  board keeps it. That's the shape the copy was made from: a copy, if a copy was copied; in
-  whichever board it was copied from, this one or another; and maybe gone since (a cut shape always
-  is). Pasting twice makes two copies of the same shapes. The rest of a shape's metadata comes
-  with it, and so do its [added properties](#added-properties)' values: a locked shape's copy is
-  locked, as tldraw's is. A paste moves its copies (`translate`) in the transaction that puts them
+- **Copies get new ids, and remember their originals.** Each copy's metadata names the shape it
+  was copied from: `record.copiedFrom`, which is `meta[CopiedFrom.self]?.shape`, and its board
+  keeps it. That's the shape the copy was made from: a copy, if a copy was copied; in whichever
+  board it was copied from, this one or another; and maybe gone since. Pasting a copy twice makes
+  two copies of the same shapes. The rest of a shape's metadata comes with it, and so do its
+  [added properties](#added-properties)' values: a locked shape's copy is locked, as tldraw's is. A paste moves its copies (`translate`) in the transaction that puts them
   in, which a lock doesn't stop.
+- **Cut and paste is a move.** A cut marks what it writes as a cut's: a token beside the shapes,
+  under a type of the app's own (`com.example.InfiniteCanvas.cut`), a fresh UUID each cut, in the
+  same write. A copy writes none, and any later write clears it, this app's or another's. A paste
+  of what a cut put there keeps each id nothing in the file goes by (`CanvasFile.isUnused`, the
+  core's: no shape has it, no board is kept under it, and no entry that didn't read as a board is
+  kept under the key its board would be written under), so the shapes the cut took come back as
+  themselves, on whatever board the paste lands, and whatever names them (a
+  [mention](#mentions-across-boards), on any board of the file) names them again. Such a shape gets
+  no `CopiedFrom`: it's the same shape, moved, and keeps the metadata it had, an older
+  `CopiedFrom` included, so a shape without one may still have been pasted. An id in use (the
+  shapes an earlier paste of the same cut put down, or one whose deletion the cut had refused)
+  makes that shape a copy, from the same map as the rest, so what's pasted names each of its
+  shapes as pasted. There's no ledger of pastes: the first paste's shapes hold the ids, so pasting
+  again copies, and undoing the first paste frees them. Pasted into another window, a cut moves
+  there too, where the file doesn't use its ids. A binding from outside what was cut lets go of
+  what the cut took, as it would of a deleted shape (a binding must be on its board), and the paste
+  doesn't bind it again: an arrow to a note that moved stays where it's drawn, free. Only names
+  survive a move.
 - **Where a paste lands** is tldraw's: where the originals were, if any of them would be in view
   there; otherwise centered in the view, the shapes keeping their places among themselves. A paste
   in place lies exactly over its originals, as in tldraw and Figma. Moving them is
@@ -3083,14 +3223,15 @@ Paste send), shape [metadata](#metadata), and the `ShapeReferencing` [capability
   the board a copied shape owns, the boards its shapes own, and so on, read with
   `editor.contents(of:)`. On each board, the shapes that can be copied go, letting go of those left
   out on that board, and a shape left out takes the boards under it. A shape of a kind that owns no
-  board is copied without whatever board a file keeps under its id. A paste gives every shape on
-  every board a new id, from one map, so shapes inside stay bound to each other and name each
-  other (an arrow on a subboard stays bound), and each copy, nested ones included, names its
-  original. Each owner goes in with its boards, re-keyed by its copy's id
-  (`transaction.insert(_:contents:)`, one commit); only its top-level copies are moved into place
-  and selected. The new ids make a new tree, so a subboard pasted onto its own board is a copy
+  board is copied without whatever board a file keeps under its id. A paste renames every shape on
+  every board from one map (a copy's to new ids, a move's to its own), so shapes inside stay bound
+  to each other and name each other (an arrow on a subboard stays bound), and each copy, nested
+  ones included, names its original. Each owner goes in with its boards, keyed by its id as pasted
+  (`transaction.insert(_:contents:)`, one commit); only the top-level shapes are moved into place
+  and selected. A copy's new ids make a new tree, so a subboard pasted onto its own board is a copy
   inside itself, never a loop. Cut deletes only the shapes copied whole: one whose boards held
-  something that couldn't be copied stays, as an uncopyable shape does, with everything under it.
+  something that couldn't be copied stays, as an uncopyable shape does, with everything under it,
+  and its id being in use, it pastes as a copy.
 - **The pasteboard** holds a small board: `BoardCodec`'s JSON, each kind and added property at its version, under the
   app's own type. So one window can paste what another copied, a paste into a newer app migrates as
   opening a board does, and a kind the board doesn't install is left out of a paste, on any board,
@@ -3108,7 +3249,10 @@ Paste send), shape [metadata](#metadata), and the `ShapeReferencing` [capability
   edited, a panel's field), which takes them first. Cut and Paste don't run mid-gesture; Copy does.
 - **Undo.** Cut and Paste are one step each, "Cut" and "Paste", by key, menu or context menu.
   Undoing a cut brings the shapes back selected; undoing a paste selects what was before it, and
-  redoing it brings back the same copies (the same ids, `copiedFrom` and all).
+  redoing it brings back the same copies (the same ids, `copiedFrom` and all). Undoing a move's
+  paste takes the shapes out and frees their ids (a paste after it moves them again), redoing it
+  puts them back under them, and undoing the cut too puts the file back as it was, showing the
+  board the cut was made on.
 - **In the context menu**, Cut, Copy and Paste are items for the canvas
   (`registrar.contextMenuForCanvas`), in `ClipboardMenuGroup` (order 100, before Arrange), asked
   once per menu. Cut and Copy show when some of the menu's shapes can be copied, and act on those;
@@ -3567,12 +3711,15 @@ Ports are the part of data-canvas's that notes and schema cards need to prove th
 Mentions ([`Sources/Mentions`](../Sources/Mentions)) lets text mention other shapes: `@` in a
 note, a few letters of another note's title, Return, and the note says "Ask ⟨▤ Ship the beta⟩
 first", the mention an inline pill with the note's symbol and name. It's a horizontal on
-Selection, the table of contents and Titles, and two kinds opt in: sticky notes, whose text holds
-mentions and which can be mentioned, and subboards, which can be mentioned (following a mention of
-one enters it). The core knows no mention; what
-Mentions needs of it is generic: [names](#values-that-name-shapes) of shapes that may outlive them,
-[faces](#faces-clickable-parts-of-a-shape), [going to shapes](#selection), and
-[rows read from more than their shape](#rows-read-from-more-than-their-shape).
+Selection, the context menu, the detail panel, the table of contents and Titles, and two kinds opt
+in: sticky notes, whose text holds mentions and which can be mentioned, and subboards, which can
+be mentioned (following a mention of one enters it). A mentioned shape's panel lists what mentions
+it, and its context menu selects what does. The core knows no mention; what Mentions needs of it
+is generic: [names](#values-that-name-shapes) of shapes that may outlive them,
+[faces](#faces-clickable-parts-of-a-shape), [going to shapes](#selection),
+[rows read from more than their shape](#rows-read-from-more-than-their-shape), and the panel's
+[text boxes](#text-of-a-plugins-own-detailtextbox) and
+[sections a service shows](#contributing-two-points-and-their-sugar).
 
 ```swift
 // In StickyNotesPlugin.register:
@@ -3611,6 +3758,10 @@ only when its shape does:
   view); `.opens` goes into it (`goInto`: goes to it, then opens it, as a double-click on it would,
   one step back in all), for a kind that's opened rather than looked at: a subboard shows its
   board.
+- **Its Mentioned In tab.** Opting in brings the kind's panel a tab listing what mentions each
+  shape, shown only while something does ([What mentions a shape](#what-mentions-a-shape)), so a
+  plugin list with a mentionable kind needs `DetailPanelPlugin()`. `mentionableEveryShape` brings
+  none, since the panel has no section for every shape's record.
 
 `registry.mentionAppearance(of:)` is how a shape shows (`MentionAppearance`), and
 `registry.mentionResolution(of:lookup:)` what a mention of an id shows now (`MentionResolution`):
@@ -3676,9 +3827,10 @@ admits a shape, and what its schema says of it (`x-canvas-mentions`, beside the 
   mentionable to join, and the scope declared).
 
 A scope limits what the picker offers, and the schema says it. It never refuses a mention that's
-there (pasted, or written by an agent), as a bound is a guideline. No shipped text is restricted
-yet: a note's mentions any mentionable shape. MentionsTests hold scopes with fixtures (a `Brief`
-holds text of `Only<Plate>` and of `Blockers`, which plates and tokens join).
+there (pasted, or written by an agent), as a bound is a guideline, though
+[MentionValidation](#warnings-mentionvalidation) warns about it. No shipped text is restricted yet:
+a note's text mentions any mentionable shape. MentionsTests hold scopes with
+fixtures (a `Brief` holds text of `Only<Plate>` and of `Blockers`, which plates and tokens join).
 
 ### Drawing
 
@@ -3764,12 +3916,14 @@ follows undo and redo, during which nothing may):
   catalog the whole file's), and the `@` that opens the picker among 10,000 of which 3 can be
   mentioned, are held to 2 ms.
 - **Going and hovering**: `follow(_:)` goes to a shape on the next turn of the scheduler
-  (`editor.goTo`: editing ends, the shape is selected and brought into view, and ⌘[ comes back;
+  (`editor.goTo`, or `goInto` for a kind followed by opening it: editing ends, the shape is selected and brought into view, and ⌘[ comes back;
   going is no undo step, so Undo after it takes back the edit before it, selecting what was
   selected then, and Back returns to where the mention went),
   since a click in the text being edited is still being handled by the view that going ends;
   `hover(_:)` and `endHover(_:)` set `editor.hovered`, so the shape is outlined faintly and its row
   tinted, the one hover every plugin shares.
+- **What mentions each shape**, read from the index: `isMentioned(_:)`, `backlinks(of:)`,
+  `backlinkRevision(of:)` and `showWhatMentions(_:)` ([What mentions a shape](#what-mentions-a-shape)).
 
 ### On the canvas: faces
 
@@ -3780,20 +3934,24 @@ is the note, and the text is its editor.
 - **A click** on a pill edits its shape from the pill (`beginEditing(_:at:)` at the pill's
   center), and the editor selects the pill's character there: a pill is selected as text is, never
   followed on a single click. A read-only shape (a locked one) isn't asked to: a refused edit is a
-  try to change it, which Locking shakes, and a click isn't one.
+  try to change it, which Locking shakes, and a click isn't one. A kind with no editing view is
+  only selected.
 - **A double-click** on an editable note's pill lands in the text view the click opened, which
-  follows it. On a read-only shape the canvas's face follows it (`goTo`, or `goInto` for a kind
-  followed by opening it). A missing pill's does nothing.
+  follows it. On a read-only shape, or one of a kind with no editing view, the canvas's face
+  follows it (`goTo`, or `goInto` for a kind followed by opening it), and Back comes back. A missing pill's does nothing.
 - **The pointer** over a live pill hovers the shape it names, if it's on the board shown; over a
   missing one, or one naming a shape on another board, its own shape.
 
 Faces are Selection's, so a plugin list with Mentions needs `SelectionPlugin()` (and so
-`KeyboardPlugin()`).
+`KeyboardPlugin()`); Show What Mentions is an item in ContextMenus' menu, so it needs
+`ContextMenusPlugin()` too (`ownerNotInstalled` otherwise).
 
 ### Editing: `MentionTextView`
 
-The note's editor is a `MentionTextView<AnyMentionable>`, an `NSTextView` on TextKit 2, with the
-note's style, its shape as `owner` (never offered in its own picker) and the service:
+The note's editor is a `MentionTextView<AnyMentionable>`, a `DetailTextView` (the panel's text
+view, so the panel's boxes take it too: [In the panel](#in-the-panel-mentiontextarea)) on TextKit 2,
+with the note's style, its shape as `owner` (never offered in its own picker) and the service. On
+the canvas nothing of the panel's is set, so it's the text view it always was:
 
 ```swift
 textView = MentionTextView(frame: CGRect(origin: .zero, size: frame.size), text: text, style: NoteStyle.text,
@@ -3812,7 +3970,10 @@ func textDidChange(_ notification: Notification) {
   it, typing replaces it. A click on it selects it; a double-click on a live one follows it
   (`MentionState.follow`), and on a missing one keeps it selected. Such a press is the view's to
   its release: its drags and its release never reach the canvas behind, which would take them for
-  the pointer over it and hover the note. It's not a link: no pointing hand. Its menu adds Go to “Name” (a live one) and Remove Mention, which leaves its name as text.
+  the pointer over it and hover the note. It's not a link: no pointing hand. Its menu adds Go to
+  “Name” (a live one), Show What Mentions “Name” (a live one whose shape is on the board shown,
+  unless the text is that shape's own and nothing else mentions it; on the scheduler's next turn,
+  as Go to is) and Remove Mention, which leaves its name as text.
 - **Copy and paste** write the stored form under a type of the app's own (`.mentionText`) and the
   plain form ("@Ship the beta") as a string; a paste reads the stored form first, then plain text,
   where a whole `@[name](shape:UUID)` becomes a pill. So ⌘C and ⌘V on a pill make another mention
@@ -3846,9 +4007,9 @@ func textDidChange(_ notification: Notification) {
   the picker's model, headless, shown in a child window that never takes the keyboard. What's
   typed after the `@` is the query: Recent and Nearby for an empty one, else the matches, the
   matched characters semibold; "No matches" or "Nothing to mention" when there's none. ↑ and ↓
-  move, Return and Tab pick, Escape closes, and so do the caret leaving the query, a line break,
-  a query longer than 80 characters (a whole title can be typed), or a space after a query that
-  matches nothing. A pick puts the pill in the query's place, then a space, one step of the text's
+  move, Return and Tab pick, Escape (or ⌘.) closes, and so do the caret leaving the query, a line
+  break, a query longer than 80 characters (a whole title can be typed), or a space after a query
+  that matches nothing. A pick puts the pill in the query's place, then a space, one step of the text's
   undo, which gives back the query as typed. Undo while it's open closes it: the text's, taking
   back the `@` typed, or the board's, ending editing. While it's open, the highlighted shape is hovered on the canvas,
   and autocorrection is off. VoiceOver hears its list change as the highlight moves (the row, or
@@ -3856,9 +4017,146 @@ func textDidChange(_ notification: Notification) {
 - **Where editing began.** `selectPill(at:)` selects the pill at a point in the view: the note
   calls it with `EditContext.startPoint`, so a click on a pill on the canvas has that pill
   selected in the editor, and a click anywhere else puts the caret where it always has.
+- **Its delegate** is the view's own (`MentionTextDelegate`: it keeps pills out of what Writing
+  Tools rewrite), which hands its host (the note's editor, a panel box) the rest of what a text
+  view asks, but only the questions `HostlessTextDelegate` answers too: a text view reads what its
+  delegate answers once, as it's set, and the host, held weakly, may be gone while the view still
+  asks (a panel's box let go before its view leaves the window), when each question gets the answer
+  a text view with no delegate gets. A host's delegate method outside that list isn't handed on
+  until it's added there.
 
 A note's render and its editor lay the pills out alike: each pill's frame in the editor is the
 canvas's (StickyNotesTests' `noteEditorTests`), so nothing moves when editing starts.
+
+### In the panel: `MentionTextArea`
+
+Mention text edits in the detail panel as it does on its shape: `MentionTextArea`, a
+[`DetailTextBox`](#text-of-a-plugins-own-detailtextbox) over a `MentionTextView`, in a section of
+the kind's. No shipped kind puts one in its panel yet (a note's text is edited on the note);
+MentionsTests' fixtures hold it, a jot's text and a brief's Blocked By:
+
+```swift
+DetailSection("Text", in: FieldsTab.self) { $jot in
+    MentionTextArea($jot, \.text, placeholder: "Say something")   // height:, placeholder:, onCommit: as a DetailTextArea's
+}
+```
+
+- **As on the canvas**: pills, the `@` picker, copy and paste, a click on a pill selecting it and a
+  double-click going to its shape, Go to, Show What Mentions and Remove Mention in its menu. Its
+  owner is the shape the binding writes (`$jot.shapeID`), never offered in its picker. The style
+  is `MentionStyle.panelText`: the panel's font (`DetailStyle.textFont`), the label's color, and a
+  neutral surface, where each pill's symbol takes its target's tint, as in the picker.
+- **Writes.** It writes the field on every change, as the panel's text does: a run of writes is one
+  undo step, named for its section ("Change Text"), a pick, Remove Mention and a paste included. A pick with the mouse is
+  part of the run too: the picker is a child window of the board's, and a click there, unlike one
+  in any other window that isn't a board's, doesn't seal the run ([Undo](#undo)). It shows what
+  the shape says only when that changed from elsewhere (an undo of the board, another plugin's
+  write), with `show(_:)`: its pills as their targets are now, the caret where it was, the picker
+  closed, and nothing written back. A rename of what it mentions redraws its pills and writes
+  nothing, as in a note being edited.
+- **Keys.** Without `onCommit` (a jot's), Return is a new line; with it (a brief's), Return, ⌘↩
+  and the keyboard leaving say the text is done, and ⇧↩ is a new line. While the picker is open its keys
+  are the picker's (`holdsKeys`): Return and Tab pick and commit nothing, and Escape (or ⌘.)
+  closes it; a second leaves the panel.
+- **Read-only** (a locked shape, `detailUpdating`), it's dimmed as one, text and pills
+  (`showEnabled`, by `alphaValue`), opens no picker (a lock landing closes an open one), and its
+  menu has no Remove Mention; its clicks still land, so a click selects a pill, text is selected
+  and copied, and a double-click on a pill still goes to its shape, which changes nothing; nor
+  does it ever say its text is done (`onCommit`), since nothing was written.
+- **Undo.** In a board's window, Edit › Undo while it has the keyboard is the text's own (a pick
+  undone gives back its query), written back once; once the keyboard leaves, the board's Undo takes
+  back the field's run whole, "Undo Change Text".
+
+### What mentions a shape
+
+The index is kept both ways, so what mentions a shape is one lookup: its backlinks. Mentions reads
+them on the board shown, as its index is ([across boards](#mentions-across-boards)):
+
+- **`isMentioned(_:)`**: whether another shape on the board shown mentions it. A shape's mention
+  of itself doesn't count.
+- **`backlinks(of:)`**: a `MentionBacklink` per mentioner, in document order, the shape itself left
+  out. Each is named as it's mentioned (`mentionAppearance`), else by its title, else its tool's
+  label, with its symbol, and carries a quote: about 60 characters (`MentionStyle.quoteLength`) of
+  its text as plain text around its first mention of the shape, each mention "@" and the name it
+  shows now, on one line, the mention whole and the rest shared half and half on each side (room
+  one side doesn't use goes to the other), cut between words with "…" where text is left out. It
+  reads the board as the state last heard it, never the editor's observed document, so a SwiftUI
+  view that reads it redraws only as its revision says.
+- **`backlinkRevision(of:)`** is observed per shape, as `labelRevision` is: it changes when a commit
+  adds, changes or removes a shape that mentions the shape or did (never when it only moves one: a
+  drag costs nothing), when a name a mentioner's quote shows changes, and on a switch of board.
+  Only shapes whose revision was read since it last changed tell observers, so a rename of a
+  subboard 100 notes mention tells no one who isn't looking.
+- **`showWhatMentions(_:)`** selects what mentions the shapes (their mentioners, each one's mention
+  of itself left out) and brings them into view (`editor.goTo`: one step back), on the scheduler's
+  next turn, since from a menu in text it ends the editing that menu's view is part of; nothing if
+  nothing mentions them.
+
+Two places show them:
+
+- **The Mentioned In tab** (`MentionsTab`, order 300: a tab of the shape's state that comes and
+  goes, as Issues is) comes with a kind's opt-in, `x.mentionable` or `registrar.mentionable(K.self)`.
+  Its one section is shown while the shape `isMentioned` (`shownWhile`, asked on every commit, one
+  lookup), so the tab shows only then. A line per mentioner, its symbol, its name and its quote
+  under it; the pointer on a line hovers the mentioner (`editor.hovered`: outlined on the canvas,
+  its row tinted), and a click goes to it (`follow`: ⌘[ comes back). The list observes the shape's
+  `backlinkRevision` alone, so a mentioner renamed, added or removed redraws it though the shape
+  itself didn't change, and a drag redraws nothing. Its lines work on a read-only shape too
+  (`enabledWhileReadOnly`): going to what mentions a locked shape changes nothing of it. In debug
+  builds `MentionState.backlinksShown` records what each list last drew, for tests.
+- **Show What Mentions**, in the canvas's context menu: an item for the canvas
+  (`contextMenuForCanvas`, since whether a shape is mentioned is what Mentions' state knows, not
+  the shape), in `MentionsMenuGroup` (order 50, after a kind's own items), shown when any shape the
+  menu is for is mentioned, and in a pill's menu in text ("Show What Mentions “Name”"). Both run
+  `showWhatMentions`.
+
+So a list with a mentionable kind needs `DetailPanelPlugin()`, and one with Mentions
+`ContextMenusPlugin()`; the report shows the tab as `ShapeDetails → sticky-note` after the kind's
+`mentionable`, and the menu item as `CanvasContextMenu` on the `mentions` line.
+
+### Warnings: MentionValidation
+
+A mention that's there is never refused, as a scope never refuses one, but some can't work, and a
+bridge between two horizontals says so:
+[`MentionValidation`](../Sources/MentionValidation/MentionValidation.swift), which neither Mentions
+nor Validation knows. Mentions finds the problems (`registry.mentionProblems(of:lookup:)`, each a
+`MentionProblem`: the property the text is in, and a sentence), and the bridge makes each a warning
+about that property:
+
+```swift
+registrar.validateEveryShape(ignoringMoves: true) { shape, context in
+    guard context.registry.namingKinds.contains(shape.kind) else { return [] }   // no mention text: one set lookup
+    return context.registry.mentionProblems(of: shape, lookup: context.shape).map { .warning($0.message, field: $0.property) }
+}
+```
+
+| Problem | Warning |
+|---|---|
+| A mention of a shape whose kind can't be mentioned (an arrow) | `“Arrow” can’t be mentioned.`: named as the mention holds it, else by its kind |
+| A mention of a mentionable shape outside its text's scope (scoped text only: `AnyMentionable` admits every one) | `“Groceries” can’t be mentioned here.`: named as it's called now |
+| Text that looks like a mention but isn't one | `“@[x](shape: 7C1E…” isn’t a mention.`: quoted to 30 characters |
+
+- **Never for a missing shape**: its dashed pill says so. Nor for one kept aside, which isn't the
+  app's to judge, nor for a shape on another board: targets are looked up on the board shown
+  (`context.shape`), the only board Validation checks, so one elsewhere is looked up no more than a
+  missing one.
+- **Each target once per text**, in text order, then the text's look-alikes; the same problem twice
+  in one property is said once. Every text a shape keeps is walked (`forEachNamingValue`, then
+  `forEachNamingLeaf`), so text in an added property warns about that property.
+- **Look-alikes** (`text.lookalikes`): from each `@[` that isn't escaped and starts no mention, and
+  has `(shape` (in any case) after it on its line before the next `@[`, through the first `)` after
+  that, else to the line's end or that `@[`: `@[x](shape: 7C1E…)` (a space), `@[x](shape:1234)` (no
+  UUID), `@[a]b](shape:…)` (a `]` not escaped). `\@[`, `@[x]` alone, and a mention with a lowercase
+  id aren't. What an agent or a hand meant as a mention and got wrong: no surface writes one, since
+  text made from runs escapes every `@[` in its text. Text with no more unescaped `@[`s than
+  mentions has none, which one pass over its bytes tells, so asking costs little for text without.
+- **Changes check again.** The lookups are Validation's, so a change to a target (renamed, deleted,
+  undone) checks its mentioners again. The rule ignores moves, so a drag of a shape 100 notes
+  mention, or of the whole board, runs it for none of them (`MentionValidationPlugin.textsChecked`,
+  debug builds, counts the texts it checks, which tests hold a drag to).
+
+Shipped after ValidationContents, its warnings show as any issue does: an orange outline, a line in
+the Issues tab and a dot on the row.
 
 ### Mentions across boards
 
@@ -3897,12 +4195,14 @@ shape on any board of it, and shows it as it's called now, wherever it is:
 - **A copy of a tree of boards** mentions the copies of the shapes copied with it, on any board of
   the tree (Clipboard's paste passes names through the whole tree's map), and goes on naming the
   rest, wherever they are.
-- **Moving by cut and paste breaks mentions from outside what moved.** Cut and paste is the only
-  way to move shapes to another board, and a paste gives everything new ids, what a cut took
-  included: what moved mentions the copies moved with it, but a mention from elsewhere in the file
-  of a shape that moved names the shape cut, and shows missing (by the name it holds) until undo
-  brings it back (CompositionTests' `mentionsBoardsTests`; [Not built yet](#not-built-yet)). On one
-  board it was so before boards.
+- **Moving by cut and paste keeps mentions.** Cut and paste is the way to move shapes to another
+  board, and it's a move ([the clipboard](#the-clipboard)): a paste of what a cut took keeps each
+  id the file doesn't use, so a mention from anywhere else in the file of a shape that moved shows
+  it missing between the cut and the paste (by the name it holds), and live again once it's
+  pasted, on whatever board, and following it goes there; what moved with it mentions it as before.
+  Undoing the paste makes it missing again, and undoing the cut too, live where it was. A second
+  paste of the same cut is copies, as a copy's paste always is. Only an arrow bound to what moved,
+  from outside it, isn't kept: a binding lets go at the cut, as at a delete.
 - **The picker lists the whole file.** Its catalog is every mentionable shape on every board the
   editor can show (the root, and from it down the boards of owners that aren't kept aside, of kinds
   that own boards: `canShow`'s), read whole as the editor opens, or a file or a board is put in
@@ -3916,12 +4216,18 @@ shape on any board of it, and shows it as it's called now, wherever it is:
 - **The index is the board shown's**: who mentions whom, which the rows and pills need. Each
   board's is kept for going back to it, and a board entered for the first time has its mention
   text read on the way in.
+- **So are backlinks and warnings.** What mentions a shape is read from the index, so the Mentioned
+  In tab and Show What Mentions list the mentioners on the board shown, not those on other boards,
+  and a pill's Show What Mentions shows only for a shape on the board shown. MentionValidation
+  looks a mention's target up on the board shown, so a mention of a shape on another board is
+  checked no more than a missing one is (both are [Not built yet](#not-built-yet) across boards).
 
 MentionsTests' `boardsTests` hold these on pockets (and a mention of a shape on a board the app
 can't show); CompositionTests' `mentionsBoardsTests` on
 the shipped notes in a subboard (rows across switches, renames there and their undo, the subboard
 deleted, a locked note's pill double-clicked, a subboard copied with the notes inside it and beside
-it, one cut and pasted, and `canvas draw` naming a note two boards down); `SubboardFileTests` a saved file whose
+it, one cut and pasted with every id kept, a note cut inside one and pasted on the root, and
+`canvas draw` naming a note two boards down); `SubboardFileTests` a saved file whose
 notes mention each other two boards apart (`nested-mentions-across.v4.json`).
 
 ## Boards
@@ -5242,10 +5548,10 @@ each of them:
 | [Selection](#selection) | Opening a shape (`ShapeOpening`); Back crosses boards, and showing another board is a step; nothing is selected on arrival; `showBoard(_:selecting:)`; `goTo` goes to a shape on any board. |
 | [Boards](#boards) | Opening a kind's boards, ⌘↑, a board's name and symbol, and the path over the canvas. |
 | [The table of contents](#whats-listed-and-selecting) | Lists the board shown, keeps each board's rows, and takes its header from its placer (the board's crumb, in the app). A row may read shapes on other boards ([`elsewhere`](#rows-read-from-more-than-their-shape)). |
-| [Validation](#a-horizontal-plugin) | Checks the board shown, keeping each board's issues; a board never shown isn't checked. |
+| [Validation](#a-horizontal-plugin) | Checks the board shown, keeping each board's issues; a board never shown isn't checked, and a rule's lookups (MentionValidation's targets) find shapes there alone. |
 | [Locking](#locking) | A shape whose board holds a locked shape isn't deleted; a locked owner is entered as any other. |
-| [Mentions](#mentions-across-boards) | A mention names a shape on any board, live and followed there (`goTo`); indexes the board shown, keeping each board's index; the `@` picker lists the board shown's shapes. |
-| [The clipboard](#the-clipboard) | Copies what a shape holds, all the way down, and pastes the tree with new ids. |
+| [Mentions](#mentions-across-boards) | A mention names a shape on any board, live and followed there (`goTo`, or `goInto` for a kind followed by opening it: a subboard); indexes the board shown, keeping each board's index; the `@` picker lists the whole file (the board shown's first on a tie), while the Mentioned In tab and Show What Mentions read the board shown. |
+| [The clipboard](#the-clipboard) | Copies what a shape holds, all the way down, and pastes the tree with new ids; what a cut took, onto any board, under the ids it had (a move). |
 | [Undo](#undo) | One history per file; a step holds every board it reached, and undoing one made on another board shows that board first. |
 | [Boards on disk](#boards-on-disk) | Format 4 saves every board, in one flat map; the camera on each board, and the board left open, are remembered per file on this Mac. |
 | [The command line](#the-command-line) | Commands work on the board a file's window shows. |
@@ -5324,7 +5630,8 @@ what it could undo is forgotten, and the board's step for the typing is what's l
 (the canvas, the table of contents' list, a checkbox) they're the board's, named. The window seals a
 run on a click, on a key where neither text nor the canvas has the keyboard, and when the keyboard
 moves, since the editor sees none of those; and every board's window seals on a click in a window
-that isn't a board's (the color panel a color well opens, whose picks are panel writes).
+that isn't a board's (the color panel a color well opens, whose picks are panel writes), but not
+in a board's child window (the `@` picker beside a panel's text, whose pick is part of the typing).
 
 **Counting and saving** is the host's: `BoardDocument` has no undo manager, and counts its changes
 by the history's events as they happen (`undoHistory.didChange`, host API: a step began, came to
@@ -5416,7 +5723,7 @@ an autosave, as TextEdit's does. A periodic autosave that comes during a press (
 
 **A kind versions its own props.** Its migrations sit beside `static let kind`, and their count
 is the version boards record. The sticky note's steps handed its checklist over to Checklists, then
-its title to Titles:
+its title to Titles, and made its text mention text:
 
 ```swift
 public struct StickyNote: BoxShapeProps {
@@ -5427,6 +5734,8 @@ public struct StickyNote: BoxShapeProps {
         PropsMigration.handOver("checklist", to: ChecklistProperty.self),
         // So does Titles the title, once someone names the note.
         PropsMigration.handOver("title", to: TitleProperty.self),
+        // Its text may mention shapes: what would now read as a mention is escaped.
+        PropsMigration("text may mention shapes") { props in MentionTextFormat.escapeLookalikesV1(in: &props, "text") },
     ]
     ...
 }
@@ -5595,8 +5904,8 @@ core                 tool hand · command undo · command redo
 keyboard             service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo
 selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection
 arrows               shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay
-sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · channel note-link
-subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails → subboard
+sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link
+subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard
 schemas              service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
 adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
@@ -5605,10 +5914,11 @@ context-menus        service ContextMenuState · secondary-click menu
 table-of-contents    service ContentsState
 checklists           property checklist · adornment ChecklistChip → every shape
 titles               property title · adornment TitlePill → every shape
-mentions             service MentionState · overlay MentionFrames · ShapeFaces
+mentions             service MentionState · overlay MentionFrames · ShapeFaces · CanvasContextMenu
 board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
 validation-details   DetailStatuses in Issues
 validation-contents  ContentsMarks
+mention-validation   ValidationRules
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
 locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · CanvasContextMenu
 snapping             service SnapState · translation adjuster
@@ -5640,10 +5950,14 @@ core. `ports note-link → sticky-note` is a note's ports and `channel note-link
 StickyNotes declares for them; arrow-ports' `connector → arrow` makes arrows what ports draw, and
 brings the opt-in before it (`property channel → arrow`). `mention text → sticky-note` and
 `mentionable → sticky-note` are Mentions' opt-ins: a note's text shows pills (`note.mentionText`),
-and text may mention a note (`note.mentionable`), as it may a subboard (`mentionable → subboard`);
+and text may mention a note (`note.mentionable`), which brings the `ShapeDetails` entry after it,
+the Mentioned In tab. A subboard is mentionable with its tab too (`mentionable → subboard`: called
+by its title, and following a mention of one enters it).
 `mentions` keeps who mentions whom (`MentionState`), tells the text it keeps drawn
-(`MentionTextMemo`) where each frame ends (`MentionFrames`, an overlay that draws nothing), and
-makes pills answer clicks (`ShapeFaces`).
+(`MentionTextMemo`) where each frame ends (`MentionFrames`, an overlay that draws nothing), makes
+pills answer clicks (`ShapeFaces`), and puts Show What Mentions in the context menu
+(`CanvasContextMenu`); `mention-validation`'s `ValidationRules`, for every kind, is its warnings
+about mentions that can't work.
 Titles places its pill on every shape whose kind's title shows one (`adornment TitlePill → every shape`), Checklists its chip likewise,
 and Locking its lock; `adornments` lends them their layout and drawing, a canvas button
 (`CanvasButtons`) and their hits (`DecorationHits`), and places none of its own. The automation
@@ -5693,9 +6007,10 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   (`$0.shortcut("c", forTool: ToolID(placing: Card.kind))`). SelectionTests, ArrowsTests,
   ValidationTests, DetailPanelTests, AdornmentsTests, ChecklistsTests, ClipboardTests, TitlesTests,
   ValidationDetailsTests, ValidationContentsTests, LockingTests, PortsTests, AutomationTests,
-  TitleNamesTests, PortEdgesTests and ValidationChecksTests import no real vertical (only these
-  fixtures, and local test kinds), which proves those plugins are shape-agnostic. ArrowPortsTests
-  import one real vertical, Arrows, and join fixtures with its arrows.
+  TitleNamesTests, PortEdgesTests, ValidationChecksTests and MentionValidationTests import no real
+  vertical (only these fixtures, and local test kinds), which proves those plugins are
+  shape-agnostic. ArrowPortsTests import one real vertical, Arrows, and join fixtures with its
+  arrows.
 - **Names of shapes** without a real kind that holds them: `NamingPlugin()` (CanvasTesting) registers
   `Memo`, whose props name shapes in a struct in a list (`MemoNote`), an optional and a dictionary,
   and which opts into `CitationsProperty`, an added set of names; and `CitingTag`, bound to its
@@ -5755,9 +6070,18 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   `window.settle()`, a few turns of the loop, where there's nothing to wait for or the point is
   that nothing more happens. Find controls by AppKit class (`view.descendants(NSTextField.self)`)
   and `stringValue` or `placeholderString`, give a field the keyboard with `window.focus(field)`,
-  send keys with `window.type` and `window.press` (`modifiers:` for ⌘A), and press the canvas with
-  `canvas.mouseDown(with: window.mouse(...))`: `sendEvent` mouse-downs don't reach views in an
-  unshown window.
+  send keys with `window.type` and `window.press` (`modifiers:` for ⌘A; `pressCommandPeriod()`
+  for ⌘., which the window sends up the responder chain as `cancelOperation:`), and press the
+  canvas with `canvas.mouseDown(with: window.mouse(...))`: `sendEvent` mouse-downs don't reach
+  views in an unshown window. A click in the panel goes where the window's hit test lands
+  (`PanelWindow.hit(_:in:)`, `clickThroughWindow(at:in:)`), since SwiftUI takes the clicks over
+  what it disables: a view's own `mouseDown`, called directly, would never meet that. `PanelWindow(editor, inBoardWindow: true)` hosts the panel in a `BoardWindow`,
+  for Edit › Undo. A plugin's text box is held with a fixture view (DetailPanelTests'
+  `KeyedTextView`, a `DetailTextView` whose value wraps a string, with a `holdsKeys` a test sets,
+  logging the commands it gets, its `didChangeText`s and its `show`s): in the panel, a view that
+  doesn't hold keys never hears Escape, which the panel's root takes first. `shownWhile` is held
+  with a service of the test's own (`Watchers`), and a commit on another shape showing and hiding
+  the section, with its tab, while nothing else is built (`countedBuilds`).
 - **Context menus.** `h.secondaryClick(at:)` (CanvasTesting) right-clicks through the host API and
   returns the `NSMenu`, or nil. `menu.outline` reads it a line per item ("(Brighter)" when dimmed,
   "✓ 1", "– 2" when mixed, "Level ▸" and its items indented, "—" between groups), and
@@ -5777,7 +6101,11 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
 - **The clipboard.** A test that copies gives the clipboard a pasteboard of its own, so it never
   touches the user's: `ClipboardPlugin(pasteboard: NSPasteboard.withUniqueName())`, or
   `ShippedPlugins.makeEditor(pasteboard:model:)` (and `releaseGlobally()` it after). Two editors on one
-  pasteboard are two boards copying and pasting between them.
+  pasteboard are two boards copying and pasting between them. ClipboardTests' `moveTests` hold cut
+  and paste to a move: the cut's mark, cleared by a copy or any write; a second paste, a copy;
+  an id in use, an orphan board or an unreadable entry under a cut id, and a refused deletion, each
+  pasting that shape as a copy; a moved copy keeping its `CopiedFrom`; a name left behind naming
+  the shape again, and a binding let go.
 - **The language model.** No test reaches the network: every shipped list a test builds gets a
   `ScriptedLanguageModel` (`ShippedPlugins.makeEditor(model:)`, whose `model:` has no default so
   none can be forgotten), which keeps each request, answers from its queue, and holds its answers
@@ -5871,15 +6199,19 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   BoardDocumentTests open, save, revert and host boards with `BoardDocument.configuration` set as
   the app sets it. `./build.sh bench` builds BenchmarkTests in release and holds saving, opening
   (Mentions' index and catalog, built as a board opens, among it), validation's first read (every
-  shape, checked against its kind's schema too) and its reads after a drag event and after moving
-  every shape, a hover and a drag frame (titles' pills, checklists' tallies, locks and mentions'
-  pills in view), a hover on a note's port dot and a drag from it, a hover onto a title's pill and
-  onto a mention's, reading the table of contents' rows after a drag event, an insert, a delete and
-  a restack, a keystroke in the `@` picker (the `@` that opens it too, and on a file of two boards),
-  a rename of a subboard mentioned
-  100 times against one mentioned by none, a `canvas draw` of 20 notes each pushed along its row of
-  the grid (150 ms, time the window doesn't draw), the minimap's first picture (a frame at a time)
-  and a drag frame with it, ten subboards' previews filling in (the longest frame, and how many), and
+  shape, checked against its kind's schema too) and its reads after a drag event, after a drag
+  event of a subboard 100 notes mention (whose mention rule looked it up, and ignores moves) and
+  after moving every shape, a hover and a drag frame (titles' pills, checklists' tallies, locks and
+  mentions' pills in view), a hover on a note's port dot and a drag from it, a hover onto a title's
+  pill and onto a mention's, reading the table of contents' rows after a drag event, an insert, a
+  delete and a restack, a keystroke in the `@` picker (the `@` that opens it too, on a file of two
+  boards, and among thousands of rectangles where only 3 notes can be mentioned), a rename of a
+  subboard mentioned 100 times against one mentioned by none (its commit, and validation's read
+  after it), the panel's layout of that subboard, its Mentioned In tab showing, after a drag event
+  of another note and after a mentioner's rename (`Budget.panelAfterCommit`, 1 ms; the tab's lines,
+  `backlinks(of:)`, only reported), a `canvas draw` of 20 notes each pushed along its row of the
+  grid (150 ms, time the window doesn't draw), the minimap's first picture (a frame at a time) and
+  a drag frame with it, ten subboards' previews filling in (the longest frame, and how many), and
   undoing and redoing a drag (with its frame), a tenth of the board's move and deletion and every
   shape's deletion (the steps alone), to their budgets on generated boards of 1,000 and 10,000
   shapes (`generatedBoard`; three notes in ten mention a subboard and a shape that isn't there), and
@@ -5926,7 +6258,8 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   nothing is placed, and the camera arrives.
 - **Mentions.** MentionsTests use fixtures only (`MentionFixturesPlugin`: `Jot`, a box of mention
   text with a `MentionTextView` editor, and `Plate`, `Token`, `Endpoint` and `Brief`, with the
-  `Blockers` scope; `mentionHarness` puts Keyboard and Selection first). They fuzz the stored
+  `Blockers` scope; `mentionPlugins` installs the detail panel and the context menu, for the tab
+  and Show What Mentions, and `mentionHarness` puts Keyboard and Selection first). They fuzz the stored
   grammar, hold scopes and their registry checks, names, `MentionState`'s index, observations and
   rows (`textsRead` counts the texts a commit reads, in debug builds), the matcher's tiers, and the
   pill's images; drawing, pixel for pixel against string drawing, and each pill's pixels within
@@ -5937,22 +6270,50 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   steps); the state, the pills and the rows as steps are undone and redone (`editor.undo()`,
   `redo()`: never a record inserted again in undo's place); and the picker's model, headless. AppKit closes an undo group at the end of a turn of the run loop,
   so a test that undoes steps one at a time settles the window (`window.settle()`) between them.
+  They hold backlinks too (`backlinkTests`: order and names, quotes cut at either end, the canvas's
+  menu item and its one Back step, the board shown's alone, and a quoted name changed on another
+  board, by `transact(on:)`, a pocket's deletion and its undo, telling the revision's observers;
+  the revision's bumps and non-bumps, a drag, a self-mention, undo and redo, with the state's
+  tests). Mention text in the panel
+  (`panelTests`): `MentionPanel` hosts a `DetailPanelView` in an unshown window with the real
+  `TaskScheduler`, and `MentionFieldsPlugin` gives `Jot` a Text field and `Brief` one that commits;
+  they hold a pick to one step, the picker's keys against the box's and the panel's, pills clicked,
+  deleted and double-clicked, copy and paste, a rename redrawn and the board's undo shown without a
+  write, Edit › Undo in a `BoardWindow`, read-only (a pill clicked and followed where the
+  window's hit test lands, which SwiftUI would take over a disabled box), ⌘. closing the picker,
+  and the picker under its `@` as the panel scrolls. In an unshown window the picker has no parent window, so a test picks with the mouse by
+  clicking its rows (CanvasUITests hold a board's child window to not sealing). The Mentioned In
+  tab (`mentionedInTests`) is read through `backlinksShown`, since SwiftUI draws its lines: shown
+  while mentioned, the lines in order, a click and Back, redrawn by a mentioner's change and not by
+  a drag. A line's hover goes untested: SwiftUI's `.onHover` doesn't answer synthesized events.
   StickyNotesTests hold a note's text (its third migration, its row, what it's called) and its
   editor to its render with pills (`noteEditorTests`: each pill's frame in the editor, TextKit 2's
   for its attachment, is the canvas's; at a whole number of pixels to a point, the lines start
   alike and the pills' pixels are within a quarter; at 60%, string drawing draws a pill part way
   into a pixel and TextKit 2 on the nearest, so there only the pixels off the pills are held).
+  MentionValidationTests hold the bridge with fixtures of their own (`Card` and `Sheet`
+  mentionable, `Blob` not, `Letter` holding `MentionText` and `ScopedMentionText<Only<Card>>`, and
+  `Postscript`, an added property of mention text): each warning and its field, missing and
+  kept-aside targets, delete and undo, scope, look-alikes (fuzzed: text made from runs has none),
+  a locked mentioner, the board shown, and moves: a drag of a target or of its mentioner checks
+  no text, and a rename of the target checks its mentioner (`MentionValidationPlugin.textsChecked`,
+  debug builds, counts the texts the rule checks).
   CompositionTests' `mentionsShippedTests` hold the shipped pieces together in a `CanvasView`: a
   titled note picked with `@`, renamed (the editor, the row and the canvas), deleted and undone; the
   pill clicked on the canvas and double-clicked in the text; a locked note's pill; copying and
-  pasting a pill; and the text view's undo written back to the note. In a board's window
-  (`UndoBoard`, whose `BoardWindow` gives Edit › Undo to the text with the keyboard), they hold a
-  session begun from a pill, with a pick, Remove Mention, a paste and typing, to one step, and a
-  note placed and typed into with a pick to one step with its placing, "Add Note"; a pick
-  undone in the text to its query, each undo to one write; Undo with the picker open, the text's
-  and the board's, to closing it; a deletion and a rename undone to pills as they were; and going
-  to a mention to no step, with Back beside Undo. CommandLineTests `draw`
-  notes that mention shapes, on the board or not.
+  pasting a pill; a note and the note it mentions cut and pasted as the same shapes, and a titled
+  note that mentions an untitled one copied and cut with it; and the text view's undo written back
+  to the note. In a
+  board's window (`UndoBoard`, whose `BoardWindow` gives Edit › Undo to the text with the
+  keyboard), they hold a session begun from a pill, with a pick, Remove Mention, a paste and
+  typing, to one step, and a note placed and typed into with a pick to one step with its placing,
+  "Add Note"; a pick undone in the text to its query, each undo to one write; Undo with the picker
+  open, the text's and the board's, to closing it; a deletion and a rename undone to pills as they
+  were; and going to a mention to no step, with Back beside Undo. `backlinksShippedTests` hold Show
+  What Mentions among a subboard's own items and the clipboard's, and the Mentioned In tab of a
+  note and of a subboard in the shipped panel, in a `BoardWindow` (a line goes to its mentioner,
+  and Back returns); ShippedTests a MentionValidation warning in Issues and on its row; and
+  CommandLineTests `draw` notes that mention shapes, on the board or not.
 - **Board previews.** CanvasTests' PreviewTests drive a `BoardPreviews` of their own over a
   `CanvasFile` (`preview(of:in:)`, `build(in:until:)`: a deadline already past builds one chunk,
   one far off everything; `waiting`, `keptKeys`, and the mask's pixels), and an editor's through
@@ -6129,7 +6490,8 @@ Each of these adds to the design without changing what plugins are written again
   ports draw every arrow a board needs, removing the arrow tool (the POC's transcript drives it
   today).
 - **More of boards**: moving shapes into a subboard, or up out of one (Move to Subboard), keeping
-  their ids, with a check that no shape goes into its own board; arrows across boards (an end bound
+  their ids as a cut and its paste do, in one step, with a check that no shape goes into its own
+  board; arrows across boards (an end bound
   to a shape on another board: bindings stay on their board, and a copy lets go of the rest); the
   selection remembered per board, so going back into a board selects what was selected there
   (nothing is selected on arrival, and only Back returns to it); a crumb's menu from the keyboard
@@ -6155,18 +6517,18 @@ Each of these adds to the design without changing what plugins are written again
 - **More of checking shapes against their schemas**: `unevaluatedProperties`, `dependentSchemas`
   and references to other documents, which no schema here writes; and checking only the parts of a
   shape its schema bounds, for the first read of a large board (10,000 shapes take about 30 ms).
-- **More of mentions**: mention text in the detail panel (a panel text view shared with schema
-  cards), in checklist items, and on the canvas where they're drawn; a text restricted to some kinds
-  among the shipped ones; a shape's backlinks ("Mentioned in"); validation of mentions that are missing or outside
-  their scope; saying in the `@` picker which board a shape on another board is on; moving
-  shapes to another board
-  without breaking the mentions of them from outside what moves (a paste of what the last cut took
-  keeping its ids, or renaming the file's mentions of them to the copies), and a move that isn't a
-  cut and paste; the command line reading and
-  listing what can be mentioned; more kinds mentionable (through bridges); and making a shape from
-  the picker.
+- **More of mentions**: a shipped text in the panel that holds mentions (`MentionTextArea` is
+  there for one); mention text in checklist items; saying in the `@` picker which board a shape on
+  another board is on; backlinks and validation across boards (the Mentioned In tab and Show What
+  Mentions list the mentioners on the board shown, and MentionValidation checks a mention of a
+  shape on another board no more than a missing one); a text restricted to some kinds among the
+  shipped ones; a move that isn't a cut and paste (Move to Subboard, below), keeping ids as a cut's
+  paste does, so mentions stay live; the command line reading and listing what can be mentioned,
+  and helpers for writing mentions; more kinds mentionable (through bridges); and making a shape
+  from the picker.
 - **More of the detail panel**: editing several selected shapes at once (it shows "N Shapes"
   today); every-shape sections over the record (there are every-box ones over the frame, and those
-  over an added property), and every-box overrides such as an aspect lock;
+  over an added property; so `mentionableEveryShape` brings no Mentioned In tab), and every-box
+  overrides such as an aspect lock;
   remembering the chosen tab and collapsed sections across launches (`DetailTabID.name` is stable
   for that); and marking the row a validation issue is about (`ValidationIssue.field`).

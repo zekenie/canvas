@@ -80,7 +80,7 @@ import TestKit
         expectEqual(copies.map(\.box), [slot(0), slot(1)])
         expectEqual(h.editor.selectedShapeIDs, copies.map(\.id))
     },
-    test("⌘X copies and deletes; ⌘V brings back copies, with new ids") {
+    test("⌘X copies and deletes; ⌘V puts the same shapes back, under their ids, selected; ⌘V again pastes copies of them") {
         let pasteboard = privatePasteboard()
         defer { pasteboard.releaseGlobally() }
         let h = try harness(pasteboard)
@@ -94,10 +94,16 @@ import TestKit
         expectEqual(h.editor.selectedShapeIDs, [])
         expect(h.command("v"))
         let pasted = h.editor.document.shapes
+        expectEqual(pasted.map(\.id), [box, disc])
         expectEqual(pasted.map(\.kind), [Box.kind, Disc.kind])
         expectEqual(pasted.map(\.box), [slot(0), slot(1)])
-        expectEqual(pasted.map(\.copiedFrom), [box, disc])
-        expect(pasted.allSatisfy { $0.id != box && $0.id != disc })
+        expectEqual(pasted.map(\.copiedFrom), [nil, nil], "moved, not copied")
+        expectEqual(h.editor.selectedShapeIDs, [box, disc])
+        let before = h.editor.document
+        expect(h.command("v"))
+        let copies = h.editor.shapes(since: before)
+        expectEqual(copies.map(\.copiedFrom), [box, disc], "their ids are the moved shapes' now")
+        expectEqual(copies.map(\.box), [slot(0), slot(1)])
     },
     test("with nothing selected, ⌘C and ⌘X pass the key on, and the pasteboard keeps what it had") {
         let pasteboard = privatePasteboard()
@@ -160,7 +166,7 @@ import TestKit
         expectEqual(h.editor.document.shapes.map(\.id), [ticket], "the ticket wasn't copied, so it isn't deleted")
         let before = h.editor.document
         h.editor.paste()
-        expectEqual(h.editor.shapes(since: before).map(\.copiedFrom), [box])
+        expectEqual(h.editor.shapes(since: before).map(\.id), [box], "the box, moved back")
     },
     test("only uncopyable shapes selected: ⌘C and ⌘X pass the key on, and nothing changes") {
         let pasteboard = privatePasteboard()
@@ -286,7 +292,7 @@ import TestKit
         h.editor.cutSelection()
         expectEqual(h.editor.document.shapes.map(\.id), [comet, tether.id])
         h.editor.paste()
-        expectEqual(h.editor.document.shapes.last?.copiedFrom, box.id)
+        expectEqual(h.editor.document.shapes.map(\.id), [comet, tether.id, box.id], "the box, moved back")
     },
 ])
 
@@ -464,7 +470,7 @@ import TestKit
         try require(h.secondaryClick(at: middle(1))).choose("Cut")
         expectEqual(h.editor.document.shapes.count, 1)
         h.editor.paste()
-        expectEqual(h.editor.document.shapes.suffix(2).map(\.copiedFrom), [a, b])
+        expectEqual(h.editor.document.shapes.suffix(2).map(\.id), [a, b])
     },
     test("an uncopyable shape alone has no Cut or Copy, and nothing else, no menu; with a copyable one too, they cut and copy that one") {
         let pasteboard = privatePasteboard()
@@ -481,7 +487,7 @@ import TestKit
         expectEqual(h.editor.document.shapes.map(\.id), [ticket])
         expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Paste"])
         h.editor.paste()
-        expectEqual(h.editor.document.shapes.last?.copiedFrom, box)
+        expectEqual(h.editor.document.shapes.last?.id, box)
     },
 ])
 

@@ -53,6 +53,14 @@ public struct CanvasFile: Equatable, Sendable {
         locations[id].flatMap { self[$0][id] }
     }
 
+    /// Whether nothing in the file goes by the id: no shape has it, and nothing is kept under it (a
+    /// board whose owner isn't here, or an entry that didn't read as a board under the key the id's
+    /// board is written under), which a shape given the id would take for its own. What gives a
+    /// shape back an id it had (a paste of what a cut took) asks first.
+    public func isUnused(_ id: ShapeID) -> Bool {
+        locations[id] == nil && children[id] == nil && (unreadableBoards.isEmpty || unreadableBoards[id.description] == nil)
+    }
+
     /// The board holding the board's owner; nil for the root, and for a board whose owner isn't in
     /// the file.
     public func parent(of board: BoardID) -> BoardID? {

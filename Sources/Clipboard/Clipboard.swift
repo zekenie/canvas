@@ -6,11 +6,13 @@ import Selection
 
 /// Cut, copy and paste, as a plugin: ⌘X, ⌘C and ⌘V (registered with Keyboard), Edit › Cut, Copy
 /// and Paste (the commands the board's window runs), and Cut, Copy and Paste in every context
-/// menu, on shapes and on empty canvas. Copying puts the selection's copyable shapes on the pasteboard; pasting puts
-/// copies of them on the board, with new ids, each remembering the shape it was copied from
-/// (`CopiedFrom`, kept in its board). Every kind is copyable unless it opts out
-/// (`shape.uncopyable()`). Only this app's shapes paste: anything else on the pasteboard (text, an
-/// image) is left alone, for now.
+/// menu, on shapes and on empty canvas. Copying puts the selection's copyable shapes on the
+/// pasteboard; pasting puts copies of them on the board, with new ids, each remembering the shape
+/// it was copied from (`CopiedFrom`, kept in its board). Cutting and pasting is a move: a paste of
+/// what a cut took puts the shapes themselves back, on whatever board, under the ids they had
+/// (those the file doesn't use), so what names them (a mention) names them again. Every kind is
+/// copyable unless it opts out (`shape.uncopyable()`). Only this app's shapes paste: anything else
+/// on the pasteboard (text, an image) is left alone, for now.
 extension PluginID {
     public static let clipboard: PluginID = "clipboard"
 }
@@ -44,7 +46,8 @@ extension ShapeRegistrar {
 
 // MARK: Where a copy came from
 
-/// Where a pasted shape was copied from, in its metadata: `record.copiedFrom`. Boards keep it.
+/// Where a pasted copy was copied from, in its metadata: `record.copiedFrom`. Boards keep it. A
+/// shape a cut took and a paste put back is no copy: it keeps whatever it had.
 public enum CopiedFrom {}
 
 extension CopiedFrom: ShapeMetaKey {
@@ -55,15 +58,15 @@ extension CopiedFrom: ShapeMetaKey {
 
 /// The shape a copy was made from.
 public struct CopySource: Codable, Equatable, Sendable {
-    /// Its id in the board it was copied from: this one or another, and it may be gone since (a cut
-    /// shape always is). A copy of a copy names the copy it was made from.
+    /// Its id in the board it was copied from: this one or another, and it may be gone since. A
+    /// copy of a copy names the copy it was made from.
     public var shape: ShapeID
 
     public init(shape: ShapeID) { self.shape = shape }
 }
 
 extension AnyShapeRecord {
-    /// The shape this one is a copy of, if it was pasted (`meta[CopiedFrom.self]`).
+    /// The shape this one is a copy of, if it was pasted as a copy (`meta[CopiedFrom.self]`).
     public var copiedFrom: ShapeID? { meta[CopiedFrom.self]?.shape }
 }
 

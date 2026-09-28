@@ -5,9 +5,9 @@ import SwiftUI
 
 /// The panel. The app places it (in `.inspector`, through Composition); it follows the editor's
 /// selection by itself. `onExit` gives the keyboard back to the canvas: the panel calls it on
-/// Escape, when it has just removed the control that had the keyboard, and when it's hidden with
-/// that control in it (an `.inspector` hides its content without removing it). The keyboard would
-/// otherwise land on the window itself, and tool shortcuts would stop.
+/// Escape and ⌘., when it has just removed the control that had the keyboard, and when it's hidden
+/// with that control in it (an `.inspector` hides its content without removing it). The keyboard
+/// would otherwise land on the window itself, and tool shortcuts would stop.
 public struct DetailPanelView: View {
     let editor: CanvasEditor
     let onExit: @MainActor () -> Void
@@ -37,8 +37,10 @@ public struct DetailPanelView: View {
                 if ids.count > 1 {
                     SelectionSummary(header: state.selectionSummary(of: ids.compactMap { editor.document[$0] }), editor: editor, overview: overview)
                 } else if let id = editor.selection, let record = editor.document[id] {
+                    // Status lines and `shownWhile` read services, so they're read here, on every
+                    // commit: the panel below draws again only when they, or its shape, change.
                     ShapePanel(state: state, editor: editor, record: record, statuses: state.statuses(of: record),
-                               contentChanged: reclaimSoon)
+                               hidden: state.hiddenSections(of: record), contentChanged: reclaimSoon)
                         .equatable()
                         .id(id)
                 } else if let overview {
@@ -61,14 +63,22 @@ public struct DetailPanelView: View {
         .environment(\.detailEditor, editor)
         // So a number being typed lands on its shape before another board is shown.
         .onAppear { editor.detailPanel?.drafts = drafts }
-        .onKeyPress(.escape) {
-            // Leaves the panel, dropping a number being typed rather than committing it.
-            drafts.revert()
-            onExit()
-            return .handled
-        }
+        .onKeyPress(.escape) { exitByKey() ? .handled : .ignored }
+        // ⌘., which the window sends up the responder chain as `cancelOperation:` with no key
+        // down: the panel's text views and fields leave it to their superviews.
+        .onExitCommand { _ = exitByKey() }
         .onChange(of: editor.selectedShapeIDs) { reclaimSoon() }
         .inspectorColumnWidth(min: DetailStyle.minWidth, ideal: DetailStyle.idealWidth, max: DetailStyle.maxWidth)
+    }
+
+    /// Escape or ⌘.: leaves the panel, dropping a number being typed rather than committing it,
+    /// unless a text view holding keys (a list it shows over its text) has the keyboard, whose key
+    /// it is (the panel hears keys before the view with the keyboard does). Whether it left.
+    private func exitByKey() -> Bool {
+        if (window.window?.firstResponder as? DetailTextView)?.holdsKeys == true { return false }
+        drafts.revert()
+        onExit()
+        return true
     }
 
     /// After SwiftUI has removed (or AppKit hidden) views: if the keyboard fell to the window, hand
@@ -138,21 +148,22 @@ struct SelectionSummary: View {
     }
 }
 
-/// One shape's panel. Skipped (`.equatable()`) unless its record or status lines change, so
-/// dragging another shape costs one comparison.
+/// One shape's panel. Skipped (`.equatable()`) unless its record, status lines or the sections
+/// `shownWhile` hides change, so dragging another shape costs one comparison.
 struct ShapePanel: View, Equatable {
     let state: DetailPanelState
     let editor: CanvasEditor
     let record: AnyShapeRecord
     let statuses: ShapeStatuses
+    let hidden: Set<DetailSectionKey>
     let contentChanged: @MainActor () -> Void
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
-        MainActor.assumeIsolated { a.record == b.record && a.statuses == b.statuses }
+        MainActor.assumeIsolated { a.record == b.record && a.statuses == b.statuses && a.hidden == b.hidden }
     }
 
     var body: some View {
-        let layout = state.layout(for: record, statuses: statuses.tabs)
+        let layout = state.layout(for: record, statuses: statuses.tabs, hidden: hidden)
         let current = state.currentTab(in: layout, for: record.kind)
         let sections = current.map { layout.resolved(in: $0) } ?? []
         let lines = current.map { layout.statuses(in: $0) } ?? []
@@ -194,8 +205,8 @@ struct ShapePanel: View, Equatable {
             Spacer(minLength: 0)
             FooterView(statuses: statuses.footer)
         }
-        // A tab switch, a collapse, or a section hidden by `when` may remove the control that had
-        // the keyboard.
+        // A tab switch, a collapse, or a section hidden by `when` or `shownWhile` may remove the
+        // control that had the keyboard.
         .onChange(of: current.map { tab in layout.sections(in: tab).filter { !state.isCollapsed($0) } } ?? []) {
             contentChanged()
         }

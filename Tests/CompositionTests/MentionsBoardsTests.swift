@@ -20,7 +20,7 @@ import Titles
 
 // Mentions as shipped in a file of boards: notes on the root and inside a subboard that mention
 // each other and a titled note, followed, renamed, deleted with their board, undone, copied as a tree,
-// and drawn by `canvas draw`.
+// moved by cut and paste, and drawn by `canvas draw`.
 
 /// A file as shipped: on the root, subboard "Plans", a note titled "Ship it", and a note mentioning
 /// note Alpha (by the name "Old alpha"); on Plans' board, Alpha, and a note mentioning Alpha and
@@ -195,30 +195,64 @@ extension CanvasEditor {
         expectEqual(h.editor.contentsRow(alone), "See @Alpha")
     },
 
-    test("moving a subboard by cut and paste gives what it holds new ids, so a mention from outside it of a note inside names the note cut, missing (not built yet); undoing both brings it back") {
+    test("moving a subboard by cut and paste keeps every id, so a mention from outside it of a note inside, missing after the cut, is live again after the paste; undoing the paste, missing; undoing the cut, live") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let f = PlansFile()
         let h = try f.harness(pasteboard)
+        let original = h.editor.file
         expectEqual(h.editor.contentsRow(f.outer), "See @Alpha")
         h.editor.selectedShapeIDs = [f.plans]
         h.editor.perform(.cut)
         expectEqual(h.editor.file.record(f.alpha), nil, "cut with Plans")
-        let before = h.editor.document
+        expectEqual(h.editor.mentions?.resolve(f.alpha), .missing)
+        expectEqual(h.editor.contentsRow(f.outer), "See @Old alpha")
+        expectEqual(h.editor.mentionPills(of: f.outer).map(\.isLive), [false])
         h.editor.perform(.paste)
-        let plansCopy = try require(h.editor.shapes(since: before).first?.id)
-        let inside = h.editor.contents(of: BoardID(owner: plansCopy)).shapes.map(\.id)
-        expectEqual(inside.count, 2)
-        expect(!inside.contains(f.alpha), "a paste gets new ids, even of what a cut took")
-        expectEqual(h.editor.text(of: inside[1])?.mentioned, [inside[0], f.ship], "inside, the copy of Alpha named, as a copy does")
-        expectEqual(h.editor.text(of: f.outer)?.mentioned, [f.alpha], "outside, the note cut, which nothing renames")
+        expectEqual(h.editor.selection, f.plans, "Plans itself, moved")
+        expectEqual(h.editor.contents(of: f.plansBoard).shapes.map(\.id), [f.alpha, f.beta])
+        expectEqual(h.editor.text(of: f.beta)?.mentioned, [f.alpha, f.ship])
+        expectEqual(h.editor.text(of: f.outer)?.mentioned, [f.alpha])
+        expect(h.editor.mentions?.resolve(f.alpha).isLive == true)
+        expectEqual(h.editor.contentsRow(f.outer), "See @Alpha")
+        expectEqual(h.editor.mentionPills(of: f.outer).map(\.isLive), [true])
+        h.editor.undo()
         expectEqual(h.editor.mentions?.resolve(f.alpha), .missing)
         expectEqual(h.editor.contentsRow(f.outer), "See @Old alpha")
         expectEqual(h.editor.mentionPills(of: f.outer).map(\.isLive), [false])
         h.editor.undo()
-        h.editor.undo()
         expectEqual(h.editor.contentsRow(f.outer), "See @Alpha")
         expectEqual(h.editor.mentionPills(of: f.outer).map(\.isLive), [true])
+        expectEqual(h.editor.file, original, "as it was")
+    },
+
+    test("a note cut inside a subboard and pasted on the root is the same note: a mention of it there is live again, and going to it stays on the root") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let f = PlansFile()
+        let h = try f.harness(pasteboard)
+        expect(h.enter(f.plans))
+        h.editor.selection = f.alpha
+        h.editor.perform(.cut)
+        expectEqual(h.editor.text(of: f.beta)?.mentioned, [f.alpha, f.ship], "beside it, the name stays")
+        expectEqual(h.editor.mentionPills(of: f.beta).map(\.isLive), [false, true])
+        h.editor.goToEnclosingBoard()
+        expectEqual(h.editor.board, .root)
+        expectEqual(h.editor.contentsRow(f.outer), "See @Old alpha")
+        h.editor.perform(.paste)
+        expectEqual(h.editor.file.board(containing: f.alpha), .root)
+        expectEqual(h.editor.file.record(f.alpha)?.copiedFrom, nil)
+        expectEqual(h.editor.contentsRow(f.outer), "See @Alpha")
+        expectEqual(h.editor.mentionPills(of: f.outer).map(\.isLive), [true])
+        h.editor.selection = nil
+        let mentions = try require(h.editor.mentions)
+        mentions.follow(f.alpha)
+        h.wait(0)
+        expectEqual(h.editor.board, .root)
+        expectEqual(h.editor.selection, f.alpha)
+        expect(h.enter(f.plans))
+        expectEqual(h.editor.mentionPills(of: f.beta).map(\.isLive), [true, true], "live again, of the note on the root")
+        expect(h.editor.mentions?.resolve(f.alpha).isLive == true)
     },
 
     test("canvas draw sticky-note mentioning a note inside a subboard: made without a warning, its pill live, and its row following the note") {

@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import DetailPanel
 
 extension NSPasteboard.PasteboardType {
     /// Mention text on the pasteboard, in its stored form: what a mention text view copies beside
@@ -32,8 +33,12 @@ extension NSPasteboard.PasteboardType {
 ///   either, it shows the pills put back as their targets are now and, if the text differs from
 ///   what it last reported, reports it (`didChangeText`), in any window. A board's window tells the
 ///   text it changed after its undo too; the text is reported by then, so the host writes once.
+/// - It's a `DetailTextView`, so the panel's boxes take it (`MentionTextArea`): while its picker is
+///   open it holds keys (`holdsKeys`), so Return, ⌘↩ and Escape are the picker's, not the box's
+///   commit or the panel's exit, and a box shows it text from outside with `show(_:)`. On the
+///   canvas, where nothing of the panel's is set, it's the text view it always was.
 @MainActor
-public final class MentionTextView<Scope: MentionScope>: NSTextView {
+public final class MentionTextView<Scope: MentionScope>: DetailTextView {
     /// The shape the text is on: never offered in its picker.
     public private(set) var owner: ShapeID?
     public private(set) weak var mentions: MentionState?
@@ -60,6 +65,15 @@ public final class MentionTextView<Scope: MentionScope>: NSTextView {
     /// A press the view took on a pill, until its release: the drags and the release are the
     /// view's too, so none of them reaches the canvas behind it.
     private var tookPillPress = false
+
+    /// While the picker is open, its keys (Return and Tab pick, Escape closes) are the view's own:
+    /// in the panel, neither the box's commit nor the panel's exit.
+    public override var holdsKeys: Bool { picker != nil }
+
+    /// Made read-only (a lock landing, something else writing the text), it closes its picker.
+    public override var isEditable: Bool {
+        didSet { if !isEditable { closePicker() } }
+    }
 
     /// What the host last heard the text is, to tell after an undo whether it changed.
     private var reported: ScopedMentionText<Scope>?
@@ -198,6 +212,14 @@ public final class MentionTextView<Scope: MentionScope>: NSTextView {
         observeTargets()
         toolTipsAreStale = true
         readPicker(isEdit: true)
+    }
+
+    /// Dimmed as one, text and pills alike, while its box is read-only (the text keeps its style's
+    /// color, and a pill its own, so the whole view fades rather than its text alone).
+    public override func showEnabled(_ isEnabled: Bool) {
+        guard style != nil else { return super.showEnabled(isEnabled) }
+        let opacity = isEnabled ? 1 : MentionStyle.disabledOpacity
+        if alphaValue != opacity { alphaValue = opacity }
     }
 
     // MARK: Pills that fit and show as they are
@@ -425,7 +447,12 @@ public final class MentionTextView<Scope: MentionScope>: NSTextView {
 
     // MARK: The pill's menu
 
-    /// The text view's menu, with Go to and Remove Mention first on a pill (which it selects).
+    /// The text view's menu, with Go to, Show What Mentions and Remove Mention first on a pill
+    /// (which it selects). Show What Mentions is for a live pill whose target is on the board shown,
+    /// which is what its mentioners are read from, and that something there mentions: this text's
+    /// shape does, unless it's the target. Like Go to, it acts on the scheduler's next turn, once
+    /// the editing it ends is over. Remove Mention is for text that can be edited (not a locked
+    /// shape's in the panel).
     public override func menu(for event: NSEvent) -> NSMenu? {
         let menu = super.menu(for: event)
         guard let range = pillRange(at: convert(event.locationInWindow, from: nil)), let pill = pill(at: range.location), let helper else {
@@ -437,9 +464,16 @@ public final class MentionTextView<Scope: MentionScope>: NSTextView {
         if pill.resolution.isLive {
             let target = pill.target
             items.append(helper.item(MentionStyle.goTo(pill.shownLabel)) { [weak self] in self?.mentions?.follow(target) })
+            if let mentions, mentions.isShown(target), owner != target || mentions.isMentioned(target) {
+                items.append(helper.item(MentionStyle.showWhatMentions(pill.shownLabel)) { [weak self] in
+                    self?.mentions?.showWhatMentions([target])
+                })
+            }
         }
-        items.append(helper.item(MentionStyle.removeMention) { [weak self] in self?.removeMention(target: pill) })
-        items.append(.separator())
+        if isEditable {
+            items.append(helper.item(MentionStyle.removeMention) { [weak self] in self?.removeMention(target: pill) })
+        }
+        if !items.isEmpty { items.append(.separator()) }
         for (index, item) in items.enumerated() { result.insertItem(item, at: index) }
         return result
     }
@@ -579,6 +613,15 @@ public final class MentionTextView<Scope: MentionScope>: NSTextView {
         case .close: closePicker()
         default: break
         }
+    }
+
+    /// ⌘., which the window sends up the responder chain as this command with no key, closes the
+    /// picker, as Escape does. With it closed, the command goes on up as though the view didn't
+    /// answer it (in the panel, the panel leaves; on the canvas, it's the canvas's Cancel, which
+    /// leaves editing as it is).
+    public override func cancelOperation(_ sender: Any?) {
+        if picker != nil { return closePicker() }
+        _ = nextResponder?.tryToPerform(#selector(NSResponder.cancelOperation(_:)), with: sender)
     }
 
     public override func resignFirstResponder() -> Bool {
@@ -730,6 +773,30 @@ public final class MentionTextView<Scope: MentionScope>: NSTextView {
     }
 }
 
+extension MentionTextView: DetailTextContent {
+    /// The text, as the view writes it (`mentionText`): what its box writes to the binding.
+    public var value: ScopedMentionText<Scope> { mentionText }
+
+    /// Shows `text` in place of what's there, as something other than typing does (an undo of the
+    /// board, a write from elsewhere): the storage alone, its pills as their targets are now and
+    /// fitted to the line, the caret where it was as far as the new text reaches, the picker
+    /// closed. It never calls `didChangeText`, so nothing is written back, and what the host last
+    /// heard is the text shown.
+    public func show(_ text: ScopedMentionText<Scope>) {
+        closePicker()
+        guard let storage = textStorage else { return }
+        let caret = selectedRange().location
+        storage.setAttributedString(attributed(text))
+        if let style { typingAttributes = style.attributes }
+        setSelectedRange(NSRange(location: min(caret, storage.length), length: 0))
+        reported = mentionText
+        observeTargets()
+        fitPills()
+        toolTipsAreStale = true
+        needsDisplay = true
+    }
+}
+
 extension MentionStyle {
     static func goTo(_ label: String) -> String { "Go to “\(label)”" }
     static let removeMention = "Remove Mention"
@@ -778,18 +845,31 @@ private struct Substitutions {
 }
 
 /// The view's delegate, in front of the host's: it answers what only a delegate can for mention
-/// text (Writing Tools leave pills alone) and hands everything else to the host, which the text
-/// view reports as its delegate.
+/// text (Writing Tools leave pills alone) and hands the host the rest of what a text view asks its
+/// delegate (`HostlessTextDelegate`'s methods), which the text view reports as its delegate.
+///
+/// A text view asks its delegate what it answers once, as it's set, and the host is held weakly (it
+/// holds the view), so it may be gone while the view is still asking (a panel's box let go before
+/// its view leaves the window): then each question gets the answer a text view with no delegate
+/// has, never an unrecognized selector.
 @MainActor
 private final class MentionTextDelegate: NSObject, NSTextViewDelegate {
     nonisolated(unsafe) weak var host: (any NSTextViewDelegate)?
+    /// What answers in the host's place once it's gone.
+    private let hostless: HostlessTextDelegate
+
+    override init() {
+        hostless = HostlessTextDelegate()
+        super.init()
+    }
 
     nonisolated override func responds(to selector: Selector!) -> Bool {
-        super.responds(to: selector) || (host as AnyObject?)?.responds(to: selector) == true
+        super.responds(to: selector) || ((host as AnyObject?)?.responds(to: selector) == true && hostless.responds(to: selector))
     }
 
     nonisolated override func forwardingTarget(for selector: Selector!) -> Any? {
-        (host as AnyObject?)?.responds(to: selector) == true ? host : nil
+        if let host = host as AnyObject?, host.responds(to: selector) { return host }
+        return hostless.responds(to: selector) ? hostless : nil
     }
 
     /// Writing Tools skip each pill in the range.
@@ -803,6 +883,45 @@ private final class MentionTextDelegate: NSObject, NSTextViewDelegate {
         }
         return ranges
     }
+}
+
+/// A text view's delegate that answers as though there were none: what `MentionTextDelegate` hands
+/// the host, answered once the host is gone. Only what's here is handed to the host.
+@MainActor
+private final class HostlessTextDelegate: NSObject {}
+
+extension HostlessTextDelegate: NSTextViewDelegate {
+    func textShouldBeginEditing(_ textObject: NSText) -> Bool { true }
+    func textShouldEndEditing(_ textObject: NSText) -> Bool { true }
+    func textDidBeginEditing(_ notification: Notification) {}
+    func textDidEndEditing(_ notification: Notification) {}
+    func textDidChange(_ notification: Notification) {}
+    func textViewDidChangeSelection(_ notification: Notification) {}
+    func textViewDidChangeTypingAttributes(_ notification: Notification) {}
+    func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool { false }
+    func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool { true }
+    func textView(_ textView: NSTextView, shouldChangeTextInRanges affectedRanges: [NSValue], replacementStrings: [String]?) -> Bool { true }
+    func textView(_ textView: NSTextView, willChangeSelectionFromCharacterRange oldSelectedCharRange: NSRange,
+                  toCharacterRange newSelectedCharRange: NSRange) -> NSRange {
+        newSelectedCharRange
+    }
+    func textView(_ textView: NSTextView, willChangeSelectionFromCharacterRanges oldSelectedCharRanges: [NSValue],
+                  toCharacterRanges newSelectedCharRanges: [NSValue]) -> [NSValue] {
+        newSelectedCharRanges
+    }
+    func textView(_ textView: NSTextView, shouldChangeTypingAttributes oldTypingAttributes: [String: Any] = [:],
+                  toAttributes newTypingAttributes: [NSAttributedString.Key: Any] = [:]) -> [NSAttributedString.Key: Any] {
+        newTypingAttributes
+    }
+    func textView(_ textView: NSTextView, menu: NSMenu, for event: NSEvent, at charIndex: Int) -> NSMenu? { menu }
+    func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool { false }
+    func textView(_ view: NSTextView, willDisplayToolTip tooltip: String, forCharacterAt characterIndex: Int) -> String? { tooltip }
+    func textView(_ textView: NSTextView, completions words: [String], forPartialWordRange charRange: NSRange,
+                  indexOfSelectedItem index: UnsafeMutablePointer<Int>?) -> [String] {
+        words
+    }
+    /// The window's, as a text view without a delegate has.
+    func undoManager(for view: NSTextView) -> UndoManager? { view.window?.undoManager }
 }
 
 /// What a mention text view needs of Objective-C, kept off the generic view: the notifications

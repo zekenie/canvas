@@ -43,33 +43,48 @@ public struct ValidationResult: Equatable, Sendable {
 }
 
 /// Rules' only way into the document. The engine notes the shapes a rule looks up, and checks the
-/// shape again when one of them changes. Add lookups here as rules need them.
+/// shape again when one of them changes; for a rule that ignores moves, not when one only moves.
+/// Add lookups here as rules need them.
 @MainActor
 public struct ValidationContext {
     /// The shapes rules see: the engine's, the editor's document; `validationIssues(of:in:)`'s,
     /// whatever it's given (a transaction's, mid-way).
     let shapes: ShapeContext
-    let registry: Registry
+    /// What the installed plugins registered, for a rule over every kind that asks about the
+    /// shape's kind or another's (whether it can hold names, whether it can be mentioned). It
+    /// never changes, so reading it is no lookup.
+    public let registry: Registry
     /// Validation's own rule's: each shape's schema issues, kept from one check to the next.
     let schemaVerdicts: SchemaVerdicts
     let lookups: Lookups
 
     public func shape(_ id: ShapeID) -> AnyShapeRecord? {
-        lookups.ids.insert(id)
+        if lookups.ignoringMoves { lookups.steady.insert(id) } else { lookups.placed.insert(id) }
         return shapes.shape(id)
     }
 }
 
-/// The shapes a shape's rules looked up while it was checked.
+/// The shapes a shape's rules looked up while it was checked: by the rules that ignore moves, and
+/// by the others (a move of one of these checks the shape again).
 @MainActor
 final class Lookups {
-    var ids: Set<ShapeID> = []
+    /// Whether the rule being run ignores moves: where its lookups go.
+    var ignoringMoves = false
+    var steady: Set<ShapeID> = []
+    var placed: Set<ShapeID> = []
 }
 
 public struct ValidationRule {
     let check: @MainActor (AnyShapeRecord, ValidationContext) -> [ValidationIssue]
-    public init(_ check: @escaping @MainActor (AnyShapeRecord, ValidationContext) -> [ValidationIssue]) {
+    /// Whether its issues follow from what shapes are and never from where they are: from the
+    /// shape's props and added values but its box's origin, and the same of the shapes it looks up.
+    /// A commit that only moves shapes (`ChangeSet.moved`: a drag, every event) runs it again for
+    /// none of them, neither those it moved nor those whose rule looked one of them up: each keeps
+    /// what this rule found. A rule that measures distances, or finds overlaps, must not.
+    let ignoresMoves: Bool
+    public init(ignoringMoves: Bool = false, _ check: @escaping @MainActor (AnyShapeRecord, ValidationContext) -> [ValidationIssue]) {
         self.check = check
+        ignoresMoves = ignoringMoves
     }
 }
 
@@ -81,9 +96,11 @@ public enum ValidationRules: ExtensionPoint {
 }
 
 extension ShapeRegistrar {
-    /// A rule for this kind, with its props typed.
-    public mutating func validate(_ rule: @escaping @MainActor (ShapeRecord<Definition.Props>, ValidationContext) -> [ValidationIssue]) {
-        contribute(ValidationRule { record, context in
+    /// A rule for this kind, with its props typed; `ignoringMoves` for one whose issues follow from
+    /// what shapes are, never where (`ValidationRule`).
+    public mutating func validate(ignoringMoves: Bool = false,
+                                  _ rule: @escaping @MainActor (ShapeRecord<Definition.Props>, ValidationContext) -> [ValidationIssue]) {
+        contribute(ValidationRule(ignoringMoves: ignoringMoves) { record, context in
             record.typed(as: Definition.Props.self).map { rule($0, context) } ?? []
         }, to: ValidationRules.self)
     }
@@ -91,49 +108,77 @@ extension ShapeRegistrar {
 
 extension PluginRegistrar {
     /// A rule for a kind another plugin registers.
-    public mutating func validate<P: ShapeProps>(_: P.Type, _ rule: @escaping @MainActor (ShapeRecord<P>, ValidationContext) -> [ValidationIssue]) {
-        contribute(ValidationRule { record, context in
+    public mutating func validate<P: ShapeProps>(_: P.Type, ignoringMoves: Bool = false,
+                                                 _ rule: @escaping @MainActor (ShapeRecord<P>, ValidationContext) -> [ValidationIssue]) {
+        contribute(ValidationRule(ignoringMoves: ignoringMoves) { record, context in
             record.typed(as: P.self).map { rule($0, context) } ?? []
         }, to: ValidationRules.self, for: .kind(P.kind))
     }
 
     /// A rule for every kind.
-    public mutating func validateEveryShape(_ rule: @escaping @MainActor (AnyShapeRecord, ValidationContext) -> [ValidationIssue]) {
-        contribute(ValidationRule(rule), to: ValidationRules.self, for: .any)
+    public mutating func validateEveryShape(ignoringMoves: Bool = false,
+                                            _ rule: @escaping @MainActor (AnyShapeRecord, ValidationContext) -> [ValidationIssue]) {
+        contribute(ValidationRule(ignoringMoves: ignoringMoves, rule), to: ValidationRules.self, for: .any)
     }
 }
 
 /// Every shape's issues: on the first read, every shape's; after that, on the first read after a
 /// change, only those of the shapes it touched and of the shapes whose rules looked one of them up.
-/// It checks the board shown; what it found on the boards shown last is kept for going back to
-/// them, and taken back while those boards are as they were left (`BoardStash`).
+/// A commit that only moves shapes runs none of the rules that ignore moves again (the schema
+/// rule is one): it checks the shapes it moved, and those whose other rules looked one of them up,
+/// with those other rules alone, each keeping what the rest found. It checks the board shown; what
+/// it found on the boards shown last is kept for going back to them, and taken back while those
+/// boards are as they were left (`BoardStash`).
 @MainActor
 public final class ValidationEngine {
-    /// What's kept of a board that isn't shown.
-    private struct Kept {
-        let cache: [ShapeID: ValidationResult]
-        let unchecked: Set<ShapeID>
-        let lookups: [ShapeID: Set<ShapeID>]
-        let lookedUpBy: [ShapeID: Set<ShapeID>]
+    /// The shapes each shape's rules looked up, and the other way around.
+    private struct LookupTable {
+        private(set) var of: [ShapeID: Set<ShapeID>] = [:]
+        private(set) var by: [ShapeID: Set<ShapeID>] = [:]
+
+        mutating func set(_ ids: Set<ShapeID>, for shape: ShapeID) {
+            if of[shape] != nil { forget(shape) }
+            guard !ids.isEmpty else { return }
+            of[shape] = ids
+            for other in ids { by[other, default: []].insert(shape) }
+        }
+
+        mutating func forget(_ shape: ShapeID) {
+            for other in of.removeValue(forKey: shape) ?? [] {
+                by[other]?.remove(shape)
+                if by[other]?.isEmpty == true { by[other] = nil }
+            }
+        }
+    }
+
+    /// What it knows of a board: what it found, what's left to check, and what the rules looked up.
+    private struct Board {
+        /// Only shapes with at least one issue.
+        var cache: [ShapeID: ValidationResult] = [:]
+        /// The shapes to check again with every rule.
+        var unchecked: Set<ShapeID> = []
+        /// The shapes to check again with only the rules that don't ignore moves.
+        var moved: Set<ShapeID> = []
+        /// What the rules that ignore moves found of each shape, by the rule's place among its
+        /// kind's: only those that found something.
+        var steadyIssues: [ShapeID: [Int: [ValidationIssue]]] = [:]
+        /// What the rules that ignore moves looked up, and what the others did.
+        var steadyLookups = LookupTable()
+        var placedLookups = LookupTable()
     }
 
     private unowned let editor: CanvasEditor
     /// Each kind's rules, found once: the registry is frozen.
     private var rules: [ShapeKind: [ValidationRule]] = [:]
-    /// Only shapes with at least one issue.
-    private var cache: [ShapeID: ValidationResult] = [:]
-    /// The shapes to check on the next read; nil for every shape.
-    private var unchecked: Set<ShapeID>?
-    /// The revision `unchecked` is up to date with. Read before this engine has heard of a commit
-    /// (by a service that hears first), it checks every shape.
+    /// What it knows of the board shown; nil to check every shape on the next read.
+    private var board: Board?
+    /// The revision `board` is up to date with. Read before this engine has heard of a commit (by a
+    /// service that hears first), it checks every shape.
     private var heardRevision: Int
-    /// The shapes each shape's rules looked up, and the other way around.
-    private var lookups: [ShapeID: Set<ShapeID>] = [:]
-    private var lookedUpBy: [ShapeID: Set<ShapeID>] = [:]
     /// What the schema rule found of each shape, so one that only moved isn't checked again.
     private let schemaVerdicts = SchemaVerdicts()
     /// The boards shown last, as they were left.
-    private var kept = BoardStash<Kept>()
+    private var kept = BoardStash<Board>()
 
     init(editor: CanvasEditor) {
         self.editor = editor
@@ -143,62 +188,82 @@ public final class ValidationEngine {
     /// Only shapes with at least one issue.
     public var results: [ShapeID: ValidationResult] {
         refreshIfNeeded()
-        return cache
+        return board?.cache ?? [:]
     }
 
     public func result(for id: ShapeID) -> ValidationResult? { results[id] }
 
     /// The shapes whose rules looked one of `ids` up when they were last checked: those a change to
-    /// it checks again, besides itself. For a plugin that keeps what it shows of each shape's issues
-    /// and redoes it for what each commit changed (ValidationContents' marks).
+    /// it may check again, besides itself. For a plugin that keeps what it shows of each shape's
+    /// issues and redoes it for what each commit changed (ValidationContents' marks).
     public func dependents(of ids: Set<ShapeID>) -> Set<ShapeID> {
-        ids.reduce(into: []) { found, id in found.formUnion(lookedUpBy[id] ?? []) }
+        guard let board else { return [] }
+        return ids.reduce(into: []) { found, id in
+            found.formUnion(board.steadyLookups.by[id] ?? [])
+            found.formUnion(board.placedLookups.by[id] ?? [])
+        }
     }
 
     private func refreshIfNeeded() {
         let document = editor.document
         if heardRevision != editor.revision {
-            unchecked = nil
+            board = nil
             heardRevision = editor.revision
         }
         // Lookups in the document, and nothing else: rules see shapes only through `shape(_:)`.
         let shapes = ShapeContext(document: document, registry: editor.registry)
-        guard let ids = unchecked else {
-            cache = [:]
-            lookups = [:]
-            lookedUpBy = [:]
+        guard var board else {
+            var fresh = Board()
             schemaVerdicts.forgetAll()
-            for shape in document.shapes { check(shape, in: shapes) }
-            unchecked = []
+            for shape in document.shapes { check(shape, in: shapes, into: &fresh) }
+            self.board = fresh
             return
         }
-        guard !ids.isEmpty else { return }
-        unchecked = []
-        for id in ids {
-            for other in lookups.removeValue(forKey: id) ?? [] {
-                lookedUpBy[other]?.remove(id)
-                if lookedUpBy[other]?.isEmpty == true { lookedUpBy[other] = nil }
-            }
+        guard !board.unchecked.isEmpty || !board.moved.isEmpty else { return }
+        self.board = nil                                   // so `board` is the only copy, changed in place
+        let unchecked = board.unchecked, moved = board.moved.subtracting(board.unchecked)
+        board.unchecked = []
+        board.moved = []
+        for id in unchecked {
             if let shape = document[id] {
-                check(shape, in: shapes)
+                check(shape, in: shapes, into: &board)
             } else {
-                cache[id] = nil
+                board.cache[id] = nil
+                board.steadyIssues[id] = nil
+                board.steadyLookups.forget(id)
+                board.placedLookups.forget(id)
             }
         }
+        for id in moved {
+            guard let shape = document[id] else { continue }
+            check(shape, in: shapes, onlyPlaced: true, into: &board)
+        }
+        self.board = board
     }
 
-    private func check(_ shape: AnyShapeRecord, in shapes: ShapeContext) {
+    /// Checks a shape with every rule, or (`onlyPlaced`) with the rules that don't ignore moves,
+    /// taking what the others found last.
+    private func check(_ shape: AnyShapeRecord, in shapes: ShapeContext, onlyPlaced: Bool = false, into board: inout Board) {
         // Shapes the board keeps aside aren't the app's to judge.
         guard !shape.isOpaque else {
-            cache[shape.id] = nil
+            board.cache[shape.id] = nil
             return
         }
-        let context = ValidationContext(shapes: shapes, registry: shapes.registry, schemaVerdicts: schemaVerdicts, lookups: Lookups())
-        let issues = rules(for: shape.kind).flatMap { $0.check(shape, context) }
-        cache[shape.id] = issues.isEmpty ? nil : ValidationResult(issues: issues)
-        guard !context.lookups.ids.isEmpty else { return }
-        lookups[shape.id] = context.lookups.ids
-        for other in context.lookups.ids { lookedUpBy[other, default: []].insert(shape.id) }
+        let lookups = Lookups()
+        let context = ValidationContext(shapes: shapes, registry: shapes.registry, schemaVerdicts: schemaVerdicts, lookups: lookups)
+        let kept = onlyPlaced ? board.steadyIssues[shape.id] : nil
+        var steady: [Int: [ValidationIssue]] = [:]
+        var issues: [ValidationIssue] = []
+        for (index, rule) in rules(for: shape.kind).enumerated() {
+            lookups.ignoringMoves = rule.ignoresMoves
+            let found = rule.ignoresMoves && onlyPlaced ? kept?[index] ?? [] : rule.check(shape, context)
+            if rule.ignoresMoves, !found.isEmpty { steady[index] = found }
+            issues += found
+        }
+        board.cache[shape.id] = issues.isEmpty ? nil : ValidationResult(issues: issues)
+        board.steadyIssues[shape.id] = steady.isEmpty ? nil : steady
+        board.placedLookups.set(lookups.placed, for: shape.id)
+        if !onlyPlaced { board.steadyLookups.set(lookups.steady, for: shape.id) }
     }
 
     private func rules(for kind: ShapeKind) -> [ValidationRule] {
@@ -213,31 +278,37 @@ extension ValidationEngine: EditorService {
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         // A commit heard out of turn (a service committed while hearing an earlier one, which this
         // engine hasn't heard yet): what the earlier one changed isn't known, so no verdict kept
-        // can be trusted to still hold. The rest catches up when that one is heard.
-        if heardRevision < editor.revision - 1 { schemaVerdicts.forgetAll() }
+        // can be trusted to still hold, and a shape this one only moved may have changed in it. The
+        // rest catches up when that one is heard.
+        let outOfTurn = heardRevision < editor.revision - 1
+        if outOfTurn { schemaVerdicts.forgetAll() }
         heardRevision = editor.revision
         schemaVerdicts.documentDidChange(changes)
-        guard unchecked != nil else { return }             // every shape is unchecked already
+        guard board != nil else { return }                 // every shape is unchecked already
         for id in changes.shapeIDs {
-            unchecked!.insert(id)
-            unchecked!.formUnion(lookedUpBy[id] ?? [])
+            if changes.moved.contains(id), !outOfTurn {
+                // Only moved: what the rules that ignore moves found of it, and of the shapes whose
+                // rules of that sort looked it up, still holds.
+                board!.moved.insert(id)
+                board!.moved.formUnion(board!.placedLookups.by[id] ?? [])
+            } else {
+                board!.unchecked.insert(id)
+                board!.unchecked.formUnion(board!.steadyLookups.by[id] ?? [])
+                board!.unchecked.formUnion(board!.placedLookups.by[id] ?? [])
+            }
         }
     }
 
     /// Keeps what it found on the board left, if it has checked it, for going back to it.
     public func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor) {
-        guard old != new, heardRevision == editor.revision, let unchecked else { return }
-        kept.keep(Kept(cache: cache, unchecked: unchecked, lookups: lookups, lookedUpBy: lookedUpBy), for: old, in: editor)
+        guard old != new, heardRevision == editor.revision, let board else { return }
+        kept.keep(board, for: old, in: editor)
     }
 
     /// Checks the board shown: what it found there, if it's as it was left, and the shapes it hadn't
     /// checked again yet; else every shape, on the next read.
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
-        let taken = kept.take(for: change.to, in: editor)
-        cache = taken?.cache ?? [:]
-        unchecked = taken?.unchecked
-        lookups = taken?.lookups ?? [:]
-        lookedUpBy = taken?.lookedUpBy ?? [:]
+        board = kept.take(for: change.to, in: editor)
         heardRevision = editor.revision
     }
 }
@@ -314,11 +385,11 @@ func schemaIssues(of shape: AnyShapeRecord, in context: ValidationContext) -> [V
 }
 
 /// The schema rule's issues for each shape, kept until a commit changes the shape in any way but
-/// moving it (`ChangeSet.moved`): a drag commits every shape it drags on every event, and checking
-/// a shape against its kind's schema costs microseconds, while where a shape is is nothing its
-/// schema checks. A box is the core's rect in every kind's schema, and moving one keeps it as finite
-/// as it was (a transaction refuses a box that isn't). And a shape checked again because a shape
-/// its rules looked up changed keeps its own.
+/// moving it (`ChangeSet.moved`): checking a shape against its kind's schema costs microseconds,
+/// while where a shape is is nothing its schema checks. A box is the core's rect in every kind's
+/// schema, and moving one keeps it as finite as it was (a transaction refuses a box that isn't). So
+/// the rule ignores moves (a drag, which commits every shape it drags on every event, doesn't run
+/// it), and a shape checked again because a shape its rules looked up changed keeps its own.
 @MainActor
 final class SchemaVerdicts {
     private var verdicts: [ShapeID: [ValidationIssue]] = [:]
@@ -354,6 +425,6 @@ public struct ValidationPlugin: CanvasPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { ValidationEngine(editor: $0) }
         registrar.overlay(ValidationOverlay())
-        registrar.validateEveryShape(schemaIssues)
+        registrar.validateEveryShape(ignoringMoves: true, schemaIssues)
     }
 }

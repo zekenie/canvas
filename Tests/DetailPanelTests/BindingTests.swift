@@ -9,6 +9,13 @@ import TestKit
 // The panel's one write path: snapshot reads (and, after a write, what it made of the shape),
 // key-path writes onto the live shape.
 @MainActor let bindingTests = Suite("Shape bindings", [
+    test("a binding names its shape, whatever its value is: the props, the frame, an added property's value") {
+        let editor = try gadgetEditor([BadgesPlugin()])
+        let id = editor.add(Gadget(gadgetFrame))
+        expectEqual(try require(editor.shapeBinding(id, as: Gadget.self)).shapeID, id)
+        expectEqual(try require(editor.frameBinding(id)).shapeID, id)
+        expectEqual(try require(editor.propertyBinding(id, Badges.self)).shapeID, id)
+    },
     test("a field write is one transaction and changes only that field") {
         let editor = try gadgetEditor()
         let id = editor.add(Gadget(gadgetFrame, name: "Old"))

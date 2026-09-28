@@ -37,8 +37,10 @@ public struct DetailCodeEditor: View {
         let lines = CGFloat(Self.lineCount(text, upTo: DetailStyle.codeEditorMaxLines))
         // A line more than it has, for the caret on a new one and a sideways scroller.
         let fitted = max(height, (lines + 1) * DetailStyle.codeLineHeight + DetailStyle.fieldCorner * 2)
-        PanelTextView(text: $text, kind: .code, placeholder: nil, isEditable: isEditable, coloring: coloring, onCommit: onCommit)
-            .detailTextBox(height: nil)
+        let coloring = coloring
+        // ⌘↩ commits; Return is a new line.
+        DetailTextBox($text, height: nil, isEditable: isEditable, commitsOnReturn: false, onCommit: onCommit,
+                      make: PlainTextView.code, prepare: PlainTextView.unwrapLines, update: { $0.coloring = coloring })
             .containerRelativeFrame(.vertical, alignment: .top) { visible, _ in
                 min(fitted, max(height, visible - DetailStyle.codeEditorMargin))
             }
@@ -84,9 +86,10 @@ public struct DetailCodeSpan: Equatable, Sendable {
 }
 
 extension View {
-    /// Marks a text box (`DetailTextArea`, `DetailCodeEditor`) that something other than the person
-    /// is writing just now: read-only, and so dimmed, while `isUpdating`. What's writing it says
-    /// so in words where the person is (a `DetailStatusLine` with `isBusy`), never over the text.
+    /// Marks a text box (`DetailTextArea`, `DetailCodeEditor`, any `DetailTextBox`) that something
+    /// other than the person is writing just now: read-only, and so dimmed, while `isUpdating`.
+    /// What's writing it says so in words where the person is (a `DetailStatusLine` with
+    /// `isBusy`), never over the text.
     public func detailUpdating(_ isUpdating: Bool) -> some View {
         disabled(isUpdating)
     }
@@ -157,268 +160,437 @@ public struct DetailStatusAction {
     }
 }
 
-// MARK: The text view under both
+// MARK: The text view under every box
 
-/// An `NSTextView` in a scroll view, for the panel's text boxes that need what `TextEditor` doesn't
-/// give: keys that commit, code typed exactly as keyed, a placeholder drawn where the text starts.
-/// It writes the binding on every keystroke; what the binding says changes the text only when it
-/// changed from outside (the model writing it, another view), so a keystroke typed before the panel
-/// draws again is never lost.
-struct PanelTextView: NSViewRepresentable {
-    enum Kind {
-        /// Words: Return commits, ⇧↩ is a new line; the system's substitutions stay as the user
-        /// has them.
-        case prose
-        /// `DetailCodeEditor`'s.
-        case code
+/// The text view of the panel's text boxes (`DetailTextBox`): an `NSTextView` with what a box in
+/// the panel needs and `TextEditor` doesn't give, which a plugin subclasses for text of its own
+/// (a `DetailTextContent`). What it adds does nothing until it's set, so a subclass used outside
+/// the panel is a plain text view:
+///
+/// - `onCommit` says the text is done: ⌘↩, the keyboard leaving it, and its leaving its window with
+///   the keyboard (the panel showing another shape) call it, a turn later for the last. Nil, none
+///   of them is taken: ⌘↩ goes on as any other key does. A view that isn't editable (read-only,
+///   though its text can still be clicked, selected and copied) never calls it: nothing was written.
+/// - `commitsOnReturn`, with `onCommit`: Return calls it too, and ⇧↩ is a new line.
+/// - `onExit`: Escape calls it (the panel's, which gives the keyboard back to the canvas) in place
+///   of what a text view does with Escape. (In the panel, the panel hears Escape before the view
+///   does, and leaves itself. ⌘. never comes to the view as a key: the window sends
+///   `cancelOperation:` up the responder chain, which the view leaves to the panel's root.)
+/// - `placeholder` is drawn, dimmed, where the text starts while there's none.
+///
+/// While `holdsKeys` (a subclass's: a list it shows over its text, say, whose keys Return and
+/// Escape are), Return, ⌘↩ and Escape are the view's own, to `doCommand(by:)` as for any text
+/// view, never `onCommit`'s or `onExit`'s, and the panel lets Escape through to it, and doesn't
+/// leave on ⌘. (a subclass may answer `cancelOperation(_:)` itself, to close its list).
+@MainActor
+open class DetailTextView: NSTextView {
+    /// The text is done (the box's `onCommit`).
+    public var onCommit: (@MainActor () -> Void)?
+    /// Return calls `onCommit`, and ⇧↩ is a new line; only with `onCommit`.
+    public var commitsOnReturn = false
+    /// Escape, when set: the panel's hand-back to the canvas.
+    public var onExit: (@MainActor () -> Void)?
+    /// Drawn where the text starts while there's none, in the text's font, dimmed.
+    public var placeholder: String? {
+        didSet { if placeholder != oldValue { needsDisplay = true } }
     }
 
-    @Binding var text: String
-    let kind: Kind
+    /// Whether Return, ⌘↩ and Escape are the view's own just now. False unless a subclass says.
+    open var holdsKeys: Bool { false }
+
+    /// Shows the text as its box is: enabled, or dimmed (read-only, or something else writing it).
+    /// Its box asks on every update. By default the text's color, the label's or the secondary
+    /// label's, set only when it changes; a view that colors its text itself says how.
+    open func showEnabled(_ isEnabled: Bool) {
+        let color: NSColor = isEnabled ? .labelColor : .secondaryLabelColor
+        if textColor != color { textColor = color }
+    }
+
+    // MARK: Keys
+
+    open override func keyDown(with event: NSEvent) {
+        if let onCommit = commit, !holdsKeys, Self.isReturn(event), !hasMarkedText() {
+            let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+            if modifiers == .command || (commitsOnReturn && modifiers.isEmpty) {
+                onCommit()
+                return
+            }
+            if commitsOnReturn && modifiers == .shift {
+                insertNewline(nil)
+                return
+            }
+        }
+        super.keyDown(with: event)
+    }
+
+    /// ⌘↩ may come as a key equivalent (before the menus) rather than a key down.
+    open override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if let onCommit = commit, !holdsKeys, window?.firstResponder === self, Self.isReturn(event),
+           event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command {
+            onCommit()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    private static func isReturn(_ event: NSEvent) -> Bool { event.keyCode == 36 || event.keyCode == 76 }
+
+    /// `onCommit`, while the text can be written: a read-only view's text is never done, since
+    /// nothing was written (a locked shape's, whose clicks still land so it can be copied from).
+    private var commit: (@MainActor () -> Void)? { isEditable ? onCommit : nil }
+
+    /// Escape leaves the panel. Taken as its command comes, before the delegate's turn, rather than
+    /// by implementing `cancelOperation(_:)`, which NSTextView doesn't: a view with no `onExit`
+    /// answers Escape exactly as a text view does.
+    open override func doCommand(by selector: Selector) {
+        if selector == #selector(cancelOperation(_:)), let onExit, !holdsKeys {
+            onExit()
+            return
+        }
+        super.doCommand(by: selector)
+    }
+
+    // MARK: Committing when the keyboard leaves
+
+    open override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned { commit?() }
+        return resigned
+    }
+
+    /// Taken out of the window while it had the keyboard (the panel showing another shape):
+    /// that's leaving it too. After the update that took it out.
+    open override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil, window?.firstResponder === self, let onCommit = commit {
+            Task { @MainActor in onCommit() }
+        }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    // MARK: The placeholder
+
+    open override func didChangeText() {
+        super.didChangeText()
+        if placeholder != nil { needsDisplay = true }
+    }
+
+    /// The placeholder is drawn with the background, under where the text would be: overriding
+    /// `draw(_:)` would opt every subclass out of TextKit 2 (AppKit makes a text view whose class
+    /// draws for itself with TextKit 1), which a subclass may need (a mention text view's pills).
+    open override func drawBackground(in rect: NSRect) {
+        super.drawBackground(in: rect)
+        guard let placeholder, string.isEmpty else { return }
+        let origin = textContainerOrigin, padding = textContainer?.lineFragmentPadding ?? 0
+        NSAttributedString(string: placeholder, attributes: [.font: font ?? DetailStyle.textFont, .foregroundColor: NSColor.placeholderTextColor])
+            .draw(with: NSRect(x: origin.x + padding, y: origin.y, width: bounds.width - origin.x - padding * 2, height: bounds.height - origin.y),
+                  options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+    }
+}
+
+/// A `DetailTextView` whose text is a value its box binds (`DetailTextBox`): a string, or text a
+/// plugin keeps in a form of its own (mentions of shapes, say). Adopt it on a subclass (a view of
+/// `DetailTextView` itself adopting it would fix every subclass's `Value`).
+@MainActor
+public protocol DetailTextContent: DetailTextView {
+    associatedtype Value: Equatable
+    /// What the text is now: what its box writes to the binding after every change.
+    var value: Value { get }
+    /// Shows `value` in place of the text, as something other than typing does: the model writing
+    /// it, an undo of the board. It changes only the text's storage (the caret stays where it was,
+    /// as far as the new text reaches), and never calls `didChangeText`, so nothing is written
+    /// back: its box calls it while the board may be applying a step, when nothing may commit.
+    /// The box drops what typing registered with its undo after it.
+    func show(_ value: Value)
+}
+
+/// A box of text in the panel, as `DetailTextArea` is, over a text view a plugin makes
+/// (`make`, a `DetailTextContent`: its own class, its own font and substitutions), so text that
+/// isn't a string (mentions of shapes, say) edits in the panel as a string does. The box lays it
+/// out (`height` tall, bordered, scrolling), writes the binding on every change (a panel field's run
+/// of writes is one undo step), and shows what the binding says only when it changed from outside
+/// (the model writing it, an undo), so a keystroke typed before the panel draws again is never
+/// lost; typing's undo is the box's own, dropped when the text is shown from outside. With
+/// `onCommit`, Return, ⌘↩ and the keyboard leaving say the text is done, and ⇧↩ is a new line;
+/// without, Return is a new line. Escape leaves the panel; `placeholder` shows while it's empty.
+/// The panel's read-only shape, `detailUpdating`, or any `disabled` around it makes it read-only
+/// and dimmed (`DetailTextView.showEnabled(_:)`), and still there to read: its text is selected and
+/// copied, and its view answers clicks (a pill in it followed).
+public struct DetailTextBox<Content: DetailTextContent>: View {
+    @Binding var value: Content.Value
+    let height: CGFloat?
     let placeholder: String?
     let isEditable: Bool
-    var coloring: DetailCodeColoring? = nil
+    let commitsOnReturn: Bool
     let onCommit: (@MainActor () -> Void)?
+    let make: @MainActor () -> Content
+    let prepare: (@MainActor (Content, NSScrollView) -> Void)?
+    let update: (@MainActor (Content) -> Void)?
+    @Environment(\.isEnabled) private var isEnabled
 
-    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+    public init(_ value: Binding<Content.Value>, height: CGFloat = DetailStyle.textAreaHeight, placeholder: String? = nil,
+                onCommit: (@MainActor () -> Void)? = nil, make: @escaping @MainActor () -> Content) {
+        self.init(value, height: height, placeholder: placeholder, commitsOnReturn: onCommit != nil, onCommit: onCommit, make: make)
+    }
+
+    /// `height` nil: as tall as it's made. `prepare` sets up the view and its scroll view once
+    /// made (the box's own settings made first), and `update` sets it up again on every update of
+    /// the box (before it's shown enabled or not).
+    init(_ value: Binding<Content.Value>, height: CGFloat?, placeholder: String? = nil, isEditable: Bool = true, commitsOnReturn: Bool,
+         onCommit: (@MainActor () -> Void)?, make: @escaping @MainActor () -> Content,
+         prepare: (@MainActor (Content, NSScrollView) -> Void)? = nil, update: (@MainActor (Content) -> Void)? = nil) {
+        _value = value
+        self.height = height
+        self.placeholder = placeholder
+        self.isEditable = isEditable
+        self.commitsOnReturn = commitsOnReturn
+        self.onCommit = onCommit
+        self.make = make
+        self.prepare = prepare
+        self.update = update
+    }
+
+    public var body: some View {
+        // Disabled, SwiftUI would take every click over the view, so none reached the text: the
+        // view is told (not editable, dimmed), and SwiftUI sees it enabled.
+        DetailTextHost(value: $value, placeholder: placeholder, isEditable: isEditable, isEnabled: isEnabled,
+                       commitsOnReturn: commitsOnReturn, onCommit: onCommit, make: make, prepare: prepare, update: update)
+            .environment(\.isEnabled, true)
+            .detailTextBox(height: height)
+    }
+}
+
+/// A box's text view, in a scroll view built around it by hand: `scrollableTextView()` would make
+/// the receiver's class with `init(frame:)`, and a plugin's view may need more to be made.
+struct DetailTextHost<Content: DetailTextContent>: NSViewRepresentable {
+    @Binding var value: Content.Value
+    let placeholder: String?
+    let isEditable: Bool
+    /// The box's, where it is: false, it's read-only and dimmed. (The host's own environment says
+    /// it's enabled, so it answers clicks.)
+    let isEnabled: Bool
+    let commitsOnReturn: Bool
+    let onCommit: (@MainActor () -> Void)?
+    let make: @MainActor () -> Content
+    let prepare: (@MainActor (Content, NSScrollView) -> Void)?
+    let update: (@MainActor (Content) -> Void)?
+
+    func makeCoordinator() -> Coordinator { Coordinator(value: $value) }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scroll = TextView.scrollableTextView()
+        let view = make()
+        let scroll = NSScrollView()
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
-        guard let view = scroll.documentView as? TextView else { preconditionFailure("scrollableTextView makes the receiver's class") }
+        // As `scrollableTextView()` sets it up: as wide as the box, as tall as its text or the box.
+        view.minSize = .zero
+        view.isVerticallyResizable = true
+        view.isHorizontallyResizable = false
+        view.autoresizingMask = [.width, .height]
+        view.textContainer?.widthTracksTextView = true
         view.drawsBackground = false
-        view.isRichText = false
-        view.importsGraphics = false
         view.allowsUndo = true
         view.textContainerInset = .zero
-        view.isCode = kind == .code
-        view.font = kind == .code ? DetailStyle.codeFont : DetailStyle.bodyFont
-        if kind == .code {
-            // No wrapping: the text is as wide as its longest line, and scrolls sideways.
-            view.isHorizontallyResizable = true
-            view.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-            view.textContainer?.widthTracksTextView = false
-            view.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-            scroll.hasHorizontalScroller = true
-            view.inlinePredictionType = .no
-            if #available(macOS 15.0, *) {
-                view.mathExpressionCompletionType = .no
-                view.writingToolsBehavior = .none
-            }
-            view.isAutomaticQuoteSubstitutionEnabled = false
-            view.isAutomaticDashSubstitutionEnabled = false
-            view.isAutomaticTextReplacementEnabled = false
-            view.isAutomaticSpellingCorrectionEnabled = false
-            view.isContinuousSpellCheckingEnabled = false
-            view.isGrammarCheckingEnabled = false
-            view.isAutomaticLinkDetectionEnabled = false
-            view.isAutomaticDataDetectionEnabled = false
-            view.isAutomaticTextCompletionEnabled = false
-            view.smartInsertDeleteEnabled = false
-        }
-        view.string = text
-        context.coordinator.shown = text
-        view.delegate = context.coordinator
+        scroll.documentView = view
+        prepare?(view, scroll)
+        let coordinator = context.coordinator
+        if view.value != value { view.show(value) }
+        coordinator.shown = value
+        view.delegate = coordinator
         return scroll
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
-        guard let view = scroll.documentView as? TextView else { return }
+        guard let view = scroll.documentView as? Content else { return }
         let coordinator = context.coordinator
-        coordinator.text = $text
-        let isEnabled = context.environment.isEnabled
+        coordinator.value = $value
         view.isEditable = isEditable && isEnabled
         view.isSelectable = true
-        view.coloring = coloring
-        view.color(isEnabled ? .labelColor : .secondaryLabelColor, spans: isEnabled && coloring != nil)
-        view.returnCommits = kind == .prose && onCommit != nil
+        update?(view)
+        view.showEnabled(isEnabled)
+        view.commitsOnReturn = commitsOnReturn
         view.onCommit = onCommit
         view.onExit = context.environment.detailExit
-        view.placeholder = placeholder.map {
-            NSAttributedString(string: $0, attributes: [.font: DetailStyle.bodyFont, .foregroundColor: NSColor.placeholderTextColor])
-        }
+        view.placeholder = placeholder
         // Changed from outside: show it. (Typing changes the text view first, then the binding.)
-        if text != coordinator.shown {
-            coordinator.shown = text
-            if view.string != text { view.show(text, undo: coordinator.undo) }
+        if value != coordinator.shown {
+            coordinator.shown = value
+            if view.value != value {
+                view.show(value)
+                coordinator.undo.removeAllActions()
+            }
         }
     }
 
     @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
-        var text: Binding<String>
-        /// What the binding said last, as far as this view knows: set by typing, and by the
+        var value: Binding<Content.Value>
+        /// What the binding said last, as far as this box knows: set by typing, and by the
         /// binding changing from outside.
-        var shown = ""
-        /// The view's own, so text replaced from outside can drop what typing registered.
+        var shown: Content.Value
+        /// The box's own, so text shown from outside can drop what typing registered.
         let undo = UndoManager()
 
-        init(text: Binding<String>) { self.text = text }
+        init(value: Binding<Content.Value>) {
+            self.value = value
+            shown = value.wrappedValue
+        }
 
         func textDidChange(_ notification: Notification) {
-            guard let view = notification.object as? TextView else { return }
-            shown = view.string
-            view.recolor()
-            text.wrappedValue = view.string
+            guard let view = notification.object as? Content else { return }
+            let typed = view.value
+            shown = typed
+            value.wrappedValue = typed
         }
 
         func undoManager(for view: NSTextView) -> UndoManager? { undo }
     }
+}
 
-    final class TextView: NSTextView {
-        var isCode = false
-        var returnCommits = false
-        var onCommit: (@MainActor () -> Void)?
-        var onExit: (@MainActor () -> Void)?
-        var placeholder: NSAttributedString? {
-            didSet { if placeholder != oldValue { needsDisplay = true } }
+// MARK: Plain text
+
+/// A box's text as a string: a `DetailTextArea`'s words, or a `DetailCodeEditor`'s code. In
+/// TextKit 1, as the panel's text has always been laid out: a code editor is as tall as its lines
+/// in TextKit 1's metrics (`DetailStyle.codeLineHeight`), and as wide as its longest.
+final class PlainTextView: DetailTextView, DetailTextContent {
+    /// `DetailCodeEditor`'s: Return keeps the line's indentation, Tab is two spaces.
+    private(set) var isCode = false
+    var coloring: DetailCodeColoring?
+    /// The text's own color, and whether `coloring`'s runs are colored over it.
+    private var baseColor: NSColor?
+    private var colorsSpans = false
+
+    /// Words: the system's substitutions as the person has them.
+    static func prose() -> PlainTextView {
+        let view = PlainTextView(usingTextLayoutManager: false)
+        view.plain(font: DetailStyle.textFont)
+        return view
+    }
+
+    /// Code, typed exactly as keyed: every substitution, completion, prediction and Writing Tools off.
+    static func code() -> PlainTextView {
+        let view = PlainTextView(usingTextLayoutManager: false)
+        view.plain(font: DetailStyle.codeFont)
+        view.isCode = true
+        view.inlinePredictionType = .no
+        if #available(macOS 15.0, *) {
+            view.mathExpressionCompletionType = .no
+            view.writingToolsBehavior = .none
         }
-        var coloring: DetailCodeColoring?
-        /// The text's own color, and whether `coloring`'s runs are colored over it.
-        private var baseColor: NSColor?
-        private var colorsSpans = false
+        view.isAutomaticQuoteSubstitutionEnabled = false
+        view.isAutomaticDashSubstitutionEnabled = false
+        view.isAutomaticTextReplacementEnabled = false
+        view.isAutomaticSpellingCorrectionEnabled = false
+        view.isContinuousSpellCheckingEnabled = false
+        view.isGrammarCheckingEnabled = false
+        view.isAutomaticLinkDetectionEnabled = false
+        view.isAutomaticDataDetectionEnabled = false
+        view.isAutomaticTextCompletionEnabled = false
+        view.smartInsertDeleteEnabled = false
+        return view
+    }
 
-        // MARK: Color
+    /// No wrapping: the text is as wide as its longest line, and scrolls sideways.
+    static func unwrapLines(_ view: PlainTextView, in scroll: NSScrollView) {
+        view.isHorizontallyResizable = true
+        view.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        view.textContainer?.widthTracksTextView = false
+        view.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        scroll.hasHorizontalScroller = true
+    }
 
-        /// Sets the text's color, and colors `coloring`'s runs over it while `spans`; the text is
-        /// colored again only when either changes (and when the text does: `recolor`).
-        func color(_ base: NSColor, spans: Bool) {
-            guard base != baseColor || spans != colorsSpans else { return }
-            baseColor = base
-            colorsSpans = spans
-            recolor()
-        }
+    /// Plain text in one font, as `scrollableTextView()` makes it: no rich text, pictures, ruler or
+    /// font panel.
+    private func plain(font: NSFont) {
+        isRichText = false
+        importsGraphics = false
+        usesRuler = false
+        usesFontPanel = false
+        self.font = font
+    }
 
-        /// Colors the whole text: its own color, then each run's. Not while text is being composed
-        /// (an input method's marked text has attributes of its own); once it's put in, it is.
-        func recolor() {
-            guard let baseColor, let storage = textStorage, !hasMarkedText() else { return }
-            textColor = baseColor
-            let whole = NSRange(location: 0, length: storage.length)
-            guard coloring != nil else { return }
-            storage.beginEditing()
-            storage.removeAttribute(.underlineStyle, range: whole)
-            if colorsSpans, let coloring {
-                for span in coloring(string) where NSMaxRange(span.range) <= whole.length {
-                    storage.addAttribute(.foregroundColor, value: DetailStyle.codeColor(span.role), range: span.range)
-                    if span.role == .invalid {
-                        storage.addAttribute(.underlineStyle, value: NSUnderlineStyle([.single, .patternDot]).rawValue, range: span.range)
-                    }
+    var value: String { string }
+
+    /// The caret stays where it was, as far as the new text reaches.
+    func show(_ value: String) {
+        let caret = selectedRange().location
+        string = value
+        setSelectedRange(NSRange(location: min(caret, (value as NSString).length), length: 0))
+        recolor()
+        needsDisplay = true
+    }
+
+    override func showEnabled(_ isEnabled: Bool) {
+        color(isEnabled ? .labelColor : .secondaryLabelColor, spans: isEnabled && coloring != nil)
+    }
+
+    /// Colored again before its box hears of it.
+    override func didChangeText() {
+        recolor()
+        super.didChangeText()
+    }
+
+    // MARK: Color
+
+    /// Sets the text's color, and colors `coloring`'s runs over it while `spans`; the text is
+    /// colored again only when either changes (and when the text does: `recolor`).
+    func color(_ base: NSColor, spans: Bool) {
+        guard base != baseColor || spans != colorsSpans else { return }
+        baseColor = base
+        colorsSpans = spans
+        recolor()
+    }
+
+    /// Colors the whole text: its own color, then each run's. Not while text is being composed
+    /// (an input method's marked text has attributes of its own); once it's put in, it is.
+    func recolor() {
+        guard let baseColor, let storage = textStorage, !hasMarkedText() else { return }
+        textColor = baseColor
+        let whole = NSRange(location: 0, length: storage.length)
+        guard coloring != nil else { return }
+        storage.beginEditing()
+        storage.removeAttribute(.underlineStyle, range: whole)
+        if colorsSpans, let coloring {
+            for span in coloring(string) where NSMaxRange(span.range) <= whole.length {
+                storage.addAttribute(.foregroundColor, value: DetailStyle.codeColor(span.role), range: span.range)
+                if span.role == .invalid {
+                    storage.addAttribute(.underlineStyle, value: NSUnderlineStyle([.single, .patternDot]).rawValue, range: span.range)
                 }
             }
-            storage.endEditing()
         }
+        storage.endEditing()
+    }
 
-        // MARK: Keys
+    // MARK: Code
 
-        override func keyDown(with event: NSEvent) {
-            if Self.isReturn(event), !hasMarkedText() {
-                let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
-                if modifiers == .command || (returnCommits && modifiers.isEmpty) {
-                    onCommit?()
-                    return
-                }
-                if returnCommits && modifiers == .shift {
-                    insertNewline(nil)
-                    return
-                }
-            }
-            super.keyDown(with: event)
+    /// Code keeps the line's indentation, one step more after an opening bracket; between a
+    /// pair of brackets, the closing one goes on a line of its own.
+    override func insertNewline(_ sender: Any?) {
+        guard isCode, isEditable else { return super.insertNewline(sender) }
+        let text = string as NSString, selection = selectedRange()
+        let line = text.lineRange(for: NSRange(location: selection.location, length: 0))
+        let head = text.substring(with: NSRange(location: line.location, length: selection.location - line.location))
+        let indent = String(head.prefix { $0 == " " || $0 == "\t" })
+        let before = head.last { !$0.isWhitespace }
+        let rest = text.substring(with: NSRange(location: NSMaxRange(selection), length: min(80, text.length - NSMaxRange(selection))))
+        let after = rest.first { $0 != " " && $0 != "\t" }
+        guard let opener = before, opener == "{" || opener == "[" else {
+            return insertText("\n" + indent, replacementRange: selection)
         }
-
-        /// ⌘↩ may come as a key equivalent (before the menus) rather than a key down.
-        override func performKeyEquivalent(with event: NSEvent) -> Bool {
-            if window?.firstResponder === self, Self.isReturn(event),
-               event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command {
-                onCommit?()
-                return true
-            }
-            return super.performKeyEquivalent(with: event)
-        }
-
-        private static func isReturn(_ event: NSEvent) -> Bool { event.keyCode == 36 || event.keyCode == 76 }
-
-        /// Code keeps the line's indentation, one step more after an opening bracket; between a
-        /// pair of brackets, the closing one goes on a line of its own.
-        override func insertNewline(_ sender: Any?) {
-            guard isCode, isEditable else { return super.insertNewline(sender) }
-            let text = string as NSString, selection = selectedRange()
-            let line = text.lineRange(for: NSRange(location: selection.location, length: 0))
-            let head = text.substring(with: NSRange(location: line.location, length: selection.location - line.location))
-            let indent = String(head.prefix { $0 == " " || $0 == "\t" })
-            let before = head.last { !$0.isWhitespace }
-            let rest = text.substring(with: NSRange(location: NSMaxRange(selection), length: min(80, text.length - NSMaxRange(selection))))
-            let after = rest.first { $0 != " " && $0 != "\t" }
-            guard let opener = before, opener == "{" || opener == "[" else {
-                return insertText("\n" + indent, replacementRange: selection)
-            }
-            let inner = indent + Self.indentStep
-            if (opener == "{" && after == "}") || (opener == "[" && after == "]") {
-                insertText("\n" + inner + "\n" + indent, replacementRange: selection)
-                setSelectedRange(NSRange(location: selection.location + 1 + (inner as NSString).length, length: 0))
-            } else {
-                insertText("\n" + inner, replacementRange: selection)
-            }
-        }
-
-        override func insertTab(_ sender: Any?) {
-            guard isCode, isEditable else { return super.insertTab(sender) }
-            insertText(Self.indentStep, replacementRange: selectedRange())
-        }
-
-        private static let indentStep = "  "
-
-        /// Escape leaves the panel (a text view's own Escape offers completions).
-        override func cancelOperation(_ sender: Any?) {
-            guard let onExit else { return super.cancelOperation(sender) }
-            onExit()
-        }
-
-        // MARK: Committing when the keyboard leaves
-
-        override func resignFirstResponder() -> Bool {
-            let resigned = super.resignFirstResponder()
-            if resigned { onCommit?() }
-            return resigned
-        }
-
-        /// Taken out of the window while it had the keyboard (the panel showing another shape):
-        /// that's leaving it too. After the update that took it out.
-        override func viewWillMove(toWindow newWindow: NSWindow?) {
-            if newWindow == nil, window?.firstResponder === self, let onCommit {
-                Task { @MainActor in onCommit() }
-            }
-            super.viewWillMove(toWindow: newWindow)
-        }
-
-        // MARK: Text from outside, and the placeholder
-
-        /// Replaces the text, as something other than typing: the caret stays where it was, as
-        /// far as the new text reaches, and typing's undo steps (which were for the old text) go.
-        func show(_ text: String, undo: UndoManager) {
-            let caret = selectedRange().location
-            string = text
-            setSelectedRange(NSRange(location: min(caret, (text as NSString).length), length: 0))
-            undo.removeAllActions()
-            recolor()
-            needsDisplay = true
-        }
-
-        override func didChangeText() {
-            super.didChangeText()
-            if placeholder != nil { needsDisplay = true }
-        }
-
-        override func draw(_ dirtyRect: NSRect) {
-            super.draw(dirtyRect)
-            guard string.isEmpty, let placeholder else { return }
-            let origin = textContainerOrigin, padding = textContainer?.lineFragmentPadding ?? 0
-            placeholder.draw(with: NSRect(x: origin.x + padding, y: origin.y, width: bounds.width - origin.x - padding * 2,
-                                          height: bounds.height - origin.y),
-                             options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+        let inner = indent + Self.indentStep
+        if (opener == "{" && after == "}") || (opener == "[" && after == "]") {
+            insertText("\n" + inner + "\n" + indent, replacementRange: selection)
+            setSelectedRange(NSRange(location: selection.location + 1 + (inner as NSString).length, length: 0))
+        } else {
+            insertText("\n" + inner, replacementRange: selection)
         }
     }
+
+    override func insertTab(_ sender: Any?) {
+        guard isCode, isEditable else { return super.insertTab(sender) }
+        insertText(Self.indentStep, replacementRange: selectedRange())
+    }
+
+    private static let indentStep = "  "
 }

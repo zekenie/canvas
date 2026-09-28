@@ -188,4 +188,32 @@ extension ChangeSetWatcher: EditorService {
         expectEqual(inside.map(\.copiedFrom), [note])
         expect(inside.allSatisfy(\.isLocked), "the copy of a locked note is locked")
     },
+    test("a schema card cut from a pocket and pasted on the root is the same card there: its row and its issues go with it, and the pocket's list, taken back, doesn't have it") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let (file, pocket, note) = pocketWithNote()
+        let h = try shippedWithPockets(file, pasteboard: pasteboard)
+        let contents = try require(h.editor.tableOfContents)
+        expect(h.enter(pocket))
+        let card = h.add(SchemaCard(frame: CGRect(x: 300, y: 0, width: 240, height: 89)))
+        h.editor.transact { $0.update(card, as: SchemaCard.self) { $0.props.setSchema("{ \"type\": ") } }
+        let issues = h.editor.validation?.result(for: card)?.issues ?? []
+        expect(!issues.isEmpty, "a schema that isn't JSON")
+        expectEqual(contents.entries.map(\.id), [note, card])
+        expect(h.editor.showBoard(.root))
+        expect(h.enter(pocket))
+        h.editor.selection = card
+        h.editor.perform(.cut)
+        contents.showAll()
+        expectEqual(contents.entries.map(\.id), [note])
+        expect(h.editor.showBoard(.root))
+        h.editor.perform(.paste)
+        expectEqual(h.editor.selection, card)
+        expectEqual(h.editor.file.board(containing: card), .root)
+        contents.showAll()
+        expectEqual(contents.entries.map(\.id), [pocket, card])
+        expectEqual(h.editor.validation?.result(for: card)?.issues ?? [], issues)
+        expect(h.enter(pocket))
+        expectEqual(contents.entries.map(\.id), [note], "the pocket's rows, as the cut left them")
+    },
 ])

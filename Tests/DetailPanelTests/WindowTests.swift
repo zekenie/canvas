@@ -15,16 +15,26 @@ import TestKit
 @MainActor
 final class PanelWindow {
     let editor: CanvasEditor
-    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1000, height: 700), styleMask: [.titled], backing: .buffered, defer: true)
+    let window: NSWindow
     let canvas: CanvasView
     private(set) var hosting: NSView!
     /// How often the panel handed the keyboard back.
     private(set) var exits = 0
 
     /// `withOverview`: the panel's overview is a text field whose placeholder is "Overview".
+    /// `inBoardWindow`: the window is a board's, as the app's is, which splits Edit › Undo between
+    /// text and the board.
     init(_ editor: CanvasEditor, panelWidth: CGFloat = DetailStyle.idealWidth, locale: Locale = Locale(identifier: "en_US"),
-         withOverview: Bool = false) {
+         withOverview: Bool = false, inBoardWindow: Bool = false) {
         self.editor = editor
+        let frame = CGRect(x: 0, y: 0, width: 1000, height: 700)
+        if inBoardWindow {
+            let board = BoardWindow(contentRect: frame, styleMask: [.titled], backing: .buffered, defer: true)
+            board.editor = editor
+            window = board
+        } else {
+            window = NSWindow(contentRect: frame, styleMask: [.titled], backing: .buffered, defer: true)
+        }
         canvas = CanvasView(editor: editor)
         canvas.frame = CGRect(x: 0, y: 0, width: 1000 - panelWidth, height: 700)
         let exit: @MainActor () -> Void = { [unowned self] in
@@ -62,6 +72,34 @@ final class PanelWindow {
     }
 
     var canvasHasKeyboard: Bool { window.firstResponder === canvas }
+
+    /// The view a click at a point in `view` lands on, as the window finds it: its hit test from
+    /// the top, where SwiftUI takes the clicks over what it's disabled.
+    func hit(_ point: CGPoint, in view: NSView) -> NSView? {
+        guard let top = window.contentView?.superview else { return nil }
+        return top.hitTest(view.convert(point, to: nil))
+    }
+
+    /// A press and its release where a click at a point in `view` lands, as the window sends them
+    /// (`sendEvent`'s mouse-downs don't reach views in an unshown window, so they're handed over):
+    /// the keyboard first, to a view that takes it, then the press. The release waits in the queue,
+    /// for a view that tracks the press until it comes (a text view's); one that doesn't is handed
+    /// it after.
+    func clickThroughWindow(at point: CGPoint, in view: NSView, clicks: Int = 1) throws {
+        let target = try require(hit(point, in: view))
+        if target.acceptsFirstResponder { window.makeFirstResponder(target) }
+        time += 0.5
+        let location = view.convert(point, to: nil)
+        func event(_ type: NSEvent.EventType, at time: TimeInterval) throws -> NSEvent {
+            try require(NSEvent.mouseEvent(with: type, location: location, modifierFlags: [], timestamp: time, windowNumber: window.windowNumber,
+                                           context: nil, eventNumber: 0, clickCount: clicks, pressure: 1))
+        }
+        NSApplication.shared.postEvent(try event(.leftMouseUp, at: time + 0.05), atStart: true)
+        target.mouseDown(with: try event(.leftMouseDown, at: time))
+        if let up = NSApplication.shared.nextEvent(matching: .leftMouseUp, until: .distantPast, inMode: .eventTracking, dequeue: true) {
+            target.mouseUp(with: up)
+        }
+    }
 
     /// The panel as the window draws it.
     func render() throws -> NSBitmapImageRep {

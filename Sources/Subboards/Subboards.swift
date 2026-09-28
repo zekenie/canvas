@@ -36,8 +36,8 @@ extension Subboard {
 /// Subboards: the Subboard tool (B), which places a card that opens onto a board of its own. It
 /// opts into Boards (opening it: a double-click, Return, ⌘↓, Open in its menu and panel), Titles
 /// (its name, drawn on the card, so no pill), Mentions (by its name; following a mention enters
-/// it), the table of contents (a row Titles names) and the detail panel (a header that renames it).
-/// Going back up, and the path, are Boards'.
+/// it; a Mentioned In tab in its panel), the table of contents (a row Titles names) and the detail
+/// panel (a header that renames it). Going back up, and the path, are Boards'.
 public struct SubboardsPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .subboards }

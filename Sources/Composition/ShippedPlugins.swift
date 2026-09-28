@@ -15,6 +15,7 @@ import Eraser
 import Keyboard
 import LanguageModels
 import Locking
+import MentionValidation
 import Mentions
 import Polylines
 import PortEdges
@@ -60,7 +61,7 @@ public enum ShippedPlugins {
             MentionsPlugin(),
             // Getting around a file's boards (a subboard's): opening one, ⌘↑, the path.
             BoardsPlugin(),
-            ValidationDetailsPlugin(), ValidationContentsPlugin(), ClipboardPlugin(pasteboard: pasteboard),
+            ValidationDetailsPlugin(), ValidationContentsPlugin(), MentionValidationPlugin(), ClipboardPlugin(pasteboard: pasteboard),
             LockingPlugin(),
             // What a drag moves snaps to the shapes in view: their edges, their middles and the spaces
             // between them.
