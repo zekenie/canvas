@@ -1,6 +1,8 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import ContextMenus
+import DetailPanel
 import Keyboard
 import Mentions
 import Selection
@@ -370,7 +372,7 @@ private struct LinesDefinition: ShapeDefinition {
             registrar.shape(BoundedDefinition()) { $0.mentionable() }
         }
         do {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), MentionsPlugin(), bounded])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), MentionsPlugin(), bounded])
             expect(false, "a bounded mention text should be refused")
         } catch let error as RegistryError {
             guard case .invalid(let point, let reason) = error else { return expect(false, "\(error)") }
@@ -381,7 +383,7 @@ private struct LinesDefinition: ShapeDefinition {
             registrar.shape(LinesDefinition()) { $0.mentionText { _ in [] } }
         }
         do {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), MentionsPlugin(), lines])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), MentionsPlugin(), lines])
             expect(false, "a patterned mention text in a list should be refused")
         } catch let error as RegistryError {
             guard case .invalid(let point, let reason) = error else { return expect(false, "\(error)") }

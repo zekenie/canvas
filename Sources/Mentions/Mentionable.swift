@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import DetailPanel
 import Titles
 
 /// How a kind's shapes are mentioned: one per kind, plus one for every kind
@@ -125,10 +126,12 @@ extension ShapeRegistrar {
     /// tool's label ("Untitled Note"), each on one line, blank counting as none. `symbol` defaults
     /// to the placing tool's, `detail` to the kind's name, `tint` to none. `following` says what
     /// following a mention does: go to the shape, or into it (`.opens`: a subboard enters its
-    /// board). An `untitled` that reads
-    /// the shape's own mention text leaves every other shape's name out of it (`firstLine`, where
-    /// each mention is "@…"): a mention holds its target's name as written, so names made of
-    /// names would take each other in and grow.
+    /// board). An `untitled` that reads the shape's own mention text leaves every other shape's
+    /// name out of it (`firstLine`, where each mention is "@…"): a mention holds its target's name
+    /// as written, so names made of names would take each other in and grow.
+    ///
+    /// It brings the kind's Mentioned In tab (`MentionsTab`) to its panel, shown while something
+    /// on the board shown mentions the shape, so the list needs `DetailPanelPlugin()`.
     ///
     ///     note.mentionable(untitled: { $0.props.text.firstLine })
     ///     sub.mentionable(following: .opens)
@@ -141,12 +144,13 @@ extension ShapeRegistrar {
         contribute(MentionContribution(Definition.Props.self, label: label, untitled: untitled, symbol: symbol, detail: detail, tint: tint,
                                        following: following),
                    to: ShapeMentions.self)
+        details { MentionsTab.section() }
     }
 }
 
 extension PluginRegistrar {
     /// Another plugin's kind can be mentioned (bridges), with the same options as `mentionable` on
-    /// a kind's own registrar.
+    /// a kind's own registrar, and its Mentioned In tab.
     public mutating func mentionable<P: ShapeProps>(_: P.Type, label: (@MainActor (ShapeRecord<P>) -> String?)? = nil,
                                                     untitled: (@MainActor (ShapeRecord<P>) -> String?)? = nil,
                                                     symbol: (@MainActor (ShapeRecord<P>) -> String?)? = nil,
@@ -156,10 +160,12 @@ extension PluginRegistrar {
         contribute(MentionContribution(P.self, label: label, untitled: untitled, symbol: symbol, detail: detail, tint: tint,
                                        following: following),
                    to: ShapeMentions.self, for: .kind(P.kind))
+        details(P.self) { MentionsTab.section() }
     }
 
     /// Every kind `where` picks by its definition can be mentioned, as the defaults have it: a
     /// composition that wants every kind mentionable. A kind's own `mentionable` takes its place.
+    /// It brings no Mentioned In tab: the panel has no section for every shape's record.
     public mutating func mentionableEveryShape(where applies: @escaping @MainActor (any ShapeDefinition) -> Bool = { _ in true }) {
         contribute(MentionContribution(everyShape: applies), to: ShapeMentions.self, for: .any)
     }

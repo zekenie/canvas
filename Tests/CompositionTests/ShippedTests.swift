@@ -46,8 +46,8 @@ import ValidationDetails
         keyboard             service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo
         selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection
         arrows               shape arrow · ContentsRows → arrow · service ArrowTargeting · tool arrow · shortcut A → tool arrow · overlay BindingHintsOverlay
-        sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · channel note-link
-        subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails → subboard
+        sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property checklist → sticky-note · ShapeChecklists → sticky-note · ShapeDetails → sticky-note · ShapeContextMenus → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link
+        subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard
         schemas              service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link
         validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
         adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
@@ -56,10 +56,11 @@ import ValidationDetails
         table-of-contents    service ContentsState
         checklists           property checklist · adornment ChecklistChip → every shape
         titles               property title · adornment TitlePill → every shape
-        mentions             service MentionState · overlay MentionFrames · ShapeFaces
+        mentions             service MentionState · overlay MentionFrames · ShapeFaces · CanvasContextMenu
         board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
         validation-details   DetailStatuses in Issues
         validation-contents  ContentsMarks
+        mention-validation   ValidationRules
         clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
         locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · CanvasContextMenu
         snapping             service SnapState · translation adjuster
@@ -177,6 +178,26 @@ import ValidationDetails
         expectEqual(editor.document[note].flatMap(editor.registry.title(of:)), String(long.dropLast()))
         editor.transact { $0.update(note) { $0[TitleProperty.self] = "Groceries" } }
         expectEqual(editor.validation?.result(for: note), nil)
+    },
+    test("a note that mentions an arrow, or holds what looks like a mention and isn't, warns (MentionValidation): a line in Issues, an orange dot") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        let arrow = editor.add(Arrow(start: .free(CGPoint(x: 100, y: 400)), end: .free(CGPoint(x: 300, y: 400))))
+        let groceries = editor.add(Subboard(frame: CGRect(x: 400, y: 100, width: 240, height: 160)), title: "Buy milk")
+        let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200),
+                                         text: MentionText([.text("See "), .mention(arrow, label: "Arrow"), .text(" before "), .mention(groceries, label: "Buy milk"),
+                                                            .text(" and "), .mention(ShapeID(), label: "Gone")])))
+        let unmentionable = ValidationIssue.warning("“Arrow” can’t be mentioned.", field: "text")
+        expectEqual(editor.validation?.result(for: note)?.issues, [unmentionable], "a subboard can be mentioned, and a missing shape's pill says so")
+        let panel = try require(editor.detailPanel)
+        expectEqual(panel.layout(for: try require(editor.document[note])).statuses(in: .of(IssuesTab.self)),
+                    [DetailStatus(unmentionable.message, tone: .warning)])
+        let marks = Dictionary(uniqueKeysWithValues: try require(editor.tableOfContents).entries.map { ($0.id, $0.marks) })
+        expectEqual(marks[note], [ContentsMark(color: Color(nsColor: Severity.warning.color), help: unmentionable.message)])
+        // Deleting the arrow takes the warning with it; the pill is missing, which says so.
+        editor.transact { $0.delete([arrow]) }
+        expectEqual(editor.validation?.result(for: note), nil)
+        editor.transact { $0.update(note, as: StickyNote.self) { $0.props.text = MentionText(stored: "Ask @[Buy milk](shape: \(groceries.rawValue.uuidString))") } }
+        expectEqual(editor.validation?.result(for: note)?.issues, [.warning("“@[Buy milk](shape: \(groceries.rawValue.uuidString.prefix(11))…” isn’t a mention.", field: "text")])
     },
     test("the welcome board: six notes, three arrows, no warnings") {
         let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler(), model: ScriptedLanguageModel())

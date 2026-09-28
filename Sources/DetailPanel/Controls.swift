@@ -70,8 +70,10 @@ public enum DetailStyle {
     static let backSymbol = Font.system(size: 13, weight: .semibold)
     static let disclosure = Font.system(size: 8, weight: .bold)
     static let placeholder = Font.system(size: 13)
-    /// `body` and a monospaced one, for text views AppKit draws.
-    static let bodyFont = NSFont.systemFont(ofSize: 11)
+    /// The panel's text, `body`, for text views AppKit draws: a `DetailTextBox`'s view sets its
+    /// text in it, as the panel's own boxes do.
+    public static let textFont = NSFont.systemFont(ofSize: 11)
+    /// A code editor's: `textFont`'s size, monospaced.
     static let codeFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
 
     static let info = Color.blue
@@ -346,8 +348,7 @@ public struct DetailTextArea: View {
         if let onCommit {
             // Return has to be told from ⇧↩ before the text view takes it: an AppKit text view of
             // the panel's own, which draws the placeholder itself.
-            PanelTextView(text: $text, kind: .prose, placeholder: placeholder, isEditable: true, onCommit: onCommit)
-                .detailTextBox(height: height)
+            DetailTextBox($text, height: height, placeholder: placeholder, onCommit: onCommit, make: PlainTextView.prose)
         } else {
             TextEditor(text: Binding(get: { typed ?? text }, set: { typed = $0; text = $0 }))
                 .onChange(of: text) { typed = nil }

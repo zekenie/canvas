@@ -1,4 +1,5 @@
 import AppKit
+import DetailPanel
 import Titles
 
 /// Mentions' UI constants. A pill's metrics are fractions of its text's font size (an em), so a
@@ -61,4 +62,25 @@ enum MentionStyle {
     static let nearbySearchSteps = 5
     /// The longest query: a whole title can be typed, and a character more closes the picker.
     static let queryLimit = TitleProperty.maxLength
+
+    // MARK: In the panel
+
+    /// Mention text in a panel box (`MentionTextArea`): the panel's text, in the label's color, on
+    /// a neutral surface, where each pill's symbol takes its target's tint.
+    static let panelText = MentionTextStyle(font: DetailStyle.textFont, color: .labelColor, surface: .neutral)
+    /// A read-only box's text and pills, dimmed together: about the secondary label's strength.
+    static let disabledOpacity: CGFloat = 0.5
+
+    // MARK: What mentions a shape
+
+    /// The tab that lists what mentions a shape.
+    nonisolated static let mentionedIn = "Mentioned In"
+
+    /// About how many characters of a mentioner's text a backlink quotes around its mention.
+    static let quoteLength = 60
+    /// The symbol of a mentioner whose kind has no placing tool.
+    static let unknownSymbol = "square.dashed"
+    /// The canvas's context menu item, and a pill's in text.
+    static let showWhatMentions = "Show What Mentions"
+    static func showWhatMentions(_ label: String) -> String { "Show What Mentions “\(label)”" }
 }

@@ -128,7 +128,7 @@ extension CanvasEditor {
         expectEqual(other.editor.mentions?.resolve(target), .missing)
         expectEqual(other.editor.row(pasted), "Ask @Ship it first")
     },
-    test("a note cut with the target it mentions, and pasted, mentions the pasted target, live") {
+    test("a note cut with the target it mentions, and pasted, is the same note mentioning the same target, live; pasted again, a copy mentioning the copy") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let h = emptyBoard(pasteboard)
@@ -137,13 +137,49 @@ extension CanvasEditor {
         h.editor.selectedShapeIDs = [note, target]
         h.editor.cutSelection()
         expectEqual(h.editor.document.shapes.count, 0)
+        expectEqual(h.editor.mentions?.resolve(target), .missing)
         h.editor.paste()
         let pasted = h.editor.document.shapes
-        let noteCopy = try require(pasted.first { $0[TitleProperty.self] == nil }?.id)
-        let targetCopy = try require(pasted.first { $0[TitleProperty.self] != nil }?.id)
+        expectEqual(Set(pasted.map(\.id)), [note, target], "moved, not copied")
+        expectEqual(h.editor.noteText(note)?.mentioned, [target])
+        expect(h.editor.mentions?.resolve(target).isLive == true)
+        expectEqual(h.editor.row(note), "Ask @Ship it first")
+        let before = h.editor.document
+        h.editor.paste()
+        let copies = h.editor.shapes(since: before)
+        let noteCopy = try require(copies.first { $0[TitleProperty.self] == nil }?.id)
+        let targetCopy = try require(copies.first { $0[TitleProperty.self] != nil }?.id)
         expectEqual(h.editor.noteText(noteCopy)?.mentioned, [targetCopy])
         expect(h.editor.mentions?.resolve(targetCopy).isLive == true)
-        expectEqual(h.editor.row(noteCopy), "Ask @Ship it first")
+    },
+    test("a titled note that mentions an untitled one: copied with it, the copy mentions the other's copy; cut with it and pasted, the same note mentioning the same note, live, and what mentions it") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let h = emptyBoard(pasteboard)
+        let budget = ShapeRecord(StickyNote(frame: noteFrame, text: "Budget"))
+        h.editor.transact { $0.insert(budget) }
+        var waiting = ShapeRecord(StickyNote(frame: targetFrame, text: MentionText([.text("Waiting on "), .mention(budget.id, label: "Budget")])))
+        waiting[TitleProperty.self] = "Ship it"
+        h.editor.transact { $0.insert(waiting) }
+        expectEqual(h.editor.mentions?.mentioners(of: budget.id), [waiting.id])
+
+        h.editor.selectedShapeIDs = [budget.id, waiting.id]
+        h.editor.copySelection()
+        let before = h.editor.document
+        h.editor.paste()
+        let copies = h.editor.shapes(since: before)
+        let budgetCopy = try require(copies.first { $0[TitleProperty.self] == nil }?.id)
+        let waitingCopy = try require(copies.first { $0[TitleProperty.self] != nil }?.id)
+        expectEqual(h.editor.noteText(waitingCopy), MentionText([.text("Waiting on "), .mention(budgetCopy, label: "Budget")]))
+        expectEqual(h.editor.mentions?.mentioners(of: budgetCopy), [waitingCopy])
+
+        h.editor.selectedShapeIDs = [budget.id, waiting.id]
+        h.editor.cutSelection()
+        expectEqual(h.editor.mentions?.isMentioned(budget.id), false)
+        h.editor.paste()
+        expectEqual(h.editor.noteText(waiting.id)?.mentioned, [budget.id], "moved, not copied")
+        expect(h.editor.mentions?.resolve(budget.id).isLive == true)
+        expectEqual(h.editor.mentions?.backlinks(of: budget.id).map(\.id), [waiting.id])
     },
     test("renaming a target redraws its row and the rows of the notes that mention it, and no other") {
         let pasteboard = NSPasteboard.withUniqueName()

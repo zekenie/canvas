@@ -63,4 +63,35 @@ import TestKit
         expectEqual(h.editor.document, before)
         expect(!h.editor.canUndo)
     },
+    test("a move's paste undone takes the shapes out and frees their ids, so pasting again, in a pocket, still moves them; redone, the same ids; the cut undone after it, the shapes are back where they were") {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let h = try harness(pasteboard, [PocketsPlugin()])
+        let pocket = h.add(Pocket(slot(0))), box = h.add(Box(slot(1)))
+        let original = h.file
+        h.editor.selection = box
+        expect(h.command("x"))
+        expect(h.command("v"))
+        expectEqual(h.editor.document[box]?.box, slot(1))
+        h.editor.undo()
+        expectEqual(h.editor.document[box], nil)
+        expect(h.enter(pocket))
+        expect(h.command("v"))
+        expectEqual(h.file.board(containing: box), BoardID(owner: pocket), "moved again, into the pocket")
+        let moved = h.file
+        h.editor.undo()
+        expectEqual(h.file.record(box), nil)
+        h.editor.redo()
+        expectEqual(h.file, moved, "the same ids")
+        expectEqual(h.editor.selectedShapeIDs, [box])
+        h.editor.undo()
+        h.editor.undo()
+        expectEqual(h.editor.board, .root, "the cut was made there")
+        expectEqual(h.file, original)
+        expectEqual(h.editor.selectedShapeIDs, [box])
+        h.editor.redo()
+        h.editor.redo()
+        expectEqual(h.editor.board, BoardID(owner: pocket))
+        expectEqual(h.file, moved)
+    },
 ])

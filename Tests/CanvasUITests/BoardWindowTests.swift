@@ -11,6 +11,16 @@ final class TextWithOwnUndo: NSTextView {
     override var undoManager: UndoManager? { ownUndo }
 }
 
+/// A window a board's window keeps beside it (a list a text shows to pick from): its child, as
+/// `addChildWindow` makes it, without putting either on screen.
+final class ChildPanel: NSPanel {
+    weak var board: NSWindow?
+    override var parent: NSWindow? {
+        get { board }
+        set {}
+    }
+}
+
 /// A board's window, unshown: the canvas above, an editable text view and a button below it.
 @MainActor final class BoardWindowFixture {
     let h: EditorHarness
@@ -142,6 +152,33 @@ final class TextWithOwnUndo: NSTextView {
         expectEqual(f.h.editor.document[box]?.box?.origin.x, 2, "the pick after the click is a step of its own")
         f.h.editor.undo()
         expectEqual(f.h.editor.document[box]?.box?.origin.x, 0)
+    },
+    test("a click in a board's child window (a list of picks beside text) doesn't end its run of writes; one in another's child does") {
+        let f = try BoardWindowFixture()
+        let box = f.addBox()
+        let picks = ChildPanel(contentRect: CGRect(x: 0, y: 0, width: 200, height: 200), styleMask: [.borderless], backing: .buffered, defer: false)
+        picks.board = f.window
+        let other = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 200, height: 200), styleMask: [.titled], backing: .buffered, defer: false)
+        let otherPicks = ChildPanel(contentRect: CGRect(x: 0, y: 0, width: 200, height: 200), styleMask: [.borderless], backing: .buffered, defer: false)
+        otherPicks.board = other
+        for window in [picks, other, otherPicks] { window.isReleasedWhenClosed = false }
+        defer { for window in [picks, other, otherPicks] { window.close() } }
+        @MainActor func write(_ x: CGFloat) {
+            f.h.editor.transact("Change Notes", coalescing: "x") { $0.update(box, as: Box.self) { $0.frame.origin.x = x } }
+        }
+        @MainActor func click(_ window: NSWindow) {
+            NSApp.sendEvent(window.mouse(.leftMouseDown, at: CGPoint(x: 100, y: 100), time: 1))
+            NSApp.sendEvent(window.mouse(.leftMouseUp, at: CGPoint(x: 100, y: 100), time: 1.1))
+        }
+        write(1)
+        click(picks)
+        write(2)
+        click(otherPicks)
+        write(3)
+        f.h.editor.undo()
+        expectEqual(f.h.editor.document[box]?.box?.origin.x, 2, "a click in another window's child ended the run")
+        f.h.editor.undo()
+        expectEqual(f.h.editor.document[box]?.box?.origin.x, 0, "the pick with the mouse is part of the typing's step")
     },
     test("a click anywhere, or a key where neither text nor the canvas has the keyboard, ends a run of writes; the keyboard moving does too") {
         let f = try BoardWindowFixture()

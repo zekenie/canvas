@@ -100,6 +100,22 @@ public struct ScopedMentionText<Scope: MentionScope>: Sendable, ExpressibleByStr
         String(line.trimmingCharacters(in: .whitespaces).prefix(TitleProperty.maxLength))
     }
 
+    /// Text that looks like a mention but reads as text, as written: each `@[` that isn't escaped,
+    /// starts no mention, and has `(shape` (in any case) later on its line before another `@[`,
+    /// through the first `)` after that, else to the line's end or that `@[`. So
+    /// `@[x](shape: 7C1E…)` (a space), `@[x](shape:1234)` (no UUID) and `@[a]b](shape:…)` (a `]`
+    /// not escaped) are look-alikes, and `\@[`, a literal `@[`, and `@[x]` alone aren't: what an
+    /// agent or a hand meant as a mention and got wrong. No surface writes one, since text made
+    /// from runs escapes every `@[` in its text.
+    ///
+    /// Text with no more `@[`s left unescaped than it has mentions has none, which one pass over
+    /// its bytes tells: so asking costs little for text without, and nothing is kept for it (a
+    /// value's size is what fits in an existential's buffer, as it's walked as `any ShapeNaming`).
+    public var lookalikes: [String] {
+        let mentions = runs.reduce(0) { if case .mention = $1 { $0 + 1 } else { $0 } }
+        return MentionGrammar.unescapedOpenings(in: stored) > mentions ? MentionGrammar.lookalikes(in: stored) : []
+    }
+
     /// What it reads as plain text: each mention as "@" and its name, the name `label` gives, or,
     /// where it gives none, the label the mention holds.
     public func plainText(label: (ShapeID) -> String? = { _ in nil }) -> String {
@@ -172,10 +188,15 @@ extension ScopedMentionText: ShapeNaming {
 protocol MentionTextHolding {
     /// Each run, in order.
     func forEachMentionRun(_ body: (MentionRun) -> Void)
+    /// What the text may mention: its type's scope.
+    var scope: any MentionScope.Type { get }
+    /// Its look-alikes (`ScopedMentionText.lookalikes`).
+    var lookalikes: [String] { get }
 }
 
 extension ScopedMentionText: MentionTextHolding {
     func forEachMentionRun(_ body: (MentionRun) -> Void) { runs.forEach(body) }
+    var scope: any MentionScope.Type { Scope.self }
 }
 
 /// Mention text that may mention any mentionable shape.
@@ -259,12 +280,33 @@ enum MentionGrammar {
         return (ShapeID(uuid), String(label), idStart + 37)
     }
 
-    /// Linear: an `@[` whose label's scan failed rules out every `@[` up to where it stopped
-    /// (`mention(in:at:labelEnd:)`), which isn't scanned again, so many unclosed `@[`s on one line
-    /// cost their length, not its square.
+    /// The runs `string` reads as.
     static func parse(_ string: String) -> [MentionRun] {
         guard mayHoldMentions(string) else { return string.isEmpty ? [] : [.text(string)] }
-        let s = Array(string.unicodeScalars)
+        var failures: [Int]?
+        return parse(Array(string.unicodeScalars), failures: &failures)
+    }
+
+    /// How many `@[`s aren't escaped (an even number of backslashes, none included, just before
+    /// the `@`). Each mention starts at one, so text with no more of them than mentions has no `@[`
+    /// that failed to start one. Byte by byte: every character it looks for is ASCII.
+    static func unescapedOpenings(in string: String) -> Int {
+        var count = 0
+        var backslashes = 0              // the run just before this byte
+        var atAfter = -1                 // the run before the `@` just before this byte; -1: none
+        for byte in string.utf8 {
+            if byte == 0x5B, atAfter >= 0, atAfter % 2 == 0 { count += 1 }
+            atAfter = byte == 0x40 ? backslashes : -1
+            backslashes = byte == 0x5C ? backslashes + 1 : 0
+        }
+        return count
+    }
+
+    /// Linear: an `@[` whose label's scan failed rules out every `@[` up to where it stopped
+    /// (`mention(in:at:labelEnd:)`), which isn't scanned again, so many unclosed `@[`s on one line
+    /// cost their length, not its square. Where each `@[` that isn't escaped and starts no mention
+    /// is (its `@`) goes in `failures`, if it's there.
+    private static func parse(_ s: [Unicode.Scalar], failures: inout [Int]?) -> [MentionRun] {
         var runs: [MentionRun] = []
         var text = String.UnicodeScalarView()
         func flush() {
@@ -296,6 +338,7 @@ enum MentionGrammar {
                         i = end
                         continue
                     }
+                    failures?.append(a)
                     text.append(at)
                     i = a + 1
                     continue
@@ -304,17 +347,65 @@ enum MentionGrammar {
                 i = a
                 continue
             }
-            if let (id, label, end) = mention(at: i) {
-                flush()
-                runs.append(.mention(id, label: label))
-                i = end
-                continue
+            if s[i] == at, i + 1 < s.count, s[i + 1] == open {
+                if let (id, label, end) = mention(at: i) {
+                    flush()
+                    runs.append(.mention(id, label: label))
+                    i = end
+                    continue
+                }
+                failures?.append(i)
             }
             text.append(s[i])
             i += 1
         }
         flush()
         return runs
+    }
+
+    private static let shapeWord = Array("(shape".unicodeScalars)
+
+    /// `ScopedMentionText.lookalikes`: from each failed `@[` with `(shape` after it on its line,
+    /// before any other `@[` (so `@[x]` before a real mention isn't one), through the first `)`
+    /// after that, else to the line's end or the next `@[` (less the whitespace before it). So one
+    /// never holds another `@[`, and the text's are linear to find: each failed `@[`'s search
+    /// stops at the next.
+    static func lookalikes(in string: String) -> [String] {
+        guard mayHoldMentions(string) else { return [] }
+        let s = Array(string.unicodeScalars)
+        var failures: [Int]? = []
+        _ = parse(s, failures: &failures)
+        var found: [String] = []
+        for start in failures ?? [] {
+            var word = start + 2
+            while word < s.count, !isLineBreak(s[word]), !isShapeWord(in: s, at: word), !opens(s, at: word) { word += 1 }
+            guard word < s.count, isShapeWord(in: s, at: word) else { continue }
+            var end = word + shapeWord.count
+            while end < s.count, !isLineBreak(s[end]), s[end] != ")", !opens(s, at: end) { end += 1 }
+            if end < s.count, s[end] == ")" {
+                end += 1
+            } else {
+                while s[end - 1].properties.isWhitespace { end -= 1 }
+            }
+            found.append(String(String.UnicodeScalarView(s[start..<end])))
+        }
+        return found
+    }
+
+    /// Whether an `@[` starts at `i`.
+    private static func opens(_ s: [Unicode.Scalar], at i: Int) -> Bool {
+        s[i] == at && i + 1 < s.count && s[i + 1] == open
+    }
+
+    /// Whether `(shape` starts at `i`, in any case.
+    private static func isShapeWord(in s: [Unicode.Scalar], at i: Int) -> Bool {
+        guard i + shapeWord.count <= s.count else { return false }
+        for (k, expected) in shapeWord.enumerated() {
+            let c = s[i + k]
+            let lowered = ("A"..."Z").contains(c) ? Unicode.Scalar(c.value + 32)! : c
+            guard lowered == expected else { return false }
+        }
+        return true
     }
 
     /// Normalized runs, written canonically.

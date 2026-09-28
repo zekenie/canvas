@@ -15,7 +15,8 @@ import AppKit
 /// see a click or a key in the panel, the window tells its history when one begins something new
 /// (`seal()`), so a field's run of writes ends there. A click in a window of another kind (the color
 /// panel a color well opens, whose picks write to the board through the panel's field) ends runs
-/// too, in every board's window.
+/// too, in every board's window, but not one in a board's child window (a list of picks a text
+/// shows beside itself, a pick being part of the typing).
 @MainActor
 public final class BoardWindow: NSWindow {
     /// The editor whose board this window shows.
@@ -30,13 +31,15 @@ public final class BoardWindow: NSWindow {
 
     /// Watches for clicks in windows that aren't boards' (the color panel), which no board's window
     /// sees: each begins something new, so it ends every board's run of panel writes. Once per app.
+    /// Not one in a board's child window (a list text shows beside itself to pick from), whose
+    /// pick is part of the typing.
     private static var otherWindowsClicks: Any?
 
     private static func watchOtherWindows() {
         guard otherWindowsClicks == nil else { return }
         otherWindowsClicks = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { event in
             MainActor.assumeIsolated {
-                if !(event.window is BoardWindow) {
+                if !(event.window is BoardWindow), !(event.window?.parent is BoardWindow) {
                     for case let board as BoardWindow in NSApp.windows { board.editor?.undoHistory.seal() }
                 }
             }

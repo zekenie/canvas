@@ -10,7 +10,8 @@ import Selection
 import TestKit
 
 // Copying a shape that owns a board (CanvasTesting's pocket) copies what it holds, all the way
-// down; pasting gives every shape on every board a new id.
+// down; pasting a copy gives every shape on every board a new id, and pasting a cut gives each back
+// the id it had, if the file doesn't use it.
 
 private func record<P: ShapeProps>(_ id: ShapeID, _ props: P) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(id: id, props)) }
 private func board(_ records: AnyShapeRecord...) -> CanvasDocument { CanvasDocument(shapes: records) }
@@ -152,7 +153,7 @@ extension FlatPocketDefinition: ShapeDefinition {
         expectEqual(held.first { $0.copiedFrom == inside }?.typed(as: Memo.self)?.props.lead, Citation(memoCopy.id), "the root's memo's copy, a board up")
         expectEqual(h.file[BoardID(owner: nest.p)], inP, "the originals name what they named")
     },
-    test("⌘X takes the pocket and the boards under it in one transaction; ⌘V brings the tree back, with new ids") {
+    test("⌘X takes the pocket and the boards under it in one transaction; ⌘V brings the tree back, every id as it was, no copy") {
         let pasteboard = privatePasteboard()
         defer { pasteboard.releaseGlobally() }
         let nest = Nest()
@@ -164,8 +165,13 @@ extension FlatPocketDefinition: ShapeDefinition {
         expectEqual(h.file, CanvasFile())
         expect(h.command("v"))
         let pocket = try require(h.editor.document.shapes.first)
+        expectEqual(pocket.id, nest.p)
         expectEqual(outline(pocket, in: h.file), "pocket[box, pocket[disc], link]")
-        expect(allIDs(h.file).isDisjoint(with: nest.ids))
+        expectEqual(allIDs(h.file), nest.ids)
+        expectEqual(h.file.path(to: BoardID(owner: nest.q)), [.root, BoardID(owner: nest.p), BoardID(owner: nest.q)])
+        let held = h.file[BoardID(owner: nest.p)].shapes
+        expectEqual(held.last?.typed(as: Link.self)?.props, Link(from: nest.b, to: nest.q), "still bound to B and Q")
+        expect((held + [pocket] + h.file[BoardID(owner: nest.q)].shapes).allSatisfy { $0.copiedFrom == nil })
     },
     test("⌘Z after ⌘X brings the pocket back with every board under it, every id, selected; after ⌘V, it takes the pasted boards out") {
         let pasteboard = privatePasteboard()
@@ -185,6 +191,7 @@ extension FlatPocketDefinition: ShapeDefinition {
         expect(h.command("v"))
         expectEqual(h.editor.undoHistory.undoName, "Paste")
         let pasted = h.file
+        expectEqual(allIDs(pasted), nest.ids, "moved back")
         let pocket = try require(h.editor.selection)
         expect(h.command("z"))
         expectEqual(h.file, CanvasFile(), "no board left behind without its owner")
@@ -193,13 +200,13 @@ extension FlatPocketDefinition: ShapeDefinition {
         expectEqual(h.editor.selectedShapeIDs, [pocket])
         expectEqual(outline(try require(h.file.record(pocket)), in: h.file), "pocket[box, pocket[disc], link]")
     },
-    test("cut keeps a pocket holding a shape that can't be copied, anywhere under it, and copies the rest; a shape copied whole beside it goes") {
+    test("cut keeps a pocket holding a shape that can't be copied, anywhere under it, and copies the rest; a shape copied whole beside it goes, and pastes back as itself, the pocket as a copy") {
         let pasteboard = privatePasteboard()
         defer { pasteboard.releaseGlobally() }
-        let nest = Nest()
+        let nest = Nest(), box = ShapeID()
         var children = nest.file.children
         children[nest.q] = board(record(nest.d, Disc(slot(2))), record(ShapeID(), Ticket(frame: slot(3))))
-        let file = CanvasFile(root: board(record(nest.p, Pocket(slot(0))), record(ShapeID(), Box(slot(1)))), children: children)
+        let file = CanvasFile(root: board(record(nest.p, Pocket(slot(0))), record(box, Box(slot(1)))), children: children)
         let h = try pockets(pasteboard, file)
         h.editor.selectedShapeIDs = file.root.shapes.map(\.id)
         h.editor.cutSelection()
@@ -209,6 +216,11 @@ extension FlatPocketDefinition: ShapeDefinition {
         h.editor.paste()
         let pasted = h.editor.shapes(since: before)
         expectEqual(pasted.map { outline($0, in: h.file) }, ["pocket[box, pocket[disc], link]", "box"])
+        expectEqual(pasted.map(\.copiedFrom), [nest.p, nil])
+        expectEqual(pasted.last?.id, box, "moved back")
+        let held = h.file[BoardID(owner: pasted[0].id)].shapes
+        expectEqual(held.map(\.copiedFrom), [nest.b, nest.q, nest.link], "under the copy, copies all the way down: every id is in use")
+        expectEqual(held[2].typed(as: Link.self)?.props, Link(from: held[0].id, to: held[1].id))
     },
     test("a shape on a board that's left out of a copy takes the boards under it, and its owner isn't cut") {
         let pasteboard = privatePasteboard()

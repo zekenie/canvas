@@ -65,6 +65,16 @@ extension Motto: ShapeProperty {
         expectEqual(results[box]?.issues.map(\.message), ["empty box", "every"])
         expectEqual(results[disc]?.issues.map(\.message), ["every"])
     },
+    test("a rule for every kind reads the registry, to ask about the kind of what it checks") {
+        let h = try EditorHarness(plugins: [FixturesPlugin(), NamingPlugin(), ValidationPlugin(), Rules { r in
+            r.validateEveryShape { shape, context in context.registry.namingKinds.contains(shape.kind) ? [.warning("may name shapes")] : [] }
+        }])
+        let memo = h.add(Memo())
+        let box = h.add(Box(.zero))
+        let results = try require(h.editor.validation).results
+        expectEqual(results[memo]?.issues.map(\.message), ["may name shapes"])
+        expectEqual(results[box], nil)
+    },
     test("validity is derived: an error makes a shape invalid; warnings don't") {
         expectEqual(ValidationResult(issues: [.warning("w"), .error("e")]).isValid, false)
         expectEqual(ValidationResult(issues: [.warning("w"), .error("e")]).worst, .error)
@@ -130,6 +140,57 @@ extension Motto: ShapeProperty {
         h.editor.transact { $0.update(box, as: Box.self) { $0.frame.size = CGSize(width: 5, height: 5) } }
         _ = engine.results
         expectEqual(calls, 3, "the tag no longer looks at the first box")
+    },
+    test("a move runs no rule that ignores moves again, of what moved or of what looked it up; the others run, and the issues keep their order") {
+        var runs: [String: Int] = [:]
+        var watched: ShapeID?
+        let h = try EditorHarness(plugins: [FixturesPlugin(), ValidationPlugin(), Rules { r in
+            r.validate(Box.self) { box, _ in
+                runs["placed", default: 0] += 1
+                return box.frame.minX < 0 ? [.warning("left of the origin")] : []
+            }
+            r.validate(Box.self, ignoringMoves: true) { box, _ in
+                runs["steady", default: 0] += 1
+                return box.frame.width < 20 ? [.warning("narrow")] : []
+            }
+            r.validate(Tag.self, ignoringMoves: true) { tag, context in
+                runs["tag", default: 0] += 1
+                return tag.props.target.flatMap { context.shape($0) } == nil ? [.error("dangling")] : []
+            }
+            r.validate(Disc.self) { _, context in
+                runs["disc", default: 0] += 1
+                return watched.flatMap { context.shape($0)?.box }.map { $0.minX < 0 ? [.warning("watching a box left of the origin")] : [] } ?? []
+            }
+        }])
+        let box = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
+        watched = box
+        let tag = h.add(Tag(target: box))
+        let disc = h.add(Disc(CGRect(x: 0, y: 0, width: 10, height: 10)))
+        let engine = try require(h.editor.validation)
+        expectEqual(engine.result(for: box)?.issues.map(\.message), ["narrow"])
+        expectEqual(runs, ["placed": 1, "steady": 1, "tag": 1, "disc": 1])
+        expectEqual(engine.dependents(of: [box]), [tag, disc], "both looked it up")
+        // Moved: the box's rule that reads where it is runs, and the disc's, which looked it up;
+        // the box's other rule and the tag's keep what they found.
+        h.editor.transact { $0.moveBox(box, to: CGPoint(x: -5, y: 0)) }
+        expectEqual(engine.result(for: box)?.issues.map(\.message), ["left of the origin", "narrow"], "in the rules' order")
+        expectEqual(engine.result(for: disc)?.issues.map(\.message), ["watching a box left of the origin"])
+        expectEqual(runs, ["placed": 2, "steady": 1, "tag": 1, "disc": 2])
+        h.editor.transact { $0.moveBox(box, to: CGPoint(x: -8, y: 0)) }
+        expectEqual(engine.result(for: box)?.issues.map(\.message), ["left of the origin", "narrow"])
+        expectEqual(runs, ["placed": 3, "steady": 1, "tag": 1, "disc": 3])
+        // Changed otherwise, every rule runs, and the tag's too.
+        h.editor.transact { $0.update(box, as: Box.self) { $0.frame.size.width = 30 } }
+        expectEqual(engine.result(for: box)?.issues.map(\.message), ["left of the origin"])
+        expectEqual(runs, ["placed": 4, "steady": 2, "tag": 2, "disc": 4])
+        // Moved back: what the rule that ignores moves found (nothing, now) still holds.
+        h.editor.transact { $0.moveBox(box, to: .zero) }
+        expectEqual(engine.result(for: box), nil)
+        expectEqual(runs, ["placed": 5, "steady": 2, "tag": 2, "disc": 5])
+        // Deleted, the tag's rule runs again (it looked the box up), and finds it gone.
+        h.editor.transact { $0.delete([box]) }
+        expectEqual(engine.result(for: tag)?.issues.map(\.message), ["dangling"])
+        expectEqual(runs["tag"], 3)
     },
     test("a shape's dependents are the shapes whose rules looked it up when they were last checked") {
         let h = try EditorHarness(plugins: [FixturesPlugin(), ValidationPlugin(), Rules { r in

@@ -53,6 +53,9 @@ public struct ShapeBinding<Value> {
 
     /// The snapshot the panel drew with.
     public var wrappedValue: Value { value }
+    /// The shape the binding reads and writes, whatever its value is (its props, its frame, an
+    /// added property's value).
+    public var shapeID: ShapeID { record.id }
     public var projectedValue: ShapeBinding<Value> { self }
     public init(projectedValue: ShapeBinding<Value>) { self = projectedValue }
 

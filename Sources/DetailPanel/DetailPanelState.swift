@@ -67,6 +67,9 @@ public final class DetailPanelState {
     private struct Candidates {
         let headers: [@MainActor (AnyShapeRecord, CanvasEditor) -> ResolvedHeader?]
         let sections: [ResolvedSection]
+        /// Those shown only while a service says so (`shownWhile`): the only ones asked on every
+        /// commit.
+        let shownWhile: [ResolvedSection]
     }
 
     @ObservationIgnored private unowned let editor: CanvasEditor
@@ -79,13 +82,13 @@ public final class DetailPanelState {
     init(editor: CanvasEditor) { self.editor = editor }
 
     public func layout(for record: AnyShapeRecord) -> DetailLayout {
-        layout(for: record, statuses: statuses(of: record).tabs)
+        layout(for: record, statuses: statuses(of: record).tabs, hidden: hiddenSections(of: record))
     }
 
-    /// With the shape's status lines for tabs, read already.
-    func layout(for record: AnyShapeRecord, statuses: [ShapeStatuses.TabLines]) -> DetailLayout {
+    /// With the shape's status lines for tabs, and the sections `shownWhile` hides, read already.
+    func layout(for record: AnyShapeRecord, statuses: [ShapeStatuses.TabLines], hidden: Set<DetailSectionKey>) -> DetailLayout {
         let all = candidates[record.kind] ?? resolve(record.kind)
-        let shown = all.sections.filter { $0.section.isShown(record) }
+        let shown = all.sections.filter { $0.section.isShown(record) && !hidden.contains($0.key) }
         var firstSeen: [DetailTabID] = []
         for tab in shown.map(\.key.tab) + statuses.map(\.tab) where !firstSeen.contains(tab) { firstSeen.append(tab) }
         let tabs = firstSeen.enumerated().sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }.map(\.element)
@@ -103,15 +106,29 @@ public final class DetailPanelState {
     private func resolve(_ kind: ShapeKind) -> Candidates {
         let all = editor.registry.contributions(to: ShapeDetails.self)
         let ordered = all.filter { $0.target == .kind(kind) } + all.filter { $0.target == .any }
-        let resolved = Candidates(
-            headers: ordered.compactMap(\.value.header),
-            sections: ordered.flatMap { contribution in
-                contribution.value.sections.map {
-                    ResolvedSection(key: DetailSectionKey(target: contribution.target, tab: $0.tab, section: $0.id), section: $0)
-                }
-            })
+        let sections = ordered.flatMap { contribution in
+            contribution.value.sections.map {
+                ResolvedSection(key: DetailSectionKey(target: contribution.target, tab: $0.tab, section: $0.id), section: $0)
+            }
+        }
+        let resolved = Candidates(headers: ordered.compactMap(\.value.header), sections: sections,
+                                  shownWhile: sections.filter { $0.section.isShownWhile != nil })
         candidates[kind] = resolved
         return resolved
+    }
+
+    /// The sections of the shape's kind that `shownWhile` hides just now. Asked on every commit (a
+    /// section's `shownWhile` reads services, not the record alone), and of only the sections
+    /// that have one: none for most kinds.
+    func hiddenSections(of record: AnyShapeRecord) -> Set<DetailSectionKey> {
+        let all = candidates[record.kind] ?? resolve(record.kind)
+        guard !all.shownWhile.isEmpty else { return [] }
+        let context = DetailContext(editor: editor)
+        var hidden: Set<DetailSectionKey> = []
+        for resolved in all.shownWhile where resolved.section.isShownWhile?(record, context) == false {
+            hidden.insert(resolved.key)
+        }
+        return hidden
     }
 
     /// The header shown when several shapes are selected: "N Shapes", with each kind's name once,

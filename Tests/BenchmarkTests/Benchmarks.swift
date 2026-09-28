@@ -9,6 +9,7 @@ import CanvasUI
 import Checklists
 import Composition
 import CoreGraphics
+import DetailPanel
 import Foundation
 import Geometry
 import LanguageModels
@@ -28,15 +29,17 @@ import Validation
 // The persistence plan's budgets, for boards of generated shapes: saving and opening (Mentions'
 // index and catalog built as it opens), a board and a file whose shapes are spread across nested
 // subboards, validation's first read (every shape checked, against its kind's schema too) and its
-// read after moving them all, and one hover and one drag frame (the input, then drawing the whole
-// canvas, and the minimap with it), on a note, from a note's port and onto a title's pill and a
-// mention's, at 60 fps; frames and rows on a board beside a subboard holding the board's worth, and
-// inside one while the root holds as many, with a drag event's input
-// alone, which the file's other boards mustn't cost; entering a subboard, cold (the switch, a frame, the rows
-// and validation's read), going back up to its board and down again, warm, and the minimap's
-// picture of the board entered; a keystroke in the `@` picker and a rename of a shape mentioned 100
-// times; and undo and redo, a drag's in a frame and a tenth of the board's moved or deleted too, and
-// deleting a subboard whose boards hold as many shapes, and its undo and redo; ten subboards in
+// read after a drag event of a subboard mentioned 100 times and after moving them all, and one
+// hover and one drag frame (the input, then drawing the whole canvas, and the minimap with it), on
+// a note, from a note's port and onto a title's pill and a mention's, at 60 fps; frames and rows on
+// a board beside a subboard holding the board's worth, and inside one while the root holds as many,
+// with a drag event's input alone, which the file's other boards mustn't cost; entering a subboard,
+// cold (the switch, a frame, the rows and validation's read), going back up to its board and down
+// again, warm, and the minimap's picture of the board entered; a keystroke in the `@` picker and a
+// rename of a shape mentioned 100 times (the rows and validation after it too); the panel of a
+// subboard mentioned 100 times, read after a drag of another note and after renaming one of its
+// mentioners; undo and redo, a drag's in a frame and a tenth of the board's moved or deleted too,
+// and deleting a subboard whose boards hold as many shapes, and its undo and redo; ten subboards in
 // view, each holding as many, their previews filling in; and a `canvas draw` whose shapes are
 // pushed along the grid; and the root crumb's menu inside a subboard, the root's rows after a
 // move and a rename on the board shown. `./build.sh bench` runs these in a release build and holds
@@ -62,11 +65,13 @@ enum Budget {
     /// Validation's first read of 10,000 shapes' issues, each shape checked against its kind's
     /// schema too: once, on the first frame after opening.
     static let validation10k = 100.0
-    /// Validation's read after a commit that changed a shape or two.
+    /// Validation's read after a commit that changed a shape or two; also after a drag event of a
+    /// subboard 100 notes mention, whose mention rule looked it up and ignores moves.
     static let validationAfterCommit = 1.0
     /// Validation's read after a drag event that moved all 10,000 shapes (⌘A, then a drag): each
-    /// moved shape's rules run again, but not its schema check, which moving a shape can't change
-    /// (with it, some 30 ms). The drag event's own commit, before it, costs more than a frame.
+    /// moved shape's rules run again but those that ignore moves, its schema check (with it, some
+    /// 30 ms) and its mentions' (some 6 ms more). The drag event's own commit, before it, costs
+    /// more than a frame.
     static let validationAfterMovingAll10k = 16.0
     /// Undoing or redoing every shape's deletion, with the frame after it: 10,000 shapes back or gone.
     /// Also undoing or redoing the deletion of a shape whose boards hold 10,000, with the frame after
@@ -78,8 +83,12 @@ enum Budget {
     /// A keystroke in the `@` picker, the `@` that opens it (recent picks and nearby shapes) included.
     static let pickerKeystroke = 2.0
     /// What renaming a shape mentioned 100 times adds to the commit, over renaming one mentioned
-    /// by none.
+    /// by none; and to validation's read after it.
     static let renameMentioned = 1.0
+    /// The panel's layout of the shape it shows, read after a commit that changed a shape or two:
+    /// its status lines and whether its Mentioned In tab shows are read on every commit, and the
+    /// rest of its layout whenever they, or the shape, change.
+    static let panelAfterCommit = 1.0
     /// Going back to a board shown lately, as it was left: the switch, its first frame, the table
     /// of contents' rows and validation's read, together.
     static let warmReturn = frame
@@ -352,7 +361,7 @@ extension Duration {
             if holdsToBudgets, size >= 10_000 { expect(nestedOpen < Budget.open10k, "opening \(file.shapeCount) shapes on \(file.children.count + 1) boards took \(nestedOpen) ms") }
         }
     },
-    test("validation's first read checks every shape, against its kind's schema too; a drag checks the dragged shapes again, but not their schemas") {
+    test("validation's first read checks every shape, against its kind's schema too; a drag checks the dragged shapes again, but not their schemas or their mentions") {
         for size in sizes {
             let document = generatedBoard(shapes: size)
             let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
@@ -373,6 +382,20 @@ extension Duration {
             // drag event (but the locked rectangles, and the arrows with their notes).
             let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
             _ = h.editor.validation?.results
+            // A drag of the subboard the first 100 mentioning notes mention: each event moves it, and
+            // checks those notes again, as their rules looked it up (MentionValidation's).
+            let subboard = try require(mentionedSubboard(in: document))
+            expectEqual(h.editor.validation?.dependents(of: [subboard]), Set(h.editor.mentions?.mentioners(of: subboard) ?? []), "its mentioners looked it up")
+            let subboardBox = try require(document[subboard]?.box)
+            let subboardCenter = CGPoint(x: subboardBox.midX, y: subboardBox.midY)
+            h.press(at: subboardCenter)
+            var subboardNudge = 0.0
+            let subboardDrag = median(runs: 21, prepare: {
+                subboardNudge += 1
+                h.drag(to: subboardCenter + CGPoint(x: subboardNudge, y: 0))
+            }) { _ = h.editor.validation?.results }
+            expectEqual(h.editor.document[subboard]?.box?.origin.x, subboardBox.origin.x + subboardNudge, "the drag moves the subboard")
+            h.release()
             h.hold(.command)
             h.key("a")
             h.hold([])
@@ -387,14 +410,16 @@ extension Duration {
             expectEqual(h.editor.document[note.id]?.box?.origin.x, (note.box?.origin.x ?? 0) + nudge, "the drag moves what ⌘A selected")
             h.release()
             expectEqual(editor.validation?.results.isEmpty, true, "the generated board has no issues")
-            report(String(format: "%6d shapes, validation: first read %6.1f ms (budget %.0f), of which the schemas about %6.1f; after a drag event %6.3f (budget %.0f); after moving them all %6.2f (budget %.0f)",
-                          size, first, Budget.validation10k, schemas, again, Budget.validationAfterCommit, all, Budget.validationAfterMovingAll10k))
+            let mentioners = h.editor.mentions?.mentioners(of: subboard).count ?? 0
+            report(String(format: "%6d shapes, validation: first read %6.1f ms (budget %.0f), of which the schemas about %6.1f; after a drag event %6.3f (budget %.0f), of a subboard mentioned %d times %6.3f; after moving them all %6.2f (budget %.0f)",
+                          size, first, Budget.validation10k, schemas, again, Budget.validationAfterCommit, mentioners, subboardDrag, all, Budget.validationAfterMovingAll10k))
             if holdsToBudgets {
                 if size >= 10_000 {
                     expect(first < Budget.validation10k, "validation's first read of \(size) shapes took \(first) ms")
                     expect(all < Budget.validationAfterMovingAll10k, "validation after moving all \(size) shapes took \(all) ms")
                 }
                 expect(again < Budget.validationAfterCommit, "validation after a drag event on \(size) shapes took \(again) ms")
+                expect(subboardDrag < Budget.validationAfterCommit, "validation after a drag event of a subboard mentioned \(mentioners) times on \(size) shapes took \(subboardDrag) ms")
             }
         }
     },
@@ -685,14 +710,16 @@ extension Duration {
             }
         }
     },
-    test("renaming a shape mentioned 100 times costs its commit, and reading the rows after it, little more than renaming one mentioned by none") {
+    test("renaming a shape mentioned 100 times costs its commit, and reading the rows and validation after it, little more than renaming one mentioned by none") {
         for size in sizes {
             let document = generatedBoard(shapes: size)
             let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
             let editor = CanvasEditor(registry: registry, document: document, scheduler: ManualScheduler())
             let mentions = try require(editor.mentions)
             let contents = try require(editor.tableOfContents)
+            let validation = try require(editor.validation)
             var rows = contents.entries
+            _ = validation.results
             let mentioned = try require(mentionedSubboard(in: document))
             let unmentioned = try require(document.shapes.last { $0.kind == Subboard.kind && mentions.mentioners(of: $0.id).isEmpty }?.id)
             let mentioners = mentions.mentioners(of: mentioned).count
@@ -708,12 +735,60 @@ extension Duration {
             expectEqual(rowCount(rows), size)
             let first = try require(mentions.mentioners(of: mentioned).first)
             expect(rows.first { $0.id == first }?.label?.text.contains("Renamed \(n - 21)") == true, "a mentioner's row names the subboard as it's called now")
-            report(String(format: "%6d shapes, renaming a subboard mentioned %d times: the commit %6.3f ms, %6.3f for one mentioned by none (budget: %.0f more); the rows after it %6.3f, %6.3f",
-                          size, mentioners, commitMentioned, commitOther, Budget.renameMentioned, rowsMentioned, rowsOther))
+            // Validation checks the mentioners again, as their rules looked the subboard up.
+            var results = validation.results
+            let validationMentioned = median(runs: 21, prepare: { rename(mentioned) }) { results = validation.results }
+            let validationOther = median(runs: 21, prepare: { rename(unmentioned) }) { results = validation.results }
+            expect(results.isEmpty, "the generated board has no issues")
+            report(String(format: "%6d shapes, renaming a subboard mentioned %d times: the commit %6.3f ms, %6.3f for one mentioned by none (budget: %.0f more); the rows after it %6.3f, %6.3f; validation after it %6.3f, %6.3f (budget: %.0f more)",
+                          size, mentioners, commitMentioned, commitOther, Budget.renameMentioned, rowsMentioned, rowsOther,
+                          validationMentioned, validationOther, Budget.renameMentioned))
             if holdsToBudgets {
                 expectEqual(mentioners, 100)
                 expect(commitMentioned - commitOther < Budget.renameMentioned,
                        "renaming a subboard mentioned \(mentioners) times over \(size) shapes took \(commitMentioned) ms, against \(commitOther)")
+                expect(validationMentioned - validationOther < Budget.renameMentioned,
+                       "validation after renaming a subboard mentioned \(mentioners) times over \(size) shapes took \(validationMentioned) ms, against \(validationOther)")
+            }
+        }
+    },
+    test("the panel of a subboard mentioned 100 times, its Mentioned In tab showing, is read after a drag of another note and after a mentioner's rename in a millisecond") {
+        for size in sizes {
+            let document = generatedBoard(shapes: size)
+            let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+            let editor = CanvasEditor(registry: registry, document: document, scheduler: ManualScheduler())
+            let panel = try require(editor.detailPanel)
+            let mentions = try require(editor.mentions)
+            _ = editor.validation?.results
+            let subboard = try require(mentionedSubboard(in: document))
+            let mentioners = mentions.mentioners(of: subboard)
+            let mentioner = try require(mentioners.first)
+            let other = try require(document.shapes.first { $0.kind == StickyNote.kind && !mentions.mentions(in: $0.id).contains(subboard) })
+            let origin = try require(other.box?.origin)
+            var layout = panel.layout(for: try require(editor.document[subboard]))
+            expect(layout.tabs.contains(.of(MentionsTab.self)), "the subboard shows what mentions it")
+            var step = 0.0
+            let afterDrag = median(runs: 21, prepare: {
+                step += 1
+                editor.transact { $0.moveBox(other.id, to: CGPoint(x: origin.x + step, y: origin.y)) }
+            }) { layout = panel.layout(for: editor.document[subboard]!) }
+            var n = 0
+            @MainActor func rename() {
+                n += 1
+                editor.transact { $0.update(mentioner) { $0[TitleProperty.self] = "Mentioner \(n)" } }
+            }
+            let afterRename = median(runs: 21, prepare: rename) { layout = panel.layout(for: editor.document[subboard]!) }
+            // What the tab's list reads when a mentioner changes: every line again.
+            var lines: [MentionBacklink] = []
+            let backlinks = median(runs: 21, prepare: rename) { lines = mentions.backlinks(of: subboard) }
+            expectEqual(lines.first?.label, "Mentioner \(n)")
+            expect(layout.tabs.contains(.of(MentionsTab.self)))
+            report(String(format: "%6d shapes, the panel of a subboard mentioned %d times: after a drag event of another note %6.3f ms, after renaming a mentioner %6.3f (budget %.0f); its Mentioned In lines %6.3f",
+                          size, mentioners.count, afterDrag, afterRename, Budget.panelAfterCommit, backlinks))
+            if holdsToBudgets {
+                expectEqual(mentioners.count, 100)
+                expect(afterDrag < Budget.panelAfterCommit, "the panel of a subboard mentioned 100 times, after a drag event over \(size) shapes, took \(afterDrag) ms")
+                expect(afterRename < Budget.panelAfterCommit, "the panel of a subboard mentioned 100 times, after a mentioner's rename over \(size) shapes, took \(afterRename) ms")
             }
         }
     },

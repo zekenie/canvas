@@ -51,6 +51,14 @@ extension NSWindow {
     public func pressEscape() { press("\u{1b}", code: 53) }
     public func pressDelete() { press("\u{7f}", code: 51) }
 
+    /// ⌘., as the app hands a key with ⌘ on: to the window's key equivalents first, then, if none
+    /// took it, to the window, which sends `cancelOperation:` up the responder chain from the first
+    /// responder (no key down reaches it).
+    public func pressCommandPeriod() {
+        let event = keyEvent(".", code: 47, modifiers: .command)
+        if !performKeyEquivalent(with: event) { sendEvent(event) }
+    }
+
     /// Gives a field the keyboard, with its text selected, as a click does.
     public func focus(_ field: NSTextField) {
         makeFirstResponder(field)
