@@ -146,7 +146,7 @@ extension ArrowDefinition: CustomTranslation {
         let record = transaction.shapes.shape(shape.id), registry = transaction.shapes.registry
         func accepts(_ end: ArrowEnd) -> ((AnyShapeRecord) -> Bool)? {
             guard !rules.isEmpty, let record else { return nil }
-            return { candidate in rules.allSatisfy { $0(ArrowBindingQuery(arrow: record, end: end, shape: candidate, registry: registry)) } }
+            return { candidate in ArrowBindingQuery(arrow: record, end: end, shape: candidate, registry: registry).isAllowed(by: rules) }
         }
         let filters = [ArrowEnd.start: accepts(.start), .end: accepts(.end)]
         return ShapeTranslation { delta, shape, shapes in

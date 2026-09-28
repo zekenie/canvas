@@ -46,7 +46,9 @@ public struct ValidationResult: Equatable, Sendable {
 /// shape again when one of them changes. Add lookups here as rules need them.
 @MainActor
 public struct ValidationContext {
-    let document: CanvasDocument
+    /// The shapes rules see: the engine's, the editor's document; `validationIssues(of:in:)`'s,
+    /// whatever it's given (a transaction's, mid-way).
+    let shapes: ShapeContext
     let registry: Registry
     /// Validation's own rule's: each shape's schema issues, kept from one check to the next.
     let schemaVerdicts: SchemaVerdicts
@@ -54,7 +56,7 @@ public struct ValidationContext {
 
     public func shape(_ id: ShapeID) -> AnyShapeRecord? {
         lookups.ids.insert(id)
-        return document[id]
+        return shapes.shape(id)
     }
 }
 
@@ -159,12 +161,14 @@ public final class ValidationEngine {
             unchecked = nil
             heardRevision = editor.revision
         }
+        // Lookups in the document, and nothing else: rules see shapes only through `shape(_:)`.
+        let shapes = ShapeContext(document: document, registry: editor.registry)
         guard let ids = unchecked else {
             cache = [:]
             lookups = [:]
             lookedUpBy = [:]
             schemaVerdicts.forgetAll()
-            for shape in document.shapes { check(shape, in: document) }
+            for shape in document.shapes { check(shape, in: shapes) }
             unchecked = []
             return
         }
@@ -176,20 +180,20 @@ public final class ValidationEngine {
                 if lookedUpBy[other]?.isEmpty == true { lookedUpBy[other] = nil }
             }
             if let shape = document[id] {
-                check(shape, in: document)
+                check(shape, in: shapes)
             } else {
                 cache[id] = nil
             }
         }
     }
 
-    private func check(_ shape: AnyShapeRecord, in document: CanvasDocument) {
+    private func check(_ shape: AnyShapeRecord, in shapes: ShapeContext) {
         // Shapes the board keeps aside aren't the app's to judge.
         guard !shape.isOpaque else {
             cache[shape.id] = nil
             return
         }
-        let context = ValidationContext(document: document, registry: editor.registry, schemaVerdicts: schemaVerdicts, lookups: Lookups())
+        let context = ValidationContext(shapes: shapes, registry: shapes.registry, schemaVerdicts: schemaVerdicts, lookups: Lookups())
         let issues = rules(for: shape.kind).flatMap { $0.check(shape, context) }
         cache[shape.id] = issues.isEmpty ? nil : ValidationResult(issues: issues)
         guard !context.lookups.ids.isEmpty else { return }
@@ -240,6 +244,20 @@ extension ValidationEngine: EditorService {
 
 extension CanvasEditor {
     public var validation: ValidationEngine? { service(ValidationEngine.self) }
+}
+
+extension Registry {
+    /// A shape's issues as the engine finds them, whether or not it's on a board: every rule for its
+    /// kind, in the rules' order (its schema's warnings too), each looking other shapes up in
+    /// `shapes`, a transaction's (`transaction.shapes`) for a shape as it's about to be. Empty for a
+    /// shape kept aside, which isn't the app's to judge. For what checks shapes it changes without
+    /// waiting for a commit (the command line); the engine keeps every shape's on the board.
+    public func validationIssues(of record: AnyShapeRecord, in shapes: ShapeContext) -> [ValidationIssue] {
+        guard !record.isOpaque else { return [] }
+        // Verdicts of its own: the engine's are kept by id, for shapes as the board has them.
+        let context = ValidationContext(shapes: shapes, registry: self, schemaVerdicts: SchemaVerdicts(), lookups: Lookups())
+        return contributions(to: ValidationRules.self, for: record.kind).flatMap { $0.check(record, context) }
+    }
 }
 
 extension Severity {

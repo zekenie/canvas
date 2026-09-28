@@ -34,15 +34,29 @@ links to it), and asks the running app what it can do, so `canvas help` lists th
 ```sh
 build/canvas status                                          # is the app running?
 build/canvas boards                                          # the open boards, and which is in front
-build/canvas kinds --schema                                  # the kinds of shape, and every property's JSON Schema
-build/canvas create sticky-note --set text='Buy milk'        # a note in the middle of the board in front
-build/canvas create ellipse --at 400,300 --size 240,120 --board 2
+build/canvas kinds                                           # what a script can draw, and with what (--schema: every property's JSON Schema)
+build/canvas draw 'sticky-note "Inbox" text: "Buy milk"'     # a note titled Inbox in the middle of the view, on the board in front
+build/canvas draw --board 2 --dry-run - <<'EOF'               # a script on standard input: what it would do, changing nothing
+sticky-note "Web" text: "Browser app"
+sticky-note "API" right of "Web" text: "Public HTTP API"
+task-card "Ship v1" below "API" status: doing
+edge "Web" -> "API"
+EOF
 ```
+
+`canvas draw` reads a small language, one statement a line: what a shape is, what it's called, and
+where it sits against shapes already named (`right of "API"`, `below board`), never coordinates;
+the app works out the distances, keeps what's there clear, and applies the script all at once, or
+not at all. A title on the board means that shape, so a script can change or move it, connect it
+(`edge "A" -> "B"`) or delete it. The language is taught, for agents, by the canvas skill
+([.claude/skills/canvas](.claude/skills/canvas/SKILL.md), with the whole language in
+`reference/language.md`), and the plugin guide says how it's built.
 
 Output is JSON when it's piped (as agents run it) and text in a terminal (`--format` picks), errors
 come with a hint, and the exit status says what happened: 0 done, 1 the app couldn't do it, 2 the
-command line is wrong, 3 the app isn't running. To run it as just `canvas`, put the link on your
-PATH: `ln -s "$PWD/build/canvas" ~/.local/bin/canvas`.
+command line is wrong, 3 the app isn't running or didn't answer in time (it may still do it, so
+check before running it again). To run it as just `canvas`, put the link on your PATH:
+`ln -s "$PWD/build/canvas" ~/.local/bin/canvas`.
 
 ## Controls
 
@@ -68,7 +82,7 @@ PATH: `ln -s "$PWD/build/canvas" ~/.local/bin/canvas`.
 | Find a shape from the list | Click its row: it's selected and the canvas zooms to it. Pointing at a row outlines its shape faintly, and pointing at a shape tints its row |
 | Go back to the previous selection | The back button in the detail panel's header, or ⌘[ (Go › Back): what was selected before, and the view as it was then (from a row's details, the list) |
 | Add a checklist to a note or task | The panel's Checklist tab: + adds an item, − or Delete removes the selected one |
-| Name a note, or rename a task | Select it and click its title in the detail panel's header; Return or Escape goes back to the canvas |
+| Name a note, a rectangle or an ellipse, or rename a task | Select it and click its title in the detail panel's header; Return or Escape goes back to the canvas |
 | Delete shapes or arrows | Select them and press Delete |
 | Cut, copy and paste shapes | ⌘X, ⌘C and ⌘V (Edit menu, or right-click a shape; right-click empty space to paste). A paste lands where the originals were if they're in view, else in the middle of the view; arrows copied with their shapes stay attached to the copies |
 | Arrow tool | A (V or Escape to go back to select) |
@@ -85,7 +99,8 @@ An empty note (no text, no checklist) gets an orange outline (the validation plu
 warning), says why in an Issues tab of the detail panel (the validation-details bridge), and gets an orange dot on its
 row in the table of contents (the validation-contents bridge). A note with a checklist shows a done/total chip.
 A titled shape shows its title in a pill above its top-left corner, and in the table of contents (the titles plugin).
-Name a note in the detail panel's header; an ellipse is titled by its size (the ellipse-titles example). A title is
+Name a note, a rectangle or an ellipse in the detail panel's header; an ellipse nobody named is called by its size (the
+ellipse-titles and rectangle-titles examples). A title is
 part of its shape's schema, at most 80 characters: a longer one gets a warning, as does any value outside the
 bounds its schema sets (the validation plugin checks every shape against its kind's schema).
 A note's dots link it only to another note, and a task's only to another task: each kind has a channel of its own
@@ -99,6 +114,7 @@ Sources/
   Geometry/             vector math, arcs, Camera
   Canvas/               the core: model, plugin registry, editor, the hand tool, drawing
   CanvasRPC/            what the app and its command line say to each other: JSON-RPC over a socket
+  DrawScript/           the language canvas draw reads, and the solver that places what it says: pure, beneath the plugins
   CanvasUI/             the AppKit view, the SwiftUI toolbar, CanvasFocus, and the command line's server
   CanvasCLI/            canvas, the command line
   Keyboard/             the keyboard horizontal: every shortcut, registered by the plugin whose key it is
@@ -122,18 +138,23 @@ Sources/
   Locking/              a horizontal every kind is in: a lock from the context menu, its chip and its shake
   Ports/                a horizontal any kind opts into: dots beside its sides that a drag connects from,
                         on channels that say what may connect to what
-  Automation/           the command line's horizontal: every command canvas runs, create and kinds its own
+  Automation/           the command line's horizontal: every command canvas runs, draw and kinds its own
   LanguageModels/       a horizontal that lends every editor a language model (Claude Haiku), its key in Settings
   ValidationDetails/    a bridge between two horizontals: validation issues in the panel's Issues tab
   ValidationContents/   a bridge between two horizontals: a dot on the row of each shape with issues
   ArrowPorts/           a bridge: arrows are what a drag from a port draws, bound only where its channel goes
+  TitleNames/           a bridge: canvas draw names shapes by their titles
+  PortEdges/            a bridge: canvas draw's edges are the connector's connections, on a channel both ends take
+  ValidationChecks/     a bridge: canvas draw warns about each shape it draws as validation finds it
   Composition/          the shipped plugin list, and the welcome board
   InfiniteCanvas/       the SwiftUI app
 Examples/               the smallest plugin for each pattern
   Rectangles/           a vertical: a kind, how it draws, a tool
   Polylines/            a shape without a frame: its own geometry, hit test and translation
   Eraser/               a tool with no shape, and a session
-  EllipseTitles/        a bridge: titles ellipses by their size, without Ellipses or Titles knowing
+  EllipseTitles/        a bridge: an ellipse can be named, and one nobody named is called by its size,
+                        without Ellipses or Titles knowing
+  RectangleTitles/      the smallest bridge: rectangles can be named
   Reordering/           menu items for every kind with a capability: the Arrange submenu
 Tests/                  test executables (the core, each plugin with logic of its own, the examples,
                         the shipped app) and their support libraries, on a small macro-free kit

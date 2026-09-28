@@ -195,7 +195,7 @@ public struct Placement {
 
     /// The shape it puts down centered on `point` (what `editor.place` inserts there), in no
     /// document yet: for a plugin that creates shapes some other way than with the pointer (the
-    /// command line's `create`).
+    /// command line's `draw`).
     @MainActor
     public func shape(at point: CGPoint) -> AnyShapeRecord {
         make(CGRect(center: point, size: size))

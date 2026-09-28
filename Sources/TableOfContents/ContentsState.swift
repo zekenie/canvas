@@ -160,6 +160,9 @@ public final class ContentsState {
     /// What changed on other boards while the board shown was away, still to hand the rows' and
     /// the marks' `affected` (on the next read, once every service has followed the switch).
     @ObservationIgnored private var missed: Set<ShapeID> = []
+    /// The shape the pointer on its row hovered, until it leaves the row: all a row's leaving
+    /// lets go of.
+    @ObservationIgnored private var rowHover: ShapeID?
     private var pin: Pin?
     #if DEBUG
     /// How many times the list has asked a row for its view (debug builds only), so tests can hold
@@ -201,12 +204,36 @@ public final class ContentsState {
         catchUp()
         catchUpAway()
         guard let scope else {
-            if board == nil || !board!.update(row: row(of:)) { board = listing(of: nil) }
+            keepUp(&board, scope: nil)
             return board!.entries
         }
-        let ids = Set(scope)
-        if filtered?.scope != ids || !filtered!.update(row: row(of:)) { filtered = listing(of: ids) }
+        keepUp(&filtered, scope: Set(scope))
         return filtered!.entries
+    }
+
+    /// How many times a commit has brought rows in at more than one place (a script that draws a
+    /// shape and connects shapes far apart, whose arrows nest under the shapes they start from; a
+    /// deleted shape whose nested rows come out from under it, to their places far apart), or made
+    /// a listing start over: each time, the list replaces its rows rather than bring them in around
+    /// the rows it kept, and rows that were expanded collapse, as they do when what's listed
+    /// changes. Rows arriving at several places at once make AppKit, which sizes a `List`'s rows,
+    /// log a reentrant update (`TableOfContentsView`), in a list of any length.
+    @ObservationIgnored private(set) var replacements = 0
+
+    /// Brings a listing up to date with what the commits since changed, or lists `scope` from
+    /// scratch (a new scope, or one listing again is quicker for), and notes a replacement when
+    /// its rows didn't come in as one run.
+    private func keepUp(_ listing: inout ContentsListing?, scope: Set<ShapeID>?) {
+        if var kept = listing, kept.scope == scope {
+            listing = nil               // so updating it doesn't copy it
+            if kept.update(row: row(of:)) {
+                if kept.isScattered { replacements += 1 }
+                listing = kept
+                return
+            }
+            replacements += 1
+        }
+        listing = self.listing(of: scope)
     }
 
     /// Every row in scope (nil for every shape), listed from scratch, from the rows made already.
@@ -232,6 +259,7 @@ public final class ContentsState {
         remakes = rowAffected.isEmpty ? remakes.filter { rows[$0] != nil }
             : Set(rows.lazy.filter { self.kindRows($0.value.record.kind).readsOtherShapes }.map(\.key))
         remarks = markAffected.isEmpty ? remarks.filter { rows[$0] != nil } : Set(rows.keys)
+        if board != nil || filtered != nil { replacements += 1 }       // listed again, its rows anywhere
         board = nil
         filtered = nil
     }
@@ -279,11 +307,17 @@ public final class ContentsState {
 
     /// The pointer is on the shape's row (and, called again as it moves there, still is): the
     /// shape is hovered (`editor.hovered`), as though the pointer were on it on the canvas.
-    public func hover(_ id: ShapeID) { editor.hovered = id }
+    public func hover(_ id: ShapeID) {
+        rowHover = id
+        editor.hovered = id
+    }
 
-    /// The pointer left the shape's row, or the row went away: the shape isn't hovered any more.
-    /// Leaves any other shape's hover, which the canvas or another row may have set since.
+    /// The pointer left the shape's row, or the row went away: the shape isn't hovered any more,
+    /// if the pointer on the row hovered it. Leaves any other hover: another row's, or one the
+    /// canvas set (the pointer on a shape there, while the rows are replaced under it).
     public func endHover(_ id: ShapeID) {
+        guard rowHover == id else { return }
+        rowHover = nil
         if editor.hovered == id { editor.hovered = nil }
     }
 
@@ -432,6 +466,7 @@ extension ContentsState: EditorService {
         remarks = taken?.remarks ?? []
         board = taken?.board
         filtered = nil
+        rowHover = nil                  // the board left's, whose hover Selection let go of
         if pin != nil { pin = nil }
         heardRevision = editor.revision
         missed = []

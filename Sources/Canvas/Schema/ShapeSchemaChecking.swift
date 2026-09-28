@@ -41,6 +41,17 @@ extension Registry {
         return validator.violations(of: .object(json))
     }
 
+    /// Where some of a kind's properties, own and added, side by side in one object (as
+    /// `AnyShapeRecord.propertiesJSON` writes them), break its schema (`schema(for:)`), with the
+    /// kind's schema compiled once, as `schemaViolations(of:)` has it. Before they're read: what
+    /// reading drops without a word shows here (a member its type doesn't have, JSON Schema's
+    /// `additionalProperties`). The object needn't be whole, so the required properties it leaves out
+    /// are among what it finds. Empty for a kind no plugin registers.
+    public func schemaViolations(of properties: JSONObject, kind: ShapeKind) -> [SchemaViolation] {
+        guard let validator = schemaValidators[kind] else { return [] }
+        return validator.violations(of: .object(properties))
+    }
+
     /// A shape from its properties, own and added, side by side in one object: what its kind's
     /// schema describes (`schema(for:)`), as `AnyShapeRecord.propertiesJSON` writes it, at today's
     /// versions. For what writes shapes as JSON (the command line). A property the object leaves
@@ -88,9 +99,71 @@ extension Registry {
         }
         return propertyTable.normalized(record)
     }
+
+    /// The shape with some of its properties, own and added, set from one object, each read as
+    /// `shape(_:properties:)` reads it; null puts one back to its default (its `init()`'s, or an
+    /// added property's), and is refused for a required one, and so does a value that's none (a
+    /// blank title). For what changes shapes as JSON (the command line). A property it names is
+    /// replaced whole: an object value (a struct's members) or a list is read afresh, and the
+    /// members it leaves out take their defaults, not the shape's. Everything the object doesn't
+    /// name stays exactly as it was (it isn't written out and read back, so a date keeps its
+    /// fractions of a second), but for what the kind derives from what's set (`DerivedProps`: a
+    /// schema card's height, put in step when any of its own properties is set); and so do the
+    /// shape's id, its place in the stack, its metadata and its values kept aside
+    /// (`keptProperties`), which can't be set. It throws as `shape(_:properties:)` does, and for a
+    /// shape kept aside (`isOpaque`) or a value kept aside (`unreadable`); nothing changes in any
+    /// document until the shape is put in one (`transaction.update(id) { $0 = shape }`).
+    public func shape(_ record: AnyShapeRecord, setting properties: JSONObject) throws(ShapePropertiesError) -> AnyShapeRecord {
+        guard !record.isOpaque else { throw .unreadable("the shape is kept aside: this app can't read its props, so it doesn't change them") }
+        guard let definition = definition(for: record.kind) else { throw .unknownKind(record.kind) }
+        let own = Set(definition.ownPropertyNames), added = Set(self.properties(for: record.kind))
+        var ownJSON: JSONObject = [:]
+        var addedJSON: [(PropertyKey, JSONValue)] = []
+        // By name, so the same object always throws the same error.
+        for name in properties.keys.sorted() {
+            let value = properties[name]!, key = PropertyKey(rawValue: name)
+            if own.contains(name) {
+                ownJSON[name] = value
+            } else if added.contains(key) {
+                guard record.added.kept[key] == nil else {
+                    throw .unreadable("\(key): the shape's value is one this app can't read, kept as it was, so it can't be set")
+                }
+                addedJSON.append((key, value))
+            } else {
+                throw .unknownProperty(name, kind: record.kind)
+            }
+        }
+        let encoder = BoardCodec.makeEncoder()
+        var record = record
+        if !ownJSON.isEmpty {
+            do {
+                record.props = try definition.kindCodec.patchData(record.props, encoder.encode(JSONValue.object(ownJSON)))
+            } catch {
+                throw .unreadable(BoardCodec.describe(error))
+            }
+            if let derived = definition as? any DerivedProps { derived.erasedDerive(&record) }
+            guard record.box?.isFinite ?? true else { throw .unreadable("its frame isn't finite") }
+        }
+        for (key, value) in addedJSON {
+            guard let codec = propertyTable.codecs[key] else { continue }
+            guard value != .null else {
+                record.added[key] = codec.defaultValue
+                continue
+            }
+            do {
+                // One that's none is no value, as a board reads it: the default, which `normalized` fills.
+                let read = try codec.decodeData(encoder.encode(value))
+                record.added[key] = codec.isNone(read) ? nil : read
+            } catch {
+                let why = BoardCodec.describe(error)
+                throw .unreadable(why.isEmpty ? key.rawValue : "\(key): \(why)")
+            }
+        }
+        return propertyTable.normalized(record)
+    }
 }
 
-/// Why `Registry.shape(_:properties:)` made no shape.
+/// Why `Registry.shape(_:properties:)` or `shape(_:setting:)` made no shape.
 public enum ShapePropertiesError: Error, Equatable, CustomStringConvertible {
     /// No installed plugin registers the kind.
     case unknownKind(ShapeKind)

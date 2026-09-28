@@ -21,7 +21,7 @@ import Titles
 
 // Mentions as shipped in a file of boards: notes on the root and inside a subboard that mention
 // each other and a task, followed, renamed, deleted with their board, undone, copied as a tree,
-// and made by `canvas create`.
+// and drawn by `canvas draw`.
 
 /// A file as shipped: on the root, subboard "Plans", task "Ship it", and a note mentioning note
 /// Alpha (by the name "Old alpha"); on Plans' board, Alpha, and a note mentioning Alpha and the
@@ -204,18 +204,20 @@ extension CanvasEditor {
         expectEqual(h.editor.mentionPills(of: f.outer).map(\.isLive), [true])
     },
 
-    test("canvas create sticky-note mentioning a note inside a subboard: made without a warning, its pill live, and its row following the note") {
+    test("canvas draw sticky-note mentioning a note inside a subboard: made without a warning, its pill live, and its row following the note") {
         try configureBoards()
         let nest = NestedFile()
         let board = try nestedDocument()
         let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
         let (inside, _) = nest.notes(on: 3)
-        let result = try canvas(server, ["create", "sticky-note", "--at", "100,800", "--set", "text=See @[Old](shape:\(inside.rawValue.uuidString))"])
+        // Untitled, so its row is its text; found as the shape the draw made, since it names no ids.
+        let before = Set(board.editor.document.shapes.map(\.id))
+        let result = try canvas(server, ["draw", #"sticky-note text: "See @[Old](shape:\#(inside.rawValue.uuidString))""#])
         expectEqual(result.status, 0, result.error)
         let json = try JSON(text: result.output)
-        expectEqual(json["warnings"], nil, "the note is in the file, two boards down")
-        let id = ShapeID(try require(json["id"]?.stringValue.flatMap(UUID.init(uuidString:))))
+        expectEqual(json["warnings"], [], "the note is in the file, two boards down")
+        let id = try require(board.editor.document.shapes.first { !before.contains($0.id) }?.id)
         expectEqual(board.editor.board, .root)
         expectEqual(board.editor.mentionPills(of: id).map(\.isLive), [true])
         expectEqual(board.editor.contentsRow(id), "See @Inside, first")

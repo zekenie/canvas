@@ -66,6 +66,51 @@ import TestKit
         h.editor.transact { $0.delete([box]) }
         expectEqual(log.events, ["document", "document"])
     },
+    test("a transaction whose body throws commits nothing: no change to hear, no refusal, no undo step, and the error comes out") {
+        struct Stop: Error, Equatable {}
+        let log = ServiceLog(), refusals = RefusalLog()
+        let h = try EditorHarness(plugins: [FixturesPlugin(), FreezingPlugin(log: refusals),
+                                            Contributor(id: "log") { r in r.service { _ in LoggingService(log: log) } }])
+        let box = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
+        let frozen = h.add(Box(CGRect(x: 100, y: 0, width: 10, height: 10)))
+        h.editor.freeze([frozen])
+        h.editor.undoHistory.clear()
+        let undo = UndoEvents(h.editor)
+        log.events = []
+        @MainActor func throwing() {
+            do {
+                try h.editor.transact("Throw") { tx in
+                    tx.update(box) { $0.box = CGRect(x: 50, y: 50, width: 10, height: 10) }
+                    tx.insert(ShapeRecord(Box(CGRect(x: 0, y: 100, width: 10, height: 10))))
+                    tx.update(frozen) { $0.box = .zero }             // refused, which would be reported
+                    tx.delete([box])
+                    throw Stop()
+                }
+                expect(false, "the error didn't come out")
+            } catch {
+                expectEqual(error as? Stop, Stop())
+            }
+        }
+        let document = h.editor.document, revision = h.editor.revision
+        throwing()
+        expectEqual(h.editor.document, document)
+        expectEqual(h.editor.revision, revision)
+        expectEqual(log.events, [], "no change set")
+        expectEqual(refusals.refusals, [], "no refusal")
+        expectEqual(undo.events, [], "no step began, so the board isn't edited")
+        expect(!h.editor.canUndo)
+        h.editor.transact("Move") { $0.update(box) { $0.box = CGRect(x: 50, y: 50, width: 10, height: 10) } }
+        expectEqual(log.events, ["document"], "and the next transaction is as any other")
+        expectEqual(undo.events, [.began, .closed])
+        // What there was to redo stays.
+        h.editor.undo()
+        expect(h.editor.canRedo)
+        undo.events = []
+        throwing()
+        expect(h.editor.canRedo, "a throw clears nothing")
+        expectEqual(undo.events, [])
+        expectEqual(h.editor.undoHistory.redoName, "Move")
+    },
     test("tool switches are observable, so the toolbar follows ones made on the canvas with no callback") {
         let h = try EditorHarness(plugins: [CardsPlugin()])
         let changed = Flag()

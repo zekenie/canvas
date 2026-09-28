@@ -61,13 +61,14 @@ public struct Properties<Root: SchemaDefined>: Sendable {
         }
         definitions.inPlace.append(id)
         defer { definitions.inPlace.removeLast() }
-        let prototype = Root()
+        // Two, so a default that varies (a new id each time) isn't stated as one.
+        let prototype = Root(), another = Root()
         var json: JSONObject = [:]
         if let title { json["title"] = .string(title) }
         if let description { json["description"] = .string(description) }
         json["type"] = "object"
         var properties: JSONObject = [:]
-        for property in list { properties[property.name] = .object(property.schema(prototype, &definitions)) }
+        for property in list { properties[property.name] = .object(property.schema(prototype, another, &definitions)) }
         json["properties"] = .object(properties)
         let required = list.filter(\.isRequired).map { JSONValue.string($0.name) }
         if !required.isEmpty { json["required"] = .array(required) }
@@ -161,10 +162,27 @@ public struct Property<Root, Value: Codable & SchemaDescribed & Sendable>: Prope
                 }
                 root[keyPath: keyPath] = try container.decode(Value.self, forKey: key)
             },
-            schema: { prototype, definitions in
+            patch: { container, root, prototype in
+                let key = PropertyCodingKey(name)
+                guard container.contains(key) else { return }
+                guard try container.decodeNil(forKey: key) else {
+                    root[keyPath: keyPath] = try container.decode(Value.self, forKey: key)
+                    return
+                }
+                guard !isRequired else {
+                    throw DecodingError.valueNotFound(Value.self, .init(codingPath: container.codingPath + [key],
+                                                                        debugDescription: "it's required, so it can't be null"))
+                }
+                root[keyPath: keyPath] = prototype[keyPath: keyPath]
+            },
+            schema: { prototype, another, definitions in
                 var json = Value.schema(in: &definitions).merging(keywords) { _, new in new }
                 let value = prototype[keyPath: keyPath]
-                if !isRequired, !isNil(value), let encoded = try? JSONValue(encoding: value) { json["default"] = encoded }
+                // A default is what every `init()` gives: one that varies (a new id) is none.
+                if !isRequired, !isNil(value), let encoded = try? JSONValue(encoding: value),
+                   (try? JSONValue(encoding: another[keyPath: keyPath])) == encoded {
+                    json["default"] = encoded
+                }
                 let encodedExamples = examples.compactMap { try? JSONValue(encoding: $0) }
                 if !encodedExamples.isEmpty { json["examples"] = .array(encodedExamples) }
                 return json
@@ -186,8 +204,13 @@ public struct AnyProperty<Root>: Sendable {
     let naming: PropertyNaming<Root>?
     let encode: @Sendable (Root, inout KeyedEncodingContainer<PropertyCodingKey>) throws -> Void
     let decode: @Sendable (KeyedDecodingContainer<PropertyCodingKey>, inout Root) throws -> Void
-    /// Its schema, with its default read off `prototype`.
-    let schema: @Sendable (_ prototype: Root, inout SchemaDefinitions) -> JSONObject
+    /// Reads its member over `root`'s, as `decode` does, except that a member the container doesn't
+    /// have stays as `root` has it, and null puts it back to `prototype`'s (its default), unless
+    /// it's required.
+    let patch: @Sendable (KeyedDecodingContainer<PropertyCodingKey>, inout Root, _ prototype: Root) throws -> Void
+    /// Its schema, with its default read off `prototype`, if `another` (a second `init()`) has the
+    /// same one.
+    let schema: @Sendable (_ prototype: Root, _ another: Root, inout SchemaDefinitions) -> JSONObject
 }
 
 /// How a property whose member names shapes is walked and renamed: pure, so a list's `@Sendable`
@@ -223,6 +246,36 @@ extension SchemaDefined {
     public static func schema(in definitions: inout SchemaDefinitions) -> JSONObject {
         guard let name = properties.definition else { return properties.objectSchema(in: &definitions) }
         return definitions.reference(name, of: Self.self) { properties.objectSchema(in: &$0) }
+    }
+
+    /// `base`, with each member `data` (a JSON object, as a board writes one) has read over it:
+    /// what it leaves out stays exactly as `base` has it, never written out and read back, and null
+    /// puts a member back to its default (`init()`'s), unless it's required.
+    static func patching(_ base: Self, with data: Data) throws -> Self {
+        let decoder = BoardCodec.makeDecoder()
+        decoder.userInfo[.patchBase] = base
+        return try decoder.decode(Patched<Self>.self, from: data).value
+    }
+}
+
+extension CodingUserInfoKey {
+    /// The value `Patched` reads members over.
+    fileprivate static let patchBase = CodingUserInfoKey(rawValue: "canvas.patchBase")!
+}
+
+/// A value read over the one the decoder's `userInfo` holds: `SchemaDefined.patching(_:with:)`.
+private struct Patched<Root: SchemaDefined>: Decodable {
+    let value: Root
+
+    init(from decoder: any Decoder) throws {
+        guard let base = decoder.userInfo[.patchBase] as? Root else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "there's no \(Root.self) to read it over"))
+        }
+        let container = try decoder.container(keyedBy: PropertyCodingKey.self)
+        var value = base
+        let prototype = Root()
+        for property in Root.properties.list { try property.patch(container, &value, prototype) }
+        self.value = value
     }
 }
 

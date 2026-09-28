@@ -14,16 +14,9 @@ public struct PortDot: Hashable, Sendable {
     }
 }
 
-/// A kind's ports, gathered from its contributions to `ShapePorts`.
-struct KindPorts {
-    /// The channels each side's dot starts connections on, in plugin order. A side with none has no dot.
-    var dots: [PortSide: [ChannelID]] = [:]
-    /// Each channel it has ports on, and what they let it be.
-    var roles: [ChannelID: PortRole] = [:]
-}
-
-/// Per editor: every kind's ports and the channels' colors, found once (the registry is frozen); the
-/// shape whose dots show; and the connection being drawn from one, while it is.
+/// Per editor: every kind's ports (the port table, `KindPorts.table(in:)`) and the channels' colors,
+/// found once (the registry is frozen); the shape whose dots show; and the connection being drawn
+/// from one, while it is.
 @MainActor
 final class PortState {
     private unowned let editor: CanvasEditor
@@ -41,23 +34,8 @@ final class PortState {
     init(editor: CanvasEditor) {
         self.editor = editor
         let registry = editor.registry
-        connector = registry.contributions(to: Connectors.self).first?.value
-        var kinds: [ShapeKind: KindPorts] = [:]
-        for contribution in registry.contributions(to: ShapePorts.self) {
-            let ports = contribution.value
-            let targets: [ShapeKind] = switch contribution.target {
-            case .kind(let kind): [kind]
-            case .any: registry.kinds
-            }
-            for kind in targets where kinds[kind]?.roles[ports.channel] == nil {
-                kinds[kind, default: KindPorts()].roles[ports.channel] = ports.role
-                guard ports.role != .target else { continue }
-                for side in ports.sides where kinds[kind]?.dots[side]?.contains(ports.channel) != true {
-                    kinds[kind, default: KindPorts()].dots[side, default: []].append(ports.channel)
-                }
-            }
-        }
-        self.kinds = kinds
+        connector = registry.connector
+        kinds = KindPorts.table(in: registry)
         colors = Dictionary(registry.contributions(to: Channels.self).map { ($0.value.id, $0.value.color) }) { first, _ in first }
     }
 
@@ -67,11 +45,12 @@ final class PortState {
         connector != nil && editor.currentToolID == .select && editor.camera.zoom >= PortStyle.minZoom
     }
 
-    /// Whether a shape shows dots: its kind has some, and the connector can start from it.
+    /// Whether a shape shows dots: its kind has some, and the connector can start from it (asked of
+    /// the editor's document).
     func hasDots(_ id: ShapeID) -> Bool {
         guard let connector, let record = editor.document[id], !record.isOpaque,
               kinds[record.kind]?.dots.isEmpty == false else { return false }
-        return connector.canConnect(id, editor)
+        return connector.canConnect(id, editor.shapeContext)
     }
 
     /// A shape's dots, in the order of `PortSide.allCases`, with their centers in world units: just

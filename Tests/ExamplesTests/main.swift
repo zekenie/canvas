@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([examplesTests])
+runTests([examplesTests, titleHeaderTests])

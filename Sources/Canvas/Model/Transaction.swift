@@ -58,6 +58,14 @@ public struct Transaction {
         self.file = file
     }
 
+    /// Whether an agent makes the change (the command line's `draw`), not a person at the app: its
+    /// commit says so (`ChangeSet.byAgent`), so what acts on a person's edits (a schema card's sync)
+    /// takes what it changed as it is. Saying so changes nothing by itself.
+    public var byAgent: Bool {
+        get { changes.byAgent }
+        set { changes.byAgent = newValue }
+    }
+
     /// Geometry lookups against the document as it is mid-transaction.
     public var shapes: ShapeContext { ShapeContext(document: document, registry: registry, camera: camera) }
 

@@ -37,11 +37,17 @@ extension Invocation {
 }
 
 /// A result, as text for people: an object's members as `name: value` lines, a list of objects as a
-/// table, and anything nested indented under its name. JSON (`--format json`) has everything; this
-/// has what reads well.
+/// table (what a row has that isn't a value, a kind's attributes, indented under it), and anything
+/// nested indented under its name. JSON (`--format json`) has it all, as it's sent.
 enum TextOutput {
-    /// Members that lead, in this order; the rest follow by name.
-    static let leading = ["id", "name", "kind"]
+    /// Members that lead, in this order; the rest follow by name. A script's changes lead with
+    /// where each was written and what it did (no other result has `line` or `did`).
+    static let leading = ["line", "did", "id", "name", "kind"]
+    /// Members that are sentences, which a table never cuts (a warning's message ends with what to
+    /// do about it, and a kind's `why` says why a script can't draw it): its last columns.
+    static let sentences = ["message", "hint", "why"]
+    /// The most characters a table's cell shows, but for sentences.
+    static let cellLimit = 60
 
     static func render(_ json: JSON) -> String {
         render(json, indent: 0)
@@ -67,19 +73,29 @@ enum TextOutput {
         }
     }
 
-    /// Rows of objects, a column for each member that's a value or a list of values; members that are
-    /// more (a schema) are left to the JSON.
+    /// Rows of objects, a column for each member that's a value or a list of values, sentences last
+    /// and whole; members that are more (a kind's attributes, a schema) go under their row,
+    /// indented, as an object's members do.
     private static func table(_ rows: [[String: JSON]], indent: Int) -> String {
         let pad = String(repeating: " ", count: indent)
         var columns: [String] = []
         for key in ordered(Set(rows.flatMap(\.keys))) where rows.allSatisfy({ $0[key].map(isInline) ?? true }) { columns.append(key) }
-        let cells = rows.map { row in columns.map { row[$0].map { cell($0, limit: 60) } ?? "" } }
+        columns = columns.filter { !sentences.contains($0) } + sentences.filter(columns.contains)
+        let cells = rows.map { row in
+            columns.map { key in row[key].map { cell($0, limit: sentences.contains(key) ? nil : cellLimit) } ?? "" }
+        }
         let widths = columns.indices.map { column in max(columns[column].count, cells.map { $0[column].count }.max() ?? 0) }
         func line(_ values: [String]) -> String {
             pad + zip(values, widths).map { $0.padding(toLength: $1, withPad: " ", startingAt: 0) }.joined(separator: "  ")
                 .replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
         }
-        return ([line(columns)] + cells.map(line)).joined(separator: "\n")
+        var lines = [line(columns)]
+        for (row, values) in zip(rows, cells) {
+            lines.append(line(values))
+            let more = row.filter { !columns.contains($0.key) }
+            if !more.isEmpty { lines.append(render(.object(more), indent: indent + 2)) }
+        }
+        return lines.joined(separator: "\n")
     }
 
     private static func ordered(_ keys: some Collection<String>) -> [String] {

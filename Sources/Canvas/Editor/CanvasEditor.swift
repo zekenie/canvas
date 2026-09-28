@@ -228,6 +228,11 @@ public final class CanvasEditor {
     /// or, with a `coalescing` key, part of a run of commits under that key (a panel field typed
     /// into) until something else happens. `name` names the step, if nothing it's in has named it:
     /// "Move", "Delete", as a menu says Undo Move.
+    ///
+    /// A body that throws commits nothing, whatever it changed first: services hear of no change
+    /// and no refusal, the board isn't edited, no undo step opens (what there was to redo stays),
+    /// and the error comes out of `transact` (untyped: catch it and cast). So work that must happen
+    /// whole, or not at all, throws to leave.
     @discardableResult
     public func transact<T>(_ name: String? = nil, coalescing key: AnyHashable? = nil, _ body: (inout Transaction) throws -> T) rethrows -> T {
         try transact(name, coalescing: key, origin: .ordinary, body)
@@ -450,6 +455,7 @@ public final class CanvasEditor {
         changes.boardsChanged = [target]
         changes.boardsAdded = local.boardsAdded
         changes.boardsRemoved = local.boardsRemoved
+        changes.byAgent = local.byAgent
         storedFile.set(transaction.document, for: target, changes: local)
         changes.elsewhere = writeBoards(of: transaction).union(local.shapeIDs)
         documentDidChange(to: storedDocument, changes: changes)

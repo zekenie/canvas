@@ -32,20 +32,3 @@ extension JSONValue {
         }
     }
 }
-
-/// Any JSON object, as a command's param: `--props '{"text": "Hello"}'`.
-struct JSONObjectParam: Codable, Equatable, Sendable, SchemaDescribed {
-    var members: JSONObject
-
-    init(_ members: JSONObject) { self.members = members }
-
-    init(from decoder: any Decoder) throws {
-        members = try JSONObject(from: decoder)
-    }
-
-    func encode(to encoder: any Encoder) throws {
-        try members.encode(to: encoder)
-    }
-
-    static func schema(in _: inout SchemaDefinitions) -> JSONObject { ["type": "object"] }
-}

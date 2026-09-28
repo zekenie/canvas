@@ -1,3 +1,6 @@
 import TestKit
 
-runTests([createTests, kindsTests, registrationTests])
+runTests([
+    kindsTests, registrationTests, errorTests,
+    drawingTests, edgeDrawingTests, drawRunTests, drawPlacingTests, drawWarningTests, drawRefusalTests, drawPointTests, drawUndoTests, drawFileTests,
+])

@@ -3,6 +3,7 @@ import AppKit
 import Arrows
 import Boards
 @_spi(Host) import Canvas
+import CanvasRPC
 import CanvasTesting
 import CanvasUI
 import Checklists
@@ -35,11 +36,12 @@ import Validation
 // and validation's read), going back up to its board and down again, warm, and the minimap's
 // picture of the board entered; a keystroke in the `@` picker and a rename of a shape mentioned 100
 // times; and undo and redo, a drag's in a frame and a tenth of the board's moved or deleted too, and
-// deleting a subboard whose boards hold as many shapes, and its undo and redo; and ten subboards in
-// view, each holding as many, their previews filling in. `./build.sh bench` runs these in a release
-// build and holds them to the budgets; `./test.sh` runs them debug and small, so they keep working,
-// and only reports. Reported alone: the inspector's list replaced on a switch
-// (InspectorBenchmarks.swift), and a chain of 1,000 boards.
+// deleting a subboard whose boards hold as many shapes, and its undo and redo; ten subboards in
+// view, each holding as many, their previews filling in; and a `canvas draw` whose shapes are
+// pushed along the grid. `./build.sh bench` runs these in a release build and holds them to the
+// budgets; `./test.sh` runs them debug and small, so they keep working, and only reports. Reported
+// alone: the inspector's list replaced on a switch (InspectorBenchmarks.swift), and a chain of
+// 1,000 boards.
 #if DEBUG
 let sizes = [300]
 let holdsToBudgets = false
@@ -101,6 +103,9 @@ enum Budget {
     /// The inspector's list replaced on a switch between boards of 10,000 rows each: reported, not
     /// held, until it's known to fit.
     static let listReplacedTarget = 50.0
+    /// A `canvas draw` of 20 notes on 10,000 shapes, each pushed along its row to the end: the
+    /// command runs on the main actor, so it's time the window doesn't draw.
+    static let draw20 = 150.0
 }
 
 /// Notes, tasks, ellipses and schema cards in a grid, with an arrow from every fourth note to the
@@ -826,6 +831,36 @@ extension Duration {
                     }
                 }
             }
+        }
+    },
+    test("canvas draw places shapes on a big board in what's near them: each pushed along a row of the grid to its end") {
+        for size in sizes {
+            let document = generatedBoard(shapes: size)
+            let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+            let editor = CanvasEditor(registry: registry, document: document, scheduler: ManualScheduler())
+            editor.viewportDidResize(to: CGSize(width: 1200, height: 800))
+            // The worst of it: a note right of a titled note in each of 20 rows, which it lands on the
+            // next shape of and is pushed past it, and the next, to the row's end.
+            let columns = Int(Double(size).squareRoot().rounded(.up))
+            var firstTitled: [Int: String] = [:]       // each row's first titled note in its first half
+            for shape in document.shapes {
+                guard let box = shape.box, box.minX < CGFloat(columns / 2) * 260, let title = registry.title(of: shape), title.hasPrefix("Title ") else { continue }
+                if firstTitled[Int(box.minY / 260)] == nil { firstTitled[Int(box.minY / 260)] = title }
+            }
+            let rows = firstTitled.keys.sorted(), count = min(20, rows.count)      // a small board has fewer rows
+            let lines = (0..<count).map { k in
+                "sticky-note \"Mine \(k)\" right of \"\(firstTitled[rows[k * rows.count / count]]!)\" text: \"Pushed along\""
+            }
+            let commands = ShippedPlugins.commands(in: registry)
+            var result: JSON = [:]
+            let time = try median(runs: 5) {
+                result = try commands.run("draw", ["script": .string(lines.joined(separator: "\n")), "dryRun": true], editor)
+            }
+            let pushes = (result["changes"]?.arrayValue ?? []).reduce(0) { $0 + ($1["pushedPast"]?.arrayValue?.count ?? 0) }
+            expectEqual(result["changes"]?.arrayValue?.count, count)
+            expect(pushes >= count, "every note is pushed: \(pushes)")
+            report(String(format: "%6d shapes: a draw of %d notes, pushed %d times in all, %6.1f ms (budget %.0f)", size, count, pushes, time, Budget.draw20))
+            if holdsToBudgets, size >= 10_000 { expect(time < Budget.draw20, "a draw of 20 notes on \(size) shapes took \(time) ms") }
         }
     },
     test("the minimap draws a board a frame's worth at a time, and a drag redraws only what moved") {

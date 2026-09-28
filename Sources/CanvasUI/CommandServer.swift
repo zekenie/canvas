@@ -10,7 +10,9 @@ import Foundation
 /// and runs each on the board its request names (`board`), or the one in front, whose editor it
 /// changes as anything else does, so the board's window shows each change as it's made. A file with
 /// boards inside shapes is worked on where its window is: the board it shows (`editor.board`),
-/// which `status` and `boards` name.
+/// which `status` and `boards` name. A board command's result, when it's an object, says which
+/// board that was: `board: {id, name, shows, showsPath}`, as `boards` lists it (unless the
+/// command's result has a `board` of its own).
 @MainActor
 public final class CommandServer {
     /// The commands it's given, and how to run one: by name, with its params, on a board's editor
@@ -82,12 +84,10 @@ public final class CommandServer {
         case RPC.boardsCommand:
             let front = frontmost()
             return .success(.array(boards().map { board in
-                let editor = board.editor
-                var entry: [String: JSON] = ["id": .number(Double(board.number)), "name": .string(board.displayName),
-                                             "frontmost": .bool(board === front), "edited": .bool(board.isDocumentEdited),
-                                             "shows": .string(editor.board.description),
-                                             "showsPath": .array(editor.boardPath.map { .string($0.description) }),
-                                             "shapes": .number(Double(editor.document.shapes.count))]
+                var entry = shown(board)
+                entry["frontmost"] = .bool(board === front)
+                entry["edited"] = .bool(board.isDocumentEdited)
+                entry["shapes"] = .number(Double(board.editor.document.shapes.count))
                 if let url = board.fileURL { entry["path"] = .string(url.path) }
                 return .object(entry)
             }))
@@ -97,18 +97,24 @@ public final class CommandServer {
                                          hint: "`\(RPC.commandName) help` lists the commands."))
             }
             let reference = params.removeValue(forKey: RPC.boardParam)
-            var editor: CanvasEditor?
+            var target: BoardDocument?
             switch spec.scope {
             case .board:
                 switch board(reference) {
-                case .success(let board): editor = board.editor
+                case .success(let board): target = board
                 case .failure(let error): return .failure(error)
                 }
             case .app:
                 guard reference == nil else { return .failure(.invalidParams("\(spec.name) is about the app, not a board: it takes no board.")) }
             }
             do {
-                return .success(try commands.run(spec.name, .object(params), editor))
+                // Which board it worked on, as `boards` lists it (the command can't know), read
+                // before it runs.
+                let worked = target.map(shown)
+                let result = try commands.run(spec.name, .object(params), target?.editor)
+                guard let worked, case .object(var object) = result, object[RPC.boardParam] == nil else { return .success(result) }
+                object[RPC.boardParam] = .object(worked)
+                return .success(.object(object))
             } catch {
                 return .failure(error)
             }
@@ -143,6 +149,15 @@ public final class CommandServer {
     ]
 
     // MARK: Boards
+
+    /// A file and the board inside it its window shows, as `boards` lists them and a board
+    /// command's result names them: the file's id and name, `shows` ("root", or the id of the shape
+    /// that owns the board) and `showsPath`, the boards from the root down to it.
+    private func shown(_ board: BoardDocument) -> [String: JSON] {
+        let editor = board.editor
+        return ["id": .number(Double(board.number)), "name": .string(board.displayName ?? "untitled"),
+                "shows": .string(editor.board.description), "showsPath": .array(editor.boardPath.map { .string($0.description) })]
+    }
 
     /// The board a request names: by its number, its file, or its name. With none named, the board
     /// in front, or the only one open.

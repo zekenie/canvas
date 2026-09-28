@@ -30,6 +30,15 @@ extension TitleProperty: ShapeProperty {
     public static func isNone(_ title: String) -> Bool { title.allSatisfy(\.isWhitespace) }
     /// The longest title that draws no warning, in characters (code points, as JSON Schema counts).
     public static let maxLength = 80
+
+    /// A title as everything that shows it reads it (the lookup, the pill, the row): on one line,
+    /// each run of whitespace, newlines included, folded into a space; nil when that leaves
+    /// nothing, so a blank title is no title. For what matches titles as they read (the command
+    /// line names shapes by theirs), and a derived title that falls back when a name is blank.
+    public static func folded(_ title: String?) -> String? {
+        guard let folded = title?.split(whereSeparator: \.isWhitespace).joined(separator: " "), !folded.isEmpty else { return nil }
+        return folded
+    }
 }
 
 /// The extension point: which kinds have titles, what a shape's is, and whether the canvas shows it.
@@ -42,25 +51,21 @@ extension ShapeTitles: KeyedExtensionPoint {
     public static func uniqueKeys(of _: TitleContribution, for target: ShapeTarget) -> [AnyHashable] { [target] }
 }
 
-/// What `ShapeTitles` stores for a kind: its shapes' titles, as they read (`oneLine`), and whether
-/// its shapes show `TitlePill`. Only the sugar below makes one.
+/// What `ShapeTitles` stores for a kind: its shapes' titles, as they read (`TitleProperty.folded`),
+/// whether they're derived from what the kind keeps, and whether its shapes show `TitlePill`. Only
+/// the sugar below makes one.
 @MainActor
 public struct TitleContribution {
     let title: @MainActor (AnyShapeRecord) -> String?
     let showsPill: Bool
+    /// Made by what `make` says (`title { … }`), not only read from `TitleProperty` (`title()`).
+    let isDerived: Bool
 
-    init<P: ShapeProps>(_: P.Type, showsPill: Bool, _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) {
-        title = { oneLine($0.typed(as: P.self).flatMap(make)) }
+    init<P: ShapeProps>(_: P.Type, showsPill: Bool, isDerived: Bool, _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) {
+        title = { TitleProperty.folded($0.typed(as: P.self).flatMap(make)) }
         self.showsPill = showsPill
+        self.isDerived = isDerived
     }
-}
-
-/// A title as everything that shows it reads it (the lookup, the pill, the row): on one line, each
-/// run of whitespace, newlines included, folded into a space; nil when that leaves nothing, so a
-/// blank title is no title.
-func oneLine(_ title: String?) -> String? {
-    guard let folded = title?.split(whereSeparator: \.isWhitespace).joined(separator: " "), !folded.isEmpty else { return nil }
-    return folded
 }
 
 // Sugar, so opting in is one line and never names the extension point.
@@ -73,7 +78,7 @@ extension ShapeRegistrar {
     /// a `TitleHeader` in the kind's header: `note.details(header: { $note in TitleHeader($note) }) {}`.
     public mutating func title(pill: Bool = true, contents: Bool = true) {
         optIn(to: TitleProperty.self)
-        title(pill: pill, contents: contents) { $0[TitleProperty.self] }
+        title(pill: pill, contents: contents, isDerived: false) { $0[TitleProperty.self] }
     }
 
     /// Gives this kind a title derived from what it keeps itself: what `make` says a shape is
@@ -82,8 +87,13 @@ extension ShapeRegistrar {
     /// The pill and the row are as there.
     public mutating func title(pill: Bool = true, contents: Bool = true,
                                _ make: @escaping @MainActor (ShapeRecord<Definition.Props>) -> String?) {
-        contribute(TitleContribution(Definition.Props.self, showsPill: pill, make), to: ShapeTitles.self)
-        if contents { contentsTitle { oneLine(make($0)) } }
+        title(pill: pill, contents: contents, isDerived: true, make)
+    }
+
+    private mutating func title(pill: Bool, contents: Bool, isDerived: Bool,
+                                _ make: @escaping @MainActor (ShapeRecord<Definition.Props>) -> String?) {
+        contribute(TitleContribution(Definition.Props.self, showsPill: pill, isDerived: isDerived, make), to: ShapeTitles.self)
+        if contents { contentsTitle { TitleProperty.folded(make($0)) } }
     }
 }
 
@@ -92,15 +102,22 @@ extension PluginRegistrar {
     /// own registrar.
     public mutating func title<P: ShapeProps>(_: P.Type, pill: Bool = true, contents: Bool = true) {
         optIn(P.self, to: TitleProperty.self)
-        title(P.self, pill: pill, contents: contents) { $0[TitleProperty.self] }
+        title(P.self, pill: pill, contents: contents, isDerived: false) { $0[TitleProperty.self] }
     }
 
     /// A derived title for a kind another plugin registers (bridges), as `title { ... }` on a kind's
-    /// own registrar.
+    /// own registrar. A bridge that also opts the kind into `TitleProperty` (`optIn(_:to:)`) can
+    /// derive a title for the shapes nobody named: `TitleProperty.folded(shape[TitleProperty.self])
+    /// ?? what it derives` (EllipseTitles).
     public mutating func title<P: ShapeProps>(_: P.Type, pill: Bool = true, contents: Bool = true,
                                               _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) {
-        contribute(TitleContribution(P.self, showsPill: pill, make), to: ShapeTitles.self, for: .kind(P.kind))
-        if contents { contentsTitle(P.self) { oneLine(make($0)) } }
+        title(P.self, pill: pill, contents: contents, isDerived: true, make)
+    }
+
+    private mutating func title<P: ShapeProps>(_: P.Type, pill: Bool, contents: Bool, isDerived: Bool,
+                                               _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) {
+        contribute(TitleContribution(P.self, showsPill: pill, isDerived: isDerived, make), to: ShapeTitles.self, for: .kind(P.kind))
+        if contents { contentsTitle(P.self) { TitleProperty.folded(make($0)) } }
     }
 }
 
@@ -108,6 +125,14 @@ extension Registry {
     /// What a shape is called, on one line; nil if its kind has no title, or its title is blank.
     public func title(of shape: AnyShapeRecord) -> String? {
         contributions(to: ShapeTitles.self, for: shape.kind).first?.title(shape)
+    }
+
+    /// Whether a kind's titles are derived from what the kind keeps (`title { … }`: an ellipse's
+    /// size), rather than only named by someone (`title()`); false for a kind without titles. A
+    /// kind whose shapes can be named opts into `TitleProperty` (`properties(for:)` has its key),
+    /// and may be both: named, and derived for the shapes nobody named (EllipseTitles' ellipses).
+    public func titleIsDerived(_ kind: ShapeKind) -> Bool {
+        contributions(to: ShapeTitles.self, for: kind).first?.isDerived ?? false
     }
 }
 

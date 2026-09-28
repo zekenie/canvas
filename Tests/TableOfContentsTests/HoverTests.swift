@@ -39,6 +39,16 @@ extension ContentsWindow {
         contents.endHover(b)
         expectEqual(editor.hovered, nil)
     },
+    test("a row that goes away lets go of a hover the pointer on it set, never one the canvas set") {
+        let editor = try contentsEditor()
+        let (a, _, _) = threeWidgets(editor)
+        editor.hovered = a                  // the pointer on it on the canvas, as the select tool does
+        editor.contents.endHover(a)         // its row replaced, under the pointer
+        expectEqual(editor.hovered, a)
+        editor.contents.hover(a)
+        editor.contents.endHover(a)
+        expectEqual(editor.hovered, nil)
+    },
     test("a shape hovered on the canvas shows its row as hovered, unless it's selected") {
         let editor = try contentsEditor()
         let (a, b, _) = threeWidgets(editor)

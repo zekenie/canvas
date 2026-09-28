@@ -66,11 +66,15 @@ import ValidationDetails
         ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
         arrow-ports          property channel → arrow · connector → arrow · ArrowBindingRules
         language-models      service LanguageModelState
-        automation           command line create · command line kinds
+        automation           command line draw · command line kinds
+        title-names          draw names
+        port-edges           draw edges
+        validation-checks    draw checks
         rectangles           shape rectangle · tool rectangle · shortcut R → tool rectangle
         polylines            shape polyline · tool polyline · shortcut L → tool polyline
         eraser               tool eraser · shortcut E → tool eraser
-        ellipse-titles       ShapeTitles → ellipse · ContentsTitles → ellipse
+        ellipse-titles       property title → ellipse · ShapeTitles → ellipse · ContentsTitles → ellipse · ShapeDetails → ellipse
+        rectangle-titles     property title → rectangle · ShapeTitles → rectangle · ContentsTitles → rectangle · ShapeDetails → rectangle
         reordering           ShapeContextMenus
         """)
     },
@@ -81,7 +85,7 @@ import ValidationDetails
         let end = try require(guide.range(of: "\n```", range: start..<guide.endIndex)).lowerBound
         expectEqual(String(guide[start..<end]), try ShippedPlugins.registry(model: ScriptedLanguageModel()).report)
     },
-    test("every placed kind has a panel: a note its Checklist and Arrange (and Issues, empty), a task, a schema and a subboard their own tabs too, other boxes Arrange, an arrow only its header") {
+    test("every placed kind has a panel: a note its Checklist and Arrange (and Issues, empty), a task, a schema and a subboard their own tabs too, other boxes Arrange, an arrow only its header; every nameable kind's header renames it") {
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
         let state = try require(h.editor.detailPanel)
         var panels: [String] = []
@@ -93,9 +97,10 @@ import ValidationDetails
             let layout = state.layout(for: try require(h.editor.selection.flatMap { h.editor.document[$0] }))
             panels.append("\(layout.headerText): \(layout.tabs.map(\.title).joined(separator: ", "))")
         }
-        // A note's and a task's headers rename them: an untitled note's shows the placeholder. A
-        // note placed is empty, which is a warning, so it has Issues until it's written in.
-        expectEqual(panels, ["Ellipse: Arrange", "Rectangle: Arrange", "Arrow: ", "(Note): Checklist, Arrange, Issues",
+        // Every header of a kind that can be named renames it: an untitled shape's shows the
+        // placeholder, an unnamed ellipse its size. A note placed is empty, which is a warning, so
+        // it has Issues until it's written in.
+        expectEqual(panels, ["(Ellipse, 200 × 140): Arrange", "(Rectangle): Arrange", "Arrow: ", "(Note): Checklist, Arrange, Issues",
                              "New Task: Task, Checklist, Style, Arrange", "(Untitled): Schema, Arrange", "(Untitled Subboard): Board, Arrange"])
     },
     test("a long title's pill stays clear of the checklist chip: Adornments lays out both") {

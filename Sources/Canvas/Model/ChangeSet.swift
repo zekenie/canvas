@@ -1,8 +1,8 @@
 /// What one commit did to the document, record by record: the shapes it added, changed (props,
 /// or place in the stack) and removed. Services get it with `documentDidChange`, so what they keep
 /// per shape can follow the few shapes a commit touched rather than go through every shape. The
-/// records before and after are a `DocumentDelta`'s (what undo keeps, other boards whole); who made
-/// the change comes with agents.
+/// records before and after are a `DocumentDelta`'s (what undo keeps, other boards whole). Who made
+/// the change is only whether an agent did (`byAgent`).
 public struct ChangeSet: Equatable, Sendable {
     /// Shapes that weren't in the document before.
     public internal(set) var added: Set<ShapeID> = []
@@ -29,6 +29,10 @@ public struct ChangeSet: Equatable, Sendable {
     /// acts on edits (a sync) follows none, and puts back what it kept of them as they were then (as
     /// an `UndoParticipant`).
     public internal(set) var restoredStep = false
+    /// Whether an agent made the change (`Transaction.byAgent`: the command line's `draw`) rather
+    /// than a person at the app: a service that acts on a person's edits (a sync that asks a
+    /// language model) takes the shapes it changed as it takes shapes it sees for the first time.
+    public internal(set) var byAgent = false
     /// Boards it brought into the file with the shapes that own them (`insert(_:contents:)`: a
     /// paste), and boards it took out of the file with theirs (every board under a deleted shape).
     /// Neither is the board the commit was on, whose shapes are the ones named above.

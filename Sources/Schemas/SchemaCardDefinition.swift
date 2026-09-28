@@ -92,8 +92,8 @@ extension SchemaCardDefinition: ShapeDefinition {
     }
 }
 
-/// A card made from properties (the command line's `create`) is as tall as its schema, as
-/// `setSchema` would have made it.
+/// A card made from properties, or given a schema that way (the command line's `draw`), is as tall
+/// as its schema, as `setSchema` would have made it.
 extension SchemaCardDefinition: DerivedProps {
     func derive(_ card: inout SchemaCard) { card.setSchema(card.schema) }
 }

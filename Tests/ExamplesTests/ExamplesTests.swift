@@ -4,11 +4,13 @@ import Arrows
 import CanvasTesting
 import ContextMenus
 import CoreGraphics
+import DetailPanel
 import EllipseTitles
 import Ellipses
 import Eraser
 import Keyboard
 import Polylines
+import RectangleTitles
 import Rectangles
 import Reordering
 import Selection
@@ -158,8 +160,8 @@ import Titles
         expectEqual(h.editor.document[thin], nil)
     },
     test("EllipseTitles: a bridge titles ellipses by their size, though Ellipses and Titles don't know each other") {
-        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), EllipsesPlugin(), AdornmentsPlugin(), TitlesPlugin(), TableOfContentsPlugin(),
-                                            EllipseTitlesPlugin()])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), DetailPanelPlugin(), EllipsesPlugin(), AdornmentsPlugin(), TitlesPlugin(),
+                                            TableOfContentsPlugin(), EllipseTitlesPlugin()])
         let empty = renderBitmap(h.editor, size: CGSize(width: 300, height: 240))
         let ellipse = h.add(Ellipse(frame: CGRect(x: 40, y: 60, width: 200, height: 140)))
         expectEqual(h.editor.registry.title(of: try require(h.editor.document[ellipse])), "Ellipse, 200 × 140")
@@ -170,20 +172,77 @@ import Titles
         let titled = renderBitmap(h.editor, size: CGSize(width: 300, height: 240))
         expect(changedPixels(empty, titled, in: CGRect(x: 40, y: 35, width: 100, height: 12)) > 300, "the pill")
     },
+    test("EllipseTitles: an ellipse can be named, as a note can; one nobody named, or named blank, is called by its size") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), DetailPanelPlugin(), EllipsesPlugin(), AdornmentsPlugin(), TitlesPlugin(),
+                                            TableOfContentsPlugin(), EllipseTitlesPlugin()])
+        let registry = h.editor.registry
+        expectEqual(registry.properties(for: Ellipse.kind), [TitleProperty.key], "nameable: its schema has Titles' title")
+        expectEqual(registry.schema(for: Ellipse.kind)?.json["properties"]?["title"]?["maxLength"], 80)
+        expect(registry.titleIsDerived(Ellipse.kind), "and derived, for the ellipses nobody named")
+        let ellipse = h.add(Ellipse(frame: CGRect(x: 40, y: 60, width: 200, height: 140)))
+        @MainActor func title() -> String? { h.editor.document[ellipse].flatMap(registry.title(of:)) }
+        h.editor.transact { $0.update(ellipse) { $0[TitleProperty.self] = "  Sun\nspot " } }
+        expectEqual(title(), "Sun spot")
+        expectEqual(h.editor.tableOfContents?.entries.first?.label?.text, "Sun spot", "the row follows")
+        h.editor.transact { $0.update(ellipse) { $0.box = CGRect(x: 40, y: 60, width: 300, height: 140) } }
+        expectEqual(title(), "Sun spot", "a name doesn't follow the size")
+        h.editor.transact { $0.update(ellipse) { $0[TitleProperty.self] = " " } }
+        expectEqual(title(), "Ellipse, 300 × 140", "blank is no name")
+        h.editor.transact { $0.update(ellipse) { $0[TitleProperty.self] = nil } }
+        expectEqual(title(), "Ellipse, 300 × 140")
+    },
     test("EllipseTitles: needs both plugins it connects, and the table of contents, which titles name rows in") {
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeTitles", owner: .titles, contributor: "ellipse-titles")) {
-            _ = try Registry(plugins: [KeyboardPlugin(), EllipsesPlugin(), TableOfContentsPlugin(), EllipseTitlesPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), DetailPanelPlugin(), EllipsesPlugin(), TableOfContentsPlugin(), EllipseTitlesPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ContentsTitles", owner: .tableOfContents, contributor: "ellipse-titles")) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), EllipsesPlugin(), AdornmentsPlugin(), TitlesPlugin(), EllipseTitlesPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), DetailPanelPlugin(), EllipsesPlugin(), AdornmentsPlugin(), TitlesPlugin(), EllipseTitlesPlugin()])
         }
-        expectThrows(RegistryError.unknownKind("ellipse", point: "ShapeTitles", contributor: "ellipse-titles")) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), AdornmentsPlugin(), TitlesPlugin(), TableOfContentsPlugin(), EllipseTitlesPlugin()])
+        expectThrows(RegistryError.ownerNotInstalled(point: "ShapeDetails", owner: .detailPanel, contributor: "ellipse-titles")) {
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), EllipsesPlugin(), AdornmentsPlugin(), TitlesPlugin(), TableOfContentsPlugin(), EllipseTitlesPlugin()])
+        }
+        expectThrows(RegistryError.unknownKind("ellipse", point: "PropertyOptIns", contributor: "ellipse-titles")) {
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), DetailPanelPlugin(), AdornmentsPlugin(), TitlesPlugin(), TableOfContentsPlugin(),
+                                       EllipseTitlesPlugin()])
+        }
+    },
+    test("RectangleTitles: a bridge of one line lets rectangles be named, as notes are, though Rectangles and Titles don't know each other") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), RectanglesPlugin(), AdornmentsPlugin(), TitlesPlugin(), TableOfContentsPlugin(),
+                                            DetailPanelPlugin(), RectangleTitlesPlugin()])
+        let registry = h.editor.registry
+        expectEqual(registry.properties(for: Rectangle.kind), [TitleProperty.key])
+        expectEqual(registry.schema(for: Rectangle.kind)?.json["properties"]?["title"]?["maxLength"], 80)
+        expect(!registry.titleIsDerived(Rectangle.kind), "named only")
+        let empty = renderBitmap(h.editor, size: CGSize(width: 300, height: 240))
+        let rectangle = h.add(Rectangle(frame: CGRect(x: 40, y: 60, width: 200, height: 140)))
+        expectEqual(h.editor.document[rectangle].flatMap(registry.title(of:)), nil, "unnamed: no title")
+        expectEqual(h.editor.tableOfContents?.entries.first?.label?.text, "Rectangle", "its tool's label")
+        let unnamed = renderBitmap(h.editor, size: CGSize(width: 300, height: 240))
+        h.editor.transact { $0.update(rectangle) { $0[TitleProperty.self] = "Server room" } }
+        expectEqual(h.editor.document[rectangle].flatMap(registry.title(of:)), "Server room")
+        expectEqual(h.editor.tableOfContents?.entries.first?.label?.text, "Server room")
+        let named = renderBitmap(h.editor, size: CGSize(width: 300, height: 240))
+        let pill = CGRect(x: 40, y: 35, width: 100, height: 12)
+        expectEqual(changedPixels(empty, unnamed, in: pill), 0, "no pill without a name")
+        expect(changedPixels(unnamed, named, in: pill) > 300, "the pill")
+    },
+    test("RectangleTitles: needs both plugins it connects, and the table of contents") {
+        expectThrows(RegistryError.ownerNotInstalled(point: "ShapeTitles", owner: .titles, contributor: "rectangle-titles")) {
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), DetailPanelPlugin(), RectanglesPlugin(), TableOfContentsPlugin(), RectangleTitlesPlugin()])
+        }
+        expectThrows(RegistryError.ownerNotInstalled(point: "ShapeDetails", owner: .detailPanel, contributor: "rectangle-titles")) {
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), RectanglesPlugin(), AdornmentsPlugin(), TitlesPlugin(), TableOfContentsPlugin(),
+                                       RectangleTitlesPlugin()])
+        }
+        expectThrows(RegistryError.unknownKind("rectangle", point: "PropertyOptIns", contributor: "rectangle-titles")) {
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), DetailPanelPlugin(), AdornmentsPlugin(), TitlesPlugin(), TableOfContentsPlugin(),
+                                       RectangleTitlesPlugin()])
         }
     },
     test("the examples' report: who contributes what") {
         let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), RectanglesPlugin(), EraserPlugin(), PolylinesPlugin(), EllipsesPlugin(),
-                                              AdornmentsPlugin(), TitlesPlugin(), TableOfContentsPlugin(), EllipseTitlesPlugin()])
+                                              AdornmentsPlugin(), TitlesPlugin(), TableOfContentsPlugin(), DetailPanelPlugin(), EllipseTitlesPlugin(),
+                                              RectangleTitlesPlugin()])
         expectEqual(registry.report, """
         core               tool hand · command undo · command redo
         keyboard           service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo
@@ -195,7 +254,9 @@ import Titles
         adornments         service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
         titles             property title · adornment TitlePill → every shape
         table-of-contents  service ContentsState
-        ellipse-titles     ShapeTitles → ellipse · ContentsTitles → ellipse
+        detail-panel       service DetailPanelState · ShapeDetails
+        ellipse-titles     property title → ellipse · ShapeTitles → ellipse · ContentsTitles → ellipse · ShapeDetails → ellipse
+        rectangle-titles   property title → rectangle · ShapeTitles → rectangle · ContentsTitles → rectangle · ShapeDetails → rectangle
         """)
     },
     test("Reordering: every kind but those painted by anchor gets Arrange; to front and to back keep the selection's order") {

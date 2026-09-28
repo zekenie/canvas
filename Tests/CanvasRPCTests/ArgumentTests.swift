@@ -29,6 +29,19 @@ let sample = CommandSpec(
     positionals: ["kind"],
     examples: [CommandExample("canvas create note --at 10,20", "A note at (10, 20).")])
 
+/// A command that reads a script: text, which standard input may give (`x-stdin`).
+let scripted = CommandSpec(
+    name: "draw", summary: "Draw.", scope: .board,
+    params: [
+        "type": "object",
+        "properties": [
+            "script": ["type": "string", "x-stdin": true, "x-value-name": "script", "description": "What to draw, one statement a line."],
+            "note": ["type": "string"],
+        ],
+        "required": ["script"],
+    ],
+    positionals: ["script"])
+
 @MainActor func parse(_ arguments: [String], input: String = "") throws(ArgumentError) -> [String: JSON] {
     try sample.params(from: arguments, standardInput: { input })
 }
@@ -66,6 +79,34 @@ let sample = CommandSpec(
     },
     test("JSON given as - is read from standard input") {
         expectEqual(try parse(["n", "--props", "-"], input: #"{"b": [true]}"#)["props"], ["b": [true]])
+    },
+    test("text whose schema says x-stdin is read from standard input when it's given as -, by position or by name; other text is as typed") {
+        let script = "box \"A\"\nbox \"B\" right of \"A\"\n"
+        let arguments = scripted.arguments
+        expectEqual(arguments.map(\.readsStandardInput), [true, false, false])
+        expectEqual(try scripted.params(from: ["-"], standardInput: { script }), ["script": .string(script)])
+        expectEqual(try scripted.params(from: ["--script", "-", "--note", "-"], standardInput: { script }),
+                    ["script": .string(script), "note": "-"], "a note's - is a note")
+        expectEqual(try scripted.params(from: [#"box "A""#], standardInput: { throw ArgumentError("read") }), ["script": #"box "A""#],
+                    "standard input is read only for -")
+        do throws(ArgumentError) {
+            _ = try scripted.params(from: ["-"], standardInput: { throw CocoaError(.fileReadUnknown) })
+            expect(false, "it read nothing")
+        } catch {
+            expect(error.message.hasPrefix("<script>: standard input couldn't be read"), error.message)
+        }
+    },
+    test("help writes a value standard input can give as <name>|-, and says so") {
+        expectEqual(scripted.usage(), "canvas draw <script>|- [--note <note>] [--board <board>]")
+        let help = scripted.help()
+        expect(help.contains("Arguments:\n  <script>|-"), help)
+        expect(help.contains("What to draw, one statement a line. Given as -, it's read from standard input."), help)
+        do throws(ArgumentError) {
+            _ = try scripted.params(from: [], standardInput: { "" })
+            expect(false, "it took no script")
+        } catch {
+            expectEqual(error.message, "draw needs <script>|-")
+        }
     },
     test("arguments that don't spell the params say what's wrong, and what would help") {
         expectEqual(parseError([])?.message, "create needs <kind>")

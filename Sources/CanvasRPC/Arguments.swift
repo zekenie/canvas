@@ -11,6 +11,9 @@ import Foundation
 //     an array of any of those                  --set a=1 --set b=2      (repeatable)
 //     anything else (an object)                 --props '{"text": "Hi"}' (JSON; - reads it from standard input)
 //
+// Text whose schema says `"x-stdin": true` (a script) is read from standard input when it's given
+// as -, as JSON always is; help writes its value <script>|-.
+//
 // `--name=value` works as well as `--name value`, `fooBar` is `--foo-bar` (or `--fooBar`), `--`
 // ends the options, and the command's positionals take what's left, in order.
 
@@ -29,9 +32,15 @@ public struct CommandArgument: Equatable, Sendable {
     public let defaultValue: JSON?
     /// What help calls its value: `<x,y>`.
     public let valueName: String
+    /// Text given as `-` is read from standard input: its schema says `"x-stdin": true`.
+    public let readsStandardInput: Bool
 
     /// Whether `--word` names it.
     func matches(_ word: String) -> Bool { word == name || "--\(word)" == option }
+
+    /// Its value as usage and help write it: `<x,y>`, or `<script>|-` for one that standard input
+    /// can give.
+    var valueLabel: String { "<\(valueName)>" + (readsStandardInput ? "|-" : "") }
 }
 
 /// How a value is written, from what its schema says it is.
@@ -51,6 +60,21 @@ public indirect enum ValueShape: Equatable, Sendable {
 
     var isRepeatable: Bool {
         if case .list = self { true } else { false }
+    }
+}
+
+/// Why standard input's text couldn't be had.
+public enum StandardInputError: Error, CustomStringConvertible, Sendable {
+    /// Its bytes aren't UTF-8.
+    case notUTF8
+    /// It's closed: there's nothing to read.
+    case closed
+
+    public var description: String {
+        switch self {
+        case .notUTF8: "it isn't UTF-8 text"
+        case .closed: "it's closed"
+        }
     }
 }
 
@@ -79,13 +103,14 @@ extension CommandSpec {
             let shape = shape(of: schema)
             return CommandArgument(name: name, option: "--\(Self.hyphenated(name))", isPositional: positionals.contains(name),
                                    isRequired: required.contains(name), value: shape, summary: schema["description"]?.stringValue,
-                                   defaultValue: schema["default"], valueName: valueName(name, written, shape))
+                                   defaultValue: schema["default"], valueName: valueName(name, written, shape),
+                                   readsStandardInput: schema["x-stdin"] == .bool(true))
         }
         if scope == .board {
             arguments.append(CommandArgument(
                 name: RPC.boardParam, option: "--\(RPC.boardParam)", isPositional: false, isRequired: false, value: .text(choices: nil),
                 summary: "The board to work on: its id (`\(RPC.commandName) boards`), its file, or its name. Default: the board in front.",
-                defaultValue: nil, valueName: "board"))
+                defaultValue: nil, valueName: "board", readsStandardInput: false))
         }
         return arguments
     }
@@ -139,7 +164,7 @@ extension CommandSpec {
                 if let inline {
                     text = inline
                 } else {
-                    guard index < arguments.count else { throw ArgumentError("\(argument.option) needs a value: <\(argument.valueName)>") }
+                    guard index < arguments.count else { throw ArgumentError("\(argument.option) needs a value: \(argument.valueLabel)") }
                     text = arguments[index]
                     index += 1
                 }
@@ -160,15 +185,18 @@ extension CommandSpec {
             throw ArgumentError("\(name) doesn't take \(extra)", hint: "Usage: \(usage())")
         }
         for argument in all where argument.isRequired && params[argument.name] == nil {
-            throw ArgumentError("\(name) needs \(argument.isPositional ? "<\(argument.valueName)>" : "\(argument.option) <\(argument.valueName)>")",
+            throw ArgumentError("\(name) needs \(argument.isPositional ? argument.valueLabel : "\(argument.option) \(argument.valueLabel)")",
                                 hint: "Usage: \(usage())")
         }
         return params
     }
 
-    /// All of standard input, as text.
+    /// All of standard input, as text: UTF-8, or it throws, as it does when standard input can't
+    /// be read (a directory, or closed).
     public static func readStandardInput() throws -> String {
-        String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self)
+        let data = try FileHandle.standardInput.readToEnd() ?? Data()
+        guard let text = String(data: data, encoding: .utf8) else { throw StandardInputError.notUTF8 }
+        return text
     }
 
     private static func put(_ value: JSON, for argument: CommandArgument, in params: inout [String: JSON]) throws(ArgumentError) {
@@ -186,6 +214,9 @@ extension CommandSpec {
             let what = "\(argument.isPositional ? "<\(argument.valueName)>" : argument.option)"
             switch shape {
             case .text(let choices):
+                if text == "-", argument.readsStandardInput {
+                    do { return .string(try standardInput()) } catch { throw ArgumentError("\(what): standard input couldn't be read: \(error)") }
+                }
                 guard let choices, !choices.contains(text) else { return .string(text) }
                 throw ArgumentError("\(what) is one of \(choices.joined(separator: ", ")), not \(text)",
                                     hint: closest(to: text, among: choices).map { "Did you mean \($0)?" })
@@ -309,8 +340,7 @@ extension CommandSpec {
     }
 }
 
-// JSON Schema, read as the command line reads it: one reading, for what `canvas` makes of an
-// argument and what an app makes of a value typed for a property (`create`'s `--set`).
+// JSON Schema, read as the command line reads it: what `canvas` makes of an argument.
 extension JSON {
     /// This schema, part of `root`, with a local `$ref` (`#/$defs/core.point`) followed to what it
     /// names; keywords beside the reference (a description, a default) say more than its target's.

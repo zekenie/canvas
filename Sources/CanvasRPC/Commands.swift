@@ -3,8 +3,10 @@ import Foundation
 /// What the app and its command line (`canvas`) agree on, beyond JSON-RPC.
 public enum RPC {
     /// Bumped when a message changes shape in a way the other side would misread. The command line
-    /// refuses an app that speaks another version.
-    public static let protocolVersion = 1
+    /// refuses an app that speaks another version. 2: a text param may be read from standard input
+    /// (`x-stdin`), and an error's data may say where in a script it is (`line`, `statement`,
+    /// `errors`).
+    public static let protocolVersion = 2
     /// What the command line is called: in help, and in the examples commands give.
     public static let commandName = "canvas"
     /// The method that describes the app and every command it runs (`AppDescription`). Not a
@@ -25,7 +27,7 @@ public enum RPC {
     public static let globalOptions: Set<String> = ["socket", "format", "timeout", "help", "version"]
 
     /// Whether `name` can name a command: words of lowercase letters, digits and hyphens, each
-    /// starting with a letter, one space between them ("create", "board list").
+    /// starting with a letter, one space between them ("draw", "board list").
     public static func isValidCommandName(_ name: String) -> Bool {
         let words = name.split(separator: " ", omittingEmptySubsequences: false)
         return !words.isEmpty && words.allSatisfy { word in
@@ -73,7 +75,7 @@ public struct CommandSpec: Codable, Equatable, Sendable {
 
 /// A command line that uses a command, and what it does.
 public struct CommandExample: Codable, Equatable, Sendable {
-    /// As typed: `canvas create sticky-note --set text=Hello`.
+    /// As typed: `canvas draw --dry-run -`.
     public var command: String
     public var summary: String
 
@@ -101,7 +103,7 @@ public struct AppDescription: Codable, Equatable, Sendable {
     }
 
     /// The command `words` name, and its arguments: the words around its name. The name comes first,
-    /// or after options only (`--board 2 create ellipse`: an option, or a word after one); of names
+    /// or after options only (`--board 2 draw -`: an option, or a word after one); of names
     /// that start at one word, the longest (`board list` over `board`).
     public func command(in words: [String]) -> (command: CommandSpec, rest: [String])? {
         for start in words.indices {

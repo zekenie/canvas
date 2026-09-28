@@ -60,7 +60,7 @@ final class ArrowTargeting {
         guard !rules.isEmpty, let arrow = editor.document[arrowID] else { return also }
         let rules = rules, registry = editor.registry
         return { shape in
-            rules.allSatisfy { $0(ArrowBindingQuery(arrow: arrow, end: end, shape: shape, registry: registry)) } && (also?(shape) ?? true)
+            ArrowBindingQuery(arrow: arrow, end: end, shape: shape, registry: registry).isAllowed(by: rules) && (also?(shape) ?? true)
         }
     }
 

@@ -89,7 +89,7 @@ struct PortOverlay: CanvasOverlay {
         let outlines = CGMutablePath()
         for record in editor.paintOrder(in: context.visibleRect)
         where record.id != editor.hintedShapeID && state.kinds[record.kind] != nil
-            && editor.channel(of: connection, endingAt: record) != nil && connector.canConnect(record.id, editor) {
+            && editor.channel(of: connection, endingAt: record) != nil && connector.canConnect(record.id, context.shapes) {
             guard let path = indicatorPath(of: record, in: context.shapes) else { continue }
             let offset = context.worldDrawingOffset(of: record.id)
             outlines.addPath(path, transform: CGAffineTransform(translationX: offset.x, y: offset.y))

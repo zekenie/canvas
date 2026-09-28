@@ -63,7 +63,9 @@ public struct SchemaSyncFailure: Equatable, Sendable {
 ///
 /// - Only the person's edits start a sync, never the sync's own write, nor a board read again (a
 ///   revert, a reload after the file changed on disk: `ChangeSet.replacedDocument`), nor a change
-///   to anything but the two sides (a move, a lock). An edit syncs when it's committed (`commit`:
+///   to anything but the two sides (a move, a lock), nor an agent's write (`ChangeSet.byAgent`: the
+///   command line's `draw`), whose sides are taken as in step, as a card seen for the first time
+///   is (a call out, or an edit waiting, stops). An edit syncs when it's committed (`commit`:
 ///   Return in the prompt, ⌘↩ in the schema, the keyboard leaving either), else `idleDelay` after
 ///   the last one (`editor.scheduler`).
 /// - The prompt changed (and isn't empty): the model edits the schema, told the prompt at the last
@@ -447,6 +449,10 @@ extension SchemaSync: EditorService {
         if changes.restoredStep {
             stop(id)
             restoring.insert(id)
+        } else if changes.byAgent {
+            // An agent's write is none of the person's: what it says is taken as in step.
+            stop(id)
+            see(record)
         } else if let writing, writing.id == id {
             synced[id] = writing.pair
         } else {

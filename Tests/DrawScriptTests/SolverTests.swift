@@ -1,0 +1,360 @@
+import CoreGraphics
+import DrawScript
+import Geometry
+import TestKit
+
+// Cards are 200 × 100, boxes 100 × 100, discs 120 × 120 (fixtureSizes). Gaps: none 0, tight 40,
+// normal 80 (the default), wide 160; `inside` is tight; pushed apart, boxes keep 40 across and 64
+// down; a list steps 64.
+
+/// A card on the board at the origin.
+let hub = ("Hub", rect(0, 0, 200, 100))
+
+@MainActor let relationTests = Suite("Placing against a shape", [
+    test("each direction clears the target by the gap, and a lone one centers the other axis") {
+        let board = Board([("B", rect(0, 0, 200, 100))])
+        expectRect(draw(#"card "A" right of "B""#, on: board)["A"], rect(280, 0, 200, 100))
+        expectRect(draw(#"card "A" left of "B""#, on: board)["A"], rect(-280, 0, 200, 100))
+        expectRect(draw(#"card "A" below "B""#, on: board)["A"], rect(0, 180, 200, 100))
+        expectRect(draw(#"card "A" above "B""#, on: board)["A"], rect(0, -180, 200, 100))
+        expectRect(draw(#"box "A" right of "B""#, on: board)["A"], rect(280, 0, 100, 100))
+        expectRect(draw(#"disc "A" below "B""#, on: board)["A"], rect(40, 180, 120, 120))
+    },
+    test("a corner is two directions at once, the gap off both") {
+        let board = Board([("B", rect(0, 0, 200, 100))])
+        expectRect(draw(#"card "A" above-right of "B""#, on: board)["A"], rect(280, -180, 200, 100))
+        expectRect(draw(#"card "A" below-left of "B""#, on: board)["A"], rect(-280, 180, 200, 100))
+        expectRect(draw(#"card "A" above-left of "B""#, on: board)["A"], rect(-280, -180, 200, 100))
+        expectRect(draw(#"card "A" below-right of "B""#, on: board)["A"], rect(280, 180, 200, 100))
+    },
+    test("level with shares the vertical middle; a side level with shares that side") {
+        let board = Board([("B", rect(0, 0, 200, 100)), ("C", rect(600, 400, 300, 200))])
+        expectRect(draw(#"card "A" right of "B" level with "C""#, on: board)["A"], rect(280, 450, 200, 100))
+        expectRect(draw(#"card "A" right of "B" top level with "C""#, on: board)["A"], rect(280, 400, 200, 100))
+        expectRect(draw(#"card "A" right of "B" bottom level with "C""#, on: board)["A"], rect(280, 500, 200, 100))
+        expectRect(draw(#"card "A" below "B" left level with "C""#, on: board)["A"], rect(600, 180, 200, 100))
+        expectRect(draw(#"card "A" below "B" right level with "C""#, on: board)["A"], rect(700, 180, 200, 100))
+    },
+    test("a part narrows the target: a side is a segment, a point has no size") {
+        let board = Board([("B", rect(0, 0, 200, 100))])
+        expectRect(draw(#"card "A" right of "B" top"#, on: board)["A"], rect(280, -50, 200, 100))
+        expectRect(draw(#"card "A" right of "B" top-right"#, on: board)["A"], rect(280, -50, 200, 100))
+        expectRect(draw(#"card "A" below "B" left"#, on: board)["A"], rect(-100, 180, 200, 100))
+        expectRect(draw(#"card "A" level with "B" bottom right of "B""#, on: board)["A"], rect(280, 50, 200, 100))
+    },
+    test("a part the caller puts elsewhere (a corner on an outline) is where it says") {
+        let clause = try shape(#"card right of "B" top-right"#).clauses[0]
+        let problem = LayoutProblem(
+            free: [LayoutProblem.Free(line: 1, name: "\"A\"", size: CGSize(width: 200, height: 100),
+                                      clauses: [LayoutProblem.ResolvedClause(clause, refs: [.fixed(0)], partRects: [0: rect(170, 15, 0, 0)])])],
+            fixed: [LayoutProblem.Fixed(rect: rect(0, 0, 200, 100))])
+        expectRect(try problem.solve().rects[0], rect(250, -35, 200, 100))
+    },
+    test("several targets: a direction clears the furthest, centering takes the span of them all") {
+        let board = Board([("A", rect(0, 0, 200, 100)), ("B", rect(0, 300, 300, 100))])
+        expectRect(draw(#"card "N" right of "A" and "B""#, on: board)["N"], rect(380, 150, 200, 100))
+        expectRect(draw(#"card "N" left of "A" and "B""#, on: board)["N"], rect(-280, 150, 200, 100))
+        expectRect(draw(#"card "N" below "A" and "B""#, on: board)["N"], rect(50, 480, 200, 100))
+    },
+    test("a lone direction's centering is dropped once another placement speaks for that axis") {
+        let board = Board([("A", rect(0, 0, 200, 100)), ("C", rect(0, 500, 200, 100))])
+        expectRect(draw(#"card "N" right of "A" below "C""#, on: board)["N"], rect(280, 680, 200, 100))
+    },
+    test("on centers on the part, or the middle, and may overlap what it's on") {
+        let board = Board([("B", rect(0, 0, 200, 100))])
+        let middle = draw(#"box "N" on "B""#, on: board)
+        expectRect(middle["N"], rect(50, 0, 100, 100))
+        expectEqual(middle.pushedPast("N"), [])
+        expectRect(draw(#"box "N" on "B" top-right"#, on: board)["N"], rect(150, -50, 100, 100))
+    },
+    test("outside is wholly beyond the part") {
+        let board = Board([("Z", rect(0, 0, 800, 600))])
+        expectRect(draw(#"card "N" outside "Z" right"#, on: board)["N"], rect(880, 250, 200, 100))
+        expectRect(draw(#"card "N" outside "Z" top-left"#, on: board)["N"], rect(-280, -180, 200, 100))
+    },
+    test("a gap: the bracket's; else the larger of the shape's gap: and its target's; else normal") {
+        let board = Board([("A", rect(0, 0, 200, 100))])
+        expectRect(draw(#"card "N" right of "A" (gap: 10) gap: wide"#, on: board)["N"], rect(210, 0, 200, 100))
+        expectRect(draw(#"card "N" right of "A" (gap: none)"#, on: board)["N"], rect(200, 0, 200, 100))
+        expectRect(draw(#"card "N" right of "A" gap: wide"#, on: board)["N"], rect(360, 0, 200, 100))
+        let target = draw("""
+            card "B" right of "A" gap: wide
+            card "N" below "B" gap: tight
+            """, on: board)
+        expectRect(target["B"], rect(360, 0, 200, 100))
+        expectRect(target["N"], rect(360, 260, 200, 100))
+        // A shape restated without placements stays put, and its gap: counts as a target's.
+        let restated = draw("""
+            card "A" gap: wide
+            card "N" right of "A"
+            """, on: board)
+        expectRect(restated["N"], rect(360, 0, 200, 100))
+    },
+])
+
+@MainActor let insideTests = Suite("Inside", [
+    test("inside a corner, a side or an edge's middle, a tight gap in") {
+        let board = Board([("Z", rect(0, 0, 800, 600))])
+        expectRect(draw(#"card "N" inside "Z" top-left"#, on: board)["N"], rect(40, 40, 200, 100))
+        expectRect(draw(#"card "N" inside "Z" top-right"#, on: board)["N"], rect(560, 40, 200, 100))
+        expectRect(draw(#"card "N" inside "Z" bottom-left"#, on: board)["N"], rect(40, 460, 200, 100))
+        expectRect(draw(#"card "N" inside "Z" bottom-right"#, on: board)["N"], rect(560, 460, 200, 100))
+        expectRect(draw(#"card "N" inside "Z" right"#, on: board)["N"], rect(560, 250, 200, 100))
+        expectRect(draw(#"card "N" inside "Z" left"#, on: board)["N"], rect(40, 250, 200, 100))
+        expectRect(draw(#"card "N" inside "Z" top"#, on: board)["N"], rect(300, 40, 200, 100))
+        expectRect(draw(#"card "N" inside "Z" bottom"#, on: board)["N"], rect(300, 460, 200, 100))
+        expectRect(draw(#"card "N" inside "Z" top-center"#, on: board)["N"], rect(300, 40, 200, 100))
+    },
+    test("inside takes its bracketed gap, never the shape's gap:") {
+        let board = Board([("Z", rect(0, 0, 800, 600))])
+        expectRect(draw(#"card "N" inside "Z" top-left (gap: 10)"#, on: board)["N"], rect(10, 10, 200, 100))
+        expectRect(draw(#"card "N" inside "Z" top-left gap: wide"#, on: board)["N"], rect(40, 40, 200, 100))
+    },
+    test("inside view: the window's part of the board is a box like any other") {
+        let board = Board(view: rect(1000, 1000, 1000, 800))
+        expectRect(draw(#"card "Legend" inside view top-right"#, on: board)["Legend"], rect(1760, 1040, 200, 100))
+    },
+    test("inside stays inside: a shape that doesn't fit is no_room") {
+        let board = Board([("Z", rect(0, 0, 800, 600))])
+        let drawn = draw(#"card "N" inside "Z" top-left size: 900x100"#, on: board)
+        expectError(drawn, .noRoom, #""N" is inside "Z" top-left, and there's no room left in "Z""#, line: 1)
+        expectEqual(drawn.error?.hint, #"make "Z" bigger, or this smaller"#)
+        // The view and the board can't be made bigger from a script.
+        let view = draw(#"card "N" inside view top-left size: 1200x100"#, on: Board(view: rect(0, 0, 1000, 800)))
+        expectError(view, .noRoom, #""N" is inside view top-left, and there's no room left in view"#, line: 1)
+        expectEqual(view.error?.hint, "make this smaller, or place it elsewhere")
+        let whole = draw(#"card "N" inside board top-left size: 900x100"#, on: board)
+        expectError(whole, .noRoom, #""N" is inside board top-left, and there's no room left in board"#, line: 1)
+        expectEqual(whole.error?.hint, "make this smaller, or place it elsewhere")
+    },
+    test("pushed clear of a shape inside, it stays inside, or it's no_room naming what it cleared") {
+        let roomy = draw(#"card "N" inside "Z" top-left"#, on: Board([("Z", rect(0, 0, 800, 600)), ("Q", rect(100, 60, 600, 60))]))
+        expectRect(roomy["N"], rect(40, 184, 200, 100))
+        expectEqual(roomy.pushedPast("N"), ["Q"])
+        let tight = draw(#"card "N" inside "Z" top-left"#, on: Board([("Z", rect(0, 0, 800, 250)), ("Q", rect(100, 60, 600, 60))]))
+        expectError(tight, .noRoom, #""N" is inside "Z" top-left, and there's no room left in "Z" clear of "Q""#)
+        expectEqual(tight.error?.hint, "place it elsewhere, or say overlap: allow")
+    },
+    test("a list inside stacks down from the corner, and a list too long for it is no_room") {
+        let board = Board([("Z", rect(0, 0, 800, 600))])
+        let two = draw("""
+            card inside "Z" top-left
+            card inside "Z" top-left
+            """, on: board)
+        expectRect(two.rect(onLine: 1), rect(40, 40, 200, 100))
+        expectRect(two.rect(onLine: 2), rect(40, 204, 200, 100))
+        let five = draw(Array(repeating: #"card inside "Z" top-left"#, count: 5).joined(separator: "\n"), on: board)
+        expectError(five, .noRoom, #"the card on line 1 is inside "Z" top-left, and there's no room left in "Z""#)
+    },
+    test("moved out of a zone by another pair kept apart, it's no_room naming that pair") {
+        // N is kept clear of the zone drawn with it by going down, and takes A, which it's
+        // centered on, out of the zone.
+        let drawn = draw("""
+            card "Zone" right of "X" size: 1000x600
+            card "A" inside "Zone" top-left
+            card "N" right of "A"
+            """, on: Board([("X", rect(0, 0, 200, 100))]))
+        expectError(drawn, .noRoom, #""A" is inside "Zone" top-left, and there's no room left in "Zone" with "N" kept clear of "Zone""#, line: 3)
+        expectEqual(drawn.error?.hint, "place it elsewhere, or say overlap: allow")
+    },
+])
+
+@MainActor let axisTests = Suite("Axes", [
+    test("two directions on one axis and nothing on the other: a new shape is unplaced") {
+        let board = Board([("A", rect(0, 0, 200, 100)), ("B", rect(1000, 0, 200, 100))])
+        let drawn = draw(#"card "N" right of "A" left of "B""#, on: board)
+        expectError(drawn, .unplaced, #""N" does not say where it sits vertically: right of "A" and left of "B" would put it in different places"#, line: 1)
+        expectEqual(drawn.error?.hint, #"add a placement that does, as level with "A" or below "A""#)
+    },
+    test("an alignment alone says nothing about the other axis") {
+        let drawn = draw(#"card "N" level with "A""#, on: Board([("A", rect(0, 0, 200, 100))]))
+        expectError(drawn, .unplaced, #""N" says nothing about where it sits horizontally"#)
+        expectEqual(drawn.error?.hint, #"add a placement that does, as left level with "A" or right of "A""#)
+    },
+    test("a restated shape keeps where it is on an axis nothing settles") {
+        let board = Board([("A", rect(0, 0, 200, 100)), ("B", rect(1000, 0, 200, 100)), ("R", rect(500, 500, 200, 100))])
+        expectRect(draw(#"card "R" level with "A""#, on: board)["R"], rect(500, 0, 200, 100))
+        expectRect(draw(#"card "R" right of "A" left of "B""#, on: board)["R"], rect(280, 500, 200, 100))
+        expectRect(draw(#"card "R" level with "A" size: 100x50"#, on: board)["R"], rect(500, 25, 100, 50))
+    },
+    test("a restated shape with a lone direction is centered as a new one is") {
+        let board = Board([("A", rect(0, 0, 200, 100)), ("R", rect(500, 500, 200, 100))])
+        expectRect(draw(#"card "R" below "A""#, on: board)["R"], rect(0, 180, 200, 100))
+    },
+    test("left of and above hold a box at its upper bound; what's placed after it follows") {
+        let chain = draw("""
+            card "A" left of "P"
+            card "B" left of "A"
+            """, on: Board([("P", rect(1000, 0, 200, 100))]))
+        expectRect(chain["A"], rect(720, 0, 200, 100))
+        expectRect(chain["B"], rect(440, 0, 200, 100))
+        let hanging = draw("""
+            card "T" above-left of "Bd"
+            card "S" below "T"
+            """, on: Board([("Bd", rect(0, 1000, 200, 100))]))
+        expectRect(hanging["T"], rect(-280, 820, 200, 100))
+        expectRect(hanging["S"], rect(-280, 1000, 200, 100))
+    },
+    test("placements that leave no room are no_room, quoting them") {
+        let drawn = draw(#"card "N" right of "A" left of "B" level with "A""#, on: Board([("A", rect(0, 0, 200, 100)), ("B", rect(400, 0, 200, 100))]))
+        expectError(drawn, .noRoom, #""N" is right of "A" and left of "B", and there's no room between them"#, line: 1)
+        expectEqual(drawn.error?.hint, "drop or change one of them, or ask for a smaller gap")
+        let loop = draw("""
+            card "A" right of "Hub"
+            card "B" right of "A" level with "A"
+            card "C" left of "A" right of "B" level with "A"
+            """, on: Board([hub]))
+        expectError(loop, .noRoom, line: 3)
+        expect(loop.error?.message.hasSuffix("can't all hold: there's no room horizontally") == true, loop.error?.message ?? "")
+    },
+    test("a shape placed against itself is circular") {
+        expectError(draw(#"card "A" right of "A""#), .circular, #""A" is placed against itself"#)
+    },
+    test("a problem the caller built wrong is internal, never a crash") {
+        let clause = try shape(#"card right of "B""#).clauses[0]
+        func solved(_ free: LayoutProblem.Free) -> ScriptError.Reason? {
+            reason(solving: LayoutProblem(free: [free], fixed: [LayoutProblem.Fixed(rect: rect(0, 0, 10, 10))]))
+        }
+        let size = CGSize(width: 10, height: 10)
+        expectEqual(solved(LayoutProblem.Free(line: 1, name: "a", size: CGSize(width: 0, height: 10))), .internal)
+        expectEqual(solved(LayoutProblem.Free(line: 1, name: "a", size: CGSize(width: CGFloat.nan, height: 10))), .internal)
+        expectEqual(solved(LayoutProblem.Free(line: 1, name: "a", size: size, clauses: [LayoutProblem.ResolvedClause(clause, refs: [.fixed(3)])])), .internal)
+        expectEqual(solved(LayoutProblem.Free(line: 1, name: "a", size: size, clauses: [LayoutProblem.ResolvedClause(clause, refs: [.obstacle(0)])])), .internal)
+        expectEqual(solved(LayoutProblem.Free(line: 1, name: "a", size: size, clauses: [LayoutProblem.ResolvedClause(clause, refs: [.free(4)])])), .internal)
+        expectEqual(solved(LayoutProblem.Free(line: 1, name: "a", size: size, clauses: [LayoutProblem.ResolvedClause(clause, refs: [.fixed(0)])])), nil)
+        expectEqual(try LayoutProblem(free: []).solve(), LayoutSolution(rects: [], pushes: []))
+    },
+])
+
+@MainActor let listTests = Suite("Lists", [
+    test("shapes placed alike stack down the page as one, centered as one, 64 apart") {
+        let drawn = draw("""
+            card "A" right of "Hub"
+            card "B" right of "Hub"
+            card "C" right of "Hub"
+            """, on: Board([hub]))
+        expectRect(drawn["A"], rect(280, -164, 200, 100))
+        expectRect(drawn["B"], rect(280, 0, 200, 100))
+        expectRect(drawn["C"], rect(280, 164, 200, 100))
+        expectEqual(drawn.solution?.pushes.count, 0)
+    },
+    test("the step is the members' gap: when they all say the same one") {
+        let drawn = draw("""
+            card "A" right of "Hub" gap: tight
+            card "B" right of "Hub" gap: tight
+            card "C" right of "Hub" gap: tight
+            """, on: Board([hub]))
+        expectRect(drawn["A"], rect(240, -140, 200, 100))
+        expectRect(drawn["B"], rect(240, 0, 200, 100))
+        expectRect(drawn["C"], rect(240, 140, 200, 100))
+        let mixed = draw("""
+            card "A" right of "Hub" gap: tight
+            card "B" right of "Hub"
+            """, on: Board([hub]))
+        expectEqual(mixed["A"]?.minY, -82)
+        expectEqual(mixed["B"]?.minY, 82)
+    },
+    test("below a shape, each member centers across on its own") {
+        let drawn = draw("""
+            box "A" below "Hub"
+            box "B" below "Hub"
+            """, on: Board([hub]))
+        expectRect(drawn["A"], rect(50, 180, 100, 100))
+        expectRect(drawn["B"], rect(50, 344, 100, 100))
+    },
+    test("placements quoted back alike are alike; overlap: allow shapes aren't listed") {
+        let alike = draw("""
+            card "A" right "Hub"
+            card "B" right of "Hub"
+            """, on: Board([hub]))
+        expectRect(alike["A"], rect(280, -82, 200, 100))
+        expectRect(alike["B"], rect(280, 82, 200, 100))
+        let allowed = draw("""
+            card "A" right of "Hub" overlap: allow
+            card "B" right of "Hub"
+            card "C" right of "Hub"
+            """, on: Board([hub]))
+        expectRect(allowed["A"], rect(280, 0, 200, 100))
+        expectRect(allowed["B"], rect(280, -82, 200, 100))
+        expectRect(allowed["C"], rect(280, 82, 200, 100))
+    },
+])
+
+@MainActor let regionTests = Suite("Region alignments", [
+    test("centering on shapes that move apart is measured on a solve") {
+        let drawn = draw("""
+            card "B" right of "A"
+            card "N" below "A" and "B"
+            """, on: Board([("A", rect(0, 0, 200, 100))]))
+        expectRect(drawn["B"], rect(280, 0, 200, 100))
+        expectRect(drawn["N"], rect(140, 180, 200, 100))
+        let level = draw("""
+            card "B" below "A"
+            card "N" right of "A" level with "A" and "B"
+            """, on: Board([("A", rect(0, 0, 200, 100))]))
+        expectRect(level["N"], rect(280, 90, 200, 100))
+    },
+    test("aligning with a shape that's placed against you in turn is circular") {
+        let drawn = draw("""
+            card "N" right of "A" level with "A" and "B"
+            card "B" below "N"
+            """, on: Board([("A", rect(0, 0, 200, 100))]))
+        expectError(drawn, .circular,
+                    #""N" is level with "A" and "B", but "B" is placed vertically against "N" in turn, so neither can wait for the other"#, line: 1)
+    },
+    test("a region is measured again after a shape in it is pushed, until nothing more moves") {
+        let drawn = draw("""
+            card "B" right of "A"
+            card "N" below "A" and "B"
+            """, on: Board([("A", rect(0, 0, 200, 100)), ("Q", rect(400, 0, 100, 100))]))
+        expectRect(drawn["B"], rect(540, 0, 200, 100))
+        expectRect(drawn["N"], rect(270, 180, 200, 100))
+    },
+    test("a path only through the board never makes an alignment circular") {
+        let drawn = draw("""
+            card "B" right of "A"
+            card "N" below "A" and "B"
+            card "X" right of "N" left of "P" level with "N"
+            """, on: Board([("A", rect(0, 0, 200, 100)), ("P", rect(2000, 0, 200, 100))]))
+        expectRect(drawn["N"], rect(140, 180, 200, 100))
+        expectRect(drawn["X"], rect(420, 180, 200, 100))
+    },
+    test("an alignment against a shape that's aligned itself waits for it: they're settled in rounds") {
+        let board = Board([("X", rect(0, 0, 200, 100))])
+        let chain = draw("""
+            card "Web" right of "X"
+            card "API" right of "Web"
+            card "Hub" below "Web" and "API"
+            card "Log" below "Hub" and "API"
+            """, on: board)
+        expectRect(chain["Hub"], rect(420, 180, 200, 100))
+        expectRect(chain["Log"], rect(490, 360, 200, 100))
+        let swapped = draw("""
+            card "Web" right of "X"
+            card "API" right of "Web"
+            card "Log" below "Hub" and "API"
+            card "Hub" below "Web" and "API"
+            """, on: board)
+        expectRect(swapped["Log"], rect(490, 360, 200, 100))
+        // In a drawing with nothing to hang on, the same shapes.
+        let drawing = draw("""
+            card "Web"
+            card "API" right of "Web"
+            card "Hub" below "Web" and "API"
+            card "Log" below "Hub" and "API"
+            """, on: Board(view: rect(0, 0, 1000, 800)))
+        let web = try require(drawing["Web"])
+        expectRect(drawing["Hub"], rect(web.minX + 140, web.minY + 180, 200, 100))
+        expectRect(drawing["Log"], rect(web.minX + 210, web.minY + 360, 200, 100))
+    },
+    test("an alignment is measured where what it lines up with settles, not where it stood before") {
+        // N's middle, below T at first, settles level with A and B; M lines up with it there.
+        let drawn = draw("""
+            card "B" below "A"
+            card "N" right of "A" below "T" level with "A" and "B"
+            card "M" right of "N" level with "N" and "A"
+            """, on: Board([("A", rect(0, 0, 200, 100)), ("T", rect(-2000, -600, 100, 100))]))
+        expectRect(drawn["N"], rect(280, 90, 200, 100))
+        expectRect(drawn["M"], rect(560, 45, 200, 100))
+    },
+])

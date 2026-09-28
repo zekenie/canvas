@@ -76,10 +76,10 @@ public struct ShapeTranslation<Props: ShapeProps> {
 
 /// Props that hold something following from the rest, which the kind's own setters keep in step
 /// (a schema card's height, which `setSchema` fits to its schema). A shape made from properties
-/// written somewhere else, `Registry.shape(_:properties:)` (the command line's `create`), goes
-/// through `derive` before anything else is done with it, so it's in step as the setters would have
-/// left it. A board read doesn't (a shape is as it was saved), nor does a paste, nor anything a
-/// person does.
+/// written somewhere else, `Registry.shape(_:properties:)`, or given some of its own that way,
+/// `shape(_:setting:)` (the command line's `draw`), goes through `derive` before anything else is
+/// done with it, so it's in step as the setters would have left it. A board read doesn't (a shape
+/// is as it was saved), nor does a paste, nor anything a person does.
 public protocol DerivedProps: ShapeDefinition {
     func derive(_ props: inout Props)
 }

@@ -3,11 +3,11 @@ import Foundation
 // Help, made from what the app says about each command, so it's always this app's.
 
 extension CommandSpec {
-    /// One line: `canvas create <kind> [--at <x,y>] … [--board <board>]`.
+    /// One line: `canvas draw <script>|- [--dry-run] [--reveal] [--board <board>]`.
     public func usage(program: String = RPC.commandName) -> String {
         let parts = arguments.map { argument -> String in
-            let value = argument.value == .flag ? "" : " <\(argument.valueName)>"
-            let text = argument.isPositional ? "<\(argument.valueName)>" : "\(argument.option)\(value)"
+            let value = argument.value == .flag ? "" : " \(argument.valueLabel)"
+            let text = argument.isPositional ? argument.valueLabel : "\(argument.option)\(value)"
             let repeated = argument.value.isRepeatable ? "..." : ""
             return argument.isRequired ? text + repeated : "[\(text)]\(repeated)"
         }
@@ -23,10 +23,11 @@ extension CommandSpec {
         let positional = all.filter(\.isPositional), options = all.filter { !$0.isPositional }
         func rows(_ arguments: [CommandArgument], positional: Bool) -> [(String, String)] {
             arguments.map { argument in
-                let value = argument.value == .flag ? "" : " <\(argument.valueName)>"
-                let label = positional ? "<\(argument.valueName)>" : "\(argument.option)\(value)"
+                let value = argument.value == .flag ? "" : " \(argument.valueLabel)"
+                let label = positional ? argument.valueLabel : "\(argument.option)\(value)"
                 var text = argument.summary ?? ""
                 if case .text(let choices?) = argument.value, choices.count > 4 { text += " One of: \(choices.joined(separator: ", "))." }
+                if argument.readsStandardInput { text += " Given as -, it's read from standard input." }
                 if argument.value.isRepeatable { text += " Repeatable." }
                 if argument.isRequired, !positional { text += " Required." }
                 if let value = argument.defaultValue, value != .null, value != .array([]) { text += " Default: \(value.compactText)." }

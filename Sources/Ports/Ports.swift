@@ -132,7 +132,7 @@ extension ShapePorts: KeyedExtensionPoint {
     /// connection doesn't start or end on another.
     public static func check(_ registry: Registry) throws(RegistryError) {
         let declared = Set(registry.contributions(to: Channels.self).map(\.value.id))
-        let connector = registry.contributions(to: Connectors.self).first?.value.kind
+        let connector = registry.connectorKind
         for ports in registry.contributions(to: ShapePorts.self) {
             guard declared.contains(ports.value.channel) else {
                 throw .invalid(point: "ShapePorts", reason: "\(ports.pluginID) gives \(ports.target) ports on channel \(ports.value.channel), which no installed plugin declares")
@@ -157,19 +157,47 @@ public struct Connection: Sendable {
     /// The shape whose port was pressed: where the connection starts.
     public let shape: ShapeID
     public let side: PortSide
-    /// The channels of the port pressed, in plugin order. A connection ends only on a shape that
-    /// takes one (`CanvasEditor.channel(of:endingAt:)`), and is drawn on the first it takes.
+    /// The channels of the port pressed, in the port table's order (plugin order, as
+    /// `registry.dotChannels(of:side:)` has them). A connection ends only on a shape that takes one
+    /// (`CanvasEditor.channel(of:endingAt:)`), and is drawn on the first it takes.
     public let channels: [ChannelID]
     /// Where the press was, in world units.
     public let origin: CGPoint
 }
 
+/// A connection asked for without a drag (`registry.connection(_:existing:in:)`): from which shape
+/// to which, aimed at which of their sides (none: where the connector aims by itself, an arrow at
+/// the shape's center), on which channel (none: a plain connection, as one drawn some other way),
+/// and whether it has a head at its start as well as its end. The caller chooses the channel, as a
+/// drag from a port would (`dotChannels`, `takes`), and the sides (`portSides`).
+public struct ConnectionRequest: Hashable, Sendable {
+    public var from: ShapeID
+    public var to: ShapeID
+    public var fromSide: PortSide?
+    public var toSide: PortSide?
+    public var channel: ChannelID?
+    public var bothHeads: Bool
+
+    public init(from: ShapeID, to: ShapeID, fromSide: PortSide? = nil, toSide: PortSide? = nil, channel: ChannelID? = nil,
+                bothHeads: Bool = false) {
+        self.from = from
+        self.to = to
+        self.fromSide = fromSide
+        self.toSide = toSide
+        self.channel = channel
+        self.bothHeads = bothHeads
+    }
+}
+
 /// What draws connections: its kind, which opts into `ChannelProperty`; which shapes it can start
-/// from; and, for a drag from a port, the session that draws one. Only the sugar makes one.
+/// from and end on; for a drag from a port, the session that draws one; and, to connect shapes
+/// without a drag, how it makes (or changes) one and reads where one runs. Only the sugar makes one.
 @MainActor
 public struct ConnectorContribution {
     let kind: ShapeKind
-    let canConnect: @MainActor (ShapeID, CanvasEditor) -> Bool
+    let canConnect: @MainActor (ShapeID, ShapeContext) -> Bool
+    let make: (@MainActor (ConnectionRequest, AnyShapeRecord?, ShapeContext) -> AnyShapeRecord?)?
+    let ends: (@MainActor (AnyShapeRecord) -> (from: ShapeID, to: ShapeID)?)?
     let begin: @MainActor (Connection, CanvasEditor) -> (any Session)?
 }
 
@@ -210,34 +238,32 @@ extension PluginRegistrar {
 
     /// `K` is what connections are, and this plugin draws them: a drag from a port calls `begin` with
     /// the connection, for the session that draws it (nil to draw nothing), and `canConnect` says
-    /// which shapes one can start from and end on (those it can attach to). `K` opts into
-    /// `ChannelProperty`, which a connection drawn on a channel sets.
-    public mutating func connects<K: ShapeProps>(_ kind: K.Type, canConnect: @escaping @MainActor (ShapeID, CanvasEditor) -> Bool,
+    /// which shapes one can start from and end on (those it can attach to), in the document it's
+    /// given (the editor's, or a transaction's). `K` opts into `ChannelProperty`, which a connection
+    /// drawn on a channel sets. To connect shapes without a drag (`registry.connection`), `make`
+    /// makes one as a request says, not inserted, with the request's channel set before it asks
+    /// any rule; or, given an existing connection, changes it: only the sides the request names, and
+    /// its heads, keeping the rest (its channel, its curve); nil if it can't. And `ends` reads which
+    /// shapes a connection starts and ends on (nil unless both). Without them, a connection is only
+    /// ever drawn from a port.
+    public mutating func connects<K: ShapeProps>(_ kind: K.Type, canConnect: @escaping @MainActor (ShapeID, ShapeContext) -> Bool,
+                                                 make: (@MainActor (ConnectionRequest, AnyShapeRecord?, ShapeContext) -> AnyShapeRecord?)? = nil,
+                                                 ends: (@MainActor (AnyShapeRecord) -> (from: ShapeID, to: ShapeID)?)? = nil,
                                                  begin: @escaping @MainActor (Connection, CanvasEditor) -> (any Session)?) {
         optIn(K.self, to: ChannelProperty.self)
-        contribute(ConnectorContribution(kind: K.kind, canConnect: canConnect, begin: begin), to: Connectors.self, for: .kind(K.kind))
+        contribute(ConnectorContribution(kind: K.kind, canConnect: canConnect, make: make, ends: ends, begin: begin), to: Connectors.self,
+                   for: .kind(K.kind))
     }
 }
 
-// MARK: Lookups
-
-extension Registry {
-    /// Whether `shape`'s kind has ports on `channel` that let it be `role`: where a connection starts
-    /// (`.source`), or where it ends (`.target`). What rules for connections already drawn go by.
-    public func accepts(_ shape: AnyShapeRecord, on channel: ChannelID, as role: PortRole) -> Bool {
-        !shape.isOpaque && contributions(to: ShapePorts.self, for: shape.kind).contains { $0.channel == channel && $0.role.allows(role) }
-    }
-
-    /// Whether some installed plugin declares `channel`.
-    public func declares(_ channel: ChannelID) -> Bool {
-        contributions(to: Channels.self).contains { $0.value.id == channel }
-    }
-}
+// MARK: Lookups (the rest are the port table's, `PortTable.swift`)
 
 extension CanvasEditor {
     /// The channel `connection` would be drawn on if it ended at `shape`: the first of its channels
-    /// that `shape`'s kind takes; nil if it takes none (or it's where the connection starts, as a
-    /// connection never ends where it starts). Cheap enough to ask of each shape under the pointer.
+    /// that `shape`'s kind takes as a target (as `registry.takes(_:_:as:)` has it); nil if it takes
+    /// none (or it's where the connection starts, as a connection never ends where it starts, or
+    /// it's kept aside). Cheap enough to ask of each shape under the pointer: it reads the port
+    /// table the editor keeps.
     public func channel(of connection: Connection, endingAt shape: AnyShapeRecord) -> ChannelID? {
         guard shape.id != connection.shape, let ports = service(PortState.self)?.kinds[shape.kind], !shape.isOpaque else { return nil }
         return connection.channels.first { ports.roles[$0]?.allows(.target) == true }

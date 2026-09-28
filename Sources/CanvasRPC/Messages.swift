@@ -1,7 +1,7 @@
 import Foundation
 
 // JSON-RPC 2.0 (jsonrpc.org/specification), one message a line: a request's `method` is a
-// command's name ("create"), or `describe`; its `params`, an object of the command's params.
+// command's name ("draw"), or `describe`; its `params`, an object of the command's params.
 
 /// A request's id: a number or a string, as JSON-RPC allows. A request without one is a
 /// notification, which gets no response.

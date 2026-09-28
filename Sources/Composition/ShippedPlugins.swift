@@ -19,7 +19,9 @@ import LanguageModels
 import Locking
 import Mentions
 import Polylines
+import PortEdges
 import Ports
+import RectangleTitles
 import Rectangles
 import Reordering
 import Schemas
@@ -29,8 +31,10 @@ import Subboards
 import SwiftUI
 import TableOfContents
 import TaskCards
+import TitleNames
 import Titles
 import Validation
+import ValidationChecks
 import ValidationContents
 import ValidationDetails
 
@@ -64,10 +68,11 @@ public enum ShippedPlugins {
             // adornments (the lock chip among them), and are found before them.
             PortsPlugin(), ArrowPortsPlugin(),
             LanguageModelsPlugin(model: model),
-            // The command line's commands.
-            AutomationPlugin(),
+            // The command line's commands, and what `canvas draw` takes from the plugins that own a
+            // concern: titles for names, ports' connections for edges, and validity for its warnings.
+            AutomationPlugin(), TitleNamesPlugin(), PortEdgesPlugin(), ValidationChecksPlugin(),
             // The examples (Examples/). Each is one line here; delete it to leave it out.
-            RectanglesPlugin(), PolylinesPlugin(), EraserPlugin(), EllipseTitlesPlugin(), ReorderingPlugin(),
+            RectanglesPlugin(), PolylinesPlugin(), EraserPlugin(), EllipseTitlesPlugin(), RectangleTitlesPlugin(), ReorderingPlugin(),
         ]
     }
 
