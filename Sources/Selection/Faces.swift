@@ -89,10 +89,10 @@ extension CanvasEditor {
         return nil
     }
 
-    /// The shape the pointer at a world point hovers in the select tool: the selectable shape there,
-    /// or the shape a face there names in its place.
-    func shapeToHover(at point: CGPoint) -> ShapeID? {
-        guard let hit = selectableHit(at: point) else { return nil }
+    /// The shape the pointer at a world point hovers in the select tool, the selectable shape there
+    /// (`hit`), or the shape a face there names in its place.
+    func shapeToHover(_ hit: SelectableHit?, at point: CGPoint) -> ShapeID? {
+        guard let hit else { return nil }
         guard let face = faceHit(on: hit, at: point), let named = face.source.hovering?(face.face, self), isSelectable(named) else { return hit.id }
         return named
     }

@@ -62,6 +62,21 @@ public struct EditContext<Props: BoxShapeProps> {
     /// step. `rect` is in the editing view's coordinates: world units, with the shape's box at their
     /// origin, as the view's bounds are. Nothing while a press is under way.
     public func keepInView(_ rect: CGRect) { editor?.keepInView(rect, of: shapeID) }
+
+    /// The pointer is on part of the view that has a popover (its anchor in the view's coordinates,
+    /// as `keepInView`'s rect is), or on nothing that has one (nil), as `editor.hoverPopover` hears
+    /// it from the select tool over the canvas, which doesn't hear the pointer over the editing
+    /// view. Nothing once this session has ended.
+    public func hoverPopover(_ popover: CanvasPopover?) {
+        guard let editor, editor.editingShapeID == shapeID else { return }
+        guard let popover, let box = editor.document[shapeID]?.box else {
+            editor.hoverPopover(nil)
+            return
+        }
+        var inWorld = popover
+        inWorld.anchor = popover.anchor.offsetBy(dx: box.minX, dy: box.minY)
+        editor.hoverPopover(inWorld)
+    }
 }
 
 extension EditContext {

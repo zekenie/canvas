@@ -29,6 +29,7 @@ extension CanvasEditor {
             return
         }
         guard !currentTool.ignoresPress(pointer, in: self) else { return }
+        dismissPopover()
         tracker.resetVelocity()
         stopCameraMotion()
         endEditing()
@@ -53,6 +54,7 @@ extension CanvasEditor {
     /// A pan (the Hand's session) from a press, whatever the tool: the camera stops, the press is a
     /// step that commits nothing, and editing goes on.
     private func beginPan(_ pointer: Pointer) {
+        dismissPopover()
         tracker.resetVelocity()
         stopCameraMotion()
         undoHistory.pressBegan()
@@ -143,6 +145,7 @@ extension CanvasEditor {
     /// commits is one undo step, with what its repeats commit while it's held (a held arrow key's
     /// nudges), until anything else happens.
     @_spi(Host) public func keyDown(_ stroke: KeyStroke) -> Bool {
+        dismissPopover()
         guard let handle = registry.keyStrokeHandler else { return false }
         return undoHistory.key(stroke) { handle(self, stroke) }
     }

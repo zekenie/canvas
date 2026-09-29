@@ -161,9 +161,13 @@ public final class SchemaSync {
     @ObservationIgnored private var writing: (id: ShapeID, pair: Sides)?
     @ObservationIgnored private var calls = 0
     @ObservationIgnored nonisolated(unsafe) private var keyObserver: (any NSObjectProtocol)?
+    /// What links each card's description's words to its schema's parts, asked for once the two are
+    /// in step, which this tells it.
+    @ObservationIgnored public let highlighter: SchemaHighlighter
 
     init(editor: CanvasEditor) {
         self.editor = editor
+        highlighter = SchemaHighlighter(editor: editor)
         seeEveryCard(in: editor.file)
         keyObserver = NotificationCenter.default.addObserver(forName: .languageModelKeyDidChange, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.keyDidChange() }
@@ -190,6 +194,13 @@ public final class SchemaSync {
     /// Tries the failed sync again.
     public func retry(_ id: ShapeID) { sync(id) }
 
+    /// Whether the card's description and schema say what each said of the other at its last
+    /// sync, with no edit waiting and no call out: in step, so what links them is what both say.
+    public func isInStep(_ id: ShapeID) -> Bool {
+        guard let card = cards[id], card.call == nil, !card.isWaiting, !card.wantsSync, let last = synced[id] else { return false }
+        return Self.trimmed(card.seen.prompt) == Self.trimmed(last.prompt) && card.seen.schema == last.schema
+    }
+
     /// The person is choosing from the list at the caret in the card's JSON (true), or has stopped
     /// (false): meanwhile an edit waits for them, and once they stop, `idleDelay` more. A commit
     /// syncs at once either way.
@@ -211,6 +222,7 @@ public final class SchemaSync {
         if document.error == nil, document.fields.isEmpty, !Self.trimmed(sides.prompt).isEmpty { pair.prompt = "" }
         cards[record.id] = Card(seen: sides)
         synced[record.id] = pair
+        highlighter.inStep(record.id)
     }
 
     private func edited(_ id: ShapeID) {
@@ -245,6 +257,7 @@ public final class SchemaSync {
             return id
         }
         for id in waiting { sync(id) }
+        highlighter.keyDidChange()
     }
 
     /// Asks the model for whichever side is behind, if one is and it may.
@@ -273,6 +286,7 @@ public final class SchemaSync {
         } else {
             // In step: a schema laid out anew says what it said.
             if now.schema != last.schema, prompt == Self.trimmed(last.prompt) { synced[id]?.schema = now.schema }
+            highlighter.inStep(id)
             return
         }
         calls += 1
@@ -326,6 +340,7 @@ public final class SchemaSync {
             return .failed(SchemaSyncFailure(writing: call.writes, reason, remedy: wouldRepeat ? .editByHand : .retry))
         case .noChange:
             synced[id] = call.sent
+            highlighter.inStep(id)
         case let .text(text):
             switch call.writes {
             case .schema:
@@ -488,6 +503,7 @@ extension SchemaSync: EditorService {
             see(record)
         } else if let writing, writing.id == id {
             synced[id] = writing.pair
+            highlighter.inStep(id)
         } else {
             edited(id)
         }
@@ -496,6 +512,7 @@ extension SchemaSync: EditorService {
     private func forgetCard(_ id: ShapeID) {
         forget(id)
         SchemaReadings.forget(id)
+        highlighter.forget(id)
     }
 
     /// A card's description is done: typing on it ended (Return, Escape, a click elsewhere, the
@@ -516,6 +533,7 @@ extension SchemaSync: EditorService {
     /// so nothing changes; but a whole file put in place with the switch takes every card afresh,
     /// as a board read again does.
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
+        highlighter.boardChanged()
         guard change.isFileReplaced else { return }
         takeEveryCardAfresh(in: editor)
     }
@@ -545,7 +563,10 @@ extension SchemaSync: UndoParticipant {
     public func restoreUndoSnapshot(_ snapshot: any Sendable, in editor: CanvasEditor) {
         defer { restoring = [] }
         guard let pairs = snapshot as? [ShapeID: Sides] else { return }
-        for id in restoring { if let pair = pairs[id] { synced[id] = pair } }
+        for id in restoring {
+            if let pair = pairs[id] { synced[id] = pair }
+            highlighter.inStep(id)
+        }
     }
 }
 

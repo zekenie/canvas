@@ -52,6 +52,8 @@ final class SelectionState {
     @ObservationIgnored let decorationHits: [DecorationHits.Contribution]
     /// Every plugin's faces (`ShapeFaces`), found once: the last plugin's first.
     @ObservationIgnored let faceSources: [ShapeFaceSource]
+    /// Every plugin's popovers (`ShapePopovers`), found once: the last plugin's first.
+    @ObservationIgnored let popoverSources: [ShapePopoverSource]
     /// The button under the pointer, with its plugin's buttons, which say what the cursor is.
     @ObservationIgnored var hoveredButton: ButtonHit? {
         didSet {
@@ -90,6 +92,7 @@ final class SelectionState {
         buttonSources = editor.registry.contributions(to: CanvasButtons.self).map(\.value)
         decorationHits = editor.registry.contributions(to: DecorationHits.self).map(\.value).reversed()
         faceSources = editor.registry.contributions(to: ShapeFaces.self).map(\.value).reversed()
+        popoverSources = editor.registry.contributions(to: ShapePopovers.self).map(\.value).reversed()
     }
 
     /// The button under the pointer, looked for again: in the select tool, with nothing under way. A
@@ -106,8 +109,10 @@ final class SelectionState {
 
     /// What the pointer at a view point hovers in the select tool, as it moves there: a canvas
     /// button, else a handle of the only selected shape, else the shape there, or the one a face
-    /// there names in its place (`shapeToHover`).
+    /// there names in its place (`shapeToHover`), and the popover that part of it shows, if any
+    /// (`ShapePopovers`).
     func hover(atViewPoint point: CGPoint) {
+        var popover: CanvasPopover?
         if let hit = editor.buttonHit(atViewPoint: point) {
             hoveredButton = hit
             hoveredHandle = nil
@@ -119,8 +124,12 @@ final class SelectionState {
         } else {
             hoveredButton = nil
             hoveredHandle = nil
-            hover(editor.shapeToHover(at: editor.camera.toWorld(point)))
+            let world = editor.camera.toWorld(point)
+            let hit = editor.selectableHit(at: world)
+            hover(editor.shapeToHover(hit, at: world))
+            popover = hit.flatMap { editor.popoverHit(on: $0, at: world) }
         }
+        editor.hoverPopover(popover)
     }
 
     /// The union of the selected shapes' geometry bounds, in world units (`selectionBounds`), kept

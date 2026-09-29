@@ -6,11 +6,16 @@ import Observation
 /// A text view laid over the card being edited, for its description, as a note's editor is laid
 /// over the note: its frame in view points and its bounds in world units, the card's frame at their
 /// origin, so AppKit scales it by the zoom and the text lays out exactly as the canvas draws it
-/// (`SchemaStyle.textAttributes`). Return says the description is done, as it did in the panel, and
-/// ends editing, and so do ⌘↩, Escape and the keyboard going to a view outside the canvas (the
-/// panel's JSON: the description syncs before what's typed there); ⇧↩ is a new line. The sync asks
-/// for the schema once editing ends, however it ends (`SchemaSync.editingDidEnd`), or after a pause
-/// in the typing. The card grows and shrinks with what's typed, in the typing's step.
+/// (`SchemaStyle.textAttributes`). Return is a new line, as in a note; ⌘↩ says the description is
+/// done and ends editing, and so do Escape and the keyboard going to a view outside the canvas (the
+/// panel's JSON: the description syncs before what's typed there). The sync asks for the schema
+/// once editing ends, however it ends (`SchemaSync.editingDidEnd`), or after a pause in the typing.
+/// The card grows and shrinks with what's typed, in the typing's step.
+///
+/// The card's highlights show behind its words, where the canvas draws them under the view, as they
+/// are for the text being typed (words kept keep theirs), and resting the pointer on one shows its
+/// part of the schema in a popover, as on the canvas (`SchemaHighlightPopovers`), until something's
+/// typed.
 ///
 /// While the model writes the description (the answer to an edit of the schema), it's read-only and
 /// faint, as the panel's box was, and what lands shows in it: it follows the card's sync status.
@@ -42,16 +47,17 @@ final class SchemaDescriptionEditor: NSView, NSTextViewDelegate {
         textView.insertionPointColor = SchemaStyle.text
         textView.textStorage?.setAttributedString(NSAttributedString(string: card.props.prompt, attributes: SchemaStyle.textAttributes))
         textView.delegate = self
-        // Return, ⌘↩ and Escape end editing at once. The keyboard leaving ends it a turn later, once
-        // it's where it went, and only if that's outside the canvas: a press on the canvas ends
-        // editing as the canvas has it (a pan while typing doesn't).
-        textView.commitsOnReturn = true
+        // ⌘↩ and Escape end editing at once; Return is the text's. The keyboard leaving ends it a
+        // turn later, once it's where it went, and only if that's outside the canvas: a press on the
+        // canvas ends editing as the canvas has it (a pan while typing doesn't).
+        textView.commitsOnReturn = false
         textView.commitsOnLeaving = false
         textView.onCommit = { [weak self] in self?.context.end() }
         textView.onExit = { [weak self] in self?.context.end() }
         textView.onLeave = { [weak self] in
             Task { @MainActor [weak self] in self?.keyboardLeft() }
         }
+        textView.onHover = { [weak self] point in self?.hover(at: point) }
         clipsToBounds = true
         addSubview(textView)
         // A card too short for its description (drawn with a `size:`) grows to it as editing
@@ -84,6 +90,7 @@ final class SchemaDescriptionEditor: NSView, NSTextViewDelegate {
             guard card.prompt != text else { return }
             card.setPrompt(text)
         }
+        context.hoverPopover(nil)
         keepCaretInView()
     }
 
@@ -139,6 +146,21 @@ final class SchemaDescriptionEditor: NSView, NSTextViewDelegate {
         if let prompt = context.shape?.props.prompt, prompt != known { show(prompt) }
     }
 
+    /// The pointer over the text (a point in the text view's coordinates, which are this view's: the
+    /// card's, its frame at their origin), or gone from it: on a highlight's words where the canvas
+    /// draws them (the text lays out as the canvas draws it), their popover, beside the line it's on.
+    private func hover(at point: CGPoint?) {
+        guard let point, let card = context.shape else { return context.hoverPopover(nil) }
+        let origin = card.frame.origin, inWorld = CGPoint(x: point.x + origin.x, y: point.y + origin.y)
+        let placed = SchemaHighlightAnswers.placed(for: card)
+        for (highlight, lines) in zip(placed, SchemaHighlightAnswers.lines(of: card)) {
+            guard let line = lines.first(where: { $0.contains(inWorld) }) else { continue }
+            context.hoverPopover(SchemaHighlightPopovers.popover(of: highlight, in: card, anchor: line.offsetBy(dx: -origin.x, dy: -origin.y)))
+            return
+        }
+        context.hoverPopover(nil)
+    }
+
     /// Shows a description written from outside: the text's storage alone, the caret where it was as
     /// far as the text reaches (never inside a character), the camera where it is, and typing's undo
     /// dropped, since it's of text that isn't there.
@@ -160,24 +182,48 @@ final class SchemaDescriptionEditor: NSView, NSTextViewDelegate {
 
 /// The description's text view, a `DetailTextView` (TextKit 2): a plain text view on the canvas
 /// but for what its editor sets. Dimmed as a whole while it can't be written, since its text keeps
-/// the card's own gray in both appearances.
+/// the card's own gray in both appearances. It draws no background: the card's highlights, which
+/// the canvas draws, show through it.
 final class SchemaDescriptionView: DetailTextView {
     /// The keyboard left it, for anything.
     var onLeave: (@MainActor () -> Void)?
+    /// The pointer moved over it (a point in its coordinates), or left it (nil).
+    var onHover: (@MainActor (CGPoint?) -> Void)?
+    private var hoverArea: NSTrackingArea?
 
     override func showEnabled(_ isEnabled: Bool) {
         alphaValue = isEnabled ? 1 : SchemaStyle.updatingOpacity
     }
 
-    /// Read-only (the model writing the description), Return and ⌘↩ are done all the same, as
-    /// Escape is: nothing was typed to commit.
+    /// Read-only (the model writing the description), ⌘↩ is done all the same, as Escape is:
+    /// nothing was typed to commit.
     override func keyDown(with event: NSEvent) {
         let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        if !isEditable, !hasMarkedText(), event.keyCode == 36 || event.keyCode == 76, modifiers.isEmpty || modifiers == .command, let onExit {
+        if !isEditable, !hasMarkedText(), event.keyCode == 36 || event.keyCode == 76, modifiers == .command, let onExit {
             onExit()
             return
         }
         super.keyDown(with: event)
+    }
+
+    // MARK: The pointer
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        addTrackingArea(area)
+        hoverArea = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        onHover?(convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        if event.trackingArea === hoverArea { onHover?(nil) }
     }
 
     override func resignFirstResponder() -> Bool {

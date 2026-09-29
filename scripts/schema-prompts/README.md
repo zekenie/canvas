@@ -1,7 +1,8 @@
 # Schema card prompts: quick evals
 
-Whether the two prompts that keep a schema card's description and its JSON Schema in step basically
-do the job. Not a framework: a script, a CSV of cases, a CSV of results, read by eye.
+Whether the two prompts that keep a schema card's description and its JSON Schema in step, and the
+one that links the description's words to the schema's parts (Highlights, below), basically do the
+job. Not a framework: a script, a CSV of cases, a CSV of results, read by eye.
 
 - `evals.py` runs the cases and appends a row per case to `results.csv` (`pass`, what failed, latency,
   tokens, the output on one line); `results.jsonl` gets everything, and isn't committed.
@@ -40,6 +41,29 @@ check is skipped, and `evals.py` says so when it starts:
 cd scripts/schema-prompts
 python3 -m pip install --target _pylib jsonschema==4.23.0
 ```
+
+## Highlights
+
+The third prompt links a description's words to the parts of its schema they say
+(`SchemaPrompts.highlightsSystem`, asked by `SchemaHighlighter`). `highlight_evals.py` reads it, its
+model (Sonnet 5.5), effort and `max_tokens` out of `SchemaPrompts.swift`, sends each of
+`highlight_cases.py`'s cases (26: the owner's Jira ticket, terse lists, sentences, nested objects, a
+shared definition, either-ors and conditions, other languages, typos, words the schema doesn't say,
+injection, twenty fields), and scores the answer as the app reads it: each link's words found in the
+description in order, its pointer followed in the schema. A link is right (or right, wider or
+narrower), misattributed (its words are a listed link's, its pointer another's: the popover would
+show the wrong part), an extra (words no case lists, printed to be read), or invalid (words not in
+the description, a pointer to nothing). The prompt's own examples are none of the cases'.
+
+```sh
+python3 highlight_evals.py --check                    # reads the prompt and settings; no call
+python3 highlight_evals.py --runs 2 --out r.json
+python3 highlight_evals.py --model claude-haiku-4-5   # to compare
+```
+
+What it found (26 cases, twice each): Sonnet 5.5 at 356 of 358 links, none misattributed or
+invalid, some 2 s an answer and 1,500 tokens in, 190 out; Haiku 4.5 at 91%, some linked to the wrong
+field, which is why the highlights ask Sonnet 5.5 while the sync asks Haiku 4.5.
 
 ## The live smoke test
 

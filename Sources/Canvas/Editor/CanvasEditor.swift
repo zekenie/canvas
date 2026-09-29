@@ -12,6 +12,8 @@ public protocol CanvasEditorDelegate: AnyObject {
     func editorCursorDidChange(_ editor: CanvasEditor)
     /// `editingShapeID` changed: show, or take down, the definition's editing view.
     func editorEditingDidChange(_ editor: CanvasEditor)
+    /// `popover` changed: show it, over everything the canvas hosts, or take it down.
+    func editorPopoverDidChange(_ editor: CanvasEditor)
     /// Another board is shown (`board`): swap whatever is kept of the board it left (the minimap's
     /// picture). Editing has ended by now, and the canvas is to be redrawn.
     func editorBoardDidChange(_ editor: CanvasEditor)
@@ -19,6 +21,7 @@ public protocol CanvasEditorDelegate: AnyObject {
 
 @_spi(Host) extension CanvasEditorDelegate {
     public func editorBoardDidChange(_ editor: CanvasEditor) {}
+    public func editorPopoverDidChange(_ editor: CanvasEditor) {}
 }
 
 /// The canvas's brain, with no view: document, camera, tools, sessions and input.
@@ -82,6 +85,7 @@ public final class CanvasEditor {
         didSet {
             shapeIndex.cameraDidChange()
             stopCameraMotion()
+            dismissPopover()
             setNeedsDisplay()
             tellSkeletonLevel()
             sessionFollowsCamera()
@@ -229,6 +233,12 @@ public final class CanvasEditor {
     // CanvasEditor+Camera.swift.
     @ObservationIgnored var cameraMotion: ScheduledTask?
     @ObservationIgnored var cameraAnimationTarget: Camera?
+    // The popover (Popovers.swift): the one showing, the one waiting its delay and its timer, and
+    // while one has just gone, the end of that moment.
+    @ObservationIgnored var shownPopover: CanvasPopover?
+    @ObservationIgnored var waitingPopover: CanvasPopover?
+    @ObservationIgnored var popoverTimer: ScheduledTask?
+    @ObservationIgnored var popoverWarmth: ScheduledTask?
     /// An animation's frame is moving the camera: `zoomPercentage` stays its target's.
     @ObservationIgnored var isAnimationFrame = false
     // The press under way, for scrolling at the canvas's edges (EdgeScrolling.swift): where it was, in
@@ -447,6 +457,7 @@ public final class CanvasEditor {
         Self.expectAccepted(newFile, by: registry)
         isReplacingFile = true
         defer { isReplacingFile = false }
+        dismissPopover()
         if let running = session {
             _ = running.cancel(in: self)
             session = nil
@@ -671,6 +682,7 @@ public final class CanvasEditor {
     private func show(_ target: BoardID, leaving left: Camera, replacingFile: Bool = false) {
         // A step is the board's it was made on: the one under way closes here.
         undoHistory.close()
+        dismissPopover()
         leftCameras[board] = left
         leftOrder.removeAll { $0 == board }
         leftOrder.append(board)
@@ -806,6 +818,7 @@ public final class CanvasEditor {
         editingStartClickCount = point == nil ? 1 : clickCount
         editingShapeID = id
         undoHistory.editingBegan()
+        dismissPopover()
         delegate?.editorEditingDidChange(self)
         setNeedsDisplay()
         return true
@@ -818,6 +831,7 @@ public final class CanvasEditor {
         editingShapeID = nil
         editingStartPoint = nil
         editingStartClickCount = 1
+        dismissPopover()
         delegate?.editorEditingDidChange(self)
         setNeedsDisplay()
         undoHistory.editingEnded()

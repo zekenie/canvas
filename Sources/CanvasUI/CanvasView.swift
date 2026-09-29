@@ -3,11 +3,15 @@ import AppKit
 import Geometry
 
 /// The AppKit view around a `CanvasEditor`: turns NSEvents into editor calls, draws it, and hosts
-/// its subviews: a shape's editing view, and the minimap when it shows. Plugins can't import this
-/// module.
+/// its subviews: a shape's editing view, the minimap when it shows, and the editor's popover over
+/// everything. Plugins can't import this module.
 public final class CanvasView: NSView {
     public let editor: CanvasEditor
     private var editingView: EditingView?
+    /// The editor's popover while one shows (`editor.popover`), over the rest.
+    private var popoverBubble: PopoverView?
+    /// The view showing the editor's popover while one shows, over everything the canvas hosts.
+    public var popoverView: NSView? { popoverBubble }
     /// The minimap, in the bottom-left corner, over everything else; nil while the host doesn't show
     /// it (and hidden, though there, while the board is empty).
     public private(set) var minimap: MinimapView?
@@ -69,6 +73,7 @@ public final class CanvasView: NSView {
         super.setFrameSize(newSize)
         editor.viewportDidResize(to: newSize)
         layoutMinimap()
+        layoutPopover()
     }
 
     private func layoutMinimap() {
@@ -178,6 +183,24 @@ public final class CanvasView: NSView {
         guard let view = editingView?.view, let id = editor.editingShapeID, let box = editor.document[id]?.box else { return }
         view.frame = editor.camera.toView(box)
         view.bounds = CGRect(origin: .zero, size: box.size)
+    }
+
+    /// Keeps the popover beside what it's about, as the camera or its anchor moves: below it, else
+    /// above it where there's more room there, within the view's margin, starting where its anchor
+    /// does less its padding, so its text starts under the anchor's; hidden while its anchor is out
+    /// of view.
+    private func layoutPopover() {
+        guard let popoverView = popoverBubble, let popover = editor.popover else { return }
+        let anchor = editor.camera.toView(popover.anchor)
+        let margin = PopoverStyle.margin, gap = PopoverStyle.gap
+        let below = bounds.height - margin - (anchor.maxY + gap), above = anchor.minY - gap - margin
+        let wanted = popoverView.bubbleSize(maxHeight: .greatestFiniteMagnitude)
+        let under = wanted.height <= below || below >= above
+        let size = popoverView.bubbleSize(maxHeight: max(under ? below : above, 0))
+        let x = min(max(anchor.minX - PopoverStyle.padding.width, margin), bounds.width - margin - size.width)
+        popoverView.place(CGRect(x: max(x, margin), y: under ? anchor.maxY + gap : anchor.minY - gap - size.height,
+                                 width: size.width, height: size.height))
+        popoverView.isHidden = !bounds.intersects(anchor)
     }
 
     private func cursor(_ cursor: CanvasCursor) -> NSCursor {
@@ -398,6 +421,23 @@ extension CanvasView: NSMenuItemValidation {
         minimap?.updateVisibility()
         minimap?.needsDisplay = true
         layoutEditingView()
+        layoutPopover()
+    }
+
+    /// Shows the popover over everything else, in place of the one before, or takes it down.
+    public func editorPopoverDidChange(_ editor: CanvasEditor) {
+        guard let popover = editor.popover else {
+            popoverBubble?.removeFromSuperview()
+            popoverBubble = nil
+            return
+        }
+        if popoverBubble?.popoverID != popover.id {
+            popoverBubble?.removeFromSuperview()
+            let view = PopoverView(popover)
+            addSubview(view)
+            popoverBubble = view
+        }
+        layoutPopover()
     }
 
     /// Over a view the canvas hosts, that view's cursor stands.
