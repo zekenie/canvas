@@ -72,6 +72,24 @@ private let titleBand = CGRect(x: 52, y: 52, width: 216, height: 17)
         _ = renderBitmap(editor, size: size)
         expect(SchemasPlugin.schemasRead - typed <= 1, "only the typed card's, if that: \(SchemasPlugin.schemasRead - typed)")
     },
+    test("a file and its copy opened beside it, one card with another schema in each: neither window reads it again, frame after frame") {
+        // Ids are unique within a file, not across files: a copy made in Finder has the same cards.
+        let id = ShapeID()
+        let original = try schemaEditor(), copy = try schemaEditor()
+        original.transact { $0.insert(AnyShapeRecord(ShapeRecord(id: id, card(fixture(6))))) }
+        copy.transact { $0.insert(AnyShapeRecord(ShapeRecord(id: id, card(fixture(2))))) }
+        let size = CGSize(width: 340, height: 280)
+        _ = renderBitmap(original, size: size)
+        _ = renderBitmap(copy, size: size)
+        let read = SchemasPlugin.schemasRead
+        for _ in 0..<3 {
+            _ = renderBitmap(original, size: size)
+            _ = renderBitmap(copy, size: size)
+        }
+        expectEqual(SchemasPlugin.schemasRead, read, "each window's reading is kept beside the other's")
+        expectEqual(SchemaCardLayout(try require(original.document[id]?.typed(as: SchemaCard.self))).title, "Order")
+        expectEqual(SchemaCardLayout(try require(copy.document[id]?.typed(as: SchemaCard.self))).title, "Contact")
+    },
     test("a card: white, the {} mark in magenta and its name in ink, a gray chip per field, a gray star when required") {
         let bitmap = try render([card(fixture(6))])
         expect(isAbout(Palette.card)(pixel(bitmap, at: CGPoint(x: 150, y: 45))), "the card's body")

@@ -48,12 +48,16 @@ public struct SchemasPlugin: CanvasPlugin {
 }
 
 /// Each card's schema read once: the card, its name, its row, its rules and its panel all read the
-/// same text, the card every frame, so a reading is kept per card and read again only when the
-/// card's text changes (typing replaces the card's reading, never adds one). So a frame of cards
-/// that didn't change parses and measures nothing, however many are in view, and however many
-/// texts they have between them. A reading costs what its text's length does. The readings of
-/// cards that went, or were read again from disk, are dropped (`forget`, which the sync calls), and
-/// past `capacity` those used longest ago.
+/// same text, the card every frame, so a reading is kept per card and text, and read again only
+/// when the card's text changes. So a frame of cards that didn't change parses and measures
+/// nothing, however many are in view, and however many texts they have between them. A reading
+/// costs what its text's length does. A card keeps the readings of up to `versionsPerCard` texts,
+/// by its id: ids are unique within a file, not across files, so a file duplicated in Finder and
+/// opened beside its original has the same cards, whose texts may differ once one is edited, and
+/// each window's are kept beside the other's rather than taking their place every frame. Typing
+/// adds a reading, and the card's used longest ago goes. The readings of cards that went, or were
+/// read again from disk, are dropped (`forget`, which the sync calls), and past `capacity` those
+/// used longest ago.
 ///
 /// While a card's text isn't a JSON object (a keystroke in the middle of a member breaks it), what
 /// the card shows stays what its last one said (`shown`): its rows and name on the card, its row in
@@ -67,8 +71,9 @@ final class SchemaReadings {
     private(set) var text: String
     let document: SchemaDocument
     /// While `document` isn't a JSON object, the card's last reading that was, this session.
-    private let lastObject: SchemaDocument?
-    /// The layouts of the last few sizes asked (a card being resized), the latest last: of `shown`.
+    private var showing: SchemaReadings?
+    /// The layouts of the last few sizes asked (a card being resized), the latest last: of
+    /// `document` (one showing another reading asks that one).
     private var layouts: [(size: CGSize, layout: SchemaCardLayout)] = []
     private(set) lazy var issues: [ValidationIssue] = SchemaReadings.issues(of: document)
     /// When it was last asked for, counted in lookups.
@@ -76,15 +81,8 @@ final class SchemaReadings {
 
     private init(_ text: String, after previous: SchemaReadings?) {
         self.text = text
-        let document = SchemaDocument(text)
-        self.document = document
-        if document.isObject {
-            lastObject = nil
-        } else {
-            lastObject = previous.flatMap { $0.document.isObject ? $0.document : $0.lastObject }
-            // The same reading shown: its layouts still hold.
-            if lastObject != nil, let previous { layouts = previous.layouts }
-        }
+        document = SchemaDocument(text)
+        if !document.isObject, let previous { follow(previous) }
         #if DEBUG
         Self.made += 1
         #endif
@@ -92,13 +90,26 @@ final class SchemaReadings {
 
     /// What the card shows: the text's reading while it's a JSON object, else its last one that was
     /// (none: the text's, which says why there are no rows).
-    var shown: SchemaDocument { lastObject ?? document }
+    var shown: SchemaDocument { showing?.document ?? document }
 
-    private static var kept: [ShapeID: SchemaReadings] = [:]
+    /// Shows what `previous`, the card's reading before this one, showed: its text, if that was a
+    /// JSON object, else what it showed.
+    private func follow(_ previous: SchemaReadings) {
+        showing = previous.document.isObject ? previous : previous.showing
+    }
+
+    /// Each card's readings, a text each: those of the same card in files opened beside its own
+    /// (a copy's), and its texts before the last while it's typed into, until they go.
+    private static var kept: [ShapeID: [SchemaReadings]] = [:]
+    /// How many readings `kept` holds, every card's.
+    private static var count = 0
     private static var lookups = 0
-    /// At most this many readings are kept, a card each: past it, the quarter used longest ago
-    /// goes. (More cards than this in view at once would read some again every frame.)
+    /// At most this many readings are kept: past it, the quarter used longest ago goes. (More
+    /// cards than this in view at once would read some again every frame.)
     static let capacity = 4096
+    /// At most this many a card: the same card in up to three copies of its file open beside it
+    /// read nothing again, frame after frame; one typed into keeps the texts it had last.
+    static let versionsPerCard = 4
     #if DEBUG
     static var made = 0
     #endif
@@ -106,33 +117,53 @@ final class SchemaReadings {
     /// The reading of a card's schema.
     static func reading(of card: ShapeRecord<SchemaCard>) -> SchemaReadings { reading(of: card.props.schema, for: card.id) }
 
-    /// The reading of `text`, the schema of the card `id`: the one kept for the card while its text
-    /// is still this one, else read now and kept in its place.
+    /// The reading of `text`, the schema of the card `id`: the one kept for the card with this
+    /// text, else read now and kept with them, in place of the card's used longest ago once it
+    /// has `versionsPerCard`. While the text isn't a JSON object, it shows what the card's reading
+    /// used last showed (`shown`), whether it's read now or the card went back to it.
     static func reading(of text: String, for id: ShapeID) -> SchemaReadings {
         lookups += 1
-        let previous = kept[id]
-        if let previous, previous.text == text {
-            previous.text = text
-            previous.used = lookups
-            return previous
+        let versions = kept[id] ?? []
+        if let found = versions.first(where: { $0.text == text }) {
+            if !found.document.isObject, let last = versions.max(by: { $0.used < $1.used }), last !== found { found.follow(last) }
+            found.text = text
+            found.used = lookups
+            return found
         }
-        let reading = SchemaReadings(text, after: previous)
+        let reading = SchemaReadings(text, after: versions.max { $0.used < $1.used })
         reading.used = lookups
-        kept[id] = reading
-        if kept.count > capacity {
-            for (id, _) in kept.sorted(by: { $0.value.used < $1.value.used }).prefix(capacity / 4) { kept[id] = nil }
+        if versions.count < versionsPerCard {
+            kept[id, default: []].append(reading)
+            count += 1
+        } else if let oldest = versions.indices.min(by: { versions[$0].used < versions[$1].used }) {
+            kept[id]?[oldest] = reading
         }
+        if count > capacity { dropOldest() }
         return reading
     }
 
-    /// Drops the reading of a card that went, or was read again from disk, and the last one it
+    /// Drops the quarter of `capacity` used longest ago, whatever cards they're of.
+    private static func dropOldest() {
+        let all = kept.values.flatMap { $0 }.sorted { $0.used < $1.used }
+        let dropped = Set(all.prefix(capacity / 4).map(ObjectIdentifier.init))
+        kept = kept.compactMapValues { versions in
+            let left = versions.filter { !dropped.contains(ObjectIdentifier($0)) }
+            return left.isEmpty ? nil : left
+        }
+        count = all.count - dropped.count
+    }
+
+    /// Drops the readings of a card that went, or was read again from disk, and the last one it
     /// showed.
-    static func forget(_ id: ShapeID) { kept[id] = nil }
+    static func forget(_ id: ShapeID) {
+        count -= kept.removeValue(forKey: id)?.count ?? 0
+    }
 
     /// What a card of `size` shows: `shown`, laid out.
     func layout(size: CGSize) -> SchemaCardLayout {
+        if let showing { return showing.layout(size: size) }
         if let kept = layouts.last(where: { $0.size == size }) { return kept.layout }
-        let layout = SchemaCardLayout(shown, size: size)
+        let layout = SchemaCardLayout(document, size: size)
         if layouts.count >= 4 { layouts.removeFirst() }
         layouts.append((size, layout))
         return layout
