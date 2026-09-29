@@ -8,7 +8,8 @@ import Geometry
 public final class CanvasView: NSView {
     public let editor: CanvasEditor
     private var editingView: EditingView?
-    /// The minimap, in the bottom-left corner, over everything else; nil while it's hidden.
+    /// The minimap, in the bottom-left corner, over everything else; nil while the host doesn't show
+    /// it (and hidden, though there, while the board is empty).
     public private(set) var minimap: MinimapView?
     /// Where the pointer is, as the canvas last heard it: on the canvas, or over a view that has the
     /// pointer there, where the tool has been told it left: one it hosts (the minimap, the editing
@@ -52,7 +53,17 @@ public final class CanvasView: NSView {
 
     public override var isFlipped: Bool { true }
     public override var acceptsFirstResponder: Bool { true }
-    public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    /// A click in a window that isn't key (or of an app that isn't active) reaches the canvas, as it
+    /// always has; AppKit asks here before it brings the window forward and hands the click on, so
+    /// the canvas notes which click it is, for the editor (`PointerEvent.activatesWindow`).
+    public override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        if let event, event.type == .leftMouseDown, window?.isKeyWindow != true || !NSApp.isActive { firstMouse = event.eventNumber }
+        return true
+    }
+
+    /// The event number of the click that brings the window forward, until it reaches `mouseDown`.
+    private var firstMouse: Int?
 
     public override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
@@ -66,8 +77,9 @@ public final class CanvasView: NSView {
         minimap.frame = CGRect(x: MinimapStyle.margin, y: bounds.height - MinimapStyle.margin - size.height, width: size.width, height: size.height)
     }
 
-    /// Whether a point (view points) is on the minimap, which takes its own clicks.
-    private func isOnMinimap(_ point: CGPoint) -> Bool { minimap?.frame.contains(point) ?? false }
+    /// Whether a point (view points) is on the minimap, which takes its own clicks while it shows
+    /// (on an empty board it's hidden, and the corner is the canvas's).
+    private func isOnMinimap(_ point: CGPoint) -> Bool { minimap.map { !$0.isHidden && $0.frame.contains(point) } ?? false }
 
     /// Where a point (view points) is: on the minimap (which is over everything), on the editing
     /// view (which takes the pointer where it is: its text, its cursor), under a view the host put
@@ -98,9 +110,56 @@ public final class CanvasView: NSView {
         pointerPlace = place
     }
 
+    public override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if let window {
+            NotificationCenter.default.removeObserver(self, name: NSWindow.didResignKeyNotification, object: window)
+            NotificationCenter.default.removeObserver(self, name: NSMenu.didBeginTrackingNotification, object: nil)
+        }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if let window {
+            NotificationCenter.default.addObserver(self, selector: #selector(windowDidResignKey(_:)), name: NSWindow.didResignKeyNotification, object: window)
+            NotificationCenter.default.addObserver(self, selector: #selector(menuDidBeginTracking(_:)), name: NSMenu.didBeginTrackingNotification, object: nil)
+            Self.watchCommandKeyUps()
+        }
         window?.makeFirstResponder(self)
+    }
+
+    /// The window stopped being key: no key's release will reach the canvas, so every key held is
+    /// let go (Space's pan).
+    @objc private func windowDidResignKey(_ notification: Notification) { editor.keysReleased() }
+
+    /// A menu began tracking (the canvas's context menu, the toolbar's zoom menu, the path's "…", the
+    /// menu bar): its loop takes the keys, a key's release too, while the window stays key and the
+    /// canvas keeps the keyboard, so every key held is let go. One still down when the menu closes
+    /// is held again by its next repeat.
+    @objc private func menuDidBeginTracking(_ notification: Notification) { editor.keysReleased() }
+
+    /// A key let go while ⌘ is held never reaches the key window (NSApplication keeps it), so the
+    /// canvas that has the keyboard hears it here: Space let go before ⌘ (after a ⌘-scroll zoom
+    /// while panning) lets go of the hand. Once per app.
+    private static var commandKeyUps: Any?
+
+    private static func watchCommandKeyUps() {
+        guard commandKeyUps == nil else { return }
+        commandKeyUps = NSEvent.addLocalMonitorForEvents(matching: .keyUp) { event in
+            MainActor.assumeIsolated {
+                if event.modifierFlags.contains(.command), let canvas = event.window?.firstResponder as? CanvasView {
+                    canvas.editor.keyUp(KeyStroke(event))
+                }
+            }
+            return event
+        }
+    }
+
+    /// So is every key held when the canvas loses the keyboard (to a panel's field, say).
+    public override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned { editor.keysReleased() }
+        return resigned
     }
 
     public override func viewDidChangeEffectiveAppearance() {
@@ -139,17 +198,53 @@ public final class CanvasView: NSView {
     }
 
     /// A Control-click comes here only when `menu(for:)` had nothing for it; the tool decides
-    /// whether it's a click (`Pointer.isControlClick`).
+    /// whether it's a click (`Pointer.isControlClick`). One press at a time: a left press during the
+    /// middle button's pan ends the pan there, and is the press from then on (its drags and release;
+    /// the middle button's are dropped).
     public override func mouseDown(with event: NSEvent) {
         pointerPlace = .canvas
-        editor.pointerDown(pointerEvent(event))
+        if isPanningWithOtherButton {
+            isPanningWithOtherButton = false
+            editor.pointerUp(pointerEvent(event))
+        }
+        var press = pointerEvent(event)
+        press.activatesWindow = firstMouse == event.eventNumber
+        firstMouse = nil
+        editor.pointerDown(press)
     }
     public override func mouseDragged(with event: NSEvent) { editor.pointerDragged(pointerEvent(event)) }
+
+    /// A press of the middle button pans, as the Hand does, whatever the tool; while another press
+    /// is under way it does nothing, and nor do its drags and release. A pan is a press on the canvas,
+    /// wherever it began (over the text of the note being edited, say), so its release over a view the
+    /// canvas hosts, or one over it, is the pointer leaving the canvas there, as a left press's is.
+    private var isPanningWithOtherButton = false
+
+    public override func otherMouseDown(with event: NSEvent) {
+        guard event.buttonNumber == 2, !isOnMinimap(convert(event.locationInWindow, from: nil)) else { return super.otherMouseDown(with: event) }
+        isPanningWithOtherButton = editor.panPointerDown(pointerEvent(event))
+        if isPanningWithOtherButton { pointerPlace = .canvas }
+    }
+    public override func otherMouseDragged(with event: NSEvent) {
+        guard isPanningWithOtherButton else { return super.otherMouseDragged(with: event) }
+        editor.pointerDragged(pointerEvent(event))
+    }
+    public override func otherMouseUp(with event: NSEvent) {
+        guard isPanningWithOtherButton else { return super.otherMouseUp(with: event) }
+        isPanningWithOtherButton = false
+        let pointer = pointerEvent(event)
+        editor.pointerUp(pointer)
+        minimap?.updateVisibility()
+        let place = place(of: pointer.location)
+        if place != .canvas { pointerLeftCanvas(for: place) }
+    }
     /// A release over the editing view (the press began editing: a double-click) leaves the pointer
-    /// there, off the canvas, as a move there would; so does one over the minimap.
+    /// there, off the canvas, as a move there would; so does one over the minimap. The minimap, which
+    /// waits for a press that placed the first shape under it, is asked again.
     public override func mouseUp(with event: NSEvent) {
         let pointer = pointerEvent(event)
         editor.pointerUp(pointer)
+        minimap?.updateVisibility()
         let place = place(of: pointer.location)
         if place != .canvas { pointerLeftCanvas(for: place) }
     }
@@ -208,6 +303,17 @@ public final class CanvasView: NSView {
         editor.camera.zoom(by: 1 + event.magnification, around: convert(event.locationInWindow, from: nil))
     }
 
+    /// A two-finger double-tap (smart zoom) on the canvas: the command a plugin claims (Selection's,
+    /// which brings the shape under the pointer into view, and again goes back), with the pointer
+    /// where the gesture was, since a gesture reaches a window that isn't key, where no move reached
+    /// the canvas. Over the views the canvas hosts, nothing.
+    public override func smartMagnify(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        guard place(of: point) == .canvas else { return }
+        editor.pointerLocated(at: point)
+        editor.perform(.smartMagnify)
+    }
+
     // MARK: Keyboard and menu commands
 
     /// Every key goes to the plugin that claims key strokes: Keyboard, in the shipped app, whose
@@ -216,6 +322,11 @@ public final class CanvasView: NSView {
     public override func keyDown(with event: NSEvent) {
         guard !editor.keyDown(KeyStroke(event)) else { return }
         interpretKeyEvents([event])
+    }
+
+    /// A key let go: the shortcut done while it's held hears it (Space's pan ends).
+    public override func keyUp(with event: NSEvent) {
+        editor.keyUp(KeyStroke(event))
     }
 
     /// A key held with ⌘ comes here before the menu bar has it: AppKit asks the key window's views
@@ -239,6 +350,20 @@ public final class CanvasView: NSView {
     public override func insertNewline(_ sender: Any?) { standardAction(asKey: "\r") }
     public override func cancelOperation(_ sender: Any?) { standardAction(asKey: "\u{1b}") }
 
+    /// A key no shortcut took that types (a letter no tool has) types nothing on the canvas, and
+    /// doesn't beep.
+    public override func insertText(_ insertString: Any) {}
+
+    /// The moves AppKit's key bindings make of a key no shortcut took (an arrow key with nothing
+    /// selected: `moveLeft:`; Page Down, Home: `scrollPageDown:`, `scrollToBeginningOfDocument:`) do
+    /// nothing on the canvas, and don't beep. Any other action goes on as ever: the canvas's own
+    /// (above), or up the responder chain.
+    public override func doCommand(by selector: Selector) {
+        let name = NSStringFromSelector(selector)
+        if !responds(to: selector), ["move", "scroll", "page"].contains(where: name.hasPrefix) { return }
+        super.doCommand(by: selector)
+    }
+
     /// `key` as `NSEvent.charactersIgnoringModifiers` reports it: Delete, Forward Delete, Return,
     /// Escape.
     private func standardAction(asKey key: String) {
@@ -253,23 +378,24 @@ public final class CanvasView: NSView {
     public override func selectAll(_ sender: Any?) { editor.perform(.selectAll) }
     /// Edit › Delete.
     @objc public func delete(_ sender: Any?) { editor.perform(.delete) }
+}
 
-    @objc public func zoomIn(_ sender: Any?) {
-        editor.camera.zoom(by: 1.25, around: CGPoint(x: bounds.midX, y: bounds.midY))
-    }
-
-    @objc public func zoomOut(_ sender: Any?) {
-        editor.camera.zoom(by: 0.8, around: CGPoint(x: bounds.midX, y: bounds.midY))
-    }
-
-    @objc public func zoomToActualSize(_ sender: Any?) {
-        editor.camera.setZoom(1, around: CGPoint(x: bounds.midX, y: bounds.midY))
+extension CanvasView: NSMenuItemValidation {
+    /// Edit › Delete and Select All are enabled while their commands can run (`canPerform`): Delete
+    /// while something's selected, Select All while the board has shapes.
+    public func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(delete(_:)): editor.canPerform(.delete)
+        case #selector(selectAll(_:)): editor.canPerform(.selectAll)
+        default: true
+        }
     }
 }
 
 @_spi(Host) extension CanvasView: CanvasEditorDelegate {
     public func editorNeedsDisplay(_ editor: CanvasEditor) {
         needsDisplay = true
+        minimap?.updateVisibility()
         minimap?.needsDisplay = true
         layoutEditingView()
     }
@@ -282,9 +408,12 @@ public final class CanvasView: NSView {
 
     public func editorBoardDidChange(_ editor: CanvasEditor) {
         minimap?.boardDidChange()
+        minimap?.updateVisibility()
     }
 
     public func editorEditingDidChange(_ editor: CanvasEditor) {
+        // The minimap waits for editing to end before it fades in over the first shape.
+        defer { minimap?.updateVisibility() }
         if let old = editingView {
             window?.makeFirstResponder(self)
             old.view.removeFromSuperview()
@@ -312,6 +441,13 @@ extension Modifiers {
 
 extension KeyStroke {
     init(_ event: NSEvent) {
-        self.init(event.charactersIgnoringModifiers ?? "", modifiers: Modifiers(event.modifierFlags), isRepeat: event.isARepeat)
+        self.init(event.charactersIgnoringModifiers ?? "", modifiers: Modifiers(event.modifierFlags), isRepeat: event.isARepeat,
+                  numberRowKey: Self.numberRow[event.keyCode])
     }
+
+    /// The number row's keys, by their key codes (the same key whatever the layout, `kVK_ANSI_1`…),
+    /// and the digit each is.
+    static let numberRow: [UInt16: Character] = [
+        18: "1", 19: "2", 20: "3", 21: "4", 23: "5", 22: "6", 26: "7", 28: "8", 25: "9", 29: "0",
+    ]
 }

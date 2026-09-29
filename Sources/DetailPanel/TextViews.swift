@@ -128,13 +128,14 @@ extension View {
 }
 
 /// A status line of a section's own, laid out as the panel's footer and tab lines are (its tone's
-/// symbol, then its text), with a spinner in place of the symbol while `isBusy` (as wide, so the
-/// text doesn't move when one takes the other's place), and buttons under the text for what can be
-/// done about it ("Retry").
+/// symbol, then its text, which can be selected and copied), with a spinner in place of the symbol
+/// while `isBusy` (as wide, so the text doesn't move when one takes the other's place), and buttons
+/// under the text for what can be done about it ("Retry").
 public struct DetailStatusLine: View {
     let status: DetailStatus
     let isBusy: Bool
     let actions: [DetailStatusAction]
+    @Environment(\.detailReclaim) private var reclaim
 
     public init(_ status: DetailStatus, isBusy: Bool = false, actions: [DetailStatusAction] = []) {
         self.status = status
@@ -143,9 +144,14 @@ public struct DetailStatusLine: View {
     }
 
     public var body: some View {
-        // Only the symbol takes the tone: orange or red text is hard to read.
+        // Only the symbol takes the tone: orange or red text is hard to read. The text can be
+        // selected and copied, to hand an issue to someone (or an agent).
         Label {
-            let text = Text(status.text).foregroundStyle(status.tone == .neutral ? .secondary : .primary)
+            // Selected, its text has the keyboard: gone with it (an issue fixed, a failure retried,
+            // a line in its place with or without buttons), the keyboard would stay on the window,
+            // where no key reaches the canvas, so the panel hands it back.
+            let text = Text(status.text).foregroundStyle(status.tone == .neutral ? .secondary : .primary).textSelection(.enabled)
+                .onDisappear { reclaim() }
             if actions.isEmpty {
                 text
             } else {
@@ -195,6 +201,9 @@ public struct DetailStatusAction {
 ///   of them is taken: ⌘↩ goes on as any other key does. A view that isn't editable (read-only,
 ///   though its text can still be clicked, selected and copied) never calls it: nothing was written.
 /// - `commitsOnReturn`, with `onCommit`: Return calls it too, and ⇧↩ is a new line.
+/// - `commitsOnLeaving`, true unless set: whether the keyboard leaving calls `onCommit` too. Text
+///   whose host ends it itself (a note's editor on the canvas) sets it false, so only ⌘↩ says it's
+///   done.
 /// - `onExit`: Escape calls it (the panel's, which gives the keyboard back to the canvas) in place
 ///   of what a text view does with Escape. (In the panel, the panel hears Escape before the view
 ///   does, and leaves itself. ⌘. never comes to the view as a key: the window sends
@@ -219,6 +228,9 @@ open class DetailTextView: NSTextView {
     public var onCommit: (@MainActor () -> Void)?
     /// Return calls `onCommit`, and ⇧↩ is a new line; only with `onCommit`.
     public var commitsOnReturn = false
+    /// The keyboard leaving, and the view leaving its window with it, call `onCommit`, as ⌘↩ does.
+    /// False for text whose host ends it when the keyboard leaves (a note's editor on the canvas).
+    public var commitsOnLeaving = true
     /// Escape, when set: the panel's hand-back to the canvas.
     public var onExit: (@MainActor () -> Void)?
     /// Drawn where the text starts while there's none, in the text's font, dimmed.
@@ -338,7 +350,7 @@ open class DetailTextView: NSTextView {
     open override func resignFirstResponder() -> Bool {
         let resigned = super.resignFirstResponder()
         if resigned {
-            commit?()
+            if commitsOnLeaving { commit?() }
             caretListWindow?.closeList()
         }
         return resigned
@@ -349,7 +361,7 @@ open class DetailTextView: NSTextView {
     /// another, closes the list at the caret, which follows the window it was opened in.
     open override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow !== window { caretListWindow?.closeList() }
-        if newWindow == nil, window?.firstResponder === self, let onCommit = commit {
+        if newWindow == nil, commitsOnLeaving, window?.firstResponder === self, let onCommit = commit {
             Task { @MainActor in onCommit() }
         }
         super.viewWillMove(toWindow: newWindow)

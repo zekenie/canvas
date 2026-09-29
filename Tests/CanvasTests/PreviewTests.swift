@@ -101,6 +101,29 @@ private var past: ContinuousClock.Instant { .now - .seconds(1) }
         expect(previews.preview(of: boards[0], in: file) != nil, "kept")
         expect(!previews.isPending, "and not asked for again")
     },
+    test("drawn no larger than its maximum scale, a board of little is small in the middle of the rect; without one, it fills it") {
+        let (file, boards) = pocketFile([[CGRect(x: 0, y: 0, width: 100, height: 100)]])
+        let previews = BoardPreviews(registry: try previewRegistry())
+        _ = previews.preview(of: boards[0], in: file)
+        previews.build(in: file, until: later)
+        let preview = try require(previews.preview(of: boards[0], in: file))
+        // The preview drawn into a 400-point square: whether each of `points` is painted.
+        @MainActor func painted(maxScale: CGFloat, at points: [CGPoint]) throws -> [Bool] {
+            let cg = try require(CGContext(data: nil, width: 400, height: 400, bitsPerComponent: 8, bytesPerRow: 0,
+                                           space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue))
+            cg.setFillColor(gray: 1, alpha: 1)
+            cg.fill(CGRect(x: 0, y: 0, width: 400, height: 400))
+            expect(preview.draw(in: cg, fitting: CGRect(x: 0, y: 0, width: 400, height: 400), maxScale: maxScale, color: CGColor(gray: 0, alpha: 1)))
+            let image = try require(cg.makeImage()), data = try require(image.dataProvider?.data as Data?)
+            return points.map { data[Int($0.y) * image.bytesPerRow + Int($0.x)] < 128 }
+        }
+        let middle = CGPoint(x: 200, y: 200), near = CGPoint(x: 60, y: 60), far = CGPoint(x: 340, y: 340)
+        expectEqual(try painted(maxScale: .infinity, at: [middle, near, far]), [true, true, true], "fitted: the box fills the square")
+        // At half, the 100-point box is 50 points across, centered.
+        expectEqual(try painted(maxScale: 0.5, at: [middle, CGPoint(x: 180, y: 180), CGPoint(x: 220, y: 220), near, far]),
+                    [true, true, true, false, false])
+        expectEqual(try painted(maxScale: 10, at: [near, far]), [true, true], "a cap past the fit changes nothing")
+    },
     test("an empty board has none, and asks for none") {
         let (file, boards) = pocketFile([[]])
         let previews = BoardPreviews(registry: try previewRegistry())

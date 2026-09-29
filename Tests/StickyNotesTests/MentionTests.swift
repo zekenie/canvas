@@ -9,7 +9,6 @@ import SwiftUI
 import TableOfContents
 import TestKit
 import Titles
-import Validation
 
 // A note's text may mention shapes: its third version, its emptiness, its row, how it's mentioned,
 // and its editor begun from a pill. Pills drawn against the editor's are the integrator's, once
@@ -91,14 +90,16 @@ private final class ContentsList {
         expectEqual(try codec.encode(read), saved)
         expectEqual(codec.version(of: StickyNote.kind), 3)
     },
-    test("a note whose text is only a mention isn't empty; whitespace around it doesn't make it so") {
+    test("a note whose text is only a mention is listed by it, whitespace around it or not; one of only whitespace is an Empty Note") {
         let editor = try noteEditor()
         let only = editor.addNote(MentionText([.mention(groceriesID, label: "Groceries")]))
-        let spaced = editor.addNote(MentionText([.text(" \n"), .mention(groceriesID, label: ""), .text("  ")]), at: CGPoint(x: 300, y: 0))
+        let spaced = editor.addNote(MentionText([.text(" \n"), .mention(groceriesID, label: "Groceries"), .text("  ")]), at: CGPoint(x: 300, y: 0))
         let blank = editor.addNote(MentionText(plain: " \n "), at: CGPoint(x: 600, y: 0))
-        expect(editor.validation?.result(for: only) == nil)
-        expect(editor.validation?.result(for: spaced) == nil)
-        expectEqual(editor.validation?.result(for: blank)?.issues, [.warning("This note is empty.")])
+        let contents = try require(editor.tableOfContents)
+        @MainActor func row(_ id: ShapeID) -> String? { contents.entries.first { $0.id == id }?.label.map { $0.text.isEmpty ? $0.placeholder : $0.text } ?? nil }
+        expectEqual(row(only), "@Groceries")
+        expectEqual(row(spaced), "@Groceries")
+        expectEqual(row(blank), "Empty Note")
     },
     test("a note is mentioned by its title, else its text's first line (each mention @…), else as an untitled note") {
         let editor = try noteEditor()
@@ -114,6 +115,9 @@ private final class ContentsList {
         expect(untitled.isPlaceholder)
         expectEqual(untitled.systemImage, "note.text", "the Note tool's")
         expectEqual(untitled.kindName, "Note")
+        expectEqual(untitled.tint, .systemYellow, "in the @ picker and Mentioned In, a note's symbol is yellow, as in its row")
+        let row = try require(editor.tableOfContents?.entries.first { $0.id == blank }?.label)
+        expectEqual(row.color, Color(nsColor: .systemYellow))
         editor.transact { $0.update(blank, as: StickyNote.self) { $0.props.text = "Now it says something" } }
         expectEqual(editor.label(of: blank)?.label, "Now it says something")
         expectEqual(editor.mentions?.resolve(blank), .live(try require(editor.label(of: blank))))
@@ -167,14 +171,14 @@ private final class ContentsList {
         expectEqual(redrawn { editor.transact { $0.update(groceries, as: StickyNote.self) { $0.props.frame.origin.y += 40 } } }, 1,
                     "a move changes no name: its own row alone")
     },
-    test("editing begun from a press on a pill selects the pill; from anywhere else, the caret goes where it always has") {
+    test("editing begun from a press on a pill selects the pill; on text, the caret goes there, or for a double-click the word; begun from nowhere, where it always has") {
         let editor = try noteEditor()
         editor.addNote("Milk", titled: "Groceries", id: groceriesID)
         let origin = CGPoint(x: 20, y: 300)
         let note = editor.addNote(MentionText([.text("See "), .mention(groceriesID, label: "Groceries"), .text(" soon")]), at: origin)
-        @MainActor func textView(at point: CGPoint?) throws -> MentionTextView<AnyMentionable> {
+        @MainActor func textView(at point: CGPoint?, clickCount: Int = 1) throws -> MentionTextView<AnyMentionable> {
             editor.endEditing()
-            expect(editor.beginEditing(note, at: point))
+            expect(editor.beginEditing(note, at: point, clickCount: clickCount))
             return try require(editor.makeEditingView()?.firstResponder as? MentionTextView<AnyMentionable>)
         }
         let plain = try textView(at: nil)
@@ -185,9 +189,16 @@ private final class ContentsList {
         expect(pill.width > 20, "a pill, not a caret's width: \(pill)")
         let onPill = CGPoint(x: origin.x + pill.midX, y: origin.y + pill.midY)
         expectEqual(try textView(at: onPill).selectedRange(), NSRange(location: 4, length: 1), "the pill's character")
-        expectEqual(try textView(at: CGPoint(x: origin.x + pill.minX - 12, y: origin.y + pill.midY)).selectedRange(), caret,
-                    "on the text before it: as begun from nowhere")
-        expectEqual(try textView(at: CGPoint(x: origin.x + 100, y: origin.y + 180)).selectedRange(), caret, "below the text")
+        expectEqual(caret, NSRange(location: 10, length: 0), "from nowhere: at the end")
+        let beforePill = try textView(at: CGPoint(x: origin.x + pill.minX - 12, y: origin.y + pill.midY)).selectedRange()
+        expect(beforePill.length == 0 && (1...3).contains(beforePill.location), "on the text before it, between its characters there: \(beforePill)")
+        expectEqual(try textView(at: CGPoint(x: origin.x + pill.minX - 12, y: origin.y + pill.midY), clickCount: 2).selectedRange(),
+                    NSRange(location: 0, length: 3), "a double-click there: the word, See")
+        expectEqual(try textView(at: CGPoint(x: origin.x + pill.maxX + 20, y: origin.y + pill.midY), clickCount: 2).selectedRange(),
+                    NSRange(location: 6, length: 4), "and after the pill, soon")
+        expectEqual(try textView(at: CGPoint(x: origin.x + pill.midX, y: origin.y + pill.midY), clickCount: 2).selectedRange(),
+                    NSRange(location: 4, length: 1), "a double-click on the pill: the pill")
+        expectEqual(try textView(at: CGPoint(x: origin.x + 100, y: origin.y + 180)).selectedRange(), caret, "below the text: its end")
         editor.endEditing()
         expectEqual(editor.note(note)?.props.text.stored,
                     MentionText([.text("See "), .mention(groceriesID, label: "Groceries"), .text(" soon")]).stored, "nothing written")

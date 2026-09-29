@@ -39,6 +39,7 @@ import TestKit
         let t = PocketBoards()
         let h = try pocketsHarness(t, cards: doubleClickCards())
         h.press(at: CGPoint(x: 700, y: 300), clickCount: 2)
+        h.release()
         let card = try require(h.editor.document.shapes.last)
         expectEqual(card.kind, Card.kind)
         expectEqual(h.editor.editingShapeID, card.id)
@@ -62,7 +63,7 @@ import TestKit
         expect(h.key("\r"))
         expectEqual(h.editor.editingShapeID, t.c)
     },
-    test("Return with nothing to open still takes the key, and does nothing; ⌘↓ passes, as Go › Open is dimmed") {
+    test("Return with nothing to open still takes the key, and does nothing; ⌘↓ passes, as Go › Open Selection is dimmed") {
         let t = PocketBoards()
         let h = try pocketsHarness(t)
         for selection in [[], [t.a], [t.p, t.c]] {

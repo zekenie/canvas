@@ -125,7 +125,7 @@ enum SchemaStyle {
     static let typeGap: CGFloat = 8
     /// The type label's most, of the inner width.
     static let typeShare: CGFloat = 0.42
-    /// Below this zoom the rows draw as bars, no text (11-point text is under 4 points on screen);
+    /// Below this zoom the rows draw as bars, no text (12-point text is under 4.2 points on screen);
     /// below `titleTextZoom` the title does too (14 points, under 3).
     static let rowTextZoom: CGFloat = 0.35
     static let titleTextZoom: CGFloat = 0.2
@@ -145,14 +145,24 @@ enum SchemaStyle {
     static let tertiaryText = NSColor(srgbRed: 0.62, green: 0.62, blue: 0.62, alpha: 1)
     static let chipFill = NSColor(srgbRed: 0.945, green: 0.945, blue: 0.945, alpha: 1)
     static let bar = NSColor(srgbRed: 0.80, green: 0.80, blue: 0.80, alpha: 1)
-    /// The `{}` mark, and the row's symbol in the table of contents.
-    static let accent = NSColor(srgbRed: 0.40, green: 0.36, blue: 0.86, alpha: 1)
+    /// The zoom its rows read at: 11-point types are 11 points on screen at 100%, as the smallest
+    /// text macOS sets to be read is. Going to a card (`goTo`) brings it at least this close.
+    static let readableZoom: CGFloat = 1
+    /// The `{}` mark, and the row's symbol in the table of contents: magenta (hue 314°), clear of
+    /// the subboard's indigo (241°) and the line tool's, of red, orange and green (what validation
+    /// and snapping say), of the note's yellow and its links' amber, the rectangles' teal and the
+    /// system accent, so color tells a schema from a board. 5.1:1 on the card's white, as the
+    /// indigo was.
+    static let accent = NSColor(srgbRed: 0.75, green: 0.18, blue: 0.62, alpha: 1)
 
     static let titleFont = NSFont.systemFont(ofSize: 14, weight: .semibold)
     static let markFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .semibold)
-    static let nameFont = NSFont.systemFont(ofSize: 11, weight: .medium)
-    static let patternFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
-    static let typeFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+    /// A field's name, and a pattern property's, in its chip; its type at the row's end. Set as
+    /// large as the 22-point rows hold (a chip is 18 tall), so they read at 100% (`readableZoom`),
+    /// where going to a card brings it.
+    static let nameFont = NSFont.systemFont(ofSize: 12, weight: .medium)
+    static let patternFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+    static let typeFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
     static let childFont = NSFont.systemFont(ofSize: 10)
     static let noteFont = NSFont.systemFont(ofSize: 10)
     /// What's said about the rows rather than in one: `+N more`, and why there are none.

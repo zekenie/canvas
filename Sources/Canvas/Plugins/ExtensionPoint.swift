@@ -20,7 +20,7 @@ public protocol ExtensionPoint {
     /// would let a plain `throws` spelling silently fall back to the default.
     static func check(_ registry: Registry) throws
     /// How the registry's report (`registry.report`) shows a contribution. The default is the
-    /// point's name, and the kind it's for, if one: `ValidationRules → sticky-note`.
+    /// point's name, and the kind it's for, if one: `ValidationRules → schema-card`.
     static func summary(of contribution: Contribution, for target: ShapeTarget) -> String
 }
 

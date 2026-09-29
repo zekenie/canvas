@@ -41,18 +41,18 @@ import ValidationDetails
     },
     test("the registry report: who contributes what") {
         expectEqual(try ShippedPlugins.registry(model: ScriptedLanguageModel()).report, """
-        core                 tool hand · command undo · command redo
-        keyboard             service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo
-        selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection
+        core                 tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
+        keyboard             service KeyboardState · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit
+        selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
         topology             service TopologyIndex
         arrows               shape arrow · label Arrow → arrow · ContentsRows → arrow · service ArrowTargeting · overlay BindingHintsOverlay
-        sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · ValidationRules → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
+        sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
         subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard
-        schemas              service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link · edge type schema-link
+        schemas              service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · ReadableZoom → schema-card · channel schema-link · edge type schema-link
         validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
         adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
         detail-panel         service DetailPanelState
-        context-menus        service ContextMenuState · secondary-click menu
+        context-menus        service ContextMenuState · secondary-click menu · CanvasContextMenu
         table-of-contents    service ContentsState
         titles               property title · adornment TitlePill → every shape
         mentions             service MentionState · edge type mention · edges → every shape · overlay MentionFrames · ShapeFaces · CanvasContextMenu
@@ -61,7 +61,7 @@ import ValidationDetails
         validation-contents  ContentsMarks
         mention-validation   ValidationRules
         clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
-        locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · CanvasContextMenu
+        locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu
         snapping             service SnapState · translation adjuster
         ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
         arrow-ports          property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowBindingRules
@@ -84,7 +84,7 @@ import ValidationDetails
         let end = try require(guide.range(of: "\n```", range: start..<guide.endIndex)).lowerBound
         expectEqual(String(guide[start..<end]), try ShippedPlugins.registry(model: ScriptedLanguageModel()).report)
     },
-    test("every placed kind has a panel: a note its header (and Issues, empty), a schema and a subboard their own tabs, a rectangle and an arrow only their headers; every nameable kind's header renames it") {
+    test("every placed kind has a panel: a note its header, a schema and a subboard their own tabs, a rectangle and an arrow only their headers; every nameable kind's header renames it") {
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
         let state = try require(h.editor.detailPanel)
         var panels: [String] = []
@@ -101,9 +101,8 @@ import ValidationDetails
         let layout = state.layout(for: try require(h.editor.document[arrow]))
         panels.append("\(layout.headerText): \(layout.tabs.map(\.title).joined(separator: ", "))")
         // Every header of a kind that can be named renames it: an untitled shape's shows the
-        // placeholder. A note placed is empty, which is a warning, so it has Issues until it's
-        // written in.
-        expectEqual(panels, ["(Rectangle): ", "(Note): Issues", "(Untitled): Schema", "(Untitled Subboard): Board", "Arrow: "])
+        // placeholder. A note placed empty has no issue: its row says Empty Note.
+        expectEqual(panels, ["(Rectangle): ", "(Note): ", "(Untitled): Schema", "(Untitled Subboard): Board", "Arrow: "])
     },
     test("a line drawn with L is a Line in the panel, with nothing but its header") {
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
@@ -126,13 +125,15 @@ import ValidationDetails
         expectEqual(entries.map { $0.children?.map { $0.label?.text } }, [["Arrow"], nil, nil, ["Arrow"], ["Arrow"], nil])
         expectEqual(entries[0].children?.first?.symbol, "arrow.up.right")
     },
-    test("the table of contents marks each shape with issues in its outline's color: an empty note orange, a schema card that isn't JSON red") {
+    test("the table of contents marks each shape with issues in its outline's color: a note with too long a title orange, a schema card that isn't JSON red") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
-        let empty = editor.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200)))
+        let long = editor.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "Milk"), title: String(repeating: "Groceries ", count: 9))
         let broken = editor.add(SchemaCard(frame: CGRect(x: 300, y: 0, width: 240, height: 67), schema: ""))
         let written = editor.add(StickyNote(frame: CGRect(x: 600, y: 0, width: 200, height: 200), text: "Hi"))
+        let empty = editor.add(StickyNote(frame: CGRect(x: 900, y: 0, width: 200, height: 200)))
         let marks = Dictionary(uniqueKeysWithValues: try require(editor.tableOfContents).entries.map { ($0.id, $0.marks) })
-        expectEqual(marks[empty], [ContentsMark(color: Color(nsColor: Severity.warning.color), help: "This note is empty.")])
+        expectEqual(marks[long], [ContentsMark(color: Color(nsColor: Severity.warning.color), help: "Title is 90 characters long, and should be at most 80.")])
+        expectEqual(marks[empty], [], "an empty note is no issue: its row says Empty Note")
         expectEqual(marks[broken], [ContentsMark(color: Color(nsColor: Severity.error.color), help: "Invalid JSON: expected a value at line 1, column 1.")])
         expectEqual(marks[written], [])
     },
@@ -203,6 +204,19 @@ import ValidationDetails
         h.release()
         expectEqual(h.editor.document.shapes.first?.box, CGRect(x: 260, y: 270, width: 160, height: 100))
         expectEqual(h.editor.currentToolID, .select)
+    },
+    test("going to a schema card in view at 70% brings it close enough to read its rows; a note there reads, and stays") {
+        let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
+        h.editor.viewportDidResize(to: CGSize(width: 1200, height: 800))
+        let note = h.editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Hi"))
+        let card = h.editor.add(SchemaCard(frame: CGRect(x: 400, y: 100, width: 240, height: 67)))
+        h.editor.camera = Camera(zoom: 0.7)
+        h.editor.goTo([note])
+        h.wait(300)
+        expectEqual(h.editor.camera.zoom, 0.7)
+        h.editor.goTo([card])
+        h.wait(300)
+        expect(h.editor.camera.zoom >= 1, "at least 100%: \(h.editor.camera.zoom)")
     },
 ])
 

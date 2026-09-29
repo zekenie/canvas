@@ -146,6 +146,27 @@ extension NSTableView {
         w.window.pressReturn()
         w.window.spin { w.editor.editingShapeID == note }
     },
+    test("↓ held in the list picks a row; its repeats, once the canvas has the keyboard, don't move what it picked, while a fresh ↓ there does") {
+        let w = try WelcomeWindow()
+        w.window.spin { w.rows == 6 }
+        w.window.makeFirstResponder(try require(w.contents))
+        w.window.settle()
+        let down = String(UnicodeScalar(UInt16(NSDownArrowFunctionKey))!)
+        @MainActor func key(_ type: NSEvent.EventType, isRepeat: Bool = false) -> NSEvent {
+            NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [.numericPad, .function], timestamp: 1, windowNumber: w.window.windowNumber,
+                             context: nil, characters: down, charactersIgnoringModifiers: down, isARepeat: isRepeat, keyCode: 125)!
+        }
+        w.window.sendEvent(key(.keyDown))
+        let note = try require(w.editor.selection, "↓ picks the first row")
+        let origin = try require(w.editor.document[note]?.box).origin
+        w.window.spin { w.contents == nil && w.canvasHasKeyboard }
+        for _ in 0..<5 { w.window.sendEvent(key(.keyDown, isRepeat: true)) }
+        expectEqual(w.editor.document[note]?.box?.origin, origin, "held on, the key moves nothing")
+        expect(!w.editor.canUndo, "nor is it a step")
+        w.window.sendEvent(key(.keyUp))
+        w.window.sendEvent(key(.keyDown))
+        expectEqual(w.editor.document[note]?.box?.origin, CGPoint(x: origin.x, y: origin.y + 1), "a fresh ↓ is the canvas's: the selection's nudge")
+    },
     test("Escape in the list gives the keyboard back to the canvas, where tool shortcuts work again") {
         let w = try WelcomeWindow()
         w.window.spin { w.rows == 6 }

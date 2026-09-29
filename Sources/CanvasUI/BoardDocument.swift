@@ -14,9 +14,21 @@ public struct BoardConfiguration {
     public var registry: Registry
     /// A board window's content: the canvas, and whatever goes around it.
     public var content: @MainActor (BoardWindowContent) -> AnyView
+    /// How far down over the canvas the content's own views reach on a board, in points (the path
+    /// over a subboard's canvas): what the editor's fits leave clear (`CanvasEditor.coveredTop`).
+    public var coveredTop: @MainActor (BoardID) -> CGFloat
+    /// What the board shown is called, for its window's subtitle: nil on the root, which the title
+    /// (the file's name) names. Read observed, so the subtitle follows it as another board is shown
+    /// or the board is renamed. CanvasUI doesn't know what names a board; the app says (Composition's
+    /// `ShippedPlugins.boardName(of:)`).
+    public var boardName: (@MainActor (CanvasEditor) -> String?)?
 
-    public init(registry: Registry, content: @escaping @MainActor (BoardWindowContent) -> AnyView) {
+    public init(registry: Registry, coveredTop: @escaping @MainActor (BoardID) -> CGFloat = { _ in 0 },
+                boardName: (@MainActor (CanvasEditor) -> String?)? = nil,
+                content: @escaping @MainActor (BoardWindowContent) -> AnyView) {
         self.registry = registry
+        self.coveredTop = coveredTop
+        self.boardName = boardName
         self.content = content
     }
 }
@@ -55,7 +67,8 @@ public final class BoardViewState {
 ///
 /// A save closes the step under way (`breakStep`), so what's typed after it is a step of its own that
 /// the save didn't see, and undo goes back to exactly what was saved. A periodic autosave during a
-/// press (a drag) waits for its release instead of splitting it, and runs once it's over.
+/// press (a drag), or while a key is held whose repeats are one step (an arrow key's nudges), waits
+/// for its release instead of splitting it, and runs once it's over.
 ///
 /// Opening never drops a shape: what the board keeps aside and what it repaired is in `loadReport`,
 /// shown when the window first shows; repairs mark the board edited, so the next save keeps them.
@@ -83,6 +96,9 @@ public final class BoardDocument: NSDocument {
     private var hasShownLoadReport = false
     /// An autosave gave way to a press: it's scheduled again once the press's step is over.
     private var autosaveWaited = false
+    /// An autosave that can wait, waits: a press is under way, or a key is held whose repeats are
+    /// part of its step, each with changes.
+    private var autosaveWaits: Bool { editor.undoHistory.isPressing || editor.undoHistory.isKeyHolding }
     #if DEBUG
     /// How often an autosave has been scheduled (debug builds, for tests): by NSDocument, or again
     /// once a press an autosave gave way to is over.
@@ -92,6 +108,7 @@ public final class BoardDocument: NSDocument {
     public override init() {
         guard let configuration = Self.configuration else { preconditionFailure("set BoardDocument.configuration before any board opens") }
         editor = CanvasEditor(registry: configuration.registry)
+        editor.coveredTop = configuration.coveredTop
         codec = BoardCodec(registry: configuration.registry)
         Self.numbered += 1
         number = Self.numbered
@@ -139,16 +156,17 @@ public final class BoardDocument: NSDocument {
     /// change back before the count is taken, and the board reads unedited once saved. (Not for an
     /// autosave that gives way to a press: it won't write.)
     public override func changeCountToken(for saveOperation: NSDocument.SaveOperationType) -> Any {
-        if !(autosavingIsImplicitlyCancellable && editor.undoHistory.isPressing) { editor.undoHistory.breakStep() }
+        if !(autosavingIsImplicitlyCancellable && autosaveWaits) { editor.undoHistory.breakStep() }
         return super.changeCountToken(for: saveOperation)
     }
 
     /// What a save writes: every board of the file as it is, those it can't show included, with the
-    /// step under way closed there, so undo can go back to exactly what was saved. A save that may give way (a periodic autosave) does, during a
-    /// press, rather than split its step: it throws `userCancelled`, which NSDocument doesn't show,
-    /// and it's scheduled again once the press is over.
+    /// step under way closed there, so undo can go back to exactly what was saved. A save that may
+    /// give way (a periodic autosave) does, during a press or while a key is held whose repeats are
+    /// one step, rather than split its step: it throws `userCancelled`, which NSDocument doesn't
+    /// show, and it's scheduled again once the press, or the key, is let go.
     public func snapshot(implicitlyCancellable: Bool) throws -> Data {
-        if implicitlyCancellable, editor.undoHistory.isPressing {
+        if implicitlyCancellable, autosaveWaits {
             autosaveWaited = true
             throw CocoaError(.userCancelled)
         }

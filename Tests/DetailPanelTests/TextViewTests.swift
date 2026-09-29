@@ -220,4 +220,16 @@ extension PanelWindow {
         try require(host.descendants(NSButton.self).first).performClick(nil)
         expectEqual(pressed.titles, ["Again"])
     },
+    test("a status line's text can be selected, to copy, and isn't a field to type in; with buttons too") {
+        for actions in [[], [DetailStatusAction("Retry") {}]] {
+            let line = DetailStatusLine(DetailStatus("Invalid JSON: expected a value at line 12, column 3.", tone: .error), actions: actions)
+            let host = NSHostingView(rootView: line.frame(width: 240))
+            let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 240, height: 80), styleMask: [.titled], backing: .buffered, defer: false)
+            window.contentView = host
+            window.settle()
+            let text = try require(host.descendants(NSTextField.self).first { $0.stringValue.hasPrefix("Invalid JSON") })
+            expect(text.isSelectable, "selectable")
+            expect(!text.isEditable, "not editable")
+        }
+    },
 ])

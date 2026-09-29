@@ -18,7 +18,10 @@ enum InfiniteCanvasApp {
         let registry: Registry
         do {
             registry = try ShippedPlugins.registry(model: ShippedPlugins.anthropicModel)
-            BoardDocument.configuration = BoardConfiguration(registry: registry) { AnyView(ContentView(board: $0)) }
+            BoardDocument.configuration = BoardConfiguration(registry: registry, coveredTop: ShippedPlugins.coveredTop(on:),
+                                                             boardName: ShippedPlugins.boardName(of:)) {
+                AnyView(ContentView(board: $0))
+            }
         } catch {
             fatalError("The shipped plugins don't register: \(error)")   // CompositionTests catches this first
         }
@@ -115,13 +118,15 @@ struct ContentView: View {
             .frame(minWidth: 480, minHeight: 320)
             .toolbar {
                 ToolbarItem(placement: .principal) { ToolPicker(editor: editor, help: { ShippedPlugins.help(for: $0, in: editor.registry) }) }
+                ToolbarItem(placement: .primaryAction) { ZoomMenu(editor: editor) }
             }
             .inspector(isPresented: $view.showsDetails) {
-                ShippedPlugins.detailPanel(editor: editor, onExit: focus.take)
+                ShippedPlugins.detailPanel(editor: editor, onExit: focus.take, rootName: view.fileName)
                     .toolbar {
                         ToolbarItem {
-                            Button { view.showsDetails.toggle() } label: { Label("Details", systemImage: "sidebar.trailing") }
-                                .help("Show or hide details")
+                            // Named as View › Show Inspector names it, and saying what a click does now.
+                            Button { view.showsDetails.toggle() } label: { Label("Inspector", systemImage: "sidebar.trailing") }
+                                .help(view.showsDetails ? "Hide Inspector" : "Show Inspector")
                         }
                     }
             }

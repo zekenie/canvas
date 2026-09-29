@@ -139,9 +139,10 @@ struct Drawing {
         edging = registry.drawEdging
         edgeKind = registry.drawEdging.flatMap { $0.kind(registry) }
         // Where the view is headed, if it's gliding (a --reveal a moment ago): the view the drawing
-        // is seen in once it settles.
-        let size = editor.viewportSize
-        view = size.width > 0 && size.height > 0 ? editor.cameraTarget.toWorld(CGRect(origin: .zero, size: size)) : nil
+        // is seen in once it settles. The part of it the host leaves clear (below the path's pill
+        // over a subboard), as every fit is.
+        let clear = editor.unobscuredViewport
+        view = clear.isEmpty ? nil : editor.cameraTarget.toWorld(clear)
         if let naming, script.mentionsTitles { names = BoardNames(editor.document, naming: naming, registry: registry) }
         // What connects to what, for the deletes (edges read the transaction's document).
         let deletes = script.statements.contains { if case .delete = $0.body { true } else { false } }

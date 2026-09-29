@@ -113,6 +113,35 @@ private let far = CGRect(x: 3000, y: 2000, width: 100, height: 100)
         h.wait(200)
         expectEqual(h.editor.camera, revealed(near))
     },
+    test("a kind that reads closer than 70% (its readable zoom) is brought closer: at 70% it's revealed; with another, the closest of theirs counts") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), Contributor(id: "small-print") { $0.readableZoom(Disc.self, 1) }])
+        h.editor.viewportDidResize(to: view)
+        let spot = CGRect(x: 100, y: 100, width: 100, height: 100)
+        let disc = h.add(Disc(spot))
+        let box = h.add(Box(CGRect(x: 300, y: 100, width: 100, height: 100)))
+        expectEqual(h.editor.readableZoom(of: try require(h.editor.document[disc])), 1)
+        expectEqual(h.editor.readableZoom(of: try require(h.editor.document[box])), 0.7, "a kind that says nothing")
+        h.editor.camera = Camera(zoom: 0.7)
+        h.editor.goTo([box])
+        expectEqual(h.scheduler.pendingCount, 0, "a box reads at 70%")
+        h.editor.goTo([disc])
+        h.wait(200)
+        expectEqual(h.editor.camera, revealed(spot), "a disc doesn't: brought to 120%")
+        h.editor.camera = Camera(zoom: 0.9)
+        h.editor.goTo([box, disc])
+        h.wait(200)
+        expectEqual(h.editor.camera.zoom, revealed(spot.union(CGRect(x: 300, y: 100, width: 100, height: 100))).zoom, "the disc's counts")
+        h.editor.camera = Camera(zoom: 1)
+        h.editor.goTo([disc])
+        expectEqual(h.scheduler.pendingCount, 0, "at 100% it reads")
+        expectThrows(RegistryError.invalid(point: "ReadableZoom", reason: "small-print says disc reads at 0.0, which isn't a zoom")) {
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), Contributor(id: "small-print") { $0.readableZoom(Disc.self, 0) }])
+        }
+        expectThrows(RegistryError.invalid(point: "ReadableZoom", reason: "small-print says disc reads at 1.5, closer than going to a shape brings it (1.2)")) {
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), Contributor(id: "small-print") { $0.readableZoom(Disc.self, 1.5) }])
+        }
+        _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), Contributor(id: "small-print") { $0.readableZoom(Disc.self, 1.2) }])
+    },
     test("a shape too big to read whole stays as it's shown when all of it is in view as close as fitting it would bring it") {
         let h = try goToHarness()
         let big = CGRect(x: 0, y: 0, width: 3000, height: 1500)     // fitted: 900 / 3000 across, 30%
@@ -256,5 +285,73 @@ private let far = CGRect(x: 3000, y: 2000, width: 100, height: 100)
         unsized.editor.reveal([unsized.add(Box(far))])
         expectEqual(unsized.scheduler.pendingCount, 0)
         expectEqual(unsized.editor.camera, Camera())
+    },
+    test("revealing shapes, and going to them, leave clear what the host covers of the view's top (the path over a subboard's canvas)") {
+        let h = try goToHarness()
+        h.editor.coveredTop = { _ in 35 }
+        let box = h.add(Box(far))
+        let clear = Camera(fitting: far, in: CGRect(x: 0, y: 35, width: 1000, height: 665), inset: 100, maxZoom: 1.2)
+        h.editor.reveal([box])
+        h.wait(200)
+        expectEqual(h.editor.camera, clear)
+        h.editor.camera = Camera(origin: CGPoint(x: far.minX - 100, y: far.minY - 20))
+        h.editor.goTo([box])
+        h.wait(200)
+        expectEqual(h.editor.camera, clear, "its top under the covered top: not in view, so it's brought there")
+    },
+    test("⇧2 and Zoom to Selection bring what's selected into view, as revealing it does; with nothing selected, or no view, the key passes") {
+        let h = try goToHarness()
+        let a = h.add(Box(far)), b = h.add(Box(CGRect(x: 100, y: 100, width: 100, height: 100)))
+        h.hold(.shift)
+        expect(!h.editor.keyDown(KeyStroke("@", modifiers: .shift, numberRowKey: "2")), "nothing selected")
+        h.editor.selectedShapeIDs = [a, b]
+        expect(h.editor.keyDown(KeyStroke("@", modifiers: .shift, numberRowKey: "2")))
+        h.wait(200)
+        expectEqual(h.editor.camera, revealed(CGRect(x: 100, y: 100, width: 3000, height: 2000)))
+        expectEqual(h.editor.selectedShapeIDs, [a, b])
+        let unsized = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
+        unsized.editor.selection = unsized.add(Box(far))
+        expect(!unsized.editor.canPerform(.zoomToSelection))
+    },
+    test("a smart zoom brings the shape under the pointer into view; the next goes back, unless the camera has moved since; nothing under it, nothing") {
+        let h = try goToHarness()
+        let box = CGRect(x: 100, y: 100, width: 100, height: 100)
+        h.add(Box(box))
+        let start = Camera(origin: CGPoint(x: -200, y: -100), zoom: 0.5)
+        h.editor.camera = start
+        h.move(to: h.view(CGPoint(x: 150, y: 150)))
+        expect(h.editor.perform(.smartMagnify))
+        h.wait(200)
+        expectEqual(h.editor.camera, revealed(box))
+        h.editor.perform(.smartMagnify)
+        h.wait(200)
+        expectEqual(h.editor.camera, start, "again: back where it was")
+        h.editor.perform(.smartMagnify)
+        h.wait(200)
+        h.editor.camera.pan(by: CGSize(width: 5, height: 0))
+        let moved = h.editor.camera
+        h.move(to: CGPoint(x: 1, y: 1))
+        h.editor.perform(.smartMagnify)
+        h.wait(200)
+        expectEqual(h.editor.camera, moved, "moved since, and nothing under the pointer: nothing")
+    },
+    test("a smart zoom where no move reached the canvas (a window that isn't key) goes by where the gesture was, hovering nothing") {
+        let h = try goToHarness()
+        let box = CGRect(x: 100, y: 100, width: 100, height: 100)
+        h.add(Box(box))
+        let start = Camera(origin: CGPoint(x: -200, y: -100), zoom: 0.5)
+        h.editor.camera = start
+        h.move(to: CGPoint(x: 900, y: 600))
+        h.move(to: CGPoint(x: 950, y: 650))
+        let over = h.editor.pointerOverCanvas
+        expect(h.editor.pointerSpeed > 0)
+        h.editor.pointerLocated(at: h.view(CGPoint(x: 150, y: 150)))
+        expectEqual(h.editor.pointerWorldLocation, CGPoint(x: 150, y: 150))
+        expectEqual(h.editor.pointerSpeed, 0, "the jump is no motion")
+        expectEqual(h.editor.hovered, nil, "nor a hover")
+        expectEqual(h.editor.pointerOverCanvas, over, "the tool heard nothing")
+        expect(h.editor.perform(.smartMagnify))
+        h.wait(200)
+        expectEqual(h.editor.camera, revealed(box))
     },
 ])

@@ -17,11 +17,15 @@ public struct Modifiers: OptionSet, Hashable, Sendable {
     public var timestamp: TimeInterval
     public var modifiers: Modifiers
     public var clickCount: Int
-    public init(location: CGPoint, timestamp: TimeInterval, modifiers: Modifiers = [], clickCount: Int = 1) {
+    /// A press that brings its window forward: the click AppKit lets through to a window that wasn't
+    /// key (`acceptsFirstMouse`).
+    public var activatesWindow: Bool
+    public init(location: CGPoint, timestamp: TimeInterval, modifiers: Modifiers = [], clickCount: Int = 1, activatesWindow: Bool = false) {
         self.location = location
         self.timestamp = timestamp
         self.modifiers = modifiers
         self.clickCount = clickCount
+        self.activatesWindow = activatesWindow
     }
 }
 
@@ -38,6 +42,11 @@ public struct Pointer: Sendable {
     /// keys let go in the last 150 ms. On the Mac it's the secondary click, which AppKit offers to
     /// the context menu first; a tool that takes it as a click, not ⌃ as a modifier, ignores it.
     public var isControlClick = false
+    /// The press brings its window forward (a click in a window that wasn't key, which AppKit lets
+    /// through to the canvas): a click that changes modes on what's selected (the select tool's
+    /// click that edits the only selected note) leaves it to the next, as Finder's click-to-rename
+    /// ignores it.
+    public var activatesWindow = false
 }
 
 /// A key pressed on the canvas, as the plugin that claims key strokes (`registrar.keyStrokes`)
@@ -48,11 +57,16 @@ public struct KeyStroke: Hashable, Sendable {
     public var characters: String
     public var modifiers: Modifiers
     public var isRepeat: Bool
+    /// For a key of the number row, its digit, whatever the layout types with it: "1" for the key
+    /// that types "!" with ⇧ on a US keyboard and "&" alone on a French one. Nil for any other key
+    /// (the keypad's too). So a shortcut on a digit and ⇧ (⇧1) is the same key everywhere.
+    public var numberRowKey: Character?
 
-    public init(_ characters: String, modifiers: Modifiers = [], isRepeat: Bool = false) {
+    public init(_ characters: String, modifiers: Modifiers = [], isRepeat: Bool = false, numberRowKey: Character? = nil) {
         self.characters = characters
         self.modifiers = modifiers
         self.isRepeat = isRepeat
+        self.numberRowKey = numberRowKey
     }
 }
 
@@ -80,6 +94,16 @@ struct PointerTracker {
     private var lastTime: TimeInterval?
 
     mutating func resetVelocity() { velocity = .zero }
+
+    /// The pointer is at `point`, as something other than its motion says (a gesture where no move
+    /// reached the canvas): no speed or velocity comes of the jump, and the next sample starts
+    /// afresh from here.
+    mutating func relocate(_ point: CGPoint) {
+        location = point
+        lastTime = nil
+        speed = 0
+        velocity = .zero
+    }
 
     mutating func sample(_ point: CGPoint, at time: TimeInterval) {
         defer {

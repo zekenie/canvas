@@ -32,10 +32,10 @@ extension CanvasEditor {
         // Previews asked for in earlier frames first, so one finished now is drawn now.
         let previews = boardPreviews, previewColor = Style.boardPreview.cgColor, zoom = camera.zoom
         if previews.isPending { previews.build(in: file, until: .now + previews.frameBudget) }
-        let preview = { (owner: ShapeID, rect: CGRect, cg: CGContext) in
+        let preview = { (owner: ShapeID, rect: CGRect, maxScale: CGFloat, cg: CGContext) in
             // Too small on screen to show anything (zoomed out, or no room): nothing asked for.
             guard min(rect.width, rect.height) * zoom >= Style.previewSmallestSide else { return false }
-            return previews.preview(of: BoardID(owner: owner), in: file)?.draw(in: cg, fitting: rect, color: previewColor) ?? false
+            return previews.preview(of: BoardID(owner: owner), in: file)?.draw(in: cg, fitting: rect, maxScale: maxScale, color: previewColor) ?? false
         }
         for record in paintOrder(in: world.insetBy(dx: -40, dy: -40)) {
             guard let definition = registry.definition(for: record.kind) else { continue }

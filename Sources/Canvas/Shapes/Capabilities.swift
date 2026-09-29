@@ -23,13 +23,17 @@ public struct EditContext<Props: BoxShapeProps> {
     public let shapeID: ShapeID
     /// Where editing began, in world units: the press `editor.beginEditing(_:at:)` was given, so a
     /// view can put its selection there (the character pressed). Nil when what began it didn't say
-    /// (Return, Selection's double-click, a placement): the view chooses, as it always has.
+    /// (Return, a placement): the view chooses, as it always has.
     public let startPoint: CGPoint?
+    /// How many clicks that press was: 2 for a double-click (Selection's), where a text view selects
+    /// the word pressed; else 1.
+    public let startClickCount: Int
     weak var editor: CanvasEditor?
 
-    init(shapeID: ShapeID, startPoint: CGPoint?, editor: CanvasEditor) {
+    init(shapeID: ShapeID, startPoint: CGPoint?, startClickCount: Int, editor: CanvasEditor) {
         self.shapeID = shapeID
         self.startPoint = startPoint
+        self.startClickCount = startClickCount
         self.editor = editor
     }
 
@@ -40,6 +44,13 @@ public struct EditContext<Props: BoxShapeProps> {
     }
 
     public func end() { editor?.endEditing() }
+
+    /// Brings `rect` into view (a caret's, where text is typed past the window's edge: a note
+    /// growing downward with what's typed), moving the camera at once, by as little as it takes, into
+    /// the part of the view the host leaves clear, 16 points in from its edges; no zoom, and no undo
+    /// step. `rect` is in the editing view's coordinates: world units, with the shape's box at their
+    /// origin, as the view's bounds are. Nothing while a press is under way.
+    public func keepInView(_ rect: CGRect) { editor?.keepInView(rect, of: shapeID) }
 }
 
 extension EditContext {

@@ -40,6 +40,7 @@ import TestKit
     test("double-clicking empty canvas places the claimed kind and starts editing it") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), doubleClickCards()])
         h.press(at: CGPoint(x: 300, y: 200), clickCount: 2)
+        h.release()
         let card = try require(h.editor.document.shapes.first)
         expectEqual(card.kind, Card.kind)
         expectEqual(card.box, CGRect(x: 250, y: 170, width: 100, height: 60))
@@ -80,21 +81,67 @@ import TestKit
         h.editor.selection = card; h.editor.editSelection()
         expectEqual(h.editor.editingShapeID, card)
     },
-    test("a double-click, Return and a placement begin editing without saying where: the editing view chooses, as it always has") {
+    test("a double-click begins editing from where it's pressed, as a double-click; Return and a placement don't say where: the editing view chooses") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), CardsPlugin()])
         let card = h.add(Card(CGRect(x: 200, y: 0, width: 100, height: 100)))
         h.press(at: CGPoint(x: 250, y: 50), clickCount: 2); h.release()
         expectEqual(h.editor.editingShapeID, card)
-        expectEqual(h.editor.editingStartPoint, nil)
+        expectEqual(h.editor.editingStartPoint, CGPoint(x: 250, y: 50))
+        expectEqual(h.editor.editingStartClickCount, 2)
         h.editor.endEditing()
+        expectEqual(h.editor.editingStartClickCount, 1)
         h.editor.selection = card; h.editor.editSelection()
         expectEqual(h.editor.editingShapeID, card)
         expectEqual(h.editor.editingStartPoint, nil)
+        expectEqual(h.editor.editingStartClickCount, 1)
         h.editor.endEditing()
         h.editor.setTool(ToolID(placing: Card.kind))
         h.press(at: CGPoint(x: 100, y: 300)); h.release()
         expect(h.editor.editingShapeID != nil && h.editor.editingShapeID != card)
         expectEqual(h.editor.editingStartPoint, nil)
+    },
+    test("a click on the only selected shape of a kind edited in place edits it from where it's released; a first click only selects; a drag moves it") {
+        let log = RefusalLog()
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), CardsPlugin(), FreezingPlugin(log: log)])
+        let card = h.add(Card(CGRect(x: 200, y: 0, width: 100, height: 100)))
+        let box = h.add(Box(CGRect(x: 400, y: 0, width: 100, height: 100)))
+        h.click(at: CGPoint(x: 250, y: 50))
+        expectEqual(h.editor.selection, card)
+        expectEqual(h.editor.editingShapeID, nil, "the first click selects it")
+        h.press(at: CGPoint(x: 240, y: 40))
+        h.drag(to: CGPoint(x: 242, y: 41))
+        h.release()
+        expectEqual(h.editor.editingShapeID, card, "a click, jitter and all, on it selected: edited")
+        expectEqual(h.editor.editingStartPoint, CGPoint(x: 242, y: 41), "from where it was released")
+        expectEqual(h.editor.editingStartClickCount, 1)
+        expectEqual(h.editor.document[card]?.box, CGRect(x: 200, y: 0, width: 100, height: 100), "unmoved")
+        h.editor.endEditing()
+
+        h.press(at: CGPoint(x: 250, y: 50))
+        h.drag(to: CGPoint(x: 252, y: 50))
+        expectEqual(h.editor.document[card]?.box?.origin, CGPoint(x: 200, y: 0), "within the threshold it waits")
+        h.drag(to: CGPoint(x: 290, y: 60))
+        h.release()
+        expectEqual(h.editor.editingShapeID, nil, "a drag isn't a click")
+        expectEqual(h.editor.document[card]?.box?.origin, CGPoint(x: 240, y: 10), "moved with the pointer from the press")
+
+        h.click(at: CGPoint(x: 250, y: 50), activatingWindow: true)
+        expectEqual(h.editor.editingShapeID, nil, "the click that brings the window forward only brings it forward")
+        expectEqual(h.editor.selection, card)
+        h.click(at: CGPoint(x: 450, y: 50))
+        h.click(at: CGPoint(x: 450, y: 50))
+        expectEqual(h.editor.editingShapeID, nil, "a box isn't edited in place")
+        h.editor.selection = card
+        h.hold(.shift)
+        h.click(at: CGPoint(x: 290, y: 50))
+        h.hold([])
+        expectEqual(h.editor.editingShapeID, nil, "⇧ takes it out of the selection instead")
+        h.editor.transact { $0.update(card) { $0[Frozen.self] = true } }
+        h.editor.selection = card
+        h.click(at: CGPoint(x: 290, y: 50))
+        expectEqual(h.editor.editingShapeID, nil, "a read-only one is only selected")
+        expectEqual(log.refusals, [], "and a click on it isn't a try")
+        _ = box
     },
     test("a double-click press straight onto a member of a multi-selection edits it, selected alone: what's edited is selected") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), CardsPlugin()])
@@ -105,12 +152,13 @@ import TestKit
         expectEqual(h.editor.editingShapeID, card)
         expectEqual(h.editor.selectedShapeIDs, [card])
     },
-    test("a place tool that edits: centered, selected, editing, and back to select") {
+    test("a place tool that edits: centered, selected, editing once the press is let go, and back to select") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), CardsPlugin()])
         h.editor.setTool(ToolID(placing: Card.kind))
         expectEqual(h.editor.currentToolID, ToolID(placing: Card.kind))
         expectEqual(h.editor.cursor, .crosshair)
         h.press(at: CGPoint(x: 100, y: 100))
+        h.release()
         let card = try require(h.editor.document.shapes.first)
         expectEqual(card.box?.origin, CGPoint(x: 50, y: 70))
         expectEqual(h.editor.editingShapeID, card.id)

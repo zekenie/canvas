@@ -1,4 +1,5 @@
 import AppKit
+import Keyboard
 
 /// The selection's UI constants. Sizes are view points. The values follow tldraw.
 @MainActor
@@ -24,7 +25,7 @@ enum SelectionStyle {
     /// does (its zoom config, and tldraw's zoomToBounds): 100 points of margin in all, no closer
     /// than 120%, over 200 ms.
     static let revealInset: CGFloat = 100
-    static let revealMaxZoom: CGFloat = 1.2
+    static let revealMaxZoom = ReadableZoom.maximum
     static let revealDuration: Duration = .milliseconds(200)
     /// Going to shapes (`goTo`) leaves the camera where it is when they're all in view at this zoom
     /// or closer. Text on the canvas is set for 100%, a note's at 16 points: at 70% that's 11.2
@@ -32,6 +33,14 @@ enum SelectionStyle {
     /// sets text to be read at. Further out the shapes are there but can't be read, so going to them
     /// brings them closer.
     static let readableZoom: CGFloat = 0.7
+    /// How far an arrow key nudges the selection, and with ⇧, in world units (tldraw's 1 and 10).
+    static let nudge: CGFloat = 1
+    static let shiftNudge: CGFloat = 10
+    /// The arrow keys, and which way each nudges.
+    static let nudges: [(KeyChord, CGPoint)] = [
+        (.leftArrow, CGPoint(x: -1, y: 0)), (.rightArrow, CGPoint(x: 1, y: 0)),
+        (.upArrow, CGPoint(x: 0, y: -1)), (.downArrow, CGPoint(x: 0, y: 1)),
+    ]
 }
 
 extension NSAppearance {

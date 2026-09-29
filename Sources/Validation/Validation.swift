@@ -179,6 +179,14 @@ public final class ValidationEngine {
     private let schemaVerdicts = SchemaVerdicts()
     /// The boards shown last, as they were left.
     private var kept = BoardStash<Board>()
+    /// Each outlined shape's ring, as the overlay last drew it.
+    let rings = ValidationRings()
+    #if DEBUG
+    /// How many rings the overlay has grown from shapes' outlines, and how many it keeps, debug
+    /// builds: a frame drawn again at the same zoom grows none.
+    public var ringsGrown: Int { rings.grown }
+    public var ringsKept: Int { rings.count }
+    #endif
 
     init(editor: CanvasEditor) {
         self.editor = editor
@@ -349,30 +357,99 @@ enum ValidationStyle {
     static let padding: CGFloat = 3
     static let lineWidth: CGFloat = 2
     static let cornerRadius: CGFloat = 4
+    /// A shape smaller than this on screen, either way, is ringed by a rounded rect around its
+    /// bounds, which looks the same there, and costs nothing to make.
+    static let outlineMinSide: CGFloat = 32
+    /// A ring grown at one zoom is kept while the zoom stays within this fraction of it: its padding
+    /// is then off by at most a tenth of 3 points, which no one sees, and a pinch or a zoom's glide
+    /// grows each ring once every tenth, not every frame.
+    static let ringZoomTolerance: CGFloat = 0.1
 }
 
 /// The horizontal draws its own decoration; shapes never know they're invalid. A shape is outlined
-/// in its worst issue's color: red with an error, orange with only warnings, not at all without.
+/// in its worst issue's color: red with an error, orange with only warnings, not at all without;
+/// nor while it's being edited, since what it says is still being written. The ring follows the
+/// shape's own outline (`ValidationRings`), as a selection's does, 3 view points out.
 struct ValidationOverlay: CanvasOverlay {
     var space: OverlaySpace { .world }
     func draw(in context: OverlayContext) {
-        guard let results = context.editor.validation?.results, !results.isEmpty else { return }
+        guard let engine = context.editor.validation else { return }
+        let results = engine.results
+        engine.rings.forget(allBut: results)
+        guard !results.isEmpty else { return }
+        let editing = context.editor.editingShapeID
         let zoom = context.zoom
-        let pad = ValidationStyle.padding / zoom, radius = ValidationStyle.cornerRadius / zoom
         // In paint order, so overlapping outlines stack the same way every time; only shapes whose
         // outline can reach the view.
-        let reach = pad + ValidationStyle.lineWidth / zoom
+        let reach = (ValidationStyle.padding + ValidationStyle.lineWidth) / zoom
         for record in context.editor.paintOrder(in: context.visibleRect.insetBy(dx: -reach, dy: -reach)) {
-            guard let worst = results[record.id]?.worst, let bounds = context.shapes.geometry(of: record.id)?.bounds else { continue }
+            guard record.id != editing, let worst = results[record.id]?.worst, let geometry = context.shapes.geometry(of: record.id) else { continue }
+            let ring = engine.rings.ring(of: record, geometry: geometry, in: context.shapes)
             // Where the shape is drawn, so the outline moves with a shaking shape.
             let offset = context.worldDrawingOffset(of: record.id)
-            let outline = bounds.offsetBy(dx: offset.x, dy: offset.y).insetBy(dx: -pad, dy: -pad)
-            context.cg.addPath(CGPath(roundedRect: outline, cornerWidth: radius, cornerHeight: radius, transform: nil))
+            var shift = CGAffineTransform(translationX: offset.x, y: offset.y)
+            context.cg.addPath(offset == .zero ? ring : ring.copy(using: &shift) ?? ring)
             context.cg.setStrokeColor(worst.color.cgColor)
             context.cg.setLineWidth(ValidationStyle.lineWidth / zoom)
+            context.cg.setLineJoin(.round)
             context.cg.strokePath()
         }
     }
+}
+
+/// The line the overlay strokes around each shape with issues: the shape's outline as the core
+/// strokes a selection (`registry.indicatorPath(of:in:)`), grown by the padding, so a card's ring
+/// follows its rounded corners and an arrow's its line; a rounded rect around the bounds for a
+/// shape small on screen. Growing an outline takes path arithmetic, so each shape's ring is kept
+/// until the shape or its outline changes, or the zoom by more than a tenth (the padding is view
+/// points: `ValidationStyle.ringZoomTolerance`), and dropped once the shape has no issues.
+@MainActor
+final class ValidationRings {
+    private struct Ring {
+        let record: AnyShapeRecord
+        let outline: [CGPoint]
+        let zoom: CGFloat
+        let path: CGPath
+    }
+
+    private var rings: [ShapeID: Ring] = [:]
+    /// How many rings it has grown, debug builds: a test holds a frame drawn again to none.
+    #if DEBUG
+    private(set) var grown = 0
+    #endif
+
+    func ring(of record: AnyShapeRecord, geometry: ShapeGeometry, in shapes: ShapeContext) -> CGPath {
+        let zoom = shapes.zoom
+        if let ring = rings[record.id], abs(zoom / ring.zoom - 1) < ValidationStyle.ringZoomTolerance, ring.outline == geometry.outline,
+           ring.record == record {
+            return ring.path
+        }
+        let pad = ValidationStyle.padding / zoom
+        let bounds = geometry.bounds
+        let path: CGPath
+        if min(bounds.width, bounds.height) * zoom >= ValidationStyle.outlineMinSide,
+           let outline = shapes.registry.indicatorPath(of: record, in: shapes), !outline.isEmpty {
+            // Everything within the padding of the outline, and inside it for a closed shape: its
+            // edge is the outline grown by the padding.
+            let band = outline.copy(strokingWithWidth: pad * 2, lineCap: .round, lineJoin: .round, miterLimit: 10)
+            path = geometry.isClosed ? outline.union(band) : band.normalized()
+            #if DEBUG
+            grown += 1
+            #endif
+        } else {
+            let radius = ValidationStyle.cornerRadius / zoom
+            path = CGPath(roundedRect: bounds.insetBy(dx: -pad, dy: -pad), cornerWidth: radius, cornerHeight: radius, transform: nil)
+        }
+        rings[record.id] = Ring(record: record, outline: geometry.outline, zoom: zoom, path: path)
+        return path
+    }
+
+    /// Drops the rings of shapes that no longer have issues (or are gone).
+    func forget(allBut results: [ShapeID: ValidationResult]) {
+        for id in rings.keys.filter({ results[$0] == nil }) { rings[id] = nil }
+    }
+
+    var count: Int { rings.count }
 }
 
 /// Where a shape breaks its kind's schema (`Registry.schemaViolations(of:)`): a warning for each

@@ -25,8 +25,9 @@ func isAbout(_ color: [Int], within tolerance: Int = 14) -> ([Int]) -> Bool {
 
 /// Text-dark: every channel under 120.
 func isInk(_ pixel: [Int]) -> Bool { pixel.prefix(3).allSatisfy { $0 < 120 } }
-/// Indigo, as the `{}` mark is: blue well above red and green.
-func isAccent(_ pixel: [Int]) -> Bool { pixel[2] > pixel[0] + 60 && pixel[2] > pixel[1] + 60 }
+/// Magenta, as the `{}` mark is: red and blue well above green, blue nearly red's (not the indigo
+/// of a subboard's border, whose blue is well above its red, nor validation's red).
+func isAccent(_ pixel: [Int]) -> Bool { pixel[0] > pixel[1] + 50 && pixel[2] > pixel[1] + 40 && abs(pixel[0] - pixel[2]) < 60 }
 /// Any hue at all: a channel well apart from another.
 func isColorful(_ pixel: [Int]) -> Bool { pixel.prefix(3).max()! - pixel.prefix(3).min()! > 40 }
 /// Muted text: darker than the card, lighter than ink.
@@ -71,7 +72,7 @@ private let titleBand = CGRect(x: 52, y: 52, width: 216, height: 17)
         _ = renderBitmap(editor, size: size)
         expect(SchemasPlugin.schemasRead - typed <= 1, "only the typed card's, if that: \(SchemasPlugin.schemasRead - typed)")
     },
-    test("a card: white, the {} mark in indigo and its name in ink, a gray chip per field, a gray star when required") {
+    test("a card: white, the {} mark in magenta and its name in ink, a gray chip per field, a gray star when required") {
         let bitmap = try render([card(fixture(6))])
         expect(isAbout(Palette.card)(pixel(bitmap, at: CGPoint(x: 150, y: 45))), "the card's body")
         expect(any(bitmap, in: CGRect(x: 52, y: 52, width: 16, height: 17), isAccent), "the {} mark")

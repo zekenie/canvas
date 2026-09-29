@@ -36,7 +36,8 @@ extension ShapeDefinition {
 extension Editable {
     func erasedEditingView(for record: AnyShapeRecord, editor: CanvasEditor) -> EditingView? {
         record.typed(as: Props.self).map {
-            makeEditingView(for: $0, context: EditContext(shapeID: record.id, startPoint: editor.editingStartPoint, editor: editor))
+            makeEditingView(for: $0, context: EditContext(shapeID: record.id, startPoint: editor.editingStartPoint,
+                                                          startClickCount: editor.editingStartClickCount, editor: editor))
         }
     }
 }

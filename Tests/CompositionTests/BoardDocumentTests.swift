@@ -15,7 +15,8 @@ import TestKit
 /// Boards as the app configures them, with the app's content less its toolbar, and their clipboard
 /// on `pasteboard` (a test that copies passes its own).
 @MainActor func configureBoards(pasteboard: NSPasteboard = .general) throws {
-    BoardDocument.configuration = BoardConfiguration(registry: try ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel())) { board in
+    BoardDocument.configuration = BoardConfiguration(registry: try ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel()),
+                                                     coveredTop: ShippedPlugins.coveredTop(on:), boardName: ShippedPlugins.boardName(of:)) { board in
         AnyView(InspectorHost(editor: board.editor, focus: board.focus, showsDetails: board.view.showsDetails, showsMinimap: board.view.showsMinimap,
                               view: board.view))
     }
@@ -163,7 +164,7 @@ let boardType = "com.example.InfiniteCanvas.board"
         } catch let error as NSError {
             expectEqual(error.domain, NSCocoaErrorDomain)
             expectEqual(error.code, NSFileReadCorruptFileError)
-            expect(error.localizedFailureReason?.contains("isn't a board") == true, "\(error.localizedFailureReason ?? "")")
+            expect(error.localizedFailureReason?.contains("isn’t a board") == true, "\(error.localizedFailureReason ?? "")")
             expectEqual(error.localizedRecoveryOptions, nil)
         }
         let newer = BoardDocument.openError(BoardReadError.newerFormat(9), earlierVersion: URL(fileURLWithPath: "/tmp/earlier.canvasboard"))
@@ -199,9 +200,10 @@ let boardType = "com.example.InfiniteCanvas.board"
         expect(window.windowController === controller, "the controller is in the window's responder chain")
         let zoom = board.editor.camera.zoom
         controller.zoomIn(nil)
-        expect(board.editor.camera.zoom > zoom)
+        window.spin { board.editor.camera.zoom > zoom }
+        expectEqual(board.editor.cameraTarget.zoom, 2, "the next stop")
         controller.zoomToActualSize(nil)
-        expectEqual(board.editor.camera.zoom, 1)
+        window.spin { board.editor.camera.zoom == 1 }
         let item = NSMenuItem(title: "", action: #selector(BoardWindowController.toggleDetails(_:)), keyEquivalent: "")
         _ = controller.validateMenuItem(item)
         expectEqual(item.title, "Hide Inspector")
@@ -304,9 +306,11 @@ let boardType = "com.example.InfiniteCanvas.board"
         try check("View", "Zoom In", "zoomIn:", "=")
         try check("View", "Zoom Out", "zoomOut:", "-")
         try check("View", "Actual Size", "zoomToActualSize:", "0")
+        try check("View", "Zoom to Fit", "zoomToFit:", "1", .shift)
+        try check("View", "Zoom to Selection", "zoomToSelection:", "2", .shift)
         try check("Go", "Back", "goBack:", "[")
         try check("Go", "Enclosing Board", "enclosingBoard:", "\u{F700}")
-        try check("Go", "Open", "openSelection:", "\u{F701}")
+        try check("Go", "Open Selection", "openSelection:", "\u{F701}")
         expectEqual(menus.main.items.map(\.title), ["Infinite Canvas", "File", "Edit", "View", "Go", "Window", "Help"])
         try check("Infinite Canvas", "Settings…", "showSettings:", ",")
         let app = try require(menus.main.item(withTitle: "Infinite Canvas")?.submenu)

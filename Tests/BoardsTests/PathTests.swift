@@ -50,6 +50,23 @@ import Titles
         expectEqual(layout.folded.map(\.board), deepIDs.prefix(3).map { BoardID(owner: $0) })
         expectEqual(layout.trailing.map(\.board), deepIDs.suffix(2).map { BoardID(owner: $0) })
     },
+    test("\"…\" is a menu of the boards it folds, root side first, each going up to its board, one step back") {
+        let (h, ids) = try chainHarness(depth: 5)
+        for (id, name) in zip(ids, ["A", "B", "C", "D", "E"]) {
+            expect(h.editor.showBoard(try require(h.editor.file.board(containing: id))))
+            h.name(id, name)
+        }
+        expect(h.enter(ids[4]))
+        let folded = try require(h.editor.boardCrumbs).layout(rootName: "R").folded
+        let menu = BoardPath.foldedMenu(folded, editor: h.editor)
+        expectEqual(menu.items.map(\.title), ["A", "B", "C"])
+        expect(menu.items.allSatisfy(\.isEnabled))
+        try menu.choose("B")                     // through NSApp, which this suite alone never makes
+        expectEqual(h.editor.board, BoardID(owner: ids[1]))
+        expectEqual(h.editor.selectedShapeIDs, [ids[2]], "the shape the path came through")
+        h.editor.goBack()
+        expectEqual(h.editor.board, BoardID(owner: ids[4]))
+    },
     test("a commit on the board shown leaves the crumbs as they are; showing another board remakes them") {
         let nest = Nest()
         let h = try nestHarness(nest)

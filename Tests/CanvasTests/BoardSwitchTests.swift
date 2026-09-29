@@ -309,6 +309,22 @@ private func uuid(_ n: Int) -> String { String(format: "00000000-0000-0000-0000-
         headless.enter(tree.p)
         expectEqual(headless.editor.camera, Camera(), "no view to fit into")
     },
+    test("a first visit's fit and Zoom to Fit leave clear what the host covers of the view's top on that board") {
+        let tree = BoardTree()
+        let h = try harness(tree.file)
+        h.editor.viewportDidResize(to: CGSize(width: 800, height: 600))
+        h.editor.coveredTop = { $0.isRoot ? 0 : 35 }
+        expectEqual(h.editor.unobscuredViewport, CGRect(x: 0, y: 0, width: 800, height: 600), "nothing covered on the root")
+        h.enter(tree.p)
+        expectEqual(h.editor.unobscuredViewport, CGRect(x: 0, y: 35, width: 800, height: 565))
+        let clear = CGRect(x: 0, y: 35, width: 800, height: 565)
+        expectEqual(h.editor.camera, Camera(fitting: CGRect(x: 0, y: 0, width: 1200, height: 1100), in: clear, inset: 64, maxZoom: 1))
+        expectClose(h.editor.camera.toView(CGPoint(x: 600, y: 0)).y, 35 + 32, within: 1e-9)
+        h.editor.camera = Camera()
+        h.editor.perform(.zoomToFit)
+        h.wait(320)
+        expectEqual(h.editor.camera, Camera(fitting: CGRect(x: 0, y: 0, width: 1200, height: 1100), in: clear, inset: 64))
+    },
     test("a camera moving as the board is left stops, and the board keeps where it was headed") {
         let tree = BoardTree()
         let h = try harness(tree.file)

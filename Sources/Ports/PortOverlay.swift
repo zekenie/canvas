@@ -90,7 +90,7 @@ struct PortOverlay: CanvasOverlay {
         for record in editor.paintOrder(in: context.visibleRect)
         where record.id != editor.hintedShapeID && state.kinds[record.kind] != nil
             && editor.channel(of: connection, endingAt: record) != nil && connector.canConnect(record.id, context.shapes) {
-            guard let path = indicatorPath(of: record, in: context.shapes) else { continue }
+            guard let path = context.shapes.registry.indicatorPath(of: record, in: context.shapes) else { continue }
             let offset = context.worldDrawingOffset(of: record.id)
             outlines.addPath(path, transform: CGAffineTransform(translationX: offset.x, y: offset.y))
         }
@@ -101,16 +101,4 @@ struct PortOverlay: CanvasOverlay {
         cg.addPath(outlines)
         cg.strokePath()
     }
-}
-
-/// The outline the core draws for a shape (its definition's `indicatorPath`).
-@MainActor
-private func indicatorPath(of record: AnyShapeRecord, in context: ShapeContext) -> CGPath? {
-    guard let definition = context.registry.definition(for: record.kind) else { return nil }
-    return indicatorPath(definition, of: record, in: context)
-}
-
-@MainActor
-private func indicatorPath<D: ShapeDefinition>(_ definition: D, of record: AnyShapeRecord, in context: ShapeContext) -> CGPath? {
-    record.typed(as: D.Props.self).map { definition.indicatorPath(of: $0, in: context) }
 }

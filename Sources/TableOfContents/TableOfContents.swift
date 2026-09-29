@@ -51,9 +51,10 @@ extension ContentsTitles: KeyedExtensionPoint {
     public static func uniqueKeys(of _: Contribution, for target: ShapeTarget) -> [AnyHashable] { [target] }
 }
 
-/// Dots at the trailing end of a shape's row, from any plugin: a state worth seeing at a glance down
-/// the list (ValidationContents marks a shape with issues red or orange). A list: the kind's
-/// contributions, then every kind's, each in plugin order, and a row shows every mark it gets. A
+/// Marks at the trailing end of a shape's row, from any plugin: a state worth seeing at a glance down
+/// the list (ValidationContents marks a shape with issues with a red or orange dot, Locking a locked
+/// one with a lock). A list: the kind's contributions, then every kind's that apply to it, each in
+/// plugin order, and a row shows every mark it gets. A
 /// mark is part of the row, made with it, and made again with it when a commit changes the shape.
 /// A mark read from other shapes (validation's rules may look at other shapes) also names, with
 /// `affected`, the shapes a commit may change the marks of without changing them: their marks are
@@ -70,24 +71,42 @@ public enum ContentsMarks: ExtensionPoint {
 public struct ContentsMarkContribution {
     let mark: @MainActor (AnyShapeRecord, ContentsContext) -> ContentsMark?
     let affected: (@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>)?
+    /// Which kinds an every-shape mark is for, asked once per kind.
+    let appliesTo: @MainActor (ContentsKind) -> Bool
 
     /// `mark` gives the shape's mark, nil for none. `affected`, given each commit's change set,
     /// names the shapes it doesn't change whose marks it may; leave it out for a mark that reads
-    /// only its shape.
+    /// only its shape. `appliesTo` picks the kinds a mark for every shape goes on.
     public init(affected: (@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>)? = nil,
+                where appliesTo: @escaping @MainActor (ContentsKind) -> Bool = { _ in true },
                 _ mark: @escaping @MainActor (AnyShapeRecord, ContentsContext) -> ContentsMark?) {
         self.mark = mark
         self.affected = affected
+        self.appliesTo = appliesTo
     }
 }
 
-/// A small dot at a row's trailing end, in `color`. `help` says what it means, as its tooltip and
-/// to VoiceOver.
+/// A kind, as the `where` of a mark for every shape sees it (`contentsMarkForEveryShape(where:)`):
+/// asked once per kind, so a mark goes only on the kinds that opted into what it marks.
+@MainActor
+public struct ContentsKind {
+    public let kind: ShapeKind
+    public let registry: Registry
+
+    /// Whether this kind's shapes hold an added property: opted into it, however (Locking's lock
+    /// goes on the kinds that can be locked, `$0.holds(LockedProperty.self)`).
+    public func holds<P: ShapeProperty>(_: P.Type) -> Bool { registry.properties(for: kind).contains(P.key) }
+}
+
+/// A mark at a row's trailing end: a small dot in `color`, or, with `symbol`, that SF Symbol in it
+/// (a lock). `help` says what it means, as its tooltip and to VoiceOver.
 public struct ContentsMark: Hashable, Sendable {
+    public var symbol: String?
     public var color: Color
     public var help: String
 
-    public init(color: Color, help: String) {
+    public init(symbol: String? = nil, color: Color, help: String) {
+        self.symbol = symbol
         self.color = color
         self.help = help
     }
@@ -246,18 +265,25 @@ extension PluginRegistrar {
     }
 
     /// A mark on every shape's row, where `make` gives one (nil for none), from the shape and the
-    /// editor's services. A mark read from more than the shape (a horizontal's engine, which looks
-    /// at other shapes) names, with `affected`, the shapes whose marks a commit may change besides
-    /// those it changes:
+    /// editor's services; `where` (a `ContentsKind`, asked once per kind) keeps it to the kinds
+    /// that opted into what it marks, as Locking's lock goes only on kinds that can be locked:
+    ///
+    ///     registrar.contentsMarkForEveryShape(where: { $0.holds(LockedProperty.self) }) { shape, _ in
+    ///         shape.isLocked ? ContentsMark(symbol: "lock.fill", color: .secondary, help: "Locked") : nil
+    ///     }
+    ///
+    /// A mark read from more than the shape (a horizontal's engine, which looks at other shapes)
+    /// names, with `affected`, the shapes whose marks a commit may change besides those it changes:
     ///
     ///     registrar.contentsMarkForEveryShape(affected: { changes, context in
     ///         context.service(ValidationEngine.self)?.dependents(of: changes.shapeIDs) ?? []
     ///     }) { shape, context in ... }
     public mutating func contentsMarkForEveryShape(
+        where appliesTo: @escaping @MainActor (ContentsKind) -> Bool = { _ in true },
         affected: (@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>)? = nil,
         _ make: @escaping @MainActor (AnyShapeRecord, ContentsContext) -> ContentsMark?
     ) {
-        contribute(ContentsMarkContribution(affected: affected, make), to: ContentsMarks.self, for: .any)
+        contribute(ContentsMarkContribution(affected: affected, where: appliesTo, make), to: ContentsMarks.self, for: .any)
     }
 }
 
@@ -294,6 +320,20 @@ public struct ContentsLabel: View {
 
     public var isPlaceholder: Bool { title.allSatisfy(\.isWhitespace) && placeholder != nil }
 
+    /// The row's tooltip: its text, for a row the list cuts short (notes that begin alike), up to
+    /// `ContentsStyle.helpLength` characters, cut between words with "…" past that (a note's whole
+    /// pasted page would be a help tag down the screen); none for a placeholder, which says nothing
+    /// more, or for no text.
+    public var help: String? {
+        let text = text
+        guard !isPlaceholder, !text.isEmpty else { return nil }
+        guard text.count > ContentsStyle.helpLength else { return text }
+        let end = text.index(text.startIndex, offsetBy: ContentsStyle.helpLength)
+        let head = text[..<end]
+        let cut = text[end] == " " ? head : head[..<(head.lastIndex(of: " ") ?? head.endIndex)]
+        return cut + "…"
+    }
+
     /// The same label, called `title` (`ContentsTitles`).
     func retitled(_ title: String) -> ContentsLabel {
         ContentsLabel(title, placeholder: placeholder, systemImage: systemImage, color: color, badge: badge)
@@ -322,6 +362,7 @@ public struct ContentsLabel: View {
             }
         }
         .lineLimit(1)
+        .help(help ?? "")
     }
 }
 
@@ -353,11 +394,17 @@ public struct TableOfContentsPlugin: CanvasPlugin {
 @MainActor
 enum ContentsStyle {
     static let badgeSpacing: CGFloat = 6
+    /// The most of a row's text its tooltip shows (`ContentsLabel.help`): enough to tell apart rows
+    /// that begin alike.
+    static let helpLength = 200
     /// The header's: between the up button, the heading's symbol and its title; the up button's width.
     static let headerSpacing: CGFloat = 4
     static let upWidth: CGFloat = 16
-    /// A mark's dot, and the square around it that its tooltip answers in.
+    /// The up button's: an arrow that turns up, a way out as Finder's enclosing folder is, not a disclosure.
+    static let upSymbol = "arrow.turn.left.up"
+    /// A mark's dot, a mark's symbol, and the square around either that its tooltip answers in.
     static let markSize: CGFloat = 6
+    static let markSymbolSize: CGFloat = 9
     static let markTarget: CGFloat = 12
     /// A hovered row's tint, in the selection highlight's place: inset from the row's sides, with
     /// its corners.

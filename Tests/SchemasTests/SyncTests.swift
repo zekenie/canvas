@@ -518,6 +518,24 @@ let petSchema = """
         expectEqual(b.status(id), .failed(SchemaSyncFailure(writing: .prompt, "Unusable answer")))
         expectEqual(b.card(id)?.prompt, "", "never written over the person's prompt")
     },
+    test("a refusal is a failure with nothing to retry, either way (asked again, it would decline again); rewording syncs") {
+        let b = try SyncBench()
+        let id = b.place()
+        b.typePrompt(id, "a pet in my household")
+        b.model.queue(ModelResponse(text: "", stopReason: .refusal))
+        b.sync.commit(id)
+        spinRunLoop(until: { !b.isUpdating(id) })
+        expectEqual(b.status(id), .failed(SchemaSyncFailure(writing: .schema, "Claude declined", remedy: .editByHand)))
+        expectEqual(b.card(id)?.schema, SchemaCard.starter)
+        b.typePrompt(id, "a pet")
+        b.sync(id, answer: petSchema)
+        expectEqual(b.card(id)?.schema, petSchema, "the next commit syncs")
+        b.typeSchema(id, petSchema.replacingOccurrences(of: "\"name\"", with: "\"nickname\""))
+        b.model.queue(ModelResponse(text: "", stopReason: .refusal))
+        b.sync.commit(id)
+        spinRunLoop(until: { !b.isUpdating(id) })
+        expectEqual(b.status(id), .failed(SchemaSyncFailure(writing: .prompt, "Claude declined", remedy: .editByHand)))
+    },
     test("NO_CHANGE writes nothing, and the sync is done") {
         let b = try SyncBench()
         let id = b.place()

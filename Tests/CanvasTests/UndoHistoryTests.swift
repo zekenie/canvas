@@ -296,6 +296,85 @@ private let frame = CGRect(x: 0, y: 0, width: 100, height: 100)
         h.editor.undo()
         expectEqual(h.editor.document[box]?.box, frame)
     },
+    test("a held key's repeats are part of the step its first press opened, until another key, a commit, seal or undo") {
+        let h = try boxes([Contributor(id: "keys") { r in
+            r.keyStrokes { editor, stroke in
+                guard stroke.characters == "x" || stroke.characters == "y" else { return false }
+                editor.transact("Slide") { $0.translate(Set(editor.document.shapes.map(\.id)), by: CGPoint(x: 1, y: 0)) }
+                return true
+            }
+        }])
+        let box = h.add(Box(frame))
+        forget(h)
+        let events = UndoEvents(h.editor)
+        h.key("x")
+        h.key("x", isRepeat: true)
+        h.key("x", isRepeat: true)
+        expectEqual(events.events, [.began], "one step, still taking the key's repeats")
+        expectEqual(h.editor.undoHistory.undoName, "Slide")
+        h.key("y", isRepeat: true)
+        expectEqual(events.events, [.began, .closed, .began], "another key's repeat is a step of its own")
+        h.hold(.shift)
+        h.key("y", isRepeat: true)
+        expectEqual(events.events, [.began, .closed, .began, .closed, .began], "so is the key with other keys held")
+        h.hold([])
+        h.key("x")
+        h.key("x")
+        expectEqual(events.events.count, 9, "a press of the key again, not a repeat, is one too")
+        h.editor.transact("Nudge") { $0.update(box, as: Box.self) { $0.frame.size.width = 50 } }
+        expectEqual(Array(events.events.suffix(3)), [.closed, .began, .closed], "a commit closes it")
+        for _ in 0..<5 { h.editor.undo() }
+        expectEqual(h.editor.document[box]?.box, frame.offsetBy(dx: 3, dy: 0), "the first key and its two repeats: one step left")
+        h.editor.undo()
+        expectEqual(h.editor.document[box]?.box, frame)
+        h.editor.redo()
+        h.key("x", isRepeat: true)
+        expectEqual(h.editor.document[box]?.box, frame.offsetBy(dx: 4, dy: 0))
+        expectEqual(h.editor.undoHistory.undoName, "Slide")
+        h.editor.undoHistory.seal()
+        h.key("x", isRepeat: true)
+        h.editor.undo()
+        expectEqual(h.editor.document[box]?.box, frame.offsetBy(dx: 4, dy: 0), "sealed: the repeat after it is a step of its own")
+    },
+    test("a held key's step closes as the key is let go (⇧ or not), as every key is (the canvas lost the keyboard), and at a press; an autosave waits for it") {
+        let h = try boxes([Contributor(id: "keys") { r in
+            r.keyStrokes { editor, stroke in
+                guard stroke.characters.lowercased() == "x" else { return false }
+                editor.transact("Slide") { $0.translate(Set(editor.document.shapes.map(\.id)), by: CGPoint(x: 1, y: 0)) }
+                return true
+            }
+        }])
+        let box = h.add(Box(frame))
+        forget(h)
+        let events = UndoEvents(h.editor)
+        h.key("x")
+        h.key("x", isRepeat: true)
+        expect(h.editor.undoHistory.isKeyHolding, "held, with changes: an autosave that can wait, waits")
+        expect(!h.editor.undoHistory.isPressing)
+        h.editor.keyUp(KeyStroke("y"))
+        expectEqual(events.events, [.began], "another key's release isn't its")
+        h.hold(.shift)
+        h.editor.keyUp(KeyStroke("X", modifiers: .shift))
+        h.hold([])
+        expectEqual(events.events, [.began, .closed], "let go of, with ⇧ held now or not")
+        expect(!h.editor.undoHistory.isKeyHolding)
+        h.key("x", isRepeat: true)
+        expectEqual(events.events, [.began, .closed, .began], "a repeat after it is a step of its own")
+        h.editor.keysReleased()
+        expectEqual(events.events, [.began, .closed, .began, .closed], "every key let go")
+        h.key("x")
+        h.press(at: CGPoint(x: 500, y: 500))
+        h.release()
+        h.key("x", isRepeat: true)
+        expectEqual(Array(events.events.suffix(3)), [.began, .closed, .began], "a press (the Hand's, which commits nothing) closes it")
+        h.editor.undo()
+        expectEqual(h.editor.document[box]?.box, frame.offsetBy(dx: 4, dy: 0), "the repeat after the press, alone")
+        h.editor.undo()
+        expectEqual(h.editor.document[box]?.box, frame.offsetBy(dx: 3, dy: 0), "the key before it, alone")
+        let lone = try boxes([Contributor(id: "keys") { r in r.keyStrokes { _, _ in true } }])
+        lone.key("x")
+        expect(!lone.editor.undoHistory.isKeyHolding, "a key that commits nothing holds nothing")
+    },
     test("commits under one coalescing key are one step, until another key, a commit without one, seal, an action or undo") {
         let h = try boxes()
         let box = h.add(Box(frame))

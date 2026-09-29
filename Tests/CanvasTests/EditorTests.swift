@@ -7,7 +7,7 @@ import TestKit
 
 // The core on its own: with no plugin claiming it, the Hand is the default tool.
 @MainActor let editorTests = Suite("Editor", [
-    test("a place tool that edits: centered, editing, and back to the default tool") {
+    test("a place tool that edits: centered, following the pointer while pressed, edited on the release, and back to the default tool") {
         let h = try EditorHarness(plugins: [CardsPlugin()])
         h.editor.setTool(ToolID(placing: Card.kind))
         expectEqual(h.editor.currentToolID, ToolID(placing: Card.kind))
@@ -15,8 +15,46 @@ import TestKit
         h.press(at: CGPoint(x: 100, y: 100))
         let card = try require(h.editor.document.shapes.first)
         expectEqual(card.box?.origin, CGPoint(x: 50, y: 70))
-        expectEqual(h.editor.editingShapeID, card.id)
         expectEqual(h.editor.currentToolID, .hand)
+        expectEqual(h.editor.editingShapeID, nil, "not while the press lasts")
+        h.drag(to: CGPoint(x: 130, y: 110))
+        expectEqual(h.editor.document[card.id]?.box?.origin, CGPoint(x: 80, y: 80), "it follows the pointer, as a translating placement does")
+        h.release()
+        expectEqual(h.editor.editingShapeID, card.id)
+        expectEqual(h.editor.undoHistory.undoName, "Add Card")
+        h.editor.endEditing()
+        h.click(at: CGPoint(x: 400, y: 400))
+        expectEqual(h.editor.editingShapeID, nil, "the hand's click places nothing")
+        h.editor.setTool(ToolID(placing: Card.kind))
+        h.click(at: CGPoint(x: 400, y: 400))
+        expectEqual(h.editor.editingShapeID, h.editor.document.shapes.last?.id, "a click: edited once it's let go")
+        expectEqual(h.editor.document.shapes.last?.box?.origin, CGPoint(x: 350, y: 370))
+    },
+    test("Escape while a placed shape follows the pointer takes it away: the press's step comes to nothing, and the release edits nothing") {
+        let h = try EditorHarness(plugins: [CardsPlugin(), discTools()])
+        for kind in [Card.kind, Disc.kind] {
+            h.editor.setTool(ToolID(placing: kind))
+            h.press(at: CGPoint(x: 100, y: 100))
+            h.drag(to: CGPoint(x: 150, y: 120))
+            h.escape()
+            expectEqual(h.editor.document.shapes, [], "\(kind)")
+            h.drag(to: CGPoint(x: 200, y: 200))
+            h.release()
+            expectEqual(h.editor.document.shapes, [])
+            expectEqual(h.editor.editingShapeID, nil)
+            expect(!h.editor.canUndo, "nothing to undo")
+            expectEqual(h.editor.currentToolID, .hand)
+        }
+    },
+    test("placed with no press under way, an editing placement's shape is edited at once, and any other stays where it's placed") {
+        let h = try EditorHarness(plugins: [CardsPlugin(), discTools()])
+        h.editor.place(try require(h.editor.registry.placement(for: Card.kind)), at: CGPoint(x: 100, y: 100))
+        let card = try require(h.editor.document.shapes.first?.id)
+        expectEqual(h.editor.editingShapeID, card)
+        h.editor.endEditing()
+        h.editor.place(try require(h.editor.registry.placement(for: Disc.kind)), at: CGPoint(x: 300, y: 300))
+        expect(h.editor.session == nil)
+        expectEqual(h.editor.document.shapes.last?.box?.origin, CGPoint(x: 280, y: 280))
     },
     test("a place tool that translates keeps dragging the new shape after switching to the default tool") {
         let h = try EditorHarness(plugins: [discTools()])
@@ -30,10 +68,11 @@ import TestKit
     },
     test("Escape on a drag puts back where the shape was, and only that: what else changed while it moved stays") {
         let h = try EditorHarness(plugins: [discTools()])
-        h.editor.setTool(ToolID(placing: Disc.kind))
-        h.press(at: CGPoint(x: 100, y: 100))
-        let disc = try require(h.editor.document.shapes.first)
+        let id = h.add(Disc(CGRect(x: 80, y: 80, width: 40, height: 40)))
+        let disc = try require(h.editor.document[id])
         let placed = try require(disc.box)
+        h.press(at: CGPoint(x: 100, y: 100))
+        h.editor.session = TranslatingSession(ids: [disc.id], from: CGPoint(x: 100, y: 100), in: h.editor)
         h.drag(to: CGPoint(x: 130, y: 110))
         // Something other than the drag writes the shape while it moves (a model's answer landing).
         h.editor.transact { $0.update(disc.id) { $0.box?.size.width += 40 } }
@@ -55,7 +94,7 @@ import TestKit
         h.press(at: CGPoint(x: 300, y: 300))
         let disc = try require(h.editor.document.shapes.last?.id)
         expectEqual(log.events.last, "placed \(disc) in hand, editing nil, session none")
-        expect(h.editor.session is TranslatingSession)
+        expect(h.editor.session != nil, "then it follows the pointer")
         h.release()
     },
     test("services hear of every transaction that changed the document, and of no other") {
@@ -285,6 +324,26 @@ import TestKit
         h.editor.setTool("small-disc"); h.press(at: CGPoint(x: 100, y: 100)); h.release()
         h.editor.setTool(ToolID(placing: Disc.kind)); h.press(at: CGPoint(x: 300, y: 300)); h.release()
         expectEqual(h.editor.document.shapes.map(\.box), [CGRect(x: 95, y: 95, width: 10, height: 10), CGRect(x: 280, y: 280, width: 40, height: 40)])
+    },
+    test("an editing view keeps a rect in view (its caret): the camera pans at once, as little as it takes, 16 points in from the clear part of the view; no zoom, no step") {
+        let h = try EditorHarness(plugins: [CardsPlugin()])
+        h.editor.viewportDidResize(to: CGSize(width: 800, height: 600))
+        let card = h.add(Card(CGRect(x: 100, y: 700, width: 100, height: 60)))
+        h.editor.replaceDocument(with: h.editor.document)
+        expect(h.editor.beginEditing(card))
+        let field = try require(h.editor.makeEditingView()?.view as? CardField)
+        let caret = CGRect(x: 10, y: 10, width: 1, height: 16)          // in the view's coordinates: from the card's corner
+        field.context.keepInView(caret)
+        expectEqual(h.editor.camera, Camera(origin: CGPoint(x: 0, y: 142), zoom: 1), "726, its bottom, to 584")
+        field.context.keepInView(caret)
+        expectEqual(h.editor.camera.origin, CGPoint(x: 0, y: 142), "in view: nothing")
+        h.editor.coveredTop = { _ in 35 }
+        h.editor.camera = Camera(origin: CGPoint(x: 0, y: 700), zoom: 2)
+        field.context.keepInView(caret)
+        expectEqual(h.editor.camera, Camera(origin: CGPoint(x: 0, y: 700 - 15.5), zoom: 2), "at its top, 20 points down: to 51, 16 below the covered top")
+        field.context.keepInView(CGRect(x: 90, y: 10, width: 1, height: 16))
+        expectEqual(h.editor.camera.origin.x, 0, "190 at 200%: 380 points in, in view")
+        expect(!h.editor.canUndo, "the camera's moves are no step")
     },
 ])
 

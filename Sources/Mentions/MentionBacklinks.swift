@@ -1,3 +1,4 @@
+import AppKit
 import Canvas
 
 /// A shape that mentions another, as a list of what mentions a shape shows it
@@ -11,12 +12,16 @@ public struct MentionBacklink: Hashable, Sendable {
     /// About 60 characters of the mentioner's text as plain text (each mention "@" and the name it
     /// shows now) around its first mention of the shape, on one line, "…" where it's cut.
     public let quote: String
+    /// Its symbol's color, as the `@` picker shows it: its kind's mention tint (a note's yellow);
+    /// nil for none, or a mentioner that can't be mentioned.
+    public let tint: NSColor?
 
-    public init(id: ShapeID, label: String, systemImage: String, quote: String) {
+    public init(id: ShapeID, label: String, systemImage: String, quote: String, tint: NSColor? = nil) {
         self.id = id
         self.label = label
         self.systemImage = systemImage
         self.quote = quote
+        self.tint = tint
     }
 }
 

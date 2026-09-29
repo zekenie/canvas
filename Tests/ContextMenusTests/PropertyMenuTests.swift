@@ -36,13 +36,13 @@ struct WattagePlugin: CanvasPlugin {
         h.add(Box(slot(1)))
         let menu = try require(h.secondaryClick(at: middle(0)))
         expectEqual(menu.outline, ["Turn On", "Brighter", "Level ▸", "  ✓ 1", "  2", "  3", "—",
-                                   "Brighter Bulb", "Bulb ▸", "  ✓ 40 W", "  60 W", "  100 W"])
+                                   "Brighter Bulb", "Bulb ▸", "  ✓ 40 W", "  60 W", "  100 W", "—", "Delete"])
         let revision = h.editor.revision
         try menu.choose("Bulb", "100 W")
         expectEqual(h.editor.document[lamp]?[Wattage.self], 100)
         expectEqual(h.editor.revision, revision + 1)
         expect(!(try require(h.secondaryClick(at: middle(0))).outline.contains("Brighter Bulb")), "at 100 W, there's nothing brighter")
-        expect(h.secondaryClick(at: middle(1)) == nil, "a box has no wattage, and no menu")
+        expectEqual(try require(h.secondaryClick(at: middle(1))).outline, ["Delete"], "a box has no wattage")
     },
     test("on two kinds that opt in, a property's item is one item, and it edits each shape's value") {
         let h = try harness([WattagePlugin()])
@@ -51,7 +51,7 @@ struct WattagePlugin: CanvasPlugin {
         h.editor.transact { $0.update(fan) { $0[Wattage.self] = 60 } }
         h.editor.selectedShapeIDs = [lamp, fan]
         let menu = try require(h.secondaryClick(at: middle(1)))
-        expectEqual(menu.outline, ["Turn On", "—", "Brighter Bulb", "Bulb ▸", "  – 40 W", "  – 60 W", "  100 W"])
+        expectEqual(menu.outline, ["Turn On", "—", "Brighter Bulb", "Bulb ▸", "  – 40 W", "  – 60 W", "  100 W", "—", "Delete"])
         let revision = h.editor.revision
         try menu.choose("Brighter Bulb")
         expectEqual([h.editor.document[lamp]?[Wattage.self], h.editor.document[fan]?[Wattage.self]], [60, 80])

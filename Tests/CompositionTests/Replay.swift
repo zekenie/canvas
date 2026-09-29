@@ -90,8 +90,8 @@ let scenarios: [(String, withArrow: CGFloat?, [Step])] = [
                              .tool("v"), .selectArrow(0), .move(600, 210), .down(600, 210, clicks: 1), .dragPath(800, 430, speed: fast), .up]),
 ]
 
-/// The notes' text in `interactions`, so today's canvas shows no validation warning (the POC had
-/// no validation).
+/// The notes' text in `interactions`, which the POC's fixtures were recorded with (the render
+/// script, scripts/poc-fixtures/render, uses it too), so it never changes.
 let noteTexts = ("Start here", "End here")
 
 /// Arrow hints, outlines and handles mid-interaction, each captured to Fixtures/poc-<name>.png

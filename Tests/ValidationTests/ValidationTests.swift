@@ -267,6 +267,75 @@ extension Motto: ShapeProperty {
         expect(error[0] > 200 && error[1] < 100 && error[2] < 100, "red outline: \(error)")
         expect(clean[0] < 250 && abs(clean[0] - clean[2]) < 10, "no outline: \(clean)")
     },
+    test("the shape being edited isn't outlined, since what it says is still being written; once editing ends, it is") {
+        let h = try EditorHarness(plugins: [CardsPlugin(), ValidationPlugin(), Rules { r in
+            r.validate(Card.self) { card, _ in card.props.text.isEmpty ? [.warning("empty")] : [] }
+        }])
+        let card = h.add(Card(CGRect(x: 40, y: 40, width: 40, height: 40)))
+        let other = h.add(Card(CGRect(x: 140, y: 40, width: 40, height: 40)))
+        let outlined = renderBitmap(h.editor, size: CGSize(width: 300, height: 200))
+        expect(h.editor.beginEditing(card))
+        let editing = renderBitmap(h.editor, size: CGSize(width: 300, height: 200))
+        // Each card's top edge, 3 points out.
+        let top = CGPoint(x: 60, y: 37), otherTop = CGPoint(x: 160, y: 37)
+        expect(pixel(outlined, at: top)[0] > 200 && pixel(outlined, at: top)[2] < 100, "outlined before: \(pixel(outlined, at: top))")
+        expect(pixel(editing, at: top)[2] > 200, "not while it's edited: \(pixel(editing, at: top))")
+        expectEqual(pixel(editing, at: otherTop), pixel(outlined, at: otherTop), "the other card is still outlined")
+        expectEqual(h.editor.validation?.result(for: card)?.issues.map(\.message), ["empty"], "its issues are still there")
+        h.editor.endEditing()
+        expectEqual(pixel(renderBitmap(h.editor, size: CGSize(width: 300, height: 200)), at: top), pixel(outlined, at: top))
+    },
+    test("the ring follows the shape's own outline, 3 view points out: a disc's is a circle, not its bounds' corners") {
+        let h = try EditorHarness(plugins: [FixturesPlugin(), ValidationPlugin(), Rules { r in
+            r.validate(Disc.self) { _, _ in [.error("always")] }
+        }])
+        h.add(Disc(CGRect(x: 50, y: 50, width: 100, height: 100)))
+        let rep = renderBitmap(h.editor, size: CGSize(width: 200, height: 200))
+        @MainActor func red(_ point: CGPoint) -> Bool { let p = pixel(rep, at: point); return p[0] > 200 && p[1] < 150 && p[2] < 150 }
+        // The circle's radius is 50; the ring's, 53, around (100, 100).
+        expect(red(CGPoint(x: 100, y: 47)), "above the top, 3 out")
+        expect(red(CGPoint(x: 153, y: 100)), "right of the right")
+        let diagonal = 53 / CGFloat(2).squareRoot()
+        expect(red(CGPoint(x: 100 - diagonal, y: 100 - diagonal)), "on the diagonal, where the circle is")
+        expect(!red(CGPoint(x: 49, y: 49)) && !red(CGPoint(x: 48, y: 48)), "not at the bounds' corner: \(pixel(rep, at: CGPoint(x: 48, y: 48)))")
+    },
+    test("a shape small on screen is ringed by a rounded rect around its bounds; the ring is kept until the zoom changes by a tenth, or the shape changes") {
+        let h = try EditorHarness(plugins: [FixturesPlugin(), ValidationPlugin(), Rules { r in
+            r.validate(Disc.self) { _, _ in [.error("always")] }
+        }])
+        let disc = h.add(Disc(CGRect(x: 50, y: 50, width: 100, height: 100)))
+        let engine = try require(h.editor.validation)
+        h.editor.camera = Camera(origin: .zero, zoom: 0.2)       // 20 points across
+        let far = renderBitmap(h.editor, size: CGSize(width: 200, height: 200))
+        // The disc is (10, 10) to (30, 30) on screen; the ring, 3 points out, a rounded rect from 7 to
+        // 33, where a circle's would be 13 from (20, 20).
+        let edge = pixel(far, at: CGPoint(x: 12, y: 7)), corner = pixel(far, at: CGPoint(x: 8, y: 8))
+        expect(edge[0] > 200 && edge[1] < 150, "along the bounds' top: \(edge)")
+        expect(corner[0] > 200 && corner[1] < 215, "by the bounds' corner, rounded a little: \(corner)")
+        #if DEBUG
+        expectEqual(engine.ringsGrown, 0, "nothing grown")
+        h.editor.camera = Camera(origin: .zero, zoom: 1)
+        _ = renderBitmap(h.editor, size: CGSize(width: 200, height: 200))
+        expectEqual(engine.ringsGrown, 1)
+        _ = renderBitmap(h.editor, size: CGSize(width: 200, height: 200))
+        expectEqual(engine.ringsGrown, 1, "kept")
+        h.editor.camera = Camera(origin: CGPoint(x: 10, y: 0), zoom: 1)
+        _ = renderBitmap(h.editor, size: CGSize(width: 200, height: 200))
+        expectEqual(engine.ringsGrown, 1, "kept as the camera pans")
+        h.editor.camera = Camera(origin: .zero, zoom: 1.08)
+        _ = renderBitmap(h.editor, size: CGSize(width: 200, height: 200))
+        expectEqual(engine.ringsGrown, 1, "kept through a zoom's frames within a tenth of it")
+        h.editor.camera = Camera(origin: .zero, zoom: 1.5)
+        _ = renderBitmap(h.editor, size: CGSize(width: 200, height: 200))
+        expectEqual(engine.ringsGrown, 2, "grown again at another zoom")
+        h.editor.transact { $0.update(disc, as: Disc.self) { $0.frame.size.width = 120 } }
+        _ = renderBitmap(h.editor, size: CGSize(width: 200, height: 200))
+        expectEqual(engine.ringsGrown, 3, "and for the shape changed")
+        h.editor.transact { $0.delete([disc]) }
+        _ = renderBitmap(h.editor, size: CGSize(width: 200, height: 200))
+        expectEqual(engine.ringsKept, 0, "dropped once it has no issues")
+        #endif
+    },
     test("the outline goes where its shape is drawn (a shake)") {
         let h = try EditorHarness(plugins: [FixturesPlugin(), ValidationPlugin(), Rules { r in
             r.validate(Box.self) { _, _ in [.error("always")] }

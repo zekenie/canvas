@@ -38,7 +38,7 @@ import Validation
         expectEqual(registry.report.split(separator: "\n").first { $0.hasPrefix("schemas") }.map(String.init), """
         schemas            service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · \
         ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · \
-        ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link · edge type schema-link
+        ShapeDetails → schema-card · ports schema-link → schema-card · ReadableZoom → schema-card · channel schema-link · edge type schema-link
         """)
     },
     test("needs validation, titles, the table of contents, the detail panel and ports installed") {

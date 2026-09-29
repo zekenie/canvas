@@ -437,11 +437,79 @@ func isAccent(_ p: [Int]) -> Bool { p[2] > p[0] + 60 }
             $0.defaultTool(.probe)
         }])
         let (_, canvas, minimap) = try minimapped(h)
+        _ = h.add(Box(CGRect(x: 0, y: 0, width: 1000, height: 800)))
         canvas.mouseMoved(with: mouse(.mouseMoved, at: CGPoint(x: 400, y: 100), in: canvas))
         canvas.mouseMoved(with: mouse(.mouseMoved, at: CGPoint(x: 100, y: 75), in: minimap, time: 1.1))
         canvas.mouseMoved(with: mouse(.mouseMoved, at: CGPoint(x: 105, y: 75), in: minimap, time: 1.2))
         canvas.mouseMoved(with: mouse(.mouseMoved, at: CGPoint(x: 400, y: 100), in: canvas, time: 1.3))
         expectEqual(log.events, ["moved", "exited", "moved"])
+    },
+    test("on an empty board it's hidden, and its corner is the canvas's; the first shape fades it in, the last one's deletion hides it; asked to show, it still is") {
+        let log = PointerLog()
+        let h = try minimapEditor([Contributor(id: "probe") {
+            $0.tool(ToolDescriptor(id: .probe, label: "Probe", systemImage: "circle")) { _ in ProbeTool(log: log) }
+            $0.defaultTool(.probe)
+        }])
+        let (_, canvas, minimap) = try minimapped(h)
+        expect(minimap.isHidden, "an empty board's")
+        expect(canvas.showsMinimap && canvas.minimap === minimap, "still asked to show")
+        let corner = CGPoint(x: 100, y: 75)
+        canvas.mouseMoved(with: mouse(.mouseMoved, at: corner, in: minimap))
+        canvas.mouseDown(with: mouse(.leftMouseDown, at: corner, in: minimap, time: 1.1))
+        canvas.mouseUp(with: mouse(.leftMouseUp, at: corner, in: minimap, time: 1.15))
+        expectEqual(Array(log.events.prefix(2)), ["moved", "down"], "the canvas's corner: the tool hears the pointer there")
+        expect(!log.events.contains("exited"), "\(log.events)")
+        let box = h.add(Box(CGRect(x: 0, y: 0, width: 1000, height: 800)))
+        expect(!minimap.isHidden, "the first shape shows it")
+        expect(minimap.layer?.animationKeys()?.contains("opacity") == true, "fading in")
+        expectEqual(minimap.alphaValue, 1, "to where the fade ends")
+        h.editor.transact { $0.delete([box]) }
+        expect(minimap.isHidden, "the last one's deletion hides it")
+        h.editor.undo()
+        expect(!minimap.isHidden, "undone, the shape's back")
+    },
+    test("on another board it shows or hides at once, as that board has shapes or none") {
+        let fullID = ShapeID(), emptyID = ShapeID()
+        let root = CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: fullID, Pocket(CGRect(x: 0, y: 0, width: 200, height: 200)))),
+                                           AnyShapeRecord(ShapeRecord(id: emptyID, Pocket(CGRect(x: 300, y: 0, width: 200, height: 200))))])
+        let inside = CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(Box(CGRect(x: 0, y: 0, width: 100, height: 100))))])
+        let h = try minimapEditor(file: CanvasFile(root: root, children: [fullID: inside]))
+        let (_, _, minimap) = try minimapped(h)
+        expect(!minimap.isHidden)
+        expect(h.enter(emptyID))
+        expect(minimap.isHidden, "an empty board's")
+        expect(h.editor.showBoard(.root))
+        expect(!minimap.isHidden)
+        expectEqual(minimap.alphaValue, 1, "at once")
+        expect(minimap.layer?.animationKeys()?.contains("opacity") != true, "no fade")
+        expect(h.enter(fullID))
+        expect(!minimap.isHidden)
+        expect(minimap.layer?.animationKeys()?.contains("opacity") != true, "no fade")
+    },
+    test("the first shape placed under it, on an empty board, isn't covered as it arrives: the minimap waits for its press and its editing, then fades in") {
+        let h = try minimapEditor([CardsPlugin()])
+        let (_, canvas, minimap) = try minimapped(h)
+        expect(minimap.isHidden)
+        h.editor.setTool(ToolID(placing: Card.kind))
+        let corner = CGPoint(x: 112, y: 513)                     // the minimap's middle, were it shown
+        canvas.mouseDown(with: mouse(.leftMouseDown, at: corner, in: canvas, time: 1))
+        expectEqual(h.editor.document.shapes.count, 1, "placed")
+        expect(minimap.isHidden, "not over the card being placed")
+        canvas.mouseUp(with: mouse(.leftMouseUp, at: corner, in: canvas, time: 1.05))
+        expect(h.editor.editingShapeID != nil)
+        expect(minimap.isHidden, "nor over the card being typed into")
+        h.editor.endEditing()
+        expect(!minimap.isHidden, "once it's done")
+        expect(minimap.layer?.animationKeys()?.contains("opacity") == true, "fading in")
+        h.editor.transact { $0.delete(Set($0.document.shapes.map(\.id))) }
+        expect(minimap.isHidden)
+        h.add(Box(CGRect(x: 60, y: 480, width: 100, height: 60)))
+        expect(!minimap.isHidden, "a shape that comes with no press or editing (a paste, a draw) shows it at once, under it or not")
+        h.editor.transact { $0.delete(Set($0.document.shapes.map(\.id))) }
+        h.editor.setTool(ToolID(placing: Card.kind))
+        canvas.mouseDown(with: mouse(.leftMouseDown, at: CGPoint(x: 600, y: 200), in: canvas, time: 2))
+        expect(!minimap.isHidden, "a shape placed clear of it: at once")
+        canvas.mouseUp(with: mouse(.leftMouseUp, at: CGPoint(x: 600, y: 200), in: canvas, time: 2.05))
     },
     test("a click on the minimap gives the canvas the keyboard, unless the shape being edited has it") {
         let h = try minimapEditor([CardsPlugin()])

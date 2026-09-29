@@ -48,16 +48,22 @@ public struct TableOfContentsView: View {
 
 /// What the table of contents' header calls the board it lists, when it lists every shape: its
 /// title, a symbol before it, and a command that goes up from it, which the header offers as a
-/// button while it can run (`editor.canPerform`).
+/// button while it can run (`editor.canPerform`), called `upTitle` (what VoiceOver says, and what
+/// the menu item that runs the command is called, say) with `upHelp` its tooltip (the title and
+/// its key: "Enclosing Board (⌘↑)"; the title, by default).
 public struct ContentsHeading {
     public var title: String
     public var systemImage: String?
     public var up: CanvasCommand?
+    public var upTitle: String
+    public var upHelp: String?
 
-    public init(_ title: String, systemImage: String? = nil, up: CanvasCommand? = nil) {
+    public init(_ title: String, systemImage: String? = nil, up: CanvasCommand? = nil, upTitle: String = "Up", upHelp: String? = nil) {
         self.title = title
         self.systemImage = systemImage
         self.up = up
+        self.upTitle = upTitle
+        self.upHelp = upHelp
     }
 }
 
@@ -132,13 +138,14 @@ struct ContentsHeader: View {
                 let heading = heading(editor) ?? ContentsHeading("Board")
                 if let up = heading.up, editor.canPerform(up) {
                     Button { editor.perform(up) } label: {
-                        Image(systemName: "chevron.up")
+                        // Not a chevron: in a list's disclosure column, one reads as collapsing.
+                        Image(systemName: ContentsStyle.upSymbol)
                             .frame(width: ContentsStyle.upWidth)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.borderless)
-                    .help("Go up")
-                    .accessibilityLabel("Up")
+                    .help(heading.upHelp ?? heading.upTitle)
+                    .accessibilityLabel(heading.upTitle)
                 }
                 if let symbol = heading.systemImage {
                     Image(systemName: symbol)
@@ -175,19 +182,27 @@ struct ContentsRow: View {
     }
 }
 
-/// A mark: a small dot, centered in a square wide enough to hover for its tooltip.
+/// A mark: a small dot, or its symbol, centered in a square wide enough to hover for its tooltip.
 struct ContentsMarkView: View {
     let mark: ContentsMark
 
     var body: some View {
-        Circle()
-            .fill(mark.color)
-            .frame(width: ContentsStyle.markSize, height: ContentsStyle.markSize)
-            .frame(width: ContentsStyle.markTarget, height: ContentsStyle.markTarget)
-            .contentShape(Rectangle())
-            .help(mark.help)
-            .accessibilityElement()
-            .accessibilityLabel(mark.help)
+        Group {
+            if let symbol = mark.symbol {
+                Image(systemName: symbol)
+                    .font(.system(size: ContentsStyle.markSymbolSize))
+                    .foregroundStyle(mark.color)
+            } else {
+                Circle()
+                    .fill(mark.color)
+                    .frame(width: ContentsStyle.markSize, height: ContentsStyle.markSize)
+            }
+        }
+        .frame(width: ContentsStyle.markTarget, height: ContentsStyle.markTarget)
+        .contentShape(Rectangle())
+        .help(mark.help)
+        .accessibilityElement()
+        .accessibilityLabel(mark.help)
     }
 }
 

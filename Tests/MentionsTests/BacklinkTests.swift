@@ -114,9 +114,9 @@ let tiesPlugin = Contributor(id: "ties") { registrar in
 
     test("Show What Mentions, in the context menu of a shape something mentions, selects what mentions it on the next turn, one step back") {
         let b = try Mentioned()
-        expect(b.h.secondaryClick(at: CGPoint(x: 460, y: 240)) == nil, "nothing mentions the errands, and they have no other item")
+        expectEqual(try require(b.h.secondaryClick(at: CGPoint(x: 460, y: 240))).outline, ["Delete"], "nothing mentions the errands")
         let menu = try require(b.h.secondaryClick(at: CGPoint(x: 460, y: 40)))
-        expectEqual(menu.outline, ["Show What Mentions"])
+        expectEqual(menu.outline, ["Show What Mentions", "—", "Delete"])
         expectEqual(b.editor.selectedShapeIDs, [b.groceries], "the right-click selected it")
         try menu.choose("Show What Mentions")
         expectEqual(b.editor.selectedShapeIDs, [b.groceries], "not yet")
@@ -134,7 +134,7 @@ let tiesPlugin = Contributor(id: "ties") { registrar in
         // A shape's mention of itself is none.
         b.editor.setText(b.plan, MentionText([.mention(b.plan, label: "Plan")]))
         b.editor.selectedShapeIDs = []
-        expect(b.h.secondaryClick(at: CGPoint(x: 100, y: 500)) == nil, "the plan mentions only itself")
+        expectEqual(try require(b.h.secondaryClick(at: CGPoint(x: 100, y: 500))).outline, ["Delete"], "the plan mentions only itself")
     },
 
     test("a list with Mentions needs ContextMenus, for Show What Mentions") {
@@ -200,7 +200,7 @@ let tiesPlugin = Contributor(id: "ties") { registrar in
 
         // Show What Mentions shows the mentioner's board, and selects it there, one step back.
         let menu = try require(h.secondaryClick(at: CGPoint(x: 460, y: 40)))
-        expectEqual(menu.outline, ["Show What Mentions"])
+        expectEqual(menu.outline, ["Show What Mentions", "—", "Delete"])
         try menu.choose("Show What Mentions")
         h.wait(0)
         expectEqual(h.editor.board, BoardID(owner: pocket))

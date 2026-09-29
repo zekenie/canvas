@@ -85,15 +85,17 @@ public struct SnapTargets: Sendable {
     /// its middle before its far edge), with the guides for everything that lines up exactly where it
     /// ends up. Along an axis where nothing is near enough, the delta is `delta`'s, untouched. Where
     /// it snaps, it's what puts the rect's edge (or middle) there from where `rect` is: `rect` moved
-    /// by it lands on the line.
-    public func snap(_ rect: CGRect, movedBy delta: CGPoint, within threshold: CGFloat) -> Snap {
+    /// by it lands on the line. With `only` an axis (a drag kept to it), it snaps along that axis
+    /// alone, and shows only its guides.
+    public func snap(_ rect: CGRect, movedBy delta: CGPoint, within threshold: CGFloat, only: SnapAxis? = nil) -> Snap {
         let moved = rect.offsetBy(dx: delta.x, dy: delta.y)
         var snapped = delta
-        for axis in SnapAxis.allCases {
+        for axis in SnapAxis.allCases where only == nil || only == axis {
             if let along = nearest(along: axis, to: moved, from: rect, within: threshold) { snapped[axis] = along }
         }
         let placed = rect.offsetBy(dx: snapped.x, dy: snapped.y)
-        return Snap(delta: snapped, guides: guides(for: placed))
+        guard let only else { return Snap(delta: snapped, guides: guides(for: placed)) }
+        return Snap(delta: snapped, guides: spacings(along: only, of: placed) + alignments(along: only, of: placed))
     }
 
     /// Everything `rect` lines up with exactly, as guides: equal spacing first, then alignments

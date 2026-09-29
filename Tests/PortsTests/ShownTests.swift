@@ -33,6 +33,21 @@ import TestKit
         expect(connections.begun.isEmpty)
         expectEqual(h.editor.selectedShapeIDs, [cover])
     },
+    test("a box dragged and let go with Space pressed during the drag shows no dots beside the open hand: the hand's press would pan") {
+        let h = try portsHarness()
+        h.add(Box(boxFrame))
+        h.move(to: boxMiddle)
+        h.press()
+        h.drag(to: boxMiddle + CGPoint(x: 40, y: 0))
+        h.key(" ")
+        h.drag(to: boxMiddle + CGPoint(x: 60, y: 0))
+        h.release()
+        let released = render(h)
+        expectEqual(h.editor.pointerOverCanvas, nil)
+        h.editor.keyUp(KeyStroke(" "))
+        h.move(to: CGPoint(x: 580, y: 390))
+        expectEqual(dotPixels(render(h), released, at: rightDot + CGPoint(x: 60, y: 0)), 0, "none, as with the pointer away")
+    },
     test("a shape the select tool sees through doesn't hide a dot: it shows, and a drag from it connects") {
         let connections = Connections()
         let h = try portsHarness(connections, more: [unselectableDiamondsPlugin()])

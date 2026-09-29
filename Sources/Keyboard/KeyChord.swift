@@ -68,6 +68,18 @@ extension KeyChord {
         return [self, KeyChord(key, modifiers.subtracting(.shift))]
     }
 
+    /// The chords a key stroke answers to, best first: its own chord's (`answers`); then, for a key
+    /// of the number row that typed something other than its digit, the digit with the modifiers
+    /// held, so a digit's chord is that key whatever the layout: ⇧1 is the key that types "!" with ⇧
+    /// on a US keyboard, and "1" on a French one. Empty for a stroke that isn't one key.
+    static func answers(to stroke: KeyStroke) -> [KeyChord] {
+        var answers = KeyChord(stroke)?.answers ?? []
+        if let digit = stroke.numberRowKey, !answers.contains(where: { $0.key == digit }) {
+            answers.append(KeyChord(digit, stroke.modifiers))
+        }
+        return answers
+    }
+
     /// Whether ⇧ can be what types the key on some keyboard: punctuation, a symbol or a digit. Not a
     /// letter (⇧ makes it a capital), nor a key that types no character.
     private var isTypedWithShift: Bool {

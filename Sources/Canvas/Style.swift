@@ -60,8 +60,27 @@ public enum Style {
     static var cameraSlideFrame: Duration { .milliseconds(Int(cameraSlideFrameMilliseconds)) }
 
     /// A board shown for the first time fits its shapes with this much margin in all (half on each
-    /// side), no closer than 100%.
+    /// side), no closer than 100%; so does Zoom to Fit, as close as the zoom goes.
     static let firstVisitInset: CGFloat = 64
+    /// How long the zoom commands ease the camera (tldraw's animationMediumMs).
+    static let zoomDuration: Duration = .milliseconds(320)
+
+    // Scrolling at the canvas's edges while a drag that asks for it runs (tldraw's EdgeScrollManager
+    // and its options). Milliseconds and view points.
+    /// How near an edge (or past it) the pointer scrolls the canvas: at the edge fully, half as fast
+    /// halfway in.
+    /// How far in from the edges of the view (view points) an editing view's caret is kept
+    /// (`EditContext.keepInView`).
+    static let keepInViewMargin: CGFloat = 16
+    static let edgeScrollDistance: CGFloat = 8
+    /// How long the pointer stays there before it scrolls, and then how long the speed eases in.
+    static let edgeScrollDelay: CGFloat = 200
+    static let edgeScrollEaseDuration: CGFloat = 200
+    /// View points a 60 Hz frame at full speed.
+    static let edgeScrollSpeed: CGFloat = 25
+    /// A view narrower (or shorter) than this scrolls across (or up and down) this much slower.
+    static let edgeScrollSmallView: CGFloat = 1000
+    static let edgeScrollSmallViewFactor: CGFloat = 0.612
 
     // Pictures of boards: the minimap's, and boards' previews (`BoardPreviews`). Sizes in pixels.
     /// A shape under this many pixels across is drawn as its bounds (`Silhouettes`).

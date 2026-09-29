@@ -50,7 +50,9 @@ public struct MenuItem<Value> {
     let entry: MenuEntry<Value>
 
     /// Edits the shapes it's for: `edit` runs on each one's live value, all of them in one
-    /// transaction. Setting what a shape already has commits nothing.
+    /// transaction. Setting what a shape already has commits nothing. Over a `MenuSubject` (an item
+    /// for the canvas), `edit` is handed the subject instead, once, in the item's undo group and in
+    /// no transaction, and changes the document only through `editor.transact`, as `perform` does.
     public init(_ title: String, in group: any MenuGroup.Type = ShapeMenuGroup.self, id: String? = nil,
                 when isShown: @escaping @MainActor (Value) -> Bool = { _ in true },
                 isEnabled: @escaping @MainActor (Value) -> Bool = { _ in true },

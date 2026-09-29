@@ -126,6 +126,10 @@ private func live(_ label: String, symbol: String = "rectangle.fill", tint: NSCo
         let missing = MentionAttachment(target: idA, storedLabel: "Groceries", resolution: .missing, style: note)
         expect(pixel(draw(missing), at: CGPoint(x: missing.bounds.width - 3, y: missing.bounds.height / 2))[0] > 250, "no fill")
         expect(anyPixel(draw(missing), in: CGRect(x: 0, y: 0, width: 1, height: missing.bounds.height)) { $0[0] < 230 }, "a dashed outline")
+        // The name it holds is all that's left of what was mentioned: at about two thirds of the
+        // text's strength, 4.6:1 on a note's yellow, not half (3:1). On white, the text's 31 at
+        // 65% is about 109.
+        expect((95...125).contains(darkest(draw(missing))), "its label, at about two thirds: \(darkest(draw(missing)))")
         pill.isSelected = true
         let selected = pixel(draw(pill), at: padding)
         expect(selected[2] > selected[0], "the selection's blue: \(selected)")

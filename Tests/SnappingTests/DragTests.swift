@@ -27,6 +27,26 @@ import TestKit
         expectEqual(h.editor.snapGuides, [], "the guides go with the drag")
         expectEqual(h.origin(of: target), CGPoint(x: 300, y: 0))
     },
+    test("kept to an axis with ⇧, a box snaps along it alone, and shows no guide across it") {
+        let h = try snapHarness()
+        h.add(Box(CGRect(x: 300, y: 0, width: 100, height: 100)))
+        h.add(Box(CGRect(x: 0, y: 403, width: 50, height: 50)))
+        let box = h.add(Box(CGRect(x: 0, y: 200, width: 100, height: 100)))
+        h.press(at: CGPoint(x: 50, y: 250))
+        h.hold(.shift)
+        // Further across than down: kept to x, its right edge 3 short of the first box's left snaps,
+        // and y stays where it began.
+        h.drag(to: CGPoint(x: 247, y: 250 + 100))
+        expectEqual(h.origin(of: box), CGPoint(x: 200, y: 200), "not moved down")
+        expectEqual(h.editor.snapGuides, [.alignment(.x, at: 300, points: [CGPoint(x: 300, y: 0), CGPoint(x: 300, y: 100),
+                                                                            CGPoint(x: 300, y: 200), CGPoint(x: 300, y: 300)])])
+        // Further down: kept to y, its bottom 3 short of the second box's top snaps, x where it began.
+        h.drag(to: CGPoint(x: 50 + 10, y: 250 + 100))
+        expectEqual(h.origin(of: box), CGPoint(x: 0, y: 303))
+        expect(h.editor.snapGuides.allSatisfy { if case .alignment(.x, _, _) = $0 { false } else if case .spacing(.x, _) = $0 { false } else { true } },
+               "\(h.editor.snapGuides)")
+        h.release()
+    },
     test("8 view points are 4 world units at 200%") {
         let h = try snapHarness()
         h.add(Box(CGRect(x: 300, y: 0, width: 100, height: 100)))

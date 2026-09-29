@@ -101,7 +101,7 @@ style <name> attribute { attribute }             a named set of attributes, for 
 
 | kind | size | attributes besides `size`, `gap`, `overlap`, `style`, `title` | edges |
 |---|---|---|---|
-| `sticky-note` | 200x200 | `text`, `locked` | `note-link`, on its left, right and bottom |
+| `sticky-note` | 200x200 | `text` (the note is as tall as its text, at least 200; a `size:` height lasts only until the text changes), `locked` | `note-link`, on its left, right and bottom |
 | `rectangle` | 160x100 | `locked` | none: plain arrows |
 | `schema-card` | 240x67 | `schema` (a JSON Schema, as text: the card grows to list it), `prompt` (what it holds, in words), `locked` | `schema-link`, on all four sides |
 | `subboard` | 240x160 | `locked` | none: plain arrows |
@@ -263,7 +263,7 @@ sticky-note "Ship 1.0" owner: "Ann"
 
 - **Writing only.** No command reads a board back yet, so you know only what your scripts drew and what their results said. Say so when you report back.
 - **Placement happens once.** The board doesn't remember `right of "API"`. When the user moves API, nothing follows it.
-- **The result confirms intent, not the picture.** It tells you where each shape landed and what was pushed. It doesn't tell you whether a note's text overflowed (long text is cut off, so give it a bigger `size:`) or whether a line crosses other shapes.
+- **The result confirms intent, not the picture.** It tells you where each shape landed and what was pushed. It doesn't tell you whether a note's text overflowed (a note grows to fit its text unless you gave it a `size:`, which cuts long text off, so leave `size:` off notes with long text) or whether a line crosses other shapes.
 - **Edges are plain.** They carry no text, they're arcs, and they don't route around shapes. Only closed shapes are kept clear, so a shape can land across an arrow or a drawn line.
 - **Pills overlap when zoomed out.** A title's pill (and a lock's chip, in the same row just above a shape) clears the shape above it in a list down to about 42% zoom.
 - **One board at a time.** A draw works on the board its file's window shows, and can't reach a subboard's board from outside it.

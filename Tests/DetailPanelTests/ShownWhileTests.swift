@@ -109,4 +109,52 @@ extension CanvasEditor {
         panel.window.type("g")                                  // a tool shortcut, on the canvas
         expectEqual(editor.currentToolID, ToolID(placing: Gadget.kind))
     },
+    test("a status line whose text has the keyboard (selected, to copy it) hands it back to the canvas as it goes: one of a tab's lines, or a section's line swapped for another") {
+        final class Lines { var count = 2 }
+        let lines = Lines()
+        let editor = try gadgetEditor([Contributor(id: "lines") { r in
+            r.detailStatusForEveryShape(in: AlertsTab.self) { _, _ in
+                (0..<lines.count).map { DetailStatus($0 == 0 ? "First line." : "Second line.", tone: .warning) }
+            }
+            r.details(Gadget.self) {
+                DetailSection("Sync", in: AlertsTab.self) { $gadget in
+                    if $gadget.name.wrappedValue == "busy" {
+                        DetailStatusLine(DetailStatus("Updating"), isBusy: true)
+                    } else {
+                        DetailStatusLine(DetailStatus("Unusable answer", tone: .warning), actions: [DetailStatusAction("Retry") {}])
+                    }
+                }
+            }
+        }], scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
+        let id = editor.add(Gadget(gadgetFrame)), other = editor.add(Box(gadgetFrame))
+        try require(editor.detailPanel).choose(.of(AlertsTab.self), for: Gadget.kind)
+        editor.selection = id
+        @MainActor func line(_ text: String) -> NSTextField? { panel.hosting.descendants(NSTextField.self).first { $0.stringValue == text } }
+        /// A click in a line's text, as the window sends it: its release waits in the queue.
+        @MainActor func select(_ text: String) throws {
+            let field = try require(line(text), "a line saying \(text)")
+            let location = field.convert(CGPoint(x: 4, y: field.bounds.midY), to: nil)
+            @MainActor func event(_ type: NSEvent.EventType) throws -> NSEvent {
+                try require(NSEvent.mouseEvent(with: type, location: location, modifierFlags: [], timestamp: 1, windowNumber: panel.window.windowNumber,
+                                               context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+            }
+            NSApp.postEvent(try event(.leftMouseUp), atStart: true)
+            field.mouseDown(with: try event(.leftMouseDown))
+            expect(panel.window.firstResponder is NSText, "its text has the keyboard")
+        }
+        panel.window.spin { line("Second line.") != nil }
+        try select("Second line.")
+        lines.count = 1
+        editor.transact { $0.update(other) { $0.box?.origin.x = 1 } }
+        panel.window.spin { panel.canvasHasKeyboard }
+        expectEqual(panel.exits, 1)
+        expect(line("First line.") != nil, "the tab stays, with its other line")
+        try select("Unusable answer")
+        editor.transact { $0.update(id, as: Gadget.self) { $0.props.name = "busy" } }
+        panel.window.spin { panel.canvasHasKeyboard }
+        expectEqual(panel.exits, 2)
+        panel.window.type("g")                                  // a tool shortcut, on the canvas
+        expectEqual(editor.currentToolID, ToolID(placing: Gadget.kind))
+    },
 ])

@@ -1,5 +1,6 @@
 import Canvas
 import CoreGraphics
+import Geometry
 import Observation
 
 /// The selection, the way back through it, the hovered shape, the hovered handle, and the canvas
@@ -14,6 +15,8 @@ final class SelectionState {
     @ObservationIgnored private let rules: [ShapeKind: @MainActor (AnyShapeRecord) -> Bool]
     /// Each kind's opener (`ShapeOpening`), found once.
     @ObservationIgnored let openers: [ShapeKind: ShapeOpener]
+    /// The zoom each kind that says so reads at (`ReadableZoom`), found once.
+    @ObservationIgnored let readableZooms: [ShapeKind: CGFloat]
     private(set) var selectedIDs: [ShapeID] = []
     /// +1 each time `selectedIDs` changes.
     private(set) var revision = 0
@@ -64,6 +67,9 @@ final class SelectionState {
     /// moved the camera (a link's `goTo`). The rest of its double-click is that click's
     /// (`SelectTool.ignoresPress`), until a press that isn't.
     @ObservationIgnored var clickWentElsewhere = false
+    /// A smart zoom's (`smartMagnify`): the camera before it, and the one it went to, so the next
+    /// goes back while the camera is still there.
+    @ObservationIgnored var smartZoom: (before: Camera, shown: Camera)?
     /// Where the pointer was last seen over the canvas in the select tool, in view points: where to
     /// look for a button again when buttons change under a pointer that's still.
     @ObservationIgnored var lastPointer: CGPoint? {
@@ -75,6 +81,7 @@ final class SelectionState {
         self.editor = editor
         rules = editor.registry.contributionByKind(to: ShapeSelectability.self)
         openers = editor.registry.contributionByKind(to: ShapeOpening.self)
+        readableZooms = editor.registry.contributionByKind(to: ReadableZoom.self)
         buttonSources = editor.registry.contributions(to: CanvasButtons.self).map(\.value)
         decorationHits = editor.registry.contributions(to: DecorationHits.self).map(\.value).reversed()
         faceSources = editor.registry.contributions(to: ShapeFaces.self).map(\.value).reversed()
@@ -402,6 +409,18 @@ extension CanvasEditor {
         guard !ids.isEmpty else { return }
         transact("Delete") { $0.delete(Set(ids)) }   // the commit drops them from the selection
         hovered = nil                                   // and this, a hover over a shape that stays
+    }
+
+    /// Whether the arrow keys nudge: something's selected, and nothing's under way or being edited.
+    public var canNudge: Bool { session == nil && editingShapeID == nil && !selectedShapeIDs.isEmpty }
+
+    /// An arrow key's nudge: moves every selected shape by `delta`, in world units, as `translate`
+    /// does, in one transaction ("Move"), with no snapping. Read-only shapes stay, refused (a locked
+    /// one shakes), and the rest move. Does nothing unless it `canNudge`.
+    public func nudgeSelection(by delta: CGPoint) {
+        guard canNudge else { return }
+        let ids = Set(selectedShapeIDs)
+        transact("Move") { $0.translate(ids, by: delta) }
     }
 
     /// Edits the only selected shape if its kind is editable, whatever else opening it would do

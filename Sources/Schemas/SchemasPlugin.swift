@@ -2,6 +2,7 @@ import Canvas
 import CoreGraphics
 import Keyboard
 import Ports
+import Selection
 import SwiftUI
 import TableOfContents
 import Titles
@@ -34,6 +35,7 @@ public struct SchemasPlugin: CanvasPlugin {
             }
             schema.schemaPanel()
             schema.schemaLinks()
+            schema.readableZoom(SchemaStyle.readableZoom)      // going to a card brings it to 100%, where its rows read
         }
         registrar.channel(SchemaLink.self)
     }

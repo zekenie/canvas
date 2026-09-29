@@ -425,24 +425,30 @@ import TestKit
         defer { pasteboard.releaseGlobally() }
         let h = try harness(pasteboard, [Contributor(id: "own") { r in r.contextMenu(Box.self) { MenuItem("Own") { _ in } } }])
         let box = h.add(Box(slot(0)))
-        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Own", "—", "Cut", "Copy"])
+        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Own", "—", "Cut", "Copy", "—", "Delete"])
         h.editor.copy([box])
-        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Own", "—", "Cut", "Copy", "Paste"])
+        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Own", "—", "Cut", "Copy", "Paste", "—", "Delete"])
     },
-    test("on empty canvas, the menu is Paste alone, once there's something to paste; the selection stays") {
+    test("on empty canvas, Paste shows once there's something to paste, and lands centered where the menu was asked for; ⌘V keeps its place") {
         let pasteboard = privatePasteboard()
         defer { pasteboard.releaseGlobally() }
         let h = try harness(pasteboard)
         let box = h.add(Box(slot(0)))
         h.editor.selection = box
-        expect(h.secondaryClick(at: middle(1)) == nil, "nothing to paste: no menu")
+        expectEqual(try require(h.secondaryClick(at: middle(1))).outline, ["Select All"], "nothing to paste")
         h.editor.copySelection()
-        let before = h.editor.document
+        var before = h.editor.document
         let menu = try require(h.secondaryClick(at: middle(1)))
-        expectEqual(menu.outline, ["Paste"])
+        expectEqual(menu.outline, ["Paste", "—", "Select All"])
         expectEqual(h.editor.selectedShapeIDs, [box])
         try menu.choose("Paste")
-        expectEqual(h.editor.shapes(since: before).map(\.copiedFrom), [box])
+        let pasted = try require(h.editor.shapes(since: before).first)
+        expectEqual(pasted.copiedFrom, box)
+        expectEqual(pasted.box, slot(1), "centered on the click, the middle of slot 1")
+        expectEqual(h.editor.undoHistory.undoName, "Paste")
+        before = h.editor.document
+        h.editor.paste()
+        expectEqual(h.editor.shapes(since: before).first?.box, slot(0), "⌘V: where it was copied from")
     },
     test("Copy then Paste from the menu copy the right-clicked shape and paste it") {
         let pasteboard = privatePasteboard()
@@ -452,11 +458,12 @@ import TestKit
         try require(h.secondaryClick(at: middle(0))).choose("Copy")
         expectEqual(h.editor.selectedShapeIDs, [box])
         let before = h.editor.document
-        let menu = try require(h.secondaryClick(at: middle(0)))
-        expectEqual(menu.outline, ["Cut", "Copy", "Paste"])
+        let menu = try require(h.secondaryClick(at: CGPoint(x: 60, y: 70)))
+        expectEqual(menu.outline, ["Cut", "Copy", "Paste", "—", "Delete"])
         try menu.choose("Paste")
         let copy = try require(h.editor.shapes(since: before).first)
         expectEqual(copy.copiedFrom, box)
+        expectEqual(copy.box, slot(0).offsetBy(dx: 10, dy: 20), "centered on the click, on the box")
         expectEqual(h.editor.selectedShapeIDs, [copy.id])
     },
     test("Cut from the menu cuts the whole selection") {
@@ -472,20 +479,20 @@ import TestKit
         h.editor.paste()
         expectEqual(h.editor.document.shapes.suffix(2).map(\.id), [a, b])
     },
-    test("an uncopyable shape alone has no Cut or Copy, and nothing else, no menu; with a copyable one too, they cut and copy that one") {
+    test("an uncopyable shape alone has no Cut or Copy, only Delete; with a copyable one too, they cut and copy that one") {
         let pasteboard = privatePasteboard()
         defer { pasteboard.releaseGlobally() }
         let h = try harness(pasteboard)
         let ticket = h.add(Ticket(frame: slot(0)))
         let box = h.add(Box(slot(1)))
-        expect(h.secondaryClick(at: middle(0)) == nil)
-        expectEqual(h.editor.selectedShapeIDs, [], "a right-click with no menu selects nothing")
+        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Delete"])
+        expectEqual(h.editor.selectedShapeIDs, [ticket])
         h.editor.selectedShapeIDs = [ticket, box]
         let menu = try require(h.secondaryClick(at: middle(0)))
-        expectEqual(menu.outline, ["Cut", "Copy"])
+        expectEqual(menu.outline, ["Cut", "Copy", "—", "Delete"])
         try menu.choose("Cut")
         expectEqual(h.editor.document.shapes.map(\.id), [ticket])
-        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Paste"])
+        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Paste", "—", "Delete"])
         h.editor.paste()
         expectEqual(h.editor.document.shapes.last?.id, box)
     },

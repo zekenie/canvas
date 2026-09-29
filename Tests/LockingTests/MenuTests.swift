@@ -13,12 +13,12 @@ import TestKit
         }])
         let box = h.add(Box(CGRect(x: 100, y: 100, width: 100, height: 100)))
         let menu = try require(h.secondaryClick(at: CGPoint(x: 150, y: 150)))
-        expectEqual(menu.outline, ["Widen", "—", "Lock"])
+        expectEqual(menu.outline, ["Widen", "—", "Lock", "—", "Delete"], "Delete last, after Lock")
         try menu.choose("Lock")
         expect(h.editor.isLocked(box))
         expectEqual(h.editor.document[box]?[LockedProperty.self], true)
         expectEqual(h.editor.selectedShapeIDs, [box], "still selected: a locked shape is selected as any other")
-        expectEqual(try require(h.secondaryClick(at: CGPoint(x: 150, y: 150))).outline, ["Widen", "—", "Unlock"])
+        expectEqual(try require(h.secondaryClick(at: CGPoint(x: 150, y: 150))).outline, ["Widen", "—", "Unlock", "—", "Delete"])
         try require(h.secondaryClick(at: CGPoint(x: 150, y: 150))).choose("Unlock")
         expect(!h.editor.isLocked(box))
         expectEqual(h.editor.document[box]?[LockedProperty.self], nil)
@@ -30,7 +30,7 @@ import TestKit
         h.editor.lock([a])
         h.editor.selectedShapeIDs = [a, b]
         let menu = try require(h.secondaryClick(at: CGPoint(x: 150, y: 150)))
-        expectEqual(menu.outline, ["Lock"])
+        expectEqual(menu.outline, ["Lock", "—", "Delete"])
         try menu.choose("Lock")
         expect(h.editor.isLocked(a) && h.editor.isLocked(b))
         try require(h.secondaryClick(at: CGPoint(x: 350, y: 150))).choose("Unlock")
@@ -39,7 +39,21 @@ import TestKit
     test("empty canvas offers neither") {
         let h = try lockingHarness()
         h.add(Box(CGRect(x: 100, y: 100, width: 100, height: 100)))
-        expect(h.secondaryClick(at: CGPoint(x: 400, y: 400)) == nil)
+        expectEqual(try require(h.secondaryClick(at: CGPoint(x: 400, y: 400))).outline, ["Select All"])
+    },
+    test("the menu's Delete on a locked shape deletes nothing and shakes it, as the Delete key does; with an unlocked one, it takes that one") {
+        let h = try lockingHarness()
+        let locked = h.add(Box(CGRect(x: 100, y: 100, width: 100, height: 100)))
+        let free = h.add(Box(CGRect(x: 300, y: 100, width: 100, height: 100)))
+        h.editor.lock([locked])
+        try require(h.secondaryClick(at: CGPoint(x: 150, y: 150))).choose("Delete")
+        expectEqual(h.editor.document.shapes.map(\.id), [locked, free])
+        h.wait(60)
+        expect(h.editor.drawingOffset(of: locked) != .zero, "shaking")
+        h.wait(1000)
+        h.editor.selectedShapeIDs = [locked, free]
+        try require(h.secondaryClick(at: CGPoint(x: 350, y: 150))).choose("Delete")
+        expectEqual(h.editor.document.shapes.map(\.id), [locked])
     },
     test("every kind can be locked: each one's schema has `locked`, a boolean Locking owns") {
         let h = try lockingHarness()

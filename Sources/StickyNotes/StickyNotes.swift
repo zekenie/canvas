@@ -1,11 +1,11 @@
 import AppKit
 import Canvas
+import DetailPanel
 import Keyboard
 import Mentions
 import Ports
 import Selection
 import Titles
-import Validation
 
 public struct StickyNote: BoxShapeProps {
     public static let kind: ShapeKind = "sticky-note"
@@ -37,11 +37,6 @@ public struct StickyNote: BoxShapeProps {
 }
 
 extension ShapeRecord where Props == StickyNote {
-    /// No text (a mention is text) and no title.
-    var isEmpty: Bool {
-        props.text.isBlank && (self[TitleProperty.self] ?? "").allSatisfy(\.isWhitespace)
-    }
-
     /// Where the note draws its text: in its frame, inset by the padding. The render draws exactly
     /// this, and Mentions finds the note's pills through it.
     @MainActor var mentionTexts: [MentionTextPlacement] {
@@ -61,15 +56,12 @@ public struct StickyNotesPlugin: CanvasPlugin {
             let place = note.editingPlacement(size: NoteStyle.size) { StickyNote() }
             note.tool(label: "Note", systemImage: "note.text", shortcut: "n", placing: place)
             note.createOnDoubleClick(place)                    // opts into the selection's double-click
-            note.validate { shape, _ in                        // opts into the validation horizontal
-                shape.isEmpty ? [.warning("This note is empty.")] : []
-            }
             note.title()                                       // and titles: a title, its pill, and its row's name
             note.noteHeader()                                  // renamed in the detail panel's header
             note.noteRow()                                     // and the table of contents
             note.noteLinks()                                   // and ports: arrows from a note to a note
             note.mentionText { $0.mentionTexts }               // and mentions: its text shows pills,
-            note.mentionable(untitled: { $0.props.text.firstLine })   // and it's called by its title, else its first line
+            note.mentionable(untitled: { $0.props.text.firstLine }, tint: { _ in NoteStyle.tint })   // called by its title, else its first line
         }
         registrar.channel(NoteLink.self)                       // which this plugin declares
     }
@@ -87,6 +79,16 @@ extension StickyNoteDefinition: ShapeDefinition {
 
     func indicatorPath(of shape: ShapeRecord<StickyNote>, in context: ShapeContext) -> CGPath {
         NoteStyle.path(shape.frame)
+    }
+}
+
+/// A note is as tall as its text, and no shorter than a new one: typing fits it (`NoteEditor`), and
+/// so does a note made or given text from properties (the command line's `draw`), each mention
+/// measured by the name it holds, as the pure function of its props this is.
+extension StickyNoteDefinition: DerivedProps {
+    func derive(_ note: inout StickyNote) {
+        let string = NoteStyle.text.attributedString(note.text, width: note.frame.width - NoteStyle.padding * 2) { _ in .missing }
+        note.frame.size.height = NoteStyle.fittedHeight(of: string, width: note.frame.width, keeping: note.frame.height)
     }
 }
 
@@ -118,12 +120,24 @@ enum NoteStyle {
     static func path(_ frame: CGRect) -> CGPath {
         CGPath(roundedRect: frame, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
     }
+
+    /// How tall a note `width` wide is to show all of `text` (as it's drawn: `NoteStyle.text`, with
+    /// its pills): its lines (the empty one after a last Return too, where the caret is), and the
+    /// padding above and below, with half a point spare so string drawing never cuts the last line;
+    /// never shorter than a new note (tldraw's note grows the same way). `height`, a note's own, is
+    /// kept when the width leaves no room for text to measure.
+    static func fittedHeight(of text: NSAttributedString, width: CGFloat, keeping height: CGFloat) -> CGFloat {
+        let inner = width - padding * 2
+        guard inner > 0 else { return height }
+        let lines = text.boundingRect(with: CGSize(width: inner, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin]).height
+        return max(size.height, (lines + 0.5).rounded(.up) + padding * 2)
+    }
 }
 
 /// A text view laid over the note being edited. Its frame is in view points and its bounds in
 /// world units, the note's frame at its origin, so AppKit scales it by the zoom and the text lays
 /// out exactly as the canvas draws it. Its text shows mentions as pills (`MentionTextView`), and
-/// begun from a press on a pill, that pill is selected.
+/// begun from a press on a pill, that pill is selected. Escape and ⌘↩ end editing.
 final class NoteEditor: NSView, NSTextViewDelegate {
     let textView: MentionTextView<AnyMentionable>
     private let context: EditContext<StickyNote>
@@ -143,13 +157,27 @@ final class NoteEditor: NSView, NSTextViewDelegate {
         textView.typingAttributes = NoteStyle.textAttributes
         textView.insertionPointColor = NoteStyle.text.color
         textView.delegate = self
+        // ⌘↩ says the text is done, as in the panel's boxes: editing ends. The keyboard leaving
+        // isn't that here: the canvas ends editing itself.
+        textView.commitsOnLeaving = false
+        textView.onCommit = { [weak self] in self?.context.end() }
         clipsToBounds = true
         addSubview(textView)
-        // Begun from a press on a pill, the pill is selected: the view's bounds, and so the text
-        // view's, are world units with the note's frame at their origin. Anywhere else, the text
-        // view puts the caret where it always has.
+        // A note too short for its text (saved before notes grew with it, or drawn with a `size:`)
+        // grows to it as editing begins, as typing would grow it, so what was cut off can be read and
+        // edited; the write joins the editing session's step. Never shorter than it is: a note drawn
+        // taller keeps its height until it's typed into.
+        let fitted = NoteStyle.fittedHeight(of: textView.attributedString(), width: frame.width, keeping: frame.height)
+        if fitted > frame.height {
+            context.update { $0.frame.size.height = max($0.frame.size.height, fitted) }
+            textView.setFrameSize(CGSize(width: frame.width, height: fitted))
+        }
+        // Begun from a press, the selection goes where it was, as a click in the text puts it: on a
+        // pill, the pill; elsewhere the caret, or for a double-click the word. The view's bounds,
+        // and so the text view's, are world units with the note's frame at their origin. Begun
+        // without one (Return, placing a note), the text view puts the caret where it always has.
         if let start = context.startPoint {
-            textView.selectPill(at: CGPoint(x: start.x - frame.minX, y: start.y - frame.minY))
+            textView.placeSelection(at: CGPoint(x: start.x - frame.minX, y: start.y - frame.minY), selectingWord: context.startClickCount >= 2)
         }
     }
 
@@ -159,10 +187,52 @@ final class NoteEditor: NSView, NSTextViewDelegate {
     override var isFlipped: Bool { true }
 
     /// Commits the text only when it differs from the note's: a second report of one change (after
-    /// an undo, the text view's own and then the board's window's) writes nothing.
+    /// an undo, the text view's own and then the board's window's) writes nothing. The note is fitted
+    /// to it in the same write, so growing is part of the typing's step ("Typing", "Add Note").
     func textDidChange(_ notification: Notification) {
         let text = textView.mentionText
-        context.update { if $0.text != text { $0.text = text } }
+        let shown = textView.attributedString()
+        context.update { note in
+            guard note.text != text else { return }
+            note.text = text
+            note.frame.size.height = NoteStyle.fittedHeight(of: shown, width: note.frame.width, keeping: note.frame.height)
+        }
+        keepCaretInView()
+    }
+
+    /// The caret moved (an arrow key, Return, a click): it's kept in view too.
+    func textViewDidChangeSelection(_ notification: Notification) { keepCaretInView() }
+
+    /// A note grows downward with its text, past the window's bottom if it's near it, and the canvas
+    /// scrolls no text of its own: the camera follows the caret instead, so what's typed is never
+    /// typed blind (`EditContext.keepInView`).
+    private func keepCaretInView() {
+        guard window != nil, let caret = caretFrame else { return }
+        // In this view's coordinates: world units, the note's frame at their origin.
+        context.keepInView(convert(caret, from: textView))
+    }
+
+    /// Where the caret is, in the text view's coordinates: the line fragment it's on, as TextKit 2
+    /// lays it out. TextKit 2 lays out only the text in view, so the note's text is laid out first
+    /// (a note's is short): the caret may have gone where nothing was (⌘↓ in a long note).
+    private var caretFrame: CGRect? {
+        guard let layout = textView.textLayoutManager, let content = layout.textContentManager,
+              let location = content.location(content.documentRange.location, offsetBy: NSMaxRange(textView.selectedRange())) else { return nil }
+        layout.ensureLayout(for: content.documentRange)
+        var frame: CGRect?
+        layout.enumerateTextSegments(in: NSTextRange(location: location), type: .selection, options: [.rangeNotRequired]) { _, segment, _, _ in
+            frame = segment
+            return false
+        }
+        let origin = textView.textContainerOrigin
+        return frame.map { CGRect(x: $0.minX + origin.x, y: $0.minY + origin.y, width: max($0.width, 1), height: $0.height) }
+    }
+
+    /// The canvas lays the editor over the note, its bounds the note's size: as the note grows with
+    /// its text, the text view grows with it, so the text past the note's first height shows.
+    override func setBoundsSize(_ newSize: NSSize) {
+        super.setBoundsSize(newSize)
+        if textView.frame.size != newSize { textView.setFrameSize(newSize) }
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {

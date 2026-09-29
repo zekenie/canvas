@@ -35,7 +35,7 @@ import TestKit
         expectEqual(h.editor.selectedShapeIDs, [a, b])
         expectEqual(h.editor.document.shapes.map(\.id), [a, b, c])
     },
-    test("⇧-click on a selected shape removes it on release; ⇧-dragging it moves the whole selection and keeps it") {
+    test("⇧-click on a selected shape removes it on release; ⇧-dragging it moves the whole selection, kept to one axis, and keeps it") {
         let (h, a, b, _) = try threeBoxes()
         h.editor.selectedShapeIDs = [a, b]
         h.hold(.shift)
@@ -48,8 +48,8 @@ import TestKit
 
         h.editor.selectedShapeIDs = [a, b]
         h.press(at: CGPoint(x: 50, y: 50)); h.drag(to: CGPoint(x: 60, y: 70)); h.release()
-        expectEqual(h.editor.document[a]?.box?.origin, CGPoint(x: 10, y: 20))
-        expectEqual(h.editor.document[b]?.box?.origin, CGPoint(x: 210, y: 20))
+        expectEqual(h.editor.document[a]?.box?.origin, CGPoint(x: 0, y: 20), "down, the way it went further, and not across (tldraw's)")
+        expectEqual(h.editor.document[b]?.box?.origin, CGPoint(x: 200, y: 20))
         expectEqual(h.editor.selectedShapeIDs, [a, b])
     },
     test("⌘-press doesn't select or raise; ⌘-click adds on release, and removes a selected shape; ⌘-drag from a shape brushes from the press, enclosing only") {
@@ -258,6 +258,7 @@ import TestKit
         h.hold([])
         h.wait(200)
         h.press(at: CGPoint(x: 300, y: 200), clickCount: 2)
+        h.release()
         let card = try require(h.editor.document.shapes.first)
         expectEqual(h.editor.editingShapeID, card.id)
     },

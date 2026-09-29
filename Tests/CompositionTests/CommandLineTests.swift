@@ -149,6 +149,17 @@ edge "API" -> "Cache" channel: none
             expectEqual(at, [.number(expected.width), .number(expected.height)], "placed as big as it is")
         }
     },
+    test("canvas draw sticky-note is as tall as its text, from its top; a size: is as asked") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        let lines = (1...12).map { "Line \($0)" }.joined(separator: "\\n")
+        _ = try drawnInProcess(#"sticky-note "Long" text: "\#(lines)""#, on: editor)
+        _ = try drawnInProcess(#"sticky-note "Sized" right of "Long" text: "\#(lines)" size: 200x200"#, on: editor)
+        _ = try drawnInProcess(#"sticky-note "Short" right of "Sized" text: "Hi""#, on: editor)
+        @MainActor func height(_ title: String) -> CGFloat? { editor.document.shapes.first { $0[TitleProperty.self] == title }?.box?.height }
+        expectEqual(height("Long"), 12 * 19 + 33, "twelve lines")
+        expectEqual(height("Sized"), 200, "as asked")
+        expectEqual(height("Short"), 200, "a new note's")
+    },
     test("canvas boards lists the open boards; --board picks one by its id, its file or its name") {
         try configureBoards()
         let first = newBoard(), second = newBoard()

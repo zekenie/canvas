@@ -124,14 +124,16 @@ final class SnapDrag {
 }
 
 extension SnapDrag: TranslationAdjuster {
-    func adjust(_ delta: CGPoint, for pointer: Pointer, in editor: CanvasEditor) -> CGPoint {
+    /// Kept to one axis (⇧), it snaps and guides along that axis alone.
+    func adjust(_ delta: CGPoint, along axis: TranslationAxis?, for pointer: Pointer, in editor: CanvasEditor) -> CGPoint {
         let shown = guides
         defer { if guides != shown { editor.setNeedsDisplay() } }
         guides = []
         if !isPastThreshold { isPastThreshold = pointer.view.distance(to: editor.camera.toView(origin)) > Style.dragThreshold }
         // Its frames all gone (deleted mid-drag): nothing to snap.
         guard isPastThreshold, !bounds.isNull, pointer.modifiers.isDisjoint(with: SnappingStyle.freeMoveModifiers) else { return delta }
-        let snap = targets(in: editor).snap(bounds, movedBy: delta, within: SnappingStyle.threshold / editor.camera.zoom)
+        let snap = targets(in: editor).snap(bounds, movedBy: delta, within: SnappingStyle.threshold / editor.camera.zoom,
+                                            only: axis.map { $0 == .x ? SnapAxis.x : .y })
         guides = snap.guides
         return snap.delta
     }

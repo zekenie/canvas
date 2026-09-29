@@ -37,24 +37,24 @@ final class ContextMenuState {
         } else {
             ids = []
         }
-        var entries = entries(for: ids)
+        var entries = entries(for: ids, at: pointer.world)
         guard !entries.isEmpty else { return nil }
         let revision = editor.revision
         editor.endEditing()
         if let selects { editor.selection = selects }
         // Ending editing may have saved the editing view: resolve against what it saved.
-        if editor.revision != revision { entries = self.entries(for: ids) }
+        if editor.revision != revision { entries = self.entries(for: ids, at: pointer.world) }
         return entries.isEmpty ? nil : ContextMenuItems.menu(entries)
     }
 
-    /// What the menu holds for these shapes: the items that apply to every one of them, then the
-    /// canvas's items, less any whose place a shape's own item takes (shown or not, as a kind's own
-    /// item takes an every-shape one's).
-    func entries(for ids: [ShapeID]) -> [ResolvedEntry] {
+    /// What the menu asked for at `point` (world units) holds for these shapes: the items that
+    /// apply to every one of them, then the canvas's items, less any whose place a shape's own item
+    /// takes (shown or not, as a kind's own item takes an every-shape one's).
+    func entries(for ids: [ShapeID], at point: CGPoint) -> [ResolvedEntry] {
         let records = ids.compactMap { editor.document[$0] }
         let own = ContextMenuItems.resolve(records.map { ($0, ContextMenuItems.shown(candidates(for: $0.kind), for: $0)) }, in: editor)
         let taken = Set(Set(records.map(\.kind)).flatMap { candidates(for: $0).map(\.key) })
-        let canvas = ContextMenuItems.resolve(canvasEntries, for: MenuSubject(shapes: records.map(\.id), editor: editor))
+        let canvas = ContextMenuItems.resolve(canvasEntries, for: MenuSubject(shapes: records.map(\.id), point: point, editor: editor))
         return own + canvas.filter { !taken.contains($0.key) }
     }
 

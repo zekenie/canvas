@@ -87,7 +87,8 @@ extension InspectorWindow {
         w.window.spin { mentions.backlinksShown[groceries.id] != nil }
         let symbol = try require(w.editor.registry.mentionAppearance(of: AnyShapeRecord(ship))?.systemImage)
         expectEqual(mentions.backlinksShown[groceries.id], [MentionBacklink(id: ship.id, label: "Ship it", systemImage: symbol,
-                                                                            quote: "Ask @Groceries first, then @Plans")])
+                                                                            quote: "Ask @Groceries first, then @Plans", tint: .systemYellow)],
+                    "its symbol a note's yellow, as in its row and the @ picker")
         w.window.spin { w.mentionLines.count == 1 }
         w.mentionLines[0].performClick(nil)
         w.window.spin { w.editor.selection == ship.id }

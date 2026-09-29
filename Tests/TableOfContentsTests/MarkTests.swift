@@ -51,6 +51,23 @@ extension Array where Element == ContentsEntry {
         editor.add(Gizmo())
         expectEqual(editor.contents.entries.marks, [["widget b", "a", "b"], ["a"]])
     },
+    test("a mark for every shape goes only on the kinds its where picks, asked once per kind; a mark may be a symbol") {
+        final class Asked { var kinds: [ShapeKind] = [] }
+        let asked = Asked()
+        let editor = try contentsEditor([Contributor(id: "stars") { r in
+            r.contentsMarkForEveryShape(where: { kind in
+                asked.kinds.append(kind.kind)
+                return kind.kind == Widget.kind
+            }) { _, _ in ContentsMark(symbol: "star.fill", color: .secondary, help: "Starred") }
+        }])
+        editor.add(Widget(name: "W"))
+        editor.add(Gizmo())
+        editor.add(Widget(name: "V"))
+        expectEqual(editor.contents.entries.marks, [["Starred"], [], ["Starred"]])
+        expectEqual(editor.contents.entries.first?.marks.first?.symbol, "star.fill")
+        expectEqual(asked.kinds.sorted { $0.rawValue < $1.rawValue }, [Gizmo.kind, Widget.kind], "once per kind")
+        expectEqual(ContentsMark(color: .red, help: "a").symbol, nil, "a dot, by default")
+    },
     test("a mark is made with its row; after a commit, marks are read again only for the shapes it changed and those its contributor says it may") {
         flag([])
         let editor = try contentsEditor([flags])

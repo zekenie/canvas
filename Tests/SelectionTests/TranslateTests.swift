@@ -43,7 +43,7 @@ import TestKit
         expectEqual(h.editor.document, before)
         expectEqual(h.editor.selectedShapeIDs, [a, b])
     },
-    test("Escape reverts a lone box's move, and puts a just-placed shape back where it was placed") {
+    test("Escape reverts a lone box's move, and takes a just-placed shape away, selecting again what was selected before") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), discTools()])
         let box = h.add(Disc(CGRect(x: 0, y: 0, width: 100, height: 100)))   // this Disc's geometry is its frame
         h.press(at: CGPoint(x: 50, y: 50)); h.drag(to: CGPoint(x: 70, y: 60))
@@ -58,8 +58,25 @@ import TestKit
         h.drag(to: CGPoint(x: 330, y: 310))
         expectEqual(h.editor.document[disc]?.box?.origin, CGPoint(x: 310, y: 290))
         h.escape(); h.release()
-        expectEqual(h.editor.document[disc]?.box?.origin, CGPoint(x: 280, y: 280))
+        expectEqual(h.editor.document[disc], nil, "the press's step comes to nothing")
+        expectEqual(h.editor.selectedShapeIDs, [box], "and what was selected before it is again")
         expectEqual(h.editor.currentToolID, .select)
+    },
+    test("Escape on an editing placement mid-drag takes it away, edits nothing, and selects again what was selected: nothing to undo") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), CardsPlugin()])
+        let a = h.add(Card(CGRect(x: 0, y: 0, width: 100, height: 60)))
+        h.editor.replaceDocument(with: h.editor.document)
+        h.editor.selection = a
+        h.editor.setTool(ToolID(placing: Card.kind))
+        h.press(at: CGPoint(x: 300, y: 300))
+        let card = try require(h.editor.selection)
+        expect(card != a, "the placed card, selected alone")
+        h.drag(to: CGPoint(x: 330, y: 310))
+        h.escape(); h.release()
+        expectEqual(h.editor.document.shapes.map(\.id), [a])
+        expectEqual(h.editor.selectedShapeIDs, [a])
+        expectEqual(h.editor.editingShapeID, nil)
+        expect(!h.editor.canUndo, "the press came to nothing")
     },
     test("a CustomTranslation kind: begin runs once for each shape, all in one commit before the first move; its move gets the delta and sees this event's boxes already moved") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), PinsPlugin()])

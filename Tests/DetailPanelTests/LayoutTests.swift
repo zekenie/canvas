@@ -167,6 +167,20 @@ extension AlertsTab: DetailTab {
         editor.transact { $0.update(box, as: Box.self) { $0.frame.size.width = 10 } }
         expectEqual(try editor.layout(box).tabs.map(\.title), ["Frame"])
     },
+    test("a tab's alert is its lines' worst tone when that's a warning or an error, for the strip to show") {
+        final class Lines { var tones: [DetailStatus.Tone] = [] }
+        let lines = Lines()
+        let editor = try gadgetEditor([Contributor(id: "alerts") { r in
+            r.detailStatusForEveryShape(in: AlertsTab.self) { _, _ in lines.tones.map { DetailStatus("A line.", tone: $0) } }
+        }])
+        let box = editor.add(Box(gadgetFrame))
+        for (tones, alert) in [([.neutral], nil), ([.info, .neutral], nil), ([.info, .warning], .warning),
+                               ([.error, .warning, .info], .error), ([.warning, .error], DetailStatus.Tone.error)] as [([DetailStatus.Tone], DetailStatus.Tone?)] {
+            lines.tones = tones
+            expectEqual(try editor.layout(box).alert(in: .of(AlertsTab.self)), alert, "\(tones)")
+        }
+        expectEqual(try editor.layout(box).alert(in: .of(FrameTab.self)), nil, "a tab without lines")
+    },
     test("a tab can hold status lines and sections: the kind's lines, then every kind's; its sections as they were") {
         let editor = try gadgetEditor([Contributor(id: "notes") { r in
             r.detailStatusForEveryShape(in: RemarksTab.self) { _, _ in [DetailStatus("Every kind.")] }
@@ -190,7 +204,7 @@ extension AlertsTab: DetailTab {
             r.detailStatusForEveryShape(in: AlertsTab.self) { _, _ in [] }
         }])
         expectEqual(registry.report, """
-        core          tool hand · command undo · command redo
+        core          tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
         fixtures      shape box · shape disc · shape tag
         detail-panel  service DetailPanelState
         p             DetailStatuses · DetailStatuses in Alerts
@@ -205,7 +219,7 @@ extension AlertsTab: DetailTab {
             }
         }])
         expectEqual(registry.report, """
-        core          tool hand · command undo · command redo
+        core          tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
         fixtures      shape box · shape disc · shape tag
         detail-panel  service DetailPanelState
         p             ShapeDetails → box

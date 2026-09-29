@@ -781,6 +781,20 @@ import TestKit
     },
 ])
 
+@MainActor let drawCoveredTests = Suite("Drawing: under what the host puts over the canvas", [
+    test("with the view's top covered (the path's pill over a subboard), view is the clear part below it, and --reveal fits what's drawn into that") {
+        let editor = try drawEditor()
+        editor.coveredTop = { _ in 35 }
+        expectEqual(rows(try drawn(#"tile "Legend" inside view top-right"#, on: editor)).first?["at"], [[740, 175], [120, 80]], "40 below the pill, not the window's top")
+        let far = try drawn(#"tile "Far" right of "Legend" (gap: 5000)"#, on: editor, ["--reveal"])
+        expectEqual(far["warnings"], [])
+        let bounds = try require(shape("Far", in: editor)?.box)
+        let shown = editor.cameraTarget.toView(bounds)
+        expectEqual(shown.midY, 35 + 565 / 2, "centered in the clear part")
+        expect(editor.cameraTarget.toWorld(editor.unobscuredViewport).contains(bounds))
+    },
+])
+
 @MainActor let drawRefusalTests = Suite("Drawing: what's refused", [
     test("a kind that isn't one, or that isn't drawn on its own") {
         let editor = try drawEditor()

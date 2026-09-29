@@ -55,6 +55,8 @@ public struct Shortcut {
         case tool(ToolID)
         case command(CanvasCommand, repeats: Bool)
         case custom(title: String, when: @MainActor (CanvasEditor) -> Bool, repeats: Bool, perform: @MainActor (CanvasEditor) -> Void)
+        /// Down, `press`; up (or the canvas losing the keyboard), `release`.
+        case held(title: String, press: @MainActor (CanvasEditor) -> Void, release: @MainActor (CanvasEditor) -> Void)
     }
 
     /// What it does, by name: for the report, tooltips and tests.
@@ -62,7 +64,7 @@ public struct Shortcut {
         switch effect {
         case .tool(let id): .tool(id)
         case .command(let command, _): .command(command)
-        case .custom(let title, _, _, _): .custom(title)
+        case .custom(let title, _, _, _), .held(let title, _, _): .custom(title)
         }
     }
 
@@ -89,7 +91,7 @@ extension Shortcut {
     /// item is enabled), a custom shortcut's while its `when` holds, a tool's always.
     @MainActor func applies(in editor: CanvasEditor) -> Bool {
         switch effect {
-        case .tool: true
+        case .tool, .held: true
         case .command(let command, _): editor.canPerform(command)
         case .custom(_, let when, _, _): when(editor)
         }
@@ -99,7 +101,7 @@ extension Shortcut {
     /// (⌘Z undoes again and again, as a menu's key does).
     var repeats: Bool {
         switch effect {
-        case .tool: false
+        case .tool, .held: false
         case .command(_, let repeats), .custom(_, _, let repeats, _): repeats
         }
     }
@@ -108,7 +110,7 @@ extension Shortcut {
         switch effect {
         case .tool(let id): editor.setTool(id)
         case .command(let command, _): editor.perform(command)
-        case .custom(_, _, _, let perform): perform(editor)
+        case .custom(_, _, _, let perform), .held(_, let perform, _): perform(editor)
         }
     }
 }
@@ -127,6 +129,14 @@ extension PluginRegistrar {
     public mutating func shortcut(_ chord: KeyChord, _ title: String, when: @escaping @MainActor (CanvasEditor) -> Bool = { _ in true },
                                   repeats: Bool = false, perform: @escaping @MainActor (CanvasEditor) -> Void) {
         contribute(Shortcut(chord: chord, effect: .custom(title: title, when: when, repeats: repeats, perform: perform)), to: KeyboardShortcuts.self)
+    }
+
+    /// A key that does something while it's held down: `press` runs as it goes down (its repeats are
+    /// the shortcut's, and do nothing), `release` as it comes up, or as the canvas loses the keyboard or
+    /// its window stops being key, where no release would reach it. `title` names it ("Pan").
+    public mutating func shortcut(_ chord: KeyChord, _ title: String, whileHeld press: @escaping @MainActor (CanvasEditor) -> Void,
+                                  released release: @escaping @MainActor (CanvasEditor) -> Void) {
+        contribute(Shortcut(chord: chord, effect: .held(title: title, press: press, release: release)), to: KeyboardShortcuts.self)
     }
 
     /// A key that runs a command another plugin (or the core) claims, as its menu item does: the
@@ -176,6 +186,15 @@ extension Registry {
     public func help(for tool: ToolDescriptor) -> String {
         shortcut(forTool: tool.id).map { "\(tool.label) (\($0.chord))" } ?? tool.label
     }
+
+    /// The shortcut that runs a command (the first, if it has several).
+    public func shortcut(forCommand command: CanvasCommand) -> Shortcut? { shortcuts.first { $0.action == .command(command) } }
+
+    /// The tooltip of a button that runs a command, as a tool's is: what it's called, and the key
+    /// that runs it: "Enclosing Board (⌘↑)".
+    public func help(_ title: String, forCommand command: CanvasCommand) -> String {
+        shortcut(forCommand: command).map { "\(title) (\($0.chord))" } ?? title
+    }
 }
 
 /// Per editor: the shortcuts by chord, gathered once (the registry is frozen), and what a key pressed
@@ -184,22 +203,49 @@ extension Registry {
 final class KeyboardState {
     private unowned let editor: CanvasEditor
     private let shortcuts: [KeyChord: Shortcut]
+    /// The keys held down whose shortcuts do something while they're held, by key.
+    private var held: [Character: Shortcut] = [:]
+    /// The key the canvas last saw go down, until it's let go: a key's repeats run a shortcut again
+    /// only for it, so a key held down elsewhere repeats on the canvas as nothing (↓ held in the
+    /// table of contents, whose pick gave the canvas the keyboard, never nudges what it picked).
+    private var down: Character?
 
     init(editor: CanvasEditor) {
         self.editor = editor
         shortcuts = Dictionary(editor.registry.shortcuts.map { ($0.chord, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
-    /// A key pressed on the canvas: of the chords it answers to (`KeyChord.answers`), the first
-    /// whose shortcut applies runs it, once per press. False if none does, so the key goes on.
+    /// A key pressed on the canvas: of the chords it answers to (`KeyChord.answers(to:)`), the first
+    /// whose shortcut applies runs it, once per press; one held down runs once until its release. A
+    /// repeat runs a shortcut that `repeats` again only when the canvas saw its key go down; one of
+    /// a key pressed elsewhere is taken and does nothing. False if none applies, so the key goes on.
     func handle(_ stroke: KeyStroke) -> Bool {
-        guard let chord = KeyChord(stroke) else { return false }
-        for candidate in chord.answers {
+        let key = KeyChord(stroke)?.key
+        if !stroke.isRepeat { down = key }
+        let wentDownHere = !stroke.isRepeat || (key != nil && key == down)
+        for candidate in KeyChord.answers(to: stroke) {
             guard let shortcut = shortcuts[candidate], shortcut.applies(in: editor) else { continue }
-            if !stroke.isRepeat || shortcut.repeats { shortcut.run(in: editor) }
+            if case .held = shortcut.effect {
+                if held[candidate.key] == nil {
+                    held[candidate.key] = shortcut
+                    shortcut.run(in: editor)
+                }
+                return true
+            }
+            if !stroke.isRepeat || (shortcut.repeats && wentDownHere) { shortcut.run(in: editor) }
             return true
         }
         return false
+    }
+
+    /// A key let go (nil: every key), which a shortcut done while it's held hears.
+    func release(_ stroke: KeyStroke?) {
+        if stroke.map({ KeyChord($0)?.key == down }) ?? true { down = nil }
+        let keys = stroke.map { stroke in KeyChord(stroke).map { [$0.key] } ?? [] } ?? Array(held.keys)
+        for key in keys {
+            guard let shortcut = held.removeValue(forKey: key), case .held(_, _, let release) = shortcut.effect else { continue }
+            release(editor)
+        }
     }
 }
 
@@ -210,8 +256,11 @@ extension KeyboardState: EditorService {
 
 // MARK: The plugin
 
-/// Claims key strokes, and gives the core's own actions their keys: H for the Hand, Escape (⌘.
-/// too, as anywhere on the Mac) to cancel, and ⌘Z and ⇧⌘Z to undo and redo (held, again and again).
+/// Claims key strokes and their releases, and gives the core's own actions their keys: H for the
+/// Hand, and Space held to pan as it does whatever the tool (`editor.isHandHeld`, Figma's and
+/// tldraw's), Escape (⌘. too, as anywhere on the Mac) to cancel, ⌘Z and ⇧⌘Z to undo and redo (held,
+/// again and again), and the View menu's zoom keys: ⌘= and ⌘- (held, again and again), ⌘0, and ⇧1
+/// for Zoom to Fit (tldraw's), the number row's 1 whatever the layout types with it.
 public struct KeyboardPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .keyboard }
@@ -219,10 +268,16 @@ public struct KeyboardPlugin: CanvasPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { KeyboardState(editor: $0) }
         registrar.keyStrokes { editor, stroke in editor.service(KeyboardState.self)?.handle(stroke) ?? false }
+        registrar.keyReleases { editor, stroke in editor.service(KeyboardState.self)?.release(stroke) }
         registrar.shortcut("h", forTool: .hand)
+        registrar.shortcut(.space, "Pan", whileHeld: { $0.isHandHeld = true }, released: { $0.isHandHeld = false })
         registrar.shortcut(.escape, "Cancel") { $0.cancel() }
         registrar.shortcut(KeyChord(".", .command), "Cancel") { $0.cancel() }
         registrar.shortcut(KeyChord("z", .command), forCommand: .undo, repeats: true)
         registrar.shortcut(KeyChord("z", [.command, .shift]), forCommand: .redo, repeats: true)
+        registrar.shortcut(KeyChord("=", .command), forCommand: .zoomIn, repeats: true)
+        registrar.shortcut(KeyChord("-", .command), forCommand: .zoomOut, repeats: true)
+        registrar.shortcut(KeyChord("0", .command), forCommand: .zoomToActualSize)
+        registrar.shortcut(KeyChord("1", .shift), forCommand: .zoomToFit)
     }
 }

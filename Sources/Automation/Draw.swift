@@ -122,8 +122,9 @@ private struct DryRun: Error {
 
 @MainActor
 enum DrawStyle {
-    /// `--reveal`: the view eases to fit what was drawn, this far in from the window's edges, no
-    /// closer than 100%.
+    /// `--reveal`: the view eases to fit what was drawn, this far in from the edges of the part of
+    /// the view the host leaves clear (`unobscuredViewport`: below the path's pill), no closer than
+    /// 100%.
     static let revealInset: CGFloat = 100
     static let revealMaxZoom: CGFloat = 1
     static let revealDuration: Duration = .milliseconds(320)
@@ -197,16 +198,16 @@ private func apply(_ drawing: Drawing, to editor: CanvasEditor, reveals: Bool, d
 }
 
 /// Eases the view to fit what the run made or changed (or, if nothing, what it's about), as the
-/// table of contents zooms to a shape.
+/// table of contents zooms to a shape: into the part of the view the host leaves clear.
 @MainActor
 private func reveal(_ result: DrawResult, in editor: CanvasEditor) {
-    let size = editor.viewportSize
-    guard size.width > 0, size.height > 0 else { return }
+    let clear = editor.unobscuredViewport
+    guard !clear.isEmpty else { return }
     let shapes = result.changes.filter { $0.at != nil }
     let changed = shapes.filter { $0.did != .unchanged }
     let bounds = (changed.isEmpty ? shapes : changed).compactMap(\.at).reduce(CGRect.null) { $0.union($1) }
     guard !bounds.isNull, bounds.isFinite else { return }
-    editor.animateCamera(to: Camera(fitting: bounds, in: size, inset: DrawStyle.revealInset, maxZoom: DrawStyle.revealMaxZoom),
+    editor.animateCamera(to: Camera(fitting: bounds, in: clear, inset: DrawStyle.revealInset, maxZoom: DrawStyle.revealMaxZoom),
                          duration: DrawStyle.revealDuration)
 }
 

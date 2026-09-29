@@ -48,7 +48,7 @@ public struct SubboardsPlugin: CanvasPlugin {
             sub.tool(label: "Subboard", systemImage: Subboard.systemImage, shortcut: "b", placing: place)
             sub.title(pill: false)                         // Titles keeps its name; the card draws it
             sub.opensBoard(placeholder: Subboard.placeholder, systemImage: Subboard.systemImage)
-            sub.mentionable(following: .opens)             // by its name, else "Untitled Subboard"; followed, it's entered
+            sub.mentionable(tint: { _ in SubboardStyle.border }, following: .opens)   // by its name, else "Untitled Subboard"; followed, it's entered
             sub.subboardRow()                              // the table of contents, named by Titles
             sub.subboardHeader()                           // renamed in the panel's header
         }
