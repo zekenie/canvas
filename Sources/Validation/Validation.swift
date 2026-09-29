@@ -43,6 +43,14 @@ public struct ValidationResult: Equatable, Sendable {
     }
 }
 
+/// A shape's verdict as the engine holds it, without checking (`ValidationEngine.cachedResult(for:)`).
+public enum CachedVerdict: Equatable, Sendable {
+    /// What the engine found of the shape, which still holds: its issues, nil for none.
+    case current(ValidationResult?)
+    /// Nothing it can say without checking the shape.
+    case unknown
+}
+
 /// Rules' only way into the document. The engine notes the shapes a rule looks up, and checks the
 /// shape again when one of them changes; for a rule that ignores moves, not when one only moves.
 /// Add lookups here as rules need them.
@@ -201,6 +209,19 @@ public final class ValidationEngine {
     }
 
     public func result(for id: ShapeID) -> ValidationResult? { results[id] }
+
+    /// A shape's issues as the engine last found them, if that still holds, checking nothing: for a
+    /// reader that mustn't make the engine read a board (`results` checks what's waiting, and every
+    /// shape of a board it hasn't read yet), as a query asking about many shapes does. Current only
+    /// for a shape on the board shown, once the engine has heard every commit and read that board,
+    /// and while the shape isn't waiting to be checked again (it changed or moved, or a shape its
+    /// rules looked up did); unknown otherwise, where only running its rules can say
+    /// (`registry.validationIssues(of:in:)`). It never runs a rule.
+    public func cachedResult(for id: ShapeID) -> CachedVerdict {
+        guard heardRevision == editor.revision, let board, !board.unchecked.contains(id), !board.moved.contains(id),
+              editor.withoutObservingDocument({ editor.document[id] != nil }) else { return .unknown }
+        return .current(board.cache[id])
+    }
 
     /// The shapes whose rules looked one of `ids` up when they were last checked: those a change to
     /// it may check again, besides itself. For a plugin that keeps what it shows of each shape's

@@ -70,6 +70,13 @@ import ValidationDetails
         title-names          draw names
         port-edges           draw edges
         validation-checks    draw checks
+        queries              service QueryState · query engine
+        title-queries        query names
+        board-queries        query board names
+        mention-queries      query word :mentions · query word :mentioned-by · query text text/x-canvas-mentions
+        validation-queries   query word :invalid · query word :warned
+        selection-queries    query word :selected
+        query-commands       command line query · command line query-vocabulary
         rectangles           shape rectangle · tool rectangle · shortcut R → tool rectangle
         polylines            shape polyline · tool polyline · shortcut L → tool polyline
         eraser               tool eraser · shortcut E → tool eraser

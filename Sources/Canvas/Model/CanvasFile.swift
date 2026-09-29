@@ -81,6 +81,18 @@ public struct CanvasFile: Equatable, Sendable {
         return path.reversed()
     }
 
+    /// Whether the app can show a board: the root, or a board whose owners, from the root down, are
+    /// all in the file, none kept aside, each of one of `boardOwningKinds` (the registry's, the kinds
+    /// that are `BoardOwning`). The board itself may have no shapes (yet). O(the board's depth).
+    /// `editor.canShow`'s rule, for code that holds a file off the main actor (Topology's snapshot).
+    public func canShow(_ board: BoardID, boardOwningKinds: Set<ShapeKind>) -> Bool {
+        guard !board.isRoot else { return true }
+        guard let path = path(to: board) else { return false }
+        return path.dropFirst().allSatisfy { step in
+            step.owner.flatMap(record).map { !$0.isOpaque && boardOwningKinds.contains($0.kind) } ?? false
+        }
+    }
+
     /// The boards these shapes own, then the boards those boards' shapes own, and so on, breadth
     /// first: everything deleting the shapes takes with it. Only boards the file has (with shapes).
     public func subtree(ownedBy ids: some Sequence<ShapeID>) -> [BoardID] {

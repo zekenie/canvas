@@ -7,9 +7,11 @@ import TestKit
 
 /// An app for `canvas` to talk to. Its commands: `echo` (its params back), `recite` (its script
 /// back, which standard input may give), `touch` (a board's: the board it's given back), `fail`
-/// (an error; with `--lines`, one about a script, as `draw`'s are), `rows` (a list), `drew` (what a
-/// draw says), `sorts` (a list whose rows have objects and sentences, as `kinds`'s do), and `slow`
-/// (an answer a second late).
+/// (an error; with `--lines`, one about a script, as `draw`'s are, and with `--at`, one about where
+/// on a line, as a query's are), `rows` (a list), `drew` (what a draw says), `sorts` (a list whose
+/// rows have objects and sentences, as `kinds`'s do), `found` (shapes, as a query finds them), and
+/// `slow` (an answer a second late, the main actor free meanwhile; `--briefly` says to wait for it
+/// 0.3 s, and `--patiently` 3).
 @MainActor
 final class FakeApp {
     let path = temporarySocketPath()
@@ -39,11 +41,20 @@ final class FakeApp {
                 "required": ["script"],
             ], positionals: ["script"]),
             CommandSpec(name: "touch", summary: "Touch a board.", scope: .board),
-            CommandSpec(name: "fail", summary: "Fail.", scope: .app, params: ["type": "object", "properties": ["lines": ["type": "boolean"]]]),
+            CommandSpec(name: "fail", summary: "Fail.", scope: .app, params: ["type": "object", "properties": ["lines": ["type": "boolean"],
+                                                                                                          "at": ["type": "boolean"],
+                                                                                                          "wide": ["type": "boolean"]]]),
             CommandSpec(name: "rows", summary: "Some rows.", scope: .app),
             CommandSpec(name: "drew", summary: "Say what was drawn.", scope: .app),
             CommandSpec(name: "sorts", summary: "Some sorts of shape.", scope: .app),
-            CommandSpec(name: "slow", summary: "Answer late.", scope: .app),
+            CommandSpec(name: "found", summary: "Say what was found.", scope: .app),
+            CommandSpec(name: "slow", summary: "Answer late.", scope: .app, params: [
+                "type": "object",
+                "properties": [
+                    "briefly": ["type": "boolean", "description": "Wait only a moment.", "x-timeout": 0.3],
+                    "patiently": ["type": "boolean", "description": "Wait a while.", "x-timeout": 3],
+                ],
+            ]),
         ])
     }
 
@@ -73,28 +84,54 @@ final class FakeApp {
         ],
     ])
 
+    /// What `fail --at` fails with: an error about where on a line, what a query's are.
+    static let wordError = RPCError(RPCError.failed, reason: "unknown_word", ":mention isn't a pseudo-class.", hint: "Did you mean :mentions?", details: [
+        "line": 1, "column": 12, "length": 8, "statement": #"sticky-note:mention("API gateway")"#,
+        "errors": [
+            ["line": 1, "column": 12, "length": 8, "statement": #"sticky-note:mention("API gateway")"#, "reason": "unknown_word",
+             "message": ":mention isn't a pseudo-class."],
+            ["line": 1, "column": 21, "length": 1, "statement": #"sticky-note:mention("API gateway")"#, "reason": "unknown_title",
+             "message": "\"API gateway\" isn't in the file."],
+        ],
+    ])
+
+    /// What `fail --wide` fails with: an error about where on a line whose characters before it,
+    /// and in it, take two cells in a terminal (an emoji, Japanese).
+    static let wideError = RPCError(RPCError.failed, reason: "unknown_title", #""発射" isn't in the file."#, details: [
+        "line": 1, "column": 16, "length": 4, "statement": #""🚀 発射":mention("発射")"#,
+    ])
+
+    /// What `found` says: a shape, as a query's rows have it.
+    static let found: JSON = [
+        "count": 1,
+        "rows": [["id": "A1", "kind": "note", "title": "Checkout", "board": "root", "inside": ["Payments"], "properties": ["text": "Calls the gateway"]]],
+    ]
+
     init() throws {
-        let listener = RPCListener(path: path) { [unowned self] request in answer(request) }
+        let listener = RPCListener(path: path) { [unowned self] request in await answer(request) }
         try listener.start()
         self.listener = listener
     }
 
     func stop() { listener?.stop() }
 
-    private func answer(_ request: RPCRequest) -> Result<JSON, RPCError> {
+    private func answer(_ request: RPCRequest) async -> Result<JSON, RPCError> {
         methods.append(request.method)
         switch request.method {
         case RPC.describeMethod: return .success(try! JSON(encoding: description))
         case "echo", "recite": return .success(request.params ?? [:])
         case "touch": return .success(["board": request.params?["board"] ?? .null])
         case "fail" where request.params?["lines"] == true: return .failure(FakeApp.scriptError)
+        case "fail" where request.params?["at"] == true: return .failure(FakeApp.wordError)
+        case "fail" where request.params?["wide"] == true: return .failure(FakeApp.wideError)
         case "fail": return .failure(.failed("It didn't work.", reason: "no_luck", hint: "Try luck."))
         case "rows": return .success([["id": 2, "name": "Plans", "shapes": 12], ["id": 10, "name": "Untitled", "edited": true]])
         case "drew": return .success(FakeApp.drawn)
         case "sorts": return .success([["kind": "box", "drawable": true, "attributes": ["color": "text"], "edges": ["left": ["wire"]]],
                                        ["kind": "squiggle", "drawable": false, "why": .string(FakeApp.undrawable)]])
+        case "found": return .success(FakeApp.found)
         case "slow":
-            Thread.sleep(forTimeInterval: 1)
+            try? await Task.sleep(for: .seconds(1))
             return .success([:])
         default: return .failure(RPCError(code: RPCError.methodNotFound, message: "no \(request.method)"))
         }
@@ -138,7 +175,7 @@ final class FakeApp {
         expectEqual(text.status, 0, text.error)
         let lines = text.output.components(separatedBy: "\n")
         let header = try require(lines.first { $0.hasPrefix("  line") })
-        expectEqual(Array(header.split(separator: " ").prefix(3)), ["line", "did", "kind"], "then the rest by name")
+        expectEqual(header.split(separator: " ").prefix(4).joined(separator: " "), "line did kind title", "then the rest by name")
         expect(lines.contains("  line  severity  message"), text.output)
         expect(lines.contains("  1     warning   \(FakeApp.pushed)"), text.output)
         expect(lines.contains("        warning   \(FakeApp.outside)"), text.output)
@@ -151,6 +188,21 @@ final class FakeApp {
         expectEqual(text.output, "kind      drawable  why\nbox       yes\n  attributes:\n    color: text\n  edges:\n    left: wire\n"
             + "squiggle  no        \(FakeApp.undrawable)\n")
     },
+    test("as text, a shape a query found leads with its id, kind and title, and its properties go under it") {
+        let app = try FakeApp()
+        defer { app.stop() }
+        let text = try canvas(["--socket", app.path, "--format", "text", "found"])
+        expectEqual(text.status, 0, text.error)
+        expectEqual(text.output, """
+            count: 1
+            rows:
+              id  kind  title     board  inside
+              A1  note  Checkout  root   Payments
+                properties:
+                  text: Calls the gateway
+
+            """)
+    },
     test("an answer that doesn't come in time is exit 3, timed_out, and says the app may still do it") {
         let app = try FakeApp()
         defer { app.stop() }
@@ -159,6 +211,19 @@ final class FakeApp {
         let error = try JSON(text: late.error)["error"]
         expectEqual(error?["reason"], "timed_out")
         expectEqual(error?["hint"], "The app may still do it: check before running it again. --timeout waits longer.")
+    },
+    test("a param that says its answer takes a while (x-timeout) is waited for that long when it's given, the longest of those given; --timeout still wins") {
+        let app = try FakeApp()
+        defer { app.stop() }
+        let brief = try canvas(["--socket", app.path, "slow", "--briefly"])
+        expectEqual(brief.status, 3, "waited 0.3 s, not the usual 10")
+        expectEqual(try JSON(text: brief.error)["error"]?["reason"], "timed_out")
+        let patient = try canvas(["--socket", app.path, "slow", "--briefly", "--patiently"])
+        expectEqual(patient.status, 0, patient.error)
+        let told = try canvas(["--socket", app.path, "--timeout", "5", "slow", "--briefly"])
+        expectEqual(told.status, 0, told.error)
+        let help = try canvas(["--socket", app.path, "help", "slow"])
+        expect(help.output.contains("Wait a while. (waits up to 3 s)"), help.output)
     },
     test("a board command's --board, when it's a file, is sent as the whole path") {
         let app = try FakeApp()
@@ -212,7 +277,13 @@ final class FakeApp {
         let value = try canvas(["--socket", app.path, "echo", "hi", "--count", "many"])
         expectEqual(value.status, 2)
         expectEqual(try JSON(text: value.error)["error"]?["message"], "--count is a whole number, not many")
-        expectEqual(app.methods, Array(repeating: RPC.describeMethod, count: 3), "nothing ran")
+        // A command with no options says so, and one about the app says it takes no --board.
+        let none = try canvas(["--socket", app.path, "--format", "text", "rows", "--board", "1"])
+        expectEqual(none.status, 2)
+        expectEqual(none.error, "canvas: rows has no option --board\nhint: It's about the app, not a board. It takes no options.\n")
+        let board = try canvas(["--socket", app.path, "--format", "text", "touch", "--quick"])
+        expectEqual(board.error, "canvas: touch has no option --quick\nhint: Its options: --board.\n")
+        expectEqual(app.methods, Array(repeating: RPC.describeMethod, count: 5), "nothing ran")
     },
     test("an error from the app is exit 1, with its reason and hint") {
         let app = try FakeApp()
@@ -245,6 +316,39 @@ final class FakeApp {
               box "API" right of "Web"
             hint: Did you mean "web"?
             line 4: left of what? A placement needs a shape to go against.
+
+            """)
+    },
+    test("an error about where on a line says the column, and marks what's wrong under the statement") {
+        let app = try FakeApp()
+        defer { app.stop() }
+        let json = try canvas(["--socket", app.path, "fail", "--at"])
+        expectEqual(json.status, 1)
+        let error = try JSON(text: json.error)["error"]
+        expectEqual(error?["column"], 12)
+        expectEqual(error?["length"], 8)
+        let text = try canvas(["--socket", app.path, "fail", "--at", "--format", "text"])
+        expectEqual(text.status, 1)
+        expectEqual(text.error, """
+            canvas: line 1, column 12: :mention isn't a pseudo-class.
+              sticky-note:mention("API gateway")
+                         ^^^^^^^^
+            hint: Did you mean :mentions?
+            line 1, column 21: "API gateway" isn't in the file.
+
+            """)
+    },
+    test("the marks under a statement line up in a terminal, where an emoji or a Japanese character takes two cells") {
+        let app = try FakeApp()
+        defer { app.stop() }
+        let text = try canvas(["--socket", app.path, "fail", "--wide", "--format", "text"])
+        expectEqual(text.status, 1)
+        // Before the column: a quote, the rocket (2), a space, two characters (2 each), a quote, and
+        // `:mention(`, 18 cells; under it, a quote, two characters and a quote, 6.
+        expectEqual(text.error, """
+            canvas: line 1, column 16: "発射" isn't in the file.
+              "🚀 発射":mention("発射")
+                                ^^^^^^
 
             """)
     },

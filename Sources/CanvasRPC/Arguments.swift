@@ -12,7 +12,9 @@ import Foundation
 //     anything else (an object)                 --props '{"text": "Hi"}' (JSON; - reads it from standard input)
 //
 // Text whose schema says `"x-stdin": true` (a script) is read from standard input when it's given
-// as -, as JSON always is; help writes its value <script>|-.
+// as -, as JSON always is; help writes its value <script>|-. A param whose schema says
+// `"x-timeout": 60` has the app wait on something slow (a language model): given, `canvas` waits up
+// to that many seconds for the answer, and help says so.
 //
 // `--name=value` works as well as `--name value`, `fooBar` is `--foo-bar` (or `--fooBar`), `--`
 // ends the options, and the command's positionals take what's left, in order.
@@ -34,6 +36,9 @@ public struct CommandArgument: Equatable, Sendable {
     public let valueName: String
     /// Text given as `-` is read from standard input: its schema says `"x-stdin": true`.
     public let readsStandardInput: Bool
+    /// How long, in seconds, `canvas` waits for the answer to a request that gives it: its schema's
+    /// `"x-timeout"`, for a param the app waits on something slow for. Nil: the usual wait.
+    public let waits: TimeInterval?
 
     /// Whether `--word` names it.
     func matches(_ word: String) -> Bool { word == name || "--\(word)" == option }
@@ -104,13 +109,14 @@ extension CommandSpec {
             return CommandArgument(name: name, option: "--\(Self.hyphenated(name))", isPositional: positionals.contains(name),
                                    isRequired: required.contains(name), value: shape, summary: schema["description"]?.stringValue,
                                    defaultValue: schema["default"], valueName: valueName(name, written, shape),
-                                   readsStandardInput: schema["x-stdin"] == .bool(true))
+                                   readsStandardInput: schema["x-stdin"] == .bool(true),
+                                   waits: schema["x-timeout"]?.numberValue.flatMap { $0 > 0 && $0.isFinite ? $0 : nil })
         }
         if scope == .board {
             arguments.append(CommandArgument(
                 name: RPC.boardParam, option: "--\(RPC.boardParam)", isPositional: false, isRequired: false, value: .text(choices: nil),
                 summary: "The board to work on: its id (`\(RPC.commandName) boards`), its file, or its name. Default: the board in front.",
-                defaultValue: nil, valueName: "board", readsStandardInput: false))
+                defaultValue: nil, valueName: "board", readsStandardInput: false, waits: nil))
         }
         return arguments
     }
@@ -145,9 +151,11 @@ extension CommandSpec {
             }
             guard let argument else {
                 let options = all.map(\.option)
+                let listed = options.isEmpty ? "It takes no options." : "Its options: \(options.joined(separator: ", "))."
+                // Every board's command takes --board: one about the app says why it doesn't.
+                let aboutApp = name == RPC.boardParam && scope == .app ? "It's about the app, not a board. " : ""
                 throw ArgumentError("\(self.name) has no option --\(name)",
-                                    hint: Self.closest(to: "--\(name)", among: options).map { "Did you mean \($0)?" }
-                                        ?? "Its options: \(options.joined(separator: ", ")).")
+                                    hint: Self.closest(to: "--\(name)", among: options).map { "Did you mean \($0)?" } ?? aboutApp + listed)
             }
             let value: JSON
             if argument.value == .flag {

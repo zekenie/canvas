@@ -15,6 +15,7 @@ public enum ArrowEdge {}
 
 extension ArrowEdge: EdgeType {
     public static let id = EdgeTypeID(rawValue: Arrow.kind.rawValue)
+    public static let summary: String? = "an arrow bound at both ends, from the shape it starts on to the shape it ends on, whatever its arrowheads"
 }
 
 /// Arrows are what ports draw, though neither plugin has heard of the other: a drag from a port

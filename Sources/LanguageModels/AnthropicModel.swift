@@ -10,8 +10,11 @@ public struct AnthropicModel: LanguageModel {
     public static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
     /// The `anthropic-version` header.
     public static let apiVersion = "2023-06-01"
+    /// The `anthropic-beta` header a request that asks for the service's fallback sends
+    /// (`ModelFallbacks.default`, the body's `"fallbacks": "default"`).
+    public static let fallbackBeta = "server-side-fallback-2026-07-01"
 
-    /// The model's id.
+    /// The model's id: the one that answers a request that names none (`ModelRequest.model`).
     public let model: String
     /// Where the key is read from.
     public let keys: AnthropicKeyStore
@@ -60,10 +63,17 @@ public struct AnthropicModel: LanguageModel {
         timeout + Double(request.maxTokens) / Self.slowestTokensPerSecond
     }
 
+    /// What's sent, in the API's names (snake case); what's nil is left out. An answer another model
+    /// gave in the asked one's place (`fallbacks`) is read as any other: the block that marks the
+    /// switch isn't text.
     private struct Body: Encodable {
         struct Message: Encodable {
             let role: String
             let content: String
+        }
+
+        struct OutputConfig: Encodable {
+            let effort: String
         }
 
         let model: String
@@ -72,6 +82,8 @@ public struct AnthropicModel: LanguageModel {
         let messages: [Message]
         let temperature: Double?
         let stopSequences: [String]?
+        let outputConfig: OutputConfig?
+        let fallbacks: String?
     }
 
     func urlRequest(for request: ModelRequest, key: String) -> URLRequest {
@@ -80,11 +92,13 @@ public struct AnthropicModel: LanguageModel {
         urlRequest.setValue("application/json", forHTTPHeaderField: "content-type")
         urlRequest.setValue(key, forHTTPHeaderField: "x-api-key")
         urlRequest.setValue(Self.apiVersion, forHTTPHeaderField: "anthropic-version")
-        let body = Body(model: model, maxTokens: request.maxTokens,
+        if request.fallbacks != nil { urlRequest.setValue(Self.fallbackBeta, forHTTPHeaderField: "anthropic-beta") }
+        let body = Body(model: request.model ?? model, maxTokens: request.maxTokens,
                         system: request.system.flatMap { $0.isEmpty ? nil : $0 },
                         messages: request.messages.map { Body.Message(role: $0.role.rawValue, content: $0.text) },
                         temperature: request.temperature,
-                        stopSequences: request.stopSequences.isEmpty ? nil : request.stopSequences)
+                        stopSequences: request.stopSequences.isEmpty ? nil : request.stopSequences,
+                        outputConfig: request.effort.map(Body.OutputConfig.init), fallbacks: request.fallbacks?.rawValue)
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
         encoder.outputFormatting = .sortedKeys

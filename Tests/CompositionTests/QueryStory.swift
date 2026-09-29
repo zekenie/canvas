@@ -1,0 +1,228 @@
+import AppKit
+@_spi(Host) import Canvas
+import CanvasRPC
+import CanvasTesting
+import CanvasUI
+import Composition
+import CoreGraphics
+import Foundation
+import LanguageModels
+import Locking
+import Mentions
+import Ports
+import Queries
+import Rectangles
+import Schemas
+import Selection
+import StickyNotes
+import Subboards
+import TestKit
+import Titles
+
+// The story file every query example runs on (the skill's, the prompt's, the evaluation's and these
+// tests'), "Roadmap", built with the shipped kinds and fixed ids, `00000000-0000-4000-8000-0000000000NN`
+// (NN in hex, the design's `…NN`), the design's letters naming them:
+//
+//     Roadmap (the top board), back to front:
+//       P  …01  subboard "Payments"
+//       A  …02  sticky-note "API gateway"   text: Owns auth. See @Checkout    (mentions C)
+//       U  …03  sticky-note "Auth"          text: JWT, 15 min expiry
+//       N1 …04  sticky-note (untitled)      text: TODO: rate limits
+//       W  …05  rectangle "Warehouse"
+//       S  …06  schema-card                 {"title": "Order", ...}, locked
+//       V  …07  schema-card                 {"type": "object" "title": "Invoice"}   (not JSON: untitled, an error)
+//       R1 …08  arrow A → U                 channel note-link
+//       R2 …09  arrow W → P                 no channel
+//       L  …0A  sticky-note "Ledger"        text: Moved to @Old ledger        (Old ledger, …FF, is gone)
+//     Payments' board (P):
+//       C  …11  sticky-note "Checkout"      text: Calls @API gateway for tokens    (mentions A)
+//       F  …12  subboard "Refunds"
+//       N2 …13  sticky-note (untitled)      text: Retry on 502
+//     Refunds' board (F):
+//       Y  …21  sticky-note "Refund policy" text: 30 days, locked
+//
+// Its window shows the top board, and Auth is selected. File order: P, C, F, Y, N2, A, U, N1, W,
+// S, V, R1, R2, L.
+
+/// The story file: its shapes' ids, the file (`file(in:)`), and the file open as the app has it,
+/// in an editor (`harness`) or a board document (`document`).
+@MainActor
+enum QueryStory {
+    /// `…NN`: the story's id for `nn`.
+    static func id(_ nn: UInt8) -> ShapeID {
+        ShapeID(UUID(uuidString: String(format: "00000000-0000-4000-8000-0000000000%02X", nn))!)
+    }
+
+    static let payments = id(0x01), gateway = id(0x02), auth = id(0x03), todo = id(0x04), warehouse = id(0x05)
+    static let order = id(0x06), invoice = id(0x07), gatewayToAuth = id(0x08), warehouseToPayments = id(0x09), ledger = id(0x0A)
+    static let checkout = id(0x11), refunds = id(0x12), retry = id(0x13), refundPolicy = id(0x21)
+    /// "Old ledger", which Ledger mentions: in no board of the file.
+    static let oldLedger = id(0xFF)
+
+    /// Each shape by the design's letter for it.
+    static let letters: [String: ShapeID] = [
+        "P": payments, "A": gateway, "U": auth, "N1": todo, "W": warehouse, "S": order, "V": invoice, "R1": gatewayToAuth,
+        "R2": warehouseToPayments, "L": ledger, "C": checkout, "F": refunds, "N2": retry, "Y": refundPolicy,
+    ]
+
+    /// Shapes by their letters, as the design lists them: "C, Y, N2".
+    static func ids(_ list: String) -> [ShapeID] {
+        list.split(separator: ",").map { part in
+            let letter = part.trimmingCharacters(in: .whitespaces)
+            guard let id = letters[letter] else { preconditionFailure("the story has no shape \(letter)") }
+            return id
+        }
+    }
+
+    /// Every shape, in file order: the top board back to front, each subboard followed by its board's.
+    static let fileOrder = ids("P, C, F, Y, N2, A, U, N1, W, S, V, R1, R2, L")
+
+    /// Order's schema: an object with an id.
+    static let orderSchema = #"{"title": "Order", "type": "object", "properties": {"id": {"type": "string"}}}"#
+    /// Invoice's: not JSON, a comma left out before its title, so it has none (a card whose text
+    /// isn't JSON is named by a title read before what's wrong). Untitled only while this process
+    /// hasn't read V's text as a JSON object: Schemas keeps each card's last object by id for the
+    /// whole process, and a card read later whose text isn't one shows it (`shown`). So a test that
+    /// mends V's JSON makes a story built after it name V: mend a copy (a new id), never V.
+    static let invoiceSchema = #"{"type": "object" "title": "Invoice"}"#
+
+    /// The view a board of the story is shown in, as the skill's boards are.
+    static let viewport = CGSize(width: 1440, height: 900)
+
+    /// The file, its arrows made by the shipped connector as a connection made by name is (ArrowPorts:
+    /// both ends bound at their shapes' centers, R1 on the note-link channel).
+    static func file(in registry: Registry) -> CanvasFile {
+        func note(_ id: ShapeID, _ title: String?, at x: CGFloat, _ y: CGFloat, _ text: MentionText, locked: Bool = false) -> AnyShapeRecord {
+            var note = ShapeRecord(id: id, StickyNote(frame: CGRect(origin: CGPoint(x: x, y: y), size: StickyNote.defaultSize), text: text))
+            note[TitleProperty.self] = title
+            note[LockedProperty.self] = locked ? true : nil
+            return AnyShapeRecord(note)
+        }
+        func subboard(_ id: ShapeID, _ title: String, at x: CGFloat, _ y: CGFloat) -> AnyShapeRecord {
+            var subboard = ShapeRecord(id: id, Subboard(frame: CGRect(origin: CGPoint(x: x, y: y), size: Subboard.defaultSize)))
+            subboard[TitleProperty.self] = title
+            return AnyShapeRecord(subboard)
+        }
+        func card(_ id: ShapeID, _ schema: String, at x: CGFloat, _ y: CGFloat, locked: Bool = false) -> AnyShapeRecord {
+            var props = SchemaCard(frame: CGRect(origin: CGPoint(x: x, y: y), size: SchemaCard.defaultSize), schema: "")
+            props.setSchema(schema)
+            var card = ShapeRecord(id: id, props)
+            card[LockedProperty.self] = locked ? true : nil
+            return AnyShapeRecord(card)
+        }
+        var rectangle = ShapeRecord(id: warehouse, Rectangle(frame: CGRect(x: 80, y: 420, width: 240, height: 160)))
+        rectangle[TitleProperty.self] = "Warehouse"
+
+        let top = [
+            subboard(payments, "Payments", at: 80, 80),
+            note(gateway, "API gateway", at: 400, 80, MentionText([.text("Owns auth. See "), .mention(checkout, label: "Checkout")])),
+            note(auth, "Auth", at: 700, 80, MentionText(plain: "JWT, 15 min expiry")),
+            note(todo, nil, at: 1000, 80, MentionText(plain: "TODO: rate limits")),
+            AnyShapeRecord(rectangle),
+            card(order, orderSchema, at: 400, 420, locked: true),
+            card(invoice, invoiceSchema, at: 700, 420),
+        ]
+        func connection(_ id: ShapeID, _ request: ConnectionRequest) -> AnyShapeRecord {
+            guard let made = registry.connection(request, in: ShapeContext(document: CanvasDocument(shapes: top), registry: registry)) else {
+                preconditionFailure("the shipped connector connects \(request.from) to \(request.to)")
+            }
+            return made.copy(as: id)
+        }
+        let arrows = [
+            connection(gatewayToAuth, ConnectionRequest(from: gateway, to: auth, channel: NoteLink.id)),
+            connection(warehouseToPayments, ConnectionRequest(from: warehouse, to: payments)),
+        ]
+        let last = note(ledger, "Ledger", at: 1000, 420, MentionText([.text("Moved to "), .mention(oldLedger, label: "Old ledger")]))
+        return CanvasFile(
+            root: CanvasDocument(shapes: top + arrows + [last]),
+            children: [
+                payments: CanvasDocument(shapes: [
+                    note(checkout, "Checkout", at: 80, 80, MentionText([.text("Calls "), .mention(gateway, label: "API gateway"), .text(" for tokens")])),
+                    subboard(refunds, "Refunds", at: 400, 80),
+                    note(retry, nil, at: 700, 80, MentionText(plain: "Retry on 502")),
+                ]),
+                refunds: CanvasDocument(shapes: [note(refundPolicy, "Refund policy", at: 80, 80, MentionText(plain: "30 days"), locked: true)]),
+            ])
+    }
+
+    /// The story in an editor of the shipped plugins, their clipboard on `pasteboard` (a test's own)
+    /// and their model `model`: the top board shown, in `viewport`, Auth selected.
+    static func harness(pasteboard: NSPasteboard, model: any LanguageModel = ScriptedLanguageModel()) throws -> EditorHarness {
+        let registry = try ShippedPlugins.registry(pasteboard: pasteboard, model: model)
+        let h = EditorHarness { CanvasEditor(registry: registry, file: file(in: registry), scheduler: $0) }
+        h.editor.viewportDidResize(to: viewport)
+        h.editor.selection = auth
+        return h
+    }
+
+    /// The story as the app opens it: a board document read from the file as written, with the
+    /// boards' configuration (`configureBoards(pasteboard:)`, first), in its window as the app makes
+    /// it (unshown), or with none, in `viewport`; the top board shown, Auth selected, not edited.
+    static func document(windowed: Bool = true) throws -> BoardDocument {
+        let registry = try require(BoardDocument.configuration, "boards are configured").registry
+        let board = BoardDocument()
+        try board.read(from: try BoardCodec(registry: registry).encode(file(in: registry)), ofType: boardType)
+        if windowed {
+            board.makeWindowControllers()
+            try require(board.windowControllers.first?.window).settle()
+        } else {
+            board.editor.viewportDidResize(to: viewport)
+        }
+        board.editor.selection = auth
+        return board
+    }
+}
+
+@MainActor let queryStoryTests = Suite("Query story", [
+    test("the story file: * answers its 14 shapes in file order, as an editor and a board document have it") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let h = try QueryStory.harness(pasteboard: pasteboard)
+        expectEqual(h.editor.board, .root)
+        expectEqual(h.editor.selectedShapeIDs, [QueryStory.auth])
+        expectEqual(h.file.root.shapes.count, 10)
+        expectEqual(h.file.children.count, 2, "Payments' board and Refunds'")
+        let queries = try require(h.editor.queries)
+        let all = try awaitResult { try await queries.run(QueryRequest("*", limit: QueryBudget.maxRows, properties: .none)) }
+        expectEqual(all.count, 14)
+        expectEqual(all.rows.map(\.id), QueryStory.fileOrder)
+
+        // What the rows say of it: titles (Order's derived, Invoice untitled), where each is, and
+        // the arrows bound at both ends as the connector binds them.
+        let rows = Dictionary(uniqueKeysWithValues: all.rows.map { ($0.id, $0) })
+        expectEqual(rows[QueryStory.order]?.title, "Order")
+        expectEqual(rows[QueryStory.invoice]?.title, nil)
+        expectEqual(rows[QueryStory.todo]?.title, nil)
+        expectEqual(rows[QueryStory.refundPolicy]?.inside, ["Payments", "Refunds"])
+        expectEqual(rows[QueryStory.gatewayToAuth]?.connection?.from.id, QueryStory.gateway)
+        expectEqual(rows[QueryStory.gatewayToAuth]?.connection?.to.id, QueryStory.auth)
+        expectEqual(rows[QueryStory.gatewayToAuth]?.connection.map { "\($0.type)" }, NoteLink.id.rawValue)
+        expectEqual(rows[QueryStory.warehouseToPayments]?.connection?.from.id, QueryStory.warehouse)
+        expectEqual(h.file.record(QueryStory.gatewayToAuth)?[ChannelProperty.self], NoteLink.id)
+        expectEqual(h.file.record(QueryStory.warehouseToPayments)?[ChannelProperty.self], nil)
+        expect(h.file.record(QueryStory.order)?.isLocked == true && h.file.record(QueryStory.refundPolicy)?.isLocked == true)
+        expectEqual(h.editor.mentions?.mentions(in: QueryStory.ledger), [QueryStory.oldLedger])
+        expectEqual(h.file.record(QueryStory.oldLedger), nil, "gone from the file")
+
+        // The same file as the app opens it, in its window.
+        try configureBoards(pasteboard: pasteboard)
+        let board = try QueryStory.document()
+        defer { board.close() }
+        expect(board.windowControllers.first?.window != nil)
+        expectEqual(board.editor.selectedShapeIDs, [QueryStory.auth])
+        expect(!board.isDocumentEdited)
+        let opened = try require(board.editor.queries)
+        let listed = try awaitResult { try await opened.run(QueryRequest("*", limit: QueryBudget.maxRows, properties: .none)) }
+        expectEqual(listed.rows.map(\.id), QueryStory.fileOrder)
+
+        // And as `canvas`, as built, asks the app for it.
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let asked = try canvas(server, ["query", "*", "--brief", "--board", "\(board.number)"])
+        expectEqual(asked.status, 0, asked.error)
+        let answer = try JSON(text: asked.output)
+        expectEqual(answer["count"], 14)
+        expectEqual(answer["rows"]?.arrayValue?.map { $0["id"] }, QueryStory.fileOrder.map { .string($0.description) })
+        expect(!board.isDocumentEdited, "a query changes nothing")
+    },
+])

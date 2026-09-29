@@ -15,6 +15,9 @@ import Observation
 ///
 /// Queries cost what they return: a shape's edges read its own, a type's its own, never a board's.
 /// Services that read it as they hear a commit may hear it first: `catchUp` brings it up to date.
+/// What's asked of it is asked of its tables (`EdgeTables`) and of the file's containment
+/// (`Containment`), which a snapshot for another thread holds as they are (`snapshot()`), so the
+/// two answer alike.
 @MainActor
 @Observable
 public final class TopologyIndex {
@@ -24,13 +27,8 @@ public final class TopologyIndex {
 
     /// Each kind's sources, for the kinds that have any.
     @ObservationIgnored private var emitters: [ShapeKind: [EdgeEmitter]] = [:]
-    /// What each carrier emitted last, in order: a commit says which shapes changed, not what they
-    /// carried before.
-    @ObservationIgnored private var byCarrier: [ShapeID: [Edge]] = [:]
-    /// Each shape's edges, either way, by carrier, in the order their carriers came.
-    @ObservationIgnored private var byNode: [ShapeID: EdgeGroup] = [:]
-    /// Each type's edges, by carrier.
-    @ObservationIgnored private var byType: [EdgeTypeID: EdgeGroup] = [:]
+    /// The file's edges: by carrier, by each end and by type.
+    @ObservationIgnored private(set) var tables = EdgeTables()
     /// +1 for a shape each time its edges change, observed a shape at a time: only the shapes whose
     /// revision has been read (`watched`), so a commit that changes many shapes' edges (a board
     /// deleted) tells only the shapes someone may be watching.
@@ -70,12 +68,7 @@ public final class TopologyIndex {
     /// the file's order, root first; those one commit brings, in no order among themselves), each
     /// carrier's in the order it emits them. An edge from `id` to `id` is there once.
     public func edges(of id: ShapeID, _ direction: EdgeDirection = .either, types filter: EdgeTypeFilter = .all) -> [Edge] {
-        guard let group = byNode[id] else { return [] }
-        var found: [Edge] = []
-        group.forEach { edge in
-            if edge.touches(id, direction), filter.isAll || filter.admits(edge.type, in: types) { found.append(edge) }
-        }
-        return found
+        tables.edges(of: id, direction, types: filter, in: types)
     }
 
     /// Whether `id` has any edge `edges(of:_:types:)` would find that `predicate` takes (any, by
@@ -83,42 +76,27 @@ public final class TopologyIndex {
     /// every commit.
     public func hasEdges(of id: ShapeID, _ direction: EdgeDirection = .either, types filter: EdgeTypeFilter = .all,
                          where predicate: (Edge) -> Bool = { _ in true }) -> Bool {
-        byNode[id]?.contains { $0.touches(id, direction) && (filter.isAll || filter.admits($0.type, in: types)) && predicate($0) } ?? false
+        tables.hasEdges(of: id, direction, types: filter, in: types, where: predicate)
     }
 
     /// The shapes at the other end of `id`'s edges (as `edges(of:_:types:)` finds them), by each
     /// edge's type, each once per type, in the order its first edge comes: what's connected to it,
     /// and how. `id` itself, for an edge from `id` to `id`.
     public func neighbors(of id: ShapeID, _ direction: EdgeDirection = .either, types filter: EdgeTypeFilter = .all) -> [EdgeTypeID: [ShapeID]] {
-        var found: [EdgeTypeID: [ShapeID]] = [:], seen: Set<Neighbor> = []
-        for edge in edges(of: id, direction, types: filter) {
-            let other = edge.otherEnd(from: id, direction)
-            if seen.insert(Neighbor(type: edge.type, id: other)).inserted { found[edge.type, default: []].append(other) }
-        }
-        return found
+        tables.neighbors(of: id, direction, types: filter, in: types)
     }
 
     /// Every edge in the file of the types `filter` admits: type by type (declared ones in plugin
     /// order, then the rest by name), each type's by carrier, in the order they came.
-    public func edges(ofType filter: EdgeTypeFilter) -> [Edge] {
-        var found: [Edge] = []
-        for type in byType.keys.filter({ filter.admits($0, in: types) }).sorted(by: types.precedes) {
-            byType[type]?.forEach { found.append($0) }
-        }
-        return found
-    }
+    public func edges(ofType filter: EdgeTypeFilter) -> [Edge] { tables.edges(ofType: filter, in: types) }
 
     /// What `carrier` carries, in the order it emits them; none for a shape on a board the editor
     /// can't show, or in no board of the file.
-    public func edges(carriedBy carrier: ShapeID) -> [Edge] { byCarrier[carrier] ?? [] }
+    public func edges(carriedBy carrier: ShapeID) -> [Edge] { tables.edges(carriedBy: carrier) }
 
     /// How a shape at an end of an edge is now: live on a board the editor can show, unavailable on
     /// one it can't, missing from the file.
-    public func end(_ id: ShapeID) -> EdgeEnd {
-        if editor.document[id] != nil { return .live(editor.board) }
-        guard let board = editor.file.board(containing: id) else { return .missing }
-        return editor.canShow(board) ? .live(board) : .unavailable
-    }
+    public func end(_ id: ShapeID) -> EdgeEnd { containment().end(id) }
 
     /// A shape's revision: +1 each time its edges (at either end) change, from the first time it's
     /// read. Reading it observes only that shape, so a SwiftUI view of one shape's connections
@@ -152,37 +130,32 @@ public final class TopologyIndex {
 
     // MARK: Containment
 
+    /// The kinds whose shapes can contain others (`registry.containerKinds`): today the kinds that
+    /// own boards.
+    public var containerKinds: Set<ShapeKind> { editor.registry.containerKinds }
+
     /// The shape whose board `id` is on: nil on the root, and for a shape on a board the editor
     /// can't show (or in no board of the file).
-    public func parent(of id: ShapeID) -> ShapeID? {
-        guard editor.shape(inFile: id) != nil else { return nil }
-        return editor.file.board(containing: id)?.owner
-    }
+    public func parent(of id: ShapeID) -> ShapeID? { containment().parent(of: id) }
 
     /// The shapes on the board `id` owns, in document order: none for a shape that owns no board the
     /// editor can show.
-    public func children(of id: ShapeID) -> [ShapeID] {
-        guard let owner = editor.shape(inFile: id), editor.registry.ownsShowableBoard(owner) else { return [] }
-        return editor.contents(of: BoardID(owner: id)).shapes.map(\.id)
-    }
+    public func children(of id: ShapeID) -> [ShapeID] { containment().children(of: id) }
 
     /// The shapes `id` is inside, the nearest first (its parent, its parent's, up to one on the
     /// root): none on the root, and for a shape on a board the editor can't show.
-    public func ancestors(of id: ShapeID) -> [ShapeID] {
-        guard editor.shape(inFile: id) != nil else { return [] }
-        let file = editor.file
-        var found: [ShapeID] = [], met: Set<ShapeID> = [id], current = id
-        while let owner = file.board(containing: current)?.owner, met.insert(owner).inserted {
-            found.append(owner)
-            current = owner
-        }
-        return found
-    }
+    public func ancestors(of id: ShapeID) -> [ShapeID] { containment().ancestors(of: id) }
 
     /// Whether `a` is inside `b`, at any depth (on its board, or on a board under it); never inside
     /// itself. O(`a`'s depth).
-    public func isInside(_ a: ShapeID, _ b: ShapeID) -> Bool {
-        a != b && ancestors(of: a).contains(b)
+    public func isInside(_ a: ShapeID, _ b: ShapeID) -> Bool { containment().isInside(a, b) }
+
+    /// The file's containment as it is now, observed through `document` as the file is (unless
+    /// `observing` is false): made for the one question, never kept, since a copy of the file kept
+    /// past a commit would make that commit copy the file's tables.
+    func containment(observing: Bool = true) -> Containment {
+        let file = observing ? editor.file : editor.withoutObservingDocument { editor.file }
+        return Containment(file: file, boardOwningKinds: editor.registry.boardOwningKinds)
     }
 
     // MARK: Following the file
@@ -232,7 +205,7 @@ public final class TopologyIndex {
                 if children[record.id] != nil, registry.ownsShowableBoard(record), met.insert(owned).inserted { boards.append(owned) }
             }
         }
-        for carrier in Array(byCarrier.keys) where !seen.contains(carrier) { set(carrier, []) }
+        for carrier in Array(tables.byCarrier.keys) where !seen.contains(carrier) { set(carrier, []) }
     }
 
     /// What a record carries, as its kind's sources say.
@@ -244,46 +217,10 @@ public final class TopologyIndex {
         return Registry.edges(of: record, emitters: emitters, in: editor.registry)
     }
 
-    /// Makes `edges` what `carrier` carries, keeping each end's and each type's in step, and notes
-    /// the ends of the edges that changed in `touched`.
+    /// Makes `edges` what `carrier` carries, and notes the ends of the edges that changed in
+    /// `touched`.
     private func set(_ carrier: ShapeID, _ edges: [Edge]) {
-        let old = byCarrier[carrier] ?? []
-        guard old != edges else { return }
-        byCarrier[carrier] = edges.isEmpty ? nil : edges
-
-        // A carrier's edges come or go whole (opening a file, a shape added or deleted): each end
-        // and type holds only these of its, so they're added or taken edge by edge.
-        if old.isEmpty || edges.isEmpty {
-            // An end or type the edge before had too (a text's edges all start at its shape) is
-            // done: taking a carrier out of a group takes all of its edges there.
-            var previous: Edge?
-            for edge in old.isEmpty ? edges : old {
-                touch(edge)
-                if old.isEmpty {
-                    byNode[edge.source, default: EdgeGroup()].append(edge, for: carrier)
-                    if edge.target != edge.source { byNode[edge.target, default: EdgeGroup()].append(edge, for: carrier) }
-                    byType[edge.type, default: EdgeGroup()].append(edge, for: carrier)
-                } else {
-                    if edge.source != previous?.source { remove(carrier, from: edge.source, in: &byNode) }
-                    remove(carrier, from: edge.target, in: &byNode)
-                    if edge.type != previous?.type { remove(carrier, from: edge.type, in: &byType) }
-                }
-                previous = edge
-            }
-            return
-        }
-
-        let changed = Set(old).symmetricDifference(edges)
-        // Only their order changed: every end's edges read in another order.
-        for edge in changed.isEmpty ? old : Array(changed) { touch(edge) }
-
-        let oldNodes = Self.byNode(old), newNodes = Self.byNode(edges)
-        for node in oldNodes.keys where newNodes[node] == nil { remove(carrier, from: node, in: &byNode) }
-        for (node, touching) in newNodes { byNode[node, default: EdgeGroup()].set(touching, for: carrier) }
-
-        let oldTypes = Dictionary(grouping: old, by: \.type), newTypes = Dictionary(grouping: edges, by: \.type)
-        for type in oldTypes.keys where newTypes[type] == nil { remove(carrier, from: type, in: &byType) }
-        for (type, ofType) in newTypes { byType[type, default: EdgeGroup()].set(ofType, for: carrier) }
+        for edge in tables.set(carrier, edges) { touch(edge) }
     }
 
     /// Notes an edge's ends in `touched`, under its type.
@@ -297,22 +234,6 @@ public final class TopologyIndex {
     private func clearTouched() {
         touched = []
         touchedByType = [:]
-    }
-
-    /// Each end's edges among `edges`, in order: an edge from a shape to itself once.
-    private static func byNode(_ edges: [Edge]) -> [ShapeID: [Edge]] {
-        var found: [ShapeID: [Edge]] = [:]
-        for edge in edges {
-            found[edge.source, default: []].append(edge)
-            if edge.target != edge.source { found[edge.target, default: []].append(edge) }
-        }
-        return found
-    }
-
-    private func remove<Key: Hashable>(_ carrier: ShapeID, from key: Key, in groups: inout [Key: EdgeGroup]) {
-        guard let index = groups.index(forKey: key) else { return }
-        groups.values[index].remove(carrier)
-        if groups.values[index].isEmpty { groups.remove(at: index) }
     }
 
     /// Bumps the revisions of those of these shapes whose revision has been read, telling their
@@ -372,69 +293,5 @@ private struct Lookup {
         let canShow = showable[board] ?? editor.canShow(board)
         showable[board] = canShow
         return canShow ? file[board][id] : nil
-    }
-}
-
-/// A shape at the other end of an edge, of its type: what `neighbors` lists once.
-private struct Neighbor: Hashable {
-    let type: EdgeTypeID
-    let id: ShapeID
-}
-
-/// Edges grouped by carrier (a shape's, a type's), in the order the carriers came: a carrier that
-/// comes back comes last. Setting or removing a carrier's costs O(its edges), whatever the group
-/// holds: a removed carrier leaves a gap, and the gaps go once they're half the order.
-struct EdgeGroup {
-    /// A carrier's edges, and where it is in `order`.
-    private struct Entry {
-        var position: Int
-        var edges: [Edge]
-    }
-
-    private var order: [ShapeID] = []
-    /// Each carrier held: a carrier in `order` at another position than its entry's is a gap.
-    private var entries: [ShapeID: Entry] = [:]
-
-    var isEmpty: Bool { entries.isEmpty }
-
-    mutating func set(_ carried: [Edge], for carrier: ShapeID) {
-        if let index = entries.index(forKey: carrier) {
-            entries.values[index].edges = carried
-        } else {
-            entries[carrier] = Entry(position: order.count, edges: carried)
-            order.append(carrier)
-        }
-    }
-
-    /// Adds one edge to `carrier`'s, after those it holds: a carrier new to the group comes last.
-    mutating func append(_ edge: Edge, for carrier: ShapeID) {
-        if let index = entries.index(forKey: carrier) {
-            entries.values[index].edges.append(edge)
-        } else {
-            entries[carrier] = Entry(position: order.count, edges: [edge])
-            order.append(carrier)
-        }
-    }
-
-    mutating func remove(_ carrier: ShapeID) {
-        guard entries.removeValue(forKey: carrier) != nil else { return }
-        if entries.isEmpty {
-            order = []
-        } else if order.count > 16, entries.count * 2 < order.count {
-            order = order.enumerated().filter { entries[$0.element]?.position == $0.offset }.map(\.element)
-            for (index, carrier) in order.enumerated() { entries[carrier]?.position = index }
-        }
-    }
-
-    /// Whether an edge it holds satisfies `predicate`: it stops at the first.
-    func contains(where predicate: (Edge) -> Bool) -> Bool {
-        entries.values.contains { $0.edges.contains(where: predicate) }
-    }
-
-    func forEach(_ body: (Edge) -> Void) {
-        for (index, carrier) in order.enumerated() {
-            guard let entry = entries[carrier], entry.position == index else { continue }
-            for edge in entry.edges { body(edge) }
-        }
     }
 }

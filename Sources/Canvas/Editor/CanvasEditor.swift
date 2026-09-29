@@ -604,11 +604,7 @@ public final class CanvasEditor {
     public func canShow(_ target: BoardID) -> Bool { Self.canShow(target, in: file, registry: registry) }
 
     static func canShow(_ target: BoardID, in file: CanvasFile, registry: Registry) -> Bool {
-        guard !target.isRoot else { return true }
-        guard let path = file.path(to: target) else { return false }
-        return path.dropFirst().allSatisfy { board in
-            board.owner.flatMap(file.record).map(registry.ownsShowableBoard) ?? false
-        }
+        file.canShow(target, boardOwningKinds: registry.boardOwningKinds)
     }
 
     /// A shape on the board shown, or on another board of the file it can show (`canShow`); nil for

@@ -3,6 +3,7 @@ import AppKit
 import ArrowPorts
 import Arrows
 import Automation
+import BoardQueries
 import Boards
 import Canvas
 import CanvasRPC
@@ -14,28 +15,34 @@ import Eraser
 import Keyboard
 import LanguageModels
 import Locking
+import MentionQueries
 import MentionValidation
 import Mentions
 import Polylines
 import PortEdges
 import Ports
+import Queries
+import QueryCommands
 import RectangleTitles
 import Rectangles
 import Reordering
 import Schemas
 import Selection
+import SelectionQueries
 import Snapping
 import StickyNotes
 import Subboards
 import SwiftUI
 import TableOfContents
 import TitleNames
+import TitleQueries
 import Titles
 import Topology
 import Validation
 import ValidationChecks
 import ValidationContents
 import ValidationDetails
+import ValidationQueries
 
 /// The static composition point: which plugins ship, in which order (the toolbar's order, and the
 /// order overlays draw in). Tests import this, so they check exactly what ships.
@@ -76,6 +83,12 @@ public enum ShippedPlugins {
             // The command line's commands, and what `canvas draw` takes from the plugins that own a
             // concern: titles for names, ports' connections for edges, and validity for its warnings.
             AutomationPlugin(), TitleNamesPlugin(), PortEdgesPlugin(), ValidationChecksPlugin(),
+            // Reading the file: `canvas query`, and what queries take from the plugins that own a concern:
+            // titles for names, boards' names, mentions for text and relations, validity and the selection
+            // for their words.
+            QueriesPlugin(), TitleQueriesPlugin(), BoardQueriesPlugin(), MentionQueriesPlugin(), ValidationQueriesPlugin(),
+            SelectionQueriesPlugin(),
+            QueryCommandsPlugin(askPrompt: QueryPrompt.system),
             // The examples (Examples/). Each is one line here; delete it to leave it out.
             RectanglesPlugin(), PolylinesPlugin(), EraserPlugin(), RectangleTitlesPlugin(), ReorderingPlugin(),
         ]
@@ -153,11 +166,12 @@ public enum ShippedPlugins {
 
     /// The commands the plugins give the command line (Automation's), for the app's command server:
     /// what `canvas` shows of each, and how to run one, by name, on a board's editor (nil for a
-    /// command about the app as a whole).
+    /// command about the app as a whole), answering when it's done: at once for most, later for
+    /// one that waits.
     public static func commands(in registry: Registry)
-        -> (specs: [CommandSpec], run: @MainActor (_ name: String, _ params: JSON, _ editor: CanvasEditor?) throws(RPCError) -> JSON) {
-        (registry.automationCommands, { name, params, editor throws(RPCError) in
-            try registry.runAutomationCommand(name, params: params, editor: editor)
+        -> (specs: [CommandSpec], run: @MainActor (_ name: String, _ params: JSON, _ editor: CanvasEditor?) async throws(RPCError) -> JSON) {
+        (registry.automationCommands, { name, params, editor async throws(RPCError) in
+            try await registry.runAutomationCommand(name, params: params, editor: editor)
         })
     }
 }

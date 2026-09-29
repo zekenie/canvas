@@ -101,14 +101,23 @@ extension CanvasEditor {
     public func name(of board: BoardID, root: String) -> String {
         guard let owner = owner(of: board) else { return board.isRoot ? root : "Board" }
         if let title = registry.title(of: owner) { return title }
-        if let kind = registry.contributions(to: BoardKinds.self, for: owner.kind).first { return kind.placeholder }
-        return registry.label(of: owner.kind).name
+        return registry.boardPlaceholder(of: owner.kind) ?? registry.label(of: owner.kind).name
     }
 
     /// A board's symbol: its owner's kind's (`opensBoard`), else its kind's label's; nil for the root.
     public func symbol(of board: BoardID) -> String? {
         guard let owner = owner(of: board) else { return nil }
-        if let kind = registry.contributions(to: BoardKinds.self, for: owner.kind).first { return kind.systemImage }
-        return registry.label(of: owner.kind).systemImage
+        return registry.boardKind(of: owner.kind)?.systemImage ?? registry.label(of: owner.kind).systemImage
     }
+}
+
+extension Registry {
+    /// What a board a shape of `kind` owns is called while the shape has no title: the kind's
+    /// placeholder (`opensBoard(placeholder:systemImage:)`, "Untitled Subboard"); nil for a kind
+    /// that doesn't open its boards. What `editor.name(of:root:)` reads, and anything that names a
+    /// board as it does without an editor (a query's rows).
+    public func boardPlaceholder(of kind: ShapeKind) -> String? { boardKind(of: kind)?.placeholder }
+
+    /// What `BoardKinds` holds for a kind: at most one.
+    func boardKind(of kind: ShapeKind) -> BoardKind? { contributions(to: BoardKinds.self, for: kind).first }
 }

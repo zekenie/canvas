@@ -36,15 +36,37 @@ public struct ModelRequest: Equatable, Sendable {
     public var temperature: Double?
     /// Text that ends the answer where the model writes it (it isn't included).
     public var stopSequences: [String]
+    /// Which model answers, by its id (`claude-sonnet-5-5`); nil for the one the editor's model is
+    /// (`AnthropicModel.model`). For a plugin whose task one model does better than the app's.
+    public var model: String?
+    /// How much the model spends on its answer, thinking included (`low`, `medium`, `high`,
+    /// `xhigh`, `max`); nil for its default. Only for a model that takes it: Haiku 4.5 refuses a
+    /// request that says one.
+    public var effort: String?
+    /// Whether the service may answer with another model when this one declines (a refusal): nil
+    /// for never, so a refusal comes back as one. Only for a model the service falls back from
+    /// (Sonnet 5.5).
+    public var fallbacks: ModelFallbacks?
 
     public init(system: String? = nil, messages: [ModelMessage], maxTokens: Int = 1024, temperature: Double? = nil,
-                stopSequences: [String] = []) {
+                stopSequences: [String] = [], model: String? = nil, effort: String? = nil, fallbacks: ModelFallbacks? = nil) {
         self.system = system
         self.messages = messages
         self.maxTokens = maxTokens
         self.temperature = temperature
         self.stopSequences = stopSequences
+        self.model = model
+        self.effort = effort
+        self.fallbacks = fallbacks
     }
+}
+
+/// Which model the service answers with when the one asked declines.
+public enum ModelFallbacks: String, Equatable, Sendable {
+    /// The one the service recommends for why it declined (Anthropic's server-side fallback, its
+    /// `"default"` form): Sonnet 5.5's cyber and frontier-LLM declines go to Sonnet 5, and the rest
+    /// still come back as refusals.
+    case `default`
 }
 
 /// Why a model stopped writing. Open-ended, as the API's list grows; compare with the constants.

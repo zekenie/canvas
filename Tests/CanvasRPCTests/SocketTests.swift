@@ -3,12 +3,12 @@ import Darwin
 import Foundation
 import TestKit
 
-/// Answers `echo` with its params, and anything else with an error.
+/// Answers `echo` with its params, and anything else with an error, each at once.
 @MainActor func echoListener(at path: String) -> RPCListener {
-    RPCListener(path: path) { request in
+    RPCListener(path: path, synchronous: { request in
         expect(Thread.isMainThread, "requests are answered on the main actor")
         return request.method == "echo" ? .success(request.params ?? .null) : .failure(.failed("There's no \(request.method).", reason: "nope"))
-    }
+    })
 }
 
 /// A request from a client of its own, on another thread, while the main run loop turns.

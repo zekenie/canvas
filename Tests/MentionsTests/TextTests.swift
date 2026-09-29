@@ -298,6 +298,40 @@ private struct LinesDefinition: ShapeDefinition {
         expectEqual(failures, 0)
     },
 
+    test("plain text read from the stored string in one pass is what its runs read as: the named cases and 20,000 fuzzed strings, ids near and far from ones") {
+        let names: [ShapeID: String] = [idA: "Live 👍🏽 ]name\\"]
+        for (_, stored) in namedCases {
+            expectEqual(MentionText.plainText(stored: stored), MentionText(stored: stored).plainText(), stored)
+            expectEqual(MentionText.plainText(stored: stored) { names[$0] }, MentionText(stored: stored).plainText { names[$0] }, stored)
+        }
+        // Ids as UUID(uuidString:) reads them, and ones it doesn't: mixed case, a letter past f, a hyphen
+        // out of place, a character that isn't ASCII or is NUL, one too short.
+        let mixed = String(a.enumerated().map { $0.offset % 2 == 0 ? Character($0.element.lowercased()) : $0.element })
+        let nearIDs = [a, b.lowercased(), mixed, String(a.dropLast()) + "g", a.replacingOccurrences(of: "-", with: "x"),
+                       String(a.dropLast()) + "é", String(a.dropLast()) + "\u{0}", String(a.dropFirst()), "{" + a.dropFirst(2) + "}"]
+        let alphabet = ["@", "[", "]", ")", "\\", "a", " ", "\n", "\r", "é", "@[", "](shape:", "\\]", "\\\\", "👍🏽"] + nearIDs + nearIDs.map { $0 + ")" }
+            + nearIDs.map { "@[x\\]y](shape:\($0))" }
+        var rng = SplitMix(seed: 0x706C_6169_6E20_7478)
+        var failures = 0, mentioning = 0
+        for _ in 0..<20_000 {
+            var string = ""
+            for _ in 0..<Int.random(in: 0...14, using: &rng) { string += alphabet.randomElement(using: &rng)! }
+            if Bool.random(using: &rng) { string += MentionText(fuzzedRuns(&rng)).stored }
+            let reference = MentionText(stored: string)
+            if !reference.mentioned.isEmpty { mentioning += 1 }
+            for live in [false, true] {
+                let fast = MentionText.plainText(stored: string) { live ? names[$0] : nil }
+                let read = reference.plainText { live ? names[$0] : nil }
+                if fast != read {
+                    failures += 1
+                    if failures < 4 { expect(false, "\(string.debugDescription) reads as \(fast.debugDescription), not \(read.debugDescription)") }
+                }
+            }
+        }
+        expectEqual(failures, 0)
+        expect(mentioning > 10_000, "most strings hold a mention: \(mentioning)")
+    },
+
     test("escapeLookalikesV1 escapes old text byte for byte, so it reads back as it was, and leaves text without @[ as it is") {
         let cases: [(String, String)] = [
             ("Ask @[Groceries](shape:\(a)) first", "Ask \\@[Groceries](shape:\(a)) first"),

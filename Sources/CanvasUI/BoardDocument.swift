@@ -103,6 +103,11 @@ public final class BoardDocument: NSDocument {
     /// How often an autosave has been scheduled (debug builds, for tests): by NSDocument, or again
     /// once a press an autosave gave way to is over.
     public private(set) var autosavesScheduled = 0
+    /// The boards made and not closed that are still around, the first made first (debug builds, for
+    /// tests): AppKit autosaves an edited board 15 s after its last change, whatever the process is
+    /// doing then, so a test closes the boards it edits (CompositionTests' `closeBoardsLeftOpen`).
+    public static var unclosed: [BoardDocument] { made.allObjects.sorted { $0.number < $1.number } }
+    private static let made = NSHashTable<BoardDocument>.weakObjects()
     #endif
 
     public override init() {
@@ -115,6 +120,9 @@ public final class BoardDocument: NSDocument {
         super.init()
         hasUndoManager = false
         editor.undoHistory.didChange = { [weak self] event in self?.historyDidChange(event) }
+        #if DEBUG
+        Self.made.add(self)
+        #endif
     }
 
     /// Counts the board's changes by its history's steps, as NSDocument counts an undo manager's.
@@ -257,7 +265,13 @@ public final class BoardDocument: NSDocument {
 
     public override func close() {
         rememberView()
+        // A command still running on it (one that waits) is answered now, and stops: nothing it
+        // did after would reach a window.
+        CommandServer.boardWillClose(self)
         super.close()
+        #if DEBUG
+        Self.made.remove(self)
+        #endif
     }
 
     /// Remembers, for the next time the file opens, where the camera was left on the boards it can

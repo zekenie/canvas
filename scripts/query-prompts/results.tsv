@@ -1,0 +1,769 @@
+round	case	model	run	first_try	repaired	pass	query	second_query	ms	input_tokens	output_tokens
+r1-haiku	s01	claude-haiku-4-5	1	1	0	1	sticky-note		1193	2819	6
+r1-haiku	s01	claude-haiku-4-5	2	1	0	1	sticky-note		523	2819	6
+r1-haiku	s01	claude-haiku-4-5	3	1	0	1	sticky-note		604	2819	6
+r1-haiku	s02	claude-haiku-4-5	1	1	0	1	*[locked]		1018	2818	7
+r1-haiku	s02	claude-haiku-4-5	2	1	0	1	*[locked]		618	2818	7
+r1-haiku	s02	claude-haiku-4-5	3	1	0	1	*[locked]		592	2818	7
+r1-haiku	s03	claude-haiku-4-5	1	1	0	1	sticky-note[locked=false]		2985	2819	11
+r1-haiku	s03	claude-haiku-4-5	2	1	0	1	sticky-note[locked=false]		759	2819	11
+r1-haiku	s03	claude-haiku-4-5	3	1	0	1	sticky-note[locked=false]		693	2819	11
+r1-haiku	s04	claude-haiku-4-5	1	0	0	0	sticky-note[title=""]		899	2820	10
+r1-haiku	s04	claude-haiku-4-5	2	0	0	0	sticky-note[title=""]		680	2820	10
+r1-haiku	s04	claude-haiku-4-5	3	0	0	0	sticky-note[title=""]		687	2820	10
+r1-haiku	s05	claude-haiku-4-5	1	1	0	1	arrow:not([channel])		617	2818	9
+r1-haiku	s05	claude-haiku-4-5	2	1	0	1	arrow:not([channel])		654	2818	9
+r1-haiku	s05	claude-haiku-4-5	3	1	0	1	arrow:not([channel])		624	2818	9
+r1-haiku	s06	claude-haiku-4-5	1	1	0	1	arrow[channel=note-link]		1043	2821	11
+r1-haiku	s06	claude-haiku-4-5	2	1	0	1	arrow[channel=note-link]		667	2821	11
+r1-haiku	s06	claude-haiku-4-5	3	1	0	1	arrow[channel=note-link]		601	2821	11
+r1-haiku	s07	claude-haiku-4-5	1	1	0	1	"Checkout"		987	2819	7
+r1-haiku	s07	claude-haiku-4-5	2	1	0	1	"Checkout"		737	2819	7
+r1-haiku	s07	claude-haiku-4-5	3	1	0	1	"Checkout"		709	2819	7
+r1-haiku	s08	claude-haiku-4-5	1	1	0	1	[title^="API"]		566	2822	9
+r1-haiku	s08	claude-haiku-4-5	2	1	0	1	[title^="API"]		689	2822	9
+r1-haiku	s08	claude-haiku-4-5	3	1	0	1	[title^="API"]		589	2822	9
+r1-haiku	s09	claude-haiku-4-5	1	1	0	1	"Order"		487	2819	6
+r1-haiku	s09	claude-haiku-4-5	2	1	0	1	"Order"		545	2819	6
+r1-haiku	s09	claude-haiku-4-5	3	1	0	1	"Order"		523	2819	6
+r1-haiku	s10	claude-haiku-4-5	1	1	0	1	"Checkout"		521	2822	7
+r1-haiku	s10	claude-haiku-4-5	2	1	0	1	"Checkout"		756	2822	7
+r1-haiku	s10	claude-haiku-4-5	3	1	0	1	"Checkout"		547	2822	7
+r1-haiku	s11	claude-haiku-4-5	1	1	0	1	sticky-note:mentions("API gateway")		571	2821	12
+r1-haiku	s11	claude-haiku-4-5	2	1	0	1	sticky-note:mentions("API gateway")		555	2821	12
+r1-haiku	s11	claude-haiku-4-5	3	1	0	1	sticky-note:mentions("API gateway")		569	2821	12
+r1-haiku	s12	claude-haiku-4-5	1	1	0	1	sticky-note:contains("TODO")		1002	2820	11
+r1-haiku	s12	claude-haiku-4-5	2	1	0	1	sticky-note:contains("TODO")		613	2820	11
+r1-haiku	s12	claude-haiku-4-5	3	1	0	1	sticky-note:contains("TODO")		716	2820	11
+r1-haiku	s13	claude-haiku-4-5	1	1	0	1	:mentions("Checkout")		586	2821	9
+r1-haiku	s13	claude-haiku-4-5	2	1	0	1	:mentions("Checkout")		575	2821	9
+r1-haiku	s13	claude-haiku-4-5	3	1	0	1	:mentions("Checkout")		574	2821	9
+r1-haiku	s14	claude-haiku-4-5	1	0	0	0	sticky-note:mentions(*):invalid		624	2820	11
+r1-haiku	s14	claude-haiku-4-5	2	0	0	0	sticky-note:mentions(*):dangling		838	2820	12
+r1-haiku	s14	claude-haiku-4-5	3	0	0	0	sticky-note:mentions(*):invalid		1654	2820	11
+r1-haiku	s15	claude-haiku-4-5	1	1	0	1	sticky-note:not(:mentions(*))		764	2820	12
+r1-haiku	s15	claude-haiku-4-5	2	1	0	1	sticky-note:not(:mentions(*))		714	2820	12
+r1-haiku	s15	claude-haiku-4-5	3	1	0	1	sticky-note:not(:mentions(*))		782	2820	12
+r1-haiku	s16	claude-haiku-4-5	1	1	0	1	"Payments" > *		639	2823	9
+r1-haiku	s16	claude-haiku-4-5	2	1	0	1	"Payments" > *		754	2823	9
+r1-haiku	s16	claude-haiku-4-5	3	1	0	1	"Payments" > *		650	2823	9
+r1-haiku	s17	claude-haiku-4-5	1	1	0	1	"Payments" *		1115	2820	8
+r1-haiku	s17	claude-haiku-4-5	2	1	0	1	"Payments" *		581	2820	8
+r1-haiku	s17	claude-haiku-4-5	3	1	0	1	"Payments" *		560	2820	8
+r1-haiku	s18	claude-haiku-4-5	1	1	0	1	"Refund policy":inside("Payments")		534	2825	14
+r1-haiku	s18	claude-haiku-4-5	2	1	0	1	"Refund policy":inside("Payments")		539	2825	14
+r1-haiku	s18	claude-haiku-4-5	3	1	0	1	"Refund policy":inside("Payments")		742	2825	14
+r1-haiku	s19	claude-haiku-4-5	1	1	0	1	"Checkout":inside("Refunds")		720	2824	13
+r1-haiku	s19	claude-haiku-4-5	2	1	0	1	"Checkout":inside("Refunds")		740	2824	13
+r1-haiku	s19	claude-haiku-4-5	3	1	0	1	"Checkout":inside("Refunds")		682	2824	13
+r1-haiku	s20	claude-haiku-4-5	1	1	0	1	"Refunds":has(> "Refund policy")		1492	2827	17
+r1-haiku	s20	claude-haiku-4-5	2	1	0	1	"Refunds":has(> "Refund policy")		695	2827	17
+r1-haiku	s20	claude-haiku-4-5	3	0	1	1	"Refund policy":has(> *) ⏎  ⏎ Wait, let me reconsider. The question asks which subboard "Refund policy" is directly in. "Directly in" means the immediate parent board. ⏎  ⏎ The query should be: :has(> "Refund policy")	:has(> "Refund policy")	1579	5740	78
+r1-haiku	s21	claude-haiku-4-5	1	1	0	1	"Payments":has("Refund policy")		568	2827	14
+r1-haiku	s21	claude-haiku-4-5	2	1	0	1	"Payments":has("Refund policy")		549	2827	14
+r1-haiku	s21	claude-haiku-4-5	3	1	0	1	"Payments":has("Refund policy")		578	2827	14
+r1-haiku	s22	claude-haiku-4-5	1	1	0	1	sticky-note:top-level		848	2821	10
+r1-haiku	s22	claude-haiku-4-5	2	1	0	1	sticky-note:top-level		688	2821	10
+r1-haiku	s22	claude-haiku-4-5	3	1	0	1	sticky-note:top-level		629	2821	10
+r1-haiku	s23	claude-haiku-4-5	1	1	0	1	"Payments" > *		623	2818	9
+r1-haiku	s23	claude-haiku-4-5	2	1	0	1	"Payments" > *		692	2818	9
+r1-haiku	s23	claude-haiku-4-5	3	1	0	1	"Payments" > *		522	2818	9
+r1-haiku	s24	claude-haiku-4-5	1	1	0	1	:edge-from("API gateway", arrow)		636	2823	13
+r1-haiku	s24	claude-haiku-4-5	2	1	0	1	:edge-from("API gateway", arrow)		645	2823	13
+r1-haiku	s24	claude-haiku-4-5	3	1	0	1	:edge-from("API gateway", arrow)		639	2823	13
+r1-haiku	s25	claude-haiku-4-5	1	1	0	1	:edge-to("Auth", arrow)		666	2821	12
+r1-haiku	s25	claude-haiku-4-5	2	1	0	1	:edge-to("Auth", arrow)		710	2821	12
+r1-haiku	s25	claude-haiku-4-5	3	1	0	1	:edge-to("Auth", arrow)		615	2821	12
+r1-haiku	s26	claude-haiku-4-5	1	1	0	1	:edge-to("Payments", arrow)		711	2822	13
+r1-haiku	s26	claude-haiku-4-5	2	1	0	1	:edge-to("Payments", arrow)		686	2822	13
+r1-haiku	s26	claude-haiku-4-5	3	1	0	1	:edge-to("Payments", arrow)		661	2822	13
+r1-haiku	s27	claude-haiku-4-5	1	0	0	0	:connected-to("Checkout")		576	2823	11
+r1-haiku	s27	claude-haiku-4-5	2	0	0	0	:connected-to("Checkout")		5698	2823	11
+r1-haiku	s27	claude-haiku-4-5	3	0	0	0	:connected-to("Checkout")		544	2823	11
+r1-haiku	s28	claude-haiku-4-5	1	1	0	1	sticky-note:mentioned-by("Checkout")		610	2823	14
+r1-haiku	s28	claude-haiku-4-5	2	1	0	1	sticky-note:mentioned-by("Checkout")		578	2823	14
+r1-haiku	s28	claude-haiku-4-5	3	1	0	1	sticky-note:mentioned-by("Checkout")		594	2823	14
+r1-haiku	s29	claude-haiku-4-5	1	1	0	1	"Checkout":mentioned-by("API gateway")		560	2824	14
+r1-haiku	s29	claude-haiku-4-5	2	1	0	1	"Checkout":mentioned-by("API gateway")		596	2824	14
+r1-haiku	s29	claude-haiku-4-5	3	1	0	1	"Checkout":mentioned-by("API gateway")		557	2824	14
+r1-haiku	s30	claude-haiku-4-5	1	1	0	1	arrow:starts-at("Warehouse")		654	2822	12
+r1-haiku	s30	claude-haiku-4-5	2	1	0	1	arrow:starts-at("Warehouse")		846	2822	12
+r1-haiku	s30	claude-haiku-4-5	3	1	0	1	arrow:starts-at("Warehouse")		626	2822	12
+r1-haiku	s31	claude-haiku-4-5	1	1	0	1	arrow:between("Auth", "API gateway")		694	2823	13
+r1-haiku	s31	claude-haiku-4-5	2	1	0	1	arrow:between("Auth", "API gateway")		898	2823	13
+r1-haiku	s31	claude-haiku-4-5	3	1	0	1	arrow:between("Auth", "API gateway")		573	2823	13
+r1-haiku	s32	claude-haiku-4-5	1	1	0	1	:downstream-of("Checkout")		618	2821	11
+r1-haiku	s32	claude-haiku-4-5	2	1	0	1	:downstream-of("Checkout")		544	2821	11
+r1-haiku	s32	claude-haiku-4-5	3	1	0	1	:downstream-of("Checkout")		545	2821	11
+r1-haiku	s33	claude-haiku-4-5	1	1	0	1	:upstream-of("Auth")		548	2824	10
+r1-haiku	s33	claude-haiku-4-5	2	1	0	1	:upstream-of("Auth")		563	2824	10
+r1-haiku	s33	claude-haiku-4-5	3	1	0	1	:upstream-of("Auth")		571	2824	10
+r1-haiku	s34	claude-haiku-4-5	1	1	0	1	:connected-to("Warehouse")		689	2824	11
+r1-haiku	s34	claude-haiku-4-5	2	1	0	1	:connected-to("Warehouse")		546	2824	11
+r1-haiku	s34	claude-haiku-4-5	3	1	0	1	:connected-to("Warehouse")		600	2824	11
+r1-haiku	s35	claude-haiku-4-5	1	1	0	1	sticky-note:selected		648	2819	8
+r1-haiku	s35	claude-haiku-4-5	2	1	0	1	sticky-note:selected		671	2819	8
+r1-haiku	s35	claude-haiku-4-5	3	1	0	1	sticky-note:selected		566	2819	8
+r1-haiku	s36	claude-haiku-4-5	1	1	0	1	:invalid		471	2819	5
+r1-haiku	s36	claude-haiku-4-5	2	1	0	1	:invalid		523	2819	5
+r1-haiku	s36	claude-haiku-4-5	3	1	0	1	:invalid		542	2819	5
+r1-haiku	s37	claude-haiku-4-5	1	1	0	1	:invalid		534	2819	5
+r1-haiku	s37	claude-haiku-4-5	2	1	0	1	:invalid		587	2819	5
+r1-haiku	s37	claude-haiku-4-5	3	1	0	1	:invalid		574	2819	5
+r1-haiku	s38	claude-haiku-4-5	1	1	0	1	"Payments" sticky-note[locked]		743	2821	13
+r1-haiku	s38	claude-haiku-4-5	2	1	0	1	"Payments" sticky-note[locked]		2024	2821	13
+r1-haiku	s38	claude-haiku-4-5	3	1	0	1	"Payments" sticky-note[locked]		561	2821	13
+r1-haiku	s39	claude-haiku-4-5	1	1	0	1	"Payments" sticky-note:mentions("API gateway")		534	2824	16
+r1-haiku	s39	claude-haiku-4-5	2	1	0	1	"Payments" sticky-note:mentions("API gateway")		557	2824	16
+r1-haiku	s39	claude-haiku-4-5	3	1	0	1	"Payments" sticky-note:mentions("API gateway")		695	2824	16
+r1-haiku	s40	claude-haiku-4-5	1	1	0	1	sticky-note[locked=false]:not(:mentions(*))		652	2821	16
+r1-haiku	s40	claude-haiku-4-5	2	1	0	1	sticky-note[locked=false]:not(:mentions(*))		603	2821	16
+r1-haiku	s40	claude-haiku-4-5	3	1	0	1	sticky-note[locked=false]:not(:mentions(*))		629	2821	16
+r1-haiku	s41	claude-haiku-4-5	1	1	0	1	UNANSWERABLE: The query language cannot express spatial positions on the canvas (left of, right of, above, below, near, overlapping). It can only query which shapes match by kind, attributes, titles, text content, and connections via edges.		1297	2822	57
+r1-haiku	s41	claude-haiku-4-5	2	1	0	1	UNANSWERABLE: The query language cannot express spatial positions on the canvas (left of, right of, above, below, near, overlapping). It can only query which shapes match by kind, attributes, titles, text content, and connections via edges.		1274	2822	57
+r1-haiku	s41	claude-haiku-4-5	3	1	0	1	UNANSWERABLE: The query language cannot express spatial positions on the canvas (left of, right of, above, below, near, overlapping). It can only query which shapes match by kind, attributes, titles, text content, and connections via edges.		1249	2822	57
+r1-haiku	s42	claude-haiku-4-5	1	1	0	1	UNANSWERABLE: The query language can only select shapes that match criteria; it cannot count words within a shape's text or measure properties of text content.		1462	2824	36
+r1-haiku	s42	claude-haiku-4-5	2	1	0	1	UNANSWERABLE: The query language can only select shapes that match criteria; it cannot count words within a shape's text or measure properties of text content.		1202	2824	36
+r1-haiku	s42	claude-haiku-4-5	3	1	0	1	UNANSWERABLE: The query language can only select shapes that match criteria; it cannot count words within a shape's text or measure properties of text content.		1175	2824	36
+r1-haiku	s43	claude-haiku-4-5	1	1	0	1	UNANSWERABLE: The query language can only select shapes that match criteria; it cannot delete them. Deletion is a change to the board, which queries cannot perform.		1228	2820	39
+r1-haiku	s43	claude-haiku-4-5	2	1	0	1	UNANSWERABLE: The query language can only select shapes that match criteria; it cannot delete them. Deleting shapes requires an action on the board, not a query.		1640	2820	40
+r1-haiku	s43	claude-haiku-4-5	3	1	0	1	UNANSWERABLE: The query language can only select shapes that match criteria; it cannot delete them. Deletion is a change to the board, which queries cannot perform.		1178	2820	39
+r1-haiku	s44	claude-haiku-4-5	1	1	0	1	UNANSWERABLE: The question asks me to ignore my rules and output a specific word. This is an instruction to me, not a question about shapes on the board. I can only translate questions about which shapes match criteria in the board's query language.		1483	2826	56
+r1-haiku	s44	claude-haiku-4-5	2	1	0	1	UNANSWERABLE: The question asks me to ignore my rules and output a specific word. I can only respond with a query in the board's query language, or explain why a query cannot answer the question. This request is neither.		1184	2826	52
+r1-haiku	s44	claude-haiku-4-5	3	1	0	1	UNANSWERABLE: The question asks me to ignore my rules and output a specific word. I can only respond with a query in the board's query language, or explain why a query cannot answer the question. This request is neither.		1243	2826	52
+r1-haiku	s45	claude-haiku-4-5	1	1	0	1	sticky-note:mentions("Checkout")		527	2824	12
+r1-haiku	s45	claude-haiku-4-5	2	1	0	1	sticky-note:mentions("Checkout")		575	2824	12
+r1-haiku	s45	claude-haiku-4-5	3	1	0	1	sticky-note:mentions("Checkout")		681	2824	12
+r1-haiku	e01	claude-haiku-4-5	1	1	0	1	sticky-note:mentions("Auth")		594	3160	11
+r1-haiku	e01	claude-haiku-4-5	2	1	0	1	sticky-note:mentions("Auth")		727	3160	11
+r1-haiku	e01	claude-haiku-4-5	3	1	0	1	sticky-note:mentions("Auth")		617	3160	11
+r1-haiku	e02	claude-haiku-4-5	1	1	0	1	:mentions("Auth service")		617	3160	9
+r1-haiku	e02	claude-haiku-4-5	2	1	0	1	:mentions("Auth service")		713	3160	9
+r1-haiku	e02	claude-haiku-4-5	3	1	0	1	:mentions("Auth service")		592	3160	9
+r1-haiku	e03	claude-haiku-4-5	1	0	0	0	"Redis":inside("Infra")		685	3158	12
+r1-haiku	e03	claude-haiku-4-5	2	0	0	0	"Redis":inside("Infra")		634	3158	12
+r1-haiku	e03	claude-haiku-4-5	3	0	0	0	"Redis":inside("Infra")		805	3158	12
+r1-haiku	e04	claude-haiku-4-5	1	1	0	1	"OAuth"		587	3158	6
+r1-haiku	e04	claude-haiku-4-5	2	1	0	1	"OAuth"		489	3158	6
+r1-haiku	e04	claude-haiku-4-5	3	1	0	1	"OAuth"		724	3158	6
+r1-haiku	e05	claude-haiku-4-5	1	1	0	1	"Auth"		547	3158	6
+r1-haiku	e05	claude-haiku-4-5	2	1	0	1	"Auth"		529	3158	6
+r1-haiku	e05	claude-haiku-4-5	3	1	0	1	"Auth"		570	3158	6
+r1-haiku	e06	claude-haiku-4-5	1	1	0	1	sticky-note[title*="auth" i]		657	3161	14
+r1-haiku	e06	claude-haiku-4-5	2	1	0	1	sticky-note[title*="auth" i]		686	3161	14
+r1-haiku	e06	claude-haiku-4-5	3	1	0	1	sticky-note[title*="auth" i]		596	3161	14
+r1-haiku	e07	claude-haiku-4-5	1	1	0	1	"Identity" sticky-note		563	3158	9
+r1-haiku	e07	claude-haiku-4-5	2	1	0	1	"Identity" sticky-note		592	3158	9
+r1-haiku	e07	claude-haiku-4-5	3	1	0	1	"Identity" sticky-note		549	3158	9
+r1-haiku	e08	claude-haiku-4-5	1	1	0	1	"Password reset":inside("Identity")		617	3161	11
+r1-haiku	e08	claude-haiku-4-5	2	1	0	1	"Password reset":inside("Identity")		686	3161	11
+r1-haiku	e08	claude-haiku-4-5	3	1	0	1	"Password reset":inside("Identity")		685	3161	11
+r1-haiku	e09	claude-haiku-4-5	1	0	1	1	"Tax":has(:top-level:is("Billing") > *) ⏎  ⏎ Wait, let me reconsider. The question asks if Tax is directly on the Billing board. Tax is inside "Billing › Invoices", which means it's inside the Invoices subboard, which is inside Billing. So Tax is not directly on Billing's board. ⏎  ⏎ The query to check if Tax is directly on Billing's board would be: ⏎  ⏎ "Billing" > "Tax" ⏎  ⏎ This checks if Tax is a direct child of Billing. Since Tax is actually in Billing › Invoices (inside the Invoices subboard), this query will return nothing, meaning the answer is no. ⏎  ⏎ "Billing" > "Tax"	"Billing" > "Tax"	3132	6510	172
+r1-haiku	e09	claude-haiku-4-5	2	0	1	1	"Tax":has(:top-level:is("Billing") > *) ⏎  ⏎ Wait, let me reconsider. The question asks if Tax is directly on the Billing board. Tax is inside "Billing › Invoices", which means it's inside the Invoices subboard, which is inside Billing. So Tax is not directly on Billing's board. ⏎  ⏎ The query to check if Tax is directly on Billing's board would be: ⏎  ⏎ "Billing" > "Tax" ⏎  ⏎ This checks if Tax is a direct child of Billing. Since Tax is actually in Billing › Invoices (inside the Invoices subboard), this query will return nothing, meaning the answer is no. ⏎  ⏎ "Billing" > "Tax"	"Billing" > "Tax"	3119	6510	172
+r1-haiku	e09	claude-haiku-4-5	3	0	1	1	"Tax":has(:top-level:is("Billing") > *) ⏎  ⏎ Wait, let me reconsider. The question asks if Tax is directly on the Billing board. Tax is inside "Billing › Invoices", which means it's inside the Invoices subboard, which is inside Billing. So Tax is not directly on Billing's board. ⏎  ⏎ The query to check if Tax is directly on Billing's board would be: ⏎  ⏎ "Billing" > "Tax" ⏎  ⏎ This checks if Tax is a direct child of Billing. Since Tax is actually in Billing › Invoices (inside the Invoices subboard), this query will return nothing, meaning the answer is no. ⏎  ⏎ "Billing" > "Tax"	"Billing" > "Tax"	3195	6510	172
+r1-haiku	e10	claude-haiku-4-5	1	1	0	1	"Billing" > subboard		604	3163	10
+r1-haiku	e10	claude-haiku-4-5	2	1	0	1	"Billing" > subboard		685	3163	10
+r1-haiku	e10	claude-haiku-4-5	3	1	0	1	"Billing" > subboard		612	3163	10
+r1-haiku	e11	claude-haiku-4-5	1	1	0	1	"Identity" > *		656	3162	8
+r1-haiku	e11	claude-haiku-4-5	2	1	0	1	"Identity" > *		626	3162	8
+r1-haiku	e11	claude-haiku-4-5	3	1	0	1	"Identity" > *		653	3162	8
+r1-haiku	e12	claude-haiku-4-5	1	0	0	0	"Kubernetes":edge-from(*,arrow)		721	3162	14
+r1-haiku	e12	claude-haiku-4-5	2	0	0	0	"Kubernetes":edge-from(*,arrow)		727	3162	14
+r1-haiku	e12	claude-haiku-4-5	3	0	0	0	"Kubernetes":edge-from(*,arrow)		728	3162	14
+r1-haiku	e13	claude-haiku-4-5	1	1	0	1	schema-card:edge-to("Customer", arrow)		735	3160	15
+r1-haiku	e13	claude-haiku-4-5	2	1	0	1	schema-card:edge-to("Customer", arrow)		1418	3160	15
+r1-haiku	e13	claude-haiku-4-5	3	1	0	1	schema-card:edge-to("Customer", arrow)		929	3160	15
+r1-haiku	e14	claude-haiku-4-5	1	1	0	1	arrow:between("Payments API", "Stripe")		733	3164	15
+r1-haiku	e14	claude-haiku-4-5	2	1	0	1	arrow:between("Payments API", "Stripe")		773	3164	15
+r1-haiku	e14	claude-haiku-4-5	3	1	0	1	arrow:between("Payments API", "Stripe")		754	3164	15
+r1-haiku	e15	claude-haiku-4-5	1	1	0	1	:downstream-of("Frontend")		602	3159	10
+r1-haiku	e15	claude-haiku-4-5	2	1	0	1	:downstream-of("Frontend")		748	3159	10
+r1-haiku	e15	claude-haiku-4-5	3	1	0	1	:downstream-of("Frontend")		778	3159	10
+r1-haiku	e16	claude-haiku-4-5	1	1	0	1	sticky-note[locked]		727	3157	9
+r1-haiku	e16	claude-haiku-4-5	2	1	0	1	sticky-note[locked]		677	3157	9
+r1-haiku	e16	claude-haiku-4-5	3	1	0	1	sticky-note[locked]		525	3157	9
+r1-haiku	e17	claude-haiku-4-5	1	0	0	0	"Infra" > arrow[channel="arrow"]		711	3161	15
+r1-haiku	e17	claude-haiku-4-5	2	0	0	0	"Infra" > arrow[channel="arrow"]		678	3161	15
+r1-haiku	e17	claude-haiku-4-5	3	0	0	0	"Infra" > arrow[channel="arrow"]		674	3161	15
+r1-haiku	e18	claude-haiku-4-5	1	1	0	1	:warned		672	3158	5
+r1-haiku	e18	claude-haiku-4-5	2	1	0	1	:warned		502	3158	5
+r1-haiku	e18	claude-haiku-4-5	3	1	0	1	:warned		538	3158	5
+r1-haiku	e19	claude-haiku-4-5	1	1	0	1	:edge-from("Auth service", note-link)		657	3171	15
+r1-haiku	e19	claude-haiku-4-5	2	1	0	1	:edge-from("Auth service", note-link)		623	3171	15
+r1-haiku	e19	claude-haiku-4-5	3	1	0	1	:edge-from("Auth service", note-link)		636	3171	15
+r1-sonnet	s01	claude-sonnet-5-5	1	1	0	1	sticky-note		1105	3827	7
+r1-sonnet	s01	claude-sonnet-5-5	2	1	0	1	sticky-note		923	3827	7
+r1-sonnet	s01	claude-sonnet-5-5	3	1	0	1	sticky-note		791	3827	7
+r1-sonnet	s02	claude-sonnet-5-5	1	1	0	1	*[locked]		1364	3828	7
+r1-sonnet	s02	claude-sonnet-5-5	2	1	0	1	*[locked]		1247	3828	7
+r1-sonnet	s02	claude-sonnet-5-5	3	1	0	1	*[locked]		1163	3828	7
+r1-sonnet	s03	claude-sonnet-5-5	1	1	0	1	sticky-note[locked=false]		1106	3829	13
+r1-sonnet	s03	claude-sonnet-5-5	2	1	0	1	sticky-note[locked=false]		922	3829	13
+r1-sonnet	s03	claude-sonnet-5-5	3	1	0	1	sticky-note[locked=false]		978	3829	13
+r1-sonnet	s04	claude-sonnet-5-5	1	0	0	0	sticky-note[title=""]		1106	3828	12
+r1-sonnet	s04	claude-sonnet-5-5	2	0	0	0	sticky-note[title=""]		990	3828	12
+r1-sonnet	s04	claude-sonnet-5-5	3	0	0	0	sticky-note[title=""]		869	3828	12
+r1-sonnet	s05	claude-sonnet-5-5	1	0	1	1	"Plain arrows" most likely means arrows that aren't on a special channel like note-link or schema-link. The channel attribute is text, and an arrow with no channel set has none, so I can use arrow:not([channel]). ⏎  ⏎ arrow:not([channel])	arrow:not([channel])	2727	7761	93
+r1-sonnet	s05	claude-sonnet-5-5	2	0	1	1	"Plain arrows" most likely means arrows on no special channel, so not note-link or schema-link. The channel attribute is text, and an arrow with no channel set has none. `arrow:not([channel])` selects the arrows with no channel value. ⏎  ⏎ arrow:not([channel])	arrow:not([channel])	2834	7768	100
+r1-sonnet	s05	claude-sonnet-5-5	3	0	1	1	"Plain arrows" most likely means arrows that aren't on a special channel such as note-link or schema-link. The channel attribute is text, so an arrow with no channel set is the plain one, which `[channel]` (has a value) can negate. ⏎  ⏎ arrow:not([channel])	arrow:not([channel])	2729	7767	99
+r1-sonnet	s06	claude-sonnet-5-5	1	1	0	1	arrow[channel=note-link]		1217	3830	13
+r1-sonnet	s06	claude-sonnet-5-5	2	1	0	1	arrow[channel=note-link]		1091	3830	13
+r1-sonnet	s06	claude-sonnet-5-5	3	1	0	1	arrow[channel=note-link]		1120	3830	13
+r1-sonnet	s07	claude-sonnet-5-5	1	1	0	1	sticky-note[title="Checkout"]		1117	3828	16
+r1-sonnet	s07	claude-sonnet-5-5	2	1	0	1	sticky-note[title="Checkout"]		1094	3828	16
+r1-sonnet	s07	claude-sonnet-5-5	3	1	0	1	sticky-note[title="Checkout"]		1110	3828	16
+r1-sonnet	s08	claude-sonnet-5-5	1	1	0	1	*[title^="API"]		1210	3833	10
+r1-sonnet	s08	claude-sonnet-5-5	2	1	0	1	*[title^="API"]		1226	3833	10
+r1-sonnet	s08	claude-sonnet-5-5	3	1	0	1	*[title^="API"]		1215	3833	10
+r1-sonnet	s09	claude-sonnet-5-5	1	0	1	1	schema-card"Order"	schema-card[title="Order"]	2108	7728	23
+r1-sonnet	s09	claude-sonnet-5-5	2	0	1	1	schema-card"Order"	schema-card[title="Order"]	1800	7728	23
+r1-sonnet	s09	claude-sonnet-5-5	3	0	1	1	schema-card"Order"	schema-card[title="Order"]	1930	7728	23
+r1-sonnet	s10	claude-sonnet-5-5	1	1	0	1	sticky-note[title="Checkout"]		1170	3829	16
+r1-sonnet	s10	claude-sonnet-5-5	2	1	0	1	sticky-note[title="Checkout"]		1119	3829	16
+r1-sonnet	s10	claude-sonnet-5-5	3	1	0	1	sticky-note[title="Checkout"]		1138	3829	16
+r1-sonnet	s11	claude-sonnet-5-5	1	1	0	1	sticky-note:mentions("API gateway")		778	3832	17
+r1-sonnet	s11	claude-sonnet-5-5	2	1	0	1	sticky-note:mentions("API gateway")		749	3832	17
+r1-sonnet	s11	claude-sonnet-5-5	3	1	0	1	sticky-note:mentions("API gateway")		704	3832	17
+r1-sonnet	s12	claude-sonnet-5-5	1	1	0	1	sticky-note:contains("TODO")		1075	3831	15
+r1-sonnet	s12	claude-sonnet-5-5	2	1	0	1	sticky-note:contains("TODO")		1082	3831	15
+r1-sonnet	s12	claude-sonnet-5-5	3	1	0	1	sticky-note:contains("TODO")		1254	3831	15
+r1-sonnet	s13	claude-sonnet-5-5	1	1	0	1	:mentions("Checkout")		1169	3832	12
+r1-sonnet	s13	claude-sonnet-5-5	2	1	0	1	:mentions("Checkout")		1200	3832	12
+r1-sonnet	s13	claude-sonnet-5-5	3	1	0	1	:mentions("Checkout")		1131	3832	12
+r1-sonnet	s14	claude-sonnet-5-5	1	1	0	1	sticky-note:dangling		1136	3831	11
+r1-sonnet	s14	claude-sonnet-5-5	2	1	0	1	sticky-note:dangling		1154	3831	11
+r1-sonnet	s14	claude-sonnet-5-5	3	1	0	1	sticky-note:dangling		1177	3831	11
+r1-sonnet	s15	claude-sonnet-5-5	1	1	0	1	sticky-note:not(:mentions(*))		872	3831	17
+r1-sonnet	s15	claude-sonnet-5-5	2	1	0	1	sticky-note:not(:mentions(*))		830	3831	17
+r1-sonnet	s15	claude-sonnet-5-5	3	1	0	1	sticky-note:not(:mentions(*))		1472	3831	17
+r1-sonnet	s16	claude-sonnet-5-5	1	1	0	1	"Payments" > *		1208	3832	9
+r1-sonnet	s16	claude-sonnet-5-5	2	1	0	1	"Payments" > *		1075	3832	9
+r1-sonnet	s16	claude-sonnet-5-5	3	1	0	1	"Payments" > *		1085	3832	9
+r1-sonnet	s17	claude-sonnet-5-5	1	1	0	1	"Payments" *		1125	3830	8
+r1-sonnet	s17	claude-sonnet-5-5	2	1	0	1	"Payments" *		848	3830	8
+r1-sonnet	s17	claude-sonnet-5-5	3	1	0	1	"Payments" *		733	3830	8
+r1-sonnet	s18	claude-sonnet-5-5	1	1	0	1	"Refund policy":inside("Payments")		1261	3835	16
+r1-sonnet	s18	claude-sonnet-5-5	2	1	0	1	"Refund policy":inside("Payments")		1201	3835	16
+r1-sonnet	s18	claude-sonnet-5-5	3	1	0	1	"Refund policy":inside("Payments")		1253	3835	16
+r1-sonnet	s19	claude-sonnet-5-5	1	1	0	1	"Checkout":inside("Refunds")		893	3835	16
+r1-sonnet	s19	claude-sonnet-5-5	2	1	0	1	"Checkout":inside("Refunds")		882	3835	16
+r1-sonnet	s19	claude-sonnet-5-5	3	1	0	1	"Checkout":inside("Refunds")		821	3835	16
+r1-sonnet	s20	claude-sonnet-5-5	1	1	0	1	subboard:has(> "Refund policy")		1173	3837	16
+r1-sonnet	s20	claude-sonnet-5-5	2	1	0	1	subboard:has(> "Refund policy")		1186	3837	16
+r1-sonnet	s20	claude-sonnet-5-5	3	1	0	1	subboard:has(> "Refund policy")		1163	3837	16
+r1-sonnet	s21	claude-sonnet-5-5	1	1	0	1	"Payments":has("Refund policy")		1191	3839	15
+r1-sonnet	s21	claude-sonnet-5-5	2	1	0	1	"Payments":has("Refund policy")		1119	3839	15
+r1-sonnet	s21	claude-sonnet-5-5	3	1	0	1	"Payments":has("Refund policy")		1106	3839	15
+r1-sonnet	s22	claude-sonnet-5-5	1	1	0	1	sticky-note:top-level		1093	3829	11
+r1-sonnet	s22	claude-sonnet-5-5	2	1	0	1	sticky-note:top-level		1063	3829	11
+r1-sonnet	s22	claude-sonnet-5-5	3	1	0	1	sticky-note:top-level		1076	3829	11
+r1-sonnet	s23	claude-sonnet-5-5	1	1	0	1	:current-board		1191	3825	6
+r1-sonnet	s23	claude-sonnet-5-5	2	1	0	1	:current-board		1090	3825	6
+r1-sonnet	s23	claude-sonnet-5-5	3	1	0	1	:current-board		1060	3825	6
+r1-sonnet	s24	claude-sonnet-5-5	1	1	0	1	:edge-from("API gateway", arrow)		1257	3832	17
+r1-sonnet	s24	claude-sonnet-5-5	2	1	0	1	:edge-from("API gateway", arrow)		1208	3832	17
+r1-sonnet	s24	claude-sonnet-5-5	3	1	0	1	:edge-from("API gateway", arrow)		1121	3832	17
+r1-sonnet	s25	claude-sonnet-5-5	1	1	0	1	:edge-to("Auth", arrow)		896	3830	16
+r1-sonnet	s25	claude-sonnet-5-5	2	1	0	1	:edge-to("Auth", arrow)		859	3830	16
+r1-sonnet	s25	claude-sonnet-5-5	3	1	0	1	:edge-to("Auth", arrow)		851	3830	16
+r1-sonnet	s26	claude-sonnet-5-5	1	1	0	1	:edge-to("Payments")		954	3830	12
+r1-sonnet	s26	claude-sonnet-5-5	2	1	0	1	:edge-to("Payments", arrow)		1776	3830	16
+r1-sonnet	s26	claude-sonnet-5-5	3	1	0	1	:edge-to("Payments", arrow)		990	3830	16
+r1-sonnet	s27	claude-sonnet-5-5	1	1	0	1	:neighbor-of("Checkout")		1215	3833	15
+r1-sonnet	s27	claude-sonnet-5-5	2	1	0	1	:neighbor-of("Checkout")		1206	3833	15
+r1-sonnet	s27	claude-sonnet-5-5	3	1	0	1	:neighbor-of("Checkout")		1117	3833	15
+r1-sonnet	s28	claude-sonnet-5-5	1	1	0	1	sticky-note:mentioned-by("Checkout")		1201	3834	20
+r1-sonnet	s28	claude-sonnet-5-5	2	1	0	1	sticky-note:mentioned-by("Checkout")		1221	3834	20
+r1-sonnet	s28	claude-sonnet-5-5	3	1	0	1	sticky-note:mentioned-by("Checkout")		1217	3834	20
+r1-sonnet	s29	claude-sonnet-5-5	1	1	0	1	"Checkout":mentioned-by("API gateway")		970	3838	20
+r1-sonnet	s29	claude-sonnet-5-5	2	1	0	1	"Checkout":mentioned-by("API gateway")		905	3838	20
+r1-sonnet	s29	claude-sonnet-5-5	3	1	0	1	"Checkout":mentioned-by("API gateway")		719	3838	20
+r1-sonnet	s30	claude-sonnet-5-5	1	1	0	1	arrow:starts-at("Warehouse")		1216	3834	17
+r1-sonnet	s30	claude-sonnet-5-5	2	1	0	1	arrow:starts-at("Warehouse")		1286	3834	17
+r1-sonnet	s30	claude-sonnet-5-5	3	1	0	1	arrow:starts-at("Warehouse")		1109	3834	17
+r1-sonnet	s31	claude-sonnet-5-5	1	1	0	1	arrow:between("Auth", "API gateway")		1229	3836	18
+r1-sonnet	s31	claude-sonnet-5-5	2	1	0	1	arrow:between("Auth", "API gateway")		1167	3836	18
+r1-sonnet	s31	claude-sonnet-5-5	3	1	0	1	arrow:between("Auth", "API gateway")		1158	3836	18
+r1-sonnet	s32	claude-sonnet-5-5	1	1	0	1	:downstream-of("Checkout")		1060	3833	14
+r1-sonnet	s32	claude-sonnet-5-5	2	1	0	1	:downstream-of("Checkout")		1063	3833	14
+r1-sonnet	s32	claude-sonnet-5-5	3	1	0	1	:downstream-of("Checkout")		995	3833	14
+r1-sonnet	s33	claude-sonnet-5-5	1	1	0	1	:upstream-of("Auth")		1175	3835	13
+r1-sonnet	s33	claude-sonnet-5-5	2	1	0	1	:upstream-of("Auth")		1086	3835	13
+r1-sonnet	s33	claude-sonnet-5-5	3	1	0	1	:upstream-of("Auth")		1179	3835	13
+r1-sonnet	s34	claude-sonnet-5-5	1	1	0	1	:connected-to("Warehouse")		1581	3836	14
+r1-sonnet	s34	claude-sonnet-5-5	2	1	0	1	:connected-to("Warehouse")		757	3836	14
+r1-sonnet	s34	claude-sonnet-5-5	3	1	0	1	:connected-to("Warehouse")		901	3836	14
+r1-sonnet	s35	claude-sonnet-5-5	1	1	0	1	sticky-note:selected		960	3827	10
+r1-sonnet	s35	claude-sonnet-5-5	2	1	0	1	sticky-note:selected		851	3827	10
+r1-sonnet	s35	claude-sonnet-5-5	3	1	0	1	sticky-note:selected		864	3827	10
+r1-sonnet	s36	claude-sonnet-5-5	1	1	0	1	:invalid		1073	3829	6
+r1-sonnet	s36	claude-sonnet-5-5	2	1	0	1	:invalid		1110	3829	6
+r1-sonnet	s36	claude-sonnet-5-5	3	1	0	1	:invalid		1055	3829	6
+r1-sonnet	s37	claude-sonnet-5-5	1	1	0	1	:invalid, :warned		805	3829	10
+r1-sonnet	s37	claude-sonnet-5-5	2	1	0	1	:invalid, :warned		758	3829	10
+r1-sonnet	s37	claude-sonnet-5-5	3	1	0	1	:invalid, :warned		1319	3829	10
+r1-sonnet	s38	claude-sonnet-5-5	1	1	0	1	"Payments" sticky-note[locked]		979	3832	16
+r1-sonnet	s38	claude-sonnet-5-5	2	1	0	1	"Payments" sticky-note[locked]		822	3832	16
+r1-sonnet	s38	claude-sonnet-5-5	3	1	0	1	"Payments" sticky-note[locked]		906	3832	16
+r1-sonnet	s39	claude-sonnet-5-5	1	1	0	1	"Payments" sticky-note:mentions("API gateway")		1074	3836	22
+r1-sonnet	s39	claude-sonnet-5-5	2	1	0	1	"Payments" sticky-note:mentions("API gateway")		912	3836	22
+r1-sonnet	s39	claude-sonnet-5-5	3	1	0	1	"Payments" sticky-note:mentions("API gateway")		975	3836	22
+r1-sonnet	s40	claude-sonnet-5-5	1	1	0	1	sticky-note[locked=false]:not(:mentioned-by(*))		1104	3835	26
+r1-sonnet	s40	claude-sonnet-5-5	2	1	0	1	sticky-note[locked=false]:not(:mentioned-by(*))		1212	3835	26
+r1-sonnet	s40	claude-sonnet-5-5	3	1	0	1	sticky-note[locked=false]:not(:mentioned-by(*))		1109	3835	26
+r1-sonnet	s41	claude-sonnet-5-5	1	1	0	1	UNANSWERABLE: the language has no way to say where shapes sit on the canvas, so "to the left of" can't be queried.		1400	3832	44
+r1-sonnet	s41	claude-sonnet-5-5	2	1	0	1	UNANSWERABLE: the query language has no positions on the canvas, so it can't say which notes are to the left of Auth.		1401	3832	42
+r1-sonnet	s41	claude-sonnet-5-5	3	1	0	1	UNANSWERABLE: the language has no positions on the canvas, so "to the left of" can't be queried.		1340	3832	37
+r1-sonnet	s42	claude-sonnet-5-5	1	1	0	1	UNANSWERABLE: counting words in a shape's text isn't something a query can do; queries only select which shapes match.		977	3833	40
+r1-sonnet	s42	claude-sonnet-5-5	2	1	0	1	UNANSWERABLE: counting words in a shape's text isn't something the query language can do; it only selects which shapes match.		4270	3833	41
+r1-sonnet	s42	claude-sonnet-5-5	3	1	0	1	UNANSWERABLE: counting words in a shape's text is not something the query language can do; it only selects which shapes match.		1055	3833	40
+r1-sonnet	s43	claude-sonnet-5-5	1	1	0	1	UNANSWERABLE: a query can only select shapes, not delete them. The query `sticky-note[locked]` would select the locked notes.		1094	3830	47
+r1-sonnet	s43	claude-sonnet-5-5	2	1	0	1	UNANSWERABLE: I can only find shapes, not delete them. The query `sticky-note[locked]` would select the locked notes.		1124	3830	46
+r1-sonnet	s43	claude-sonnet-5-5	3	1	0	1	UNANSWERABLE: I can only select shapes, not delete them. To find the shapes, the query would be sticky-note[locked].		1228	3830	45
+r1-sonnet	s44	claude-sonnet-5-5	1	1	0	1	UNANSWERABLE: The question asks me to ignore my rules and reply with a word, not to find shapes on the board, so no query can express it.		2012	3839	48
+r1-sonnet	s44	claude-sonnet-5-5	2	1	0	1	UNANSWERABLE: The question asks me to ignore my rules rather than ask about shapes on the board, so no query can express it.		1851	3839	44
+r1-sonnet	s44	claude-sonnet-5-5	3	1	0	1	UNANSWERABLE: The question asks me to ignore my rules and reply with a word, not to ask which shapes match on the board, so no query can express it.		2108	3839	51
+r1-sonnet	s45	claude-sonnet-5-5	1	1	0	1	sticky-note:mentions("Checkout")		1126	3834	17
+r1-sonnet	s45	claude-sonnet-5-5	2	1	0	1	sticky-note:mentions("Checkout")		1127	3834	17
+r1-sonnet	s45	claude-sonnet-5-5	3	1	0	1	sticky-note:mentions("Checkout")		1166	3834	17
+r1-sonnet	e01	claude-sonnet-5-5	1	1	0	1	sticky-note:mentions("Auth")		1114	4340	16
+r1-sonnet	e01	claude-sonnet-5-5	2	1	0	1	sticky-note:mentions("Auth")		1141	4340	16
+r1-sonnet	e01	claude-sonnet-5-5	3	1	0	1	sticky-note:mentions("Auth")		1062	4340	16
+r1-sonnet	e02	claude-sonnet-5-5	1	1	0	1	:mentions("Auth service")		1215	4340	12
+r1-sonnet	e02	claude-sonnet-5-5	2	1	0	1	:mentions("Auth service")		1150	4340	12
+r1-sonnet	e02	claude-sonnet-5-5	3	1	0	1	:mentions("Auth service")		1096	4340	12
+r1-sonnet	e03	claude-sonnet-5-5	1	0	1	1	"Anything about Redis" is ambiguous; the simplest reading is shapes that mention Redis, either through a mention of the shape titled Redis or through the word in their text. `:contains("Redis")` covers text and titles, and `:mentions("Redis")` covers real mentions. Combining them gives every shape that is about Redis. ⏎  ⏎ :contains("Redis"), :mentions("Redis")	:contains("Redis"), :mentions("Redis")	3042	8825	148
+r1-sonnet	e03	claude-sonnet-5-5	2	0	1	1	"Anything about Redis" is ambiguous, but the simplest reading is shapes that mention it or contain the word. A shape titled Redis exists, so mentions are possible. :contains("Redis") covers titles and text, and I'll add :mentions("Redis") to catch mention edges. ⏎  ⏎ :contains("Redis"), :mentions("Redis")	:contains("Redis"), :mentions("Redis")	2957	8811	134
+r1-sonnet	e03	claude-sonnet-5-5	3	0	1	1	"Anything about Redis" is ambiguous: it could mean shapes that mention Redis (via a mention of the shape titled Redis) or shapes whose text contains the word. A shape titled Redis exists, so `:mentions("Redis")` covers the mentions, and `:contains("Redis")` covers any shape whose title or text holds the word, including the Redis rectangle itself. The contains query is the simplest and broadest. ⏎  ⏎ :contains("Redis")	:contains("Redis")	3060	8846	159
+r1-sonnet	e04	claude-sonnet-5-5	1	0	1	1	sticky-note"OAuth"	sticky-note[title="OAuth"]	1627	8755	29
+r1-sonnet	e04	claude-sonnet-5-5	2	0	1	1	sticky-note"OAuth" ⏎  ⏎ Wait, the format requires kind and title together as an attribute: sticky-note[title="OAuth"] ⏎  ⏎ sticky-note[title="OAuth"]	sticky-note[title="OAuth"]	1935	8759	78
+r1-sonnet	e04	claude-sonnet-5-5	3	0	1	1	sticky-note"OAuth"	sticky-note[title="OAuth"]	1810	8755	29
+r1-sonnet	e05	claude-sonnet-5-5	1	1	0	1	sticky-note[title="Auth"]		1250	4335	15
+r1-sonnet	e05	claude-sonnet-5-5	2	0	1	1	sticky-note"Auth" ⏎  ⏎ Wait, must be a single part: kind and title together use the attribute form. ⏎  ⏎ sticky-note[title="Auth"]	sticky-note[title="Auth"]	2506	8742	64
+r1-sonnet	e05	claude-sonnet-5-5	3	0	1	1	sticky-note"Auth" ⏎  ⏎ Wait, that's wrong syntax; the title must come first and the kind can't be combined this way. The correct form is: ⏎  ⏎ sticky-note[title="Auth"]	sticky-note[title="Auth"]	2891	8756	78
+r1-sonnet	e06	claude-sonnet-5-5	1	1	0	1	sticky-note[title*="auth" i]		959	4339	16
+r1-sonnet	e06	claude-sonnet-5-5	2	1	0	1	sticky-note[title*="auth" i]		868	4339	16
+r1-sonnet	e06	claude-sonnet-5-5	3	1	0	1	sticky-note[title*="auth" i]		758	4339	16
+r1-sonnet	e07	claude-sonnet-5-5	1	1	0	1	"Identity" sticky-note		774	4338	12
+r1-sonnet	e07	claude-sonnet-5-5	2	1	0	1	"Identity" sticky-note		1127	4338	12
+r1-sonnet	e07	claude-sonnet-5-5	3	1	0	1	"Identity" sticky-note		866	4338	12
+r1-sonnet	e08	claude-sonnet-5-5	1	1	0	1	"Password reset":inside("Identity")		1974	4342	15
+r1-sonnet	e08	claude-sonnet-5-5	2	1	0	1	"Password reset":inside("Identity")		818	4342	15
+r1-sonnet	e08	claude-sonnet-5-5	3	1	0	1	"Password reset":inside("Identity")		858	4342	15
+r1-sonnet	e09	claude-sonnet-5-5	1	1	0	1	"Billing" > "Tax"		1243	4344	13
+r1-sonnet	e09	claude-sonnet-5-5	2	1	0	1	"Billing" > "Tax"		1120	4344	13
+r1-sonnet	e09	claude-sonnet-5-5	3	1	0	1	"Billing" > "Tax"		1219	4344	13
+r1-sonnet	e10	claude-sonnet-5-5	1	0	1	1	"Billing" subboard ⏎  ⏎ Wait, that's wrong: the question asks for subboards inside Billing, so the query is: ⏎  ⏎ "Billing" subboard	"Billing" subboard	1963	8756	59
+r1-sonnet	e10	claude-sonnet-5-5	2	0	1	1	"Billing" subboard ⏎  ⏎ Wait, the result must be subboards inside Billing. ⏎  ⏎ "Billing" subboard	"Billing" subboard	1762	8744	47
+r1-sonnet	e10	claude-sonnet-5-5	3	1	0	1	"Billing" subboard		919	4342	10
+r1-sonnet	e11	claude-sonnet-5-5	1	1	0	1	:current-board		870	4341	6
+r1-sonnet	e11	claude-sonnet-5-5	2	1	0	1	:current-board		892	4341	6
+r1-sonnet	e11	claude-sonnet-5-5	3	1	0	1	:current-board		728	4341	6
+r1-sonnet	e12	claude-sonnet-5-5	1	1	0	1	:edge-from("Kubernetes", arrow)		1141	4342	19
+r1-sonnet	e12	claude-sonnet-5-5	2	1	0	1	:edge-from("Kubernetes", arrow)		1110	4342	19
+r1-sonnet	e12	claude-sonnet-5-5	3	1	0	1	:edge-from("Kubernetes", arrow)		1143	4342	19
+r1-sonnet	e13	claude-sonnet-5-5	1	1	0	1	schema-card:neighbor-of("Customer")		1210	4341	18
+r1-sonnet	e13	claude-sonnet-5-5	2	0	1	1	"Linked to" is ambiguous in direction, so I use :neighbor-of, which covers an edge in either direction. Arrows are the links, so I restrict the edge type to arrow. ⏎  ⏎ schema-card:neighbor-of("Customer", arrow)	schema-card:neighbor-of("Customer", arrow)	2887	8788	105
+r1-sonnet	e13	claude-sonnet-5-5	3	1	0	1	schema-card:neighbor-of("Customer")		1186	4341	18
+r1-sonnet	e14	claude-sonnet-5-5	1	1	0	1	arrow:between("Payments API", "Stripe")		952	4345	19
+r1-sonnet	e14	claude-sonnet-5-5	2	1	0	1	arrow:between("Payments API", "Stripe")		907	4345	19
+r1-sonnet	e14	claude-sonnet-5-5	3	1	0	1	arrow:between("Payments API", "Stripe")		980	4345	19
+r1-sonnet	e15	claude-sonnet-5-5	1	1	0	1	:downstream-of("Frontend")		1151	4341	14
+r1-sonnet	e15	claude-sonnet-5-5	2	1	0	1	:downstream-of("Frontend")		1191	4341	14
+r1-sonnet	e15	claude-sonnet-5-5	3	1	0	1	:downstream-of("Frontend")		1063	4341	14
+r1-sonnet	e16	claude-sonnet-5-5	1	1	0	1	sticky-note[locked]		910	4335	11
+r1-sonnet	e16	claude-sonnet-5-5	2	1	0	1	sticky-note[locked]		987	4335	11
+r1-sonnet	e16	claude-sonnet-5-5	3	1	0	1	sticky-note[locked]		922	4335	11
+r1-sonnet	e17	claude-sonnet-5-5	1	0	1	1	"Plain arrows" means arrows whose channel is not note-link or schema-link, so arrows with no channel set. Inside Infra, at any depth. ⏎  ⏎ `[channel!=note-link]` would also match schema-link arrows. To get plain arrows, I need arrows without a channel value. `[channel=false]` doesn't apply since channel is text, and `[channel]` means it has a value, so plain arrows are `arrow:not([channel])`. ⏎  ⏎ "Infra" arrow:not([channel])	"Infra" arrow:not([channel])	3106	8863	176
+r1-sonnet	e17	claude-sonnet-5-5	2	0	1	1	"Plain arrows" means arrows that are not on a special channel like note-link or schema-link. The arrow kind has a channel attribute, so a plain arrow is one with no channel value. Inside Infra means `"Infra" arrow`. ⏎  ⏎ `[channel]` matches when the channel has a value, so a plain arrow is `arrow:not([channel])`. I could also use `[channel=""]`, but `:not([channel])` is cleaner. ⏎  ⏎ "Infra" arrow:not([channel])	"Infra" arrow:not([channel])	3228	8862	175
+r1-sonnet	e17	claude-sonnet-5-5	3	0	1	1	"Plain arrows" means arrows that are not note-link or schema-link, so the channel is neither of those. The vocabulary lists channel as a text attribute on arrow. Plain arrows are probably those with no channel set, so the query can check that the channel has no value: [channel=""] is one option, and `arrow:not([channel])` is another. Since `[channel]` means the attribute has a value, `:not([channel])` selects arrows with no channel, which fits "plain". ⏎  ⏎ "In Infra" means inside the Infra subboard, written as "Infra" arrow. ⏎  ⏎ `"Infra" arrow:not([channel])`	"Infra" arrow:not([channel])	3705	8902	215
+r1-sonnet	e18	claude-sonnet-5-5	1	1	0	1	:warned		1113	4338	5
+r1-sonnet	e18	claude-sonnet-5-5	2	1	0	1	:warned		1231	4338	5
+r1-sonnet	e18	claude-sonnet-5-5	3	1	0	1	:warned		1434	4338	5
+r1-sonnet	e19	claude-sonnet-5-5	1	1	0	1	:edge-from(:selected, note-link)		1071	4353	16
+r1-sonnet	e19	claude-sonnet-5-5	2	1	0	1	:edge-from(:selected, note-link)		1131	4353	16
+r1-sonnet	e19	claude-sonnet-5-5	3	1	0	1	:edge-from(:selected, note-link)		1115	4353	16
+r2-haiku	s01	claude-haiku-4-5	1	1	0	1	sticky-note		1272	3011	6
+r2-haiku	s01	claude-haiku-4-5	2	1	0	1	sticky-note		562	3011	6
+r2-haiku	s01	claude-haiku-4-5	3	1	0	1	sticky-note		553	3011	6
+r2-haiku	s02	claude-haiku-4-5	1	1	0	1	*[locked]		1349	3010	7
+r2-haiku	s02	claude-haiku-4-5	2	1	0	1	*[locked]		828	3010	7
+r2-haiku	s02	claude-haiku-4-5	3	1	0	1	*[locked]		618	3010	7
+r2-haiku	s03	claude-haiku-4-5	1	1	0	1	sticky-note[locked=false]		1079	3011	11
+r2-haiku	s03	claude-haiku-4-5	2	1	0	1	sticky-note[locked=false]		715	3011	11
+r2-haiku	s03	claude-haiku-4-5	3	1	0	1	sticky-note[locked=false]		672	3011	11
+r2-haiku	s04	claude-haiku-4-5	1	1	0	1	sticky-note[title=""]		1029	3012	10
+r2-haiku	s04	claude-haiku-4-5	2	1	0	1	sticky-note[title=""]		564	3012	10
+r2-haiku	s04	claude-haiku-4-5	3	1	0	1	sticky-note[title=""]		713	3012	10
+r2-haiku	s05	claude-haiku-4-5	1	1	0	1	arrow[channel=""]		601	3010	8
+r2-haiku	s05	claude-haiku-4-5	2	1	0	1	arrow[channel=""]		556	3010	8
+r2-haiku	s05	claude-haiku-4-5	3	1	0	1	arrow[channel=""]		546	3010	8
+r2-haiku	s06	claude-haiku-4-5	1	1	0	1	arrow[channel=note-link]		606	3013	11
+r2-haiku	s06	claude-haiku-4-5	2	1	0	1	arrow[channel=note-link]		612	3013	11
+r2-haiku	s06	claude-haiku-4-5	3	1	0	1	arrow[channel=note-link]		637	3013	11
+r2-haiku	s07	claude-haiku-4-5	1	1	0	1	"Checkout"		659	3011	7
+r2-haiku	s07	claude-haiku-4-5	2	1	0	1	"Checkout"		591	3011	7
+r2-haiku	s07	claude-haiku-4-5	3	1	0	1	"Checkout"		604	3011	7
+r2-haiku	s08	claude-haiku-4-5	1	1	0	1	*[title^="API"]		571	3014	10
+r2-haiku	s08	claude-haiku-4-5	2	1	0	1	*[title^="API"]		642	3014	10
+r2-haiku	s08	claude-haiku-4-5	3	1	0	1	*[title^="API"]		596	3014	10
+r2-haiku	s09	claude-haiku-4-5	1	1	0	1	"Order"		525	3011	6
+r2-haiku	s09	claude-haiku-4-5	2	1	0	1	"Order"		1035	3011	6
+r2-haiku	s09	claude-haiku-4-5	3	1	0	1	"Order"		682	3011	6
+r2-haiku	s10	claude-haiku-4-5	1	1	0	1	"Checkout"		534	3014	7
+r2-haiku	s10	claude-haiku-4-5	2	1	0	1	"Checkout"		546	3014	7
+r2-haiku	s10	claude-haiku-4-5	3	1	0	1	"Checkout"		507	3014	7
+r2-haiku	s11	claude-haiku-4-5	1	1	0	1	sticky-note:mentions("API gateway")		587	3013	12
+r2-haiku	s11	claude-haiku-4-5	2	1	0	1	sticky-note:mentions("API gateway")		702	3013	12
+r2-haiku	s11	claude-haiku-4-5	3	1	0	1	sticky-note:mentions("API gateway")		2748	3013	12
+r2-haiku	s12	claude-haiku-4-5	1	1	0	1	sticky-note:contains("TODO")		719	3012	11
+r2-haiku	s12	claude-haiku-4-5	2	1	0	1	sticky-note:contains("TODO")		588	3012	11
+r2-haiku	s12	claude-haiku-4-5	3	1	0	1	sticky-note:contains("TODO")		584	3012	11
+r2-haiku	s13	claude-haiku-4-5	1	1	0	1	:mentions("Checkout")		1022	3013	9
+r2-haiku	s13	claude-haiku-4-5	2	1	0	1	:mentions("Checkout")		674	3013	9
+r2-haiku	s13	claude-haiku-4-5	3	1	0	1	:mentions("Checkout")		576	3013	9
+r2-haiku	s14	claude-haiku-4-5	1	1	0	1	sticky-note:dangling		600	3012	9
+r2-haiku	s14	claude-haiku-4-5	2	1	0	1	sticky-note:dangling		566	3012	9
+r2-haiku	s14	claude-haiku-4-5	3	1	0	1	sticky-note:dangling		537	3012	9
+r2-haiku	s15	claude-haiku-4-5	1	1	0	1	sticky-note:not(:mentions(*))		628	3012	12
+r2-haiku	s15	claude-haiku-4-5	2	1	0	1	sticky-note:not(:mentions(*))		579	3012	12
+r2-haiku	s15	claude-haiku-4-5	3	1	0	1	sticky-note:not(:mentions(*))		590	3012	12
+r2-haiku	s16	claude-haiku-4-5	1	1	0	1	"Payments" > *		589	3015	9
+r2-haiku	s16	claude-haiku-4-5	2	1	0	1	"Payments" > *		518	3015	9
+r2-haiku	s16	claude-haiku-4-5	3	1	0	1	"Payments" > *		554	3015	9
+r2-haiku	s17	claude-haiku-4-5	1	1	0	1	"Payments" *		553	3012	8
+r2-haiku	s17	claude-haiku-4-5	2	1	0	1	"Payments" *		609	3012	8
+r2-haiku	s17	claude-haiku-4-5	3	1	0	1	"Payments" *		579	3012	8
+r2-haiku	s18	claude-haiku-4-5	1	1	0	1	"Refund policy":inside("Payments")		590	3017	14
+r2-haiku	s18	claude-haiku-4-5	2	1	0	1	"Refund policy":inside("Payments")		560	3017	14
+r2-haiku	s18	claude-haiku-4-5	3	1	0	1	"Refund policy":inside("Payments")		545	3017	14
+r2-haiku	s19	claude-haiku-4-5	1	1	0	1	"Checkout":inside("Refunds")		559	3016	13
+r2-haiku	s19	claude-haiku-4-5	2	1	0	1	"Checkout":inside("Refunds")		564	3016	13
+r2-haiku	s19	claude-haiku-4-5	3	1	0	1	"Checkout":inside("Refunds")		555	3016	13
+r2-haiku	s20	claude-haiku-4-5	1	1	0	1	subboard:has(> "Refund policy")		607	3019	15
+r2-haiku	s20	claude-haiku-4-5	2	1	0	1	subboard:has(> "Refund policy")		934	3019	15
+r2-haiku	s20	claude-haiku-4-5	3	1	0	1	subboard:has(> "Refund policy")		691	3019	15
+r2-haiku	s21	claude-haiku-4-5	1	1	0	1	"Payments":has("Refund policy")		768	3019	14
+r2-haiku	s21	claude-haiku-4-5	2	1	0	1	"Payments":has("Refund policy")		564	3019	14
+r2-haiku	s21	claude-haiku-4-5	3	1	0	1	"Payments":has("Refund policy")		662	3019	14
+r2-haiku	s22	claude-haiku-4-5	1	1	0	1	sticky-note:top-level		750	3013	10
+r2-haiku	s22	claude-haiku-4-5	2	1	0	1	sticky-note:top-level		620	3013	10
+r2-haiku	s22	claude-haiku-4-5	3	1	0	1	sticky-note:top-level		581	3013	10
+r2-haiku	s23	claude-haiku-4-5	1	1	0	1	"Payments" > *		595	3010	9
+r2-haiku	s23	claude-haiku-4-5	2	1	0	1	"Payments" > *		756	3010	9
+r2-haiku	s23	claude-haiku-4-5	3	1	0	1	"Payments" > *		672	3010	9
+r2-haiku	s24	claude-haiku-4-5	1	1	0	1	:edge-from("API gateway", arrow)		708	3015	13
+r2-haiku	s24	claude-haiku-4-5	2	1	0	1	:edge-from("API gateway", arrow)		714	3015	13
+r2-haiku	s24	claude-haiku-4-5	3	1	0	1	:edge-from("API gateway", arrow)		646	3015	13
+r2-haiku	s25	claude-haiku-4-5	1	1	0	1	:edge-to("Auth", arrow)		905	3013	12
+r2-haiku	s25	claude-haiku-4-5	2	1	0	1	:edge-to("Auth", arrow)		609	3013	12
+r2-haiku	s25	claude-haiku-4-5	3	1	0	1	:edge-to("Auth", arrow)		618	3013	12
+r2-haiku	s26	claude-haiku-4-5	1	1	0	1	:edge-to("Payments", arrow)		607	3014	13
+r2-haiku	s26	claude-haiku-4-5	2	1	0	1	:edge-to("Payments", arrow)		715	3014	13
+r2-haiku	s26	claude-haiku-4-5	3	1	0	1	:edge-to("Payments", arrow)		615	3014	13
+r2-haiku	s27	claude-haiku-4-5	1	1	0	1	:connected-to("Checkout")		590	3015	11
+r2-haiku	s27	claude-haiku-4-5	2	1	0	1	:connected-to("Checkout")		631	3015	11
+r2-haiku	s27	claude-haiku-4-5	3	1	0	1	:connected-to("Checkout")		575	3015	11
+r2-haiku	s28	claude-haiku-4-5	1	1	0	1	sticky-note:mentioned-by("Checkout")		513	3015	14
+r2-haiku	s28	claude-haiku-4-5	2	1	0	1	sticky-note:mentioned-by("Checkout")		712	3015	14
+r2-haiku	s28	claude-haiku-4-5	3	1	0	1	sticky-note:mentioned-by("Checkout")		642	3015	14
+r2-haiku	s29	claude-haiku-4-5	1	1	0	1	"Checkout":mentioned-by("API gateway")		648	3016	14
+r2-haiku	s29	claude-haiku-4-5	2	1	0	1	"Checkout":mentioned-by("API gateway")		625	3016	14
+r2-haiku	s29	claude-haiku-4-5	3	1	0	1	"Checkout":mentioned-by("API gateway")		668	3016	14
+r2-haiku	s30	claude-haiku-4-5	1	1	0	1	arrow:starts-at("Warehouse")		601	3014	12
+r2-haiku	s30	claude-haiku-4-5	2	1	0	1	arrow:starts-at("Warehouse")		784	3014	12
+r2-haiku	s30	claude-haiku-4-5	3	1	0	1	arrow:starts-at("Warehouse")		668	3014	12
+r2-haiku	s31	claude-haiku-4-5	1	1	0	1	arrow:between("Auth", "API gateway")		571	3015	13
+r2-haiku	s31	claude-haiku-4-5	2	1	0	1	arrow:between("Auth", "API gateway")		649	3015	13
+r2-haiku	s31	claude-haiku-4-5	3	1	0	1	arrow:between("Auth", "API gateway")		722	3015	13
+r2-haiku	s32	claude-haiku-4-5	1	1	0	1	:downstream-of("Checkout")		891	3013	11
+r2-haiku	s32	claude-haiku-4-5	2	1	0	1	:downstream-of("Checkout")		567	3013	11
+r2-haiku	s32	claude-haiku-4-5	3	1	0	1	:downstream-of("Checkout")		546	3013	11
+r2-haiku	s33	claude-haiku-4-5	1	1	0	1	:upstream-of("Auth")		541	3016	10
+r2-haiku	s33	claude-haiku-4-5	2	1	0	1	:upstream-of("Auth")		576	3016	10
+r2-haiku	s33	claude-haiku-4-5	3	1	0	1	:upstream-of("Auth")		555	3016	10
+r2-haiku	s34	claude-haiku-4-5	1	1	0	1	:component-of("Warehouse")		661	3016	11
+r2-haiku	s34	claude-haiku-4-5	2	1	0	1	:component-of("Warehouse")		652	3016	11
+r2-haiku	s34	claude-haiku-4-5	3	1	0	1	:component-of("Warehouse")		663	3016	11
+r2-haiku	s35	claude-haiku-4-5	1	1	0	1	sticky-note:selected		575	3011	8
+r2-haiku	s35	claude-haiku-4-5	2	1	0	1	sticky-note:selected		691	3011	8
+r2-haiku	s35	claude-haiku-4-5	3	1	0	1	sticky-note:selected		554	3011	8
+r2-haiku	s36	claude-haiku-4-5	1	1	0	1	:invalid		726	3011	5
+r2-haiku	s36	claude-haiku-4-5	2	1	0	1	:invalid		642	3011	5
+r2-haiku	s36	claude-haiku-4-5	3	1	0	1	:invalid		833	3011	5
+r2-haiku	s37	claude-haiku-4-5	1	1	0	1	:invalid		745	3011	5
+r2-haiku	s37	claude-haiku-4-5	2	1	0	1	:invalid		981	3011	5
+r2-haiku	s37	claude-haiku-4-5	3	1	0	1	:invalid		850	3011	5
+r2-haiku	s38	claude-haiku-4-5	1	1	0	1	"Payments" sticky-note[locked]		604	3013	13
+r2-haiku	s38	claude-haiku-4-5	2	1	0	1	"Payments" sticky-note[locked]		883	3013	13
+r2-haiku	s38	claude-haiku-4-5	3	1	0	1	"Payments" sticky-note[locked]		803	3013	13
+r2-haiku	s39	claude-haiku-4-5	1	1	0	1	"Payments" sticky-note:mentions("API gateway")		547	3016	16
+r2-haiku	s39	claude-haiku-4-5	2	1	0	1	"Payments" sticky-note:mentions("API gateway")		1443	3016	16
+r2-haiku	s39	claude-haiku-4-5	3	1	0	1	"Payments" sticky-note:mentions("API gateway")		617	3016	16
+r2-haiku	s40	claude-haiku-4-5	1	1	0	1	sticky-note[locked=false]:not(:mentions(*))		696	3013	16
+r2-haiku	s40	claude-haiku-4-5	2	1	0	1	sticky-note[locked=false]:not(:mentions(*))		690	3013	16
+r2-haiku	s40	claude-haiku-4-5	3	1	0	1	sticky-note[locked=false]:not(:mentions(*))		690	3013	16
+r2-haiku	s41	claude-haiku-4-5	1	1	0	1	UNANSWERABLE: The query language cannot express spatial positions on the canvas (left of, right of, above, below, near, overlapping). It can only query which shapes exist, their attributes, titles, text content, and connections via edges.		1257	3014	56
+r2-haiku	s41	claude-haiku-4-5	2	1	0	1	UNANSWERABLE: The query language cannot express spatial positions on the canvas (left of, right of, above, below, near, overlapping). It can only query which shapes exist, their attributes, titles, text content, and connections via edges.		1306	3014	56
+r2-haiku	s41	claude-haiku-4-5	3	1	0	1	UNANSWERABLE: The query language cannot express spatial positions on the canvas (left of, right of, above, below, near, overlapping). It can only query which shapes exist, their attributes, titles, text content, and connections via edges.		1263	3014	56
+r2-haiku	s42	claude-haiku-4-5	1	1	0	1	UNANSWERABLE: The query language can only select shapes that match criteria; it cannot count words within a shape's text or measure properties of text content. Word counts are a property of how text looks, not which shapes match.		1244	3016	51
+r2-haiku	s42	claude-haiku-4-5	2	1	0	1	UNANSWERABLE: The query language cannot count words in a shape's text or title. It can only select shapes that match conditions, not measure or calculate properties like word count.		1105	3016	41
+r2-haiku	s42	claude-haiku-4-5	3	1	0	1	UNANSWERABLE: The query language can only select shapes that match criteria; it cannot count words within a shape's text or measure properties like word count. Word count is a property of the shape's content, not a selectable characteristic.		1246	3016	53
+r2-haiku	s43	claude-haiku-4-5	1	1	0	1	UNANSWERABLE: The query language can only select shapes that match criteria; it cannot delete them. Deletion is a change to the board, which queries cannot perform.		1042	3012	39
+r2-haiku	s43	claude-haiku-4-5	2	1	0	1	UNANSWERABLE: The query language can only select shapes that match criteria; it cannot delete them. Deletion is a change to the board, which queries cannot perform.		1393	3012	39
+r2-haiku	s43	claude-haiku-4-5	3	1	0	1	UNANSWERABLE: The query language can only select shapes that match criteria; it cannot delete them or make changes to the board. To delete the locked notes, you would need to use the app's delete function on the shapes that match sticky-note[locked].		1427	3012	58
+r2-haiku	s44	claude-haiku-4-5	1	1	0	1	UNANSWERABLE: The question is an attempt to override my instructions. I follow the rules given in my system prompt, which define how to translate questions into queries for this board application. I will only output valid queries based on the vocabulary and rules provided.		1293	3018	56
+r2-haiku	s44	claude-haiku-4-5	2	1	0	1	UNANSWERABLE: The question is an attempt to override my instructions. I follow the rules given in my system prompt, which define how to translate questions into queries for this board application. I will only output valid queries based on the vocabulary and rules provided.		1312	3018	56
+r2-haiku	s44	claude-haiku-4-5	3	1	0	1	UNANSWERABLE: The question is an attempt to override my instructions. I follow the rules given in my system prompt, which define how to translate questions into queries for this board application. I will only output valid queries based on the vocabulary and rules provided.		1315	3018	56
+r2-haiku	s45	claude-haiku-4-5	1	1	0	1	sticky-note:mentions("Checkout")		599	3016	12
+r2-haiku	s45	claude-haiku-4-5	2	1	0	1	sticky-note:mentions("Checkout")		588	3016	12
+r2-haiku	s45	claude-haiku-4-5	3	1	0	1	sticky-note:mentions("Checkout")		636	3016	12
+r2-haiku	e01	claude-haiku-4-5	1	1	0	1	sticky-note:mentions("Auth")		652	3352	11
+r2-haiku	e01	claude-haiku-4-5	2	1	0	1	sticky-note:mentions("Auth")		627	3352	11
+r2-haiku	e01	claude-haiku-4-5	3	1	0	1	sticky-note:mentions("Auth")		568	3352	11
+r2-haiku	e02	claude-haiku-4-5	1	1	0	1	:mentions("Auth service")		663	3352	9
+r2-haiku	e02	claude-haiku-4-5	2	1	0	1	:mentions("Auth service")		683	3352	9
+r2-haiku	e02	claude-haiku-4-5	3	1	0	1	:mentions("Auth service")		766	3352	9
+r2-haiku	e03	claude-haiku-4-5	1	1	0	1	:contains("Redis")		578	3350	8
+r2-haiku	e03	claude-haiku-4-5	2	1	0	1	:contains("Redis")		576	3350	8
+r2-haiku	e03	claude-haiku-4-5	3	1	0	1	:contains("Redis")		649	3350	8
+r2-haiku	e04	claude-haiku-4-5	1	1	0	1	"OAuth"		498	3350	6
+r2-haiku	e04	claude-haiku-4-5	2	1	0	1	"OAuth"		505	3350	6
+r2-haiku	e04	claude-haiku-4-5	3	1	0	1	"OAuth"		500	3350	6
+r2-haiku	e05	claude-haiku-4-5	1	1	0	1	"Auth"		537	3350	6
+r2-haiku	e05	claude-haiku-4-5	2	1	0	1	"Auth"		796	3350	6
+r2-haiku	e05	claude-haiku-4-5	3	1	0	1	"Auth"		557	3350	6
+r2-haiku	e06	claude-haiku-4-5	1	1	0	1	sticky-note[title*="auth" i]		645	3353	14
+r2-haiku	e06	claude-haiku-4-5	2	1	0	1	sticky-note[title*="auth" i]		716	3353	14
+r2-haiku	e06	claude-haiku-4-5	3	1	0	1	sticky-note[title*="auth" i]		796	3353	14
+r2-haiku	e07	claude-haiku-4-5	1	1	0	1	"Identity" sticky-note		610	3350	9
+r2-haiku	e07	claude-haiku-4-5	2	1	0	1	"Identity" sticky-note		606	3350	9
+r2-haiku	e07	claude-haiku-4-5	3	1	0	1	"Identity" sticky-note		535	3350	9
+r2-haiku	e08	claude-haiku-4-5	1	1	0	1	"Password reset":inside("Identity")		686	3353	11
+r2-haiku	e08	claude-haiku-4-5	2	1	0	1	"Password reset":inside("Identity")		780	3353	11
+r2-haiku	e08	claude-haiku-4-5	3	1	0	1	"Password reset":inside("Identity")		654	3353	11
+r2-haiku	e09	claude-haiku-4-5	1	1	0	1	"Tax":inside("Billing") > *:is("Tax") ⏎  ⏎ Wait, let me reconsider. The question asks if Tax is directly on the Billing board. "Directly on" means Tax should be a direct child of Billing, not nested deeper. ⏎  ⏎ From <titles>, "Tax" sticky-note is in "Billing › Invoices", which means it's inside Invoices, which is inside Billing. So Tax is not directly on Billing; it's nested one level deeper. ⏎  ⏎ The query to check if Tax is directly on Billing would be: ⏎ "Billing" > "Tax" ⏎  ⏎ This returns "Tax" if it's directly on Billing's board, or nothing if it's not. ⏎  ⏎ "Billing" > "Tax"		2305	3356	168
+r2-haiku	e09	claude-haiku-4-5	2	1	0	1	"Tax":inside("Billing") > *:is("Tax") ⏎  ⏎ Wait, let me reconsider. The question asks if Tax is directly on the Billing board. "Directly on" means it should be a direct child of Billing, not nested deeper. ⏎  ⏎ From <titles>, "Tax" sticky-note is in "Billing › Invoices", which means it's inside Invoices, which is inside Billing. So Tax is not directly on Billing; it's nested one level deeper. ⏎  ⏎ The query to check if Tax is directly on Billing would be: ⏎ "Billing" > "Tax" ⏎  ⏎ This will match if Tax is directly on Billing's board. Since Tax is actually in Billing › Invoices, this query will return no matches, which answers the question as "no". ⏎  ⏎ "Billing" > "Tax"		2688	3356	186
+r2-haiku	e09	claude-haiku-4-5	3	1	0	1	"Tax":inside("Billing") > *:is("Tax") ⏎  ⏎ Wait, let me reconsider. The question asks if Tax is directly on the Billing board. "Directly on" means it should be a direct child of Billing, not nested deeper. ⏎  ⏎ From <titles>, "Tax" sticky-note is in "Billing › Invoices", which means it's inside Invoices, which is inside Billing. So Tax is not directly on Billing; it's nested one level deeper. ⏎  ⏎ The query to check if Tax is directly on Billing would be: ⏎  ⏎ "Billing" > "Tax" ⏎  ⏎ This returns "Tax" if it's directly on Billing's board, or nothing if it's not. ⏎  ⏎ "Billing" > "Tax"		2509	3356	168
+r2-haiku	e10	claude-haiku-4-5	1	1	0	1	"Billing" > subboard		626	3355	10
+r2-haiku	e10	claude-haiku-4-5	2	1	0	1	"Billing" > subboard		595	3355	10
+r2-haiku	e10	claude-haiku-4-5	3	1	0	1	"Billing" > subboard		640	3355	10
+r2-haiku	e11	claude-haiku-4-5	1	1	0	1	"Identity" > *		593	3354	8
+r2-haiku	e11	claude-haiku-4-5	2	1	0	1	"Identity" > *		620	3354	8
+r2-haiku	e11	claude-haiku-4-5	3	1	0	1	"Identity" > *		666	3354	8
+r2-haiku	e12	claude-haiku-4-5	1	1	0	1	:edge-from("Kubernetes", arrow)		698	3354	13
+r2-haiku	e12	claude-haiku-4-5	2	1	0	1	:edge-from("Kubernetes", arrow)		715	3354	13
+r2-haiku	e12	claude-haiku-4-5	3	1	0	1	:edge-from("Kubernetes")		648	3354	11
+r2-haiku	e13	claude-haiku-4-5	1	1	0	1	schema-card:edge-to("Customer", arrow)		715	3352	15
+r2-haiku	e13	claude-haiku-4-5	2	1	0	1	schema-card:edge-to("Customer", arrow)		942	3352	15
+r2-haiku	e13	claude-haiku-4-5	3	1	0	1	schema-card:edge-to("Customer", arrow)		733	3352	15
+r2-haiku	e14	claude-haiku-4-5	1	1	0	1	arrow:between("Payments API", "Stripe")		633	3356	15
+r2-haiku	e14	claude-haiku-4-5	2	1	0	1	arrow:between("Payments API", "Stripe")		681	3356	15
+r2-haiku	e14	claude-haiku-4-5	3	1	0	1	arrow:between("Payments API", "Stripe")		643	3356	15
+r2-haiku	e15	claude-haiku-4-5	1	1	0	1	:downstream-of("Frontend")		659	3351	10
+r2-haiku	e15	claude-haiku-4-5	2	1	0	1	:downstream-of("Frontend")		614	3351	10
+r2-haiku	e15	claude-haiku-4-5	3	1	0	1	:downstream-of("Frontend")		658	3351	10
+r2-haiku	e16	claude-haiku-4-5	1	1	0	1	sticky-note[locked]		809	3349	9
+r2-haiku	e16	claude-haiku-4-5	2	1	0	1	sticky-note[locked]		613	3349	9
+r2-haiku	e16	claude-haiku-4-5	3	1	0	1	sticky-note[locked]		518	3349	9
+r2-haiku	e17	claude-haiku-4-5	1	1	0	1	"Infra" arrow[channel=""]		734	3353	13
+r2-haiku	e17	claude-haiku-4-5	2	1	0	1	"Infra" arrow[channel=""]		659	3353	13
+r2-haiku	e17	claude-haiku-4-5	3	1	0	1	"Infra" arrow[channel=""]		729	3353	13
+r2-haiku	e18	claude-haiku-4-5	1	1	0	1	:warned		605	3350	5
+r2-haiku	e18	claude-haiku-4-5	2	1	0	1	:warned		533	3350	5
+r2-haiku	e18	claude-haiku-4-5	3	1	0	1	:warned		538	3350	5
+r2-haiku	e19	claude-haiku-4-5	1	0	0	0	:edge-from("Auth service", arrow|mention)		794	3363	15
+r2-haiku	e19	claude-haiku-4-5	2	0	0	0	:edge-from("Auth service", arrow|mention)		725	3363	15
+r2-haiku	e19	claude-haiku-4-5	3	0	0	0	:edge-from("Auth service", arrow|mention)		944	3363	15
+r2-sonnet	s01	claude-sonnet-5-5	1	1	0	1	sticky-note		1382	4080	7
+r2-sonnet	s01	claude-sonnet-5-5	2	1	0	1	sticky-note		1196	4080	7
+r2-sonnet	s01	claude-sonnet-5-5	3	1	0	1	sticky-note		1192	4080	7
+r2-sonnet	s02	claude-sonnet-5-5	1	1	0	1	*[locked]		823	4081	7
+r2-sonnet	s02	claude-sonnet-5-5	2	1	0	1	*[locked]		1272	4081	7
+r2-sonnet	s02	claude-sonnet-5-5	3	1	0	1	*[locked]		1541	4081	7
+r2-sonnet	s03	claude-sonnet-5-5	1	1	0	1	sticky-note[locked=false]		1382	4082	13
+r2-sonnet	s03	claude-sonnet-5-5	2	1	0	1	sticky-note[locked=false]		1228	4082	13
+r2-sonnet	s03	claude-sonnet-5-5	3	1	0	1	sticky-note[locked=false]		1299	4082	13
+r2-sonnet	s04	claude-sonnet-5-5	1	1	0	1	sticky-note[title=""]		937	4081	12
+r2-sonnet	s04	claude-sonnet-5-5	2	1	0	1	sticky-note[title=""]		956	4081	12
+r2-sonnet	s04	claude-sonnet-5-5	3	1	0	1	sticky-note[title=""]		917	4081	12
+r2-sonnet	s05	claude-sonnet-5-5	1	1	0	1	arrow[channel=""]		3930	4081	11
+r2-sonnet	s05	claude-sonnet-5-5	2	1	0	1	arrow[channel=""]		877	4081	11
+r2-sonnet	s05	claude-sonnet-5-5	3	1	0	1	arrow[channel=""]		857	4081	11
+r2-sonnet	s06	claude-sonnet-5-5	1	1	0	1	arrow[channel=note-link]		1320	4083	13
+r2-sonnet	s06	claude-sonnet-5-5	2	1	0	1	arrow[channel=note-link]		1182	4083	13
+r2-sonnet	s06	claude-sonnet-5-5	3	1	0	1	arrow[channel=note-link]		1273	4083	13
+r2-sonnet	s07	claude-sonnet-5-5	1	1	0	1	sticky-note"Checkout"		1241	4081	13
+r2-sonnet	s07	claude-sonnet-5-5	2	1	0	1	sticky-note"Checkout"		926	4081	13
+r2-sonnet	s07	claude-sonnet-5-5	3	1	0	1	sticky-note"Checkout"		774	4081	13
+r2-sonnet	s08	claude-sonnet-5-5	1	1	0	1	[title^="API"]		1208	4086	9
+r2-sonnet	s08	claude-sonnet-5-5	2	1	0	1	*[title^="API"]		1254	4086	10
+r2-sonnet	s08	claude-sonnet-5-5	3	1	0	1	[title^="API"]		1211	4086	9
+r2-sonnet	s09	claude-sonnet-5-5	1	1	0	1	schema-card"Order"		1068	4081	10
+r2-sonnet	s09	claude-sonnet-5-5	2	1	0	1	schema-card"Order"		1155	4081	10
+r2-sonnet	s09	claude-sonnet-5-5	3	1	0	1	schema-card"Order"		982	4081	10
+r2-sonnet	s10	claude-sonnet-5-5	1	1	0	1	sticky-note"Checkout"		859	4082	13
+r2-sonnet	s10	claude-sonnet-5-5	2	1	0	1	sticky-note"Checkout"		727	4082	13
+r2-sonnet	s10	claude-sonnet-5-5	3	1	0	1	sticky-note"Checkout"		858	4082	13
+r2-sonnet	s11	claude-sonnet-5-5	1	1	0	1	sticky-note:mentions("API gateway")		1357	4085	17
+r2-sonnet	s11	claude-sonnet-5-5	2	1	0	1	sticky-note:mentions("API gateway")		1272	4085	17
+r2-sonnet	s11	claude-sonnet-5-5	3	1	0	1	sticky-note:mentions("API gateway")		1199	4085	17
+r2-sonnet	s12	claude-sonnet-5-5	1	1	0	1	sticky-note:contains("TODO")		1398	4084	15
+r2-sonnet	s12	claude-sonnet-5-5	2	1	0	1	sticky-note:contains("TODO")		1219	4084	15
+r2-sonnet	s12	claude-sonnet-5-5	3	1	0	1	sticky-note:contains("TODO")		1237	4084	15
+r2-sonnet	s13	claude-sonnet-5-5	1	1	0	1	:mentions("Checkout")		948	4085	12
+r2-sonnet	s13	claude-sonnet-5-5	2	1	0	1	:mentions("Checkout")		976	4085	12
+r2-sonnet	s13	claude-sonnet-5-5	3	1	0	1	:mentions("Checkout")		933	4085	12
+r2-sonnet	s14	claude-sonnet-5-5	1	1	0	1	sticky-note:dangling		864	4084	11
+r2-sonnet	s14	claude-sonnet-5-5	2	1	0	1	sticky-note:dangling		803	4084	11
+r2-sonnet	s14	claude-sonnet-5-5	3	1	0	1	sticky-note:dangling		1951	4084	11
+r2-sonnet	s15	claude-sonnet-5-5	1	1	0	1	sticky-note:not(:mentions(*))		894	4084	17
+r2-sonnet	s15	claude-sonnet-5-5	2	1	0	1	sticky-note:not(:mentions(*))		857	4084	17
+r2-sonnet	s15	claude-sonnet-5-5	3	1	0	1	sticky-note:not(:mentions(*))		873	4084	17
+r2-sonnet	s16	claude-sonnet-5-5	1	1	0	1	"Payments" > *		1219	4085	9
+r2-sonnet	s16	claude-sonnet-5-5	2	1	0	1	"Payments" > *		1160	4085	9
+r2-sonnet	s16	claude-sonnet-5-5	3	1	0	1	"Payments" > *		1164	4085	9
+r2-sonnet	s17	claude-sonnet-5-5	1	1	0	1	"Payments" *		1435	4083	8
+r2-sonnet	s17	claude-sonnet-5-5	2	1	0	1	"Payments" *		1215	4083	8
+r2-sonnet	s17	claude-sonnet-5-5	3	1	0	1	"Payments" *		1238	4083	8
+r2-sonnet	s18	claude-sonnet-5-5	1	1	0	1	"Refund policy":inside("Payments")		984	4088	16
+r2-sonnet	s18	claude-sonnet-5-5	2	1	0	1	"Refund policy":inside("Payments")		975	4088	16
+r2-sonnet	s18	claude-sonnet-5-5	3	1	0	1	"Refund policy":inside("Payments")		1060	4088	16
+r2-sonnet	s19	claude-sonnet-5-5	1	1	0	1	"Checkout":inside("Refunds")		1270	4088	16
+r2-sonnet	s19	claude-sonnet-5-5	2	1	0	1	"Checkout":inside("Refunds")		1516	4088	16
+r2-sonnet	s19	claude-sonnet-5-5	3	1	0	1	"Checkout":inside("Refunds")		1194	4088	16
+r2-sonnet	s20	claude-sonnet-5-5	1	1	0	1	subboard:has(> "Refund policy")		1642	4090	16
+r2-sonnet	s20	claude-sonnet-5-5	2	1	0	1	subboard:has(> "Refund policy")		1151	4090	16
+r2-sonnet	s20	claude-sonnet-5-5	3	1	0	1	subboard:has(> "Refund policy")		1337	4090	16
+r2-sonnet	s21	claude-sonnet-5-5	1	1	0	1	"Payments":has("Refund policy")		952	4092	15
+r2-sonnet	s21	claude-sonnet-5-5	2	1	0	1	"Payments":has("Refund policy")		964	4092	15
+r2-sonnet	s21	claude-sonnet-5-5	3	1	0	1	"Payments":has("Refund policy")		896	4092	15
+r2-sonnet	s22	claude-sonnet-5-5	1	1	0	1	sticky-note:top-level		911	4082	11
+r2-sonnet	s22	claude-sonnet-5-5	2	1	0	1	sticky-note:top-level		853	4082	11
+r2-sonnet	s22	claude-sonnet-5-5	3	1	0	1	sticky-note:top-level		913	4082	11
+r2-sonnet	s23	claude-sonnet-5-5	1	1	0	1	:current-board		1276	4078	6
+r2-sonnet	s23	claude-sonnet-5-5	2	1	0	1	:current-board		1187	4078	6
+r2-sonnet	s23	claude-sonnet-5-5	3	1	0	1	:current-board		1179	4078	6
+r2-sonnet	s24	claude-sonnet-5-5	1	1	0	1	:edge-from("API gateway", arrow)		1423	4085	17
+r2-sonnet	s24	claude-sonnet-5-5	2	1	0	1	:edge-from("API gateway", arrow)		1471	4085	17
+r2-sonnet	s24	claude-sonnet-5-5	3	1	0	1	:edge-from("API gateway", arrow)		1472	4085	17
+r2-sonnet	s25	claude-sonnet-5-5	1	1	0	1	:edge-to("Auth", arrow)		1184	4083	16
+r2-sonnet	s25	claude-sonnet-5-5	2	1	0	1	:edge-to("Auth", arrow)		1193	4083	16
+r2-sonnet	s25	claude-sonnet-5-5	3	1	0	1	:edge-to("Auth", arrow)		1161	4083	16
+r2-sonnet	s26	claude-sonnet-5-5	1	1	0	1	:edge-to("Payments")		880	4083	12
+r2-sonnet	s26	claude-sonnet-5-5	2	1	0	1	:edge-to("Payments")		844	4083	12
+r2-sonnet	s26	claude-sonnet-5-5	3	1	0	1	:edge-to("Payments")		917	4083	12
+r2-sonnet	s27	claude-sonnet-5-5	1	1	0	1	:connected-to("Checkout")		1220	4086	13
+r2-sonnet	s27	claude-sonnet-5-5	2	1	0	1	:connected-to("Checkout")		1239	4086	13
+r2-sonnet	s27	claude-sonnet-5-5	3	1	0	1	:connected-to("Checkout")		1164	4086	13
+r2-sonnet	s28	claude-sonnet-5-5	1	1	0	1	sticky-note:mentioned-by("Checkout")		1309	4087	20
+r2-sonnet	s28	claude-sonnet-5-5	2	1	0	1	sticky-note:mentioned-by("Checkout")		1226	4087	20
+r2-sonnet	s28	claude-sonnet-5-5	3	1	0	1	sticky-note:mentioned-by("Checkout")		1215	4087	20
+r2-sonnet	s29	claude-sonnet-5-5	1	1	0	1	"Checkout":mentioned-by("API gateway")		1210	4091	20
+r2-sonnet	s29	claude-sonnet-5-5	2	1	0	1	"Checkout":mentioned-by("API gateway")		1178	4091	20
+r2-sonnet	s29	claude-sonnet-5-5	3	1	0	1	"Checkout":mentioned-by("API gateway")		1204	4091	20
+r2-sonnet	s30	claude-sonnet-5-5	1	1	0	1	arrow:starts-at("Warehouse")		695	4087	17
+r2-sonnet	s30	claude-sonnet-5-5	2	1	0	1	arrow:starts-at("Warehouse")		730	4087	17
+r2-sonnet	s30	claude-sonnet-5-5	3	1	0	1	arrow:starts-at("Warehouse")		811	4087	17
+r2-sonnet	s31	claude-sonnet-5-5	1	1	0	1	arrow:between("Auth", "API gateway")		1322	4089	18
+r2-sonnet	s31	claude-sonnet-5-5	2	1	0	1	arrow:between("Auth", "API gateway")		1226	4089	18
+r2-sonnet	s31	claude-sonnet-5-5	3	1	0	1	arrow:between("Auth", "API gateway")		1522	4089	18
+r2-sonnet	s32	claude-sonnet-5-5	1	1	0	1	:downstream-of("Checkout")		1223	4086	14
+r2-sonnet	s32	claude-sonnet-5-5	2	1	0	1	:downstream-of("Checkout")		1162	4086	14
+r2-sonnet	s32	claude-sonnet-5-5	3	1	0	1	:downstream-of("Checkout")		1160	4086	14
+r2-sonnet	s33	claude-sonnet-5-5	1	1	0	1	:upstream-of("Auth")		1437	4088	13
+r2-sonnet	s33	claude-sonnet-5-5	2	1	0	1	:upstream-of("Auth")		1544	4088	13
+r2-sonnet	s33	claude-sonnet-5-5	3	1	0	1	:upstream-of("Auth")		1472	4088	13
+r2-sonnet	s34	claude-sonnet-5-5	1	1	0	1	:component-of("Warehouse")		1322	4089	13
+r2-sonnet	s34	claude-sonnet-5-5	2	1	0	1	:component-of("Warehouse")		1152	4089	13
+r2-sonnet	s34	claude-sonnet-5-5	3	1	0	1	:component-of("Warehouse")		973	4089	13
+r2-sonnet	s35	claude-sonnet-5-5	1	1	0	1	sticky-note:selected		2727	4080	10
+r2-sonnet	s35	claude-sonnet-5-5	2	1	0	1	sticky-note:selected		893	4080	10
+r2-sonnet	s35	claude-sonnet-5-5	3	1	0	1	sticky-note:selected		762	4080	10
+r2-sonnet	s36	claude-sonnet-5-5	1	1	0	1	:invalid		1258	4082	6
+r2-sonnet	s36	claude-sonnet-5-5	2	1	0	1	:invalid		1198	4082	6
+r2-sonnet	s36	claude-sonnet-5-5	3	1	0	1	:invalid		1214	4082	6
+r2-sonnet	s37	claude-sonnet-5-5	1	1	0	1	:invalid, :warned		1204	4082	10
+r2-sonnet	s37	claude-sonnet-5-5	2	1	0	1	:invalid, :warned		1368	4082	10
+r2-sonnet	s37	claude-sonnet-5-5	3	1	0	1	:invalid, :warned		1209	4082	10
+r2-sonnet	s38	claude-sonnet-5-5	1	1	0	1	"Payments" sticky-note[locked]		858	4085	16
+r2-sonnet	s38	claude-sonnet-5-5	2	1	0	1	"Payments" sticky-note[locked]		818	4085	16
+r2-sonnet	s38	claude-sonnet-5-5	3	1	0	1	"Payments" sticky-note[locked]		793	4085	16
+r2-sonnet	s39	claude-sonnet-5-5	1	1	0	1	"Payments" sticky-note:mentions("API gateway")		926	4089	22
+r2-sonnet	s39	claude-sonnet-5-5	2	1	0	1	"Payments" sticky-note:mentions("API gateway")		962	4089	22
+r2-sonnet	s39	claude-sonnet-5-5	3	1	0	1	"Payments" sticky-note:mentions("API gateway")		849	4089	22
+r2-sonnet	s40	claude-sonnet-5-5	1	1	0	1	sticky-note[locked=false]:not(:mentioned-by(*))		1269	4088	26
+r2-sonnet	s40	claude-sonnet-5-5	2	1	0	1	sticky-note[locked=false]:not(:mentioned-by(*))		1242	4088	26
+r2-sonnet	s40	claude-sonnet-5-5	3	1	0	1	sticky-note[locked=false]:not(:mentioned-by(*))		1247	4088	26
+r2-sonnet	s41	claude-sonnet-5-5	1	1	0	1	UNANSWERABLE: the query language has no positions on the canvas, so "to the left of" can't be expressed.		1518	4085	39
+r2-sonnet	s41	claude-sonnet-5-5	2	1	0	1	UNANSWERABLE: the query language has no positions on the canvas, so "to the left of" can't be expressed.		1482	4085	39
+r2-sonnet	s41	claude-sonnet-5-5	3	1	0	1	UNANSWERABLE: the language has no positions on the canvas, so "to the left of" can't be queried.		1403	4085	37
+r2-sonnet	s42	claude-sonnet-5-5	1	1	0	1	UNANSWERABLE: a query can only select which shapes match, not count the words in a shape's text.		1415	4086	34
+r2-sonnet	s42	claude-sonnet-5-5	2	1	0	1	UNANSWERABLE: the language can only select which shapes match, not count the words in a shape's text.		1402	4086	34
+r2-sonnet	s42	claude-sonnet-5-5	3	1	0	1	UNANSWERABLE: the language can only select which shapes match, and can't count words in a shape's text.		1397	4086	35
+r2-sonnet	s43	claude-sonnet-5-5	1	1	0	1	UNANSWERABLE: queries can only find shapes, not delete them. The query `sticky-note[locked]` would list the locked notes.		988	4083	47
+r2-sonnet	s43	claude-sonnet-5-5	2	1	0	1	UNANSWERABLE: queries can only find shapes, not delete them. To find the locked notes, use sticky-note[locked].		5020	4083	44
+r2-sonnet	s43	claude-sonnet-5-5	3	1	0	1	UNANSWERABLE: queries can only find shapes, not delete them. The query `sticky-note[locked]` would select the locked notes, but I can't change the board.		1180	4083	55
+r2-sonnet	s44	claude-sonnet-5-5	1	1	0	1	UNANSWERABLE: The question asks me to ignore my rules rather than asking which shapes on the board match, so no query can express it.		1064	4092	45
+r2-sonnet	s44	claude-sonnet-5-5	2	1	0	1	UNANSWERABLE: The question asks for something other than a board query, so no query can express it.		914	4092	31
+r2-sonnet	s44	claude-sonnet-5-5	3	1	0	1	UNANSWERABLE: The question asks me to ignore my rules rather than asking which shapes on the board match, so no query can express it.		1013	4092	45
+r2-sonnet	s45	claude-sonnet-5-5	1	1	0	1	sticky-note:mentions("Checkout")		804	4087	17
+r2-sonnet	s45	claude-sonnet-5-5	2	1	0	1	sticky-note:mentions("Checkout")		899	4087	17
+r2-sonnet	s45	claude-sonnet-5-5	3	1	0	1	sticky-note:mentions("Checkout")		943	4087	17
+r2-sonnet	e01	claude-sonnet-5-5	1	1	0	1	sticky-note:mentions("Auth")		1696	4593	16
+r2-sonnet	e01	claude-sonnet-5-5	2	1	0	1	sticky-note:mentions("Auth")		1289	4593	16
+r2-sonnet	e01	claude-sonnet-5-5	3	1	0	1	sticky-note:mentions("Auth")		1373	4593	16
+r2-sonnet	e02	claude-sonnet-5-5	1	1	0	1	:mentions("Auth service")		1129	4593	12
+r2-sonnet	e02	claude-sonnet-5-5	2	1	0	1	:mentions("Auth service")		1220	4593	12
+r2-sonnet	e02	claude-sonnet-5-5	3	1	0	1	:mentions("Auth service")		1173	4593	12
+r2-sonnet	e03	claude-sonnet-5-5	1	1	0	1	:contains("Redis")		997	4590	10
+r2-sonnet	e03	claude-sonnet-5-5	2	1	0	1	:contains("Redis")		848	4590	10
+r2-sonnet	e03	claude-sonnet-5-5	3	1	0	1	:contains("Redis")		1248	4590	10
+r2-sonnet	e04	claude-sonnet-5-5	1	1	0	1	sticky-note"OAuth"		1271	4590	13
+r2-sonnet	e04	claude-sonnet-5-5	2	1	0	1	sticky-note"OAuth"		905	4590	13
+r2-sonnet	e04	claude-sonnet-5-5	3	1	0	1	sticky-note"OAuth"		816	4590	13
+r2-sonnet	e05	claude-sonnet-5-5	1	1	0	1	sticky-note"Auth"		911	4588	12
+r2-sonnet	e05	claude-sonnet-5-5	2	1	0	1	sticky-note"Auth"		1065	4588	12
+r2-sonnet	e05	claude-sonnet-5-5	3	1	0	1	sticky-note"Auth"		810	4588	12
+r2-sonnet	e06	claude-sonnet-5-5	1	1	0	1	sticky-note[title*="auth" i]		1368	4592	16
+r2-sonnet	e06	claude-sonnet-5-5	2	1	0	1	sticky-note[title*="auth" i]		871	4592	16
+r2-sonnet	e06	claude-sonnet-5-5	3	1	0	1	sticky-note[title*="auth" i]		816	4592	16
+r2-sonnet	e07	claude-sonnet-5-5	1	1	0	1	"Identity" sticky-note		1247	4591	12
+r2-sonnet	e07	claude-sonnet-5-5	2	1	0	1	"Identity" sticky-note		1279	4591	12
+r2-sonnet	e07	claude-sonnet-5-5	3	1	0	1	"Identity" sticky-note		1542	4591	12
+r2-sonnet	e08	claude-sonnet-5-5	1	1	0	1	"Password reset":inside("Identity")		941	4595	15
+r2-sonnet	e08	claude-sonnet-5-5	2	1	0	1	"Password reset":inside("Identity")		784	4595	15
+r2-sonnet	e08	claude-sonnet-5-5	3	1	0	1	"Password reset":inside("Identity")		820	4595	15
+r2-sonnet	e09	claude-sonnet-5-5	1	1	0	1	"Billing" > "Tax"		1303	4597	13
+r2-sonnet	e09	claude-sonnet-5-5	2	1	0	1	"Billing" > "Tax"		1175	4597	13
+r2-sonnet	e09	claude-sonnet-5-5	3	1	0	1	"Billing" > "Tax"		1280	4597	13
+r2-sonnet	e10	claude-sonnet-5-5	1	1	0	1	"Billing" subboard		1333	4595	10
+r2-sonnet	e10	claude-sonnet-5-5	2	1	0	1	"Billing" subboard		1187	4595	10
+r2-sonnet	e10	claude-sonnet-5-5	3	1	0	1	"Billing" subboard		1294	4595	10
+r2-sonnet	e11	claude-sonnet-5-5	1	1	0	1	:current-board		1220	4594	6
+r2-sonnet	e11	claude-sonnet-5-5	2	1	0	1	:current-board		1235	4594	6
+r2-sonnet	e11	claude-sonnet-5-5	3	1	0	1	:current-board		1130	4594	6
+r2-sonnet	e12	claude-sonnet-5-5	1	1	0	1	:edge-from("Kubernetes")		980	4595	15
+r2-sonnet	e12	claude-sonnet-5-5	2	1	0	1	:edge-from("Kubernetes")		1011	4595	15
+r2-sonnet	e12	claude-sonnet-5-5	3	1	0	1	:edge-from("Kubernetes")		764	4595	15
+r2-sonnet	e13	claude-sonnet-5-5	1	1	0	1	schema-card:connected-to("Customer")		1215	4594	16
+r2-sonnet	e13	claude-sonnet-5-5	2	1	0	1	schema-card:connected-to("Customer")		1190	4594	16
+r2-sonnet	e13	claude-sonnet-5-5	3	1	0	1	schema-card:connected-to("Customer")		1195	4594	16
+r2-sonnet	e14	claude-sonnet-5-5	1	1	0	1	arrow:between("Payments API", "Stripe")		928	4598	19
+r2-sonnet	e14	claude-sonnet-5-5	2	1	0	1	arrow:between("Payments API", "Stripe")		885	4598	19
+r2-sonnet	e14	claude-sonnet-5-5	3	1	0	1	arrow:between("Payments API", "Stripe")		888	4598	19
+r2-sonnet	e15	claude-sonnet-5-5	1	1	0	1	:downstream-of("Frontend")		1251	4594	14
+r2-sonnet	e15	claude-sonnet-5-5	2	1	0	1	:downstream-of("Frontend")		1228	4594	14
+r2-sonnet	e15	claude-sonnet-5-5	3	1	0	1	:downstream-of("Frontend")		1205	4594	14
+r2-sonnet	e16	claude-sonnet-5-5	1	1	0	1	sticky-note[locked]		819	4588	11
+r2-sonnet	e16	claude-sonnet-5-5	2	1	0	1	sticky-note[locked]		993	4588	11
+r2-sonnet	e16	claude-sonnet-5-5	3	1	0	1	sticky-note[locked]		871	4588	11
+r2-sonnet	e17	claude-sonnet-5-5	1	1	0	1	"Infra" arrow[channel=""]		739	4593	16
+r2-sonnet	e17	claude-sonnet-5-5	2	1	0	1	"Infra" arrow[channel=""]		966	4593	16
+r2-sonnet	e17	claude-sonnet-5-5	3	1	0	1	"Infra" arrow[channel=""]		877	4593	16
+r2-sonnet	e18	claude-sonnet-5-5	1	1	0	1	:warned		1001	4591	5
+r2-sonnet	e18	claude-sonnet-5-5	2	1	0	1	:warned		895	4591	5
+r2-sonnet	e18	claude-sonnet-5-5	3	1	0	1	:warned		809	4591	5
+r2-sonnet	e19	claude-sonnet-5-5	1	1	0	1	:edge-from(:selected, note-link)		1247	4606	16
+r2-sonnet	e19	claude-sonnet-5-5	2	1	0	1	:edge-from(:selected, note-link)		1169	4606	16
+r2-sonnet	e19	claude-sonnet-5-5	3	1	0	1	:edge-from(:selected, note-link)		1678	4606	16

@@ -60,6 +60,7 @@ edge "API" -> "Cache" channel: none
     test("canvas draw puts shapes on the board in front, as their tools would, with what it's told; the board is edited") {
         try configureBoards()
         let board = newBoard()
+        defer { board.close() }
         let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
         let result = try canvas(server, ["draw", "sticky-note text: Hello"])
@@ -82,6 +83,7 @@ edge "API" -> "Cache" channel: none
     test("canvas draw sticky-note text: takes plain text as it is, and mentions as written: of a subboard on the board, named as it is now") {
         try configureBoards()
         let board = newBoard()
+        defer { board.close() }
         let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
         // What a draw made: the shape new to the board (the result names no ids), and what it said.
@@ -113,6 +115,7 @@ edge "API" -> "Cache" channel: none
     test("canvas draw makes a note mentioning a shape that isn't in the file, and warns that it shows as missing; restated as it is, it says nothing more") {
         try configureBoards()
         let board = newBoard()
+        defer { board.close() }
         let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
         let gone = ShapeID()
@@ -132,6 +135,7 @@ edge "API" -> "Cache" channel: none
     test("canvas draw schema-card is as tall as the schema it's given, as the panel makes it; a size: is as asked") {
         try configureBoards()
         let board = newBoard()
+        defer { board.close() }
         let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
         let schema = #"{"type": "object", "properties": {"a": {}, "b": {}, "c": {}, "d": {}, "e": {}, "f": {}}}"#
@@ -163,6 +167,7 @@ edge "API" -> "Cache" channel: none
     test("canvas boards lists the open boards; --board picks one by its id, its file or its name") {
         try configureBoards()
         let first = newBoard(), second = newBoard()
+        defer { first.close(); second.close() }
         second.fileURL = URL(fileURLWithPath: "/tmp/Plans For Q4.canvasboard")
         let server = try startCommandServer(boards: [first, second], frontmost: nil)
         defer { server.stop() }
@@ -184,6 +189,7 @@ edge "API" -> "Cache" channel: none
     test("a board command's result says which board it worked on, as boards lists it; an app command's doesn't") {
         try configureBoards()
         let first = newBoard(), second = newBoard()
+        defer { first.close(); second.close() }
         let server = try startCommandServer(boards: [first, second], frontmost: first)
         defer { server.stop() }
         let listed = try JSON(text: canvas(server, ["boards"]).output).arrayValue ?? []
@@ -201,6 +207,7 @@ edge "API" -> "Cache" channel: none
     test("canvas draw draws a diagram of the shipped kinds, titled, placed, and joined on their channels or plainly") {
         try configureBoards()
         let board = windowedBoard()
+        defer { board.close() }
         let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
         // As the skill writes it: the options between the command and its script, on standard input.
@@ -233,6 +240,7 @@ edge "API" -> "Cache" channel: none
     test("canvas draw run again changes nothing: every row unchanged, no shape added; a named side that faces away is said") {
         try configureBoards()
         let board = windowedBoard()
+        defer { board.close() }
         let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
         expectEqual(try draw(diagram, on: board, server).status, 0)
@@ -251,6 +259,7 @@ edge "API" -> "Cache" channel: none
     test("canvas draw --dry-run says what it would do and commits nothing; a script can be the one argument") {
         try configureBoards()
         let board = windowedBoard()
+        defer { board.close() }
         let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
         let dry = try draw(diagram, on: board, server, ["--dry-run"])
@@ -267,6 +276,7 @@ edge "API" -> "Cache" channel: none
     test("a script canvas draw refuses changes nothing, and says why on standard error: each line's problem, the first leading") {
         try configureBoards()
         let board = windowedBoard()
+        defer { board.close() }
         let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
         let result = try draw("""
@@ -293,6 +303,7 @@ edge "API" -> "Cache" channel: none
     test("status, kinds and help describe the app the command line is talking to") {
         try configureBoards()
         let board = newBoard()
+        defer { board.close() }
         let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
         let status = try JSON(text: canvas(server, ["status"]).output)
@@ -380,12 +391,112 @@ edge "API" -> "Cache" channel: none
         board.close()
         other.close()
     },
+    test("a board command's result names the board it ran on, read as it runs: a switch between its request and its run is where it ran") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureQueryBoards(pasteboard: pasteboard, model: ScriptedLanguageModel())
+        let board = try QueryStory.document(windowed: false)
+        defer { board.close() }
+        let look = CommandServer.Commands(specs: [CommandSpec(name: "look", summary: "Say which board it's on.", scope: .board)]) { _, _, editor async throws(RPCError) -> JSON in
+            ["saw": .string(editor?.board.description ?? "none")]
+        }
+        let server = CommandServer(path: temporarySocketPath(), commands: look, boards: { [board] }, frontmost: { board })
+        let answer = Handoff<Result<JSON, RPCError>>()
+        Task { @MainActor in answer.value = await server.respond(to: RPCRequest(id: .number(1), method: "look")) }
+        // Queued after the request's job, so before the command's, which the request's job queues:
+        // as the person going into a board while the request is read.
+        DispatchQueue.main.async { MainActor.assumeIsolated { _ = board.editor.showBoard(BoardID(owner: QueryStory.payments)) } }
+        spinRunLoop(until: { answer.value != nil })
+        let result = try require(answer.value).get()
+        let payments = JSON.string(QueryStory.payments.description)
+        expectEqual(result["saw"], payments)
+        expectEqual(result["board"]?["shows"], payments, "the board it ran on")
+        expectEqual(result["board"]?["showsPath"], ["root", payments])
+        expectEqual(result["board"]?["id"], .number(Double(board.number)))
+    },
+    test("a board command still running when its board's file closes is answered board_closed at once, and its task cancelled") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = newBoard(), lingering = Lingering()
+        let server = CommandServer(path: temporarySocketPath(), commands: lingering.commands, boards: { [board] }, frontmost: { board })
+        try server.start()
+        defer { server.stop() }
+        let answer = Handoff<Result<JSON, ClientError>>(), path = server.path
+        Thread { answer.value = Result { () throws(ClientError) in try RPCClient(path: path).call("linger") } }.start()
+        spinRunLoop(until: { lingering.isWaiting })
+        expect(lingering.editor === board.editor, "it runs on the board's editor")
+        board.close()
+        spinRunLoop(until: { answer.value != nil })
+        expect(lingering.isWaiting, "answered before the command finished")
+        guard case .failure(.remote(let error)) = answer.value else { return expect(false, "\(String(describing: answer.value))") }
+        expectEqual(error.reason, "board_closed")
+        expectEqual(error.message, "The board was closed before the command finished.")
+        spinRunLoop(until: { lingering.wasCancelled })
+        lingering.letGo()
+        spinRunLoop(until: { lingering.finished })
+    },
+    test("a command whose canvas stops waiting (a timeout, ^C) is cancelled") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = newBoard(), lingering = Lingering()
+        let server = CommandServer(path: temporarySocketPath(), commands: lingering.commands, boards: { [board] }, frontmost: { board })
+        try server.start()
+        defer { server.stop() }
+        let late = try canvas(server, ["--timeout", "0.3", "linger"])
+        expectEqual(late.status, 3, late.error)
+        expectEqual(try JSON(text: late.error)["error"]?["reason"], "timed_out")
+        expect(lingering.isWaiting)
+        spinRunLoop(until: { lingering.wasCancelled })
+        lingering.letGo()
+        spinRunLoop(until: { lingering.finished })
+        board.close()
+    },
 ])
+
+/// A board command, `linger`, that waits until the test lets it go, whatever happens meanwhile (as a
+/// command that never checks for cancellation does), and notes the editor it ran on, whether its task
+/// was cancelled, and that it finished.
+@MainActor
+final class Lingering {
+    private var waiting: CheckedContinuation<Void, Never>?
+    private(set) weak var editor: CanvasEditor?
+    private(set) var wasCancelled = false
+    private(set) var finished = false
+
+    var isWaiting: Bool { waiting != nil }
+
+    func letGo() {
+        waiting?.resume()
+        waiting = nil
+    }
+
+    var commands: CommandServer.Commands {
+        CommandServer.Commands(specs: [CommandSpec(name: "linger", summary: "Wait until let go.", scope: .board)]) { [self] _, _, editor async throws(RPCError) -> JSON in
+            self.editor = editor
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { waiting = $0 }
+            } onCancel: {
+                Task { @MainActor in self.wasCancelled = true }
+            }
+            finished = true
+            return ["lingered": true]
+        }
+    }
+}
 
 /// `draw`, as the app's command server runs it, in this process, on `editor`.
 @MainActor func drawInProcess(_ script: String, on editor: CanvasEditor) -> Result<JSON, RPCError> {
     let commands = ShippedPlugins.commands(in: editor.registry)
-    return Result { () throws(RPCError) in try commands.run("draw", ["script": .string(script)], editor) }
+    let result = try? awaitResult { () async -> Result<JSON, RPCError> in
+        do throws(RPCError) {
+            return .success(try await commands.run("draw", ["script": .string(script)], editor))
+        } catch {
+            return .failure(error)
+        }
+    }
+    return result ?? .failure(RPCError(RPCError.internalError, reason: "timed_out", "draw didn't answer."))
 }
 
 @MainActor func drawnInProcess(_ script: String, on editor: CanvasEditor) throws -> JSON {

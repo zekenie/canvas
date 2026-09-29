@@ -292,6 +292,14 @@ public final class MentionState {
         text.plainText { resolve($0).appearance?.label }
     }
 
+    /// The names mentions show now, to read anywhere (`MentionLabels`): for every shape the file
+    /// mentions, what `plainText` reads, so `text.plainText { labels.label(of: $0) }` is
+    /// `plainText(text)` for the text of any shape the editor can show. Taking them costs nothing:
+    /// they share what the state keeps, which the next change to it (a rename, a shape mentioned
+    /// anew) copies once while they're held. They're as of the last commit the state heard: every
+    /// commit, but to a service hearing one.
+    public var labels: MentionLabels { MentionLabels(resolutions) }
+
     /// A target's revision: +1 each time what a mention of it shows changes. Reading it observes
     /// only that target, so a SwiftUI view of a pill redraws when its own target changes.
     public func labelRevision(of target: ShapeID) -> Int {

@@ -1258,10 +1258,18 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
                 "sticky-note \"Mine \(k)\" right of \"\(firstTitled[rows[k * rows.count / count]]!)\" text: \"Pushed along\""
             }
             let commands = ShippedPlugins.commands(in: registry)
-            var result: JSON = [:]
-            let time = try median(runs: 5) {
-                result = try commands.run("draw", ["script": .string(lines.joined(separator: "\n")), "dryRun": true], editor)
+            var result: JSON = [:], times: [Double] = []
+            for _ in 0..<5 {
+                // The draw alone: it answers without suspending, so the clock reads nothing else.
+                let (drawn, time) = try awaitResult { () async throws -> (JSON, Double) in
+                    let clock = ContinuousClock(), start = clock.now
+                    let drawn = try await commands.run("draw", ["script": .string(lines.joined(separator: "\n")), "dryRun": true], editor)
+                    return (drawn, (clock.now - start).milliseconds)
+                }
+                result = drawn
+                times.append(time)
             }
+            let time = times.sorted()[times.count / 2]
             let pushes = (result["changes"]?.arrayValue ?? []).reduce(0) { $0 + ($1["pushedPast"]?.arrayValue?.count ?? 0) }
             expectEqual(result["changes"]?.arrayValue?.count, count)
             expect(pushes >= count, "every note is pushed: \(pushes)")

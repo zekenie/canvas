@@ -99,6 +99,21 @@ import Titles
         expectEqual(TitleProperty.folded(""), nil)
         expectEqual(TitleProperty.folded(nil), nil)
     },
+    test("a title folds as the rule says, whether it's read as it's written or folded again: seeded, from ASCII and beyond") {
+        // Every kind of whitespace a title may hold, one line or several, and what's around it.
+        let pieces = ["a", "Z", "7", "-", " ", "  ", "\t", "\n", "\r\n", "\u{0B}", "\u{0C}", "\r", "\u{1F}", "\u{7F}", "\u{85}",
+                      "\u{A0}", "\u{2003}", "\u{3000}", "é", "日", "👍🏽"]
+        var random = SplitMix(state: 20_260_928)
+        for _ in 0..<5_000 {
+            let title = (0..<Int.random(in: 0...8, using: &random)).map { _ in pieces.randomElement(using: &random)! }.joined()
+            let rule = title.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            expectEqual(TitleProperty.folded(title), rule.isEmpty ? nil : rule, "\(title.debugDescription)")
+        }
+        expectEqual(TitleProperty.folded("Title 5004"), "Title 5004")
+        expectEqual(TitleProperty.folded("Title  5004"), "Title 5004")
+        expectEqual(TitleProperty.folded(" Title"), "Title")
+        expectEqual(TitleProperty.folded("Title\u{A0}5004"), "Title 5004", "a no-break space is whitespace too")
+    },
     test("a kind's title is derived when a bridge makes it from what the kind keeps; named only, or none, it isn't") {
         let registry = try titleEditor([CardsPlugin(), CardTitlesPlugin(), Contributor(id: "disc-titles") { r in
             // Named, and derived for the discs nobody named.
@@ -165,3 +180,15 @@ import Titles
         expectEqual(try require(editor.tableOfContents).entries.map { $0.label?.text }, ["box"])
     },
 ])
+
+/// A reproducible stream of choices.
+private struct SplitMix: RandomNumberGenerator {
+    var state: UInt64
+    mutating func next() -> UInt64 {
+        state &+= 0x9E37_79B9_7F4A_7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        return z ^ (z >> 31)
+    }
+}

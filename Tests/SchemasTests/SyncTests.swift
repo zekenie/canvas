@@ -598,6 +598,9 @@ let petSchema = """
         expectEqual(toPrompt.messages, [.user("<schema>\n{\"a\": 1}\n</schema>")])
         expectEqual([toSchema.maxTokens, toPrompt.maxTokens], [16_000, 2048])
         expectEqual([toSchema.temperature, toPrompt.temperature], [0, 0])
+        // The editor's own model, Haiku 4.5, whatever --ask asks.
+        expectEqual([toSchema.model, toPrompt.model], [nil, nil])
+        expectEqual([toSchema.fallbacks, toPrompt.fallbacks], [nil, nil])
     },
     test("an answer: NO_CHANGE alone, a fenced or tagged answer unwrapped, a stop before the end a failure") {
         func parse(_ text: String, _ direction: SchemaPrompts.Direction = .toSchema, stop: StopReason = .endTurn) -> SchemaPrompts.Answer {

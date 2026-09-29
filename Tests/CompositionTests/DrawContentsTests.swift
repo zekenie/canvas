@@ -41,7 +41,7 @@ final class DrawingWindow {
         let commands = ShippedPlugins.commands(in: editor.registry)
         let spec = try require(commands.specs.first { $0.name == "draw" })
         let params = try spec.params(from: ["-"], standardInput: { script })
-        return try commands.run(spec.name, .object(params), editor)
+        return try awaitResult { try await commands.run(spec.name, .object(params), self.editor) }
     }
 }
 

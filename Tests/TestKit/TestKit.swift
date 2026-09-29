@@ -116,9 +116,10 @@ public func require<T>(_ value: T?, _ message: @autoclosure () -> String = "", f
 
 /// Runs every test (TEST_FILTER=substring runs the matching ones; empty means all), prints failures
 /// with file:line, ends with "N passed, M failed" (test.sh reads it), and exits 1 if any failed.
-/// TEST_TIMES=1 writes each test's seconds to standard error ("0.123 Suite: test").
+/// TEST_TIMES=1 writes each test's seconds to standard error ("0.123 Suite: test"). `afterEach` runs
+/// after each test, whatever it did, as part of it: what it expects there fails that test.
 @MainActor
-public func runTests(_ suites: [Suite]) -> Never {
+public func runTests(_ suites: [Suite], afterEach: @MainActor () -> Void = {}) -> Never {
     // Line-buffered even into a file (test.sh sends this to one), so a crash doesn't swallow what came before.
     setvbuf(stdout, nil, _IOLBF, 0)
     let environment = ProcessInfo.processInfo.environment
@@ -132,6 +133,7 @@ public func runTests(_ suites: [Suite]) -> Never {
             failures = []
             let start = Date()
             do { try test.body() } catch is RequireFailed {} catch { failures.append("threw \(error)") }
+            afterEach()
             if timed { FileHandle.standardError.write(Data((String(format: "%.3f ", Date().timeIntervalSince(start)) + name + "\n").utf8)) }
             if failures.isEmpty {
                 passed += 1

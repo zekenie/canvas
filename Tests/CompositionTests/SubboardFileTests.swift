@@ -155,6 +155,7 @@ struct NestedFile {
         try configureBoards()
         let nest = NestedFile()
         let board = try nestedDocument()
+        defer { board.close() }
         expect(board.editor.showBoard(nest.sBoard))
         expect(board.editor.showBoard(nest.tBoard))
         let added = addNote(board, "Deep")
@@ -277,6 +278,7 @@ struct NestedFile {
         let nest = NestedFile(), url = scratchURL("revert.canvasboard")
         defer { try? FileManager.default.removeItem(at: url) }
         let board = try nestedDocument()
+        defer { board.close() }
         expect(board.editor.showBoard(nest.sBoard))
         board.editor.transact("Delete") { $0.delete([nest.t]) }
         try board.data(ofType: boardType).write(to: url)
@@ -303,6 +305,7 @@ struct NestedFile {
                        "\(box)" : { "shapes" : [ \(record(inBox, "rectangle", "a0")) ] } } }
         """
         let board = BoardDocument()
+        defer { board.close() }
         try board.read(from: Data(json.utf8), ofType: boardType)
         expectEqual(Set(board.loadReport.keptAside.map(\.id)), [gadget, box])
         expectEqual(board.loadReport.keptBoards.map(\.key), [box.description])
@@ -324,6 +327,7 @@ struct NestedFile {
         try configureBoards()
         let nest = NestedFile()
         let board = try nestedDocument()
+        defer { board.close() }
         runLoop { false }
         expect(board.editor.showBoard(nest.sBoard))
         expect(board.editor.showBoard(nest.tBoard))

@@ -5,33 +5,96 @@ import CanvasUI
 import Composition
 import Foundation
 import LanguageModels
+import QueryLanguage
 import TestKit
 
-// The canvas skill (.claude/skills/canvas) teaches agents `canvas draw` by example, so its examples
-// must run: each file's blocks, in order, on a fresh board of its own in a 1440 × 900 window,
-// through `canvas` as built, against the app's command server. A block tagged `draw` runs for real
-// and must succeed, pushing nothing aside (an example says where things go); one tagged
-// `draw-error` runs as a dry run and must fail, with the reason its first line names
-// (`// reason: <reason>`), changing nothing. SKILL_DUMP=1 prints what each example said, for
-// checking the prose around it.
+// The canvas skill (.claude/skills/canvas) teaches agents `canvas draw` and `canvas query` by
+// example, so its examples must run: each file's blocks, in order, through `canvas` as built,
+// against the app's command server, on a board of the file's own: a fresh one in a 1440 × 900
+// window, or, for a file whose first line is `<!-- board: query-story -->`, the story file every
+// query example is about (`QueryStory`), as the app opens it, in the same view. A block tagged
+// `draw` runs for real and must succeed, pushing nothing aside (an example says where things go);
+// one tagged `draw-error` runs as a dry run and must fail, with the reason its first line names
+// (`// reason: <reason>`), changing nothing. A block tagged `query` is a query, run as the skill
+// has an agent run one (`canvas query - --board <n>`, the block on standard input), and must answer
+// exactly what its first line, a comment, says: `/* matches: "Title", (kind) */`, the shapes it
+// lists, in order (an untitled one by its kind in brackets, nothing after the colon for none), or
+// `/* count: N */`; one tagged `query-error` must be refused with the reason its first line names
+// (`/* reason: <reason> */`). A query block leaves the board as it was: the same file, no more
+// edited, and no step to undo. SKILL_DUMP=1 prints what each example said, for checking the prose
+// around it.
 
 /// Where the skill is, from the repository's root (where tests run).
 let skillFolder = ".claude/skills/canvas"
 
 /// A fenced example in a skill file.
 struct SkillExample {
+    /// The command it's for: its fence's tag, less `-error`.
+    enum Command: String {
+        case draw
+        case query
+    }
+
     let file: String
     /// The line its fence opens on.
     let line: Int
+    let command: Command
     let fails: Bool
     let script: String
-    /// The reason a failing one names.
-    var reason: String? {
-        guard let first = script.split(separator: "\n", omittingEmptySubsequences: false).first,
-              let range = first.range(of: "// reason:") else { return nil }
-        return first[range.upperBound...].trimmingCharacters(in: .whitespaces)
+
+    /// What its first line says as `name: value`, in a comment (`// name: value` for a script,
+    /// `/* name: value */` for a query); nil when it says nothing by that name.
+    func directive(_ name: String) -> String? {
+        guard let first = script.split(separator: "\n", omittingEmptySubsequences: false).first else { return nil }
+        var said = first.trimmingCharacters(in: .whitespaces)
+        switch command {
+        case .draw:
+            guard said.hasPrefix("//") else { return nil }
+            said = String(said.dropFirst(2))
+        case .query:
+            guard said.hasPrefix("/*"), said.hasSuffix("*/") else { return nil }
+            said = String(said.dropFirst(2).dropLast(2))
+        }
+        said = said.trimmingCharacters(in: .whitespaces)
+        guard said.hasPrefix(name + ":") else { return nil }
+        return said.dropFirst(name.count + 1).trimmingCharacters(in: .whitespaces)
     }
+
+    /// The reason a failing one names.
+    var reason: String? { directive("reason") }
+
+    /// The shapes a query lists, in order, as `matches:` writes them (`skillLabel`); empty for
+    /// none. Nil when it doesn't say, and `["?"]` for what can't be read.
+    var matches: [String]? {
+        guard let said = directive("matches") else { return nil }
+        var rest = Substring(said)
+        var shapes: [String] = []
+        while let first = rest.first {
+            switch first {
+            case " ", ",":
+                rest = rest.dropFirst()
+            case "\"", "(":
+                let close: Character = first == "(" ? ")" : "\""
+                guard let end = rest.dropFirst().firstIndex(of: close) else { return ["?"] }
+                shapes.append(String(rest[...end]))
+                rest = rest[rest.index(after: end)...]
+            default:
+                return ["?"]
+            }
+        }
+        return shapes
+    }
+
+    /// How many a query matches, as `count:` says.
+    var count: Int? { directive("count").flatMap { Int($0) } }
+
     var place: String { "\(file):\(line)" }
+}
+
+/// A shape a query's answer lists, as `matches:` writes it: its title in double quotes, or its kind
+/// in brackets.
+func skillLabel(_ row: JSON) -> String {
+    row["title"]?.stringValue.map { "\"\($0)\"" } ?? "(\(row["kind"]?.stringValue ?? "?"))"
 }
 
 /// The skill's files: SKILL.md, then its references.
@@ -40,26 +103,34 @@ func skillFiles() throws -> [String] {
     return ["\(skillFolder)/SKILL.md"] + references.map { "\(skillFolder)/reference/\($0)" }
 }
 
-/// A file's ```draw and ```draw-error blocks, in order.
+/// A file's ```draw, ```draw-error, ```query and ```query-error blocks, in order.
 func skillExamples(in path: String) throws -> [SkillExample] {
     let lines = try String(contentsOfFile: path, encoding: .utf8).components(separatedBy: "\n")
     var examples: [SkillExample] = []
-    var open: (line: Int, fails: Bool, body: [String])?
+    var open: (line: Int, command: SkillExample.Command, fails: Bool, body: [String])?
     for (index, line) in lines.enumerated() {
         if var block = open {
             if line.hasPrefix("```") {
-                examples.append(SkillExample(file: path, line: block.line, fails: block.fails, script: block.body.joined(separator: "\n")))
+                examples.append(SkillExample(file: path, line: block.line, command: block.command, fails: block.fails,
+                                             script: block.body.joined(separator: "\n")))
                 open = nil
             } else {
                 block.body.append(line)
                 open = block
             }
-        } else if line == "```draw" || line == "```draw-error" {
-            open = (index + 1, line == "```draw-error", [])
+        } else if line.hasPrefix("```") {
+            let tag = line.dropFirst(3)
+            let fails = tag.hasSuffix("-error")
+            if let command = SkillExample.Command(rawValue: String(fails ? tag.dropLast("-error".count) : tag)) {
+                open = (index + 1, command, fails, [])
+            }
         }
     }
     return examples
 }
+
+/// The first line of a skill file whose examples run on the story file (`QueryStory`).
+let queryStoryMarker = "<!-- board: query-story -->"
 
 /// A board as the app makes a new one, in a window of 1440 × 900 points: its view is (0, 0) to
 /// (1440, 900).
@@ -77,20 +148,64 @@ func skillExamples(in path: String) throws -> [SkillExample] {
 /// Whether to print what each example said (SKILL_DUMP=1).
 let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
 
+/// Runs a skill file's query example on `board`, and holds it to what it says it answers, or the
+/// reason it says it's refused, and to changing nothing.
+@MainActor func runQueryExample(_ example: SkillExample, on board: BoardDocument, _ server: CommandServer) throws {
+    let file = board.editor.file, edited = board.isDocumentEdited
+    let undo = (board.editor.undoHistory.canUndo, board.editor.undoHistory.undoName, board.editor.undoHistory.canRedo)
+    let result = try canvas(server, ["query", "-", "--board", "\(board.number)"], input: example.script)
+    if dumpsExamples { print("== \(example.place)\n\(example.script)\n\(result.output)\(result.error)") }
+    if example.fails {
+        expectEqual(result.status, 1, "\(example.place) should be refused: \(result.output)\(result.error)")
+        let reason = (try? JSON(text: result.error))?["error"]?["reason"]?.stringValue
+        expect(example.reason != nil, "\(example.place) says the reason it's refused: /* reason: … */")
+        expectEqual(reason, example.reason, "\(example.place): \(result.error)")
+    } else {
+        expectEqual(result.status, 0, "\(example.place) should answer: \(result.error)")
+        let answer = (try? JSON(text: result.output)) ?? .null
+        let rows = answer["rows"]?.arrayValue ?? []
+        switch (example.matches, example.count) {
+        case (let matches?, nil):
+            expectEqual(rows.map(skillLabel), matches, "\(example.place) matches")
+            expectEqual(answer["count"], .number(Double(matches.count)), "\(example.place): every shape it matches, listed")
+        case (nil, let count?):
+            expectEqual(answer["count"], .number(Double(count)), "\(example.place) counts")
+        default:
+            expect(false, "\(example.place) says what it answers, on its first line: /* matches: … */ or /* count: N */")
+        }
+    }
+    expectEqual(board.editor.file, file, "\(example.place) changed nothing")
+    expectEqual(board.isDocumentEdited, edited, "\(example.place) edited nothing")
+    expect(board.editor.undoHistory.canUndo == undo.0 && board.editor.undoHistory.undoName == undo.1 && board.editor.undoHistory.canRedo == undo.2,
+           "\(example.place) made no step to undo")
+}
+
 @MainActor let skillTests = Suite("The canvas skill", [
     test("every example in the skill runs as it says: each file's blocks in order on a board of its own") {
-        try configureBoards()
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
         let files = try skillFiles()
-        expect(files.count >= 2, "SKILL.md and a reference: \(files)")
-        var ran = 0
+        expect(files.count >= 3, "SKILL.md and the references: \(files)")
+        var ran = 0, onTheStory = 0
         for file in files {
-            let board = windowedBoard()
+            let onStory = try String(contentsOfFile: file, encoding: .utf8).hasPrefix(queryStoryMarker + "\n")
+            let board = onStory ? try QueryStory.document(windowed: false) : windowedBoard()
+            defer { board.close() }
+            if onStory {
+                onTheStory += 1
+                expect(!board.isDocumentEdited && !board.editor.undoHistory.canUndo, "\(file): the story as the app opens it")
+            }
             let server = try startCommandServer(boards: [board], frontmost: board)
             defer { server.stop() }
             let examples = try skillExamples(in: file)
             expect(!examples.isEmpty, "\(file) has examples")
             for example in examples {
                 ran += 1
+                guard example.command == .draw else {
+                    try runQueryExample(example, on: board, server)
+                    continue
+                }
                 let before = board.editor.document
                 let result = try draw(example.script, on: board, server, example.fails ? ["--dry-run"] : [])
                 if dumpsExamples { print("== \(example.place)\n\(example.script)\n\(result.output)\(result.error)") }
@@ -107,12 +222,84 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
                     expectEqual(pushed, [], "\(example.place) pushes nothing aside")
                 }
             }
+            if onStory {
+                expect(!board.isDocumentEdited && !board.editor.undoHistory.canUndo, "\(file): its queries left the story as it was")
+            }
         }
         expect(ran > 30, "the skill has its examples: \(ran)")
+        expectEqual(onTheStory, 1, "reference/query.md runs on the story")
+    },
+    test("SKILL.md's description fits the frontmatter's 1,024 characters, and says both what draws and what reads") {
+        let skill = try String(contentsOfFile: "\(skillFolder)/SKILL.md", encoding: .utf8)
+        let lines = skill.components(separatedBy: "\n")
+        expectEqual(lines.first, "---")
+        let end = try require(lines.dropFirst().firstIndex(of: "---"), "the frontmatter ends")
+        let description = try require(lines[1..<end].first { $0.hasPrefix("description: ") }, "the frontmatter's description")
+            .dropFirst("description: ".count)
+        expect(description.count <= 1_024, "\(description.count) characters")
+        expect(description.contains("`canvas draw`") && description.contains("`canvas query`"), String(description))
+    },
+    test("the query reference has every construct of the design's table as a block, answering or refused as the table says") {
+        let examples = try skillExamples(in: "\(skillFolder)/reference/query.md")
+        /// How `matches:` writes each of the story's shapes.
+        let labels = ["P": #""Payments""#, "A": #""API gateway""#, "U": #""Auth""#, "N1": "(sticky-note)", "W": #""Warehouse""#,
+                      "S": #""Order""#, "V": "(schema-card)", "R1": "(arrow)", "R2": "(arrow)", "L": #""Ledger""#, "C": #""Checkout""#,
+                      "F": #""Refunds""#, "N2": "(sticky-note)", "Y": #""Refund policy""#]
+        for row in StoryQuery.table {
+            let said = "row \(row.number), \(row.query)"
+            let block = examples.first { example in
+                example.command == .query && example.script.components(separatedBy: "\n").dropFirst().joined(separator: "\n") == row.query
+            }
+            guard let block else {
+                expect(false, "\(said) is a block of reference/query.md")
+                continue
+            }
+            switch row.answer {
+            case .shapes(let letters):
+                expect(!block.fails, "\(block.place): \(said) answers")
+                let shapes = letters.split(separator: ",").map { labels[$0.trimmingCharacters(in: .whitespaces)] ?? "?" }
+                expect(block.matches == shapes || block.count == shapes.count, "\(block.place): \(said) answers \(shapes)")
+            case .refused(let reason):
+                expect(block.fails, "\(block.place): \(said) is refused")
+                expectEqual(block.reason, reason.rawValue, "\(block.place): \(said)")
+            }
+        }
+    },
+    test("the query reference's tables of plugins' words and edge types are what canvas query-vocabulary says") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let registry = try ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel())
+        let commands = ShippedPlugins.commands(in: registry)
+        let vocabulary = try awaitResult { try await commands.run("query-vocabulary", [:], nil) }
+        let reference = try String(contentsOfFile: "\(skillFolder)/reference/query.md", encoding: .utf8)
+        let tables = markdownTables(in: reference)
+
+        // Each word a plugin adds: its form in backticks (`:mentions(S)`), the plugin whose it is,
+        // and what it means, in the vocabulary's order.
+        let words = try require(tables.first { $0.first == ["pseudo-class", "from", "means"] }, "the reference's table of plugins' words")
+        let listed = words.dropFirst().map { row -> [String] in
+            let form = backticked(row[0]).first ?? row[0]
+            let word = form.drop { $0 == ":" }.prefix { $0 != "(" }
+            return [String(word), backticked(row[1]).first ?? row[1], row[2]]
+        }
+        let added = (vocabulary["words"]?.arrayValue ?? []).filter { $0["from"] != "queries" }.map { word in
+            [word["word"]?.stringValue ?? "?", word["from"]?.stringValue ?? "?", word["summary"]?.stringValue ?? "?"]
+        }
+        expect(!added.isEmpty, "the shipped plugins add words")
+        expectEqual(listed, added, "the reference's plugins' words")
+
+        // Each edge type, the type it's under (— for a root) and what it means, in the tree's order.
+        let types = try require(tables.first { $0.first == ["edge type", "under", "means"] }, "the reference's table of edge types")
+        let written = types.dropFirst().map { row in [backticked(row[0]).first ?? row[0], backticked(row[1]).first ?? "", row[2]] }
+        let declared = (vocabulary["edgeTypes"]?.arrayValue ?? []).map { type in
+            [type["type"]?.stringValue ?? "?", type["under"]?.stringValue ?? "", type["summary"]?.stringValue ?? ""]
+        }
+        expectEqual(written, declared, "the reference's edge types")
     },
     test("the skill's tables of kinds are what canvas kinds says: every drawable kind, its size, its attributes, its channels by side") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
-        let listed = try ShippedPlugins.commands(in: registry).run("kinds", [:], nil).arrayValue ?? []
+        let commands = ShippedPlugins.commands(in: registry)
+        let listed = try awaitResult { try await commands.run("kinds", [:], nil) }.arrayValue ?? []
         var kinds: [String: JSON] = [:]
         for kind in listed where kind["drawable"] == true { kinds[kind["kind"]?.stringValue ?? "?"] = kind }
         expect(kinds.count >= 4, "the shipped kinds: \(kinds.keys.sorted())")
@@ -178,7 +365,7 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
 ])
 
 /// A Markdown file's tables, each its rows (the header first), each row its cells, trimmed; the
-/// line under the header left out.
+/// line under the header left out. A `|` escaped (`\|`, in a cell's code) is the cell's.
 func markdownTables(in text: String) -> [[[String]]] {
     var tables: [[[String]]] = [], table: [[String]] = []
     for line in text.components(separatedBy: "\n") {
@@ -187,7 +374,9 @@ func markdownTables(in text: String) -> [[[String]]] {
             table = []
             continue
         }
-        let cells = line.split(separator: "|", omittingEmptySubsequences: false).dropFirst().dropLast().map { $0.trimmingCharacters(in: .whitespaces) }
+        let escaped = "\u{0}"
+        let cells = line.replacingOccurrences(of: "\\|", with: escaped).split(separator: "|", omittingEmptySubsequences: false).dropFirst().dropLast()
+            .map { $0.replacingOccurrences(of: escaped, with: "|").trimmingCharacters(in: .whitespaces) }
         if cells.allSatisfy({ $0.allSatisfy { "-: ".contains($0) } }) { continue }
         table.append(cells)
     }

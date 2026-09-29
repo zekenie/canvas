@@ -1,0 +1,349 @@
+import Canvas
+import Foundation
+import QueryLanguage
+import Topology
+
+/// A query resolved against the app: every kind, attribute, literal, edge type and word checked
+/// and bound, ready to be answered anywhere (`Sendable`). Titles and ids are left for the answer,
+/// which checks them against the file as it takes it up. Made by `QueryState.check(_:)`, or by
+/// `init(resolving:text:vocabulary:presentEdgeTypes:kindOf:)` from a vocabulary alone.
+///
+/// Its nodes are numbered in the order they're made, each once, for an answer's memo: what a node
+/// matched is worked out once per query, however often the tree reaches it.
+public struct QueryPlan: Sendable {
+    /// The query as sent.
+    public let text: String
+    /// The query as the language writes it (`SelectorList.canonical`): what an answer says it ran.
+    public let canonical: String
+    /// What it matches: the union of its selectors, each shape once.
+    let root: PlanList
+    /// What answering it reads, so the answer takes up only that.
+    let uses: PlanUses
+    /// How many nodes and lists it has: their ids are `0..<nodeCount`.
+    let nodeCount: Int
+    /// The title heads (`.title` nodes) that stand where a container goes (the left of a space or
+    /// `>`, in `:inside()`, what `:has()` is on): the answer refuses one whose shapes all hold no
+    /// board (`cannot_contain`), as resolution refuses such a kind or id.
+    let containerTitles: Set<PlanNodeID>
+}
+
+/// A node's number in its plan.
+struct PlanNodeID: Hashable, Sendable {
+    let rawValue: Int
+}
+
+/// Shapes any of whose nodes match (a selector list's OR; one node for most).
+struct PlanList: Sendable {
+    let id: PlanNodeID
+    let items: [PlanNode]
+}
+
+/// A test of shapes, numbered.
+struct PlanNode: Sendable {
+    let id: PlanNodeID
+    let op: PlanOp
+    /// Where in the query it comes from, for what the answer refuses (an unknown title, a container
+    /// that holds nothing); nil for what no one part says (a compound's AND).
+    let span: QuerySpan?
+}
+
+/// What a node tests.
+indirect enum PlanOp: Sendable {
+    /// Every shape the query ranges over.
+    case all
+    /// Shapes of these kinds.
+    case kinds(Set<ShapeKind>)
+    /// Shapes whose name, folded, is this (folded by the names point's `fold`); `written` as the
+    /// query wrote it, for a refusal.
+    case title(folded: String, written: String)
+    /// The shape with this id.
+    case id(ShapeID)
+    /// An attribute's test, read per kind (`AttributeReader`): a shape matches when its kind has a
+    /// reader whose test holds for its value.
+    case attribute(name: String, readers: [AttributeReader])
+    /// The name or any text of its attributes holds this, ignoring case (`:contains`).
+    case contains(String)
+    case not(PlanList)
+    case `is`(PlanList)
+    /// Inside a shape the list matches, at any depth (`:inside`).
+    case inside(PlanList)
+    /// Something the items match is inside it: at any depth, or directly on its board (`child`).
+    case has([PlanHasItem])
+    /// On the board of a shape the list matches (`A > B`'s B).
+    case parentIn(PlanList)
+    /// On the board of a shape the list matches, or a board inside it (`A B`'s B).
+    case ancestorIn(PlanList)
+    /// On the file's top board.
+    case topLevel
+    /// On the board the file's window shows, as the query started.
+    case currentBoard
+    /// One of the language's edge words (`:edge-to` … `:between`): its anchors (`second` only for
+    /// `:between`) and the edge types it follows.
+    case edges(word: Word, anchor: PlanList, second: PlanList?, types: PlanEdgeTypes)
+    /// A plugin's relation (`:mentions(S)`): the result → S (`.outgoing`) or S → the result.
+    case relation(word: String, anchor: PlanList, types: PlanEdgeTypes, direction: EdgeDirection)
+    /// Carries an edge of these types whose far end isn't a shape the query ranges over.
+    case dangling(PlanEdgeTypes)
+    /// A plugin's pseudo-class (`:selected`), by its word: its behavior is the vocabulary's.
+    case pseudo(word: String)
+    /// Every node matches: a compound's head and filters, cheapest first (`PlanCost`).
+    case and([PlanNode])
+}
+
+/// One item of `:has(…)`.
+struct PlanHasItem: Sendable {
+    /// `> S`: directly on the subject's board; else at any depth.
+    let child: Bool
+    let node: PlanNode
+}
+
+/// How an attribute is read for some kinds, and the test its value must pass.
+struct AttributeReader: Sendable {
+    enum Source: Sendable, Equatable {
+        /// The property of this shape in the kind's schema (`record.propertiesJSON`), text read
+        /// through its media type's format, if one.
+        case property(KindSchema.PropertyShape)
+        /// The shape's name, through the names point (named or derived).
+        case names
+    }
+
+    let kinds: Set<ShapeKind>
+    let source: Source
+    let test: TypedTest
+}
+
+/// An attribute's test, its literal read by the property's type.
+struct TypedTest: Sendable, Equatable {
+    enum Comparison: Sendable, Equatable {
+        /// `[a]`: a value that says something (true; text, a list or an object not empty; a number
+        /// or a date there at all).
+        case present
+        /// `[a=""]` on text: no value, absent or empty (for a name, none).
+        case absent
+        /// `=`: the value (a day: any instant of it).
+        case equals(PlanValue)
+        /// `^=`, `$=`, `*=`: text starts with, ends with, holds.
+        case prefix(String), suffix(String), substring(String)
+        /// `~=` on text: one of its whitespace-separated words is this.
+        case word(String)
+        /// `|=`: the text is this, or starts with it and a hyphen.
+        case dash(String)
+        /// `<`, `<=`, `>`, `>=` on a number or a date (a day: before its start, before its end,
+        /// from its end, from its start).
+        case less(PlanValue), lessOrEqual(PlanValue), greater(PlanValue), greaterOrEqual(PlanValue)
+        /// `~=` on a list: an item equals this.
+        case hasItem(PlanValue)
+    }
+
+    let comparison: Comparison
+    /// The `i` flag: text compared ignoring case (no diacritics folded).
+    let ignoringCase: Bool
+}
+
+/// A literal as its property reads it.
+enum PlanValue: Sendable, Equatable {
+    case text(String)
+    case number(Double)
+    case bool(Bool)
+    /// A whole UTC day, from this instant (its midnight) to the next day's.
+    case day(Date)
+    /// An instant.
+    case instant(Date)
+    /// Any other JSON (an item of a list of any JSON).
+    case json(JSONValue)
+}
+
+/// The edge types a word follows: every type (no list), or exactly those a list resolved to, each
+/// type's descendants already taken in unless it said `only`.
+struct PlanEdgeTypes: Sendable, Equatable {
+    /// Nil: every type.
+    let types: Set<EdgeTypeID>?
+
+    static let all = PlanEdgeTypes(types: nil)
+
+    /// As Topology filters: `.all`, or `.only` the set.
+    var filter: EdgeTypeFilter { types.map { .only($0) } ?? .all }
+
+    var planDescription: String {
+        types.map { "(\($0.map(\.rawValue).sorted().joined(separator: "|")))" } ?? "(every type)"
+    }
+}
+
+/// What answering a plan reads, so the answer takes up only that from the app.
+struct PlanUses: Sendable, Equatable {
+    /// Titles (a title head, the names point's attribute): the names point.
+    var names = false
+    /// The attributes it tests, by name.
+    var attributes: Set<String> = []
+    /// The media types whose formats it reads text through (`prepare`d as it takes up the file).
+    var textFormats: Set<String> = []
+    /// Plugins' pseudo-classes it uses (`prepare`d as it takes up the file).
+    var pseudoClasses: Set<String> = []
+    /// Topology's edges.
+    var edges = false
+    /// Topology's containment.
+    var containment = false
+    /// The board the window shows.
+    var currentBoard = false
+    /// Text, which a shape being typed into holds as the board has it, and may still change
+    /// (attributes, `:contains`): the answer warns about it (`editing`).
+    var readsText = false
+}
+
+// MARK: Cost
+
+/// How early a compound's node runs: AND commutes, so what narrows most for least goes first.
+enum PlanCost: Int, Comparable {
+    /// Ids, titles, a word's seeds: a few shapes, found directly.
+    case found
+    /// Kinds, every shape: a walk of the shapes the query ranges over.
+    case kinds
+    /// Sets taken up with the file: the top board, the board shown.
+    case captured
+    /// Topology's containment and edges, and what's worked out of other nodes.
+    case structure
+    /// Attributes and text, read per shape.
+    case read
+    /// A word the main actor answers.
+    case main
+
+    static func < (a: PlanCost, b: PlanCost) -> Bool { a.rawValue < b.rawValue }
+}
+
+// MARK: Reading a plan
+
+extension QueryPlan: CustomStringConvertible {
+    /// The plan as a tree, a node a line, each indented under the one it's in: what tests and
+    /// debugging read. Its ids and spans are left out, so two queries that mean the same thing
+    /// print the same (`[rank=3]` and `[rank="3"]`).
+    public var description: String {
+        var lines: [String] = []
+        func list(_ items: PlanList, _ depth: Int) {
+            if items.items.count == 1 {
+                node(items.items[0], depth)
+            } else {
+                lines.append(String(repeating: "  ", count: depth) + "any of")
+                for item in items.items { node(item, depth + 1) }
+            }
+        }
+        func node(_ planned: PlanNode, _ depth: Int) {
+            let indent = String(repeating: "  ", count: depth)
+            switch planned.op {
+            case .all: lines.append(indent + "every shape")
+            case .kinds(let kinds): lines.append(indent + "kind " + kinds.map(\.rawValue).sorted().joined(separator: "|"))
+            case .title(let folded, _):
+                lines.append(indent + "titled " + quotedForPlan(folded) + (containerTitles.contains(planned.id) ? ", a container" : ""))
+            case .id(let id): lines.append(indent + "id " + id.description)
+            case .attribute(let name, let readers):
+                for reader in readers {
+                    lines.append(indent + "[\(name)] of \(reader.kinds.map(\.rawValue).sorted().joined(separator: "|"))"
+                                 + " \(reader.source.planDescription): \(reader.test.planDescription)")
+                }
+            case .contains(let text): lines.append(indent + "contains " + quotedForPlan(text))
+            case .not(let inner):
+                lines.append(indent + "not")
+                list(inner, depth + 1)
+            case .is(let inner):
+                lines.append(indent + "is")
+                list(inner, depth + 1)
+            case .inside(let inner):
+                lines.append(indent + "inside")
+                list(inner, depth + 1)
+            case .has(let items):
+                lines.append(indent + "has")
+                for item in items {
+                    if item.child {
+                        lines.append(indent + "  directly")
+                        node(item.node, depth + 2)
+                    } else {
+                        node(item.node, depth + 1)
+                    }
+                }
+            case .parentIn(let inner):
+                lines.append(indent + "on the board of")
+                list(inner, depth + 1)
+            case .ancestorIn(let inner):
+                lines.append(indent + "inside, at any depth")
+                list(inner, depth + 1)
+            case .topLevel: lines.append(indent + "top level")
+            case .currentBoard: lines.append(indent + "on the board shown")
+            case .edges(let word, let anchor, let second, let types):
+                lines.append(indent + "\(word.rawValue) \(types.planDescription)")
+                list(anchor, depth + 1)
+                if let second { list(second, depth + 1) }
+            case .relation(let word, let anchor, let types, let direction):
+                lines.append(indent + "\(word) \(direction == .incoming ? "from" : "to") \(types.planDescription)")
+                list(anchor, depth + 1)
+            case .dangling(let types): lines.append(indent + "dangling \(types.planDescription)")
+            case .pseudo(let word): lines.append(indent + ":" + word)
+            case .and(let nodes):
+                lines.append(indent + "all of")
+                for inner in nodes { node(inner, depth + 1) }
+            }
+        }
+        list(root, 0)
+        return lines.joined(separator: "\n")
+    }
+}
+
+extension AttributeReader.Source {
+    var planDescription: String {
+        switch self {
+        case .names: "name"
+        case .property(let shape): shape.planDescription
+        }
+    }
+}
+
+extension KindSchema.PropertyShape {
+    var planDescription: String {
+        switch self {
+        case .string(let format, let mediaType, let choices):
+            "text" + (format.map { " \($0)" } ?? "") + (mediaType.map { " \($0)" } ?? "") + (choices.map { " \($0.joined(separator: "|"))" } ?? "")
+        case .number(let integer): integer ? "integer" : "number"
+        case .boolean(let fallback): "true|false (\(fallback) when absent)"
+        case .array(let items): "list of \(items.planDescription)"
+        case .object: "object"
+        case .json: "JSON"
+        }
+    }
+}
+
+extension TypedTest {
+    var planDescription: String {
+        let flag = ignoringCase ? " ignoring case" : ""
+        return switch comparison {
+        case .present: "present"
+        case .absent: "absent or empty"
+        case .equals(let value): "= \(value.planDescription)\(flag)"
+        case .prefix(let text): "starts with \(quotedForPlan(text))\(flag)"
+        case .suffix(let text): "ends with \(quotedForPlan(text))\(flag)"
+        case .substring(let text): "holds \(quotedForPlan(text))\(flag)"
+        case .word(let text): "has the word \(quotedForPlan(text))\(flag)"
+        case .dash(let text): "is or starts \(quotedForPlan(text + "-"))\(flag)"
+        case .less(let value): "< \(value.planDescription)"
+        case .lessOrEqual(let value): "<= \(value.planDescription)"
+        case .greater(let value): "> \(value.planDescription)"
+        case .greaterOrEqual(let value): ">= \(value.planDescription)"
+        case .hasItem(let value): "has the item \(value.planDescription)\(flag)"
+        }
+    }
+}
+
+extension PlanValue {
+    var planDescription: String {
+        switch self {
+        case .text(let text): quotedForPlan(text)
+        case .number(let number): KindSchema.number(number)
+        case .bool(let flag): "\(flag)"
+        case .day(let start): "the day " + start.formatted(.iso8601.year().month().day())
+        case .instant(let instant): instant.formatted(.iso8601)
+        case .json(let json): "JSON \(json)"
+        }
+    }
+}
+
+/// Text in double quotes, `"` and `\` escaped: for a plan's description.
+func quotedForPlan(_ text: String) -> String {
+    "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
+}

@@ -72,14 +72,15 @@ public enum SchemaPrompts {
         return ModelRequest(system: system, messages: [.user(message)], maxTokens: maxTokens, temperature: temperature)
     }
 
-    /// Reads an answer: the text trimmed, and unwrapped (`unwrap`: a safety net, since the prompts ask
-    /// for neither a fence nor tags). A stop other than the end of its turn is a failure (a cut-off
-    /// schema isn't one); an answer whose first word is `NO_CHANGE` is no change, whatever follows
-    /// it (a period, a reason), and so is one whose last line is (the prompt said again, then
-    /// `NO_CHANGE`). A schema must be a JSON object, from its first character to its
-    /// last; anything else is a failure. A prompt must not be empty, loses one pair of quotes around
-    /// it, and mustn't read as something other than the prompt (`isNotAPrompt`). The text is as it
-    /// came back, never laid out again: its order is the model's, which keeps the person's.
+    /// Reads an answer: the text trimmed, and unwrapped (`ModelAnswer.unwrapped`: a safety net,
+    /// since the prompts ask for neither a fence nor tags). A stop other than the end of its turn is
+    /// a failure (a cut-off schema isn't one); an answer whose first word is `NO_CHANGE` is no
+    /// change, whatever follows it (a period, a reason), and so is one whose last line is (the
+    /// prompt said again, then `NO_CHANGE`). A schema must be a JSON object, from its first
+    /// character to its last; anything else is a failure. A prompt must not be empty, loses one pair
+    /// of quotes around it, and mustn't read as something other than the prompt (`isNotAPrompt`).
+    /// The text is as it came back, never laid out again: its order is the model's, which keeps the
+    /// person's.
     ///
     /// A failure says what went wrong in a fragment, as the model's errors do: a schema cut off is
     /// too long to rewrite (`SchemaSync.tooLongMessage`: the person edits it by hand); a refusal is
@@ -93,8 +94,7 @@ public enum SchemaPrompts {
         case .refusal: return .failure("Claude declined")
         default: return unusable
         }
-        let text = unwrap(response.text.trimmingCharacters(in: .whitespacesAndNewlines),
-                          tag: direction == .toSchema ? "schema" : "prompt")
+        let text = ModelAnswer.unwrapped(response.text, tag: direction == .toSchema ? "schema" : "prompt")
         if saysNoChange(text) { return .noChange }
         switch direction {
         case .toSchema:
@@ -142,33 +142,6 @@ public enum SchemaPrompts {
     private static let preambles = ["here's ", "here’s ", "here is ", "here are ", "updated prompt", "updated description",
                                     "the updated prompt", "the updated description", "prompt:", "description:",
                                     "sure,", "sure!", "sure.", "certainly,", "certainly!", "certainly."]
-
-    /// Strips what the model sometimes wraps an answer in, from either end, until nothing changes: a
-    /// code-fence line (one that starts with three backticks), a line that's nothing but a tag
-    /// (`</output>`, which the model sometimes ends with), and the answer's own block tags
-    /// (`<schema>`, `</schema>`), trimming after each.
-    static func unwrap(_ text: String, tag: String) -> String {
-        var text = text
-        while true {
-            let before = text
-            var lines = text.split(separator: "\n", omittingEmptySubsequences: false)
-            if let first = lines.first, isWrapper(first) { lines.removeFirst() }
-            if let last = lines.last, isWrapper(last) { lines.removeLast() }
-            text = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-            if text.hasPrefix("<\(tag)>") { text = text.dropFirst(tag.count + 2).trimmingCharacters(in: .whitespacesAndNewlines) }
-            if text.hasSuffix("</\(tag)>") { text = text.dropLast(tag.count + 3).trimmingCharacters(in: .whitespacesAndNewlines) }
-            if text == before { return text }
-        }
-    }
-
-    /// A fence line, or a line of one tag alone (`<answer>`, `</output>`).
-    private static func isWrapper(_ line: Substring) -> Bool {
-        let line = line.trimmingCharacters(in: .whitespaces)
-        if line.hasPrefix("```") { return true }
-        guard line.hasPrefix("<"), line.hasSuffix(">"), line.count > 2 else { return false }
-        let name = line.dropFirst(line.hasPrefix("</") ? 2 : 1).dropLast()
-        return !name.isEmpty && name.allSatisfy { $0.isASCII && ($0.isLetter || $0 == "_" || $0 == "-") }
-    }
 
     // MARK: The system prompts
 

@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([benchmarks, inspectorBenchmarks])
+runTests([benchmarks, inspectorBenchmarks, queryBenchmarks])

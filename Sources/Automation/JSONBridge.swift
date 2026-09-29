@@ -4,7 +4,10 @@ import CanvasRPC
 // The core's JSON and the wire's are the same six cases; commands cross from one to the other.
 
 extension JSON {
-    init(_ value: JSONValue) {
+    /// The core's JSON as the wire's, member for member: how a command that builds its output from
+    /// what the core writes (a shape's properties, `record.propertiesJSON`) puts it on the wire
+    /// without writing it as text and reading it back.
+    public init(_ value: JSONValue) {
         switch value {
         case .null: self = .null
         case .bool(let bool): self = .bool(bool)

@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([messageTests, argumentTests, socketTests])
+runTests([messageTests, argumentTests, socketTests, asyncTests])

@@ -40,6 +40,55 @@ import TestKit
             expectEqual(String(decoding: body, as: UTF8.self), #"{"max_tokens":5,"messages":[{"content":"Hi","role":"user"}],"model":"claude-haiku-4-5"}"#)
         }
     },
+    test("a request that names a model is answered by it, and one that says an effort sends it in output_config") {
+        try withStubbedModel(answering: .http(status: 200, body: reply("OK"))) { model in
+            _ = try outcome(of: model, ModelRequest(messages: [.user("Hi")], maxTokens: 2048, model: "claude-sonnet-5-5", effort: "low"))
+            let body = try require(StubProtocol.received.first).body
+            expectEqual(String(decoding: body, as: UTF8.self),
+                        #"{"max_tokens":2048,"messages":[{"content":"Hi","role":"user"}],"model":"claude-sonnet-5-5","output_config":{"effort":"low"}}"#,
+                        "no temperature: the model's own sampling")
+        }
+        try withStubbedModel(answering: .http(status: 200, body: reply("OK"))) { model in
+            _ = try outcome(of: model, ModelRequest(messages: [.user("Hi")], maxTokens: 400, temperature: 0, effort: "medium"))
+            let body = try require(StubProtocol.received.first).body
+            expectEqual(String(decoding: body, as: UTF8.self),
+                        #"{"max_tokens":400,"messages":[{"content":"Hi","role":"user"}],"model":"claude-haiku-4-5","output_config":{"effort":"medium"},"temperature":0}"#)
+        }
+        try withTemporaryStore { keys in
+            try keys.write(testKey)
+            let sonnet = AnthropicModel(model: "claude-sonnet-5-5", keys: keys, session: StubProtocol.session(answering: .http(status: 200, body: reply("OK"))))
+            _ = try outcome(of: sonnet)
+            _ = try outcome(of: sonnet, ModelRequest(messages: [.user("Hi")], model: AnthropicModel.haiku))
+            let sent = StubProtocol.received.map { ((try? JSONSerialization.jsonObject(with: $0.body)) as? [String: Any])?["model"] as? String }
+            expectEqual(sent, ["claude-sonnet-5-5", AnthropicModel.haiku], "the model's own, unless the request names one")
+        }
+    },
+    test("a request that asks for the service's fallback sends fallbacks \"default\" under its beta; one that doesn't sends neither") {
+        try withStubbedModel(answering: .http(status: 200, body: reply("OK"))) { model in
+            _ = try outcome(of: model, ModelRequest(messages: [.user("Hi")], maxTokens: 2048, model: "claude-sonnet-5-5", effort: "low",
+                                                    fallbacks: .default))
+            let sent = try require(StubProtocol.received.first)
+            expectEqual(sent.request.value(forHTTPHeaderField: "anthropic-beta"), "server-side-fallback-2026-07-01")
+            expectEqual(String(decoding: sent.body, as: UTF8.self),
+                        #"{"fallbacks":"default","max_tokens":2048,"messages":[{"content":"Hi","role":"user"}],"model":"claude-sonnet-5-5","output_config":{"effort":"low"}}"#)
+        }
+        try withStubbedModel(answering: .http(status: 200, body: reply("OK"))) { model in
+            _ = try outcome(of: model, ModelRequest(messages: [.user("Hi")], maxTokens: 5))
+            let sent = try require(StubProtocol.received.first)
+            expectEqual(sent.request.value(forHTTPHeaderField: "anthropic-beta"), nil)
+            expect(!String(decoding: sent.body, as: UTF8.self).contains("fallbacks"))
+        }
+    },
+    test("the scripted model keeps what a request asks of the model, for tests to read") {
+        let model = ScriptedLanguageModel(answers: ["OK"])
+        let request = ModelRequest(messages: [.user("Hi")], maxTokens: 2048, model: "claude-sonnet-5-5", effort: "low")
+        _ = try outcome(of: model, request)
+        expectEqual(model.lastRequest?.model, "claude-sonnet-5-5")
+        expectEqual(model.lastRequest?.effort, "low")
+        expectEqual(ModelRequest(messages: [.user("Hi")]).model, nil)
+        expectEqual(ModelRequest(messages: [.user("Hi")]).effort, nil)
+        expectEqual(ModelRequest(messages: [.user("Hi")]).fallbacks, nil, "no fallback unless asked")
+    },
     test("reads the key at every call: one saved after the model was made is the one sent") {
         try withTemporaryStore { keys in
             let model = AnthropicModel(keys: keys, session: StubProtocol.session(answering: .http(status: 200, body: reply("OK"))))
@@ -71,6 +120,15 @@ import TestKit
         """#
         try withStubbedModel(answering: .http(status: 200, body: body)) { model in
             expectEqual(try outcome(of: model).map(\.text), .success(#"{"a": 1}"#))
+        }
+    },
+    test("an answer another model gave in its place (the service's fallback): its text, the block marking the switch left out") {
+        let body = #"""
+        {"content":[{"type":"fallback","from":{"model":"claude-sonnet-5-5"},"to":{"model":"claude-sonnet-5"}},{"type":"text","text":"chore"}],
+         "model":"claude-sonnet-5","stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":2}}
+        """#
+        try withStubbedModel(answering: .http(status: 200, body: body)) { model in
+            expectEqual(try outcome(of: model), .success(ModelResponse(text: "chore", inputTokens: 1, outputTokens: 2)))
         }
     },
     test("a stop reason the app doesn't know is kept as it came") {

@@ -113,7 +113,13 @@ let extras = Contributor(id: "extras") { registrar in
     let registry = try require(registry ?? editor?.registry)
     let spec = try require(registry.automationCommands.first { $0.name == line[0] })
     let params = try spec.params(from: Array(line.dropFirst()), standardInput: { input })
-    return Result { () throws(RPCError) in try registry.runAutomationCommand(spec.name, params: .object(params), editor: editor) }
+    return try awaitResult { () async -> Result<JSON, RPCError> in
+        do throws(RPCError) {
+            return .success(try await registry.runAutomationCommand(spec.name, params: .object(params), editor: editor))
+        } catch {
+            return .failure(error)
+        }
+    }
 }
 
 @MainActor let kindsTests = Suite("kinds", [

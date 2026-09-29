@@ -31,6 +31,7 @@ extension CommandSpec {
                 if argument.value.isRepeatable { text += " Repeatable." }
                 if argument.isRequired, !positional { text += " Required." }
                 if let value = argument.defaultValue, value != .null, value != .array([]) { text += " Default: \(value.compactText)." }
+                if let seconds = argument.waits { text += " (waits up to \(Help.seconds(seconds)) s)" }
                 return (label, text.trimmingCharacters(in: .whitespaces))
             }
         }
@@ -68,6 +69,11 @@ public enum Help {
             }
             return lead + "\n" + wrapped
         }.joined(separator: "\n")
+    }
+
+    /// A number of seconds as help writes it: a whole one without a decimal point (60, 0.5).
+    static func seconds(_ seconds: Double) -> String {
+        seconds.rounded() == seconds && abs(seconds) < 1e15 ? String(Int(seconds)) : String(seconds)
     }
 
     /// Words wrapped to `width` columns, each line indented; blank lines between paragraphs kept.

@@ -41,7 +41,7 @@ let fixtureRules = Contributor(id: "fixture-rules") { registrar in
 @MainActor func drawn(_ script: String, on editor: CanvasEditor) throws -> JSON {
     let spec = try require(editor.registry.automationCommands.first { $0.name == "draw" })
     let params = try spec.params(from: ["-"], standardInput: { script })
-    return try editor.registry.runAutomationCommand(spec.name, params: .object(params), editor: editor)
+    return try awaitResult { try await editor.registry.runAutomationCommand(spec.name, params: .object(params), editor: editor) }
 }
 
 /// A result's warnings, as `severity line: message (attribute)`.
