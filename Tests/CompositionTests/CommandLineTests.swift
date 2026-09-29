@@ -146,7 +146,7 @@ edge "API" -> "Cache" channel: none
             let result = try canvas(server, ["draw", #"schema-card schema: "\#(written)" prompt: "a person\nname\nemail\nphone""# + size])
             expectEqual(result.status, 0, result.error)
             let card = try require(board.editor.document.shapes.first { !before.contains($0.id) }?.typed(as: SchemaCard.self)?.props)
-            expectEqual(card.schema, schema)
+            expectEqual(card.schema.text, schema)
             expectEqual(card.prompt, "a person\nname\nemail\nphone")
             expectEqual(card.frame.size, expected, "four lines: 109 high, where the placed card is 52")
             let at = try JSON(text: result.output)["changes"]?.arrayValue?.first?["at"]?.arrayValue?.last

@@ -1,11 +1,12 @@
 import AppKit
 import Canvas
+import Mentions
 
 /// The card zoomed out, where its text no longer reads (`CustomSkeleton`, below the editor's
 /// `skeletonZoom`): the card, white, with no shadow but a light gray edge inside its frame, where
 /// the shadow's edge showed (`SchemaStyle.skeletonEdge`), so a white card on the light canvas still
 /// has one; and its description greeked as a note's text is (`SkeletonTextBars`, counted from its
-/// characters, never laid out). Its name is its title's pill's, drawn blank above it (Adornments).
+/// characters, never laid out, each mention as wide as its pill by the name it holds). Its name is its title's pill's, drawn blank above it (Adornments).
 /// Three fills, whatever it says: the edge, the card inside it, and every bar in one
 /// (`RenderContext.fillSkeletonText`). Square (its corners are rounded by under 2 points here, and a
 /// rounded card costs a third more), so its outline is the default, its frame's, exactly.
@@ -19,6 +20,6 @@ extension SchemaCardDefinition: CustomSkeleton {
         guard !inside.isEmpty else { return }
         cg.setFillColor(SchemaStyle.skeletonCard)
         cg.fill(inside)
-        context.fillSkeletonText(SkeletonTextBars(shape.props.prompt, in: SchemaStyle.textBox(of: frame), metrics: SchemaStyle.skeletonText))
+        context.fillSkeletonText(SkeletonTextBars(shape.props.prompt.runs, in: SchemaStyle.textBox(of: frame), metrics: SchemaStyle.skeletonText))
     }
 }

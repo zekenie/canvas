@@ -4,6 +4,7 @@ import CanvasTesting
 import Foundation
 import Geometry
 import LanguageModels
+import Mentions
 import Schemas
 import TestKit
 
@@ -69,7 +70,7 @@ final class HighlightBench {
     /// The card's highlights as it's drawn: each one's words, and its kind.
     func shown(_ id: ShapeID) -> [String] {
         guard let card = card(id) else { return [] }
-        let text = card.props.prompt as NSString
+        let text = card.props.prompt.stored as NSString
         return SchemaHighlightAnswers.placed(for: card).map { "\(text.substring(with: $0.range)) \($0.kind == .field ? "field" : "rule")" }
     }
 }
@@ -193,7 +194,7 @@ final class HighlightBench {
         let b = try HighlightBench()
         b.model.holdsAnswers = true
         let id = b.editor.add(SchemaCard(frame: CGRect(x: 40, y: 40, width: 240, height: 52)))
-        b.editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.setPrompt(jiraPrompt) } }
+        b.editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.setPrompt(SchemaPromptText(plain: jiraPrompt)) } }
         b.frame()
         b.settle()
         expectEqual(b.asked.count, 0, "an edit waiting")
@@ -206,7 +207,7 @@ final class HighlightBench {
         expectEqual(b.asked.count, 0, "the schema being written")
         b.model.holdsAnswers = false
         b.model.release()
-        spinRunLoop(until: { b.card(id)?.props.schema == jiraSchema })
+        spinRunLoop(until: { b.card(id)?.props.schema.text == jiraSchema })
         b.frame()
         b.settle()
         expectEqual(b.asked.count, 1, "in step once the answer's written")
@@ -269,11 +270,11 @@ final class HighlightBench {
         let id = b.editor.add(card(jiraSchema, prompt: jiraPrompt))
         b.frame()
         b.settle()
-        b.editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.setPrompt("its status, then " + jiraPrompt) } }
+        b.editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.setPrompt(SchemaPromptText(plain: "its status, then " + jiraPrompt)) } }
         expectEqual(b.shown(id), ["jira ticket field", "key field", "one-line rule", "summary field", "link to it field"], "in their new places")
-        b.editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.setPrompt(jiraPrompt.replacingOccurrences(of: "one-line summary", with: "title")) } }
+        b.editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.setPrompt(SchemaPromptText(plain: jiraPrompt.replacingOccurrences(of: "one-line summary", with: "title"))) } }
         expectEqual(b.shown(id), ["jira ticket field", "key field", "link to it field"])
-        b.editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema = jiraSchema.replacingOccurrences(of: "\"url\"", with: "\"link\"") } }
+        b.editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema.text = jiraSchema.replacingOccurrences(of: "\"url\"", with: "\"link\"") } }
         expectEqual(b.shown(id), ["jira ticket field", "key field"], "a part renamed")
     },
 ])

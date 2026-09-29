@@ -370,10 +370,10 @@ final class NestedWindow {
         expect(code.string.hasPrefix(#"{"title": ""#), code.string)
         expect(code.caretListWindow == nil)
         let id = try require(w.editor.selection)
-        expectEqual(w.editor.document[id]?.typed(as: SchemaCard.self)?.props.schema, code.string)
+        expectEqual(w.editor.document[id]?.typed(as: SchemaCard.self)?.props.schema.text, code.string)
         expectEqual(w.editor.undoHistory.undoName, "Change JSON")
         w.editor.undo()
-        expectEqual(w.editor.document[id]?.typed(as: SchemaCard.self)?.props.schema, SchemaCard.starter, "the typing and the pick, one step")
+        expectEqual(w.editor.document[id]?.typed(as: SchemaCard.self)?.props.schema.text, SchemaCard.starter, "the typing and the pick, one step")
     },
     test("View's zoom items run the zoom commands, each dimmed while it can't run; Edit › Delete and Select All likewise") {
         let w = try NestedWindow()

@@ -3,6 +3,7 @@ import AppKit
 import CanvasTesting
 import Foundation
 import LanguageModels
+import Mentions
 import Schemas
 import TestKit
 
@@ -43,12 +44,12 @@ private struct CardInPocket {
         spinRunLoop(until: { !b.isUpdating(tree.card) })
         expectEqual(b.editor.board, .root, "nothing is shown for it")
         expectEqual(b.editor.document, shown)
-        expectEqual(card(b, tree.card)?.schema, petSchema, "written on the pocket's board")
+        expectEqual(card(b, tree.card)?.schema.text, petSchema, "written on the pocket's board")
         expectEqual(b.status(tree.card), .idle)
         expectEqual(b.editor.undoHistory.undoName, "Update Schema")
         b.editor.undo()
         expectEqual(b.editor.board, tree.pBoard, "undoing it shows the card's board")
-        expectEqual(card(b, tree.card)?.schema, SchemaCard.starter)
+        expectEqual(card(b, tree.card)?.schema.text, SchemaCard.starter)
         expectEqual(card(b, tree.card)?.prompt, "a pet in my household")
         b.scheduler.advance(by: .seconds(5))
         b.settle()
@@ -56,7 +57,7 @@ private struct CardInPocket {
         expect(b.editor.showBoard(.root))
         b.editor.redo()
         expectEqual(b.editor.board, tree.pBoard)
-        expectEqual(card(b, tree.card)?.schema, petSchema)
+        expectEqual(card(b, tree.card)?.schema.text, petSchema)
         b.sync.commit(tree.card)
         b.settle()
         expectEqual(b.model.requests.count, 1, "redone, it's in step")
@@ -69,7 +70,7 @@ private struct CardInPocket {
         b.model.queue(petSchema)
         b.scheduler.advance(by: SchemaSync.idleDelay)
         spinRunLoop(until: { b.model.requests.count == 1 && !b.isUpdating(tree.card) })
-        expectEqual(card(b, tree.card)?.schema, petSchema)
+        expectEqual(card(b, tree.card)?.schema.text, petSchema)
         expectEqual(b.editor.board, .root)
 
         expect(b.editor.showBoard(tree.pBoard))
@@ -77,7 +78,7 @@ private struct CardInPocket {
         expect(b.editor.showBoard(.root))
         b.sync(tree.card, answer: petSchema.replacingOccurrences(of: "\"birthYear\"", with: "\"weight\""))
         expectEqual(b.message(1)?.contains("and its weight"), true)
-        expect(card(b, tree.card)?.schema.contains("weight") == true)
+        expect(card(b, tree.card)?.schema.text.contains("weight") == true)
         expectEqual(b.editor.undoHistory.undoName, "Update Schema")
     },
     test("a card whose board goes with its owner drops its call; undoing that brings back what it last synced") {
@@ -116,7 +117,7 @@ private struct CardInPocket {
         b.model.release()
         spinRunLoop(until: { b.model.answered == 1 })
         b.settle()
-        expectEqual(card(b, tree.card)?.schema, SchemaCard.starter, "the answer to what the file no longer says isn't written")
+        expectEqual(card(b, tree.card)?.schema.text, SchemaCard.starter, "the answer to what the file no longer says isn't written")
         expect(!b.editor.canUndo)
     },
 ])

@@ -63,8 +63,8 @@ private struct SkeletonBoard {
         ], id: rectangle)
         rectangle[LockedProperty.self] = true
         var card = SchemaCard(frame: CGRect(origin: CGPoint(x: 400, y: 400), size: SchemaCard.defaultSize))
-        card.schema = #"{"title": "\#(say("Pet"))", "type": "object", "properties": {"\#(say("name"))": {"type": "string"}, "\#(say("species"))": {"type": "string"}}, "required": ["\#(say("name"))"]}"#
-        card.setPrompt(say("A pet and its name"))
+        card.schema.text = #"{"title": "\#(say("Pet"))", "type": "object", "properties": {"\#(say("name"))": {"type": "string"}, "\#(say("species"))": {"type": "string"}}, "required": ["\#(say("name"))"]}"#
+        card.setPrompt(SchemaPromptText(plain: say("A pet and its name")))
         let schema = ShapeRecord(id: cardID ?? self.card, card)
         let line = try editor.registry.shape("polyline", properties: [
             "points": .array(Self.linePoints.map { .array([.number($0.x), .number($0.y)]) }),

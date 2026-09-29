@@ -1,6 +1,7 @@
 import Canvas
 import CoreGraphics
 import Foundation
+import Mentions
 import Schemas
 import TestKit
 
@@ -12,7 +13,7 @@ func cardHeight(lines: Int) -> CGFloat { CGFloat(max(lines, 1)) * 19 + 1 + 32 }
     test("a new card: the starter schema, no description, 240 × 52, a line's height") {
         expectEqual(SchemaCard.defaultSize, CGSize(width: 240, height: 52))
         expectEqual(SchemaCardMetrics.emptyHeight, cardHeight(lines: 1))
-        expectEqual(SchemaCard().schema, SchemaCard.starter)
+        expectEqual(SchemaCard().schema.text, SchemaCard.starter)
         expectEqual(SchemaCard().prompt, "")
         expectEqual([SchemaDocument(SchemaCard.starter).title], [nil])
         expectEqual(SchemaCard.untitled, "Untitled")
@@ -29,11 +30,11 @@ func cardHeight(lines: Int) -> CGFloat { CGFloat(max(lines, 1)) * 19 + 1 + 32 }
         card.setPrompt("")
         expectEqual(card.frame.height, cardHeight(lines: 1), "empty: a line's height")
         let long = String(repeating: "a pet with a name ", count: 20)
-        card.setPrompt(long)
+        card.setPrompt(SchemaPromptText(plain: long))
         let wrapped = card.frame.height
         expect(wrapped > cardHeight(lines: 5), "wrapped at its width: \(wrapped)")
         card.frame.size.width = 480
-        card.setPrompt(long)
+        card.setPrompt(SchemaPromptText(plain: long))
         expect(card.frame.height < wrapped, "wider, fewer lines")
         expectEqual(card.frame.origin, CGPoint(x: 10, y: 20))
         var narrow = SchemaCard(frame: CGRect(x: 0, y: 0, width: 20, height: 70))
@@ -42,10 +43,10 @@ func cardHeight(lines: Int) -> CGFloat { CGFloat(max(lines, 1)) * 19 + 1 + 32 }
     },
     test("the schema is its text alone: writing it or renaming it leaves the card's size") {
         var card = SchemaCard(frame: CGRect(x: 0, y: 0, width: 240, height: 52))
-        card.schema = fixture(6)
+        card.schema.text = fixture(6)
         card.setTitle("Purchase")
         expectEqual(card.frame, CGRect(x: 0, y: 0, width: 240, height: 52))
-        expectEqual(SchemaDocument(card.schema).title, "Purchase")
+        expectEqual(SchemaDocument(card.schema.text).title, "Purchase")
     },
     test("a card made or given a description from properties (the command line's draw) is as tall as its description; a board read keeps what it saved") {
         let registry = try Registry(plugins: schemaPlugins())
@@ -63,9 +64,9 @@ func cardHeight(lines: Int) -> CGFloat { CGFloat(max(lines, 1)) * 19 + 1 + 32 }
     },
     test("setTitle renames the schema, changing nothing else in its text") {
         func renamed(_ text: String, _ title: String) -> String {
-            var card = SchemaCard(schema: text)
+            var card = SchemaCard(schema: SchemaText(text))
             card.setTitle(title)
-            return card.schema
+            return card.schema.text
         }
         expectEqual(renamed(SchemaCard.starter, "Pet"), "{\n  \"title\": \"Pet\",\n  \"type\": \"object\",\n  \"properties\": {}\n}")
         expectEqual(renamed(#"{"type":"object"}"#, "Pet"), #"{"title":"Pet","type":"object"}"#)

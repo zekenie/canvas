@@ -19,6 +19,10 @@ import Observation
 /// - at most `concurrentCalls` at once, the rest waiting their turn in the order they came; another
 ///   board shown drops the ones waiting for the board left.
 ///
+/// The model reads the description with each mention `@` and a word of the name it holds, and the
+/// schema with each `$ref` to a card it mentions that word (`SchemaReferenceNames`), as the sync shows
+/// them, and its words are found in that (`SchemaHighlightAnswers.placed`).
+///
 /// An answer is kept for its pair whatever the card says by the time it lands, and is the card's
 /// last unless one asked after it landed first; the canvas redraws, and `revision(of:)` changes for
 /// the card, which its editor observes. A failure keeps nothing, and its pair isn't asked about
@@ -34,7 +38,7 @@ public final class SchemaHighlighter {
     /// The pairs being asked about. A call isn't cancelled: whatever the card says by the time it
     /// lands, its answer is kept for its pair.
     @ObservationIgnored private var asking: Set<SchemaHighlightAnswers.Pair> = []
-    @ObservationIgnored private var waiting: [(id: ShapeID, pair: SchemaHighlightAnswers.Pair)] = []
+    @ObservationIgnored private var waiting: [(id: ShapeID, pair: SchemaHighlightAnswers.Pair, request: ModelRequest)] = []
     /// Cards drawn with no answer, waiting to be in step.
     @ObservationIgnored private var wanted: Set<ShapeID> = []
     @ObservationIgnored private var failed: Set<SchemaHighlightAnswers.Pair> = []
@@ -100,7 +104,7 @@ public final class SchemaHighlighter {
             wanted.remove(id)
             return
         }
-        let pair = SchemaHighlightAnswers.Pair(prompt: card.props.prompt, schema: card.props.schema)
+        let pair = SchemaHighlightAnswers.Pair(card.props)
         guard !pair.prompt.isEmpty, SchemaHighlightAnswers.answer(for: pair) == nil, !failed.contains(pair), editor.languageModel != nil else {
             wanted.remove(id)
             return
@@ -108,17 +112,19 @@ public final class SchemaHighlighter {
         guard !asking.contains(pair), !waiting.contains(where: { $0.pair == pair }),
               editor.schemaSync?.isInStep(id) == true, SchemaReadings.reading(of: pair.schema, for: id).document.isObject else { return }
         wanted.remove(id)
-        waiting.append((id, pair))
+        let names = SchemaReferenceNames(prompts: [card.props.prompt], schemas: [], name: { _ in nil })
+        let request = SchemaPrompts.toHighlights(prompt: names.modelText(of: card.props.prompt).text, schema: names.modelSchema(pair.schema),
+                                                 namesSchemas: !names.named.isEmpty)
+        waiting.append((id, pair, request))
         askNext()
     }
 
     private func askNext() {
         guard let model = editor?.languageModel else { return }
         while asking.count < Self.concurrentCalls, !waiting.isEmpty {
-            let (id, pair) = waiting.removeFirst()
+            let (id, pair, request) = waiting.removeFirst()
             asked += 1
             let number = asked
-            let request = SchemaPrompts.toHighlights(prompt: pair.prompt, schema: pair.schema)
             asking.insert(pair)
             Task { [weak self] in
                 let result: Result<ModelResponse, LanguageModelError>

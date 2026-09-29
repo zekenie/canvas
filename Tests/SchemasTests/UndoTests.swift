@@ -3,6 +3,7 @@ import AppKit
 import CanvasTesting
 import Foundation
 import LanguageModels
+import Mentions
 import Schemas
 import TestKit
 import Titles
@@ -19,21 +20,21 @@ import Titles
         b.sync(id, answer: petSchema)
         expectEqual(b.editor.undoHistory.undoName, "Update Schema")
         b.editor.undo()
-        expectEqual(b.card(id)?.schema, SchemaCard.starter, "the schema as it was")
+        expectEqual(b.card(id)?.schema.text, SchemaCard.starter, "the schema as it was")
         expectEqual(b.card(id)?.prompt, "a pet in my household", "the person's prompt stays")
         b.scheduler.advance(by: .seconds(5))
         b.settle()
         expectEqual(b.model.requests.count, 1, "undo is no edit: nothing is asked again")
         expectEqual(b.status(id), .idle)
         b.editor.redo()
-        expectEqual(b.card(id)?.schema, petSchema)
+        expectEqual(b.card(id)?.schema.text, petSchema)
         b.sync.commit(id)
         b.settle()
         expectEqual(b.model.requests.count, 1, "redone, it's in step")
         b.editor.undo()
         b.sync(id, answer: petSchema)
         expectEqual(b.message(1), b.message(0), "undone, it's as before the answer: the schema asked for again, from nothing")
-        expectEqual(b.card(id)?.schema, petSchema)
+        expectEqual(b.card(id)?.schema.text, petSchema)
     },
     test("the sync's write of the description is one step, Update Description") {
         let b = try SyncBench(document: CanvasDocument())
@@ -45,7 +46,7 @@ import Titles
         expectEqual(b.editor.undoHistory.undoName, "Update Description")
         b.editor.undo()
         expectEqual(b.card(id)?.prompt, "")
-        expectEqual(b.card(id)?.schema, weighed)
+        expectEqual(b.card(id)?.schema.text, weighed)
     },
     test("undo while a call is out drops the call: its answer isn't written, and redo asks nothing either") {
         let b = try SyncBench()
@@ -61,7 +62,7 @@ import Titles
         expectEqual(b.status(id), .idle, "no longer updating")
         spinRunLoop(until: { b.model.answered == 1 })
         b.settle()
-        expectEqual(b.card(id)?.schema, SchemaCard.starter, "the answer to the prompt undone isn't written")
+        expectEqual(b.card(id)?.schema.text, SchemaCard.starter, "the answer to the prompt undone isn't written")
         expectEqual(b.model.queued.count, 1, "the call was cancelled, and took no answer")
         b.model.holdsAnswers = false
         b.editor.redo()
@@ -118,24 +119,24 @@ import Titles
         let code = try require(panel.code)
         panel.focus(code, caret: (SchemaCard.starter as NSString).range(of: "{}").location + 1)
         panel.window.type(#""a": {}"#)
-        let typed = try require(panel.card(id)?.schema)
+        let typed = try require(panel.card(id)?.schema.text)
         expect(typed != SchemaCard.starter)
         expectEqual(panel.editor.undoHistory.undoName, "Change JSON")
         panel.editor.undo()
-        expectEqual(panel.card(id)?.schema, SchemaCard.starter, "every keystroke, undone at once")
+        expectEqual(panel.card(id)?.schema.text, SchemaCard.starter, "every keystroke, undone at once")
         panel.editor.redo()
-        expectEqual(panel.card(id)?.schema, typed)
+        expectEqual(panel.card(id)?.schema.text, typed)
     },
     test("renaming in the header is one step, Change Schema; typing the card's description one, Typing") {
         let panel = try SchemaPanelWindow()
         let id = panel.show(card(#"{"type": "object", "properties": {"a": {}}}"#))
-        let before = try require(panel.card(id)?.schema)
+        let before = try require(panel.card(id)?.schema.text)
         panel.window.focus(try require(panel.headerField))
         panel.window.type("Pets")
         expectEqual(panel.editor.registry.title(of: try require(panel.editor.document[id])), "Pets")
         expectEqual(panel.editor.undoHistory.undoName, "Change Schema")
         panel.editor.undo()
-        expectEqual(panel.card(id)?.schema, before, "the name typed, undone at once")
+        expectEqual(panel.card(id)?.schema.text, before, "the name typed, undone at once")
         panel.editor.undoHistory.seal()     // what the app's window does as the keyboard moves
         panel.model.queue("NO_CHANGE")
         _ = try panel.describe(id)

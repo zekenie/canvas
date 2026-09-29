@@ -258,11 +258,12 @@ def with_props(schema, add=None, remove=(), required=None, patch=None, rename=No
 cases = []
 
 
-def case(id, direction, checks, prompt="", previous_prompt="", schema=None, previous_schema=None, core=1, note=""):
+def case(id, direction, checks, prompt="", previous_prompt="", schema=None, previous_schema=None, core=1, note="", schemas=""):
     cases.append({
         "id": id,
         "direction": direction,
         "core": core,
+        "schemas": schemas,
         "prompt": prompt,
         "previous_prompt": previous_prompt,
         "schema": schema if isinstance(schema, str) else fmt(schema) if schema is not None else "",
@@ -708,9 +709,79 @@ case("s_huge_add", "to_schema", [
     prompt="a wide record: five of everything a customer record has, and a preferred contact method (email, phone or sms)",
     schema=HUGE, note="200 fields, past the old 4096-token ceiling: the whole schema written again")
 
+# ---------------------------------------------------------------- other schemas, by their words
+
+# The app shows the model each other schema card a card's texts name as @ and a word
+# (SchemaReferenceNames), lists them in <schemas>, and writes a "$ref" to one as that word; it reads
+# the words back as the cards' URIs, and as mentions in a description.
+
+HOUSE = {
+    "title": "House",
+    "type": "object",
+    "properties": {
+        "bedrooms": {"type": "integer"},
+        "yearBuilt": {"type": "integer"},
+    },
+    "required": ["bedrooms"],
+}
+
+HOUSE_AT = with_props(HOUSE, add={"address": {"$ref": "@Address"}})
+HOUSE_ROOMS = with_props(HOUSE, add={"address": {"$ref": "@Address"}, "rooms": {"type": "array", "items": {"$ref": "@Room"}}})
+
+case("s_ref_new", "to_schema", [
+    "changed", "title", "eq:/properties/address={\"$ref\": \"@Address\"}", "eq:/properties/rooms/items={\"$ref\": \"@Room\"}",
+    "type:/properties/rooms=array", "reqexact:/=bedrooms", "absent:/$defs", "lacks_text:street", "refs:@Address=1", "refs:@Room=1",
+], schemas="@Address\n@Room", prompt="A house: its @Address, how many bedrooms (required), and a list of @Room", schema=STARTER,
+    note="a word from <schemas> is that whole schema: a $ref to the word, never its fields")
+case("s_ref_added", "to_schema", [
+    "changed", "titlesame", "same:/properties/bedrooms", "same:/properties/yearBuilt", "same:/required",
+    "eq:/properties/address={\"$ref\": \"@Address\"}", "count:/properties=3..3",
+], schemas="@Address", previous_prompt="A house: bedrooms (required), year built",
+    prompt="A house: bedrooms (required), year built, and its @Address", schema=HOUSE,
+    note="a mention added to the prompt: a property pointing to it, the rest as it was")
+case("s_ref_kept", "to_schema", [
+    "changed", "same:/properties/address", "same:/properties/rooms", "same:/properties/bedrooms",
+    "anyprop:/properties=garage|hasGarage|garageSpaces",
+], schemas="@Address\n@Room", previous_prompt="A house: its @Address, bedrooms (required), year built, and a list of @Room",
+    prompt="A house: its @Address, bedrooms (required), year built, a list of @Room, and whether it has a garage", schema=HOUSE_ROOMS,
+    note="an edit about something else: every $ref to a word stays exactly as written")
+case("s_ref_removed", "to_schema", [
+    "changed", "absent:/properties/address", "same:/properties/rooms", "same:/properties/bedrooms", "refs:@Address=0",
+], schemas="@Address\n@Room", previous_prompt="A house: its @Address, bedrooms (required), year built, and a list of @Room",
+    prompt="A house: bedrooms (required), year built, and a list of @Room", schema=HOUSE_ROOMS,
+    note="a mention taken out of the prompt: the property pointing to it goes")
+case("s_ref_roles", "to_schema", [
+    "changed", "title", "refs:@Address=2", "anyprop:/properties=shippingAddress|shipTo|shippingAddr|shippedTo",
+    "anyprop:/properties=billingAddress|billTo|billingAddr|billedTo", "refs:@Customer=1", "lacks_text:street",
+], schemas="@Address\n@Customer", prompt="An order: the @Customer, shipped to a @Address and billed to a @Address, and its total",
+    schema=STARTER, note="one schema twice, each property named for its role")
+case("s_ref_unlisted_at", "to_schema", [
+    "changed", "refs:@Address=1", "lacks_text:@handle|@home",
+], schemas="@Address", prompt="A contact: email, the @handle they go by, and their @Address", schema=STARTER,
+    note="an @ word <schemas> doesn't list is only words: no $ref to it")
+
+case("p_ref_from_nothing", "to_prompt", [
+    "changed", "contains:@Address", "contains:@Room", "lacks:@Rooms", "lacks:street", "maxlen:200",
+], schemas="@Address\n@Room", previous_schema=STARTER, schema=HOUSE_ROOMS,
+    note="a $ref to a word is named by the word, @ and all")
+case("p_ref_added", "to_prompt", [
+    "changed", "contains:@Address", "startswith:A house: bedrooms (required)", "growmax:30",
+], schemas="@Address", prompt="A house: bedrooms (required), year built", previous_schema=HOUSE, schema=HOUSE_AT,
+    note="a $ref added by hand: the prompt gains the word, the rest word for word")
+case("p_ref_removed", "to_prompt", [
+    "changed", "lacks:@Address", "contains:bedrooms", "contains:year built",
+], schemas="@Address", prompt="A house: its @Address, bedrooms (required), year built", previous_schema=HOUSE_AT, schema=HOUSE,
+    note="a $ref taken out by hand: the word goes")
+case("p_ref_kept", "to_prompt", [
+    "contains:@Address", "keeps:0.85",
+], schemas="@Address", prompt="A house: its @Address, bedrooms (required), year built",
+    previous_schema=HOUSE_AT, schema=with_props(HOUSE_AT, patch={"bedrooms": {"type": "integer", "maximum": 10}}),
+    note="another change: the word stays word for word")
+
+
 if __name__ == "__main__":
     with open(os.path.join(HERE, "cases.csv"), "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=["id", "direction", "core", "prompt", "previous_prompt", "schema", "previous_schema", "checks", "note"])
+        w = csv.DictWriter(f, fieldnames=["id", "direction", "core", "schemas", "prompt", "previous_prompt", "schema", "previous_schema", "checks", "note"])
         w.writeheader()
         for c in cases:
             w.writerow(c)

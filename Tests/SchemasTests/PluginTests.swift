@@ -5,6 +5,7 @@ import CanvasTesting
 import DetailPanel
 import Foundation
 import Keyboard
+import Mentions
 import Ports
 import Schemas
 import Selection
@@ -25,15 +26,16 @@ import Validation
         expectEqual([tool.label, tool.systemImage], ["Schema", "curlybraces"])
         expectEqual(registry.shortcut(forTool: tool.id)?.chord, "s")
         expectEqual(registry.report.split(separator: "\n").first { $0.hasPrefix("schemas") }.map(String.init), """
-        schemas            service SchemaSync · overlay SchemaHighlightFrames · ShapePopovers · shape schema-card · tool schema-card · shortcut S → tool schema-card · \
-        ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · \
-        ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link · edge type schema-link
+        schemas            service SchemaSync · overlay SchemaHighlightFrames · ShapePopovers · shape schema-card v1 · tool schema-card · \
+        shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · \
+        ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · mention text → schema-card · \
+        mentionable → schema-card · ShapeDetails → schema-card · channel schema-link · edge type schema-link
         """)
     },
-    test("needs validation, titles, the table of contents, the detail panel and ports installed") {
+    test("needs validation, titles, the table of contents, the detail panel, ports and mentions installed") {
         let plugins = schemaPlugins()
         for (point, owner) in [("ValidationRules", PluginID.validation), ("ShapeTitles", .titles), ("ContentsTitles", .tableOfContents),
-                               ("ShapeDetails", .detailPanel), ("ShapePorts", .ports)] {
+                               ("ShapeDetails", .detailPanel), ("ShapePorts", .ports), ("MentionTexts", .mentions)] {
             expectThrows(RegistryError.ownerNotInstalled(point: point, owner: owner, contributor: .schemas)) {
                 _ = try Registry(plugins: plugins.filter { $0.id != owner })
             }
@@ -119,20 +121,20 @@ import Validation
         let broken = String(fixture(6).dropLast(3))
         @MainActor func title() throws -> String? { editor.registry.title(of: try require(editor.document[id])) }
         for text in [broken, broken + "]", "[1]", "\"x\""] {
-            editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema = text } }
+            editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema.text = text } }
             expectEqual(try title(), "Order", text)
             let row = try contentsLabel(of: id, in: editor)
             expectEqual([row?.text, row?.badge], ["Order", "6"], text)
             expectEqual(editor.issues(id).map(\.severity), [.error], "the rules read the text itself")
             expectEqual(editor.schemaCard(id)?.frame.height, cardHeight(lines: 1), "its description's height, whatever the schema")
         }
-        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema = fixture(2) } }
+        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema.text = fixture(2) } }
         expectEqual(try title(), "Contact", "a good text shows itself")
         expectEqual(try contentsLabel(of: id, in: editor)?.badge, "3")
-        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema = "[1]" } }
+        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema.text = "[1]" } }
         expectEqual(try contentsLabel(of: id, in: editor)?.badge, "3", "the three it showed last")
         // Deleted, what it showed goes with it: a card of its id, read again, shows only its text.
-        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema = broken } }
+        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema.text = broken } }
         expectEqual(try title(), "Contact")
         editor.transact { $0.delete([id]) }
         let again = editor.add(card(broken), id: id)
@@ -147,7 +149,7 @@ import Validation
         let broken = String(fixture(2).dropLast(3))
         let id = editor.add(card(broken))
         let saved = editor.document
-        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema = fixture(2) } }
+        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema.text = fixture(2) } }
         expectEqual(try contentsLabel(of: id, in: editor)?.badge, "3")
         editor.replaceDocument(with: saved)
         expectEqual(try contentsLabel(of: id, in: editor)?.badge, nil, "the fix is in no version of the file")
@@ -156,22 +158,25 @@ import Validation
         let editor = try schemaEditor()
         let id = editor.add(card(fixture(10)))
         expectEqual(editor.issues(id).count, 1)
-        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema = fixture(6) } }
+        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema.text = fixture(6) } }
         expectEqual(editor.issues(id), [])
     },
     test("props round-trip through JSON, the schema's text exactly as typed") {
-        let props = SchemaCard(frame: CGRect(x: 1, y: 2, width: 300, height: 177), schema: fixture(10) + "\n\t// é", prompt: "an order")
+        let props = SchemaCard(frame: CGRect(x: 1, y: 2, width: 300, height: 177), schema: SchemaText(fixture(10) + "\n\t// é"), prompt: "an order")
         expectEqual(try JSONDecoder().decode(SchemaCard.self, from: JSONEncoder().encode(props)), props)
-        expectEqual(try JSONDecoder().decode(SchemaCard.self, from: Data(#"{"frame": [[0, 0], [240, 89]]}"#.utf8)).schema, SchemaCard.starter)
+        expectEqual(try JSONDecoder().decode(SchemaCard.self, from: Data(#"{"frame": [[0, 0], [240, 89]]}"#.utf8)).schema.text, SchemaCard.starter)
     },
     test("the kind's schema: its text is JSON Schema by media type, and no title of its own (the name is the schema's)") {
         let registry = try Registry(plugins: schemaPlugins())
         let json = try require(registry.schema(for: SchemaCard.kind)).json
         expectEqual(json["properties"]?["schema"]?["contentMediaType"], .string("application/schema+json"))
-        expectEqual(json["properties"]?["prompt"]?["type"], .string("string"))
+        // Its description is mention text, of schema cards alone.
+        expectEqual(json["properties"]?["prompt"]?["$ref"], .string("#/$defs/mentions.text"))
+        expectEqual(json["properties"]?["prompt"]?["x-canvas-mentions"], ["kinds": ["schema-card"]])
+        expectEqual(json["properties"]?["schema"]?["type"], .string("string"))
         expectEqual(json["required"], .array([.string("frame")]))
         expect(json["properties"]?["title"] == nil, "a derived title: not the property Titles keeps for a named shape")
-        let card = AnyShapeRecord(ShapeRecord(SchemaCard(frame: CGRect(x: 0, y: 0, width: 240, height: 177), schema: fixture(6))))
+        let card = AnyShapeRecord(ShapeRecord(SchemaCard(frame: CGRect(x: 0, y: 0, width: 240, height: 177), schema: SchemaText(fixture(6)))))
         expectEqual(registry.schemaViolations(of: card), [], "a card keeps to its kind's schema")
     },
 ])

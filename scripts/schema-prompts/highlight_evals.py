@@ -49,13 +49,17 @@ def swift_settings():
     if not m:
         raise Fatal(f"no highlightsSystem in {SWIFT}")
     system = m.group(1)
+    m = re.search(r'static let highlightsReferences = #"""\n(.*?)\n"""#', src, re.S)
+    if not m:
+        raise Fatal(f"no highlightsReferences in {SWIFT}")
+    references = m.group(1)
 
     def value(name, pattern):
         found = re.search(r'static let ' + name + r' = ' + pattern, src)
         if not found:
             raise Fatal(f"no {name} in {SWIFT}")
         return found.group(1)
-    return {"system": system, "model": value("highlightsModel", r'"([^"]+)"'),
+    return {"system": system, "references": references, "model": value("highlightsModel", r'"([^"]+)"'),
             "effort": value("highlightsEffort", r'"([^"]+)"'), "max_tokens": int(value("highlightsMaxTokens", r'([0-9_]+)').replace("_", ""))}
 
 
@@ -81,8 +85,11 @@ def load_key():
     return os.environ.get("ANTHROPIC_API_KEY", "").strip() or None
 
 
-def call(key, settings, model, user):
-    body = {"model": model, "max_tokens": settings["max_tokens"], "system": settings["system"],
+def call(key, settings, model, user, names_schemas=False):
+    # What it says of other schemas after it, a blank line apart, for a prompt that names some
+    # (SchemaPrompts.toHighlights).
+    system = settings["system"] + "\n" + settings["references"] if names_schemas else settings["system"]
+    body = {"model": model, "max_tokens": settings["max_tokens"], "system": system,
             "messages": [{"role": "user", "content": user}]}
     if model.startswith("claude-haiku"):
         body["temperature"] = 0.0      # Haiku takes no effort; the app asks it at 0, as the sync does
@@ -302,7 +309,7 @@ def main():
 
     def run(item):
         c, r = item
-        answer = call(key, settings, model, user_message(c["prompt"], c["schema"]))
+        answer = call(key, settings, model, user_message(c["prompt"], c["schema"]), c.get("names_schemas", False))
         return c, r, answer, parse(answer)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:

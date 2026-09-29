@@ -2,9 +2,11 @@ import Adornments
 import AppKit
 import Canvas
 import CanvasTesting
+import ContextMenus
 import DetailPanel
 import Keyboard
 import LanguageModels
+import Mentions
 import Ports
 import Schemas
 import Selection
@@ -14,13 +16,13 @@ import Titles
 import Topology
 import Validation
 
-/// Every plugin a schema card contributes to (validation, the table of contents, titles, the detail
-/// panel, ports), with the keyboard and the selection, to place and select one as a person does,
-/// Adornments, which Titles places its pill with, and the language model its sync asks: a scripted
-/// one, so no test reaches the network.
+/// Every plugin a schema card contributes to (validation, the table of contents, titles, mentions and
+/// the context menu their Show What Mentions is in, the detail panel, ports), with the keyboard and
+/// the selection, to place and select one as a person does, Adornments, which Titles places its pill
+/// with, and the language model its sync asks: a scripted one, so no test reaches the network.
 @MainActor func schemaPlugins(model: any LanguageModel = ScriptedLanguageModel()) -> [any CanvasPlugin] {
-    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), SchemasPlugin(), ValidationPlugin(), AdornmentsPlugin(), TableOfContentsPlugin(), TitlesPlugin(),
-     DetailPanelPlugin(), PortsPlugin(), LanguageModelsPlugin(model: model)]
+    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), SchemasPlugin(), ValidationPlugin(), AdornmentsPlugin(), ContextMenusPlugin(),
+     TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), DetailPanelPlugin(), PortsPlugin(), LanguageModelsPlugin(model: model)]
 }
 
 @MainActor func schemaEditor(scheduler: any Scheduler = ManualScheduler(), model: any LanguageModel = ScriptedLanguageModel(),
@@ -31,8 +33,8 @@ import Validation
 /// A card at `origin`, `width` wide, of `schema`, as tall as its description makes it (a line's,
 /// with none).
 @MainActor func card(_ schema: String, prompt: String = "", at origin: CGPoint = CGPoint(x: 40, y: 40), width: CGFloat = 240) -> SchemaCard {
-    var card = SchemaCard(frame: CGRect(origin: origin, size: CGSize(width: width, height: SchemaCard.defaultSize.height)), schema: schema)
-    card.setPrompt(prompt)
+    var card = SchemaCard(frame: CGRect(origin: origin, size: CGSize(width: width, height: SchemaCard.defaultSize.height)), schema: SchemaText(schema))
+    card.setPrompt(SchemaPromptText(plain: prompt))
     return card
 }
 

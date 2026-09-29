@@ -176,8 +176,8 @@ enum Budget {
             shapes.append(rectangle)
         case 9:
             var schema = SchemaCard(frame: CGRect(origin: origin, size: SchemaCard.defaultSize))
-            schema.schema = #"{"title": "Record \#(i)", "type": "object", "properties": {"name": {"type": "string"}, "count\#(i)": {"type": "integer"}, "tags": {"type": "array", "items": {"type": "string"}}}, "required": ["name"]}"#
-            schema.setPrompt("Record \(i): its name, a count, and its tags")
+            schema.schema.text = #"{"title": "Record \#(i)", "type": "object", "properties": {"name": {"type": "string"}, "count\#(i)": {"type": "integer"}, "tags": {"type": "array", "items": {"type": "string"}}}, "required": ["name"]}"#
+            schema.setPrompt(SchemaPromptText(plain: "Record \(i): its name, a count, and its tags"))
             shapes.append(AnyShapeRecord(ShapeRecord(schema)))
         default:
             var text = MentionText(plain: "Note \(i): something to do")

@@ -186,12 +186,12 @@ extension ChangeSetWatcher: EditorService {
         let schema = #"{ "title": "Person", "type": "object", "properties": { "name": { "type": "string" }, "email": { "type": "string" } } }"#
         model.queue(schema)
         h.scheduler.advance(by: SchemaSync.idleDelay)
-        spinRunLoop(until: { h.file.record(card)?.typed(as: SchemaCard.self)?.props.schema == schema })
+        spinRunLoop(until: { h.file.record(card)?.typed(as: SchemaCard.self)?.props.schema.text == schema })
         expectEqual(h.editor.board, .root, "nothing is shown for it")
         expectEqual(h.editor.undoHistory.undoName, "Update Schema")
         h.editor.undo()
         expectEqual(h.editor.board, BoardID(owner: pocket))
-        expectEqual(h.editor.document[card]?.typed(as: SchemaCard.self)?.props.schema, SchemaCard.starter)
+        expectEqual(h.editor.document[card]?.typed(as: SchemaCard.self)?.props.schema.text, SchemaCard.starter)
     },
     test("a locked note inside a copied pocket pastes locked, and holds the pocket from being cut") {
         let pasteboard = NSPasteboard.withUniqueName()

@@ -5,6 +5,7 @@ import CoreGraphics
 import Foundation
 import LanguageModels
 import Mentions
+import Schemas
 import StickyNotes
 import TestKit
 import Titles
@@ -46,6 +47,25 @@ import Titles
             .mention(groceries, label: "Plans"),
         ])
         expectEqual(MentionText(note.props.text.runs), note.props.text, "written as a note's editor writes it")
+    },
+    // Since its second version a schema card's description may mention other schema cards, which its
+    // schema refers to: what it said before reads as it did.
+    test("a schema card's description from before mentions reads as the text it was; today's fixture mentions the card its schema refers to") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let codec = BoardCodec(registry: registry)
+        let directory = "Tests/CompositionTests/Fixtures/kinds"
+        expectEqual(codec.version(of: SchemaCard.kind), 1)
+        let before = try Data(contentsOf: URL(fileURLWithPath: "\(directory)/schema-card.v0.json"))
+        let old = try require(codec.decodeRecord(props: before, kind: SchemaCard.kind, version: 0).typed(as: SchemaCard.self))
+        expectEqual(old.props.prompt.runs, [.text("email required, phone required, description")])
+        let data = try Data(contentsOf: URL(fileURLWithPath: "\(directory)/schema-card.v1.json"))
+        let card = try require(codec.decodeRecord(props: data, kind: SchemaCard.kind, version: 1).typed(as: SchemaCard.self))
+        let address = ShapeID(UUID(uuidString: "5B0E7C1A-3D2F-4E6B-8A9C-1F2E3D4C5B6A")!)
+        expectEqual(card.props.prompt.runs, [.text("A house: its "), .mention(address, label: "Address"), .text(", and how many bedrooms (required).")])
+        expectEqual(SchemaReferences.refs(in: card.props.schema.text).map(\.card), [address])
+        var named: [ShapeID] = []
+        card.props.schema.forEachNamedShape { named.append($0) }
+        expectEqual(named, [address], "a $ref names its card, as the mention does")
     },
     test("the welcome board, and a board of every shipped kind, read back as they were") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())

@@ -1,13 +1,15 @@
 import AppKit
 import Canvas
+import Mentions
 
 /// On the main actor as a whole, so its drawing helpers share the protocol's isolation.
 @MainActor
 struct SchemaCardDefinition {}
 
 /// A white card, its corners a note's, that says what its schema holds in words: its description
-/// (the prompt the model writes the schema from), set as a note's text is, and typed on the card
-/// itself (`Editable`). Its name is its title's pill's, above it, after the kind's `{}` (Titles);
+/// (the prompt the model writes the schema from), set as a note's text is, each mention of another
+/// card a pill (`drawMentionText`), and typed on the card itself (`Editable`). Its name is its
+/// title's pill's, above it, after the kind's `{}` (Titles);
 /// its schema is its panel's. A card with no description is blank. Zoomed out, the editor draws its
 /// skeleton in its place (SchemaSkeleton.swift). Colors are the same in both appearances, as every
 /// shape's body is, and gray: the kind's hue is its row's symbol and its ports' dots.
@@ -17,21 +19,22 @@ extension SchemaCardDefinition: ShapeDefinition {
         context.fillWithShadow(SchemaStyle.rounded(frame, SchemaStyle.cornerRadius), SchemaStyle.card)
         // A card too small for its padding has no room for text.
         let box = SchemaStyle.textBox(of: frame)
-        guard !shape.props.prompt.isEmpty, !box.isEmpty else { return }
+        guard !shape.props.prompt.stored.isEmpty, !box.isEmpty else { return }
         // Its highlights behind their words, a field's one way and a rule's another, under its editor
         // too, whose text lays out as this does (read, too, so a card drawn in full is asked about
-        // once it's in step: `SchemaHighlightAnswers`).
+        // once it's in step: `SchemaHighlightAnswers`), each mention's pill as it's drawn.
         let placed = SchemaHighlightAnswers.placed(for: shape)
         if !placed.isEmpty {
-            for (highlight, lines) in zip(placed, SchemaHighlightAnswers.lines(of: shape)) {
+            let registry = context.shapes.registry
+            let lines = SchemaHighlightAnswers.lines(of: shape) { registry.mentionResolution(of: $0, lookup: { context.shape(inFile: $0) }) }
+            for (highlight, lines) in zip(placed, lines) {
                 context.cg.setFillColor(SchemaStyle.highlightColor(highlight.kind))
                 for line in lines { context.cg.fill(SchemaStyle.highlightFill(line)) }
             }
         }
         // While editing, the editing view draws the text instead.
         guard !context.isEditing else { return }
-        NSAttributedString(string: shape.props.prompt, attributes: SchemaStyle.textAttributes)
-            .draw(with: box, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+        context.drawMentionText(shape.mentionPlacement)
     }
 
     func indicatorPath(of shape: ShapeRecord<SchemaCard>, in context: ShapeContext) -> CGPath {
@@ -43,6 +46,14 @@ extension SchemaCardDefinition: ShapeDefinition {
 /// tall as its description, as `setPrompt` would have made it.
 extension SchemaCardDefinition: DerivedProps {
     func derive(_ card: inout SchemaCard) { card.setPrompt(card.prompt) }
+}
+
+extension ShapeRecord where Props == SchemaCard {
+    /// Where the card draws its description: in its padding, in the card's text. The render draws
+    /// exactly this, and Mentions finds its pills through it (`mentionText`).
+    @MainActor var mentionPlacement: MentionTextPlacement {
+        MentionTextPlacement(props.prompt, in: SchemaStyle.textBox(of: frame), style: SchemaStyle.text)
+    }
 }
 
 /// Its description is typed on the card (`SchemaDescriptionEditor`), from a placed card at once.
@@ -70,9 +81,7 @@ enum SchemaStyle {
 
     static let card = NSColor.white
     /// The description's color, a note's text's (`NoteStyle.text`), made the same way.
-    static let text = NSColor(white: 0.12, alpha: 1)
-    /// The description's editor while the model writes the description: read-only, and this faint.
-    static let updatingOpacity: CGFloat = 0.45
+    static let textColor = NSColor(white: 0.12, alpha: 1)
     /// Behind the words a highlight links to the schema: a field's pale blue, a rule's pale amber,
     /// light enough on the white card that the text stays the text's gray.
     static let fieldHighlight = NSColor(srgbRed: 0.20, green: 0.47, blue: 0.96, alpha: 0.16).cgColor
@@ -94,16 +103,13 @@ enum SchemaStyle {
     /// white, as the indigo was.
     static let accent = NSColor(srgbRed: 0.75, green: 0.18, blue: 0.62, alpha: 1)
 
-    /// The description's attributes, shared by the render and the editor, so its text doesn't move
-    /// as editing starts: a note's text, the system font at 16 points, every line 19 points tall
-    /// (`SchemaCardMetrics.lineHeight`), string drawing's own pitch for the font, which TextKit 2
-    /// would set a point closer.
-    static let textAttributes: [NSAttributedString.Key: Any] = {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = SchemaCardMetrics.lineHeight
-        paragraph.maximumLineHeight = SchemaCardMetrics.lineHeight
-        return [.font: NSFont.systemFont(ofSize: 16), .foregroundColor: text, .paragraphStyle: paragraph.copy()]
-    }()
+    /// The description's style, shared by the render and the editor, so its text and its pills don't
+    /// move as editing starts: a note's text (`NoteStyle.text`), the system font at 16 points, every
+    /// line 19 points tall (`SchemaCardMetrics.lineHeight`), string drawing's own pitch for the font,
+    /// which TextKit 2 would set a point closer; its pills in its color, on the card's surface.
+    static let text = MentionTextStyle(font: .systemFont(ofSize: 16), color: textColor, lineHeight: SchemaCardMetrics.lineHeight)
+    /// Its attributes: its font, its color and its fixed lines.
+    static var textAttributes: [NSAttributedString.Key: Any] { text.attributes }
     /// Where the editor's text starts in the card. At the same line height, TextKit 2 sets a line's
     /// glyphs a point lower in it than string drawing does, so the editor's text starts a point
     /// higher than the render's and its lines fall exactly on the render's (as a note's editor's).
@@ -124,12 +130,19 @@ enum SchemaStyle {
     /// after a last Return too, where the caret is), and the padding above and below, with half a
     /// point spare so string drawing never cuts the last line; never shorter than one line
     /// (`SchemaCardMetrics.emptyHeight`). `height`, the card's own, is kept when the width leaves no
-    /// room for text to measure. A note's measure (`NoteStyle.fittedHeight`), with a line for its least.
-    static func fittedHeight(of text: String, width: CGFloat, keeping height: CGFloat) -> CGFloat {
+    /// room for text to measure. A note's measure (`NoteStyle.fittedHeight`), with a line for its
+    /// least. Each mention is measured by the name it holds, as a pure function of the text.
+    static func fittedHeight(of text: SchemaPromptText, width: CGFloat, keeping height: CGFloat) -> CGFloat {
+        let inner = width - SchemaCardMetrics.padding * 2
+        guard inner > 0 else { return height }
+        return fittedHeight(of: self.text.attributedString(text, width: inner) { _ in .missing }, width: width, keeping: height)
+    }
+
+    /// The same, of the text as it's shown (the editor's, each pill as its card is called now).
+    static func fittedHeight(of shown: NSAttributedString, width: CGFloat, keeping height: CGFloat) -> CGFloat {
         let padding = SchemaCardMetrics.padding, inner = width - padding * 2
         guard inner > 0 else { return height }
-        let lines = NSAttributedString(string: text, attributes: textAttributes)
-            .boundingRect(with: CGSize(width: inner, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin]).height
+        let lines = shown.boundingRect(with: CGSize(width: inner, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin]).height
         return max(SchemaCardMetrics.emptyHeight, (lines + 0.5).rounded(.up) + padding * 2)
     }
 

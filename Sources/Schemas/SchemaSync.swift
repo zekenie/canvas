@@ -1,6 +1,7 @@
 import Canvas
 import Foundation
 import LanguageModels
+import Mentions
 import Observation
 
 /// One of a schema card's two sides: its prompt (what it holds, in words: the card's description,
@@ -80,6 +81,10 @@ public struct SchemaSyncFailure: Equatable, Sendable {
 ///   card's description while it's typed into); if it changes anyway, the answer is dropped. Edits
 ///   to the other side wait, and sync once it lands. A card deleted meanwhile drops it, and so does
 ///   every card when a file is put in place (read again from disk), those it left as they were too.
+/// - The cards the two sides name (a mention in the description, a `$ref` in the schema) are shown
+///   to the model as `@` and a word of their names, never their ids, and what it writes names them
+///   back (`SchemaReferenceNames`): a mention it writes is a `$ref` to the card's schema, and a
+///   `$ref` a mention, each card called as it is now, else as its mention holds.
 /// - A failure leaves both sides as they are and says why; Retry (or the next commit) tries again,
 ///   and a key saved in Settings (`Notification.Name.languageModelKeyDidChange`) does for a card
 ///   that failed for want of one. A cancelled call says nothing. `NO_CHANGE` writes nothing. A
@@ -108,12 +113,13 @@ public final class SchemaSync {
     public nonisolated static let tooLongMessage = "Schema too long to rewrite"
 
     private struct Sides: Equatable, Sendable {
-        var prompt: String
+        var prompt: SchemaPromptText
         var schema: String
 
+        /// A side's text, as stored.
         subscript(side: SchemaSide) -> String {
             switch side {
-            case .prompt: prompt
+            case .prompt: prompt.stored
             case .schema: schema
             }
         }
@@ -124,6 +130,8 @@ public final class SchemaSync {
         let writes: SchemaSide
         /// Both sides as they were sent.
         let sent: Sides
+        /// The words the model was shown for the cards the sides name, which its answer names them by.
+        let names: SchemaReferenceNames
         let number: Int
         let task: Task<Void, Never>
 
@@ -179,6 +187,28 @@ public final class SchemaSync {
     }
 
     // MARK: What the panel asks
+
+    /// A shape on a board of the file the editor can show: a card another's `$ref` points to.
+    func shape(inFile id: ShapeID) -> AnyShapeRecord? { editor?.shape(inFile: id) }
+
+    /// The cards a `$ref` in the card `id`'s schema can point to, as its JSON's completions offer
+    /// them: every other titled card on a board of the file the editor can show, by its title
+    /// (the name its mentions show), its fields counted, in the order of their titles.
+    public func referenceTargets(from id: ShapeID) -> [JSONCompletionOffer] {
+        guard let editor else { return [] }
+        var found: [(name: String, card: ShapeID, detail: String)] = []
+        for card in cards.keys where card != id {
+            guard let record = editor.shape(inFile: card)?.typed(as: SchemaCard.self) else { continue }
+            let shown = SchemaReadings.reading(of: record).shown
+            guard let title = shown.title else { continue }
+            found.append((title, card, SchemaPanelText.subtitle(shown) ?? ""))
+        }
+        found.sort { a, b in
+            let order = a.name.localizedStandardCompare(b.name)
+            return order == .orderedSame ? a.card.description < b.card.description : order == .orderedAscending
+        }
+        return found.map { SchemaCompletions.card($0.card, named: $0.name, detail: $0.detail) }
+    }
 
     /// Where the card's sync is. Observing it hears only this card's changes.
     public func status(of id: ShapeID) -> SchemaSyncStatus {
@@ -271,13 +301,16 @@ public final class SchemaSync {
         let prompt = Self.trimmed(now.prompt)
         let promptAhead = !prompt.isEmpty && prompt != Self.trimmed(last.prompt)
         let tooLong = now.schema.utf8.count > SchemaPrompts.toSchemaMaxLength
+        let names = referenceNames(now, last, in: editor)
         let request: ModelRequest, writes: SchemaSide
         if promptAhead, !tooLong {
-            request = SchemaPrompts.toSchema(previousPrompt: last.prompt, prompt: now.prompt, schema: now.schema)
+            request = SchemaPrompts.toSchema(previousPrompt: names.modelText(of: last.prompt).text, prompt: names.modelText(of: now.prompt).text,
+                                             schema: names.modelSchema(now.schema), schemas: names.list)
             writes = .schema
         } else if !Self.means(root, last.schema) {
             guard !(document.fields.isEmpty && prompt.isEmpty) else { return }
-            request = SchemaPrompts.toPrompt(prompt: now.prompt, previousSchema: last.schema, schema: now.schema)
+            request = SchemaPrompts.toPrompt(prompt: names.modelText(of: now.prompt).text, previousSchema: names.modelSchema(last.schema),
+                                             schema: names.modelSchema(now.schema), schemas: names.list)
             writes = .prompt
         } else if promptAhead {
             // Too long to write whole: the person edits it, and the prompt follows that edit.
@@ -300,8 +333,21 @@ public final class SchemaSync {
             }
             self?.land(id, call: number, result)
         }
-        cards[id]?.call = Call(writes: writes, sent: now, number: number, task: task)
+        cards[id]?.call = Call(writes: writes, sent: now, names: names, number: number, task: task)
         setStatus(.updating(writes), of: id)
+    }
+
+    /// The words the model is shown for the cards a card's sides name, now and at its last sync: each
+    /// schema card called by its title, as a mention of it shows it now; a card that isn't in the
+    /// file (deleted, or in another file) by the name its mention holds, and a `$ref` to one no
+    /// mention holds a name for as written. A mention of another kind's shape (pasted: the picker
+    /// offers only schema cards) is no schema, and stays words.
+    private func referenceNames(_ now: Sides, _ last: Sides, in editor: CanvasEditor) -> SchemaReferenceNames {
+        SchemaReferenceNames(prompts: [now.prompt, last.prompt], schemas: [now.schema, last.schema], name: { id in
+            guard let record = editor.shape(inFile: id), record.kind == SchemaCard.kind,
+                  let appearance = editor.registry.mentionAppearance(of: record), !appearance.isPlaceholder else { return nil }
+            return appearance.label
+        }, isSchema: { id in editor.shape(inFile: id).map { $0.kind == SchemaCard.kind } ?? true })
     }
 
     private func land(_ id: ShapeID, call number: Int, _ result: Result<ModelResponse, LanguageModelError>) {
@@ -342,11 +388,14 @@ public final class SchemaSync {
             synced[id] = call.sent
             highlighter.inStep(id)
         case let .text(text):
+            // The cards it names by their words, named by their ids again.
             switch call.writes {
             case .schema:
-                write(id, .schema, inStep: Sides(prompt: call.sent.prompt, schema: text)) { if text != now.schema { $0.schema = text } }
+                let schema = call.names.schema(fromModel: text)
+                write(id, .schema, inStep: Sides(prompt: call.sent.prompt, schema: schema)) { if schema != now.schema { $0.schema = SchemaText(schema) } }
             case .prompt:
-                write(id, .prompt, inStep: Sides(prompt: text, schema: call.sent.schema)) { if text != now.prompt { $0.setPrompt(text) } }
+                let prompt = call.names.prompt(fromModel: text)
+                write(id, .prompt, inStep: Sides(prompt: prompt, schema: call.sent.schema)) { if prompt != now.prompt { $0.setPrompt(prompt) } }
             }
         }
         return .idle
@@ -406,10 +455,12 @@ public final class SchemaSync {
 
     private static func sides(of record: AnyShapeRecord) -> Sides? {
         guard record.kind == SchemaCard.kind, let card = record.typed(as: SchemaCard.self)?.props else { return nil }
-        return Sides(prompt: card.prompt, schema: card.schema)
+        return Sides(prompt: card.prompt, schema: card.schema.text)
     }
 
     fileprivate nonisolated static func trimmed(_ text: String) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
+    /// A description as stored, trimmed.
+    fileprivate nonisolated static func trimmed(_ text: SchemaPromptText) -> String { trimmed(text.stored) }
 
     /// Whether `text` is JSON that says what `root` does: objects member for member in any order,
     /// arrays in order, numbers by value.

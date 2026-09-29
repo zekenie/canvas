@@ -1,6 +1,7 @@
 import Canvas
 import CoreGraphics
 import Foundation
+import Mentions
 
 // What a schema card's description says of its schema, a few words at a time. The model links words
 // of the description to the parts of the schema they say (`SchemaPrompts.toHighlights`, asked by
@@ -36,7 +37,8 @@ public struct SchemaHighlight: Hashable, Sendable {
 
 /// A highlight found in a description as it is, and its part in the schema as it is.
 public struct PlacedHighlight: Equatable, Sendable {
-    /// Where its words are in the description, in UTF-16, as AppKit's text ranges are.
+    /// Where its words are in the description as it's drawn (each mention one character, its pill),
+    /// in UTF-16, as AppKit's text ranges are.
     public var range: NSRange
     public var kind: SchemaHighlight.Kind
     public var pointer: JSONPointer
@@ -162,19 +164,22 @@ public enum SchemaHighlights {
 }
 
 /// What the model said each description and schema's words link to, process-wide, as a card's
-/// readings are kept (`SchemaReadings`): by the pair's text (the description trimmed, as the sync
-/// compares it), so undo, a copy or a file opened twice finds what it said; and each card's last
-/// answer, whatever pair it was for, so a description being typed keeps the words still there.
+/// readings are kept (`SchemaReadings`): by the pair's text (the description as stored, trimmed, as
+/// the sync compares it), so undo, a copy or a file opened twice finds what it said; and each card's
+/// last answer, whatever pair it was for, so a description being typed keeps the words still there.
 ///
 /// What a card shows (`placed(for:)`, which its render and its editor read) is its pair's answer,
-/// else its last, placed in its text as it is; kept per card while nothing it goes by changes
-/// (its two texts, what's been said), since the canvas reads it every frame. A card read that has
-/// no answer for its pair is wanted: the frame's end hands the cards wanted to the editor's
-/// highlighter (`SchemaHighlightFrames`), which asks once a card is in step, so a card is asked
-/// about only once it's drawn in full, not while it's out of view or drawn as a skeleton.
+/// else its last, placed in its text as it is: found in the description as the model read it, each
+/// mention `@` and a word of the name it holds (`SchemaReferenceNames`, what the highlighter sends),
+/// and moved to the description as it's drawn, words in a mention's word its pill. Kept per card
+/// while nothing it goes by changes (its two texts, what's been said), since the canvas reads it
+/// every frame. A card read that has no answer for its pair is wanted: the frame's end hands the
+/// cards wanted to the editor's highlighter (`SchemaHighlightFrames`), which asks once a card is in
+/// step, so a card is asked about only once it's drawn in full, not while it's out of view or drawn
+/// as a skeleton.
 @MainActor
 public enum SchemaHighlightAnswers {
-    /// A description and its schema, as an answer is kept by.
+    /// A description and its schema, as an answer is kept by: the description as stored.
     public struct Pair: Hashable, Sendable {
         public var prompt: String
         public var schema: String
@@ -183,6 +188,9 @@ public enum SchemaHighlightAnswers {
             self.prompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
             self.schema = schema
         }
+
+        /// A card's.
+        public init(_ card: SchemaCard) { self.init(prompt: card.prompt.stored, schema: card.schema.text) }
     }
 
     /// At most this many answers are kept: past it, the quarter kept longest goes.
@@ -193,14 +201,15 @@ public enum SchemaHighlightAnswers {
     private static var answered = 0
     /// What each card read last shows, while its texts are the same and nothing's been said since.
     private struct Shown {
-        let prompt: String
-        let schema: String
+        let prompt: SchemaPromptText
+        let schema: SchemaText
         let answered: Int
         let placed: [PlacedHighlight]
         /// Its pair has no answer.
         let wants: Bool
-        /// Where `placed` is drawn in a text box of this size, once asked (`lines(of:)`).
-        var lines: (size: CGSize, rects: [[CGRect]])?
+        /// Where `placed` is drawn in a text box of this size, each mention's pill as it showed then,
+        /// once asked (`lines(of:resolve:)`).
+        var lines: (size: CGSize, pills: [MentionResolution], rects: [[CGRect]])?
     }
     private static var shown: [ShapeID: Shown] = [:]
     private static var wanted: Set<ShapeID> = []
@@ -239,30 +248,45 @@ public enum SchemaHighlightAnswers {
 
     private static func show(_ card: ShapeRecord<SchemaCard>) -> Shown {
         let prompt = card.props.prompt, schema = card.props.schema
-        let pair = Pair(prompt: prompt, schema: schema)
+        let pair = Pair(card.props)
         let answer = answers[pair]?.highlights
         let highlights = answer ?? latest[card.id]?.highlights ?? []
         var placed: [PlacedHighlight] = []
-        if !highlights.isEmpty, let root = SchemaReadings.reading(of: schema, for: card.id).shownRoot {
-            placed = SchemaHighlights.place(highlights, in: prompt, schema: root)
+        if !highlights.isEmpty, let root = SchemaReadings.reading(of: schema.text, for: card.id).shownRoot {
+            let read = SchemaReferenceNames(prompts: [prompt], schemas: [], name: { _ in nil }).modelText(of: prompt)
+            var end = 0
+            for var highlight in SchemaHighlights.place(highlights, in: read.text, schema: root) {
+                // Words in one mention's word are its pill, which only the first of them takes.
+                highlight.range = read.shownRange(of: highlight.range)
+                guard highlight.range.length > 0, highlight.range.location >= end else { continue }
+                end = NSMaxRange(highlight.range)
+                placed.append(highlight)
+            }
         }
         return Shown(prompt: prompt, schema: schema, answered: answered, placed: placed, wants: answer == nil && !pair.prompt.isEmpty)
     }
 
     /// Where each of the card's highlights (`placed(for:)`'s, in its order) is drawn, in world units:
-    /// a rect a line, where the canvas fills behind its words (`SchemaHighlightRects`), which its
-    /// editor fills too, and the pointer is found on. Kept with what the card shows, for its text
-    /// box's size.
-    public static func lines(of card: ShapeRecord<SchemaCard>) -> [[CGRect]] {
+    /// a rect a line, where the canvas fills behind its words (`MentionTextStyle.lineRects`), which
+    /// its editor fills too, and the pointer is found on, each mention's pill as `resolve` says it
+    /// shows. Kept with what the card shows, for its text box's size and how its pills show.
+    public static func lines(of card: ShapeRecord<SchemaCard>, resolve: (ShapeID) -> MentionResolution) -> [[CGRect]] {
         let placed = placed(for: card)
         guard !placed.isEmpty else { return [] }
         let box = SchemaStyle.textBox(of: card.frame)
+        let prompt = card.props.prompt
+        var pills: [MentionResolution] = []
+        for run in prompt.runs {
+            if case .mention(let target, _) = run { pills.append(resolve(target)) }
+        }
         let rects: [[CGRect]]
-        if let kept = shown[card.id]?.lines, kept.size == box.size {
+        if let kept = shown[card.id]?.lines, kept.size == box.size, kept.pills == pills {
             rects = kept.rects
         } else {
-            rects = SchemaHighlightRects.rects(of: placed, in: card.props.prompt, size: box.size)
-            shown[card.id]?.lines = (box.size, rects)
+            var next = pills.makeIterator()
+            let string = SchemaStyle.text.attributedString(prompt, width: box.width) { _ in next.next() ?? .missing }
+            rects = SchemaStyle.text.lineRects(of: placed.map(\.range), in: string, size: box.size)
+            shown[card.id]?.lines = (box.size, pills, rects)
         }
         return rects.map { lines in lines.map { $0.offsetBy(dx: box.minX, dy: box.minY) } }
     }
@@ -276,7 +300,7 @@ public enum SchemaHighlightAnswers {
     /// The part of the card's schema a placed highlight of it shows, as a person reads it
     /// (`SchemaHighlights.fragment`), cut from the text it was placed in.
     public static func fragment(of highlight: PlacedHighlight, in card: ShapeRecord<SchemaCard>) -> String {
-        SchemaHighlights.fragment(highlight.part, of: SchemaReadings.reading(of: card.props.schema, for: card.id).shownText)
+        SchemaHighlights.fragment(highlight.part, of: SchemaReadings.reading(of: card).shownText)
     }
 
     /// Drops what's kept of a card that went (its answers stay, by their text).

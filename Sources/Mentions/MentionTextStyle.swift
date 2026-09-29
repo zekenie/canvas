@@ -78,6 +78,15 @@ public struct MentionTextStyle: @MainActor Hashable {
         return string
     }
 
+    /// Where each of `ranges` of `string` (made by `attributedString`) is when the canvas draws it
+    /// in a box of `size` (`drawMentionText`): a rect a line the range is on, from the box's
+    /// top-left (down is +y), as wide as its glyphs and pills there and as tall as the line; none
+    /// on a line past the box. For what a shape draws behind some of its words (a schema card's
+    /// highlights).
+    public func lineRects(of ranges: [NSRange], in string: NSAttributedString, size: CGSize) -> [[CGRect]] {
+        MentionTextLayout.lineRects(of: ranges, in: string, size: size, style: self)
+    }
+
     /// One pill: its attachment's character, with the text's attributes, so its line keeps its height.
     public func pill(_ attachment: MentionAttachment) -> NSAttributedString {
         let pill = NSMutableAttributedString(attachment: attachment)

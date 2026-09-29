@@ -1,6 +1,7 @@
 import Canvas
 import CoreGraphics
 import Keyboard
+import Mentions
 import Ports
 import Selection
 import SwiftUI
@@ -18,7 +19,9 @@ extension PluginID {
 /// of contents; validation's rules for a schema that isn't one; its panel, where the schema is
 /// written as JSON; the sync that keeps the two saying the same thing through the editor's language
 /// model (`SchemaSync`); its description's highlights, words linked to the parts of the schema they
-/// say, each part shown in a popover on its words (`SchemaHighlighter`); and ports, whose arrows link
+/// say, each part shown in a popover on its words (`SchemaHighlighter`); mentions of other schema
+/// cards in its description, each a `$ref` to that card's schema (`SchemaReferences`), so a card can
+/// be mentioned (its Mentioned In tab lists the cards that refer to it); and ports, whose arrows link
 /// a schema to a schema (`SchemaLink`).
 public struct SchemasPlugin: CanvasPlugin {
     public init() {}
@@ -29,7 +32,7 @@ public struct SchemasPlugin: CanvasPlugin {
         // Resting the pointer on a highlight's words shows the part of the schema they say.
         registrar.shapePopovers { editor, record, point in
             guard let card = record.typed(as: SchemaCard.self), editor.editingShapeID != card.id else { return nil }
-            return SchemaHighlightPopovers.popover(at: point, on: card)
+            return SchemaHighlightPopovers.popover(at: point, on: card, in: editor)
         }
         registrar.shape(SchemaCardDefinition()) { schema in
             let place = schema.editingPlacement(size: SchemaCard.defaultSize) { SchemaCard() }
@@ -43,6 +46,10 @@ public struct SchemasPlugin: CanvasPlugin {
             }
             schema.schemaPanel()
             schema.schemaLinks()
+            // Its description's mentions of other cards show as pills, and a card is mentioned by
+            // its title, in its kind's magenta, as its row shows it.
+            schema.mentionText { [$0.mentionPlacement] }
+            schema.mentionable(tint: { _ in SchemaStyle.accent })
         }
         registrar.channel(SchemaLink.self)
     }
@@ -121,7 +128,7 @@ final class SchemaReadings {
     #endif
 
     /// The reading of a card's schema.
-    static func reading(of card: ShapeRecord<SchemaCard>) -> SchemaReadings { reading(of: card.props.schema, for: card.id) }
+    static func reading(of card: ShapeRecord<SchemaCard>) -> SchemaReadings { reading(of: card.props.schema.text, for: card.id) }
 
     /// The reading of `text`, the schema of the card `id`: the one kept for the card with this
     /// text, else read now and kept with them, in place of the card's used longest ago once it
