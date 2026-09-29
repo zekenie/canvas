@@ -59,7 +59,9 @@ extension LockMenuGroup: MenuGroup {
 
 /// A shape's lock chip: a lock in a disc at the right end of the row just above a locked shape,
 /// where a title's pill starts at the other end, farthest out of what's there, as a state that
-/// comes and goes. For a moment after a shape is unlocked it shows the lock open, fading.
+/// comes and goes. For a moment after a shape is unlocked it shows the lock open, fading. Zoomed
+/// out, on a shape drawn as a skeleton, it's a blank disc, open or not, and a click on it does as
+/// ever.
 public enum LockChip {}
 
 extension LockChip: Adornment {

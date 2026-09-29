@@ -43,7 +43,15 @@ public struct OverlayContext {
     /// `editor.paintOrder(in:)` with this, grown by however far past its shapes it draws (and by
     /// `worldDrawingReach` if it follows drawing offsets), rather than through every shape.
     public let visibleRect: CGRect
+    /// Whether this frame draws shapes as skeletons (`CanvasEditor.drawsSkeletons`): an overlay
+    /// that shows what a shape holds (its title's text) draws it simply too, or not at all, and
+    /// the shape being edited is drawn in full (`drawsSkeleton(of:)`).
+    public let drawsSkeletons: Bool
     public var zoom: CGFloat { shapes.zoom }
+
+    /// Whether this frame draws the shape as a skeleton: `drawsSkeletons`, but for the shape being
+    /// edited.
+    public func drawsSkeleton(of id: ShapeID) -> Bool { drawsSkeletons && id != editor.editingShapeID }
 
     /// How far from where it is a shape is drawn (`editor.setDrawingOffset`), in world units: an
     /// overlay that decorates a shape moves its decoration by this, so it stays with the shape.
@@ -57,7 +65,5 @@ public struct OverlayContext {
     /// decorations by `worldDrawingOffset(of:)` grows the rect by this too, so a shape shaken into
     /// view from just outside it is decorated there. It looks at only the shapes drawn away from
     /// where they are.
-    public var worldDrawingReach: CGFloat {
-        editor.drawingOffsets.values.reduce(0) { max($0, abs($1.x), abs($1.y)) } / zoom
-    }
+    public var worldDrawingReach: CGFloat { editor.worldDrawingReach }
 }

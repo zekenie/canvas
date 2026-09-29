@@ -76,5 +76,9 @@ enum Palette {
     static let card = [255, 255, 255]
     static let chip = [241, 241, 241]
     static let accent = [191, 46, 158]
-    static let bar = [204, 204, 204]
+    /// A skeleton's greeked text (the canvas's, a fifth of black) on the card, and on a chip.
+    static let textBar = [204, 204, 204]
+    static let textBarOnChip = [193, 193, 193]
+    /// A skeleton's edge, inside its frame.
+    static let skeletonEdge = [230, 230, 230]
 }

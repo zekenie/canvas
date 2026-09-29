@@ -197,4 +197,47 @@ import TestKit
         expectEqual(board.editor.mentionPills(of: plain), [])
         expectEqual(board.editor.mentionPills(of: idA), [], "a plate draws no mention text")
     },
+    test("zoomed out past 35%, a jot is drawn as a skeleton, with no pills to click or hover: a click there selects it, a double-click edits it; at 35%, pills again") {
+        let board = try FaceBoard()
+        let pill = try require(board.pills.first)
+        board.editor.camera = Camera(zoom: 0.3)
+        board.h.move(to: try board.onPill())
+        expectEqual(board.editor.hovered, board.jot, "not what the pill names")
+        board.h.click(at: try board.onPill())
+        expectEqual(board.editor.selection, board.jot)
+        expectEqual(board.editor.editingShapeID, nil, "no edit from the pill")
+        board.h.click(at: try board.onPill(), clickCount: 2)
+        expectEqual(board.editor.selection, board.jot, "not gone to what the pill names")
+        expectEqual(board.editor.editingShapeID, board.jot, "a double-click on the jot edits it")
+        let start = try require(board.editor.editingStartPoint, "from where it's pressed, as any double-click")
+        expect(start.distance(to: board.center(pill)) < 0.01, "there, no pill's face: \(start)")
+        board.editor.endEditing()
+        board.editor.camera = Camera(zoom: 0.35)
+        board.h.move(to: try board.onPill())
+        expectEqual(board.editor.hovered, idA)
+        board.h.click(at: try board.onPill())
+        expectEqual(board.editor.editingShapeID, board.jot)
+        expectEqual(board.editor.editingStartPoint, board.center(pill), "from the pill")
+    },
+    test("zoomed out past 35%, a double-click where a read-only jot's live pill is tries to edit the jot, and goes nowhere") {
+        let board = try FaceBoard()
+        board.editor.freeze([board.jot])
+        board.editor.camera = Camera(zoom: 0.3)
+        let camera = board.editor.cameraTarget
+        board.doubleClick(at: try board.onPill())
+        expectEqual(board.editor.selection, board.jot)
+        expectEqual(board.editor.cameraTarget, camera)
+        expectEqual(board.refusals.refusals, [[board.jot]], "a try to edit it, which a read-only jot refuses")
+    },
+    test("a pill hovered at 40%, zoomed out to 30% under a still pointer, hovers what it names no longer, but its jot; zoomed back in, again") {
+        let board = try FaceBoard()
+        board.editor.camera = Camera(zoom: 0.4)
+        let point = try board.onPill()
+        board.h.move(to: point)
+        expectEqual(board.editor.hovered, idA)
+        board.editor.camera.setZoom(0.3, around: point)
+        expectEqual(board.editor.hovered, board.jot)
+        board.editor.camera.setZoom(0.4, around: point)
+        expectEqual(board.editor.hovered, idA)
+    },
 ])

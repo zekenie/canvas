@@ -132,4 +132,26 @@ public enum SchemaCardMetrics {
         guard document.isObject, !document.fields.isEmpty else { return 1 }
         return min(document.fields.count, maxRows) + (document.rules.isEmpty ? 0 : 1)
     }
+
+    /// How many rows a card `height` tall has room for: those `height(rows:)` made room for, and
+    /// what a card made taller by hand has besides; at most `maxFittingRows`, so a frame of any
+    /// height (a file edited by hand keeps one of 1e21) makes an Int.
+    static func rows(fitting height: CGFloat) -> Int {
+        Int(min((max(0, height - padding * 2 - titleLineHeight - headerGap) + rowGap) / rowHeight, CGFloat(maxFittingRows)))
+    }
+
+    /// Far more rows than a card shows (`maxRows`), so a card of any height a person makes counts
+    /// its own.
+    static let maxFittingRows = 1_000_000
+
+    /// The overflow rule, for `fields` top-level fields on a card with room for `fit` rows: as many
+    /// field rows as fit, at most `maxRows`; if the fields don't all fit, the last row says how many
+    /// more (`more`), so it's never "+1 more"; then the rules line, if the schema has rules and a row
+    /// is left for it.
+    static func overflow(fields count: Int, hasRules: Bool, fit: Int) -> (fields: Int, more: Int, rules: Bool) {
+        let slots = min(maxRows, fit)
+        let shown = count <= slots ? count : max(0, slots - 1)
+        let more = slots > 0 ? count - shown : 0
+        return (shown, more, hasRules && shown + (more > 0 ? 1 : 0) < fit)
+    }
 }

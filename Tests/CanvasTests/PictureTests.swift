@@ -223,5 +223,16 @@ extension StampDefinition: ShapeDefinition {
         expectEqual(h.editor.outlines.shapes, [a, c])
         expectEqual(h.editor.outlines.faintShapes, [b])
         expectEqual(h.editor.outlines.rects, [CGRect(x: 0, y: 0, width: 30, height: 10)])
+        outlined.faint = [c, b]
+        expectEqual(h.editor.outlines.faintShapes, [b], "the hint is outlined in full")
+
+        // Many faint ones, in their order, those outlined in full left out, and one twice kept twice.
+        let more = (0..<12).map { h.add(Box(CGRect(x: 60 + 20 * CGFloat($0), y: 0, width: 10, height: 10))) }
+        outlined.shapes = [a] + more.filter { more.firstIndex(of: $0)! % 3 == 0 }
+        outlined.faint = more.reversed() + [b, b]
+        expectEqual(h.editor.outlines.faintShapes, more.reversed().filter { more.firstIndex(of: $0)! % 3 != 0 } + [b, b])
+        outlined.shapes = more
+        outlined.faint = more.reversed()
+        expectEqual(h.editor.outlines.faintShapes, [], "every one outlined in full")
     },
 ])

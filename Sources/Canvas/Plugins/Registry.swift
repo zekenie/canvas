@@ -24,6 +24,12 @@ public struct Registry {
     public let namingKinds: Set<ShapeKind>
     /// Kinds whose shapes own boards (`BoardOwning`).
     public let boardOwningKinds: Set<ShapeKind>
+    /// Kinds that draw a skeleton of their own (`CustomSkeleton`), found once: a frame zoomed out
+    /// asks for every shape it draws.
+    let customSkeletons: [ShapeKind: any CustomSkeleton]
+    /// Those outlined their own way (`CustomSkeletonOutline`), found once: ⌘A zoomed out outlines
+    /// every shape in view, and asks only these.
+    let skeletonOutlines: [ShapeKind: any CustomSkeletonOutline]
     /// Every plugin's rule for which shapes can't change (`registrar.readOnlyShapes`), found once:
     /// a transaction asks them about every shape it changes.
     private let readOnlyRules: [@MainActor (AnyShapeRecord) -> Bool]
@@ -64,6 +70,8 @@ public struct Registry {
         }, uniquingKeysWith: { first, _ in first })
         referencingKinds = Set(definitions.filter { $0.value is any ShapeReferencing }.keys)
         boardOwningKinds = Set(definitions.filter { $0.value is any BoardOwning }.keys)
+        customSkeletons = definitions.compactMapValues { $0 as? any CustomSkeleton }
+        skeletonOutlines = definitions.compactMapValues { $0 as? any CustomSkeletonOutline }
         readOnlyRules = (byPoint[ObjectIdentifier(CorePoints.ReadOnlyRules.self)] ?? []).map { $0.value as! CorePoints.ReadOnlyRules.Contribution }
         let declarations = byPoint[ObjectIdentifier(CorePoints.PropertyDeclarations.self)] ?? []
         let table = try PropertyTable(declarations: declarations,

@@ -144,6 +144,21 @@ import Titles
         h.editor.redo()
         expectEqual(h.editor.document.shapes, [line])
     },
+    test("Polylines: drawn as a skeleton, zoomed out, a line is a view point wide, in its own indigo") {
+        // The camera is Geometry's, which these tests don't import, so the level moves instead:
+        // skeletons at 100%, where the render's 3 units are 3 points.
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), PolylinesPlugin()])
+        let size = CGSize(width: 600, height: 300), scale: CGFloat = 4
+        let blank = renderBitmap(h.editor, size: size, scale: scale)
+        h.add(Polyline(points: [CGPoint(x: 100, y: 200), CGPoint(x: 300, y: 200), CGPoint(x: 500, y: 200)]))
+        let full = renderBitmap(h.editor, size: size, scale: scale)
+        h.editor.skeletonZoom = 1.01
+        let skeleton = renderBitmap(h.editor, size: size, scale: scale)
+        let middle = CGPoint(x: 200, y: 200), aside = CGPoint(x: 200, y: 201)
+        expectEqual(pixel(skeleton, at: middle, scale: scale), pixel(full, at: middle, scale: scale), "its own indigo, not the core's gray")
+        expectEqual(pixel(skeleton, at: aside, scale: scale), pixel(blank, at: aside, scale: scale), "a point wide: nothing a point from its middle")
+        expectEqual(pixel(full, at: aside, scale: scale), pixel(full, at: middle, scale: scale), "where the render's 3 points are")
+    },
     test("Eraser: a quick stroke erases what it crosses between two events, even a thin arrow") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), RectanglesPlugin(), EraserPlugin()])
         let arrow = h.add(Arrow(start: .free(CGPoint(x: 100, y: 300)), end: .free(CGPoint(x: 300, y: 300))))

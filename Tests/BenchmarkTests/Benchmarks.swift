@@ -31,23 +31,29 @@ import Validation
 // subboards, validation's first read (every shape checked, against its kind's schema too) and its
 // read after a drag event of a subboard mentioned 100 times and after moving them all, and one
 // hover and one drag frame (the input, then drawing the whole canvas, and the minimap with it), on
-// a note, from a note's port and onto a title's pill and a mention's, at 60 fps; an empty board's
-// frame on Retina, the dot grid all it draws, at four zooms, still, panning and pinching; frames and rows on
-// a board beside a subboard holding the board's worth, and inside one while the root holds as many,
-// with a drag event's input alone, which the file's other boards mustn't cost; entering a subboard,
-// cold (the switch, a frame, the rows and validation's read), going back up to its board and down
-// again, warm, and the minimap's picture of the board entered; a keystroke in the `@` picker and a
-// rename of a shape mentioned 100 times (the rows and validation after it too); the panel of a
-// subboard mentioned 100 times, read after a drag of another note and after renaming one of its
-// mentioners; completing a schema card's JSON as long as the model writes it; undo and redo, a
-// drag's in a frame and a tenth of the board's moved or deleted too, and deleting a subboard whose
-// boards hold as many shapes, and its undo and redo; ten subboards in view, each holding as many,
-// their previews filling in; and a `canvas draw` whose shapes are pushed along the grid; and the
-// root crumb's menu inside a subboard, the root's rows after a move and a rename on the board
-// shown. `./build.sh bench` runs these in a release build and holds them to the budgets;
-// `./test.sh` runs them debug and small, so they keep working, and only reports. Reported alone:
-// the inspector's list replaced on a switch, and a crumb's menu shown in the window
-// (InspectorBenchmarks.swift), a chain of 1,000 boards, and a crumb's menu's first read.
+// a note, from a note's port and onto a title's pill and a mention's, at 60 fps; a frame zoomed out
+// to fit the board, where shapes are skeletons (its first and each after), and a pan's frame with
+// every shape selected (⌘A) there and at 100%; a board all out of view, with nothing selected and
+// all of it, against an empty one; an empty board's frame on Retina, the dot grid all it draws,
+// at four zooms, still, panning and pinching; frames and rows on a board beside a subboard holding the board's
+// worth, and inside one while the root holds as many, with a drag event's input alone, which the
+// file's other boards mustn't cost; entering a subboard, cold (the switch, a frame, the rows and
+// validation's read), going back up to its board and down again, warm, and the minimap's picture of
+// the board entered; a keystroke in the `@` picker and a rename of a shape mentioned 100 times (the
+// rows and validation after it too); the panel of a subboard mentioned 100 times, read after a drag
+// of another note and after renaming one of its mentioners; completing a schema card's JSON as long
+// as the model writes it; undo and redo, a drag's in a frame and a tenth of the board's moved or
+// deleted too, and deleting a subboard whose boards hold as many shapes, and its undo and redo; ten
+// subboards in view, each holding as many, their previews filling in; and a `canvas draw` whose
+// shapes are pushed along the grid; and the root crumb's menu inside a subboard, the root's rows
+// after a move and a rename on the board shown. `./build.sh bench` runs these in a release build
+// and holds them to the budgets; `./test.sh` runs them debug and small, so they keep working, and
+// only reports. Reported alone: the inspector's list replaced on a switch, and a crumb's menu shown
+// in the window (InspectorBenchmarks.swift), a chain of 1,000 boards, a crumb's menu's first read,
+// the first frame zoomed in to 35% from skeletons (every text in view laid out), and a pinch from
+// 100% to 10% and back, a frame at each zoom (in full just above 35%, a frame of the
+// generated board takes more than 16 ms). New frame budgets time the main thread's CPU
+// (`median(runs:onThread:)`), never the wall clock.
 #if DEBUG
 let sizes = [300]
 let holdsToBudgets = false
@@ -128,6 +134,16 @@ enum Budget {
     /// still, panning or pinching, at any zoom: a small part of a frame, where filling the grid's
     /// dots as ellipses took 3 to 7 ms. The thread's CPU time.
     static let emptyFrame = 2.0
+    /// A frame zoomed out to fit the board (as far as the zoom goes: 10% for 10,000 shapes, some
+    /// 1,700 of them in view, 11% for 1,000, all of them), where shapes are drawn as their
+    /// skeletons and adornments blank: the first, which makes the labels of every adorned shape in
+    /// view, and each after.
+    static let zoomedOut = frame
+    /// What a board of 10,000 shapes, all out of view, adds to a frame over an empty board's, at
+    /// 100% and at 10%, with nothing selected and with every shape (⌘A): nothing off screen is
+    /// drawn, finding what's in view costs next to nothing, and a shape outlined out of view a look
+    /// at its kept extent (all 10,000 of them, some 0.5 ms).
+    static let offscreenBoard = 1.0
 }
 
 /// Notes, subboards, rectangles and schema cards in a grid, with an arrow from every fourth note to
@@ -295,6 +311,11 @@ extension Duration {
         times.append(try (onThread ? threadCPUTime(body) : clock.measure(body)).milliseconds)
     }
     return times.sorted()[times.count / 2]
+}
+
+/// The camera at `zoom` with the middle of `bounds` in the middle of a view of `size`.
+func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Camera {
+    Camera(origin: CGPoint(x: bounds.midX - size.width / 2 / zoom, y: bounds.midY - size.height / 2 / zoom), zoom: zoom)
 }
 
 /// Every row, nested ones included.
@@ -513,14 +534,8 @@ extension Duration {
                 draw(h.editor, into: context, size: viewport)
             }
             expectEqual(h.editor.hovered, mention.target, "the pill hovers the subboard it names")
-            // Zoomed out to fit the board (as far as the zoom goes), the first frame makes the labels of
-            // every adorned shape in view, and the next draws what's kept. Reported, with no budget.
-            h.editor.camera = Camera(fitting: h.editor.shapeBounds, in: viewport, inset: 0)
-            let clock = ContinuousClock()
-            let zoomedOut = clock.measure { draw(h.editor, into: context, size: viewport) }.milliseconds
-            let zoomedOutAgain = clock.measure { draw(h.editor, into: context, size: viewport) }.milliseconds
-            report(String(format: "%6d shapes: a hover onto a titled note's pill %5.1f ms, onto a mention's pill %5.1f ms (budget %.0f); zoomed out to fit the board (%.0f%%), the first frame %.1f, the next %.1f",
-                          size, onPill, onMention, Budget.frame, h.editor.camera.zoom * 100, zoomedOut, zoomedOutAgain))
+            report(String(format: "%6d shapes: a hover onto a titled note's pill %5.1f ms, onto a mention's pill %5.1f ms (budget %.0f)",
+                          size, onPill, onMention, Budget.frame))
             if holdsToBudgets {
                 expect(onPill < Budget.frame, "a hover onto a titled note's pill over \(size) shapes took \(onPill) ms")
                 expect(onMention < Budget.frame, "a hover onto a mention's pill over \(size) shapes took \(onMention) ms")
@@ -561,6 +576,166 @@ extension Duration {
                 expect(panning < Budget.emptyFrame, "an empty board's frame at \(zoom * 100)%, panning, took \(panning) ms")
                 expect(pinching < Budget.emptyFrame, "an empty board's frame at \(zoom * 100)%, pinching, took \(pinching) ms")
             }
+        }
+    },
+    test("zoomed out to fit the board, where shapes are skeletons, the first frame and each after fit in a frame; zoomed in to 35%, the first frame in full is reported") {
+        let viewport = CGSize(width: 1200, height: 800)
+        let context = try bitmapContext(viewport)
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        for size in sizes {
+            // Each run a board of its own: new ids, so nothing the canvas keeps by what a shape says
+            // or by its id (Mentions' memo of mention text, the schema cards' readings) is another
+            // run's. Opened and drawn at 100% at its top left (validation's first read done), then
+            // zoomed out to fit it, where the first frame makes every adorned shape's labels in
+            // view; then zoomed in to 35% on its middle, where shapes are drawn in full again and
+            // every text in view is laid out, none of it before.
+            var firsts: [Double] = [], zoomedIn: [Double] = []
+            var next = 0.0, fitted = Camera(), inView = 0, inViewNear = 0
+            for run in 0..<5 {
+                let document = generatedBoard(shapes: size)
+                let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
+                h.editor.viewportDidResize(to: viewport)
+                draw(h.editor, into: context, size: viewport)
+                fitted = Camera(fitting: h.editor.shapeBounds, in: viewport, inset: 0)
+                h.editor.camera = fitted
+                expect(h.editor.drawsSkeletons, "zoomed out, shapes are skeletons")
+                firsts.append(threadCPUTime { draw(h.editor, into: context, size: viewport) }.milliseconds)
+                if run == 0 {
+                    next = median(runs: 21, onThread: true) { draw(h.editor, into: context, size: viewport) }
+                    inView = h.editor.paintOrder(in: fitted.toWorld(CGRect(origin: .zero, size: viewport))).count
+                }
+                let near = camera(centering: h.editor.shapeBounds, at: 0.35, in: viewport)
+                h.editor.camera = near
+                expect(!h.editor.drawsSkeletons, "at 35%, in full")
+                zoomedIn.append(threadCPUTime { draw(h.editor, into: context, size: viewport) }.milliseconds)
+                inViewNear = h.editor.paintOrder(in: near.toWorld(CGRect(origin: .zero, size: viewport))).count
+            }
+            let first = firsts.sorted()[firsts.count / 2], zoomIn = zoomedIn.sorted()[zoomedIn.count / 2]
+            report(String(format: "%6d shapes zoomed out to fit the board (%.0f%%, %d in view): the first frame %5.1f ms, the next %5.1f (budget %.0f); zoomed in to 35%% (%d in view), the first frame in full %5.1f (reported)",
+                          size, fitted.zoom * 100, inView, first, next, Budget.zoomedOut, inViewNear, zoomIn))
+            if holdsToBudgets {
+                expect(first < Budget.zoomedOut, "the first frame zoomed out over \(size) shapes took \(first) ms")
+                expect(next < Budget.zoomedOut, "a frame zoomed out over \(size) shapes took \(next) ms")
+            }
+        }
+    },
+    test("⌘A: a frame with every shape of the board selected fits in a frame at 100%; zoomed out to fit the board, it's reported") {
+        let viewport = CGSize(width: 1200, height: 800)
+        let context = try bitmapContext(viewport)
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        for size in sizes {
+            let document = generatedBoard(shapes: size)
+            let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
+            // The hover benchmark's camera, then the whole board fitted (as far as the zoom goes),
+            // where shapes draw as skeletons and so do their outlines. Each frame with nothing
+            // selected, then with everything; the selection's part is the difference, and of it the
+            // outlines read (`editor.outlines`: Selection's, with the box around them all) before
+            // the core strokes those in view. Each frame timed is a pan's, the camera a point from
+            // the last one's, back and forth, so the box around them all is worked out again, as it
+            // is on every frame of a pan in the app. Zoomed out it's reported, not held: at 10,000
+            // shapes (some 1,700 in view, each outlined) it's within a millisecond or two of a frame.
+            var lines: [String] = []
+            var atFull = 0.0
+            for camera in [Camera(), Camera(fitting: h.editor.shapeBounds, in: viewport, inset: 0)] {
+                h.editor.camera = camera
+                var step = 0.0
+                let pan = {
+                    step = step == 0 ? 1 : 0
+                    h.editor.camera = Camera(origin: CGPoint(x: camera.origin.x + step / camera.zoom, y: camera.origin.y), zoom: camera.zoom)
+                }
+                h.editor.selectedShapeIDs = []
+                draw(h.editor, into: context, size: viewport)
+                let plain = median(runs: 11, prepare: pan, onThread: true) { draw(h.editor, into: context, size: viewport) }
+                h.editor.selectAll()
+                expectEqual(h.editor.selectedShapeIDs.count, size)
+                draw(h.editor, into: context, size: viewport)
+                let selected = median(runs: 11, prepare: pan, onThread: true) { draw(h.editor, into: context, size: viewport) }
+                let read = median(runs: 11, onThread: true) { _ = h.editor.outlines }
+                if camera.zoom == 1 { atFull = selected }
+                lines.append(String(format: "at %.0f%% %5.1f ms (%5.1f with nothing selected; the outlines read %4.1f)",
+                                    camera.zoom * 100, selected, plain, read))
+            }
+            report(String(format: "%6d shapes, all selected (⌘A), a frame: %@ (budget %.0f at 100%%; zoomed out, reported)",
+                          size, lines.joined(separator: "; "), Budget.frame))
+            if holdsToBudgets { expect(atFull < Budget.frame, "a frame at 100% with all \(size) shapes selected took \(atFull) ms") }
+        }
+    },
+    test("a board of the board's worth of shapes, all out of view, costs a frame nothing over an empty board's, at 100% and at 10%, with nothing selected or all of it") {
+        let viewport = CGSize(width: 1200, height: 800)
+        let context = try bitmapContext(viewport)
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let empty = EditorHarness { CanvasEditor(registry: registry, document: CanvasDocument(), scheduler: $0) }
+        for size in sizes {
+            let h = EditorHarness { CanvasEditor(registry: registry, document: generatedBoard(shapes: size), scheduler: $0) }
+            draw(h.editor, into: context, size: viewport)                   // validation's first read, and the rows
+            var lines: [String] = []
+            var most = -Double.infinity
+            for zoom: CGFloat in [1, 0.1] {
+                // Empty canvas far to the board's upper left: at 10% the view spans 12,000 × 8,000
+                // world units, and the board starts at (0, 0). Both editors at the same camera, so
+                // the grid is the same.
+                let far = Camera(origin: CGPoint(x: -100_000, y: -60_000), zoom: zoom)
+                h.editor.camera = far
+                empty.editor.camera = far
+                expectEqual(h.editor.paintOrder(in: far.toWorld(CGRect(origin: .zero, size: viewport))).count, 0, "nothing in view")
+                // With nothing selected, then with every shape (⌘A): outlined, all out of view.
+                var parts: [String] = []
+                for selected in [false, true] {
+                    if selected { h.editor.selectAll() } else { h.editor.selectedShapeIDs = [] }
+                    draw(h.editor, into: context, size: viewport)
+                    draw(empty.editor, into: context, size: viewport)
+                    // A frame of each in turn, so whatever else slows the machine meanwhile slows both.
+                    var boards: [Double] = [], nones: [Double] = []
+                    for _ in 0..<21 {
+                        boards.append(threadCPUTime { draw(h.editor, into: context, size: viewport) }.milliseconds)
+                        nones.append(threadCPUTime { draw(empty.editor, into: context, size: viewport) }.milliseconds)
+                    }
+                    let board = boards.sorted()[boards.count / 2], none = nones.sorted()[nones.count / 2]
+                    most = max(most, board - none)
+                    parts.append(String(format: selected ? "all selected %5.2f ms, an empty board's %5.2f" : "%5.2f ms, an empty board's %5.2f", board, none))
+                }
+                h.editor.selectedShapeIDs = []
+                lines.append(String(format: "at %.0f%% %@", zoom * 100, parts.joined(separator: "; ")))
+            }
+            report(String(format: "%6d shapes out of view, a frame: %@ (budget: %.0f more)", size, lines.joined(separator: "; "), Budget.offscreenBoard))
+            if holdsToBudgets { expect(most < Budget.offscreenBoard, "\(size) shapes out of view added \(most) ms to a frame") }
+        }
+    },
+    test("a pinch from 100% to 10% and back, centered on the board, each frame at a zoom of its own (reported)") {
+        let viewport = CGSize(width: 1200, height: 800)
+        let context = try bitmapContext(viewport)
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        for size in sizes {
+            let h = EditorHarness { CanvasEditor(registry: registry, document: generatedBoard(shapes: size), scheduler: $0) }
+            h.editor.viewportDidResize(to: viewport)
+            let bounds = h.editor.shapeBounds
+            // A pinch's frames: the zoom times 0.93 each, from 100% down to 10%, then back up by the
+            // same steps from there to where it began, the untimed first frame's zoom: no other
+            // frame is at a zoom one before it drew (the fonts' sizes, the grid's spacing). Each
+            // board's a hair off the one before's (0.3% less), so none of its frames but 10%, where
+            // every board's pinch turns (the zoom goes no lower; skeletons there, no text), is at a
+            // zoom another board's pinch drew either.
+            let shift = pow(0.997, CGFloat(sizes.firstIndex(of: size) ?? 0))
+            let down = (1...31).map { shift * pow(0.93, CGFloat($0)) }, up = (1...31).map { shift * 0.1 / pow(0.93, CGFloat($0)) }
+            let zooms = down + [0.1] + up + [shift]
+            // Where it begins, untimed: validation's first read, and the rows.
+            h.editor.camera = camera(centering: bounds, at: shift, in: viewport)
+            draw(h.editor, into: context, size: viewport)
+            var frames: [(zoom: CGFloat, ms: Double)] = []
+            for zoom in zooms {
+                let ms = threadCPUTime {
+                    h.editor.camera = camera(centering: bounds, at: zoom, in: viewport)
+                    draw(h.editor, into: context, size: viewport)
+                }.milliseconds
+                frames.append((zoom, ms))
+            }
+            let times = frames.map(\.ms).sorted()
+            let worst = try require(frames.max { $0.ms < $1.ms })
+            let skeletons = frames.filter { $0.zoom < h.editor.skeletonZoom }
+            let worstSkeleton = try require(skeletons.max { $0.ms < $1.ms })
+            report(String(format: "%6d shapes, a pinch from 100%% to 10%% and back, %d frames: the median %5.1f ms, the worst %5.1f at %.0f%%, %d over %.0f; of the %d below 35%% (skeletons), the worst %5.1f at %.0f%% (reported: in full just above 35%%, a frame of this board takes more than %.0f)",
+                          size, frames.count, times[times.count / 2], worst.ms, worst.zoom * 100, frames.count { $0.ms > Budget.frame }, Budget.frame,
+                          skeletons.count, worstSkeleton.ms, worstSkeleton.zoom * 100, Budget.frame))
         }
     },
     test("a drag that snaps with every shape of the board in view: its first event, which reads them, fits in a frame, and each event after costs its input's budget") {

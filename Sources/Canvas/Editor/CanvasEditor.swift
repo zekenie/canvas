@@ -76,12 +76,14 @@ public final class CanvasEditor {
     /// +1 per transaction that changed something.
     public private(set) var revision = 0
     /// Setting it stops the camera's slide or animation (CanvasEditor+Camera.swift), and a session
-    /// that scrolls at the canvas's edges hears a drag where the pointer is (EdgeScrolling.swift).
+    /// that scrolls at the canvas's edges hears a drag where the pointer is (EdgeScrolling.swift). A
+    /// zoom across `skeletonZoom` tells services (`drawsSkeletonsDidChange`).
     public var camera = Camera() {
         didSet {
             shapeIndex.cameraDidChange()
             stopCameraMotion()
             setNeedsDisplay()
+            tellSkeletonLevel()
             sessionFollowsCamera()
         }
     }
@@ -201,6 +203,23 @@ public final class CanvasEditor {
     @ObservationIgnored var drawingOffsets: [ShapeID: CGPoint] = [:]
     /// The dot grid under the shapes, and the tiles it keeps from frame to frame.
     @ObservationIgnored let dotGrid = DotGrid()
+    /// Below this zoom the canvas draws shapes as skeletons (`drawsSkeletons`, `CustomSkeleton`):
+    /// 35% (`Style.skeletonZoom`) unless the host says otherwise. 0 draws every shape in full at
+    /// every zoom (a test held to pictures drawn before skeletons were). Setting it redraws, and
+    /// tells services if it moves past the camera's zoom (`drawsSkeletonsDidChange`).
+    @_spi(Host) @ObservationIgnored public var skeletonZoom: CGFloat = Style.skeletonZoom {
+        didSet {
+            guard skeletonZoom != oldValue else { return }
+            setNeedsDisplay()
+            tellSkeletonLevel()
+        }
+    }
+    /// What services last heard of `drawsSkeletons` (`drawsSkeletonsDidChange`), which the camera
+    /// and `skeletonZoom` are held to as they change.
+    @ObservationIgnored private var toldDrawsSkeletons = false
+    /// A board is being put in place (`show`): its camera's level is told once services have heard
+    /// the switch.
+    @ObservationIgnored private var isShowingBoard = false
     // Input state, used by CanvasEditor+Host.swift.
     @ObservationIgnored var tracker = PointerTracker()
     @ObservationIgnored var heldModifiers: Modifiers = []
@@ -245,6 +264,7 @@ public final class CanvasEditor {
         for (id, make) in registry.toolFactories { tools[id] = make(self) }
         undoHistory.editor = self
         undoHistory.participants = serviceOrder.compactMap { $0 as? any UndoParticipant }
+        toldDrawsSkeletons = drawsSkeletons
     }
 
     /// An editor of a file of this one board.
@@ -381,6 +401,14 @@ public final class CanvasEditor {
     /// Something tried to change these read-only shapes, and didn't: services hear which.
     func refuseChanges(to ids: Set<ShapeID>) {
         for service in serviceOrder { service.didRefuseChanges(to: ids, in: self) }
+    }
+
+    /// Services hear that the canvas started or stopped drawing skeletons, if it did since they last
+    /// heard: a comparison, as the camera changes on every event of a pinch.
+    private func tellSkeletonLevel() {
+        guard !isShowingBoard, drawsSkeletons != toldDrawsSkeletons else { return }
+        toldDrawsSkeletons = drawsSkeletons
+        for service in serviceOrder { service.drawsSkeletonsDidChange(in: self) }
     }
 
     /// What a transaction reads of the rest of the file: the editor's file as it is.
@@ -661,8 +689,11 @@ public final class CanvasEditor {
         // What the board left asked for isn't drawn now; what this one draws asks for its own.
         boardPreviews.stopWaiting()
         revision += 1
+        isShowingBoard = true
         camera = arrivalCamera(for: target)
+        isShowingBoard = false
         for service in serviceOrder { service.boardDidChange(change, in: self) }
+        tellSkeletonLevel()
         delegate?.editorBoardDidChange(self)
         setNeedsDisplay()
         refreshCursor()

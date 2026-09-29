@@ -111,8 +111,7 @@ public struct SchemaCardLayout {
         }
         titleRect = style.centered(title, in: CGRect(x: inner.minX, y: inner.minY, width: inner.width, height: metrics.titleLineHeight))
         let top = inner.minY + metrics.titleLineHeight + metrics.headerGap
-        let body = CGRect(x: inner.minX, y: top, width: inner.width, height: max(0, inner.maxY - top))
-        let fit = max(0, Int((body.height + metrics.rowGap) / metrics.rowHeight))
+        let fit = metrics.rows(fitting: size.height)
         func row(_ i: Int) -> CGRect {
             CGRect(x: inner.minX, y: top + CGFloat(i) * metrics.rowHeight, width: inner.width, height: metrics.chipHeight)
         }
@@ -126,13 +125,11 @@ public struct SchemaCardLayout {
         }
         stateRow = nil
 
-        // The overflow rule: as many rows as fit, at most 7; if the fields don't all fit, the last
-        // row says how many more, so it's never "+1 more".
-        let slots = min(metrics.maxRows, fit)
-        let count = document.fields.count
-        let shown = count <= slots ? count : max(0, slots - 1)
-        more = slots > 0 ? count - shown : 0
-        let columns = Int((inner.width * style.typeShare) / style.typeAdvance)
+        let overflow = metrics.overflow(fields: document.fields.count, hasRules: !document.rules.isEmpty, fit: fit)
+        let shown = overflow.fields
+        more = overflow.more
+        // Bounded, so a card of any width (a file edited by hand keeps one of 1e21) makes an Int.
+        let columns = Int(min((inner.width * style.typeShare) / style.typeAdvance, CGFloat(Int32.max)))
         rows = document.fields.prefix(shown).enumerated().map { i, field in
             SchemaCardLayout.row(field, in: row(i), columns: columns)
         }
@@ -145,7 +142,7 @@ public struct SchemaCardLayout {
         } else {
             moreRow = nil
         }
-        if !document.rules.isEmpty, next < fit {
+        if overflow.rules {
             let rules = document.rules.joined(separator: " · ")
             let line = NSMutableAttributedString(attributedString: style.text("Rules ", style.noteFont, style.tertiaryText))
             line.append(style.text(rules, style.typeFont, style.secondaryText))

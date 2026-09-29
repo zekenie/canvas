@@ -42,6 +42,18 @@ extension Editable {
     }
 }
 
+extension CustomSkeleton {
+    func erasedRenderSkeleton(_ record: AnyShapeRecord, in context: RenderContext) {
+        record.typed(as: Props.self).map { renderSkeleton($0, in: context) }
+    }
+}
+
+extension CustomSkeletonOutline {
+    func erasedSkeletonIndicatorPath(of record: AnyShapeRecord, in context: ShapeContext) -> CGPath? {
+        record.typed(as: Props.self).flatMap { skeletonIndicatorPath(of: $0, in: context) }
+    }
+}
+
 extension CustomTranslation {
     func erasedBeginTranslation(of record: AnyShapeRecord, movingWith moving: Set<ShapeID>,
                                 in transaction: inout Transaction) -> (@MainActor (CGPoint, inout Transaction) -> Void)? {

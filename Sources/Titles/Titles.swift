@@ -140,6 +140,8 @@ extension Registry {
 /// shape whose kind shows one (`pill: true`, the default). Titles places it, though it defines no
 /// shape; Adornments lays it out: as long as the title, no longer than the row leaves it (the
 /// shape's width, less whatever is at the row's right end, a lock, and 4 points), ending in "…".
+/// Zoomed out, on a shape drawn as a skeleton, it's a blank capsule, as long as the title's
+/// columns (a CJK character or an emoji two); on the shape being edited, drawn in full, its title.
 public enum TitlePill {}
 
 extension TitlePill: Adornment {

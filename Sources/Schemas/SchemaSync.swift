@@ -466,7 +466,7 @@ extension SchemaSync: EditorService {
     }
 
     /// A card changed: if its sides did, an edit to follow, unless it's the sync's own write, a
-    /// board read again, or undo or redo.
+    /// board read again, or undo or redo; and a schema that changed is read now, whichever it was.
     private func changed(_ record: AnyShapeRecord, _ changes: ChangeSet) {
         let id = record.id
         guard let now = Self.sides(of: record) else { return }
@@ -476,7 +476,12 @@ extension SchemaSync: EditorService {
             see(record)
             return
         }
-        guard cards[id]?.seen != now else { return }
+        guard let seen = cards[id]?.seen, seen != now else { return }
+        // Read as it changes, whoever wrote it (the person, undo or redo, an agent, the sync's own
+        // write, a write to a board not shown), so the frame after the commit finds the reading
+        // kept: zoomed out, a card's skeleton goes by it, and Validation, which reads every card on
+        // the board shown, reads only once the shapes are drawn.
+        if seen.schema != now.schema { _ = SchemaReadings.reading(of: now.schema, for: id) }
         cards[id]?.seen = now
         if changes.restoredStep {
             stop(id)
