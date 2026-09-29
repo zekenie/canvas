@@ -2,6 +2,7 @@ import Canvas
 import CoreGraphics
 import Keyboard
 import Ports
+import Selection
 import SwiftUI
 import TableOfContents
 import Titles
@@ -16,12 +17,20 @@ extension PluginID {
 /// a pill after the kind's `{}`, since the card's words don't say what it is); its row in the table
 /// of contents; validation's rules for a schema that isn't one; its panel, where the schema is
 /// written as JSON; the sync that keeps the two saying the same thing through the editor's language
-/// model (`SchemaSync`); and ports, whose arrows link a schema to a schema (`SchemaLink`).
+/// model (`SchemaSync`); its description's highlights, words linked to the parts of the schema they
+/// say, each part shown in a popover on its words (`SchemaHighlighter`); and ports, whose arrows link
+/// a schema to a schema (`SchemaLink`).
 public struct SchemasPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .schemas }
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { SchemaSync(editor: $0) }
+        registrar.overlay(SchemaHighlightFrames())
+        // Resting the pointer on a highlight's words shows the part of the schema they say.
+        registrar.shapePopovers { editor, record, point in
+            guard let card = record.typed(as: SchemaCard.self), editor.editingShapeID != card.id else { return nil }
+            return SchemaHighlightPopovers.popover(at: point, on: card)
+        }
         registrar.shape(SchemaCardDefinition()) { schema in
             let place = schema.editingPlacement(size: SchemaCard.defaultSize) { SchemaCard() }
             schema.tool(label: "Schema", systemImage: "curlybraces", shortcut: "s", placing: place)
@@ -85,6 +94,10 @@ final class SchemaReadings {
     /// What the card is called by (its pill, its row, its panel's header): the text's reading while
     /// it's a JSON object, else its last one that was (none: the text's).
     var shown: SchemaDocument { showing?.document ?? document }
+    /// The schema a card's highlights are followed in (`shown`'s, while one is an object), and its
+    /// text, which their parts are cut from.
+    var shownRoot: JSONNode? { shown.isObject ? shown.root : nil }
+    var shownText: String { showing?.text ?? text }
 
     /// Shows what `previous`, the card's reading before this one, showed: its text, if that was a
     /// JSON object, else what it showed.

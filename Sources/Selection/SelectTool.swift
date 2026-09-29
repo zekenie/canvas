@@ -133,6 +133,7 @@ extension SelectTool: Tool {
         editor.hovered = nil
         editor.hoveredHandle = nil
         editor.selectionState?.hoveredButton = nil
+        editor.hoverPopover(nil)
     }
 
     /// Escape with nothing under way deselects all.

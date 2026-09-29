@@ -90,6 +90,10 @@ public enum Style {
     static let firstVisitInset: CGFloat = 64
     /// How long the zoom commands ease the camera (tldraw's animationMediumMs).
     static let zoomDuration: Duration = .milliseconds(320)
+    /// How long the pointer stays on what a popover is about before it shows (`hoverPopover`), and
+    /// how soon after one goes another shows at once.
+    static let popoverDelay: Duration = .milliseconds(500)
+    static let popoverWarmth: Duration = .milliseconds(500)
 
     // Scrolling at the canvas's edges while a drag that asks for it runs (tldraw's EdgeScrollManager
     // and its options). Milliseconds and view points.

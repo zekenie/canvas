@@ -6358,8 +6358,12 @@ registrar.channel(SchemaLink.self)
   it as a note's is: a `DetailTextView` on TextKit 2 (`SchemaDescriptionView`), its text set with
   the render's attributes, starting a point higher (`SchemaStyle.editorInset`), so its lines fall on
   the render's, pixel for pixel but anti-aliasing, and nothing moves as editing starts
-  (SchemasTests' "Schema card description"). Return says the description is done, as it did in the
-  panel it came from, and ends editing, as ⌘↩ and Escape do; ⇧↩ is a new line. Begun from a press,
+  (SchemasTests' "Schema card description"). Return is a new line, as in a note; ⌘↩ and Escape say
+  the description is done and end editing. Its highlights (words linked to the parts of the schema
+  they say, `SchemaHighlighter`, asking Sonnet 5.5) are filled by the render under its text, while
+  it's edited too, and resting the pointer on them shows that part of the schema in the core's
+  popover (`CanvasPopover`: Selection's `ShapePopovers` on the canvas, `EditContext.hoverPopover`
+  in the editor). Begun from a press,
   the caret goes where it was (`placeSelection(at:selectingWord:)`), and the camera follows it as
   the card grows past the window's edge (`caretFrame`, `EditContext.keepInView`).
 - **Its height** is its description's, set in the same transaction: `setPrompt` sets the text and
@@ -7612,7 +7616,7 @@ topology             service TopologyIndex
 arrows               shape arrow · label Arrow → arrow · ContentsRows → arrow · service ArrowTargeting · overlay BindingHintsOverlay
 sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
 subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard
-schemas              service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link · edge type schema-link
+schemas              service SchemaSync · overlay SchemaHighlightFrames · ShapePopovers · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link · edge type schema-link
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
 adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
 detail-panel         service DetailPanelState

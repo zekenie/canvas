@@ -15,10 +15,21 @@ extension SchemaCardDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<SchemaCard>, in context: RenderContext) {
         let frame = shape.frame
         context.fillWithShadow(SchemaStyle.rounded(frame, SchemaStyle.cornerRadius), SchemaStyle.card)
-        // While editing, the editing view draws the text instead; a card too small for its padding
-        // has no room for any.
+        // A card too small for its padding has no room for text.
         let box = SchemaStyle.textBox(of: frame)
-        guard !context.isEditing, !shape.props.prompt.isEmpty, !box.isEmpty else { return }
+        guard !shape.props.prompt.isEmpty, !box.isEmpty else { return }
+        // Its highlights behind their words, a field's one way and a rule's another, under its editor
+        // too, whose text lays out as this does (read, too, so a card drawn in full is asked about
+        // once it's in step: `SchemaHighlightAnswers`).
+        let placed = SchemaHighlightAnswers.placed(for: shape)
+        if !placed.isEmpty {
+            for (highlight, lines) in zip(placed, SchemaHighlightAnswers.lines(of: shape)) {
+                context.cg.setFillColor(SchemaStyle.highlightColor(highlight.kind))
+                for line in lines { context.cg.fill(SchemaStyle.highlightFill(line)) }
+            }
+        }
+        // While editing, the editing view draws the text instead.
+        guard !context.isEditing else { return }
         NSAttributedString(string: shape.props.prompt, attributes: SchemaStyle.textAttributes)
             .draw(with: box, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }
@@ -62,6 +73,20 @@ enum SchemaStyle {
     static let text = NSColor(white: 0.12, alpha: 1)
     /// The description's editor while the model writes the description: read-only, and this faint.
     static let updatingOpacity: CGFloat = 0.45
+    /// Behind the words a highlight links to the schema: a field's pale blue, a rule's pale amber,
+    /// light enough on the white card that the text stays the text's gray.
+    static let fieldHighlight = NSColor(srgbRed: 0.20, green: 0.47, blue: 0.96, alpha: 0.16).cgColor
+    static let validationHighlight = NSColor(srgbRed: 0.96, green: 0.62, blue: 0.04, alpha: 0.24).cgColor
+    static func highlightColor(_ kind: SchemaHighlight.Kind) -> CGColor {
+        switch kind {
+        case .field: fieldHighlight
+        case .validation: validationHighlight
+        }
+    }
+    /// What a highlight fills of a line its words are on (`SchemaHighlightAnswers.lines`): its words'
+    /// width, and the line's height less half a point above and below, so highlights on lines one
+    /// under the other stay apart.
+    static func highlightFill(_ line: CGRect) -> CGRect { line.insetBy(dx: 0, dy: 0.5) }
     /// The row's symbol in the table of contents, and its ports' dots (`SchemaLink.color`): magenta
     /// (hue 314°), clear of the subboard's indigo (241°) and the line tool's, of red, orange and
     /// green (what validation and snapping say), of the note's yellow and its links' amber, the

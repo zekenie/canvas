@@ -64,24 +64,22 @@ let antiAliasing = 16
         again.insertText("a pet", replacementRange: again.selectedRange())
         expectEqual(height(), cardHeight(lines: 1), "back to a line's")
     },
-    test("Return says the description is done and ends editing, keeping what's typed; ⇧↩ is a new line; ⌘↩ ends it too") {
+    test("Return is a new line, as in a note, and so is ⇧↩; ⌘↩ says the description is done and ends editing, keeping what's typed") {
         let h = try EditorHarness(plugins: schemaPlugins())
         let id = h.add(SchemaCard(frame: CGRect(x: 0, y: 0, width: 240, height: 52)))
         h.editor.selection = id
         expect(h.key("\r"))
         let textView = try require(h.editor.makeEditingView()?.firstResponder as? NSTextView)
         textView.insertText("a pet", replacementRange: NSRange(location: 0, length: 0))
-        pressReturn(textView, .shift)
-        expectEqual(h.editor.editingShapeID, id, "⇧↩ is the text's")
-        textView.insertText("in my household", replacementRange: NSRange(location: textView.string.count, length: 0))
         pressReturn(textView)
-        expectEqual(h.editor.editingShapeID, nil, "Return is done")
-        expectEqual(h.editor.schemaCard(id)?.prompt, "a pet\nin my household")
-        expect(h.key("\r"))
-        let again = try require(h.editor.makeEditingView()?.firstResponder as? NSTextView)
-        pressReturn(again, .command)
-        expectEqual(h.editor.editingShapeID, nil, "⌘↩ too")
-        expectEqual(h.editor.schemaCard(id)?.prompt, "a pet\nin my household")
+        textView.insertText("in my household", replacementRange: NSRange(location: textView.string.count, length: 0))
+        pressReturn(textView, .shift)
+        textView.insertText("indoors", replacementRange: NSRange(location: textView.string.count, length: 0))
+        expectEqual(h.editor.editingShapeID, id, "Return and ⇧↩ are the text's")
+        expectEqual(h.editor.schemaCard(id)?.prompt, "a pet\nin my household\nindoors", "new lines, not line separators")
+        pressReturn(textView, .command)
+        expectEqual(h.editor.editingShapeID, nil, "⌘↩ is done")
+        expectEqual(h.editor.schemaCard(id)?.prompt, "a pet\nin my household\nindoors")
     },
     test("placing a card and typing into it are one undo step, Add Schema") {
         let h = try EditorHarness(plugins: schemaPlugins())
@@ -196,7 +194,7 @@ let antiAliasing = 16
         expectEqual(b.model.requests.count, 1, "nothing waits for, or asks about, a card a file put in place")
         expectEqual(b.status(id), .idle)
     },
-    test("read-only while the model writes the description, Return and ⌘↩ still end editing, as Escape does") {
+    test("read-only while the model writes the description, ⌘↩ still ends editing, as Escape does; Return types nothing") {
         let b = try SyncBench()
         let id = b.editor.add(card(petSchema, at: .zero))
         b.model.holdsAnswers = true
@@ -205,13 +203,14 @@ let antiAliasing = 16
         b.sync.commit(id)
         spinRunLoop(until: { b.model.waiting == 1 })
         b.editor.selection = id
-        for modifiers in [[], .command] as [NSEvent.ModifierFlags] {
-            expect(b.harness.key("\r"))
-            let textView = try require(b.editor.makeEditingView()?.firstResponder as? NSTextView)
-            expect(!textView.isEditable)
-            pressReturn(textView, modifiers)
-            expectEqual(b.editor.editingShapeID, nil, "\(modifiers.contains(.command) ? "⌘↩" : "Return") ends it")
-        }
+        expect(b.harness.key("\r"))
+        let textView = try require(b.editor.makeEditingView()?.firstResponder as? NSTextView)
+        expect(!textView.isEditable)
+        pressReturn(textView)
+        expectEqual(b.editor.editingShapeID, id, "Return is the text's, which can't be written")
+        expectEqual(textView.string, "")
+        pressReturn(textView, .command)
+        expectEqual(b.editor.editingShapeID, nil, "⌘↩ ends it")
         b.model.release()
         spinRunLoop(until: { b.status(id) == .idle })
         expectEqual(b.model.requests.count, 1, "nothing typed, nothing asked")

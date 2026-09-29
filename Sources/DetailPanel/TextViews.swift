@@ -717,10 +717,7 @@ final class PlainTextView: DetailTextView, DetailTextContent {
         storage.removeAttribute(.underlineStyle, range: whole)
         if colorsSpans, let coloring {
             for span in coloring(string) where NSMaxRange(span.range) <= whole.length {
-                storage.addAttribute(.foregroundColor, value: DetailStyle.codeColor(span.role), range: span.range)
-                if span.role == .invalid {
-                    storage.addAttribute(.underlineStyle, value: NSUnderlineStyle([.single, .patternDot]).rawValue, range: span.range)
-                }
+                storage.addAttributes(DetailStyle.codeAttributes(span.role), range: span.range)
             }
         }
         storage.endEditing()

@@ -151,7 +151,7 @@ private func described(_ keyword: String) -> String? { MetaSchema.root["properti
         panel.model.queue(petSchema)
         _ = try panel.describe(id)
         panel.window.type("a pet in my household")
-        panel.window.pressReturn()
+        panel.commandReturn()
         spinRunLoop(until: { panel.model.waiting == 1 })
         panel.window.spin { panel.code?.isEditable == false }
         let code = try require(panel.code)

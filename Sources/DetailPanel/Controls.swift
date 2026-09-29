@@ -94,6 +94,23 @@ public enum DetailStyle {
         case .invalid: .systemRed
         }
     }
+
+    /// A run of code in a role, over the text's own color: the role's color, and a dotted line under
+    /// what doesn't belong.
+    static func codeAttributes(_ role: DetailCodeSpan.Role) -> [NSAttributedString.Key: Any] {
+        guard role == .invalid else { return [.foregroundColor: codeColor(role)] }
+        return [.foregroundColor: codeColor(role), .underlineStyle: NSUnderlineStyle([.single, .patternDot]).rawValue]
+    }
+
+    /// Code as a code editor shows it (`DetailCodeEditor`), in `codeFont` and the label's color, each
+    /// of `spans` in its role's: for code shown outside one (a popover's), so it looks as it does there.
+    public static func code(_ text: String, spans: [DetailCodeSpan]) -> NSAttributedString {
+        let code = NSMutableAttributedString(string: text, attributes: [.font: codeFont, .foregroundColor: NSColor.labelColor])
+        for span in spans where NSMaxRange(span.range) <= code.length {
+            code.addAttributes(codeAttributes(span.role), range: span.range)
+        }
+        return code
+    }
 }
 
 /// What every `LabeledContent` in the panel looks like: the label in a fixed column, so all rows'
