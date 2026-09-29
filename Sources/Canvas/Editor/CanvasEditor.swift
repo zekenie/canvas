@@ -75,19 +75,43 @@ public final class CanvasEditor {
     }
     /// +1 per transaction that changed something.
     public private(set) var revision = 0
-    /// Setting it stops the camera's slide or animation (CanvasEditor+Camera.swift).
+    /// Setting it stops the camera's slide or animation (CanvasEditor+Camera.swift), and a session
+    /// that scrolls at the canvas's edges hears a drag where the pointer is (EdgeScrolling.swift).
     public var camera = Camera() {
         didSet {
             shapeIndex.cameraDidChange()
             stopCameraMotion()
             setNeedsDisplay()
+            sessionFollowsCamera()
         }
     }
+
+    /// The zoom where the camera is headed (`cameraTarget`), in whole percent: what the toolbar shows,
+    /// and what the zoom commands step from. Observed apart from `camera`, and set only when it
+    /// changes, so a view that shows it redraws as the zoom does, never as the camera pans.
+    public internal(set) var zoomPercentage = 100
 
     /// The hosting view's size, in view points: the part of the world the camera shows is
     /// `camera.toWorld(CGRect(origin: .zero, size: viewportSize))`. Zero until the view has a size
     /// (and in tests that don't give one).
     @ObservationIgnored public internal(set) var viewportSize: CGSize = .zero
+
+    /// How far down over the canvas the host's own views reach on a board, in view points, from the
+    /// view's top edge (the path's pill inside a subboard): what fitting shapes into view leaves
+    /// clear. None unless the host says (`unobscuredViewport`).
+    @_spi(Host) @ObservationIgnored public var coveredTop: @MainActor (BoardID) -> CGFloat = { _ in 0 }
+
+    /// The part of the view nothing the host puts over the canvas covers, on the board shown, in view
+    /// points: the view, less the top the host covers there (`coveredTop`). What a fit fits shapes
+    /// into: a board's first visit, Zoom to Fit, Selection's `reveal`. Empty before the view has a
+    /// size.
+    public var unobscuredViewport: CGRect { unobscuredViewport(on: board) }
+
+    func unobscuredViewport(on target: BoardID) -> CGRect {
+        guard viewportSize.width > 0, viewportSize.height > 0 else { return .zero }
+        let top = min(max(coveredTop(target), 0), viewportSize.height - 1)
+        return CGRect(x: 0, y: top, width: viewportSize.width, height: viewportSize.height - top)
+    }
 
     /// A shape outlined as a target, whatever the tool (a connector tool sets it while aiming).
     /// Setting it to a shape that isn't there drops it.
@@ -103,10 +127,26 @@ public final class CanvasEditor {
     private var hintedID: ShapeID?
     /// Starts as the registry's default tool.
     public private(set) var currentToolID: ToolID
+    /// While true (Keyboard's Space, held), a press pans as the Hand does, whatever the tool, which
+    /// stays the tool (nothing `setTool` resets, an arrow's targeting included): the cursor is the open
+    /// hand, and the closed hand while it pans; the tool hears no hover meanwhile. A pan under way when
+    /// it's let go goes on to its release. Held during another press (a drag), it waits for that
+    /// press: the drag keeps its cursor, and at its release the tool hears the pointer leave and the
+    /// open hand shows.
+    public var isHandHeld = false {
+        didSet {
+            guard isHandHeld != oldValue else { return }
+            if isHandHeld, session == nil { currentTool.pointerExited(in: self) }
+            refreshCursor()
+        }
+    }
     public private(set) var editingShapeID: ShapeID?
     /// While a shape is edited, where the press that began it was, in world units
     /// (`beginEditing(_:at:)`); nil if none said, and once editing ends.
     public private(set) var editingStartPoint: CGPoint?
+    /// While a shape is edited, how many clicks the press that began it was: 2 for a double-click
+    /// (`beginEditing(_:at:clickCount:)`), else 1.
+    public private(set) var editingStartClickCount = 1
     /// The press-drag-release in progress, if any. Tools start sessions; a session may hand over
     /// to another by setting this. Observed only as one starts and as the last ends, not as one
     /// hands over: a view that reads it (a control enabled only between presses, through
@@ -116,6 +156,7 @@ public final class CanvasEditor {
         set {
             runningSession = newValue
             if (newValue != nil) != isPressing { isPressing = newValue != nil }
+            if newValue?.scrollsAtEdges != true { stopEdgeScrolling() }
             setNeedsDisplay()
         }
     }
@@ -169,6 +210,18 @@ public final class CanvasEditor {
     // CanvasEditor+Camera.swift.
     @ObservationIgnored var cameraMotion: ScheduledTask?
     @ObservationIgnored var cameraAnimationTarget: Camera?
+    /// An animation's frame is moving the camera: `zoomPercentage` stays its target's.
+    @ObservationIgnored var isAnimationFrame = false
+    // The press under way, for scrolling at the canvas's edges (EdgeScrolling.swift): where it was, in
+    // view points; whether the pointer has gone past the drag threshold from it; the last pointer, for
+    // a drag where it is when the camera moves; the edge's next tick; how long the pointer has been at
+    // an edge, in milliseconds; and a drag of the camera's under way.
+    @ObservationIgnored var pressLocation: CGPoint?
+    @ObservationIgnored var pressDragged = false
+    @ObservationIgnored var lastPointer: Pointer?
+    @ObservationIgnored var edgeScrollTick: ScheduledTask?
+    @ObservationIgnored var edgeScrollTime: CGFloat = 0
+    @ObservationIgnored var isFollowingCamera = false
 
     /// An editor of the file, showing `showing` (the root, if it can't be shown: `canShow`). Every
     /// shape on every board must be of a kind the registry accepts, or kept aside (`isOpaque`);
@@ -616,13 +669,15 @@ public final class CanvasEditor {
     }
 
     /// The camera a board is shown with: as it was left, else as the host remembers it, else its
-    /// shapes fitted into view, no closer than 100%, else where a board starts.
+    /// shapes fitted into the part of the view the host leaves clear there (`unobscuredViewport`), no
+    /// closer than 100%, else where a board starts.
     private func arrivalCamera(for target: BoardID) -> Camera {
         if let kept = leftCameras[target] ?? rememberedCameras[target] { return kept }
-        guard viewportSize.width > 0, viewportSize.height > 0 else { return Camera() }
+        let view = unobscuredViewport(on: target)
+        guard !view.isEmpty else { return Camera() }
         let bounds = shapeBounds
         guard !bounds.isNull else { return Camera() }
-        return Camera(fitting: bounds, in: viewportSize, inset: Style.firstVisitInset, maxZoom: 1)
+        return Camera(fitting: bounds, in: view, inset: Style.firstVisitInset, maxZoom: 1)
     }
 
     // MARK: Tools
@@ -638,20 +693,28 @@ public final class CanvasEditor {
     }
 
     /// Where place tools (and any plugin with a `Placement`) create shapes: the shape goes in, the
-    /// default tool comes back, services hear `didPlace` (the selection selects it), and the shape
-    /// follows the pointer or is edited. (Other tools create shapes with
-    /// `transact { $0.insert(...) }`, as a port's drag does.)
+    /// default tool comes back, services hear `didPlace` (the selection selects it), and, while the
+    /// press that placed it lasts, the shape follows the pointer (`PlacingSession`), whatever the
+    /// placement; on the release an editing placement's shape is edited, and Escape before it takes
+    /// the shape away and selects again what was selected before (the undo participants' state from
+    /// before the press, as undoing its step would), so the press comes to nothing. Placed with no
+    /// press under way, an editing placement's shape is edited at once. (Other tools create shapes
+    /// with `transact { $0.insert(...) }`, as a port's drag does.)
     /// The insert names its undo step "Add" and the placing tool's label ("Add Note").
     public func place(_ placement: Placement, at point: CGPoint) {
         let record = placement.shape(at: point)
         let tool = ToolID(placing: placement.kind)
         let label = registry.tools.first { $0.id == tool }?.label
+        let follows = undoHistory.isPressHeld && session == nil
+        let before = follows ? undoHistory.snapshots() : [:]
         transact("Add \(label ?? "Shape")") { $0.insert(record) }
         setTool(registry.defaultTool)
         for service in serviceOrder { service.didPlace(record.id, in: self) }
-        switch placement.completion {
-        case .translate: session = TranslatingSession(ids: [record.id], from: point, in: self)
-        case .edit: beginEditing(record.id)
+        let edits = placement.completion == .edit
+        if follows, session == nil {
+            session = PlacingSession(record.id, from: point, edits: edits, restoring: before, in: self)
+        } else if edits {
+            beginEditing(record.id)
         }
     }
 
@@ -700,11 +763,12 @@ public final class CanvasEditor {
 
     /// Edits a shape of an `Editable` kind in place. Returns false for any other shape, and for a
     /// read-only one, which is refused (services hear it, `didRefuseChanges`). `point`, in world
-    /// units, is where the press that began it was, if one did: the editing view reads it
-    /// (`EditContext.startPoint`) to put its selection there. Nil (Return, Selection's double-click,
-    /// a placement) leaves the view to choose.
+    /// units, is where the press that began it was, if one did, and `clickCount` how many clicks it
+    /// was: the editing view reads them (`EditContext.startPoint`, `startClickCount`) to put its
+    /// selection there, as a text view would (a caret for a click, a word for a double-click). Nil
+    /// (Return, a placement) leaves the view to choose.
     @discardableResult
-    public func beginEditing(_ id: ShapeID, at point: CGPoint? = nil) -> Bool {
+    public func beginEditing(_ id: ShapeID, at point: CGPoint? = nil, clickCount: Int = 1) -> Bool {
         endEditing()
         guard let record = document[id], !record.isOpaque, registry.definition(for: record.kind) is any Editable else { return false }
         guard !registry.isReadOnly(record) else {
@@ -712,6 +776,7 @@ public final class CanvasEditor {
             return false
         }
         editingStartPoint = point
+        editingStartClickCount = point == nil ? 1 : clickCount
         editingShapeID = id
         undoHistory.editingBegan()
         delegate?.editorEditingDidChange(self)
@@ -724,6 +789,7 @@ public final class CanvasEditor {
         guard editingShapeID != nil else { return }
         editingShapeID = nil
         editingStartPoint = nil
+        editingStartClickCount = 1
         delegate?.editorEditingDidChange(self)
         setNeedsDisplay()
         undoHistory.editingEnded()

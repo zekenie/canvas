@@ -69,7 +69,7 @@ extension StampedAt: ShapeProperty {
             "/ratio exclusiveMaximum: Ratio is 1, and should be less than 1.",
             "/tags maxItems: Tags has 4 items, and should have at most 3.",
             "/tags uniqueItems: Tags has the same item more than once.",
-            "/extra additionalProperties: Extra isn't one of the value's properties.",
+            "/extra additionalProperties: Extra isn’t one of the value’s properties.",
         ])
         expectEqual(check(schema, ["name": "", "kind": "other", "ratio": 0, "count": -2, "tags": []]), [
             "/count minimum: Count is -2, and should be at least 0.",
@@ -98,7 +98,7 @@ extension StampedAt: ShapeProperty {
         let schema: JSONObject = ["maxLength": 2]
         expectEqual(check(schema, "é"), [], "one code point, precomposed")
         expectEqual(check(schema, "👍🏽"), [], "a thumbs-up and its skin tone: two")
-        expectEqual(check(schema, "👍🏽!"), ["/ maxLength: The value is 3 characters long as JSON Schema counts them (2 as shown), and should be at most 2."])
+        expectEqual(check(schema, "👍🏽!"), ["/ maxLength: The value counts as 3 characters (2 shown), and should be at most 2."])
         expectEqual(check(schema, "abc"), ["/ maxLength: The value is 3 characters long, and should be at most 2."], "the two counts only when they differ")
     },
     test("titles name the places they describe, and paths the rest: a member, an element as its item's number") {
@@ -132,7 +132,7 @@ extension StampedAt: ShapeProperty {
         expectEqual(check(["$defs": ["a/b": ["maxLength": 1]], "$ref": "#/$defs/a~1b"], "xy"),
                     ["/ maxLength: The value is 2 characters long, and should be at most 1."], "a pointer's / and ~, escaped")
         expectEqual(check(["properties": ["a": ["$ref": "#/$defs/missing"]]], ["a": 1]),
-                    ["/a $ref: A can't be checked: its schema refers to #/$defs/missing, which isn't in it."])
+                    ["/a $ref: A can’t be checked: its schema refers to #/$defs/missing, which isn’t in it."])
         expectEqual(check(["properties": ["a": ["$ref": "https://example.com/schema"]]], ["a": 1]).map { $0.hasPrefix("/a $ref:") }, [true],
                     "only local references")
     },
@@ -145,15 +145,15 @@ extension StampedAt: ShapeProperty {
             "cond": ["if": ["type": "string"], "then": ["minLength": 3], "else": ["minimum": 10]],
         ]]
         expectEqual(check(schema, ["both": "abc", "any": true, "one": 2, "none": "x", "cond": "ab"]), [
-            "/any anyOf: Any doesn't fit any of its forms.",
+            "/any anyOf: Any doesn’t fit any of its forms.",
             "/both maxLength: Both is 3 characters long, and should be at most 2.",
             "/cond minLength: Cond is 2 characters long, and should be at least 3.",
-            "/none not: None fits a form it shouldn't.",
+            "/none not: None fits a form it shouldn’t.",
             "/one oneOf: One fits more than one of its forms.",
         ])
         expectEqual(check(schema, ["one": 2.5, "cond": 3]), ["/cond minimum: Cond is 3, and should be at least 10."])
-        expectEqual(check(schema, ["one": "x", "cond": "abc", "any": 1, "none": 1]), ["/one oneOf: One doesn't fit any of its forms."])
-        expectEqual(check(["properties": ["no": false]], ["no": 1]), ["/no false: No isn't allowed here."])
+        expectEqual(check(schema, ["one": "x", "cond": "abc", "any": 1, "none": 1]), ["/one oneOf: One doesn’t fit any of its forms."])
+        expectEqual(check(["properties": ["no": false]], ["no": 1]), ["/no false: No isn’t allowed here."])
     },
     test("arrays: prefixItems, then items for the rest, or none past them with items false; contains counts the items that fit") {
         let schema: JSONObject = ["properties": [
@@ -183,7 +183,7 @@ extension StampedAt: ShapeProperty {
         expectEqual(check(schema, ["x-note": 1, "start": 1, "overlong": 2, "big": "no"]), [
             "/end dependentRequired: End is missing, which start needs.",
             "/big type: Big should be a number, not \"no\".",
-            "/overlong propertyNames: overlong isn't a name the value allows.",
+            "/overlong propertyNames: overlong isn’t a name the value allows.",
             "/x-note type: X-note should be a string, not 1.",
             "/ maxProperties: The value has 4 properties, and should have at most 3.",
         ])

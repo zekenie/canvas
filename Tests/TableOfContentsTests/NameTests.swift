@@ -31,6 +31,22 @@ import TestKit
         expectEqual(editor.contents.entries.outline, ["Gizmo 100"])
         expectEqual(editor.contents.entries.map(\.symbol), ["cube"])
     },
+    test("a kind with no row that another plugin names shows its tool's label dimmed until a shape is named; one nobody names, at full strength") {
+        let editor = try contentsEditor([Contributor(id: "names") { r in r.contentsTitle(Gizmo.self) { $0.frame.width > 100 ? "Wide" : nil } }])
+        let gizmo = editor.add(Gizmo(CGRect(x: 0, y: 0, width: 100, height: 50)))
+        var label = try require(editor.contents.entries.first?.label)
+        expectEqual(label.text, "Gizmo")
+        expect(label.isPlaceholder, "unnamed: dimmed, as an untitled note is")
+        editor.transact { $0.update(gizmo, as: Gizmo.self) { $0.frame.size.width = 200 } }
+        label = try require(editor.contents.entries.first?.label)
+        expectEqual(label.text, "Wide")
+        expect(!label.isPlaceholder, "named")
+        let unnamed = try contentsEditor()
+        unnamed.add(Gizmo())
+        label = try require(unnamed.contents.entries.first?.label)
+        expectEqual(label.text, "Gizmo")
+        expect(!label.isPlaceholder, "a kind nobody names: its label is all it's called")
+    },
     test("a row that isn't a ContentsLabel stays its kind's view") {
         let editor = try contentsEditor([Contributor(id: "rows") { r in
             r.contentsRow(Box.self) { _ in Text("A box") }

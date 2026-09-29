@@ -16,7 +16,6 @@ import Subboards
 import SwiftUI
 import TestKit
 import Titles
-import Validation
 
 /// A canvas view in an unshown window, which is enough for first responders, field editors and
 /// sendEvent.
@@ -42,6 +41,7 @@ extension CanvasEditor {
 final class ActionLog: NSView {
     var actions: [String] = []
     override func moveRight(_ sender: Any?) { actions.append("moveRight:") }
+    override func insertTab(_ sender: Any?) { actions.append("insertTab:") }
 }
 
 /// A pill in a note's text, as Mentions' will be: a face (Selection's `ShapeFaces`) 60 × 20, 10 in
@@ -92,13 +92,164 @@ struct NotePill: Hashable, Sendable {
         editor.camera.setZoom(2, around: .zero)
         expectEqual(host.frame, CGRect(x: 400, y: 400, width: 400, height: 400))
         expectEqual(host.bounds.size, CGSize(width: 200, height: 200))
-        expectEqual(editor.validation?.result(for: id)?.worst, .warning)
         textView.insertText("Hi", replacementRange: NSRange(location: 0, length: 0))
         expectEqual(editor.document[id]?.typed(as: StickyNote.self)?.props.text, "Hi")
-        expect(editor.validation?.result(for: id) == nil)
         window.firstResponder?.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
         expect(window.firstResponder === canvas)
         expect(canvas.subviews.isEmpty)
+    },
+    test("typed past its eighth line, a note grows, and its editor with it, so the caret and the text stay in view") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        let (window, canvas) = windowed(editor)
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: CGPoint(x: 300, y: 250), clicks: 2, time: 1))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: CGPoint(x: 300, y: 250), clicks: 2, time: 1.05))
+        let id = try require(editor.editingShapeID)
+        let textView = try require(window.firstResponder as? NSTextView)
+        let host = try require(canvas.subviews.first { !($0 is MinimapView) })
+        for line in 1...12 { textView.insertText(line == 1 ? "1" : "\n\(line)", replacementRange: textView.selectedRange()) }
+        let box = try require(editor.document[id]?.box)
+        expectEqual(box.height, 12 * 19 + 33)
+        expectEqual(host.frame, editor.camera.toView(box), "the editor over all of it")
+        expectEqual(host.bounds.size, box.size)
+        expect(textView.frame.height >= box.height, "its text view too, the last line in it: \(textView.frame)")
+        window.firstResponder?.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
+        expectEqual(editor.undoHistory.undoName, "Add Note", "placing, typing and growing: one step")
+    },
+    test("typed near the window's bottom, a note grows past it, and the camera follows the caret, so nothing's typed blind; as an arrow key moves it too") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        let (window, canvas) = windowed(editor)
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: CGPoint(x: 300, y: 480), clicks: 2, time: 1))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: CGPoint(x: 300, y: 480), clicks: 2, time: 1.05))
+        let id = try require(editor.editingShapeID)
+        let textView = try require(window.firstResponder as? NSTextView)
+        /// The caret, in the canvas's points.
+        @MainActor func caret() -> CGRect {
+            let screen = textView.firstRect(forCharacterRange: NSRange(location: NSMaxRange(textView.selectedRange()), length: 0), actualRange: nil)
+            return canvas.convert(window.convertFromScreen(screen), from: nil)
+        }
+        let start = editor.camera
+        for line in 1...15 {
+            textView.insertText(line == 1 ? "1" : "\n\(line)", replacementRange: textView.selectedRange())
+            expect(canvas.bounds.insetBy(dx: 15, dy: 15).contains(caret()), "line \(line)'s caret in view: \(caret())")
+        }
+        expect(editor.camera.origin.y > start.origin.y, "the camera went down with it")
+        expectEqual(editor.camera.zoom, start.zoom, "no zoom")
+        let box = try require(editor.document[id]?.box)
+        expect(editor.camera.toView(box).maxY > 600 - 20, "the note's bottom, with the caret, at the window's")
+        textView.moveToBeginningOfDocument(nil)
+        editor.camera = start
+        textView.moveToEndOfDocument(nil)
+        expect(canvas.bounds.insetBy(dx: 15, dy: 15).contains(caret()), "the caret moved to where it's out of view: shown")
+        window.firstResponder?.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
+        expectEqual(editor.undoHistory.undoName, "Add Note", "the camera's moves are no step")
+        // A long note whose end has never been in view: the caret sent there (⌘↓), the camera goes there.
+        let long = (1...40).map(String.init).joined(separator: "\n")
+        let tall = editor.add(StickyNote(frame: CGRect(x: 500, y: 100, width: 200, height: 200), text: MentionText(plain: long)))
+        editor.camera = start
+        editor.selection = tall
+        let onFirstLine = editor.camera.toView(CGPoint(x: 520, y: 125))
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: onFirstLine, clicks: 1, time: 5))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: onFirstLine, clicks: 1, time: 5.05))
+        expectEqual(editor.editingShapeID, tall)
+        let top = editor.camera
+        let end = try require(window.firstResponder as? NSTextView)
+        end.moveToEndOfDocument(nil)
+        let screen = end.firstRect(forCharacterRange: NSRange(location: (end.string as NSString).length, length: 0), actualRange: nil)
+        expect(editor.camera.origin.y > top.origin.y + 200, "the camera went down to it: \(top.origin.y) to \(editor.camera.origin.y)")
+        expect(screen != .zero && canvas.bounds.insetBy(dx: 15, dy: 15).contains(canvas.convert(window.convertFromScreen(screen), from: nil)),
+               "at its end, in view: \(screen)")
+    },
+    test("a double-click on a note's word edits it with that word selected; a click on the selected note, with the caret where it's clicked") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        let (window, canvas) = windowed(editor)
+        let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Buy milk and bread"))
+        // The first line's middle, 16 points in and 9 down past the padding: on "Buy", then on "milk".
+        let onBuy = CGPoint(x: 100 + 16 + 12, y: 100 + 16 + 9), onMilk = CGPoint(x: 100 + 16 + 52, y: 100 + 16 + 9)
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: onBuy, clicks: 1, time: 1))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: onBuy, clicks: 1, time: 1.05))
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: onBuy, clicks: 2, time: 1.1))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: onBuy, clicks: 2, time: 1.15))
+        expectEqual(editor.editingShapeID, note)
+        expectEqual((window.firstResponder as? NSTextView)?.selectedRange(), NSRange(location: 0, length: 3), "Buy")
+        window.firstResponder?.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
+        expectEqual(editor.editingShapeID, nil)
+        expectEqual(editor.selection, note)
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: onMilk, clicks: 1, time: 3))
+        expectEqual(editor.editingShapeID, nil, "not on the press")
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: onMilk, clicks: 1, time: 3.05))
+        expectEqual(editor.editingShapeID, note, "on the release")
+        let caret = try require((window.firstResponder as? NSTextView)?.selectedRange())
+        expect(caret.length == 0 && (4...8).contains(caret.location), "in milk: \(caret)")
+        expectEqual(editor.hovered, nil, "released over its text")
+    },
+    test("a titled note's pill isn't its text: a click there on the note selected doesn't edit it, and a double-click edits it with the caret at the end") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        let (window, canvas) = windowed(editor)
+        let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Milk and bread"), title: "Groceries")
+        // The pill: the row 9 to 27 points above the note's top edge, from its left end.
+        let pill = CGPoint(x: 120, y: 82)
+        expectEqual(editor.selectableShape(at: pill), note, "the pill is the note's for the select tool")
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: pill, clicks: 1, time: 1))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: pill, clicks: 1, time: 1.05))
+        expectEqual(editor.selection, note)
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: pill, clicks: 1, time: 3))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: pill, clicks: 1, time: 3.05))
+        expectEqual(editor.editingShapeID, nil, "a click on the selected note's pill only selects it")
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: pill, clicks: 2, time: 3.1))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: pill, clicks: 2, time: 3.15))
+        expectEqual(editor.editingShapeID, note)
+        expectEqual((window.firstResponder as? NSTextView)?.selectedRange(), NSRange(location: 14, length: 0), "at the end, no word selected")
+    },
+    test("the click that brings a board's window forward, on its only selected note, only brings it forward; the next click edits it") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        let (window, canvas) = windowed(editor)
+        let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Hi"))
+        editor.selection = note
+        expect(!window.isKeyWindow)
+        let press = window.mouse(.leftMouseDown, at: CGPoint(x: 200, y: 200), time: 1)
+        expect(canvas.acceptsFirstMouse(for: press), "it takes the click")
+        canvas.mouseDown(with: press)
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: CGPoint(x: 200, y: 200), time: 1.05))
+        expectEqual(editor.editingShapeID, nil)
+        expectEqual(editor.selection, note)
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: CGPoint(x: 200, y: 200), time: 3))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: CGPoint(x: 200, y: 200), time: 3.05))
+        expectEqual(editor.editingShapeID, note)
+    },
+    test("opening a note too short for its text grows it, and its editor with it, to show all of it before anything's typed; Escape and Undo put it back") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        let (window, canvas) = windowed(editor)
+        let long = (1...12).map(String.init).joined(separator: "\n")
+        let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 50, width: 200, height: 200), text: MentionText(plain: long)))
+        editor.selection = note
+        window.makeFirstResponder(canvas)
+        window.pressReturn()
+        expectEqual(editor.editingShapeID, note)
+        let box = try require(editor.document[note]?.box)
+        expectEqual(box.height, 12 * 19 + 33)
+        let host = try require(canvas.subviews.first { !($0 is MinimapView) })
+        expectEqual(host.frame, editor.camera.toView(box), "the editor over all of it")
+        let textView = try require(window.firstResponder as? NSTextView)
+        expect(textView.frame.height >= box.height, "its text view too: \(textView.frame)")
+        window.firstResponder?.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
+        expectEqual(editor.undoHistory.undoName, "Typing")
+        editor.undo()
+        expectEqual(editor.document[note]?.box?.height, 200)
+    },
+    test("⌘↩ in a note's text ends editing and hands the canvas the keyboard, as a key equivalent and as a key") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        let (window, canvas) = windowed(editor)
+        for (x, asKeyEquivalent) in [(200.0, true), (500, false)] {
+            canvas.mouseDown(with: window.mouse(.leftMouseDown, at: CGPoint(x: x, y: 300), clicks: 2, time: 1))
+            canvas.mouseUp(with: window.mouse(.leftMouseUp, at: CGPoint(x: x, y: 300), clicks: 2, time: 1.05))
+            let id = try require(editor.editingShapeID)
+            window.type("Hi")
+            let event = window.keyEvent("\r", code: 36, modifiers: .command)
+            if asKeyEquivalent { expect(window.performKeyEquivalent(with: event), "taken before the menus") } else { window.sendEvent(event) }
+            expectEqual(editor.editingShapeID, nil, "as a key equivalent: \(asKeyEquivalent)")
+            expect(window.firstResponder === canvas)
+            expectEqual(editor.document[id]?.typed(as: StickyNote.self)?.props.text, "Hi")
+        }
     },
     test("a note being edited isn't hovered under its text, released or moved there; on the canvas, what's under the pointer is, and it too once editing ends") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
@@ -286,7 +437,7 @@ struct NotePill: Hashable, Sendable {
         canvas.cancelOperation(nil)
         expectEqual(editor.currentToolID, .select)
     },
-    test("a key no shortcut takes goes on to AppKit's key bindings, and their action up the responder chain, as from any view") {
+    test("a key no shortcut takes goes on to AppKit's key bindings: their moves and typing stop at the canvas, and any other action goes up the responder chain, as from any view") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
         let parent = ActionLog(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
@@ -295,9 +446,10 @@ struct NotePill: Hashable, Sendable {
         parent.addSubview(canvas)
         window.contentView = parent
         window.makeFirstResponder(canvas)
-        window.press("\u{F703}", code: 124, modifiers: [.numericPad, .function])       // →, which nothing claims
+        window.press("\u{F703}", code: 124, modifiers: [.numericPad, .function])       // →, with nothing to nudge
         window.press("q", code: 12)
-        expectEqual(parent.actions, ["moveRight:"])
+        window.press("\t", code: 48)
+        expectEqual(parent.actions, ["insertTab:"], "→'s moveRight: stops at the canvas, so it doesn't beep")
         expectEqual(editor.currentToolID, .select)
         expect(window.firstResponder === canvas)
     },
@@ -392,23 +544,27 @@ struct NotePill: Hashable, Sendable {
         defer { pasteboard.releaseGlobally() }
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
         let (window, canvas) = windowed(editor)
+        let arrow = CGPoint(x: 190, y: 300), card = CGPoint(x: 520, y: 140), empty = CGPoint(x: 190, y: 500)
+        // An empty board, with nothing to paste, has nothing to offer. AppKit sends a Control-click to
+        // mouseDown only when menu(for:) has nothing: it isn't a press, so it does nothing.
+        expect(canvas.menu(for: window.mouse(.rightMouseDown, at: empty, time: 1)) == nil)
+        let revision = editor.revision
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: empty, modifiers: .control, time: 1.5))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: empty, modifiers: .control, time: 1.55))
+        expectEqual(editor.revision, revision)
         editor.add(Arrow(start: .free(CGPoint(x: 40, y: 300)), end: .free(CGPoint(x: 340, y: 300))))
         let subboard = editor.add(Subboard(frame: CGRect(x: 400, y: 40, width: 240, height: 160)), title: "Ship")
-        let arrow = CGPoint(x: 190, y: 300), card = CGPoint(x: 520, y: 140), empty = CGPoint(x: 190, y: 500)
-        // Every shipped shape has something to offer (Cut, Copy and Paste, at least); empty canvas has nothing.
-        expect(canvas.menu(for: window.mouse(.rightMouseDown, at: empty, time: 1)) == nil)
-        let menu = try require(canvas.menu(for: window.mouse(.rightMouseDown, at: card, time: 2)))
+        // Every shipped shape has something to offer (Cut, Copy, Lock, Delete, at least); empty canvas
+        // on a board with shapes, Select All.
+        expectEqual(try require(canvas.menu(for: window.mouse(.rightMouseDown, at: empty, time: 2))).outline, ["Select All"])
+        let menu = try require(canvas.menu(for: window.mouse(.rightMouseDown, at: card, time: 2.5)))
         expectEqual(menu.outline.first, "Open")
-        expectEqual(editor.selectedShapeIDs, [subboard])
-        // AppKit sends a Control-click to mouseDown only when menu(for:) has nothing: it isn't a press,
-        // so it doesn't deselect.
-        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: empty, modifiers: .control, time: 3))
-        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: empty, modifiers: .control, time: 3.05))
+        expectEqual(menu.outline.last, "Delete")
         expectEqual(editor.selectedShapeIDs, [subboard])
         expect(canvas.menu(for: window.mouse(.leftMouseDown, at: card, modifiers: .control, time: 4)) != nil)
-        // An arrow's menu is just the clipboard's (nothing to paste yet) and Lock: Arrange leaves out
-        // what's painted by anchor.
-        expectEqual(try require(canvas.menu(for: window.mouse(.rightMouseDown, at: arrow, time: 5))).outline, ["Cut", "Copy", "—", "Lock"])
+        // An arrow's menu is the clipboard's (nothing to paste yet), Lock and Delete: Arrange leaves
+        // out what's painted by anchor.
+        expectEqual(try require(canvas.menu(for: window.mouse(.rightMouseDown, at: arrow, time: 5))).outline, ["Cut", "Copy", "—", "Lock", "—", "Delete"])
         // Asked with some other event (the accessibility Show Menu action), there's no click to go by.
         let key = try require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 5, windowNumber: window.windowNumber,
                                                context: nil, characters: "m", charactersIgnoringModifiers: "m", isARepeat: false, keyCode: 46))
@@ -428,4 +584,153 @@ struct NotePill: Hashable, Sendable {
         expect(editor.camera.origin != origin, "it panned")
         expectEqual(editor.selectedShapeIDs, [])
     },
+    test("an arrow key from the keyboard nudges the selection; with nothing selected it, a letter no tool has and Page Down go no further than the canvas") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        let (window, canvas) = windowed(editor)
+        let spy = ResponderSpy()
+        canvas.nextResponder = spy
+        window.makeFirstResponder(canvas)
+        let arrowKey: NSEvent.ModifierFlags = [.function, .numericPad]
+        let note = editor.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "Here"))
+        editor.selection = note
+        window.press("\u{F703}", code: 124, modifiers: arrowKey)
+        window.press("\u{F701}", code: 125, modifiers: arrowKey.union(.shift))
+        expectEqual(editor.document[note]?.box?.origin, CGPoint(x: 1, y: 10))
+        editor.selection = nil
+        window.press("\u{F703}", code: 124, modifiers: arrowKey)
+        window.press("\u{F703}", code: 124, modifiers: arrowKey.union(.command))
+        window.press("q", code: 12)
+        window.press("\u{F72D}", code: 121, modifiers: .function)
+        expectEqual(spy.heard, [], "AppKit's moves and typing stop at the canvas, so nothing beeps")
+        window.press("\u{1b}", code: 53)
+        expectEqual(spy.heard, [], "Escape is the canvas's too")
+        expectEqual(editor.document[note]?.box?.origin, CGPoint(x: 1, y: 10))
+    },
 ])
+
+@MainActor let panningViewTests = Suite("Panning the canvas view", [
+    test("Space held on the canvas holds the hand, the note tool staying; its key-up, the canvas losing the keyboard or the window stopping being key let go") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        let (window, canvas) = windowed(editor)
+        window.makeFirstResponder(canvas)
+        window.press("n", code: 45)
+        window.press(" ", code: 49)
+        expect(editor.isHandHeld)
+        expectEqual(editor.cursor, .openHand)
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: CGPoint(x: 100, y: 100), time: 1))
+        canvas.mouseDragged(with: window.mouse(.leftMouseDragged, at: CGPoint(x: 160, y: 140), time: 1.2))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: CGPoint(x: 160, y: 140), time: 1.5))
+        expectEqual(editor.camera.origin, CGPoint(x: -60, y: -40))
+        expectEqual(editor.document.shapes, [], "no note placed")
+        window.sendEvent(try require(NSEvent.keyEvent(with: .keyUp, location: .zero, modifierFlags: [], timestamp: 2, windowNumber: window.windowNumber,
+                                                      context: nil, characters: " ", charactersIgnoringModifiers: " ", isARepeat: false, keyCode: 49)))
+        expect(!editor.isHandHeld)
+        expectEqual(editor.currentToolID, ToolID(placing: StickyNote.kind), "the tool stayed")
+        window.press(" ", code: 49)
+        window.makeFirstResponder(nil)
+        expect(!editor.isHandHeld, "the canvas lost the keyboard")
+        window.makeFirstResponder(canvas)
+        window.press(" ", code: 49)
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
+        expect(!editor.isHandHeld, "the window stopped being key")
+    },
+    test("Space let go while ⌘ is held, whose release NSApplication keeps from the window, or while a menu tracks, lets go of the hand") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        let (window, canvas) = windowed(editor)
+        window.makeFirstResponder(canvas)
+        window.press(" ", code: 49)
+        expect(editor.isHandHeld)
+        NSApp.sendEvent(try require(NSEvent.keyEvent(with: .keyUp, location: .zero, modifierFlags: .command, timestamp: 2, windowNumber: window.windowNumber,
+                                                     context: nil, characters: " ", charactersIgnoringModifiers: " ", isARepeat: false, keyCode: 49)))
+        expect(!editor.isHandHeld, "let go with ⌘ held (a ⌘-scroll zoom while panning)")
+        window.press(" ", code: 49)
+        expect(editor.isHandHeld)
+        NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: NSMenu())
+        expect(!editor.isHandHeld, "a menu's loop takes the key's release")
+        expect(window.isVisible == false && window.firstResponder === canvas, "the canvas kept the keyboard")
+    },
+    test("a middle-button pan begun and released over the note being edited leaves nothing hovered there, and editing goes on") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        let (window, canvas) = windowed(editor)
+        let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Pan"))
+        editor.selection = note
+        expect(editor.beginEditing(note))
+        let text = CGPoint(x: 200, y: 200)
+        canvas.mouseMoved(with: window.mouse(.mouseMoved, at: text, time: 1))
+        expectEqual(editor.pointerOverCanvas, nil, "over the text, off the canvas")
+        canvas.otherMouseDown(with: try middleButton(window.mouse(.otherMouseDown, at: text, time: 1.1)))
+        canvas.otherMouseDragged(with: try middleButton(window.mouse(.otherMouseDragged, at: CGPoint(x: 220, y: 210), time: 1.2)))
+        expectEqual(editor.camera.origin, CGPoint(x: -20, y: -10))
+        canvas.otherMouseUp(with: try middleButton(window.mouse(.otherMouseUp, at: CGPoint(x: 220, y: 210), time: 1.3)))
+        expectEqual(editor.hovered, nil)
+        expectEqual(editor.pointerOverCanvas, nil, "no port dots around the note")
+        expectEqual(editor.editingShapeID, note)
+        canvas.mouseMoved(with: window.mouse(.mouseMoved, at: CGPoint(x: 225, y: 212), time: 1.4))
+        expectEqual(editor.pointerOverCanvas, nil, "still over its text")
+    },
+    test("a left press during a middle-button pan ends the pan and is the press: its drag moves what it pressed, and the middle button's release doesn't end it") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        let (window, canvas) = windowed(editor)
+        let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Pan"))
+        editor.selection = note
+        window.makeFirstResponder(canvas)
+        canvas.otherMouseDown(with: try middleButton(window.mouse(.otherMouseDown, at: CGPoint(x: 150, y: 150), time: 1)))
+        canvas.otherMouseDragged(with: try middleButton(window.mouse(.otherMouseDragged, at: CGPoint(x: 160, y: 150), time: 1.1)))
+        expectEqual(editor.camera.origin, CGPoint(x: -10, y: 0))
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: CGPoint(x: 160, y: 150), time: 1.2))
+        canvas.otherMouseUp(with: try middleButton(window.mouse(.otherMouseUp, at: CGPoint(x: 160, y: 150), time: 1.3)))
+        expect(editor.session != nil, "the left press goes on")
+        canvas.mouseDragged(with: window.mouse(.leftMouseDragged, at: CGPoint(x: 200, y: 170), time: 1.4))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: CGPoint(x: 200, y: 170), time: 1.5))
+        expectEqual(editor.camera.origin, CGPoint(x: -10, y: 0), "the pan ended at the left press")
+        expectEqual(editor.document[note]?.box?.origin, CGPoint(x: 140, y: 120), "the drag moved the note")
+        expectEqual(editor.editingShapeID, nil, "a drag, not a click that edits")
+        expectEqual(editor.undoHistory.undoName, "Move")
+        // The other order: the left press let go first; the middle button's drags and release are dropped.
+        canvas.otherMouseDown(with: try middleButton(window.mouse(.otherMouseDown, at: CGPoint(x: 600, y: 500), time: 2)))
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: CGPoint(x: 600, y: 500), time: 2.1))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: CGPoint(x: 600, y: 500), time: 2.2))
+        let camera = editor.camera
+        canvas.otherMouseDragged(with: try middleButton(window.mouse(.otherMouseDragged, at: CGPoint(x: 650, y: 520), time: 2.3)))
+        canvas.otherMouseUp(with: try middleButton(window.mouse(.otherMouseUp, at: CGPoint(x: 650, y: 520), time: 2.4)))
+        expectEqual(editor.camera, camera, "the middle button's pan ended at the left press")
+        expect(editor.session == nil)
+    },
+    test("a middle-button drag pans the canvas, whatever the tool") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        let (window, canvas) = windowed(editor)
+        window.press("n", code: 45)
+        @MainActor func middle(_ type: CGEventType, _ point: CGPoint) throws -> NSEvent {
+            try require(CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: .center).flatMap(NSEvent.init(cgEvent:)))
+        }
+        canvas.otherMouseDown(with: try middle(.otherMouseDown, CGPoint(x: 300, y: 300)))
+        canvas.otherMouseDragged(with: try middle(.otherMouseDragged, CGPoint(x: 350, y: 330)))
+        expectEqual(editor.camera.origin, CGPoint(x: -50, y: -30), "a Quartz point's y is down, as the canvas's is")
+        canvas.otherMouseUp(with: try middle(.otherMouseUp, CGPoint(x: 350, y: 330)))
+        expectEqual(editor.document.shapes, [], "no note placed")
+        expectEqual(editor.currentToolID, ToolID(placing: StickyNote.kind))
+    },
+])
+
+/// `event` (a mouse event made for a window) as the middle button's: button 2, where it was. (Made
+/// through a Quartz event, which has no window: its location is put where the window's would be.)
+@MainActor func middleButton(_ event: NSEvent) throws -> NSEvent {
+    let cg = try require(event.cgEvent)
+    cg.setIntegerValueField(.mouseEventButtonNumber, value: 2)
+    // Quartz's y is down, so the Cocoa y it reads as goes up as it goes down.
+    let off = try require(NSEvent(cgEvent: cg)).locationInWindow.y - event.locationInWindow.y
+    cg.location.y += off
+    let middle = try require(NSEvent(cgEvent: cg))
+    expectEqual(middle.buttonNumber, 2)
+    expectEqual(middle.locationInWindow, event.locationInWindow)
+    return middle
+}
+
+/// The canvas's next responder, in place of the window: what the canvas passes on.
+final class ResponderSpy: NSResponder {
+    var heard: [String] = []
+    override func doCommand(by selector: Selector) { heard.append(NSStringFromSelector(selector)) }
+    override func insertText(_ insertString: Any) { heard.append("insertText:") }
+    override func keyDown(with event: NSEvent) { heard.append("keyDown:") }
+    override func noResponder(for eventSelector: Selector) { heard.append("noResponder: \(NSStringFromSelector(eventSelector))") }
+}

@@ -322,6 +322,29 @@ extension ListTab: DetailTab { static var title: String { "List" } }
         expect((25..<144).contains(redArea(image, in: panel, rows: 60..<120)), "the line's symbol")
         expectEqual(redArea(image, in: panel, rows: 660..<700), 0, "the footer")
     },
+    test("a tab whose lines warn or err shows its worst tone's symbol before its title, from another tab; a tab of other lines, none") {
+        final class Lines { var tone = DetailStatus.Tone.error }
+        let lines = Lines()
+        let editor = try gadgetEditor([Contributor(id: "alerts") { r in
+            r.detailStatusForEveryShape(in: AlertsTab.self) { _, _ in [DetailStatus("Something is badly wrong with this box", tone: lines.tone)] }
+        }], scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
+        let box = editor.add(Box(gadgetFrame))
+        editor.selection = box
+        panel.window.spin { !panel.fields.isEmpty }
+        expectEqual(try editor.layout(box).tabs.map(\.title), ["Frame", "Alerts"])
+        // The strip, under the 44-point header: a 9-point symbol, some 40 square points of color.
+        let strip = 44..<72
+        expect((15..<90).contains(redArea(try panel.render(), in: panel, rows: strip)), "an error's octagon, while Frame is shown")
+        lines.tone = .warning
+        editor.transact { $0.update(box, as: Box.self) { $0.frame.size.width += 1 } }
+        panel.window.settle()
+        expect((15..<90).contains(redArea(try panel.render(), in: panel, rows: strip)), "a warning's triangle (orange counts)")
+        lines.tone = .info
+        editor.transact { $0.update(box, as: Box.self) { $0.frame.size.width += 1 } }
+        panel.window.settle()
+        expectEqual(redArea(try panel.render(), in: panel, rows: strip), 0, "an info line's tab has none")
+    },
     test("a tab's status lines come before its sections") {
         let editor = try gadgetEditor([Contributor(id: "alerts") { r in
             r.detailStatusForEveryShape(in: RemarksTab.self) { _, _ in [DetailStatus("Something is badly wrong with this gadget", tone: .error)] }
@@ -333,7 +356,7 @@ extension ListTab: DetailTab { static var title: String { "List" } }
         let area = try require(panel.textViews.first)
         let top = Int(area.convert(area.bounds, to: panel.hosting).minY)
         let image = try panel.render()
-        expect((25..<144).contains(redArea(image, in: panel, rows: 44..<top)), "the line's symbol, above the remark's text area at \(top)")
+        expect((25..<144).contains(redArea(image, in: panel, rows: 72..<top)), "the line's symbol, under the strip (whose Remarks tab has its own) and above the remark's text area at \(top)")
         expectEqual(redArea(image, in: panel, rows: top..<700), 0, "nothing red from the text area down")
     },
     test("a draft commits to its own shape when the selection moves under it, and the canvas gets the keyboard") {

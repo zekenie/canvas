@@ -21,7 +21,7 @@ import TestKit
 // before sending mouseDown, and sends mouseDown only when there's none. A context menu is a window
 // of its own, so this puts one on screen for a moment: opt-in, with TEST_UI_MENUS=1.
 @MainActor let menuRoutingTests = Suite("Context menu routing, on screen", [
-    test("a Control-click goes to the menu first: shown, it never presses; with none, the select tool ignores it; a right-click opens it too") {
+    test("a Control-click goes to the menu first: shown, it never presses; with none, the select tool ignores it; a right-click opens it too; empty canvas has Select All") {
         NSApplication.shared.setActivationPolicy(.accessory)
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -32,8 +32,6 @@ import TestKit
         window.contentView = canvas
         window.orderFrontRegardless()
         defer { window.orderOut(nil) }
-        let subboard = editor.add(Subboard(frame: CGRect(x: 400, y: 40, width: 240, height: 160)), title: "Ship")
-
         let opened = OpenedMenus()
         let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: nil) { note in
             nonisolated(unsafe) let object = note.object          // posted on the main thread, as tracking begins
@@ -51,16 +49,21 @@ import TestKit
             window.sendEvent(window.mouse(up, at: point, modifiers: modifiers, time: time + 0.05))
         }
 
+        click(.leftMouseDown, .leftMouseUp, at: CGPoint(x: 190, y: 500), .control)
+        expectEqual(opened.outlines.count, 0, "an empty board, with nothing to paste, has nothing to offer")
+        expect(editor.session == nil, "and the Control-click that reached mouseDown pressed nothing")
+
+        let subboard = editor.add(Subboard(frame: CGRect(x: 400, y: 40, width: 240, height: 160)), title: "Ship")
         click(.leftMouseDown, .leftMouseUp, at: CGPoint(x: 520, y: 140), .control)
         expectEqual(opened.outlines.first?.first, "Open")
         expectEqual(editor.selectedShapeIDs, [subboard])
         expect(editor.session == nil)
 
         click(.leftMouseDown, .leftMouseUp, at: CGPoint(x: 190, y: 500), .control)
-        expectEqual(opened.outlines.count, 1, "empty canvas has nothing to offer")
-        expectEqual(editor.selectedShapeIDs, [subboard], "and the Control-click that reached mouseDown didn't deselect")
+        expectEqual(opened.outlines.last, ["Select All"], "on empty canvas, the canvas's own items")
+        expectEqual(editor.selectedShapeIDs, [subboard], "shown, the menu took the Control-click: nothing deselected it")
 
         click(.rightMouseDown, .rightMouseUp, at: CGPoint(x: 520, y: 140), [])
-        expectEqual(opened.outlines.count, 2)
+        expectEqual(opened.outlines.count, 3)
     },
 ])

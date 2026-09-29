@@ -52,10 +52,62 @@ import TestKit
         for id in ids { expect(editor.showBoard(BoardID(owner: id))) }
         path.window.spin { path.buttons.count == 2 }
         expectEqual(path.buttons.count, 2, "the root and the parent")
-        expect(path.folded != nil)
+        let fold = path.frame(of: try require(path.folded, "\"…\", a button as the crumbs are"))
+        expect(fold.minX > path.frame(of: path.buttons[0]).maxX && fold.maxX < path.frame(of: path.buttons[1]).minX, "between them")
         try path.click(1)
         expectEqual(editor.board, BoardID(owner: ids[3]))
         expectEqual(editor.selectedShapeIDs, [ids[4]])
+    },
+    test("\"…\" is drawn as the boards above around it are, in their gray, on a light pill and a dark one") {
+        let (h, ids) = try chainHarness(depth: 5)
+        let editor = try windowEditor(h.editor.file)
+        let path = PathWindow(editor, rootName: "R")
+        for id in ids { expect(editor.showBoard(BoardID(owner: id))) }
+        path.window.spin { path.buttons.count == 2 && path.folded != nil }
+        for (appearance, name) in [(NSAppearance.Name.aqua, "light"), (.darkAqua, "dark")] {
+            path.window.appearance = NSAppearance(named: appearance)
+            path.window.settle()
+            let image = snapshot(path.hosting), pixels = DeviceRGBPixels(image)
+            let scale = CGFloat(image.pixelsWide) / path.hosting.bounds.width
+            /// How strongly a view's ink stands out from the pill under it (its frame's commonest
+            /// gray): 0 none, 1 black on white. On a dark pill the ink is light, so darkness can't say.
+            @MainActor func ink(_ view: NSView) -> CGFloat {
+                let frame = path.frame(of: view)
+                var grays: [CGFloat] = []
+                for y in Int(frame.minY * scale)..<Int(frame.maxY * scale) {
+                    for x in Int(frame.minX * scale)..<Int(frame.maxX * scale) { grays.append(pixels[x, y]?.gray ?? 0) }
+                }
+                let buckets = Dictionary(grouping: grays) { ($0 * 32).rounded() }
+                let pill = buckets.max { $0.value.count < $1.value.count }?.value.first ?? 0
+                return grays.map { abs($0 - pill) }.max() ?? 0
+            }
+            let fold = ink(try require(path.folded)), root = ink(try require(path.buttons.first)), parent = ink(try require(path.buttons.last))
+            expect(root > 0.2, "\(name): the root's crumb shows: \(root)")
+            // A pull-down's "…" (a SwiftUI Menu) drew apart from them, 0.07 lighter on a light pill and
+            // 0.1 on a dark one even in tertiary: it takes no style from around it.
+            expect(abs(fold - root) < 0.02 && abs(fold - parent) < 0.02, "\(name): the crumbs' ink (\(root), \(parent)): \(fold)")
+        }
+    },
+    test("the pill reaches exactly as far down as it says it covers (coveredHeight, what fits leave clear), with its \"…\" or without") {
+        let nest = Nest()
+        let (h, ids) = try chainHarness(depth: 5)
+        for (editor, boards, folds) in [(try windowEditor(nest.file), [nest.dBoard, nest.pBoard], false),
+                                        (try windowEditor(h.editor.file), ids.map { BoardID(owner: $0) }, true)] {
+            let path = PathWindow(editor)
+            for board in boards { expect(editor.showBoard(board)) }
+            path.window.spin { !path.buttons.isEmpty && (path.folded != nil) == folds }
+            path.window.settle()
+            let covered = BoardPath.coveredHeight(on: editor.board)
+            expect(covered > 20 && covered < 60, "\(covered)")
+            let bitmap = snapshot(path.hosting)
+            let background = pixel(bitmap, at: CGPoint(x: 1, y: path.hosting.bounds.height - 1))
+            @MainActor func drawn(inRow y: CGFloat) -> Bool {
+                stride(from: 0, to: path.hosting.bounds.width, by: 1).contains { pixel(bitmap, at: CGPoint(x: $0 + 0.5, y: y + 0.5)) != background }
+            }
+            let below = stride(from: covered, to: path.hosting.bounds.height, by: 1).filter(drawn(inRow:))
+            expectEqual(below, [], "\(folds ? "folded" : "two crumbs"): nothing drawn from \(covered) points down")
+            expect(drawn(inRow: covered - 1), "\(folds ? "folded" : "two crumbs"): the pill reaches the row above it")
+        }
     },
     test("a crumb is as wide as its name, on one line, up to 180 points: a longer one is cut short, a short one isn't widened") {
         let long = String(repeating: "Cupboard ", count: 25)
@@ -132,10 +184,39 @@ import TestKit
     },
 ])
 
+/// The menus shown on screen (each modal while it tracks), closed as soon as each has shown, and
+/// where each was, in screen points.
+@MainActor final class ShownMenus {
+    private(set) var menus: [NSMenu] = []
+    private(set) var frames: [CGRect] = []
+    private var observer: NSObjectProtocol?
+
+    init() {
+        observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: nil) { [weak self] note in
+            nonisolated(unsafe) let object = note.object          // posted on the main thread, as tracking begins
+            MainActor.assumeIsolated {
+                guard let menu = object as? NSMenu else { return }
+                self?.menus.append(menu)
+                RunLoop.main.perform(inModes: [.eventTracking, .common]) {
+                    MainActor.assumeIsolated {
+                        self?.frames += NSApp.windows.filter { $0.isVisible && $0.level == .popUpMenu }.map(\.frame)
+                        self?.menus.last?.cancelTracking()
+                    }
+                }
+            }
+        }
+    }
+
+    func stop() {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+        observer = nil
+    }
+}
+
 /// Opens the real "…" menu, which shows on screen for a moment, so it runs only with
 /// TEST_UI_MENUS=1 (see main.swift). What it holds is tested headlessly in `pathTests`.
 @MainActor let menuTests = Suite("The path's menu, on screen", [
-    test("\"…\" lists the boards it folds, root side first, and choosing one goes up to it") {
+    test("a click on \"…\" shows the boards it folds, root side first, and choosing one goes up to it") {
         let (h, ids) = try chainHarness(depth: 5)
         for (id, name) in zip(ids, ["A", "B", "C", "D", "E"]) {
             _ = h.editor.showBoard(h.editor.file.board(containing: id)!)
@@ -146,12 +227,22 @@ import TestKit
         for id in ids { expect(named.showBoard(BoardID(owner: id))) }
         path.window.spin { path.folded != nil }
         let button = try require(path.folded)
-        RunLoop.main.add(Timer(timeInterval: 0, repeats: false) { _ in
-            MainActor.assumeIsolated { button.menu?.cancelTracking() }
-        }, forMode: .common)
+        // With room below it for the menu, which AppKit would otherwise open upward.
+        path.window.center()
+        path.window.settle()
+        let shown = ShownMenus()
+        defer { shown.stop() }
         button.performClick(nil)
-        let menu = try require(button.menu)
-        expectEqual(menu.items.map(\.title).filter { !$0.isEmpty && $0 != "…" }, ["A", "B", "C"])
+        path.window.spin { !shown.menus.isEmpty }
+        let menu = try require(shown.menus.first, "the click showed a menu")
+        expectEqual(shown.menus.count, 1)
+        // Its window's top at the pill's bottom edge, where a crumb's menu starts (6 points below the
+        // crumbs), lined up with the leading edge of "…".
+        let fold = path.window.convertToScreen(button.convert(button.bounds, to: nil)), placed = try require(shown.frames.first)
+        let pillBottom = path.window.convertToScreen(path.hosting.convert(path.hosting.bounds, to: nil)).maxY - BoardPath.coveredHeight(on: named.board)
+        expect(abs(placed.maxY - pillBottom) <= 0.5 && abs(placed.maxY - (fold.minY - 6)) <= 0.5 && abs(placed.minX - fold.minX) <= 1,
+               "at the pill's bottom edge, \(pillBottom), below \"…\" at \(fold), lined up with it: \(placed)")
+        expectEqual(menu.items.map(\.title), ["A", "B", "C"])
         menu.performActionForItem(at: menu.indexOfItem(withTitle: "B"))
         path.window.settle()
         expectEqual(named.board, BoardID(owner: ids[1]))

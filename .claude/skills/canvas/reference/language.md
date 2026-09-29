@@ -176,7 +176,7 @@ Every other key is one of the kind's properties, named as its schema names it; `
 
 The shipped kinds' attributes:
 
-- **sticky-note**: `text` (what it says), `locked`.
+- **sticky-note**: `text` (what it says: past eight lines or so the note grows taller to fit it, from its top. A `size:` holds as drawn only until its text changes, typed by the user or set again by a script without `size:`: then it's as tall as its text again, never under 200, and opening it to edit grows it to its text. So don't use a note as a zone of a set height), `locked`.
 - **schema-card**: `schema` (a JSON Schema, as text: its properties in the order written; the card grows to list them), `prompt` (what the schema should hold, in words), `locked`. What a script writes is taken as written: the Claude sync that rewrites one side when the user edits the other isn't asked, so write a prompt and a schema that agree, or leave the prompt out.
 - **rectangle**, **subboard**: `locked`.
 - **A note's `text`** is kept as written. In it, `@[label](shape:<id>)` is a mention of a shape, which the note shows as a live pill with that shape's name now. No id ever reaches a script, so write plain words: an `@`, or `@[…]` without `(shape:…)`, is only text. (The app writes a mention's form as plain text with `\@[`, which a script's string spells `\\@[`.) A mention of a shape that isn't in the file is kept, and warned about.
@@ -233,7 +233,7 @@ on "A" [<part>]        centered on that part (A's middle if none)
 A target is a quoted title, optionally followed by a part, or one of two unquoted words:
 
 - **`board`** is the box around every [obstacle](#keeping-clear): the shapes on the board that this script doesn't move (the board the window shows, not the boards inside its subboards). `right of board` is a new column past everything, `below board` is the space under everything. On an empty board it's `unknown_title`, because there's nothing to be right of. Leave one shape unplaced instead, and the drawing goes in the window.
-- **`view`** is the part of the board in the window. `inside view top-right` puts a legend in a corner. `view` needs the board's window to have a size, or it's `no_view`.
+- **`view`** is the part of the board in the window (below the path's pill over a subboard, which covers the window's top there). `inside view top-right` puts a legend in a corner. `view` needs the board's window to have a size, or it's `no_view`.
 
 Both are fixed boxes, measured once when the script runs.
 
@@ -569,7 +569,7 @@ An illustration (not the board on this page):
 
 The run succeeds with these **warnings**, each with its `severity`, the `line` of the statement it's about (all but the count of shapes out of view have one), and the `attribute` it's about, when it's about one:
 
-- every validation issue on each shape made or changed, errors included, like `"Inbox": This note is empty.` or a schema card's `A schema must be a JSON object.` An `error` means the board outlines that shape in red;
+- every validation issue on each shape made or changed, errors included, like a schema card's `A schema must be a JSON object.` An `error` means the board outlines that shape in red;
 - every schema bound a value breaks, like a title over 80 characters;
 - every push;
 - sides that face away;

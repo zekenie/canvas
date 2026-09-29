@@ -75,6 +75,14 @@ enum CorePoints {
         static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["key strokes"] }
     }
 
+    /// What a key let go on the canvas does (nil: every key, the canvas having lost the keyboard).
+    /// One plugin may claim it, the one that claims key strokes, for a key held down (Space's pan).
+    enum KeyReleases: KeyedExtensionPoint {
+        typealias Contribution = @MainActor (CanvasEditor, KeyStroke?) -> Void
+        static var owner: PluginID { .core }
+        static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["key releases"] }
+    }
+
     /// Where a drag that moves shapes puts them (`TranslationAdjuster`). One plugin may claim it;
     /// otherwise they follow the pointer.
     enum TranslationAdjusters: KeyedExtensionPoint {
@@ -146,12 +154,22 @@ struct ServiceRegistration {
     }
 }
 
-/// Installed ahead of every plugin list: the Hand, and undo and redo (whose keys Keyboard gives).
+/// Installed ahead of every plugin list: the Hand, undo and redo, and zooming (whose keys Keyboard
+/// gives). Zoom In and Zoom Out are dimmed at the last stop, Actual Size at 100%, and Zoom to Fit
+/// with nothing to fit.
 struct CorePlugin: CanvasPlugin {
     var id: PluginID { .core }
     func register(into registrar: inout PluginRegistrar) {
         registrar.tool(ToolDescriptor(id: .hand, label: "Hand", systemImage: "hand.raised")) { _ in HandTool() }
         registrar.command(.undo, isEnabled: { $0.canUndo }) { $0.undo() }
         registrar.command(.redo, isEnabled: { $0.canRedo }) { $0.redo() }
+        registrar.command(.zoomIn, isEnabled: { $0.zoomInStop != nil }) { editor in
+            if let stop = editor.zoomInStop { editor.zoom(toPercent: stop) }
+        }
+        registrar.command(.zoomOut, isEnabled: { $0.zoomOutStop != nil }) { editor in
+            if let stop = editor.zoomOutStop { editor.zoom(toPercent: stop) }
+        }
+        registrar.command(.zoomToActualSize, isEnabled: { $0.zoomPercentage != 100 }) { $0.zoom(toPercent: 100) }
+        registrar.command(.zoomToFit, isEnabled: { $0.canZoomToFit }) { $0.zoomToFit() }
     }
 }

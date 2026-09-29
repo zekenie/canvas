@@ -104,25 +104,45 @@ public enum ShippedPlugins {
     /// one shape's details, or, with nothing or several selected, the table of contents (the whole
     /// board, or the selection), as data-canvas's details panel does. `onExit` must give the
     /// keyboard back to the canvas. Inside a subboard, the list's header names its board, with
-    /// its symbol and a button up (⌘↑'s `.enclosingBoard`); on the root it's "Board".
-    public static func detailPanel(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void) -> some View {
+    /// its symbol and a button up (⌘↑'s `.enclosingBoard`); on the root it's `rootName` (the
+    /// file's name, as the window and the path's root crumb call it), else "Board".
+    public static func detailPanel(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void, rootName: String = "") -> some View {
         DetailPanelView(editor: editor, onExit: onExit) {
-            TableOfContentsView(editor: editor, onExit: onExit, heading: { contentsHeading(for: $0) })
+            TableOfContentsView(editor: editor, onExit: onExit, heading: { contentsHeading(for: $0, rootName: rootName) })
         }
     }
 
     /// The table of contents' heading in `detailPanel`: the board shown's crumb (Boards'), so it's
-    /// named as the path names it and redraws as the path does, with ⌘↑'s way up; nil on the root,
-    /// where it's the list's own, "Board".
-    public static func contentsHeading(for editor: CanvasEditor) -> ContentsHeading? {
-        editor.boardCrumbs?.crumbs.last.map { ContentsHeading($0.title, systemImage: $0.systemImage, up: .enclosingBoard) }
+    /// named as the path names it and redraws as the path does, with ⌘↑'s way up, called as Go ›
+    /// Enclosing Board is, with its key; on the root, `rootName`, or nil where that's empty, for
+    /// the list's own, "Board".
+    public static func contentsHeading(for editor: CanvasEditor, rootName: String = "") -> ContentsHeading? {
+        guard let crumb = editor.boardCrumbs?.crumbs.last else { return rootName.isEmpty ? nil : ContentsHeading(rootName) }
+        return ContentsHeading(crumb.title, systemImage: crumb.systemImage, up: .enclosingBoard, upTitle: enclosingBoard,
+                               upHelp: editor.registry.help(enclosingBoard, forCommand: .enclosingBoard))
     }
+
+    /// What going up is called in the list, as the Go menu calls it.
+    private static let enclosingBoard = "Enclosing Board"
 
     /// Where the board shown is in its file (Boards' `BoardPath`), for the app to place over the top
     /// middle of the canvas (`.overlay(alignment: .top)`): a pill of crumbs, the root's named
     /// `rootName` (the file's name), nothing on the root. Only the pill takes clicks.
     public static func boardPath(editor: CanvasEditor, rootName: String) -> some View {
         BoardPath(editor: editor, rootName: rootName)
+    }
+
+    /// How far down over the canvas `boardPath` reaches on a board, for the app to tell the editor
+    /// (`BoardConfiguration.coveredTop`): a fit leaves the path's pill clear.
+    public static func coveredTop(on board: BoardID) -> CGFloat {
+        BoardPath.coveredHeight(on: board)
+    }
+
+    /// What the board shown is called, for its window's subtitle (`BoardConfiguration.boardName`):
+    /// its crumb's title, as the path and the list's heading name it; nil on the root, which the
+    /// window's title, the file's name, names.
+    public static func boardName(of editor: CanvasEditor) -> String? {
+        editor.boardCrumbs?.crumbs.last?.title
     }
 
     /// A toolbar tool's tooltip, for the app's tool picker: its label, and the key that switches to

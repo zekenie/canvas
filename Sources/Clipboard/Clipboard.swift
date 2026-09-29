@@ -99,7 +99,8 @@ public struct ClipboardPlugin: CanvasPlugin {
         registrar.command(.paste, shortcuts: [KeyChord("v", .command)], isEnabled: { $0.canPaste }) { $0.paste() }
         // In every context menu, on shapes and on empty canvas. Cut and Copy show when some of the
         // shapes the menu is for can be copied, and act on those; Paste, when there's something
-        // to paste.
+        // to paste, which lands centered where the menu was asked for (⌘V keeps its rule: where it
+        // was copied from, if that's in view).
         registrar.contextMenuForCanvas {
             MenuItem("Cut", in: ClipboardMenuGroup.self, when: { $0.shapes.contains(where: $0.editor.isCopyable) }) { ids, editor in
                 editor.cut(ids)
@@ -107,7 +108,9 @@ public struct ClipboardPlugin: CanvasPlugin {
             MenuItem("Copy", in: ClipboardMenuGroup.self, when: { $0.shapes.contains(where: $0.editor.isCopyable) }) { ids, editor in
                 editor.copy(ids)
             }
-            MenuItem("Paste", in: ClipboardMenuGroup.self, when: { $0.editor.canPaste }) { _, editor in editor.paste() }
+            MenuItem("Paste", in: ClipboardMenuGroup.self, when: { $0.editor.canPaste }) { subject in   // handed the subject: its point
+                subject.editor.paste(centeredAt: subject.point)
+            }
         }
     }
 }

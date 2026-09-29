@@ -6,14 +6,14 @@ import Geometry
 import TestKit
 
 // The translation adjuster (`registrar.translationAdjuster`): what Snapping claims, here a fixture
-// that puts x on a grid of 10 and leaves y alone, unless ⇧ is held. The core has no Selection here,
+// that puts x on a grid of 10 and leaves y alone, unless ⌥ is held. The core has no Selection here,
 // so tests start drags themselves.
 
 /// What the fixture adjuster heard.
 @MainActor
 final class AdjusterLog {
     var begun: [TranslationStart] = []
-    var asked: [(delta: CGPoint, modifiers: Modifiers)] = []
+    var asked: [(delta: CGPoint, modifiers: Modifiers, axis: TranslationAxis?)] = []
     var draws = 0
 }
 
@@ -22,9 +22,15 @@ final class GridAdjuster: TranslationAdjuster {
     let log: AdjusterLog
     init(log: AdjusterLog) { self.log = log }
 
-    func adjust(_ delta: CGPoint, for pointer: Pointer, in editor: CanvasEditor) -> CGPoint {
-        log.asked.append((delta, pointer.modifiers))
-        return pointer.modifiers.contains(.shift) ? delta : CGPoint(x: (delta.x / 10).rounded() * 10, y: delta.y)
+    /// Across the axis a drag keeps to, it says 7, which the drag ignores.
+    func adjust(_ delta: CGPoint, along axis: TranslationAxis?, for pointer: Pointer, in editor: CanvasEditor) -> CGPoint {
+        log.asked.append((delta, pointer.modifiers, axis))
+        let gridded = pointer.modifiers.contains(.option) ? delta : CGPoint(x: (delta.x / 10).rounded() * 10, y: delta.y)
+        switch axis {
+        case .x?: return CGPoint(x: gridded.x, y: 7)
+        case .y?: return CGPoint(x: 7, y: gridded.y)
+        case nil: return gridded
+        }
     }
 
     /// A black square at the world's origin.
@@ -68,14 +74,48 @@ final class GridAdjuster: TranslationAdjuster {
         h.editor.session = TranslatingSession(ids: [box], from: CGPoint(x: 5, y: 5), in: h.editor)
         h.drag(to: CGPoint(x: 18, y: 9))
         expectEqual(h.editor.document[box]?.box?.origin, CGPoint(x: 10, y: 4))
-        h.hold(.shift)
+        h.hold(.option)
         expectEqual(h.editor.document[box]?.box?.origin, CGPoint(x: 13, y: 4))
         expectEqual(log.asked.last?.delta, CGPoint(x: 13, y: 4))
-        expectEqual(log.asked.last?.modifiers, .shift)
+        expectEqual(log.asked.last?.modifiers, .option)
         h.editor.session = nil
         let asked = log.asked.count
         h.hold([])
         expectEqual(log.asked.count, asked, "not once the drag is over")
+    },
+    test("⇧ keeps a drag to the axis the pointer has come further along: the adjuster is told which, and what it says across it is ignored") {
+        let log = AdjusterLog()
+        let h = try EditorHarness(plugins: [FixturesPlugin(), gridPlugin(log)])
+        let box = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
+        h.move(to: CGPoint(x: 5, y: 5))
+        h.editor.session = TranslatingSession(ids: [box], from: CGPoint(x: 5, y: 5), in: h.editor)
+        h.hold(.shift)
+        h.drag(to: CGPoint(x: 18, y: 30))
+        expectEqual(log.asked.last?.delta, CGPoint(x: 0, y: 25))
+        expectEqual(log.asked.last?.axis, .y)
+        expectEqual(h.editor.document[box]?.box?.origin, CGPoint(x: 0, y: 25), "up and down only, where it began across")
+        h.drag(to: CGPoint(x: 40, y: 30))
+        expectEqual(log.asked.last?.axis, .x)
+        expectEqual(h.editor.document[box]?.box?.origin, CGPoint(x: 40, y: 0), "side to side, on the grid, not the 7 it said across")
+        h.hold([])
+        h.wait(150)
+        expectEqual(log.asked.last?.axis, nil)
+        expectEqual(h.editor.document[box]?.box?.origin, CGPoint(x: 40, y: 25), "⇧ let go: both ways again, where the pointer is")
+    },
+    test("⇧ keeps a drag with no adjuster to one axis too, pressed or let go mid-drag at once") {
+        let h = try EditorHarness(plugins: [FixturesPlugin()])
+        let box = h.add(Box(CGRect(x: 1, y: 2, width: 10, height: 10)))
+        h.move(to: CGPoint(x: 5, y: 5))
+        h.editor.session = TranslatingSession(ids: [box], from: CGPoint(x: 5, y: 5), in: h.editor)
+        h.drag(to: CGPoint(x: 18, y: 9))
+        expectEqual(h.editor.document[box]?.box?.origin, CGPoint(x: 14, y: 6))
+        h.hold(.shift)
+        expectEqual(h.editor.document[box]?.box?.origin, CGPoint(x: 14, y: 2), "at once, without a move")
+        h.hold([])
+        h.wait(150)
+        expectEqual(h.editor.document[box]?.box?.origin, CGPoint(x: 14, y: 6))
+        h.escape()
+        expectEqual(h.editor.document[box]?.box?.origin, CGPoint(x: 1, y: 2))
     },
     test("it's made as the drag begins, given what moves, read-only shapes left out, and where the press was; a drag that moves nothing makes none") {
         let log = AdjusterLog()

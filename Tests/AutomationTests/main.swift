@@ -2,5 +2,5 @@ import TestKit
 
 runTests([
     kindsTests, registrationTests, errorTests,
-    drawingTests, edgeDrawingTests, drawRunTests, drawPlacingTests, drawWarningTests, drawRefusalTests, drawPointTests, drawUndoTests, drawFileTests,
+    drawingTests, edgeDrawingTests, drawRunTests, drawPlacingTests, drawCoveredTests, drawWarningTests, drawRefusalTests, drawPointTests, drawUndoTests, drawFileTests,
 ])

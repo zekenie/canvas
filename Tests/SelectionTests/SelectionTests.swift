@@ -152,6 +152,25 @@ import TestKit
         expectEqual(h.editor.selectedShapeIDs, [box])
         h.release()
     },
+    test("Delete can run while something's selected (a locked shape too, which refuses), and Select All while the board has shapes; else their keys pass") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), FreezingPlugin()])
+        expect(!h.editor.canPerform(.delete))
+        expect(!h.editor.canPerform(.selectAll))
+        expect(!h.key("\u{7f}"), "Delete with nothing selected passes")
+        h.hold(.command)
+        expect(!h.key("a"), "⌘A on an empty board passes")
+        h.hold([])
+        let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
+        expect(h.editor.canPerform(.selectAll))
+        expect(!h.editor.canPerform(.delete))
+        let frozen = h.add(Box(CGRect(x: 200, y: 0, width: 50, height: 50)))
+        h.editor.freeze([frozen])
+        h.editor.selection = frozen
+        expect(h.editor.canPerform(.delete), "read-only: it runs, and the shape refuses")
+        h.editor.selection = box
+        expect(h.key("\u{7f}"))
+        expectEqual(h.editor.document[box], nil)
+    },
     test("Escape in select with several selected selects none") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
         h.editor.selectedShapeIDs = [h.add(Box(.zero)), h.add(Box(.zero))]

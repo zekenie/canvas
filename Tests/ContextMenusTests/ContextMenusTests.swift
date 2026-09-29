@@ -11,14 +11,14 @@ import TestKit
         let h = try harness()
         let lamp = h.add(Lamp(slot(0)))
         let menu = try require(h.secondaryClick(at: middle(0)))
-        expectEqual(menu.outline, ["Turn On", "Brighter", "Level ▸", "  ✓ 1", "  2", "  3"])
+        expectEqual(menu.outline, ["Turn On", "Brighter", "Level ▸", "  ✓ 1", "  2", "  3", "—", "Delete"], "Delete last, the plugin's own")
         expectEqual(h.editor.selectedShapeIDs, [lamp])
     },
     test("choosing an item edits the live shape, in one transaction; when, isEnabled and isChecked follow its props") {
         let h = try harness()
         let lamp = h.add(Lamp(slot(0), level: 3))
         var menu = try require(h.secondaryClick(at: middle(0)))
-        expectEqual(menu.outline, ["Turn On", "(Brighter)", "Level ▸", "  1", "  2", "  ✓ 3"])
+        expectEqual(menu.outline, ["Turn On", "(Brighter)", "Level ▸", "  1", "  2", "  ✓ 3", "—", "Delete"])
         let revision = h.editor.revision
         try menu.choose("Turn On")
         expectEqual(h.editor.lamp(lamp)?.isOn, true)
@@ -30,16 +30,25 @@ import TestKit
         try menu.choose("Level", "2")                // the level it has: nothing to commit
         expectEqual(h.editor.revision, revision + 2)
     },
-    test("a right-click where nothing applies does nothing: a shape with no items, empty canvas") {
+    test("a shape with no items of its own has Delete alone; empty canvas, Select All while the board has shapes; where nothing applies, a right-click does nothing") {
         let h = try harness()
+        expect(h.secondaryClick(at: emptyCanvas) == nil, "an empty board: nothing to select")
         let lamp = h.add(Lamp(slot(0)))
-        h.add(Box(slot(1)))
+        let box = h.add(Box(slot(1)))
         h.editor.selection = lamp
         let revision = h.editor.revision
-        expect(h.secondaryClick(at: middle(1)) == nil)
-        expect(h.secondaryClick(at: emptyCanvas) == nil)
-        expectEqual(h.editor.selectedShapeIDs, [lamp])
-        expectEqual(h.editor.revision, revision)
+        expectEqual(try require(h.secondaryClick(at: emptyCanvas)).outline, ["Select All"])
+        expectEqual(h.editor.selectedShapeIDs, [lamp], "a menu on empty canvas leaves the selection")
+        try require(h.secondaryClick(at: emptyCanvas)).choose("Select All")
+        expectEqual(h.editor.selectedShapeIDs, [lamp, box])
+        h.editor.selection = lamp
+        let menu = try require(h.secondaryClick(at: middle(1)))
+        expectEqual(menu.outline, ["Delete"])
+        expectEqual(h.editor.selectedShapeIDs, [box])
+        expectEqual(h.editor.revision, revision, "nothing chosen, nothing changed")
+        try menu.choose("Delete")
+        expectEqual(h.editor.document.shapes.map(\.id), [lamp], "the box, as the Delete key deletes it")
+        expectEqual(h.editor.undoHistory.undoName, "Delete")
     },
     test("a submenu's own when leaves it out, items and all") {
         let h = try harness([Contributor(id: "wide") { r in
@@ -50,19 +59,23 @@ import TestKit
         }])
         h.add(Box(slot(0)))
         h.add(Box(CGRect(x: 0, y: 200, width: 300, height: 100)))
-        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Always"])
-        expectEqual(try require(h.secondaryClick(at: CGPoint(x: 150, y: 250))).outline, ["Wide ▸", "  Stretch", "Always"])
+        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Always", "—", "Delete"])
+        expectEqual(try require(h.secondaryClick(at: CGPoint(x: 150, y: 250))).outline, ["Wide ▸", "  Stretch", "Always", "—", "Delete"])
     },
-    test("every item hidden, or a submenu whose items all are, and there's no menu") {
+    test("every item hidden, or a submenu whose items all are, is left out; with nothing left, there's no menu") {
         let h = try harness([Contributor(id: "never") { r in
             r.contextMenu(Box.self) {
                 MenuItem("Never", when: { _ in false }) { _ in }
                 Submenu("Empty") { MenuItem("Never Either", when: { _ in false }) { _ in } }
             }
+            r.contextMenuForCanvas {
+                MenuItem("Never Here", when: { _ in false }) { _, _ in }
+                Submenu("Empty Here") { MenuItem("Never Here Either", when: { _ in false }) { _, _ in } }
+            }
         }])
+        expect(h.secondaryClick(at: middle(0)) == nil, "an empty board, its items all hidden")
         h.add(Box(slot(0)))
-        expect(h.secondaryClick(at: middle(0)) == nil)
-        expectEqual(h.editor.selectedShapeIDs, [])
+        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Delete"])
     },
     test("items for the canvas: after a shape's own in their group's order, alone on empty canvas, each asked once with the menu's shapes") {
         let log = PerformLog()
@@ -79,11 +92,11 @@ import TestKit
         let b = h.add(Lamp(slot(1)))
         h.editor.selectedShapeIDs = [a, b]
         let menu = try require(h.secondaryClick(at: middle(0)))
-        expectEqual(menu.outline, ["Turn On", "Brighter", "Level ▸", "  ✓ 1", "  2", "  3", "—", "Anywhere", "—", "Shapes"])
+        expectEqual(menu.outline, ["Turn On", "Brighter", "Level ▸", "  ✓ 1", "  2", "  3", "—", "Anywhere", "—", "Shapes", "—", "Delete"])
         expectEqual(log.runs, ["asked 2"], "once for the menu, not once per shape")
         try menu.choose("Shapes")
         expectEqual(log.runs, ["asked 2", "ran 2"])
-        expectEqual(try require(h.secondaryClick(at: CGPoint(x: 150, y: 400))).outline, ["Anywhere"])
+        expectEqual(try require(h.secondaryClick(at: CGPoint(x: 150, y: 400))).outline, ["Anywhere", "—", "Select All"])
         expectEqual(h.editor.selectedShapeIDs, [a, b], "a menu on empty canvas leaves the selection")
     },
     test("a kind's own item with a canvas item's group and id takes its place, shown or not; two plugins adding one canvas item conflict") {
@@ -96,7 +109,7 @@ import TestKit
         h.editor.transact { $0.update(lamp, as: Lamp.self) { $0.props.isOn = true } }
         expectEqual(try require(h.secondaryClick(at: middle(0))).outline.first, "Turn Off")
         expect(try require(h.secondaryClick(at: middle(0))).outline.contains("Turn On") == false, "the lamp's own, hidden, still takes its place")
-        expectEqual(try require(h.secondaryClick(at: middle(1))).outline, ["Turn On"])
+        expectEqual(try require(h.secondaryClick(at: middle(1))).outline, ["Turn On", "—", "Delete"])
         expectThrows(RegistryError.conflict(point: "CanvasContextMenu", key: "* Paste", plugins: ["one", "two"])) {
             _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(),
                                        Contributor(id: "one") { $0.contextMenuForCanvas { MenuItem("Paste") { _, _ in } } },
@@ -120,7 +133,7 @@ import TestKit
         h.add(Disc(slot(0).offsetBy(dx: 50, dy: 0)))
         expectEqual(try require(h.secondaryClick(at: CGPoint(x: 75, y: 50))).outline.first, "Turn On")
         expectEqual(h.editor.selectedShapeIDs, [lamp])
-        expect(h.secondaryClick(at: CGPoint(x: 125, y: 50)) == nil)
+        expectEqual(try require(h.secondaryClick(at: CGPoint(x: 125, y: 50))).outline, ["Select All"], "the canvas's: nothing of the disc's")
     },
     test("a right-click ends editing when it opens a menu, and only then") {
         let h = try harness([CardsPlugin(), Contributor(id: "clear") { r in
@@ -128,10 +141,13 @@ import TestKit
         }])
         let editing = h.add(Card(slot(0), text: "a"))
         let other = h.add(Card(slot(1), text: "b"))
-        h.add(Box(slot(2)))
+        // Every shape has a menu now (Delete), so no menu is a Control-click in another tool.
+        h.editor.setTool(.hand)
         h.editor.selection = editing
         h.editor.beginEditing(editing)
-        expect(h.secondaryClick(at: middle(2)) == nil)
+        h.hold(.control)
+        expect(h.secondaryClick(at: middle(1)) == nil, "a Control-click in the hand tool: no menu")
+        h.hold([])
         expectEqual(h.editor.editingShapeID, editing)
         try require(h.secondaryClick(at: middle(1))).choose("Clear")
         expectEqual(h.editor.editingShapeID, nil)
@@ -168,7 +184,7 @@ import TestKit
         let menu = try require(h.secondaryClick(at: middle(0)))
         expectEqual(h.editor.selectedShapeIDs, [a, b])
         // Turn On is a's, Turn Off b's: neither is both's. The levels differ: each is mixed.
-        expectEqual(menu.outline, ["Brighter", "Level ▸", "  – 1", "  – 2", "  3"])
+        expectEqual(menu.outline, ["Brighter", "Level ▸", "  – 1", "  – 2", "  3", "—", "Delete"])
         let revision = h.editor.revision
         try menu.choose("Level", "3")
         expectEqual([h.editor.lamp(a)?.level, h.editor.lamp(b)?.level], [3, 3])
@@ -190,20 +206,24 @@ import TestKit
         let fan = h.add(Fan(frame: slot(1)))
         h.editor.selectedShapeIDs = [lamp, fan]
         let menu = try require(h.secondaryClick(at: middle(1)))
-        expectEqual(menu.outline, ["Turn On"])
+        expectEqual(menu.outline, ["Turn On", "—", "Delete"])
         let revision = h.editor.revision
         try menu.choose("Turn On")
         expectEqual(h.editor.lamp(lamp)?.isOn, true)
         expectEqual(h.editor.fan(fan)?.isOn, true)
         expectEqual(h.editor.revision, revision + 1)
     },
-    test("with nothing every selected shape offers, there's no menu, and the selection stays") {
+    test("with nothing of their own every selected shape offers, the menu is Delete alone, for them all, and the selection stays") {
         let h = try harness()
         let lamp = h.add(Lamp(slot(0)))
         let box = h.add(Box(slot(1)))
+        let other = h.add(Box(slot(2)))
         h.editor.selectedShapeIDs = [lamp, box]
-        expect(h.secondaryClick(at: middle(0)) == nil)
+        let menu = try require(h.secondaryClick(at: middle(0)))
+        expectEqual(menu.outline, ["Delete"])
         expectEqual(h.editor.selectedShapeIDs, [lamp, box])
+        try menu.choose("Delete")
+        expectEqual(h.editor.document.shapes.map(\.id), [other])
     },
     test("on empty space inside a multi-selection's box, the menu is for the selection; outside it, there's none") {
         let h = try harness()
@@ -215,7 +235,7 @@ import TestKit
         expectEqual(h.editor.selectedShapeIDs, [a, b])
         try menu.choose("Turn On")
         expectEqual([h.editor.lamp(a)?.isOn, h.editor.lamp(b)?.isOn], [true, true])
-        expect(h.secondaryClick(at: CGPoint(x: 150, y: 300)) == nil)
+        expectEqual(try require(h.secondaryClick(at: CGPoint(x: 150, y: 300))).outline, ["Select All"], "outside it, the canvas's")
         expectEqual(h.editor.selectedShapeIDs, [a, b])
     },
     test("an item one kind checks and another doesn't is mixed, not checked, for both") {
@@ -235,7 +255,7 @@ import TestKit
         let b = h.add(Lamp(slot(1)))
         let fan = h.add(Fan(frame: slot(2)))
         h.editor.selectedShapeIDs = [a, b]
-        expectEqual(try require(h.secondaryClick(at: middle(2))).outline, ["Turn On"])
+        expectEqual(try require(h.secondaryClick(at: middle(2))).outline, ["Turn On", "—", "Delete"])
         expectEqual(h.editor.selectedShapeIDs, [fan])
     },
 ])
@@ -254,8 +274,8 @@ import TestKit
         h.add(Lamp(slot(0), isOn: true))
         h.add(Box(slot(1)))
         expectEqual(try require(h.secondaryClick(at: middle(0))).outline,
-                    ["Turn Off", "Brighter", "Level ▸", "  ✓ 1", "  2", "  3", "Inspect", "—", "Timer", "—", "Late"])
-        expectEqual(try require(h.secondaryClick(at: middle(1))).outline, ["Inspect", "—", "Late"])
+                    ["Turn Off", "Brighter", "Level ▸", "  ✓ 1", "  2", "  3", "Inspect", "—", "Timer", "—", "Late", "—", "Delete"])
+        expectEqual(try require(h.secondaryClick(at: middle(1))).outline, ["Inspect", "—", "Late", "—", "Delete"])
     },
     test("every shape's items can pick kinds by their definition, and so by capability") {
         let h = try harness([Contributor(id: "lamps-only") { r in
@@ -264,7 +284,7 @@ import TestKit
         h.add(Lamp(slot(0)))
         h.add(Box(slot(1)))
         expect(try require(h.secondaryClick(at: middle(0))).outline.contains("Dim"))
-        expect(h.secondaryClick(at: middle(1)) == nil)
+        expectEqual(try require(h.secondaryClick(at: middle(1))).outline, ["Delete"], "no Dim on a box")
     },
     test("a perform gets the shapes it's for, in selection order, once per contribution; a kind's own item replaces every shape's") {
         let log = PerformLog()
@@ -308,7 +328,7 @@ import TestKit
     test("the report: the plugin claims the secondary click, and each kind's items are one line") {
         let report = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), AppliancesPlugin()]).report
         expectEqual(report.split(separator: "\n").filter { $0.hasPrefix("context-menus") || $0.hasPrefix("appliances") }, [
-            "context-menus  service ContextMenuState · secondary-click menu",
+            "context-menus  service ContextMenuState · secondary-click menu · CanvasContextMenu",
             "appliances     shape lamp · ShapeContextMenus → lamp · shape fan · ShapeContextMenus → fan",
         ])
     },

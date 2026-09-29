@@ -120,11 +120,11 @@ struct Mixed: BoxShapeProps {
     test("a $ref back to itself, before the value is gone into, ends at once: said as a problem, and where a value meets it") {
         let validator = SchemaValidator(JSONSchema(["$ref": "#"]))
         expectEqual(validator.problems, ["# refers back to itself without going into the value, so checking one would never end"])
-        expectEqual(validator.violations(of: 1).map(\.description), ["/ $ref: The value can't be checked: its schema refers back to itself without end."])
+        expectEqual(validator.violations(of: 1).map(\.description), ["/ $ref: The value can’t be checked: its schema refers back to itself without end."])
         let mutual: JSONObject = ["$defs": ["a": ["allOf": [["$ref": "#/$defs/b"]]], "b": ["anyOf": [["$ref": "#/$defs/a"]]]],
                                   "properties": ["x": ["$ref": "#/$defs/a"]]]
         expectEqual(SchemaValidator(JSONSchema(mutual)).problems.count, 1)
-        expectEqual(check(mutual, ["x": 1]), ["/x $ref: X can't be checked: its schema refers back to itself without end."])
+        expectEqual(check(mutual, ["x": 1]), ["/x $ref: X can’t be checked: its schema refers back to itself without end."])
         // A type that holds itself goes into the value on the way round: it ends with the value.
         let tree: JSONObject = ["$defs": ["node": ["properties": ["children": ["items": ["$ref": "#/$defs/node"]]]]], "$ref": "#/$defs/node"]
         expectEqual(SchemaValidator(JSONSchema(tree)).problems, [])
@@ -217,7 +217,7 @@ struct Mixed: BoxShapeProps {
         let validator = SchemaValidator(JSONSchema(schema))
         expectEqual(validator.problems, ["the pattern for properties at #, \"(\", isn't a regular expression ICU can read"])
         expectEqual(validator.violations(of: ["x-note": "hi", "other": 1]).map(\.description),
-                    ["/ patternProperties: The value can't be checked: its pattern \"(\" for properties isn't a regular expression ICU can read."])
+                    ["/ patternProperties: The value can’t be checked: its pattern \"(\" for properties isn’t a regular expression ICU can read."])
         expectEqual(check(["patternProperties": ["^x-[^]*$": ["type": "string"]], "additionalProperties": false], ["x-note": "hi"]), [])
     },
     test("strings are the same code point for code point, as JSON Schema compares them, not canonically equivalent") {
@@ -228,7 +228,7 @@ struct Mixed: BoxShapeProps {
         expectEqual(check(["enum": [.string(nfc)]], .string(nfd)).count, 1)
         expectEqual(check(["required": [.string(nfd)]], .object([nfc: 1])), ["/cafe\u{301} required: Cafe\u{301} is missing."])
         expectEqual(check(["properties": [nfd: ["type": "string"]], "additionalProperties": false], .object([nfc: 1])),
-                    ["/caf\u{E9} additionalProperties: Caf\u{E9} isn't one of the value's properties."])
+                    ["/caf\u{E9} additionalProperties: Caf\u{E9} isn’t one of the value’s properties."])
         expectEqual(check(["const": ["a": 1.0]], ["a": 1]), [], "numbers by value")
         expectEqual(check(["uniqueItems": true], [["a": 1, "b": "x"], ["b": "x", "a": 1.0]]).count, 1, "an object whatever its members' order")
         let many = JSONValue.array((0..<2_000).map { .object(["label": .string("item \($0)"), "done": .bool($0 % 2 == 0)]) })

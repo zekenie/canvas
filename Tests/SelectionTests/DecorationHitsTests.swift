@@ -92,14 +92,31 @@ func tab(of frame: CGRect) -> CGRect { CGRect(x: frame.minX, y: frame.minY - 30,
         h.add(Box(CGRect(x: 100, y: 100, width: 200, height: 100)))                   // in front of the disc, its tab where the disc's is
         expectEqual(h.editor.selectableShape(at: CGPoint(x: 120, y: 80)), disc)
     },
-    test("a double-click there edits an editable shape, and places nothing") {
+    test("a double-click there edits an editable shape as with no press (it isn't in the shape's text), and places nothing") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), doubleClickCards(), tabsPlugin()])
         let card = h.add(Card(CGRect(x: 100, y: 100, width: 200, height: 100)))
         h.click(at: CGPoint(x: 120, y: 80))
         h.press(at: CGPoint(x: 120, y: 80), clickCount: 2)
         expectEqual(h.editor.editingShapeID, card)
+        expectEqual(h.editor.editingStartPoint, nil, "the view puts the caret where it would with no press")
+        expectEqual(h.editor.editingStartClickCount, 1, "and selects no word there")
         expectEqual(h.editor.document.shapes.map(\.id), [card], "no card placed on the tab")
         h.release()
+    },
+    test("a click there on the only selected shape doesn't edit it: it's no click in its text; a drag from it moves the shape") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), CardsPlugin(), tabsPlugin()])
+        let card = h.add(Card(CGRect(x: 100, y: 100, width: 200, height: 100)))
+        h.editor.selection = card
+        h.click(at: CGPoint(x: 120, y: 80))
+        expectEqual(h.editor.editingShapeID, nil)
+        expectEqual(h.editor.selection, card)
+        expectEqual(h.editor.document[card]?.box?.origin, CGPoint(x: 100, y: 100))
+        h.editor.beginEditing(card)
+        h.click(at: CGPoint(x: 120, y: 80))
+        expectEqual(h.editor.editingShapeID, nil, "while it's edited, a click there ends editing, and begins none")
+        expectEqual(h.editor.selection, card)
+        h.press(at: CGPoint(x: 120, y: 80)); h.drag(to: CGPoint(x: 160, y: 90)); h.release()
+        expectEqual(h.editor.document[card]?.box?.origin, CGPoint(x: 140, y: 110))
     },
     test("only the select tool's hit rule counts it: the core's `shape(at:)`, which other tools hit-test with, and the marquee go by shapes alone") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), tabsPlugin()])

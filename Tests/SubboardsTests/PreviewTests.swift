@@ -24,11 +24,11 @@ private let canvasSize = CGSize(width: 320, height: 240)
 @MainActor let previewCardTests = Suite("The card's preview", [
     test("once built, the body shows the board's shapes as silhouettes where they are, fitted; until then, the count") {
         let sub = ShapeRecord(Subboard(frame: cardFrame))
-        // A board four times as wide as tall: fitted to the rect's width, 54 tall, in its middle,
-        // a box at each end.
+        // A board four times as wide as tall, big enough to be fitted under a tenth of its size:
+        // fitted to the rect's width, 54 tall, in its middle, a box at each end.
         let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(sub)]),
-                              children: [sub.id: CanvasDocument(shapes: [record(ShapeID(), Box(CGRect(x: 0, y: 0, width: 100, height: 100))),
-                                                                         record(ShapeID(), Box(CGRect(x: 300, y: 0, width: 100, height: 100)))])])
+                              children: [sub.id: CanvasDocument(shapes: [record(ShapeID(), Box(CGRect(x: 0, y: 0, width: 1000, height: 1000))),
+                                                                         record(ShapeID(), Box(CGRect(x: 3000, y: 0, width: 1000, height: 1000)))])])
         let h = try EditorHarness(plugins: subboardPlugins(), file: file)
         let (asking, built) = twoFrames(h)
         expect(darkest(asking, in: captionMiddle) < 170, "the count, while the preview's built")
@@ -42,6 +42,21 @@ private let canvasSize = CGSize(width: 320, height: 240)
         }
         expectEqual(changedPixels(asking, built, in: CGRect(x: 40, y: 40, width: 240, height: 32)), 0, "the header as it was")
         expectEqual(h.scheduler.pendingCount, 0, "no frame asked for once it's drawn")
+    },
+    test("a board of little is drawn at a tenth of its size, small in the body's middle, not as big as a board of hundreds") {
+        let sub = ShapeRecord(Subboard(frame: cardFrame))
+        // One 200-point box: 20 points across at a tenth, around the rect's middle, (160, 132).
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(sub)]),
+                              children: [sub.id: CanvasDocument(shapes: [record(ShapeID(), Box(CGRect(x: 500, y: 500, width: 200, height: 200)))])])
+        let h = try EditorHarness(plugins: subboardPlugins(), file: file)
+        let built = twoFrames(h).built
+        for point in [CGPoint(x: 160, y: 132), CGPoint(x: 152, y: 124), CGPoint(x: 168, y: 140)] {
+            let silhouette = pixel(built, at: point)
+            expect(silhouette[0] < 225 && abs(silhouette[0] - silhouette[2]) < 20, "the box at \(point): \(silhouette)")
+        }
+        for point in [CGPoint(x: 140, y: 132), CGPoint(x: 180, y: 132), CGPoint(x: 160, y: 100), CGPoint(x: 160, y: 164)] {
+            expectColor(pixel(built, at: point), [255, 255, 255], "the body around it, at \(point)", within: 2)
+        }
     },
     test("after the board is edited, and after an undo, the card never shows the preview it had: the count, then the board as it is") {
         let nest = Nest()

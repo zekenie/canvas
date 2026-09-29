@@ -62,8 +62,8 @@ check before running it again). To run it as just `canvas`, put the link on your
 
 | Action | How |
 | --- | --- |
-| Pan | Two-finger scroll, or H (the hand tool) and drag; a fling slides on. V or Escape goes back to select |
-| Zoom | Pinch, ⌘-scroll, or ⌘= / ⌘- / ⌘0 |
+| Pan | Two-finger scroll; drag with Space held or with the middle button, whatever the tool; or H (the hand tool) and drag. A fling slides on; V or Escape goes back to select |
+| Zoom | Pinch, ⌘-scroll, or ⌘= / ⌘- / ⌘0; ⇧1 fits the board, ⇧2 the selection; also the View menu and the toolbar's zoom menu. A two-finger double-tap zooms to the shape under the pointer, and again back |
 | See where you are | The minimap, in the canvas's bottom-left corner: every shape in miniature, and the part the canvas shows outlined. Click beside that part to move there, drag it to move it, double-click to center on a spot. ⌃⌘M shows or hides it |
 | New note | Double-click empty space, or N (the note tool) and click |
 | New rectangle | R, then click (an example plugin) |
@@ -71,18 +71,19 @@ check before running it again). To run it as just `canvas`, put the link on your
 | Erase | E, then click or drag across shapes (an example plugin) |
 | Select | Click a shape, or drag across empty space to select what the marquee touches (⌘: only what it encloses; ⇧: add to the selection) |
 | Add to or remove from the selection | ⇧-click (or ⌘-click) a shape |
-| Select all | ⌘A |
+| Select all | ⌘A, or right-click empty space |
 | Move shapes | Drag a shape. With several selected, drag any of them, or the space between them, to move them all; Escape puts them back |
+| Nudge shapes | The arrow keys move the selection a point, ten with ⇧; a key held down is one undo step |
 | Line shapes up | Drag near other shapes: edges and middles snap to theirs, and to even spaces between them, with red guides. Once dragging, hold ⌘ (or ⌃) to move freely |
-| Edit a note | Double-click it, or select it and press Return; Escape to finish |
+| Edit a note | Double-click it (the word clicked is selected), click it once it's selected (the caret goes there), or select it and press Return; Escape or ⌘↩ to finish |
 | Edit a shape's details | Select it; the detail panel on the right edits it. Escape gives the keyboard back to the canvas |
-| Show or hide the detail panel | ⌃⌘I, or the Details button in the toolbar |
+| Show or hide the detail panel | ⌃⌘I (View › Show Inspector), or the Inspector button in the toolbar |
 | See what's on the board | With nothing selected, the detail panel lists every shape, each arrow under the shape it starts from; with several selected, just those (Show All lists every shape again) |
 | Find a shape from the list | Click its row: it's selected and the canvas zooms to it. Pointing at a row outlines its shape faintly, and pointing at a shape tints its row |
 | Go back to the previous selection | The back button in the detail panel's header, or ⌘[ (Go › Back): what was selected before, and the view as it was then (from a row's details, the list) |
 | Name a note or a rectangle | Select it and click its title in the detail panel's header; Return or Escape goes back to the canvas |
-| Delete shapes or arrows | Select them and press Delete |
-| Cut, copy and paste shapes | ⌘X, ⌘C and ⌘V (Edit menu, or right-click a shape; right-click empty space to paste). A paste lands where the originals were if they're in view, else in the middle of the view; arrows copied with their shapes stay attached to the copies |
+| Delete shapes or arrows | Select them and press Delete, or right-click and choose Delete |
+| Cut, copy and paste shapes | ⌘X, ⌘C and ⌘V (Edit menu, or right-click a shape; right-click empty space to paste). ⌘V lands a paste where the originals were if they're in view, else in the middle of the view; Paste from a right-click lands it centered where you clicked. Arrows copied with their shapes stay attached to the copies |
 | Link a note to a note, or a schema card to a schema card | With the select tool, point at one: dots show just outside its sides (a note has none on top; zoomed out below 25%, none show). Drag from a dot to another of its kind: those it could link to are outlined faintly as you drag, and released anywhere else, nothing is drawn. The link is an arrow; there's no arrow tool. Arriving quickly aims at the shape's center; arriving slowly, or pausing inside the shape, aims at that exact spot |
 | Aim into a shape | Hold ⌥ while linking or dragging an end: the arrow runs all the way to the spot |
 | Don't attach | Hold ⌘ while dragging an end |
@@ -91,9 +92,10 @@ check before running it again). To run it as just `canvas`, put the link on your
 | Bend | Select the arrow and drag its middle handle |
 | Toggle an arrowhead | Double-click an end handle |
 
-An empty note (no text, no title) gets an orange outline (the validation plugin: red for an error, orange for a
-warning), says why in an Issues tab of the detail panel (the validation-details bridge), and gets an orange dot on its
-row in the table of contents (the validation-contents bridge).
+A shape with an issue (a schema card that isn't JSON, a title past 80 characters) gets an outline (the validation
+plugin: red for an error, orange for a warning; none while it's being edited), says why in an Issues tab of the detail
+panel (the validation-details bridge), and gets a dot of the same color on its row in the table of contents (the
+validation-contents bridge).
 A titled shape shows its title in a pill above its top-left corner, and in the table of contents (the titles plugin).
 Name a note or a rectangle in the detail panel's header (a rectangle's title is the rectangle-titles example). A title is
 part of its shape's schema, at most 80 characters: a longer one gets a warning, as does any value outside the

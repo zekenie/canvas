@@ -50,6 +50,18 @@ import TestKit
         expectEqual(h.editor.snapGuides, [])
         expectEqual(h.editor.selectedShapeIDs, [b.id])
     },
+    test("an arrow key nudges a note exactly a unit, never onto another's edge within reach, and draws no guide") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        // b's right edge 3 short of a's left edge, well within the 8 points a drag snaps across.
+        let a = note(CGRect(x: 203, y: 0, width: 200, height: 200)), b = note(CGRect(x: 0, y: 0, width: 200, height: 200))
+        let h = shipped([a, b], pasteboard)
+        h.editor.selection = b.id
+        expect(h.key("\u{F703}"))
+        expectEqual(h.editor.document[b.id]?.box?.origin, CGPoint(x: 1, y: 0))
+        expectEqual(h.editor.snapGuides, [])
+        expectEqual(h.editor.undoHistory.undoName, "Move")
+    },
     test("in a canvas view, as the app hosts it, a note dragged near another snaps, with its guide") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -104,5 +116,30 @@ import TestKit
         expectEqual(h.editor.document[placed]?.box?.maxX, 400)
         h.release()
         expectEqual(h.editor.document[placed]?.box?.maxX, 400)
+    },
+    test("a note placed with its tool follows the pointer and snaps as a rectangle does, and is typed into once let go; Escape before that takes it away") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let a = note(CGRect(x: 400, y: 0, width: 200, height: 200))
+        let h = shipped([a], pasteboard)
+        h.key("n")
+        h.press(at: CGPoint(x: 100, y: 650))
+        let placed = try require(h.editor.selection)
+        let frame = try require(h.editor.document[placed]?.box)
+        expectEqual(h.editor.editingShapeID, nil)
+        h.drag(to: CGPoint(x: 100 + 397 - frame.maxX, y: 650))
+        expectEqual(h.editor.document[placed]?.box?.maxX, 400, "snapped to the note beside it")
+        h.release()
+        expectEqual(h.editor.editingShapeID, placed)
+        expectEqual(h.editor.undoHistory.undoName, "Add Note")
+        h.editor.endEditing()
+        h.key("n")
+        h.press(at: CGPoint(x: 900, y: 650))
+        h.drag(to: CGPoint(x: 950, y: 700))
+        h.escape()
+        h.release()
+        expectEqual(h.editor.document.shapes.count, 2, "the second note is gone")
+        expectEqual(h.editor.editingShapeID, nil)
+        expectEqual(h.editor.undoHistory.undoName, "Add Note", "the first's step is the last")
     },
 ])

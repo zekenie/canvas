@@ -221,7 +221,7 @@ private let frame = CGRect(x: 0, y: 0, width: 100, height: 100)
     test("the report shows who declares a property, and who opts which kind in") {
         let registry = try Registry(plugins: [FixturesPlugin(), ratings { $0.optInEveryShape(to: Ribbons.self) }])
         expectEqual(registry.report, """
-        core          tool hand · command undo · command redo
+        core          tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
         fixtures      shape box · shape disc · shape tag
         ratings       property stars · property sticker · property ribbons · property stars → box · property sticker → box · property ribbons → every shape
         """)

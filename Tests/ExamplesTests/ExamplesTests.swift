@@ -195,9 +195,9 @@ import Titles
         let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), RectanglesPlugin(), EraserPlugin(), PolylinesPlugin(),
                                               AdornmentsPlugin(), TitlesPlugin(), TableOfContentsPlugin(), DetailPanelPlugin(), RectangleTitlesPlugin()])
         expectEqual(registry.report, """
-        core               tool hand · command undo · command redo
-        keyboard           service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo
-        selection          service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection
+        core               tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
+        keyboard           service KeyboardState · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit
+        selection          service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
         rectangles         shape rectangle · tool rectangle · shortcut R → tool rectangle
         eraser             tool eraser · shortcut E → tool eraser
         polylines          shape polyline · tool polyline · shortcut L → tool polyline
@@ -216,7 +216,7 @@ import Titles
         let c = h.add(Rectangle(frame: CGRect(x: 400, y: 0, width: 100, height: 100)))
         h.editor.selectedShapeIDs = [c, a]
         let menu = try require(h.secondaryClick(at: CGPoint(x: 50, y: 50)))
-        expectEqual(menu.outline, ["Arrange ▸", "  Bring to Front", "  Bring Forward", "  Send Backward", "  Send to Back"])
+        expectEqual(menu.outline, ["Arrange ▸", "  Bring to Front", "  Bring Forward", "  Send Backward", "  Send to Back", "—", "Delete"])
         try menu.choose("Arrange", "Send to Back")
         expectEqual(h.editor.document.shapes.map(\.id), [a, c, b])
         try require(h.secondaryClick()).choose("Arrange", "Bring to Front")
@@ -226,7 +226,7 @@ import Titles
         expectEqual(try require(h.secondaryClick(at: CGPoint(x: 200, y: 301))).outline.first, "Arrange ▸")
         expectEqual(h.editor.selectedShapeIDs, [line])
         h.add(Arrow(start: .free(CGPoint(x: 0, y: 500)), end: .free(CGPoint(x: 400, y: 500))))
-        expect(h.secondaryClick(at: CGPoint(x: 200, y: 500)) == nil)
+        expectEqual(try require(h.secondaryClick(at: CGPoint(x: 200, y: 500))).outline, ["Delete"], "no Arrange for an arrow")
     },
     test("Reordering: Bring Forward and Send Backward step past the next shape each overlaps, keeping the selection's order") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), RectanglesPlugin(), ReorderingPlugin()])

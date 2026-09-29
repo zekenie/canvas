@@ -10,6 +10,32 @@ import TestKit
 // The drag drawing a connection, around its ends: Escape, the target's outline, the binding hints,
 // and what it leaves alone (the selection, its history, the tool).
 @MainActor let connectionDragTests = Suite("Connection drag", [
+    test("drawn past the canvas's edge, a connection scrolls it, its end under the pointer, and binds to a shape it brought into view") {
+        let board = try PortBoard()
+        board.h.editor.viewportDidResize(to: CGSize(width: 700, height: 600))
+        let far = board.h.add(Box(CGRect(x: 1100, y: 80, width: 200, height: 200)))
+        board.connect(to: CGPoint(x: 720, y: 180), release: false)
+        board.h.wait(1000)
+        let camera = board.h.editor.camera
+        expect(camera.origin.x > 500, "scrolled right: \(camera)")
+        guard case .free(let end)? = board.arrows.first?.props.end else { throw RequireFailed() }
+        expectClose(end, camera.toWorld(CGPoint(x: 720, y: 180)), within: 1e-9)
+        board.h.drag(to: board.h.view(CGPoint(x: 1200, y: 180)), speed: fast)
+        board.h.release()
+        expectEqual(board.arrows.first?.props.end.binding?.shapeID, far)
+    },
+    test("an arrow's handle dragged past the canvas's edge doesn't scroll it, as tldraw's doesn't") {
+        let board = try PortBoard()
+        board.h.editor.viewportDidResize(to: CGSize(width: 700, height: 600))
+        board.h.editor.selection = board.h.add(Arrow(start: .free(CGPoint(x: 300, y: 450)), end: .free(CGPoint(x: 500, y: 450))))
+        board.h.move(to: CGPoint(x: 500, y: 450))
+        board.h.press()
+        expect(board.h.editor.session != nil, "the end's handle")
+        board.h.drag(to: CGPoint(x: 720, y: 180), speed: fast)
+        board.h.wait(1000)
+        expectEqual(board.h.editor.camera, Camera())
+        board.h.release()
+    },
     test("Escape mid-drag, its key or the command, deletes the arrow; the rest of the drag does nothing") {
         for byKey in [false, true] {
             let board = try PortBoard()

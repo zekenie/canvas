@@ -189,7 +189,8 @@ public final class MentionState {
             return ordered(mentionersOfAny([target]), shown: document, in: file).compactMap { id in
                 guard let record = document[id] ?? file.record(id) else { return nil }
                 let name = backlinkName(of: record)
-                return MentionBacklink(id: id, label: name.label, systemImage: name.systemImage, quote: quote(of: record, around: target) ?? "")
+                return MentionBacklink(id: id, label: name.label, systemImage: name.systemImage, quote: quote(of: record, around: target) ?? "",
+                                       tint: name.tint)
             }
         }
     }
@@ -235,11 +236,11 @@ public final class MentionState {
     }
 
     /// How a mentioner is named in a backlink: as it's mentioned, if it can be; else by its title,
-    /// else its kind's label; with its kind's symbol.
-    private func backlinkName(of record: AnyShapeRecord) -> (label: String, systemImage: String) {
-        if let appearance = appearance(of: record) { return (appearance.label, appearance.systemImage) }
+    /// else its kind's label; with its kind's symbol, and the tint it's mentioned with.
+    private func backlinkName(of record: AnyShapeRecord) -> (label: String, systemImage: String, tint: NSColor?) {
+        if let appearance = appearance(of: record) { return (appearance.label, appearance.systemImage, appearance.tint) }
         let kind = registry.label(of: record.kind)
-        return (oneLine(registry.title(of: record)) ?? kind.name, kind.systemImage ?? MentionStyle.unknownSymbol)
+        return (oneLine(registry.title(of: record)) ?? kind.name, kind.systemImage ?? MentionStyle.unknownSymbol, nil)
     }
 
     /// The quote around a mentioner's first mention of `target`: in the first of its texts that

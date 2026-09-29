@@ -1,3 +1,4 @@
+import AppKit
 import Canvas
 import Mentions
 import SwiftUI
@@ -9,7 +10,13 @@ extension ShapeRegistrar where Definition == StickyNoteDefinition {
     /// mentions remakes the row, and only the rows of notes that mention it.
     mutating func noteRow() {
         contentsRow(affected: MentionRows.affected) { note, context in
-            ContentsLabel(context.plainText(note.props.text), placeholder: "Empty Note", color: .yellow)
+            ContentsLabel(context.plainText(note.props.text), placeholder: "Empty Note", color: Color(nsColor: NoteStyle.tint))
         }
     }
+}
+
+extension NoteStyle {
+    /// A note's symbol wherever it's shown beside others' on a neutral surface: its row, the `@`
+    /// picker, Mentioned In, a pill in the panel's text.
+    static let tint = NSColor.systemYellow
 }

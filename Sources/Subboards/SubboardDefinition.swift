@@ -32,7 +32,7 @@ extension SubboardDefinition: ShapeDefinition {
         cg.fill(CGRect(x: header.minX, y: header.maxY - SubboardStyle.ruleWidth, width: header.width, height: SubboardStyle.ruleWidth))
         drawHeader(title: context.shapes.registry.title(of: AnyShapeRecord(shape)), in: header)
         let body = SubboardStyle.body(of: card, below: header)
-        if !context.drawBoardPreview(ofBoardOwnedBy: shape.id, in: SubboardStyle.preview(in: body)) {
+        if !context.drawBoardPreview(ofBoardOwnedBy: shape.id, in: SubboardStyle.preview(in: body), maxScale: SubboardStyle.previewMaxScale) {
             drawCaption(context.shapeCount(inBoardOwnedBy: shape.id), in: body)
         }
         cg.restoreGState()

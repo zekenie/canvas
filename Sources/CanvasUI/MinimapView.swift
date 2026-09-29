@@ -31,6 +31,9 @@ public final class MinimapView: NSView {
     private var costPerShape = MinimapStyle.initialCostPerShape
     private var nextFrame: ScheduledTask?
     private var press: Press?
+    /// The board whether it's hidden was last worked out for (`updateVisibility`): on another, it
+    /// shows or hides at once, with no fade.
+    private var visibilityBoard: BoardID?
 
     /// A press on the minimap, as tldraw keeps it.
     private struct Press {
@@ -57,6 +60,39 @@ public final class MinimapView: NSView {
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
         setAccessibilityLabel("Minimap")
+        updateVisibility()
+    }
+
+    /// Hidden while the board has nothing to show (no shape, or none with a place: `shapeBounds` is
+    /// null), where it would be an empty frame that does nothing when clicked, and the corner is
+    /// the canvas's; it fades in with the first shape, and hides with the last. The first shape
+    /// placed in its corner isn't covered as it arrives: while a press is under way (the one placing
+    /// it) or a shape is being edited (the note placed, typed into) and the board's shapes are under
+    /// the minimap, it waits, and fades in once they're done (the canvas asks again as a press ends
+    /// and as editing begins or ends). On another board it shows or hides at once. Whether the host
+    /// shows it (View › Show Minimap) doesn't change. The canvas calls this with every redraw and
+    /// switch: `shapeBounds` is kept, so it costs nothing.
+    func updateVisibility() {
+        let empty = editor.shapeBounds.isNull
+        let sameBoard = visibilityBoard == editor.board
+        visibilityBoard = editor.board
+        guard empty != isHidden else { return }
+        if !empty, sameBoard, editor.undoHistory.isPressHeld || editor.session != nil || editor.editingShapeID != nil,
+           editor.camera.toView(editor.shapeBounds).intersects(frame) {
+            return
+        }
+        isHidden = empty
+        guard !empty else { return }
+        needsDisplay = true
+        guard sameBoard else {
+            alphaValue = 1
+            return
+        }
+        alphaValue = 0
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = MinimapStyle.fadeInDuration
+            animator().alphaValue = 1
+        }
     }
 
     @available(*, unavailable)
@@ -423,6 +459,8 @@ enum MinimapStyle {
     static let clickJitterSquared: CGFloat = 4
     /// Moving the canvas to a point clicked takes this long (tldraw's animationMediumMs).
     static let recenterDuration: Duration = .milliseconds(320)
+    /// Showing with a board's first shape, it fades in over this long, in seconds.
+    static let fadeInDuration: TimeInterval = 0.2
 
     // The pictures (MinimapPicture). Sizes there are in pixels.
     /// A picture is drawn with this many pixels for each one the minimap shows the board at, so

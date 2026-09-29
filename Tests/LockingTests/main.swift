@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([lockMenuTests, shakeTests, chipTests, chipClickTests, undoTests, lockingBoardTests])
+runTests([lockMenuTests, shakeTests, chipTests, chipClickTests, undoTests, lockingBoardTests, lockRowTests])

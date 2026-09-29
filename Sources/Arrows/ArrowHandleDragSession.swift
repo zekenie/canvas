@@ -31,6 +31,9 @@ final class ArrowHandleDragSession {
 extension ArrowHandleDragSession: Session {
     func cursor(in editor: CanvasEditor) -> CanvasCursor? { .closedHand }
     var hidesOutlines: Bool { true }
+    /// A connection drawn for another plugin's gesture (a port's) scrolls the canvas at its edges, so
+    /// it can reach a shape off screen; a handle's drag doesn't, as tldraw's doesn't.
+    var scrollsAtEdges: Bool { connecting != nil }
 
     func drag(_ pointer: Pointer, in editor: CanvasEditor) {
         update(to: pointer.world, modifiers: pointer.modifiers)

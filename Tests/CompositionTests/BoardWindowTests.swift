@@ -1,3 +1,4 @@
+import Adornments
 import AppKit
 import Boards
 @_spi(Host) import Canvas
@@ -12,9 +13,16 @@ import Mentions
 import Schemas
 import Selection
 import StickyNotes
+import SwiftUI
 import TableOfContents
 import TestKit
 import Titles
+
+/// A menu item's target that counts what it's sent.
+@MainActor final class MenuActionLog: NSObject {
+    var fired = 0
+    @objc func fire(_ sender: Any?) { fired += 1 }
+}
 
 /// A board window as the app makes it (`makeWindowControllers`, unshown), over the nested file: the
 /// canvas with the path over it, and the panel.
@@ -37,9 +45,12 @@ final class NestedWindow {
         canvas = try require(board.focus.canvas, "the window's content made the canvas")
     }
 
-    /// The path's crumbs that are buttons, over the canvas, leading first.
+    /// The path's crumbs that are buttons, over the canvas, leading first ("…" isn't one).
     var crumbs: [NSButton] {
-        (window.contentView?.descendants(NSButton.self) ?? []).filter { !($0 is NSPopUpButton) && overCanvas($0) && onCanvas($0).minY < Self.pathBottom }
+        guard let content = window.contentView else { return [] }
+        let folds = pathFolds(under: content)
+        return content.descendants(NSButton.self)
+            .filter { button in !folds.contains { $0 === button } && overCanvas(button) && onCanvas(button).minY < Self.pathBottom }
             .sorted { $0.convert($0.bounds, to: nil).minX < $1.convert($1.bounds, to: nil).minX }
     }
 
@@ -61,7 +72,7 @@ final class NestedWindow {
         canvas.mouseMoved(with: event)
     }
 
-    /// Below the path, which is 8 points down and about 26 tall.
+    /// Below the path, which is 8 points down and 27 tall (`BoardPath.coveredHeight`, 35).
     static let pathBottom: CGFloat = 40
 
     /// The panel header's text field (Titles' `TitleHeader`), beside the canvas.
@@ -76,7 +87,7 @@ final class NestedWindow {
         let menus = BoardMenus.make(appName: "Infinite Canvas")
         let go = try require(menus.main.item(withTitle: "Go")?.submenu)
         for item in go.items { item.target = controller }
-        return (menus, try require(go.item(withTitle: "Enclosing Board")), try require(go.item(withTitle: "Open")))
+        return (menus, try require(go.item(withTitle: "Enclosing Board")), try require(go.item(withTitle: "Open Selection")))
     }
 
     /// What a click at `point`, in the canvas's coordinates, would land on.
@@ -95,6 +106,16 @@ final class NestedWindow {
     private func overCanvas(_ view: NSView) -> Bool {
         let frame = canvas.convert(view.bounds, from: view)
         return canvas.bounds.contains(CGPoint(x: frame.midX, y: frame.midY))
+    }
+}
+
+/// The path's "…" under `root`: each a button over the view its menu is placed against
+/// (`BoardPath.foldedAnchor`), not a crumb. Never clicked here: its menu is modal on screen.
+@MainActor func pathFolds(under root: NSView) -> [NSButton] {
+    let anchors = root.descendants(NSView.self).filter { $0.identifier == BoardPath.foldedAnchor }.map { $0.convert($0.bounds, to: nil) }
+    return root.descendants(NSButton.self).filter { button in
+        let frame = button.convert(button.bounds, to: nil)
+        return anchors.contains { frame.contains(CGPoint(x: $0.midX, y: $0.midY)) }
     }
 }
 
@@ -200,6 +221,25 @@ final class NestedWindow {
         expectEqual(w.editor.selectedShapeIDs, [w.nest.s], "the subboard the path came through")
         w.window.spin { w.crumbs.isEmpty }
     },
+    test("the window's subtitle names the board shown inside a subboard, as its crumb does, and nothing on the root, where the title is the file's name") {
+        let w = try NestedWindow()
+        defer { w.board.close() }
+        expectEqual(w.window.subtitle, "")
+        expect(w.editor.showBoard(w.nest.sBoard))
+        w.window.spin { w.window.subtitle == "Plans" }
+        expect(w.editor.showBoard(w.nest.tBoard))
+        w.window.spin { w.window.subtitle == "Untitled Subboard" }
+        w.editor.goToEnclosingBoard()
+        w.window.spin { w.window.subtitle == "Plans" }
+        // Renamed there, and entered again: the name it has now.
+        w.editor.transact("Rename") { $0.update(w.nest.t) { $0[TitleProperty.self] = "Pantry" } }
+        expect(w.editor.showBoard(w.nest.tBoard))
+        w.window.spin { w.window.subtitle == "Pantry" }
+        w.editor.undo()                                  // the rename, made on Plans's board, which it shows first
+        w.window.spin { w.window.subtitle == "Plans" }
+        expect(w.editor.showBoard(.root))
+        w.window.spin { w.window.subtitle.isEmpty }
+    },
     test("undo from another board shows the board its step was made on, through the window") {
         let w = try NestedWindow()
         defer { w.board.close() }
@@ -267,6 +307,20 @@ final class NestedWindow {
         w.move(to: CGPoint(x: crumb.midX, y: crumb.maxY + 60), time: 1.3)
         expectEqual(w.editor.hovered, under, "and back off it")
     },
+    test("a subboard's first visit fits its board below the path's pill: the top note's title pill is clear of the crumbs") {
+        let w = try NestedWindow()
+        defer { w.board.close() }
+        let (note, _) = w.nest.notes(on: 2)
+        w.editor.transact(on: w.nest.sBoard, "Tall") { tx in
+            tx.update(note) { $0[TitleProperty.self] = "Top" }
+            tx.insert(ShapeRecord(StickyNote(frame: CGRect(x: 80, y: 4000, width: 200, height: 200), text: "Far below")))
+        }
+        expect(w.editor.showBoard(w.nest.sBoard))
+        w.window.spin { !w.crumbs.isEmpty }
+        let pill = try require(w.editor.adornmentFrames(of: note).first { $0.adornment == .of(TitlePill.self) }, "the title's pill")
+        let crumbsBottom = try require(w.crumbs.map { w.onCanvas($0).maxY }.max())
+        expect(w.editor.camera.toView(pill.rect).minY >= crumbsBottom, "the pill at \(w.editor.camera.toView(pill.rect)), the crumbs down to \(crumbsBottom)")
+    },
     test("⌃Space in a schema card's JSON, which no menu takes, opens its completions there") {
         let w = try NestedWindow()
         defer { w.board.close() }
@@ -320,6 +374,103 @@ final class NestedWindow {
         expectEqual(w.editor.undoHistory.undoName, "Change JSON")
         w.editor.undo()
         expectEqual(w.editor.document[id]?.typed(as: SchemaCard.self)?.props.schema, SchemaCard.starter, "the typing and the pick, one step")
+    },
+    test("View's zoom items run the zoom commands, each dimmed while it can't run; Edit › Delete and Select All likewise") {
+        let w = try NestedWindow()
+        defer { w.board.close() }
+        let menus = BoardMenus.make(appName: "Infinite Canvas")
+        let view = try require(menus.main.item(withTitle: "View")?.submenu)
+        @MainActor func enabled(_ title: String) throws -> Bool { w.controller.validateMenuItem(try require(view.item(withTitle: title), title)) }
+        w.editor.camera = Camera()
+        expect(try enabled("Zoom In") && enabled("Zoom Out") && enabled("Zoom to Fit"))
+        expect(try !enabled("Actual Size"), "at 100%")
+        expect(try !enabled("Zoom to Selection"), "nothing selected")
+        w.editor.selection = w.nest.s
+        expect(try enabled("Zoom to Selection"))
+        w.editor.camera.zoom = 8
+        expect(try !enabled("Zoom In"), "the last stop")
+        w.controller.zoomToFit(nil)
+        expect(w.editor.cameraTarget != w.editor.camera, "on its way")
+        let edit = try require(menus.main.item(withTitle: "Edit")?.submenu)
+        let delete = try require(edit.item(withTitle: "Delete")), all = try require(edit.item(withTitle: "Select All"))
+        expect(w.canvas.validateMenuItem(delete) && w.canvas.validateMenuItem(all))
+        w.editor.selection = nil
+        expect(!w.canvas.validateMenuItem(delete), "nothing selected")
+        expect(w.editor.showBoard(w.nest.sBoard))
+        w.editor.transact { $0.delete(Set($0.document.shapes.map(\.id))) }
+        expect(!w.canvas.validateMenuItem(all), "an empty board")
+    },
+    test("⇧1 at the menu bar zooms to fit by the number row's key, whatever it types; in text it types, and the menu leaves it") {
+        let w = try NestedWindow()
+        defer { w.board.close() }
+        let menus = BoardMenus.make(appName: "Infinite Canvas")
+        let view = try require(menus.main.item(withTitle: "View")?.submenu)
+        for item in view.items { item.target = w.controller }
+        w.editor.camera = Camera(origin: CGPoint(x: 5000, y: 5000))
+        let bang = w.window.keyEvent("!", code: 18, modifiers: .shift)
+        expect(menus.main.performKeyEquivalent(with: bang), "⇧1 as a US keyboard sends it: \"!\"")
+        expect(w.editor.cameraTarget != w.editor.camera, "zooming to fit")
+        w.editor.camera = Camera(origin: CGPoint(x: 5000, y: 5000))
+        expect(menus.main.performKeyEquivalent(with: w.window.keyEvent("1", code: 18, modifiers: .shift)), "as a French one does")
+        expect(!menus.main.performKeyEquivalent(with: w.window.keyEvent("!", code: 30, modifiers: .shift)), "\"!\" from another key isn't ⇧1")
+        w.editor.selection = nil
+        expect(!menus.main.performKeyEquivalent(with: w.window.keyEvent("@", code: 19, modifiers: .shift)), "nothing selected: Zoom to Selection leaves ⇧2")
+        expect(w.editor.showBoard(w.nest.sBoard))
+        let (note, _) = w.nest.notes(on: 2)
+        w.editor.selection = note
+        w.window.spin { w.titleField != nil }
+        let field = try require(w.titleField)
+        w.window.focus(field)
+        w.editor.camera = Camera(origin: CGPoint(x: 5000, y: 5000))
+        expect(!menus.main.performKeyEquivalent(with: bang), "text has the keyboard: the menu leaves the key")
+        expectEqual(w.editor.cameraTarget, Camera(origin: CGPoint(x: 5000, y: 5000)))
+    },
+    test("a key held with fn (🌐E, Emoji & Symbols) is the menu bar's while text has the keyboard, as AppKit's items for them answer only there") {
+        let w = try NestedWindow()
+        defer { w.board.close() }
+        let menus = BoardMenus.make(appName: "Infinite Canvas")
+        let edit = try require(menus.main.item(withTitle: "Edit")?.submenu)
+        let log = MenuActionLog()
+        // In the place of the one AppKit adds to the app's Edit menu, hidden, keyed 🌐E: only AppKit
+        // may key an item with fn, so this one is keyed E, which a key event made here (not one from
+        // the keyboard) held with fn matches too. What it holds is that the key reaches AppKit's match.
+        let emoji = NSMenuItem(title: "Emoji & Symbols", action: #selector(MenuActionLog.fire(_:)), keyEquivalent: "e")
+        emoji.keyEquivalentModifierMask = []
+        emoji.target = log
+        emoji.isHidden = true
+        edit.addItem(emoji)
+        expect(w.editor.showBoard(w.nest.sBoard))
+        let (note, _) = w.nest.notes(on: 2)
+        w.editor.selection = note
+        w.window.spin { w.titleField != nil }
+        w.window.focus(try require(w.titleField))
+        expect(w.window.firstResponder is NSText, "the title's field has the keyboard")
+        let globeE = w.window.keyEvent("e", code: 14, modifiers: .function)
+        expect(menus.main.performKeyEquivalent(with: globeE), "🌐E opens the character palette, not an \"e\" in the field")
+        expectEqual(log.fired, 1)
+        let bang = w.window.keyEvent("!", code: 18, modifiers: .shift)
+        expect(!menus.main.performKeyEquivalent(with: bang), "⇧1 still types")
+    },
+    test("the toolbar's zoom menu shows the zoom, rounded, and holds View's zoom items, which the window's controller runs and dims") {
+        let w = try NestedWindow()
+        defer { w.board.close() }
+        let host = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 200, height: 60), styleMask: [.titled], backing: .buffered, defer: false)
+        host.contentView = NSHostingView(rootView: ZoomMenu(editor: w.editor))
+        host.settle()
+        let popUp = try require(host.contentView?.descendants(NSPopUpButton.self).first)
+        expect(popUp.pullsDown)
+        w.editor.camera = Camera()
+        host.spin { popUp.itemTitle(at: 0) == "100%" }
+        expectEqual(popUp.itemTitles, ["100%", "Zoom In", "Zoom Out", "Actual Size", "Zoom to Fit", "Zoom to Selection"])
+        let items = Array(popUp.itemArray.dropFirst())
+        expectEqual(items.map { $0.action.map(NSStringFromSelector) }, ["zoomIn:", "zoomOut:", "zoomToActualSize:", "zoomToFit:", "zoomToSelection:"])
+        expect(items.allSatisfy { $0.keyEquivalent.isEmpty }, "the View menu's are the keys")
+        expectEqual(items.map { w.controller.validateMenuItem($0) }, [true, true, false, true, false])
+        w.editor.camera.zoom = 0.873
+        host.spin { popUp.itemTitle(at: 0) == "87%" }
+        w.editor.camera.pan(by: CGSize(width: 30, height: 0))
+        w.controller.zoomIn(nil)
+        host.spin { popUp.itemTitle(at: 0) == "100%" }
     },
 ])
 

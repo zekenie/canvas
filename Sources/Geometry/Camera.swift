@@ -3,6 +3,12 @@ import CoreGraphics
 /// Maps between world space, where shapes live, and view space, the canvas view's points.
 public struct Camera: Equatable, Sendable {
     public static let zoomRange: ClosedRange<CGFloat> = 0.1...8
+    /// Where Zoom In and Zoom Out stop, in whole percent, within `zoomRange`: tldraw's steps, less
+    /// its 5%.
+    public static let zoomStops: [Int] = [10, 25, 50, 100, 200, 400, 800]
+
+    /// The zoom in whole percent, as the app shows it: 100 at 100%.
+    public var zoomPercentage: Int { Int((zoom * 100).rounded()) }
 
     /// The world point shown at the view's top-left corner.
     public var origin: CGPoint = .zero
@@ -18,10 +24,17 @@ public struct Camera: Equatable, Sendable {
     /// `maxZoom` (tldraw's zoomToBounds, whose `targetZoom` is `maxZoom`). A side of zero size
     /// doesn't limit the zoom.
     public init(fitting bounds: CGRect, in viewSize: CGSize, inset: CGFloat, maxZoom: CGFloat = Camera.zoomRange.upperBound) {
-        let width = max(viewSize.width - inset, 1), height = max(viewSize.height - inset, 1)
+        self.init(fitting: bounds, in: CGRect(origin: .zero, size: viewSize), inset: inset, maxZoom: maxZoom)
+    }
+
+    /// Shows `bounds` (world units) centered in `viewRect`, a part of the view (view points), zoomed
+    /// to fit it as `init(fitting:in:inset:maxZoom:)` fits a whole view: for a view whose top the
+    /// host covers (a path over a subboard's canvas).
+    public init(fitting bounds: CGRect, in viewRect: CGRect, inset: CGFloat, maxZoom: CGFloat = Camera.zoomRange.upperBound) {
+        let width = max(viewRect.width - inset, 1), height = max(viewRect.height - inset, 1)
         let fit = min(bounds.width > 0 ? width / bounds.width : .infinity, bounds.height > 0 ? height / bounds.height : .infinity)
         zoom = min(maxZoom, min(max(fit, Self.zoomRange.lowerBound), Self.zoomRange.upperBound))
-        origin = CGPoint(x: bounds.midX - viewSize.width / 2 / zoom, y: bounds.midY - viewSize.height / 2 / zoom)
+        origin = CGPoint(x: bounds.midX - viewRect.midX / zoom, y: bounds.midY - viewRect.midY / zoom)
     }
 
     public func toView(_ point: CGPoint) -> CGPoint {

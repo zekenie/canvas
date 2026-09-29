@@ -13,9 +13,6 @@ enum BoardsStyle {
     static let maxWidth: CGFloat = 640
     /// The root's crumb when the host names it nothing.
     static let rootFallback = "Board"
-    /// The caret after the title of a crumb with a menu, and between them.
-    static let caretSize: CGFloat = 8
-    static let caretSpacing: CGFloat = 3
     /// How long the pointer stays on a crumb before its menu shows, and off it and its menu before
     /// the menu closes (data-canvas's hover intent).
     static let menuDelay: Duration = .milliseconds(150)
@@ -23,6 +20,10 @@ enum BoardsStyle {
     /// width, and how tall it grows before it scrolls; around its rows; its corners; and how near the
     /// canvas's edges it may come.
     static let menuGap: CGFloat = 6
+    /// AppKit's padding above an `NSMenu`'s first item, which `popUp(positioning: nil, at:in:)` puts
+    /// at the point it's given (measured: macOS 26), so the fold's menu (`BoardPath.foldedMenu`) is
+    /// placed that much lower to start where a crumb's does.
+    static let systemMenuTopPadding: CGFloat = 5
     static let menuWidth: CGFloat = 300
     static let menuMaxHeight: CGFloat = 360
     static let menuPadding: CGFloat = 6

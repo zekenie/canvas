@@ -1,10 +1,13 @@
 import Adornments
 import Canvas
 import ContextMenus
+import SwiftUI
+import TableOfContents
 
 /// Locking, as a plugin: a shape can be locked, and then nothing changes it (not a drag, Delete,
-/// the eraser, editing, the panel or a menu item) until it's unlocked. Every try shakes it, and a
-/// lock chip sits just above its top-right corner. Shapes are locked from the context menu, and
+/// the eraser, editing, the panel or a menu item) until it's unlocked. Every try shakes it, a lock
+/// chip sits just above its top-right corner, and its row in the table of contents ends in a lock,
+/// so the list says which are locked at a glance. Shapes are locked from the context menu, and
 /// unlocked there or with a click on the chip, which then shows the lock open for a moment (a click
 /// on it locks the shape again) before it goes. Whether a shape is locked is something it knows
 /// (tldraw's `isLocked`): an added property every kind opts into, `locked`. What makes it hold is
@@ -83,6 +86,11 @@ public struct LockingPlugin: CanvasPlugin {
         registrar.adornmentForEveryShape(LockChip.self, where: { $0.holds(LockedProperty.self) }) { shape, context in
             if shape.isLocked { return AdornmentLabel(systemImage: "lock.fill") }
             return context.service(LockState.self)?.openLockOpacity(of: shape.id).map { AdornmentLabel(systemImage: "lock.open.fill").opacity($0) }
+        }
+        // A lock at the end of a locked shape's row, on the kinds that can be locked, read from the
+        // record alone.
+        registrar.contentsMarkForEveryShape(where: { $0.holds(LockedProperty.self) }) { shape, _ in
+            shape.isLocked ? ContentsMark(symbol: "lock.fill", color: .secondary, help: "Locked") : nil
         }
         // One item for the menu's shapes, as tldraw's toggleLock: Unlock when every one is locked,
         // otherwise Lock, which locks the rest. Items for the canvas, so a mix of locked and

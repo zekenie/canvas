@@ -450,9 +450,13 @@ public final class ContentsState {
     }
 
     /// The shape's row as its kind makes it, else its kind's label, called what `ContentsTitles`
-    /// names it if it's a `ContentsLabel`.
+    /// names it if it's a `ContentsLabel`. A kind whose rows another plugin names has its label as a
+    /// placeholder, dimmed until the shape is named, as an untitled note's is: twenty unnamed
+    /// rectangles don't read as named "Rectangle". A kind nobody names (an arrow) has its label at
+    /// full strength: it's all such a shape is called.
     private func resolvedRow(of record: AnyShapeRecord, kind: KindRows) -> ResolvedRow {
-        let row = kind.contribution?.row?(record, ContentsContext(editor: editor)) ?? ResolvedRow(ContentsLabel(kind.name))
+        let fallback = kind.title == nil ? ContentsLabel(kind.name) : ContentsLabel("", placeholder: kind.name)
+        let row = kind.contribution?.row?(record, ContentsContext(editor: editor)) ?? ResolvedRow(fallback)
         if let label = row.label, let title = kind.title?(record), !title.allSatisfy(\.isWhitespace) {
             return ResolvedRow(label.retitled(title))
         }
@@ -470,9 +474,10 @@ public final class ContentsState {
         if let found = kinds[kind] { return found }
         let registry = editor.registry
         let label = registry.label(of: kind)
+        let markable = ContentsKind(kind: kind, registry: registry)
         let found = KindRows(contribution: registry.contributions(to: ContentsRows.self, for: kind).first,
                              title: registry.contributions(to: ContentsTitles.self, for: kind).first,
-                             marks: registry.contributions(to: ContentsMarks.self, for: kind),
+                             marks: registry.contributions(to: ContentsMarks.self, for: kind).filter { $0.appliesTo(markable) },
                              name: label.name, symbol: label.systemImage ?? ContentsSymbolKey.defaultValue)
         kinds[kind] = found
         return found

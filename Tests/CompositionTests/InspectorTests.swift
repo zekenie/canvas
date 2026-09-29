@@ -82,11 +82,12 @@ final class InspectorWindow {
     /// The canvas as the window draws it.
     func render() -> NSBitmapImageRep { renderBitmap(editor, size: canvas.bounds.size) }
 
-    /// The path's crumbs that are buttons, over the canvas.
+    /// The path's crumbs that are buttons, over the canvas ("…" isn't one).
     var crumbs: [NSButton] {
-        host.descendants(NSButton.self).filter {
-            let frame = canvas.convert($0.bounds, from: $0)
-            return !($0 is NSPopUpButton) && canvas.bounds.contains(CGPoint(x: frame.midX, y: frame.midY))
+        let folds = pathFolds(under: host)
+        return host.descendants(NSButton.self).filter { button in
+            let frame = canvas.convert(button.bounds, from: button)
+            return !folds.contains { $0 === button } && canvas.bounds.contains(CGPoint(x: frame.midX, y: frame.midY))
         }
     }
     /// The table of contents' list, while the panel shows it.
@@ -116,7 +117,7 @@ struct InspectorHost: View {
         CanvasRepresentable(editor: editor, focus: focus, showsMinimap: showsMinimap)
             .overlay(alignment: .top) { ShippedPlugins.boardPath(editor: editor, rootName: view?.fileName ?? "") }
             .inspector(isPresented: .constant(showsDetails)) {
-                ShippedPlugins.detailPanel(editor: editor, onExit: focus.take)
+                ShippedPlugins.detailPanel(editor: editor, onExit: focus.take, rootName: view?.fileName ?? "")
             }
             .transaction { $0.disablesAnimations = true }
     }
@@ -273,16 +274,19 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         w.editor.selection = nil
         expectEqual(w.editor.tableOfContents?.entries.map { $0.label?.text }, ["Groceries"])
     },
-    test("an empty note's Issues tab says so, through the validation-details bridge; a written note has no such tab") {
+    test("a note whose title is too long has an Issues tab that says so, through the validation-details bridge; a note without issues has no such tab") {
         let w = try InspectorWindow()
-        let empty = note(), written = ShapeRecord(StickyNote(frame: CGRect(x: 400, y: 100, width: 200, height: 200), text: "Hi"))
-        w.editor.transact { $0.insert(empty); $0.insert(written) }
+        var long = note("Hi")
+        long[TitleProperty.self] = String(repeating: "Groceries ", count: 9)
+        let written = ShapeRecord(StickyNote(frame: CGRect(x: 400, y: 100, width: 200, height: 200), text: "Hi"))
+        w.editor.transact { $0.insert(long); $0.insert(written) }
         w.click(CGPoint(x: 200, y: 200))
-        expectEqual(w.editor.selection, empty.id)
+        expectEqual(w.editor.selection, long.id)
         let state = try require(w.editor.detailPanel)
-        let record = try require(w.editor.document[empty.id])
+        let record = try require(w.editor.document[long.id])
         expectEqual(state.layout(for: record).tabs.map(\.title), ["Issues"])
-        expectEqual(state.layout(for: record).statuses(in: .of(IssuesTab.self)), [DetailStatus("This note is empty.", tone: .warning)])
+        expectEqual(state.layout(for: record).statuses(in: .of(IssuesTab.self)),
+                    [DetailStatus("Title is 90 characters long, and should be at most 80.", tone: .warning)])
         expectEqual(state.statuses(for: record), [], "nothing in the footer")
         w.click(CGPoint(x: 500, y: 200))
         expectEqual(w.editor.selection, written.id)
@@ -312,7 +316,10 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         let w = try InspectorWindow(file: nest.file)
         w.window.spin { w.contentsRows == 3 }
         expectEqual(w.contentsHeaderButtons.count, 0, "nothing above the root")
-        expect(ShippedPlugins.contentsHeading(for: w.editor) == nil, "the root's is the list's own, \"Board\"")
+        expect(ShippedPlugins.contentsHeading(for: w.editor) == nil, "the root's is the list's own, \"Board\", with no name for it")
+        let root = try require(ShippedPlugins.contentsHeading(for: w.editor, rootName: "Roadmap"))
+        expectEqual(root.title, "Roadmap", "the file's name, as the window and the path's root crumb have it")
+        expectEqual(root.up, nil)
         expect(w.editor.showBoard(nest.sBoard))
         w.window.spin { w.contentsHeaderButtons.count == 1 }
         let (first, second) = nest.notes(on: 2)
@@ -321,6 +328,8 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         expectEqual(heading.title, "Plans")
         expectEqual(heading.systemImage, "rectangle.stack")
         expectEqual(heading.up, .enclosingBoard)
+        expectEqual(heading.upTitle, "Enclosing Board", "as the Go menu calls it")
+        expectEqual(heading.upHelp, "Enclosing Board (⌘↑)", "with its key, as Back's tooltip has its")
         expect(w.editor.showBoard(nest.tBoard))
         expectEqual(ShippedPlugins.contentsHeading(for: w.editor)?.title, "Untitled Subboard", "the placeholder, as the path has it")
         w.editor.goToEnclosingBoard()

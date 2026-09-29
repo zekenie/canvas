@@ -1,4 +1,5 @@
 import Canvas
+import CoreGraphics
 
 /// Context menus, as a plugin: a right-click (or Control-click) on a shape opens the items that
 /// apply to it, contributed by its kind, by horizontals it opts into, by bridges, and by any plugin
@@ -173,9 +174,9 @@ extension PluginRegistrar {
 
 // MARK: Items for the canvas
 
-/// Items that aren't any one shape's (Cut, Copy and Paste). They're in every context menu: on
-/// shapes, after the shapes' own items in their groups' order, and on empty canvas, where they're
-/// the menu. Keyed by group and id, as a shape's are: two plugins adding one item are a
+/// Items that aren't any one shape's (Cut, Copy and Paste; Delete and Select All, this plugin's
+/// own). They're in every context menu: on shapes, after the shapes' own items in their groups'
+/// order, and on empty canvas, where they're the menu. Keyed by group and id, as a shape's are: two plugins adding one item are a
 /// `conflict`, and a shape's own item with the same group and id takes its place, shown or not.
 public enum CanvasContextMenu {}
 
@@ -194,6 +195,10 @@ public struct MenuSubject {
     /// The selection, on a selected shape; the shape right-clicked, which becomes the selection,
     /// on one that wasn't; none on empty canvas.
     public let shapes: [ShapeID]
+    /// Where the menu was asked for, in world units: the click. An item that puts something down
+    /// puts it there (the menu's Paste lands centered on it). An item gets it through `MenuItem`'s
+    /// `edit` form, which is handed the subject.
+    public let point: CGPoint
     public let editor: CanvasEditor
 }
 
@@ -205,10 +210,15 @@ public struct CanvasMenuContribution {
 
 extension PluginRegistrar {
     /// Items for the canvas, in every context menu (see `CanvasContextMenu`), over the menu's
-    /// `MenuSubject`. They take `MenuItem`'s `perform` form, which gets the subject's shapes:
+    /// `MenuSubject`. They take either of `MenuItem`'s forms: `perform`, which gets the subject's
+    /// shapes and the editor; or `edit`, which is handed the subject itself, once, in no
+    /// transaction, for an item that needs more of it than its shapes (where the menu was opened,
+    /// `point`). The subject can't be changed (its members are constants): either form changes the
+    /// document only through `editor.transact`.
     ///
     ///     registrar.contextMenuForCanvas {
-    ///         MenuItem("Paste", when: { $0.editor.canPaste }) { _, editor in editor.paste() }
+    ///         MenuItem("Copy", when: { !$0.shapes.isEmpty }) { ids, editor in editor.copy(ids) }
+    ///         MenuItem("Paste", when: { $0.editor.canPaste }) { subject in subject.editor.paste(centeredAt: subject.point) }
     ///     }
     public mutating func contextMenuForCanvas(@MenuBuilder<MenuSubject> _ items: () -> [MenuEntry<MenuSubject>]) {
         contribute(CanvasMenuContribution(entries: items()), to: CanvasContextMenu.self)
@@ -217,8 +227,20 @@ extension PluginRegistrar {
 
 // MARK: The plugin
 
-/// Claims the secondary click. Contributes no items of its own: with nothing else installed, a
-/// right-click does nothing.
+/// Selection's commands, last in every menu, after Lock, as Keynote has Delete: Delete on the
+/// menu's shapes, and Select All on empty canvas.
+public enum SelectionMenuGroup {}
+extension SelectionMenuGroup: MenuGroup {
+    public static var order: Int { 400 }
+}
+
+/// Claims the secondary click, and adds two items that are Selection's commands, since a menu is
+/// for the selection: Delete, in every shape's menu, runs `.delete` on the menu's shapes (the
+/// selection: a right-click on a shape that isn't selected selects it before the item runs), as
+/// the Delete key does, so a locked one shakes; and Select All, on empty canvas while the board has
+/// shapes, runs `.selectAll`. Whether they show is asked of the menu's subject, never of
+/// `canPerform`, which reads the selection as it was before the click. So with Selection
+/// installed, a right-click shows no menu only on an empty board with nothing else to offer there.
 public struct ContextMenusPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .contextMenus }
@@ -226,5 +248,11 @@ public struct ContextMenusPlugin: CanvasPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { ContextMenuState(editor: $0) }
         registrar.menuForSecondaryClick { editor, pointer in editor.service(ContextMenuState.self)?.menu(for: pointer) }
+        registrar.contextMenuForCanvas {
+            MenuItem("Delete", in: SelectionMenuGroup.self, when: { !$0.shapes.isEmpty }) { _, editor in editor.perform(.delete) }
+            MenuItem("Select All", in: SelectionMenuGroup.self, when: { $0.shapes.isEmpty && !$0.editor.document.shapes.isEmpty }) { _, editor in
+                editor.perform(.selectAll)
+            }
+        }
     }
 }

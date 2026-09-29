@@ -75,6 +75,6 @@ extension CanvasEditor {
 enum Palette {
     static let card = [255, 255, 255]
     static let chip = [241, 241, 241]
-    static let accent = [102, 92, 219]
+    static let accent = [191, 46, 158]
     static let bar = [204, 204, 204]
 }

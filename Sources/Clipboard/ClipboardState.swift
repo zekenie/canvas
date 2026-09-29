@@ -180,8 +180,10 @@ final class ClipboardState {
     var hasShapes: Bool { !pasteable().file.root.shapes.isEmpty }
 
     /// The shapes on the pasteboard, on top of the board, then selected (tldraw's paste). They land
-    /// where they were copied from if any of them would be in view there, and otherwise centered in
-    /// the view. A shape that owns a board goes in with what it holds, all the way down.
+    /// centered on `point` (world units) when there is one (the context menu's Paste, at its
+    /// click); else where they were copied from if any of them would be in view there, and
+    /// otherwise centered in the view. A shape that owns a board goes in with what it holds, all
+    /// the way down.
     ///
     /// What a copy put there pastes as copies, with new ids, each copy's `CopiedFrom` naming its
     /// original. What a cut put there moves: each shape keeps its id if nothing in the file goes by
@@ -189,7 +191,7 @@ final class ClipboardState {
     /// it was, since it's the same shape; the rest are copies. Either way one map renames every id
     /// on every board of what's pasted: a binding or a name (`ShapeNaming`) of a shape pasted with
     /// it names that shape as pasted, and a name of anything else is kept.
-    func paste() {
+    func paste(centeredAt point: CGPoint? = nil) {
         let (file, isCut) = pasteable()
         let shapes = file.root.shapes
         guard !shapes.isEmpty else { return }
@@ -204,7 +206,10 @@ final class ClipboardState {
                 transaction.insert(pasted(record, as: ids[record.id]!), contents: pastedBoards(under: record.id, in: file, renaming: ids))
             }
             let placed = shapes.compactMap { ids[$0.id] }.filter { transaction.document[$0] != nil }
-            if let offset = offset(placing: placed, in: transaction.shapes) { transaction.translate(Set(placed), by: offset) }
+            let centered = point.flatMap { point in transaction.shapes.bounds(of: placed).map { point - $0.center } }
+            if let offset = centered ?? offset(placing: placed, in: transaction.shapes), offset != .zero {
+                transaction.translate(Set(placed), by: offset)
+            }
             return placed
         }
         editor.selectedShapeIDs = pastedIDs
@@ -304,5 +309,12 @@ extension CanvasEditor {
     public func paste() {
         guard canPaste else { return }
         clipboard?.paste()
+    }
+
+    /// The context menu's Paste: as ⌘V, but what's put down lands centered on `point` (world
+    /// units), where the menu was asked for, wherever it was copied from.
+    public func paste(centeredAt point: CGPoint) {
+        guard canPaste else { return }
+        clipboard?.paste(centeredAt: point)
     }
 }

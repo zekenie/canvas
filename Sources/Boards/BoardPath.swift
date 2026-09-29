@@ -1,3 +1,4 @@
+import AppKit
 import Canvas
 import SwiftUI
 import TableOfContents
@@ -7,10 +8,12 @@ import TableOfContents
 /// canvas, with `.overlay(alignment: .top)`: the pill keeps `BoardsStyle.topInset` from its top edge,
 /// and a crumb's menu stays inside it). Nothing on the root. The board shown is bold and not a
 /// button; each board above is, and shows that board with the shape you came through selected
-/// (`editor.goUp(to:)`). More than four fold the middle into "…", a menu of the boards it hides.
+/// (`editor.goUp(to:)`). The crumbs are separated by ›s. More than four fold the middle into
+/// "…", a button drawn as those crumbs are, whose menu lists the boards it hides (`foldedMenu`),
+/// starting at the pill's bottom edge, as a crumb's menu does.
 ///
-/// Every crumb has a menu, as data-canvas's do, marked by a caret (the board shown's only while it
-/// has shapes): the pointer on the crumb shows it below the crumb (`BoardCrumbs.pointerEntered(crumb:)`),
+/// Every crumb has a menu, as data-canvas's do, unmarked (the board shown's only while it has
+/// shapes): the pointer on the crumb shows it below the crumb (`BoardCrumbs.pointerEntered(crumb:)`),
 /// that board's rows as the table of contents lists them (`ContentsOutline`), with the shape whose
 /// board is next on the path highlighted, the way you came; a row picked goes to its shape, or into
 /// its board (`BoardCrumbs.pick`). The path reads only the crumbs (`BoardCrumbs`), so it redraws
@@ -30,6 +33,16 @@ public struct BoardPath: View {
         if let crumbs = editor.boardCrumbs {
             BoardPathPill(crumbs: crumbs, editor: editor, rootName: rootName)
         }
+    }
+
+    /// How far down over the canvas the path reaches on a board, in points: to its pill's bottom
+    /// edge, nothing on the root, where it shows nothing. The host tells the editor
+    /// (`coveredTop`), so a fit (a board's first visit, Zoom to Fit, `reveal`) leaves it clear.
+    @MainActor
+    public static func coveredHeight(on board: BoardID) -> CGFloat {
+        guard !board.isRoot else { return 0 }
+        let font = NSFont.systemFont(ofSize: BoardsStyle.fontSize, weight: .medium)
+        return BoardsStyle.topInset + 2 * BoardsStyle.verticalPadding + (font.ascender - font.descender + font.leading).rounded(.up)
     }
 }
 
@@ -74,18 +87,7 @@ struct BoardPathPill: View {
             }
             if !layout.folded.isEmpty {
                 separator
-                Menu {
-                    ForEach(layout.folded) { crumb in
-                        Button(crumb.title) { editor.goUp(to: crumb.board) }
-                    }
-                } label: {
-                    Text("…")
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("Boards between")
-                .focusable(false)
+                FoldedCrumbs(folded: layout.folded, crumbs: crumbs, editor: editor)
             }
             ForEach(layout.trailing) { crumb in
                 separator
@@ -103,18 +105,20 @@ struct BoardPathPill: View {
         .padding(.top, BoardsStyle.topInset)
     }
 
+    /// Drawn only: VoiceOver reads the crumbs in order, so a "Forward" image between each pair would
+    /// be noise.
     private var separator: some View {
         Image(systemName: "chevron.right").imageScale(.small).foregroundStyle(.tertiary)
+            .accessibilityHidden(true)
     }
 
-    /// A crumb with a menu has a caret after its title, and shows the menu as the pointer stays on it.
+    /// A crumb shows its menu, if it has one, as the pointer stays on it; nothing marks it.
     @ViewBuilder
     private func item(_ crumb: BoardCrumb, isCurrent: Bool) -> some View {
-        let hasMenu = crumbs.menu(of: crumb.board) != nil
         Group {
             if isCurrent {
                 CrumbWidth(maxWidth: BoardsStyle.crumbMaxWidth) {
-                    CrumbTitle(title: crumb.title, hasMenu: hasMenu).fontWeight(.semibold)
+                    CrumbTitle(title: crumb.title).fontWeight(.semibold)
                 }
                 .help(crumb.title)
                 .accessibilityAddTraits(.isHeader)
@@ -127,7 +131,7 @@ struct BoardPathPill: View {
                         crumbs.closeMenu()
                         editor.goUp(to: crumb.board)
                     } label: {
-                        CrumbTitle(title: crumb.title, hasMenu: hasMenu)
+                        CrumbTitle(title: crumb.title)
                     }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
@@ -144,21 +148,125 @@ struct BoardPathPill: View {
     }
 }
 
-/// A crumb's title, on one line cut in the middle (a button's own title would wrap), and its caret.
+/// A crumb's title, on one line cut in the middle (a button's own title would wrap).
 struct CrumbTitle: View {
     let title: String
-    let hasMenu: Bool
 
     var body: some View {
-        HStack(spacing: BoardsStyle.caretSpacing) {
-            Text(title).lineLimit(1).truncationMode(.middle)
-            if hasMenu {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: BoardsStyle.caretSize, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
+        Text(title).lineLimit(1).truncationMode(.middle)
+    }
+}
+
+/// The boards the path folds, as "…": a button built as a board above's crumb is (borderless, in its
+/// gray and the pill's type), which shows them in a menu (`BoardPath.foldedMenu`) lined up with its
+/// leading edge, the menu's top at the pill's bottom edge, where a crumb's menu starts. (A SwiftUI
+/// `Menu` draws as a pop-up button, which takes no style from around it and draws without the pill's
+/// vibrancy: darker than the crumbs on a light pill, near white on a dark one.) To assistive apps
+/// it's a pop-up button, "Boards between", whose press shows that menu and whose children are the
+/// boards it folds, each a button that goes up to its board.
+struct FoldedCrumbs: View {
+    let folded: [BoardCrumb]
+    let crumbs: BoardCrumbs
+    let editor: CanvasEditor
+    @State private var anchor = MenuAnchor()
+
+    var body: some View {
+        Button(action: showMenu) {
+            Text("…")
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .background(MenuAnchorView(anchor: anchor))
+        .help(Self.name)
+        // A click leaves the keyboard with the canvas, even with Full Keyboard Access on.
+        .focusable(false)
+        // What assistive apps read in its place; never drawn. Its primary action is what a press
+        // runs: a `Menu` without one does nothing when pressed here, having no pop-up button to open.
+        .accessibilityRepresentation {
+            Menu {
+                ForEach(folded) { crumb in
+                    Button(crumb.title) {
+                        crumbs.closeMenu()
+                        editor.goUp(to: crumb.board)
+                    }
+                }
+            } label: {
+                Text(Self.name)
+            } primaryAction: {
+                showMenu()
             }
         }
+    }
+
+    /// Its tooltip, and its name to assistive apps.
+    private static let name = "Boards between"
+
+    private func showMenu() {
+        crumbs.closeMenu()
+        guard let view = anchor.view else { return }
+        // AppKit puts the first item's top at the point, and its own padding above that.
+        let drop = BoardsStyle.menuGap + BoardsStyle.systemMenuTopPadding
+        let below = view.isFlipped ? view.bounds.maxY + drop : view.bounds.minY - drop
+        BoardPath.foldedMenu(folded, editor: editor).popUp(positioning: nil, at: NSPoint(x: view.bounds.minX, y: below), in: view)
+    }
+}
+
+extension BoardPath {
+    /// The empty view behind "…", which its menu is placed against: the fold's button is the one
+    /// over it, as a test finds it.
+    public static let foldedAnchor = NSUserInterfaceItemIdentifier("BoardPath.folded")
+
+    /// The menu "…" shows: the boards it folds, root side first, each going up to its board
+    /// (`editor.goUp(to:)`), as a crumb does. Made afresh each time it shows; a test reads and
+    /// chooses its items (`performActionForItem(at:)`) without showing it.
+    @MainActor
+    public static func foldedMenu(_ folded: [BoardCrumb], editor: CanvasEditor) -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for crumb in folded {
+            let action = FoldedMenuAction { [weak editor] in editor?.goUp(to: crumb.board) }
+            let item = NSMenuItem(title: crumb.title, action: #selector(FoldedMenuAction.fire), keyEquivalent: "")
+            item.target = action
+            item.representedObject = action          // the item holds its target weakly
+            menu.addItem(item)
+        }
+        return menu
+    }
+}
+
+/// What an item of the fold's menu runs: its target, kept alive as its `representedObject`. The
+/// item stays a plain NSMenuItem, since AppKit may copy one through initializers a subclass wouldn't
+/// inherit.
+final class FoldedMenuAction: NSObject {
+    private let run: @MainActor () -> Void
+
+    init(_ run: @escaping @MainActor () -> Void) { self.run = run }
+
+    /// AppKit sends menu actions on the main thread.
+    @MainActor @objc func fire() { run() }
+}
+
+/// The view the fold's menu is placed against, kept for the button's action.
+@MainActor
+final class MenuAnchor {
+    weak var view: NSView?
+}
+
+/// An empty view behind the fold's button, for its menu to be placed against; it takes no clicks.
+struct MenuAnchorView: NSViewRepresentable {
+    let anchor: MenuAnchor
+
+    func makeNSView(context: Context) -> NSView {
+        let view = PassThroughView()
+        view.identifier = BoardPath.foldedAnchor
+        anchor.view = view
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) { anchor.view = view }
+
+    private final class PassThroughView: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }
 

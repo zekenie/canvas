@@ -70,7 +70,12 @@ struct MentionedInLine: View {
                     }
                 }
             } icon: {
-                Image(systemName: line.systemImage).foregroundStyle(.secondary)
+                // In its kind's tint, as the `@` picker shows it (a note's yellow), else secondary.
+                if let tint = line.tint {
+                    Image(systemName: line.systemImage).foregroundStyle(Color(nsColor: tint))
+                } else {
+                    Image(systemName: line.systemImage).foregroundStyle(.secondary)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())

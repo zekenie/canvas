@@ -222,7 +222,7 @@ extension ShapeRegistrar {
                                                   r.contribute("x", to: Described.self)
                                               }])
         expectEqual(registry.report, """
-        core          tool hand · command undo · command redo
+        core          tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
         fixtures      shape box · shape disc · shape tag
         cards         shape card · tool card
         stamps        \("")

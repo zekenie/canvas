@@ -255,6 +255,35 @@ let welcomeNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x:
         let discarded = scheduled(by: .zero, autosaveMidway: false)
         expectEqual(scheduled(by: .zero, autosaveMidway: true), discarded + 1, "a step that came to nothing")
     },
+    test("an autosave waits while an arrow key held on the canvas nudges the selection, and is scheduled again once it's let go: the nudges are one step") {
+        let b = try UndoBoard()
+        defer { b.close() }
+        b.click(welcomeNotes[2])
+        let note = try require(b.editor.selection)
+        let start = try require(b.editor.document[note]?.box).origin
+        @MainActor func right(_ type: NSEvent.EventType, isRepeat: Bool = false) -> NSEvent {
+            NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [.function, .numericPad], timestamp: 1, windowNumber: b.window.windowNumber,
+                             context: nil, characters: "\u{F703}", charactersIgnoringModifiers: "\u{F703}", isARepeat: isRepeat, keyCode: 124)!
+        }
+        b.window.makeFirstResponder(b.canvas)
+        b.canvas.keyDown(with: right(.keyDown))
+        b.canvas.keyDown(with: right(.keyDown, isRepeat: true))
+        expect(b.editor.undoHistory.isKeyHolding)
+        do {
+            _ = try b.board.snapshot(implicitlyCancellable: true)
+            expect(false, "an autosave while the key is held gives way")
+        } catch let error as CocoaError {
+            expectEqual(error.code, .userCancelled)
+        }
+        b.canvas.keyDown(with: right(.keyDown, isRepeat: true))
+        let before = b.board.autosavesScheduled
+        b.canvas.keyUp(with: right(.keyUp))
+        expectEqual(b.board.autosavesScheduled, before + 1, "scheduled again as the key is let go, which closes its step")
+        expectEqual(b.editor.document[note]?.box?.origin, CGPoint(x: start.x + 3, y: start.y))
+        expectEqual(b.editor.undoHistory.undoName, "Move")
+        b.editor.undo()
+        expectEqual(b.editor.document[note]?.box?.origin, start, "every nudge, one step")
+    },
     test("a new board and a reverted one have nothing to undo; a save after an undo writes the board undone") {
         let b = try UndoBoard()
         defer { b.close() }

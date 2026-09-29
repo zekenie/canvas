@@ -41,11 +41,12 @@ public final class BoardPreviews {
         public let mask: CGImage?
 
         /// Draws the silhouettes in `color` into `rect` (in the context's units, y down, as a render's),
-        /// fitted: the board's proportions kept, centered. False, and nothing drawn, with nothing to show.
+        /// fitted: the board's proportions kept, centered, at no more than `maxScale` of the context's
+        /// units to a world unit of the board. False, and nothing drawn, with nothing to show.
         @discardableResult
-        public func draw(in cg: CGContext, fitting rect: CGRect, color: CGColor) -> Bool {
-            guard let mask, frame.width > 0, frame.height > 0, rect.width > 0, rect.height > 0 else { return false }
-            let scale = min(rect.width / frame.width, rect.height / frame.height)
+        public func draw(in cg: CGContext, fitting rect: CGRect, maxScale: CGFloat = .infinity, color: CGColor) -> Bool {
+            guard let mask, frame.width > 0, frame.height > 0, rect.width > 0, rect.height > 0, maxScale > 0 else { return false }
+            let scale = min(rect.width / frame.width, rect.height / frame.height, maxScale)
             let width = frame.width * scale, height = frame.height * scale
             let target = CGRect(x: rect.midX - width / 2, y: rect.midY - height / 2, width: width, height: height)
             cg.saveGState()

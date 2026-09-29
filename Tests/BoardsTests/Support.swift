@@ -134,11 +134,21 @@ final class PathWindow {
         window.settle()
     }
 
-    /// The crumbs that are buttons, leading first; "…" is a pull-down, not among them. (Their
-    /// titles are drawn by SwiftUI, not the button's: `pathTests` reads them from the crumbs.)
+    /// The crumbs that are buttons, leading first; "…" (`folded`) isn't among them. (Their titles
+    /// are drawn by SwiftUI, not the button's: `pathTests` reads them from the crumbs.)
     var buttons: [NSButton] {
-        hosting.descendants(NSButton.self).filter { !($0 is NSPopUpButton) && frame(of: $0).minY < Self.pillBottom }
+        let fold = folded
+        return hosting.descendants(NSButton.self).filter { $0 !== fold && frame(of: $0).minY < Self.pillBottom }
             .sorted { frame(of: $0).minX < frame(of: $1).minX }
+    }
+
+    /// "…": the button over the view its menu is placed against (`BoardPath.foldedAnchor`). Never
+    /// clicked here but on screen (`menuTests`): its menu is modal. What the menu holds is
+    /// `BoardPath.foldedMenu`'s, read and chosen from without showing it.
+    var folded: NSButton? {
+        guard let anchor = hosting.descendants(NSView.self).first(where: { $0.identifier == BoardPath.foldedAnchor }) else { return nil }
+        let place = frame(of: anchor)
+        return hosting.descendants(NSButton.self).first { frame(of: $0).contains(CGPoint(x: place.midX, y: place.midY)) }
     }
 
     /// The buttons of the menu that shows, below the pill, top first: each row's, and a disclosure
@@ -154,7 +164,7 @@ final class PathWindow {
         return hosting.isFlipped ? rect : CGRect(x: rect.minX, y: hosting.bounds.height - rect.maxY, width: rect.width, height: rect.height)
     }
 
-    /// Below the pill, which is 8 points down and about 26 tall.
+    /// Below the pill, which is 8 points down and 27 tall (`BoardPath.coveredHeight`, 35).
     static let pillBottom: CGFloat = 40
 
     /// Whether the path draws anything: a pixel of it that isn't the window's background.
@@ -165,10 +175,9 @@ final class PathWindow {
             stride(from: 0, to: hosting.bounds.width, by: 2).contains { pixel(bitmap, at: CGPoint(x: $0, y: y)) != background }
         }
     }
-    var folded: NSPopUpButton? { hosting.descendants(NSPopUpButton.self).first }
     var redrawn: Int { editor.boardCrumbs?.pathRedrawn ?? 0 }
 
-    /// Clicks the crumb button `index` from the leading end.
+    /// Clicks the crumb button `index` from the leading end ("…" isn't one).
     func click(_ index: Int) throws {
         try require(buttons.dropFirst(index).first, "no crumb button \(index) of \(buttons.count)").performClick(nil)
         window.settle()

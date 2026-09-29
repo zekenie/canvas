@@ -32,11 +32,13 @@ enum MentionStyle {
     static let shapeFill: CGFloat = 0.10
     static let shapeSymbol: CGFloat = 0.65
     /// A pill naming a shape that isn't there, or can't be mentioned: no fill, a dashed stroke at
-    /// this strength, 1 point wide, and the label, in italic, at half.
+    /// this strength, 1 point wide, and the label, in italic, at about two thirds: the name it holds
+    /// is the only record of what was mentioned, so it reads at 4.6:1 on a note's yellow (half was
+    /// 3:1), while the dashes and the italic say it's gone.
     static let missingStroke: CGFloat = 0.35
     static let missingStrokeWidth: CGFloat = 1
     static let missingDash: [CGFloat] = [2, 2]
-    static let missingLabel: CGFloat = 0.5
+    static let missingLabel: CGFloat = 0.65
 
     /// Below this many device pixels per point (25% zoom on a 1× screen), a pill draws only its
     /// fill (or its dashed outline): its text couldn't be read there.

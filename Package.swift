@@ -66,7 +66,7 @@ let package = Package(
         .target(name: "Adornments", dependencies: ["Canvas", "Geometry", "Selection"]),       // layer: horizontal
         .target(name: "Clipboard", dependencies: ["Canvas", "ContextMenus", "Geometry", "Keyboard", "Selection"]), // layer: horizontal
         .target(name: "Titles", dependencies: ["Adornments", "Canvas", "DetailPanel", "TableOfContents"]),  // layer: horizontal
-        .target(name: "Locking", dependencies: ["Adornments", "Canvas", "ContextMenus", "Selection"]), // layer: horizontal
+        .target(name: "Locking", dependencies: ["Adornments", "Canvas", "ContextMenus", "Selection", "TableOfContents"]), // layer: horizontal
         .target(name: "Ports", dependencies: ["Canvas", "Geometry", "Selection", "Topology"]), // layer: horizontal
         .target(name: "Automation", dependencies: ["Canvas", "CanvasRPC", "DrawScript", "Geometry"]), // layer: horizontal
         .target(name: "LanguageModels", dependencies: ["Canvas"]),                            // layer: horizontal
@@ -76,8 +76,8 @@ let package = Package(
         .target(name: "Topology", dependencies: ["Canvas"]),                                  // layer: horizontal
 
         .target(name: "Arrows", dependencies: ["Canvas", "Geometry", "Selection", "TableOfContents"]), // layer: vertical
-        .target(name: "StickyNotes", dependencies: ["Canvas", "DetailPanel", "Keyboard", "Mentions", "Ports", "Selection", "TableOfContents", "Titles", "Validation"]), // layer: vertical
-        .target(name: "Schemas", dependencies: ["Canvas", "DetailPanel", "Keyboard", "LanguageModels", "Ports", "TableOfContents", "Titles", "Validation"]), // layer: vertical
+        .target(name: "StickyNotes", dependencies: ["Canvas", "DetailPanel", "Keyboard", "Mentions", "Ports", "Selection", "TableOfContents", "Titles"]), // layer: vertical
+        .target(name: "Schemas", dependencies: ["Canvas", "DetailPanel", "Keyboard", "LanguageModels", "Ports", "Selection", "TableOfContents", "Titles", "Validation"]), // layer: vertical
         .target(name: "Subboards", dependencies: ["Boards", "Canvas", "DetailPanel", "Keyboard", "Mentions", "TableOfContents", "Titles"]), // layer: vertical
 
         .target(name: "ValidationDetails", dependencies: ["Canvas", "DetailPanel", "Validation"]), // layer: bridge
@@ -117,8 +117,8 @@ let package = Package(
         .executableTarget(name: "ValidationDetailsTests", dependencies: ["Canvas", "CanvasTesting", "DetailPanel", "TestKit", "Validation", "ValidationDetails"], path: "Tests/ValidationDetailsTests"), // layer: test
         .executableTarget(name: "ValidationContentsTests", dependencies: ["Canvas", "CanvasTesting", "TableOfContents", "TestKit", "Validation", "ValidationContents"], path: "Tests/ValidationContentsTests"), // layer: test
         .executableTarget(name: "ClipboardTests", dependencies: ["Canvas", "CanvasTesting", "Clipboard", "ContextMenus", "Geometry", "Keyboard", "Selection", "TestKit"], path: "Tests/ClipboardTests"), // layer: test
-        .executableTarget(name: "StickyNotesTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "Mentions", "Ports", "Selection", "StickyNotes", "TableOfContents", "TestKit", "Titles", "Topology", "Validation"], path: "Tests/StickyNotesTests"), // layer: test
-        .executableTarget(name: "LockingTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "ContextMenus", "Geometry", "Keyboard", "Locking", "Selection", "TestKit"], path: "Tests/LockingTests"), // layer: test
+        .executableTarget(name: "StickyNotesTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "Mentions", "Ports", "Selection", "StickyNotes", "TableOfContents", "TestKit", "Titles", "Topology"], path: "Tests/StickyNotesTests"), // layer: test
+        .executableTarget(name: "LockingTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "ContextMenus", "Geometry", "Keyboard", "Locking", "Selection", "TableOfContents", "TestKit"], path: "Tests/LockingTests"), // layer: test
         .executableTarget(name: "SchemasTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "CanvasUI", "DetailPanel", "Geometry", "Keyboard", "LanguageModels", "Ports", "Schemas", "Selection", "TableOfContents", "TestKit", "Titles", "Topology", "Validation"], path: "Tests/SchemasTests"), // layer: test
         .executableTarget(name: "LanguageModelsTests", dependencies: ["Canvas", "CanvasTesting", "LanguageModels", "TestKit"], path: "Tests/LanguageModelsTests"), // layer: test
         .executableTarget(name: "TitlesTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "CanvasUI", "DetailPanel", "Geometry", "Keyboard", "Selection", "TableOfContents", "TestKit", "Titles"], path: "Tests/TitlesTests"), // layer: test

@@ -21,6 +21,9 @@ public enum DetailStyle {
     static let tabPadding: CGFloat = 5
     static let tabCorner: CGFloat = 5
     static let tabFill = Color.primary.opacity(0.08)
+    /// A tab whose status lines warn or err: its worst tone's symbol before its title, and between them.
+    static let tabAlert = Font.system(size: 9)
+    static let tabAlertSpacing: CGFloat = 3
     static let sectionHeaderHeight: CGFloat = 20
     static let sectionTop: CGFloat = 10
     static let sectionBottom: CGFloat = 12

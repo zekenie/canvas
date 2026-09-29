@@ -181,6 +181,20 @@ import TestKit
         expectEqual(log.asked.count, asked, "with ⌘, never asked")
         h.release()
     },
+    test("the marquee held at the canvas's edge scrolls it, and grows to select what it brings into view") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
+        h.editor.viewportDidResize(to: CGSize(width: 1000, height: 800))
+        let near = h.add(Box(CGRect(x: 400, y: 600, width: 50, height: 50)))
+        let below = h.add(Box(CGRect(x: 400, y: 1000, width: 50, height: 50)))
+        h.press(at: CGPoint(x: 300, y: 500))
+        h.drag(to: CGPoint(x: 500, y: 810))                      // past the bottom edge
+        expectEqual(h.editor.selectedShapeIDs, [near])
+        h.wait(1000)
+        expect(h.editor.camera.origin.y > 250, "scrolled down: \(h.editor.camera)")
+        expectClose(try require(h.editor.brush?.maxY), h.editor.camera.toWorld(CGPoint(x: 500, y: 810)).y, within: 1e-9)   // under the pointer
+        expectEqual(h.editor.selectedShapeIDs, [near, below], "reached as the canvas scrolled, before the pointer moved")
+        h.release()
+    },
 ])
 
 /// A crosses (0, 0, 100, 100); B is (150, 20, 20, 20), inside the brush from (180, 70) to (50, 10).

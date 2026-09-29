@@ -43,6 +43,12 @@ public protocol Session: AnyObject {
     /// While it runs, plugins' outlines (`registrar.outlines`) aren't drawn; the hint still is. For
     /// a drag that reshapes a shape its outline would crowd (an arrow's handle).
     var hidesOutlines: Bool { get }
+    /// Whether the canvas scrolls while the pointer is at its edge, or past it (tldraw's edge
+    /// scrolling: a drag that moves shapes, a marquee, a connection being drawn), once the pointer is
+    /// past the drag threshold from the press. Such a session hears a drag at the pointer, where it
+    /// is, whenever the camera moves (a scroll, a pinch, the edge's own), so what it drags stays
+    /// under the pointer.
+    var scrollsAtEdges: Bool { get }
     func drag(_ pointer: Pointer, in editor: CanvasEditor)
     /// The button came up. The editor clears the session afterwards unless this started another.
     func end(_ pointer: Pointer, in editor: CanvasEditor)
@@ -57,6 +63,7 @@ public protocol Session: AnyObject {
 extension Session {
     public func cursor(in editor: CanvasEditor) -> CanvasCursor? { nil }
     public var hidesOutlines: Bool { false }
+    public var scrollsAtEdges: Bool { false }
     public func end(_ pointer: Pointer, in editor: CanvasEditor) {}
     public func cancel(in editor: CanvasEditor) -> Bool { false }
     public func modifiersChanged(_ modifiers: Modifiers, in editor: CanvasEditor) {}

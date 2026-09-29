@@ -1,4 +1,5 @@
 import AppKit
+import Canvas
 
 /// The app's menus, built in code (there's no nib): a document app's standard items, sent to the
 /// first responder, so the canvas, a panel's field, the board's window controller, the document,
@@ -70,13 +71,15 @@ public enum BoardMenus {
             item("Zoom In", NSSelectorFromString("zoomIn:"), "="),
             item("Zoom Out", NSSelectorFromString("zoomOut:"), "-"),
             item("Actual Size", NSSelectorFromString("zoomToActualSize:"), "0"),
+            item("Zoom to Fit", NSSelectorFromString("zoomToFit:"), "1", .shift),
+            item("Zoom to Selection", NSSelectorFromString("zoomToSelection:"), "2", .shift),
             .separator(),
             item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
         ])
         let go = menu("Go", [
             item("Back", #selector(BoardWindowController.goBack(_:)), "["),
             item("Enclosing Board", #selector(BoardWindowController.enclosingBoard(_:)), upArrow),
-            item("Open", #selector(BoardWindowController.openSelection(_:)), downArrow),
+            item("Open Selection", #selector(BoardWindowController.openSelection(_:)), downArrow),
         ])
         let windows = menu("Window", [
             item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
@@ -114,16 +117,46 @@ public enum BoardMenus {
     }
 }
 
-/// The menu bar: as any, but an item whose key is an arrow key (Go › Enclosing Board, ⌘↑, and Open,
-/// ⌘↓) leaves that key to the key window while it's disabled, as it is while text has the keyboard,
-/// so the text moves its caret with it. (AppKit's menus take a disabled item's key, and beep.)
+/// The menu bar: as any, but an item whose key is an arrow key (Go › Enclosing Board, ⌘↑, and Open
+/// Selection, ⌘↓) leaves that key to the key window while it's disabled, as it is while text has the keyboard,
+/// so the text moves its caret with it. (AppKit's menus take a disabled item's key, and beep.) And
+/// an item whose key types (View › Zoom to Fit, ⇧1, and Zoom to Selection, ⇧2: no ⌘, ⌃ or ⌥) never
+/// takes it from text, where it types ("!" on a US keyboard); elsewhere it answers the number row's
+/// key it names, whatever the layout types with it, and leaves it while it's disabled. A key held
+/// with fn (🌐) is AppKit's as ever, text or not: the items it adds for them (Edit › Emoji & Symbols,
+/// 🌐E; Start Dictation, 🌐D; View › Enter Full Screen, 🌐F) answer only as key equivalents.
 final class MenuBar: NSMenu {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.type == .keyDown, let item = arrowItem(for: event, in: self) {
             item.menu?.update()
             if !item.isEnabled { return false }
         }
+        if event.type == .keyDown, event.modifierFlags.isDisjoint(with: [.command, .control, .option, .function]) {
+            // Menus are asked on the main thread.
+            let window = event.window
+            let inText = MainActor.assumeIsolated { (window ?? NSApp.keyWindow)?.firstResponder is NSText }
+            if inText { return false }
+            if let digit = KeyStroke.numberRow[event.keyCode], let (menu, index) = typedItem(digit, event, in: self) {
+                menu.update()
+                guard let item = menu.item(at: index), item.isEnabled else { return false }
+                menu.performActionForItem(at: index)
+                return true
+            }
+        }
         return super.performKeyEquivalent(with: event)
+    }
+
+    /// The item, in `menu` or a menu under it, whose key equivalent is `digit` with `event`'s ⇧ (or
+    /// none), and where it is.
+    private func typedItem(_ digit: Character, _ event: NSEvent, in menu: NSMenu) -> (NSMenu, Int)? {
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        for (index, item) in menu.items.enumerated() {
+            if item.keyEquivalent == String(digit), item.keyEquivalentModifierMask.intersection([.command, .shift, .option, .control]) == modifiers {
+                return (menu, index)
+            }
+            if let submenu = item.submenu, let found = typedItem(digit, event, in: submenu) { return found }
+        }
+        return nil
     }
 
     private static let arrows: Set<String> = Set([NSUpArrowFunctionKey, NSDownArrowFunctionKey, NSLeftArrowFunctionKey, NSRightArrowFunctionKey]

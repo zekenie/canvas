@@ -80,8 +80,20 @@ public struct CanvasCommand: Hashable, Sendable, ExpressibleByStringLiteral, Cus
     /// Edit › Undo and Redo: the core's own (`editor.undo()`, `editor.redo()`).
     public static let undo: CanvasCommand = "undo"
     public static let redo: CanvasCommand = "redo"
-    /// Go › Open (⌘↓): the only selected shape's board, or whatever opening that shape does.
+    /// Go › Open Selection (⌘↓): the only selected shape's board, or whatever opening that shape does.
     public static let openSelection: CanvasCommand = "openSelection"
     /// Go › Enclosing Board (⌘↑): the board holding the shown board's owner.
     public static let enclosingBoard: CanvasCommand = "enclosingBoard"
+    /// View › Zoom In, Zoom Out and Actual Size: the core's own, the camera to the next of the zoom
+    /// stops (`Camera.zoomStops`) in or out, or to 100%, around the view's center.
+    public static let zoomIn: CanvasCommand = "zoomIn"
+    public static let zoomOut: CanvasCommand = "zoomOut"
+    public static let zoomToActualSize: CanvasCommand = "zoomToActualSize"
+    /// View › Zoom to Fit: the core's own, every shape of the board shown in view.
+    public static let zoomToFit: CanvasCommand = "zoomToFit"
+    /// View › Zoom to Selection: what's selected in view, for the plugin that keeps the selection.
+    public static let zoomToSelection: CanvasCommand = "zoomToSelection"
+    /// A two-finger double-tap on a trackpad (smart zoom), for a plugin to claim: in the shipped app,
+    /// Selection's, which brings the shape under the pointer into view, and again goes back.
+    public static let smartMagnify: CanvasCommand = "smartMagnify"
 }

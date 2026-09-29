@@ -58,6 +58,9 @@ public final class UndoHistory {
         case run(AnyHashable)
         /// One commit at no action's depth: closes once services have heard it.
         case single
+        /// A key's action committed it, and the key may be held: its repeats are part of it, until
+        /// it's let go or anything else happens.
+        case held(KeyStroke)
     }
 
     private struct OpenStep {
@@ -88,6 +91,8 @@ public final class UndoHistory {
     private var isEditing = false
     /// Editing began inside the action under way: when it ends, its step goes on as the editing one.
     private var editingBeganInAction = false
+    /// The key the canvas last had a stroke of, until it's let go (`keyReleased`).
+    private var keyDown: KeyStroke?
 
     init() {}
 
@@ -144,6 +149,14 @@ public final class UndoHistory {
     /// doesn't split the press.
     @_spi(Host) public var isPressing: Bool { isInPress && open?.builder.isHolding == true }
 
+    /// A key is held down whose step is open for its repeats, with changes (a held arrow key's
+    /// nudges): an autosave that can wait, waits, as for a press, so it doesn't split them. The step
+    /// closes as the key is let go, and the autosave runs then.
+    @_spi(Host) public var isKeyHolding: Bool {
+        guard let keyDown, let open, case .held(let key) = open.holder, open.builder.isHolding else { return false }
+        return Self.isSameKey(keyDown, key)
+    }
+
     /// A press is held, changes or not: from the press to its release, whatever commits is part of
     /// its step, whoever commits it. What changes the board for someone else (the command line's
     /// `draw`) waits for the release, so that its change is a step of its own.
@@ -161,11 +174,13 @@ public final class UndoHistory {
     }
 
     /// A new gesture began where the editor can't see it (a click in a panel, the keyboard moving to
-    /// another field): ends a run of commits under one coalescing key, so the next is a step of its
-    /// own. Never ends a press's, an action's or an editing session's step.
+    /// another field): ends a run of commits under one coalescing key, or a held key's, so the next
+    /// is a step of its own. Never ends a press's, an action's or an editing session's step.
     public func seal() {
-        guard depth == 0, case .run? = open?.holder else { return }
-        close()
+        switch open?.holder {
+        case .run?, .held?: if depth == 0 { close() }
+        default: break
+        }
     }
 
     /// A save point: closes the open step, whatever holds it. Later commits of the same press, run or
@@ -191,13 +206,43 @@ public final class UndoHistory {
         groupNames.append(name)
     }
 
-    func actionEnded() {
+    /// A key pressed on the canvas: an action, whose step, if it commits something, stays open for
+    /// the key's repeats (a held arrow key's nudges are one step), which go on in it; its release
+    /// (`keyReleased`), or anything else, closes it.
+    func key<T>(_ stroke: KeyStroke, _ body: () throws -> T) rethrows -> T {
+        let key = KeyStroke(stroke.characters, modifiers: stroke.modifiers, numberRowKey: stroke.numberRowKey)
+        keyDown = key
+        if stroke.isRepeat, depth == 0, open?.holder == .held(key) {
+            open?.holder = .action
+            depth += 1
+            groupNames.append(nil)
+        } else {
+            actionBegan()
+        }
+        defer { actionEnded(holding: key) }
+        return try body()
+    }
+
+    /// A key let go on the canvas (nil: every key, as the canvas lost the keyboard): the step its
+    /// strokes held open for their repeats closes. Keys are matched by what they type, whatever the
+    /// modifiers (⇧ may come up before the arrow it was held with).
+    func keyReleased(_ stroke: KeyStroke?) {
+        if let keyDown, stroke.map({ Self.isSameKey($0, keyDown) }) ?? true { self.keyDown = nil }
+        guard depth == 0, case .held(let key)? = open?.holder, stroke.map({ Self.isSameKey($0, key) }) ?? true else { return }
+        close()
+    }
+
+    private static func isSameKey(_ a: KeyStroke, _ b: KeyStroke) -> Bool { a.characters.lowercased() == b.characters.lowercased() }
+
+    func actionEnded(holding key: KeyStroke? = nil) {
         precondition(depth > 0, "an action ended that didn't begin")
         depth -= 1
         groupNames.removeLast()
         guard depth == 0 else { return }
         if editingBeganInAction, isEditing {
             open?.holder = .editing
+        } else if let key, open?.holder == .action {
+            open?.holder = .held(key)
         } else if !isEditingStepOpen {
             close()
         }
@@ -318,12 +363,24 @@ public final class UndoHistory {
         didChange?(.undid)
     }
 
+    /// Puts back what `snapshots()` took, as undoing a step does: for a press whose step comes to
+    /// nothing, though it changed what the participants keep (a shape placed and taken away again
+    /// with Escape, which selected it meanwhile).
+    func restore(_ snapshots: [ObjectIdentifier: any Sendable]) {
+        guard let editor else { return }
+        for participant in participants {
+            if let snapshot = snapshots[ObjectIdentifier(participant)] { participant.restoreUndoSnapshot(snapshot, in: editor) }
+        }
+    }
+
     func pushRedone(_ step: Step) {
         undos.append(step)
         didChange?(.redid)
     }
 
-    private func snapshots() -> [ObjectIdentifier: any Sendable] {
+    /// What each participant keeps now (the selection), by participant: what undoing a step that
+    /// opened now would restore.
+    func snapshots() -> [ObjectIdentifier: any Sendable] {
         guard let editor, !participants.isEmpty else { return [:] }
         var snapshots: [ObjectIdentifier: any Sendable] = [:]
         for participant in participants { snapshots[ObjectIdentifier(participant)] = participant.undoSnapshot(in: editor) }

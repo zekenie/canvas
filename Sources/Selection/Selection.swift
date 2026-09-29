@@ -1,5 +1,6 @@
 import Canvas
 import CoreGraphics
+import Geometry
 import Keyboard
 
 /// Selecting shapes, as a plugin: the selection itself (`editor.selection`,
@@ -88,13 +89,15 @@ public struct SelectionPlugin: CanvasPlugin {
         registrar.defaultTool(.select)
         registrar.outlines { $0.selectionOutlines }
         registrar.overlay(HandlesOverlay())
-        // Delete and Forward Delete, and Edit › Delete, delete the selection; ⌘A and Edit › Select
-        // All select everything; ⌘[ and Go › Back go back to what was selected before, when there's
+        // Delete and Forward Delete, and Edit › Delete, delete the selection, while there is one (a
+        // locked one too, which shakes); ⌘A and Edit › Select All select everything, while the
+        // board has shapes; ⌘[ and Go › Back go back to what was selected before, when there's
         // somewhere to go; ⌘↓ opens the only selected shape, when it can be opened and isn't being
         // edited (⌘↓ is then the text's), and Return (and Enter) does too, but always takes the
-        // key, as it did when it only edited.
-        registrar.command(.delete, shortcuts: [.delete, .deleteForward]) { $0.deleteSelection() }
-        registrar.command(.selectAll, shortcuts: [KeyChord("a", .command)]) { $0.selectAll() }
+        // key, as it did when it only edited; ⇧2 and View › Zoom to Selection bring the selection
+        // into view (tldraw's key), and a trackpad's smart zoom the shape under the pointer.
+        registrar.command(.delete, shortcuts: [.delete, .deleteForward], isEnabled: { !$0.selectedShapeIDs.isEmpty }) { $0.deleteSelection() }
+        registrar.command(.selectAll, shortcuts: [KeyChord("a", .command)], isEnabled: { !$0.document.shapes.isEmpty }) { $0.selectAll() }
         registrar.command(.goBack, shortcuts: [KeyChord("[", .command)], isEnabled: { $0.canGoBack && $0.session == nil }) { $0.goBack() }
         registrar.command(.openSelection, shortcuts: [KeyChord(KeyChord.downArrow.key, .command)],
                           isEnabled: { editor in
@@ -102,5 +105,16 @@ public struct SelectionPlugin: CanvasPlugin {
                           }) { $0.openSelection() }
         registrar.shortcut(.return, "Open Selection") { $0.perform(.openSelection) }
         registrar.shortcut(.enter, "Open Selection") { $0.perform(.openSelection) }
+        registrar.command(.zoomToSelection, shortcuts: [KeyChord("2", .shift)],
+                          isEnabled: { !$0.selectedShapeIDs.isEmpty && !$0.unobscuredViewport.isEmpty }) { $0.reveal($0.selectedShapeIDs) }
+        registrar.command(.smartMagnify) { $0.smartMagnify() }
+        // ← → ↑ ↓ nudge the selection a world unit, and ten with ⇧, again and again while held (one
+        // undo step), while nothing's under way or being edited; with nothing selected they pass.
+        for (arrow, direction) in SelectionStyle.nudges {
+            registrar.shortcut(arrow, "Nudge", when: { $0.canNudge }, repeats: true) { $0.nudgeSelection(by: direction * SelectionStyle.nudge) }
+            registrar.shortcut(KeyChord(arrow.key, .shift), "Nudge", when: { $0.canNudge }, repeats: true) {
+                $0.nudgeSelection(by: direction * SelectionStyle.shiftNudge)
+            }
+        }
     }
 }

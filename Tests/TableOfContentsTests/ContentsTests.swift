@@ -49,6 +49,22 @@ import TestKit
         expectEqual(bare.text, "")
         expect(!bare.isPlaceholder, "no placeholder to show")
     },
+    test("a row's tooltip is its text, for a row cut short, to 200 characters cut between words; a placeholder, or no text, has none") {
+        let long = "TODO: " + String(repeating: "and then something else ", count: 8)
+        expectEqual(ContentsLabel(long).help, long.split(whereSeparator: \.isWhitespace).joined(separator: " "), "on one line, as the row reads")
+        let page = String(repeating: "a pasted paragraph goes on\n", count: 40)
+        let folded = page.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        let help = try require(ContentsLabel(page).help)
+        expect(help.hasSuffix("…") && help.count <= 201, "cut: \(help.count)")
+        let kept = String(help.dropLast())
+        expect(folded.hasPrefix(kept + " "), "between words, the last one whole: \(kept.suffix(20))")
+        expect(kept.count > 180, "as much as fits")
+        let exact = String(repeating: "abcd ", count: 40) + "end"             // a space right at the 200th character
+        expectEqual(ContentsLabel(exact).help, String(repeating: "abcd ", count: 40).dropLast() + "…")
+        expectEqual(ContentsLabel("  Buy\nmilk ", placeholder: "Empty").help, "Buy milk")
+        expectEqual(ContentsLabel(" ", placeholder: "Empty").help, nil)
+        expectEqual(ContentsLabel("").help, nil)
+    },
     test("`when` leaves shapes out of the list, and puts them back when it lets them in") {
         let editor = try contentsEditor()
         editor.add(Widget(name: "Shown"))

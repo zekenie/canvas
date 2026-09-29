@@ -120,12 +120,12 @@ public struct SchemaValidator: Sendable {
         let node = nodes[index]
         // What the place is called, worked out only when there's something to say about it.
         func name() -> Naming { Naming(path: path, title: title(of: node)) }
-        if node.allowsNothing { return found.report(path, "false", "\(name()) isn't allowed here.") }
+        if node.allowsNothing { return found.report(path, "false", "\(name()) isn’t allowed here.") }
         if let unresolved = node.unresolvedRef {
-            return found.report(path, "$ref", "\(name()) can't be checked: its schema refers to \(unresolved), which isn't in it.")
+            return found.report(path, "$ref", "\(name()) can’t be checked: its schema refers to \(unresolved), which isn’t in it.")
         }
         if node.loops {
-            return found.report(path, "$ref", "\(name()) can't be checked: its schema refers back to itself without end.")
+            return found.report(path, "$ref", "\(name()) can’t be checked: its schema refers back to itself without end.")
         }
         if let ref = node.ref { check(value, against: ref, at: &path, into: &found) }
         // A value of the wrong type isn't what the rest describes: that's all there is to say.
@@ -152,14 +152,14 @@ public struct SchemaValidator: Sendable {
         }
         for index in node.allOf { check(value, against: index, at: &path, into: &found) }
         if !node.anyOf.isEmpty, !node.anyOf.contains(where: { holds(value, against: $0, at: &path) }) {
-            found.report(path, "anyOf", "\(name()) doesn't fit any of its forms.")
+            found.report(path, "anyOf", "\(name()) doesn’t fit any of its forms.")
         }
         if !node.oneOf.isEmpty {
             let fits = node.oneOf.count { holds(value, against: $0, at: &path) }
-            if fits != 1 { found.report(path, "oneOf", fits == 0 ? "\(name()) doesn't fit any of its forms." : "\(name()) fits more than one of its forms.") }
+            if fits != 1 { found.report(path, "oneOf", fits == 0 ? "\(name()) doesn’t fit any of its forms." : "\(name()) fits more than one of its forms.") }
         }
         if let not = node.not, holds(value, against: not, at: &path) {
-            found.report(path, "not", "\(name()) fits a form it shouldn't.")
+            found.report(path, "not", "\(name()) fits a form it shouldn’t.")
         }
         if let condition = node.condition {
             let branch = holds(value, against: condition, at: &path) ? node.then : node.else
@@ -205,15 +205,15 @@ public struct SchemaValidator: Sendable {
             // Code points, as JSON Schema counts a string's length.
             let length = string.unicodeScalars.count
             if let minimum = node.minLength, length < minimum {
-                found.report(path, "minLength", length == 0 ? "\(name()) is empty." : "\(name()) is \(Self.length(of: string, length)), and should be at least \(minimum).")
+                found.report(path, "minLength", length == 0 ? "\(name()) is empty." : "\(name()) \(Self.length(of: string, length)), and should be at least \(minimum).")
             }
             if let maximum = node.maxLength, length > maximum {
-                found.report(path, "maxLength", "\(name()) is \(Self.length(of: string, length)), and should be at most \(maximum).")
+                found.report(path, "maxLength", "\(name()) \(Self.length(of: string, length)), and should be at most \(maximum).")
             }
         }
         if let pattern = node.pattern {
             guard let regex = pattern.regex else {
-                return found.report(path, "pattern", "\(name()) can't be checked: its pattern \(Self.quoted(pattern.source)) isn't a regular expression ICU can read.")
+                return found.report(path, "pattern", "\(name()) can’t be checked: its pattern \(Self.quoted(pattern.source)) isn’t a regular expression ICU can read.")
             }
             if regex.firstMatch(in: string, range: NSRange(string.startIndex..., in: string)) == nil {
                 found.report(path, "pattern", "\(name()) should match \(pattern.source).")
@@ -298,14 +298,14 @@ public struct SchemaValidator: Sendable {
             let broken = node.patternProperties.first { $0.regex == nil }
             if let broken {
                 found.report(path, "patternProperties",
-                             "\(name()) can't be checked: its pattern \(Self.quoted(broken.source)) for properties isn't a regular expression ICU can read.")
+                             "\(name()) can’t be checked: its pattern \(Self.quoted(broken.source)) for properties isn’t a regular expression ICU can read.")
             }
             for member in members.keys.sorted() {
                 let value = members[member]!
                 path.append(.member(member))
                 defer { path.removeLast() }
                 if let names = node.propertyNames, !holds(.string(member), against: names, at: &path) {
-                    found.report(path, "propertyNames", "\(member) isn't a name \(objectName()) allows.")
+                    found.report(path, "propertyNames", "\(member) isn’t a name \(objectName()) allows.")
                 }
                 var matched = broken != nil || Self.member(member, of: node.listed) != nil
                 for (_, regex, schema) in node.patternProperties {
@@ -315,7 +315,7 @@ public struct SchemaValidator: Sendable {
                 }
                 if !matched, let additional = node.additionalProperties {
                     if nodes[additional].allowsNothing {
-                        found.report(path, "additionalProperties", "\(Naming(path: path, title: nil)) isn't one of \(objectName())'s properties.")
+                        found.report(path, "additionalProperties", "\(Naming(path: path, title: nil)) isn’t one of \(objectName())’s properties.")
                     } else {
                         check(value, against: additional, at: &path, into: &found)
                     }
@@ -422,14 +422,14 @@ public struct SchemaValidator: Sendable {
         "\(count) \(count == 1 ? singular : plural ?? "\(singular)s")"
     }
 
-    /// A string's length, in the code points JSON Schema counts: "95 characters long". Where the
-    /// string shows fewer characters than that (an emoji with a skin tone is two code points, an
-    /// accent may be one of its own), both, so the count a person sees makes sense of the bound:
-    /// "82 characters long as JSON Schema counts them (41 as shown)".
+    /// What a string's length is, in the code points JSON Schema counts: "is 95 characters long".
+    /// Where the string shows fewer characters than that (an emoji with a skin tone is two code
+    /// points, an accent may be one of its own), both, so the count a person sees makes sense of
+    /// the bound, without naming the standard that counts: "counts as 82 characters (41 shown)".
     private static func length(of string: String, _ codePoints: Int) -> String {
         let shown = string.count
-        let long = "\(count(codePoints, "character")) long"
-        return shown == codePoints ? long : "\(long) as JSON Schema counts them (\(shown) as shown)"
+        let counted = count(codePoints, "character")
+        return shown == codePoints ? "is \(counted) long" : "counts as \(counted) (\(shown) shown)"
     }
 
     /// "a, b or c"; "a, b and c" when `or` is false.

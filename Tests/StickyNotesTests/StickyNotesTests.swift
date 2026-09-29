@@ -13,11 +13,10 @@ import StickyNotes
 import TestKit
 import Titles
 import Topology
-import Validation
 
 /// The note, every plugin it opts into, and Adornments, which lays out what Titles shows on it.
 @MainActor var notePlugins: [any CanvasPlugin] {
-    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), ValidationPlugin(), AdornmentsPlugin(), DetailPanelPlugin(),
+    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), AdornmentsPlugin(), DetailPanelPlugin(),
      ContextMenusPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin()]
 }
 
@@ -29,32 +28,29 @@ import Validation
         expect(registry.definition(for: StickyNote.kind) is any Editable)
         expectEqual(registry.contributions(to: DoubleClickPlacement.self).map(\.value.kind), [StickyNote.kind])
     },
-    test("can't be installed without the keyboard, selection, validation, titles, ports and mentions plugins it opts into, the panel and the table of contents") {
+    test("can't be installed without the keyboard, selection, titles, ports and mentions plugins it opts into, the panel and the table of contents") {
         expectThrows(RegistryError.ownerNotInstalled(point: "KeyboardShortcuts", owner: .keyboard, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [StickyNotesPlugin(), ValidationPlugin(), DetailPanelPlugin()])
+            _ = try Registry(plugins: [StickyNotesPlugin(), DetailPanelPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "DoubleClickPlacement", owner: .selection, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), StickyNotesPlugin(), ValidationPlugin(), DetailPanelPlugin()])
-        }
-        expectThrows(RegistryError.ownerNotInstalled(point: "ValidationRules", owner: .validation, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), StickyNotesPlugin(), DetailPanelPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeTitles", owner: .titles, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), DetailPanelPlugin(), TableOfContentsPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), DetailPanelPlugin(), TableOfContentsPlugin()])
         }
         // A title names the note's row, so titles need the table of contents too.
         expectThrows(RegistryError.ownerNotInstalled(point: "ContentsTitles", owner: .tableOfContents, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), DetailPanelPlugin(), TitlesPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), DetailPanelPlugin(), TitlesPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeDetails", owner: .detailPanel, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), TableOfContentsPlugin(), TitlesPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), TableOfContentsPlugin(), TitlesPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapePorts", owner: .ports, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ValidationPlugin(), DetailPanelPlugin(),
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), DetailPanelPlugin(),
                                        TableOfContentsPlugin(), TitlesPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "MentionTexts", owner: .mentions, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), ValidationPlugin(), DetailPanelPlugin(),
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), DetailPanelPlugin(),
                                        TableOfContentsPlugin(), TitlesPlugin(), PortsPlugin()])
         }
     },
@@ -78,15 +74,6 @@ import Validation
         expectEqual(layout.header(as: TitleHeader.self)?.title, "", "an untitled note's header, where it's named")
         expectEqual(layout.tabs, [])
     },
-    test("a note with no text but a title isn't empty; one with neither warns") {
-        let editor = CanvasEditor(registry: try Registry(plugins: notePlugins), scheduler: ManualScheduler())
-        var titled = ShapeRecord(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: " "))
-        titled[TitleProperty.self] = "Groceries"
-        let empty = ShapeRecord(StickyNote(frame: CGRect(x: 300, y: 0, width: 200, height: 200), text: " "))
-        editor.transact { $0.insert(titled); $0.insert(empty) }
-        expect(editor.validation?.result(for: titled.id) == nil)
-        expectEqual(editor.validation?.result(for: empty.id)?.worst, .warning)
-    },
     test("N then a click places a note centered there, editing, and back in select") {
         let h = try EditorHarness(plugins: notePlugins)
         h.key("n")
@@ -96,19 +83,123 @@ import Validation
         expectEqual(h.editor.editingShapeID, note.id)
         expectEqual(h.editor.currentToolID, .select)
     },
-    test("an empty note warns; typing into its editor clears the warning; Escape ends editing") {
+    test("typing into a new note's editor writes its text; Escape ends editing") {
         let h = try EditorHarness(plugins: notePlugins)
         h.press(at: CGPoint(x: 300, y: 300), clickCount: 2); h.release()
         let id = try require(h.editor.editingShapeID)
-        expectEqual(h.editor.validation?.result(for: id)?.worst, .warning)
-        expectEqual(h.editor.validation?.result(for: id)?.isValid, true)
         let editing = try require(h.editor.makeEditingView())
         let textView = try require(editing.firstResponder as? NSTextView)
         textView.insertText("Hello", replacementRange: NSRange(location: 0, length: 0))
         expectEqual(h.editor.document[id]?.typed(as: StickyNote.self)?.props.text, "Hello")
-        expect(h.editor.validation?.result(for: id) == nil)
         textView.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
         expectEqual(h.editor.editingShapeID, nil)
+    },
+    test("a note grows with its text as it's typed, in the same step, and shrinks back, no shorter than a new one") {
+        let h = try EditorHarness(plugins: notePlugins)
+        let id = h.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200)))
+        h.editor.replaceDocument(with: h.editor.document)
+        h.editor.selection = id
+        expect(h.key("\r"))
+        let editing = try require(h.editor.makeEditingView())
+        let textView = try require(editing.firstResponder as? NSTextView)
+        @MainActor func height() -> CGFloat? { h.editor.document[id]?.box?.height }
+        textView.insertText("1\n2\n3\n4\n5\n6\n7\n8", replacementRange: NSRange(location: 0, length: 0))
+        expectEqual(height(), 200, "eight lines fit a new note")
+        textView.insertText("\n9\n10\n11\n12", replacementRange: NSRange(location: textView.string.count, length: 0))
+        // Twelve lines of 19 points, half a point spare, and 16 above and below.
+        expectEqual(height(), 12 * 19 + 1 + 32)
+        expectEqual(h.editor.document[id]?.box?.origin, .zero, "from its top")
+        textView.insertText("\n", replacementRange: NSRange(location: textView.string.count, length: 0))
+        expectEqual(height(), 13 * 19 + 1 + 32, "a last Return: room for the caret's line")
+        // The editor over it grows with it, as the canvas lays it out.
+        editing.view.frame = CGRect(x: 0, y: 0, width: 200, height: 13 * 19 + 33)
+        editing.view.bounds = CGRect(x: 0, y: 0, width: 200, height: 13 * 19 + 33)
+        expectEqual(textView.frame.height, 13 * 19 + 33)
+        textView.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
+        expectEqual(h.editor.undoHistory.undoName, "Typing", "growing is part of the typing's step")
+        h.editor.undo()
+        expectEqual(height(), 200)
+        expectEqual(h.editor.document[id]?.typed(as: StickyNote.self)?.props.text, "")
+        h.editor.redo()
+        expectEqual(height(), 13 * 19 + 33)
+        expect(h.key("\r"))
+        let again = try require(h.editor.makeEditingView()?.firstResponder as? NSTextView)
+        again.selectAll(nil)
+        again.insertText("Short", replacementRange: again.selectedRange())
+        expectEqual(height(), 200, "back to a new note's")
+    },
+    test("a note made or given text from properties (the command line's draw) is as tall as its text; a board read keeps what it saved") {
+        let registry = try Registry(plugins: notePlugins)
+        let long = (1...12).map(String.init).joined(separator: "\n")
+        let made = try registry.shape(StickyNote.kind, properties: ["frame": [[40, 60], [200, 200]], "text": .string(long)])
+        expectEqual(made.box, CGRect(x: 40, y: 60, width: 200, height: 12 * 19 + 33))
+        let short = try registry.shape(made, setting: ["text": "Hi"])
+        expectEqual(short.box?.height, 200)
+        let wide = try registry.shape(StickyNote.kind, properties: ["frame": [[0, 0], [400, 200]], "text": .string(String(repeating: "word ", count: 60))])
+        let narrow = try registry.shape(StickyNote.kind, properties: ["frame": [[0, 0], [200, 200]], "text": .string(String(repeating: "word ", count: 60))])
+        expect(try require(narrow.box?.height) > require(wide.box?.height), "wrapped at its width")
+        let codec = BoardCodec(registry: registry)
+        var tall = ShapeRecord(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: MentionText(plain: long)))
+        tall.props.frame.size.height = 200
+        let read = try codec.decode(codec.encode(CanvasDocument(shapes: [AnyShapeRecord(tall)]))).document
+        expectEqual(read.shapes.first?.box?.height, 200, "read as saved: nothing a person did")
+    },
+    test("a note too short for its text (saved before notes grew, or drawn with a size) grows to it as editing begins, as part of the editing's step; never shrinks") {
+        let h = try EditorHarness(plugins: notePlugins)
+        let long = (1...12).map(String.init).joined(separator: "\n")
+        let id = h.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: MentionText(plain: long)))
+        let tall = h.add(StickyNote(frame: CGRect(x: 300, y: 0, width: 200, height: 400), text: MentionText(plain: "Hi")))
+        h.editor.replaceDocument(with: h.editor.document)
+        @MainActor func height(_ id: ShapeID) -> CGFloat? { h.editor.document[id]?.box?.height }
+        expectEqual(height(id), 200, "cut off")
+        h.editor.selection = id
+        expect(h.key("\r"))
+        let editing = try require(h.editor.makeEditingView())
+        expectEqual(height(id), 12 * 19 + 33, "all of it, before anything's typed")
+        let textView = try require(editing.firstResponder as? NSTextView)
+        expectEqual(textView.frame.height, 12 * 19 + 33)
+        textView.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
+        expectEqual(h.editor.undoHistory.undoName, "Typing")
+        h.editor.undo()
+        expectEqual(height(id), 200)
+        h.editor.selection = tall
+        expect(h.key("\r"))
+        _ = try require(h.editor.makeEditingView())
+        expectEqual(height(tall), 400, "a note drawn taller keeps its height until it's typed into")
+        h.editor.endEditing()
+        expect(!h.editor.canUndo, "a note that fits wrote nothing")
+    },
+    test("a note fitted to its text draws its last line") {
+        let editor = CanvasEditor(registry: try Registry(plugins: notePlugins), scheduler: ManualScheduler())
+        let long = (1...12).map { "Line \($0)" }.joined(separator: "\n")
+        let fitted = try editor.registry.shape(StickyNote.kind, properties: ["frame": [[0, 0], [200, 200]], "text": .string(long)])
+        editor.transact { $0.insert(fitted) }
+        let rep = renderBitmap(editor, size: CGSize(width: 220, height: 300))
+        // The twelfth line: 16 + 11 × 19 down, 19 tall; its text is dark on the note's yellow.
+        let band = CGRect(x: 16, y: 16 + 11 * 19, width: 60, height: 19)
+        var ink = 0
+        for y in stride(from: band.minY, to: band.maxY, by: 1) {
+            for x in stride(from: band.minX, to: band.maxX, by: 1) where pixel(rep, at: CGPoint(x: x, y: y))[0] < 120 { ink += 1 }
+        }
+        expect(ink > 20, "the last line's text: \(ink) dark pixels")
+    },
+    test("⌘↩ ends editing a note, keeping what's typed, as it's done in the panel's boxes; Return is a new line") {
+        let h = try EditorHarness(plugins: notePlugins)
+        h.press(at: CGPoint(x: 300, y: 300), clickCount: 2); h.release()
+        let id = try require(h.editor.editingShapeID)
+        let textView = try require(h.editor.makeEditingView()?.firstResponder as? NSTextView)
+        @MainActor func key(_ modifiers: NSEvent.ModifierFlags) {
+            textView.keyDown(with: NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 1, windowNumber: 0, context: nil,
+                                                    characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36)!)
+        }
+        textView.insertText("Milk", replacementRange: NSRange(location: 0, length: 0))
+        key([])
+        expectEqual(h.editor.editingShapeID, id, "Return is the text's")
+        textView.insertText("Bread", replacementRange: NSRange(location: textView.string.count, length: 0))
+        key(.command)
+        expectEqual(h.editor.editingShapeID, nil)
+        expectEqual(h.editor.document[id]?.typed(as: StickyNote.self)?.props.text, "Milk\nBread")
+        expectEqual(h.editor.undoHistory.undoName, "Add Note", "one step, placing and typing")
     },
     test("typing into a note's editor is one undo step; placing the note and typing into it are one too") {
         let h = try EditorHarness(plugins: notePlugins)
@@ -151,26 +242,5 @@ import Validation
         let titled = renderBitmap(editor, size: CGSize(width: 300, height: 300))
         expect(changedPixels(untitled, titled, in: CGRect(x: 40, y: 35, width: 60, height: 12)) > 300, "the pill, above the note")
         expectEqual(changedPixels(untitled, titled, in: CGRect(x: 40, y: 60, width: 200, height: 200)), 0, "nothing in the note")
-    },
-    test("a note with only a title isn't empty") {
-        let editor = CanvasEditor(registry: try Registry(plugins: notePlugins), scheduler: ManualScheduler())
-        var named = ShapeRecord(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200)))
-        named[TitleProperty.self] = "Ideas"
-        var blank = ShapeRecord(StickyNote(frame: CGRect(x: 300, y: 0, width: 200, height: 200)))
-        blank[TitleProperty.self] = "  "
-        editor.transact { $0.insert(named); $0.insert(blank) }
-        expect(editor.validation?.result(for: named.id) == nil)
-        expectEqual(editor.validation?.result(for: blank.id)?.issues, [.warning("This note is empty.")])
-    },
-    test("a title longer than 80 characters is a warning on the title, from its schema; one of 80 isn't") {
-        let editor = CanvasEditor(registry: try Registry(plugins: notePlugins), scheduler: ManualScheduler())
-        var note = ShapeRecord(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "Buy milk"))
-        note[TitleProperty.self] = String(repeating: "a", count: 80)
-        editor.transact { $0.insert(note) }
-        expect(editor.validation?.result(for: note.id) == nil)
-        editor.transact { $0.update(note.id) { $0[TitleProperty.self] = String(repeating: "a", count: 81) } }
-        expectEqual(editor.validation?.result(for: note.id)?.issues,
-                    [.warning("Title is 81 characters long, and should be at most 80.", field: "title")])
-        expectEqual(editor.validation?.result(for: note.id)?.isValid, true, "a warning, not an error")
     },
 ])

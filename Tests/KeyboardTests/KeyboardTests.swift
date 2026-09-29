@@ -1,4 +1,4 @@
-import Canvas
+@_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
 import Keyboard
@@ -118,6 +118,63 @@ import TestKit
         expect(h.key("."), "⌘. is ⇧⌘; on a French keyboard")
         expectEqual(h.editor.currentToolID, .hand)
     },
+    test("a digit's chord is its key on the number row, whatever the layout types with it: ⇧1 is the key that types \"!\" on a US keyboard") {
+        let log = KeyLog()
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), Contributor(id: "keys") { r in
+            r.shortcut(KeyChord("2", .shift), "Two") { _ in log.events.append("⇧2") }
+            r.shortcut("!", "Bang") { _ in log.events.append("!") }
+        }])
+        h.hold(.shift)
+        expect(h.editor.keyDown(KeyStroke("@", modifiers: .shift, numberRowKey: "2")), "US: ⇧2 types @")
+        expect(h.editor.keyDown(KeyStroke("2", modifiers: .shift, numberRowKey: "2")), "French: ⇧ and the key types 2")
+        expect(h.editor.keyDown(KeyStroke("!", modifiers: .shift, numberRowKey: "1")), "a chord of what it types comes first")
+        expect(!h.editor.keyDown(KeyStroke("@", modifiers: .shift)), "@ from another key isn't ⇧2")
+        h.hold([])
+        expect(!h.editor.keyDown(KeyStroke("é", numberRowKey: "2")), "the key alone isn't ⇧2")
+        expectEqual(log.events, ["⇧2", "⇧2", "!"])
+    },
+    test("Keyboard gives the core's zoom commands their keys: ⌘= and ⌘- (held, again and again), ⌘0, and ⇧1 for Zoom to Fit") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), FixturesPlugin()])
+        h.editor.viewportDidResize(to: CGSize(width: 800, height: 600))
+        h.hold(.command)
+        expect(h.key("="))
+        expectEqual(h.editor.zoomPercentage, 200)
+        expect(h.key("=", isRepeat: true))
+        expectEqual(h.editor.zoomPercentage, 400)
+        expect(h.key("-"))
+        expectEqual(h.editor.zoomPercentage, 200)
+        expect(h.key("0"))
+        expectEqual(h.editor.zoomPercentage, 100)
+        expect(!h.key("0"), "at 100%, ⌘0 passes")
+        h.hold(.shift)
+        expect(!h.editor.keyDown(KeyStroke("!", modifiers: .shift, numberRowKey: "1")), "nothing to fit: ⇧1 passes")
+        h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
+        expect(h.editor.keyDown(KeyStroke("!", modifiers: .shift, numberRowKey: "1")))
+        expectEqual(h.editor.zoomPercentage, 536, "600 − 64 points for 100")
+    },
+    test("Space held holds the hand, whatever the tool: its repeats are taken and do nothing; its release, or every key's, lets go") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), CardsPlugin(), cardKey])
+        h.key("c")
+        expect(h.key(" "))
+        expect(h.editor.isHandHeld)
+        expectEqual(h.editor.currentToolID, ToolID(placing: Card.kind), "the tool stays")
+        expect(h.key(" ", isRepeat: true), "kept, so AppKit doesn't beep")
+        h.press(at: CGPoint(x: 100, y: 100)); h.drag(to: CGPoint(x: 130, y: 100)); h.release(after: 100)
+        expectEqual(h.editor.document.shapes, [], "it panned")
+        h.editor.keyUp(KeyStroke(" "))
+        expect(!h.editor.isHandHeld)
+        h.hold(.shift)
+        expect(h.key(" "), "with ⇧ too")
+        h.hold([])
+        expect(h.editor.isHandHeld)
+        h.editor.keysReleased()
+        expect(!h.editor.isHandHeld, "the canvas lost the keyboard")
+        h.editor.keyUp(KeyStroke(" "))
+        expect(!h.editor.isHandHeld)
+        h.key(" ")
+        h.editor.keyUp(KeyStroke("c"))
+        expect(h.editor.isHandHeld, "another key's release isn't Space's")
+    },
     test("a shortcut whose when doesn't hold passes the key on: to the key alone, if it answers that, else to AppKit") {
         let log = KeyLog()
         let h = try EditorHarness(plugins: [KeyboardPlugin(), Contributor(id: "keys") { r in
@@ -148,6 +205,34 @@ import TestKit
         h.editor.setTool(.hand)
         expect(h.key("c", isRepeat: true))
         expectEqual(h.editor.currentToolID, .hand, "a tool's key, held, switches once")
+    },
+    test("a key's repeats run its shortcut again only while the canvas has seen it go down: one held down elsewhere, or let go of, repeats as nothing") {
+        let log = KeyLog()
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), Contributor(id: "keys") { r in
+            r.shortcut(.rightArrow, "Nudge", repeats: true) { _ in log.events.append("nudge") }
+            r.shortcut(.leftArrow, "Back", repeats: true) { _ in log.events.append("back") }
+        }])
+        let right = "\u{F703}", left = "\u{F702}"
+        expect(h.key(right, isRepeat: true), "held down elsewhere (a list's pick gave the canvas the keyboard): taken, so AppKit doesn't beep")
+        expectEqual(log.events, [], "and nothing done")
+        expect(h.key(right))
+        expect(h.key(right, isRepeat: true))
+        h.hold(.shift)
+        expect(h.key(right, isRepeat: true), "⇧ pressed while it's held: the same key")
+        h.hold([])
+        expectEqual(log.events, ["nudge", "nudge", "nudge"])
+        expect(h.key(left))
+        expect(h.key(right, isRepeat: true), "another key went down since")
+        expectEqual(log.events, ["nudge", "nudge", "nudge", "back"])
+        expect(h.key(right))
+        h.editor.keysReleased()
+        expect(h.key(right, isRepeat: true), "the canvas lost the keyboard meanwhile")
+        expect(h.key(right))
+        h.editor.keyUp(KeyStroke(left))
+        expect(h.key(right, isRepeat: true), "another key's release isn't its")
+        h.editor.keyUp(KeyStroke(right))
+        expect(h.key(right, isRepeat: true), "let go of")
+        expectEqual(log.events, ["nudge", "nudge", "nudge", "back", "nudge", "nudge", "nudge"])
     },
 ])
 
@@ -183,6 +268,15 @@ import TestKit
         expectEqual(registry.tools.map { registry.help(for: $0) }, ["Hand (H)", "Card (C)", "Zap"])
         expectEqual(registry.shortcut(forTool: ToolID(placing: Card.kind))?.chord, "c")
     },
+    test("a button that runs a command names its first key in its tooltip, as a tool's does; one without a key is just its title") {
+        let registry = try Registry(plugins: [KeyboardPlugin(), Contributor(id: "stamps") { r in
+            r.command("stamp", shortcuts: [KeyChord(KeyChord.upArrow.key, .command), "s"]) { _ in }
+            r.command("plain") { _ in }
+        }])
+        expectEqual(registry.help("Stamp", forCommand: "stamp"), "Stamp (⌘↑)")
+        expectEqual(registry.help("Plain", forCommand: "plain"), "Plain")
+        expectEqual(registry.shortcut(forCommand: "stamp")?.chord, KeyChord(KeyChord.upArrow.key, .command))
+    },
     test("the tool and command sugar register the key with the tool or command; the report shows each key and what it does") {
         let registry = try Registry(plugins: [KeyboardPlugin(), Contributor(id: "discs") { r in
             r.shape(DiscDefinitionForTests()) { disc in
@@ -190,14 +284,15 @@ import TestKit
             }
             r.tool(ToolDescriptor(id: "zap", label: "Zap", systemImage: "bolt"), shortcut: "z") { _ in NoTool() }
             r.command("stamp", shortcuts: [KeyChord("s", .command)]) { _ in }
-            r.shortcut(.space, "Pan") { _ in }
+            r.shortcut(.tab, "Next") { _ in }
         }])
-        expectEqual(registry.shortcuts.map(\.action), [.tool(.hand), .custom("Cancel"), .custom("Cancel"), .command(.undo), .command(.redo),
-                                                       .tool(ToolID(placing: Disc.kind)), .tool("zap"), .command("stamp"), .custom("Pan")])
+        expectEqual(registry.shortcuts.map(\.action), [.tool(.hand), .custom("Pan"), .custom("Cancel"), .custom("Cancel"), .command(.undo), .command(.redo),
+                                                       .command(.zoomIn), .command(.zoomOut), .command(.zoomToActualSize), .command(.zoomToFit),
+                                                       .tool(ToolID(placing: Disc.kind)), .tool("zap"), .command("stamp"), .custom("Next")])
         expectEqual(registry.report, """
-        core          tool hand · command undo · command redo
-        keyboard      service KeyboardState · key strokes · shortcut H → tool hand · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo
-        discs         shape disc · tool disc · shortcut D → tool disc · tool zap · shortcut Z → tool zap · command stamp · shortcut ⌘S → command stamp · shortcut Space → Pan
+        core          tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
+        keyboard      service KeyboardState · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit
+        discs         shape disc · tool disc · shortcut D → tool disc · tool zap · shortcut Z → tool zap · command stamp · shortcut ⌘S → command stamp · shortcut ⇥ → Next
         """)
     },
     test("a chord is its key, lowercased, and its modifiers; it describes itself as menus show it") {

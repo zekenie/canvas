@@ -40,8 +40,10 @@ public struct SchemaSyncFailure: Equatable, Sendable {
         /// Open Settings…, for a key none is saved or one refused: saving a key there tries again
         /// by itself, so there's no Retry.
         case key
-        /// Nothing to try again: the schema is too long for the model to write whole, so the person
-        /// edits it by hand (and the description follows).
+        /// Nothing to try again: asked again, the model would answer the same. The schema is too
+        /// long for the model to write whole, so the person edits it by hand (and the description
+        /// follows); or Claude declined, as it would again, so the person rewords what they wrote,
+        /// and that edit syncs.
         case editByHand
     }
 
@@ -324,9 +326,12 @@ public final class SchemaSync {
         guard now[call.writes] == call.sent[call.writes] else { return .idle }
         switch SchemaPrompts.parse(response, call.direction) {
         case let .failure(reason):
-            // A schema cut off would be cut off again: the person edits it instead.
+            // A schema cut off would be cut off again, and a refusal, at temperature 0, refused
+            // again: the person edits instead (rewording the description, say), and the next
+            // commit syncs. Only an unusable answer is worth asking again.
             let cutOff = response.stopReason == .maxTokens && call.writes == .schema
-            return .failed(SchemaSyncFailure(writing: call.writes, reason, remedy: cutOff ? .editByHand : .retry))
+            let wouldRepeat = cutOff || response.stopReason == .refusal
+            return .failed(SchemaSyncFailure(writing: call.writes, reason, remedy: wouldRepeat ? .editByHand : .retry))
         case .noChange:
             synced[id] = call.sent
         case let .text(text):

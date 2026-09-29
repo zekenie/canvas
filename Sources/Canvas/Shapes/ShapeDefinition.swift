@@ -120,11 +120,11 @@ public struct RenderContext {
     public let isEditing: Bool
     public var zoom: CGFloat { shapes.zoom }
     private let boardShapeCount: (ShapeID) -> Int
-    private let boardPreview: (ShapeID, CGRect, CGContext) -> Bool
+    private let boardPreview: (ShapeID, CGRect, CGFloat, CGContext) -> Bool
     private let fileShape: (ShapeID) -> AnyShapeRecord?
 
     init(cg: CGContext, shapes: ShapeContext, isEditing: Bool, shapeCount: @escaping (ShapeID) -> Int,
-         preview: @escaping (ShapeID, CGRect, CGContext) -> Bool, fileShape: @escaping (ShapeID) -> AnyShapeRecord?) {
+         preview: @escaping (ShapeID, CGRect, CGFloat, CGContext) -> Bool, fileShape: @escaping (ShapeID) -> AnyShapeRecord?) {
         self.cg = cg
         self.shapes = shapes
         self.isEditing = isEditing
@@ -150,14 +150,18 @@ public struct RenderContext {
     public func shapeCount(inBoardOwnedBy owner: ShapeID) -> Int { boardShapeCount(owner) }
 
     /// Draws a rough picture of the board a shape owns into `rect` (world units), fitted: the
-    /// board's proportions kept, centered. Every shape there is a silhouette of its geometry, all in
+    /// board's proportions kept, centered, and no larger than `maxScale` times its own size, so a
+    /// board of a few shapes is drawn small in the middle of the rect rather than as big as one of
+    /// hundreds (a card's preview at 0.1 shows its board as the canvas does at 10%). Every shape there is a silhouette of its geometry, all in
     /// one muted gray (none of their text or colors; a shape that owns a board is its outline), as
     /// the minimap draws. Returns false, having drawn nothing, while the picture isn't ready, for a
     /// board with nothing to show (none, or empty), and for a rect too small on screen to show one
     /// (under 16 view points either way): draw something else then (a count). A picture
     /// takes a few frames to build (the core builds them within a budget each frame, and redraws
     /// until they're done), and one of a board as it was before an edit or an undo is never drawn.
-    public func drawBoardPreview(ofBoardOwnedBy owner: ShapeID, in rect: CGRect) -> Bool { boardPreview(owner, rect, cg) }
+    public func drawBoardPreview(ofBoardOwnedBy owner: ShapeID, in rect: CGRect, maxScale: CGFloat = .infinity) -> Bool {
+        boardPreview(owner, rect, maxScale, cg)
+    }
 
     /// The canvas's standard shape shadow. Shadows ignore the transform, so the blur is scaled by
     /// hand; the offset is zero because shadow offsets live in device space.

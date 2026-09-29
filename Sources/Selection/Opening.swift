@@ -1,4 +1,5 @@
 import Canvas
+import CoreGraphics
 
 /// What opening a shape does, for a kind whose shapes open as something other than editing in place
 /// (a board-owning kind shows its board). A double-click, Return, Enter, ⌘↓ and the `.openSelection`
@@ -59,11 +60,13 @@ extension CanvasEditor {
     }
 
     /// Opens a shape on the board shown: its kind's opener, if it has one (true once it's run), else
-    /// edits it (`beginEditing`: false for a kind that isn't `Editable`, or a read-only shape).
+    /// edits it (`beginEditing`: false for a kind that isn't `Editable`, or a read-only shape),
+    /// from `point` (world units) if a press opened it, and with its `clickCount` (a double-click's
+    /// 2), so the editing view puts its selection there; Return gives none.
     @discardableResult
-    public func open(_ id: ShapeID) -> Bool {
+    public func open(_ id: ShapeID, at point: CGPoint? = nil, clickCount: Int = 1) -> Bool {
         guard let record = document[id], !record.isOpaque else { return false }
-        guard let opener = selectionState?.openers[record.kind] else { return beginEditing(id) }
+        guard let opener = selectionState?.openers[record.kind] else { return beginEditing(id, at: point, clickCount: clickCount) }
         opener.open(id, self)
         return true
     }

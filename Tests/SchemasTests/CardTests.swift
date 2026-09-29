@@ -16,7 +16,7 @@ func flat(_ count: Int, extra: String = "") -> String {
         expectEqual(rows(fixture(3)), ["name* string", "species* dog | cat | bird | fish | other", "birthYear integer", "coatColor string",
                                        "vaccinated boolean"])
         expectEqual(rows(fixture(4)), ["title* string", "author* string", "isbn string", "pages integer", "publishedOn date",
-                                       "genre fiction | nonfiction | poetry | drama", "inPrint boolean"])
+                                       "genre fiction | nonfiction | poetry | +1", "inPrint boolean"])
         expectEqual(rows(fixture(5)), ["id* uuid", "firstName* string", "lastName* string", "email* email", "phone string", "company string",
                                        "+14 more"])
         expectEqual(rows(fixture(6)), ["id* string", "customer* { name · email }", "items* [ sku · quantity · price ]",
@@ -100,13 +100,14 @@ func flat(_ count: Int, extra: String = "") -> String {
             "createdAt date-time",
         ])
         // Too narrow for a tray: an object says so at the end instead, in a word if need be (in the columns it has).
-        expectEqual(rows(fixture(6), size: CGSize(width: 120, height: 177))[1...2], ["customer* object", "items* array"])
-        expectEqual(rows(fixture(6), size: CGSize(width: 120, height: 177))[4], "status* enum", "values with no room: the label's back")
+        expectEqual(rows(fixture(6), size: CGSize(width: 124, height: 177))[1...2], ["customer* object", "items* array"])
+        expectEqual(rows(fixture(6), size: CGSize(width: 124, height: 177))[4], "status* enum", "values with no room: the label's back")
+        expectEqual(rows(fixture(6), size: CGSize(width: 110, height: 177))[1], "customer* obje…", "no columns for the word: cut")
         let long = SchemaCardLayout(SchemaDocument(fixture(8)), size: CGSize(width: 240, height: 155)).rows
         expect(long.allSatisfy { $0.chip.maxX <= $0.frame.maxX }, "every chip in its row")
         // A tray that could say only how many values: none, and the name has the room up to the label.
         expectEqual([long[3].tray, long[3].type], [nil, "enum"])
-        expect((31...34).contains(long[3].frame.maxX - long[3].chip.maxX), "up to the label, `enum` and its gap: \(long[3].frame.maxX - long[3].chip.maxX)")
+        expect((34...37).contains(long[3].frame.maxX - long[3].chip.maxX), "up to the label, `enum` and its gap: \(long[3].frame.maxX - long[3].chip.maxX)")
         // A tray that shows what's in it keeps its least, though the name is cut.
         let named = SchemaCardLayout(SchemaDocument(#"{"properties": {"aVeryLongFieldNameThatNeedsCuttingShort": {"properties": {"a": {}, "b": {}}}}}"#),
                                      size: CGSize(width: 240, height: 67)).rows[0]
@@ -120,13 +121,13 @@ func flat(_ count: Int, extra: String = "") -> String {
         expectEqual(rows(format, size: CGSize(width: 480, height: 67)), ["when a-very-long-format-name"])
         let ref = ##"{ "properties": { "when": { "$ref": "#/$defs/aVeryLongDefinitionName" } } }"##
         let cut = try require(rows(ref).first)
-        expect(cut.hasPrefix("when → aVeryLongDe") && cut.hasSuffix("…") && cut.count <= "when ".count + 15, cut)
+        expect(cut.hasPrefix("when → aVeryLong") && cut.hasSuffix("…") && cut.count <= "when ".count + 15, cut)
         expectEqual(rows(ref, size: CGSize(width: 480, height: 67)), ["when → aVeryLongDefinitionName"])
     },
     test("a choice's options say what it is: no label, but JSON Schema's word where there's no room for them") {
         let choice = #"{ "properties": { "pay": { "anyOf": [{ "title": "Card" }, { "title": "Cash" }] }, "p": { "allOf": [{ "title": "A" }] } } }"#
         expectEqual(rows(choice), ["pay Card | Cash", "p A"])
-        expectEqual(rows(choice, size: CGSize(width: 100, height: 89)), ["pay anyOf", "p allOf"])
+        expectEqual(rows(choice, size: CGSize(width: 110, height: 89)), ["pay anyOf", "p allOf"])
     },
     test("a type that isn't one reads as written, not as any; true, {} and no type are any") {
         let text = #"{ "properties": { "birthYear": { "type": "ninteger" }, "a": true, "b": {}, "c": { "description": "x" }, "d": { "type": ["string", "nul"] } } }"#

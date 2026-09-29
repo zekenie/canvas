@@ -244,6 +244,43 @@ import TestKit
         expectEqual(h.editor.camera.origin, CGPoint(x: -40, y: -30))
         expectEqual(try pan(waiting: 0).scheduler.pendingCount, 1, "without the wait, the release would slide")
     },
+    test("while the hand is held, a press pans as the Hand's does, with its cursors, and the tool stays the tool; let go, the tool presses again") {
+        let h = try EditorHarness(plugins: [CardsPlugin()])
+        h.editor.setTool(ToolID(placing: Card.kind))
+        h.editor.isHandHeld = true
+        expectEqual(h.editor.cursor, .openHand)
+        h.press(at: CGPoint(x: 100, y: 100))
+        expectEqual(h.editor.cursor, .closedHand)
+        h.drag(to: CGPoint(x: 160, y: 140))
+        expectEqual(h.editor.camera.origin, CGPoint(x: -60, y: -40))
+        expectEqual(h.editor.document.shapes, [], "nothing placed")
+        h.editor.isHandHeld = false
+        h.drag(to: CGPoint(x: 170, y: 140))
+        expectEqual(h.editor.camera.origin, CGPoint(x: -70, y: -40), "a pan under way goes on to its release")
+        h.release(after: 100)
+        expectEqual(h.editor.currentToolID, ToolID(placing: Card.kind), "no setTool")
+        expectEqual(h.editor.cursor, .crosshair)
+        expectEqual(h.editor.undoHistory.undoName, nil, "panning is no step")
+        h.click(at: CGPoint(x: 300, y: 300))
+        expectEqual(h.editor.document.shapes.count, 1, "the tool's press again")
+    },
+    test("a press of the middle button pans, whatever the tool, editing going on; not while another press is under way") {
+        let h = try EditorHarness(plugins: [CardsPlugin()])
+        let card = h.add(Card(CGRect(x: 0, y: 0, width: 100, height: 60)))
+        expect(h.editor.beginEditing(card))
+        h.editor.setTool(ToolID(placing: Card.kind))
+        expect(h.editor.panPointerDown(PointerEvent(location: CGPoint(x: 100, y: 100), timestamp: h.time)))
+        h.drag(to: CGPoint(x: 150, y: 100))
+        expectEqual(h.editor.camera.origin, CGPoint(x: -50, y: 0))
+        h.release(after: 100)
+        expectEqual(h.editor.editingShapeID, card, "editing goes on")
+        expectEqual(h.editor.currentToolID, ToolID(placing: Card.kind))
+        expectEqual(h.editor.document.shapes.count, 1)
+        h.editor.setTool(.hand)
+        h.press(at: CGPoint(x: 100, y: 100))
+        expect(!h.editor.panPointerDown(PointerEvent(location: CGPoint(x: 100, y: 100), timestamp: h.time)), "a press is under way")
+        h.release()
+    },
 ])
 
 /// A tool that does nothing, "idle"; with `isDefault`, the default tool.

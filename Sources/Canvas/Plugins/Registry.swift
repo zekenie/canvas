@@ -164,6 +164,13 @@ public struct Registry {
 
     public func definition(for kind: ShapeKind) -> (any ShapeDefinition)? { definitions[kind] }
 
+    /// The outline the core strokes for a shape (its kind's `indicatorPath`: a selection, a hover,
+    /// the hint), in world units, for an overlay that decorates a shape along it (Validation's
+    /// ring). Nil for a shape kept aside, or of a kind no plugin defines.
+    public func indicatorPath(of shape: AnyShapeRecord, in context: ShapeContext) -> CGPath? {
+        shape.isOpaque ? nil : definition(for: shape.kind)?.erasedIndicatorPath(of: shape, in: context)
+    }
+
     /// Whether a shape's board can be shown wherever the shape's own board can: it isn't kept
     /// aside, and its kind owns boards (`BoardOwning`). What `canShow` asks of every owner on a
     /// board's path, so what walks a file's boards from the root down asks it too.
@@ -299,6 +306,9 @@ public struct Registry {
     var keyStrokeHandler: (@MainActor (CanvasEditor, KeyStroke) -> Bool)? {
         contributions(to: CorePoints.KeyStrokes.self).first?.value
     }
+    var keyReleaseHandler: (@MainActor (CanvasEditor, KeyStroke?) -> Void)? {
+        contributions(to: CorePoints.KeyReleases.self).first?.value
+    }
     var translationAdjuster: (@MainActor (CanvasEditor, TranslationStart) -> (any TranslationAdjuster)?)? {
         contributions(to: CorePoints.TranslationAdjusters.self).first?.value
     }
@@ -378,6 +388,7 @@ struct RawContribution {
             case is CorePoints.DefaultTool.Type: "default tool \(value)"
             case is CorePoints.SecondaryClickMenu.Type: "secondary-click menu"
             case is CorePoints.KeyStrokes.Type: "key strokes"
+            case is CorePoints.KeyReleases.Type: "key releases"
             case is CorePoints.TranslationAdjusters.Type: "translation adjuster"
             default: P.summary(of: value, for: target)
             }

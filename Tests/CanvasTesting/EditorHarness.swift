@@ -50,8 +50,8 @@ public final class EditorHarness {
         scheduler.advance(by: .milliseconds(ms))
     }
 
-    private func event(clickCount: Int = 1) -> PointerEvent {
-        PointerEvent(location: location, timestamp: time, modifiers: held, clickCount: clickCount)
+    private func event(clickCount: Int = 1, activatesWindow: Bool = false) -> PointerEvent {
+        PointerEvent(location: location, timestamp: time, modifiers: held, clickCount: clickCount, activatesWindow: activatesWindow)
     }
 
     public func move(to point: CGPoint, after ms: Int = 16) {
@@ -60,10 +60,11 @@ public final class EditorHarness {
         editor.pointerMoved(event(clickCount: 0))
     }
 
-    public func press(at point: CGPoint? = nil, clickCount: Int = 1, after ms: Int = 16) {
+    /// `activatingWindow`: the click that brings the canvas's window forward (`acceptsFirstMouse`).
+    public func press(at point: CGPoint? = nil, clickCount: Int = 1, activatingWindow: Bool = false, after ms: Int = 16) {
         wait(ms)
         if let point { location = point }
-        editor.pointerDown(event(clickCount: clickCount))
+        editor.pointerDown(event(clickCount: clickCount, activatesWindow: activatingWindow))
     }
 
     public func drag(to point: CGPoint, after ms: Int = 16) {
@@ -88,8 +89,8 @@ public final class EditorHarness {
     }
 
     /// A press and a release where the pointer is (or at `point`), 16 ms apart.
-    public func click(at point: CGPoint? = nil, clickCount: Int = 1) {
-        press(at: point, clickCount: clickCount)
+    public func click(at point: CGPoint? = nil, clickCount: Int = 1, activatingWindow: Bool = false) {
+        press(at: point, clickCount: clickCount, activatingWindow: activatingWindow)
         release()
     }
 

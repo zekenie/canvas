@@ -60,6 +60,7 @@ public struct DetailPanelView: View {
         .toggleStyle(DetailCheckboxStyle())
         .environment(\.detailDrafts, drafts)
         .environment(\.detailExit, onExit)
+        .environment(\.detailReclaim, reclaimSoon)
         .environment(\.detailEditor, editor)
         // So a number being typed lands on its shape before another board is shown.
         .onAppear { editor.detailPanel?.drafts = drafts }
@@ -86,7 +87,9 @@ public struct DetailPanelView: View {
     }
 
     /// After SwiftUI has removed (or AppKit hidden) views: if the keyboard fell to the window, hand
-    /// it to the canvas. A control that is still there keeps it.
+    /// it to the canvas. A control that is still there keeps it. Asked as the selection changes, the
+    /// panel hides, the tab's sections change, and a status line goes (its text may have been
+    /// selected: `detailReclaim`); it acts only when the window has the keyboard, so asking is free.
     private func reclaimSoon() {
         _ = editor.scheduler.schedule(after: .zero) { [window, onExit] in
             if let window = window.window, window.firstResponder === window { onExit() }
@@ -179,7 +182,7 @@ struct ShapePanel: View, Equatable {
                        isReadOnly: isReadOnly)
             if let current {
                 if layout.tabs.count > 1 {
-                    TabStrip(tabs: layout.tabs, selection: current) { state.choose($0, for: record.kind) }
+                    TabStrip(tabs: layout.tabs, alert: layout.alert(in:), selection: current) { state.choose($0, for: record.kind) }
                 }
                 Divider()
                 ScrollView {
@@ -328,6 +331,13 @@ struct DetailExitKey: EnvironmentKey {
     static var defaultValue: @MainActor () -> Void { {} }
 }
 
+/// The panel's `reclaimSoon`, for a view that may have the keyboard as it goes (a status line's
+/// selected text): once it's gone, if the keyboard fell to the window, the canvas has it again.
+/// Outside the panel, nothing.
+struct DetailReclaimKey: EnvironmentKey {
+    static var defaultValue: @MainActor () -> Void { {} }
+}
+
 extension EnvironmentValues {
     var detailKindName: String {
         get { self[DetailKindNameKey.self] }
@@ -342,6 +352,11 @@ extension EnvironmentValues {
     var detailExit: @MainActor () -> Void {
         get { self[DetailExitKey.self] }
         set { self[DetailExitKey.self] = newValue }
+    }
+
+    var detailReclaim: @MainActor () -> Void {
+        get { self[DetailReclaimKey.self] }
+        set { self[DetailReclaimKey.self] = newValue }
     }
 }
 
@@ -358,14 +373,18 @@ struct BackButton: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
-            .help("Back to the previous selection (⌘[)")
+            .help("Back (⌘[)")
             .accessibilityLabel("Back")
         }
     }
 }
 
+/// The tabs, the one shown filled. A tab whose status lines warn or err (`DetailLayout.alert(in:)`,
+/// ValidationDetails' Issues) has its worst tone's symbol before its title, in the tone's color,
+/// as the lines draw it, so it reads as a tab of problems from any tab; no count.
 struct TabStrip: View {
     let tabs: [DetailTabID]
+    let alert: @MainActor (DetailTabID) -> DetailStatus.Tone?
     let selection: DetailTabID
     let choose: (DetailTabID) -> Void
 
@@ -373,12 +392,12 @@ struct TabStrip: View {
         TabStripLayout(spacing: DetailStyle.tabSpacing) {
             ForEach(tabs, id: \.self) { tab in
                 let selected = tab == selection
+                let alert = alert(tab)
                 Button { choose(tab) } label: {
                     // Sized for the semibold title, so selecting a tab doesn't move the others.
-                    Text(tab.title).font(DetailStyle.tabSelected).hidden()
+                    TabTitle(title: tab.title, alert: alert, font: DetailStyle.tabSelected).hidden()
                         .overlay {
-                            Text(tab.title)
-                                .font(selected ? DetailStyle.tabSelected : DetailStyle.tab)
+                            TabTitle(title: tab.title, alert: alert, font: selected ? DetailStyle.tabSelected : DetailStyle.tab)
                                 .foregroundStyle(selected ? .primary : .secondary)
                         }
                         .lineLimit(1)
@@ -389,11 +408,28 @@ struct TabStrip: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(tab.title)
+                .accessibilityValue(alert == .error ? "Errors" : alert == .warning ? "Warnings" : "")
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
         .padding(.horizontal, DetailStyle.stripInset)
         .padding(.bottom, DetailStyle.stripBottom)
+    }
+}
+
+/// A tab's title, after its alert's symbol if it has one.
+struct TabTitle: View {
+    let title: String
+    let alert: DetailStatus.Tone?
+    let font: Font
+
+    var body: some View {
+        HStack(spacing: DetailStyle.tabAlertSpacing) {
+            if let alert {
+                Image(systemName: alert.symbol).font(DetailStyle.tabAlert).foregroundStyle(alert.color)
+            }
+            Text(title).font(font)
+        }
     }
 }
 

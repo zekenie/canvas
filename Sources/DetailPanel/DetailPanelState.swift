@@ -39,6 +39,13 @@ public struct DetailLayout {
     /// The tab's status lines (`DetailStatuses`), shown above its sections: the kind's
     /// contributions, then every kind's, each in plugin order.
     public func statuses(in tab: DetailTabID) -> [DetailStatus] { statusesByTab[tab] ?? [] }
+
+    /// The worst tone of the tab's status lines when it's a warning or an error, whose symbol the
+    /// tab strip shows before the tab's title, so a tab of problems looks like one from any tab;
+    /// nil otherwise.
+    public func alert(in tab: DetailTabID) -> DetailStatus.Tone? {
+        statuses(in: tab).map(\.tone).max().flatMap { $0 >= .warning ? $0 : nil }
+    }
 }
 
 /// A shape's status lines, where they go: what the panel redraws for when they change.

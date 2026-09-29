@@ -73,6 +73,14 @@ public struct PluginRegistrar {
         contribute(handle, to: CorePoints.KeyStrokes.self)
     }
 
+    /// What a key let go on the canvas does, for a key that does something while it's held (Space's
+    /// pan): `release` gets the key, or nil when every key is let go at once (the canvas lost the
+    /// keyboard, or its window stopped being key, so no key's release will come). At most one plugin
+    /// may claim it (Keyboard, in the shipped app).
+    public mutating func keyReleases(_ release: @escaping @MainActor (CanvasEditor, KeyStroke?) -> Void) {
+        contribute(release, to: CorePoints.KeyReleases.self)
+    }
+
     /// The tool the editor starts in, and returns to on Escape and after placing a shape (a
     /// registered tool, any plugin's). At most one plugin may claim it; otherwise it's the Hand.
     public mutating func defaultTool(_ id: ToolID) {
@@ -162,7 +170,8 @@ extension ShapeRegistrar where Definition.Props: BoxShapeProps {
 }
 
 extension ShapeRegistrar where Definition: Editable {
-    /// Centered where the canvas is pressed, and being edited.
+    /// Centered where the canvas is pressed, following the pointer until release, and then being
+    /// edited (placed with no press under way, at once).
     public func editingPlacement(size: CGSize, props: @escaping @MainActor () -> Definition.Props) -> Placement {
         Placement(kind: kind, size: size, completion: .edit, props: props)
     }

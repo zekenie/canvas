@@ -613,7 +613,7 @@ public enum BoardReadError: Error, Equatable, CustomStringConvertible {
 
     public var description: String {
         switch self {
-        case .unreadable(let why): "It isn't a board this app can read: \(why)"
+        case .unreadable(let why): "It isn’t a board this app can read: \(why)"
         case .newerFormat(let format): "A newer version of the app wrote it (format \(format); this one reads up to \(BoardCodec.format))."
         }
     }
@@ -766,7 +766,7 @@ private struct Contents: Decodable {
         let container = try decoder.container(keyedBy: Keys.self)
         let format = try container.decode(Int.self, forKey: .format)
         guard format <= BoardCodec.format else { throw BoardReadError.newerFormat(format) }
-        guard format >= 1 else { throw BoardReadError.unreadable("format \(format) isn't a board format") }
+        guard format >= 1 else { throw BoardReadError.unreadable("format \(format) isn’t a board format") }
         var versions = Versions()
         if format < 3 {
             versions.kinds = (try? container.decode([String: Int].self, forKey: .schema)) ?? [:]
@@ -780,7 +780,7 @@ private struct Contents: Decodable {
         }
         guard format >= 4, container.contains(.boards) else { return }
         guard let entries = try? container.nestedContainer(keyedBy: PropertyCodingKey.self, forKey: .boards) else {
-            throw BoardReadError.unreadable("its boards aren't an object")
+            throw BoardReadError.unreadable("its boards aren’t an object")
         }
         for key in entries.allKeys {
             // A key as this app writes it: the owner's id, in capitals.
@@ -795,7 +795,7 @@ private struct Contents: Decodable {
             } else {
                 // Kept only to be written back, so kept whole, or the file isn't read: a save would lose it.
                 guard let json = try? entries.decode(JSONValue.self, forKey: key) else {
-                    throw BoardReadError.unreadable("boards.\(key.stringValue) isn't a board, and can't be kept as it is")
+                    throw BoardReadError.unreadable("boards.\(key.stringValue) isn’t a board, and can’t be kept as it is")
                 }
                 unreadableBoards[key.stringValue] = (json, owner == nil ? "its key isn't a shape's id" : "it isn't an object with a list of shapes")
             }

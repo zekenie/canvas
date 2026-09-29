@@ -2,7 +2,9 @@ import CoreGraphics
 import Geometry
 
 /// Every shape in `ids` follows the pointer from where it was when the drag began, in one
-/// transaction per drag event (tldraw's Translating, without cloning or the axis lock). Boxes move
+/// transaction per drag event (tldraw's Translating, without cloning). While ⇧ is held, it keeps to
+/// one axis, the one the pointer has come further along since the press (tldraw's), and stays where
+/// it began along the other; pressing or letting go of ⇧ takes effect at once. Boxes move
 /// by their frame; `CustomTranslation` kinds by their own rules, after the boxes; anything else
 /// stays put. Read-only shapes stay put too, and the rest move without them (as tldraw's translating
 /// leaves locked shapes out); once the pointer is past the drag threshold, services hear that they
@@ -56,6 +58,9 @@ public final class TranslatingSession {
 }
 
 extension TranslatingSession: Session {
+    /// The canvas scrolls at its edges while it runs.
+    public var scrollsAtEdges: Bool { true }
+
     public func drag(_ pointer: Pointer, in editor: CanvasEditor) {
         last = pointer
         // A click on a read-only shape (a lone box follows the pointer from the press) isn't a try
@@ -66,26 +71,32 @@ extension TranslatingSession: Session {
             editor.refuseChanges(to: ids)
         }
         guard !before.isEmpty else { return }
-        let delta = pointer.world - origin
-        let moved = adjuster?.adjust(delta, for: pointer, in: editor) ?? delta
+        var delta = pointer.world - origin
+        // ⇧ keeps it to the axis the pointer has come further along; along the other it stays.
+        let axis: TranslationAxis? = pointer.modifiers.contains(.shift) ? (abs(delta.x) < abs(delta.y) ? .y : .x) : nil
+        delta = axis?.keeping(delta) ?? delta
+        var moved = adjuster?.adjust(delta, along: axis, for: pointer, in: editor) ?? delta
+        moved = axis?.keeping(moved) ?? moved
         editor.transact("Move") { tx in
             for frame in frames {
                 // On an axis the adjuster leaves alone, `pointer.world − grabOffset`, not `start +
                 // delta`: the two differ in the last bit for some fractional points. This is the
                 // POC's box drag, and Characterization pins it. On an axis it changes, exactly what
-                // it says, from where the box began: a box snapped to an edge lands on it.
+                // it says, from where the box began: a box snapped to an edge lands on it. On the
+                // axis ⇧ holds still, where it began.
                 let follows = pointer.world - frame.grabOffset
-                tx.moveBox(frame.id, to: CGPoint(x: moved.x == delta.x ? follows.x : frame.start.x + moved.x,
-                                                 y: moved.y == delta.y ? follows.y : frame.start.y + moved.y))
+                tx.moveBox(frame.id, to: CGPoint(x: axis == .y ? frame.start.x : (moved.x == delta.x ? follows.x : frame.start.x + moved.x),
+                                                 y: axis == .x ? frame.start.y : (moved.y == delta.y ? follows.y : frame.start.y + moved.y)))
             }
             for move in moves { move(moved, &tx) }
         }
     }
 
-    /// Held keys changed mid-drag: with an adjuster, which may read them (⌘ lets Snapping's shapes
-    /// follow the pointer exactly), the move is made again where the pointer is, without its moving.
+    /// Held keys changed mid-drag: the move is made again where the pointer is, without its moving,
+    /// with an adjuster, which may read them (⌘ lets Snapping's shapes follow the pointer exactly),
+    /// or when ⇧ came or went (it keeps to an axis, or stops).
     public func modifiersChanged(_ modifiers: Modifiers, in editor: CanvasEditor) {
-        guard adjuster != nil, var pointer = last else { return }
+        guard var pointer = last, adjuster != nil || modifiers.contains(.shift) != pointer.modifiers.contains(.shift) else { return }
         pointer.world = editor.camera.toWorld(pointer.view)
         pointer.modifiers = modifiers
         drag(pointer, in: editor)
@@ -111,6 +122,47 @@ extension TranslatingSession: Session {
     public func draw(in context: OverlayContext) { adjuster?.draw(in: context) }
 }
 
+/// A shape just placed (`editor.place`), while the press that placed it lasts: it follows the pointer
+/// as a `TranslatingSession` moves it (snapping, ⇧ keeping it to an axis), whatever its placement,
+/// and on the release an editing placement's shape is edited (a click's at once, as far as anyone
+/// can tell). Escape takes the shape away again and puts back what the undo participants kept before
+/// the press (what was selected, which placing replaced), so the press comes to nothing, where a
+/// drag's Escape puts what it moved back. Only that: what others committed during the press stays.
+@MainActor
+final class PlacingSession {
+    private let id: ShapeID
+    private let move: TranslatingSession
+    private let edits: Bool
+    private let before: [ObjectIdentifier: any Sendable]
+
+    init(_ id: ShapeID, from point: CGPoint, edits: Bool, restoring before: [ObjectIdentifier: any Sendable], in editor: CanvasEditor) {
+        self.id = id
+        self.edits = edits
+        self.before = before
+        move = TranslatingSession(ids: [id], from: point, in: editor)
+    }
+}
+
+extension PlacingSession: Session {
+    var scrollsAtEdges: Bool { true }
+
+    func drag(_ pointer: Pointer, in editor: CanvasEditor) { move.drag(pointer, in: editor) }
+
+    func end(_ pointer: Pointer, in editor: CanvasEditor) {
+        if edits { editor.beginEditing(id) }
+    }
+
+    func cancel(in editor: CanvasEditor) -> Bool {
+        editor.transact { $0.delete([id]) }
+        editor.undoHistory.restore(before)
+        return true
+    }
+
+    func modifiersChanged(_ modifiers: Modifiers, in editor: CanvasEditor) { move.modifiersChanged(modifiers, in: editor) }
+
+    func draw(in context: OverlayContext) { move.draw(in: context) }
+}
+
 /// A drag that moves shapes (a `TranslatingSession`), as it begins: what the plugin that adjusts it
 /// is given (`registrar.translationAdjuster`).
 public struct TranslationStart: Sendable {
@@ -121,6 +173,17 @@ public struct TranslationStart: Sendable {
     public let origin: CGPoint
 }
 
+/// The axis a drag that moves shapes keeps to while ⇧ is held (`TranslatingSession`): `.x`, it moves
+/// only side to side; `.y`, only up and down.
+public enum TranslationAxis: Sendable, Hashable {
+    case x, y
+
+    /// `delta` along this axis alone: zero across it.
+    public func keeping(_ delta: CGPoint) -> CGPoint {
+        self == .x ? CGPoint(x: delta.x, y: 0) : CGPoint(x: 0, y: delta.y)
+    }
+}
+
 /// Where a drag that moves shapes (`TranslatingSession`) puts them, if not under the pointer: made
 /// as the drag begins by the plugin that claims it (`registrar.translationAdjuster`; Snapping's,
 /// which snaps what moves to other shapes), and kept for as long as the drag lasts.
@@ -129,9 +192,11 @@ public protocol TranslationAdjuster: AnyObject {
     /// How far to move the shapes on this drag event, in world units, given how far the pointer has
     /// come since the press (`delta`): `delta` itself to leave them following the pointer. On an axis
     /// given back as it came, boxes follow the pointer exactly as they would with no adjuster; on one
-    /// it changes, each box moves by exactly what it returns from where it began. Asked again, with
+    /// it changes, each box moves by exactly what it returns from where it began. While ⇧ keeps the
+    /// drag to one axis, `axis` says which, `delta` is zero across it, and what it gives back across it
+    /// is ignored: what moves stays there, so it neither moves nor guides that way. Asked again, with
     /// the same pointer, when held keys change.
-    func adjust(_ delta: CGPoint, for pointer: Pointer, in editor: CanvasEditor) -> CGPoint
+    func adjust(_ delta: CGPoint, along axis: TranslationAxis?, for pointer: Pointer, in editor: CanvasEditor) -> CGPoint
     /// Draws what it shows while the drag runs (guides), in world units, above the world overlays.
     func draw(in context: OverlayContext)
 }

@@ -2,15 +2,63 @@ import Canvas
 import CoreGraphics
 import Geometry
 
+/// The zoom a kind's shapes read at, where its text is set smaller than a note's 16 points (a
+/// schema card's rows): going to one (`goTo`) brings it at least that close. A kind that says
+/// nothing reads at `SelectionStyle.readableZoom`, 70%. At most one per kind, plus one for every
+/// kind (`.any`), which a kind's own overrides; each above zero and at most `maximum`, 120%, as close
+/// as going to a shape brings it (`reveal`'s closest).
+public enum ReadableZoom {
+    /// The closest going to shapes brings them (`reveal`, data-canvas's and tldraw's 120%), and so
+    /// the closest a kind can say it reads at.
+    public static let maximum: CGFloat = 1.2
+}
+
+extension ReadableZoom: KeyedExtensionPoint {
+    public typealias Contribution = CGFloat
+    public static var owner: PluginID { .selection }
+    public static func uniqueKeys(of _: CGFloat, for target: ShapeTarget) -> [AnyHashable] { [target] }
+
+    public static func check(_ registry: Registry) throws(RegistryError) {
+        for zoom in registry.contributions(to: ReadableZoom.self) {
+            guard zoom.value > 0, zoom.value.isFinite else {
+                throw .invalid(point: "ReadableZoom", reason: "\(zoom.pluginID) says \(zoom.target) reads at \(zoom.value), which isn't a zoom")
+            }
+            guard zoom.value <= maximum else {
+                throw .invalid(point: "ReadableZoom",
+                               reason: "\(zoom.pluginID) says \(zoom.target) reads at \(zoom.value), closer than going to a shape brings it (\(maximum))")
+            }
+        }
+    }
+}
+
+extension ShapeRegistrar {
+    /// Its shapes read at `zoom` or closer (1 is 100%; at most 120%, `ReadableZoom.maximum`): going
+    /// to one (`goTo`) brings it at least that close, where one of a kind that says nothing is left
+    /// at 70%. For a kind whose text is
+    /// set smaller than a note's: a schema card's 11- and 12-point rows read at 100%.
+    public mutating func readableZoom(_ zoom: CGFloat) {
+        contribute(zoom, to: ReadableZoom.self)
+    }
+}
+
+extension PluginRegistrar {
+    /// The zoom a kind another plugin registers reads at (bridges), as `readableZoom` on a kind's
+    /// own registrar.
+    public mutating func readableZoom<P: ShapeProps>(_: P.Type, _ zoom: CGFloat) {
+        contribute(zoom, to: ReadableZoom.self, for: .kind(P.kind))
+    }
+}
+
 // Going to shapes, one way for every plugin that brings shapes into view: the table of contents
 // (a row's click), and whatever links to a shape (a mention in text). data-canvas's navigateToShape.
 extension CanvasEditor {
-    /// Brings the shapes into view: centers their bounds (`shapeContext.bounds(of:)`), zoomed to fit
-    /// with 100 points of margin in all but no closer than 120%, and moves the camera there over
-    /// 200 ms (`animateCamera`), as data-canvas's table of contents does (tldraw's zoomToBounds). What
-    /// selecting rows of the table of contents does. Only on the board shown (`goTo` goes to shapes
-    /// on another). Does nothing before the view has a size, or when none of the shapes has bounds
-    /// (none is on the board shown).
+    /// Brings the shapes into view: centers their bounds (`shapeContext.bounds(of:)`) in the part of
+    /// the view the host leaves clear (`unobscuredViewport`: below the path over a subboard's canvas),
+    /// zoomed to fit with 100 points of margin in all but no closer than 120%, and moves the camera
+    /// there over 200 ms (`animateCamera`), as data-canvas's table of contents does (tldraw's
+    /// zoomToBounds). What selecting rows of the table of contents does, and Zoom to Selection. Only
+    /// on the board shown (`goTo` goes to shapes on another). Does nothing before the view has a
+    /// size, or when none of the shapes has bounds (none is on the board shown).
     public func reveal(_ ids: [ShapeID]) {
         guard let bounds = shapeContext.bounds(of: ids), let target = revealCamera(fitting: bounds) else { return }
         animateCamera(to: target, duration: SelectionStyle.revealDuration)
@@ -21,9 +69,10 @@ extension CanvasEditor {
     /// readable zoom. Selecting them is a step back (`goBack`, ⌘[ returns, camera and all) when it
     /// changes the selection; going to what's selected already, or to shapes none of which can be
     /// selected, leaves the selection as it is and takes no step, so it only moves the camera.
-    /// "Readable" is 70% or closer (where a note's text reads at about 11 points), or, for
-    /// shapes too big to show whole at that, as close as fitting them would bring them. The camera
-    /// is judged where it's headed, if it's gliding.
+    /// "Readable" is 70% or closer (where a note's text reads at about 11 points), or closer for a
+    /// kind whose text is smaller (`ReadableZoom`: a schema card's, 100%), the closest of the
+    /// shapes' kinds; or, for shapes too big to show whole at that, as close as fitting them would
+    /// bring them. The camera is judged where it's headed, if it's gliding.
     ///
     /// The shapes may be anywhere in the file (a mention names a shape on any board). It goes to the
     /// board of the first of them that's on a board it can show (`canShow`), and to those of them on
@@ -62,19 +111,45 @@ extension CanvasEditor {
         if let selectionState { selectionState.asOneStep(go) } else { go() }
     }
 
-    /// Where `reveal` takes the camera to show `bounds`; nil before the view has a size.
-    private func revealCamera(fitting bounds: CGRect) -> Camera? {
-        let size = viewportSize
-        guard size.width > 0, size.height > 0 else { return nil }
-        return Camera(fitting: bounds, in: size, inset: SelectionStyle.revealInset, maxZoom: SelectionStyle.revealMaxZoom)
+    /// A trackpad's smart zoom (a two-finger double-tap, `.smartMagnify`), as Safari's and Preview's:
+    /// brings the shape under the pointer into view, as `reveal` does; the next, while the camera is
+    /// still where that one took it, eases it back to where it was. Nothing under the pointer, and
+    /// nothing to go back to: nothing. Nothing mid-gesture.
+    public func smartMagnify() {
+        guard session == nil, let state = selectionState else { return }
+        if let zoom = state.smartZoom, zoom.shown == cameraTarget {
+            state.smartZoom = nil
+            animateCamera(to: zoom.before, duration: SelectionStyle.revealDuration)
+            return
+        }
+        state.smartZoom = nil
+        guard let id = selectableShape(at: pointerWorldLocation), let bounds = shapeContext.bounds(of: [id]),
+              let target = revealCamera(fitting: bounds) else { return }
+        state.smartZoom = (before: cameraTarget, shown: target)
+        animateCamera(to: target, duration: SelectionStyle.revealDuration)
     }
 
-    /// Whether the shapes' bounds are all in view, where the camera is headed, at a zoom they read
-    /// at: `SelectionStyle.readableZoom` or closer, or as close as `reveal` would bring them.
+    /// Where `reveal` takes the camera to show `bounds`; nil before the view has a size.
+    private func revealCamera(fitting bounds: CGRect) -> Camera? {
+        let view = unobscuredViewport
+        guard !view.isEmpty else { return nil }
+        return Camera(fitting: bounds, in: view, inset: SelectionStyle.revealInset, maxZoom: SelectionStyle.revealMaxZoom)
+    }
+
+    /// Whether the shapes' bounds are all in view (in what the host leaves clear of it), where the
+    /// camera is headed, at a zoom they read at: the closest any of their kinds reads at
+    /// (`readableZoom(of:)`) or closer, or as close as `reveal` would bring them.
     private func isReadablyInView(_ ids: [ShapeID]) -> Bool {
         guard let bounds = shapeContext.bounds(of: ids), let fitted = revealCamera(fitting: bounds) else { return false }
         let camera = cameraTarget
-        let visible = camera.toWorld(CGRect(origin: .zero, size: viewportSize))
-        return visible.contains(bounds) && camera.zoom >= min(SelectionStyle.readableZoom, fitted.zoom)
+        let visible = camera.toWorld(unobscuredViewport)
+        let readable = ids.compactMap { document[$0] }.map(readableZoom(of:)).max() ?? SelectionStyle.readableZoom
+        return visible.contains(bounds) && camera.zoom >= min(readable, fitted.zoom)
+    }
+
+    /// The zoom a shape reads at: its kind's (`ReadableZoom`), else 70%, where a note's 16-point
+    /// text is 11.2 points on screen (`SelectionStyle.readableZoom`).
+    public func readableZoom(of shape: AnyShapeRecord) -> CGFloat {
+        selectionState?.readableZooms[shape.kind] ?? SelectionStyle.readableZoom
     }
 }

@@ -14,6 +14,10 @@ enum SubboardStyle {
     static let spacing: CGFloat = 6
     /// Between the body's edges and the board's preview.
     static let previewInset: CGFloat = 12
+    /// The board's preview is drawn at most this fraction of its size, as the canvas shows it at
+    /// 10%: a board of one note shows a small note in the middle, and one of hundreds fills the
+    /// body, so the two don't look alike.
+    static let previewMaxScale: CGFloat = 0.1
     static let borderWidth: CGFloat = 1.5
     static let plateBorderWidth: CGFloat = 1
     /// The line between the header band and the body.
