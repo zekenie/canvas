@@ -30,7 +30,7 @@ import TestKit
 
         @MainActor func place(_ prompt: String) -> ShapeID {
             let id = editor.add(SchemaCard(frame: CGRect(x: 0, y: 0, width: 240, height: 89)))
-            editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.prompt = prompt } }
+            editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.setPrompt(prompt) } }
             return id
         }
 
@@ -53,7 +53,7 @@ import TestKit
         edited.replaceSubrange(last.value.range.upperBound..<last.value.range.upperBound,
                                with: Array(",\n    \"company\": {\n      \"type\": \"string\"\n    }".utf8))
         let handEdited = String(decoding: edited, as: UTF8.self)
-        editor.transact { $0.update(contact, as: SchemaCard.self) { $0.props.setSchema(handEdited) } }
+        editor.transact { $0.update(contact, as: SchemaCard.self) { $0.props.schema = handEdited } }
         print("── the schema edited by hand\n\(handEdited)")
         let described = try require(commit(contact, "the hand edit → description"))
         print(described.prompt)

@@ -214,7 +214,8 @@ struct LaidOutAdornments {
 }
 
 /// One adornment as a shape shows it: its label, which says something (text that isn't blank, or a
-/// symbol), and how wide it's drawn blank, from its text's length, never measured.
+/// symbol), how wide it's drawn blank, from its text's length, never measured, and how far its text
+/// starts past its padding (a symbol before it).
 @MainActor
 struct ShownAdornment {
     let id: AdornmentID
@@ -223,6 +224,7 @@ struct ShownAdornment {
     /// Text, which gives way at the row's left end; otherwise a symbol's disc.
     let isText: Bool
     let blankWidth: CGFloat
+    let lead: CGFloat
 
     /// Nil for a label that shows nothing: blank text, or neither text nor a symbol.
     init?(_ contribution: AdornmentContribution, label: AdornmentLabel) {
@@ -236,9 +238,10 @@ struct ShownAdornment {
         isClickable = contribution.click != nil
         isText = label.text != nil
         blankWidth = AdornmentStyle.blankWidth(of: label, in: id.placement)
+        lead = AdornmentStyle.lead(of: label, in: id.placement)
     }
 
-    func item(width: CGFloat) -> AdornmentLayout.Item { AdornmentLayout.Item(id.placement, width: width, isText: isText) }
+    func item(width: CGFloat) -> AdornmentLayout.Item { AdornmentLayout.Item(id.placement, width: width, isText: isText, lead: lead) }
 
     /// Whether this, on `shape`, is `button` (the one hovered or pressed).
     func isButton(_ button: AdornmentButton?, on shape: ShapeID) -> Bool {

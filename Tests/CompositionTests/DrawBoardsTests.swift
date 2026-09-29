@@ -108,7 +108,7 @@ func scripted(_ text: String) -> String { text.replacingOccurrences(of: "\"", wi
         let renamed = try drawnInProcess(#"subboard "Payments" title: "Billing""#, on: editor)
         expectEqual(renamed["changes"]?.arrayValue?.first?["was"], "Payments")
     },
-    test("a schema card is as tall as its schema, named by its schema's title, and renamed by a schema of another; untitled, a statement can't name it") {
+    test("a schema card is named by its schema's title, and renamed by a schema of another; untitled, a statement can't name it") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
         let person = #"{"title": "Person", "type": "object", "properties": {"name": {"type": "string"}, "email": {"type": "string"}}}"#
@@ -117,7 +117,7 @@ func scripted(_ text: String) -> String { text.replacingOccurrences(of: "\"", wi
         _ = try drawnInProcess(#"schema-card schema: "\#(scripted(person))""#, on: editor)
         let card = try require(editor.document.shapes.first)
         expectEqual(editor.registry.title(of: card), "Person")
-        expectEqual(card.box?.height, SchemaCard.height(for: person))
+        expectEqual(card.box?.height, SchemaCard.defaultSize.height, "no description: a line's height, whatever its schema")
         // Found by its title; a schema whose title is another renames it, as `title:` renames a note.
         let human = person.replacingOccurrences(of: "Person", with: "Human")
         let renamed = try drawnInProcess(#"schema-card "Person" schema: "\#(scripted(human))""#, on: editor)
@@ -151,7 +151,7 @@ func scripted(_ text: String) -> String { text.replacingOccurrences(of: "\"", wi
         expectEqual(model.requests.count, 0, "what an agent wrote is taken as in step")
         expectEqual(editor.schemaSync?.status(of: id), .idle)
         // The person edits the prompt: that asks the model for the schema.
-        editor.transact("Edit Description") { $0.update(id, as: SchemaCard.self) { $0.props.prompt = "A person, their email and phone" } }
+        editor.transact("Edit Description") { $0.update(id, as: SchemaCard.self) { $0.props.setPrompt("A person, their email and phone") } }
         scheduler.advance(by: SchemaSync.idleDelay)
         spinRunLoop(until: { model.requests.count == 1 })
     },

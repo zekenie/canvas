@@ -3,7 +3,7 @@ import CoreGraphics
 import SwiftUI
 
 /// A shape as a section sees it. Take it as a `$` parameter, as with `ForEach($items) { $item in }`:
-/// `card` is the value the panel last drew, and `$card.prompt` is a `Binding` whose every write
+/// `card` is the value the panel last drew, and `$card.schema` is a `Binding` whose every write
 /// changes that one field of the live shape, in one `editor.transact`, and always on this shape
 /// (never on whatever is selected by the time it writes). A write to a shape that's gone does
 /// nothing; a write of the value the shape already has commits nothing.
@@ -11,7 +11,7 @@ import SwiftUI
 /// Reads never touch `editor.document`, so a section isn't re-rendered when other shapes change.
 /// For a larger section, write a View with `@ShapeBinding var card: SchemaCard` and pass `$card`.
 ///
-/// Writes are undo steps named for the section ("Change Description"; "Change" and the kind's name,
+/// Writes are undo steps named for the section ("Change JSON"; "Change" and the kind's name,
 /// "Change Schema", in the header or a section without a title). Writes to one field of one shape, one after
 /// another, are one step (a field typed into, a slider or a color dragged), until anything else
 /// happens: another field, a click or a key elsewhere (the host seals the run), any other change.
@@ -83,7 +83,7 @@ public struct ShapeBinding<Value> {
         return named
     }
 
-    /// `$card.prompt`: reads the snapshot, or what its last write made of the shape; writes the key
+    /// `$card.schema`: reads the snapshot, or what its last write made of the shape; writes the key
     /// path into the live shape. Bind the narrowest key path: a collection's binding writes the
     /// whole collection. Writes to one key path of one shape, one after another, are one undo step.
     public subscript<T>(dynamicMember keyPath: WritableKeyPath<Value, T>) -> Binding<T> {
@@ -111,9 +111,9 @@ public struct ShapeBinding<Value> {
         if let live = write(stepName, nil, change) { latest.value = live }
     }
 
-    /// A write to one field that goes through the value's own method, since it changes what follows
-    /// from the field too (`$card.update(\.schema) { $0.setSchema(text) }`, which fits the card to
-    /// its schema): applied to the live shape, as `update` is, but one after another they run
+    /// A write to one field that goes through the value's own method, which may keep what follows
+    /// from the field in step too (`$card.update(\.schema) { $0.setTitle(name) }`, which renames a
+    /// schema in its text): applied to the live shape, as `update` is, but one after another they run
     /// together into one undo step, with the field's own binding's writes (`$card.schema`), as
     /// typing in a field does.
     public func update<T>(_ field: WritableKeyPath<Value, T>, _ change: (inout Value) -> Void) {

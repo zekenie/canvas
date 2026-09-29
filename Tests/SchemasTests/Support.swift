@@ -28,18 +28,18 @@ import Validation
     CanvasEditor(registry: try Registry(plugins: schemaPlugins(model: model) + more), file: file ?? CanvasFile(root: document), scheduler: scheduler)
 }
 
-/// A card at `origin`, `width` wide, as tall as its schema makes it (the empty card's height for a
-/// text that isn't a JSON object).
-func card(_ schema: String, at origin: CGPoint = CGPoint(x: 40, y: 40), width: CGFloat = 240) -> SchemaCard {
-    var card = SchemaCard(frame: CGRect(origin: origin, size: CGSize(width: width, height: SchemaCard.defaultSize.height)))
-    card.setSchema(schema)
+/// A card at `origin`, `width` wide, of `schema`, as tall as its description makes it (a line's,
+/// with none).
+@MainActor func card(_ schema: String, prompt: String = "", at origin: CGPoint = CGPoint(x: 40, y: 40), width: CGFloat = 240) -> SchemaCard {
+    var card = SchemaCard(frame: CGRect(origin: origin, size: CGSize(width: width, height: SchemaCard.defaultSize.height)), schema: schema)
+    card.setPrompt(prompt)
     return card
 }
 
 extension CanvasEditor {
     @discardableResult
-    func add(_ props: SchemaCard) -> ShapeID {
-        let record = AnyShapeRecord(ShapeRecord(props))
+    func add(_ props: SchemaCard, id: ShapeID = ShapeID()) -> ShapeID {
+        let record = AnyShapeRecord(ShapeRecord(id: id, props))
         transact { $0.insert(record) }
         return record.id
     }
@@ -47,12 +47,6 @@ extension CanvasEditor {
     func schemaCard(_ id: ShapeID) -> SchemaCard? { document[id]?.typed(as: SchemaCard.self)?.props }
 
     func issues(_ id: ShapeID) -> [ValidationIssue] { validation?.result(for: id)?.issues ?? [] }
-}
-
-/// What a card of `size` shows for `schema`, each row as it reads.
-@MainActor func rows(_ schema: String, size: CGSize? = nil) -> [String] {
-    let layout = SchemaCardLayout(SchemaDocument(schema), size: size ?? CGSize(width: 240, height: SchemaCard.height(for: schema) ?? 67))
-    return layout.rows.map(\.text) + (layout.more > 0 ? ["+\(layout.more) more"] : []) + (layout.rules.map { ["Rules \($0)"] } ?? [])
 }
 
 /// Whether any pixel in `rect` (view points) is about `color`.
@@ -74,11 +68,9 @@ extension CanvasEditor {
 /// Colors on the card, as 0...255 sRGB (renderBitmap draws in device RGB, close enough here).
 enum Palette {
     static let card = [255, 255, 255]
-    static let chip = [241, 241, 241]
     static let accent = [191, 46, 158]
-    /// A skeleton's greeked text (the canvas's, a fifth of black) on the card, and on a chip.
+    /// A skeleton's greeked text (the canvas's, a fifth of black) on the card.
     static let textBar = [204, 204, 204]
-    static let textBarOnChip = [193, 193, 193]
     /// A skeleton's edge, inside its frame.
     static let skeletonEdge = [230, 230, 230]
 }

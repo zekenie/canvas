@@ -2,7 +2,6 @@ import Canvas
 import CoreGraphics
 import Keyboard
 import Ports
-import Selection
 import SwiftUI
 import TableOfContents
 import Titles
@@ -12,22 +11,22 @@ extension PluginID {
     public static let schemas: PluginID = "schemas"
 }
 
-/// Schema cards: the Schema tool (S), which places an empty card; the card, which lists a JSON
-/// Schema's fields; its name, the schema's `"title"` (Titles, without the pill: the card draws its
-/// name); its row in the table of contents; validation's rules for a schema that isn't one; its
-/// panel, where it's described in words and written as JSON; the sync that keeps the two saying the
-/// same thing through the editor's language model (`SchemaSync`); and ports, whose arrows link a
-/// schema to a schema (`SchemaLink`).
+/// Schema cards: the Schema tool (S), which places an empty card and types into it; the card, which
+/// says in words what a JSON Schema holds, typed on it; its name, the schema's `"title"` (Titles, in
+/// a pill after the kind's `{}`, since the card's words don't say what it is); its row in the table
+/// of contents; validation's rules for a schema that isn't one; its panel, where the schema is
+/// written as JSON; the sync that keeps the two saying the same thing through the editor's language
+/// model (`SchemaSync`); and ports, whose arrows link a schema to a schema (`SchemaLink`).
 public struct SchemasPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .schemas }
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { SchemaSync(editor: $0) }
         registrar.shape(SchemaCardDefinition()) { schema in
-            let place = schema.placement(size: SchemaCard.defaultSize) { SchemaCard() }
+            let place = schema.editingPlacement(size: SchemaCard.defaultSize) { SchemaCard() }
             schema.tool(label: "Schema", systemImage: "curlybraces", shortcut: "s", placing: place)
             schema.validate { shape, _ in SchemaReadings.reading(of: shape).issues }
-            schema.title(pill: false) { SchemaReadings.reading(of: $0).shown.title }
+            schema.title(symbolInPill: true) { SchemaReadings.reading(of: $0).shown.title }
             schema.contentsRow { shape in
                 let shown = SchemaReadings.reading(of: shape).shown
                 return ContentsLabel(shown.title ?? "", placeholder: SchemaCard.untitled, systemImage: "curlybraces",
@@ -35,38 +34,33 @@ public struct SchemasPlugin: CanvasPlugin {
             }
             schema.schemaPanel()
             schema.schemaLinks()
-            schema.readableZoom(SchemaStyle.readableZoom)      // going to a card brings it to 100%, where its rows read
         }
         registrar.channel(SchemaLink.self)
     }
 
     #if DEBUG
     /// How many times a card's schema has been read (parsed) in this process, debug builds only:
-    /// tests hold a frame to reading only the cards whose text changed.
+    /// tests hold what reads a card to reading only the cards whose text changed.
     public static var schemasRead: Int { SchemaReadings.made }
     #endif
 }
 
-/// Each card's schema read once: the card, its name, its row, its rules and its panel all read the
-/// same text, the card every frame, so a reading is kept per card and text, and read again only
-/// when the card's text changes. So a frame of cards that didn't change parses and measures
-/// nothing, however many are in view, and however many texts they have between them. A reading
-/// costs what its text's length does. A card keeps the readings of up to `versionsPerCard` texts,
-/// by its id: ids are unique within a file, not across files, so a file duplicated in Finder and
-/// opened beside its original has the same cards, whose texts may differ once one is edited, and
-/// each window's are kept beside the other's rather than taking their place every frame. Typing
-/// adds a reading, and the card's used longest ago goes. The readings of cards that went, or were
-/// read again from disk, are dropped (`forget`, which the sync calls), and past `capacity` those
-/// used longest ago.
-/// Zoomed out, a card's skeleton reads none: it takes a reading kept for its text, if there is
-/// one (`held`), and goes without; so the sync reads each card's text as it comes and as it
-/// changes, whoever changed it, and the frame after the commit finds it kept.
+/// Each card's schema read once: its name (its title's pill), its row, its rules, the sync and its
+/// panel all read the same text, so a reading is kept per card and text, and read again only when
+/// the card's text changes. A reading costs what its text's length does. A card keeps the readings
+/// of up to `versionsPerCard` texts, by its id: ids are unique within a file, not across files, so
+/// a file duplicated in Finder and opened beside its original has the same cards, whose texts may
+/// differ once one is edited, and each window's are kept beside the other's rather than taking
+/// their place as each is read. Typing adds a reading, and the card's used longest ago goes. The
+/// readings of cards that went, or were read again from disk, are dropped (`forget`, which the sync
+/// calls), and past `capacity` those used longest ago. The card itself shows its description, and
+/// reads none.
 ///
 /// While a card's text isn't a JSON object (a keystroke in the middle of a member breaks it), what
-/// the card shows stays what its last one said (`shown`): its rows and name on the card, its row in
-/// the table of contents, its title, its panel's header. So typing doesn't make the card flicker;
-/// Validation's outline says it's broken. What acts on the text (Validation's rules, the sync, the
-/// editor's colors, a rename) reads the text itself (`document`).
+/// the card shows of it stays what its last one said (`shown`): its title (its pill), its row in
+/// the table of contents, its panel's header. So typing doesn't make them flicker; Validation's
+/// outline says it's broken. What acts on the text (Validation's rules, the sync, the editor's
+/// colors, a rename) reads the text itself (`document`).
 @MainActor
 final class SchemaReadings {
     /// The text read, to tell whether a card's text is still this one: the record's own string
@@ -75,12 +69,7 @@ final class SchemaReadings {
     let document: SchemaDocument
     /// While `document` isn't a JSON object, the card's last reading that was, this session.
     private var showing: SchemaReadings?
-    /// The layouts of the last few sizes asked (a card being resized), the latest last: of
-    /// `document` (one showing another reading asks that one).
-    private var layouts: [(size: CGSize, layout: SchemaCardLayout)] = []
     private(set) lazy var issues: [ValidationIssue] = SchemaReadings.issues(of: document)
-    /// What the card's skeleton goes by, counted once: of `shown`.
-    private(set) lazy var skeleton = SchemaSkeleton.Counts(shown)
     /// When it was last asked for, counted in lookups.
     private var used = 0
 
@@ -93,8 +82,8 @@ final class SchemaReadings {
         #endif
     }
 
-    /// What the card shows: the text's reading while it's a JSON object, else its last one that was
-    /// (none: the text's, which says why there are no rows).
+    /// What the card is called by (its pill, its row, its panel's header): the text's reading while
+    /// it's a JSON object, else its last one that was (none: the text's).
     var shown: SchemaDocument { showing?.document ?? document }
 
     /// Shows what `previous`, the card's reading before this one, showed: its text, if that was a
@@ -109,11 +98,10 @@ final class SchemaReadings {
     /// How many readings `kept` holds, every card's.
     private static var count = 0
     private static var lookups = 0
-    /// At most this many readings are kept: past it, the quarter used longest ago goes. (More
-    /// cards than this in view at once would read some again every frame.)
+    /// At most this many readings are kept: past it, the quarter used longest ago goes.
     static let capacity = 4096
     /// At most this many a card: the same card in up to three copies of its file open beside it
-    /// read nothing again, frame after frame; one typed into keeps the texts it had last.
+    /// read nothing again; one typed into keeps the texts it had last.
     static let versionsPerCard = 4
     #if DEBUG
     static var made = 0
@@ -158,30 +146,10 @@ final class SchemaReadings {
         count = all.count - dropped.count
     }
 
-    /// A reading kept for a card's schema as it is now, if there is one: never read here, so never
-    /// counted (`made`), and nothing measured. What its skeleton goes by, a frame drawing thousands
-    /// zoomed out (past `capacity`, some with none kept).
-    static func held(for card: ShapeRecord<SchemaCard>) -> SchemaReadings? {
-        guard let held = kept[card.id]?.first(where: { $0.text == card.props.schema }) else { return nil }
-        lookups += 1
-        held.used = lookups
-        return held
-    }
-
     /// Drops the readings of a card that went, or was read again from disk, and the last one it
     /// showed.
     static func forget(_ id: ShapeID) {
         count -= kept.removeValue(forKey: id)?.count ?? 0
-    }
-
-    /// What a card of `size` shows: `shown`, laid out.
-    func layout(size: CGSize) -> SchemaCardLayout {
-        if let showing { return showing.layout(size: size) }
-        if let kept = layouts.last(where: { $0.size == size }) { return kept.layout }
-        let layout = SchemaCardLayout(document, size: size)
-        if layouts.count >= 4 { layouts.removeFirst() }
-        layouts.append((size, layout))
-        return layout
     }
 
     /// Validation's rules, about the text itself: a text that isn't JSON is an error at its line

@@ -103,12 +103,12 @@ style <name> attribute { attribute }             a named set of attributes, for 
 |---|---|---|---|
 | `sticky-note` | 200x200 | `text` (the note is as tall as its text, at least 200; a `size:` height lasts only until the text changes), `locked` | `note-link`, on its left, right and bottom |
 | `rectangle` | 160x100 | `locked` | none: plain arrows |
-| `schema-card` | 240x67 | `schema` (a JSON Schema, as text: the card grows to list it), `prompt` (what it holds, in words), `locked` | `schema-link`, on all four sides |
+| `schema-card` | 240x52 | `prompt` (what it holds, in words: the card shows them, and grows to fit), `schema` (a JSON Schema, as text: its panel shows it), `locked` | `schema-link`, on its left, right and bottom |
 | `subboard` | 240x160 | `locked` | none: plain arrows |
 
 Arrows are what edges are; you don't draw one on its own. Values: text is quoted (`text: "Two words"`). `true` and `false` are bare words (`locked: true`). `null` puts a property back to its default (but not a title: `title:` only renames). `size: 300x200` is in world units, up to 100000. A value past a bound, like a title over 80 characters, is kept and warned about.
 
-A subboard is a card that holds a board of its own. `inside "Payments" top-left` puts a shape over its card, on the board you're drawing on, never onto its board, and deleting it deletes everything on its board too (the result warns how much). A schema card's `schema:` is JSON inside a quoted string, so escape each quote: `schema: "{\"title\": \"Order\", \"type\": \"object\"}"`; the card grows to list it. What you write on one is taken as written: the Claude sync that rewrites one side when the user edits the other isn't asked, so write a prompt and a schema that agree, or leave `prompt:` out.
+A subboard is a card that holds a board of its own. `inside "Payments" top-left` puts a shape over its card, on the board you're drawing on, never onto its board, and deleting it deletes everything on its board too (the result warns how much). A schema card shows its `prompt:`, what the schema holds in words, as a note shows its text, and grows to fit it; with none it's blank. Its `schema:` is JSON inside a quoted string, so escape each quote: `schema: "{\"title\": \"Order\", \"type\": \"object\"}"`; the user sees it in the card's panel. Give a card both. What you write on one is taken as written: the Claude sync that rewrites one side when the user edits the other isn't asked, so write a prompt and a schema that agree.
 
 ```draw
 sticky-note "Ship v1" below "API" text: "Cut the release"

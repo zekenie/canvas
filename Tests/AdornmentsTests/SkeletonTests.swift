@@ -121,6 +121,21 @@ let blankGray = CGColor(srgbRed: 0.84, green: 0.85, blue: 0.86, alpha: 1)
         expect(counts[0] > 3 && counts[2] == counts[0], "text in full: \(counts)")
         expectEqual(counts[1], 1, "blank just under 35%")
     },
+    test("drawn blank, text after a symbol is longer by the symbol's place, as in full, and shows neither") {
+        let h = try adornedHarness([everyShape(Caption.self) {
+            $0.box?.minY == boxFrame.minY / 0.3 ? AdornmentLabel("Lobby", systemImage: "curlybraces") : AdornmentLabel("Lobby")
+        }])
+        let marked = h.add(Box(world(boxFrame, atZoom: 0.3)))
+        let alone = h.add(Box(world(boxFrame.offsetBy(dx: 0, dy: 150), atZoom: 0.3)))
+        h.editor.camera = Camera(origin: .zero, zoom: 0.3)
+        let blank = try [marked, alone].map { try require(viewRects(h, $0).first).width }
+        expectClose(blank[0] - blank[1], 14)                      // blank, the symbol's place and its gap
+        let rendered = render(h)
+        expectEqual(colors(rendered, in: inside(try captionRect(h, marked))).filter { !isBlankGray($0) }, [], "one flat gray: no symbol, no text")
+        h.editor.skeletonZoom = 0.2                                 // in full at 30%
+        let full = try [marked, alone].map { try require(viewRects(h, $0).first).width }
+        expectClose(full[0] - full[1], 14)                        // in full, the same
+    },
     test("drawn blank, a label is as long as its text's columns, not its letters") {
         let h = try adornedHarness([everyShape(Caption.self) { $0.box?.minY == boxFrame.minY / 0.3 ? AdornmentLabel("iiiiiiii") : AdornmentLabel("WWWWWWWW") }])
         let narrow = h.add(Box(world(boxFrame, atZoom: 0.3)))

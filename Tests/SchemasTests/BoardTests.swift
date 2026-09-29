@@ -44,7 +44,6 @@ private struct CardInPocket {
         expectEqual(b.editor.board, .root, "nothing is shown for it")
         expectEqual(b.editor.document, shown)
         expectEqual(card(b, tree.card)?.schema, petSchema, "written on the pocket's board")
-        expectEqual(card(b, tree.card)?.frame.height, SchemaCard.height(for: petSchema), "its height with it")
         expectEqual(b.status(tree.card), .idle)
         expectEqual(b.editor.undoHistory.undoName, "Update Schema")
         b.editor.undo()

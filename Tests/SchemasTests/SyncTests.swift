@@ -31,12 +31,12 @@ final class SyncBench {
 
     /// The person writing the prompt (a keystroke, or the lot).
     func typePrompt(_ id: ShapeID, _ text: String) {
-        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.prompt = text } }
+        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.setPrompt(text) } }
     }
 
     /// The person writing the schema.
     func typeSchema(_ id: ShapeID, _ text: String) {
-        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.setSchema(text) } }
+        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema = text } }
     }
 
     func card(_ id: ShapeID) -> SchemaCard? { editor.schemaCard(id) }
@@ -92,7 +92,7 @@ let petSchema = """
 }
 
 @MainActor let syncTests = Suite("Schema sync", [
-    test("a prompt committed asks for the schema at once; the answer is written, trimmed, the card fitted to it") {
+    test("a prompt committed asks for the schema at once; the answer is written, trimmed, the card as tall as its description") {
         let b = try SyncBench()
         let id = b.place()
         b.typePrompt(id, "a pet in my household")
@@ -109,7 +109,7 @@ let petSchema = """
         expectEqual(request.stopSequences, [])
         expectEqual(request.messages, [.user("<prompt>\na pet in my household\n</prompt>\n\n<schema>\n\(SchemaCard.starter)\n</schema>")])
         expectEqual(b.card(id)?.schema, petSchema)
-        expectEqual(b.card(id)?.frame, CGRect(x: 0, y: 0, width: 240, height: 111), "three rows")
+        expectEqual(b.card(id)?.frame, CGRect(x: 0, y: 0, width: 240, height: cardHeight(lines: 1)), "its description's line: no schema sizes it")
         expectEqual(b.card(id)?.prompt, "a pet in my household")
     },
     test("a schema is written as the model wrote it, never laid out again: its order and spacing are the model's") {
@@ -119,7 +119,6 @@ let petSchema = """
         let compact = #"{"type":"object","title":"Pet","properties":{"species":{"enum":["dog","cat"]},"name":{"type":"string"},"birthYear":{"type":"integer"}}}"#
         b.sync(id, answer: compact)
         expectEqual(b.card(id)?.schema, compact)
-        expectEqual(b.card(id)?.frame.height, 111, "three rows")
         b.sync.commit(id)
         b.settle()
         expectEqual(b.model.requests.count, 1, "and it's in step")
@@ -240,12 +239,12 @@ let petSchema = """
     },
     test("a card seen for the first time is in step: on a board opened, and pasted") {
         var props = card(petSchema, at: .zero)
-        props.prompt = "a pet in my household"
+        props.setPrompt("a pet in my household")
         let loaded = ShapeRecord(props)
         let b = try SyncBench(document: CanvasDocument(shapes: [AnyShapeRecord(loaded)]))
         b.sync.commit(loaded.id)
         let pasted = b.editor.add(card(petSchema, at: CGPoint(x: 400, y: 0)))
-        b.editor.transact { $0.update(pasted, as: SchemaCard.self) { $0.props.prompt = "a pet" } }
+        b.editor.transact { $0.update(pasted, as: SchemaCard.self) { $0.props.setPrompt("a pet") } }
         b.scheduler.advance(by: .seconds(5))
         b.settle()
         expectEqual(b.model.requests.count, 1, "the pasted card's prompt, changed after it came, syncs")
@@ -336,7 +335,7 @@ let petSchema = """
         spinRunLoop(until: { !b.isUpdating(id) })
         expectEqual(b.card(id)?.schema, petSchema)
         b.editor.cancel()
-        expectEqual(b.card(id)?.frame, CGRect(x: 0, y: 0, width: 240, height: 111), "back where it was, and as tall as the answer")
+        expectEqual(b.card(id)?.frame, CGRect(x: 0, y: 0, width: 240, height: cardHeight(lines: 1)), "back where it was")
         expectEqual(b.card(id)?.schema, petSchema, "Escape takes back the move, not the answer")
         b.scheduler.advance(by: .seconds(5))
         b.settle()

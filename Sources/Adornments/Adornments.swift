@@ -53,8 +53,8 @@ public protocol ClickableAdornment: Adornment {
 /// view points: constant on screen down to 25% zoom, shrinking with the shapes below that.
 public enum AdornmentPlacement: Hashable, Sendable, CaseIterable {
     /// The row just above the top edge (18 points tall, 9 above it), from its left end rightward,
-    /// in the room its right end leaves: text gives way, ending in "…", and needs 30 points, or
-    /// it isn't shown. A title's pill.
+    /// in the room its right end leaves: text gives way, ending in "…", and needs 30 points (and
+    /// a symbol before it, its place), or it isn't shown. A title's pill.
     case aboveTopLeft
     /// The same row, from its right end leftward, whole: past the shape's left end on a shape too
     /// narrow for it. A lock.
@@ -106,11 +106,12 @@ public struct AdornmentButton: Hashable, Sendable {
 
 /// What an adornment shows on one shape. Adornments draws it, so every plugin's look alike (as
 /// `ContentsLabel` does for rows): a capsule in the title pill's dark gray (green for something
-/// done), white text on one line, or a symbol in a disc. Its height, font and padding are its
-/// place's: 18 points, 11-point text, 7 in, in the row; 16 points, 10-point semibold figures, 5
-/// in, on the corner. On a shape drawn as a skeleton, zoomed out (`editor.drawsSkeleton(of:)`),
-/// it's drawn blank: the capsule, as long as its text's columns (`SkeletonText`), or the disc,
-/// alone, in a pale gray (green), its opacity kept.
+/// done), white text on one line, a small symbol before it if it has one (a kind's mark: a schema
+/// card's title's `{}`), or a symbol alone in a disc. Its height, font and padding are its place's:
+/// 18 points, 11-point text, 7 in, in the row; 16 points, 10-point semibold figures, 5 in, on the
+/// corner. On a shape drawn as a skeleton, zoomed out (`editor.drawsSkeleton(of:)`), it's drawn
+/// blank: the capsule, as long as its symbol's place and its text's columns (`SkeletonText`), or
+/// the disc, alone, in a pale gray (green), its opacity kept.
 public struct AdornmentLabel: Hashable, Sendable {
     public enum Tone: Hashable, Sendable {
         case neutral
@@ -120,15 +121,17 @@ public struct AdornmentLabel: Hashable, Sendable {
 
     /// On one line: each run of whitespace, newlines included, folds into a space. Blank shows nothing.
     public let text: String?
-    /// An SF Symbol, drawn in a disc as tall as its place.
+    /// An SF Symbol: with text, drawn small before it, in a place as wide as the text is tall;
+    /// alone, in a disc as tall as its place.
     public let systemImage: String?
     public var tone: Tone
     /// How opaque it's drawn: 1, but for one fading away (an open lock).
     public var opacity: CGFloat
 
-    public init(_ text: String, tone: Tone = .neutral) {
+    /// Text, after a small symbol if `systemImage` names one (a kind's mark: a schema card's `{}`).
+    public init(_ text: String, systemImage: String? = nil, tone: Tone = .neutral) {
         self.text = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        systemImage = nil
+        self.systemImage = systemImage
         self.tone = tone
         opacity = 1
     }

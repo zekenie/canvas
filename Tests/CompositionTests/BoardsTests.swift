@@ -154,7 +154,7 @@ extension ChangeSetWatcher: EditorService {
         h.editor.transact { $0.update(note) { $0[TitleProperty.self] = "Inner" } }
         h.editor.lock([note])
         let card = h.add(SchemaCard(frame: CGRect(x: 300, y: 0, width: 240, height: 89)))
-        h.editor.transact { $0.update(card, as: SchemaCard.self) { $0.props.setSchema("{ \"type\": ") } }
+        h.editor.transact { $0.update(card, as: SchemaCard.self) { $0.props.schema = "{ \"type\": " } }
         let frames = h.editor.adornmentFrames(of: note)
         expectEqual(frames.count, 2, "the title's pill and the lock")
         let rows = try require(h.editor.tableOfContents).entries.map(\.id)
@@ -180,7 +180,7 @@ extension ChangeSetWatcher: EditorService {
         let h = try shippedWithPockets(file, pasteboard: pasteboard, model: model)
         expect(h.enter(pocket))
         let card = h.add(SchemaCard(frame: CGRect(x: 300, y: 0, width: 240, height: 89)))
-        h.editor.transact("Change Description") { $0.update(card, as: SchemaCard.self) { $0.props.prompt = "a person: name and email" } }
+        h.editor.transact("Change Description") { $0.update(card, as: SchemaCard.self) { $0.props.setPrompt("a person: name and email") } }
         h.editor.goBack()
         expectEqual(h.editor.board, .root)
         let schema = #"{ "title": "Person", "type": "object", "properties": { "name": { "type": "string" }, "email": { "type": "string" } } }"#
@@ -222,7 +222,7 @@ extension ChangeSetWatcher: EditorService {
         let contents = try require(h.editor.tableOfContents)
         expect(h.enter(pocket))
         let card = h.add(SchemaCard(frame: CGRect(x: 300, y: 0, width: 240, height: 89)))
-        h.editor.transact { $0.update(card, as: SchemaCard.self) { $0.props.setSchema("{ \"type\": ") } }
+        h.editor.transact { $0.update(card, as: SchemaCard.self) { $0.props.schema = "{ \"type\": " } }
         let issues = h.editor.validation?.result(for: card)?.issues ?? []
         expect(!issues.isEmpty, "a schema that isn't JSON")
         expectEqual(contents.entries.map(\.id), [note, card])

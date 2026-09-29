@@ -6,20 +6,19 @@ import SwiftUI
 import Titles
 import Validation
 
-/// The card's own tab: what it holds, in words and as JSON.
+/// The card's own tab: its JSON Schema.
 public enum SchemaTab {}
 extension SchemaTab: DetailTab {
     public static var title: String { "Schema" }
 }
 
 extension ShapeRegistrar where Definition == SchemaCardDefinition {
-    /// The card's panel, its only editor: the header, where it's renamed (its `"title"`), and the
-    /// Schema tab: the description (the prompt) over the JSON, each rewritten from the other by
-    /// `SchemaSync`, whose status shows under the side the person edited. Arrange comes from the
-    /// panel itself.
+    /// The card's panel, where its schema is written: the header, where it's renamed (its
+    /// `"title"`), and the Schema tab, its JSON, which `SchemaSync` rewrites from the description
+    /// typed on the card, and the description from, with the sync's status under it. Arrange comes
+    /// from the panel itself.
     mutating func schemaPanel() {
         details(header: { $card in schemaHeader($card) }) {
-            DetailSection("Description", in: SchemaTab.self) { $card in SchemaDescription(card: $card) }
             DetailSection("JSON", in: SchemaTab.self) { $card in SchemaCode(card: $card) }
         }
     }
@@ -28,17 +27,13 @@ extension ShapeRegistrar where Definition == SchemaCardDefinition {
 /// What the panel says about schema cards.
 @MainActor
 enum SchemaPanelText {
-    /// Only while the schema is an object with no fields: once it has fields, the description is
-    /// written from them; while it isn't an object (never one this session), nothing syncs, and
-    /// whatever it holds isn't a pet.
-    static let promptPlaceholder = "e.g. a pet in my household"
     static let updatingSchema = "Updating schema…"
     static let updatingPrompt = "Updating description…"
     static let openSettings = "Open Settings…"
     static let retry = "Retry"
 
-    /// Under the name: how many fields the card shows; nothing when it shows none (the card says
-    /// so).
+    /// Under the name: how many top-level fields the schema has, as its row's badge counts them;
+    /// nothing for none.
     static func subtitle(_ shown: SchemaDocument) -> String? {
         switch shown.fields.count {
         case 0: nil
@@ -65,40 +60,23 @@ func schemaHeader(_ card: ShapeBinding<SchemaCard>) -> TitleHeader {
                        isEnabled: !isUpdating, isRenamable: reading.document.isObject)
 }
 
-// The sections' commits hold the sync weakly: a text view that loses the keyboard as its window
-// closes commits a turn later (`DetailTextArea`), after the board, its editor and its sync may
+// The section's commit holds the sync weakly: a text view that loses the keyboard as its window
+// closes commits a turn later (`DetailCodeEditor`), after the board, its editor and its sync may
 // have gone.
 
-/// The prompt, and under it the sync's status when it's about the prompt (the schema being
-/// written from it, or why it couldn't be).
-struct SchemaDescription: View {
-    @ShapeBinding var card: SchemaCard
-
-    var body: some View {
-        let sync = $card.service(SchemaSync.self), id = $card.shape.id
-        let status = sync?.status(of: id) ?? .idle
-        let shown = SchemaReadings.reading(of: card.schema, for: id).shown
-        DetailTextArea($card.prompt, placeholder: shown.isObject && shown.fields.isEmpty ? SchemaPanelText.promptPlaceholder : nil,
-                       onCommit: { [weak sync] in sync?.commit(id) })
-            .detailUpdating(status == .updating(.prompt))
-        SchemaSyncLine(status: status, under: .prompt, sync: sync, id: id)
-    }
-}
-
 /// The JSON Schema as text, which ⌃Space completes (`SchemaCompletions`); under it, what
-/// Validation finds wrong with it (in its words, each in its tone), and the sync's status when it's
-/// about the schema (the description being written from it, or why it couldn't be). What's typed
-/// in it, keystroke after keystroke, picks included, is one undo step ("Change JSON"), as the
-/// description's is ("Change Description"). While its list is open the sync's idle wait waits too
-/// (`SchemaSync.completing`): the person is still choosing.
+/// Validation finds wrong with it (in its words, each in its tone), and the sync's status, whichever
+/// side it writes: the schema from the description typed on the card, or the description from this.
+/// What's typed in it, keystroke after keystroke, picks included, is one undo step ("Change JSON").
+/// While its list is open the sync's idle wait waits too (`SchemaSync.completing`): the person is
+/// still choosing.
 struct SchemaCode: View {
     @ShapeBinding var card: SchemaCard
 
     var body: some View {
         let sync = $card.service(SchemaSync.self), id = $card.shape.id
         let status = sync?.status(of: id) ?? .idle
-        let schema = $card.schema
-        DetailCodeEditor(Binding(get: { schema.wrappedValue }, set: { text in $card.update(\.schema) { $0.setSchema(text) } }),
+        DetailCodeEditor($card.schema,
                          coloring: { text in SchemaCodeColors.spans(in: text, for: id) },
                          completions: { text, caret in SchemaCompletions.completions(in: text, at: caret).map(DetailCodeCompletions.init) },
                          onCompleting: { [weak sync] isCompleting in sync?.completing(id, isCompleting) },
@@ -108,38 +86,27 @@ struct SchemaCode: View {
         ForEach(issues.indices, id: \.self) { i in
             DetailStatusLine(DetailStatus(issues[i].message, tone: issues[i].severity == .error ? .error : .warning))
         }
-        SchemaSyncLine(status: status, under: .schema, sync: sync, id: id)
+        SchemaSyncLine(status: status, sync: sync, id: id)
     }
 }
 
-/// Where the sync is, under the side the person edited (`SchemaSyncStatus.source`): so it's under
-/// the text they just committed, and in view whichever section is collapsed. Updating, with a
-/// spinner (the side being written is dimmed and read-only), or why it failed (the warning's tone:
-/// red is the schema's own errors), with what can be done: Retry, or for want of a key Open
-/// Settings… (saving one there tries again by itself); nothing for a schema too long to rewrite.
+/// Where the sync is, under the JSON: updating, with a spinner (the side being written, the JSON
+/// or the card's description, is dimmed and read-only), or why it failed (the warning's tone: red
+/// is the schema's own errors), with what can be done: Retry, or for want of a key Open Settings…
+/// (saving one there tries again by itself); nothing for a schema too long to rewrite.
 struct SchemaSyncLine: View {
     let status: SchemaSyncStatus
-    let side: SchemaSide
     weak var sync: SchemaSync?
     let id: ShapeID
 
-    init(status: SchemaSyncStatus, under side: SchemaSide, sync: SchemaSync?, id: ShapeID) {
-        self.status = status
-        self.side = side
-        self.sync = sync
-        self.id = id
-    }
-
     var body: some View {
-        if status.source == side {
-            switch status {
-            case .idle:
-                EmptyView()
-            case let .updating(writing):
-                DetailStatusLine(DetailStatus(writing == .schema ? SchemaPanelText.updatingSchema : SchemaPanelText.updatingPrompt), isBusy: true)
-            case let .failed(failure):
-                DetailStatusLine(DetailStatus(failure.message, tone: .warning), actions: actions(for: failure.remedy))
-            }
+        switch status {
+        case .idle:
+            EmptyView()
+        case let .updating(writing):
+            DetailStatusLine(DetailStatus(writing == .schema ? SchemaPanelText.updatingSchema : SchemaPanelText.updatingPrompt), isBusy: true)
+        case let .failed(failure):
+            DetailStatusLine(DetailStatus(failure.message, tone: .warning), actions: actions(for: failure.remedy))
         }
     }
 
@@ -173,7 +140,7 @@ enum SchemaCodeColors {
     static let maxLength = 200_000
 
     /// The runs of the card `id`'s schema `text`, and where it stops being JSON, from the card's
-    /// reading (which the card, its rules and the panel read too).
+    /// reading (which its name, its row, its rules, the panel and the sync read too).
     @MainActor
     static func spans(in text: String, for id: ShapeID) -> [DetailCodeSpan] {
         guard text.utf8.count <= maxLength else { return [] }

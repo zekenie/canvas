@@ -19,8 +19,7 @@ import Titles
         b.sync(id, answer: petSchema)
         expectEqual(b.editor.undoHistory.undoName, "Update Schema")
         b.editor.undo()
-        expectEqual(b.card(id)?.schema, SchemaCard.starter, "the schema as it was, and the card's height with it")
-        expectEqual(b.card(id)?.frame.height, 89)
+        expectEqual(b.card(id)?.schema, SchemaCard.starter, "the schema as it was")
         expectEqual(b.card(id)?.prompt, "a pet in my household", "the person's prompt stays")
         b.scheduler.advance(by: .seconds(5))
         b.settle()
@@ -127,7 +126,7 @@ import Titles
         panel.editor.redo()
         expectEqual(panel.card(id)?.schema, typed)
     },
-    test("typing the description is one step, Change Description; renaming in the header one, Change Schema") {
+    test("renaming in the header is one step, Change Schema; typing the card's description one, Typing") {
         let panel = try SchemaPanelWindow()
         let id = panel.show(card(#"{"type": "object", "properties": {"a": {}}}"#))
         let before = try require(panel.card(id)?.schema)
@@ -138,9 +137,11 @@ import Titles
         panel.editor.undo()
         expectEqual(panel.card(id)?.schema, before, "the name typed, undone at once")
         panel.editor.undoHistory.seal()     // what the app's window does as the keyboard moves
-        panel.focus(try require(panel.prompt))
+        panel.model.queue("NO_CHANGE")
+        _ = try panel.describe(id)
         panel.window.type("a pet")
-        expectEqual(panel.editor.undoHistory.undoName, "Change Description")
+        panel.window.pressReturn()
+        expectEqual(panel.editor.undoHistory.undoName, "Typing")
         panel.editor.undo()
         expectEqual(panel.card(id)?.prompt, "")
     },

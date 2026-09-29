@@ -207,25 +207,9 @@ final class NoteEditor: NSView, NSTextViewDelegate {
     /// scrolls no text of its own: the camera follows the caret instead, so what's typed is never
     /// typed blind (`EditContext.keepInView`).
     private func keepCaretInView() {
-        guard window != nil, let caret = caretFrame else { return }
+        guard window != nil, let caret = textView.caretFrame else { return }
         // In this view's coordinates: world units, the note's frame at their origin.
         context.keepInView(convert(caret, from: textView))
-    }
-
-    /// Where the caret is, in the text view's coordinates: the line fragment it's on, as TextKit 2
-    /// lays it out. TextKit 2 lays out only the text in view, so the note's text is laid out first
-    /// (a note's is short): the caret may have gone where nothing was (⌘↓ in a long note).
-    private var caretFrame: CGRect? {
-        guard let layout = textView.textLayoutManager, let content = layout.textContentManager,
-              let location = content.location(content.documentRange.location, offsetBy: NSMaxRange(textView.selectedRange())) else { return nil }
-        layout.ensureLayout(for: content.documentRange)
-        var frame: CGRect?
-        layout.enumerateTextSegments(in: NSTextRange(location: location), type: .selection, options: [.rangeNotRequired]) { _, segment, _, _ in
-            frame = segment
-            return false
-        }
-        let origin = textView.textContainerOrigin
-        return frame.map { CGRect(x: $0.minX + origin.x, y: $0.minY + origin.y, width: max($0.width, 1), height: $0.height) }
     }
 
     /// The canvas lays the editor over the note, its bounds the note's size: as the note grows with

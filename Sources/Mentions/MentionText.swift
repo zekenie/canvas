@@ -9,6 +9,31 @@ public enum MentionRun: Hashable, Sendable {
     case mention(ShapeID, label: String)
 }
 
+/// Greeked, zoomed out (`SkeletonTextBars`: a note's skeleton): text as it reads, and a mention as
+/// wide as its pill, by the name it holds (its target isn't looked up), read only as far as a pill
+/// grows.
+extension MentionRun: SkeletonTextRunConvertible {
+    public var skeletonTextRun: SkeletonTextRun {
+        switch self {
+        case .text(let text): .text(text)
+        case .mention(_, let label): .inline(columns: Self.pillColumns(named: label))
+        }
+    }
+
+    /// How many of its text's columns (about half an em of its font each, `SkeletonTextMetrics`) a
+    /// pill takes: its symbol and padding (1.5 em), and its label, set 0.85 as large (about 0.39
+    /// em a column), at most 16 em (`MentionStyle`).
+    static let pillColumns: CGFloat = 3
+    static let pillColumn: CGFloat = 0.75
+    static let longestPill: CGFloat = 30
+    /// The most of a label that counts: past this many columns its pill is `longestPill`.
+    static let longestLabel = Int(((longestPill - pillColumns) / pillColumn).rounded(.up))
+
+    static func pillColumns(named label: String) -> CGFloat {
+        Swift.min(pillColumns + CGFloat(SkeletonText.columns(of: label, upTo: longestLabel)) * pillColumn, longestPill)
+    }
+}
+
 /// Text that may mention shapes, restricted to what `Scope` admits (`MentionText` admits any
 /// mentionable shape). Stored as one string in which `@[label](shape:UUID)` is a mention: in a
 /// label, `\]` stands for `]` and `\\` for `\`; in the text, `\@[` is a literal `@[`, and any

@@ -1,10 +1,12 @@
 import Canvas
 import CoreGraphics
 
-/// A JSON Schema on the canvas, drawn as a card listing its fields. The schema is kept as its text,
-/// not as a parsed value: a dictionary would lose the order its properties were written in (which
-/// the card shows, and whoever wrote them cares about), and a schema being typed isn't JSON for a
-/// while. Its name is the schema's own `"title"`: one place to say it.
+/// A JSON Schema on the canvas, drawn as a card of what it holds in words (its prompt, typed on the
+/// card), which the editor's language model writes the schema from, and back (`SchemaSync`). The
+/// schema is kept as its text, not as a parsed value: a dictionary would lose the order its
+/// properties were written in (which whoever wrote them cares about), and a schema being typed
+/// isn't JSON for a while; its panel is where it's written. Its name is the schema's own `"title"`:
+/// one place to say it, shown in its title's pill.
 public struct SchemaCard: BoxShapeProps {
     public static let kind: ShapeKind = "schema-card"
     /// Append only. The count is the version boards record.
@@ -14,9 +16,9 @@ public struct SchemaCard: BoxShapeProps {
         Property("schema", \.schema)
             .description("A JSON Schema, as text: its properties in the order written, kept as typed while it isn't JSON. Its \"title\" is the card's name.")
             .keywords(["contentMediaType": .string("application/schema+json")])
-        Property("prompt", \.prompt).description("What the schema should hold, in words.")
+        Property("prompt", \.prompt).description("What the schema should hold, in words: what the card shows.")
     }
-    /// A placed card: 240 wide (as a subboard), and as tall as the empty card, which `starter` is.
+    /// A placed card: 240 wide (as a subboard), and as tall as one line of its description (52).
     public static let defaultSize = CGSize(width: SchemaCardMetrics.defaultWidth, height: SchemaCardMetrics.emptyHeight)
     /// A new card's schema: an object with no properties yet.
     public static let starter = """
@@ -27,11 +29,11 @@ public struct SchemaCard: BoxShapeProps {
     """
 
     public var frame: CGRect
-    /// Written with `setSchema`, which keeps the card as tall as what it lists.
-    public internal(set) var schema: String
-    public var prompt: String
+    public var schema: String
+    /// Written with `setPrompt`, which keeps the card as tall as its text.
+    public internal(set) var prompt: String
 
-    /// A card as it is: its frame isn't fitted to its schema (see `setSchema`).
+    /// A card as it is: its frame isn't fitted to its description (see `setPrompt`).
     public init(frame: CGRect = .zero, schema: String = SchemaCard.starter, prompt: String = "") {
         self.frame = frame
         self.schema = schema
@@ -40,14 +42,13 @@ public struct SchemaCard: BoxShapeProps {
 
     public init() { self.init(frame: .zero) }
 
-    /// Sets the schema's text and, if it's a JSON object, the card's height to what it lists, keeping
-    /// its top-left corner and width (so the card grows and shrinks downward, in the same
-    /// transaction). A text that isn't a JSON object leaves the frame as it was: a typo doesn't make
-    /// the card jump, and the card goes on showing its last reading that was one
-    /// (`SchemaReadings.shown`), which that frame still fits.
-    public mutating func setSchema(_ text: String) {
-        schema = text
-        if let height = SchemaCard.height(for: text) { frame.size.height = height }
+    /// Sets the description and the card's height to its text at the card's width, set as the card
+    /// sets it (a note's text: `SchemaStyle`), keeping its top-left corner and width, so the card
+    /// grows and shrinks downward in the same transaction; never shorter than one line
+    /// (`SchemaCardMetrics.emptyHeight`). A card too narrow for text keeps its height.
+    @MainActor public mutating func setPrompt(_ text: String) {
+        prompt = text
+        frame.size.height = SchemaStyle.fittedHeight(of: text, width: frame.width, keeping: frame.height)
     }
 
     /// Renames the schema: sets its root `"title"` (added first if there's none; removed when
@@ -55,21 +56,11 @@ public struct SchemaCard: BoxShapeProps {
     /// JSON object.
     public mutating func setTitle(_ title: String) {
         guard let text = SchemaCard.retitled(schema, title) else { return }
-        setSchema(text)
+        schema = text
     }
 
-    /// The height a card's content sets: 45 and 22 a row (at most 7 fields, and the rules line), at
-    /// least one row (67), where a schema with no fields says so. Nil for a text that isn't a JSON
-    /// object (not JSON, or `[1]`): it has no rows of its own to fit. Arithmetic only: no text is
-    /// measured, and the width never matters.
-    public static func height(for schema: String) -> CGFloat? {
-        let document = SchemaDocument(schema)
-        guard document.error == nil, document.isObject else { return nil }
-        return SchemaCardMetrics.height(rows: SchemaCardMetrics.rows(for: document))
-    }
-
-    /// What an untitled card is called: on the card, in its panel's header and in its row. The
-    /// `{}` beside it says what it is.
+    /// What an untitled card is called in its panel's header and its row, beside its kind's `{}`.
+    /// On the canvas it has no title's pill, as an untitled note has none.
     public static let untitled = "Untitled"
 }
 
@@ -103,55 +94,16 @@ extension SchemaCard {
     }
 }
 
-/// The card's vertical metrics, in world units: all that decides its height, so the height is
-/// arithmetic (no fonts), nonisolated, beside the props. `SchemaStyle` keeps the rest of the look.
+/// The metrics a card's size comes from, in world units, nonisolated, beside the props: its
+/// description is set as a note's text is, in its padding, and measured at that
+/// (`SchemaStyle.fittedHeight`, on the main actor, where fonts are). `SchemaStyle` keeps the rest of
+/// the look.
 public enum SchemaCardMetrics {
     public static let defaultWidth: CGFloat = 240
-    public static let padding: CGFloat = 12
-    /// The title's line: what 14-point semibold system text takes, as string drawing lays it out.
-    public static let titleLineHeight: CGFloat = 17
-    public static let headerGap: CGFloat = 8
-    public static let chipHeight: CGFloat = 18
-    /// A chip, and the gap under it.
-    public static let rowHeight: CGFloat = 22
-    public static let rowGap: CGFloat = rowHeight - chipHeight
-    /// At most this many field rows: 8 fields or more show 6 and "+N more".
-    public static let maxRows = 7
-    /// A card of one row: the least, where a card with no fields says so ("No fields").
-    public static let emptyHeight = height(rows: 1)
-
-    /// How tall a card of `rows` rows is (field rows, "+N more", the rules line), at least one.
-    public static func height(rows: Int) -> CGFloat {
-        padding + titleLineHeight + headerGap + CGFloat(max(rows, 1)) * rowHeight - rowGap + padding
-    }
-
-    /// The rows a schema's content wants: its top-level fields, at most `maxRows`, and the rules
-    /// line if it has rules; one for a schema with no fields (the line that says so), or a text
-    /// that isn't a JSON object (which `SchemaCard.height(for:)` doesn't fit).
-    public static func rows(for document: SchemaDocument) -> Int {
-        guard document.isObject, !document.fields.isEmpty else { return 1 }
-        return min(document.fields.count, maxRows) + (document.rules.isEmpty ? 0 : 1)
-    }
-
-    /// How many rows a card `height` tall has room for: those `height(rows:)` made room for, and
-    /// what a card made taller by hand has besides; at most `maxFittingRows`, so a frame of any
-    /// height (a file edited by hand keeps one of 1e21) makes an Int.
-    static func rows(fitting height: CGFloat) -> Int {
-        Int(min((max(0, height - padding * 2 - titleLineHeight - headerGap) + rowGap) / rowHeight, CGFloat(maxFittingRows)))
-    }
-
-    /// Far more rows than a card shows (`maxRows`), so a card of any height a person makes counts
-    /// its own.
-    static let maxFittingRows = 1_000_000
-
-    /// The overflow rule, for `fields` top-level fields on a card with room for `fit` rows: as many
-    /// field rows as fit, at most `maxRows`; if the fields don't all fit, the last row says how many
-    /// more (`more`), so it's never "+1 more"; then the rules line, if the schema has rules and a row
-    /// is left for it.
-    static func overflow(fields count: Int, hasRules: Bool, fit: Int) -> (fields: Int, more: Int, rules: Bool) {
-        let slots = min(maxRows, fit)
-        let shown = count <= slots ? count : max(0, slots - 1)
-        let more = slots > 0 ? count - shown : 0
-        return (shown, more, hasRules && shown + (more > 0 ? 1 : 0) < fit)
-    }
+    /// The description's inset from every edge, and each of its lines' height: a note's.
+    public static let padding: CGFloat = 16
+    public static let lineHeight: CGFloat = 19
+    /// A card of one line, or none: the least a card is, and a new one. A line's height with half a
+    /// point spare, so string drawing never cuts it (`SchemaStyle.fittedHeight`), and the padding.
+    public static let emptyHeight = (lineHeight + 0.5).rounded(.up) + padding * 2
 }

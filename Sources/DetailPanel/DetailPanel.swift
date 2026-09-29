@@ -103,8 +103,8 @@ public struct DetailStatus: Hashable, Sendable {
 /// One section of a tab: an optional bold header (collapsible), then rows. `Value` is what it
 /// edits: a kind's props, or a box's frame.
 ///
-/// The content closure gets a `ShapeBinding`. Take it as `$card`: `card.prompt` is the value,
-/// `$card.prompt` a `Binding` that writes that one field in its own transaction.
+/// The content closure gets a `ShapeBinding`. Take it as `$card`: `card.schema` is the value,
+/// `$card.schema` a `Binding` that writes that one field in its own transaction.
 /// (The closure types are deliberately unannotated: annotated `@MainActor`, Swift 6.3 compiles a
 /// `$`-parameter body as nonisolated, and every view initializer in it fails.)
 @MainActor
@@ -341,7 +341,6 @@ extension ShapeRegistrar {
     /// This kind's header and sections, in one call:
     ///
     ///     schema.details(header: { $card in schemaHeader($card) }) {
-    ///         DetailSection("Description", in: SchemaTab.self) { $card in DetailTextArea($card.prompt) }
     ///         DetailSection("JSON", in: SchemaTab.self) { $card in SchemaCode(card: $card) }
     ///     }
     ///

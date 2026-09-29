@@ -160,7 +160,7 @@ enum QueryEvalBoard {
         func card(_ id: ShapeID, _ schema: String) -> Placed {
             { origin in
                 var props = SchemaCard(frame: CGRect(origin: origin, size: SchemaCard.defaultSize), schema: "")
-                props.setSchema(schema)
+                props.schema = schema
                 return AnyShapeRecord(ShapeRecord(id: id, props))
             }
         }

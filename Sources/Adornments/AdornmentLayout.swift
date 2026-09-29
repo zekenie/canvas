@@ -7,7 +7,8 @@ import Geometry
 ///
 /// - the row above the top edge (`rowGap` above it, `rowHeight` tall): its right end leftward from
 ///   the right edge, whole, then its left end rightward from the left edge, in the room left (text
-///   gives way, ending in "…", and needs `minTextRoom`, or it and the rest are left out);
+///   gives way, ending in "…", and needs `minTextRoom`, and its `lead` more, a symbol before it, or
+///   it and the rest are left out);
 /// - the top-right corner (`cornerHeight` tall, centered on the top edge), leftward from
 ///   `cornerOverhang` past the right edge.
 ///
@@ -40,15 +41,19 @@ public enum AdornmentLayout {
 
     /// One adornment to lay out: its place, how wide it is (text as long as it's drawn, measured in
     /// full and counted from its columns drawn blank, zoomed out; a symbol's disc as wide as its
-    /// place is tall), and whether it's text, which gives way at the row's left end.
+    /// place is tall), whether it's text, which gives way at the row's left end, and for text, how
+    /// far it starts past its padding (`lead`: a symbol before it, and the gap after that), which it
+    /// needs room for besides `minTextRoom`.
     public struct Item: Equatable, Sendable {
         public var placement: AdornmentPlacement
         public var width: CGFloat
         public var isText: Bool
-        public init(_ placement: AdornmentPlacement, width: CGFloat, isText: Bool) {
+        public var lead: CGFloat
+        public init(_ placement: AdornmentPlacement, width: CGFloat, isText: Bool, lead: CGFloat = 0) {
             self.placement = placement
             self.width = width
             self.isText = isText
+            self.lead = lead
         }
     }
 
@@ -122,7 +127,7 @@ public enum AdornmentLayout {
         var left: CGFloat = 0
         for i in items.indices where items[i].placement == .aboveTopLeft {
             let room = width + right - left
-            let shown: CGFloat? = items[i].isText ? (room >= minTextRoom ? min(items[i].width, room) : nil)
+            let shown: CGFloat? = items[i].isText ? (room >= minTextRoom + items[i].lead ? min(items[i].width, room) : nil)
                                                   : (items[i].width <= room ? items[i].width : nil)
             guard let shown else { break }
             slots[i] = Slot(frame: CGRect(x: left, y: rowY, width: shown, height: rowHeight), isFromRight: false)

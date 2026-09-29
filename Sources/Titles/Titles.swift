@@ -70,18 +70,21 @@ extension ShapeTitles: KeyedExtensionPoint {
 }
 
 /// What `ShapeTitles` stores for a kind: its shapes' titles, as they read (`TitleProperty.folded`),
-/// whether they're derived from what the kind keeps, and whether its shapes show `TitlePill`. Only
-/// the sugar below makes one.
+/// whether they're derived from what the kind keeps, whether its shapes show `TitlePill`, and
+/// whether the pill starts with the kind's symbol. Only the sugar below makes one.
 @MainActor
 public struct TitleContribution {
     let title: @MainActor (AnyShapeRecord) -> String?
     let showsPill: Bool
+    let symbolInPill: Bool
     /// Made by what `make` says (`title { … }`), not only read from `TitleProperty` (`title()`).
     let isDerived: Bool
 
-    init<P: ShapeProps>(_: P.Type, showsPill: Bool, isDerived: Bool, _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) {
+    init<P: ShapeProps>(_: P.Type, showsPill: Bool, symbolInPill: Bool, isDerived: Bool,
+                        _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) {
         title = { TitleProperty.folded($0.typed(as: P.self).flatMap(make)) }
         self.showsPill = showsPill
+        self.symbolInPill = symbolInPill
         self.isDerived = isDerived
     }
 }
@@ -91,26 +94,29 @@ extension ShapeRegistrar {
     /// Gives this kind a title that Titles keeps: its shapes hold one (`TitleProperty`, nil until
     /// they're named), and its schema gains it, bounds and all, so a title too long draws a warning.
     /// A titled shape shows it in a pill above its top-left corner, unless `pill` is false (for a
-    /// kind that draws its own), and it names the shape's row in the table of contents, unless
-    /// `contents` is false (for a kind whose row says more). To rename it in the detail panel, put
-    /// a `TitleHeader` in the kind's header: `note.details(header: { $note in TitleHeader($note) }) {}`.
-    public mutating func title(pill: Bool = true, contents: Bool = true) {
+    /// kind that draws its own), after the kind's symbol (`registry.label(of:)`) if `symbolInPill`
+    /// (for a kind whose look doesn't say what it is: a schema card's `{}`), and it names the
+    /// shape's row in the table of contents, unless `contents` is false (for a kind whose row says
+    /// more). To rename it in the detail panel, put a `TitleHeader` in the kind's header:
+    /// `note.details(header: { $note in TitleHeader($note) }) {}`.
+    public mutating func title(pill: Bool = true, symbolInPill: Bool = false, contents: Bool = true) {
         optIn(to: TitleProperty.self)
-        title(pill: pill, contents: contents, isDerived: false) { $0[TitleProperty.self] }
+        title(pill: pill, symbolInPill: symbolInPill, contents: contents, isDerived: false) { $0[TitleProperty.self] }
     }
 
     /// Gives this kind a title derived from what it keeps itself: what `make` says a shape is
     /// called, if anything (nil or blank is none), as `label.title { $0.props.text }`. It follows
     /// what it's made from, and isn't in the kind's schema; one that someone names is `title()`.
     /// The pill and the row are as there.
-    public mutating func title(pill: Bool = true, contents: Bool = true,
+    public mutating func title(pill: Bool = true, symbolInPill: Bool = false, contents: Bool = true,
                                _ make: @escaping @MainActor (ShapeRecord<Definition.Props>) -> String?) {
-        title(pill: pill, contents: contents, isDerived: true, make)
+        title(pill: pill, symbolInPill: symbolInPill, contents: contents, isDerived: true, make)
     }
 
-    private mutating func title(pill: Bool, contents: Bool, isDerived: Bool,
+    private mutating func title(pill: Bool, symbolInPill: Bool, contents: Bool, isDerived: Bool,
                                 _ make: @escaping @MainActor (ShapeRecord<Definition.Props>) -> String?) {
-        contribute(TitleContribution(Definition.Props.self, showsPill: pill, isDerived: isDerived, make), to: ShapeTitles.self)
+        contribute(TitleContribution(Definition.Props.self, showsPill: pill, symbolInPill: symbolInPill, isDerived: isDerived, make),
+                   to: ShapeTitles.self)
         if contents { contentsTitle { TitleProperty.folded(make($0)) } }
     }
 }
@@ -118,23 +124,24 @@ extension ShapeRegistrar {
 extension PluginRegistrar {
     /// A title Titles keeps, for a kind another plugin registers (bridges), as `title()` on a kind's
     /// own registrar.
-    public mutating func title<P: ShapeProps>(_: P.Type, pill: Bool = true, contents: Bool = true) {
+    public mutating func title<P: ShapeProps>(_: P.Type, pill: Bool = true, symbolInPill: Bool = false, contents: Bool = true) {
         optIn(P.self, to: TitleProperty.self)
-        title(P.self, pill: pill, contents: contents, isDerived: false) { $0[TitleProperty.self] }
+        title(P.self, pill: pill, symbolInPill: symbolInPill, contents: contents, isDerived: false) { $0[TitleProperty.self] }
     }
 
     /// A derived title for a kind another plugin registers (bridges), as `title { ... }` on a kind's
     /// own registrar. A bridge that also opts the kind into `TitleProperty` (`optIn(_:to:)`) can
     /// derive a title for the shapes nobody named: `TitleProperty.folded(shape[TitleProperty.self])
     /// ?? what it derives`.
-    public mutating func title<P: ShapeProps>(_: P.Type, pill: Bool = true, contents: Bool = true,
+    public mutating func title<P: ShapeProps>(_: P.Type, pill: Bool = true, symbolInPill: Bool = false, contents: Bool = true,
                                               _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) {
-        title(P.self, pill: pill, contents: contents, isDerived: true, make)
+        title(P.self, pill: pill, symbolInPill: symbolInPill, contents: contents, isDerived: true, make)
     }
 
-    private mutating func title<P: ShapeProps>(_: P.Type, pill: Bool, contents: Bool, isDerived: Bool,
+    private mutating func title<P: ShapeProps>(_: P.Type, pill: Bool, symbolInPill: Bool, contents: Bool, isDerived: Bool,
                                                _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) {
-        contribute(TitleContribution(P.self, showsPill: pill, isDerived: isDerived, make), to: ShapeTitles.self, for: .kind(P.kind))
+        contribute(TitleContribution(P.self, showsPill: pill, symbolInPill: symbolInPill, isDerived: isDerived, make),
+                   to: ShapeTitles.self, for: .kind(P.kind))
         if contents { contentsTitle(P.self) { TitleProperty.folded(make($0)) } }
     }
 }
@@ -155,11 +162,12 @@ extension Registry {
 }
 
 /// A title's pill: the shape's title at the left end of the row just above it, on every titled
-/// shape whose kind shows one (`pill: true`, the default). Titles places it, though it defines no
-/// shape; Adornments lays it out: as long as the title, no longer than the row leaves it (the
-/// shape's width, less whatever is at the row's right end, a lock, and 4 points), ending in "…".
-/// Zoomed out, on a shape drawn as a skeleton, it's a blank capsule, as long as the title's
-/// columns (a CJK character or an emoji two); on the shape being edited, drawn in full, its title.
+/// shape whose kind shows one (`pill: true`, the default), after the kind's symbol where the kind
+/// asks (`symbolInPill`). Titles places it, though it defines no shape; Adornments lays it out: as
+/// long as the title, no longer than the row leaves it (the shape's width, less whatever is at the
+/// row's right end, a lock, and 4 points), ending in "…". Zoomed out, on a shape drawn as a
+/// skeleton, it's a blank capsule, as long as the symbol's place and the title's columns (a CJK
+/// character or an emoji two); on the shape being edited, drawn in full, its title.
 public enum TitlePill {}
 
 extension TitlePill: Adornment {
@@ -171,6 +179,13 @@ extension Registry {
     /// Whether a kind's shapes show their title in a pill: it's titled, and not with `pill: false`.
     func showsTitlePill(_ kind: ShapeKind) -> Bool {
         contributions(to: ShapeTitles.self, for: kind).first?.showsPill == true
+    }
+
+    /// The symbol a kind's title pill starts with: the kind's own (`label(of:)`), where it asks for
+    /// it (`symbolInPill`); else none.
+    func titlePillSymbol(_ kind: ShapeKind) -> String? {
+        guard contributions(to: ShapeTitles.self, for: kind).first?.symbolInPill == true else { return nil }
+        return label(of: kind).systemImage
     }
 }
 
@@ -185,7 +200,7 @@ public struct TitlesPlugin: CanvasPlugin {
         registrar.declare(TitleProperty.self)
         // The pill, on every shape whose kind's title shows one: Titles places it, and defines no kind.
         registrar.adornmentForEveryShape(TitlePill.self, where: { $0.registry.showsTitlePill($0.kind) }) { shape, context in
-            context.registry.title(of: shape).map { AdornmentLabel($0) }
+            context.registry.title(of: shape).map { AdornmentLabel($0, systemImage: context.registry.titlePillSymbol(shape.kind)) }
         }
     }
 }
