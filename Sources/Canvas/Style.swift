@@ -14,6 +14,20 @@ public enum Style {
     /// Grid dots never get closer than this on screen; the grid coarsens instead.
     static let minGridSpacingOnScreen: CGFloat = 16
     static let gridDotDiameter: CGFloat = 2
+    // The grid's tiles (`DotGrid`). Sizes in device pixels.
+    /// A copy of a tile lands on a quarter of a pixel: within an eighth of where its dots are.
+    nonisolated static let gridSubpixelSteps = 4
+    /// A tile holds at most this many dots a side, and is at most `gridLargestTile` pixels a side.
+    nonisolated static let gridMostDotsPerSide = 16
+    nonisolated static let gridLargestTile: CGFloat = 512
+    /// What a frame whose tiles are made afresh spends, in microseconds (measured into an RGBA
+    /// bitmap on Retina): on each dot filled into a tile, each pixel of a tile made (its first draw
+    /// reads all of it), and each copy drawn. What a tile's size is chosen by: a small one is quick
+    /// to make but needs many copies, a big one the other way round, and one of many variants is
+    /// made many times.
+    nonisolated static let gridDotCost = 1.0
+    nonisolated static let gridTilePixelCost = 0.00076
+    nonisolated static let gridCopyCost = 2.0
 
     static let shapeShadow = NSColor(white: 0, alpha: 0.25)
 

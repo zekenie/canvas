@@ -31,7 +31,8 @@ import Validation
 // subboards, validation's first read (every shape checked, against its kind's schema too) and its
 // read after a drag event of a subboard mentioned 100 times and after moving them all, and one
 // hover and one drag frame (the input, then drawing the whole canvas, and the minimap with it), on
-// a note, from a note's port and onto a title's pill and a mention's, at 60 fps; frames and rows on
+// a note, from a note's port and onto a title's pill and a mention's, at 60 fps; an empty board's
+// frame on Retina, the dot grid all it draws, at four zooms, still, panning and pinching; frames and rows on
 // a board beside a subboard holding the board's worth, and inside one while the root holds as many,
 // with a drag event's input alone, which the file's other boards mustn't cost; entering a subboard,
 // cold (the switch, a frame, the rows and validation's read), going back up to its board and down
@@ -123,6 +124,10 @@ enum Budget {
     /// A `canvas draw` of 20 notes on 10,000 shapes, each pushed along its row to the end: the
     /// command runs on the main actor, so it's time the window doesn't draw.
     static let draw20 = 150.0
+    /// An empty board's frame on Retina at 1200 × 800 (the background and the dot grid), the camera
+    /// still, panning or pinching, at any zoom: a small part of a frame, where filling the grid's
+    /// dots as ellipses took 3 to 7 ms. The thread's CPU time.
+    static let emptyFrame = 2.0
 }
 
 /// Notes, subboards, rectangles and schema cards in a grid, with an arrow from every fourth note to
@@ -279,13 +284,15 @@ extension Duration {
     var milliseconds: Double { Double(components.seconds) * 1000 + Double(components.attoseconds) / 1e15 }
 }
 
-/// The median of `runs` timings of `body`, in milliseconds, each after an untimed `prepare`.
-@MainActor func median(runs: Int, prepare: () -> Void = {}, _ body: () throws -> Void) rethrows -> Double {
+/// The median of `runs` timings of `body`, in milliseconds, each after an untimed `prepare`: by the
+/// wall clock, or with `onThread`, the thread's CPU time (what a budget is held to, since the wall
+/// clock counts whatever else the machine runs).
+@MainActor func median(runs: Int, prepare: () -> Void = {}, onThread: Bool = false, _ body: () throws -> Void) rethrows -> Double {
     let clock = ContinuousClock()
     var times: [Double] = []
     for _ in 0..<runs {
         prepare()
-        times.append(try clock.measure(body).milliseconds)
+        times.append(try (onThread ? threadCPUTime(body) : clock.measure(body)).milliseconds)
     }
     return times.sorted()[times.count / 2]
 }
@@ -517,6 +524,42 @@ extension Duration {
             if holdsToBudgets {
                 expect(onPill < Budget.frame, "a hover onto a titled note's pill over \(size) shapes took \(onPill) ms")
                 expect(onMention < Budget.frame, "a hover onto a mention's pill over \(size) shapes took \(onMention) ms")
+            }
+        }
+    },
+    test("an empty board's frame on Retina, the dot grid all it draws, costs little at every zoom, the camera still, panning or pinching") {
+        let viewport = CGSize(width: 1200, height: 800)
+        let context = try bitmapContext(viewport, scale: 2)
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let h = EditorHarness { CanvasEditor(registry: registry, document: CanvasDocument(), scheduler: $0) }
+        let middle = CGPoint(x: viewport.width / 2, y: viewport.height / 2)
+        let frame = { draw(h.editor, into: context, size: viewport) }
+        // 100%; where the dots are closest, just before the spacing doubles (70%, 35%); and 10%.
+        for zoom: CGFloat in [1, 0.7, 0.35, 0.1] {
+            h.editor.camera = Camera(origin: CGPoint(x: 3.3, y: 7.7), zoom: zoom)
+            frame()
+            let still = median(runs: 21, onThread: true, frame)
+            // Less than a pixel a frame, so every frame's dots fall elsewhere within their pixels, and
+            // a pinch back and forth by a fraction of a percent, each frame's spacing another's.
+            let panning = median(runs: 21, onThread: true) {
+                h.editor.camera.pan(by: CGSize(width: 0.37, height: 0.29))
+                frame()
+            }
+            var step = 0
+            let pinching = median(runs: 21, onThread: true) {
+                step += 1
+                h.editor.camera.zoom(by: step % 2 == 1 ? 1.003 : 1 / 1.003, around: middle)
+                frame()
+            }
+            let ellipses = median(runs: 5, onThread: true) {
+                drawGridAsEllipses(in: context, bounds: CGRect(origin: .zero, size: viewport), camera: h.editor.camera)
+            }
+            report(String(format: "empty board at %3.0f%%, 2×: a frame still %.2f ms, panning %.2f, pinching %.2f (budget %.0f); its grid as ellipses %.1f",
+                          zoom * 100, still, panning, pinching, Budget.emptyFrame, ellipses))
+            if holdsToBudgets {
+                expect(still < Budget.emptyFrame, "an empty board's frame at \(zoom * 100)%, the camera still, took \(still) ms")
+                expect(panning < Budget.emptyFrame, "an empty board's frame at \(zoom * 100)%, panning, took \(panning) ms")
+                expect(pinching < Budget.emptyFrame, "an empty board's frame at \(zoom * 100)%, pinching, took \(pinching) ms")
             }
         }
     },
