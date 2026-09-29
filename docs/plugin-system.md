@@ -5408,13 +5408,16 @@ registrar.channel(SchemaLink.self)
   that isn't a JSON object (not JSON, or `[1]`) leaves the frame alone, so it still fits the last
   reading the card shows (below). The width is the person's. An untitled card is
   `SchemaCard.untitled` ("Untitled") on the card, in its header and in its row.
-- **Cost.** A card's text is read once: `SchemaReadings` keeps a reading per card (and its
-  layouts), compared with the card's text by identity (the record's own string) before anything,
-  and read again only when that text changes, so typing replaces one reading and a frame parses
-  and measures nothing, however many different schemas are in view. Readings of deleted cards, and
-  of cards on a board read again, are dropped (the sync hears it), and past 4,096 the quarter used
-  longest ago; debug builds count
-  reads (`SchemasPlugin.schemasRead`). Far out, rows, `+N more` and the rules are bars (below
+- **Cost.** A card's text is read once: `SchemaReadings` keeps a reading per card and text (and
+  its layouts), compared with the card's text by identity (the record's own string) before
+  anything, and read again only when that text changes, so a frame parses and measures nothing,
+  however many different schemas are in view. A card keeps the readings of up to 4 texts
+  (`versionsPerCard`): ids are unique within a file, not across files, so a file duplicated in
+  Finder and opened beside its original has the same cards, and once one is edited each window's
+  reading is kept beside the other's instead of taking its place every frame; typing adds a
+  reading, and the card's used longest ago goes. Readings of deleted cards, and of cards on a
+  board read again, are dropped (the sync hears it), and past 4,096 the quarter used longest ago;
+  debug builds count reads (`SchemasPlugin.schemasRead`). Far out, rows, `+N more` and the rules are bars (below
   35%), then the title (below 20%); a line saying there are none isn't a field, so no bar stands
   for it. A card made from properties, or given a schema that way (`canvas draw`), is as tall as its
   schema (`DerivedProps`).
