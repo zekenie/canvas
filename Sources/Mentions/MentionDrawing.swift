@@ -441,6 +441,42 @@ enum MentionTextLayout {
         return pills
     }
 
+    /// Where string drawing shows each of `ranges` of `string` in a box of `size`: a rect a line,
+    /// as wide as the range's glyphs there and as tall as the line as string drawing stacks them
+    /// (`pills(of:in:style:)`), from the box's top-left; none on a line past the box.
+    static func lineRects(of ranges: [NSRange], in string: NSAttributedString, size: CGSize, style: MentionTextStyle) -> [[CGRect]] {
+        let laid = NSMutableAttributedString(attributedString: string)
+        string.enumerateAttribute(.attachment, in: NSRange(location: 0, length: string.length)) { value, range, _ in
+            guard let pill = value as? MentionAttachment else { return }
+            laid.addAttribute(.attachment, value: standIn(pill.bounds), range: range)
+        }
+        let (storage, manager) = layOut(laid, width: size.width)
+        defer { withExtendedLifetime(storage) {} }
+        guard let container = manager.textContainers.first else { return ranges.map { _ in [] } }
+        let lineHeight = lineHeight(of: style)
+        var lines: [(glyphs: NSRange, top: CGFloat, height: CGFloat)] = []
+        var top: CGFloat = 0
+        manager.enumerateLineFragments(forGlyphRange: NSRange(location: 0, length: manager.numberOfGlyphs)) { rect, _, _, glyphs, stop in
+            let height = max(rect.height, lineHeight)
+            guard top + height <= size.height + 0.01 else {
+                stop.pointee = true
+                return
+            }
+            lines.append((glyphs, top, height))
+            top += height
+        }
+        return ranges.map { range in
+            guard range.length > 0, NSMaxRange(range) <= storage.length else { return [] }
+            let glyphs = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            return lines.compactMap { line in
+                let part = NSIntersectionRange(glyphs, line.glyphs)
+                guard part.length > 0 else { return nil }
+                let bounds = manager.boundingRect(forGlyphRange: part, in: container)
+                return CGRect(x: bounds.minX, y: line.top, width: bounds.width, height: line.height)
+            }
+        }
+    }
+
     /// An attachment of a pill's size, with nothing to draw.
     private static func standIn(_ bounds: CGRect) -> NSTextAttachment {
         let standIn = NSTextAttachment()

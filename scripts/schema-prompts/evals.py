@@ -44,8 +44,8 @@ MODEL_SWIFT = os.path.join(SOURCES, "LanguageModels", "AnthropicModel.swift")
 # Each direction's system prompt and max_tokens (the Swift constants they're read from), and its
 # temperature: `swift_settings` fills in the values, and MODEL, from the Swift.
 CONFIG = {
-    "to_schema": {"system": "toSchemaSystem", "max_tokens_name": "toSchemaMaxTokens"},
-    "to_prompt": {"system": "toPromptSystem", "max_tokens_name": "toPromptMaxTokens"},
+    "to_schema": {"system": "toSchemaSystem", "references": "toSchemaReferences", "max_tokens_name": "toSchemaMaxTokens"},
+    "to_prompt": {"system": "toPromptSystem", "references": "toPromptReferences", "max_tokens_name": "toPromptMaxTokens"},
 }
 MODEL = None
 NO_CHANGE = "NO_CHANGE"
@@ -60,11 +60,11 @@ def block(tag, text):
     return f"<{tag}>\n{text}\n</{tag}>" if text else ""
 
 
-def user_message(direction, prompt="", schema="", previous_prompt="", previous_schema=""):
+def user_message(direction, prompt="", schema="", previous_prompt="", previous_schema="", schemas=""):
     if direction == "to_schema":
-        parts = [block("previous_prompt", previous_prompt), block("prompt", prompt), block("schema", schema)]
+        parts = [block("schemas", schemas), block("previous_prompt", previous_prompt), block("prompt", prompt), block("schema", schema)]
     else:
-        parts = [block("prompt", prompt), block("previous_schema", previous_schema), block("schema", schema)]
+        parts = [block("schemas", schemas), block("prompt", prompt), block("previous_schema", previous_schema), block("schema", schema)]
     return "\n\n".join(p for p in parts if p)
 
 
@@ -171,16 +171,22 @@ def swift_source():
         return f.read()
 
 
-def system_prompt(direction):
+def literal(name):
     """The raw string literal `public static let <name> = #\"\"\"` ... `\"\"\"#`, flush left, as Swift
     reads it: the lines between the delimiters, without the last line break."""
-    if direction not in SYSTEMS:
-        name = CONFIG[direction]["system"]
+    if name not in SYSTEMS:
         m = re.search(r'static let ' + name + r' = #"""\n(.*?)\n"""#', swift_source(), re.S)
         if not m:
             raise Fatal(f"no {name} in {SWIFT}")
-        SYSTEMS[direction] = m.group(1)
-    return SYSTEMS[direction]
+        SYSTEMS[name] = m.group(1)
+    return SYSTEMS[name]
+
+
+def system_prompt(direction, schemas=""):
+    """The direction's system prompt and, for a request that names other schemas, what it says of
+    them after it, a blank line apart (SchemaPrompts.system)."""
+    base = literal(CONFIG[direction]["system"])
+    return base + "\n" + literal(CONFIG[direction]["references"]) if (schemas or "").strip() else base
 
 
 def swift_settings():
@@ -205,13 +211,13 @@ def swift_settings():
     MODEL = m.group(1)
 
 
-def call(key, direction, user):
+def call(key, direction, user, schemas=""):
     cfg = CONFIG[direction]
     body = json.dumps({
         "model": MODEL,
         "max_tokens": cfg["max_tokens"],
         "temperature": cfg["temperature"],
-        "system": system_prompt(direction),
+        "system": system_prompt(direction, schemas),
         "messages": [{"role": "user", "content": user}],
     }).encode("utf-8")
     headers = {"content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01"}
@@ -320,6 +326,19 @@ def auto_schema_checks(text, obj, inp):
     return failed, warn
 
 
+def refs_in(node):
+    """Every "$ref" value, at any depth."""
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k == "$ref" and isinstance(v, str):
+                yield v
+            else:
+                yield from refs_in(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from refs_in(v)
+
+
 def auto_prompt_checks(text):
     failed = []
     low = text.lower()
@@ -420,6 +439,10 @@ def run_check(check, direction, kind, out_text, out_obj, case):
             return None if any(a in text for a in arg.split("|")) else f"no {arg}"
         if name == "lacks_text":
             return None if not any_in(text, arg) else f"has {arg}"
+        if name == "refs":
+            word, _, n = arg.partition("=")
+            count = sum(1 for ref in refs_in(obj) if ref == word)
+            return None if count == int(n) else f"{count} $ref {word}"
         return f"unknown check {name}"
 
     # to_prompt
@@ -460,6 +483,11 @@ def evaluate(case, result):
         f, w = auto_schema_checks(value, out_obj, case.get("schema"))
         failed += f
         warn += w
+        # A "$ref" to an @ word is only ever to one <schemas> lists, as the app reads them back.
+        listed = {line.strip() for line in (case.get("schemas") or "").split("\n") if line.strip()}
+        for ref in refs_in(out_obj):
+            if ref.startswith("@") and ref.split("#")[0] not in listed:
+                failed.append(f"unlisted-ref:{ref}")
     elif kind == "prompt":
         failed += auto_prompt_checks(value)
     if kind != "error":
@@ -662,6 +690,7 @@ def main():
     for d in CONFIG:
         text = system_prompt(d)
         print(f"{d}: {CONFIG[d]['system']}, {len(text)} characters, {len(text.splitlines())} lines, "
+              f"and {CONFIG[d]['references']}, {len(literal(CONFIG[d]['references']))} characters, for other schemas; "
               f"max_tokens {CONFIG[d]['max_tokens']}, temperature {CONFIG[d]['temperature']}")
     if Draft202012Validator is None:
         print("metaschema check skipped: no jsonschema in _pylib (see README.md)")
@@ -689,8 +718,8 @@ def main():
     def work(job):
         c, run = job
         user = user_message(c["direction"], prompt=c["prompt"], schema=c["schema"],
-                            previous_prompt=c["previous_prompt"], previous_schema=c["previous_schema"])
-        r = call(key, c["direction"], user)
+                            previous_prompt=c["previous_prompt"], previous_schema=c["previous_schema"], schemas=c.get("schemas", ""))
+        r = call(key, c["direction"], user, c.get("schemas", ""))
         kind, value, failed, warn = evaluate(c, r)
         return c, run, r, kind, value, failed, warn
 

@@ -3,6 +3,7 @@ import CanvasTesting
 import CoreGraphics
 import Foundation
 import LanguageModels
+import Mentions
 import Observation
 import Schemas
 import TestKit
@@ -31,12 +32,12 @@ final class SyncBench {
 
     /// The person writing the prompt (a keystroke, or the lot).
     func typePrompt(_ id: ShapeID, _ text: String) {
-        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.setPrompt(text) } }
+        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.setPrompt(SchemaPromptText(plain: text)) } }
     }
 
     /// The person writing the schema.
     func typeSchema(_ id: ShapeID, _ text: String) {
-        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema = text } }
+        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema.text = text } }
     }
 
     func card(_ id: ShapeID) -> SchemaCard? { editor.schemaCard(id) }
@@ -108,7 +109,7 @@ let petSchema = """
         expectEqual(request.temperature, 0)
         expectEqual(request.stopSequences, [])
         expectEqual(request.messages, [.user("<prompt>\na pet in my household\n</prompt>\n\n<schema>\n\(SchemaCard.starter)\n</schema>")])
-        expectEqual(b.card(id)?.schema, petSchema)
+        expectEqual(b.card(id)?.schema.text, petSchema)
         expectEqual(b.card(id)?.frame, CGRect(x: 0, y: 0, width: 240, height: cardHeight(lines: 1)), "its description's line: no schema sizes it")
         expectEqual(b.card(id)?.prompt, "a pet in my household")
     },
@@ -118,7 +119,7 @@ let petSchema = """
         b.typePrompt(id, "a pet in my household")
         let compact = #"{"type":"object","title":"Pet","properties":{"species":{"enum":["dog","cat"]},"name":{"type":"string"},"birthYear":{"type":"integer"}}}"#
         b.sync(id, answer: compact)
-        expectEqual(b.card(id)?.schema, compact)
+        expectEqual(b.card(id)?.schema.text, compact)
         b.sync.commit(id)
         b.settle()
         expectEqual(b.model.requests.count, 1, "and it's in step")
@@ -135,14 +136,14 @@ let petSchema = """
         expectEqual(b.model.requests.count, 0)
         b.scheduler.advance(by: .milliseconds(1))
         spinRunLoop(until: { b.model.requests.count == 1 && b.status(id) == .idle })
-        expectEqual(b.card(id)?.schema, petSchema)
+        expectEqual(b.card(id)?.schema.text, petSchema)
     },
     test("the sync's own write starts no sync") {
         let b = try SyncBench()
         let id = b.place()
         b.typePrompt(id, "a pet in my household")
         b.sync(id, answer: petSchema)
-        expectEqual(b.card(id)?.schema, petSchema)
+        expectEqual(b.card(id)?.schema.text, petSchema)
         b.scheduler.advance(by: .seconds(10))
         b.sync.commit(id)
         b.settle()
@@ -163,7 +164,7 @@ let petSchema = """
         expectEqual(request.temperature, 0)
         expectEqual(request.messages, [.user("<prompt>\na pet in my household\n</prompt>\n\n<previous_schema>\n\(petSchema)\n</previous_schema>\n\n<schema>\n\(edited)\n</schema>")])
         expectEqual(b.card(id)?.prompt, "a pet in my household, with its microchip ID")
-        expectEqual(b.card(id)?.schema, edited, "the side the person wrote isn't touched")
+        expectEqual(b.card(id)?.schema.text, edited, "the side the person wrote isn't touched")
     },
     test("a prompt edited after a sync tells the model the prompt it was, as previous_prompt") {
         let b = try SyncBench()
@@ -227,7 +228,7 @@ let petSchema = """
         b.editor.freeze([id])
         b.model.release()
         spinRunLoop(until: { b.status(id) == .idle })
-        expectEqual(b.card(id)?.schema, SchemaCard.starter)
+        expectEqual(b.card(id)?.schema.text, SchemaCard.starter)
         expectEqual(log.refusals, [], "no write is tried, so nothing is refused (no shake)")
         // Its last sync is where it was: thawed, its prompt still asks for the schema, from nothing.
         b.editor.freeze([id], false)
@@ -235,7 +236,7 @@ let petSchema = """
         b.sync(id, answer: petSchema)
         expectEqual(b.model.lastRequest?.system, SchemaPrompts.toSchemaSystem)
         expectEqual(b.message(1), "<prompt>\na pet in my household\n</prompt>\n\n<schema>\n\(SchemaCard.starter)\n</schema>")
-        expectEqual(b.card(id)?.schema, petSchema)
+        expectEqual(b.card(id)?.schema.text, petSchema)
     },
     test("a card seen for the first time is in step: on a board opened, and pasted") {
         var props = card(petSchema, at: .zero)
@@ -267,7 +268,7 @@ let petSchema = """
         b.sync(loaded.id, answer: petSchema)
         expectEqual(b.model.lastRequest?.system, SchemaPrompts.toSchemaSystem)
         expectEqual(b.message(0), "<prompt>\na pet in my household\n</prompt>\n\n<schema>\n\(SchemaCard.starter)\n</schema>", "from nothing")
-        expectEqual(b.card(loaded.id)?.schema, petSchema)
+        expectEqual(b.card(loaded.id)?.schema.text, petSchema)
         b.sync(pasted, answer: "NO_CHANGE")
         expectEqual(b.model.requests.count, 2, "the pasted one too")
     },
@@ -289,7 +290,7 @@ let petSchema = """
         spinRunLoop(until: { b.model.answered == 2 })
         b.settle()
         expectEqual(b.card(id)?.prompt, "a pet in my household")
-        expectEqual(b.card(id)?.schema, petSchema, "the answer isn't written onto the card read again")
+        expectEqual(b.card(id)?.schema.text, petSchema, "the answer isn't written onto the card read again")
         expectEqual(b.model.queued.count, 1, "the call was cancelled, and took no answer")
         b.model.holdsAnswers = false
         b.scheduler.advance(by: .seconds(5))
@@ -333,10 +334,10 @@ let petSchema = """
         expectEqual(b.card(id)?.frame.origin, CGPoint(x: 60, y: 40))
         b.model.release()
         spinRunLoop(until: { !b.isUpdating(id) })
-        expectEqual(b.card(id)?.schema, petSchema)
+        expectEqual(b.card(id)?.schema.text, petSchema)
         b.editor.cancel()
         expectEqual(b.card(id)?.frame, CGRect(x: 0, y: 0, width: 240, height: cardHeight(lines: 1)), "back where it was")
-        expectEqual(b.card(id)?.schema, petSchema, "Escape takes back the move, not the answer")
+        expectEqual(b.card(id)?.schema.text, petSchema, "Escape takes back the move, not the answer")
         b.scheduler.advance(by: .seconds(5))
         b.settle()
         expectEqual(b.model.requests.count, 1)
@@ -379,7 +380,7 @@ let petSchema = """
         b.model.queue(petSchema)
         settings.save()
         spinRunLoop(until: { b.model.requests.count == 3 && b.status(id) == .idle })
-        expectEqual(b.card(id)?.schema, petSchema)
+        expectEqual(b.card(id)?.schema.text, petSchema)
         b.settle()
         expectEqual(b.model.requests.count, 3)
         expectEqual(b.status(other), .failed(SchemaSyncFailure(writing: .schema, LanguageModelError.overloaded.message)))
@@ -400,7 +401,7 @@ let petSchema = """
         b.sync(id, answer: "a big record, with a name")
         expectEqual(b.model.lastRequest?.system, SchemaPrompts.toPromptSystem)
         expectEqual(b.card(id)?.prompt, "a big record, with a name")
-        expectEqual(b.card(id)?.schema, edited)
+        expectEqual(b.card(id)?.schema.text, edited)
     },
     test("an answer is dropped if the side it writes changed while it was out, and the change syncs after") {
         let b = try SyncBench()
@@ -411,10 +412,10 @@ let petSchema = """
         b.sync.commit(id)
         spinRunLoop(until: { b.model.waiting == 1 })
         b.editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.setTitle("Mine") } }
-        let renamed = try require(b.card(id)).schema
+        let renamed = try require(b.card(id)).schema.text
         b.model.release()
         spinRunLoop(until: { b.status(id) == .idle })
-        expectEqual(b.card(id)?.schema, renamed)
+        expectEqual(b.card(id)?.schema.text, renamed)
         b.scheduler.advance(by: .seconds(3))
         spinRunLoop(until: { b.model.requests.count == 2 })
         expectEqual(b.message(1), "<prompt>\na pet in my household\n</prompt>\n\n<schema>\n\(renamed)\n</schema>")
@@ -435,7 +436,7 @@ let petSchema = """
         b.model.queue("NO_CHANGE")
         b.model.release()
         spinRunLoop(until: { b.model.requests.count == 2 && b.status(id) == .idle })
-        expectEqual(b.card(id)?.schema, petSchema)
+        expectEqual(b.card(id)?.schema.text, petSchema)
         expectEqual(b.message(1), "<previous_prompt>\na pet in my household\n</previous_prompt>\n\n<prompt>\na pet in my household, and its weight\n</prompt>\n\n<schema>\n\(petSchema)\n</schema>")
     },
     test("a card deleted while its call is out drops the answer") {
@@ -462,13 +463,13 @@ let petSchema = """
         spinRunLoop(until: { b.status(id) != .updating(.schema) })
         expectEqual(b.status(id), .failed(SchemaSyncFailure(writing: .schema, "Anthropic overloaded")))
         expectEqual(b.card(id)?.prompt, "a pet in my household")
-        expectEqual(b.card(id)?.schema, SchemaCard.starter)
+        expectEqual(b.card(id)?.schema.text, SchemaCard.starter)
         b.model.queue(petSchema)
         b.sync.retry(id)
         spinRunLoop(until: { b.status(id) == .idle })
         expectEqual(b.model.requests.count, 2)
         expectEqual(b.model.requests[1], b.model.requests[0])
-        expectEqual(b.card(id)?.schema, petSchema)
+        expectEqual(b.card(id)?.schema.text, petSchema)
     },
     test("with no key saved, or one refused, the failure says so, and its remedy is Settings") {
         let b = try SyncBench()
@@ -490,10 +491,10 @@ let petSchema = """
         b.sync.commit(id)
         spinRunLoop(until: { b.model.answered == 1 && !b.isUpdating(id) })
         expectEqual(b.status(id), .idle)
-        expectEqual(b.card(id)?.schema, SchemaCard.starter)
+        expectEqual(b.card(id)?.schema.text, SchemaCard.starter)
         b.sync(id, answer: petSchema)
         expectEqual(b.model.requests.count, 2)
-        expectEqual(b.card(id)?.schema, petSchema)
+        expectEqual(b.card(id)?.schema.text, petSchema)
     },
     test("an answer that can't be used is a failure, and changes nothing: a schema cut off (too long to rewrite, by hand), not a schema (retry)") {
         let b = try SyncBench()
@@ -508,7 +509,7 @@ let petSchema = """
         b.sync.retry(id)
         spinRunLoop(until: { !b.isUpdating(id) })
         expectEqual(b.status(id), .failed(SchemaSyncFailure(writing: .schema, "Unusable answer")))
-        expectEqual(b.card(id)?.schema, SchemaCard.starter)
+        expectEqual(b.card(id)?.schema.text, SchemaCard.starter)
         b.typeSchema(id, petSchema)
         b.typePrompt(id, "")
         b.model.queue(ModelResponse(text: "Here's the updated prompt: a pet", stopReason: .endTurn))
@@ -525,10 +526,10 @@ let petSchema = """
         b.sync.commit(id)
         spinRunLoop(until: { !b.isUpdating(id) })
         expectEqual(b.status(id), .failed(SchemaSyncFailure(writing: .schema, "Claude declined", remedy: .editByHand)))
-        expectEqual(b.card(id)?.schema, SchemaCard.starter)
+        expectEqual(b.card(id)?.schema.text, SchemaCard.starter)
         b.typePrompt(id, "a pet")
         b.sync(id, answer: petSchema)
-        expectEqual(b.card(id)?.schema, petSchema, "the next commit syncs")
+        expectEqual(b.card(id)?.schema.text, petSchema, "the next commit syncs")
         b.typeSchema(id, petSchema.replacingOccurrences(of: "\"name\"", with: "\"nickname\""))
         b.model.queue(ModelResponse(text: "", stopReason: .refusal))
         b.sync.commit(id)
@@ -600,6 +601,22 @@ let petSchema = """
         // The editor's own model, Haiku 4.5, whatever --ask asks.
         expectEqual([toSchema.model, toPrompt.model], [nil, nil])
         expectEqual([toSchema.fallbacks, toPrompt.fallbacks], [nil, nil])
+    },
+    test("what the prompts say of other schemas goes after them only in a request that names some, whose words come first; one that names none is sent what it always was") {
+        expectEqual(SchemaPrompts.toSchema(previousPrompt: nil, prompt: "a pet", schema: "{}").system, SchemaPrompts.toSchemaSystem)
+        expectEqual(SchemaPrompts.toSchema(previousPrompt: nil, prompt: "a pet", schema: "{}", schemas: " \n").system, SchemaPrompts.toSchemaSystem)
+        let toSchema = SchemaPrompts.toSchema(previousPrompt: nil, prompt: "a pet at an @Address", schema: "{}", schemas: "@Address")
+        expectEqual(toSchema.system, SchemaPrompts.toSchemaSystem + "\n" + SchemaPrompts.toSchemaReferences)
+        expectEqual(toSchema.messages, [.user("<schemas>\n@Address\n</schemas>\n\n<prompt>\na pet at an @Address\n</prompt>\n\n<schema>\n{}\n</schema>")])
+        expectEqual(SchemaPrompts.toPrompt(prompt: "", previousSchema: nil, schema: "{}").system, SchemaPrompts.toPromptSystem)
+        let toPrompt = SchemaPrompts.toPrompt(prompt: "", previousSchema: nil, schema: #"{"a": {"$ref": "@Address"}}"#, schemas: "@Address")
+        expectEqual(toPrompt.system, SchemaPrompts.toPromptSystem + "\n" + SchemaPrompts.toPromptReferences)
+        expect(toPrompt.messages.first?.text.hasPrefix("<schemas>\n@Address\n</schemas>\n\n<schema>") == true)
+        expectEqual(SchemaPrompts.toHighlights(prompt: "a pet", schema: "{}").system, SchemaPrompts.highlightsSystem)
+        expectEqual(SchemaPrompts.toHighlights(prompt: "a pet at an @Address", schema: "{}", namesSchemas: true).system,
+                    SchemaPrompts.highlightsSystem + "\n" + SchemaPrompts.highlightsReferences)
+        expect(SchemaPrompts.toSchemaSystem.hasSuffix("\n\n") == false && SchemaPrompts.toSchemaReferences.hasPrefix("Other schemas\n"),
+               "a blank line apart, as the prompts' own sections are")
     },
     test("an answer: NO_CHANGE alone, a fenced or tagged answer unwrapped, a stop before the end a failure") {
         func parse(_ text: String, _ direction: SchemaPrompts.Direction = .toSchema, stop: StopReason = .endTurn) -> SchemaPrompts.Answer {

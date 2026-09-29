@@ -18,8 +18,8 @@ ROOT = ""
 NEVER = "__never__"
 
 
-def case(id, prompt, schema, links, note=""):
-    CASES.append({"id": id, "prompt": prompt, "schema": fmt(schema), "links": links, "note": note})
+def case(id, prompt, schema, links, note="", names_schemas=False):
+    CASES.append({"id": id, "prompt": prompt, "schema": fmt(schema), "links": links, "note": note, "names_schemas": names_schemas})
 
 
 case("jira",
@@ -622,3 +622,46 @@ case("emoji",
       ("up to 3", ["/properties/toppings/maxItems"]),
       ("whether it's delivered", ["/properties/delivered"])],
      "emoji around the words")
+
+
+# Other schema cards, as the app shows them to the model: a mention as @ and a word, and a "$ref"
+# to it as that word.
+
+case("house_refs",
+     "A house: its @Address, how many bedrooms (required), and a list of @Room",
+     {
+         "title": "House",
+         "type": "object",
+         "properties": {
+             "address": {"$ref": "@Address"},
+             "bedrooms": {"type": "integer"},
+             "rooms": {"type": "array", "items": {"$ref": "@Room"}},
+         },
+         "required": ["bedrooms"],
+     },
+     [("house", [ROOT, "/title"]),
+      ("@Address", ["/properties/address"]),
+      ("bedrooms", ["/properties/bedrooms"]),
+      ("required", ["/required"]),
+      ("list of", ["/properties/rooms"]),
+      ("@Room", ["/properties/rooms/items", "/properties/rooms"])],
+     "a mention of another schema: linked to what points to it", names_schemas=True)
+
+case("order_roles",
+     "An order: the @Customer, shipped to a @Address and billed to a @Address, and its total",
+     {
+         "title": "Order",
+         "type": "object",
+         "properties": {
+             "customer": {"$ref": "@Customer"},
+             "shippingAddress": {"$ref": "@Address"},
+             "billingAddress": {"$ref": "@Address"},
+             "total": {"type": "number"},
+         },
+     },
+     [("order", [ROOT, "/title"]),
+      ("@Customer", ["/properties/customer"]),
+      ("@Address", ["/properties/shippingAddress"]),
+      ("@Address", ["/properties/billingAddress"]),
+      ("total", ["/properties/total"])],
+     "one schema twice: each mention linked to its own use", names_schemas=True)

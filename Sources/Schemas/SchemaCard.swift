@@ -1,22 +1,28 @@
+import AppKit
 import Canvas
-import CoreGraphics
+import Mentions
 
 /// A JSON Schema on the canvas, drawn as a card of what it holds in words (its prompt, typed on the
 /// card), which the editor's language model writes the schema from, and back (`SchemaSync`). The
 /// schema is kept as its text, not as a parsed value: a dictionary would lose the order its
 /// properties were written in (which whoever wrote them cares about), and a schema being typed
 /// isn't JSON for a while; its panel is where it's written. Its name is the schema's own `"title"`:
-/// one place to say it, shown in its title's pill.
+/// one place to say it, shown in its title's pill. Its description may mention other schema cards,
+/// and its schema refers to them (`SchemaReferences`): a mention says in words what a `$ref` says.
 public struct SchemaCard: BoxShapeProps {
     public static let kind: ShapeKind = "schema-card"
     /// Append only. The count is the version boards record.
-    public static let migrations: [PropsMigration] = []
+    public static let migrations = [
+        // Its description may mention schema cards: text that would now read as a mention (or an
+        // escaped one) is escaped, so it stays the text it was.
+        PropsMigration("prompt may mention schema cards") { props in MentionTextFormat.escapeLookalikesV1(in: &props, "prompt") },
+    ]
     public static let properties = Properties<SchemaCard>(title: "Schema card") {
         Property("frame", \.frame).required()
         Property("schema", \.schema)
-            .description("A JSON Schema, as text: its properties in the order written, kept as typed while it isn't JSON. Its \"title\" is the card's name.")
+            .description("A JSON Schema, as text: its properties in the order written, kept as typed while it isn't JSON. Its \"title\" is the card's name. A \"$ref\" to \"urn:uuid:\" and another schema card's id refers to that card's schema.")
             .keywords(["contentMediaType": .string("application/schema+json")])
-        Property("prompt", \.prompt).description("What the schema should hold, in words: what the card shows.")
+        Property("prompt", \.prompt).description("What the schema should hold, in words: what the card shows. A mention of another schema card is a \"$ref\" to it in the schema.")
     }
     /// A placed card: 240 wide (as a subboard), and as tall as one line of its description (52).
     public static let defaultSize = CGSize(width: SchemaCardMetrics.defaultWidth, height: SchemaCardMetrics.emptyHeight)
@@ -29,12 +35,12 @@ public struct SchemaCard: BoxShapeProps {
     """
 
     public var frame: CGRect
-    public var schema: String
+    public var schema: SchemaText
     /// Written with `setPrompt`, which keeps the card as tall as its text.
-    public internal(set) var prompt: String
+    public internal(set) var prompt: SchemaPromptText
 
     /// A card as it is: its frame isn't fitted to its description (see `setPrompt`).
-    public init(frame: CGRect = .zero, schema: String = SchemaCard.starter, prompt: String = "") {
+    public init(frame: CGRect = .zero, schema: SchemaText = SchemaText(SchemaCard.starter), prompt: SchemaPromptText = "") {
         self.frame = frame
         self.schema = schema
         self.prompt = prompt
@@ -43,20 +49,28 @@ public struct SchemaCard: BoxShapeProps {
     public init() { self.init(frame: .zero) }
 
     /// Sets the description and the card's height to its text at the card's width, set as the card
-    /// sets it (a note's text: `SchemaStyle`), keeping its top-left corner and width, so the card
-    /// grows and shrinks downward in the same transaction; never shorter than one line
-    /// (`SchemaCardMetrics.emptyHeight`). A card too narrow for text keeps its height.
-    @MainActor public mutating func setPrompt(_ text: String) {
+    /// sets it (a note's text: `SchemaStyle`), each mention a pill by the name it holds, keeping its
+    /// top-left corner and width, so the card grows and shrinks downward in the same transaction;
+    /// never shorter than one line (`SchemaCardMetrics.emptyHeight`). A card too narrow for text keeps
+    /// its height.
+    @MainActor public mutating func setPrompt(_ text: SchemaPromptText) {
         prompt = text
         frame.size.height = SchemaStyle.fittedHeight(of: text, width: frame.width, keeping: frame.height)
+    }
+
+    /// The same, fitted to the text as it's shown (`shown`: its editor's, each pill as its card is
+    /// called now).
+    @MainActor mutating func setPrompt(_ text: SchemaPromptText, shown: NSAttributedString) {
+        prompt = text
+        frame.size.height = SchemaStyle.fittedHeight(of: shown, width: frame.width, keeping: frame.height)
     }
 
     /// Renames the schema: sets its root `"title"` (added first if there's none; removed when
     /// `title` is blank), changing nothing else in the text. Does nothing unless the schema is a
     /// JSON object.
     public mutating func setTitle(_ title: String) {
-        guard let text = SchemaCard.retitled(schema, title) else { return }
-        schema = text
+        guard let text = SchemaCard.retitled(schema.text, title) else { return }
+        schema.text = text
     }
 
     /// What an untitled card is called in its panel's header and its row, beside its kind's `{}`.

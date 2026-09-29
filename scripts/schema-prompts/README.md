@@ -6,12 +6,20 @@ job. Not a framework: a script, a CSV of cases, a CSV of results, read by eye.
 
 - `evals.py` runs the cases and appends a row per case to `results.csv` (`pass`, what failed, latency,
   tokens, the output on one line); `results.jsonl` gets everything, and isn't committed.
-- `cases.csv` holds the cases (64: 41 prompt → schema, 23 schema → prompt), written by
+- `cases.csv` holds the cases (74: 47 prompt → schema, 27 schema → prompt), written by
   `gen_cases.py`, where they're readable. Edit `gen_cases.py`, then run it. Four chains (a hand edit
   surviving a prompt edit, a round trip, two both-ways edits) are in `evals.py` itself.
+- Ten of the cases (`s_ref_…`, `p_ref_…`) name other schema cards, as the app shows them to the
+  model: each `@` and a word (`@Address`), listed in `<schemas>` (the case's `schemas`), a mention
+  that word in the prompt and a `$ref` to the card that word in the schema. For those, and only
+  those, the system prompt has what it says of other schemas after it (`toSchemaReferences`,
+  `toPromptReferences`), as `SchemaPrompts.system` sends it; every `$ref` to an `@` word must be
+  to one `<schemas>` lists, as the app reads them back. Added to every request, the same words
+  cost three of the other cases (a snake_case name, a `$ref`'d field marked required, a round
+  trip's `required`), which is why they go only where there are other schemas.
 
 Nothing the app sends is copied here: `evals.py` reads the system prompts, each direction's
-`max_tokens` and the temperature out of `Sources/Schemas/SchemaPrompts.swift`, the model's id out of
+`max_tokens`, what each says of other schemas and the temperature out of `Sources/Schemas/SchemaPrompts.swift`, the model's id out of
 `Sources/LanguageModels/AnthropicModel.swift`, and `gen_cases.py` a new card's schema out of
 `Sources/Schemas/SchemaCard.swift`, so the evals send exactly what the app does (a schema written
 from nothing is sent with the new card's schema as `previous_schema`, as `SchemaSync` sends it). Its
@@ -47,9 +55,10 @@ python3 -m pip install --target _pylib jsonschema==4.23.0
 The third prompt links a description's words to the parts of its schema they say
 (`SchemaPrompts.highlightsSystem`, asked by `SchemaHighlighter`). `highlight_evals.py` reads it, its
 model (Sonnet 5.5), effort and `max_tokens` out of `SchemaPrompts.swift`, sends each of
-`highlight_cases.py`'s cases (26: the owner's Jira ticket, terse lists, sentences, nested objects, a
+`highlight_cases.py`'s cases (28: the owner's Jira ticket, terse lists, sentences, nested objects, a
 shared definition, either-ors and conditions, other languages, typos, words the schema doesn't say,
-injection, twenty fields), and scores the answer as the app reads it: each link's words found in the
+injection, twenty fields, and two that name other schema cards, each `@` word linked to what points
+to it, with `highlightsReferences` after the prompt), and scores the answer as the app reads it: each link's words found in the
 description in order, its pointer followed in the schema. A link is right (or right, wider or
 narrower), misattributed (its words are a listed link's, its pointer another's: the popover would
 show the wrong part), an extra (words no case lists, printed to be read), or invalid (words not in
@@ -62,11 +71,12 @@ python3 highlight_evals.py --model claude-haiku-4-5   # to compare
 ```
 
 What it found (26 cases, twice each): Sonnet 5.5 at 356 of 358 links, none misattributed or
-invalid, some 2 s an answer and 1,500 tokens in, 190 out; Haiku 4.5 at 91%, some linked to the wrong
+invalid, some 2 s an answer and 1,500 tokens in, 190 out (the two that name other schemas, three
+times each: every `@` word linked to its own use, none misattributed); Haiku 4.5 at 91%, some linked to the wrong
 field, which is why the highlights ask Sonnet 5.5 while the sync asks Haiku 4.5.
 
 ## The live smoke test
 
 `SCHEMA_LIVE=1 build/debug/SchemasTests/SchemasTests` (after `./test.sh` has built it) runs three
-cases through the app's own path, `AnthropicModel` and `SchemaSync`, and prints what came back.
+cases, and a card that mentions another both ways, through the app's own path, `AnthropicModel` and `SchemaSync`, and prints what came back.
 `./test.sh` never sets it.

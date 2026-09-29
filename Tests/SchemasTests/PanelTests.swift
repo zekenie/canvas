@@ -6,6 +6,7 @@ import DetailPanel
 import Foundation
 import Geometry
 import LanguageModels
+import Mentions
 import Schemas
 import Selection
 import SwiftUI
@@ -175,11 +176,11 @@ let blankCard = SchemaCard(frame: CGRect(x: 40, y: 40, width: 240, height: 52))
         @MainActor func header() throws -> TitleHeader {
             try require(editor.detailPanel?.layout(for: try require(editor.document[id])).header(as: TitleHeader.self))
         }
-        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema = String(fixture(6).dropLast(3)) } }
+        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema.text = String(fixture(6).dropLast(3)) } }
         let broken = try header()
         expectEqual([broken.title, broken.subtitle], ["Order", "6 fields"])
         expectEqual([broken.isEnabled, broken.isRenamable], [true, false], "not dimmed, not a field")
-        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema = fixture(6) } }
+        editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema.text = fixture(6) } }
         expectEqual(try header().isRenamable, true)
     },
     test("the header renames the schema: only its title member changes, the rest byte for byte") {
@@ -190,9 +191,9 @@ let blankCard = SchemaCard(frame: CGRect(x: 40, y: 40, width: 240, height: 52))
         expectEqual(field.placeholderString, "Untitled")
         panel.window.focus(field)
         panel.window.type("Pet")
-        expectEqual(panel.card(id)?.schema, "{ \"title\": \"Pet\", \"type\":\"object\",\n\t\"properties\" : { \"a\" : {} } }")
+        expectEqual(panel.card(id)?.schema.text, "{ \"title\": \"Pet\", \"type\":\"object\",\n\t\"properties\" : { \"a\" : {} } }")
         panel.window.type("s")
-        expectEqual(panel.card(id)?.schema, "{ \"title\": \"Pets\", \"type\":\"object\",\n\t\"properties\" : { \"a\" : {} } }")
+        expectEqual(panel.card(id)?.schema.text, "{ \"title\": \"Pets\", \"type\":\"object\",\n\t\"properties\" : { \"a\" : {} } }")
         expectEqual(panel.editor.registry.title(of: try require(panel.editor.document[id])), "Pets")
     },
     test("the header can't rename a schema that isn't a JSON object: its name is text, not a field") {
@@ -200,7 +201,7 @@ let blankCard = SchemaCard(frame: CGRect(x: 40, y: 40, width: 240, height: 52))
         let id = panel.show(card(fixture(10)))
         expect(panel.headerField == nil, "no field to type in")
         expect(try hasInk(panel.snapshot(), in: CGRect(x: 40, y: 8, width: 60, height: 20)), "Invoice, in ink")
-        panel.editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema = fixture(6) } }
+        panel.editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema.text = fixture(6) } }
         panel.window.spin { panel.headerField != nil }
         expectEqual(panel.headerField?.stringValue, "Order")
     },
@@ -220,7 +221,7 @@ let blankCard = SchemaCard(frame: CGRect(x: 40, y: 40, width: 240, height: 52))
         panel.commandReturn()
         expectEqual(description.string, "a pet\nin my household\nindoors", "⌘↩ isn't a new line")
         expectEqual(panel.editor.editingShapeID, nil, "⌘↩ is done: editing ends")
-        panel.window.spin { panel.card(id)?.schema == petSchema && panel.code?.string == petSchema }
+        panel.window.spin { panel.card(id)?.schema.text == petSchema && panel.code?.string == petSchema }
         expectEqual(panel.model.requests.count, 1)
         expectEqual(panel.editor.selection, id, "the card stays selected, its panel up")
     },
@@ -235,7 +236,7 @@ let blankCard = SchemaCard(frame: CGRect(x: 40, y: 40, width: 240, height: 52))
         let typed = "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"name\": {\"type\": \"string\"}\n  }\n}"
         code.checkTextInDocument(nil)       // what AppKit does a moment after typing, where substitutions are on
         expectEqual(code.string, typed, "straight quotes, as typed")
-        expectEqual(panel.card(id)?.schema, typed, "written as typed")
+        expectEqual(panel.card(id)?.schema.text, typed, "written as typed")
         panel.window.settle()
         expectEqual(panel.model.requests.count, 0)
         panel.model.queue("A thing with a name.")
@@ -260,7 +261,7 @@ let blankCard = SchemaCard(frame: CGRect(x: 40, y: 40, width: 240, height: 52))
         panel.window.spin { panel.code?.isEditable == false }             // the JSON waits for it, as it waited for the panel's description
         panel.model.holdsAnswers = false
         panel.model.release()
-        panel.window.spin { panel.card(id)?.schema == petSchema && panel.code?.isEditable == true }
+        panel.window.spin { panel.card(id)?.schema.text == petSchema && panel.code?.isEditable == true }
         panel.focus(code, caret: (petSchema as NSString).range(of: "\"integer\"").location + 1)
         panel.window.type("n")       // "ninteger": not a type, but JSON
         panel.model.queue("a pet in my household, its birth year oddly typed")
@@ -283,7 +284,7 @@ let blankCard = SchemaCard(frame: CGRect(x: 40, y: 40, width: 240, height: 52))
         let id = panel.show(card(petSchema, prompt: "a pet", at: CGPoint(x: 40, y: 40)))
         panel.model.holdsAnswers = true
         panel.model.queue("🐶 A dog: its name, breed and birth year.")
-        panel.editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema = petSchema.replacingOccurrences(of: "\"integer\"", with: "\"number\"") } }
+        panel.editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema.text = petSchema.replacingOccurrences(of: "\"integer\"", with: "\"number\"") } }
         try require(panel.editor.schemaSync).commit(id)
         spinRunLoop(until: { panel.model.waiting == 1 })
         let description = try panel.describe(id)
@@ -336,7 +337,7 @@ let blankCard = SchemaCard(frame: CGRect(x: 40, y: 40, width: 240, height: 52))
         panel.model.release()
         panel.window.spin { panel.code?.isEditable == true && panel.code?.string == petSchema }
         expectEqual(panel.headerField?.isEnabled, true)
-        expectEqual(panel.card(id)?.schema, petSchema)
+        expectEqual(panel.card(id)?.schema.text, petSchema)
         panel.window.spin { panel.spinners.isEmpty }
         panel.render("synced")
     },
@@ -414,12 +415,12 @@ let blankCard = SchemaCard(frame: CGRect(x: 40, y: 40, width: 240, height: 52))
         expectEqual(rows, lines, "a row a line, so line N of an error is the Nth on screen")
         expect(layout.usedRect(for: container).width > code.enclosingScrollView?.contentSize.width ?? 0, "a long line runs past the box, and scrolls sideways")
         expect(try require(panel.codeBox).height > DetailStyle.codeEditorHeight, "a dozen lines: taller than the least")
-        panel.editor.transact { $0.update(try! require(panel.editor.selection), as: SchemaCard.self) { $0.props.schema = #"{"type": "object"}"# } }
+        panel.editor.transact { $0.update(try! require(panel.editor.selection), as: SchemaCard.self) { $0.props.schema.text = #"{"type": "object"}"# } }
         panel.window.spin { code.string == #"{"type": "object"}"# }
         panel.window.settle()
         expectEqual(panel.codeBox?.height, DetailStyle.codeEditorHeight - 8, "a short schema: the least height, a text area's")
         expectEqual(DetailStyle.codeEditorHeight, DetailStyle.textAreaHeight)
-        panel.editor.transact { $0.update(try! require(panel.editor.selection), as: SchemaCard.self) { $0.props.schema = fixture(5) } }
+        panel.editor.transact { $0.update(try! require(panel.editor.selection), as: SchemaCard.self) { $0.props.schema.text = fixture(5) } }
         panel.window.spin { code.string == fixture(5) }
         panel.window.settle()
         layout.ensureLayout(for: container)
@@ -428,7 +429,7 @@ let blankCard = SchemaCard(frame: CGRect(x: 40, y: 40, width: 240, height: 52))
         expect(box.height > DetailStyle.codeEditorHeight, "twenty fields: taller than the least")
         expect(box.height >= text, "every line in view: \(box.height) for \(text)")
         let long = (0..<200).map { "  \"field\($0)\": {}" }.joined(separator: ",\n")
-        panel.editor.transact { $0.update(try! require(panel.editor.selection), as: SchemaCard.self) { $0.props.schema = "{\"properties\": {\n\(long)\n}}" } }
+        panel.editor.transact { $0.update(try! require(panel.editor.selection), as: SchemaCard.self) { $0.props.schema.text = "{\"properties\": {\n\(long)\n}}" } }
         panel.window.spin { code.string.hasSuffix("}}") && code.string.count > 1000 }
         panel.window.settle()
         let full = try require(panel.codeBox)
@@ -455,7 +456,7 @@ let blankCard = SchemaCard(frame: CGRect(x: 40, y: 40, width: 240, height: 52))
         expectEqual(catcher.shown, 1)
         panel.model.queue(petSchema)
         NotificationCenter.default.post(name: .languageModelKeyDidChange, object: nil)       // what Settings' Save says
-        panel.window.spin { panel.card(id)?.schema != SchemaCard.starter }
+        panel.window.spin { panel.card(id)?.schema.text != SchemaCard.starter }
         expectEqual(panel.model.requests.count, 2)
         panel.window.spin { panel.buttons.isEmpty }
     },
@@ -490,7 +491,7 @@ let blankCard = SchemaCard(frame: CGRect(x: 40, y: 40, width: 240, height: 52))
         let units = text as NSString
         expect(underlined(units.length - 1), "the closing brace, where a property name should be: line 4, as the line under it says")
         expect(!underlined(units.range(of: ",\n}").location), "the comma itself reads as JSON")
-        panel.editor.transact { $0.update(try! require(panel.editor.selection), as: SchemaCard.self) { $0.props.schema = "{\"type\": " } }
+        panel.editor.transact { $0.update(try! require(panel.editor.selection), as: SchemaCard.self) { $0.props.schema.text = "{\"type\": " } }
         panel.window.spin { code.string == "{\"type\": " }
         expect(!(0..<(code.string as NSString).length).contains { underlined($0) }, "a text cut short is being typed: nothing to mark")
     },
@@ -501,12 +502,12 @@ let blankCard = SchemaCard(frame: CGRect(x: 40, y: 40, width: 240, height: 52))
         expectEqual(try panel.statusMarks(), [.red], "Invalid JSON: expected a property name at line 6, column 35.")
         expectEqual(panel.editor.issues(id).map(\.severity), [.error])
         let warned = #"{"properties": {"a": {"type": "ninteger"}}, "required": ["fax"]}"#
-        panel.editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema = warned } }
+        panel.editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema.text = warned } }
         panel.window.spin { panel.code?.string == warned }
         panel.window.settle()
         expectEqual(panel.editor.issues(id).map(\.message), ["“fax” is required, but isn’t a property.", "“ninteger” in a isn’t a JSON Schema type."])
         expectEqual(try panel.statusMarks(), [.orange, .orange], "both warnings, each a line")
-        panel.editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema = fixture(6) } }
+        panel.editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.schema.text = fixture(6) } }
         panel.window.spin { (try? panel.statusMarks()) == [] }
     },
 ])

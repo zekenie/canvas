@@ -50,11 +50,11 @@ enum SchemaPanelText {
 @MainActor
 func schemaHeader(_ card: ShapeBinding<SchemaCard>) -> TitleHeader {
     let id = card.shape.id
-    let reading = SchemaReadings.reading(of: card.wrappedValue.schema, for: id)
+    let reading = SchemaReadings.reading(of: card.wrappedValue.schema.text, for: id)
     let isUpdating = card.service(SchemaSync.self)?.status(of: id) == .updating(.schema)
     // Read from the text the last rename made, so a field typed ahead of the panel keeps it.
     let schema = card.schema
-    return TitleHeader(Binding(get: { SchemaReadings.reading(of: schema.wrappedValue, for: id).shown.title ?? "" },
+    return TitleHeader(Binding(get: { SchemaReadings.reading(of: schema.wrappedValue.text, for: id).shown.title ?? "" },
                                set: { name in card.update(\.schema) { $0.setTitle(name) } }),
                        placeholder: SchemaCard.untitled, subtitle: SchemaPanelText.subtitle(reading.shown),
                        isEnabled: !isUpdating, isRenamable: reading.document.isObject)
@@ -64,9 +64,10 @@ func schemaHeader(_ card: ShapeBinding<SchemaCard>) -> TitleHeader {
 // closes commits a turn later (`DetailCodeEditor`), after the board, its editor and its sync may
 // have gone.
 
-/// The JSON Schema as text, which ⌃Space completes (`SchemaCompletions`); under it, what
-/// Validation finds wrong with it (in its words, each in its tone), and the sync's status, whichever
-/// side it writes: the schema from the description typed on the card, or the description from this.
+/// The JSON Schema as text, which ⌃Space completes (`SchemaCompletions`: a `$ref` to another card in
+/// the file too, by its name); under it, what Validation finds wrong with it (in its words, each in
+/// its tone), and the sync's status, whichever side it writes: the schema from the description typed
+/// on the card, or the description from this.
 /// What's typed in it, keystroke after keystroke, picks included, is one undo step ("Change JSON").
 /// While its list is open the sync's idle wait waits too (`SchemaSync.completing`): the person is
 /// still choosing.
@@ -76,13 +77,15 @@ struct SchemaCode: View {
     var body: some View {
         let sync = $card.service(SchemaSync.self), id = $card.shape.id
         let status = sync?.status(of: id) ?? .idle
-        DetailCodeEditor($card.schema,
+        DetailCodeEditor($card.schema.text,
                          coloring: { text in SchemaCodeColors.spans(in: text, for: id) },
-                         completions: { text, caret in SchemaCompletions.completions(in: text, at: caret).map(DetailCodeCompletions.init) },
+                         completions: { [weak sync] text, caret in
+                             SchemaCompletions.completions(in: text, at: caret) { sync?.referenceTargets(from: id) ?? [] }.map(DetailCodeCompletions.init)
+                         },
                          onCompleting: { [weak sync] isCompleting in sync?.completing(id, isCompleting) },
                          onCommit: { [weak sync] in sync?.commit(id) })
             .detailUpdating(status == .updating(.schema))
-        let issues = SchemaReadings.reading(of: card.schema, for: id).issues
+        let issues = SchemaReadings.reading(of: card.schema.text, for: id).issues
         ForEach(issues.indices, id: \.self) { i in
             DetailStatusLine(DetailStatus(issues[i].message, tone: issues[i].severity == .error ? .error : .warning))
         }

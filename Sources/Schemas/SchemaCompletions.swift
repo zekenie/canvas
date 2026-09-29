@@ -5,9 +5,10 @@ import Foundation
 // (`JSONCompleter`) over JSON Schema's own meta-schema (`MetaSchema`), which holds all it knows of
 // JSON Schema as data (the keywords, their descriptions, the values they take, when they matter).
 // Code adds only what a schema can't say of where in the text it is: which names a `required` list
-// can hold (the same object's `properties`), where a `$ref` can point (the root's definitions), and
-// that `$schema` and `$vocabulary` belong at the top (the spec's rule of where, which no meta-schema
-// checks). Offsets are UTF-16, as the code editor's text view counts them.
+// can hold (the same object's `properties`), where a `$ref` can point (the root's definitions, and
+// the other cards of the file), and that `$schema` and `$vocabulary` belong at the top (the spec's
+// rule of where, which no meta-schema checks). Offsets are UTF-16, as the code editor's text view
+// counts them.
 
 /// What can be typed where the caret is in a schema card's JSON: keywords with their descriptions,
 /// the values a keyword takes, the fields a `required` list can name, the definitions a `$ref` can
@@ -19,16 +20,19 @@ public enum SchemaCompletions {
     /// What can be typed at the caret at `utf16Caret` in `text`, a schema's JSON, with every range
     /// in UTF-16 (the completions' range into the text, each item's selection within its insert).
     /// Nil where nothing can (`JSONCaret.at`), nothing is offered, or the text is too long to color
-    /// (`SchemaCodeColors.maxLength`), as it would be to read at every keystroke.
-    public static func completions(in text: String, at utf16Caret: Int) -> JSONCompletions? {
+    /// (`SchemaCodeColors.maxLength`), as it would be to read at every keystroke. `cards` lists the
+    /// other cards a `$ref` can point to (`card(_:named:detail:)`), asked only where a `$ref`'s value
+    /// goes.
+    public static func completions(in text: String, at utf16Caret: Int, cards: () -> [JSONCompletionOffer] = { [] }) -> JSONCompletions? {
         let count = text.utf8.count
         guard count <= SchemaCodeColors.maxLength, utf16Caret >= 0 else { return nil }
         // An ASCII text (a schema mostly is) counts alike either way.
         let isASCII = text.utf16.count == count
         guard let offset = isASCII ? utf16Caret : TextOffsets.utf8(ofUTF16: utf16Caret, in: Array(text.utf8)),
-              let caret = JSONCaret.at(offset, in: text), var completions = engine.completions(at: caret, in: text) else {
-            return nil
-        }
+              let caret = JSONCaret.at(offset, in: text) else { return nil }
+        var others: [JSONCompletionOffer] = []
+        if case .value(of: "$ref") = caret.position { others = cards() }
+        guard var completions = $otherCards.withValue(others, operation: { engine.completions(at: caret, in: text) }) else { return nil }
         completions.items.removeAll { !belongs($0, at: caret) }
         guard !completions.items.isEmpty else { return nil }
         if !isASCII {
@@ -52,15 +56,22 @@ public enum SchemaCompletions {
     private static let refKeyword = MetaSchema.root["properties"]?["$ref"]
     /// What `#` is offered as, beside a `$ref`.
     static let wholeSchema = "Whole schema"
+    /// The other cards a `$ref` being completed can point to, while its completions are made.
+    @TaskLocal static var otherCards: [JSONCompletionOffer] = []
 
-    /// A `required` list's names, and a `$ref`'s targets.
+    /// Another card, as a `$ref` points to it: its URI (`SchemaReferences.uri`), offered by its name.
+    public static func card(_ card: ShapeID, named name: String, detail: String) -> JSONCompletionOffer {
+        JSONCompletionOffer(json: JSONReader.literal(SchemaReferences.uri(of: card)), label: name, detail: detail)
+    }
+
+    /// A `required` list's names, and a `$ref`'s targets: its own definitions, then other cards.
     static func offers(at place: JSONCompletionPlace) -> [JSONCompletionOffer] {
         let caret = place.caret
         switch caret.position {
         case .element where caret.path.last == .member("required") && holds(place.schemas, requiredKeyword):
             return requirable(caret)
         case .value(of: "$ref") where holds(place.valueSchemas, refKeyword):
-            return targets(in: caret.root)
+            return targets(in: caret.root) + otherCards
         default:
             return []
         }

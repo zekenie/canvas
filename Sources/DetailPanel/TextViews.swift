@@ -199,11 +199,15 @@ public struct DetailStatusAction {
 /// - `onCommit` says the text is done: ⌘↩, the keyboard leaving it, and its leaving its window with
 ///   the keyboard (the panel showing another shape) call it, a turn later for the last. Nil, none
 ///   of them is taken: ⌘↩ goes on as any other key does. A view that isn't editable (read-only,
-///   though its text can still be clicked, selected and copied) never calls it: nothing was written.
+///   though its text can still be clicked, selected and copied) never calls it: nothing was written;
+///   but for ⌘↩ where it `commitsWhileReadOnly`, whose commit only says the person is done (a
+///   schema card's description, read-only while the model writes it, ends editing on ⌘↩).
 /// - `commitsOnReturn`, with `onCommit`: Return calls it too, and ⇧↩ is a new line.
 /// - `commitsOnLeaving`, true unless set: whether the keyboard leaving calls `onCommit` too. Text
 ///   whose host ends it itself (a note's editor on the canvas) sets it false, so only ⌘↩ says it's
-///   done.
+///   done. `onLeave` hears the keyboard leave, whatever for, after that: for a host that decides
+///   what leaving means (a schema card's description ends editing only once the keyboard is outside
+///   the canvas).
 /// - `onExit`: Escape calls it (the panel's, which gives the keyboard back to the canvas) in place
 ///   of what a text view does with Escape. (In the panel, the panel hears Escape before the view
 ///   does, and leaves itself. ⌘. never comes to the view as a key: the window sends
@@ -231,6 +235,12 @@ open class DetailTextView: NSTextView {
     /// The keyboard leaving, and the view leaving its window with it, call `onCommit`, as ⌘↩ does.
     /// False for text whose host ends it when the keyboard leaves (a note's editor on the canvas).
     public var commitsOnLeaving = true
+    /// ⌘↩ calls `onCommit` while the text can't be written too: for text whose commit only says the
+    /// person is done with it (a schema card's description ends editing, read-only or not). Return
+    /// and the keyboard leaving still never commit read-only text.
+    public var commitsWhileReadOnly = false
+    /// The keyboard left it, whatever for (after `onCommit`, if it commits on leaving).
+    public var onLeave: (@MainActor () -> Void)?
     /// Escape, when set: the panel's hand-back to the canvas.
     public var onExit: (@MainActor () -> Void)?
     /// Drawn where the text starts while there's none, in the text's font, dimmed.
@@ -269,14 +279,18 @@ open class DetailTextView: NSTextView {
 
     open override func keyDown(with event: NSEvent) {
         // ⌘↩ says the text's done, list or not: a list at the caret closes first.
-        if commit != nil, Self.isCommandReturn(event), !hasMarkedText() { caretListWindow?.closeList() }
-        if let onCommit = commit, !holdsKeys, Self.isReturn(event), !hasMarkedText() {
+        if commandCommit != nil, Self.isCommandReturn(event), !hasMarkedText() { caretListWindow?.closeList() }
+        if !holdsKeys, Self.isReturn(event), !hasMarkedText() {
             let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
-            if modifiers == .command || (commitsOnReturn && modifiers.isEmpty) {
+            if modifiers == .command, let onCommit = commandCommit {
                 onCommit()
                 return
             }
-            if commitsOnReturn && modifiers == .shift {
+            if let onCommit = commit, commitsOnReturn, modifiers.isEmpty {
+                onCommit()
+                return
+            }
+            if commit != nil, commitsOnReturn, modifiers == .shift {
                 insertNewline(nil)
                 return
             }
@@ -286,8 +300,8 @@ open class DetailTextView: NSTextView {
 
     /// ⌘↩ may come as a key equivalent (before the menus) rather than a key down.
     open override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if commit != nil, window?.firstResponder === self, Self.isCommandReturn(event) { caretListWindow?.closeList() }
-        if let onCommit = commit, !holdsKeys, window?.firstResponder === self, Self.isCommandReturn(event) {
+        if commandCommit != nil, window?.firstResponder === self, Self.isCommandReturn(event) { caretListWindow?.closeList() }
+        if let onCommit = commandCommit, !holdsKeys, window?.firstResponder === self, Self.isCommandReturn(event) {
             onCommit()
             return true
         }
@@ -304,6 +318,8 @@ open class DetailTextView: NSTextView {
     /// `onCommit`, while the text can be written: a read-only view's text is never done, since
     /// nothing was written (a locked shape's, whose clicks still land so it can be copied from).
     private var commit: (@MainActor () -> Void)? { isEditable ? onCommit : nil }
+    /// What ⌘↩ calls: `commit`, or `onCommit` whatever the text is, where it `commitsWhileReadOnly`.
+    private var commandCommit: (@MainActor () -> Void)? { commitsWhileReadOnly ? onCommit : commit }
 
     /// While a list is open at the caret, the commands that move through it and pick from it (and
     /// close it) are its own; Return and Tab with nothing to pick, and every other command, are the
@@ -346,12 +362,13 @@ open class DetailTextView: NSTextView {
 
     // MARK: Committing when the keyboard leaves
 
-    /// The keyboard leaving commits, and closes the list at the caret.
+    /// The keyboard leaving commits, closes the list at the caret, and tells `onLeave`.
     open override func resignFirstResponder() -> Bool {
         let resigned = super.resignFirstResponder()
         if resigned {
             if commitsOnLeaving { commit?() }
             caretListWindow?.closeList()
+            onLeave?()
         }
         return resigned
     }

@@ -5,6 +5,7 @@ import CanvasUI
 import Foundation
 import Geometry
 import LanguageModels
+import Mentions
 import Schemas
 import TestKit
 
@@ -23,10 +24,10 @@ extension HighlightBench {
     /// Where the card's highlight of `words` is drawn, its first line, in world units.
     func line(of words: String, on id: ShapeID) throws -> CGRect {
         let card = try require(card(id))
-        let text = card.props.prompt as NSString
+        let text = card.props.prompt.stored as NSString
         let placed = SchemaHighlightAnswers.placed(for: card)
         let index = try require(placed.firstIndex { text.substring(with: $0.range) == words }, "no highlight of \(words)")
-        return try require(SchemaHighlightAnswers.lines(of: card)[index].first)
+        return try require(SchemaHighlightAnswers.lines(of: card, resolve: { _ in .missing })[index].first)
     }
 
     /// The pointer moved to a point on the canvas, in view points.
@@ -108,7 +109,7 @@ private func isFieldTinted(_ pixel: [Int]) -> Bool { pixel[2] - pixel[0] >= 20 &
         textView.insertText("url", replacementRange: at)
         textView.insertText("Its ", replacementRange: NSRange(location: 0, length: 0))
         shown = renderBitmap(b.editor, size: size, editing: editing)
-        expect(b.card(id)?.props.prompt.hasPrefix("Its a jira ticket") == true)
+        expect(b.card(id)?.props.prompt.stored.hasPrefix("Its a jira ticket") == true)
         expect(!isFieldTinted(pixel(shown, at: CGPoint(x: link.minX + 1, y: link.minY + 1))), "typed over")
         let moved = try b.line(of: "key", on: id)
         expect(moved.minX > key.minX, "along with what's typed before it")
@@ -124,9 +125,9 @@ private func isFieldTinted(_ pixel: [Int]) -> Bool { pixel[2] - pixel[0] >= 20 &
         _ = renderBitmap(panel.editor, size: panel.canvas.frame.size)          // a frame draws it in full, which asks
         panel.window.spin { !SchemaHighlightAnswers.placed(for: panel.editor.document[id]!.typed(as: SchemaCard.self)!).isEmpty }
         let card = try require(panel.editor.document[id]?.typed(as: SchemaCard.self))
-        let placed = SchemaHighlightAnswers.placed(for: card), text = card.props.prompt as NSString
+        let placed = SchemaHighlightAnswers.placed(for: card), text = card.props.prompt.stored as NSString
         let index = try require(placed.firstIndex { text.substring(with: $0.range) == "summary" })
-        let summary = try require(SchemaHighlightAnswers.lines(of: card)[index].first)
+        let summary = try require(SchemaHighlightAnswers.lines(of: card, resolve: { _ in .missing })[index].first)
         let view = try panel.describe(id)
         panel.window.settle()
         let point = panel.canvas.convert(panel.editor.camera.toView(CGPoint(x: summary.midX, y: summary.midY)), to: nil)

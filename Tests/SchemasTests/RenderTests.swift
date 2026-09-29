@@ -3,6 +3,7 @@ import AppKit
 import CanvasTesting
 import Foundation
 import Geometry
+import Mentions
 import Schemas
 import TestKit
 import Titles
@@ -187,8 +188,8 @@ let petPrompt = "A pet in my household: its name, its species (a dog or a cat), 
             expectEqual(SchemasPlugin.schemasRead, read, "a second frame reads none, skeletons \(skeletons)")
         }
         editor.skeletonZoom = 0
-        let first = try require(editor.schemaCard(ids[0])).schema
-        editor.transact { $0.update(ids[0], as: SchemaCard.self) { $0.props.schema = first + " " } }
+        let first = try require(editor.schemaCard(ids[0])).schema.text
+        editor.transact { $0.update(ids[0], as: SchemaCard.self) { $0.props.schema.text = first + " " } }
         let typed = SchemasPlugin.schemasRead
         _ = renderBitmap(editor, size: size)
         expect(SchemasPlugin.schemasRead - typed <= 1, "only the written card's, for its name: \(SchemasPlugin.schemasRead - typed)")

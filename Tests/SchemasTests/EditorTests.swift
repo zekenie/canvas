@@ -4,6 +4,7 @@ import CanvasTesting
 import Foundation
 import Geometry
 import LanguageModels
+import Mentions
 import Schemas
 import Selection
 import TestKit
@@ -131,7 +132,7 @@ let antiAliasing = 16
         expectEqual(b.status(id), .updating(.schema), "asked the next turn")
         spinRunLoop(until: { b.status(id) == .idle })
         expectEqual(b.model.lastRequest?.messages, [.user("<prompt>\na pet in my household\n</prompt>\n\n<schema>\n\(SchemaCard.starter)\n</schema>")])
-        expectEqual(b.card(id)?.schema, petSchema)
+        expectEqual(b.card(id)?.schema.text, petSchema)
         expectEqual(b.editor.undoHistory.undoName, "Update Schema", "a step of its own")
         // Looked at and left as it was: nothing asked.
         b.editor.selection = id                          // the click let go of it
@@ -150,7 +151,7 @@ let antiAliasing = 16
         expectEqual(b.status(id), .updating(.schema), "asked after 3 s, still editing")
         expectEqual(b.editor.editingShapeID, id)
         spinRunLoop(until: { b.status(id) == .idle })
-        expect(b.card(id)?.schema.contains("weight") == true)
+        expect(b.card(id)?.schema.text.contains("weight") == true)
     },
     test("editing that ends commits only an edit still waiting: looking in and out asks nothing, a failure stays, and an undo or a file put in place that ends it asks nothing") {
         let b = try SyncBench()

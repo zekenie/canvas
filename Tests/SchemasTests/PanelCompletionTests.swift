@@ -4,6 +4,7 @@ import CanvasTesting
 import DetailPanel
 import Foundation
 import LanguageModels
+import Mentions
 import Schemas
 import TestKit
 
@@ -79,12 +80,12 @@ private func described(_ keyword: String) -> String? { MetaSchema.root["properti
         let picked = "{\n  \"type\": \"object\",\n  \"properties\": {\"name\": {\"type\": \"string\"}}\n}"
         expectEqual(code.string, picked)
         expect(panel.completions == nil)
-        expectEqual(panel.card(id)?.schema, picked)
+        expectEqual(panel.card(id)?.schema.text, picked)
         expectEqual(panel.editor.undoHistory.undoName, "Change JSON")
         panel.window.settle()
         expectEqual(panel.model.requests.count, 0, "a pick is typing: the sync waits for a commit")
         panel.editor.undo()
-        expectEqual(panel.card(id)?.schema, SchemaCard.starter, "the typing and both picks, one step")
+        expectEqual(panel.card(id)?.schema.text, SchemaCard.starter, "the typing and both picks, one step")
     },
     test("a keyword picked after a member with no comma after it brings the comma, in the same edit") {
         let panel = try SchemaPanelWindow()
@@ -99,7 +100,7 @@ private func described(_ keyword: String) -> String? { MetaSchema.root["properti
         panel.window.pressReturn()
         let picked = "{\n  \"type\": \"string\",\n  \"format\": \"\"\n}"
         expectEqual(code.string, picked)
-        expectEqual(panel.card(id)?.schema, picked)
+        expectEqual(panel.card(id)?.schema.text, picked)
         expectEqual(panel.listed.prefix(3).map(\.title), ["date-time", "date", "time"], "format's values, open again")
         panel.window.pressEscape()
         panel.window.settle()

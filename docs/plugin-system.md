@@ -2535,8 +2535,11 @@ public var body: some View {
   later; without it ⌘↩ goes on as any key does), `commitsOnReturn` (with `onCommit`, Return
   commits and ⇧↩ is a new line), `commitsOnLeaving` (on unless set: off, only ⌘↩ commits, for
   text a host ends itself: a note's and a schema card's on the canvas, which end with editing, the
-  card's too as the keyboard goes to a view outside the canvas), `onExit` (Escape: the panel's hand-back to
-  the canvas) and `placeholder`. The box sets them from its arguments.
+  card's too as the keyboard goes to a view outside the canvas), `commitsWhileReadOnly` (⌘↩ commits
+  read-only text too, for a commit that only ends editing: a schema card's description while the
+  model writes it), `onLeave` (the keyboard left, whatever for, after any commit: the card's
+  editor looks where it went), `onExit` (Escape: the panel's hand-back to the canvas) and
+  `placeholder`. The box sets them from its arguments.
 - **The binding.** The box writes `value` to the binding after every change the view reports, so a
   field's run of writes is one undo step, as a text area's is. It calls `show(_:)` only when the
   binding changed from outside (an undo of the board, another plugin's write), never for a change
@@ -4103,9 +4106,10 @@ Mentions ([`Sources/Mentions`](../Sources/Mentions)) lets text mention other sha
 note, a few letters of another note's title, Return, and the note says "Ask ⟨▤ Ship the beta⟩
 first", the mention an inline pill with the note's symbol and name. It's a horizontal on
 Selection, the context menu, the detail panel, the table of contents, Titles and [Topology](#topology) (each mention is an edge of the
-file's graph), and two kinds opt
-in: sticky notes, whose text holds mentions and which can be mentioned, and subboards, which can
-be mentioned (following a mention of one enters it). A mentioned shape's panel lists what mentions
+file's graph), and three kinds opt
+in: sticky notes, whose text holds mentions and which can be mentioned, subboards, which can
+be mentioned (following a mention of one enters it), and schema cards, whose descriptions mention
+each other, each mention a `$ref` in the card's schema ([References between cards](#references-between-cards)). A mentioned shape's panel lists what mentions
 it, and its context menu goes to what does. The core knows no mention; what Mentions needs of it
 is generic: [names](#values-that-name-shapes) of shapes that may outlive them,
 [faces](#faces-clickable-parts-of-a-shape), [going to shapes](#selection),
@@ -4124,6 +4128,10 @@ registrar.shape(StickyNoteDefinition()) { note in
 
 // In SubboardsPlugin.register:
 sub.mentionable(tint: { _ in SubboardStyle.border }, following: .opens)   // by its title; the card's indigo; followed, it's entered
+
+// In SchemasPlugin.register:
+schema.mentionText { [$0.mentionPlacement] }                     // its description, with pills
+schema.mentionable(tint: { _ in SchemaStyle.accent })            // by its title, in its magenta
 ```
 
 ### Mentionable kinds
@@ -4223,8 +4231,9 @@ admits a shape, and what its schema says of it (`x-canvas-mentions`, beside the 
 
 A scope limits what the picker offers, and the schema says it. It never refuses a mention that's
 there (pasted, or written by an agent), as a bound is a guideline, though
-[MentionValidation](#warnings-mentionvalidation) warns about it. No shipped text is restricted yet:
-a note's text mentions any mentionable shape. MentionsTests hold scopes with
+[MentionValidation](#warnings-mentionvalidation) warns about it. A note's text mentions any
+mentionable shape; a schema card's description (`SchemaPromptText`) only schema cards, whose
+schemas it refers to. MentionsTests hold scopes with
 fixtures (a `Brief` holds text of `Only<Plate>` and of `Blockers`, which plates and tokens join).
 
 ### Drawing
@@ -6339,14 +6348,18 @@ registrar.shape(SchemaCardDefinition()) { schema in
     schema.contentsRow { shape in ContentsLabel(…, systemImage: "curlybraces", badge: "6") }  // top-level fields
     schema.schemaPanel()                                                               // the header and the Schema tab
     schema.schemaLinks()                                                               // ports: a schema to a schema
+    schema.mentionText { [$0.mentionPlacement] }                                       // its description's pills
+    schema.mentionable(tint: { _ in SchemaStyle.accent })                              // by its title, in its magenta
 }
 registrar.channel(SchemaLink.self)
 ```
 
 - **The card** is white, with a note's corners (`SchemaStyle.cornerRadius`, 4), and shows its
-  description as a note shows its text: the same attributes (the system font at 16 points, every
-  line 19 tall, string drawing's pitch: `SchemaStyle.textAttributes`), 16 points in from its edges
-  (`SchemaCardMetrics`), and nothing of its schema; with no description it's blank. It has no hue:
+  description as a note shows its text: the same style (the system font at 16 points, every
+  line 19 tall, string drawing's pitch: `SchemaStyle.text`, a `MentionTextStyle`), 16 points in
+  from its edges (`SchemaCardMetrics`), each mention of another card a pill (`drawMentionText`,
+  through its placement, `mentionPlacement`, so its pills are [faces](#faces-clickable-parts-of-a-shape)),
+  and nothing of its schema; with no description it's blank. It has no hue:
   the kind's magenta is its row's symbol and its ports' dots. Its text reads where a note's does, so
   going to one (`goTo`) leaves it at 70%, and it says no zoom of its own. An untitled card is
   `SchemaCard.untitled` ("Untitled") in its header and in its row.
@@ -6355,21 +6368,28 @@ registrar.channel(SchemaLink.self)
   Return, a double-click, or a click on the only selected card edits one, as a note is edited
   ("Typing"). Its editor, `SchemaDescriptionEditor`
   ([SchemaDescriptionEditor.swift](../Sources/Schemas/SchemaDescriptionEditor.swift)), is laid over
-  it as a note's is: a `DetailTextView` on TextKit 2 (`SchemaDescriptionView`), its text set with
-  the render's attributes, starting a point higher (`SchemaStyle.editorInset`), so its lines fall on
+  it as a note's is: a `MentionTextView<Only<SchemaCard>>` (TextKit 2), its text set in the
+  render's style, starting a point higher (`SchemaStyle.editorInset`), so its lines fall on
   the render's, pixel for pixel but anti-aliasing, and nothing moves as editing starts
-  (SchemasTests' "Schema card description"). Return is a new line, as in a note; ⌘↩ and Escape say
-  the description is done and end editing. Its highlights (words linked to the parts of the schema
+  (SchemasTests' "Schema card description"). `@` where a word starts lists the file's other
+  titled schema cards, on any board, never the card itself, and a pick is a pill
+  ([References between cards](#references-between-cards)). Return is a new line, as in a note; ⌘↩
+  and Escape say the description is done and end editing, ⌘↩ while the model writes the
+  description too (`DetailTextView.commitsWhileReadOnly`), and so does the keyboard going to a view
+  outside the canvas (heard through `onLeave`). Its highlights (words linked to the parts of the schema
   they say, `SchemaHighlighter`, asking Sonnet 5.5) are filled by the render under its text, while
-  it's edited too, and resting the pointer on them shows that part of the schema in the core's
-  popover (`CanvasPopover`: Selection's `ShapePopovers` on the canvas, `EditContext.hoverPopover`
-  in the editor). Begun from a press,
+  it's edited too, where the canvas draws the words, pills and all (Mentions'
+  `MentionTextStyle.lineRects`), and resting the pointer on them shows that part of the schema in
+  the core's popover (`CanvasPopover`: Selection's `ShapePopovers` on the canvas,
+  `EditContext.hoverPopover` in the editor, where the mention text view's `onPointer` says where
+  the pointer is). Begun from a press,
   the caret goes where it was (`placeSelection(at:selectingWord:)`), and the camera follows it as
   the card grows past the window's edge (`caretFrame`, `EditContext.keepInView`).
 - **Its height** is its description's, set in the same transaction: `setPrompt` sets the text and
   fits the height to it at the card's width (`prompt` is `internal(set)`, so nothing writes it
   without), as a note's text fits a note (`SchemaStyle.fittedHeight`: its lines, measured as string
-  drawing sets them, with half a point spare, and the padding), at least a line: a new card is
+  drawing sets them, each pill by the name its mention holds, with half a point spare, and the
+  padding; the editor's `setPrompt(_:shown:)` measures its text as it shows it), at least a line: a new card is
   240 × 52. The editor writes it with every change, so the card grows and shrinks with what's typed,
   in the typing's step, and grows one too short for its description as editing begins (a card
   drawn with a `size:`); one drawn taller keeps its height until it's typed into. The width is the
@@ -6441,7 +6461,7 @@ registrar.channel(SchemaLink.self)
   one cut off (`SchemaSync.tooLongMessage`), and "Claude declined" (at temperature 0 it would
   decline again; rewording the description is what helps, and that edit syncs). The side being
   written is read-only and dimmed: the JSON (`detailUpdating`), or the card's description, whose
-  editor, if it's open, is read-only and faint (`SchemaStyle.updatingOpacity`) and shows the
+  editor, if it's open, is read-only and dimmed as mention text is (`MentionTextView.showEnabled`) and shows the
   description the model wrote once it lands (it follows the sync's status and the card itself,
   `EditContext.shape`, observed). The section's commit holds the sync weakly: a box that loses the
   keyboard as its window closes commits after the board has gone.
@@ -6472,10 +6492,76 @@ registrar.channel(SchemaLink.self)
   keywords in the order offered, each with a description, and `x-canvas-when`, the app's one
   annotation (`minLength` matters only where `type` is or lists `string`: left out beside
   `"type": "number"` until something's typed, then last).
-  `SchemaCompletions.completions(in:at:)` is the card's, in UTF-16, adding in code only what no
-  schema can say: a `required` list's names, the same object's `properties`; a `$ref`'s targets,
-  `#` and the root's definitions; and that `$vocabulary` goes only in the root and `$schema` only
-  in the root or a subschema with an `$id`.
+  `SchemaCompletions.completions(in:at:cards:)` is the card's, in UTF-16, adding in code only what
+  no schema can say: a `required` list's names, the same object's `properties`; a `$ref`'s targets,
+  `#` and the root's definitions, then the file's other titled cards by their titles, each written
+  as its URI (`cards`, asked only at a `$ref`'s value: `SchemaSync.referenceTargets(from:)`); and
+  that `$vocabulary` goes only in the root and `$schema` only in the root or a subschema with an
+  `$id`.
+
+### References between cards
+
+A card refers to another card's schema as a JSON Schema refers to another document: with a `$ref`
+to the other card's URI, `urn:uuid:` and its id, lowercase (as RFC 9562 writes a UUID), whole or
+with a fragment (`#/$defs/money`, a part of it). Its description says so with a mention of the card:
+"A house: its ⟨{} Address⟩, and how many bedrooms (required)" is
+
+```json
+{
+  "title": "House",
+  "type": "object",
+  "properties": {
+    "address": { "$ref": "urn:uuid:5b0e7c1a-3d2f-4e6b-8a9c-1f2e3d4c5b6a" },
+    "bedrooms": { "type": "integer" }
+  },
+  "required": ["bedrooms"]
+}
+```
+
+and the sync writes one from the other, as it writes every other part
+([SchemaReferences.swift](../Sources/Schemas/SchemaReferences.swift)):
+
+- **The description** is mention text of schema cards alone (`SchemaPromptText`,
+  `ScopedMentionText<Only<SchemaCard>>`): its schema's `prompt` is `mentions.text`, with
+  `x-canvas-mentions` saying so. A card is mentioned by its title, in its magenta; an untitled
+  card has no name to offer, so the picker leaves it out. Its panel's Mentioned In tab lists the
+  cards whose descriptions mention it, and its menu has Show What Mentions, as any mentionable
+  kind's. The card's first migration, `PropsMigration("prompt may mention schema cards")`,
+  escapes what would now read as a mention, as a note's third did.
+- **The id, not the name.** A `$ref` holds the card's id, so renaming the card changes no schema,
+  and it finds a card on any board of the file, as a mention does ("or sub-board!", in the owner's
+  words). `SchemaReferences.uri(of:)` writes one, `target(of:)` reads one (in any case, with its
+  fragment), and `refs(in:)` finds every `$ref` to a card in a schema's text, at any depth, with
+  where its value is (none in text that isn't JSON, and none looked for in text that never says
+  `urn:uuid:`, one pass over its bytes).
+- **A name, as a mention is.** The schema is a `SchemaText` (one string in a board, as it always
+  was), which is [`ShapeNaming`](#values-that-name-shapes): a copy of a card with the cards it
+  refers to refers to the copies, in its schema as in its description, and one copied alone to
+  the originals; a cut and paste keeps them; deleting a card writes nothing, its `$ref`s pointing
+  nowhere until the deletion is undone, as its mentions show it missing; and `canvas draw` warns of a
+  `$ref` to a card that isn't in the file.
+- **What the model sees.** Never an id, which it would have to copy digit for digit: each card a
+  card's texts name is `@` and a word of its name (`SchemaReferenceNames`: its words run together,
+  each after the first capitalized, only letters, digits and `_`, then a number for a second card
+  of one word: `@LineItem`, `@Address2`), named as the card is now (its title, as its mentions show
+  it; else as its mention holds it, for one deleted; a `$ref` to a card with neither stays as
+  written, and a mention of a shape that isn't a schema card is words). A mention is its word in
+  the description, and a `$ref` to a card that word as its URI (`"$ref": "@Address"`, a fragment
+  kept after it); the words come first, listed in `<schemas>`. What it writes is read back: a
+  `$ref` to a word is its card's URI again, and `@` and a word in a description (any case, the
+  longest that fits, not inside a word or after a letter) a mention of its card, named as it is.
+  What the prompts say of other schemas (`SchemaPrompts.toSchemaReferences`,
+  `toPromptReferences`, `highlightsReferences`) goes after each only in a request that names some,
+  so a card that refers to no other is sent exactly what it always was: the evals held that, as
+  the same words added to every request cost three of the cases that name no other schema.
+- **Highlights on pills.** The highlighter sends the description as the model reads it (each
+  mention `@` and the word of the name it holds) and the schema with each `$ref` to a mentioned
+  card its word, and an answer is found in that text, then moved onto the description as it's
+  drawn, where a mention is one character, its pill (`SchemaModelText.shownRange`): words in a
+  mention's word highlight its pill. Resting the pointer on the words that say a `$ref` to a card in
+  the file shows that card's schema (the part its fragment points to), not the `$ref`.
+- **Completing one.** At a `$ref`'s value in the panel's JSON, ⌃Space lists, after the card's own
+  definitions, the file's other titled cards by their titles, each written as its URI.
 
 ### Keeping the description and the schema in step: `SchemaSync`
 
@@ -6556,9 +6642,11 @@ description to say what it now holds. `SchemaSync`, the plugin's service, does i
   whichever board it shows after (`BoardChange.isFileReplaced`), as a board read again does.
 - **What it asks** is `SchemaPrompts`: the two system prompts (raw string literals, each its text
   byte for byte, which [`scripts/schema-prompts/evals.py`](../scripts/schema-prompts) reads out of
-  the Swift, so the quick evals test exactly what ships), the user message (tagged blocks, each
-  trimmed: `<previous_prompt>`, `<prompt>`, `<schema>`; or `<prompt>`, `<previous_schema>`,
-  `<schema>`; empty ones left out, tags and all), 16,000 tokens at most for a schema and 2048 for a
+  the Swift, so the quick evals test exactly what ships; what each says of other schemas goes after
+  it only in a request that names some, [References between cards](#references-between-cards)),
+  the user message (tagged blocks, each trimmed: `<schemas>`, `<previous_prompt>`, `<prompt>`,
+  `<schema>`; or `<schemas>`, `<prompt>`, `<previous_schema>`, `<schema>`; empty ones left out, tags
+  and all), 16,000 tokens at most for a schema and 2048 for a
   description, temperature 0, no prefill or stop sequences, and `parse` (the answer trimmed, then
   unwrapped of any code-fence line and its own block's tags, from either end, until none is left,
   `ModelAnswer.unwrapped` (LanguageModels', which `--ask` reads its answers with too): the model
@@ -7616,7 +7704,7 @@ topology             service TopologyIndex
 arrows               shape arrow · label Arrow → arrow · ContentsRows → arrow · service ArrowTargeting · overlay BindingHintsOverlay
 sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
 subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard
-schemas              service SchemaSync · overlay SchemaHighlightFrames · ShapePopovers · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link · edge type schema-link
+schemas              service SchemaSync · overlay SchemaHighlightFrames · ShapePopovers · shape schema-card v1 · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · mention text → schema-card · mentionable → schema-card · ShapeDetails → schema-card · channel schema-link · edge type schema-link
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
 adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
 detail-panel         service DetailPanelState
@@ -8284,7 +8372,14 @@ Each of these adds to the design without changing what plugins are written again
   step (a failed sync, a call cut off by closing) opens knowing it, not only one whose schema has
   no fields; a patch in place of the whole schema, so a big schema can be edited from its
   description (and a long one answered sooner); streaming, for answers longer than a request that
-  doesn't stream should wait for; and schemas that type or check other shapes.
+  doesn't stream should wait for; schemas that type or check other shapes; and more of references
+  between cards: a warning for a `$ref` to a card that isn't in the file, or isn't a schema card (a
+  missing mention's pill is dashed, but a `$ref` says nothing), the fields a `$ref` to another card
+  leads to read where fields are counted, described and completed (`SchemaField.fields` follows
+  `$ref`s within the document only), references as edges of their own in Topology, beside the
+  mention edges a card's description has, a card's schema handed out with the cards it refers to
+  (each with its `$id`) for tools outside the app, and `@Address` typed without the picker read as
+  the card called that.
 - **An editing view hearing about outside changes** to its shape, whatever writes them:
   `EditContext.shape` reads it as it is, and a schema card's editor shows its description as the
   sync writes it, watching the sync's status for it; a note's hears nothing (undo, a draw and a file
@@ -8411,8 +8506,7 @@ Each of these adds to the design without changing what plugins are written again
 - **More of mentions**: a shipped text in the panel that holds mentions (`MentionTextArea` is
   there for one); saying in the `@` picker which board a shape on
   another board is on; validation across boards (MentionValidation checks a mention of a shape on
-  another board no more than a missing one); a text restricted to some kinds among the
-  shipped ones; a move that isn't a cut and paste (Move to Subboard, below), keeping ids as a cut's
+  another board no more than a missing one); a move that isn't a cut and paste (Move to Subboard, below), keeping ids as a cut's
   paste does, so mentions stay live; the command line reading and listing what can be mentioned,
   and helpers for writing mentions; more kinds mentionable (through bridges); and making a shape
   from the picker.

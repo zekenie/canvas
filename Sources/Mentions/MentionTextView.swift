@@ -54,6 +54,10 @@ public final class MentionTextView<Scope: MentionScope>: DetailTextView {
     /// The view's Objective-C face: notifications, menu items, tooltips.
     private var helper: MentionTextViewHelper?
 
+    /// The pointer moved over the view (a point in its coordinates), or left it (nil): for a host
+    /// that shows something of its own where the pointer is (a schema card's highlights).
+    public var onPointer: (@MainActor (CGPoint?) -> Void)?
+
     /// The open picker, and the window its list shows in.
     public private(set) var picker: MentionPicker?
     private var pickerWindow: CaretListWindow?
@@ -406,20 +410,23 @@ public final class MentionTextView<Scope: MentionScope>: DetailTextView {
     }
 
     /// The pointer over a live pill hovers its target (again on each move: the canvas ends hover
-    /// once as the pointer comes onto the view, perhaps after this does).
+    /// once as the pointer comes onto the view, perhaps after this does). `onPointer` hears where.
     public override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
         if toolTipsAreStale { updateToolTips() }
-        let target = pillRange(at: convert(event.locationInWindow, from: nil)).flatMap { pill(at: $0.location) }
+        let point = convert(event.locationInWindow, from: nil)
+        let target = pillRange(at: point).flatMap { pill(at: $0.location) }
             .flatMap { $0.resolution.isLive ? $0.target : nil }
         if let pointerHover, pointerHover != target { mentions?.endHover(pointerHover) }
         pointerHover = target
         if let target { mentions?.hover(target) }
+        onPointer?(point)
     }
 
     public override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
         endPointerHover()
+        if event.trackingArea === hoverArea { onPointer?(nil) }
     }
 
     private func endPointerHover() {
