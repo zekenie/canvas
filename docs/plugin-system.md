@@ -5640,7 +5640,7 @@ double-click and a placement say nothing, and the view chooses, as it always has
   moved in the stack, not one it carried along above its anchor. It's host API (`shapeBounds`,
   `damageMark`, `damage(since:)`, and `outlines`, what the canvas outlines), as the minimap is
   the host's.
-- **Drawing**, back to front: background and grid; shapes in paint order (culled by extent: those
+- **Drawing**, back to front: background and the dot grid (`DotGrid`: tiles of dots filled once, copied at whole device pixels, kept while the camera stays); shapes in paint order (culled by extent: those
   more than 40 world units out of view don't draw, and a shape with no outline always does), each
   where it's drawn ([`setDrawingOffset`](#the-cores-part-drawing-offsets): a shaking shape, away
   from where it is, with its outline); every
@@ -6558,7 +6558,8 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   shape, checked against its kind's schema too) and its reads after a drag event, after a drag
   event of a subboard 100 notes mention (whose mention rule looked it up, and ignores moves) and
   after moving every shape, a hover and a drag frame (titles' pills, locks and mentions'
-  pills in view), a hover on a note's port dot and a drag from it, a hover onto a title's
+  pills in view), an empty board's frame on Retina at 100%, 70%, 35% and 10%, the camera still,
+  panning and pinching (`Budget.emptyFrame`, 2 ms of the thread's CPU time), a hover on a note's port dot and a drag from it, a hover onto a title's
   pill and onto a mention's, reading the table of contents' rows after a drag event, an insert, a
   delete and a restack, a keystroke in the `@` picker (the `@` that opens it too, on a file of two
   boards, and among thousands of rectangles where only 3 notes can be mentioned), a rename of a

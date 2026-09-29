@@ -158,6 +158,8 @@ public final class CanvasEditor {
     @ObservationIgnored var nextPreviewFrame: ScheduledTask?
     /// Shapes drawn away from where they are, in view points (`setDrawingOffset`).
     @ObservationIgnored var drawingOffsets: [ShapeID: CGPoint] = [:]
+    /// The dot grid under the shapes, and the tiles it keeps from frame to frame.
+    @ObservationIgnored let dotGrid = DotGrid()
     // Input state, used by CanvasEditor+Host.swift.
     @ObservationIgnored var tracker = PointerTracker()
     @ObservationIgnored var heldModifiers: Modifiers = []

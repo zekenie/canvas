@@ -16,7 +16,7 @@ extension CanvasEditor {
 
         Style.canvasBackground.setFill()
         dirtyRect.fill()
-        drawGrid(in: context, bounds: bounds)
+        dotGrid.draw(in: context, bounds: bounds, camera: camera)
 
         let shapes = shapeContext
         context.saveGState()
@@ -68,6 +68,11 @@ extension CanvasEditor {
             drawIsolated(context) { overlay.draw(in: overlayContext) }
         }
     }
+
+    #if DEBUG
+    /// How many tiles the dot grid has made (debug builds): a frame the camera didn't move makes none.
+    @_spi(Host) public var gridTilesMade: Int { dotGrid.tilesMade }
+    #endif
 
     // MARK: Drawing a shape away from where it is
 
@@ -145,29 +150,6 @@ extension CanvasEditor {
         draw()
         context.beginPath()
         context.restoreGState()
-    }
-
-    private func drawGrid(in context: CGContext, bounds: CGRect) {
-        var spacing = Style.gridSpacing
-        while spacing * camera.zoom < Style.minGridSpacingOnScreen {
-            spacing *= 2
-        }
-        // Dots are placed in view space so they stay the same size at every zoom level.
-        let step = spacing * camera.zoom
-        let startX = (floor(camera.origin.x / spacing) * spacing - camera.origin.x) * camera.zoom
-        let startY = (floor(camera.origin.y / spacing) * spacing - camera.origin.y) * camera.zoom
-        let diameter = Style.gridDotDiameter
-        var y = startY
-        while y < bounds.maxY + diameter {
-            var x = startX
-            while x < bounds.maxX + diameter {
-                context.addEllipse(in: CGRect(x: x - diameter / 2, y: y - diameter / 2, width: diameter, height: diameter))
-                x += step
-            }
-            y += step
-        }
-        context.setFillColor(Style.gridDot.cgColor)
-        context.fillPath()
     }
 
     /// Every plugin's outlines (unless the session hides them), then the hint, in one stroke at a
