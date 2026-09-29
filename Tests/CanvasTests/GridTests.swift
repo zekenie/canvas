@@ -60,6 +60,43 @@ private enum Layout {
      })
 }
 
+/// An empty board drawn by the editor twice into one kind of bitmap: with the grid's copies clipped
+/// to the pixels their dots touch, as into any bitmap (the default), and with them unclipped, as
+/// into a context that isn't one (`gridClipOverride`). Each frame is held to what it says of
+/// itself, so the two differ only in the clip.
+@MainActor private func clippedAndUnclipped(_ editor: CanvasEditor, _ size: CGSize, scale: CGFloat, layout: Layout = .rgba, dark: Bool = false,
+                                            clip: CGRect? = nil, _ label: String) throws -> (clipped: CGContext, unclipped: CGContext) {
+    @MainActor func frame() throws -> (context: CGContext, clipped: Int, unclipped: Int) {
+        let before = (editor.gridFramesClipped, editor.gridFramesUnclipped)
+        let context = try picture(size, scale: scale, layout: layout, dark: dark, clip: clip) { editor.draw(in: $0, bounds: $1, dirtyRect: $1) }
+        return (context, editor.gridFramesClipped - before.0, editor.gridFramesUnclipped - before.1)
+    }
+    let clipped = try frame()
+    expectEqual(clipped.clipped, 1, "\(label): a bitmap's copies are clipped")
+    expectEqual(clipped.unclipped, 0, "\(label): and not drawn unclipped")
+    editor.gridClipOverride = false
+    defer { editor.gridClipOverride = nil }
+    let unclipped = try frame()
+    expectEqual(unclipped.clipped, 0, "\(label): once the override says not to, they aren't clipped")
+    expectEqual(unclipped.unclipped, 1, "\(label): and are drawn unclipped")
+    return (clipped.context, unclipped.context)
+}
+
+/// A one-page PDF, y down as `picture`'s bitmaps are: a context that isn't a bitmap, as AppKit's is
+/// for a view on screen.
+@MainActor private func pdfPage(_ size: CGSize, _ draw: (CGContext, CGRect) -> Void) throws {
+    var mediaBox = CGRect(origin: .zero, size: size)
+    let pdf = try require(CGContext(consumer: try require(CGDataConsumer(data: NSMutableData())), mediaBox: &mediaBox, nil))
+    pdf.beginPDFPage(nil)
+    pdf.translateBy(x: 0, y: size.height)
+    pdf.scaleBy(x: 1, y: -1)
+    try require(NSAppearance(named: .aqua)).performAsCurrentDrawingAppearance {
+        draw(pdf, mediaBox)
+    }
+    pdf.endPDFPage()
+    pdf.closePDF()
+}
+
 /// How many bytes differ between two 8-bit bitmaps of one layout, and by how much at most (0...255).
 private func difference(_ a: CGContext, _ b: CGContext) -> (bytes: Int, most: Int) {
     let count = a.bytesPerRow * a.height
@@ -233,5 +270,87 @@ private func dots(in context: CGContext, camera: Camera, scale: CGFloat) -> [(ce
             let (tiles, reference) = try pictures(h.editor, CGSize(width: 400, height: 300), scale: scale, clip: dirty)
             expectEqual(difference(tiles, reference).bytes, 0, "at \(scale)×")
         }
+    },
+    // A tile is clear but for its dots, and its copies never overlap, so what the clip of the pixels
+    // the dots touch leaves out is clear anyway. Into a context that isn't a bitmap, where the clip
+    // costs far more than it saves, the copies are drawn without it.
+    test("drawn unclipped, as into a context that isn't a bitmap, the grid is the clipped grid pixel for pixel, at every zoom") {
+        let h = try EditorHarness(plugins: [])
+        // 100%; where the dots are closest (70%, 35%); 10%; and zooms whose copies drift from their dots.
+        for scale: CGFloat in [1, 2] {
+            for (zoom, origin) in [(1, CGPoint(x: 3.3, y: 7.7)), (0.7, CGPoint(x: -33.1, y: 12.9)), (0.35, CGPoint(x: 101.7, y: -55.5)),
+                                   (0.1, CGPoint(x: -1234.5, y: 987.6)), (0.7137, CGPoint(x: -123.4, y: 55.5)), (1.2345, CGPoint(x: 17.17, y: -3.3)),
+                                   (0.4321, CGPoint(x: 9.9, y: 99.9)), (3.14159, CGPoint(x: -2.71, y: 1.61)), (0.123, CGPoint(x: 5000.5, y: -777.7))]
+                as [(CGFloat, CGPoint)] {
+                h.editor.camera = Camera(origin: origin, zoom: zoom)
+                let label = "\(zoom * 100)% at \(scale)×"
+                let (clipped, unclipped) = try clippedAndUnclipped(h.editor, CGSize(width: 600, height: 400), scale: scale, label)
+                expectEqual(difference(clipped, unclipped).bytes, 0, label)
+            }
+        }
+        // 87.3% about a point off the middle, and Parity's zoomed renders (60% about (300, 200) and 15%
+        // about (370, 180)), at 2× in a view of 1,200 × 800.
+        for (zoom, anchor) in [(0.873, CGPoint(x: 431, y: 127)), (0.6, CGPoint(x: 300, y: 200)), (0.15, CGPoint(x: 370, y: 180))] as [(CGFloat, CGPoint)] {
+            h.editor.camera = Camera()
+            h.editor.camera.setZoom(zoom, around: anchor)
+            let label = "\(zoom * 100)% about \(anchor) at 2×"
+            let (clipped, unclipped) = try clippedAndUnclipped(h.editor, CGSize(width: 1200, height: 800), scale: 2, label)
+            expectEqual(difference(clipped, unclipped).bytes, 0, label)
+        }
+    },
+    test("unclipped, the grid is the clipped grid pixel for pixel in dark, in Core Graphics' own layout and an extended range's, and where part of the canvas is redrawn") {
+        let h = try EditorHarness(plugins: [])
+        let size = CGSize(width: 400, height: 300)
+        // At 100% the dots at 44.7 and 16.3 straddle the redrawn part's edges.
+        let dirty = CGRect(x: 45, y: 17, width: 300, height: 200)
+        for zoom: CGFloat in [1, 0.7137] {
+            h.editor.camera = Camera(origin: CGPoint(x: 3.3, y: 7.7), zoom: zoom)
+            for (name, layout, dark) in [("dark", .rgba, true), ("BGRA", .bgra, false), ("extended", .extended, false)] as [(String, Layout, Bool)] {
+                let label = "\(name) at \(zoom * 100)%, 2×"
+                let (clipped, unclipped) = try clippedAndUnclipped(h.editor, size, scale: 2, layout: layout, dark: dark, label)
+                expectEqual(difference(clipped, unclipped).bytes, 0, label)
+            }
+            for scale: CGFloat in [1, 2] {
+                let label = "part redrawn at \(zoom * 100)%, \(scale)×"
+                let (clipped, unclipped) = try clippedAndUnclipped(h.editor, size, scale: scale, clip: dirty, label)
+                expectEqual(difference(clipped, unclipped).bytes, 0, label)
+            }
+        }
+    },
+    test("a bitmap's copies are clipped and a PDF page's aren't, unless gridClipOverride says otherwise; a frame that draws no copies counts neither") {
+        let h = try EditorHarness(plugins: [])
+        h.editor.camera = Camera(origin: CGPoint(x: 3.3, y: 7.7), zoom: 1)
+        let size = CGSize(width: 300, height: 200)
+        // How many frames the grid drew clipped and unclipped, in that order, while `draw` ran.
+        @MainActor func frames(_ draw: () throws -> Void) throws -> [Int] {
+            let before = [h.editor.gridFramesClipped, h.editor.gridFramesUnclipped]
+            try draw()
+            return [h.editor.gridFramesClipped - before[0], h.editor.gridFramesUnclipped - before[1]]
+        }
+        @MainActor func bitmap(turned: Bool = false) throws {
+            _ = try picture(size, scale: 2, turned: turned) {
+                expect($0.bitsPerComponent > 0, "a bitmap has bits to a component")
+                h.editor.draw(in: $0, bounds: $1, dirtyRect: $1)
+            }
+        }
+        @MainActor func page() throws {
+            try pdfPage(size) {
+                expectEqual($0.bitsPerComponent, 0, "a PDF page isn't a bitmap")
+                h.editor.draw(in: $0, bounds: $1, dirtyRect: $1)
+            }
+        }
+        expectEqual(try frames { try bitmap() }, [1, 0], "a bitmap's copies are clipped")
+        expectEqual(try frames(page), [0, 1], "a PDF page's aren't")
+        h.editor.gridClipOverride = false
+        expectEqual(try frames { try bitmap() }, [0, 1], "a bitmap's aren't, once the override says not to")
+        h.editor.gridClipOverride = true
+        expectEqual(try frames(page), [1, 0], "and a PDF page's are, once it says to")
+        h.editor.gridClipOverride = nil
+        expectEqual(try frames { try bitmap() }, [1, 0], "the context decides again")
+        expectEqual(try frames(page), [0, 1], "for a PDF page too")
+        expectEqual(try frames { try bitmap(turned: true) }, [0, 0], "turned a quarter, the grid is a path of ellipses: no copies")
+        h.editor.camera = Camera(origin: CGPoint(x: .nan, y: 7.7), zoom: 1)
+        expectEqual(try frames { try bitmap() }, [0, 0], "no grid at all")
+        expectEqual(try frames(page), [0, 0], "in a PDF page too")
     },
 ])

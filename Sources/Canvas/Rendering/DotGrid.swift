@@ -2,10 +2,18 @@ import AppKit
 import Geometry
 
 /// The canvas's dot grid, drawn from tiles: a tile holds a block of dots, filled as ellipses once,
-/// and copies of it are drawn at whole device pixels through a clip of just the pixels the dots
-/// touch (a tile's clear pixels would cost as much to draw as its dots). Filling a path of an
-/// ellipse per dot, as the grid was drawn, costs some 2 µs a dot every frame: 7 ms at 1200 × 800 on
-/// Retina where the dots are closest (70%, 35%), and more on a bigger screen.
+/// and copies of it are drawn at whole device pixels. Into a bitmap each is drawn through a clip of
+/// just the pixels the dots touch, since a bitmap composites a copy's clear pixels as dearly as its
+/// dots. Filling a path of an ellipse per dot, as the grid was drawn, costs some 2 µs a dot every
+/// frame: 7 ms at 1200 × 800 on Retina where the dots are closest (70%, 35%), and more on a bigger
+/// screen.
+///
+/// Into a context that isn't a bitmap (its `bitsPerComponent` is 0: AppKit's for a view's
+/// `draw(_:)`, which records a display list, or a PDF's) the copies are drawn unclipped, and the
+/// clip isn't made. Core Animation renders that list on the GPU while the window is on screen, and
+/// makes a clip of many rects into a region again for every draw through it: the grid's clip, a
+/// rect per dot (thousands), kept the main thread waiting some 400 ms a frame. Nothing but the cost
+/// changes, since a tile is clear but for its dots and its copies never overlap.
 ///
 /// Where a whole number of dots spans a whole number of pixels (at 100%, and at the zooms whose
 /// spacing in pixels has few decimals: 60% on Retina is 57.6 pixels, five of them 288), every copy's
@@ -78,7 +86,8 @@ final class DotGrid {
         }
 
         /// The pixels each dot touches, as its copy draws it, those within `low..<high`: the only
-        /// pixels of the copies drawn. `count` of the copies' dots are the grid's, the rest past it.
+        /// pixels of the copies drawn, into a bitmap. `count` of the copies' dots are the grid's, the
+        /// rest past it.
         func spans(count: Int, within low: CGFloat, _ high: CGFloat) -> [ClosedRange<CGFloat>] {
             var spans: [ClosedRange<CGFloat>] = []
             for (index, copy) in copies.enumerated() {
@@ -110,6 +119,12 @@ final class DotGrid {
     #if DEBUG
     /// How many tiles have been made (debug builds).
     private(set) var tilesMade = 0
+    /// How many frames have drawn their copies through the clip, and how many without it (debug builds).
+    private(set) var framesClipped = 0
+    private(set) var framesUnclipped = 0
+    /// Whether the copies are clipped whatever the context is: nil leaves it to the context (debug
+    /// builds).
+    var clipOverride: Bool?
     #endif
 
     /// Draws the grid for `camera` over `bounds`, view points, in `context`'s current space (the
@@ -185,25 +200,44 @@ final class DotGrid {
                 copies.append((rect, tile))
             }
         }
-        let xSpans = across.spans(count: x.count, within: visible.minX, visible.maxX)
-        let ySpans = down.spans(count: y.count, within: visible.minY, visible.maxY)
+        guard !copies.isEmpty else { return }
+        // The rects of the pixels the dots touch, only where they're the clip: not into a context that
+        // isn't a bitmap, where they'd be made for nothing.
+        let clips = clipsCopies(into: context)
         var dots: [CGRect] = []
-        dots.reserveCapacity(xSpans.count * ySpans.count)
-        for row in ySpans {
-            for column in xSpans {
-                dots.append(CGRect(x: column.lowerBound, y: row.lowerBound, width: column.upperBound - column.lowerBound,
-                                   height: row.upperBound - row.lowerBound))
+        if clips {
+            let xSpans = across.spans(count: x.count, within: visible.minX, visible.maxX)
+            let ySpans = down.spans(count: y.count, within: visible.minY, visible.maxY)
+            dots.reserveCapacity(xSpans.count * ySpans.count)
+            for row in ySpans {
+                for column in xSpans {
+                    dots.append(CGRect(x: column.lowerBound, y: row.lowerBound, width: column.upperBound - column.lowerBound,
+                                       height: row.upperBound - row.lowerBound))
+                }
             }
+            guard !dots.isEmpty else { return }
         }
-        guard !dots.isEmpty else { return }
         context.saveGState()
         defer { context.restoreGState() }
         context.concatenate(toDevice.inverted())
         context.interpolationQuality = .none
-        context.clip(to: dots)
+        if clips { context.clip(to: dots) }
         for copy in copies {
             context.draw(copy.tile, in: copy.rect)
         }
+        #if DEBUG
+        if clips { framesClipped += 1 } else { framesUnclipped += 1 }
+        #endif
+    }
+
+    /// Whether the copies are drawn through a clip of the pixels their dots touch: into a bitmap
+    /// (whose `bitsPerComponent` is more than 0), not into any other context, unless a debug build
+    /// says otherwise (`clipOverride`).
+    private func clipsCopies(into context: CGContext) -> Bool {
+        #if DEBUG
+        if let clipOverride { return clipOverride }
+        #endif
+        return context.bitsPerComponent > 0
     }
 
     /// The tilings to draw with: of the sizes a tile may be, the pair whose tiles and copies cost the

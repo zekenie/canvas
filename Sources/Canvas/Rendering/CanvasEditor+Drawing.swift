@@ -87,6 +87,18 @@ extension CanvasEditor {
     #if DEBUG
     /// How many tiles the dot grid has made (debug builds): a frame the camera didn't move makes none.
     @_spi(Host) public var gridTilesMade: Int { dotGrid.tilesMade }
+
+    /// How many frames drew the dot grid's copies through the clip of the pixels their dots touch,
+    /// and how many without it (debug builds): a bitmap's are clipped, and no other context's.
+    @_spi(Host) public var gridFramesClipped: Int { dotGrid.framesClipped }
+    @_spi(Host) public var gridFramesUnclipped: Int { dotGrid.framesUnclipped }
+
+    /// Whether the dot grid clips its copies whatever the context is (debug builds): nil, the
+    /// default, leaves it to the context; a test that draws a bitmap unclipped sets false.
+    @_spi(Host) public var gridClipOverride: Bool? {
+        get { dotGrid.clipOverride }
+        set { dotGrid.clipOverride = newValue }
+    }
     #endif
 
     // MARK: Drawing a shape away from where it is
