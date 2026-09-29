@@ -5,7 +5,8 @@ public enum RPC {
     /// Bumped when a message changes shape in a way the other side would misread. The command line
     /// refuses an app that speaks another version. 2: a text param may be read from standard input
     /// (`x-stdin`), and an error's data may say where in a script it is (`line`, `statement`,
-    /// `errors`).
+    /// `errors`). What an older reader passes over keeps the version: a param's `x-timeout` (an
+    /// older `canvas` waits its usual time, and says `timed_out`), an error's `column` and `length`.
     public static let protocolVersion = 2
     /// What the command line is called: in help, and in the examples commands give.
     public static let commandName = "canvas"

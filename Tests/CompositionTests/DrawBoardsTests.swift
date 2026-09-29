@@ -48,6 +48,7 @@ func scripted(_ text: String) -> String { text.replacingOccurrences(of: "\"", wi
     test("a draw is one undo step, Draw: the board is edited, and undone it isn't; a dry run makes none") {
         try configureBoards()
         let board = newBoard()
+        defer { board.close() }
         let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
         expectEqual(try canvas(server, ["draw", "--dry-run", #"sticky-note "Idea" text: "Try a cache""#]).status, 0)
@@ -159,5 +160,5 @@ func scripted(_ text: String) -> String { text.replacingOccurrences(of: "\"", wi
 /// `draw`, as the app's command server runs it, in this process, on `editor`: a dry run, or not.
 @MainActor func drawnInProcess(_ script: String, on editor: CanvasEditor, dryRun: Bool) throws -> JSON {
     let commands = ShippedPlugins.commands(in: editor.registry)
-    return try commands.run("draw", ["script": .string(script), "dryRun": .bool(dryRun)], editor)
+    return try awaitResult { try await commands.run("draw", ["script": .string(script), "dryRun": .bool(dryRun)], editor) }
 }

@@ -52,7 +52,11 @@ private final class ZoneBoard {
         server = try startCommandServer(boards: [board], frontmost: board)
     }
 
-    func stop() { server.stop() }
+    /// The server stops, and the board closes.
+    func stop() {
+        server.stop()
+        board.close()
+    }
 
     /// `canvas draw`, as a dry run if asked, and what it said.
     func draw(_ script: String, dryRun: Bool = false) throws -> Drew {

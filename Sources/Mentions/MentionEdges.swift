@@ -8,6 +8,7 @@ public enum MentionEdge {}
 
 extension MentionEdge: EdgeType {
     public static let id: EdgeTypeID = "mention"
+    public static let summary: String? = "a mention in a shape's text, from that shape to the shape it names"
 }
 
 /// Mentions' edges: every mention in the mention text of every kind whose shapes can hold names

@@ -10,6 +10,7 @@ extension NoteLink: Channel {
     public static let id: ChannelID = "note-link"
     /// A brown amber, darker than the note, so a dot reads beside one.
     public static var color: NSColor { NSColor(srgbRed: 0.70, green: 0.45, blue: 0.05, alpha: 1) }
+    public static let summary: String? = "an arrow drawn on the note-link channel"
 }
 
 extension ShapeRegistrar where Definition == StickyNoteDefinition {

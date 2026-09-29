@@ -49,16 +49,21 @@ extension ChannelID: SchemaDescribed {
 ///     extension NoteLink: Channel {
 ///         public static let id: ChannelID = "note-link"
 ///         public static var color: NSColor { .systemBrown }
+///         public static let summary: String? = "an arrow drawn on the note-link channel"
 ///     }
 public protocol Channel {
     /// What a connection drawn on it keeps: never change it once shipped.
     static var id: ChannelID { get }
     /// Its ports' dots. Computed (`static var`), as colors aren't `Sendable`. Default: gray.
     static var color: NSColor { get }
+    /// What a connection drawn on it is, in one line: its edge type's summary (`EdgeType.summary`).
+    /// Nil (the default): nothing said.
+    static var summary: String? { get }
 }
 
 extension Channel {
     public static var color: NSColor { .systemGray }
+    public static var summary: String? { nil }
 }
 
 /// What a connection drawn on a channel knows: which it is. An added property the connector's kind
@@ -235,11 +240,11 @@ extension ShapeRegistrar {
 
 extension PluginRegistrar {
     /// Declares a channel this plugin owns, so kinds can have ports on it, and its edge type
-    /// (Topology's, of the same name), under the family of edges the connector draws (a root
-    /// without a connector): a connection drawn on it is an edge of that type.
+    /// (Topology's, of the same name, with the channel's summary), under the family of edges the
+    /// connector draws (a root without a connector): a connection drawn on it is an edge of that type.
     public mutating func channel<C: Channel>(_ channel: C.Type) {
         contribute(ChannelDeclaration(id: C.id, color: C.color), to: Channels.self)
-        edgeType(EdgeTypeID(C.id), parent: { $0.connector?.edgeType })
+        edgeType(EdgeTypeID(C.id), parent: { $0.connector?.edgeType }, summary: C.summary)
     }
 
     /// Ports on `channel` for a kind another plugin registers (bridges), as `ports` on a kind's own

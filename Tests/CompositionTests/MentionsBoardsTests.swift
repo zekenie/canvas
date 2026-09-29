@@ -259,6 +259,7 @@ extension CanvasEditor {
         try configureBoards()
         let nest = NestedFile()
         let board = try nestedDocument()
+        defer { board.close() }
         let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
         let (inside, _) = nest.notes(on: 3)

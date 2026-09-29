@@ -62,7 +62,7 @@ struct Invocation {
         }
         let app: AppDescription
         do {
-            app = try client.describe(timeout: options.timeout)
+            app = try client.describe(timeout: options.timeout ?? Options.defaultTimeout)
         } catch {
             return fail(.unavailable, error, format: format)
         }
@@ -98,8 +98,10 @@ struct Invocation {
         if command.scope == .board, let board = params[RPC.boardParam]?.stringValue, Self.isPath(board) {
             params[RPC.boardParam] = .string(Self.absolute(board))
         }
+        // As long as the params given say their answer takes (a model's), unless --timeout says.
+        let waits = command.arguments.filter { params[$0.name] != nil }.compactMap(\.waits).max()
         do {
-            let result = try client.call(command.name, params: .object(params), timeout: options.timeout)
+            let result = try client.call(command.name, params: .object(params), timeout: options.timeout ?? waits ?? Options.defaultTimeout)
             print(TextOutput.render(result), format: format, json: result)
             return .done
         } catch .remote(let error) {
@@ -148,8 +150,9 @@ struct Invocation {
     }
 
     /// Says what went wrong on standard error: as JSON (`{"error": {…}}`, with the members of
-    /// `details` beside its own) or as text, with the hint. A script's error says its line and the
-    /// statement written there, and then each of the other problems found in it, a line each.
+    /// `details` beside its own) or as text, with the hint. A script's error says its line (and
+    /// column) and the statement written there, marked under what's wrong when it says where on
+    /// the line that is, and then each of the other problems found in it, a line each.
     private func fail(_ status: ExitStatus, reason: String, _ message: String, hint: String?, details: [String: JSON] = [:],
                       format: OutputFormat) -> ExitStatus {
         switch format {
@@ -159,25 +162,69 @@ struct Invocation {
             error.merge(details) { own, _ in own }
             write(JSON.object(["error": .object(error)]).prettyText, true)
         case .text:
-            let line = details["line"]?.intValue
-            var lines = ["\(RPC.commandName): " + Self.located(message, line: line)]
-            if let statement = details["statement"]?.stringValue, !statement.isEmpty { lines.append("  " + statement) }
+            let line = details["line"]?.intValue, column = details["column"]?.intValue
+            var lines = ["\(RPC.commandName): " + Self.located(message, line: line, column: column)]
+            if let statement = details["statement"]?.stringValue, !statement.isEmpty {
+                lines.append("  " + statement)
+                if let column, let marks = Self.caret(under: statement, column: column, length: details["length"]?.intValue) {
+                    lines.append("  " + marks)
+                }
+            }
             if let hint { lines.append("hint: \(hint)") }
             for other in details["errors"]?.arrayValue ?? [] {
                 guard let text = other["message"]?.stringValue else { continue }
-                let at = other["line"]?.intValue
-                if text == message, at == line { continue }        // the error above
-                lines.append(Self.located(text, line: at))
+                let at = other["line"]?.intValue, atColumn = other["column"]?.intValue
+                if text == message, at == line, atColumn == column { continue }        // the error above
+                lines.append(Self.located(text, line: at, column: atColumn))
             }
             write(lines.joined(separator: "\n"), true)
         }
         return status
     }
 
-    /// `line 3: message`, or the message alone when it's about no line.
-    private static func located(_ message: String, line: Int?) -> String {
-        line.map { "line \($0): \(message)" } ?? message
+    /// `line 3, column 12: message`, `line 3: message`, or the message alone when it's about no line.
+    private static func located(_ message: String, line: Int?, column: Int?) -> String {
+        switch (line, column) {
+        case (let line?, let column?): "line \(line), column \(column): \(message)"
+        case (let line?, nil): "line \(line): \(message)"
+        case (nil, let column?): "column \(column): \(message)"
+        case (nil, nil): message
+        }
     }
+
+    /// Carets under `length` characters of `statement` from `column` (from 1), at least one, lined up
+    /// with it as a terminal draws it: a tab before them stays a tab, and a character takes as many
+    /// cells as it's drawn in (`cells`). Nil for a column past the statement's end.
+    static func caret(under statement: String, column: Int, length: Int?) -> String? {
+        let characters = Array(statement)
+        guard column >= 1, column <= characters.count + 1 else { return nil }
+        let lead = characters.prefix(column - 1).map { $0 == "\t" ? "\t" : String(repeating: " ", count: cells($0)) }.joined()
+        let marked = characters.dropFirst(column - 1).prefix(max(0, length ?? 1)).reduce(0) { $0 + cells($1) }
+        return lead + String(repeating: "^", count: max(1, marked))
+    }
+
+    /// How many cells a terminal draws a character in: two for an emoji shown as one and for East
+    /// Asian wide and fullwidth characters (CJK, kana, Hangul, fullwidth forms), none for one that's
+    /// only a mark or a format control (a zero-width space), else one.
+    static func cells(_ character: Character) -> Int {
+        let scalars = character.unicodeScalars
+        guard let first = scalars.first else { return 0 }
+        let properties = first.properties
+        if properties.isEmojiPresentation || (properties.isEmoji && scalars.contains("\u{FE0F}")) { return 2 }
+        switch properties.generalCategory {
+        case .nonspacingMark, .enclosingMark, .format: return 0
+        default: break
+        }
+        return wideRanges.contains { $0.contains(first.value) } ? 2 : 1
+    }
+
+    /// The code points East Asian Width calls wide or fullwidth (the emoji among them are told by
+    /// their presentation).
+    private static let wideRanges: [ClosedRange<UInt32>] = [
+        0x1100...0x115F, 0x2E80...0x303E, 0x3041...0x33FF, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xA000...0xA4CF,
+        0xA960...0xA97F, 0xAC00...0xD7A3, 0xF900...0xFAFF, 0xFE10...0xFE19, 0xFE30...0xFE6F, 0xFF00...0xFF60,
+        0xFFE0...0xFFE6, 0x16FE0...0x16FE4, 0x17000...0x18CFF, 0x1B000...0x1B2FF, 0x20000...0x2FFFD, 0x30000...0x3FFFD,
+    ]
 
     // MARK: Boards named by their files
 
@@ -200,9 +247,13 @@ struct Invocation {
 /// The command line's own options, read wherever they are (before `--`); everything else is the
 /// command's.
 struct Options {
+    /// How long `canvas` waits for an answer when neither `--timeout` nor the params given say.
+    static let defaultTimeout: TimeInterval = 10
+
     var socket: String?
     var format: OutputFormat?
-    var timeout: TimeInterval = 10
+    /// `--timeout`: how long to wait for the app to answer, whatever the params given say.
+    var timeout: TimeInterval?
     var help = false
     var version = false
     /// The command's name and arguments, in order.

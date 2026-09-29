@@ -108,7 +108,7 @@ A kind is drawable when a tool places it. These are the shipped ones:
 
 ### Titles are the names
 
-A shape is referred to by its title and nothing else. There are no ids.
+A shape is referred to by its title and nothing else. There are no ids in a script.
 
 - **A title is always quoted.** It's folded as the app folds titles: runs of spaces and new lines become one space, and the ends are trimmed. A title that folds to nothing is refused; leave it out for an untitled shape. Keep titles to one line. One longer than 80 characters is kept but warned about.
 - **Matching is exact** on the folded form, and case matters. `"deploy"` is not `"Deploy"`.
@@ -179,7 +179,7 @@ The shipped kinds' attributes:
 - **sticky-note**: `text` (what it says: past eight lines or so the note grows taller to fit it, from its top. A `size:` holds as drawn only until its text changes, typed by the user or set again by a script without `size:`: then it's as tall as its text again, never under 200, and opening it to edit grows it to its text. So don't use a note as a zone of a set height), `locked`.
 - **schema-card**: `schema` (a JSON Schema, as text: its properties in the order written; the card grows to list them), `prompt` (what the schema should hold, in words), `locked`. What a script writes is taken as written: the Claude sync that rewrites one side when the user edits the other isn't asked, so write a prompt and a schema that agree, or leave the prompt out.
 - **rectangle**, **subboard**: `locked`.
-- **A note's `text`** is kept as written. In it, `@[label](shape:<id>)` is a mention of a shape, which the note shows as a live pill with that shape's name now. No id ever reaches a script, so write plain words: an `@`, or `@[…]` without `(shape:…)`, is only text. (The app writes a mention's form as plain text with `\@[`, which a script's string spells `\\@[`.) A mention of a shape that isn't in the file is kept, and warned about.
+- **A note's `text`** is kept as written. In it, `@[label](shape:<id>)` is a mention of a shape, which the note shows as a live pill with that shape's name now. Only the app writes one (an id from a query's rows is for naming the shape in a later query, never in a script), so write plain words: an `@`, or `@[…]` without `(shape:…)`, is only text. (The app writes a mention's form as plain text with `\@[`, which a script's string spells `\\@[`.) A mention of a shape that isn't in the file is kept, and warned about.
 - **`locked: true`** locks a shape, as the context menu's Lock does. A locked shape refuses every later change (`read_only`). Leave locking to the user.
 
 A value past a bound (a title over 80 characters, say) isn't refused. The shape is drawn and the bound comes back as a warning. A value of the wrong type is `invalid_value`, naming the attribute and what it takes. So is a word outside a set, which also gets a Did you mean. A key the kind doesn't have is `unknown_attribute`, which lists what the kind takes and names the kinds that do have the key, if any. A property that holds an object or a list (none of the shipped kinds has one) takes JSON on one line, which replaces the whole property, so write every member; a value of the wrong type anywhere inside it, or a member it doesn't have, is `invalid_value` too, never dropped.
@@ -756,9 +756,9 @@ These are left out on purpose. What they protect is that the app never chooses a
 
 ## Not built yet
 
-- **Reading a board back.** No command lists a board's shapes, titles or positions yet. An agent knows only what its scripts drew and what the results said.
-- **Drawing on a board the window doesn't show**, and listing a file's subboards. A script works on the board its file's window shows; the user opens a subboard for it.
-- **Mentions by title.** A note's `text:` is kept as written, and a mention in it is written with the shape's id, which no result gives.
+- **Reading positions back.** `canvas query` ([query.md](query.md)) lists a file's shapes, their titles and attributes, what's inside what and what's connected to what, but not where a shape is: only a script's result says where what it drew landed.
+- **Drawing on a board the window doesn't show.** A script works on the board its file's window shows; the user opens a subboard for it. A query lists a file's subboards (`subboard`), and what's in each.
+- **Mentions by title.** A note's `text:` is kept as written, and a mention in it is written with the shape's id, which only the app writes.
 - **Text on edges.** Arrows have no labels.
 - **Groups and containers** that grow with what's in them, or that move as one. Zones are plain shapes, and their contents are placed once.
 - **Routing.** A line may cross shapes it has nothing to do with. There's no `between` or `below "X"` for edges yet.

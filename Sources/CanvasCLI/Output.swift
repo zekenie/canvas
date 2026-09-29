@@ -19,7 +19,7 @@ extension Invocation {
             ("--format <json|text>", "How results are printed: JSON (the default when the output isn't a terminal) or text. CANVAS_FORMAT sets it too. "
                 + "Help is text, unless --format json asks for what the app says about its commands, their params' JSON Schema too."),
             ("--socket <path>", "Where the app listens. Default: \(SocketPath.environmentKey) if set, else \(SocketPath.defaultPath(home: "~"))."),
-            ("--timeout <seconds>", "How long to wait for the app to answer. Default: 10."),
+            ("--timeout <seconds>", "How long to wait for the app to answer. Default: 10, or longer for what waits on a model (--ask)."),
             ("-h, --help", "This help, or a command's (`\(name) help <command>`)."),
             ("--version", "\(name)'s version: the protocol it speaks."),
         ]))
@@ -40,9 +40,11 @@ extension Invocation {
 /// table (what a row has that isn't a value, a kind's attributes, indented under it), and anything
 /// nested indented under its name. JSON (`--format json`) has it all, as it's sent.
 enum TextOutput {
-    /// Members that lead, in this order; the rest follow by name. A script's changes lead with
-    /// where each was written and what it did (no other result has `line` or `did`).
-    static let leading = ["line", "did", "id", "name", "kind"]
+    /// Members that lead, by their place; the rest follow by name. A script's changes lead with
+    /// where each was written and what it did (no other result has `line` or `did`), and a shape
+    /// (a query's row) with its id, kind and title. (Written as members, which `title` may be: the
+    /// id audit takes any other string that's an id for a use of it.)
+    static let leading: [String: Int] = ["line": 0, "did": 1, "id": 2, "name": 3, "kind": 4, "title": 5]
     /// Members that are sentences, which a table never cuts (a warning's message ends with what to
     /// do about it, and a kind's `why` says why a script can't draw it): its last columns.
     static let sentences = ["message", "hint", "why"]
@@ -99,7 +101,7 @@ enum TextOutput {
     }
 
     private static func ordered(_ keys: some Collection<String>) -> [String] {
-        leading.filter(keys.contains) + keys.filter { !leading.contains($0) }.sorted()
+        keys.compactMap { key in leading[key].map { (key, $0) } }.sorted { $0.1 < $1.1 }.map(\.0) + keys.filter { leading[$0] == nil }.sorted()
     }
 
     /// Whether a value fits on its line: anything but an object, or a list with an object in it.

@@ -7,12 +7,22 @@ import Foundation
 /// a queue per connection, so a client that's slow to read holds up only itself. The app's command
 /// server is built on it.
 ///
+/// A request may take its time (a language model's answer) without holding up the main actor or
+/// anyone else: each runs as a task of its own on the main actor, so while one waits, the others,
+/// on its connection and on any other, run. A connection's answers go back in the order its
+/// requests came, whichever finishes first. When a client hangs up, its requests still running are
+/// cancelled (`Task.isCancelled`), since no one is left to read their answers: `RPCClient` never
+/// stops sending before it stops reading, so nothing more to read means it's gone. A notification
+/// (no id) isn't: no one waits for it, and it runs to its end.
+///
 /// Only processes of the user the app runs as are answered: the socket is readable by no one else,
 /// its folder is made readable by no one else, and each connection's peer is checked.
 public final class RPCListener: @unchecked Sendable {
-    /// What a request does. It runs on the main actor; a request without an id (a notification)
-    /// runs too, but gets no response.
-    public typealias Handler = @MainActor @Sendable (RPCRequest) -> Result<JSON, RPCError>
+    /// What a request does. It runs on the main actor, and may wait; a request without an id (a
+    /// notification) runs too, but gets no response.
+    public typealias Handler = @MainActor @Sendable (RPCRequest) async -> Result<JSON, RPCError>
+    /// A handler that answers each request at once, in one turn of the main actor.
+    public typealias SynchronousHandler = @MainActor @Sendable (RPCRequest) -> Result<JSON, RPCError>
 
     public let path: String
     private let handler: Handler
@@ -31,6 +41,11 @@ public final class RPCListener: @unchecked Sendable {
     public init(path: String, handler: @escaping Handler) {
         self.path = path
         self.handler = handler
+    }
+
+    /// A listener whose handler answers each request at once.
+    public convenience init(path: String, synchronous handler: @escaping SynchronousHandler) {
+        self.init(path: path, handler: { request in handler(request) })
     }
 
     /// Starts listening. Makes the socket's folder, readable only by this user, if there's none,
@@ -182,6 +197,13 @@ private final class Connection: @unchecked Sendable {
     private var buffer = LineBuffer()
     /// Requests the main actor has and hasn't answered yet.
     private var pending = 0
+    /// The request handed to the main actor last, whose answer the next one's waits for.
+    private var last: Task<Void, Never>?
+    /// The requests with ids that haven't been answered yet, by the order they came in: what a
+    /// hang-up cancels.
+    private var running: [Int: Task<Void, Never>] = [:]
+    /// How many requests it has read: the next one's number in `running`.
+    private var requestsRead = 0
     /// Nothing more will be read: the client's done sending, or gone.
     private var doneReading = false
     private var closed = false
@@ -199,6 +221,10 @@ private final class Connection: @unchecked Sendable {
             // The descriptor stays open until every answer is written (`closeIfDone`).
             source.setCancelHandler { [self] in
                 doneReading = true
+                // The client's gone (it never stops sending while it waits for an answer), sent a
+                // line too long to read, or the listener stopped: no one will read what's still
+                // being answered. A notification runs to its end.
+                for task in running.values { task.cancel() }
                 closeIfDone()
             }
             source.resume()
@@ -238,15 +264,22 @@ private final class Connection: @unchecked Sendable {
             return
         }
         pending += 1
-        let handler = handler
-        DispatchQueue.main.async { [self] in
-            let outcome = MainActor.assumeIsolated { handler(request) }
+        let handler = handler, before = last, number = requestsRead
+        requestsRead += 1
+        let task = Task { @MainActor [self] in
+            let outcome = await handler(request)
+            // After the answer to the request before it, whichever finished first. That one wrote
+            // its answer to the queue before it ended, so this one's comes after it.
+            await before?.value
             queue.async { [self] in
                 pending -= 1
+                running[number] = nil
                 if let id = request.id { send(RPCResponse(id: id, outcome: outcome)) }
                 closeIfDone()
             }
         }
+        last = task
+        if request.id != nil { running[number] = task }
     }
 
     private func send(_ response: RPCResponse) {
@@ -268,6 +301,7 @@ private final class Connection: @unchecked Sendable {
     private func closeIfDone() {
         guard doneReading, pending == 0, !closed else { return }
         closed = true
+        last = nil
         close(fd)
         didFinish(self)
     }

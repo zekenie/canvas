@@ -116,6 +116,13 @@ public struct ScopedMentionText<Scope: MentionScope>: Sendable, ExpressibleByStr
         return MentionGrammar.unescapedOpenings(in: stored) > mentions ? MentionGrammar.lookalikes(in: stored) : []
     }
 
+    /// What text stored so reads as plain text, as `init(stored:)`'s `plainText(label:)` reads it,
+    /// in one pass over its bytes, with no runs made: for what reads many texts once (a query's scan
+    /// and its rows). Text without an `@[` reads as it's stored, and costs a pass that finds none.
+    public static func plainText(stored: String, label: (ShapeID) -> String? = { _ in nil }) -> String {
+        MentionGrammar.plainText(of: stored, label: label)
+    }
+
     /// What it reads as plain text: each mention as "@" and its name, the name `label` gives, or,
     /// where it gives none, the label the mention holds.
     public func plainText(label: (ShapeID) -> String? = { _ in nil }) -> String {
@@ -361,6 +368,129 @@ enum MentionGrammar {
         }
         flush()
         return runs
+    }
+
+    // MARK: Plain text, from the bytes
+
+    private static let headBytes = Array("](shape:".utf8)
+
+    /// `parse(_:)`'s runs as `plainText(label:)` reads them, from the string's UTF-8 in one pass:
+    /// every character the grammar gives a meaning to is ASCII, and no byte of another character is
+    /// one, so each is found, and each run of text copied, byte for byte, as the scalar parse finds
+    /// and copies them. Text with no `@[` is as it's stored.
+    static func plainText(of string: String, label: (ShapeID) -> String?) -> String {
+        guard mayHoldMentions(string) else { return string }
+        var string = string
+        return string.withUTF8 { plainText(of: $0, label: label) }
+    }
+
+    private static func plainText(of s: UnsafeBufferPointer<UInt8>, label: (ShapeID) -> String?) -> String {
+        let backslash: UInt8 = 0x5C, at: UInt8 = 0x40, open: UInt8 = 0x5B
+        var out: [UInt8] = []
+        out.reserveCapacity(s.count)
+        var ruledOut = 0                 // no mention starts before this: a failed scan got this far
+        var i = 0
+        while i < s.count {
+            var a = i                    // an `@[` that isn't escaped starts here, once found
+            if s[i] == backslash {
+                var n = 0
+                while i + n < s.count, s[i + n] == backslash { n += 1 }
+                a = i + n
+                guard a + 1 < s.count, s[a] == at, s[a + 1] == open else {
+                    out.append(contentsOf: repeatElement(backslash, count: n))
+                    i = a
+                    continue
+                }
+                out.append(contentsOf: repeatElement(backslash, count: n / 2))
+                if n % 2 == 1 {
+                    out.append(at)
+                    i = a + 1
+                    continue
+                }
+            } else if s[i] != at || i + 1 >= s.count || s[i + 1] != open {
+                out.append(s[i])
+                i += 1
+                continue
+            }
+            out.append(at)
+            if a >= ruledOut, let (id, name, end) = mention(in: s, at: a, labelEnd: &ruledOut) {
+                if let live = label(id) {
+                    out.append(contentsOf: live.utf8)
+                } else {
+                    // The label as it holds it: `\]` and `\\` stand for `]` and `\`.
+                    var k = name.lowerBound
+                    while k < name.upperBound {
+                        if s[k] == backslash { k += 1 }
+                        out.append(s[k])
+                        k += 1
+                    }
+                }
+                i = end
+            } else {
+                i = a + 1
+            }
+        }
+        return String(decoding: out, as: UTF8.self)
+    }
+
+    /// `mention(in:at:labelEnd:)` over bytes: the id, where the label is (escapes and all), and
+    /// where the mention ends.
+    private static func mention(in s: UnsafeBufferPointer<UInt8>, at i: Int, labelEnd: inout Int) -> (ShapeID, Range<Int>, Int)? {
+        let backslash: UInt8 = 0x5C, close: UInt8 = 0x5D
+        var j = i + 2
+        while j < s.count {
+            let c = s[j]
+            if c == backslash {
+                guard j + 1 < s.count, s[j + 1] == close || s[j + 1] == backslash else {
+                    labelEnd = j
+                    return nil
+                }
+                j += 2
+                continue
+            }
+            if c == close { break }
+            if c == 0x0A || c == 0x0D {
+                labelEnd = j
+                return nil
+            }
+            j += 1
+        }
+        labelEnd = j
+        guard j + headBytes.count + 37 <= s.count else { return nil }
+        for k in 0..<headBytes.count where s[j + k] != headBytes[k] { return nil }
+        let idStart = j + headBytes.count
+        guard s[idStart + 36] == 0x29, let uuid = uuid(in: s, at: idStart) else { return nil }
+        return (ShapeID(uuid), (i + 2)..<j, idStart + 37)
+    }
+
+    /// The UUID written in the 36 bytes at `start` as `UUID(uuidString:)` reads one: hex digits in
+    /// either case, in groups of 8, 4, 4, 4 and 12 with a hyphen between each; nil for anything else.
+    private static func uuid(in s: UnsafeBufferPointer<UInt8>, at start: Int) -> UUID? {
+        var bytes: uuid_t = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+        let parsed = withUnsafeMutableBytes(of: &bytes) { out -> Bool in
+            var k = start, n = 0
+            while n < 16 {
+                if k - start == 8 || k - start == 13 || k - start == 18 || k - start == 23 {
+                    guard s[k] == 0x2D else { return false }
+                    k += 1
+                }
+                guard let high = hexValue(s[k]), let low = hexValue(s[k + 1]) else { return false }
+                out[n] = high << 4 | low
+                n += 1
+                k += 2
+            }
+            return true
+        }
+        return parsed ? UUID(uuid: bytes) : nil
+    }
+
+    private static func hexValue(_ byte: UInt8) -> UInt8? {
+        switch byte {
+        case 0x30...0x39: byte - 0x30
+        case 0x41...0x46: byte - 0x41 + 10
+        case 0x61...0x66: byte - 0x61 + 10
+        default: nil
+        }
     }
 
     private static let shapeWord = Array("(shape".unicodeScalars)

@@ -47,6 +47,19 @@ struct MinimapHost: View {
     for _ in 0..<5 { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.002)) }
 }
 
+/// After each test (main.swift's `afterEach`): the boards it left open are closed, and one it left
+/// with changes fails it. AppKit autosaves an edited board 15 s after its last change, or after the
+/// last event sent through NSApp, if that's later, in whatever test is running then; a test's board
+/// has no file type (NSDocumentController gives the app's theirs), so one given a file throws
+/// "inTypeName is nil" there, and the run ends. Whether those 15 s passed before the run ended
+/// depended on how busy the machine was.
+@MainActor func closeBoardsLeftOpen() {
+    for board in BoardDocument.unclosed {
+        expect(!board.isDocumentEdited, "board \(board.number), \(board.displayName ?? ""), was left open with changes: close it")
+        board.close()
+    }
+}
+
 @MainActor func scratchURL(_ name: String) -> URL {
     FileManager.default.temporaryDirectory.appendingPathComponent("BoardDocumentTests-\(UUID().uuidString)-\(name)")
 }
@@ -57,6 +70,7 @@ let boardType = "com.example.InfiniteCanvas.board"
     test("editing marks a board edited; the camera, the selection and a new board's shapes don't") {
         try configureBoards()
         let board = BoardDocument()
+        defer { board.close() }
         board.start(with: WelcomeBoard.document())
         expect(!board.isDocumentEdited)
         board.editor.camera = Camera(origin: CGPoint(x: 40, y: 40), zoom: 2)
@@ -88,6 +102,7 @@ let boardType = "com.example.InfiniteCanvas.board"
           { "id" : "\(ShapeID())", "index" : "a2", "kind" : "gadget", "props" : { } } ] }
         """
         let board = BoardDocument()
+        defer { board.close() }
         try board.read(from: Data(json.utf8), ofType: boardType)
         expectEqual(board.editor.document.shapes.count, 3)
         expectEqual(board.loadReport.repairs.count, 1)
@@ -145,6 +160,7 @@ let boardType = "com.example.InfiniteCanvas.board"
 
         let saved = try board.data(ofType: boardType)
         let reopened = BoardDocument()
+        defer { reopened.close() }
         try reopened.read(from: saved, ofType: boardType)
         expectEqual(reopened.editor.file, board.editor.file, "every board, as it was")
         expectEqual(reopened.loadReport, board.loadReport)
@@ -177,6 +193,7 @@ let boardType = "com.example.InfiniteCanvas.board"
         let url = scratchURL("revert.canvasboard")
         defer { try? FileManager.default.removeItem(at: url) }
         let board = BoardDocument()
+        defer { board.close() }
         board.start(with: WelcomeBoard.document())
         try board.data(ofType: boardType).write(to: url)
         board.fileURL = url

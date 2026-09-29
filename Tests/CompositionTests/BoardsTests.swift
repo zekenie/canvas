@@ -9,6 +9,7 @@ import Foundation
 import LanguageModels
 import Locking
 import Mentions
+import Queries
 import Schemas
 import Selection
 import StickyNotes
@@ -86,6 +87,28 @@ extension ChangeSetWatcher: EditorService {
         expectEqual(h.editor.board, .root)
         #if DEBUG
         expectEqual(watch.workedOut, [false, false])
+        #endif
+    },
+    test("queries keep nothing per board: a switch works out no change set for them, and each query after one takes up the board shown") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let watch = ChangeSetWatch()
+        let (file, pocket, note) = pocketWithNote()
+        let h = try shippedWithPockets(file, pasteboard: pasteboard, more: [watching(watch)])
+        let queries = try require(h.editor.queries, "the shipped list answers queries")
+        @MainActor func shown() throws -> [ShapeID] {
+            try awaitResult { try await queries.run(QueryRequest(":current-board", properties: .none)) }.rows.map(\.id)
+        }
+        expectEqual(try shown(), [pocket])
+        expect(h.enter(pocket))
+        expectEqual(try shown(), [note])
+        h.editor.goBack()
+        expectEqual(h.editor.board, .root)
+        expectEqual(try shown(), [pocket])
+        #if DEBUG
+        expectEqual(watch.workedOut, [false, false])
+        expectEqual(queries.captures, 3, "each query takes up the file afresh")
+        expectEqual(queries.liveSnapshots, 0, "and none outlives its query")
         #endif
     },
     test("mentions are indexed for the whole file, as it opens (no board's mention text is read on entering it), and the picker finds shapes on every board") {

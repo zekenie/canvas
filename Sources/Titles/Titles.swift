@@ -36,8 +36,26 @@ extension TitleProperty: ShapeProperty {
     /// nothing, so a blank title is no title. For what matches titles as they read (the command
     /// line names shapes by theirs), and a derived title that falls back when a name is blank.
     public static func folded(_ title: String?) -> String? {
-        guard let folded = title?.split(whereSeparator: \.isWhitespace).joined(separator: " "), !folded.isEmpty else { return nil }
-        return folded
+        guard let title else { return nil }
+        if isFoldedASCII(title) { return title }
+        let folded = title.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return folded.isEmpty ? nil : folded
+    }
+
+    /// Whether a title is ASCII and reads as it's written already, as most do: not empty, and no
+    /// whitespace but single spaces between words. Read a byte at a time, since splitting and
+    /// joining would cost every title read (a query reads every one in the file) a few allocations.
+    /// ASCII's whitespace is a space and tab to carriage return, as `isWhitespace` reads it.
+    private static func isFoldedASCII(_ title: String) -> Bool {
+        title.utf8.withContiguousStorageIfAvailable { bytes in
+            guard let first = bytes.first, let last = bytes.last, first != 0x20, last != 0x20 else { return false }
+            var previous: UInt8 = 0
+            for byte in bytes {
+                if byte >= 0x80 || (0x09...0x0D).contains(byte) || (byte == 0x20 && previous == 0x20) { return false }
+                previous = byte
+            }
+            return true
+        } ?? false
     }
 }
 

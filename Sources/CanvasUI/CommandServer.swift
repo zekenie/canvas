@@ -11,17 +11,29 @@ import Foundation
 /// changes as anything else does, so the board's window shows each change as it's made. A file with
 /// boards inside shapes is worked on where its window is: the board it shows (`editor.board`),
 /// which `status` and `boards` name. A board command's result, when it's an object, says which
-/// board that was: `board: {id, name, shows, showsPath}`, as `boards` lists it (unless the
-/// command's result has a `board` of its own).
+/// board that was: `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the
+/// command's own job as it starts, so nothing switches boards between the two for a command that
+/// doesn't wait (`draw`). A command that knows better where inside the file it worked (a query:
+/// the board shown as it took up the file) says so in a `board` object of its own, which the server
+/// completes with what it knows and the command doesn't (the file's `id` and `name`); a `board`
+/// that isn't an object is left alone.
+///
+/// A command may take its time (one that waits on a language model): each runs as a task of its
+/// own, the main actor free while it waits. A request whose client hangs up is answered
+/// `cancelled` at once, and its command's task cancelled; and a board command still running when
+/// its board's file closes (`BoardDocument.close()`) is answered `board_closed` at once, and let go
+/// of the same way, since nothing it did after would reach a window. What a cancelled command
+/// returns later is dropped.
 @MainActor
 public final class CommandServer {
     /// The commands it's given, and how to run one: by name, with its params, on a board's editor
     /// (nil for a command about the app as a whole).
     public struct Commands {
         public var specs: [CommandSpec]
-        public var run: @MainActor (_ name: String, _ params: JSON, _ editor: CanvasEditor?) throws(RPCError) -> JSON
+        public var run: @MainActor (_ name: String, _ params: JSON, _ editor: CanvasEditor?) async throws(RPCError) -> JSON
 
-        public init(specs: [CommandSpec], run: @escaping @MainActor (_ name: String, _ params: JSON, _ editor: CanvasEditor?) throws(RPCError) -> JSON) {
+        public init(specs: [CommandSpec],
+                    run: @escaping @MainActor (_ name: String, _ params: JSON, _ editor: CanvasEditor?) async throws(RPCError) -> JSON) {
             self.specs = specs
             self.run = run
         }
@@ -50,7 +62,8 @@ public final class CommandServer {
     public func start() throws(SocketError) {
         guard listener == nil else { return }
         let listener = RPCListener(path: path) { [weak self] request in
-            self?.respond(to: request) ?? .failure(RPCError(RPCError.internalError, reason: "stopping", "The app is quitting."))
+            guard let self else { return .failure(RPCError(RPCError.internalError, reason: "stopping", "The app is quitting.")) }
+            return await respond(to: request)
         }
         try listener.start()
         self.listener = listener
@@ -63,7 +76,7 @@ public final class CommandServer {
     }
 
     /// What it answers a request with (what the listener asks it, on the main actor).
-    public func respond(to request: RPCRequest) -> Result<JSON, RPCError> {
+    public func respond(to request: RPCRequest) async -> Result<JSON, RPCError> {
         guard request.params == nil || request.params?.objectValue != nil else {
             return .failure(.invalidParams("A request's params are an object, by name."))
         }
@@ -84,7 +97,7 @@ public final class CommandServer {
         case RPC.boardsCommand:
             let front = frontmost()
             return .success(.array(boards().map { board in
-                var entry = shown(board)
+                var entry = Self.shown(board)
                 entry["frontmost"] = .bool(board === front)
                 entry["edited"] = .bool(board.isDocumentEdited)
                 entry["shapes"] = .number(Double(board.editor.document.shapes.count))
@@ -107,17 +120,93 @@ public final class CommandServer {
             case .app:
                 guard reference == nil else { return .failure(.invalidParams("\(spec.name) is about the app, not a board: it takes no board.")) }
             }
-            do {
-                // Which board it worked on, as `boards` lists it (the command can't know), read
-                // before it runs.
-                let worked = target.map(shown)
-                let result = try commands.run(spec.name, .object(params), target?.editor)
-                guard let worked, case .object(var object) = result, object[RPC.boardParam] == nil else { return .success(result) }
-                object[RPC.boardParam] = .object(worked)
+            let (outcome, worked) = await run(spec.name, .object(params), on: target)
+            switch outcome {
+            case .success(let result):
+                guard let worked, case .object(var object) = result else { return .success(result) }
+                switch object[RPC.boardParam] {
+                case nil: object[RPC.boardParam] = .object(worked)
+                case .object(let own)?: object[RPC.boardParam] = .object(worked.merging(own) { _, own in own })
+                default: return .success(result)
+                }
                 return .success(.object(object))
-            } catch {
+            case .failure(let error):
                 return .failure(error)
             }
+        }
+    }
+
+    // MARK: Running a command
+
+    /// Runs a command in a task of its own, kept against its board (`running`), and answers as it
+    /// finishes, or at once, as its request is cancelled (`cancelled`) or its board closes
+    /// (`board_closed`), whichever comes first; what comes after the answer is dropped. With the
+    /// outcome, which board it worked on, as `boards` lists it (the command can't know), read in the
+    /// command's job just before it runs: a command that doesn't wait runs in that job, so no
+    /// switch of board comes between the two.
+    private func run(_ name: String, _ params: JSON, on board: BoardDocument?) async -> (Result<JSON, RPCError>, [String: JSON]?) {
+        let command = RunningCommand(board: board)
+        let editor = board?.editor, commands = commands
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                command.continuation = continuation
+                Self.running.append(command)
+                command.task = Task { @MainActor in
+                    // Its board closed before it started: it doesn't run at all.
+                    guard !Task.isCancelled else { return }
+                    let worked = command.board.map(Self.shown)
+                    let outcome: Result<JSON, RPCError>
+                    do throws(RPCError) {
+                        outcome = .success(try await commands.run(name, params, editor))
+                    } catch {
+                        outcome = .failure(error)
+                    }
+                    command.answer(outcome, worked)
+                }
+            }
+        } onCancel: {
+            Task { @MainActor in command.stop(answering: Self.cancelled) }
+        }
+    }
+
+    /// The commands running, each kept against its board (none for an app command) until it's
+    /// answered.
+    private static var running: [RunningCommand] = []
+
+    /// A board's file is closing (`BoardDocument.close()`): its commands still running are answered
+    /// `board_closed` now, and their tasks cancelled.
+    static func boardWillClose(_ board: BoardDocument) {
+        for command in running where command.board === board { command.stop(answering: boardClosed) }
+    }
+
+    static let cancelled = RPCError(RPCError.failed, reason: "cancelled", "The request was cancelled before the command finished.")
+    static let boardClosed = RPCError(RPCError.failed, reason: "board_closed", "The board was closed before the command finished.",
+                                      hint: "Open it again, and run the command again.")
+
+    /// A command on its way: the task running it, and the request waiting for its answer.
+    @MainActor
+    private final class RunningCommand {
+        weak var board: BoardDocument?
+        var task: Task<Void, Never>?
+        var continuation: CheckedContinuation<(Result<JSON, RPCError>, [String: JSON]?), Never>?
+
+        init(board: BoardDocument?) {
+            self.board = board
+        }
+
+        /// Answers the request, with the board it worked on, unless it has been answered already.
+        func answer(_ outcome: Result<JSON, RPCError>, _ worked: [String: JSON]?) {
+            guard let continuation else { return }
+            self.continuation = nil
+            task = nil
+            CommandServer.running.removeAll { $0 === self }
+            continuation.resume(returning: (outcome, worked))
+        }
+
+        /// Answers the request with `error` now, and cancels the task, which stops at its next check.
+        func stop(answering error: RPCError) {
+            task?.cancel()
+            answer(.failure(error), nil)
         }
     }
 
@@ -153,7 +242,7 @@ public final class CommandServer {
     /// A file and the board inside it its window shows, as `boards` lists them and a board
     /// command's result names them: the file's id and name, `shows` ("root", or the id of the shape
     /// that owns the board) and `showsPath`, the boards from the root down to it.
-    private func shown(_ board: BoardDocument) -> [String: JSON] {
+    private static func shown(_ board: BoardDocument) -> [String: JSON] {
         let editor = board.editor
         return ["id": .number(Double(board.number)), "name": .string(board.displayName ?? "untitled"),
                 "shows": .string(editor.board.description), "showsPath": .array(editor.boardPath.map { .string($0.description) })]

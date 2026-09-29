@@ -11,6 +11,7 @@ extension SchemaLink: Channel {
     public static let id: ChannelID = "schema-link"
     /// The card's accent (`SchemaStyle.accent`), so a dot reads as the card's.
     public static var color: NSColor { NSColor(srgbRed: 0.75, green: 0.18, blue: 0.62, alpha: 1) }
+    public static let summary: String? = "an arrow drawn on the schema-link channel"
 }
 
 extension ShapeRegistrar where Definition == SchemaCardDefinition {

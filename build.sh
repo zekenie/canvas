@@ -39,8 +39,9 @@ typeset -A EXECUTABLE_LAYER=(app 1 test 1 cli 1)
 # bundle, at Contents/Helpers/canvas, and build/canvas, a link to it.
 CLI_NAME=canvas
 # Public types that would shadow a module (`Observation` breaks @Observable's expansion), or
-# Swift's `Task`: a public `Task` would shadow it in every module that imports the declaring one.
-RESERVED_TYPE_NAMES=(Observation Foundation AppKit SwiftUI CoreGraphics Swift Task)
+# Swift's `Task` or `Span`: a public `Task` would shadow it in every module that imports the
+# declaring one.
+RESERVED_TYPE_NAMES=(Observation Foundation AppKit SwiftUI CoreGraphics Swift Task Span)
 
 # An SDK the compiler accepts: SDKROOT if set, else the newest installed one that type-checks
 # (`xcrun --show-sdk-path` picks MacOSX27.0.sdk here, which swiftc 6.3 rejects). The choice is
@@ -367,7 +368,7 @@ audit_sources() {
     SHADOWING="${(j:|:)NAMES}|${(j:|:)RESERVED_TYPE_NAMES}"
     for hit in ${(f)"$(matching "^[^:]+:[0-9]+:[[:space:]]*(@[A-Za-z]+[[:space:]]+)*(public|open)[[:space:]]+(final[[:space:]]+)?(struct|class|enum|protocol|actor|typealias)[[:space:]]+($SHADOWING)([^A-Za-z0-9_]|\$)")"}; do
         [[ $hit =~ "(struct|class|enum|protocol|actor|typealias)[[:space:]]+($SHADOWING)" ]] || continue
-        [[ $match[2] == Task ]] && what="Swift's Task" || what="the module $match[2]"
+        [[ $match[2] == (Task|Span) ]] && what="Swift's $match[2]" || what="the module $match[2]"
         problems+="$(at $hit): a public type named $match[2] shadows $what"
     done
 

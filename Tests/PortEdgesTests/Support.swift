@@ -142,7 +142,13 @@ let fixtureNames = Contributor(id: "fixture-names") { registrar in
 @MainActor func run(_ line: [String], on editor: CanvasEditor, input: String = "") throws -> Result<JSON, RPCError> {
     let spec = try require(editor.registry.automationCommands.first { $0.name == line[0] })
     let params = try spec.params(from: Array(line.dropFirst()), standardInput: { input })
-    return Result { () throws(RPCError) in try editor.registry.runAutomationCommand(spec.name, params: .object(params), editor: editor) }
+    return try awaitResult { () async -> Result<JSON, RPCError> in
+        do throws(RPCError) {
+            return .success(try await editor.registry.runAutomationCommand(spec.name, params: .object(params), editor: editor))
+        } catch {
+            return .failure(error)
+        }
+    }
 }
 
 /// What `canvas draw -` says of a script that runs.

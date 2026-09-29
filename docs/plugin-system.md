@@ -3,7 +3,7 @@
 Everything on the canvas comes from a plugin: sticky notes, arrows, schema cards, subboards,
 validation, titles, the pills and chips shown on shapes (adornments), the detail panel
 and the table of contents beside the canvas, selecting itself, copying and pasting, locking, the
-ports arrows are dragged from, text's mentions of shapes, the graph of what connects to what, snapping what's dragged to the shapes around it, what each key does, what the command line can do, the language model plugins ask, even the examples.
+ports arrows are dragged from, text's mentions of shapes, the graph of what connects to what, the queries that find shapes in a file, snapping what's dragged to the shapes around it, what each key does, what the command line can do, the language model plugins ask, even the examples.
 The core (`Sources/Canvas`) knows how to hold shapes, run tools, draw, and wire plugins together,
 and nothing about any particular shape or concern. Its one built-in tool is tldraw's Hand, which
 pans (a flung release slides on). Select, which selects (a click, ⇧-click, or a marquee dragged
@@ -34,6 +34,7 @@ maps one onto the other.
 - [Ports](#ports)
 - [Mentions](#mentions)
 - [Topology](#topology)
+- [Queries](#queries)
 - [Boards](#boards)
 - [The command line](#the-command-line)
 - [Schema cards](#schema-cards)
@@ -283,6 +284,8 @@ Once one plugin works, the question is which piece the next feature needs.
 | Say what an arrow's end may bind to (tldraw's canBind) | Arrows' `registrar.arrowBindingRule { query in ... }` | [ArrowPorts](#the-connector-arrowports) |
 | Connect two shapes without a drag, as a connector would from a port | `make` and `ends` on `registrar.connects`; `registry.connection(_:existing:in:)`, `registry.connectionEnds(of:)` | [Connecting without a drag](#connecting-without-a-drag) |
 | Let agents (or scripts) do something to a board from outside the app | `registrar.automationCommand("name", "…", params: P.self) { params, context in … }`: a `canvas` command | [The command line](#the-command-line) |
+| Have a command answer later (it waits on a model, or runs off the main actor), its output written off the main actor | `registrar.automationCommand(…, runAsync: { params, context async throws(AutomationError) in … })` | [A command may be async](#a-command-may-be-async) |
+| Read text as a kind's property reads it (a value typed by its schema), or say briefly what a property takes | The core's `KindSchema(schema)`, over `registry.schema(for:)` | [A kind's schema](#a-kinds-schema) |
 | Let `canvas draw` name shapes, draw edges, or warn about what it draws, from the plugin that owns the concern | A bridge: `registrar.drawNames`, `drawEdges` or `drawChecks` | [TitleNames, PortEdges, ValidationChecks](#what-draw-takes-from-other-plugins) |
 | Make or change a shape without the pointer: what a kind's tool places, a shape from its JSON, or some of a shape's properties set from JSON | `registry.placement(for:)`, `placement.shape(at:)`; `registry.shape(_:properties:)`, `registry.shape(_:setting:)` | [The command line](#making-and-changing-shapes-without-the-pointer) |
 | Draw a shape away from where it is, for an animation (a shake) | `editor.setDrawingOffset(_:for:)`; adornments follow by themselves, and an overlay with `context.worldDrawingOffset(of:)` | [Locking](#locking) |
@@ -297,6 +300,9 @@ Once one plugin works, the question is which piece the next feature needs.
 | Ask what's connected to a shape, and how (arrows, mentions), anywhere in the file | `editor.topology?.neighbors(of:)`, `edges(of:_:types:)` with an `EdgeTypeFilter` | [Topology](#the-index-topologyindex) |
 | Say that a kind's shapes connect others: a new kind of edge | An `EdgeType`, `registrar.edgeType(T.self)`, and a source: `x.edges { … }`, `registrar.edges(K.self)`, or `registrar.edges(in: P.self, as: T.self)` over an added property that names shapes | [Topology](#sources) |
 | Ask which shape a shape is inside (the owner of its board, at any depth) | `editor.topology?.parent(of:)`, `ancestors(of:)`, `isInside(_:_:)` | [Containment](#containment) |
+| Read edges and containment off the main actor, as they were at one instant | `topology.snapshot()`, a Sendable `TopologySnapshot` | [A snapshot for other threads](#a-snapshot-for-other-threads) |
+| Find the shapes of a file a query matches (by kind, title, attribute, what's inside what, what connects to what), from a plugin or an agent | `editor.queries?.run(QueryRequest(#"sticky-note:mentions("Auth")"#))`, answered off the main actor; `canvas query` | [Queries](#queries) |
+| Give queries a plugin's word (a pseudo-class, or a relation over its edges), or say how its text reads in them | A bridge: `registrar.queryPseudoClass`, `queryRelation` or `queryTextFormat` | [What plugins add](#what-plugins-add) |
 | Put an editing view's selection where the press that began editing was | `editor.beginEditing(id, at: point, clickCount:)`, read as `EditContext.startPoint` and `startClickCount` | [Capabilities](#capabilities) |
 | Name an undo step, or make several changes one | `editor.transact("Name") { ... }`; `editor.undoHistory.group("Name") { ... }`; `transact(coalescing:)` for a run of writes | [Undo](#undo) |
 | Put a service's state back with undo (a selection) | `UndoParticipant` | [Undo](#undo) |
@@ -347,7 +353,10 @@ kind's text can hold mentions, while Mentions owns the stored form, the pills, t
 mentions each shape and what keeps them in step with the shapes they name. So is what connects and contains what:
 [Topology](#topology) keeps the file's graph of edges (an arrow bound at both ends, a mention),
 typed by the plugins that own what each means and read out of the shapes that carry them, while
-Ports and Mentions only say what their shapes carry. And a horizontal may declare no point at
+Ports and Mentions only say what their shapes carry. So is finding shapes: [Queries](#queries)
+answers a query about the whole file (kinds, attributes by their schemas, what's inside what, what
+connects to what), while the plugins that own a concern say through bridges what shapes are called
+and what more a query may ask. And a horizontal may declare no point at
 all and only lend something:
 [LanguageModels](#language-models) lends every editor the model plugins ask.
 
@@ -365,7 +374,10 @@ Opting in goes in one of two directions:
   about mentions that can't work, though Mentions has never heard of validation, nor Validation of
   mentions. `ArrowPorts` makes arrows what a drag from a port draws, and names their family of edges, though Arrows has never heard
   of a
-  channel or an edge, nor Ports of an arrow.
+  channel or an edge, nor Ports of an arrow. `TitleQueries`, `BoardQueries`, `MentionQueries`,
+  `ValidationQueries` and `SelectionQueries` give [queries](#queries) shapes' names, boards' names
+  and words (`:mentions`, `:invalid`, `:selected`), though Queries has never heard of titles,
+  boards, mentions, validity or the selection, nor any of them of queries.
 
 Either way the edge is visible in `Package.swift`, and the dependency always points from the
 vertical (or bridge) to the horizontal, never back.
@@ -393,11 +405,11 @@ Each target is one line, with its layer:
 | Layer | May depend on | Modules |
 |---|---|---|
 | wire | wire | CanvasRPC (what the app and its [command line](#the-command-line) say to each other) |
-| foundation | foundation | Geometry, Canvas (the core), and pure libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, and its solver) |
+| foundation | foundation | Geometry, Canvas (the core), and pure libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, and its solver) and QueryLanguage (the language [`canvas query`](#query) reads) |
 | ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
-| horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Adornments, Clipboard, Locking, Ports, Mentions, Topology, Automation, LanguageModels, Boards, Snapping |
+| horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Adornments, Clipboard, Locking, Ports, Mentions, Topology, Queries, Automation, QueryCommands, LanguageModels, Boards, Snapping |
 | vertical | foundation, horizontal | Arrows, StickyNotes, Schemas, Subboards, Rectangles, Polylines, Eraser, Reordering |
-| bridge | foundation, horizontal, vertical | RectangleTitles, ValidationDetails, ValidationContents, MentionValidation, ArrowPorts, TitleNames, PortEdges, ValidationChecks |
+| bridge | foundation, horizontal, vertical | RectangleTitles, ValidationDetails, ValidationContents, MentionValidation, ArrowPorts, TitleNames, PortEdges, ValidationChecks, TitleQueries, BoardQueries, MentionQueries, ValidationQueries, SelectionQueries |
 | composition | foundation, horizontal, vertical, bridge, wire | Composition (the shipped plugin list) |
 | app | foundation, ui, composition, wire | InfiniteCanvas |
 | cli | wire | CanvasCLI (`canvas`, an executable: it knows the wire, never the app) |
@@ -432,8 +444,9 @@ What `./build.sh audit` enforces:
 - **The host API is fenced off.** What `CanvasView` calls on the editor (input, the cursor,
   drawing, the delegate) is `@_spi(Host)`. Only modules that `@_spi(Host) import Canvas` see it,
   and only the ui, testsupport and test layers may; a plugin that calls it doesn't compile.
-- **No shadowing names.** A public type named like a module fails, and so does a public `Task`,
-  which would shadow Swift's `Task` in every module that imports it.
+- **No shadowing names.** A public type named like a module fails, and so does a public `Task` or
+  `Span`, which would shadow Swift's in every module that imports it (a query's place in its text is
+  a `QuerySpan` for that reason).
 - **Package.swift is real SwiftPM.** The audit evaluates it with SwiftPM's own `PackageDescription`
   and fails if SwiftPM would see a different graph, so Xcode opens the same project.
 
@@ -954,7 +967,10 @@ renamed or cleared by a person in the panel, since a name a script gave is their
 Either way, a shape may have none: nil or blank is no title. However it's written, a title reads
 on one line wherever it shows (each run of whitespace folds into a space: `TitleProperty.folded`),
 so the lookup, the pill and the row agree, and so does whatever matches titles (`canvas draw`
-folds the titles a script writes the same way). What a title brings:
+folds the titles a script writes the same way, and `canvas query` those a query writes). A title
+that reads as it's written already (ASCII, no whitespace but single spaces between words, as most
+are) comes back as it is, checked a byte at a time, so a query that reads every title in the file
+splits and joins none of them. What a title brings:
 
 - **A pill** at the left end of the row just above the shape (18 points tall, 9 above the top edge):
   one line, as long as the title and no longer than the row leaves it, where a longer title ends in
@@ -1054,6 +1070,17 @@ work. Outside the engine, `registry.validationIssues(of: record, in: shapes)` ru
 shape's kind against any `ShapeContext`, a transaction's mid-way included (the rules look other
 shapes up in it): it's how [`canvas draw`](#what-draw-takes-from-other-plugins) warns about what
 it's drawing before it commits (ValidationChecks, a fourth bridge).
+
+`editor.validation?.cachedResult(for: id)` is a shape's verdict as the engine holds it, checking
+nothing (`CachedVerdict`): `.current(result)` (nil for no issues) for a shape on the board shown,
+once the engine has heard every commit and read that board, while the shape isn't waiting to be
+checked again (it changed or moved, or a shape its rules looked up did); `.unknown` otherwise, where
+only running its rules can say (`validationIssues(of:in:)`). It never runs a rule, so it's for a
+reader that mustn't make the engine read a board (`result(for:)` checks every shape that's waiting,
+or a whole board it hasn't read, in one turn): a query's `:invalid` and `:warned`, asked about many
+shapes in slices ([ValidationQueries](#what-plugins-add)), take it where it's current and run the
+rules where it isn't. ValidationTests' CachedResultTests hold it, counting rule runs, with a service
+that hears each commit before the engine.
 
 A drag commits every shape it drags, on every event, so a rule whose issues follow from what
 shapes are, never where, says so, and a drag doesn't run it:
@@ -1305,6 +1332,30 @@ writes a shape (an agent, a form) sees it. A board keeps the two apart, `props` 
 with its own versions ([Boards on disk](#boards-on-disk)), so a plugin's property comes and goes
 without touching the kind. CompositionTests also checks that every shipped kind's schema describes
 its fixture, and that every fixture holds up against it.
+
+**Text reads a kind's schema through the core's `KindSchema`**
+([KindSchema.swift](../Sources/Canvas/Schema/KindSchema.swift)), so [`canvas draw`](#draw) and
+[`canvas query`](#queries) read a value alike. It holds the schema's JSON and no registry, so it's
+`Sendable` and reads anywhere (a query's vocabulary keeps each kind's), and it follows the
+schema's `$ref`s within it (`#`, `#/$defs/<name>`, the name a pointer's step, percent-encoded):
+
+- **What a property is**: `holdsPlace(_:)`, whether it says where a shape is (its schema is, or holds,
+  the core's rect or point, never judged by name; a size doesn't), and `shape(of:)`, what its values
+  are (`KindSchema.PropertyShape`: `.string(format:mediaType:choices:)`, `.number(integer:)`,
+  `.boolean(default:)`, the schema's default, else false, `.array(items:)`, `.object`, `.json`).
+- **What it takes, said briefly**: `compactType(of:)` (`todo|doing|blocked|done`, `number ≥ 0`,
+  `text (≤ 80)`, `JSON [text]`), the words of `canvas kinds` and of a query's vocabulary.
+- **A literal read as the property's JSON**: `value(ofLiteral:quoted:for:)`, or `forItemOf:` for one
+  item of a list. Unquoted `null` is the default (refused for a required property), a day alone is
+  midnight UTC for a date-time, a number or true|false only unquoted, a list or an object as JSON.
+  It refuses with `KindSchema.Refusal` (`.notAProperty`, `.notAChoice(choices:)`,
+  `.notA(compactType:)`, `.required`, `.notFinite`, `.notJSON`), which holds no words: each command
+  says it in its own, `draw` through Automation's `KindVocabulary`, a query through its resolution. A
+  bound is never a refusal.
+
+CanvasTests' KindSchemaTests pin every CanvasTesting kind's compact types and the properties that
+hold a place, each refusal, and hand-written `$ref`s, read on a detached task; `draw`'s words stay
+AutomationTests' and SkillTests'.
 
 ### Checking shapes against their schemas
 
@@ -3760,6 +3811,7 @@ extension NoteLink: Channel {
     public static let id: ChannelID = "note-link"
     /// A brown amber, darker than the note, so a dot reads beside one.
     public static var color: NSColor { NSColor(srgbRed: 0.70, green: 0.45, blue: 0.05, alpha: 1) }
+    public static let summary: String? = "an arrow drawn on the note-link channel"
 }
 
 extension ShapeRegistrar where Definition == StickyNoteDefinition {
@@ -3785,9 +3837,10 @@ already what a connection is in Topology's graph: its edge type.
 
 ### Channels
 
-- **A channel is a type** (`Channel`), as a tab or an added property is: its `id` (`ChannelID`)
-  and the color of its dots (`static var color`, computed, since colors aren't `Sendable`; gray by
-  default). The plugin that owns what a connection on it means declares it,
+- **A channel is a type** (`Channel`), as a tab or an added property is: its `id` (`ChannelID`),
+  the color of its dots (`static var color`, computed, since colors aren't `Sendable`; gray by
+  default), and what a connection drawn on it is, in a line (`static var summary`, nil by default:
+  its edge type's [summary](#types)). The plugin that owns what a connection on it means declares it,
   `registrar.channel(C.self)` (the `Channels` point: a channel declared twice is a `conflict`), and
   kinds have ports on it by its type, so a plugin that gives a kind ports on another's channel
   imports that plugin's module. StickyNotes declares `NoteLink` for its notes, and Schemas
@@ -3929,6 +3982,7 @@ public enum ArrowEdge {}
 
 extension ArrowEdge: EdgeType {
     public static let id = EdgeTypeID(rawValue: Arrow.kind.rawValue)    // "arrow"
+    public static let summary: String? = "an arrow bound at both ends, from the shape it starts on to the shape it ends on, whatever its arrowheads"
 }
 
 registrar.connects(Arrow.self, edgeType: ArrowEdge.self, canConnect: { id, shapes in shapes.canBindArrow(to: id) },
@@ -4242,6 +4296,15 @@ follows undo and redo, during which nothing may):
   undone gives every pill, row and editor its name back, and a deletion undone makes its pills
   live. A file or board put in place (`replaceFile`, `replaceDocument`) is read afresh, with
   nothing to undo.
+- **The names mentions show, for another thread**: `labels` (`MentionLabels`, `Sendable`) is what
+  `plainText` reads for every shape the file mentions, so `text.plainText { labels.label(of: $0) }`
+  is `state.plainText(text)` anywhere (`label(of:)` is nil while a target is missing or
+  unavailable, so the name the mention holds shows, and for a shape nothing mentions). Taking them
+  costs nothing: they share what the state keeps, which its next change (a rename, a shape
+  mentioned anew) copies once while they're held. They're as of the last commit the state heard (a
+  rename after they're taken isn't in them): a query takes them as it takes up the file, and reads
+  mention text with them off the main actor ([MentionQueries](#what-plugins-add)). MentionsTests'
+  LabelsTests hold them to `plainText`, read on a detached task.
 - **Following changes**: `observe(_:_:)` tells an AppKit view which of its targets' resolutions a
   commit changed (the text view's pills), `labelRevision(of:)` observes one target for SwiftUI, and
   `rowsAffected(by:)` names the shapes that mention what changed, for rows: a note's row reads its
@@ -4651,10 +4714,11 @@ kept aside (`record.isOpaque`) carries none, nor does a shape on a board the edi
 
 ### Types
 
-- **An edge type is a type** (`EdgeType`: `static let id: EdgeTypeID`, and `static var parent`,
-  nil by default), declared by the plugin that owns what it means (`registrar.edgeType(T.self)`;
-  the `EdgeTypes` point, one declaration per id: two are a `conflict`). The id audit holds an
-  `EdgeTypeID` literal to the module that declares it, as it does a channel's.
+- **An edge type is a type** (`EdgeType`: `static let id: EdgeTypeID`, and `static var parent`
+  and `static var summary`, nil by default), declared by the plugin that owns what it means
+  (`registrar.edgeType(T.self)`; the `EdgeTypes` point, one declaration per id: two are a
+  `conflict`). The id audit holds an `EdgeTypeID` literal to the module that declares it, as it
+  does a channel's.
 - **Types are a tree.** Each is under at most one parent, which some installed plugin must declare,
   and none is under itself (`EdgeTypes.check`):
 
@@ -4670,10 +4734,18 @@ kept aside (`record.isOpaque`) carries none, nor does a shape on a board the edi
   parent a closure over the frozen registry. `ArrowEdge.id` is `EdgeTypeID(rawValue:
   Arrow.kind.rawValue)`: the audit gives a string to every module that declares it, so a second
   declaration of `"arrow"` would have Arrows, which writes it, depend on ArrowPorts.
+- **What a type means** is its `summary`: a lowercase line, no period, saying what it joins and
+  which way it runs, which a [query's vocabulary](#queries) shows beside it
+  (`EdgeTypeTree.summary(of:)`; `edgeType(_:parent:summary:)` carries one, and Ports' `Channel.summary`,
+  nil by default, is passed on by `registrar.channel(C.self)` to the type it declares). Shipped:
+  `arrow`, "an arrow bound at both ends, from the shape it starts on to the shape it ends on, whatever
+  its arrowheads"; `note-link`, "an arrow drawn on the note-link channel", and `schema-link` likewise;
+  `mention`, "a mention in a shape's text, from that shape to the shape it names".
 - **An edge reports its most specific type**, and a query names types with an `EdgeTypeFilter`:
   `.all`; `.within(t, …)`, those types and every type under them (`.within(ArrowEdge.id)` is every
   arrow, plain or on a channel); `.only(t, …)`, exactly those (`.only(ArrowEdge.id)` is plain
-  arrows alone).
+  arrows alone). Each also takes a sequence (`.within(types)`, a query's resolved types), and an
+  empty one admits nothing.
 - **A type nobody declares** (an arrow's channel from a newer app, or from a plugin that isn't
   installed) is kept as written: it's the edge's type, `types.isDeclared(t)` is false, and it has no
   parent, so only `.all` and a filter that names it match it. A channel that names a type declared
@@ -4745,8 +4817,55 @@ owner of the board a shape is on (nil on the root), `children(of:)` the shapes o
 in document order, `ancestors(of:)` those it's inside, the nearest first, and `isInside(a, b)`
 whether `a` is inside `b` at any depth (never inside itself; O(`a`'s depth)). It needs no index: the
 core knows where every shape is. As with edges, only shapes on boards the editor can show count
-(nil, none, or false for the rest). Containers that aren't boards (frames, groups) would each be a
-source of containment, a point Topology doesn't have yet.
+(nil, none, or false for the rest). It's one piece of code, `Containment`, a value over a
+`CanvasFile` and the kinds that own boards, which the index makes over the file as it is for each
+question and a [snapshot](#a-snapshot-for-other-threads) keeps over the file as it was taken, so the
+two answer alike. `containerKinds` (on `Registry`, the index and the snapshot) is which kinds
+contain others: today the kinds that own boards. Containers that aren't boards (frames, groups)
+would join them there, each a source of containment, a point Topology doesn't have yet, and every
+reader, live or not, would follow.
+
+### A snapshot for other threads
+
+`topology.snapshot()` is Topology as it is now, for any thread: a `TopologySnapshot`, `Sendable`,
+taken in O(1), reading no record and observing nothing. It shares the index's tables (its edges as
+a value) and the editor's file (read without observing it), with the edge types, and answers
+through the same code the index does, the tables and `Containment`, so what it answers is what the
+index would have answered as it was taken: every question about edges and containment, though not
+what changed (no `revision(of:)` or `touched`). A query takes one as it takes up the file and reads
+it off the main actor, uninterrupted, whatever commits land meanwhile ([Queries](#queries)).
+
+```swift
+let graph = topology.snapshot()                                         // on the main actor, O(1)
+Task.detached {
+    graph.forEachShape { record, board in … }                          // every shape the app can show, in file order
+    graph.neighbors(of: note, .outgoing, types: .within(ArrowEdge.id))  // as the index would have answered
+}
+```
+
+Beside the index's questions, it reads the file whole:
+
+- **`forEachShape(inFileOrder:)`**: every shape on a board the app can show, kept-aside ones too,
+  with its board, in file order: the root's shapes back to front, each shape that owns a board
+  followed at once by that board's shapes, and theirs, before the next. It's iterative, so a chain of
+  boards of any depth is walked, and no board twice. An error its body throws stops it, and comes out
+  as the body's own type (`throws(E)`: a query's cancellation is a `QueryError`).
+- **`fileOrderKey(of:)`**: where a shape comes in that order, as a key that sorts lexicographically
+  (the index of each owner above it on its board, from the root's down, then its own); nil off the
+  boards the app can show. O(its depth): for putting a few shapes in order without walking the file.
+- **`topLevel`**, the root's shapes in document order, and **`descendants(of:)`**, every shape inside
+  a shape at any depth, in file order (O(what's inside it)).
+- **`shape(_:)`**, a record on a board the app can show, kept aside or not (`isOpaque` tells), nil
+  elsewhere (O(its depth)); **`presentTypes`**, the types of the edges the file has, declared or
+  not; and **`end(_:)`**, as the index's.
+
+**Hold one for a task, never past it.** Nothing is copied while it's held until a commit changes a
+table it shares; that commit copies the table, once (a move changes none of the index's; a shape
+added or removed copies the file's `locations`). Kept, a snapshot makes every later commit's first
+change to a table copy it. And one taken by a service hearing a commit before Topology has is that
+commit's file with the commit before's edges, as the index's own answers are then: `catchUp` first.
+TopologyTests' Snapshots suite holds a snapshot to the index on every question, over a seeded run of
+every kind of commit, switch and undo, and a snapshot taken a step before to its old answers.
 
 ### What it costs
 
@@ -4782,11 +4901,488 @@ owner isn't installed is `ownerNotInstalled`.
   half-made.
 - **Spatial relations.** A shape that happens to lie within another's bounds isn't inside it;
   that's geometry (`editor.paintOrder(in:)`, `shapeContext.bounds(of:)`).
-- **Agents reading it.** `canvas` has no command that reads the graph (how agents read a board is
-  still to design), and `canvas draw` matches an edge it restates by its ends, not by its type.
+- **Drawing by type.** Agents read the graph with [`canvas query`](#query), through a snapshot
+  (`:edge-to`, `:downstream-of`, `"Payments" *`), but `canvas draw` matches an edge it restates by
+  its ends, not by its type.
 - **Showing it.** Nothing in the app shows a shape's connections in general yet (a Connections
   section of its panel); what mentions a shape is shown, Mentions' Mentioned In tab and Show What
   Mentions.
+
+## Queries
+
+Queries ([`Sources/Queries`](../Sources/Queries)) finds the shapes of a file a query matches: a
+selector in a CSS-like language over every shape on every board the app can show, by kind, title,
+id, attributes typed by their kind's schema, text, Topology's containment and typed edges, and the
+words plugins add. It's a horizontal on Topology, over the core and QueryLanguage (DrawScript lends
+it only its "did you mean", `Suggestions`), knows no plugin, and hears no commit. Agents ask through [`canvas query`](#query); any plugin may ask too:
+
+```swift
+guard let queries = editor.queries else { return }                 // nil without QueriesPlugin
+let result = try await queries.run(QueryRequest(#""Payments" sticky-note:mentions("Auth")"#, limit: 20))
+result.count                                                        // every shape that matches, listed or not
+result.rows                                                         // the first 20, in file order
+```
+
+The language, every form, word and refusal, is taught to agents by the canvas skill
+([`reference/query.md`](../.claude/skills/canvas/reference/query.md), whose every block SkillTests
+runs on a file of its own, so it can't drift from the app). What a plugin needs of it:
+
+- **A query** is a list of selectors, commas between them, each of compounds joined by a space
+  (inside, at any depth) or `>` (on the board of); a compound is at most one head (a kind, `*`, a
+  title in quotes, a kind with a title right after it, `sticky-note"Checkout"`, as CSS writes
+  `div#id`, or `#` and an id) and then tests with no space between them, attributes in brackets
+  and `:word`s: `"Payments" sticky-note[text*="retry" i]:mentions("Auth")`. A selector answers with
+  the shapes its last compound matches, as in CSS, and a list with those any of its selectors does,
+  each once.
+- **QueryLanguage** ([`Sources/QueryLanguage`](../Sources/QueryLanguage)), a foundation module that
+  knows no canvas, registry or plugin, reads it: `SelectorList(parsing:)`, a tree whose every part
+  knows its place in the text (`QuerySpan`, in characters of the query as sent), and `canonical`,
+  the one form it prints (its own words in lowercase, titles in double quotes, one space around `>`,
+  no comments), which is what an answer says ran. It refuses what the text alone shows
+  (`empty_query`, `syntax`, `stray_space`, `too_long`, `too_complex`, `unsupported`, `not_built`
+  for `.Class` and `[a.b]`, `not_an_id`, and `bad_argument` for its own words), stopping at the
+  first, and knows only its own words (`Word`: `:not`,
+  `:is`, `:where`, `:has`, `:inside`, `:top-level`, `:current-board`, the edge words, `:dangling`,
+  `:contains`); another's argument it keeps as text for the engine to read as shapes
+  (`SelectorList(argumentOf:)`, its spans in the whole query), or to refuse with the rewrite for a
+  word people invent (`KnownInventions`: `:parent-of`, `:near`, `:source-of`, and `:neighbor-of`,
+  the language's old name for `:connected-to`). `QueryLimits` bounds it: 8,192 characters, 1,024
+  in a string, 32 levels of parentheses, 256 compounds, 20 problems said.
+- **Queries resolves it** against what this app has (`queries.check(_:)`, into a `QueryPlan`,
+  `Sendable`, whose `description` prints it as a tree), refusing what isn't there with the one like
+  it (`unknown_kind`, `unknown_attribute`, `unknown_pseudo_class`, `unknown_edge_type`,
+  `invalid_value`, `unsupported_operator`, `cannot_contain`, `no_names`; `not_built` for an
+  attribute that holds a place and `=` on an object; and the words people write in brackets,
+  `[kind=…]`, `[id=…]`, `[board=…]`, with what to write), every problem that doesn't hang on another
+  at once, in the query's order; and answers it, refusing a title or an id no shape has
+  (`unknown_title`, `unknown_id`) rather than answering none. Nothing unknown is passed over: a
+  query that runs asked what it says, and a hint is most often the query to write instead. A hint
+  that is a query is never one the app would refuse for a reason the query it mends didn't have:
+  one that takes for granted what only the app can say (that a title is some shape's, that a
+  kind's shapes can have titles, that what it puts where a container goes holds a board) waits for
+  it (`HintPremise`, QueryLanguage's, settled by the kinds and ids as the query resolves and by the
+  titles as it's answered: `#Checkout` hints `"Checkout"` only where a shape is titled so).
+
+### What a query sees
+
+- **Every shape on every board the app can show** (`canShow`'s), none kept aside: a kept-aside
+  shape has no properties to read and carries no edges, and a board the app can't show is the
+  file's, not the app's. `#` with such a shape's id is refused `unknown_id`, saying which it is.
+- **File order**, for every answer: the root's shapes back to front, each shape that owns a board
+  followed at once by that board's shapes, all the way down, the order Topology's snapshot walks in
+  (`forEachShape(inFileOrder:)`, or `fileOrderKey(of:)` for a few shapes), so the engine never walks
+  boards itself. The same query on the same file answers in the same order. Both are Topology's, so
+  without `TopologyPlugin` every query is `no_topology`.
+- **One instant, but for what only the main actor knows.** An answer is the file as it was when the
+  app took up the query, but for titles a shape works out from what it holds (a schema card's) and
+  validity (`:invalid`, `:warned`), which are as the app has them when the query asks: a shape a
+  commit changed while the query ran can answer with its newer title or verdict, never an older one,
+  and one gone since has no title and fails the word. So no main-actor code is ever handed a record
+  the app has since replaced, and no plugin's cache keeps one. The board shown (`:current-board`) and
+  what's selected (`:selected`) are as they were when it started.
+- **Titles through the names point** (Titles', through TitleQueries). A head `"Checkout"` is every
+  shape whose title, folded as Titles folds one, is the literal folded, case and all, named or
+  derived; several shapes may share it, and it names them all. A title no shape has is refused, so
+  a no always means the shape is there: `[title="X"]`, which folds its literal the same way, is how
+  to ask whether one is, its count of 0 an answer (warned `no_title_match`). A kind with a title
+  right after it, `sticky-note"Checkout"`, is the kind's shapes with that title: a title head
+  beside the kind's (the title's node first, as it finds its shapes), so a title no shape has is
+  refused as `"Checkout"` is, one only other kinds have answers none, and a kind whose shapes have
+  no titles is `unknown_attribute`, as `[title=…]` on it is. With a space between, the title is
+  inside the kind's shapes, and where they hold no board the refusal (`cannot_contain`) hints the
+  two together, if they can have titles. Without a names point, a title is `no_names`.
+- **Attributes through the kinds' schemas** (`registry.schema(for:)`, read with
+  [`KindSchema`](#a-kinds-schema)): every property, own or added, but those that hold a place (where
+  a shape is isn't in the language yet: `frame`, `not_built`), and the names point's word (`title`),
+  read through the names point, so a derived title is an attribute too, on the kinds whose shapes
+  have titles. A literal is read by its property's schema as `draw` reads a value, and the test is
+  typed by it: a number numerically (`[rank=3]` and `[rank="3"]` alike; one that isn't finite
+  matches no number test), a date-time by its UTC day (`[due<2026-10-01]`) or instant, a choice from
+  its list (`i`: in any case), a list by its items (`~=`), text as text (`^=`, `$=`, `*=`, `|=`, and
+  `i` for any case; `<` refused). An absent true|false is its schema's default, else false
+  (`[locked=false]` is every unlocked shape); `[a]` is a value that says something (true, text, a
+  list or an object not empty, a number or a date there); `[a=""]` on text (mention text, a choice,
+  a date, the names point's word too) is no value, absent or empty (`sticky-note[title=""]` is the
+  untitled notes, since a blank title is none; `arrow[channel=""]` a plain arrow), and elsewhere
+  `""` is what it always was; `[a!=v]` is `:not([a=v])`; and any other test of an absent value is
+  false. With no kind named, a test applies to the kinds that have the attribute, each reading the
+  literal its own way. `[a.b]` and `=` on an object are `not_built`, and a shape's metadata
+  (`ShapeMeta`) is never an attribute.
+- **Text as a person reads it.** A string whose schema names a media type a text format reads
+  (`contentMediaType`) is tested and shown as that format makes it: mention text as plain text, each
+  mention `@` and the name its target has now, or the name it holds while its target is gone, never
+  the stored form with its ids. `:contains("x")` is a substring of the title or of any string in the
+  attributes, as they read, in any case: a filter, not search.
+- **Boards named as Boards names them.** A row's `inside` is the names of the boards it's inside,
+  outermost first, as the path over the canvas names them: the owner's title, else its kind's
+  placeholder (through the board names point), else its label.
+- **A query changes nothing**: no shape, no selection, no step of undo. It never ends typing: a
+  shape being typed into reads as the board has it (a note writes each keystroke, so its text as
+  typed so far), and an answer that lists it, or read its text, warns that it may still change
+  (`editing`).
+
+`run(QueryRequest(text, limit:, countOnly:, properties:))` answers a `QueryResult`: `query` (the
+plan's `canonical`), `count` (every shape that matches, listed or not), `rows` (the first `limit`,
+`QueryBudget.rows` (100) unless it says, at most `maxRows` (10,000), in file order; none with
+`countOnly`), `warnings` (`limited`, `editing`, `no_title_match`; `QueryWarning.Reason` is open,
+and the command line adds `repaired`), `shown` and `shownPath` (the board the window showed as it
+took up the file, `:current-board`'s, and the boards from the root down to it: where it ran, which
+the command line's `board` says), and `timings` (thread CPU on the main actor and off it, the
+slices, the longest, and the costliest record: the longest stretch between two reads of a slice's
+clock, the stretch after its last read included). A `QueryRow` is the shape's `id`, `kind`,
+`title` (nil for none), `board`, `inside`, `properties` (its attributes as they read: own properties
+as a board writes them, added ones when set, text through its format, cut at `QueryBudget.cut` (500)
+characters unless `.only([…])` names it, those cut named in `cut`; never where it is, nor its name;
+none for `.none`), `connection`, for a shape that carries an edge itself in slot `""` (an arrow: the
+edge's type and the shapes it runs `from` and `to`, each by id and title), and `editing`; it encodes
+itself leaving out what's absent. `titles(for:limit:)` and `whereThePersonIs(selectedLimit:)` are
+what [`--ask`](#--ask) sends the model, each run as a query is.
+
+### Where it runs
+
+A query costs the main actor what it reads and one turn, and does everything else off it:
+
+1. **Checked**, on the main actor (`check`): parsed and resolved against the vocabulary
+   (`queries.vocabulary`, a `QueryVocabulary`, `Sendable`: each kind with its label, how its shapes
+   are named, whether it holds a board and what an untitled one's board is called, and its
+   attributes with what each takes; the edge types in the tree's order, with their summaries; the
+   words, the language's then plugins', each with its form, what it takes, what it means and an
+   example; and `text`, the `<vocabulary>` block `--ask` sends: the kinds, the edge types and the
+   plugins' words, since the prompt teaches the language's own), made on the editor's first query
+   and kept, since the registry never changes.
+2. **Taken up**, in one main-actor turn, in O(1) (`QuerySnapshot`): the file
+   (`withoutObservingDocument { editor.file }`) and Topology's snapshot, shared and not copied; the
+   board shown and the path to it; the revision and the shape being typed into; then what each word
+   and text format the query uses takes (`prepare`, in word order: the selection's ids, Mentions'
+   labels), every text format's when rows list attributes.
+3. **Answered off the main actor**, in a task of its own (`Evaluation`), handed the snapshot whole
+   (`Handover`), so the evaluation is its last holder and it's freed there, with everything read from
+   it. A set at a time: each node of the plan is worked out once into the set of shapes it matches
+   among the candidates its compound has narrowed to so far, and kept for the query, so nothing
+   recurses per shape; a compound's tests run cheapest first (ids, titles and seeds; kinds; the top
+   board and the board shown; containment and edges; attributes and text; words asked of the main
+   actor last, on what's left).
+   A compound with a one-step edge word (`:edge-to`, `:edge-from`, `:connected-to`, `:starts-at`,
+   `:ends-at`, `:between`, a plugin's relation) and fewer than `QueryBudget.seedFromAnchors` (1,024)
+   anchors starts from their edges' far ends, never a walk of every shape: `sticky-note:edge-to(#…)`
+   costs the anchor's degree. Containment walks up from each candidate (its ancestors, worked out once
+   per board), or, when nothing narrowed the candidates, down from the containers, asking only the
+   shapes of `containerKinds` for their boards; transitive words go breadth first from their anchors.
+   Titles and ids are checked here, against the snapshot (`unknown_title` with the titles like it,
+   and, for a title standing for an edge word's or a relation's anchor where an edge of the types it
+   follows points at a shape the query can't see from a carrier it can, the `:dangling` that finds
+   those carriers, of exactly those types: `:mentions("Old ledger")` hints `:dangling(mention)`;
+   `unknown_id`, `cannot_contain` for a title that names only shapes holding no board). The rows are
+   made here too, in file order: the walk's, when every shape was walked, else `fileOrderKey`'s; a
+   count isn't put in order at all.
+4. **Asked of the main actor in slices**, for what only it can say: a derived name (the names point's
+   `derived`) and a word's verdict (its `onMain`). `MainFacts` asks them in slices, each a
+   main-actor job of its own that lasts `QueryBudget.slice` (2 ms of the thread's CPU) and at most the
+   one record that crosses it, one record at least: its clock is read after the first record, then
+   every `clockStride` (16) while the pace leaves room before `everyRecordAfter` (1.5 ms), and after
+   every record from then on. The evaluation asks for the next slice only once it has the last one's
+   answers, so a query never has more than one waiting on the main queue, and input, drawing and
+   commits run between them (the main run loop services its sources between one job and the next).
+   Each shape is asked about as the app has it when its slice runs: its id looked up in the live
+   file, with the board it's on now (`QueryMainContext.shape(_:)`); one gone since, kept aside, or on
+   a board the app can't show has no name and fails the word.
+5. **Written** as the wire's JSON member by member, off the main actor too, where the result is let
+   go of ([query](#query)).
+
+**One at a time, and bounded.** Queries on one editor run one at a time, each taking up the file once
+the one before it is done (`--ask`'s titles and where the person is too), so no two snapshots are
+held at once. A query stops when its caller's task is cancelled (`cancelled`: the evaluation looks
+every `QueryBudget.cancellationStride` (256) shapes and before each slice, and `canvas` hanging up
+cancels the command's task); when `QueryBudget.deadline` (8 s, before `canvas`'s 10 s wait runs
+out) has passed since it was asked, running or waiting its turn (`too_slow`: a scheduled action on
+`editor.scheduler` cancels it, and is cancelled if the query ends first, so tests reach it by
+advancing a `ManualScheduler`); and when its editor goes (`board_closed`: `QueryState` and
+`MainFacts` hold the editor weakly, so a query never keeps a closed file's editor alive).
+
+**Zero upkeep.** `QueryState` keeps nothing per shape or per board, implements no
+`documentDidChange`, and overrides `boardDidChange` with nothing: a commit, a drag event's included,
+and a switch of board cost queries nothing, ever, and nothing outlives a query but the vocabulary
+(`liveSnapshots`, debug builds, is 0 whenever none runs).
+
+**What a held snapshot costs.** While a query runs, its snapshot shares the file's tables and
+Topology's, so a commit that lands meanwhile copies each table it changes, once: a drag event the
+file's `revisions` (and, off the root, its `children`), a shape added or removed its `locations`, a
+change of edges the index's tables it touches, a rename of a mentioned shape Mentions' resolutions
+(while a text format holds the labels). At most one copy per table per query, and none once the
+answer is made, since the snapshot is let go of then; `./build.sh bench` can't tell a commit with a
+snapshot held from one without (below).
+
+### What plugins add
+
+Queries knows no plugin: what shapes are called, what an untitled owner's board is called, words
+beyond the language's, how text of a media type reads, and what's selected come through points
+Queries declares ([QueryPoints.swift](../Sources/Queries/QueryPoints.swift)), each filled by a
+bridge between Queries and the plugin that owns the concern. Without one, a query does without:
+
+| Point | Sugar | What a query gets | Without it | Shipped |
+|---|---|---|---|---|
+| `QueryNames` | `registrar.queryNames(attribute:source:named:derived:fold:)` | The attribute names are tested by; per kind, whether its shapes are named, derived or neither; a named shape's name, read anywhere; a derived one's, on the main actor; how a title a query writes is folded | No titles: a title head is `no_names`, and rows have none | TitleQueries |
+| `QueryBoardNames` | `registrar.queryBoardNames(placeholder:)` | What an untitled owner's board is called, per kind | Its kind's label | BoardQueries |
+| `QueryWords` | `registrar.queryPseudoClass(_:_:example:prepare:seeds:matches:onMain:)`, `querySelection(_:_:example:selected:)`, `queryRelation(_:_:example:types:direction:)` | A word: a pseudo-class, the person's selection, or a relation over edges of exactly some types | The word is `unknown_pseudo_class` | MentionQueries, ValidationQueries, SelectionQueries |
+| `QueryTextFormats` | `registrar.queryTextFormat(mediaType:describes:prepare:read:)` | How strings of a `contentMediaType` read, anywhere | Text read as stored | MentionQueries |
+| `QueryEngines` | none: `QueriesPlugin`'s mark, which only Queries makes | That the app answers queries (`registry.answersQueries`), for what has a registry and no editor | `canvas query` and `query-vocabulary` answer `no_queries` | QueriesPlugin |
+
+`QueryNames` and `QueryBoardNames` take one contribution each, `QueryWords` one a word and
+`QueryTextFormats` one a media type (their report lines: `query names`, `query board names`, `query
+word :mentions`, `query text text/x-canvas-mentions`; `query engine` on queries'). The five bridges'
+registrations, whole (each bridge's words are its own nested `enum Word: String`, and
+ValidationQueries registers each of its two in a helper, whose `has` is below)
+([TitleQueries.swift](../Sources/TitleQueries/TitleQueries.swift),
+[BoardQueries.swift](../Sources/BoardQueries/BoardQueries.swift),
+[MentionQueries.swift](../Sources/MentionQueries/MentionQueries.swift),
+[ValidationQueries.swift](../Sources/ValidationQueries/ValidationQueries.swift),
+[SelectionQueries.swift](../Sources/SelectionQueries/SelectionQueries.swift)):
+
+```swift
+// TitleQueries: a shape is called what Titles calls it; a named title read off the record anywhere,
+// a derived one on the main actor.
+registrar.queryNames(attribute: TitleProperty.key.rawValue,
+                     source: { kind, registry in
+                         if registry.titleIsDerived(kind) { return .derived }
+                         return registry.properties(for: kind).contains(TitleProperty.key) ? .named : .none
+                     },
+                     named: { TitleProperty.folded($0[TitleProperty.self]) },
+                     derived: { record, registry in registry.title(of: record) },
+                     fold: { TitleProperty.folded($0) })
+
+// BoardQueries: an untitled owner's board is called what the path calls it.
+registrar.queryBoardNames { kind, registry in registry.boardPlaceholder(of: kind) }
+
+// MentionQueries: Topology's mention edges as two words, and mention text as a person reads it.
+registrar.queryRelation(Word.mentions.rawValue, "its text mentions a shape S matches", example: #":mentions("Checkout")"#,
+                        types: [MentionEdge.id], direction: .outgoing)
+registrar.queryRelation(Word.mentionedBy.rawValue, "a shape S matches mentions it", example: #":mentioned-by("API gateway")"#,
+                        types: [MentionEdge.id], direction: .incoming)
+registrar.queryTextFormat(mediaType: MentionTextFormat.mediaType, describes: "mentions read as @Name",
+                          prepare: { $0.editor.mentions?.labels ?? MentionLabels() },
+                          read: { stored, labels in MentionText(stored: stored).plainText { labels.label(of: $0) } })
+
+// ValidationQueries: :invalid and :warned, which only the main actor can say.
+registrar.queryPseudoClass(word.rawValue, summary, example: ":\(word.rawValue)",
+                           prepare: { _ in () },
+                           matches: { _, _ in .onMain },
+                           onMain: { record, board, _, context in has(severity, record, on: board, context) })
+
+// SelectionQueries: the person's selection, as the query takes up the file.
+registrar.querySelection(Word.selected.rawValue, "the person has it selected", example: ":selected") { $0.selectedShapeIDs }
+```
+
+- **Names are titles.** A kind's shapes are `.named` when it opts into the title Titles keeps
+  (`TitleProperty`), read off the record on any thread; `.derived` when Titles works them out (a
+  schema card's, from its schema's `"title"`), read through `registry.title(of:)` in slices, which
+  wins for a kind that's both, since Titles falls back to it for the shapes nobody named and only
+  the main actor can say which; else `.none`. `source` is asked once per kind, as the vocabulary is
+  made. The attribute must be a word a query writes bare (`QueryNames.check`), and `[title="X"]`
+  folds its literal through `fold`, so it matches exactly what the head `"X"` does. The rule is
+  `draw`'s own ([TitleNames](#what-draw-takes-from-other-plugins)), so the two name shapes alike.
+- **Boards are named by Boards' rule**: the owner's name, else `placeholder` for its kind (asked once
+  per kind), else its label (`registry.label(of:)`). BoardQueries' is `registry.boardPlaceholder(of:)`,
+  which [`editor.name(of:root:)`](#boards) reads, so a row's `inside` says what the path's crumbs say.
+- **A pseudo-class** (`:invalid`) takes no argument. `prepare` runs on the main actor in the turn the
+  query takes up the file, taking what it needs there, O(1) or O(what it holds) (a set of ids, a
+  service's value), and what it returns (any `Sendable`) is handed as it was to the rest: `seeds`, if
+  given, the only shapes that can match, which a compound then starts from; `matches`, anywhere,
+  `.yes`, `.no` or `.onMain` for each shape the query tests (a `QueryShape`: its record, its board and
+  the Topology snapshot); and `onMain`, in slices, for those `matches` leaves to the main actor, about
+  the shape as the app has it then, with a `QueryMainContext` (the registry, the editor, the revision
+  as the query started, `shape(_:)`, and `shapes(on:)`, a board as the app has it now, one
+  `ShapeContext` per board per query, made again once that board's revision changes). A word is
+  lowercase words joined by hyphens, and never one of the language's own or one it refuses as
+  invented (`QueryWords.check`).
+- **The person's selection** is a pseudo-class of one sort: `querySelection` takes the shapes
+  selected, in the selection's order, as the query takes up the file (so a change of the selection
+  while a query runs changes nothing it answers), seeds and matches them, and is what `--ask` tells
+  the model is selected (`whereThePersonIs`), in that order. At most one plugin says what's
+  selected (`QueryWords.check`).
+- **A relation** (`:mentions(S)`) is `:edge-to(S, only t)` under a word of its own: `.outgoing`, the
+  result has an edge of exactly one of `types` (none under them) to a shape S matches; `.incoming`,
+  a shape S matches has one to the result. Its types must be ones an installed plugin declares.
+  MentionQueries' follow `MentionEdge.id` alone, so a shape that mentions itself counts (Mentions'
+  `isMentioned` leaves it out).
+- **A text format** makes a stored string what a person reads, anywhere (`read`), with what `prepare`
+  took; `describes` says so in the vocabulary, beside the attribute (`text (mentions read as
+  @Name)`). Mention text reads through [`MentionState.labels`](#the-service-mentionstate), taken as
+  the query takes up the file, so a gone target reads as the name its mention holds.
+- **Validity is Validation's cache where it's current, else its rules.** `:invalid` and `:warned`
+  leave every shape to the main actor (`.onMain`). There, a shape on the board shown, with nothing
+  committed since the query started (`context.revision`), takes
+  [`cachedResult(for:)`](#a-horizontal-plugin) while it's `.current`; any other runs its kind's rules
+  against the board it's on as the app has it (`registry.validationIssues(of:in:
+  context.shapes(on: board))`), which is what Validation will find once that board is shown. A
+  query never makes Validation read a board, so Validation's first read (100 ms at 10,000 shapes,
+  in one turn) is never a query's.
+
+**What a plugin list needs.** `QueriesPlugin()` needs `TopologyPlugin()` (without it, every query
+is `no_topology`). Each bridge needs `QueriesPlugin()` (a contribution to a point whose owner isn't
+installed is `ownerNotInstalled`) and its own concern's plugin: MentionQueries is refused without
+`MentionsPlugin()`, whose `mention` edge type its words follow, while TitleQueries, ValidationQueries
+and SelectionQueries find nothing without Titles, Validation or Selection (every kind untitled, no
+shape invalid, nothing selected), as `draw`'s bridges do without theirs. `QueryCommandsPlugin`
+needs `AutomationPlugin()`, and `--ask` `LanguageModelsPlugin` (else `no_model`). The shipped list
+has them after `draw`'s bridges: `QueriesPlugin(), TitleQueriesPlugin(), BoardQueriesPlugin(),
+MentionQueriesPlugin(), ValidationQueriesPlugin(), SelectionQueriesPlugin()`, then
+`QueryCommandsPlugin(askPrompt: QueryPrompt.system)`.
+
+### What it costs
+
+`./build.sh bench` holds queries on generated boards of 1,000 and 10,000 shapes and files of nested
+boards ([QueryBenchmarks.swift](../Tests/BenchmarkTests/QueryBenchmarks.swift), members of
+`extension Budget`): main-actor budgets in the test thread's CPU, off-main ones in the answer's
+`timings` (or, for what they don't cover, the answer's JSON and `--ask`'s request, every other
+thread's CPU while it runs, `cpu {}`), and only the frames on the wall clock. In release, 1,000 /
+10,000 shapes, ms:
+
+| What | Budget | Measured |
+|---|---|---|
+| A query's main-actor time (`queryMain`): reading and resolving `sticky-note[text*="note" i]:not(:inside(*))` and taking up the file, also after a drag event that moved every shape | 0.2 / 0.5 | 0.019 / 0.018 |
+| The vocabulary, made on an editor's first query (`queryVocabulary`) | 1 | 0.039 |
+| That query off the main actor, first after the file opens, 100 rows: every shape walked, every note's attributes written and its text read with live names (`queryScan`) | 5 / 40 | 2.61 / 23.7 |
+| A note by its name (`"Title 5004"`), every name read, off the main actor (`queryTitleOffMain`) | 1 / 5 | 0.32 / 2.87 |
+| And on it: every derived name asked, in slices, on a board looked at (`queryTitleMain`) | 0.5 / 4 | 0.094 / 0.78 |
+| Notes with an edge to a subboard 100 of them mention, `:edge-to(#…)`, brief rows (`queryByID`) | 0.5 | 0.26 / 0.27 |
+| And their rows with their attributes (`queryByIDRows`) | 2 | 1.19 / 1.19 |
+| `:downstream-of` along a chain through every shape, and `:component-of(*)` over one component of them all (`queryGraph`) | 3 / 30 | 1.38, 1.49 / 7.20, 8.80 |
+| Every construct that walks, and a nest as deep as the language allows, on a board and ten boards deep (`queryPathological`) | 25 / 250 | 4.2 / 37.4, the worst |
+| `:invalid` over boards not shown, the main actor's time in all (`queryInvalidHidden`) | 15 / 150 | 4.88 in 3 slices / 48.0 in 24 |
+| A slice: 2 ms and the record that crosses it, the longest of any query here (`querySlice`) | 3 | 2.008; the costliest record 0.126 |
+| `* --limit 10000` off the main actor: the rows and their JSON, let go of there (`queryRows`) | 15 / 150 | 4.1 / 41.4 |
+| That command's main time (`queryRowsMain`: `queryMain` and `queryTitleMain`) | 0.7 / 4.5 | 0.131 / 0.899 |
+| Its main time beyond its query's own, making and letting go of the answer (`queryMain`) | 0.2 / 0.5 | 0.053 / 0.092 |
+| A commit adding a note while a query holds the file, more than without (`queryHeldCommit`) | 0.1 / 0.5 | none: 0.055 held, 0.076 not / 0.340, 0.363 |
+| A drag event's input with the shipped list and a query run first, more than without queries (`queryUpkeep`) | 0.01 | none: 0.0322 with, 0.0323 without / 0.2233, 0.2231 |
+| A drag's frames at 60 Hz while `:invalid`'s slices run, the worst (`queryFrame`, wall clock) | 16 | 9.8 / 9.7, none dropped |
+| `--ask`'s request without the model, on a board looked at: main (`askAssemblyMain`) | 1 / 5 | 0.157 / 0.836 |
+| And off it (`askAssemblyOffMain`) | 3 / 10 | 0.570 / 4.74 |
+
+- **No card is cold.** The schema cards' sync reads every card of a file as it opens, and every
+  card as it changes, on any board, so a query finds each card read: a card is read in a slice only
+  once its reading has been let go of, past the 4,096 kept. On a board never shown, as the file
+  opens, `queryTitleMain` measures 0.150 / 1.35.
+- **Rows of derived kinds cost the main actor their names.** 10,000 rows of the generated board
+  hold 869 schema cards, which only the main actor can name, so the command is held to `queryMain`
+  and `queryTitleMain` together, and what it costs beyond its query's own to `queryMain`: the answer
+  is made and let go of off the main actor.
+- **Mention text is read twice.** Mentions' text format parses each note's stored text again
+  (`MentionText(stored:)`, some 6 µs a note) though the record holds it parsed: about half of a full
+  row of a mentioning note, most of `queryScan`, and why full rows of 100 notes are held to 2 ms, not
+  `queryByID`'s 0.5 ([Not built yet](#not-built-yet)).
+- **Frames** are driven by a strict main-queue dispatch timer (`FrameDriver`), each timed from the
+  first fire it answers, so a dropped frame counts as late: a run-loop `Timer` in a windowless
+  process fires up to 7 ms late on its own. While slices run a frame starts at most one slice late
+  (1.9 ms; 0.1 without), and the worst without queries is 9.0 / 9.3.
+- **A held snapshot's copy** (the file's `locations`, some 10,000 entries at 10,000 shapes) is lost
+  in a commit's own 0.36 ms; debug builds check that the query holds the file at the commit, so the
+  case is real.
+
+**No index, on purpose.** An index would cost every commit, a drag event's included (whose input is
+held to 1 ms at 10,000 shapes), and a copy of what it indexes kept in step. What it would save is
+small and off the main actor: walking every shape and filtering by kind is some 0.5 ms at 10,000;
+named titles are a read per titled shape; derived ones their owners keep; edges and containment are
+Topology's already. Attributes are written as JSON only for the candidates a test reaches, and text
+read only for those a text test reaches. Should a budget miss on queries asked again and again, the
+next step is a warm cache ([Not built yet](#not-built-yet)).
+
+### What it doesn't do
+
+- **Where shapes are.** Positions, sizes and overlaps aren't in the language (`:near`, `:left-of`,
+  `:within`, and attributes that hold a place, are `not_built`), and inside is a board's: what's
+  drawn within a rectangle's bounds isn't inside it (`cannot_contain`, for a container side that can
+  only be kinds holding no board).
+- **Shapes typed by schema cards** (`.Task`, `not_built`), attributes inside attributes (`[a.b]`),
+  and `=` on an object.
+- **Edges as answers.** A query lists shapes: a connection is asked for as its arrow
+  (`arrow:starts-at("A"):ends-at("B")`, whose row's `connection` says where it runs), and a mention
+  as the shape whose text holds it.
+- **Ranking and meaning.** `:contains` is a substring filter; ranked or semantic search would be a
+  horizontal of its own.
+- **CSS with no meaning here.** Shapes have no siblings, order or columns (`+`, `~`, `:nth-child`,
+  `||`), no pseudo-elements, and a query sees no pointer (`:hover`): each is `unsupported`, never read
+  some other way.
+- **Acting on what it found.** A query selects, reveals and changes nothing. Its rows' ids name the
+  shapes in a later query (`#…`), never in a `draw` script, which names shapes by title.
+
+### Testing queries
+
+- **QueryLanguageTests** hold the language on fixture words only (card, box, disc; rank, status,
+  due; wire, hot-wire, pipe; the unknown words glows and stacked): trees and spans, the canonical
+  form (a fixed point), every refusal (reason, message, hint, offset, length, line, column), the
+  limits at their edges, the words and the inventions, and seeded fuzz: trees generated from the
+  grammar round-trip, and random edits never crash, reprint as their canonical form when they parse,
+  and keep every span inside the text.
+- **QueriesTests** hold the engine over fixtures only: CanvasTesting's `Chore` (`ChoresPlugin`: kind
+  `chore`, labelled "Task", holding every schema type, and the added `Flagged`, key `flag`), with
+  pockets, tiles and links graded as wires; a `caption` names point, board names, words (`:starred`,
+  seeded; `:heavy`, off the main actor, counted by `Tally`; `:audited`, asked on it, counted by
+  `MainCalls`; `:wired-to(S)`, a relation) and a text format (`text/x-shout`), all in
+  `queryPlugins`; `shelf()` and `hiddenShelf()` (a kept-aside owner, a board the app can't show);
+  `choresHarness` (every schema type, every operator); `storyHarness` (the design's table of every
+  construct, on fixtures: `citesPlugin`'s edges from chores' tags, `pickedPlugin`'s selection,
+  `faultyPlugin`'s verdicts); and `wiresHarness` and `danglingHarness` (edges). `answer`, `matched`,
+  `refusedAnswer` and `expectMatches` run queries through `awaitResult`, which turns the main run loop
+  for the slices, and `plan(_:on:)` reads a plan (`description`, a tree).
+- **What runs where** is held by `QueryState`'s debug counters (`liveSnapshots`, `captures`,
+  `mainSlices`, `recordsEncoded`, `derivedTitlesAsked`, `verdictsAsked`, `universeWalks`,
+  `seededFromAnchors`) and `threadsPlugin` (a name, a text format's `read` and a word's `matches`,
+  each off the main thread). `SlowWord`, with `burn(_:)`, makes records cost what a test says: a
+  slice's bound with a costly record, the costliest record's stretch after the last read, one slice
+  queued at a time, a run-loop `Timer` firing between slices (the run loop's sources run between
+  them, not only queue order), cancellation mid-slice, the deadline reached by `h.wait(8_000)` inside a
+  slice on the `ManualScheduler`, queries waiting their turn, and a closed file (an editor held only in
+  a box a word empties). A word whose `prepare` commits lands a commit in the turn the query takes
+  up the file: attributes are the capture's, a derived name the live record's. UpkeepTests hold zero
+  upkeep.
+- **The bridges' tests** use fixtures only, through `EditorHarness` and `QueryState`: TitleQueriesTests
+  CanvasTesting's kinds titled as TitleNamesTests title them (derived names asked on the main actor,
+  and read live after a commit lands); BoardQueriesTests a `drawer`, which opens its board with a
+  placeholder, and a `crate`, which doesn't and is called by its label; MentionQueriesTests a
+  `scribble` of mention text, titled pockets to mention, and a `strand` edge type its words ignore;
+  ValidationQueriesTests card and tag rules that count their runs (the board shown answered from the
+  cache, another board by its own rules in slices, and never Validation made to read a board); and
+  SelectionQueriesTests a `:shifting` word that changes the selection mid-query. BoardQueriesTests and
+  MentionQueriesTests name shapes with a names contribution of their own over `TitleProperty`, since
+  they have no TitleQueries.
+- **QueryCommandsTests** run `query`, `query-vocabulary` and `--ask` as the server does (`start`,
+  `finish`, `run`, `answered`, `refused`) over chores, pockets and links, captions naming them,
+  "Untitled Pocket" boards, and a `Desk`: `:picked`, the selection word, and `:slow`, asked on the
+  main actor; with a `ScriptedLanguageModel` (`queue`, `holdsAnswers`, `requests`). The deadline and
+  the repair mark are reached with `h.wait(…)` on the `ManualScheduler` (from inside `:slow` for a
+  query run, from `onPicked` for the request's assembly), and `QueryOutput.lastBuiltOnMainThread`
+  (debug builds) says where an answer was built.
+- **CompositionTests** hold the shipped pieces on the story file, `QueryStory`: the design's "Roadmap"
+  (a Payments subboard holding a Refunds one, notes that mention each other and a shape that's gone,
+  arrows on a channel and on none, a derived title and an invalid card), its ids
+  `00000000-0000-4000-8000-0000000000NN` named by letter (`ids("C, Y")`), `fileOrder`, `file(in:)`,
+  `harness(pasteboard:model:)` and `document(windowed:)`. Its untitled, invalid card V holds
+  `{"type": "object" "title": "Invoice"}` (a card whose text isn't JSON is named by a title read
+  before the error, so the title comes after the missing comma); a card's last reading as an object is
+  kept by id for the whole process, so a test that mends V's JSON would title V in every story after
+  it: mend a copy. QueryShippedTests run the design's table of every construct row for row
+  (`StoryQuery.table`: shapes in file order, the count, the canonical form, each refusal's reason);
+  QueryCommandLineTests run `canvas` as built against `CommandServer` on the story open in a
+  `BoardDocument` (`configureQueryBoards(pasteboard:model:)`, `startQueryServer(for:)`, which holds the
+  board weakly so a closed file's editor can be seen to go, and `RunningCanvas`, a `canvas` left
+  running, a held `--ask`, while the test does something else: a `draw` answered meanwhile, a
+  `--timeout` that lets go of the model's call, a file closed under it answered `board_closed` at
+  once); BoardsTests `:current-board` across a switch (no change set worked out, no snapshot left);
+  and SkillTests every `query` and `query-error` block ([Testing plugins](#testing-plugins)).
+- **The prompt.** QueryPromptTests hold `QueryPrompt.system` to the language: each of its
+  `runnableExamples` answered on the story, each of its `illustrativeExamples` refused there with its
+  reason, every query written after "→" listed, nothing that reads as a query left out of the lists,
+  every `:word` the language's, a shipped plugin's or one the prompt says not to invent, the kinds,
+  edge types and words it assumes the shipped vocabulary's, in its order, and the skill's
+  `query-prompt.md` equal byte for byte; so a prompt change lists each new query-like example in one
+  of the two lists. "Query eval board" holds `QueryEvalBoard` (59 shapes on six boards: look-alike
+  titles, plain arrows, note and schema links, a mention two boards away) to what it's built with,
+  and "Query prompt, live" checks each case of `scripts/query-prompts/cases.tsv` offline, its
+  reference query finding exactly the shapes it expects; with `QUERY_LIVE=1` it asks the model
+  ([`--ask`](#--ask)).
+- **BenchmarkTests' Query benchmarks** are above; `cpu {}` sums a command's main-actor jobs without
+  polling the run loop, and `FrameDriver` drives frames on a strict dispatch timer.
 
 ## Boards
 
@@ -4846,7 +5442,10 @@ registrar.command(.enclosingBoard, shortcuts: [KeyChord(KeyChord.upArrow.key, .c
   a blank one is none), else its kind's placeholder, else its kind's label (`registry.label(of:)`);
   `root` for the root (the file's name). `editor.symbol(of:)` is its kind's symbol (`opensBoard`'s,
   else its label's), nil for the root. Composition's table-of-contents
-  heading and the path both read them.
+  heading and the path both read them. `registry.boardPlaceholder(of: kind)` is the placeholder a
+  kind opens its boards with (nil for a kind that doesn't), the registry's alone, which both read,
+  and so does a [query](#queries): its rows name the boards a shape is inside by the same rule,
+  through BoardQueries (BoardsTests' "A board's placeholder" holds it).
 - **In the app** (Composition and the app's window): the table of contents' header names the
   board shown, with its symbol and a way up (`ShippedPlugins.contentsHeading(for:rootName:)`, the
   board shown's crumb as a `ContentsHeading` with `up: .enclosingBoard`, called Enclosing Board as
@@ -5090,6 +5689,10 @@ canvas boards                           the open boards: each one's id, name, fi
 canvas draw <script>|- [--dry-run] [--reveal] [--board <board>]
                                         shapes, and the edges between them, made, changed or deleted by a script, all at once
 canvas kinds [<kind>] [--schema]        what a script can draw, and with what
+canvas query <query>|- [--limit <number>] [--count] [--brief] [--fields <attribute>]… [--board <board>]
+                                        the shapes of a file a query matches, on every board, in file order
+canvas query --ask <question>|- […]     the same, the query written by the app's language model
+canvas query-vocabulary                 what this app's queries can name: kinds and their attributes, edge types, words
 canvas help [<command>]                 what a command takes (--format json: what the app says, schemas too)
 ```
 
@@ -5097,12 +5700,16 @@ The modules, one job each:
 
 | Module | Layer | What it does |
 |---|---|---|
-| CanvasRPC | wire | What the app and `canvas` say to each other: JSON-RPC 2.0, a message a line, over a Unix-domain socket (`~/Library/Application Support/InfiniteCanvas/canvas.sock`, or `CANVAS_SOCKET`) only this user can reach; what a command is (`CommandSpec`, its params a JSON Schema) and how its params are spelled as arguments; the client, and the listener. Knows no canvas, plugin or AppKit. |
+| CanvasRPC | wire | What the app and `canvas` say to each other: JSON-RPC 2.0, a message a line, over a Unix-domain socket (`~/Library/Application Support/InfiniteCanvas/canvas.sock`, or `CANVAS_SOCKET`) only this user can reach; what a command is (`CommandSpec`, its params a JSON Schema) and how its params are spelled as arguments; the client, and the listener, which answers each request as a main-actor task of its own (one that waits holds up neither the main actor nor another connection), each connection's answers in the order its requests came, and cancels the requests still running (not notifications) once its client hangs up. Knows no canvas, plugin or AppKit. |
 | CanvasCLI | cli | `canvas`: reads its own options, asks the app what it runs (`describe`), reads the rest as one of those commands, runs it, and prints what comes back. Knows only the wire. |
-| CanvasUI's `CommandServer` | ui | The app's end: it listens, describes the app, and answers each request on the main actor. `status` and `boards` are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows, and a board command's result, when it's an object, gains `board: {id, name, shows, showsPath}`, as `boards` lists it, so an agent sees which board it worked on. |
-| Automation | horizontal | The commands plugins give the command line (`AutomationCommands`), its own two, `draw` and `kinds`, and the three points `draw` takes what it doesn't own from. The app hands the commands to its server through Composition (`ShippedPlugins.commands(in:)`). |
+| CanvasUI's `CommandServer` | ui | The app's end: it listens, describes the app, and answers each request on the main actor. `status` and `boards` are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows, each in a task kept against its board, and a board command's result, when it's an object, gains `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the command's own job just before it runs, so an agent sees which board it worked on (a command that knows better says `shows` and `showsPath` in a `board` object of its own, which the server completes: a query's is the board shown as it took up the file). A client gone is answered `cancelled`, and a board closed (`BoardDocument.close()`) answers its running commands `board_closed`, at once, their tasks cancelled and what they return later dropped. |
+| Automation | horizontal | The commands plugins give the command line (`AutomationCommands`), its own two, `draw` and `kinds`, and the three points `draw` takes what it doesn't own from. The app hands the commands to its server through Composition (`ShippedPlugins.commands(in:)`, async). |
 | DrawScript | foundation | The language `draw` reads (`Script(parsing:)`), and the solver that places what it says (`LayoutProblem.solve()`): pure, it knows no canvas, registry, kind or plugin. |
 | TitleNames, PortEdges, ValidationChecks | bridge | What `draw` takes from Titles (names), Ports (edges) and Validation (warnings), each joining Automation to the plugin that owns the concern. |
+| QueryCommands | horizontal | `query` and `query-vocabulary`, and `--ask` (on Automation, Queries, LanguageModels and the wire; it declares no point). |
+| QueryLanguage | foundation | The language `query` reads (`SelectorList(parsing:)`) and its canonical form: pure, it knows no canvas, registry or plugin. |
+| Queries | horizontal | The engine that answers a query about a file ([Queries](#queries)), and its points. |
+| TitleQueries, BoardQueries, MentionQueries, ValidationQueries, SelectionQueries | bridge | What queries take from Titles (names), Boards (boards' names), Mentions (`:mentions`, `:mentioned-by`, mention text as it reads), Validation (`:invalid`, `:warned`) and Selection (`:selected`), each joining Queries to the plugin that owns the concern. |
 
 **The commands are the app's, so `canvas` never changes for one.** It knows no command but `help`:
 each run asks the app to describe itself, and makes its commands, their arguments and their help
@@ -5143,8 +5750,12 @@ registrar.automationCommand("draw", "Draw shapes on a board, and connect them, f
   does, is read from standard input when it's given as `-`, and help writes it `<script>|-`: a
   script quoted for the shell breaks at its first apostrophe. Each property is an option (`dryRun`
   is `--dry-run`), those in `positionals` also take their places in order, and help shows each
-  one's `description`, its default, and what `x-value-name` calls its value. The app checks what
-  comes against the schema and decodes it, so `run` gets its params typed.
+  one's `description`, its default, and what `x-value-name` calls its value. A param whose schema
+  says `"x-timeout": N` (`Property(…).keywords(["x-timeout": 60])`, `--ask`'s) makes `canvas` wait
+  up to N seconds for the answer when it's given (`CommandArgument.waits`): a call waits
+  `--timeout`, else the longest such wait among the params given, else 10 s, and help says "(waits
+  up to N s)". The app checks what comes against the schema and decodes it, so `run` gets its
+  params typed.
 - **A board command** (the default scope) runs on a board: `context.board()` is its editor. An app
   command (`scope: .app`, as `kinds` is) runs with the registry. `board` is the server's param, and
   `canvas`'s own options (`socket`, `format`, `timeout`, `help`, `version`) are `canvas`'s, so the
@@ -5154,14 +5765,23 @@ registrar.automationCommand("draw", "Draw shapes on a board, and connect them, f
   `canvas`'s `help`); a positional that isn't a param; and two commands of one name.
 - **An error says why, and what to do**: `AutomationError(message, reason:, hint:)`, where `reason`
   is a word an agent can branch on (`unknown_kind`) and `hint` is often the command, or the line,
-  to write instead; a name that's nearly one gets a "did you mean". An error about a script says
-  where: `line:` (from 1) and `statement:` (that line as written, its comment left out); and a
-  command that finds several problems at once throws the first, with every one in `errors:`. They
-  reach `canvas` as the error's data (`line`, `statement`, and `errors`, each `{line, statement,
-  reason, message, hint}`), which it prints beside its own members in JSON, never over them, and
-  as text as `canvas: line 3: <message>`, the statement indented, the hint, then a line for each
-  further problem. `canvas` prints a result on standard output (JSON when that isn't a terminal,
-  which is how agents run it, or text, whose tables lead with `line` and `did`, end with sentences
+  to write instead; a name that's nearly one gets a "did you mean". An error about a script or a
+  query says where: `line:` (from 1), `column:` (from 1, in characters) and `length:` (in
+  characters) of what's wrong on it, and `statement:` (that line as written: `draw`'s trimmed, its
+  comment left out; a query's whole, so the column counts from its start); and a command that finds
+  several problems at once throws the first, with every one in `errors:`. Anything else an agent
+  can use goes in `details:` (`--ask`'s `transient`, the `query` a model wrote), under names of the
+  command's own: a detail named like one of the error's members (`reason`, `message`, `hint`,
+  `line`, `column`, `length`, `statement`, `errors`) is left out, whether the error has that member
+  or not. They reach `canvas` as the error's data (`line`, `column`, `length`, `statement`, the
+  details beside them, and `errors`, each `{line, column, length, statement, reason, message,
+  hint}` and its details), which it prints beside its own members in JSON, never over them, and as
+  text as `canvas: line 3, column 12: <message>`, the statement indented, carets under the columns
+  it names, as a terminal draws them (a tab before them stays a tab, and an emoji or a CJK character
+  takes two cells: `Invocation.caret(under:column:length:)`), the hint, then
+  a line for each further problem. `canvas` prints a result on standard output (JSON when that isn't a terminal,
+  which is how agents run it, or text, whose tables lead with `line`, `did`, `id`, `name`, `kind`
+  and `title`, those a table has, end with sentences
   (a warning's `message`), which they never cut, and list what a row has that isn't a value (a
   kind's attributes) under it; `--format` says which), an error on standard error, and exits 0
   when it's done, 1 when the app couldn't do it, 2 when the command line is wrong (standard input
@@ -5184,15 +5804,59 @@ and undoing it from another board shows that one first). `canvas boards` says wh
 file: `shows`, the board shown (`"root"`, or the id of the shape that owns it, as a `BoardID` is
 written), `showsPath`, the boards from the root down to it, and `shapes`, how many it holds;
 `canvas status` names the front file's as `frontmostShows`; and a board command's result names it
-in its `board` (`id`, `name`, `shows`, `showsPath`, as `boards` has them), read as the command
-starts. Names for them (a board's owner's title) come once the command line reads shapes, and no
-command addresses another board of a file yet ([Not built yet](#not-built-yet)): an agent that
-wants to draw on a subboard's board asks the person to open it.
+in its `board` (`id`, `name`, `shows`, `showsPath`, as `boards` has them), read in the
+command's own job as it starts: a command that doesn't wait (`draw`) runs in that job, so no
+switch of board comes between the two. A [query](#query) says where it ran itself, the board shown
+as it took up the file (`QueryResult.shown` and `shownPath`, `:current-board`'s), which may be
+later than its request (it waits its turn, and `--ask` waits on the model), and the server
+completes that `board` with the file's `id` and `name`. A query reads every board of the file the
+app can show, whichever the window shows, and names each row's board (`board`, and `inside`, the path's names for the boards it's
+inside); but no command addresses another board of a file yet ([Not built yet](#not-built-yet)):
+an agent that wants to draw on a subboard's board asks the person to open it.
 
 The app that holds the socket's lock (`canvas.sock.lock`, beside it) is the one listening: a second
 copy of the app gives up and runs without the command line, and a socket that one that crashed left
 behind is taken over. A command's options may also come before its name
 (`canvas --board 2 draw - < plan.txt`), as agents often write them.
+
+### A command may be async
+
+A command that waits on something (a language model's answer, a query answered off the main actor)
+answers later: `runAsync:` in place of `run:`, its output `Encodable & Sendable`
+([Automation.swift](../Sources/Automation/Automation.swift)), as [`query`](#query) does
+([QueryCommands.swift](../Sources/QueryCommands/QueryCommands.swift)):
+
+```swift
+registrar.automationCommand("query", "Find the shapes of a file that a query matches, …", discussion: "…",
+                            params: QueryParams.self, positionals: ["query"], examples: […],
+                            runAsync: { (params: QueryParams, context: AutomationContext) async throws(AutomationError) -> JSON in
+                                try await query(params, in: context, asking: asking)   // its answer built as JSON, off the main actor
+                            })
+```
+
+- **It runs on the main actor, awaiting**, and the main actor is free while it waits: the listener
+  answers each request as a task of its own, and `CommandServer` runs each command in a task kept
+  against its board, so a command that waits holds up neither drawing nor another connection's
+  commands. On one connection only the answers keep their order: a `draw` sent after a query may run
+  before the query's answer comes.
+- **Its output is written as JSON off the main actor** (`AutomationCommand.encoded`, `@concurrent`,
+  handed the output whole, `consume`), where it's freed too, so a large one costs the main actor
+  neither its writing nor its freeing. One that's the wire's `JSON` already passes through as it is
+  (`JSON(_: JSONValue)` makes one; `query` builds its answer member by member, off the main actor).
+  `run:` is unchanged: it never suspends, and answers in the turn it's asked in, as `draw` and
+  `kinds` do. Write the `runAsync:` label out: a trailing closure that doesn't await picks `run:`.
+- **It may be cancelled.** `canvas` hanging up (its timeout, ^C) cancels the request's task,
+  answered `cancelled`, which nobody reads; closing its file answers it `board_closed` ("The board
+  was closed before the command finished.") at once, and cancels it. What a cancelled command
+  returns later is dropped, so a long wait looks at `Task.isCancelled` (a query does every 256
+  shapes and before every slice; a model's call is cancelled at once). Every command, `draw`
+  included, runs one main-actor hop after its request, so one cancelled, or whose file closed, before
+  it starts never runs.
+- **`canvas` waits as long as its params say**: the longest `x-timeout` among those given (`--ask`'s
+  60 s), else 10 s, unless `--timeout` says ([above](#the-command-line)). The protocol stays 2: a
+  param's `x-timeout`, and an error's `column` and `length`, are what an older `canvas` passes over
+  (it waits 10 s, and says `timed_out`). `Registry.runAutomationCommand(_:params:editor:)` and
+  `ShippedPlugins.commands(in:)` are async, and a test awaits them with TestKit's `awaitResult`.
 
 ### draw
 
@@ -5235,7 +5899,8 @@ steps, the first three against the board as the run starts:
 2. **Resolve** (`Drawing`): each kind word against the registry (a kind is drawable when a tool
    places it, `registry.placement(for:)`); each title, through DrawNames, to the one board shape it
    names (restated) or to none (made); each attribute by the kind's schema, own and added
-   properties alike (`KindVocabulary`: a value read as its property's type, and JSON held to the
+   properties alike (`KindVocabulary`, over the core's [`KindSchema`](#a-kinds-schema): a value
+   read as its property's type, in draw's own words when it can't be, and JSON held to the
    schema before it's read, `registry.schemaViolations(of:kind:)`, since reading drops a member its
    type doesn't have without a word: an unknown member, or a value of the wrong type anywhere in
    it, is `invalid_value`, with a "did you mean" over the object's members; the naming property and
@@ -5442,6 +6107,144 @@ connection runs only from a shape with a dot on its channel to one that takes it
   (`registry.makesConnections`): a connector that only draws from ports leaves `draw` with
   `no_edges`.
 
+### query
+
+`query` is how an agent reads a file: which shapes are there, what they're called, what's inside
+what and what connects to what, answered by [Queries](#queries) about every board of the file
+`--board` names, whichever board its window shows. It changes nothing.
+
+```
+canvas query --board 2 - <<'EOF'
+"Payments" sticky-note:mentions("API gateway")
+EOF
+```
+
+The language is taught by the canvas skill: SKILL.md's "Reading the board" tours it, and
+`reference/query.md` is the whole of it, where every block is a query run on the story file
+([Testing queries](#testing-queries)). The commands are QueryCommands'
+([QueryCommands.swift](../Sources/QueryCommands/QueryCommands.swift)), a horizontal on Automation,
+Queries, LanguageModels and the wire (the answer is the wire's JSON), which declares no point and
+knows no shipped kind: its help writes `<kind>` and `<title>`, and `--ask`'s prompt comes from
+Composition.
+
+- **Params** (`QueryParams`): `query`, positional, read from standard input as `-` (`x-stdin`: a
+  query is full of what shells mangle, so a heredoc with a quoted delimiter); `--ask <question>`
+  instead (up to 2,000 characters, `-` too; given, `canvas` waits up to 60 s, its `x-timeout`);
+  `--limit` (1 to 10,000; 100 unless it says, and `count` is always of all);
+  `--count` (no rows); and `--brief` (rows without their attributes) or `--fields <attribute>`,
+  given again for each (only those, whole). Exactly one of a query and `--ask`, and not `--brief`
+  with `--fields`, else `invalid_params`. `--fields` naming an attribute a shape hasn't leaves it out
+  of that row.
+- **The answer** is `{board, query, count, rows, warnings?}`: `board` where it ran, `shows` and
+  `showsPath` (the board shown as it took up the file, `:current-board`'s), which the server
+  completes with the file's `id` and `name`; `query` as the language writes it, `count`, the rows
+  as `QueryRow` writes itself ([What a query sees](#what-a-query-sees)), `asked` with `--ask`, and
+  no `rows` with `--count`. It's built as the
+  wire's JSON member by member, off the main actor, where the result is let go of too
+  (`QueryOutput.json`, handed the result whole), never written through `JSONEncoder` and read back,
+  and `runAsync:` passes it through. As text, the rows are a table (`id`, `kind`, `title`, `board`,
+  `inside`), each one's attributes under it.
+- **A refusal** carries the query's reason, message and hint (most often the query to write), and
+  where it is:
+  `line`, `column` and `length` in characters, and `statement`, the line as sent, whole, so the caret
+  `canvas` draws lands on what's wrong (`AutomationError(error, in: text)`); several problems that
+  don't hang on one another come at once, each where it is, in `errors`. A line longer than 200
+  characters (`QueryOutput.quoted`) is quoted around what's wrong, `…` where it's cut, the column and
+  length counted in what's quoted (`QueryError.located(in:quoting:)`). Beside the language's reasons
+  (`QueryError.Reason`, [Queries](#queries)), `no_queries`: the app has no `QueriesPlugin`.
+- **`canvas query-vocabulary`**, an app command (it reads the registry, on no board:
+  `QueryVocabulary(registry:)`), is what this app's queries can name: `vocabulary`, the block
+  `--ask` sends the model (the kinds, the edge types and the plugins' words); `kinds`, each `{kind, label, naming, holdsBoard, attributes}`
+  (`naming` is `named`, `derived` or `none`, and not `titles`, Titles' plugin id, which the id audit
+  keeps a module that doesn't depend on Titles from writing; each attribute with what it takes,
+  `KindSchema.compactType`, and how a text format reads it: `text (mentions read as @Name)`);
+  `edgeTypes`, each `{type, under?, summary?}`, in the tree's order; and `words`, each `{word, takes,
+  summary, example, from}`, the language's own first (`from: queries`), then plugins' in plugin
+  order. Without `QueriesPlugin` it answers `no_queries` too (`registry.answersQueries`, which looks
+  up `QueriesPlugin`'s mark, since an app command has no editor to ask).
+
+#### `--ask`
+
+`canvas query --ask "which notes mention the gateway?"` has the editor's language model write the
+query, runs it, and answers as a query does: `asked`, the question, and `query`, what the model
+wrote, for the agent to check it asks what the person meant. `QueryAsking`
+([QueryAsking.swift](../Sources/QueryCommands/QueryAsking.swift)) runs on the main actor, awaiting,
+never holding it:
+
+1. **Bounds** are armed on `editor.scheduler`: `AskStyle.deadline` (55 s, under the 60 `canvas`
+   waits) for the whole command, and `AskStyle.repairBefore` (40 s) for a second try; the steps run
+   in a task of their own, which the deadline cancels.
+2. **The request** (`AskRequest`) is the system prompt, and one user message of tagged blocks, each
+   left out when it has nothing to say: `<question>`; `<vocabulary>` (`QueryVocabulary.text`);
+   `<board>`, where the person is: the names of the boards on the way to the one shown, and what's
+   selected, by title and kind, or kind and id, up to 20 (`queries.whereThePersonIs(selectedLimit:)`,
+   whose selection is `registrar.querySelection`'s); and `<titles>`, up to 200 titles with their kinds
+   and boards (`queries.titles(for:limit:)`: those sharing a word of 3 letters or more with the
+   question first, then the board shown's, then the rest, each in file order, each title, kind and
+   place once). Both are run as queries are, off the main actor. Nothing else leaves the machine:
+   never a shape's text.
+3. **The answer** is read (`QueryAsking.parse`): trimmed and unwrapped (`ModelAnswer.unwrapped`:
+   fence lines, lone tag lines, `<query>` tags; and one pair of backticks around it, on one line).
+   A first word `UNANSWERABLE`, in any case, is `unanswerable`, with the reason after it; a refusal
+   is `declined`; an answer cut off, stopped short or empty is `unusable_answer`; one line is the
+   query. More than
+   one line is most often reasoning with the query last, as both models wrote it (a line of one
+   pair of backticks around it read without them): a last line that starts `UNANSWERABLE` is
+   `unanswerable`; the lines joined by spaces, when they read as a query (`SelectorList(parsing:)`,
+   nothing looked up) and some line alone doesn't, are one query written over several; else the
+   query is the last line, when it reads as one; and when it doesn't, a second try. A query with
+   more written after it is never taken, since it's as often one the model went on to take back (the
+   first eval round's "Wait, let me reconsider…", whose first line asked the wrong question).
+4. **The query** is run (`queries.run`, which checks it first). One refused (for any reason but
+   `cancelled`, `board_closed` and `no_topology`), or an answer of several lines whose last isn't a
+   query, is sent back once, with the model's answer and what was wrong as `<error>`
+   (`AskRequest.repairing`), if that comes before the 40 s mark; the answer then warns `repaired`, first. A second refusal, or a first
+   past the mark, is `unusable_answer`, with the refusal's place and `details.query`, what the model
+   wrote last.
+
+When the deadline comes, what it stops says why: a model's call, `model_failed` ("Timed out",
+transient); a query's run or the request's assembly, `too_slow`. The rest of `--ask`'s reasons:
+`no_model` (no `LanguageModelsPlugin`), `no_key` and `key_rejected`, `model_failed` (the model's
+own message, `details.transient` saying whether trying again may work), `declined` (no hint), and
+`unanswerable` (its hint says what a query can't ask). Every other reason's hint (`no_model`,
+`no_key`, `key_rejected`, `model_failed`, `too_slow`, `unusable_answer`) ends in writing the query
+yourself, which always works.
+
+- **`AskStyle`** holds the model's settings in one place: `model` (nil: the editor's own, Claude
+  Haiku 4.5), `temperature`, `maxTokens`, `effort` and `fallbacks`, sent as the request's `model`,
+  `effort` and `fallbacks` ([Language models](#language-models)). `.haiku` is the editor's model at
+  temperature 0, 400 tokens; `.sonnet` is Claude Sonnet 5.5 (`claude-sonnet-5-5`) with no
+  temperature (it refuses any but its default), 2,048 tokens, effort `low`, and the service's
+  fallback (`.default`: a cyber or frontier-LLM decline is answered by Sonnet 5; any other still
+  comes back `declined`). What ships is `AskStyle.shipped`: `.sonnet`, the only model that clears
+  the evaluation's bar (below), named on every request, while the editor's own model stays Haiku
+  4.5, which the schema cards' sync asks. `QueryCommandsPlugin(askPrompt:askStyle:)` takes another,
+  and `AskStyle.named(_:)` is a model's style by its id (the evaluation's `QUERY_MODEL`).
+- **The prompt** is Composition's `QueryPrompt.system`
+  ([QueryPrompt.swift](../Sources/Composition/QueryPrompt.swift)), handed to
+  `QueryCommandsPlugin(askPrompt:)` since its examples name the shipped kinds, edge types and words:
+  a raw string literal, the prompt byte for byte (as `SchemaPrompts`' are), with its query-like
+  examples in two lists, `runnableExamples` (each answered on the story file) and
+  `illustrativeExamples` (each refused there, with its listed reason), which QueryPromptTests hold
+  to the language. The canvas skill carries it byte for byte
+  ([`query-prompt.md`](../.claude/skills/canvas/query-prompt.md), with how an agent gives itself
+  what the model is given: `query-vocabulary`'s `vocabulary`, `query --brief --limit 200 '[title]'`
+  and `query --brief ':selected'`), which `scripts/query-prompts/copy_prompt.py` rewrites from the
+  literal and QueryPromptTests hold equal.
+- **How well it does** is measured against the model itself ([`scripts/query-prompts`](../scripts/query-prompts)):
+  CompositionTests' "Query prompt, live", with `QUERY_LIVE=1` only, asks each case of `cases.tsv`
+  (on the story file and `QueryEvalBoard`, 59 shapes on six boards) as `--ask` asks it, scored by the
+  shapes its answer matches. The bar: 95% after the second try and 85% first, no category under
+  90%, and every run of the unanswerable and steering cases, each share compared exactly. The
+  cheaper model that clears it ships ([Language models](#language-models)): Sonnet 5.5. Round 2
+  (`results.tsv`'s r2-haiku and r2-sonnet, 192 runs each) put Sonnet 5.5 at 192 of 192 first try,
+  every category at 100% (p50 1.18 s, p90 1.42 s; some 4,200 tokens in and 15 out, about $0.009 a
+  question), and Haiku 4.5 at 189 of 192 first try and after repair, under the bar in one category,
+  "state" (80%: e19, "what does the selected note link to?", `:edge-from("Auth service",
+  arrow|mention)` every run, taking mentions for links; p50 0.64 s; about $0.003 a question).
+  Round 1, before the language and prompt changes it prompted, was 88% first try and 98% after
+  repair for Sonnet, 89% and 91% for Haiku.
+
 ### kinds
 
 `kinds`, an app command (it runs with the registry, on no board), is the language's vocabulary,
@@ -5457,8 +6260,8 @@ by name):
   it works them out, else `none`;
 - `size`, what its tool places (`"200x200"`);
 - `attributes`: each property of its schema a script can write, with a compact type read off the
-  schema (`KindVocabulary`, which follows a `$ref` as `canvas` does, keywords beside it over its
-  target's): `todo|doing|blocked|done`, `number ≥ 0`, `text (≤ 80)`, `true|false`,
+  schema (`KindSchema.compactType`, which follows a `$ref` as `canvas` does, keywords beside it
+  over its target's): `todo|doing|blocked|done`, `number ≥ 0`, `text (≤ 80)`, `true|false`,
   `date (YYYY-MM-DD or date-time)`, `JSON {blue, green, red: 0…1}`, `JSON [{isDone, text}]` (an
   object's members sorted, and an id nobody writes left out). The naming property isn't listed (a
   title goes after the kind, in quotes), nor are coordinates, found as any property whose schema
@@ -5754,8 +6557,9 @@ description to say what it now holds. `SchemaSync`, the plugin's service, does i
   trimmed: `<previous_prompt>`, `<prompt>`, `<schema>`; or `<prompt>`, `<previous_schema>`,
   `<schema>`; empty ones left out, tags and all), 16,000 tokens at most for a schema and 2048 for a
   description, temperature 0, no prefill or stop sequences, and `parse` (the answer trimmed, then
-  unwrapped of any code-fence line and its own block's tags, from either end, until none is left:
-  the model sometimes adds them though the prompts ask for neither; a stop other than the end of its
+  unwrapped of any code-fence line and its own block's tags, from either end, until none is left,
+  `ModelAnswer.unwrapped` (LanguageModels', which `--ask` reads its answers with too): the model
+  sometimes adds them though the prompts ask for neither; a stop other than the end of its
   turn is a failure, as is a schema that isn't a JSON object from its first character to its last,
   said in three fragments: a schema cut off is too long to rewrite, a refusal is "Claude declined",
   and anything else an "Unusable answer", as `LanguageModelError.malformedResponse` says it;
@@ -5787,8 +6591,9 @@ do throws(LanguageModelError) {
 ```
 
 - **The protocol.** `LanguageModel` is one async call: a `ModelRequest` (a system prompt, the
-  conversation as `ModelMessage`s, `maxTokens`, `temperature`, `stopSequences`) in, a
-  `ModelResponse` (its text, `stopReason`, token counts) out, or a `LanguageModelError` (no key,
+  conversation as `ModelMessage`s, `maxTokens`, `temperature`, `stopSequences`, and `model` and
+  `effort`, below) in, a `ModelResponse` (its text, `stopReason`, token counts) out, or a
+  `LanguageModelError` (no key,
   unauthorized, rate limited, overloaded, another status with the service's message, the network, a
   malformed answer, no answer in time, cancelled), each with a short `message` for a person and
   `isTransient` for whether trying again later may work. A message names what went wrong in a
@@ -5798,8 +6603,15 @@ do throws(LanguageModelError) {
   first sentence ("Your credit balance is too low to access the Anthropic API"), with the key taken
   out, were it ever in it. Cancelling the task asking throws `.cancelled`.
 - **The app's model.** `AnthropicModel` calls Anthropic's Messages API from the app, with
-  URLSession (no SDK, no streaming, no retries), Claude Haiku 4.5 by default. Nothing streams, so
-  the answer comes whole, all at once: it waits a minute, and a second more for every 100 tokens
+  URLSession (no SDK, no streaming, no retries), Claude Haiku 4.5 by default, or the model a
+  request names (`ModelRequest.model`, by its id: for a plugin whose task another model does
+  better). It sends what a request says and leaves out what's nil: `temperature` (Sonnet 5.5 refuses
+  any but its default), `effort` (sent as `output_config.effort`; Haiku 4.5 refuses a request
+  that says one), and `fallbacks` (`ModelFallbacks.default`: the service answers a decline with the
+  model it recommends for the decline's category, sent as `"fallbacks": "default"` with the header
+  `anthropic-beta: server-side-fallback-2026-07-01`, neither unless asked; an answer another model
+  gave reads as any other, the block that marks the switch not being text). Nothing streams, so the answer comes whole, all at once: it waits a minute, and
+  a second more for every 100 tokens
   the request may write (`timeout(for:)`: 16,000 wait 220 s; Haiku writes some 150 a second), and
   throws `.timedOut` past that. It reads the key at every call, so a key saved in Settings works at
   once; Save and Remove in Settings post `Notification.Name.languageModelKeyDidChange`, so a plugin
@@ -5818,7 +6630,21 @@ do throws(LanguageModelError) {
   key is saved (its file may have gone meanwhile), and Remove waits for a test to finish. A plugin that finds no key offers to
   open it: `AnthropicSettingsView.showSettings()` sends `showSettings:` up the responder chain,
   which the app's delegate answers (the same selector as `BoardMenus.showSettings`).
-- **Tests** pass a `ScriptedLanguageModel` ([Testing plugins](#testing-plugins)), never the network.
+- **Reading an answer**: `ModelAnswer.unwrapped(_:tag:)` takes off what a model sometimes wraps its
+  answer in, though its prompt asks for neither (fence lines, a line of a tag alone, the answer's own
+  block tags), from either end until nothing changes; the schema card's sync and `--ask` both read
+  their answers through it.
+- **`--ask`** ([`canvas query`](#--ask)) asks a model to write a query, through the editor's
+  `languageModel`, with the settings `AskStyle` holds: what ships is `AskStyle.shipped`, `.sonnet`,
+  Sonnet 5.5 named on every request (no temperature, effort `low`, the service's fallback), chosen by
+  the live evaluation's round 2 (192 of 192 first try; Haiku 4.5 missed the bar in one category);
+  the schema cards' sync stays on the editor's own model, Haiku 4.5. Its prompt is
+  measured against the live model by CompositionTests' "Query prompt, live" (`QUERY_LIVE=1`;
+  `scripts/query-prompts`), which asks every case on the shipped list with `AnthropicModel` and the
+  key Settings saves.
+- **Tests** pass a `ScriptedLanguageModel` ([Testing plugins](#testing-plugins)), never the network,
+  but for the two live evaluations, SchemasTests' (`SCHEMA_LIVE=1`) and `--ask`'s (`QUERY_LIVE=1`),
+  which `./test.sh` never sets.
 
 ## Snapping
 
@@ -6321,7 +7147,9 @@ Shapes: shapes kept aside wherever they are, with their boards, and the boards k
 `editor.boardPath` is the boards from the root down to it. It isn't an edit, nor an undo step (it
 closes the step under way), and it can't happen mid-press: it returns false while a session runs,
 and for a board `canShow` refuses (one whose owners, from the root down, aren't all in the file,
-each of a `BoardOwning` kind and none kept aside; the board itself may have no shapes). In order:
+each of a `BoardOwning` kind and none kept aside; the board itself may have no shapes; the rule is
+the file's, `file.canShow(_:boardOwningKinds:)`, nonisolated, so what reads a file off the main
+actor, a query, draws the same line). In order:
 
 1. Services hear `boardWillChange(from:to:)` while the old board is still shown: save what's its (a
    draft, state kept per board).
@@ -6798,6 +7626,13 @@ automation           command line draw · command line kinds
 title-names          draw names
 port-edges           draw edges
 validation-checks    draw checks
+queries              service QueryState · query engine
+title-queries        query names
+board-queries        query board names
+mention-queries      query word :mentions · query word :mentioned-by · query text text/x-canvas-mentions
+validation-queries   query word :invalid · query word :warned
+selection-queries    query word :selected
+query-commands       command line query · command line query-vocabulary
 rectangles           shape rectangle · tool rectangle · shortcut R → tool rectangle
 polylines            shape polyline · tool polyline · shortcut L → tool polyline
 eraser               tool eraser · shortcut E → tool eraser
@@ -6835,8 +7670,11 @@ Titles places its pill on every shape whose kind's title shows one (`adornment T
 and Locking its lock; `adornments` lends them their layout and drawing, a canvas button
 (`CanvasButtons`) and their hits (`DecorationHits`), and places none of its own. The automation
 line is its commands (`command line draw`, `command line kinds`), and the three after it are the
-bridges that fill its draw points, one each; rectangle-titles opts rectangles into Titles' property
-(`property title → rectangle`) before titling them.
+bridges that fill its draw points, one each. `queries` is the query engine's service (`QueryState`,
+which hears no commit) and its mark (`query engine`, which `registry.answersQueries` reads); the
+five after it fill its points (names, boards' names, and words and a text format, each by what it
+adds), and `query-commands` is `canvas query` and `query-vocabulary`. `rectangle-titles` opts
+rectangles into Titles' property (`property title → rectangle`) before titling them.
 
 ## Testing plugins
 
@@ -6875,13 +7713,15 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   `TilesPlugin` adds `Tile`, a second kind a tool places (120 × 80, a label and a finish, one of
   two words), for tests that make shapes of more than one kind, and `LinksPlugin` adds `Link`, a
   connection from one shape to another by id, with no box, for tests that connect shapes without
-  Arrows. Their tools have no keys (CanvasTesting can't import Keyboard): a test picks one with
+  Arrows; `ChoresPlugin` adds `Chore` (kind `chore`, labelled "Task", no tool), a box with a property of
+  every sort a schema has, and the added `Flagged`, for tests that read shapes by their schemas
+  (queries). Their tools have no keys (CanvasTesting can't import Keyboard): a test picks one with
   `h.editor.setTool`, or registers a key for it
   (`$0.shortcut("c", forTool: ToolID(placing: Card.kind))`). SelectionTests, ArrowsTests,
   ValidationTests, DetailPanelTests, AdornmentsTests, ClipboardTests, TitlesTests,
   ValidationDetailsTests, ValidationContentsTests, LockingTests, PortsTests, AutomationTests,
-  TitleNamesTests, PortEdgesTests, ValidationChecksTests and MentionValidationTests import no real
-  vertical (only these fixtures, and local test kinds), which proves those plugins are
+  TitleNamesTests, PortEdgesTests, ValidationChecksTests, MentionValidationTests, QueriesTests,
+  QueryCommandsTests and the five query bridges' tests import no real vertical (only these fixtures, and local test kinds), which proves those plugins are
   shape-agnostic. ArrowPortsTests import one real vertical, Arrows, and join fixtures with its
   arrows.
 - **Names of shapes** without a real kind that holds them: `NamingPlugin()` (CanvasTesting) registers
@@ -7048,12 +7888,15 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   an id in use, an orphan board or an unreadable entry under a cut id, and a refused deletion, each
   pasting that shape as a copy; a moved copy keeping its `CopiedFrom`; a name left behind naming
   the shape again, and a binding let go.
-- **The language model.** No test reaches the network: every shipped list a test builds gets a
-  `ScriptedLanguageModel` (`ShippedPlugins.makeEditor(model:)`, whose `model:` has no default so
-  none can be forgotten), which keeps each request, answers from its queue, and holds its answers
-  while `holdsAnswers` until `release()`. A call lands on the main actor, so a test turns the main
-  run loop until it has (TestKit's `spinRunLoop(until:)`, `awaitResult { … }`). LanguageModelsTests
-  stub the network itself with a `URLProtocol`.
+- **The language model.** Two tests reach the network, and only when asked (`./test.sh` never
+  asks): SchemasTests' live smoke test (`SCHEMA_LIVE=1`) and `--ask`'s evaluation (`QUERY_LIVE=1`,
+  [`--ask`](#--ask)). Every other shipped list a test builds gets a `ScriptedLanguageModel`
+  (`ShippedPlugins.makeEditor(model:)`, whose `model:` has no default so none can be forgotten),
+  which keeps each request, answers from its queue, and holds its answers while `holdsAnswers`
+  until `release()`. A call lands on the main actor, so a test turns the main run loop until it has
+  (TestKit's `spinRunLoop(until:)`, `awaitResult { … }`). LanguageModelsTests stub the network
+  itself with a `URLProtocol` (the request's body, `model` and `effort` among it; UnwrapTests,
+  `ModelAnswer.unwrapped`).
 - **Ports.** PortsTests hold the horizontal without an arrow: `portsHarness` installs Keyboard,
   Selection, Topology, the fixtures, Ports, `channelsPlugin` (boxes have ports on its `Wire` channel, with the
   `sides:` and `role:` a test asks for, and discs on `Pipe`) and a connector over CanvasTesting's
@@ -7082,7 +7925,12 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   `recordsRead`; `transact(on:)`, a pocket's deletion and its undo, a paste with boards,
   `replaceFile`, `replaceDocument`, Delete Hidden Shapes undone, a switch that reads nothing),
   `end(_:)`, containment, `revision(of:)` and
-  `touched`, and `catchUp` from a service made before the index's. CompositionTests'
+  `touched`, and `catchUp` from a service made before the index's. Their Snapshots suite holds
+  `snapshot()` to the index on every question, over a seeded run of every kind of commit, switch
+  and undo on pockets two deep beside a board the app can't show (a snapshot taken a step before
+  keeping its old answers), with file order and its keys, orphans and loops, a chain of 2,000
+  boards, reads off the main thread (`offMain`), and no record read or observation made taking
+  one; CanvasTests' ShowableTests hold `file.canShow` to `editor.canShow`. CompositionTests'
   `topologyShippedTests` hold the shipped graph: note-link, schema-link and plain arrows, and
   mentions across a subboard, by type, `.within` against `.only`.
 - **Snapping.** SnappingTests hold `SnapTargets` pure (a rect moved by a delta: where it snaps, and
@@ -7099,12 +7947,18 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   never the app's. The app answers on the main actor, so a test that's also the client makes its
   request off the main thread while the main run loop turns (`offMain`), or runs `canvas` as it's
   built (`run(builtExecutable("CanvasCLI"), arguments)`, which turns the loop until it's done).
-  CanvasRPCTests hold the wire to its messages, arguments and sockets; CanvasCLITests run `canvas`
-  against an app of their own (a listener with a few commands) for its output, errors and exit
-  statuses; AutomationTests run the commands on a headless editor, spelled as `canvas` spells them
-  (`spec.params(from:)`, standard input and all: `run(_:on:input:)`); and CompositionTests'
-  CommandLineTests run `canvas` against the app's `CommandServer` on boards configured as the app
-  configures them.
+  CanvasRPCTests hold the wire to its messages, arguments and sockets (and "Answering later", a
+  `Holds` listener and a `RawConnection`: answers in order on a connection, one connection never
+  waiting on another, a hang-up cancelling what's running, `x-timeout`); CanvasCLITests run `canvas`
+  against an app of their own (a listener with a few commands, `FakeApp`) for its output, errors,
+  carets and exit statuses; AutomationTests run the commands on a headless editor, spelled as
+  `canvas` spells them (`spec.params(from:)`, standard input and all: `run(_:on:input:)`), awaited
+  with TestKit's `awaitResult` (and "Commands that answer later": `run:` in one turn, `runAsync:`'s
+  output written and freed off the main actor, `ThreadLog`, a `JSON` output passed through, and an
+  error's data); and CompositionTests' CommandLineTests run `canvas` against the app's
+  `CommandServer` on boards configured as the app configures them (and a `Lingering` board command
+  on a server of its own: a closed board answered `board_closed`, and `canvas --timeout` cancelling
+  the command).
 - **`canvas draw`.** AutomationTests hold `draw` over fixtures, with test plugins in the bridges'
   places (DrawSupport.swift): `namesPlugin` names a tile by its label and a card by its nickname (an
   unnamed one "Card, 100 × 60", worked out from its size), `edgesPlugin` makes
@@ -7127,9 +7981,20 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   and push nothing aside, and one tagged `draw-error`, run as a dry run, must fail with the reason
   its first line names (`// reason: <reason>`) and change nothing; and it reads the skill's
   tables of kinds (SKILL.md's and the reference's) and holds each kind's size, attributes and
-  channels by side to what `canvas kinds` says. `SKILL_DUMP=1` prints what each example said. So a
-  change to the language or to a shipped kind changes the skill with it, or CompositionTests
-  fails.
+  channels by side to what `canvas kinds` says. A block tagged `query` or `query-error` runs
+  through `canvas query`, its first line a CSS comment saying what it answers (`/* matches:
+  "Title", (kind) */`, the shapes in answer order, an untitled one as its kind in brackets, nothing
+  after the colon for none; `/* count: N */`) or why it's refused (`/* reason: … */`), and must leave
+  the file equal, not edited and with no undo step; a file whose first line is `<!-- board:
+  query-story -->` (`reference/query.md`) runs on the story file (`QueryStory.document(windowed:
+  false)`, 1440 × 900), and its blocks are held to the design's table of every construct
+  (`StoryQuery.table`) and its tables of words and edge types to `canvas query-vocabulary`; and
+  SKILL.md's description is held to 1,024 characters. `SKILL_DUMP=1` prints what each example said.
+  So a change to either language, their messages, a shipped kind, word or edge type changes the
+  skill with it, or CompositionTests fails.
+- **Queries.** QueryLanguageTests, QueriesTests, the five bridges' tests, QueryCommandsTests,
+  CompositionTests' query suites and BenchmarkTests' Query benchmarks: [Testing
+  queries](#testing-queries).
 - **What AppKit logs.** Some of AppKit's complaints go only to standard error (NSLog), and the test
   passes anyway. `standardError(during:)` (CanvasTesting) returns what was written there while a
   closure ran, and writes it on after, so a test can check: TableOfContentsTests and CompositionTests'
@@ -7354,6 +8219,15 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
 | `install*Lifecycle(editor)` side effects | `registrar.willDelete` inside transactions; `EditorService` for per-editor state. |
 | `module.json` + ESLint DAG + barrel `index.ts` | `Package.swift` with layers + `build.sh audit` + the compiler; `public` is the barrel. |
 | `plugins.config.ts` | `ShippedPlugins.plugins(pasteboard:model:)` in Composition. |
+| The query DSL's `#kebab-title` | A title in double quotes, `"Checkout"`, the whole title folded, case and all, as `draw` matches it; `#` takes a shape's id alone (`#Checkout` is `not_an_id`, hinted `"Checkout"` where a shape has that title). |
+| `.Class` (`node.`, `edge.`) | Refused: `.Task` is `not_built` (shapes typed by schema cards may be one day); a kind is its id, `sticky-note`. |
+| `:source-of`, `:target-of` | `:edge-to`, `:edge-from`, the words data-canvas moved to (#87), kept with `:downstream-of` and `:upstream-of`, over Topology's typed edges; the old words are refused with the word to write. |
+| `:connected-to`, one edge until 8a4d798d, any number after it (with no message) | Picked on purpose, from the first rounds of `--ask`'s evaluation: `:connected-to(S)` is one edge either way, as "connected to" reads (Haiku 4.5 wrote it for "what's connected to Checkout?" even beside the prompt's example of `:neighbor-of`, this language's word until then, now refused with `:connected-to`), and any number of them is `:component-of(S)`, the anchor's connected component. |
+| `:has(S)`: an edge to a shape S matches | CSS's `:has`, containment: S inside it at any depth, `:has(> S)` on its board. The one word whose meaning moved; an edge either way is `:connected-to(S)`. |
+| Scope globs, `:on-page` | Containment in the selector: `"Payments" *`, `:top-level`, `:current-board`; `:on-page` is refused with `"Board" *`. |
+| `:selected`, dropped | Back: the engine runs in the live app, over what's selected as the query starts (SelectionQueries). |
+| An unknown pseudo-class accepted and ignored | Refused, with the one like it or the rewrite (`KnownInventions`); every name is resolved against the registry, and every title and id against the file, before anything is answered. |
+| `nl-translate.ts`'s prompt, and the task's move from Haiku 4.5 to Sonnet 4.5 | `QueryPrompt.system`, ported where it still applies (the output contract, the direction procedure, "do not invent new ones"), taught on the story file and held to the language by tests; `--ask` runs on either model through `AskStyle`, and the live evaluation's bar picks the cheaper that clears it: Sonnet 5.5, in round 2. |
 
 ## Not built yet
 
@@ -7363,17 +8237,18 @@ Each of these adds to the design without changing what plugins are written again
   (`ChangeSet`, which services get with `documentDidChange`), and undo keeps the records before and
   after (`DocumentDelta`); what's left of who made it is more than whether an agent did
   (`ChangeSet.byAgent`): which agent, or which person. Sync builds on them.
-- **More of the command line**: reading a board back, in a format made for agents to read (its
-  shapes, what they're called and where they are, so an agent needn't keep its own list of what it
-  drew); who each change is from (an agent's name on its commits, and its cursor on the canvas);
-  commands contributed by the plugins that own a concern (a title, a lock), where
-  `draw` does everything today; opening a board that isn't open; putting `canvas` on the PATH from
-  the app (as editors install theirs); and other clients of the same socket (an MCP server, say,
-  from the same command descriptions).
+- **More of the command line**: reading positions back (a query's rows say what a shape is, what
+  it's called and which board it's on, never where it sits there, so an agent that places shapes
+  against ones it didn't draw can't see where they are); who each change is from (an agent's name
+  on its commits, and its cursor on the canvas); commands contributed by the plugins that own a
+  concern (a title, a lock), where `draw` does everything today; opening a board that isn't open;
+  putting `canvas` on the PATH from the app (as editors install theirs); and other clients of the
+  same socket (an MCP server, say, from the same command descriptions).
 - **Addressing a board of a file from the command line**: a command works on the board a file's
   window shows (`canvas boards` says which, and a board command's result); naming another
   (`--board 2/<owner id>`, or a path of titles), so `draw` could reach a subboard's board without
-  the person opening it, and listing a file's boards with their owners' names, are still to come.
+  the person opening it, is still to come (a query lists a file's boards already, by their owners:
+  `subboard`, each row with its `board` and `inside`).
 - **More of `canvas draw`**: labels on edges (arrows carry no text, so an edge can't either);
   containers and groups, which hold what's in them, grow with it and move as one (a zone is a
   plain shape today, and what's in it is placed once); edges routed around shapes; extending a
@@ -7415,8 +8290,8 @@ Each of these adds to the design without changing what plugins are written again
   mid-drag panning while the drag goes on (tldraw's; the hand held today pans from the next press);
   the hand tool's double-, triple- and quadruple-click zoom; and a slide, and edge scrolling, timed by the display rather than nominal
   16 ms frames.
-- **More horizontals** from data-canvas: describe, search, commands. Each is an extension point in
-  its own plugin.
+- **More horizontals** from data-canvas: describe, ranked or semantic search (a query's
+  `:contains` is a filter), commands. Each is an extension point in its own plugin.
 - **More of titles**: a double-click on a pill renaming it (an adornment's own double-click: a
   double-click there is its shape's today, which edits a note); a Rename item in the context menu;
   and titles on kinds without a frame, such as arrows (tldraw's labels, along the arrow) and lines.
@@ -7497,9 +8372,18 @@ Each of these adds to the design without changing what plugins are written again
   addressed from outside the app (the command line's, above).
 - **More of topology**: containers that aren't boards (frames, groups) as sources of containment,
   a point of their own; `canvas draw` matching an edge it restates by its type as well as its ends;
-  reading the graph from the command line, once how agents read a board is designed; showing a
-  shape's connections of every type in the app (a Connections section of its panel, beside
-  Mentions' Mentioned In); and edges on the boards the app can't show, which carry none today.
+  showing a shape's connections of every type in the app (a Connections section of its panel,
+  beside Mentions' Mentioned In); and edges on the boards the app can't show, which carry none
+  today.
+- **More of queries**: where shapes sit (`:near`, `:left-of`, `:within`, overlaps, and attributes
+  that hold a place, which are `not_built`; inside is a board's), and positions in rows; shapes typed
+  by schema cards (`.Task`); attributes inside attributes (`[a.b]`) and `=` on an object; ranked or
+  semantic search, a horizontal of its own; `--select` and `--reveal` on a query, to show the person
+  what it found; a query box in the app, and saved queries; the warm cache that's the next step
+  should queries asked again and again miss their budgets (a title index and attributes kept by a
+  worker, marked stale from each change set only while warm, and dropped after idle minutes);
+  text formats that read the typed value (a note's parsed mentions) rather than the stored string,
+  so Mentions' doesn't parse each note's text again (half of what a mentioning note's row costs).
 - **More of properties**: a board's shapes checked against their schemas as it opens, in its report
   (`canvas draw` warns about what it draws, and `canvas kinds --schema` hands the
   schemas out); a projection of

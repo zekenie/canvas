@@ -1,11 +1,13 @@
 import Canvas
 
-/// An edge type as declared: its id, and its parent, which may follow from the registry as built (a
-/// channel's type is under whatever family the connector draws: Ports). Only the sugar makes one.
+/// An edge type as declared: its id, its parent, which may follow from the registry as built (a
+/// channel's type is under whatever family the connector draws: Ports), and its summary. Only the
+/// sugar makes one.
 @MainActor
 public struct EdgeTypeDeclaration {
     public let id: EdgeTypeID
     let parent: @MainActor (Registry) -> EdgeTypeID?
+    let summary: String?
 }
 
 /// The edge types plugins declare. Each id once: two declarations of one is
@@ -50,24 +52,25 @@ struct EdgeTypeKey: Hashable, CustomStringConvertible {
 }
 
 extension PluginRegistrar {
-    /// Declares an edge type this plugin owns, under its `parent`, if it has one.
+    /// Declares an edge type this plugin owns, under its `parent`, if it has one, with its summary.
     public mutating func edgeType<T: EdgeType>(_ type: T.Type) {
         let parent = T.parent
-        contribute(EdgeTypeDeclaration(id: T.id, parent: { _ in parent }), to: EdgeTypes.self)
+        contribute(EdgeTypeDeclaration(id: T.id, parent: { _ in parent }, summary: T.summary), to: EdgeTypes.self)
     }
 
     /// Declares an edge type whose parent follows from the registry as built: a channel's, whose
     /// family is the one the connector draws (nil, a root, without one). Asked once the registry is
-    /// built (its points' keys unique, their owners installed), and never again changes.
-    public mutating func edgeType(_ id: EdgeTypeID, parent: @escaping @MainActor (Registry) -> EdgeTypeID?) {
-        contribute(EdgeTypeDeclaration(id: id, parent: parent), to: EdgeTypes.self)
+    /// built (its points' keys unique, their owners installed), and never again changes. `summary`
+    /// is `EdgeType.summary`'s line.
+    public mutating func edgeType(_ id: EdgeTypeID, parent: @escaping @MainActor (Registry) -> EdgeTypeID?, summary: String? = nil) {
+        contribute(EdgeTypeDeclaration(id: id, parent: parent, summary: summary), to: EdgeTypes.self)
     }
 }
 
 // MARK: The tree
 
-/// The edge types installed plugins declare, as a tree: each type's parent, children and the plugin
-/// that declares it. Worked out from a registry once (`registry.edgeTypes`, or an editor's
+/// The edge types installed plugins declare, as a tree: each type's parent, children, summary and
+/// the plugin that declares it. Worked out from a registry once (`registry.edgeTypes`, or an editor's
 /// `topology.types`, which keeps it), since the registry never changes. A type no plugin declares is
 /// a root with nothing under it.
 public struct EdgeTypeTree: Sendable {
@@ -76,16 +79,19 @@ public struct EdgeTypeTree: Sendable {
     private let parents: [EdgeTypeID: EdgeTypeID]
     private let childrenByType: [EdgeTypeID: [EdgeTypeID]]
     private let plugins: [EdgeTypeID: PluginID]
+    private let summaries: [EdgeTypeID: String]
     private let order: [EdgeTypeID: Int]
 
     @MainActor
     public init(_ registry: Registry) {
         let declarations = registry.contributions(to: EdgeTypes.self)
         var declared: [EdgeTypeID] = [], parents: [EdgeTypeID: EdgeTypeID] = [:], plugins: [EdgeTypeID: PluginID] = [:]
+        var summaries: [EdgeTypeID: String] = [:]
         for declaration in declarations where plugins[declaration.value.id] == nil {
             declared.append(declaration.value.id)
             plugins[declaration.value.id] = declaration.pluginID
             if let parent = declaration.value.parent(registry) { parents[declaration.value.id] = parent }
+            if let summary = declaration.value.summary { summaries[declaration.value.id] = summary }
         }
         var children: [EdgeTypeID: [EdgeTypeID]] = [:]
         for type in declared {
@@ -94,6 +100,7 @@ public struct EdgeTypeTree: Sendable {
         self.declared = declared
         self.parents = parents
         self.plugins = plugins
+        self.summaries = summaries
         childrenByType = children
         order = Dictionary(uniqueKeysWithValues: declared.enumerated().map { ($1, $0) })
     }
@@ -106,6 +113,10 @@ public struct EdgeTypeTree: Sendable {
 
     /// The type `type` is a kind of; nil for a root, and for a type nobody declares.
     public func parent(of type: EdgeTypeID) -> EdgeTypeID? { parents[type] }
+
+    /// What an edge of `type` is, in one line, as its declaration says (`EdgeType.summary`); nil for
+    /// a type declared without one, and for a type nobody declares.
+    public func summary(of type: EdgeTypeID) -> String? { summaries[type] }
 
     /// The types right under `type`, in plugin order.
     public func children(of type: EdgeTypeID) -> [EdgeTypeID] { childrenByType[type] ?? [] }

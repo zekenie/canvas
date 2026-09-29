@@ -33,15 +33,21 @@ public struct EdgeTypeID: RawRepresentable, Hashable, Codable, Sendable, Express
 ///     public enum MentionEdge {}
 ///     extension MentionEdge: EdgeType {
 ///         public static let id: EdgeTypeID = "mention"
+///         public static let summary: String? = "a mention in a shape's text, from that shape to the shape it names"
 ///     }
 public protocol EdgeType {
     static var id: EdgeTypeID { get }
     /// The type it's a kind of; nil (the default) for a root.
     static var parent: EdgeTypeID? { get }
+    /// What an edge of the type is, in one line for people and models (what `canvas
+    /// query-vocabulary` lists): what it joins, and which way it runs, lowercase, no period. Nil (the
+    /// default): nothing said.
+    static var summary: String? { get }
 }
 
 extension EdgeType {
     public static var parent: EdgeTypeID? { nil }
+    public static var summary: String? { nil }
 }
 
 // MARK: Edges
@@ -109,10 +115,18 @@ public struct EdgeTypeFilter: Hashable, Sendable {
     public static let all = EdgeTypeFilter(match: .all)
 
     /// These types and every type under them.
-    public static func within(_ types: EdgeTypeID...) -> EdgeTypeFilter { EdgeTypeFilter(match: .within(Set(types))) }
+    public static func within(_ types: EdgeTypeID...) -> EdgeTypeFilter { within(types) }
+
+    /// These types and every type under them, from a list worked out elsewhere (a query's): none,
+    /// for an empty one.
+    public static func within(_ types: some Sequence<EdgeTypeID>) -> EdgeTypeFilter { EdgeTypeFilter(match: .within(Set(types))) }
 
     /// Exactly these types.
-    public static func only(_ types: EdgeTypeID...) -> EdgeTypeFilter { EdgeTypeFilter(match: .only(Set(types))) }
+    public static func only(_ types: EdgeTypeID...) -> EdgeTypeFilter { only(types) }
+
+    /// Exactly these types, from a list worked out elsewhere (a query's, each type and those under
+    /// it already taken in): none, for an empty one.
+    public static func only(_ types: some Sequence<EdgeTypeID>) -> EdgeTypeFilter { EdgeTypeFilter(match: .only(Set(types))) }
 
     /// Whether an edge of `type` passes, in the tree `types`. O(the type's depth).
     public func admits(_ type: EdgeTypeID, in types: EdgeTypeTree) -> Bool {

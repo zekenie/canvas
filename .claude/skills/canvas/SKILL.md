@@ -1,13 +1,13 @@
 ---
 name: canvas
-description: Put, draw or lay out things on a live board in Infinite Canvas (sticky notes, subboards, schema cards, rectangles and the arrows between them, for plans, flows, architectures, roadmaps, retros) with `canvas draw`, a text language where each line says what a shape is, what it's called, and where it sits against shapes already named. Use when asked to "draw this on the board", "put these on the canvas", "make a diagram in the app", "lay out the tasks", "add notes to the board", "connect these on the board", or to turn a plan, list or architecture into shapes in the running app. NOT for changing the app's Swift code, plugins, tests or docs; NOT for reading or writing .canvasboard files (only `canvas` touches a board); NOT for diagrams meant for a file (SVG, Mermaid, images).
+description: Put, draw or lay out things on a live board in Infinite Canvas (sticky notes, subboards, schema cards, rectangles and the arrows between them, for plans, flows, architectures, roadmaps, retros) with `canvas draw`, a text language where each line says what a shape is, what it's called, and where it sits against shapes already named; and find out what's on a board with `canvas query`, a CSS-like query, or `--ask` in English. Use when asked to "draw this on the board", "put these on the canvas", "make a diagram in the app", "connect these on the board", "what's on the board", "which notes mention X", "is X inside Y", "what links to X", "how many…", or to turn a plan, list or architecture into shapes in the running app. NOT for changing the app's Swift code, plugins, tests or docs; NOT for reading or writing .canvasboard files (only `canvas` touches a board); NOT for diagrams meant for a file (SVG, Mermaid, images).
 ---
 
-# Drawing on a board with canvas
+# Drawing on and reading a board with canvas
 
 `canvas draw` puts shapes on a board that's open in the Infinite Canvas app, while the user watches. You write one statement a line: what the shape is, what it's called, and where it sits against things already named (`right of "API"`, `below board`). The app works out only the distances. A script is applied in one step, or not at all.
 
-You can't see the board, and nothing reads it back to you yet. That's why the language works this way: the arrangement is in the sentences you wrote, so re-reading your script tells you where everything is. The result says what actually happened to each line, and what had to be pushed aside to keep clear. Anything ambiguous is refused rather than guessed, so a script that runs is one whose arrangement you fully stated.
+You can't see the board, and `canvas query` reads it back: which shapes match, with their titles and ids. Where they are it doesn't read, and that's why the language works this way: the arrangement is in the sentences you wrote, so re-reading your script tells you where everything is. The result says what actually happened to each line, and what had to be pushed aside to keep clear. Anything ambiguous is refused rather than guessed, so a script that runs is one whose arrangement you fully stated.
 
 ## Check the app
 
@@ -18,13 +18,13 @@ build/canvas status
 build/canvas boards
 ```
 
-Exit 3 means the app isn't reachable: for `not_running`, start it with `./build.sh && open build/InfiniteCanvas.app`; `unreachable` usually means a sandbox is blocking the socket, so ask the user. If `canvas` says the app speaks another protocol (`protocol_mismatch`), the app running and this checkout were built apart. A second copy of the app doesn't take over from the one running, so don't just open another: ask the user to quit the app, then open this checkout's (`./build.sh && open build/InfiniteCanvas.app`). `boards` lists the open boards. Pick one and pass `--board <id>` on every `draw` after that, because without it a draw goes to whichever board is in front, which changes whenever the user clicks another window. `kinds`, `status` and `boards` are about the app, and take no `--board`. An id lasts while its board is open.
+Exit 3 means the app isn't reachable: for `not_running`, start it with `./build.sh && open build/InfiniteCanvas.app`; `unreachable` usually means a sandbox is blocking the socket, so ask the user. If `canvas` says the app speaks another protocol (`protocol_mismatch`), the app running and this checkout were built apart. A second copy of the app doesn't take over from the one running, so don't just open another: ask the user to quit the app, then open this checkout's (`./build.sh && open build/InfiniteCanvas.app`). `boards` lists the open boards. Pick one and pass `--board <id>` on every `draw` and `query` after that, because without it a command goes to whichever board is in front, which changes whenever the user clicks another window. `kinds`, `query-vocabulary`, `status` and `boards` are about the app, and take no `--board`. An id lasts while its board is open.
 
-`--board` picks a file, not a board inside it. A file can hold boards inside shapes (a subboard's), and a draw lands on the one that file's window shows: `boards` gives it as `shows` (`"root"`, or the id of the shape that owns it) and `showsPath` (the boards from the root down to it). Every result names it too, in `board`. If `shows` isn't what it was when you started, the user has gone into or out of a subboard: stop, and tell them where your last drawing went. Nothing draws into a subboard from outside it, so to draw on one, ask the user to open it, check `shows`, then draw.
+`--board` picks a file, not a board inside it. A file can hold boards inside shapes (a subboard's), and a draw lands on the one that file's window shows (a query reads them all): `boards` gives it as `shows` (`"root"`, or the id of the shape that owns it) and `showsPath` (the boards from the root down to it). Every result names it too, in `board`. If `shows` isn't what it was when you started, the user has gone into or out of a subboard: stop, and tell them where your last drawing went. Nothing draws into a subboard from outside it, so to draw on one, ask the user to open it, check `shows`, then draw.
 
 ## The loop
 
-`build/canvas kinds` gives you the vocabulary: every kind you can draw, how it can be named, its size, the attributes it takes with their values, and the channels its edges use. Kinds come from plugins, so this list is the truth; the tables below are what shipped when this was written. Then write the script and dry-run it, which does everything but commit:
+`build/canvas kinds` gives you the vocabulary: every kind you can draw, how it can be named, its size, the attributes it takes with their values, and the channels its edges use. Kinds come from plugins, so this list is the truth; the tables below are what shipped when this was written. On a board you didn't just draw, look at what's there first ([Reading the board](#reading-the-board)): the titles on the board the window shows (`:current-board[title]`) are the names your script can use, or would change by accident. Then write the script and dry-run it, which does everything but commit:
 
 ```bash
 build/canvas draw --board 2 --dry-run - <<'EOF'
@@ -74,16 +74,16 @@ The second line restates DB. It has the same title, so it's the same shape: its 
 
 ## Titles are names
 
-A title is how you, the user and later scripts refer to a shape. There are no hidden ids.
+A title is how you, the user and later scripts refer to a shape: `draw` never takes an id. A query's rows carry each shape's id, for naming it in a later query (`#<id>`), and for nothing else.
 
 - **Quote every title** in straight double quotes: `"API"`. A bare word is read as a placement word or a value, and curly or single quotes are refused.
 - **A title on the board means that shape.** A statement whose title is already on the board updates that shape; any other title creates a new one. The match is exact and case matters, so a typo like `"deploy"` for `"Deploy"` draws a second shape. The result warns about near misses, so read the warnings.
-- **Title everything you may touch again**, and keep your own list of the titles you drew, since nothing reads the board back yet. An untitled shape can't be moved, connected, changed or deleted by a later script.
+- **Title everything you may touch again.** An untitled shape can't be moved, connected, changed or deleted by a later script. The query `:current-board[title]` lists the titled shapes on the board a script draws on ([Reading the board](#reading-the-board)).
 - **A note's title is the pill above it; what it says is `text:`.** Give notes both. A subboard's title is on its card. Rectangles show a pill.
 - **Keep titles short and specific** ("Auth service", not "Service"). Longer than 80 characters is kept but warned about. A generic title like "Notes" may already be on the board, and your statement would then change the user's shape, so dry-run first on any board you didn't just draw.
-- **Shapes the user made are usually untitled.** A note's words are its text, not a title. Place against `board` or `view` instead, or ask the user to title the shapes you need.
+- **Shapes the user made are usually untitled.** A note's words are its text, not a title. A query finds them by what they say (`sticky-note:not([title])[text*="launch"]`), but a script can't name them: place against `board` or `view` instead, or ask the user to title the shapes you need.
 - **A schema card is called by its schema's `"title"`**, and has no title of its own: `schema-card "Order"` is refused (`untitlable`). Draw it untitled, with its title inside `schema:`, and call it by that title from the next script on. Restated with a schema whose title is another, it's renamed (`did: "renamed"`).
-- **A note's `text:` is kept as written.** In it, `@[label](shape:…)` is a mention of a shape by its id, which only the app writes, and no id ever reaches you, so write plain words; an `@` or `@[…]` on its own is just text.
+- **A note's `text:` is kept as written.** In it, `@[label](shape:…)` is a mention of a shape by its id, which only the app writes, so write plain words; an `@` or `@[…]` on its own is just text. That stored form never reaches you: a query shows a note's mentions as they read, `@` and the name of what each mentions.
 
 ## Writing
 
@@ -236,6 +236,76 @@ edge "Auth service" -> "Welcome email"
 edge "Rate-limit sign-ups" -> "Verify emails"
 ```
 
+## Reading the board
+
+You can't see the board, so this is how you look at it: before drawing on a board you didn't just draw, to learn the titles already there, and after, to check what's connected to what. `canvas query` takes a query, a selector as CSS writes one, and lists every shape of the file that matches, on every board, in file order. It changes nothing. Pass the query through a heredoc with a quoted delimiter, as you pass a script: queries are full of `"`, `*`, `>`, `[` and `#`, which the shell mangles.
+
+```bash
+build/canvas query --board 2 - <<'EOF'
+sticky-note:edge-to("Auth service")
+EOF
+```
+
+```json
+{"board": {"id": 2, "name": "Sign-up", "shows": "root", "showsPath": ["root"]}, "query": "sticky-note:edge-to(\"Auth service\")", "count": 1,
+ "rows": [{"id": "7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11", "kind": "sticky-note", "title": "Sign-up form", "board": "root",
+           "properties": {"text": "Email and password"}}]}
+```
+
+- **A row is a shape**: its `id`, `kind`, `title` (none when it's untitled), `board` (`"root"`, or the id of the subboard whose board it's on), `inside` (the names of the subboards it's inside, outermost first) and its attributes, `properties`, text as a person reads it. An arrow's row says where it runs, in `connection`.
+- **An id names that shape in a later query**, `#7C1E2A04-…`, since titles can repeat. `draw` still names shapes only by title.
+- **A yes-or-no question is a query that matches the shape it asks about, or nothing**: `count` is 1 or 0, and `canvas` exits 0 either way. A title no shape has is refused (`unknown_title`, with the one like it), so a no always means no.
+- **`--count`** returns only how many; **`--brief`** leaves each row's attributes out; **`--fields text`** lists only that attribute, whole (long text is otherwise cut at 500 characters); **`--limit 500`** lists up to 500 rows (100 unless it says).
+- **A space means inside**: `"Payments" sticky-note` is the notes inside the subboard Payments, on its board or a board inside it. So never put a space before a test: `sticky-note:mentions("API")`, not `sticky-note :mentions("API")`, which is refused (`stray_space`). Inside is always a subboard's board, never `draw`'s `inside`, a shape drawn over another.
+- **When the person asked in English**, `--ask "their question"` has the app write the query (with the Claude key they saved in Settings), runs it, and says what it wrote, in `query`: check it asks what they meant. Otherwise write the query yourself; [query-prompt.md](query-prompt.md) is what the app tells Claude to write one.
+
+A kind is every shape of that kind, a title in double quotes is the shape called that (right after a kind, with no space, the shapes of that kind called that: `sticky-note"Queue"`), and tests follow with no space: `[text*="email" i]` for text (`i`: in any case), `[title=""]` for no title, `:edge-to(…)` and `:edge-from(…)` for what an edge runs to and from, `:connected-to(…)` for either, `:downstream-of(…)` for what's reached by following edges, and more ([reference/query.md](reference/query.md)). On what this page drew, the notes whose title or text has "email" in it:
+
+```query
+/* matches: "Fix signup", "Sign-up form", "Welcome email", "Verify emails", "Write the email copy" */
+sticky-note:contains("email")
+```
+
+What Web leads to, however far:
+
+```query
+/* matches: "API", "DB", "Cache" */
+:downstream-of("Web")
+```
+
+The notes with an edge to Auth service, and what Auth service has an edge to:
+
+```query
+/* matches: "Sign-up form" */
+sticky-note:edge-to("Auth service")
+```
+
+```query
+/* matches: "Welcome email" */
+:edge-from("Auth service")
+```
+
+And what's connected to it, either way:
+
+```query
+/* matches: "Sign-up form", "Welcome email" */
+:connected-to("Auth service")
+```
+
+Does Queue have an edge to Worker? It matches, so yes:
+
+```query
+/* count: 1 */
+"Queue":edge-to("Worker")
+```
+
+Backend is a rectangle, and holds no board: a note drawn `inside "Backend"` sits over it, and isn't inside it as a query means inside.
+
+```query-error
+/* reason: cannot_contain */
+sticky-note:inside("Backend")
+```
+
 ## What will bite you
 
 **Habits from other languages**: bare or curly-quoted titles, `node`, `note` or `box` for a kind (the hint lists the kinds, and names the one like it), `link` for an edge, `-->` or a bare `"A" -> "B"`, `#` for a comment (comments are `//`), text on an edge, coordinates (`x:`, `at:`). Each is refused, most with a hint naming what to write instead, and every unreadable line comes back in one pass:
@@ -261,7 +331,9 @@ sticky-note "Ship 1.0" owner: "Ann"
 
 ## Honest limits
 
-- **Writing only.** No command reads a board back yet, so you know only what your scripts drew and what their results said. Say so when you report back.
+- **Queries don't see where shapes are.** A query knows what's inside what (a subboard's board) and what's connected to what, never positions, sizes or overlaps: what's left of what, or drawn within a rectangle, it can't ask.
+- **Typing may still change.** A note the user is typing into reads as typed so far, and the query's result warns that it may still change (`editing`).
+- **Some shapes aren't in any answer**: shapes the app keeps aside (a kind this app doesn't have), and those on boards it can't show.
 - **Placement happens once.** The board doesn't remember `right of "API"`. When the user moves API, nothing follows it.
 - **The result confirms intent, not the picture.** It tells you where each shape landed and what was pushed. It doesn't tell you whether a note's text overflowed (a note grows to fit its text unless you gave it a `size:`, which cuts long text off, so leave `size:` off notes with long text) or whether a line crosses other shapes.
 - **Edges are plain.** They carry no text, they're arcs, and they don't route around shapes. Only closed shapes are kept clear, so a shape can land across an arrow or a drawn line.
@@ -270,6 +342,8 @@ sticky-note "Ship 1.0" owner: "Ann"
 
 ## Reference
 
-[reference/language.md](reference/language.md) is the full language: every construct, the gap and part tables, how lists, pushes and the unplaced drawing are worked out, edges and channels, every error reason with its fix (the command line's own and the boards' too), what the language refuses and why, and what isn't built yet. Read it when you need a construct this page doesn't cover, or when an error points at behavior you didn't expect. `build/canvas help draw` is the command's own help.
+[reference/language.md](reference/language.md) is the full `draw` language: every construct, the gap and part tables, how lists, pushes and the unplaced drawing are worked out, edges and channels, every error reason with its fix (the command line's own and the boards' too), what the language refuses and why, and what isn't built yet. Read it when you need a construct this page doesn't cover, or when an error points at behavior you didn't expect. `build/canvas help draw` is the command's own help.
+
+[reference/query.md](reference/query.md) is the whole query language, on a story file: naming shapes, attributes, inside, edges and their direction, the plugins' words, yes-or-no questions, `--ask`, and every refusal with its fix. [query-prompt.md](query-prompt.md) is what the app tells Claude for `--ask`, word for word, with how to give yourself what it's given. `build/canvas help query` is the command's own help, and `build/canvas query-vocabulary` what this app's queries can name: its kinds and their attributes, its edge types and its words.
 
 The language and its solver are modified from [reladraw](https://github.com/reladraw/reladraw) (Apache-2.0; see THIRD_PARTY_NOTICES.md). This language isn't called that.
