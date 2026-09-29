@@ -36,13 +36,11 @@ func lines(_ text: String) -> [String] { SchemaDocument(text).fields.map(line) }
                                         "/^x-/: string"])
         expectEqual(lines(fixture(10)), [])
     },
-    test("fixtures' names, rules and states") {
+    test("fixtures' names and states") {
         let documents = fixtures.map { SchemaDocument($0.json) }
         expectEqual(documents.map(\.title), [nil, "Contact", "Pet", "Book", "Customer", "Order", "Organization",
                                              "Quarterly Enterprise Subscription Renewal Request Form", "Payment", "Invoice"])
         expectEqual(documents.map(\.isObject), Array(repeating: true, count: 9) + [false])
-        expectEqual(documents[8].rules, ["if/then"])
-        expectEqual(documents.filter { !$0.rules.isEmpty }.count, 1)
         let error = try require(documents[9].error)
         expectEqual([error.line, error.column], [6, 35])
     },
@@ -74,7 +72,7 @@ func lines(_ text: String) -> [String] { SchemaDocument(text).fields.map(line) }
             .constant("DE"),
             .choice(.oneOf, []),
         ])
-        expectEqual(fields.map(\.type.label), ["enum", "anyOf", "allOf", "= DE", "oneOf"], "JSON Schema's words, as the rules line says them")
+        expectEqual(fields.map(\.type.label), ["enum", "anyOf", "allOf", "= DE", "oneOf"], "JSON Schema's words, as a completion's detail says them")
     },
     test("types JSON Schema can say: lists, booleans, formats without a type, arrays of anything, tuples, and nothing") {
         let text = #"""
@@ -106,8 +104,6 @@ func lines(_ text: String) -> [String] { SchemaDocument(text).fields.map(line) }
         ])
         let types = SchemaDocument(text).fields.map(\.type)
         expectEqual(types.suffix(2), [.unknown("ninteger"), .unknown("nul")], "a type that isn't one, as written: not any")
-        expectEqual(types.map(\.baseLabel).compactMap { $0 }, ["string", "array", "array", "array", "array", "array"],
-                    "in a word: a format's string (mail's; count's int64 is an integer's), an array's array")
     },
     test("$ref: into $defs, definitions or any pointer in the document; outside it, a name without fields; circles end") {
         let text = #"""
@@ -161,11 +157,6 @@ func lines(_ text: String) -> [String] { SchemaDocument(text).fields.map(line) }
         }
         expectEqual(SchemaDocument("[1]").isObject, false)
         expectEqual(SchemaDocument("{}").isObject, true)
-    },
-    test("rules at the root: if with then and else, and each combinator") {
-        expectEqual(SchemaDocument(#"{"if": {}, "then": {}, "else": {}, "not": {}, "allOf": [], "dependentRequired": {}}"#).rules,
-                    ["if/then/else", "allOf", "not", "dependentRequired"])
-        expectEqual(SchemaDocument(#"{"if": {}, "anyOf": [], "oneOf": [], "dependentSchemas": {}}"#).rules, ["if", "anyOf", "oneOf", "dependentSchemas"])
     },
     test("a blank title is no title; a half-typed schema keeps a title read before the error") {
         expectEqual(SchemaDocument(#"{"title": "  "}"#).title, nil)

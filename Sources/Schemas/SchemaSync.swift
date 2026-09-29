@@ -3,15 +3,13 @@ import Foundation
 import LanguageModels
 import Observation
 
-/// One of a schema card's two sides: its prompt (what it holds, in words) or its schema.
+/// One of a schema card's two sides: its prompt (what it holds, in words: the card's description,
+/// typed on it) or its schema (its panel's JSON).
 public enum SchemaSide: Sendable {
     case prompt, schema
-
-    /// The side a sync writing this one reads from: the one the person edited.
-    public var other: SchemaSide { self == .prompt ? .schema : .prompt }
 }
 
-/// Where a card's sync is, as its panel shows it.
+/// Where a card's sync is, as its panel shows it, under its JSON.
 public enum SchemaSyncStatus: Equatable, Sendable {
     /// In step, or waiting for the person to finish.
     case idle
@@ -19,16 +17,6 @@ public enum SchemaSyncStatus: Equatable, Sendable {
     case updating(SchemaSide)
     /// The last sync didn't write, and why.
     case failed(SchemaSyncFailure)
-
-    /// The side the person edited, which the status is about (the panel shows it there, so it's
-    /// in view whatever else is collapsed); nil while idle.
-    public var source: SchemaSide? {
-        switch self {
-        case .idle: nil
-        case let .updating(side): side.other
-        case let .failed(failure): failure.writing.other
-        }
-    }
 }
 
 /// Why a card's last sync didn't write, in a line for a person, and what can be done about it.
@@ -47,7 +35,7 @@ public struct SchemaSyncFailure: Equatable, Sendable {
         case editByHand
     }
 
-    /// The side the sync was to write; the line shows under the other, the side the person edited.
+    /// The side the sync was to write, from the other, the side the person edited.
     public var writing: SchemaSide
     public var message: String
     public var remedy: Remedy
@@ -67,8 +55,10 @@ public struct SchemaSyncFailure: Equatable, Sendable {
 ///   revert, a reload after the file changed on disk: `ChangeSet.replacedDocument`), nor a change
 ///   to anything but the two sides (a move, a lock), nor an agent's write (`ChangeSet.byAgent`: the
 ///   command line's `draw`), whose sides are taken as in step, as a card seen for the first time
-///   is (a call out, or an edit waiting, stops). An edit syncs when it's committed (`commit`:
-///   Return in the prompt, ⌘↩ in the schema, the keyboard leaving either), else `idleDelay` after
+///   is (a call out, or an edit waiting, stops). An edit syncs when it's committed (`commit`: the
+///   card's description done, editing it ended however it ended, Return, Escape and the keyboard
+///   going to the panel among them, `editingDidEnd`, which commits only an edit still waiting; ⌘↩
+///   in the panel's JSON, or the keyboard leaving it), else `idleDelay` after
 ///   the last one (`editor.scheduler`), but not while the person is choosing from the list at the
 ///   caret in its JSON (`completing`): a pick that opens it again leaves a whole schema waiting
 ///   for its value (`"type": ""`), so the idle wait starts once the list closes.
@@ -86,14 +76,15 @@ public struct SchemaSyncFailure: Equatable, Sendable {
 ///   prompt is taken out of its schema too. All but a prompt over a schema with no fields, which was
 ///   never answered (it failed, or the board closed first): its prompt is ahead, and the next
 ///   commit asks for the schema.
-/// - While a call is out, the side it writes is read-only in the panel; if it changes anyway, the
-///   answer is dropped. Edits to the other side wait, and sync once it lands. A card deleted, or
-///   read again from disk, meanwhile drops it.
+/// - While a call is out, the side it writes is read-only where it's edited (the panel's JSON, the
+///   card's description while it's typed into); if it changes anyway, the answer is dropped. Edits
+///   to the other side wait, and sync once it lands. A card deleted meanwhile drops it, and so does
+///   every card when a file is put in place (read again from disk), those it left as they were too.
 /// - A failure leaves both sides as they are and says why; Retry (or the next commit) tries again,
 ///   and a key saved in Settings (`Notification.Name.languageModelKeyDidChange`) does for a card
 ///   that failed for want of one. A cancelled call says nothing. `NO_CHANGE` writes nothing. A
-///   schema is written as the model wrote it (never laid out again: its order is the person's),
-///   with `setSchema`, so the card's height follows.
+///   schema is written as the model wrote it (never laid out again: its order is the person's); a
+///   description with `setPrompt`, so the card's height follows.
 /// - It keeps every card of the file, on whatever board (ids are unique across it), so a card's
 ///   sync goes on while another board is shown: a commit made as its board was left, its timer and
 ///   its call. An answer for a card on a board that isn't shown is written there, without showing
@@ -191,8 +182,9 @@ public final class SchemaSync {
         return statuses[id] ?? .idle
     }
 
-    /// The person is done with an edit (Return, ⌘↩, the keyboard leaving the side): sync now,
-    /// rather than after `idleDelay`. Nothing happens if neither side changed.
+    /// The person is done with an edit (the card's description no longer edited; ⌘↩ or the
+    /// keyboard leaving in its panel's JSON): sync now, rather than after `idleDelay`. Nothing
+    /// happens if neither side changed.
     public func commit(_ id: ShapeID) { sync(id) }
 
     /// Tries the failed sync again.
@@ -337,9 +329,9 @@ public final class SchemaSync {
         case let .text(text):
             switch call.writes {
             case .schema:
-                write(id, .schema, inStep: Sides(prompt: call.sent.prompt, schema: text)) { if text != now.schema { $0.setSchema(text) } }
+                write(id, .schema, inStep: Sides(prompt: call.sent.prompt, schema: text)) { if text != now.schema { $0.schema = text } }
             case .prompt:
-                write(id, .prompt, inStep: Sides(prompt: text, schema: call.sent.schema)) { if text != now.prompt { $0.prompt = text } }
+                write(id, .prompt, inStep: Sides(prompt: text, schema: call.sent.schema)) { if text != now.prompt { $0.setPrompt(text) } }
             }
         }
         return .idle
@@ -428,14 +420,20 @@ public final class SchemaSync {
 }
 
 extension SchemaSync: EditorService {
-    /// Cards that came, or were read again from disk, are seen for the first time; cards that went
-    /// are dropped, with their call; a card whose prompt or schema the person changed waits
-    /// `idleDelay` for more; one whose sides undo or redo changed stops (`stop`). A card read again
-    /// from disk shows what the file holds: its last reading that was a JSON object, from before, is
-    /// in no version of it, so it goes too (`SchemaReadings.forget`), as a deleted card's does. The
-    /// same for the cards on other boards a commit reached (`ChangeSet.elsewhere`: a board taken with
-    /// its owner, brought by a paste or an undo, a card written where it isn't shown).
+    /// Cards that came are seen for the first time; cards that went are dropped, with their call; a
+    /// card whose prompt or schema the person changed waits `idleDelay` for more; one whose sides
+    /// undo or redo changed stops (`stop`). The same for the cards on other boards a commit reached
+    /// (`ChangeSet.elsewhere`: a board taken with its owner, brought by a paste or an undo, a card
+    /// written where it isn't shown). A file put in place over the board shown (a revert, a board
+    /// read again from disk) takes every card afresh, those it left as they were too, with their
+    /// waits and calls: each shows what the file holds, so its last reading that was a JSON object,
+    /// from before, is in no version of it, and goes (`SchemaReadings.forget`), as a deleted card's
+    /// does.
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
+        if changes.replacedDocument {
+            takeEveryCardAfresh(in: editor)
+            return
+        }
         for id in changes.removed { forgetCard(id) }
         for id in changes.added {
             guard let record = editor.document[id] else { continue }
@@ -465,22 +463,20 @@ extension SchemaSync: EditorService {
         if changes.restoredStep, cards[record.id] != nil { restoring.insert(record.id) }
     }
 
-    /// A card changed: if its sides did, an edit to follow, unless it's the sync's own write, a
-    /// board read again, or undo or redo; and a schema that changed is read now, whichever it was.
+    /// A card changed: if its sides did, an edit to follow, unless it's the sync's own write, or
+    /// undo or redo; and a schema that changed is read now, whichever it was.
     private func changed(_ record: AnyShapeRecord, _ changes: ChangeSet) {
         let id = record.id
         guard let now = Self.sides(of: record) else { return }
-        guard cards[id] != nil, !changes.replacedDocument else {
+        guard cards[id] != nil else {
             forget(id)
-            if changes.replacedDocument { SchemaReadings.forget(id) }
             see(record)
             return
         }
         guard let seen = cards[id]?.seen, seen != now else { return }
         // Read as it changes, whoever wrote it (the person, undo or redo, an agent, the sync's own
-        // write, a write to a board not shown), so the frame after the commit finds the reading
-        // kept: zoomed out, a card's skeleton goes by it, and Validation, which reads every card on
-        // the board shown, reads only once the shapes are drawn.
+        // write, a write to a board not shown), so what the card shows of a text that isn't a JSON
+        // object (its name, its row) is the last text it had that was one, every text it had read.
         if seen.schema != now.schema { _ = SchemaReadings.reading(of: now.schema, for: id) }
         cards[id]?.seen = now
         if changes.restoredStep {
@@ -502,11 +498,29 @@ extension SchemaSync: EditorService {
         SchemaReadings.forget(id)
     }
 
+    /// A card's description is done: typing on it ended (Return, Escape, a click elsewhere, the
+    /// keyboard gone to the panel, another board shown), so an edit waiting to sync syncs now, as the
+    /// panel's ⌘↩ has it, on the scheduler's next turn: after what ended it (an undo, which stops the
+    /// card; a draw; a file put in place, which takes it afresh), so what's committed is what the
+    /// card says then. Editing that typed nothing, or whose edit already went, commits nothing: no
+    /// failure is asked again but by Retry or an edit.
+    public func editingDidEnd(_ id: ShapeID, in editor: CanvasEditor) {
+        guard cards[id]?.isWaiting == true else { return }
+        _ = editor.scheduler.schedule(after: .zero) { [weak self] in
+            guard let self, cards[id]?.isWaiting == true else { return }
+            commit(id)
+        }
+    }
+
     /// Another board is shown: every card of the file is still kept, its timer and call going on,
     /// so nothing changes; but a whole file put in place with the switch takes every card afresh,
     /// as a board read again does.
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
         guard change.isFileReplaced else { return }
+        takeEveryCardAfresh(in: editor)
+    }
+
+    private func takeEveryCardAfresh(in editor: CanvasEditor) {
         for id in Set(cards.keys).union(synced.keys) { forgetCard(id) }
         seeEveryCard(in: editor.file)
     }

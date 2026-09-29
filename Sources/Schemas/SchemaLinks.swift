@@ -15,8 +15,8 @@ extension SchemaLink: Channel {
 }
 
 extension ShapeRegistrar where Definition == SchemaCardDefinition {
-    /// Ports on all four sides: the card draws its name inside, so nothing sits above it.
+    /// Ports on every side but the top, where a titled card's pill is, as a note's.
     mutating func schemaLinks() {
-        ports(SchemaLink.self)
+        ports(SchemaLink.self, sides: [.left, .right, .bottom])
     }
 }

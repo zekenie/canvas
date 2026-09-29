@@ -52,6 +52,33 @@ let longText = "A caption much longer than the box is wide"
             expectEqual(changedPixels(plain, adorned, in: wholeView) - inside, 0, "\(name) draws nowhere else")
         }
     },
+    test("text after a symbol: the symbol in its place before the text, the text as without it moved 14 points, the capsule 14 longer; cut short, the symbol stays") {
+        let (_, marked, h) = try renders([everyShape(Caption.self) { _ in AdornmentLabel("Lobby", systemImage: "curlybraces") }]) { $0.add(Box(boxFrame)) }
+        let (_, alone, g) = try renders([everyShape(Caption.self) { _ in AdornmentLabel("Lobby") }]) { $0.add(Box(boxFrame)) }
+        let withSymbol = try require(viewRects(h, h.editor.document.shapes[0].id).first)
+        let without = try require(viewRects(g, g.editor.document.shapes[0].id).first)
+        expectEqual(withSymbol.width - without.width, 14, "its place, 11, and the gap after it, 3")
+        @MainActor func isLight(_ color: [Int]) -> Bool { color.prefix(3).allSatisfy { $0 > 150 } }
+        @MainActor func lights(_ bitmap: NSBitmapImageRep, in rect: CGRect) -> Int {
+            stride(from: rect.minY, to: rect.maxY, by: 1).reduce(0) { count, y in
+                count + stride(from: rect.minX, to: rect.maxX, by: 1).filter { isLight(pixel(bitmap, at: CGPoint(x: $0, y: y))) }.count
+            }
+        }
+        expect(lights(marked, in: CGRect(x: withSymbol.minX + 7, y: withSymbol.minY + 2, width: 11, height: 14)) > 4, "the symbol, light on the capsule")
+        // The text, pixel for pixel, but where a grid dot shows through the capsule at either place.
+        var moved = 0
+        for y in stride(from: without.minY + 2, to: without.maxY - 2, by: 1) {
+            for x in stride(from: without.minX + 7, to: without.maxX - 7, by: 1) {
+                let here = CGPoint(x: x, y: y), there = CGPoint(x: x + 14, y: y)
+                if !nearGridDot(here), !nearGridDot(there), pixel(alone, at: here) != pixel(marked, at: there) { moved += 1 }
+            }
+        }
+        expectEqual(moved, 0, "the text as without the symbol, 14 points on")
+        let (_, long, k) = try renders([everyShape(Caption.self) { _ in AdornmentLabel(longText, systemImage: "curlybraces") }]) { $0.add(Box(boxFrame)) }
+        let cut = try require(viewRects(k, k.editor.document.shapes[0].id).first)
+        expectEqual(cut.width, boxFrame.width, "cut to the row")
+        expect(lights(long, in: CGRect(x: cut.minX + 7, y: cut.minY + 2, width: 11, height: 14)) > 4, "the symbol, whole, where the text gives way")
+    },
     test("a label's tone: neutral is the dark gray of a title's pill, success is green") {
         for (tone, isGreen) in [(AdornmentLabel.Tone.neutral, false), (.success, true)] {
             let (_, adorned, h) = try renders([everyShape(Count.self) { _ in AdornmentLabel("☑ 2/5", tone: tone) }]) { $0.add(Box(boxFrame)) }

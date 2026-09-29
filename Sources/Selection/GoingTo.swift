@@ -2,8 +2,8 @@ import Canvas
 import CoreGraphics
 import Geometry
 
-/// The zoom a kind's shapes read at, where its text is set smaller than a note's 16 points (a
-/// schema card's rows): going to one (`goTo`) brings it at least that close. A kind that says
+/// The zoom a kind's shapes read at, where its text is set smaller than a note's 16 points (11
+/// points reads at 100%): going to one (`goTo`) brings it at least that close. A kind that says
 /// nothing reads at `SelectionStyle.readableZoom`, 70%. At most one per kind, plus one for every
 /// kind (`.any`), which a kind's own overrides; each above zero and at most `maximum`, 120%, as close
 /// as going to a shape brings it (`reveal`'s closest).
@@ -34,8 +34,7 @@ extension ReadableZoom: KeyedExtensionPoint {
 extension ShapeRegistrar {
     /// Its shapes read at `zoom` or closer (1 is 100%; at most 120%, `ReadableZoom.maximum`): going
     /// to one (`goTo`) brings it at least that close, where one of a kind that says nothing is left
-    /// at 70%. For a kind whose text is
-    /// set smaller than a note's: a schema card's 11- and 12-point rows read at 100%.
+    /// at 70%. For a kind whose text is set smaller than a note's: 11-point text reads at 100%.
     public mutating func readableZoom(_ zoom: CGFloat) {
         contribute(zoom, to: ReadableZoom.self)
     }
@@ -70,7 +69,7 @@ extension CanvasEditor {
     /// changes the selection; going to what's selected already, or to shapes none of which can be
     /// selected, leaves the selection as it is and takes no step, so it only moves the camera.
     /// "Readable" is 70% or closer (where a note's text reads at about 11 points), or closer for a
-    /// kind whose text is smaller (`ReadableZoom`: a schema card's, 100%), the closest of the
+    /// kind whose text is smaller (`ReadableZoom`: 11-point text's, 100%), the closest of the
     /// shapes' kinds; or, for shapes too big to show whole at that, as close as fitting them would
     /// bring them. The camera is judged where it's headed, if it's gliding.
     ///

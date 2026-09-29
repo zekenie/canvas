@@ -75,6 +75,19 @@ extension CornerDisc: Adornment {
         }
         expectEqual(changedPixels(empty, shapes, in: CGRect(x: 20, y: 175, width: 24, height: 12)), 0, "above the narrow one")
     },
+    test("a kind that asks has its symbol, its tool's, before its title in the pill, longer by the symbol's place; others have none, nor does a kind with no symbol") {
+        let marked = Contributor(id: "card-titles") { $0.title(Card.self, symbolInPill: true) { $0.props.text } }
+        let bare = Contributor(id: "disc-titles") { $0.title(Disc.self, symbolInPill: true) { _ in "Disc" } }
+        let editor = try titleEditor([CardsPlugin(), marked, bare])
+        let plaque = editor.add(Plaque(plaqueFrame), named: "Lobby")
+        let card = editor.add(Card(CGRect(x: 60, y: 300, width: 200, height: 80), text: "Lobby"))
+        let disc = editor.add(Disc(CGRect(x: 300, y: 100, width: 100, height: 60)))
+        @MainActor func pill(_ id: ShapeID) -> AdornmentFrame? { editor.adornmentFrames(of: id).first }
+        expectEqual(pill(plaque)?.label, AdornmentLabel("Lobby"), "a kind that doesn't ask")
+        expectEqual(pill(card)?.label, AdornmentLabel("Lobby", systemImage: "rectangle"), "the card tool's symbol")
+        expectEqual(pill(disc)?.label, AdornmentLabel("Disc"), "a kind with no symbol: its title alone")
+        expectEqual((pill(card)?.rect.width ?? 0) - (pill(plaque)?.rect.width ?? 0), 14, "the symbol's place, 11, and the gap after it, 3")
+    },
     test("the pill keeps its size on screen as the view zooms in") {
         let editor = try titleEditor()
         let id = editor.add(Plaque(CGRect(x: 30, y: 60, width: 100, height: 60)))

@@ -415,7 +415,9 @@ extension CanvasView: NSMenuItemValidation {
         // The minimap waits for editing to end before it fades in over the first shape.
         defer { minimap?.updateVisibility() }
         if let old = editingView {
-            window?.makeFirstResponder(self)
+            // The keyboard comes back to the canvas, unless it has gone to a view outside it (the
+            // inspector's text, whose click ended editing as it took the keyboard).
+            if !keyboardIsElsewhere { window?.makeFirstResponder(self) }
             old.view.removeFromSuperview()
             editingView = nil
             // Where it was is the canvas again; the tool hears the pointer when it next moves.
@@ -426,6 +428,12 @@ extension CanvasView: NSMenuItemValidation {
         editingView = new
         layoutEditingView()
         window?.makeFirstResponder(new.firstResponder)
+    }
+
+    /// Whether the keyboard is in a view outside the canvas and the views it hosts.
+    private var keyboardIsElsewhere: Bool {
+        guard let responder = window?.firstResponder as? NSView else { return false }
+        return responder !== self && !responder.isDescendant(of: self)
     }
 }
 

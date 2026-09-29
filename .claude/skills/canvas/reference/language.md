@@ -101,7 +101,7 @@ A kind is drawable when a tool places it. These are the shipped ones:
 |---|---|---|---|---|
 | `sticky-note` | 200x200 | its title, a pill above its top-left corner | `text:` | `note-link`, left, right and bottom |
 | `rectangle` | 160x100 | its title, a pill | nothing else | none |
-| `schema-card` | 240x67 | its schema's "title", drawn on the card: never a title of its own | `schema:` and `prompt:` | `schema-link`, all four sides |
+| `schema-card` | 240x52 | its schema's "title", a pill above its top-left corner: never a title of its own | `prompt:`, in words, on the card; `schema:` in its panel | `schema-link`, left, right and bottom |
 | `subboard` | 240x160 | its title, drawn on its card | nothing else: its board is its own | none |
 
 `arrow` is what edges are: write `edge "A" -> "B"`, never `arrow`. `polyline` is drawn by hand with the line tool and can't be placed (`not_placeable`: `its tool (Line) draws one by hand`). A kind that isn't installed is `unknown_kind`, with the drawable kinds listed and the one like it named (`did you mean sticky-note?`). Words from other languages get a hint with what to write instead: `node`, `note` and `box` that a statement starts with its kind, `link` to write `edge "A" -> "B"`, `-->` in an edge the arrow to write, and a line that joins two titles without `edge` (`API --> DB`, `"A" -> "B"`) the edge it means (`edge "API" -> "DB"`).
@@ -137,7 +137,7 @@ Two statements about one title in one script (two shape statements, or one and a
 This names nothing, so it makes a schema card with no title of its own, called by the title in its schema:
 
 ```draw
-schema-card left of "Ingest" schema: "{\"title\": \"Row\", \"type\": \"object\", \"properties\": {\"id\": {\"type\": \"string\"}}}"
+schema-card left of "Ingest" prompt: "A row, by its id." schema: "{\"title\": \"Row\", \"type\": \"object\", \"properties\": {\"id\": {\"type\": \"string\"}}}"
 ```
 
 From the next run on, the board has a shape called "Row". A schema with no title would take that name away, so a statement that gives it one is refused:
@@ -177,7 +177,7 @@ Every other key is one of the kind's properties, named as its schema names it; `
 The shipped kinds' attributes:
 
 - **sticky-note**: `text` (what it says: past eight lines or so the note grows taller to fit it, from its top. A `size:` holds as drawn only until its text changes, typed by the user or set again by a script without `size:`: then it's as tall as its text again, never under 200, and opening it to edit grows it to its text. So don't use a note as a zone of a set height), `locked`.
-- **schema-card**: `schema` (a JSON Schema, as text: its properties in the order written; the card grows to list them), `prompt` (what the schema should hold, in words), `locked`. What a script writes is taken as written: the Claude sync that rewrites one side when the user edits the other isn't asked, so write a prompt and a schema that agree, or leave the prompt out.
+- **schema-card**: `prompt` (what the schema should hold, in words: the card shows it, as a note shows its text, and grows to fit it; with none it's blank), `schema` (a JSON Schema, as text: its properties in the order written, shown in the card's panel), `locked`. What a script writes is taken as written: the Claude sync that rewrites one side when the user edits the other isn't asked, so write a prompt and a schema that agree.
 - **rectangle**, **subboard**: `locked`.
 - **A note's `text`** is kept as written. In it, `@[label](shape:<id>)` is a mention of a shape, which the note shows as a live pill with that shape's name now. Only the app writes one (an id from a query's rows is for naming the shape in a later query, never in a script), so write plain words: an `@`, or `@[…]` without `(shape:…)`, is only text. (The app writes a mention's form as plain text with `\@[`, which a script's string spells `\\@[`.) A mention of a shape that isn't in the file is kept, and warned about.
 - **`locked: true`** locks a shape, as the context menu's Lock does. A locked shape refuses every later change (`read_only`). Leave locking to the user.
@@ -410,7 +410,7 @@ A channel is what kind of connection an edge is. Each kind has ports on some cha
 | kind | channel | sides |
 |---|---|---|
 | `sticky-note` | `note-link` | left, right, bottom |
-| `schema-card` | `schema-link` | top, right, bottom, left |
+| `schema-card` | `schema-link` | left, right, bottom |
 | `rectangle`, `subboard` | none | none |
 
 `build/canvas kinds` lists each kind's channels by side, under `edges`. How an edge's channel is chosen:

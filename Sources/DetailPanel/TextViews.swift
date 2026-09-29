@@ -367,6 +367,44 @@ open class DetailTextView: NSTextView {
         super.viewWillMove(toWindow: newWindow)
     }
 
+    // MARK: The caret, laid out by TextKit 2
+
+    /// Puts the selection where a press at a point in the view's coordinates would: the caret
+    /// between the characters nearest it, or, with `selectingWord` (a double-click's), the word
+    /// there. What editing on the canvas begun from a press does with its point
+    /// (`EditContext.startPoint`). Nothing on TextKit 1.
+    open func placeSelection(at point: CGPoint, selectingWord: Bool = false) {
+        guard let layout = textLayoutManager, let content = layout.textContentManager else { return }
+        let inContainer = CGPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        layout.ensureLayout(for: layout.documentRange)
+        let navigation = layout.textSelectionNavigation
+        let bounds = CGRect(origin: .zero, size: textContainer?.size ?? bounds.size)
+        guard var selection = navigation.textSelections(interactingAt: inContainer, inContainerAt: layout.documentRange.location,
+                                                        anchors: [], modifiers: [], selecting: false, bounds: bounds).first else { return }
+        if selectingWord { selection = navigation.textSelection(for: .word, enclosing: selection) }
+        guard let range = selection.textRanges.first else { return }
+        let start = content.offset(from: content.documentRange.location, to: range.location)
+        setSelectedRange(NSRange(location: start, length: content.offset(from: range.location, to: range.endLocation)))
+    }
+
+    /// Where the caret is, in the view's coordinates: the line fragment it's on, as TextKit 2 lays
+    /// it out (nil on TextKit 1). TextKit 2 lays out only the text in view, so the text is laid out
+    /// first (text edited on a shape is short): the caret may have gone where nothing was (⌘↓ in a
+    /// long note). What an editor on the canvas keeps in view as its shape grows past the window's
+    /// edge (`EditContext.keepInView`).
+    public var caretFrame: CGRect? {
+        guard let layout = textLayoutManager, let content = layout.textContentManager,
+              let location = content.location(content.documentRange.location, offsetBy: NSMaxRange(selectedRange())) else { return nil }
+        layout.ensureLayout(for: content.documentRange)
+        var frame: CGRect?
+        layout.enumerateTextSegments(in: NSTextRange(location: location), type: .selection, options: [.rangeNotRequired]) { _, segment, _, _ in
+            frame = segment
+            return false
+        }
+        let origin = textContainerOrigin
+        return frame.map { CGRect(x: $0.minX + origin.x, y: $0.minY + origin.y, width: max($0.width, 1), height: $0.height) }
+    }
+
     // MARK: The placeholder
 
     open override func didChangeText() {

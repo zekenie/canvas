@@ -56,54 +56,85 @@ enum AdornmentStyle {
 
     /// How wide a label is drawn blank in its place: text as long as its columns at the place's
     /// average advance (`SkeletonText.columns(of:)`: a CJK character or an emoji two, a combining
-    /// mark none, as every greeked text counts them), with the place's padding, as its face is
-    /// measured; a symbol's disc as wide as its place is tall. The layout gives way as it does to a
-    /// face (at the row's left end).
+    /// mark none, as every greeked text counts them), after its symbol's place if it has one, with
+    /// the place's padding, as its face is measured; a symbol's disc as wide as its place is tall.
+    /// The layout gives way as it does to a face (at the row's left end).
     static func blankWidth(of label: AdornmentLabel, in placement: AdornmentPlacement) -> CGFloat {
         guard let text = label.text else { return AdornmentLayout.height(of: placement) }
         let isCorner = placement == .onTopRightCorner
         let columns = CGFloat(SkeletonText.columns(of: text))
-        return (columns * (isCorner ? cornerAdvance : rowAdvance) + 2 * (isCorner ? cornerPadding : rowPadding)).rounded(.up)
+        return (columns * (isCorner ? cornerAdvance : rowAdvance) + lead(of: label, in: placement)
+                + 2 * (isCorner ? cornerPadding : rowPadding)).rounded(.up)
+    }
+
+    /// A symbol before text: its place, as wide as the place's text is tall, and the gap after it.
+    static let rowSymbolPlace: CGFloat = 11
+    static let cornerSymbolPlace: CGFloat = 10
+    static let symbolGap: CGFloat = 3
+
+    /// How far a label's text starts past its padding: its symbol's place and the gap after it, for
+    /// text with a symbol; else nothing. The same in full and blank, so a label is as long either way
+    /// as its text makes it.
+    static func lead(of label: AdornmentLabel, in placement: AdornmentPlacement) -> CGFloat {
+        guard label.text != nil, label.systemImage != nil else { return 0 }
+        return (placement == .onTopRightCorner ? cornerSymbolPlace : rowSymbolPlace) + symbolGap
     }
 
     /// A symbol as a disc `height` tall shows it: half as tall, bold, white.
     static func symbol(_ name: String, height: CGFloat) -> NSImage? {
-        let key = SymbolKey(name: name, height: height)
+        symbol(SymbolKey(name: name, pointSize: height / 2, weight: .bold, white: 1))
+    }
+
+    /// A symbol before text in its place: two points smaller than the text, semibold, in white a
+    /// little softer than the text's, so it marks the text rather than reading as part of it.
+    static func leadingSymbol(_ name: String, in placement: AdornmentPlacement) -> NSImage? {
+        symbol(SymbolKey(name: name, pointSize: placement == .onTopRightCorner ? 8 : 9, weight: .semibold, white: 0.75))
+    }
+
+    /// What a symbol's image is made from: its name, size and weight, and how opaque its white is.
+    private struct SymbolKey: Hashable {
+        let name: String
+        let pointSize: CGFloat
+        let weight: NSFont.Weight
+        let white: CGFloat
+    }
+    private static var symbols: [SymbolKey: NSImage?] = [:]
+
+    private static func symbol(_ key: SymbolKey) -> NSImage? {
         if let known = symbols[key] { return known }
-        let configuration = NSImage.SymbolConfiguration(pointSize: height / 2, weight: .bold)
-            .applying(NSImage.SymbolConfiguration(paletteColors: [.white]))
-        let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
+        let configuration = NSImage.SymbolConfiguration(pointSize: key.pointSize, weight: key.weight)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [NSColor(white: 1, alpha: key.white)]))
+        let image = NSImage(systemSymbolName: key.name, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
         symbols[key] = image
         return image
     }
 
-    private struct SymbolKey: Hashable {
-        let name: String
-        let height: CGFloat
-    }
-    private static var symbols: [SymbolKey: NSImage?] = [:]
-
-    /// A label as its place draws it in full: text set in the place's font and measured, or a
-    /// symbol's image, with the width it takes.
+    /// A label as its place draws it in full: text set in the place's font and measured, after its
+    /// symbol if it has one (`symbol`: its image, nil for a name SF Symbols hasn't, and its place's
+    /// width; the text starts that and `symbolGap` past the padding), or a symbol's image alone, with
+    /// the width it takes.
     enum Face {
-        case text(NSAttributedString, size: CGSize, width: CGFloat)
+        case text(NSAttributedString, size: CGSize, symbol: (image: NSImage?, place: CGFloat)?, width: CGFloat)
         case symbol(NSImage?, width: CGFloat)
 
         var width: CGFloat {
             switch self {
-            case .text(_, _, let width), .symbol(_, let width): width
+            case .text(_, _, _, let width), .symbol(_, let width): width
             }
         }
     }
 
-    /// The face of a label that shows something (`ShownAdornment`): its text, else its symbol.
+    /// The face of a label that shows something (`ShownAdornment`): its text, after its symbol if
+    /// it has one, else its symbol in a disc.
     static func face(of label: AdornmentLabel, in placement: AdornmentPlacement) -> Face {
         let height = AdornmentLayout.height(of: placement)
         guard let text = label.text else { return .symbol(label.systemImage.flatMap { symbol($0, height: height) }, width: height) }
         let isCorner = placement == .onTopRightCorner
         let string = NSAttributedString(string: text, attributes: isCorner ? cornerText : rowText)
         let size = string.size()
-        return .text(string, size: size, width: (size.width + 2 * (isCorner ? cornerPadding : rowPadding)).rounded(.up))
+        let mark = label.systemImage.map { (image: leadingSymbol($0, in: placement), place: isCorner ? cornerSymbolPlace : rowSymbolPlace) }
+        return .text(string, size: size, symbol: mark,
+                     width: (size.width + lead(of: label, in: placement) + 2 * (isCorner ? cornerPadding : rowPadding)).rounded(.up))
     }
 
     /// How a clickable adornment is drawn: hovered or pressed while the pointer's on it.
@@ -159,17 +190,31 @@ enum AdornmentStyle {
                                       width: size.width * glyphScale, height: size.height * glyphScale),
                            from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
             }
-        case .text(let text, let size, _):
+        case .text(let text, let size, let symbol, _):
             cg.translateBy(x: corner.x, y: corner.y)
             cg.scaleBy(x: scale, y: scale)
             let radius = min(frame.width, frame.height) / 2
             cg.addPath(CGPath(roundedRect: frame, cornerWidth: radius, cornerHeight: radius, transform: nil))
             cg.fillPath()
-            if adornment.id.placement == .onTopRightCorner {
-                text.draw(at: CGPoint(x: frame.minX + cornerPadding, y: frame.midY - size.height / 2))
+            let isCorner = adornment.id.placement == .onTopRightCorner
+            let start = frame.minX + (isCorner ? cornerPadding : rowPadding)
+            // Where the text starts, as its width was measured.
+            let lead = lead(of: adornment.label, in: adornment.id.placement)
+            if let symbol, let image = symbol.image {
+                // In world units from the corner, as a disc's symbol is drawn: centered in its place.
+                let size = image.size
+                cg.saveGState()
+                cg.scaleBy(x: 1 / scale, y: 1 / scale)
+                image.draw(in: CGRect(x: (start + (symbol.place - size.width) / 2) * scale, y: (frame.midY - size.height / 2) * scale,
+                                      width: size.width * scale, height: size.height * scale),
+                           from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+                cg.restoreGState()
+            }
+            if isCorner {
+                text.draw(at: CGPoint(x: start + lead, y: frame.midY - size.height / 2))
             } else {
-                text.draw(with: CGRect(x: frame.minX + rowPadding, y: frame.midY - size.height / 2,
-                                       width: frame.width - 2 * rowPadding, height: size.height),
+                text.draw(with: CGRect(x: start + lead, y: frame.midY - size.height / 2,
+                                       width: frame.width - 2 * rowPadding - lead, height: size.height),
                           options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
             }
         }

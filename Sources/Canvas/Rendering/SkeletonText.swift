@@ -1,7 +1,8 @@
 /// How long greeked text is (`RenderContext.fillSkeletonText`), from what it says, without laying
 /// it out: in columns, a narrow character's width each, as a terminal counts them, so a bar is as
 /// long as its text's columns times the font's average narrow advance (about half an em). What
-/// every skeleton that shows text as bars goes by (a note's lines, a card's name, a blank pill), so
+/// every skeleton that shows text as bars goes by (a note's lines and a schema card's, through
+/// `SkeletonTextBars`, a subboard's title, a blank pill), so
 /// text in Japanese or in emoji is about as long greeked as in full, twice Latin text of as many
 /// characters, and every kind's bars count alike. Pure, and allocates nothing.
 public enum SkeletonText {
@@ -50,6 +51,18 @@ public enum SkeletonText {
         if let columns = text.utf8.withContiguousStorageIfAvailable(columns(ofUTF8:)) { return columns }
         var tally = Tally()
         for scalar in text.unicodeScalars { tally.add(scalar) }
+        return tally.columns
+    }
+
+    /// Text's columns, counted as `columns(of:)` counts them only until they reach `limit`: what's
+    /// past it isn't read (a mention's pill, which stops growing at a length, by the name it holds).
+    /// At least `limit`, once they reach it (a wide character may take them past it).
+    public static func columns(of text: some StringProtocol, upTo limit: Int) -> Int {
+        var tally = Tally()
+        for scalar in text.unicodeScalars {
+            guard tally.columns < limit else { break }
+            tally.add(scalar)
+        }
         return tally.columns
     }
 

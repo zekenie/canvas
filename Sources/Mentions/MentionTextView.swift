@@ -324,22 +324,10 @@ public final class MentionTextView<Scope: MentionScope>: DetailTextView {
         return true
     }
 
-    /// Puts the selection where a press at a point in the view's coordinates would: on a pill, the
-    /// pill (its whole character); elsewhere, the caret between the characters nearest it, or, with
-    /// `selectingWord` (a double-click's), the word there. What editing begun from a press does with
-    /// its point (`EditContext.startPoint`).
-    public func placeSelection(at point: CGPoint, selectingWord: Bool = false) {
-        guard !selectPill(at: point), let layout = textLayoutManager, let content = layout.textContentManager else { return }
-        let inContainer = CGPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
-        layout.ensureLayout(for: layout.documentRange)
-        let navigation = layout.textSelectionNavigation
-        let bounds = CGRect(origin: .zero, size: textContainer?.size ?? bounds.size)
-        guard var selection = navigation.textSelections(interactingAt: inContainer, inContainerAt: layout.documentRange.location,
-                                                        anchors: [], modifiers: [], selecting: false, bounds: bounds).first else { return }
-        if selectingWord { selection = navigation.textSelection(for: .word, enclosing: selection) }
-        guard let range = selection.textRanges.first else { return }
-        let start = content.offset(from: content.documentRange.location, to: range.location)
-        setSelectedRange(NSRange(location: start, length: content.offset(from: range.location, to: range.endLocation)))
+    /// On a pill, the pill (its whole character); elsewhere, as in any text.
+    public override func placeSelection(at point: CGPoint, selectingWord: Bool = false) {
+        guard !selectPill(at: point) else { return }
+        super.placeSelection(at: point, selectingWord: selectingWord)
     }
 
     /// The character of the pill drawn at a point in the view's coordinates.

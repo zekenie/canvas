@@ -34,6 +34,12 @@ func rect(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat) -> CG
         expectEqual(AdornmentLayout.frames(of: [caption(20)], width: 30), [rect(0, -27, 20, 18)], "narrower than 30 itself, in 30 of room")
         expectEqual(AdornmentLayout.frames(of: [caption(20)], width: 29), [nil])
     },
+    test("text after a symbol needs 30 points of room and the symbol's place besides, so it's never the symbol alone") {
+        let marked = Item(.aboveTopLeft, width: 80, isText: true, lead: 14)
+        expectEqual(AdornmentLayout.frames(of: [marked, flag], width: 65)[0], nil, "43 points of room")
+        expectEqual(AdornmentLayout.frames(of: [marked, flag], width: 66)[0], rect(0, -27, 44, 18), "44: 30 and its 14")
+        expectEqual(AdornmentLayout.frames(of: [marked], width: 200), [rect(0, -27, 80, 18)], "as long as it is, with room")
+    },
     test("at the row's left end, a symbol is shown whole or not at all, and what comes after it is left out with it") {
         let symbol = Item(.aboveTopLeft, width: 18, isText: false)
         expectEqual(AdornmentLayout.frames(of: [symbol, caption(100)], width: 60), [rect(0, -27, 18, 18), rect(22, -27, 38, 18)])

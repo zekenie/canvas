@@ -811,15 +811,17 @@ public final class CanvasEditor {
         return true
     }
 
-    /// What the editing view saves as it closes is part of the session's undo step.
+    /// What the editing view saves as it closes is part of the session's undo step. Services hear it
+    /// once the step is closed (`editingDidEnd`).
     public func endEditing() {
-        guard editingShapeID != nil else { return }
+        guard let id = editingShapeID else { return }
         editingShapeID = nil
         editingStartPoint = nil
         editingStartClickCount = 1
         delegate?.editorEditingDidChange(self)
         setNeedsDisplay()
         undoHistory.editingEnded()
+        for service in serviceOrder { service.editingDidEnd(id, in: self) }
     }
 
     // MARK: Hit testing and order

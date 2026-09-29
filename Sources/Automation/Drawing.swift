@@ -24,7 +24,7 @@ struct ShapeItem {
     /// the shape restated, with its title and attributes set.
     var record: AnyShapeRecord
     /// How big it is, once drawn: as written, else what setting its attributes left it (a schema
-    /// card as tall as its schema), else as it is, or as its tool places it.
+    /// card as tall as its description), else as it is, or as its tool places it.
     var size: CGSize
     /// What each placement's targets are, placement by placement.
     var targets: [[Found]] = []
@@ -492,7 +492,7 @@ struct Drawing {
         // Every shape a script makes is built by the registry, as the kind's schema reads it.
         if !settings.isEmpty || item.existing == nil { items[index].record = try record(item.record, setting: settings, item, vocabulary) }
         try references(of: items[index].record, item)
-        // A size the kind works out from what was set (a schema card's height, from its schema) is
+        // A size the kind works out from what was set (a note's or a schema card's height, from its text) is
         // the one it's placed at, unless the statement says one.
         if shape.size == nil, let before = item.record.box?.size, let after = items[index].record.box?.size, after != before {
             items[index].size = after

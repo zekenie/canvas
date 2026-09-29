@@ -38,6 +38,14 @@ public protocol EditorService: AnyObject {
     /// an adornment's label) lets go here of a hover or a button under the pointer that the level
     /// doesn't show now: a pointer held still tells it nothing.
     func drawsSkeletonsDidChange(in editor: CanvasEditor)
+    /// The shape being edited isn't any more (`editor.endEditing`, however it came: Escape, a click
+    /// elsewhere, another shape edited, another board shown, an undo): its editing view is closed
+    /// and what it wrote committed. Its step is closed unless what ended it is an action whose step
+    /// is still open (a command, an undo or redo about to apply a step, a draw, a file put in
+    /// place), so a service that writes, or asks for something, in answer waits a turn
+    /// (`editor.scheduler`) and looks again, as a schema card's sync does before it takes the
+    /// description as done.
+    func editingDidEnd(_ id: ShapeID, in editor: CanvasEditor)
 }
 
 extension EditorService {
@@ -48,4 +56,5 @@ extension EditorService {
     public func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor) {}
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) { documentDidChange(change.changes, in: editor) }
     public func drawsSkeletonsDidChange(in editor: CanvasEditor) {}
+    public func editingDidEnd(_ id: ShapeID, in editor: CanvasEditor) {}
 }

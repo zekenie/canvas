@@ -105,7 +105,7 @@ enum QueryStory {
         }
         func card(_ id: ShapeID, _ schema: String, at x: CGFloat, _ y: CGFloat, locked: Bool = false) -> AnyShapeRecord {
             var props = SchemaCard(frame: CGRect(origin: CGPoint(x: x, y: y), size: SchemaCard.defaultSize), schema: "")
-            props.setSchema(schema)
+            props.schema = schema
             var card = ShapeRecord(id: id, props)
             card[LockedProperty.self] = locked ? true : nil
             return AnyShapeRecord(card)

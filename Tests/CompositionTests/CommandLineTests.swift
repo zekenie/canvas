@@ -132,7 +132,7 @@ edge "API" -> "Cache" channel: none
         expectEqual(again["changes"]?.arrayValue?.map { $0["did"] }, ["unchanged"])
         expectEqual(again["warnings"], [], "what it names hasn't changed")
     },
-    test("canvas draw schema-card is as tall as the schema it's given, as the panel makes it; a size: is as asked") {
+    test("canvas draw schema-card is as tall as the description it's given, as typing makes it; a size: is as asked") {
         try configureBoards()
         let board = newBoard()
         defer { board.close() }
@@ -141,14 +141,14 @@ edge "API" -> "Cache" channel: none
         let schema = #"{"type": "object", "properties": {"a": {}, "b": {}, "c": {}, "d": {}, "e": {}, "f": {}}}"#
         // In a script's string, each quote is escaped.
         let written = schema.replacingOccurrences(of: "\"", with: "\\\"")
-        for (size, expected) in [("", CGSize(width: 240, height: try require(SchemaCard.height(for: schema)))),
-                                 (" size: 300x100", CGSize(width: 300, height: 100))] {
+        for (size, expected) in [("", CGSize(width: 240, height: 4 * 19 + 33)), (" size: 300x100", CGSize(width: 300, height: 100))] {
             let before = Set(board.editor.document.shapes.map(\.id))
-            let result = try canvas(server, ["draw", #"schema-card schema: "\#(written)""# + size])
+            let result = try canvas(server, ["draw", #"schema-card schema: "\#(written)" prompt: "a person\nname\nemail\nphone""# + size])
             expectEqual(result.status, 0, result.error)
             let card = try require(board.editor.document.shapes.first { !before.contains($0.id) }?.typed(as: SchemaCard.self)?.props)
             expectEqual(card.schema, schema)
-            expectEqual(card.frame.size, expected, "six rows: 177 high, where the placed card is 67")
+            expectEqual(card.prompt, "a person\nname\nemail\nphone")
+            expectEqual(card.frame.size, expected, "four lines: 109 high, where the placed card is 52")
             let at = try JSON(text: result.output)["changes"]?.arrayValue?.first?["at"]?.arrayValue?.last
             expectEqual(at, [.number(expected.width), .number(expected.height)], "placed as big as it is")
         }

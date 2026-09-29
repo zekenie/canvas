@@ -146,10 +146,10 @@ private func described(_ keyword: String) -> String? { MetaSchema.root["properti
     },
     test("while the model writes the schema, ⌃Space opens nothing in it; once it's written, it does") {
         let panel = try SchemaPanelWindow()
-        _ = panel.show(blankCard)
+        let id = panel.show(blankCard)
         panel.model.holdsAnswers = true
         panel.model.queue(petSchema)
-        panel.focus(try require(panel.prompt))
+        _ = try panel.describe(id)
         panel.window.type("a pet in my household")
         panel.window.pressReturn()
         spinRunLoop(until: { panel.model.waiting == 1 })

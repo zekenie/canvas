@@ -45,10 +45,10 @@ private func around(_ point: CGPoint, _ radius: CGFloat = 6) -> CGRect {
     AnyShapeRecord(ShapeRecord(StickyNote(frame: frame, text: MentionText(plain: text))))
 }
 
-/// Named, so it's clear which is which; as tall as an empty card.
-@MainActor private func schemaCard(_ frame: CGRect, title: String) -> AnyShapeRecord {
+/// Named, so it's clear which is which (its title's pill above it), unless `title` is nil; in `frame`.
+@MainActor private func schemaCard(_ frame: CGRect, title: String?) -> AnyShapeRecord {
     var card = SchemaCard(frame: frame)
-    card.setTitle(title)
+    if let title { card.setTitle(title) }
     card.frame = frame
     return AnyShapeRecord(ShapeRecord(card))
 }
@@ -104,7 +104,7 @@ extension EditorHarness {
 }
 
 @MainActor let portsShippedTests = Suite("Ports, as shipped", [
-    test("hovering a note shows its dots on the left, right and bottom, none on top; a schema card's on all four; each in its channel's color, with the open hand") {
+    test("hovering a note or a schema card shows its dots on the left, right and bottom, none on top, where its pill is; each in its channel's color, with the open hand") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200), cardFrame = CGRect(x: 440, y: 100, width: 240, height: 89)
@@ -112,7 +112,7 @@ extension EditorHarness {
         let size = CGSize(width: 740, height: 360)
         let rest = renderBitmap(h.editor, size: size)
         for (frame, sides, color, name) in [(noteFrame, [Side.right, .bottom, .left], NoteLink.color, "note"),
-                                            (cardFrame, Side.allCases, SchemaLink.color, "card")] {
+                                            (cardFrame, [Side.right, .bottom, .left], SchemaLink.color, "card")] {
             h.move(to: center(frame))
             let hovered = renderBitmap(h.editor, size: size)
             for side in Side.allCases {
@@ -181,7 +181,7 @@ extension EditorHarness {
         h.connect(from: .right, of: aFrame, to: CGPoint(x: 620, y: 200))
         expectEqual(arrows(h).first?.props.end.binding?.shapeID, b.id)
     },
-    test("a schema card's dots are on all four sides, in its accent; a drag from one to another card draws an arrow on the schema-link channel, bound to both, and to a note nothing") {
+    test("a schema card's dots are on its sides and bottom, in its accent; a drag from one to another card draws an arrow on the schema-link channel, bound to both, and to a note nothing") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let aFrame = CGRect(x: 100, y: 100, width: 240, height: 89), bFrame = CGRect(x: 100, y: 400, width: 240, height: 89)
@@ -192,7 +192,7 @@ extension EditorHarness {
         let rest = renderBitmap(h.editor, size: size)
         h.move(to: center(aFrame))
         let hovered = renderBitmap(h.editor, size: size)
-        for side in Side.allCases {
+        for side in [Side.right, .bottom, .left] {
             let dot = side.dot(of: aFrame)
             expect(changedPixels(rest, hovered, in: around(dot)) > 40, "the card's \(side) dot shows")
             expectNear(pixel(hovered, at: dot), restingDot(SchemaLink.color, over: pixel(rest, at: dot)), "the card's \(side) dot")
@@ -248,18 +248,20 @@ extension EditorHarness {
             expectEqual(both, 0, "with the \(side) dot lit, no pixel is both a dot's and a decoration's")
         }
     },
-    test("a locked schema card shows all four dots whole, clear of its lock") {
+    test("a titled, locked schema card shows its dots whole: no pixel is both a dot's and the pill's or the lock chip's") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let frame = CGRect(x: 100, y: 100, width: 240, height: 200)
         let size = CGSize(width: 440, height: 340)
+        let sides = [Side.right, .bottom, .left]
+        // The card untitled and unlocked, or with both, at rest and with the pointer on each dot (lit, with its halo).
         @MainActor func renders(decorated: Bool) -> (rest: NSBitmapImageRep, lit: [Side: NSBitmapImageRep]) {
-            var record = schemaCard(frame, title: "Customer")
+            var record = schemaCard(frame, title: decorated ? "A title much longer than the card is wide" : nil)
             if decorated { record[LockedProperty.self] = true }
             let h = shipped([record], pasteboard)
             let rest = renderBitmap(h.editor, size: size)
             var lit: [Side: NSBitmapImageRep] = [:]
-            for side in Side.allCases {
+            for side in sides {
                 h.move(to: center(frame))
                 h.move(to: side.dot(of: frame))
                 lit[side] = renderBitmap(h.editor, size: size)
@@ -267,11 +269,12 @@ extension EditorHarness {
             return (rest, lit)
         }
         let plain = renders(decorated: false), decorated = renders(decorated: true)
+        expect(changedPixels(plain.rest, decorated.rest, in: CGRect(x: 100, y: 75, width: 200, height: 12)) > 1000, "the pill")
         expect(changedPixels(plain.rest, decorated.rest, in: CGRect(x: 326, y: 77, width: 10, height: 10)) > 90, "the lock")
-        for side in Side.allCases {
+        for side in sides {
             let plainLit = try require(plain.lit[side]), lit = try require(decorated.lit[side])
-            for dot in Side.allCases.map({ $0.dot(of: frame) }) {
-                expectEqual(changedPixels(plainLit, lit, in: around(dot, 13)), 0, "with the \(side) dot lit, every dot as an unlocked card's")
+            for dot in sides.map({ $0.dot(of: frame) }) {
+                expectEqual(changedPixels(plainLit, lit, in: around(dot, 13)), 0, "with the \(side) dot lit, every dot as a plain card's")
             }
             var both = 0
             for y in 50..<340 {
@@ -280,7 +283,7 @@ extension EditorHarness {
                     if pixel(lit, at: point) != under && pixel(plain.rest, at: point) != under { both += 1 }
                 }
             }
-            expectEqual(both, 0, "with the \(side) dot lit, no pixel is both a dot's and the lock's")
+            expectEqual(both, 0, "with the \(side) dot lit, no pixel is both a dot's and a decoration's")
         }
     },
     test("in another tool a note shows no dots, and back in the select tool they show again") {

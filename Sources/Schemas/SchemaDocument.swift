@@ -1,11 +1,10 @@
 import Foundation
 
-// A JSON Schema read from its text: its name, its fields in the order they're written, and the
-// rules at its root. Nothing here restricts JSON Schema: a keyword this doesn't read is still in the
-// text, and still means what it means; this reads what the card, the table of contents and
-// validation show.
+// A JSON Schema read from its text: its name and its fields, in the order they're written. Nothing
+// here restricts JSON Schema: a keyword this doesn't read is still in the text, and still means what
+// it means; this reads what the card's name, its row, its panel's header and the sync go by.
 
-/// A JSON Schema, read. Its top-level fields are read at once (the card counts them); each field's
+/// A JSON Schema, read. Its top-level fields are read at once (its row counts them); each field's
 /// type and fields are read when asked, a level at a time, so what reading costs is what's looked at.
 public struct SchemaDocument: Sendable {
     /// The schema, if the text is JSON.
@@ -18,10 +17,6 @@ public struct SchemaDocument: Sendable {
     /// The top-level fields: `properties`, then `patternProperties`, each in the order written (a
     /// root with neither and a `$ref`, its target's; never an array's items').
     public let fields: [SchemaField]
-    /// The keywords at the root that constrain the object as a whole rather than name a field:
-    /// `if/then` (or `if/then/else`), `allOf`, `anyOf`, `oneOf`, `not`, `dependentRequired`,
-    /// `dependentSchemas`.
-    public let rules: [String]
 
     public init(_ text: String) {
         do throws(JSONSyntaxError) {
@@ -30,33 +25,20 @@ public struct SchemaDocument: Sendable {
             error = nil
             title = SchemaDocument.name(root["title"]?.string)
             fields = root.isObject ? SchemaResolver(root: root).fields(of: root, throughItems: false) : []
-            rules = root.isObject ? SchemaDocument.rules(of: root) : []
         } catch {
             root = nil
             self.error = error
             title = SchemaDocument.name(error.rootMembers.last { $0.key == "title" }?.value.string)
             fields = []
-            rules = []
         }
     }
 
-    /// Whether the text is JSON whose root is an object: a schema the card can list.
+    /// Whether the text is JSON whose root is an object: a schema, whose fields can be read.
     public var isObject: Bool { root?.isObject ?? false }
 
     private static func name(_ title: String?) -> String? {
         guard let title, !title.allSatisfy(\.isWhitespace) else { return nil }
         return title
-    }
-
-    private static func rules(of root: JSONNode) -> [String] {
-        var rules: [String] = []
-        if root["if"] != nil {
-            rules.append("if" + (root["then"] != nil ? "/then" : "") + (root["else"] != nil ? "/else" : ""))
-        }
-        for key in ["allOf", "anyOf", "oneOf", "not", "dependentRequired", "dependentSchemas"] where root[key] != nil {
-            rules.append(key)
-        }
-        return rules
     }
 }
 
@@ -156,9 +138,9 @@ public indirect enum SchemaFieldType: Equatable, Sendable {
     /// JSON Schema's seven types: a `type` names one of these, or a list of them.
     public static let jsonTypes: Set<String> = ["string", "number", "integer", "boolean", "null", "object", "array"]
 
-    /// How the card says it at a row's end: `string`, `email`, `string|null`, `enum`, `= DE`,
-    /// `object`, `string[]`, `object[]`, `array`, `→ money`, `oneOf`, `any`, `never`, and a type
-    /// that isn't one as it's written (`ninteger`).
+    /// How it's said in a word or two (a completion's detail, `SchemaCompletions`): `string`,
+    /// `email`, `string|null`, `enum`, `= DE`, `object`, `string[]`, `object[]`, `array`, `→ money`,
+    /// `oneOf`, `any`, `never`, and a type that isn't one as it's written (`ninteger`).
     public var label: String {
         switch self {
         case .any: "any"
@@ -179,22 +161,12 @@ public indirect enum SchemaFieldType: Equatable, Sendable {
         case .choice(let combinator, _): combinator.label
         }
     }
-
-    /// The type `label` says, in a word, for a row with no room for it: an array's `array`, a
-    /// format's `string`; nil where there's no shorter word (the label is one already).
-    public var baseLabel: String? {
-        switch self {
-        case .array(of: .some): "array"
-        case .format: "string"
-        default: nil
-        }
-    }
 }
 
 public enum SchemaCombinator: String, CaseIterable, Sendable {
     case oneOf, anyOf, allOf
 
-    /// JSON Schema's own word, as the rules line says it: `oneOf`, `anyOf`, `allOf`.
+    /// JSON Schema's own word: `oneOf`, `anyOf`, `allOf`.
     public var label: String { rawValue }
 }
 

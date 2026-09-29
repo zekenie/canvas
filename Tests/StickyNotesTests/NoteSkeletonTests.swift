@@ -67,7 +67,7 @@ private struct Run {
     return found
 }
 
-/// A column's share of a bar, in world units, as `NoteTextBars` counts: 0.52 of the text's 16
+/// A column's share of a bar, in world units, as `SkeletonTextBars` counts: 0.52 of the text's 16
 /// points. A bar under a line's width is this times its columns.
 private let column: CGFloat = 0.52 * 16
 

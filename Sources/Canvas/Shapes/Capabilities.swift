@@ -43,7 +43,18 @@ public struct EditContext<Props: BoxShapeProps> {
         editor?.transact(nil, coalescing: nil, origin: .editing) { $0.update(shapeID, as: Props.self) { change(&$0.props) } }
     }
 
-    public func end() { editor?.endEditing() }
+    /// Ends this editing session: nothing once it has ended, or another has begun, so a view may
+    /// end it a turn later (as the keyboard leaves it).
+    public func end() {
+        guard let editor, editor.editingShapeID == shapeID else { return }
+        editor.endEditing()
+    }
+
+    /// The shape as it is now: what something other than typing wrote shows here (a language
+    /// model's answer landing). It reads the document, which an observation hears change with
+    /// every commit, so a view that waits for one write observes what says it's coming instead.
+    /// Nil once it's gone.
+    public var shape: ShapeRecord<Props>? { editor?.document[shapeID]?.typed(as: Props.self) }
 
     /// Brings `rect` into view (a caret's, where text is typed past the window's edge: a note
     /// growing downward with what's typed), moving the camera at once, by as little as it takes, into
@@ -86,7 +97,7 @@ public struct ShapeTranslation<Props: ShapeProps> {
 }
 
 /// Props that hold something following from the rest, which the kind's own setters keep in step
-/// (a schema card's height, which `setSchema` fits to its schema). A shape made from properties
+/// (a schema card's height, which `setPrompt` fits to its description). A shape made from properties
 /// written somewhere else, `Registry.shape(_:properties:)`, or given some of its own that way,
 /// `shape(_:setting:)` (the command line's `draw`), goes through `derive` before anything else is
 /// done with it, so it's in step as the setters would have left it. A board read doesn't (a shape
@@ -116,7 +127,7 @@ public protocol PaintOrderAnchored: ShapeDefinition {
 /// Zoomed out, a frame draws thousands, so keep it cheap: a few fills, costing about the same
 /// whatever the shape holds; read the shape, its geometry (kept from frame to frame:
 /// `context.shapes.geometry(of:)`), `context.zoom`, and at most what's already kept for it (a
-/// board's preview, `drawBoardPreview`; a reading its plugin holds), never anything that parses or
+/// board's preview, `drawBoardPreview`; what its plugin keeps of the shape), never anything that parses or
 /// lays out text (a line's bar is as long as its text's columns, `SkeletonText`, say, not as its
 /// measured width).
 /// While skeletons are drawn, its outline (selected, hovered, the hint) is its kept geometry's, in

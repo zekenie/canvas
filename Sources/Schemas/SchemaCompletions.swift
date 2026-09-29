@@ -84,7 +84,7 @@ public enum SchemaCompletions {
     }
 
     /// The names in the `properties` of the object whose `required` list the caret is in, that the
-    /// list doesn't hold yet, each with its type as the card says it.
+    /// list doesn't hold yet, each with its type in a word or two (`SchemaFieldType.label`).
     static func requirable(_ caret: JSONCaret) -> [JSONCompletionOffer] {
         guard caret.containers.count >= 2 else { return [] }
         let object = caret.containers[caret.containers.count - 2]
@@ -97,7 +97,7 @@ public enum SchemaCompletions {
     }
 
     /// Where a `$ref` can point: the whole schema, and each of the root's definitions (`$defs`, and
-    /// the older `definitions`), each with its type as the card says it.
+    /// the older `definitions`), each with its type in a word or two (`SchemaFieldType.label`).
     static func targets(in root: JSONNode) -> [JSONCompletionOffer] {
         var offers = [JSONCompletionOffer(string: "#", detail: wholeSchema)]
         for keyword in ["$defs", "definitions"] {

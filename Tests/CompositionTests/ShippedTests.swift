@@ -48,7 +48,7 @@ import ValidationDetails
         arrows               shape arrow · label Arrow → arrow · ContentsRows → arrow · service ArrowTargeting · overlay BindingHintsOverlay
         sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
         subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard
-        schemas              service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · ReadableZoom → schema-card · channel schema-link · edge type schema-link
+        schemas              service SchemaSync · shape schema-card · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · channel schema-link · edge type schema-link
         validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
         adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
         detail-panel         service DetailPanelState
@@ -212,18 +212,17 @@ import ValidationDetails
         expectEqual(h.editor.document.shapes.first?.box, CGRect(x: 260, y: 270, width: 160, height: 100))
         expectEqual(h.editor.currentToolID, .select)
     },
-    test("going to a schema card in view at 70% brings it close enough to read its rows; a note there reads, and stays") {
+    test("going to a note or a schema card in view at 70% leaves the camera: their text, a note's, reads there") {
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
         h.editor.viewportDidResize(to: CGSize(width: 1200, height: 800))
         let note = h.editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Hi"))
-        let card = h.editor.add(SchemaCard(frame: CGRect(x: 400, y: 100, width: 240, height: 67)))
+        let card = h.editor.add(SchemaCard(frame: CGRect(x: 400, y: 100, width: 240, height: 52)))
         h.editor.camera = Camera(zoom: 0.7)
-        h.editor.goTo([note])
-        h.wait(300)
-        expectEqual(h.editor.camera.zoom, 0.7)
-        h.editor.goTo([card])
-        h.wait(300)
-        expect(h.editor.camera.zoom >= 1, "at least 100%: \(h.editor.camera.zoom)")
+        for id in [note, card] {
+            h.editor.goTo([id])
+            h.wait(300)
+            expectEqual(h.editor.camera.zoom, 0.7)
+        }
     },
 ])
 
