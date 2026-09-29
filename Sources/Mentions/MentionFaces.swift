@@ -12,7 +12,8 @@ struct MentionFace: Hashable, Sendable {
 }
 
 /// The pills on the canvas, as faces, on any shape whose kind draws mention text (`MentionTexts`),
-/// selected or not, live or not, but the one being edited, whose text view has its own:
+/// selected or not, live or not, but the one being edited, whose text view has its own, and, zoomed
+/// out, one drawn as a skeleton, which draws no text (Selection asks it for none):
 /// - a click edits the shape from the pill (`beginEditing(_:at:)`), whose text view selects the
 ///   pill there: a pill is selected as text is, never followed on a single click. A read-only shape
 ///   (a locked one) isn't asked to, since a refused edit is a try to change it, and a click isn't;

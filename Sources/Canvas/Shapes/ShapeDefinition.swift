@@ -79,11 +79,20 @@ public struct ShapeContext {
     /// shapes into view. Shapes with no outline (nothing drawn) don't count; nil if none is left.
     public func bounds(of ids: some Sequence<ShapeID>) -> CGRect? {
         var union: CGRect?
-        for id in ids {
-            guard let geometry = geometry(of: id), !geometry.outline.isEmpty, !geometry.bounds.isNull else { continue }
-            union = union?.union(geometry.bounds) ?? geometry.bounds
+        func add(_ id: ShapeID) {
+            if let bounds = outlineBounds(of: id) { union = union?.union(bounds) ?? bounds }
         }
+        // An array's ids are read from its storage, with no call through the generic for each (a
+        // selection of every shape is thousands).
+        if ids.withContiguousStorageIfAvailable({ $0.forEach(add) }) == nil { ids.forEach(add) }
         return union
+    }
+
+    /// The bounds of a shape's geometry, nil for one with no outline, or none.
+    private func outlineBounds(of id: ShapeID) -> CGRect? {
+        if let index = currentIndex { return index.outlineBounds(of: id, in: self) }
+        guard let geometry = geometry(of: id), !geometry.outline.isEmpty, !geometry.bounds.isNull else { return nil }
+        return geometry.bounds
     }
 
     /// Whether a world point hits the shape, by its definition's own test.
@@ -122,15 +131,18 @@ public struct RenderContext {
     private let boardShapeCount: (ShapeID) -> Int
     private let boardPreview: (ShapeID, CGRect, CGFloat, CGContext) -> Bool
     private let fileShape: (ShapeID) -> AnyShapeRecord?
+    let skeleton: SkeletonInk
 
     init(cg: CGContext, shapes: ShapeContext, isEditing: Bool, shapeCount: @escaping (ShapeID) -> Int,
-         preview: @escaping (ShapeID, CGRect, CGFloat, CGContext) -> Bool, fileShape: @escaping (ShapeID) -> AnyShapeRecord?) {
+         preview: @escaping (ShapeID, CGRect, CGFloat, CGContext) -> Bool, fileShape: @escaping (ShapeID) -> AnyShapeRecord?,
+         skeleton: SkeletonInk) {
         self.cg = cg
         self.shapes = shapes
         self.isEditing = isEditing
         boardShapeCount = shapeCount
         boardPreview = preview
         self.fileShape = fileShape
+        self.skeleton = skeleton
     }
 
     /// A shape on any board of the file the editor can show: one on the board shown as
@@ -173,6 +185,88 @@ public struct RenderContext {
         cg.fillPath()
         cg.restoreGState()
     }
+
+    // MARK: Skeletons
+
+    /// The default skeleton (`CustomSkeleton`): a geometry (the shape's, kept:
+    /// `shapes.geometry(of:)`) as a rough picture of the board draws it, a closed outline filled
+    /// and an open one stroked a view point wide, in one neutral gray unless `color` says
+    /// otherwise; no shadow, nothing inside. A shape only a few pixels across is its bounds (a line
+    /// from its first point to its last, if it's open), and one under a pixel the whole device
+    /// pixel its middle is in, as the minimap's silhouettes are. What the core draws for a kind
+    /// without a skeleton of its own, and what one may start from. It paints as `fillPath` does, so
+    /// call it with no path of your own under way.
+    public func drawSkeleton(of geometry: ShapeGeometry, color: NSColor? = nil) {
+        cg.saveGState()
+        fillSkeleton(of: geometry, color: color?.cgColor ?? skeleton.fill)
+        cg.restoreGState()
+    }
+
+    /// Greeked text: bars where a skeleton's text would be (world units; a line's worth each), in
+    /// one fill of the canvas's text-bar color, a translucent dark that reads on a shape's light
+    /// body, so every kind's greeked text looks alike. The kind works out the bars from what it
+    /// knows without laying text out (a line's bar as long as its characters), and may hand them
+    /// over as it works them out (a lazy sequence), with no array of its own. It paints as
+    /// `fillPath` does.
+    public func fillSkeletonText(_ bars: some Sequence<CGRect>) {
+        var bars = bars.makeIterator()
+        guard let first = bars.next() else { return }
+        cg.saveGState()
+        cg.addRect(first)
+        while let bar = bars.next() { cg.addRect(bar) }
+        cg.setFillColor(skeleton.text)
+        cg.fillPath()
+        cg.restoreGState()
+    }
+
+    /// `drawSkeleton(of:color:)` in the graphics state as it is: the core's, for a kind without
+    /// a skeleton of its own, in the fresh state each shape draws with.
+    func fillSkeleton(of geometry: ShapeGeometry, color: CGColor) {
+        let outline = geometry.outline, bounds = geometry.bounds
+        guard let first = outline.first, let last = outline.last else { return }
+        switch Silhouettes.form(of: bounds, pixel: skeleton.pixel) {
+        case .pixel:
+            // The device pixel its middle is in, whole, as a picture of the board fills the pixel
+            // it's in: a square a pixel wide around the middle would be spread over as many as four
+            // at a quarter each, and all but vanish.
+            let middle = cg.convertToDeviceSpace(CGPoint(x: bounds.midX, y: bounds.midY))
+            cg.setFillColor(color)
+            cg.fill(cg.convertToUserSpace(CGRect(x: middle.x.rounded(.down), y: middle.y.rounded(.down), width: 1, height: 1)))
+        case .bounds where geometry.isClosed:
+            cg.setFillColor(color)
+            cg.fill(bounds)
+        case .bounds:
+            cg.move(to: first)
+            cg.addLine(to: last)
+            strokeSkeleton(color: color)
+        case .outline where geometry.isClosed:
+            cg.addLines(between: outline)
+            cg.closePath()
+            cg.setFillColor(color)
+            cg.fillPath()
+        case .outline:
+            cg.addLines(between: outline)
+            strokeSkeleton(color: color)
+        }
+    }
+
+    /// Strokes the path under way.
+    private func strokeSkeleton(color: CGColor) {
+        cg.setStrokeColor(color)
+        cg.setLineWidth(Style.skeletonLineWidth / zoom)
+        cg.setLineCap(.round)
+        cg.setLineJoin(.round)
+        cg.strokePath()
+    }
+}
+
+/// What a frame's skeletons draw with, worked out once a frame: their colors, in the appearance
+/// the frame draws in, and how big a pixel is.
+struct SkeletonInk {
+    let fill: CGColor
+    let text: CGColor
+    /// World units.
+    let pixel: CGFloat
 }
 
 /// How one kind of shape looks and behaves. Stateless; one per kind, registered by its plugin.

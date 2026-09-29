@@ -11,12 +11,12 @@ struct SchemaCardDefinition {}
 /// their parent's row, one level down (`{ address {…} · phone }`), so they never take a row. A
 /// schema with no fields, or a text that isn't one (with nothing better to show: see
 /// `SchemaReadings.shown`), says so in one muted line where the first row would be ("No fields",
-/// "Invalid JSON", "Not an object"); Validation outlines the wrong ones. Far out, rows are bars
-/// (below 35%), then the title too (below 20%). Colors are the same in both appearances, as every
-/// shape's body is; the card's one hue is its accent `{}`.
+/// "Invalid JSON", "Not an object"); Validation outlines the wrong ones. Zoomed out, the editor
+/// draws its skeleton in its place (`SchemaSkeleton`). Colors are the same in both appearances, as
+/// every shape's body is; the card's one hue is its accent `{}`.
 extension SchemaCardDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<SchemaCard>, in context: RenderContext) {
-        let frame = shape.frame, cg = context.cg, zoom = context.zoom
+        let frame = shape.frame, cg = context.cg
         context.fillWithShadow(SchemaStyle.rounded(frame, SchemaStyle.cornerRadius), SchemaStyle.card)
         let layout = SchemaReadings.reading(of: shape).layout(size: frame.size)
         cg.saveGState()
@@ -25,40 +25,15 @@ extension SchemaCardDefinition: ShapeDefinition {
         cg.clip()
         // The layout is from the card's top-left corner.
         cg.translateBy(x: frame.minX, y: frame.minY)
-        guard let inner = layout.inner else { return }
-        let bars = zoom < SchemaStyle.rowTextZoom
-        drawTitle(layout, inner: inner, asBars: zoom < SchemaStyle.titleTextZoom, cg: cg)
-        // A state's line isn't a field: no bar stands for it.
-        if let state = layout.stateRow, !bars { state.text.drawLine(in: state.rect) }
-        for row in layout.rows {
-            bars ? drawBars(row, width: inner.width, cg: cg) : drawRow(row, cg: cg)
-        }
-        for line in [layout.moreRow, layout.rulesRow].compactMap({ $0 }) {
-            if bars {
-                bar(CGRect(x: line.row.minX, y: line.row.midY - SchemaStyle.barHeight / 2,
-                           width: min(CGFloat(line.text.length) * SchemaStyle.barAdvance, line.row.width), height: SchemaStyle.barHeight), cg: cg)
-            } else {
-                line.text.drawLine(in: line.rect)
-            }
-        }
+        guard layout.inner != nil else { return }
+        layout.titleText.drawLine(in: layout.titleRect)
+        if let state = layout.stateRow { state.text.drawLine(in: state.rect) }
+        for row in layout.rows { drawRow(row, cg: cg) }
+        for line in [layout.moreRow, layout.rulesRow].compactMap({ $0 }) { line.text.drawLine(in: line.rect) }
     }
 
     func indicatorPath(of shape: ShapeRecord<SchemaCard>, in context: ShapeContext) -> CGPath {
         SchemaStyle.rounded(shape.frame, SchemaStyle.cornerRadius)
-    }
-
-    /// `{}` in the accent, then the name (gray when untitled), one line ending in `…`. Far out, an
-    /// accent tick and a bar.
-    private func drawTitle(_ layout: SchemaCardLayout, inner: CGRect, asBars: Bool, cg: CGContext) {
-        guard asBars else {
-            layout.titleText.drawLine(in: layout.titleRect)
-            return
-        }
-        let height = SchemaStyle.titleBarHeight, y = inner.minY + (SchemaCardMetrics.titleLineHeight - height) / 2
-        bar(CGRect(x: inner.minX, y: y, width: SchemaStyle.markBarWidth, height: height), cg: cg, color: SchemaStyle.accent)
-        let x = inner.minX + SchemaStyle.markBarWidth + SchemaStyle.markBarGap
-        bar(CGRect(x: x, y: y, width: min(inner.maxX - x, CGFloat(layout.title.count) * SchemaStyle.titleBarAdvance), height: height),
-            cg: cg, color: SchemaStyle.secondaryText)
     }
 
     private func drawRow(_ row: SchemaCardLayout.Row, cg: CGContext) {
@@ -69,26 +44,6 @@ extension SchemaCardDefinition: ShapeDefinition {
         row.nameText.drawLine(in: row.nameRect)
         if let star = row.starText { star.drawLine(in: row.starRect) }
         if let tray = row.trayText { tray.drawLine(in: row.trayRect) }
-    }
-
-    /// A row as its chip with a bar for the name (a pattern's without its slashes): two fills.
-    private func drawBars(_ row: SchemaCardLayout.Row, width: CGFloat, cg: CGContext) {
-        let characters = CGFloat(row.name.count - (row.isPattern ? 2 : 0))
-        let chip = CGRect(x: row.frame.minX, y: row.frame.minY,
-                          width: min(characters * SchemaStyle.barAdvance + SchemaStyle.chipInset * 2, width * SchemaStyle.barShare),
-                          height: row.frame.height)
-        cg.addPath(SchemaStyle.rounded(chip, SchemaStyle.chipRadius))
-        cg.setFillColor(SchemaStyle.chipFill.cgColor)
-        cg.fillPath()
-        bar(CGRect(x: chip.minX + SchemaStyle.chipInset, y: row.frame.midY - SchemaStyle.barHeight / 2,
-                   width: chip.width - SchemaStyle.chipInset * 2, height: SchemaStyle.barHeight), cg: cg)
-    }
-
-    private func bar(_ rect: CGRect, cg: CGContext, color: NSColor = SchemaStyle.bar) {
-        guard rect.width > 0 else { return }
-        cg.addPath(SchemaStyle.rounded(rect, rect.height / 2))
-        cg.setFillColor(color.cgColor)
-        cg.fillPath()
     }
 }
 
@@ -125,26 +80,30 @@ enum SchemaStyle {
     static let typeGap: CGFloat = 8
     /// The type label's most, of the inner width.
     static let typeShare: CGFloat = 0.42
-    /// Below this zoom the rows draw as bars, no text (12-point text is under 4.2 points on screen);
-    /// below `titleTextZoom` the title does too (14 points, under 3).
-    static let rowTextZoom: CGFloat = 0.35
-    static let titleTextZoom: CGFloat = 0.2
-    /// A bar's width per character of what it stands for, and its height.
+    /// The skeleton's (`SchemaSkeleton`): a bar's width per column of what it stands for
+    /// (`SkeletonText`), and its height, where a row's text would be.
     static let barAdvance: CGFloat = 6
     static let barHeight: CGFloat = 6
-    /// A name bar's chip is at most this share of the row.
+    /// Its chip is at most this share of the row.
     static let barShare: CGFloat = 0.6
+    /// The name's bar, where 14-point text would be, and the `{}`'s mark before it.
     static let titleBarHeight: CGFloat = 9
     static let titleBarAdvance: CGFloat = 8
     static let markBarWidth: CGFloat = 14
     static let markBarGap: CGFloat = 5
+    /// The skeleton's edge, inside its frame, in view points, and its gray: where the card's shadow
+    /// showed as a device pixel or two darker than the light canvas just outside it (228 and 242 on
+    /// its 246 at 30%, 239 at 15%), a device pixel on a Retina screen of about that gray, so the
+    /// white card still has an edge there. On the dark canvas the shadow didn't show, and the edge
+    /// is a white card's softer rim.
+    static let skeletonEdgeWidth: CGFloat = 0.5
+    static let skeletonEdge = NSColor(srgbRed: 0.9, green: 0.9, blue: 0.9, alpha: 1)
 
     static let card = NSColor.white
     static let text = NSColor(srgbRed: 0.12, green: 0.12, blue: 0.12, alpha: 1)
     static let secondaryText = NSColor(srgbRed: 0.45, green: 0.45, blue: 0.45, alpha: 1)
     static let tertiaryText = NSColor(srgbRed: 0.62, green: 0.62, blue: 0.62, alpha: 1)
     static let chipFill = NSColor(srgbRed: 0.945, green: 0.945, blue: 0.945, alpha: 1)
-    static let bar = NSColor(srgbRed: 0.80, green: 0.80, blue: 0.80, alpha: 1)
     /// The zoom its rows read at: 11-point types are 11 points on screen at 100%, as the smallest
     /// text macOS sets to be read is. Going to a card (`goTo`) brings it at least this close.
     static let readableZoom: CGFloat = 1

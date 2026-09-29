@@ -8,8 +8,10 @@ import CoreGraphics
 /// face's, and the pointer over one hovers the shape the face names. The select tool asks for one
 /// only on a plain press (no ⇧, ⌘ or ⌥, and not a Control-click), and only on the shape it would
 /// press there, selected or not, where the point is on the shape itself rather than on something
-/// drawn for it (`DecorationHits`); canvas buttons and handles still come first. A list: each
-/// plugin's faces, the last plugin's first.
+/// drawn for it (`DecorationHits`); canvas buttons and handles still come first. A shape drawn as a
+/// skeleton, zoomed out (`editor.drawsSkeleton(of:)`), shows none of its content, so it has no
+/// faces: a click, a double-click and the pointer there are the shape's, and a double-click edits an
+/// `Editable` one (which then draws in full). A list: each plugin's faces, the last plugin's first.
 public enum ShapeFaces {}
 
 extension ShapeFaces: ExtensionPoint {
@@ -38,7 +40,7 @@ extension PluginRegistrar {
     /// press on the face. `hovering` names the shape the pointer over one hovers (`editor.hovered`),
     /// in its shape's place (a pill's target); nil, a shape that isn't there or can't be selected,
     /// or no `hovering`, hovers its shape. The select tool asks `at` as the pointer moves over a
-    /// shape, whatever keys are held, so keep it cheap.
+    /// shape, whatever keys are held, so keep it cheap; never for a shape drawn as a skeleton.
     public mutating func shapeFaces<Face: Hashable & Sendable>(at find: @escaping @MainActor (CanvasEditor, AnyShapeRecord, CGPoint) -> Face?,
                                                                click: @escaping @MainActor (Face, CanvasEditor) -> Void,
                                                                doubleClick: (@MainActor (Face, CanvasEditor) -> Void)? = nil,
@@ -76,9 +78,11 @@ struct FaceHit {
 
 extension CanvasEditor {
     /// The face under a world point on a shape (`ShapeFaces`), the last plugin's first. Only for a
-    /// point on the shape itself, not on something drawn for it (`SelectableHit.isOnShape`).
+    /// point on the shape itself, not on something drawn for it (`SelectableHit.isOnShape`), and
+    /// only on a shape drawn in full: a skeleton shows no faces.
     func faceHit(on hit: SelectableHit, at point: CGPoint) -> FaceHit? {
-        guard hit.isOnShape, let sources = selectionState?.faceSources, !sources.isEmpty, let record = document[hit.id] else { return nil }
+        guard hit.isOnShape, let sources = selectionState?.faceSources, !sources.isEmpty, !drawsSkeleton(of: hit.id),
+              let record = document[hit.id] else { return nil }
         for source in sources {
             if let face = source.face(self, record, point) { return FaceHit(source: source, face: face) }
         }

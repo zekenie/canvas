@@ -62,6 +62,16 @@ extension PolylineDefinition: ShapeDefinition {
     var hitMargin: HitMargin { HitMargin(world: PolylineStyle.strokeWidth / 2, view: PolylineStyle.hitMargin) }
 }
 
+extension PolylineDefinition: CustomSkeleton {
+    /// Zoomed out, where the canvas draws skeletons: the core's default, its points a view point
+    /// wide (its bounds, a few pixels across), but in its own indigo, so a line drawn by hand still
+    /// tells from an arrow. It costs what the default does.
+    func renderSkeleton(_ shape: ShapeRecord<Polyline>, in context: RenderContext) {
+        guard let geometry = context.shapes.geometry(of: shape.id) else { return }
+        context.drawSkeleton(of: geometry, color: PolylineStyle.color)
+    }
+}
+
 extension PolylineDefinition: CustomTranslation {
     /// Without this, dragging the selection would leave a line where it is: the core moves boxes
     /// by their frame, and this kind has none. Every point follows the pointer.

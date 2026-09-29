@@ -30,6 +30,14 @@ public protocol EditorService: AnyObject {
     /// like any commit, but it costs both boards' shapes, so a service that keeps less, or keeps it
     /// per board, says what it does instead.
     func boardDidChange(_ change: BoardChange, in editor: CanvasEditor)
+    /// The canvas started or stopped drawing shapes as skeletons (`editor.drawsSkeletons`): the
+    /// camera's zoom went past the editor's `skeletonZoom` (a pinch, a zoom command, a board shown
+    /// with its camera, heard after `boardDidChange`), or the host moved that past the zoom. Only
+    /// when the level changes, never as editing begins or ends (the shape being edited draws in
+    /// full either way). A service whose hit testing goes by what a shape draws (a face on its text,
+    /// an adornment's label) lets go here of a hover or a button under the pointer that the level
+    /// doesn't show now: a pointer held still tells it nothing.
+    func drawsSkeletonsDidChange(in editor: CanvasEditor)
 }
 
 extension EditorService {
@@ -39,4 +47,5 @@ extension EditorService {
     public func didRefuseChanges(to ids: Set<ShapeID>, in editor: CanvasEditor) {}
     public func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor) {}
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) { documentDidChange(change.changes, in: editor) }
+    public func drawsSkeletonsDidChange(in editor: CanvasEditor) {}
 }

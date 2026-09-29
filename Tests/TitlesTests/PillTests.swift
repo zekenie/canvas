@@ -85,7 +85,7 @@ extension CornerDisc: Adornment {
         expect(changedPixels(untitled, titled, in: CGRect(x: 60, y: 95, width: 36, height: 12)) > 300, "9 to 27 points above the corner")
         expectEqual(changedPixels(untitled, titled, in: CGRect(x: 60, y: 60, width: 200, height: 32)), 0, "not up to 54, as it would be zoomed")
     },
-    test("below 25% the pill shrinks with the shapes, as every adornment does") {
+    test("below 25% the pill shrinks with the shapes, as every adornment does, and it's blank, as below 35%") {
         let editor = try titleEditor()
         let id = editor.add(Plaque(CGRect(x: 480, y: 960, width: 800, height: 480)))
         editor.camera = Camera(origin: .zero, zoom: 0.125)  // at (60, 120), 100 points wide: the pill half size, 4.5 to 13.5 points above
@@ -94,6 +94,30 @@ extension CornerDisc: Adornment {
         let titled = render(editor)
         expect(changedPixels(untitled, titled, in: CGRect(x: 60, y: 108, width: 16, height: 6)) > 60, "the pill, half size")
         expectEqual(changedPixels(untitled, titled, in: CGRect(x: 60, y: 85, width: 100, height: 20)), 0, "not full size")
+        // Its straight middle, 4.5 points in from each end, is one color: no text.
+        let pill = editor.camera.toView(try require(editor.adornmentFrames(of: id).first).rect)
+        let middle = pill.insetBy(dx: pill.height / 2 + 1, dy: 2)
+        let colors = Set(stride(from: middle.minY, to: middle.maxY, by: 1).flatMap { y in
+            stride(from: middle.minX, to: middle.maxX, by: 1).map { x in pixel(titled, at: CGPoint(x: x, y: y)) }
+        })
+        expect(middle.width > 8, "\(pill)")
+        expectEqual(colors.count, 1, "blank: \(colors)")
+    },
+    test("below 35%, where shapes are skeletons, the pill is its capsule alone; at 35% it has its text") {
+        let editor = try titleEditor()
+        let id = editor.add(Plaque(CGRect(x: 60 / 0.3, y: 100 / 0.3, width: 200 / 0.3, height: 120 / 0.3)), named: "Front desk")
+        var counts: [CGFloat: Int] = [:]
+        for zoom in [0.3, 0.35] as [CGFloat] {
+            editor.camera = Camera(origin: .zero, zoom: zoom)
+            let pill = editor.camera.toView(try require(editor.adornmentFrames(of: id).first).rect)
+            let middle = pill.insetBy(dx: pill.height / 2, dy: 3)
+            let rendered = render(editor)
+            counts[zoom] = Set(stride(from: middle.minY, to: middle.maxY, by: 1).flatMap { y in
+                stride(from: middle.minX, to: middle.maxX, by: 1).map { x in pixel(rendered, at: CGPoint(x: x, y: y)) }
+            }).count
+        }
+        expectEqual(counts[0.3], 1, "blank at 30%")
+        expect((counts[0.35] ?? 0) > 3, "its text at 35%: \(counts)")
     },
     test("a shape just below the view shows its pill at the view's foot") {
         let editor = try titleEditor()

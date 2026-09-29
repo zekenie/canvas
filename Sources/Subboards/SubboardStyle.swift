@@ -76,9 +76,12 @@ enum SubboardStyle {
     static func plates(of frame: CGRect) -> [CGRect] {
         guard hasPlates(frame) else { return [] }
         let card = card(of: frame)
-        return [2, 1].map { (n: CGFloat) in
-            CGRect(x: card.minX + plateInset * n, y: card.minY + plateStep * n, width: card.width - plateInset * n * 2, height: card.height)
-        }
+        return [plate(2, behind: card), plate(1, behind: card)]
+    }
+
+    /// The `n`th plate behind a card that has them, counting from the card.
+    static func plate(_ n: CGFloat, behind card: CGRect) -> CGRect {
+        CGRect(x: card.minX + plateInset * n, y: card.minY + plateStep * n, width: card.width - plateInset * n * 2, height: card.height)
     }
 
     /// The header band across the card's top, no taller than the card.

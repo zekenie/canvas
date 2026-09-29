@@ -123,21 +123,9 @@ extension SelectTool: Tool {
     }
 
     func pointerMoved(_ pointer: Pointer, in editor: CanvasEditor) {
-        editor.selectionState?.lastPointer = pointer.view
-        let state = editor.selectionState
-        if let hit = editor.buttonHit(atViewPoint: pointer.view) {
-            state?.hoveredButton = hit
-            editor.hoveredHandle = nil
-            editor.hovered = nil
-        } else if let handle = editor.handle(atViewPoint: pointer.view) {
-            state?.hoveredButton = nil
-            editor.hoveredHandle = handle
-            editor.hovered = nil
-        } else {
-            state?.hoveredButton = nil
-            editor.hoveredHandle = nil
-            editor.hovered = editor.shapeToHover(at: pointer.world)
-        }
+        guard let state = editor.selectionState else { return }
+        state.lastPointer = pointer.view
+        state.hover(atViewPoint: pointer.view)
     }
 
     func pointerExited(in editor: CanvasEditor) {
@@ -196,7 +184,9 @@ extension PointingShapeSession: Session {
     /// face's, on its shape: that shape is selected alone, whatever's under the release, and the
     /// press is over before the face is clicked, so the click may go to shapes (`goTo`) or back,
     /// which do nothing mid-gesture, and what it selects is a step of its own. If it changes the
-    /// selection or moves the camera, the rest of its double-click is its (`ignoresPress`).
+    /// selection or moves the camera, the rest of its double-click is its (`ignoresPress`). A face
+    /// whose shape went to a skeleton during the press (a pinch past the level) has gone with its
+    /// shape's content, as a canvas button that goes isn't clicked: the release is the shape's.
     func end(_ pointer: Pointer, in editor: CanvasEditor) {
         if editsOnClick {
             // The press is over before editing begins: the release is the editing view's to take.
@@ -204,7 +194,7 @@ extension PointingShapeSession: Session {
             editor.beginEditing(shapeID, at: pointer.world)
             return
         }
-        if let face {
+        if let face, !editor.drawsSkeleton(of: shapeID) {
             editor.selection = shapeID
             editor.session = nil
             let revision = editor.selectionRevision, camera = editor.cameraTarget

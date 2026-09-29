@@ -126,6 +126,28 @@ final class ShapeIndex {
         return entry
     }
 
+    /// The shape's extent, as its entry has it (`entry(for:in:)`, worked out now if it isn't kept),
+    /// read without copying the rest of the entry: what culling asks of every shape it might draw.
+    func extent(of id: ShapeID, in context: ShapeContext) -> CGRect? {
+        noteRead(id)
+        if let entry = entries[id] { return entry.extent }
+        return entry(for: id, in: context)?.extent
+    }
+
+    /// The bounds of the shape's geometry, nil for one with no outline (nothing drawn) or none at
+    /// all, as its entry has it (`entry(for:in:)`), read without copying the entry: what a union of
+    /// many shapes' bounds asks of each (`ShapeContext.bounds(of:)`, a selection's box).
+    func outlineBounds(of id: ShapeID, in context: ShapeContext) -> CGRect? {
+        noteRead(id)
+        if let entry = entries[id] { return Self.outlineBounds(entry.geometry) }
+        return entry(for: id, in: context).flatMap { Self.outlineBounds($0.geometry) }
+    }
+
+    private static func outlineBounds(_ geometry: ShapeGeometry?) -> CGRect? {
+        guard let geometry, !geometry.outline.isEmpty, !geometry.bounds.isNull else { return nil }
+        return geometry.bounds
+    }
+
     static func extent(of record: AnyShapeRecord, _ geometry: ShapeGeometry?) -> CGRect {
         guard let geometry else { return .null }
         guard !geometry.outline.isEmpty else { return record.box ?? .infinite }

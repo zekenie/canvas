@@ -446,6 +446,7 @@ private func draw(_ string: NSAttributedString, in box: CGRect) {
             }
         }
         board.editor.camera = Camera(origin: CGPoint(x: -10, y: -10), zoom: 0.2)
+        board.editor.skeletonZoom = 0          // every text drawn in full at 20%, the memo's bound being the point
         let size = CGSize(width: 640, height: 580)
         var built = MentionDrawingCounts.stringsBuilt
         _ = renderBitmap(board.editor, size: size)
@@ -464,6 +465,46 @@ private func draw(_ string: NSAttributedString, in box: CGRect) {
         #endif
     },
 
+    test("zoomed out past 35%, text isn't drawn: a skeleton builds no string and lays out no pill; at 35%, it's drawn") {
+        #if DEBUG
+        let board = try DrawingBoard()
+        // Text no other test draws, so the memo has never built it.
+        board.place(Scrap(paper, text: mentioning([.mention(idA, label: "A"), .text(" \(UUID())")])))
+        board.editor.camera = Camera(zoom: 0.3)
+        let built = MentionDrawingCounts.stringsBuilt, laidOut = MentionDrawingCounts.layoutsBuilt
+        _ = renderBitmap(board.editor, size: pictureSize)
+        expectEqual(MentionDrawingCounts.stringsBuilt, built)
+        expectEqual(MentionDrawingCounts.layoutsBuilt, laidOut)
+        board.editor.camera = Camera(zoom: 0.35)
+        _ = renderBitmap(board.editor, size: pictureSize)
+        expectEqual(MentionDrawingCounts.stringsBuilt - built, 1)
+        #endif
+    },
+    test("a frame of skeletons draws no text, so at its end the memo lets go of all but 2,048 of what a full frame kept") {
+        #if DEBUG
+        let board = try DrawingBoard()
+        let capacity = MentionDrawingCounts.capacity
+        let count = capacity + 100, columns = 50
+        board.editor.transact { transaction in
+            for n in 0..<count {
+                let frame = CGRect(x: CGFloat(n % columns) * 60, y: CGFloat(n / columns) * 60, width: 50, height: 50)
+                transaction.insert(ShapeRecord(Scrap(frame, text: mentioning([.mention(idA, label: "A"), .text(" \(n)")]))))
+            }
+        }
+        let level = board.editor.skeletonZoom
+        board.editor.skeletonZoom = 0          // every text drawn in full at 20%
+        board.editor.camera = Camera(origin: CGPoint(x: -10, y: -10), zoom: 0.2)
+        let size = CGSize(width: 640, height: 580)
+        _ = renderBitmap(board.editor, size: size)
+        expect(MentionDrawingCounts.kept >= count, "a full frame keeps them all: \(MentionDrawingCounts.kept)")
+        board.editor.skeletonZoom = level
+        board.editor.camera = Camera(origin: CGPoint(x: -10, y: -10), zoom: 0.3)
+        let built = MentionDrawingCounts.stringsBuilt
+        _ = renderBitmap(board.editor, size: size)
+        expectEqual(MentionDrawingCounts.stringsBuilt, built, "skeletons at 30% build none")
+        expectEqual(MentionDrawingCounts.kept, capacity, "and keep what the memo keeps")
+        #endif
+    },
     test("a pill's image is drawn afresh at every scale, never kept as a bitmap") {
         let board = try DrawingBoard()
         let string = board.string(mentioning([.text("Ask "), .mention(idA, label: "Groceries")]))

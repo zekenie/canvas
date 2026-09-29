@@ -30,6 +30,32 @@ public enum Style {
     nonisolated static let gridCopyCost = 2.0
 
     static let shapeShadow = NSColor(white: 0, alpha: 0.25)
+    /// How far past the view, in world units, a shape is still drawn: a shadow (6 units of blur)
+    /// of one just out of view shows at the edge.
+    static let drawingPad: CGFloat = 40
+
+    // Skeletons: shapes as they show zoomed out (`CustomSkeleton`).
+    /// Below this zoom a frame draws shapes as skeletons (`CanvasEditor.skeletonZoom`): a note's
+    /// 16-point text is under 6 points on screen, which reads as texture, not words, and a schema
+    /// card already drew its rows as bars below it. No hysteresis: the level is the zoom's.
+    static let skeletonZoom: CGFloat = 0.35
+    /// The default skeleton's fill (and an open one's line): a board preview's muted gray
+    /// (`boardPreview`) on the light canvas, since a preview's silhouettes are the same thing
+    /// (shapes with nothing of their own), and as far from the dark canvas in the dark.
+    static let skeleton = NSColor(name: nil) {
+        $0.isDark ? NSColor(srgbRed: 0.44, green: 0.46, blue: 0.48, alpha: 1) : NSColor(srgbRed: 0.6, green: 0.62, blue: 0.64, alpha: 1)
+    }
+    /// Greeked text: where a skeleton's text would be, over a shape's light body (a note's yellow,
+    /// a card's white), which is the same in both appearances. Translucent, so a bar takes its
+    /// surface's hue; a little stronger in the dark, where the default skeleton it may lie on is
+    /// darker.
+    static let skeletonText = NSColor(name: nil) {
+        $0.isDark ? NSColor(white: 0, alpha: 0.26) : NSColor(white: 0, alpha: 0.2)
+    }
+    /// An open shape's skeleton line, in view points: a line stays this wide however far out, as
+    /// the minimap's and a preview's do (an arrow's 3.5 units are a third of a point at 10%), and
+    /// it's about as wide as an arrow's own just below `skeletonZoom`, so nothing jumps there.
+    static let skeletonLineWidth: CGFloat = 1
 
     // Interaction and outlines. The values follow tldraw.
     static let accent = NSColor.controlAccentColor

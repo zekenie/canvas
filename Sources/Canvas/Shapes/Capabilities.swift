@@ -105,6 +105,43 @@ public protocol PaintOrderAnchored: ShapeDefinition {
     func paintAnchor(of shape: ShapeRecord<Props>, in document: CanvasDocument) -> ShapeID?
 }
 
+/// Drawn more simply zoomed out: how a shape shows in place of `render` while the canvas draws
+/// skeletons (the camera's zoom under the editor's `skeletonZoom`, 35%, where text no longer
+/// reads). A skeleton is what the shape is and where, less than the real view: its fills, and
+/// bars where its text would be (`RenderContext.fillSkeletonText`), never text, shadows or images
+/// of its own. The shape being edited is never drawn as one (its editing view is over it). A kind
+/// without this gets the default, its geometry in one neutral gray
+/// (`RenderContext.drawSkeleton(of:color:)`, which a skeleton may draw too, in a color of its own).
+///
+/// Zoomed out, a frame draws thousands, so keep it cheap: a few fills, costing about the same
+/// whatever the shape holds; read the shape, its geometry (kept from frame to frame:
+/// `context.shapes.geometry(of:)`), `context.zoom`, and at most what's already kept for it (a
+/// board's preview, `drawBoardPreview`; a reading its plugin holds), never anything that parses or
+/// lays out text (a line's bar is as long as its text's columns, `SkeletonText`, say, not as its
+/// measured width).
+/// While skeletons are drawn, its outline (selected, hovered, the hint) is its kept geometry's, in
+/// place of `indicatorPath`, which is what the default skeleton fills; a kind whose skeleton isn't
+/// that outlines it its own way (`CustomSkeletonOutline`).
+public protocol CustomSkeleton: ShapeDefinition {
+    func renderSkeleton(_ shape: ShapeRecord<Props>, in context: RenderContext)
+}
+
+/// A skeleton outlined its own way while skeletons are drawn (selected, hovered, the hint), in
+/// place of its kept geometry's outline: a kind whose skeleton isn't that says how it's outlined
+/// (an arrow's arc, where its kept geometry is only three points, its start, middle and end). Found
+/// once per kind, so every other kind's shape is outlined without being asked. Not asked for a
+/// shape only a few pixels across, outlined by its bounds as the default skeleton is drawn. ⌘A
+/// zoomed out outlines every shape in view each frame, so it costs what the skeleton does: made
+/// from the shape and its kept geometry (`context.geometry(of:)`), nothing worked out again. And
+/// it's stroked, where a rect's outline is filled as a ring for a fraction of that: leave it out
+/// for a skeleton that differs from a rect geometry only by corners rounded a pixel or two at
+/// these zooms.
+public protocol CustomSkeletonOutline: CustomSkeleton {
+    /// What `renderSkeleton` draws, so the outline and the skeleton agree; nil for its kept
+    /// geometry's outline, as a kind without this has.
+    func skeletonIndicatorPath(of shape: ShapeRecord<Props>, in context: ShapeContext) -> CGPath?
+}
+
 /// Props bound to other shapes (a connector's ends, a label's host). Every kind whose props are
 /// bound to a shape adopts it, since the core and plugins keep those bindings right through it:
 /// deleting a shape lets go of it in every shape bound to it, and a copy is bound to the copies of

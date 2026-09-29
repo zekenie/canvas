@@ -253,6 +253,9 @@ private var past: ContinuousClock.Instant { .now - .seconds(1) }
                               children: [owner.id: inside(), big.id: inside()])
         let registry = try previewRegistry(log: log)
         let h = EditorHarness { CanvasEditor(registry: registry, file: file, scheduler: $0) }
+        // Drawn in full at 10%: the render's own ask, too small on screen, is the point (as
+        // skeletons, owners wouldn't render at all).
+        h.editor.skeletonZoom = 0
         h.editor.camera = Camera(zoom: 0.1)
         _ = renderBitmap(h.editor, size: CGSize(width: 240, height: 180))
         expectEqual(log.drawn, [false, false])

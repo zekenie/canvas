@@ -29,6 +29,15 @@ extension RectangleDefinition: ShapeDefinition {
     }
 }
 
+/// Zoomed out, where the canvas draws skeletons: its frame in its teal, with no shadow, one fill.
+/// Without this it would be the core's gray.
+extension RectangleDefinition: CustomSkeleton {
+    func renderSkeleton(_ shape: ShapeRecord<Rectangle>, in context: RenderContext) {
+        context.cg.setFillColor(NSColor.systemTeal.cgColor)
+        context.cg.fill(shape.frame)
+    }
+}
+
 public struct RectanglesPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { "rectangles" }

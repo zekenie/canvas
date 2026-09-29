@@ -1,3 +1,4 @@
+import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
@@ -36,6 +37,29 @@ extension Motto: ShapeProperty {
     static let key: PropertyKey = "motto"
     static var defaultValue: String? { nil }
     static var keywords: PropertyKeywords<String> { PropertyKeywords().maxLength(5) }
+}
+
+/// Validation's rings in full as it drew them before its line width and join were set once a frame:
+/// each shape's stroked alone, its width and join set for it, in paint order, 2 wide, around its
+/// outline (`indicatorPath`) grown 3 view points, for shapes 32 points or more on screen. The
+/// overlay still strokes each alone in full; only zoomed out does it fill a run of one color at
+/// once (square rings).
+struct OneAtATime: CanvasOverlay {
+    let severity: @MainActor (AnyShapeRecord) -> Severity?
+    var space: OverlaySpace { .world }
+    func draw(in context: OverlayContext) {
+        let zoom = context.zoom, pad = 3 / zoom
+        for record in context.editor.paintOrder(in: context.visibleRect.insetBy(dx: -10 / zoom, dy: -10 / zoom)) {
+            guard let worst = severity(record), let geometry = context.shapes.geometry(of: record.id),
+                  let outline = context.shapes.registry.indicatorPath(of: record, in: context.shapes) else { continue }
+            let band = outline.copy(strokingWithWidth: pad * 2, lineCap: .round, lineJoin: .round, miterLimit: 10)
+            context.cg.addPath(geometry.isClosed ? outline.union(band) : band.normalized())
+            context.cg.setStrokeColor(worst.color.cgColor)
+            context.cg.setLineWidth(2 / zoom)
+            context.cg.setLineJoin(.round)
+            context.cg.strokePath()
+        }
+    }
 }
 
 @MainActor var calls = 0
@@ -305,6 +329,7 @@ extension Motto: ShapeProperty {
         }])
         let disc = h.add(Disc(CGRect(x: 50, y: 50, width: 100, height: 100)))
         let engine = try require(h.editor.validation)
+        h.editor.skeletonZoom = 0                                // in full at 20%: zoomed out, a ring is a skeleton's (below)
         h.editor.camera = Camera(origin: .zero, zoom: 0.2)       // 20 points across
         let far = renderBitmap(h.editor, size: CGSize(width: 200, height: 200))
         // The disc is (10, 10) to (30, 30) on screen; the ring, 3 points out, a rounded rect from 7 to
@@ -348,5 +373,76 @@ extension Motto: ShapeProperty {
         for point in [CGPoint(x: 60, y: 37), CGPoint(x: 37, y: 60)] {
             expectEqual(pixel(moved, at: CGPoint(x: point.x + 10, y: point.y)), pixel(still, at: point), "\(point)")
         }
+    },
+    test("in full, rings that cross are stroked as they always were, the line width and join now set once for all: a front shape's over a back one's, whatever their colors") {
+        // An error at A, crossed by a warning at B in front of it, which a warning at C in front of
+        // it crosses: each crossing on straight edges, on whole points, so no edge is antialiased.
+        let a = CGRect(x: 40, y: 40, width: 100, height: 60), b = CGRect(x: 100, y: 80, width: 100, height: 60)
+        let c = CGRect(x: 160, y: 120, width: 80, height: 60)
+        let severity: @MainActor (AnyShapeRecord) -> Severity? = { $0.box?.minX == a.minX ? .error : .warning }
+        let rules = Rules { r in r.validate(Box.self) { box, _ in [ValidationIssue("flagged", severity: box.frame.minX == a.minX ? .error : .warning)] } }
+        let shipped = try EditorHarness(plugins: [FixturesPlugin(), ValidationPlugin(), rules])
+        let alone = try EditorHarness(plugins: [FixturesPlugin(), Rules("one-at-a-time") { $0.overlay(OneAtATime(severity: severity)) }])
+        var ids: [[ShapeID]] = []
+        for h in [shipped, alone] { ids.append([a, b, c].map { h.add(Box($0)) }) }
+        let size = CGSize(width: 300, height: 220)
+        let crossings = [CGPoint(x: 97, y: 103), CGPoint(x: 143, y: 77), CGPoint(x: 203, y: 117), CGPoint(x: 157, y: 143)]
+        let front = pixel(renderBitmap(shipped.editor, size: size), at: crossings[0])
+        expect(front[1] > 110, "B's orange over A's red: \(front)")
+        expectEqual(changedPixels(renderBitmap(shipped.editor, size: size), renderBitmap(alone.editor, size: size),
+                                  in: CGRect(origin: .zero, size: size)), 0, "as one at a time")
+        for (h, shapes) in zip([shipped, alone], ids) { h.editor.transact { $0.bringToFront(shapes[0]) } }
+        let raised = pixel(renderBitmap(shipped.editor, size: size), at: crossings[0])
+        expect(raised[1] < 100, "A's red, brought to the front: \(raised)")
+        expectEqual(changedPixels(renderBitmap(shipped.editor, size: size), renderBitmap(alone.editor, size: size),
+                                  in: CGRect(origin: .zero, size: size)), 0, "as one at a time, A in front")
+    },
+    test("zoomed out, where shapes are skeletons, the outline stays, square-cornered, grown from no outline, and a front shape's is over a back one's") {
+        // As the crossing test above, at 20%: each box 5 times as big, so its outline is where it is there.
+        let a = CGRect(x: 200, y: 200, width: 500, height: 300), b = CGRect(x: 500, y: 400, width: 500, height: 300)
+        let h = try EditorHarness(plugins: [FixturesPlugin(), ValidationPlugin(), Rules { r in
+            r.validate(Box.self) { box, _ in [ValidationIssue("flagged", severity: box.frame.minX == a.minX ? .error : .warning)] }
+        }])
+        let back = h.add(Box(a))
+        h.add(Box(b))
+        h.editor.camera = Camera(origin: .zero, zoom: 0.2)                         // A from (40, 40), B from (100, 80), in view
+        expect(h.editor.drawsSkeletons)
+        let size = CGSize(width: 300, height: 220)
+        var rep = renderBitmap(h.editor, size: size)
+        let error = pixel(rep, at: CGPoint(x: 80, y: 37)), corner = pixel(rep, at: CGPoint(x: 37, y: 37))
+        expect(error[0] > 200 && error[1] < 100 && error[2] < 100, "A's red outline: \(error)")
+        expectEqual(corner, error, "its corner square")
+        let inside = pixel(rep, at: CGPoint(x: 60, y: 60))
+        expect(inside[1] > 100, "hollow: \(inside)")
+        expect(pixel(rep, at: CGPoint(x: 97, y: 103))[1] > 110, "B's orange over A's red where they cross")
+        h.editor.transact { $0.bringToFront(back) }
+        rep = renderBitmap(h.editor, size: size)
+        expect(pixel(rep, at: CGPoint(x: 97, y: 103))[1] < 100, "A's red, brought to the front")
+        #if DEBUG
+        expectEqual(h.editor.validation?.ringsGrown, 0, "no ring grown from an outline, though each shape is 100 points across")
+        #endif
+    },
+    test("zoomed out, the shape being edited has no ring, and the ring of a shape under it shows where the two crossed") {
+        // As above, but cards, and B, in front, being edited: A's is a ring, B has none.
+        let a = CGRect(x: 200, y: 200, width: 500, height: 300), b = CGRect(x: 500, y: 400, width: 500, height: 300)
+        let h = try EditorHarness(plugins: [CardsPlugin(), ValidationPlugin(), Rules { r in
+            r.validate(Card.self) { card, _ in [ValidationIssue("flagged", severity: card.frame.minX == a.minX ? .error : .warning)] }
+        }])
+        h.add(Card(a))
+        let edited = h.add(Card(b))
+        h.editor.camera = Camera(origin: .zero, zoom: 0.2)
+        let size = CGSize(width: 300, height: 220)
+        let before = renderBitmap(h.editor, size: size)
+        expect(h.editor.beginEditing(edited))
+        let rep = renderBitmap(h.editor, size: size)
+        let error = pixel(rep, at: CGPoint(x: 80, y: 37))
+        expect(error[0] > 200 && error[1] < 100 && error[2] < 100, "A's red outline: \(error)")
+        expectEqual(pixel(rep, at: CGPoint(x: 37, y: 37)), error, "A's corner square: a ring")
+        // B's top edge, 3 points out.
+        let warning = pixel(before, at: CGPoint(x: 150, y: 77))
+        expect(warning[0] > 200 && warning[1] > 110 && warning[2] < 100, "B's orange ring before it's edited: \(warning)")
+        expect(pixel(rep, at: CGPoint(x: 150, y: 77))[2] > 200, "none while it's edited: \(pixel(rep, at: CGPoint(x: 150, y: 77)))")
+        let crossing = pixel(rep, at: CGPoint(x: 97, y: 103))
+        expect(crossing[0] > 200 && crossing[1] < 100, "A's red ring where B's crossed it: \(crossing)")
     },
 ])

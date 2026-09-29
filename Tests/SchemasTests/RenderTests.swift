@@ -40,6 +40,11 @@ func isRed(_ pixel: [Int]) -> Bool { pixel[0] > 180 && pixel[1] < 110 && pixel[2
     let editor = try schemaEditor()
     for card in cards { editor.add(card) }
     editor.camera = Camera(zoom: zoom)
+    return render(editor, size: size)
+}
+
+/// `editor`'s canvas, twice over.
+@MainActor func render(_ editor: CanvasEditor, size: CGSize) -> NSBitmapImageRep {
     let bitmap = renderBitmap(editor, size: size, scale: 2)
     bitmap.size = size   // two pixels a point, so `pixel` and `any` take points
     return bitmap
@@ -50,6 +55,18 @@ func isRed(_ pixel: [Int]) -> Bool { pixel[0] > 180 && pixel[1] < 110 && pixel[2
 private func rowBand(_ i: Int) -> CGRect { CGRect(x: 52, y: 77 + 22 * CGFloat(i), width: 216, height: 18) }
 private let titleBand = CGRect(x: 52, y: 52, width: 216, height: 17)
 
+// The same card's skeleton at 30%, at (12, 12), 72 wide: inside the padding from x 15.6, the {}'s
+// mark from y 16.8, 2.7 tall, the name's bar after it from x 21.3; row i's chip from y 23.1 + 6.6 i,
+// 5.4 tall, and the bar in it (or a line's, from x 17.4) 1.8 tall, its middle at y 25.8 + 6.6 i.
+private let skeletonMark = CGRect(x: 15.6, y: 16.8, width: 4.2, height: 2.7)
+private let skeletonTitle = CGRect(x: 21.3, y: 16.8, width: 40, height: 2.7)
+private func skeletonBar(_ i: Int) -> CGFloat { 25.8 + 6.6 * CGFloat(i) }
+private func skeletonRow(_ i: Int) -> CGRect { CGRect(x: 15.6, y: 23.1 + 6.6 * CGFloat(i), width: 64.8, height: 5.4) }
+/// Where a chip shows and a line's bar doesn't: its inset, left of its bar.
+private let chipInset: CGFloat = 16.3
+/// Text darker than any skeleton's (the {}'s accent aside): the drawing's text, at any zoom.
+private func isText(_ pixel: [Int]) -> Bool { pixel.prefix(3).allSatisfy { $0 < 160 } }
+
 @MainActor let renderTests = Suite("Schema card drawing", [
     test("a frame reads no card's schema again, however many different ones are in view; typing reads only the typed card's") {
         let editor = try schemaEditor()
@@ -59,6 +76,7 @@ private let titleBand = CGRect(x: 52, y: 52, width: 216, height: 17)
             ids.append(editor.add(card(schema, at: CGPoint(x: CGFloat(i % 20) * 260, y: CGFloat(i / 20) * 260))))
         }
         editor.camera = Camera(zoom: 0.2)
+        editor.skeletonZoom = 0                                  // in full: a skeleton reads none at all
         let size = CGSize(width: 1100, height: 800)
         _ = renderBitmap(editor, size: size)
         let read = SchemasPlugin.schemasRead
@@ -148,23 +166,160 @@ private let titleBand = CGRect(x: 52, y: 52, width: 216, height: 17)
         expect(any(broken, in: CGRect(x: 30, y: 30, width: 20, height: 100), isRed), "Validation's outline")
         expect(any(broken, in: CGRect(x: 70, y: 52, width: 60, height: 17), isInk), "still named: Invoice")
     },
-    test("far out, rows are bars with no text; below 20%, the title too") {
-        // At 30%, the card is at (12, 12), 72 × 53: its rows from y 23.1.
-        let bars = try render([card(fixture(6))], zoom: 0.3, size: CGSize(width: 120, height: 90))
-        let rows = CGRect(x: 15.6, y: 23.2, width: 64.8, height: 36)
-        expect(!any(bars, in: rows, isInk), "no text in the rows")
-        expect(any(bars, in: rows, isAbout(Palette.bar, within: 20)), "bars")
-        expect(any(bars, in: CGRect(x: 15.6, y: 15.6, width: 64.8, height: 5.1), { $0.prefix(3).allSatisfy { $0 < 160 } }), "the title, still text")
+    test("below 35%, a card is its skeleton: white with a light gray edge and no shadow, the {} an accent mark, and bars where its name and rows' text are") {
+        let size = CGSize(width: 120, height: 90), cardRect = CGRect(x: 12, y: 12, width: 72, height: 53.1)
+        let editor = try schemaEditor()
+        editor.add(card(fixture(6)))
+        editor.camera = Camera(zoom: 0.3)
+        let skeleton = render(editor, size: size)
+        expect(!any(skeleton, in: cardRect, isText), "no text")
+        expect(isAbout(Palette.card, within: 2)(pixel(skeleton, at: CGPoint(x: 75, y: 40))), "the card's white")
+        // Its edge, where its shadow's showed: a device pixel of light gray inside the frame, then white.
+        for (edge, inside) in [(CGPoint(x: 12.25, y: 40), CGPoint(x: 12.75, y: 40)), (CGPoint(x: 83.75, y: 40), CGPoint(x: 83.25, y: 40)),
+                               (CGPoint(x: 50, y: 12.25), CGPoint(x: 50, y: 12.75))] {
+            expect(isAbout(Palette.skeletonEdge, within: 3)(pixel(skeleton, at: edge)), "the edge at \(edge): \(pixel(skeleton, at: edge))")
+            expect(isAbout(Palette.card, within: 2)(pixel(skeleton, at: inside)), "white inside it at \(inside)")
+        }
+        expect(any(skeleton, in: skeletonMark, isAccent), "the {}'s mark")
+        expect(any(skeleton, in: skeletonTitle, isAbout(Palette.textBar, within: 6)), "the name's bar")
+        for i in 0..<6 {
+            expect(isAbout(Palette.chip, within: 3)(pixel(skeleton, at: CGPoint(x: chipInset, y: skeletonBar(i)))), "row \(i)'s chip")
+            expect(any(skeleton, in: skeletonRow(i), isAbout(Palette.textBarOnChip, within: 6)), "row \(i)'s bar")
+        }
+        // No shadow: around the card, the canvas as it is without it.
+        let bare = try render([], zoom: 0.3, size: size)
+        let around = [CGRect(x: 6, y: 6, width: 6, height: 66), CGRect(x: 84, y: 6, width: 6, height: 66),
+                      CGRect(x: 12, y: 6, width: 72, height: 6), CGRect(x: 12, y: 65.5, width: 72, height: 6)]
+        expectEqual(around.map { changedPixels(bare, skeleton, in: $0) }, [0, 0, 0, 0], "no shadow")
+        // Drawn in full (the host's switch), the same card at 30% has its text and its shadow.
+        editor.skeletonZoom = 0
+        let full = render(editor, size: size)
+        expect(any(full, in: cardRect, isText), "text in full")
+        expect(around.map { changedPixels(bare, full, in: $0) }.reduce(0, +) > 0, "a shadow in full")
+
         let farther = try render([card(fixture(6))], zoom: 0.15, size: CGSize(width: 60, height: 45))
-        // The title's bar is the secondary gray (115); text would be darker.
-        expect(!any(farther, in: CGRect(x: 6, y: 6, width: 36, height: 27), { $0.prefix(3).allSatisfy { $0 < 100 } }), "no text at all")
-        expect(any(farther, in: CGRect(x: 7.8, y: 7.8, width: 3, height: 2.6), isAccent), "the mark's bar")
-        // The rules line (fixture 9's sixth row, from y 56.1) is a bar too, as `+N more` is.
-        let rules = try render([card(fixture(9))], zoom: 0.3, size: CGSize(width: 120, height: 90))
-        expect(any(rules, in: CGRect(x: 17, y: 56.1, width: 40, height: 5.4), isAbout(Palette.bar, within: 20)), "the rules' bar")
-        // A card's line saying it has none isn't a field: no bar for it.
-        let empty = try render([card(SchemaCard.starter)], zoom: 0.3, size: CGSize(width: 120, height: 90))
-        expect(!any(empty, in: CGRect(x: 15.6, y: 23.2, width: 64.8, height: 5.4), { $0.prefix(3).allSatisfy { $0 < 230 } }), "a blank row")
+        expect(!any(farther, in: CGRect(x: 6, y: 6, width: 36, height: 26.5), isText), "no text at 15%")
+        expect(isAbout(Palette.skeletonEdge, within: 3)(pixel(farther, at: CGPoint(x: 6.25, y: 20))), "the edge at 15%, as thin on screen")
+        expect(isAbout(Palette.card, within: 2)(pixel(farther, at: CGPoint(x: 6.75, y: 20))), "white inside it")
+        expect(any(farther, in: CGRect(x: 7.8, y: 8.4, width: 2.1, height: 1.35), isAccent), "the mark at 15%")
+        expect(any(farther, in: CGRect(x: 7.8, y: 11.55, width: 32.4, height: 13.2), isAbout(Palette.textBarOnChip, within: 20)), "bars at 15%")
+        // At 35%, the card as ever.
+        let near = try render([card(fixture(6))], zoom: 0.35, size: CGSize(width: 140, height: 100))
+        expect(any(near, in: CGRect(x: 18.2, y: 26.95, width: 75.6, height: 6.3), isText), "the first row's text at 35%")
+    },
+    test("with its reading kept, a card's skeleton goes by it: a longer name's bar is longer; no fields, no rows' bars; `+N more` and the rules line are bars with no chip") {
+        let size = CGSize(width: 120, height: 90)
+        let names = try render([card(#"{"properties": {"a": {}, "abcdefghijkl": {}}}"#)], zoom: 0.3, size: size)
+        let far = CGPoint(x: 30, y: skeletonBar(1))            // 72 units of bar from 17.4
+        expect(isAbout(Palette.textBarOnChip, within: 6)(pixel(names, at: far)), "abcdefghijkl's bar reaches x 30")
+        expect(isAbout(Palette.card, within: 2)(pixel(names, at: CGPoint(x: 30, y: skeletonBar(0)))), "a's doesn't: white there")
+        // A bar is as long as its text's columns (`SkeletonText`), a wide character two: 名前名前名前 is
+        // as long as abcdefghijkl, and a title of five Japanese characters and an emoji as one of
+        // twelve letters.
+        let lettered = try render([card(#"{"title": "abcdefghijkl", "properties": {"a": {}, "abcdefghijkl": {}}}"#)], zoom: 0.3, size: size)
+        let wide = try render([card(#"{"title": "顧客データ🎉", "properties": {"a": {}, "名前名前名前": {}}}"#)], zoom: 0.3, size: size)
+        expectEqual(changedPixels(lettered, wide, in: CGRect(origin: .zero, size: size)), 0, "twelve columns each")
+        expect(changedPixels(lettered, try render([card(#"{"title": "abcdef", "properties": {"a": {}, "abcdef": {}}}"#)], zoom: 0.3, size: size),
+                             in: CGRect(origin: .zero, size: size)) > 0, "six are shorter")
+
+        let empty = try render([card(SchemaCard.starter)], zoom: 0.3, size: size)
+        expect(!any(empty, in: skeletonRow(0), { !isAbout(Palette.card, within: 2)($0) }), "a blank row: \"No fields\" isn't a field")
+        expect(any(empty, in: skeletonTitle, isAbout(Palette.textBar, within: 6)), "Untitled's bar")
+
+        // Twenty fields: six rows, then `+14 more`, a line, in the seventh.
+        let more = try render([card(fixture(5))], zoom: 0.3, size: size)
+        for i in 0..<6 { expect(isAbout(Palette.chip, within: 3)(pixel(more, at: CGPoint(x: chipInset, y: skeletonBar(i)))), "row \(i)'s chip") }
+        expect(isAbout(Palette.card, within: 2)(pixel(more, at: CGPoint(x: chipInset, y: skeletonBar(6)))), "no chip for +14 more")
+        expect(isAbout(Palette.textBar, within: 6)(pixel(more, at: CGPoint(x: 25, y: skeletonBar(6)))), "its bar")
+        // Five fields, then the rules line (`Rules if/then`) in the sixth row.
+        let rules = try render([card(fixture(9))], zoom: 0.3, size: size)
+        expect(isAbout(Palette.chip, within: 3)(pixel(rules, at: CGPoint(x: chipInset, y: skeletonBar(4)))), "the fifth field's chip")
+        expect(isAbout(Palette.card, within: 2)(pixel(rules, at: CGPoint(x: chipInset, y: skeletonBar(5)))), "no chip for the rules")
+        expect(isAbout(Palette.textBar, within: 6)(pixel(rules, at: CGPoint(x: 30, y: skeletonBar(5)))), "their bar")
+    },
+    test("a card's skeleton reads no schema: with no reading kept for its text, a chip and a bar for each row its height makes room for") {
+        let size = CGSize(width: 120, height: 90)
+        let editor = try schemaEditor()
+        var props = card(#"{"properties": {"a": {}, "b": {}}}"#)
+        props.frame.size.height = 177                           // two fields, and room for six rows: made taller by hand
+        let id = editor.add(props)
+        editor.camera = Camera(zoom: 0.3)
+        _ = render(editor, size: size)                          // Validation has read it, and keeps what it found
+        // Readings of as many other texts for its id as a card keeps (`versionsPerCard`, 4), as
+        // typing makes them: none is kept for the text it has.
+        for n in 0..<4 { _ = SchemaCardLayout(ShapeRecord(id: id, card(fixture(2 + n)))) }
+        let read = SchemasPlugin.schemasRead
+        let skeleton = render(editor, size: size)
+        expectEqual(SchemasPlugin.schemasRead, read, "nothing read")
+        for i in 0..<6 {
+            expect(isAbout(Palette.chip, within: 3)(pixel(skeleton, at: CGPoint(x: chipInset, y: skeletonBar(i)))), "row \(i)'s chip")
+            expect(any(skeleton, in: skeletonRow(i), isAbout(Palette.textBarOnChip, within: 6)), "row \(i)'s bar")
+        }
+        expect(!any(skeleton, in: CGRect(x: 12, y: 12, width: 72, height: 53.1), isText), "no text")
+        expect(any(skeleton, in: skeletonMark, isAccent), "the {}'s mark")
+        expect(any(skeleton, in: skeletonTitle, isAbout(Palette.textBar, within: 6)), "a name's bar")
+        expectEqual(changedPixels(skeleton, render(editor, size: size), in: CGRect(origin: .zero, size: size)), 0, "the same every frame")
+        expectEqual(SchemasPlugin.schemasRead, read, "nothing read by another frame")
+        // Drawn in full, a frame reads it.
+        editor.camera = Camera(zoom: 0.35)
+        _ = render(editor, size: size)
+        expectEqual(SchemasPlugin.schemasRead, read + 1, "read once in full")
+    },
+    test("zoomed out, the first frame after a card's schema changes goes by what it says: an edit, its undo and redo, the sync's write, a write to a board not shown") {
+        let size = CGSize(width: 120, height: 90)
+        let rules = #"{"properties": {"a": {}, "b": {}, "c": {}}, "allOf": [{}]}"#
+        // Three fields, then the rules line in the fourth row: a bar with no chip, where a card with
+        // no reading kept for its text would have a fourth field's chip (and nothing asks for
+        // another frame).
+        @MainActor func drawsRules(_ editor: CanvasEditor, _ comment: String) {
+            let bitmap = render(editor, size: size)
+            expect(isAbout(Palette.card, within: 2)(pixel(bitmap, at: CGPoint(x: chipInset, y: skeletonBar(3)))), "no chip for the rules: \(comment)")
+            expect(isAbout(Palette.textBar, within: 6)(pixel(bitmap, at: CGPoint(x: 30, y: skeletonBar(3)))), "their bar: \(comment)")
+        }
+        let editor = try schemaEditor()
+        let id = editor.add(card(rules))
+        editor.camera = Camera(zoom: 0.3)
+        drawsRules(editor, "placed")
+        editor.transact("Rename") { $0.update(id, as: SchemaCard.self) { $0.props.setSchema(rules.replacingOccurrences(of: #""c""#, with: #""cc""#)) } }
+        drawsRules(editor, "edited")
+        editor.undo()
+        drawsRules(editor, "undone")
+        editor.redo()
+        drawsRules(editor, "redone")
+
+        let b = try SyncBench()
+        let placed = b.place()                                  // at (0, 0), drawn where `card`'s are
+        b.editor.camera = Camera(origin: CGPoint(x: -40, y: -40), zoom: 0.3)
+        b.typePrompt(placed, "three letters, and a rule")
+        b.sync(placed, answer: rules)
+        expectEqual(b.card(placed)?.schema, rules)
+        drawsRules(b.editor, "the sync's write")
+
+        let pocket = ShapeID(), inside = ShapeID()
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: pocket, Pocket(CGRect(x: 0, y: 0, width: 100, height: 100))))]),
+                              children: [pocket: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: inside, card(SchemaCard.starter)))])])
+        let nested = try schemaEditor(file: file, more: [PocketsPlugin()])
+        let written: Void? = nested.transact(on: BoardID(owner: pocket), "Write") { $0.update(inside, as: SchemaCard.self) { $0.props.setSchema(rules) } }
+        expect(written != nil, "written on the pocket's board")
+        expect(nested.showBoard(BoardID(owner: pocket)))
+        nested.camera = Camera(zoom: 0.3)
+        drawsRules(nested, "written on a board not shown, then shown")
+    },
+    test("a card of any size a file may hold draws, in full and as its skeleton, its reading kept or not") {
+        let editor = try schemaEditor()
+        var tall = card(fixture(6)), wide = card(fixture(6), at: CGPoint(x: 300, y: 40))
+        tall.frame.size.height = 1e21                           // a file edited by hand keeps it
+        wide.frame.size.width = 1e21
+        let id = editor.add(tall)
+        editor.add(wide)
+        for zoom in [1, 0.3] as [CGFloat] {
+            editor.camera = Camera(zoom: zoom)
+            expect(changedPixels(try render([], zoom: zoom), render(editor, size: CGSize(width: 340, height: 280)),
+                                 in: CGRect(x: 0, y: 0, width: 340, height: 280)) > 0, "drawn at \(zoom)")
+        }
+        _ = SchemaCardLayout(ShapeRecord(id: id, card(fixture(2))))    // no reading kept for its text
+        expect(changedPixels(try render([], zoom: 0.3), render(editor, size: CGSize(width: 340, height: 280)),
+                             in: CGRect(x: 0, y: 0, width: 340, height: 280)) > 0, "a row for each it has room for, as many as a card shows")
     },
     test("a card draws what its schema says now: a write redraws it, a same-sized card of other text draws other text") {
         let editor = try schemaEditor()
@@ -179,8 +334,8 @@ private let titleBand = CGRect(x: 52, y: 52, width: 216, height: 17)
         let directory = ProcessInfo.processInfo.environment["SCHEMA_CARD_PNG_DIR"].map { URL(fileURLWithPath: $0) }
         let all = fixtures.map { ($0.name, card($0.json)) }
         for (zoom, dark, columns, file) in [(1.0, false, 4, "real-all-100.png"), (0.5, false, 4, "real-all-50.png"),
-                                            (1.0, true, 4, "real-all-100-dark.png"), (0.3, false, 5, "real-all-30-bars.png"),
-                                            (0.15, true, 5, "real-all-15-bars-dark.png")] {
+                                            (1.0, true, 4, "real-all-100-dark.png"), (0.3, false, 5, "real-all-30-skeleton.png"),
+                                            (0.15, true, 5, "real-all-15-skeleton-dark.png")] {
             let bitmap = try sheet(grid(all, columns: columns), zoom: zoom, dark: dark)
             if let directory { try write(bitmap, to: directory.appendingPathComponent(file)) }
         }

@@ -58,6 +58,9 @@ public struct SchemasPlugin: CanvasPlugin {
 /// adds a reading, and the card's used longest ago goes. The readings of cards that went, or were
 /// read again from disk, are dropped (`forget`, which the sync calls), and past `capacity` those
 /// used longest ago.
+/// Zoomed out, a card's skeleton reads none: it takes a reading kept for its text, if there is
+/// one (`held`), and goes without; so the sync reads each card's text as it comes and as it
+/// changes, whoever changed it, and the frame after the commit finds it kept.
 ///
 /// While a card's text isn't a JSON object (a keystroke in the middle of a member breaks it), what
 /// the card shows stays what its last one said (`shown`): its rows and name on the card, its row in
@@ -76,6 +79,8 @@ final class SchemaReadings {
     /// `document` (one showing another reading asks that one).
     private var layouts: [(size: CGSize, layout: SchemaCardLayout)] = []
     private(set) lazy var issues: [ValidationIssue] = SchemaReadings.issues(of: document)
+    /// What the card's skeleton goes by, counted once: of `shown`.
+    private(set) lazy var skeleton = SchemaSkeleton.Counts(shown)
     /// When it was last asked for, counted in lookups.
     private var used = 0
 
@@ -151,6 +156,16 @@ final class SchemaReadings {
             return left.isEmpty ? nil : left
         }
         count = all.count - dropped.count
+    }
+
+    /// A reading kept for a card's schema as it is now, if there is one: never read here, so never
+    /// counted (`made`), and nothing measured. What its skeleton goes by, a frame drawing thousands
+    /// zoomed out (past `capacity`, some with none kept).
+    static func held(for card: ShapeRecord<SchemaCard>) -> SchemaReadings? {
+        guard let held = kept[card.id]?.first(where: { $0.text == card.props.schema }) else { return nil }
+        lookups += 1
+        held.used = lookups
+        return held
     }
 
     /// Drops the readings of a card that went, or was read again from disk, and the last one it

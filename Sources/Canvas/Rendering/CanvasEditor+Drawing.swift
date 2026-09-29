@@ -22,8 +22,9 @@ extension CanvasEditor {
         context.saveGState()
         context.scaleBy(x: camera.zoom, y: camera.zoom)
         context.translateBy(x: -camera.origin.x, y: -camera.origin.y)
-        // Pad the visible area so shadows of shapes just offscreen still get drawn.
         let world = camera.toWorld(bounds)
+        // Grown so shadows of shapes just offscreen still get drawn, and shapes shaken into view.
+        let pad = Style.drawingPad + worldDrawingReach, drawn = world.insetBy(dx: -pad, dy: -pad)
         let offsets = drawingOffsets
         let file = storedFile
         let shapeCount = { (owner: ShapeID) in file.children[owner]?.shapes.count ?? 0 }
@@ -37,14 +38,28 @@ extension CanvasEditor {
             guard min(rect.width, rect.height) * zoom >= Style.previewSmallestSide else { return false }
             return previews.preview(of: BoardID(owner: owner), in: file)?.draw(in: cg, fitting: rect, maxScale: maxScale, color: previewColor) ?? false
         }
-        for record in paintOrder(in: world.insetBy(dx: -40, dy: -40)) {
+        // Skeletons or not, decided once for the frame; the shape being edited is drawn in full.
+        let skeletons = drawsSkeletons, editing = editingShapeID, customSkeletons = registry.customSkeletons
+        let deviceScale = context.userSpaceToDeviceSpaceTransform
+        let ink = SkeletonInk(fill: Style.skeleton.cgColor, text: Style.skeletonText.cgColor,
+                              pixel: 1 / max(hypot(deviceScale.a, deviceScale.b), .leastNormalMagnitude))
+        for record in paintOrder(in: drawn) {
             guard let definition = registry.definition(for: record.kind) else { continue }
             drawIsolated(context) {
                 if !offsets.isEmpty, let offset = offsets[record.id] {
-                    context.translateBy(x: offset.x / camera.zoom, y: offset.y / camera.zoom)
+                    context.translateBy(x: offset.x / zoom, y: offset.y / zoom)
                 }
-                definition.erasedRender(record, in: RenderContext(cg: context, shapes: shapes, isEditing: record.id == editingShapeID,
-                                                                  shapeCount: shapeCount, preview: preview, fileShape: fileShape))
+                let render = RenderContext(cg: context, shapes: shapes, isEditing: record.id == editing, shapeCount: shapeCount,
+                                           preview: preview, fileShape: fileShape, skeleton: ink)
+                if skeletons, record.id != editing {
+                    if let custom = customSkeletons[record.kind] {
+                        custom.erasedRenderSkeleton(record, in: render)
+                    } else if let geometry = shapes.geometry(of: record.id) {
+                        render.fillSkeleton(of: geometry, color: ink.fill)
+                    }
+                } else {
+                    definition.erasedRender(record, in: render)
+                }
             }
         }
         previews.endFrame()
@@ -54,8 +69,8 @@ extension CanvasEditor {
                 self?.setNeedsDisplay()
             }
         }
-        drawOutlines(in: context, shapes: shapes)
-        let overlayContext = OverlayContext(cg: context, editor: self, shapes: shapes, visibleRect: world)
+        drawOutlines(in: context, shapes: shapes, around: drawn, skeletonPixel: skeletons ? ink.pixel : nil)
+        let overlayContext = OverlayContext(cg: context, editor: self, shapes: shapes, visibleRect: world, drawsSkeletons: skeletons)
         for overlay in registry.overlays where overlay.space == .world {
             drawIsolated(context) { overlay.draw(in: overlayContext) }
         }
@@ -93,6 +108,28 @@ extension CanvasEditor {
     /// most shapes.
     public func drawingOffset(of id: ShapeID) -> CGPoint { drawingOffsets[id] ?? .zero }
 
+    /// The farthest any shape is drawn from where it is, along either axis, in world units: zero
+    /// unless a drawing offset is set (`OverlayContext.worldDrawingReach`).
+    var worldDrawingReach: CGFloat {
+        drawingOffsets.isEmpty ? 0 : drawingOffsets.values.reduce(0) { max($0, abs($1.x), abs($1.y)) } / camera.zoom
+    }
+
+    // MARK: Skeletons
+
+    /// Whether the canvas draws shapes as skeletons now (`CustomSkeleton`): the camera's zoom is
+    /// under `skeletonZoom` (35%), where their text no longer reads. Every shape but the one being
+    /// edited (`drawsSkeleton(of:)`). What overlays and hit testing that mirror what a shape draws
+    /// go by (a face on its text, an adornment's label), so what shows and what answers the pointer
+    /// agree; `OverlayContext.drawsSkeletons` is the frame's, and services hear it change
+    /// (`EditorService.drawsSkeletonsDidChange`). A shape's geometry isn't told it (`ShapeContext`
+    /// has no `drawsSkeletons`, and `skeletonZoom` is host API), so hit testing, the marquee,
+    /// arrows' ends, snapping and the minimap go by each shape as they always did.
+    public var drawsSkeletons: Bool { camera.zoom < skeletonZoom }
+
+    /// Whether the shape draws as a skeleton now: `drawsSkeletons`, unless it's the shape being
+    /// edited, which draws in full under its editing view.
+    public func drawsSkeleton(of id: ShapeID) -> Bool { drawsSkeletons && id != editingShapeID }
+
     // MARK: Pictures of the board
     //
     // What a view that shows the board away from the canvas (the minimap) goes by. Such a picture is
@@ -107,15 +144,31 @@ extension CanvasEditor {
         if session?.hidesOutlines != true {
             for source in registry.outlineSources {
                 let more = source(self)
-                outlines.shapes += more.shapes
-                outlines.faintShapes += more.faintShapes
-                outlines.rects += more.rects
+                // The first list of shapes is taken as it is, not copied (⌘A's is every shape).
+                if outlines.shapes.isEmpty { outlines.shapes = more.shapes } else if !more.shapes.isEmpty { outlines.shapes += more.shapes }
+                if !more.faintShapes.isEmpty { outlines.faintShapes += more.faintShapes }
+                if !more.rects.isEmpty { outlines.rects += more.rects }
             }
         }
         if let hintedShapeID { outlines.shapes.append(hintedShapeID) }
-        let full = Set(outlines.shapes)
-        outlines.faintShapes.removeAll { full.contains($0) }
+        if !outlines.faintShapes.isEmpty, !outlines.shapes.isEmpty {
+            outlines.faintShapes = Self.faint(outlines.faintShapes, leavingOut: outlines.shapes)
+        }
         return outlines
+    }
+
+    /// The faint outlines less those outlined in full, with no set of all of those (⌘A's is every
+    /// shape): each of a few (a hover) is looked for among them, which compares ids, cheaper than
+    /// hashing them; more, in one pass over them.
+    private static func faint(_ faint: [ShapeID], leavingOut full: [ShapeID]) -> [ShapeID] {
+        guard faint.count > 8 else { return faint.filter { !full.contains($0) } }
+        var unfound = Set(faint)
+        let count = unfound.count
+        for id in full {
+            unfound.remove(id)
+            if unfound.isEmpty { return [] }
+        }
+        return unfound.count == count ? faint : faint.filter(unfound.contains)
     }
 
     /// The bounds of every shape on the board, in world units: what a picture of all of it shows.
@@ -152,34 +205,124 @@ extension CanvasEditor {
         context.restoreGState()
     }
 
-    /// Every plugin's outlines (unless the session hides them), then the hint, in one stroke at a
-    /// constant screen width; under them, in a wider, lighter stroke of their own, the faint ones.
-    private func drawOutlines(in context: CGContext, shapes: ShapeContext) {
+    /// Every plugin's outlines (unless the session hides them), then the hint, in one pass at a
+    /// constant screen width; under them, in a wider, lighter pass of their own, the faint ones.
+    /// Only what meets `area` (world units, what the shapes were drawn for) is asked for its path
+    /// and stroked: a shape outlined out of view costs a look at its kept extent, however it's
+    /// outlined. `skeletonPixel` is how big a pixel is (world units) while shapes are drawn as
+    /// skeletons, nil while they aren't.
+    private func drawOutlines(in context: CGContext, shapes: ShapeContext, around area: CGRect, skeletonPixel: CGFloat?) {
         let outlines = self.outlines
         strokeOutlines(of: outlines.faintShapes, rects: [], in: Style.accent.withAlphaComponent(Style.faintIndicatorOpacity),
-                       width: Style.faintIndicatorWidth, context: context, shapes: shapes)
-        strokeOutlines(of: outlines.shapes, rects: outlines.rects, in: Style.accent, width: Style.indicatorWidth, context: context, shapes: shapes)
+                       width: Style.faintIndicatorWidth, around: area, skeletonPixel: skeletonPixel, context: context, shapes: shapes)
+        strokeOutlines(of: outlines.shapes, rects: outlines.rects, in: Style.accent, width: Style.indicatorWidth,
+                       around: area, skeletonPixel: skeletonPixel, context: context, shapes: shapes)
     }
 
     /// `width` is in view points. A shape drawn away from where it is has its outline there too.
-    private func strokeOutlines(of ids: [ShapeID], rects: [CGRect], in color: NSColor, width: CGFloat, context: CGContext, shapes: ShapeContext) {
+    ///
+    /// Drawn as a skeleton, a shape's outline is its skeleton's rather than its `indicatorPath`: its
+    /// kind's own (`CustomSkeletonOutline`), else its kept geometry's, as the default skeleton fills
+    /// it, and a shape only a few pixels across is outlined by its bounds (a line from its first
+    /// point to its last, if it's open), as its default skeleton is drawn; the shape being edited,
+    /// drawn in full, keeps its own. ⌘A zoomed out outlines every shape in view, and stroking a
+    /// path costs far more than filling one, so there a rect (most shapes' geometry, and a plugin's
+    /// rects) isn't stroked but filled as a ring, the rect grown by half the line less the rect
+    /// shrunk by as much: what the stroke paints, but that its corners are square. Nothing here
+    /// makes an array per shape.
+    private func strokeOutlines(of ids: [ShapeID], rects: [CGRect], in color: NSColor, width: CGFloat, around area: CGRect,
+                                skeletonPixel: CGFloat?, context: CGContext, shapes: ShapeContext) {
         guard !ids.isEmpty || !rects.isEmpty else { return }
-        context.saveGState()
+        let zoom = camera.zoom, line = width / zoom
+        let area = area.insetBy(dx: -line, dy: -line)
+        let skeletonOutlines = registry.skeletonOutlines, editing = editingShapeID
+        let strokes = CGMutablePath(), rings = CGMutablePath()
         for id in ids {
-            guard let record = document[id], let path = registry.definition(for: record.kind)?.erasedIndicatorPath(of: record, in: shapes) else { continue }
-            if let offset = drawingOffsets[id] {
-                var shift = CGAffineTransform(translationX: offset.x / camera.zoom, y: offset.y / camera.zoom)
-                context.addPath(path.copy(using: &shift) ?? path)
-            } else {
-                context.addPath(path)
+            guard shapeIndex.extent(of: id, in: shapes)?.touches(area) == true, let entry = shapeIndex.entry(for: id, in: shapes) else { continue }
+            let offset = drawingOffsets[id].map { CGPoint(x: $0.x / zoom, y: $0.y / zoom) } ?? .zero
+            let shift = CGAffineTransform(translationX: offset.x, y: offset.y)
+            if let pixel = skeletonPixel, id != editing {
+                let geometry = entry.geometry.flatMap { $0.outline.isEmpty ? nil : $0 }
+                let bounds = geometry.map { $0.bounds.offsetBy(dx: offset.x, dy: offset.y) }
+                if let geometry, let bounds, Silhouettes.form(of: geometry.bounds, pixel: pixel) != .outline {
+                    if geometry.isClosed {
+                        Self.addRing(around: bounds, line: line, to: rings)
+                    } else {
+                        strokes.move(to: geometry.outline[0], transform: shift)
+                        strokes.addLine(to: geometry.outline[geometry.outline.count - 1], transform: shift)
+                    }
+                    continue
+                }
+                if !skeletonOutlines.isEmpty, let record = shapes.storedDocument[id],
+                   let own = skeletonOutlines[record.kind]?.erasedSkeletonIndicatorPath(of: record, in: shapes) {
+                    strokes.addPath(own, transform: shift)
+                    continue
+                }
+                if let geometry, let bounds {
+                    if geometry.isClosed, Self.isRect(geometry.outline, bounds: geometry.bounds) {
+                        Self.addRing(around: bounds, line: line, to: rings)
+                    } else {
+                        strokes.addLines(between: geometry.outline, transform: shift)
+                        if geometry.isClosed { strokes.closeSubpath() }
+                    }
+                    continue
+                }
+            }
+            if let record = shapes.storedDocument[id],
+               let indicator = registry.definition(for: record.kind)?.erasedIndicatorPath(of: record, in: shapes) {
+                strokes.addPath(indicator, transform: shift)
             }
         }
-        for rect in rects { context.addRect(rect) }
-        context.setStrokeColor(color.cgColor)
-        context.setLineWidth(width / camera.zoom)
-        context.setLineCap(.round)
-        context.setLineJoin(.round)
-        context.strokePath()
+        for rect in rects where rect.touches(area) {
+            if skeletonPixel == nil { strokes.addRect(rect) } else { Self.addRing(around: rect, line: line, to: rings) }
+        }
+        guard !strokes.isEmpty || !rings.isEmpty else { return }
+        context.saveGState()
+        // A translucent color painted twice where a ring and a stroke meet would be darker there:
+        // painted opaque into a layer, which takes the color's alpha as a whole.
+        var ink = color.cgColor
+        let layered = ink.alpha < 1 && !strokes.isEmpty && !rings.isEmpty
+        if layered {
+            context.setAlpha(ink.alpha)
+            context.beginTransparencyLayer(auxiliaryInfo: nil)
+            ink = ink.copy(alpha: 1) ?? ink
+        }
+        if !rings.isEmpty {
+            context.addPath(rings)
+            context.setFillColor(ink)
+            context.fillPath()
+        }
+        if !strokes.isEmpty {
+            context.addPath(strokes)
+            context.setStrokeColor(ink)
+            context.setLineWidth(line)
+            context.setLineCap(.round)
+            context.setLineJoin(.round)
+            context.strokePath()
+        }
+        if layered { context.endTransparencyLayer() }
         context.restoreGState()
+    }
+
+    /// Whether a closed outline is its bounds: four corners of them, one after another around it.
+    private static func isRect(_ outline: [CGPoint], bounds: CGRect) -> Bool {
+        outline.count == 4 && (0..<4).allSatisfy { i in
+            let a = outline[i], b = outline[(i + 1) % 4]
+            return (a.x == bounds.minX || a.x == bounds.maxX) && (a.y == bounds.minY || a.y == bounds.maxY) && (a.x == b.x) != (a.y == b.y)
+        }
+    }
+
+    /// What stroking a rect `line` wide paints, with square corners, as a fill: the rect grown by
+    /// half the line, less (wound the other way, so rings filled together with the nonzero rule
+    /// make their union) the rect shrunk by as much, if anything's left of it.
+    private static func addRing(around rect: CGRect, line: CGFloat, to path: CGMutablePath) {
+        path.addRect(rect.insetBy(dx: -line / 2, dy: -line / 2))
+        let inner = rect.insetBy(dx: line / 2, dy: line / 2)
+        guard inner.width > 0, inner.height > 0 else { return }
+        path.move(to: CGPoint(x: inner.minX, y: inner.minY))
+        path.addLine(to: CGPoint(x: inner.minX, y: inner.maxY))
+        path.addLine(to: CGPoint(x: inner.maxX, y: inner.maxY))
+        path.addLine(to: CGPoint(x: inner.maxX, y: inner.minY))
+        path.closeSubpath()
     }
 }

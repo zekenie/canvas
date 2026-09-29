@@ -41,6 +41,7 @@ maps one onto the other.
 - [Snapping](#snapping)
 - [Capabilities](#capabilities)
 - [The editor, the document, and drawing](#the-editor-the-document-and-drawing)
+- [Skeletons](#skeletons)
 - [Boards in a file](#boards-in-a-file)
 - [Undo](#undo)
 - [Boards on disk](#boards-on-disk)
@@ -99,6 +100,13 @@ extension RectangleDefinition: ShapeDefinition {
     }
 }
 
+extension RectangleDefinition: CustomSkeleton {
+    func renderSkeleton(_ shape: ShapeRecord<Rectangle>, in context: RenderContext) {
+        context.cg.setFillColor(NSColor.systemTeal.cgColor)
+        context.cg.fill(shape.frame)
+    }
+}
+
 public struct RectanglesPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { "rectangles" }
@@ -114,7 +122,9 @@ public struct RectanglesPlugin: CanvasPlugin {
 
 `Rectangle` is the kind: its data, named once, with its list of properties (how a board writes it,
 and what its JSON Schema says: [Properties](#properties)) and an `init()` that sets every member to
-its default. `RectangleDefinition` says how it looks, and a kind with a frame needs to say nothing
+its default. `RectangleDefinition` says how it looks, in full and zoomed out, where the canvas draws
+every shape more simply (`CustomSkeleton`: its teal in one fill, without the shadow, where it would
+otherwise be the core's gray: [Skeletons](#skeletons)), and a kind with a frame needs to say nothing
 else. `RectanglesPlugin` registers both, with a tool that puts a
 160 × 100 rectangle where the canvas is pressed, and R, the key that switches to it: `shortcut:` is
 the Keyboard horizontal's, which every key is registered with ([Keyboard
@@ -223,6 +233,8 @@ Once one plugin works, the question is which piece the next feature needs.
 | Add a shape without a frame (a line, a path) | `ShapeProps`; `geometry`, `hitTest` (with its `hitMargin`) and `CustomTranslation`; a tool that inserts it | [Polylines](#a-shape-without-a-frame) |
 | Work out a kind's geometry from other shapes (a connector) | Look them up through the `ShapeContext`: `shape(_:)`, `geometry(of:)`, `hitTest(_:shape:)` | [Arrows](../Sources/Arrows/Connectables.swift) |
 | Hit or outline a shape more exactly than its frame | Override `geometry`, `hitTest` or `indicatorPath` | [Polylines](#a-shape-without-a-frame), [StickyNotes](../Sources/StickyNotes/StickyNotes.swift)' rounded outline |
+| Draw a kind more simply zoomed out, where its text doesn't read, and cheaply, since thousands are in view | `CustomSkeleton`'s `renderSkeleton`: fills, `context.fillSkeletonText` for bars where its text is (as long as its columns, `SkeletonText.columns(of:)`), or `context.drawSkeleton(of:color:)`, the default, in a color of its own; `CustomSkeletonOutline` for an outline there that isn't its kept geometry's | [Skeletons](#skeletons), [Rectangles](#your-first-plugin) |
+| Make what an overlay draws, or what answers the pointer, follow what a shape shows zoomed out | `editor.drawsSkeleton(of:)` and `OverlayContext.drawsSkeleton(of:)` (each shape's level: the one being edited is in full), `OverlayContext.drawsSkeletons` (the frame's), and `EditorService.drawsSkeletonsDidChange` for a pointer held still | [Skeletons](#skeletons), [Adornments](#drawing-and-cost) |
 | Edit a shape in place, as text | `Editable`, and an `editingPlacement` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
 | Add a tool that makes no shape | `registrar.tool`, a `Tool` and a `Session` | [Eraser](#tools-and-sessions) |
 | Give a tool its key | `shortcut:` on the call that registers the tool (Keyboard's) | [Rectangles](#your-first-plugin) |
@@ -449,10 +461,11 @@ is compiled by `./test.sh`, even before anything depends on it.
   | `geometry(of:in:)` | the frame (box kinds); every other kind must say ([a shape without a frame](#a-shape-without-a-frame)) |
   | `hitTest(_:on:in:)` | inside the geometry's closed outline |
   | `hitMargin` | none: how far past its geometry's bounds `hitTest` can still say yes |
-  | `indicatorPath(of:in:)` | the geometry's outline (the target hint, and hover and selection outlines) |
+  | `indicatorPath(of:in:)` | the geometry's outline (the target hint, and hover and selection outlines, drawn in full; zoomed out, [the skeleton's](#skeletons)) |
 
   `geometry` is the one source of truth. Override it and hit testing, the outline, the marquee,
-  arrows and the minimap (which draws each shape as a silhouette of its outline) all follow.
+  arrows, the minimap (which draws each shape as a silhouette of its outline) and the shape zoomed
+  out (the core's default [skeleton](#skeletons), unless the kind draws its own) all follow.
   Override `hitTest` or `indicatorPath` only when you can do better: a sticky note outlines its
   rounded corners (`indicatorPath`), and a line is hit only near its stroke (Polylines' `hitTest`).
   A `hitTest` that reaches past the outline (a stroke, a few points of slop) says how far in
@@ -509,6 +522,28 @@ string drawing's own pitch for the font, so the render is as it was, where TextK
 lines 18 points apart. At the same height TextKit 2 sets a line's glyphs a point lower in it, so the
 editor's text starts a point higher, 15 points down (`NoteStyle.editorInset`), and its lines fall
 on the render's, pixel for pixel but anti-aliasing, as typed text does too (StickyNotesTests).
+
+Zoomed out, a note is its [skeleton](#skeletons) ([NoteSkeleton.swift](../Sources/StickyNotes/NoteSkeleton.swift)):
+its frame in its yellow, square (its 4-point corners are under a point and a half on screen there)
+and without the shadow, and its text greeked, a bar where each line would be (`NoteTextBars`,
+handed to `fillSkeletonText` as they're worked out): two fills, whatever it says. The lines are
+counted, never laid out: a line holds the box's width at 0.52 em a column, as
+`SkeletonText.columns(of:)` counts them (a CJK character or an emoji two, a mark none, a scalar a
+zero-width joiner joins nothing; calibrated once against string drawing, which put a dozen typical
+notes on 55 lines where this counts 56; glyphs alone average 0.46 em, but words wrap early), so a
+paragraph in Japanese takes the lines the render gives it; a mention counts as wide as its pill, by
+the name it holds (its target isn't looked up), its label in columns, read only as far as a pill
+grows (a pill is 30 columns at most); a paragraph (ended by a line feed, a return, or both) with nothing that
+shows (empty, or spaces) is a blank line; and there are no more lines than the box holds (100,000 at
+most, so a note of any height a file edited by hand keeps, 1e21, counts them in an `Int`). Each bar
+covers its line's x-height, 6.5 to 15 points down its 19, as wide as the box but for a paragraph's
+last, as long as what's left of it (two columns at least). So it can be a line off the text where
+words wrap unusually, and a little more in a script set narrower or wider than its columns (Hangul,
+emoji). What it reads is bounded by the box, not the text: a paragraph that shows is read only until
+it fills the lines left, since every bar after that is the box's width, so a paragraph of a million
+characters costs what one that fills the box does; and text typed in the app, still the UTF-16 the
+text view cut it from until the board is read again, is read 64 code units at a time on the stack,
+never transcoded.
 
 ## Tools and sessions
 
@@ -739,6 +774,8 @@ extension PolylineDefinition: CustomTranslation {
   with the pointer's offset from the press. Escape puts the shape back without your help: its
   whole record as it was before `beginTranslation` (a box kind moved by its frame gets its origin
   back, and keeps anything else written to it while it moved).
+- **Zoomed out it's the core's default [skeleton](#skeletons)**, its points a view point wide, in
+  its own indigo (`CustomSkeleton`, its code shown there), at the default's cost.
 
 **The tool inserts the shape itself.** Placements make box shapes, so the Line tool starts a
 session, which puts the line in on the first drag (a click draws nothing, as with arrows) and adds
@@ -785,6 +822,18 @@ arrow.label("Arrow", systemImage: "arrow.up.right")
 its kind (the detail panel's header, a row in the table of contents, “Arrow” can’t be mentioned.):
 what the kind declares (`ShapeRegistrar.label`, one per kind), else its placing tool's label and
 symbol ("Note"), else its id, with no symbol.
+
+Zoomed out, an arrow draws a [skeleton](#skeletons) of its own
+([ArrowSkeleton.swift](../Sources/Arrows/ArrowSkeleton.swift)), since its render looks up the
+shapes it joins and clips its ends every frame: `ArrowSkeleton` reads only its kept geometry's
+three points (its start, the middle of its body, its end) and works nothing out again, drawing the
+arc through them, or the line from start to end where the middle is less than a quarter of a view
+point off it, in its color as wide as its own stroke but never under a view point, with butt ends,
+and each head a filled triangle, as long as the render's chevron and swung as far. A stroke and a
+fill. Its outline there is that arc (`CustomSkeletonOutline`), not its geometry's two straight
+segments. That departs on purpose from tldraw, whose arrows only trade a drawn style for a solid
+one, below 25%, and from the render's round caps and open chevrons, below 35% alone: the POC's
+transcript and every render at 35% and above are as they were.
 
 ## A horizontal plugin
 
@@ -914,8 +963,11 @@ folds the titles a script writes the same way). What a title brings:
   gone; with under 30 points left, there's no pill. The pill is `TitlePill`, an
   [adornment](#adornments): Titles places it on every shape whose kind's title shows one, though it
   defines no kind, and Adornments lays it out with whatever else the shape shows, so it never meets
-  the lock. It keeps its size on screen, shrinking with the shapes below 25% zoom, goes where its
-  shape is drawn (it shakes with a locked shape), and is its shape's for the pointer: a click on it
+  the lock. It keeps its size on screen, shrinking with the shapes below 25% zoom, is a blank
+  capsule below 35% on a shape drawn as a [skeleton](#skeletons), as long as the title's columns (a
+  CJK character or an emoji two), and in full on the shape being edited
+  ([adornments zoomed out](#the-label)), goes where its shape is drawn (it shakes with a locked
+  shape), and is its shape's for the pointer: a click on it
   selects the shape, a drag moves it, and a double-click edits a note. A kind that draws its title
   itself leaves it out: `sub.title(pill: false)`.
 - **Its row's name** in [the table of contents](#the-table-of-contents), through TableOfContents'
@@ -979,14 +1031,20 @@ the shape invalid; a warning only flags it. Validation has one rule of its own, 
 each place a shape breaks its kind's schema is a warning, about the property it's in
 ([Checking shapes](#checking-shapes-against-their-schemas)). The overlay outlines a shape with issues in its worst
 one's color, red for an error and orange for warnings alone, and a shape without issues not at
-all, nor one being edited, whose text is still being written. The ring follows the shape's own
-outline, 3 view points out, as a selection's follows it: the outline the core strokes for its kind
-(`registry.indicatorPath(of:in:)`, which any overlay that decorates a shape along it reads) grown by
-the padding, so a card's ring keeps its rounded corners and an arrow's hugs its line. Growing an
-outline is path arithmetic, so each shape's ring is kept until the shape or its outline changes,
-or the zoom by more than a tenth (a pinch grows it once a tenth, not every frame), and a shape under
-32 points on screen gets a rounded rect around its bounds, which looks
-the same there. Two bridges show the issues elsewhere, though Validation has never heard of either place: the
+all, nor one being edited, whose text is still being written. In full, each ring is stroked alone
+and follows the shape's own outline, 3 view points out, as a selection's follows it: the outline
+the core strokes for its kind (`registry.indicatorPath(of:in:)`, which any overlay that decorates a
+shape along it reads) grown by the padding, so a card's ring keeps its rounded corners and an
+arrow's hugs its line. Growing an outline is path arithmetic, so each shape's ring is kept until the
+shape or its outline changes, or the zoom by more than a tenth (a pinch grows it once a tenth, not
+every frame), and a shape under 32 points on screen gets a rounded rect around its bounds, which
+looks the same there. Zoomed out, where shapes are [skeletons](#skeletons), the rings are a map of
+where the problems are. There, with thousands in view, each is a ring around its bounds with square
+corners, grown from no outline, and a run of one color, in paint order, is filled as one path, so a
+front shape's ring still covers a back one's: Core Graphics fills rects in one path for a fraction
+of what stroking each costs (4,800 at 10%: 2.7 ms, against 21), while rounded outlines in one path,
+stroked or filled, cost ten times what each stroked alone does. Two bridges show the issues
+elsewhere, though Validation has never heard of either place: the
 detail panel lists a shape's issues in an Issues tab
 ([ValidationDetails](#a-tab-of-status-lines-from-a-bridge-validationdetails)), and the table of
 contents puts a dot of the same color on the row of each shape with issues, so the board's are
@@ -1416,6 +1474,7 @@ any plugin can use.
 | `Tool.ignoresPress` | The rest of a double-click whose first click, on a face, went somewhere (changed the selection or moved the camera) is ignored, so the camera goes on and nothing is placed or edited where it's brought. |
 | `EditorService.documentDidChange`, `didPlace` | Drops shapes that are gone (or no longer selectable) from the selection and the hover; selects a shape just placed. |
 | `EditorService.boardDidChange`, `editor.showBoard` | Another board shown: what was selected on the board left is a step back, and nothing is selected on arrival. |
+| `EditorService.drawsSkeletonsDidChange` | The canvas started or stopped drawing [skeletons](#skeletons) under a pointer that may be still: in the select tool, with nothing under way, it looks again at what the pointer rests on, as a move there would, so a face's hovered target gives way to its shape. Buttons are looked for first, as on a move, so a button that comes or goes with the level (one that shows only in full, a blank label's shorter or longer reach) takes or gives up the hover without its plugin saying so. |
 | `Session.draw(in:)` | The marquee draws itself. |
 | `TranslatingSession`, `editor.shape(at:where:)` | Dragging the selection moves it; presses and hover find the front-most selectable shape. |
 
@@ -1508,9 +1567,21 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   that doesn't open is only gone to; nothing mid-gesture, nor for a shape whose own board is shown
   (a subboard's mention followed from inside it), which is gone into already.
 - `canOpen(_:)`, `open(_:)` and `openSelection()`: opening a shape, below.
-- `hoveredHandle`, `brush` (the marquee), `selectionBounds`, `isSelectable(_:)`, and the commands'
+- `hoveredHandle`, `brush` (the marquee), `isSelectable(_:)`, and the commands'
   `selectAll()`, `deleteSelection()` and `editSelection()` (editing alone, whatever opening would
   do).
+- `selectionBounds`, the union of the selected shapes' geometry bounds, is kept from one read to
+  the next while the selection, the board's shapes (`editor.revision`: every commit, undo and redo,
+  another board shown) and the camera stay as they were, so the box around ⌘A's thousands is worked
+  out again only after one of those changed, which saves each read (the canvas's frame, the
+  minimap's, a hover's `isInSelectionBox`) a pass over the selection. The selected shapes' outlines
+  still visit every one each frame: on the canvas a look at each one's kept extent, only those in
+  view stroked ([drawing](#the-editor-the-document-and-drawing)); in the minimap each one's
+  silhouette. Any commit works it out again, not only one naming a selected shape, since a shape's
+  geometry may follow another's (a link's, its ends'), and so does any camera change, since a
+  kind's geometry may read the camera: a pan still costs a pass over the selection once a frame,
+  reading each shape's kept bounds (`ShapeContext.bounds(of:)`). Debug builds count the passes
+  (`selectionBoundsWorkedOut`).
 
 **Opting out.** Every kind is selectable unless it says otherwise, for all its shapes or for some:
 
@@ -1634,7 +1705,8 @@ registrar.canvasButtons(at: { editor, viewPoint in state.dot(atViewPoint: viewPo
 - **Only in the select tool.** In any other tool a button is only drawn, and a press there is the
   tool's: the hand pans over a lock chip, and the eraser erases under it.
 - **Buttons that come and go** with the document are looked for again under a still pointer after
-  each commit. One that comes or goes some other way (a chip fading out) calls
+  each commit, and with the [skeleton](#skeletons) level as it changes (Selection's
+  `drawsSkeletonsDidChange`). One that comes or goes some other way (a chip fading out) calls
   `editor.canvasButtonsDidChange()`, as `editor.adornmentsDidChange(for:)` does for an adornment.
 - **Keep `at` cheap**: the select tool asks it as the pointer moves. Adornments' looks only where
   an adornment could be, through `editor.paintOrder(in:)`, and at nothing when no plugin places a
@@ -1695,6 +1767,18 @@ registrar.shapeFaces(at: { editor, shape, point in pills.pill(in: shape, at: poi
   it: ⇧ adds the shape, ⌘ toggles it.
 - **Keep `at` cheap**, and to the one shape it's given: the select tool asks it as the pointer moves
   over any shape. With no plugin's faces, nothing is asked.
+- **None on a skeleton.** A shape drawn as a [skeleton](#skeletons), zoomed out
+  (`editor.drawsSkeleton(of:)`), shows none of its content, so it has no faces: `at` is never asked
+  for it, and a press, a click, a double-click and the pointer there are the shape's, as on a shape
+  without faces. So a double-click edits an `Editable` one (from where it's pressed), which then draws
+  in full, faces and all, and a read-only one's is a refused edit (a locked note shakes, and goes to
+  no pill's target). The shape being edited draws in full, so it keeps its faces. As the level
+  changes under a still pointer, Selection looks again at what it rests on
+  (`drawsSkeletonsDidChange`, by the lookup a move uses), so a face's hovered target gives way to
+  its shape zoomed out and takes the hover back zoomed in. A face pressed in full whose shape is a
+  skeleton by the release (a pinch past 35% with the button held) isn't clicked: the release is the
+  shape's, as a canvas button gone by the release isn't clicked (`PointingShapeSession.end` asks
+  `drawsSkeleton(of:)` again).
 - **The press is the shape's.** It selects the shape as any press does (a member of several keeps
   them all). Past the drag threshold it moves the selection from the press, as the shape's own press
   would. On a lone box, which a press anywhere else moves at once, a press on a face waits for the
@@ -3127,8 +3211,10 @@ has them too), in view points:
 | `.onTopRightCorner` | The top-right corner: 16 points tall, centered on the top edge, from 6 points past the right edge leftward. | None (a tally, as above) |
 
 In a place, adornments sit 4 points apart. They keep their size on screen down to 25% zoom, and
-shrink with the shapes below it (0.4× at 10%). A shape without an outline (nothing drawn) shows
-none, and neither does one its board keeps aside. On a 200-point note, in points from its top-left
+shrink with the shapes below it (0.4× at 10%); below 35% they're drawn blank on a shape drawn as a
+skeleton, and in full on the shape being edited ([the label](#the-label)). A shape without an
+outline (nothing drawn) shows none, and neither does one its
+board keeps aside. On a 200-point note, in points from its top-left
 corner, y down:
 
 | The note | Laid out |
@@ -3196,6 +3282,22 @@ plugin's look alike, as `ContentsLabel` keeps rows alike:
 A clickable one draws lighter hovered and darker pressed. A label can't draw itself (a sparkline):
 that's [not built yet](#not-built-yet).
 
+**Zoomed out**, below 35%, each label follows its own shape's level (`editor.drawsSkeleton(of:)`).
+On a shape drawn as a [skeleton](#skeletons) it's drawn blank: its capsule or its disc alone, no
+text or symbol, in an opaque pale gray of the skeletons' hue, a little off the canvas
+(`AdornmentStyle.blankFill`, sRGB 0.84, 0.85, 0.86 on the light canvas and 0.21, 0.22, 0.23 on the
+dark: lighter than a shape's skeleton on the light one, darker on the dark), so it's there without
+weighing more than the greeked text beside it, and stays gray over a note's yellow (`.success` as
+pale a green: 0.70, 0.86, 0.74 light, 0.18, 0.29, 0.21 dark). Being opaque, it lets no grid dot
+show through. It keeps its opacity (an open lock still fades) and a clickable one's lighter hovered and darker
+pressed. Text's capsule is as long as its columns (`SkeletonText.columns(of:)`: a CJK character or
+an emoji two, a combining mark none) at its place's average column advance (measured once, from a
+sample, in the place's font), with its padding, and laid out as a measured one is (at the row's left
+end, it gives way), so nothing is set or measured on a skeleton: "iiiiiiii" and "WWWWWWWW" are as
+long, and "東京の会議メモ" is about as long as in full (91 points blank, 90 in full, as measured).
+The shape being edited is drawn in full, so its labels are too, drawn and pointed at in full, while
+its neighbors' are blank.
+
 ### One of each on a shape
 
 `ShapeAdornments` is keyed: a contribution claims its target and its type, so an adornment is
@@ -3224,8 +3326,9 @@ changes, and a service's state (`context.service(S.self)`), but only a service t
 Adornments when what it keeps changes: `editor.adornmentsDidChange(for: ids)`. `LockState` keeps
 how far each just-unlocked shape's open lock has faded, and says so each frame of the fade.
 
-Adornments makes a shape's labels once, measures them, and keeps them until a commit names the
-shape (its `ChangeSet`) or `adornmentsDidChange` does. So a label read from anything else (another
+Adornments makes a shape's labels once, whatever the zoom, and keeps them until a commit names the
+shape (its `ChangeSet`) or `adornmentsDidChange` does; drawn in full, it measures them too
+([Drawing and cost](#drawing-and-cost)). So a label read from anything else (another
 shape, the clock, a service that doesn't say) goes stale. `adornmentsDidChange` also redraws the
 canvas, and has the select tool look again for a button under a still pointer
 (`canvasButtonsDidChange`), so a lock that comes or goes under it is hovered, or no longer is. A
@@ -3250,12 +3353,31 @@ never stale, and nothing else is thrown away.
   it is (`context.worldDrawingReach`, zero unless one is), so a shape just outside the view that a
   shake draws toward it shows what of its adornments reaches in.
 - **Kept, not remade.** `AdornmentState`, a service, finds each kind's adornments once (the
-  registry is frozen), and keeps each shape's labels, made and measured, dropping those of the
-  shapes each commit's change set names. Where they go is worked out when it's asked, from what's
-  kept, since it follows the zoom and geometry that follows other shapes: a few additions per
-  adorned shape in view. So a frame costs a lookup and the drawing per adorned shape in view, and a
-  drag the labels of what moves. `./build.sh bench` holds a hover and a drag at 10,000 shapes,
-  with pills and locks in view, and a hover onto a pill, to a frame (16 ms).
+  registry is frozen), and keeps each shape's labels, made once whatever the zoom, with how long
+  each is drawn blank, and, apart, the faces of those drawn or pointed at in full (the text set and
+  measured, the symbol's image), dropping both for the shapes each commit's change set names. As
+  the canvas starts drawing skeletons (`drawsSkeletonsDidChange`) it lets the faces go (the shape
+  being edited makes its own again as it's drawn); zoomed back in, it makes the faces of what a
+  frame draws. It doesn't look under the pointer itself: Selection hears the level change too and
+  looks again, buttons first, and the layouts answer at the new level whichever hears first. So
+  zooming out over a thousand adorned shapes measures nothing, and zooming in again measures what's
+  in view. Where they go is worked out when it's asked, from what's kept, since it follows the zoom
+  and geometry that follows other shapes: a few additions per adorned shape in view. So a frame
+  costs a lookup and the drawing per adorned shape in view, and a drag the labels of what moves.
+  Once labels are kept, a frame allocates nothing per adorned shape: one buffer of slots a frame
+  (`AdornmentLayout.slots(of:width:into:)`), and the hovered and pressed buttons read once and
+  compared field by field, never boxed (at 10% on the 10,000-shape bench board, 558 adorned shapes
+  and 155 locks in view, the overlay took about a millisecond, as measured, with no array a shape
+  or box a lock). `./build.sh bench` holds a hover and a drag at 10,000 shapes, with pills and locks
+  in view, and a hover onto a pill, to a frame (16 ms).
+- **Blank, a run at a time.** Zoomed out, where thousands are in view, blank labels are filled a
+  run at a time: one path while they're alike (tone, look and opacity), filled once the next isn't,
+  in paint order, so what's over what is as when each is filled alone, and, being opaque, where two
+  meet is no darker. A capsule's ends are flattened to chords within 0.2 device pixels, since Core
+  Graphics fills a path of many curves more slowly than filling each alone: 7,200 labels at 10%
+  took some 5 ms as lines in one path, where as curves they took 12 filled one at a time and 24 in
+  one path. A label drawn in full among them (the shape being edited's) fills the run first, so
+  it's over the blank ones behind it.
 
 ### Pointing
 
@@ -3267,15 +3389,18 @@ never stale, and nothing else is thrown away.
 - **A hit** is within 3 points of the adornment's capsule, so a disc's is a circle, 12 points from
   its middle, and not its box's corner. Of one shape's adornments the nearest takes it; of several
   shapes', the front-most shape's, as they're drawn, so a front shape's pill over a back shape's
-  lock takes the press. Hits go by where a shape is, not where a shake draws it. An unselectable
-  shape's adornments are seen through, as it is, but a button isn't: a lock is clicked whatever
-  its shape.
+  lock takes the press. Hits go by where a shape is, not where a shake draws it, each shape's laid
+  out at its level (`editor.drawsSkeleton(of:)`), as it's drawn: on a skeleton, a blank label is
+  hit where its capsule is, so a point past a blank title's end, which the title in full would
+  cover, hits nothing, and a blank lock still unlocks; the shape being edited's are hit in full. An
+  unselectable shape's adornments are seen through, as it is, but a button isn't: a lock is clicked
+  whatever its shape.
 - **`editor.hoveredButton`** and `editor.pressedButton` hold an `AdornmentButton` on a clickable
   one: `AdornmentButton(LockChip.self, on: id)`, the type and the shape.
 - **`editor.adornmentFrames(of: id)`** is where each of a shape's adornments is now: an
   `AdornmentFrame` each (`adornment`, as `.of(TitlePill.self)`; its `label`; and its `rect`, in
-  world units at the current zoom, where the shape is), in the order they're claimed, leaving out
-  those without room. It's empty for a shape with none.
+  world units at the current zoom, where the shape is, blank on a skeleton), in the order they're
+  claimed, leaving out those without room. It's empty for a shape with none.
 
 ### Something the user turns on
 
@@ -3549,7 +3674,10 @@ extension LockChip: ClickableAdornment {                // a click on the chip
   row just above the shape, ending at its right edge. Its order is 300, a state that comes and
   goes, so it's farthest out of what's at that end, and a title's pill at the other end stops 4
   points short of it. Adornments lays it out with the rest, keeps its size on screen down to 25%,
-  and draws it where its shape is drawn, so it shakes with it. A click within 3 points of its edge
+  draws it blank below 35% on a shape drawn as a [skeleton](#skeletons), as a locked shape always
+  is, since it can't be edited (a disc with no lock, locked or open and fading, which a click unlocks
+  or locks as ever: [the label](#the-label)), and draws it
+  where its shape is drawn, so it shakes with it. A click within 3 points of its edge
   still clicks it. The open lock, fading, is a label from what `LockState` keeps
   (`openLockOpacity(of:)`: nil but for a shape just unlocked), and `LockState` tells Adornments
   each time it changes (`editor.adornmentsDidChange(for:)`: the lock opening, each frame of its
@@ -4080,6 +4208,9 @@ func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
   drawn has drawn, so a frame of more grows it, and it keeps what each editor's last frame drew
   (a cache of fixed size that a frame goes through in order would lose each text just before
   drawing it again). Where a frame ends is an overlay of Mentions' that draws nothing.
+- **Zoomed out**, a note is its [skeleton](#skeletons), bars where its lines are, and a render
+  isn't asked: no mention text is drawn there, no string built and no pill laid out, and the memo,
+  at the end of the first such frame, lets go of all but the 2,048 used last.
 - **Where pills are.** `editor.mentionPills(of:)` is each pill's frame, in world units, with
   `isLive`, from the same placements, as string drawing puts them: a line that doesn't fit, or a
   pill the "…" of a cut-short last line covers, has none. The `MentionTexts` point (`x.mentionText`,
@@ -4161,6 +4292,9 @@ is the note, and the text is its editor.
   follows it (`goTo`, or `goInto` for a kind followed by opening it), and Back comes back. A missing pill's does nothing.
 - **The pointer** over a live pill hovers the shape it names, if it's on the board shown; over a
   missing one, or one naming a shape on another board, its own shape.
+- **None on a skeleton**: zoomed out, where the note shows no text, its pills are no faces
+  ([Selection's rule](#faces-clickable-parts-of-a-shape)), so a click there selects the note, a
+  double-click edits it (a locked one's shakes, going nowhere), and the pointer hovers the note.
 
 Faces are Selection's, so a plugin list with Mentions needs `SelectionPlugin()` (and so
 `KeyboardPlugin()`); Show What Mentions is an item in ContextMenus' menu, so it needs
@@ -4862,6 +4996,19 @@ as SwiftUI sugar is.)
   read as the card is drawn, and a preview is of one revision of its board, so neither is ever
   stale: a write to the board while another is shown (`transact(on:)`) redraws the canvas as any
   commit does.
+- **Zoomed out** the card is its [skeleton](#skeletons) ([SubboardSkeleton.swift](../Sources/Subboards/SubboardSkeleton.swift)):
+  fills alone, square (its corners are 3.5 points on screen at most there, so its outline is its
+  frame's, as the core draws it), with no shadow, symbol, text or count. Its plates are one fill in
+  what they show from afar (their fill, with a quarter of their border's indigo); the card is the
+  border's indigo under its header band and its white body, the border never under half a view
+  point (just under 35% the card's own 1.5 is about that, so nothing jumps); a bar stands where the
+  title is, after the symbol's place, 0.52 em a column of its 15-point semibold
+  (`SkeletonText.columns(of:)`: a CJK character or an emoji two, so a title in Japanese or Chinese
+  is about as long as in full), no longer than the header leaves it, the placeholder's at half
+  strength; and its board's preview is asked for as the full card asks for it, in the same rect
+  at no more than a tenth of its board, drawn once it's built and big enough on screen, else
+  nothing. Five fills and the preview (`SubboardStyle.plate(_:behind:)` makes a plate without an
+  array).
 - **Opening it** is Boards': a double-click, Return, Enter or ⌘↓ with it the only one selected, Open
   first in its menu, the Open button in its panel's Board tab, and Return once its row is picked (a
   double-click on the row only where the list stays put, not in the app's panel). ⌘↑ comes back with it selected, and ⌘[ retraces. Its panel's header renames it, a run of
@@ -4898,10 +5045,16 @@ if !context.drawBoardPreview(ofBoardOwnedBy: shape.id, in: SubboardStyle.preview
 }
 ```
 
+A [skeleton](#skeletons) may ask for one too, as the subboard's does, in the same rect and at the
+same `maxScale`, so the card shows the same picture either side of 35%; the core's default skeleton
+never asks.
+
 The picture is the minimap's kind ([Silhouettes.swift](../Sources/Canvas/Rendering/Silhouettes.swift),
 the core's, host API, which the minimap draws with too): every shape on the board as a silhouette of
-its geometry (its outline filled, or stroked when it's open; its bounds when it's a few pixels
-across), all in one muted gray, and nothing of what a shape draws, no text and no colors, so a
+its geometry (its outline filled, or stroked when it's open; under 4 pixels both ways, its bounds,
+or a line from its first point to its last when it's open; under a pixel, the pixel it's in: the
+rule, `Silhouettes.form`, that the default [skeleton](#skeletons) goes by too), all in one muted
+gray, and nothing of what a shape draws, no text and no colors, so a
 subboard inside is its rectangle, and a shape costs the same whatever its kind. It's the core's
 `BoardPreviews` ([BoardPreviews.swift](../Sources/Canvas/Rendering/BoardPreviews.swift), host API,
 `editor.boardPreviews`):
@@ -5417,10 +5570,40 @@ registrar.channel(SchemaLink.self)
   reading is kept beside the other's instead of taking its place every frame; typing adds a
   reading, and the card's used longest ago goes. Readings of deleted cards, and of cards on a
   board read again, are dropped (the sync hears it), and past 4,096 the quarter used longest ago;
-  debug builds count reads (`SchemasPlugin.schemasRead`). Far out, rows, `+N more` and the rules are bars (below
-  35%), then the title (below 20%); a line saying there are none isn't a field, so no bar stands
-  for it. A card made from properties, or given a schema that way (`canvas draw`), is as tall as its
+  debug builds count reads (`SchemasPlugin.schemasRead`). A card made from properties, or given a schema that way (`canvas draw`), is as tall as its
   schema (`DerivedProps`).
+- **Zoomed out** the card is its [skeleton](#skeletons) (`SchemaSkeleton`, [SchemaSkeleton.swift](../Sources/Schemas/SchemaSkeleton.swift)),
+  and the render always draws it in full: a white card with no shadow but a light gray edge inside
+  its frame, half a view point (`SchemaStyle.skeletonEdgeWidth`, a device pixel on a Retina screen)
+  of 0.9 gray (`SchemaStyle.skeletonEdge`), where the full card's shadow showed as a pixel or two of
+  gray on the light canvas (a softer rim on the dark one); the `{}` as an accent mark where it sits,
+  and a bar for the name; a chip per field row with a bar in it for the field's name (a pattern's
+  without its slashes), at most 60% of the row; and a bar for `+N more` and for the rules line. Five
+  fills, whatever the schema (the edge, the card inside it, the chips, the mark, and every bar in one
+  `fillSkeletonText`; a card 24 units or less either way is its edge and its white alone), and none
+  reads or measures: a frame draws thousands. The edge is the frame filled under the white inset,
+  not an even-odd ring, which cost about three times as much (as measured). The bars go by the
+  card's reading only when one is kept for its text as it is (`SchemaReadings.held`, never counted
+  in `schemasRead`; the columns of its name, field names and rules line counted once a reading,
+  `SkeletonText.columns(of:)`, a wide character, CJK or emoji, two, at `SchemaStyle.barAdvance`, 6,
+  a column, the name at its `titleBarAdvance`, 8), and its rows are those the card shows, by the
+  overflow rule the layout goes by too (`SchemaCardMetrics.overflow`, `rows(fitting:)`, at most
+  `maxFittingRows`, a million, and the type label's columns at most `Int32.max`, so a frame of any
+  size a file edited by hand keeps, 1e21, draws without trapping, in full or zoomed out). Otherwise
+  (its reading gone past 4,096, or pushed out by four other texts
+  other windows read for a card of the same id) they go by the card's height, which its
+  rows set: a row for each it has room for, at most what the card shows (8 or more: 6 and
+  `+N more`), no rules line, and each bar as long as the card's id says, the same every frame. That's
+  seldom: the sync reads every card as the editor opens and as each arrives, and reads a card's
+  schema again in `documentDidChange` whenever a commit changes it, whoever made it (an edit, undo
+  or redo, an agent's draw, the sync's own write, a `transact(on:)` write to a board not shown), so
+  the frame after the commit finds it kept. Validation reads every card on the board shown too, but
+  only once the shapes are drawn, too late for that frame. A card with no fields has no rows' bars,
+  and nothing stands for "No fields" or "Invalid JSON": a line saying there are none isn't a field.
+  The card and its chips are square (their corners are under 3 points on screen there, and a
+  rounded card costs a third more), so its outline is the default one, its frame's. It costs some
+  3 µs a card, the edge about 0.6 µs more (as measured), where the full card at that zoom costs
+  some 47.
 - **Typing through a broken text.** A keystroke in the middle of a member leaves the text not JSON
   for a moment, so while a card's text isn't a JSON object, what it shows stays what its last one
   that was said (`SchemaReadings.shown`, kept this session, and dropped with the card, or when its
@@ -5727,6 +5910,8 @@ it, the core or a horizontal.
 | `HandleProviding` (Selection's) | Draggable handles on the only selected shape. The select tool finds, draws and hit-tests them; `pressHandle` returns `.drag` or `.consumed`, and `dragSession` does the dragging. | Arrows |
 | `BrushHitTesting` (Selection's) | Whether the marquee touches it, when the brush overlaps its bounds without containing them. Default: `ShapeGeometry.isHit(byBrush:)`. | Arrows (against the visible arc) |
 | `DerivedProps` | Props that hold something following from the rest, which the kind's setters keep in step. A shape made from properties written somewhere else, `registry.shape(_:properties:)`, or given some of its own that way, `registry.shape(_:setting:)` (the command line's `draw`), goes through `derive(_:)` first, so it's as its setters would have left it; a board read (a shape is as saved), a paste, and what a person does don't. | Schemas (a card's height, from its schema; `draw`'s `size:` still wins), StickyNotes (a note's height, from its text) |
+| `CustomSkeleton` | Drawn more simply zoomed out. `renderSkeleton` draws in `render`'s place while the canvas draws [skeletons](#skeletons) (the camera's zoom under `editor.skeletonZoom`, 35%), but for the shape being edited: its fills, and bars where its text would be (`context.fillSkeletonText`, each as long as its text's columns, `SkeletonText`), never text, shadows or pictures of its own, cheaply: the shape, its kept geometry and `context.zoom`, and what its plugin already keeps of the shape if it's there (a schema card's reading), never parsing or laying out text; a picture only through `RenderContext` (a subboard's board preview). Its outline there (selected, hovered, the hint) is its kept geometry's, right for a skeleton that fills its geometry or differs from a rect only by corners rounded a pixel or two, unless it adopts `CustomSkeletonOutline`; a shape a few pixels across is outlined by its bounds. Without it a kind is the default skeleton, its geometry in one gray (`context.drawSkeleton(of:color:)`). | StickyNotes (its yellow, its text greeked), Subboards (fills, a title bar, its preview), Schemas (square, with an edge, so outlined by its frame), Arrows (its arc and heads), Rectangles (its teal, one fill), Polylines (the default in its indigo) |
+| `CustomSkeletonOutline` | A `CustomSkeleton` outlined its own way while skeletons are drawn (selected, hovered, the hint): `skeletonIndicatorPath(of:in:)`, what `renderSkeleton` draws, so the outline and the skeleton agree, made from the shape and its kept geometry, since ⌘A zoomed out asks it of every shape of the kind in view each frame; nil for its kept geometry's. Found once per kind (`registry.skeletonOutlines`), so no other kind's shape is asked; never asked for a shape a few pixels across, outlined by its bounds. | Arrows (the arc, where its kept geometry is three points) |
 | `PaintOrderAnchored` | Painted just above another shape, whatever its place in the document. The anchor follows from the shape's own props and the document's order, since the paint order is kept until one of those changes. | Arrows (above the shapes they join) |
 | `BoardOwning` | Each shape of the kind owns a board, a subboard, which the file keeps under the shape's id, never in its props (`CanvasFile`, `BoardID(owner:)`). Nothing to implement: deleting a shape takes its board and every board under it, a copy takes what it holds, a file saves every board ([format 4](#boards-on-disk)), and `editor.showBoard` shows one; Boards' `x.opensBoard(placeholder:systemImage:)` opens it. Its schema is marked `x-canvas-board`. [Boards in a file](#boards-in-a-file). | [Subboards](#subboards)' `Subboard`; CanvasTesting's `Pocket` |
 | `ShapeReferencing` | Props bound to other shapes: every kind whose props are adopts it, or it stays bound to a shape once it's gone. `remappingReferences(of:_:in:)` passes each through a map: bound to the shape it gives, or, for nil, let go of where it's drawn. Deleting a shape asks it of every shape bound to it (after `willDelete` handlers, before anything's removed), and copying asks it of each copy (`record.remappingReferences(_:in:)`). It returns nil when it can't let go of a shape it can't find: a deletion leaves it as it was, and a copy leaves it out. These are bindings, which must be on the board; a name that may outlive its shape (a mention) is a value instead, [`ShapeNaming`](#values-that-name-shapes). | Arrows (an end lets go where it's drawn, keeping the curve; a copy stays bound to the copies of its shapes); CanvasTesting's `Tag` |
@@ -5820,24 +6005,36 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   paint order of just the shapes that may show in a world rect: what drawing goes through, and
   overlays too, with `context.visibleRect`. Code that runs per frame doesn't go through every
   shape; `./build.sh bench` holds a hover and a drag at 10,000 shapes to a frame (16 ms), with the
-  minimap drawn too, and the table of contents' rows after a commit to a millisecond. The editor
-  also keeps the bounds of every shape, and where each commit moved or reshaped shapes (its
-  damage: where the shapes it touched were and are, with every shape whose geometry followed
-  them), for a picture of the whole board kept from frame to frame, the minimap's, which redraws
-  only that. Damage says where shapes are, not which is on top: a restack names the shapes it
+  minimap drawn too, and a frame zoomed out to fit the board (at 10,000, as far as the 10% zoom
+  goes), where they're [skeletons](#skeletons), and the table of contents' rows after a commit to a
+  millisecond. The editor also keeps the bounds of every shape, and where each commit moved or
+  reshaped shapes (its damage: where the shapes it touched were and are, with every shape whose
+  geometry followed them), for a picture of the whole board kept from frame to frame, the
+  minimap's, which redraws only that. Damage says where shapes are, not which is on top: a restack names the shapes it
   moved in the stack, not one it carried along above its anchor. It's host API (`shapeBounds`,
   `damageMark`, `damage(since:)`, and `outlines`, what the canvas outlines), as the minimap is
   the host's.
-- **Drawing**, back to front: background and the dot grid (`DotGrid`: tiles of dots filled once, copied at whole device pixels, kept while the camera stays); shapes in paint order (culled by extent: those
-  more than 40 world units out of view don't draw, and a shape with no outline always does), each
-  where it's drawn ([`setDrawingOffset`](#the-cores-part-drawing-offsets): a shaking shape, away
-  from where it is, with its outline); every
-  plugin's outlines (`registrar.outlines`: selection, the box around several; none while the
-  session `hidesOutlines`) and the hint, in one stroke at a constant screen width, over the faint
-  ones (`Outlines.faintShapes`: the hover), stroked first, wider and lighter; world overlays;
-  the running session's `draw(in:)` (the marquee, Snapping's guides); view overlays (Selection's handles first). Each
-  shape, overlay and session draws with a fresh graphics state. Sizes meant as view points are
-  divided by `zoom` in world space.
+- **Drawing**, back to front: background and the dot grid (`DotGrid`: tiles of dots filled once,
+  copied at whole device pixels, kept while the camera stays); shapes in paint order (culled by extent: those
+  more than 40 world units out of view don't draw, so a shadow just out of view shows at its edge,
+  a pad grown by the farthest any shape is drawn from where it is, so one shaken into view shows,
+  and a shape with no outline always does), each where it's drawn
+  ([`setDrawingOffset`](#the-cores-part-drawing-offsets): a shaking shape, away from where it is,
+  with its outline), in full or, zoomed out, as its [skeleton](#skeletons); every plugin's outlines
+  (`registrar.outlines`: selection, the box around several; none while the session
+  `hidesOutlines`) and the hint, in one pass at a constant screen width, over the faint ones
+  (`Outlines.faintShapes`: the hover), drawn first, wider and lighter, each asked for its path and
+  stroked only if its shape's kept extent meets the area the shapes were drawn for (a plugin's rects
+  too; zoomed out, a skeleton's outline, and a rect filled as a ring: [Skeletons](#skeletons));
+  world overlays; the running session's `draw(in:)` (the marquee, Snapping's guides); view overlays
+  (Selection's handles first). Each shape, overlay and session draws with a fresh graphics state.
+  Sizes meant as view points are divided by `zoom` in world space. So outlines cost what's in view
+  in strokes, and each outlined shape a look at its kept extent a frame, with nothing copied or
+  allocated: `editor.outlines` hands the first source's list (⌘A's, every shape) over as it is, and
+  leaves out a faint shape outlined in full without a set of the whole selection; a pan works
+  [Selection](#selection)'s box around them out again too, a pass over their kept bounds. With all
+  10,000 selected and none in view, a frame took about half a millisecond more than with none
+  selected (0.56 ms at 100%, 0.62 at 10%, as measured; `./build.sh bench` holds it to 1 ms).
 - **The camera** is `editor.camera`, which anyone may set; setting it stops any camera motion
   running. `editor.animateCamera(to:duration:)` moves it there, eased (tldraw's cubic), a frame
   every 16 ms, and `Camera(fitting:in:inset:maxZoom:)` (Geometry) makes one that shows a rect, in
@@ -5884,6 +6081,145 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   `editor.pointerOverCanvas` is nil there (a note being edited hides its port dots while the
   pointer is over its text). The canvas leaves their cursor alone meanwhile. Once editing ends,
   where the editing view was is the canvas again, for the next move.
+
+## Skeletons
+
+Zoomed out over a big board, thousands of shapes are in view and nothing on them reads: below 35%
+a note's 16-point text is under 6 points on screen, texture rather than words, yet drawing it, the
+shadows and the pills is most of such a frame. So there the canvas draws each shape as its
+**skeleton**: what the shape is and where, less than the real view, its fills and bars where its
+text would be, never text, shadows or pictures of its own. Zoomed back in past the level, each
+shape is itself again. At 10,000 shapes zoomed out as far as the zoom goes (10%, some 1,700 in
+view), the first frame took 166.9 ms before skeletons, and each after 89.1; with them, and
+[adornments](#the-label) drawn blank too, 13.4 and 11.2 (at 1,000 shapes, all in view at 11%, 96.9
+and 50.0 before, 9.2 and 7.8 after).
+
+- **One level for the canvas.** `editor.drawsSkeletons` is true while the camera's zoom is under
+  `editor.skeletonZoom`, 35%. It's the zoom's, frame by frame, with no hysteresis or debounce
+  ([not built yet](#not-built-yet)). The shape being edited is drawn in full whatever the zoom,
+  since its editing view is over it (`editor.drawsSkeleton(of:)` says whether one shape is a
+  skeleton now), and a frame decides once (`OverlayContext.drawsSkeletons`, and its
+  `drawsSkeleton(of:)`). What an overlay draws, or hit testing finds, of a shape's content goes by
+  the shape's own level (`drawsSkeleton(of:)`), so what's shown and what answers the pointer agree,
+  and the shape being edited keeps its faces and its adornments' text: Selection's
+  [faces](#faces-clickable-parts-of-a-shape), Adornments' [labels](#the-label). A shape's
+  geometry isn't told the level (`ShapeContext` has no `drawsSkeletons`, and `skeletonZoom` is host
+  API), so hit testing, the marquee, arrows' ends, snapping and the minimap go by each shape as they
+  always did, and Ports' dots show from 25% as ever, over skeletons too.
+- **The host's switch.** `skeletonZoom` is host API (`@_spi(Host)`), so no plugin moves the level or
+  reads the number. 0 draws every shape in full at every zoom, for a test held to pictures drawn
+  before there were skeletons ([the POC's renders](#testing-plugins)) or about what a shape draws in
+  full far out; a value above 1 draws skeletons at 100%, for a test module that can't make a
+  `Camera` (it has no Geometry). Setting it redraws, when it changes.
+- **The default**, for a kind without a skeleton of its own, is its geometry as the index keeps it,
+  drawn as a rough picture of the board draws it (`context.drawSkeleton(of:color:)`, on
+  `RenderContext`): a closed outline filled, an open one stroked a view point wide with round caps,
+  in one neutral gray (a board preview's, on the light canvas; as far from the dark canvas in the
+  dark), with no shadow and nothing inside. It follows [Silhouettes](#the-cores-part-board-previews)'
+  rule in device pixels: under 4 pixels both ways a shape is its bounds (a line from its first point
+  to its last, if it's open), and under one, the whole device pixel its middle is in, as the
+  minimap's silhouettes are, so a far-off shape still shows wherever it lies (a square a pixel wide
+  around its middle would be spread over as many as four at a quarter each). A shape with no outline
+  (nothing drawn) draws nothing.
+
+A kind's own is `CustomSkeleton` ([Capabilities](#capabilities)): `renderSkeleton` draws in the
+default's place, given the `RenderContext` a render gets. Rectangles' fills its frame in its teal
+([your first plugin](#your-first-plugin)); Polylines' is the default in a color of its own, so a
+line drawn by hand still tells from an arrow:
+
+```swift
+extension PolylineDefinition: CustomSkeleton {
+    func renderSkeleton(_ shape: ShapeRecord<Polyline>, in context: RenderContext) {
+        guard let geometry = context.shapes.geometry(of: shape.id) else { return }   // kept, never worked out again
+        context.drawSkeleton(of: geometry, color: PolylineStyle.color)
+    }
+}
+```
+
+The registry finds each kind's once (`registry.customSkeletons`), so a frame asks a shape nothing
+but its kind. `drawSkeleton` saves and restores the graphics state and paints as `fillPath` does,
+so call it with no path of your own under way.
+
+- **Keep it cheap.** Zoomed out a frame draws thousands, so a skeleton is a few fills that cost
+  about the same whatever the shape holds. It reads the shape, its kept geometry
+  (`context.shapes.geometry(of:)`) and `context.zoom`, never anything that parses or lays out text:
+  a line's bar is as long as its columns at an average advance (`SkeletonText`, below), not as its
+  measured width, and its text is read only as far as the shape shows it (a note's paragraph until
+  it fills the lines left); what a plugin keeps of a shape it uses only if it's there, making
+  nothing (a schema card's reading, when one is kept for its text, which the sync makes as the text
+  changes). A picture it may still draw, as the render would, through `RenderContext` (a
+  subboard's board preview). A plugin can't read `skeletonZoom`, so a kind that simplifies further,
+  farther out, goes by `context.zoom`.
+- **Greeked text**: `context.fillSkeletonText(bars)` fills the rects where text would be (world
+  units, a line's worth each) in one fill of the canvas's text-bar color, a translucent dark (black
+  at 20%, 26% in the dark) that takes the hue of the light body under it, so every kind's greeked
+  text looks alike, and overlapping bars are no darker than one. It takes any `Sequence<CGRect>`, so
+  a kind hands its bars over as it works them out (`NoteTextBars`, `SchemaSkeleton.Bars`), with no
+  array per shape per frame.
+- **How long greeked text is**, without laying it out:
+  [`SkeletonText.columns(of:)`](../Sources/Canvas/Rendering/SkeletonText.swift), the core's, pure,
+  counts it in columns, a narrow character's width each, as a terminal does (Markus Kuhn's
+  `wcwidth`, approximated by the Unicode blocks that hold most of each): 2 for a character set a
+  full em wide (East Asian Wide and Fullwidth: CJK, kana, Hangul, fullwidth forms) or drawn as an
+  emoji, 0 for one drawn on another or not at all (combining marks, Hangul's trailing jamo,
+  variation selectors, skin tones, zero-width spaces and joiners, direction marks), else 1, a
+  regional indicator too (a flag is two); and a scalar a zero-width joiner joins to the one before
+  it counts nothing, since the sequence draws one emoji (a family is two columns). One pass over the
+  text's UTF-8, a byte at a time while it's ASCII. A bar is its columns at an average narrow
+  advance: a note's lines and a subboard's title at 0.52 em a column (calibrated against string
+  drawing), a schema card's at `SchemaStyle.barAdvance`, a blank adornment's at an advance measured
+  once from a sample. So every kind's bars count alike, and text in Japanese or in emoji is about as
+  long greeked as in full, where a column a character would make it half. A script set wider or
+  narrower than two columns' 1.04 em is off by the difference: in a subboard's 15-point title,
+  Hangul measured about 0.85 em a character and emoji about 1.3.
+- **Its outline** (selected, hovered, the hint) is its skeleton's, not its `indicatorPath`: its
+  kind's own if the kind adopts `CustomSkeletonOutline` (`skeletonIndicatorPath(of:in:)`, nil for
+  its kept geometry's), else its kept geometry's outline, the default skeleton's; the shape being
+  edited keeps its own. The registry finds the kinds that adopt it once
+  (`registry.skeletonOutlines`), so no other kind's shape is asked. ⌘A zoomed out outlines every
+  shape in view each frame, and stroking a path costs far more than filling one, so there a rect
+  (most shapes' geometry, and a plugin's rects, the box around several) is filled as a ring, what
+  the stroke would paint but for its square corners; the rest is stroked, round. A shape a few
+  pixels across is outlined by its bounds, as its default skeleton is drawn, and isn't asked its
+  `skeletonIndicatorPath`. A translucent color (the hover's faint outline) with both rings and
+  strokes goes into a layer, so it's no darker where they meet. So `skeletonIndicatorPath` costs
+  what the skeleton does, made from the shape and its kept geometry; a kind whose skeleton fills its
+  geometry or differs from a rect only by corners rounded a pixel or two (notes, cards, subboards)
+  leaves `CustomSkeletonOutline` out, and its ring costs less. An arrow's kept geometry is only
+  three points, so it adopts it, and its outline is its arc. The rings took ⌘A's outlines at 10,000
+  shapes zoomed out from about 8.1 ms to 4.2, as measured; a pan's frame with all 10,000 selected
+  measured 14.4 ms at 10% and 9.4 at 100%, against 11.2 and 7.7 with none selected, each shape
+  outlined out of view costing a look at its kept extent
+  ([drawing](#the-editor-the-document-and-drawing)).
+- **Hearing the level change**: `EditorService.drawsSkeletonsDidChange(in:)`, when
+  `drawsSkeletons` changes, and only then: the camera's zoom across the level (a pinch, a zoom
+  command; a pinch changes the camera on every event, and services hear only the crossing), the
+  host moving the level across the zoom, or a board shown with its camera at the other level, heard
+  after `boardDidChange`. Never as editing begins or ends: the shape being edited draws in full
+  either way. A pointer held still says nothing, so a service whose hit testing goes by what a
+  shape shows lets go here of what the level doesn't show now: Selection looks again at what the
+  pointer rests on, buttons first, as a move does, so a button that comes or goes with the level (a
+  blank label's shorter or longer reach) takes or gives up the hover without its plugin saying so;
+  Adornments lets go of the faces it measured as skeletons start, and looks for nothing itself, its
+  layouts answering at the new level whichever service hears first.
+- **Batch what's drawn per shape**, in an overlay too, since zoomed out a frame draws it thousands
+  of times: Core Graphics fills many rects, or lines, in one path for a fraction of what filling
+  each alone costs, while a path of many curves costs more than each filled alone. So Adornments
+  flattens its blank capsules' ends to chords before it fills a run as one path, and Validation, as
+  the core's outlines do, fills square-cornered rings, where rounded ones stroked together cost ten
+  times what each stroked alone does. Keep the order where it shows: a run of one look at a time,
+  in paint order, so what's over what doesn't change. And make nothing per shape a frame, no array
+  or boxed value: the core builds its rings and lines point by point, and Adornments lays each
+  shape's labels out into one buffer a frame.
+
+What each shipped plugin shows zoomed out is in its own section: a [note](#a-vertical-plugin) (its
+yellow, its text greeked, and no [mention text](#drawing) or [faces](#on-the-canvas-faces)), a
+[subboard](#subboards) (fills, a title bar and its preview), a [schema card](#schema-cards) (white
+with a light gray edge, chips and bars, reading no schema), an [arrow](#a-shape-without-a-frame)
+(its arc and heads), a [rectangle](#your-first-plugin) and a [line](#a-shape-without-a-frame);
+[faces](#faces-clickable-parts-of-a-shape) (none on a skeleton), [adornments](#the-label) (blank
+and pale on a skeleton: a title's [pill](#a-horizontal-plugin) and a [lock](#locking)'s chip), and
+[Validation](#a-horizontal-plugin)'s outlines (rings).
 
 ## Boards in a file
 
@@ -6005,7 +6341,9 @@ each of a `BoardOwning` kind and none kept aside; the board itself may have no s
    longer taken back anyway), and `changes`, the switch as a commit's change set (every shape of
    one board gone, every shape of the other come, the stack changed; a shape on both, which only a
    file put in place can have, changed), worked out only if something reads it.
-5. The host hears `editorBoardDidChange`, and redraws.
+5. If the new board's camera draws [skeletons](#skeletons) where the old one's didn't, or the other
+   way round, services hear `drawsSkeletonsDidChange`: only now, once they've heard the switch.
+6. The host hears `editorBoardDidChange`, and redraws.
 
 **Warm state.** By default a service hears the switch as `documentDidChange(change.changes)`, which
 is right for state kept per shape, at the cost of both boards' shapes. A service that keeps state
@@ -6594,6 +6932,55 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   view), by more than a quarter in a channel. `largestDifference(_:_:in:scale:)` is the most any
   pixel differs in a rect, every pixel counted. StickyNotesTests' `noteEditorTests` hold the
   note's editor to its render with them, at 1× and 2×, zoomed in and out.
+- **Skeletons.** A kind's [skeleton](#skeletons) is held against the same editor drawn in full at
+  the same zoom, `editor.skeletonZoom = 0` (host API) the control: StickyNotesTests' Note skeleton
+  (at 30%, bars within the text's ink rows and about as long, and as long as their columns; a
+  Japanese paragraph on the render's lines; a pill as wide as its label says, not as the label as
+  text; text typed in the app, bridged, drawing what a Swift string does; a paragraph of a million
+  characters drawing, and costing, what one that fills the box does; notes 1e21 tall or wide; no
+  shadow; no mention text built, `MentionDrawingCounts`), ArrowsTests' Arrow skeletons (the arc,
+  bent either way, not the chord or the two segments, and a selected arrow's outline on it),
+  SchemasTests' render tests (no text, the mark, a chip and a bar a row, the edge, names in wide
+  characters as long as twice as many narrow ones, a card with no reading kept for its text reading
+  none, `schemasRead`, the first frame after an edit, its undo and redo, the sync's write and a
+  write to a board not shown going by the new schema, and cards 1e21 tall or wide). A test module
+  without Geometry can't make a `Camera` to zoom out, so it draws skeletons at 100%, `skeletonZoom`
+  just over 1, where world units are view points (RectanglesTests, ExamplesTests, SubboardsTests'
+  The card zoomed out, which holds the title's bar to the render's title in Latin, Japanese,
+  Chinese, Korean and emoji). A test of what's drawn in full far out sets it to 0 (MentionsTests'
+  memo at 20%, PreviewTests' preview too small on screen). CanvasTests' Skeletons hold the core: a
+  custom skeleton against the render either side of 35%, the default's gray and forms (a disc
+  filled, a link stroked, a shape under a pixel the one device pixel its middle is in, whole, even
+  with its middle on a pixel's corner, a tiny one its bounds, at 1× and 2×), the shape being edited
+  in full and under a skeleton painted over it, the switch, a drawing offset, previews asked for
+  only in full, outlines culled (a shape outlined out of view is never asked its outline, one
+  straddling the view's edge is outlined), outlines zoomed out (the geometry's, hollow rings that
+  unite, `CustomSkeletonOutline`, a translucent ring and stroke no darker where they meet), and
+  `drawsSkeletonsDidChange` heard once each way, on a switch after `boardDidChange`, and not for
+  editing or a pan; CanvasTests' Skeleton text holds `SkeletonText` (scalars, joiners, a substring
+  and a bridged string, fuzzed). SelectionTests' Skeletons hold faces off on a skeleton, a face
+  pressed in full not clicked once a pinch has made its shape a skeleton by the release, the hover
+  looked at again as the level changes (from the camera and from `skeletonZoom`; not off the
+  canvas, mid-press or in the hand tool), and the kept selection bounds
+  (`selectionBoundsWorkedOut`, through drags, undo, a link whose end moved and a switch);
+  AdornmentsTests' Adornments zoomed out the blank labels (one flat color in their frames, within
+  anti-aliasing of the curves they're flattened from, width by columns, Japanese and Korean titles
+  within 15% of their width in full and emoji within 30%, hit where drawn, no faces made or kept, a
+  button let go and found again and a caption cut shorter as `skeletonZoom` moves under a still
+  pointer, Selection's look alone, and the edited shape's labels laid out, drawn pixel for pixel as
+  in full and hovered in full at 30% while another's are blank); TitlesTests and LockingTests the
+  blank pill and the blank chip that still unlocks; ValidationTests the rings (none grown from an
+  outline, none on the shape being edited), and crossing rings in full against an in-test copy of
+  the stroke from before the line width and join were set once a frame, pixel for pixel;
+  MentionsTests' DrawingTests and FaceTests mention text unbuilt on a skeleton, the
+  memo trimmed, and its pills no faces (a click selects, a double-click edits, a locked one's is
+  refused and goes nowhere). CompositionTests' `skeletonsShippedTests` hold the shipped pieces
+  together: at 30% every shipped shape (a subboard, notes, an arrow, a locked rectangle, a schema
+  card and a line) is its skeleton and says nothing, nor do a title's pill and a lock, at 35% it's
+  all in full, the note being edited is in full at 30%, and in the app's canvas view a mention's
+  pill is no face at 30% and is one again at 35%. `renderBitmap` at a scale other
+  than 1 reads pixels with `pixel(_:at:scale:)`: `changedPixels` reads one a point, so it holds
+  only at 1×.
 - `Contributor(id:) { registrar in ... }` is a plugin written inline, and `editor.add(props)`
   inserts a shape in a transaction of its own.
 - **The detail panel.** `editor.detailPanel?.layout(for:)` resolves a shape's header, tabs and
@@ -6650,7 +7037,9 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   conflict key names one as `Module.Name`. A plugin list with Titles or Locking needs
   `KeyboardPlugin()`, `SelectionPlugin()` and `AdornmentsPlugin()`, which goes before the plugins
   that place adornments, as the shipped list has it. In debug builds, `editor.adornmentsKept`
-  counts the shapes whose labels are kept, so a test holds a deleted shape to being forgotten.
+  counts the shapes whose labels are kept, so a test holds a deleted shape to being forgotten, and
+  `adornmentFacesKept` and `adornmentFacesMade` the shapes whose faces are kept and the faces made
+  in all, so one holds zooming out to measuring nothing.
 - **The clipboard.** A test that copies gives the clipboard a pasteboard of its own, so it never
   touches the user's: `ClipboardPlugin(pasteboard: NSPasteboard.withUniqueName())`, or
   `ShippedPlugins.makeEditor(pasteboard:model:)` (and `releaseGlobally()` it after). Two editors on one
@@ -6785,12 +7174,22 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   `backlinks(of:)`, only reported), what's connected to a shape with 100 edges
   (`topology.neighbors(of:)`, 1 ms), a `canvas draw` of 20 notes each pushed along its row of the
   grid (150 ms, time the window doesn't draw), the minimap's first picture (a frame at a time) and
-  a drag frame with it, ten subboards' previews filling in (the longest frame, and how many), and
-  undoing and redoing a drag (with its frame), a tenth of the board's move and deletion and every
-  shape's deletion (the steps alone), to their budgets on generated boards of 1,000 and 10,000
-  shapes (`generatedBoard`; three notes in ten mention a subboard and a shape that isn't there), and
-  reports the first frame and the next zoomed out to fit the board (at 10,000, as far as the 10%
-  zoom goes). Across boards, on files of them (`generatedFile(root:children:depth:)`, the shipped
+  a drag frame with it, ten subboards' previews filling in (the longest frame, and how many), the
+  first frame and each after zoomed out to fit the board (at 10,000, as far as the 10% zoom goes),
+  where shapes are [skeletons](#skeletons) and adornments blank (the first makes the labels of
+  every adorned shape in view; a frame each), a pan's frame with every shape selected (⌘A) at 100%
+  (the camera a point from the last frame's, so the box around them is worked out again, as in a
+  pan), what a board all out of view adds to an empty board's frame, at 100% and 10%, with nothing
+  selected and with every shape (1 ms: nothing off screen is drawn, and a shape outlined out of view
+  costs a look at its kept extent), and undoing and redoing a drag (with its frame), a tenth of the
+  board's move and deletion and every shape's deletion (the steps alone), to their budgets on
+  generated boards of 1,000 and 10,000 shapes (`generatedBoard`; three notes in ten mention a
+  subboard and a shape that isn't there), and reports ⌘A's pan frame zoomed out, the first frame
+  zoomed in to 35% from skeletons (every text in view laid out), and a pinch from 100% to 10% and
+  back, a frame at each zoom (in full just above 35%, a frame of the generated board takes more
+  than 16 ms).
+  Across boards, on files of them
+  (`generatedFile(root:children:depth:)`, the shipped
   subboards): opening one whose shapes are spread over nested boards (a tenth on the root, a tenth
   in each of nine subboards, the last a chain ten deep) in the time a board of as many takes;
   entering a subboard of 10,000 shapes cold, with ⌘↓ (the switch and the camera's first fit, a
@@ -6902,6 +7301,9 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   scenarios through `CanvasView` with real events and compares where every arrow ends up, byte for
   byte, with a transcript recorded from the POC. It also compares eight renders pixel for pixel:
   the welcome board, target outlines, binding hints mid-drag, handles and their halos, zoomed out.
+  The renders are drawn with [skeletons](#skeletons) off (`skeletonZoom = 0`): the POC drew every
+  shape in full at every zoom, so "re-aimed-zoomed-out", at 15%, would differ in the shapes
+  themselves, where the app draws them as skeletons on purpose; the goldens stay as recorded.
   The same replay code (`Tests/CompositionTests/Replay.swift`) drives the POC when recording and
   the app when testing. The recordings come only from the POC:
   `scripts/record-poc-fixtures.sh` rebuilds them from commit 804db97, and re-running it should
@@ -7024,8 +7426,14 @@ Each of these adds to the design without changing what plugins are written again
   adornments that draw themselves (data-canvas's 22-point sparkline, which needs a taller row);
   adornments painted with their shape, so a shape in front covers a back shape's, and a press
   there is the front shape's (a per-shape drawing hook in the core); a tooltip on each (the lock's
-  among them); telling agents what a shape shows; and, zoomed far out over a big board, leaving
-  out text too small to read (the first frame there makes every adorned shape's labels).
+  among them); telling agents what a shape shows; and labels not made at all zoomed far out (drawn
+  blank, none is measured, but the first frame there still asks every adorned shape in view for
+  its labels).
+- **More of skeletons**: a level that holds while the zoom hovers about it (hysteresis, or tldraw's
+  debounce, which keeps a big board's level from when the camera started moving until it stops),
+  since today a pinch across 35% flips every shape each time it crosses; zooming in by degrees,
+  skeletons turning into their shapes a frame's budget at a time, as previews fill in, where the
+  frame that crosses the level draws every shape in view in full at once; and a level per kind, or by a shape's size on screen, where one zoom decides for the canvas.
 - **More of going back**: going forward again (⌘]), and a step keeping what the table of contents
   listed, so Show All survives a trip back.
 - **More of the keyboard**: a window listing every shortcut; menu items that take their key

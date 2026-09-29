@@ -38,8 +38,9 @@ public enum AdornmentLayout {
     /// Below this zoom adornments shrink with the shapes.
     public static let fullSizeZoom: CGFloat = 0.25
 
-    /// One adornment to lay out: its place, how wide it is (text as long as it is, a symbol's disc
-    /// as wide as its place is tall), and whether it's text, which gives way at the row's left end.
+    /// One adornment to lay out: its place, how wide it is (text as long as it's drawn, measured in
+    /// full and counted from its columns drawn blank, zoomed out; a symbol's disc as wide as its
+    /// place is tall), and whether it's text, which gives way at the row's left end.
     public struct Item: Equatable, Sendable {
         public var placement: AdornmentPlacement
         public var width: CGFloat
@@ -89,7 +90,16 @@ public enum AdornmentLayout {
     }
 
     static func slots(of items: [Item], width: CGFloat) -> [Slot?] {
-        var slots = [Slot?](repeating: nil, count: items.count)
+        var slots: [Slot?] = []
+        self.slots(of: items, width: width, into: &slots)
+        return slots
+    }
+
+    /// Each item's slot, into `slots`, whatever it held: one array for every shape a frame lays
+    /// out, so none is made a shape.
+    static func slots(of items: [Item], width: CGFloat, into slots: inout [Slot?]) {
+        slots.removeAll(keepingCapacity: true)
+        slots.append(contentsOf: repeatElement(Slot?.none, count: items.count))
         let rowY = -(rowGap + rowHeight)
         // The row's right end, leftward from the right edge: whole; one that would end past
         // `maxRun` is left out, with the rest.
@@ -118,7 +128,6 @@ public enum AdornmentLayout {
             slots[i] = Slot(frame: CGRect(x: left, y: rowY, width: shown, height: rowHeight), isFromRight: false)
             left += shown + spacing
         }
-        return slots
     }
 
     /// How far a point is outside an adornment laid out in `frame` (negative inside it), in view

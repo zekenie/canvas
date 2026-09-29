@@ -76,6 +76,11 @@ final class SelectionState {
         // What's drawn only while the pointer's over the canvas (a port's dots) comes and goes with it.
         didSet { if (lastPointer == nil) != (oldValue == nil) { editor.setNeedsDisplay() } }
     }
+    /// The selection's bounds as last worked out (`selectionBounds`), and what from.
+    @ObservationIgnored private var keptBounds: KeptBounds?
+    #if DEBUG
+    @ObservationIgnored private(set) var boundsWorkedOut = 0
+    #endif
 
     init(editor: CanvasEditor) {
         self.editor = editor
@@ -97,6 +102,52 @@ final class SelectionState {
             hoveredHandle = nil
             hover(nil)
         }
+    }
+
+    /// What the pointer at a view point hovers in the select tool, as it moves there: a canvas
+    /// button, else a handle of the only selected shape, else the shape there, or the one a face
+    /// there names in its place (`shapeToHover`).
+    func hover(atViewPoint point: CGPoint) {
+        if let hit = editor.buttonHit(atViewPoint: point) {
+            hoveredButton = hit
+            hoveredHandle = nil
+            hover(nil)
+        } else if let handle = editor.handle(atViewPoint: point) {
+            hoveredButton = nil
+            hoveredHandle = handle
+            hover(nil)
+        } else {
+            hoveredButton = nil
+            hoveredHandle = nil
+            hover(editor.shapeToHover(at: editor.camera.toWorld(point)))
+        }
+    }
+
+    /// The union of the selected shapes' geometry bounds, in world units (`selectionBounds`), kept
+    /// while what it's worked out from stays as it was: the selection, the board's shapes (the
+    /// editor's `revision`: every commit, undo and redo, another board shown) and the camera (a
+    /// kind's geometry may read it). So the box around several is worked out again only after one
+    /// of those changed, which saves each read (the canvas's frame, the minimap's, a hover's
+    /// `isInSelectionBox`) a pass over the selection; the selected shapes' outlines still go through
+    /// every one of them each frame (on the canvas a lookup of each one's extent, only those in view
+    /// stroked; in the minimap each one's silhouette). Any commit works it out again, not only one
+    /// naming a selected shape, since a shape's geometry may follow another's (a link's, its ends').
+    var selectionBounds: CGRect? {
+        let document = editor.revision, camera = editor.camera
+        if let kept = keptBounds, kept.selection == revision, kept.document == document, kept.camera == camera { return kept.bounds }
+        let bounds = editor.shapeContext.bounds(of: selectedIDs)
+        keptBounds = KeptBounds(selection: revision, document: document, camera: camera, bounds: bounds)
+        #if DEBUG
+        boundsWorkedOut += 1
+        #endif
+        return bounds
+    }
+
+    private struct KeptBounds {
+        let selection: Int
+        let document: Int
+        let camera: Camera
+        let bounds: CGRect?
     }
 
     /// Never a shape the board keeps aside; otherwise the kind's own rule, else one for every
@@ -283,6 +334,15 @@ extension SelectionState: EditorService {
 
     /// A placed shape is the only one selected.
     func didPlace(_ id: ShapeID, in editor: CanvasEditor) { select([id]) }
+
+    /// Shapes are drawn as skeletons now, or in full again, so their faces went or came (a note's
+    /// pills) under a pointer that may be still: what it hovers is looked for again where it rests,
+    /// as a move there would, in the select tool with nothing under way. A pill's target hovered
+    /// as the level drops gives way to its note.
+    func drawsSkeletonsDidChange(in editor: CanvasEditor) {
+        guard editor.currentToolID == .select, editor.session == nil, let point = lastPointer else { return }
+        hover(atViewPoint: point)
+    }
 }
 
 /// The selection goes back and forth with undo, as tldraw's does: undoing a step selects what was
@@ -307,6 +367,12 @@ struct SelectableHit {
 
 extension CanvasEditor {
     var selectionState: SelectionState? { service(SelectionState.self) }
+
+    #if DEBUG
+    /// How many times the selection's bounds have been worked out (debug builds only), so tests can
+    /// hold a frame, or a read, to keeping them.
+    public var selectionBoundsWorkedOut: Int { selectionState?.boundsWorkedOut ?? 0 }
+    #endif
 
     /// Every selected shape, in the order it was selected, each once: setting drops ids that
     /// aren't there or aren't selectable, and repeats (the first is kept). Setting what's already
@@ -344,8 +410,9 @@ extension CanvasEditor {
     }
 
     /// The union of the selected shapes' geometry bounds, in world units; nil with nothing
-    /// selected. Shapes with no outline (nothing drawn) don't count.
-    public var selectionBounds: CGRect? { shapeContext.bounds(of: selectedShapeIDs) }
+    /// selected. Shapes with no outline (nothing drawn) don't count. Kept from one read to the next
+    /// while the selection, the board and the camera don't change.
+    public var selectionBounds: CGRect? { selectionState?.selectionBounds }
 
     /// Whether a world point is inside the box around several selected shapes, where a press on
     /// empty space acts on the selection (tldraw's selection bounds). False with one or none.

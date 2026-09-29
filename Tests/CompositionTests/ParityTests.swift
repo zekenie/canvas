@@ -15,6 +15,15 @@ import TestKit
 // Pixel goldens rendered by the untouched POC's CanvasView (Fixtures/poc-*.png, recorded with
 // Replay.swift's `snapshot`: aqua, 2×, the accent pinned to blue, as main.swift pins it here).
 // Every pixel must match.
+//
+// An intended deviation, as TranscriptTests' `intendedDeviations` are: the POC predates skeletons
+// and drew every shape in full at every zoom, while the app draws notes and arrows as their
+// skeletons below 35% (`editor.skeletonZoom`) on purpose, and outlines them as their skeletons
+// are drawn (an arrow by its skeleton's arc, a rect as a filled ring), so "re-aimed-zoomed-out", at
+// 15%, would differ in the shapes and their outlines. What its golden holds the app to is how an
+// arrow is re-aimed and drawn in full (its outline, binding hints and handles), so every board
+// here is drawn in full at every zoom (`skeletonZoom = 0`, host SPI), as the POC drew it; what the
+// app draws below 35% is held by the skeleton tests. The goldens stay as the POC recorded them.
 
 /// Compares a snapshot of `view` with Fixtures/poc-<name>.png; on a difference, writes the
 /// snapshot to build/parity-<name>.png.
@@ -60,6 +69,7 @@ let pocWelcomeTexts = [
 @MainActor let parityTests = Suite("Pixel parity", [
     test("the welcome board, a selected bent arrow, and a zoomed selection render identically") {
         let editor = ShippedPlugins.makeEditor(document: WelcomeBoard.document(texts: pocWelcomeTexts), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        editor.skeletonZoom = 0     // in full at every zoom, as the POC drew (above)
         let canvas = CanvasView(editor: editor)
         canvas.frame = CGRect(x: 0, y: 0, width: 1200, height: 800)
         let arrows = editor.document.shapes.filter { $0.kind == Arrow.kind }.map(\.id)
@@ -75,6 +85,9 @@ let pocWelcomeTexts = [
     test("arrow interactions render identically mid-gesture: outlines, hints, handles and halos") {
         for (name, withArrow, steps) in interactions {
             let board = Board(withArrow: withArrow, texts: noteTexts)
+            // In full at every zoom, as the POC drew: "re-aimed-zoomed-out" is at 15%, where the app
+            // draws skeletons on purpose (above).
+            board.editor.skeletonZoom = 0
             board.player.play(steps)
             try expectMatchesPOC(board.canvas, name)
         }
