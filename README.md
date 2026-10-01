@@ -66,8 +66,6 @@ check before running it again). To run it as just `canvas`, put the link on your
 | Zoom | Pinch, ⌘-scroll, or ⌘= / ⌘- / ⌘0; ⇧1 fits the board, ⇧2 the selection; also the View menu and the toolbar's zoom menu. A two-finger double-tap zooms to the shape under the pointer, and again back |
 | See where you are | The minimap, in the canvas's bottom-left corner: every shape in miniature, and the part the canvas shows outlined. Click beside that part to move there, drag it to move it, double-click to center on a spot. ⌃⌘M shows or hides it |
 | New note | Double-click empty space, or N (the note tool) and click |
-| New rectangle | R, then click (an example plugin) |
-| Draw a line | L, then drag; Escape takes back the line being drawn (an example plugin) |
 | Erase | E, then click or drag across shapes (an example plugin) |
 | Select | Click a shape, or drag across empty space to select what the marquee touches (⌘: only what it encloses; ⇧: add to the selection) |
 | Add to or remove from the selection | ⇧-click (or ⌘-click) a shape |
@@ -81,7 +79,7 @@ check before running it again). To run it as just `canvas`, put the link on your
 | See what's on the board | With nothing selected, the detail panel lists every shape, each arrow under the shape it starts from; with several selected, just those (Show All lists every shape again) |
 | Find a shape from the list | Click its row: it's selected and the canvas zooms to it. Pointing at a row outlines its shape faintly, and pointing at a shape tints its row |
 | Go back to the previous selection | The back button in the detail panel's header, or ⌘[ (Go › Back): what was selected before, and the view as it was then (from a row's details, the list) |
-| Name a note or a rectangle | Select it and click its title in the detail panel's header; Return or Escape goes back to the canvas |
+| Name a note or a subboard | Select it and click its title in the detail panel's header; Return or Escape goes back to the canvas |
 | Delete shapes or arrows | Select them and press Delete, or right-click and choose Delete |
 | Cut, copy and paste shapes | ⌘X, ⌘C and ⌘V (Edit menu, or right-click a shape; right-click empty space to paste). ⌘V lands a paste where the originals were if they're in view, else in the middle of the view; Paste from a right-click lands it centered where you clicked. Arrows copied with their shapes stay attached to the copies |
 | Link a note to a note, or a schema card to a schema card | With the select tool, point at one: dots show just outside its sides (a note has none on top; zoomed out below 25%, none show). Drag from a dot to another of its kind: those it could link to are outlined faintly as you drag, and released anywhere else, nothing is drawn. The link is an arrow; there's no arrow tool. Arriving quickly aims at the shape's center; arriving slowly, or pausing inside the shape, aims at that exact spot |
@@ -97,7 +95,7 @@ plugin: red for an error, orange for a warning; none while it's being edited), s
 panel (the validation-details bridge), and gets a dot of the same color on its row in the table of contents (the
 validation-contents bridge).
 A titled shape shows its title in a pill above its top-left corner, and in the table of contents (the titles plugin).
-Name a note or a rectangle in the detail panel's header (a rectangle's title is the rectangle-titles example). A title is
+Name a note or a subboard in the detail panel's header. A title is
 part of its shape's schema, at most 80 characters: a longer one gets a warning, as does any value outside the
 bounds its schema sets (the validation plugin checks every shape against its kind's schema).
 A note's dots link it only to another note, and a schema card's only to another schema card: each kind has a channel of its own
@@ -145,10 +143,7 @@ Sources/
   Composition/          the shipped plugin list, and the welcome board
   InfiniteCanvas/       the SwiftUI app
 Examples/               the smallest plugin for each pattern
-  Rectangles/           a vertical: a kind, how it draws, a tool
-  Polylines/            a shape without a frame: its own geometry, hit test and translation
   Eraser/               a tool with no shape, and a session
-  RectangleTitles/      the smallest bridge: rectangles can be named
   Reordering/           menu items for every kind with a capability: the Arrange submenu
 Tests/                  test executables (the core, each plugin with logic of its own, the examples,
                         the shipped app) and their support libraries, on a small macro-free kit

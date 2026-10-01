@@ -95,10 +95,10 @@ import TestKit
         }
         // A gadget (no plugin has the kind) on the root and one on P's board.
         let json = """
-        { "format" : 4, "versions" : { "kinds" : { "rectangle" : 0, "pocket" : 0 } },
+        { "format" : 4, "versions" : { "kinds" : { "sticky-note" : 3, "pocket" : 0 } },
           "shapes" : [ \(record(p, "pocket", "a0")), \(record(stray, "gadget", "a1")) ],
-          "boards" : { "\(p)" : { "shapes" : [ \(record(inside, "rectangle", "a0")), \(record(gadget, "gadget", "a1")),
-                                               \(record(deeper, "rectangle", "a2")) ] } } }
+          "boards" : { "\(p)" : { "shapes" : [ \(record(inside, "sticky-note", "a0")), \(record(gadget, "gadget", "a1")),
+                                               \(record(deeper, "sticky-note", "a2")) ] } } }
         """
         let board = try pocketsDocument(pasteboard: pasteboard)
         try board.read(from: Data(json.utf8), ofType: boardType)

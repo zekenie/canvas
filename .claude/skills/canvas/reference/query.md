@@ -40,7 +40,7 @@ Roadmap (the top board), back to front:
   sticky-note "API gateway"   text: Owns auth. See @Checkout        (a mention of Checkout)
   sticky-note "Auth"          text: JWT, 15 min expiry
   sticky-note (untitled)      text: TODO: rate limits
-  rectangle "Warehouse"
+  schema-card                 its schema's "title" is "Warehouse"
   schema-card                 its schema's "title" is "Order"; locked
   schema-card                 its schema isn't JSON (a comma is missing), so it has no title
   arrow                       from API gateway to Auth, on the note-link channel
@@ -206,8 +206,8 @@ note
 | `:is(S)`, `:where(S)` | matched by S, the same thing: a list where a single part is wanted, `:is("Auth", "Checkout")` |
 
 ```query
-/* matches: "Payments", "Refunds", "Warehouse" */
-subboard, rectangle
+/* matches: "Payments", "Refunds", "Warehouse", "Order", (schema-card) */
+subboard, schema-card
 ```
 
 ```query
@@ -217,7 +217,7 @@ subboard, rectangle
 
 ```query
 /* matches: "Payments" */
-:is(subboard, rectangle):edge-from(*)
+:is(subboard, schema-card):edge-from(*)
 ```
 
 ## Attributes
@@ -416,7 +416,7 @@ Auth, the shape selected, is on the top board, inside no subboard:
 subboard *:selected
 ```
 
-- **What holds nothing can't have anything inside it.** When the container side of a space, a `>`, `:inside()` or `:has()` can only be kinds that hold no board (a rectangle, a note, named straight or through `:is()` or `:where()`), the query is refused (`cannot_contain`), with the kinds that do. Being drawn within a rectangle's bounds isn't something a query can ask yet.
+- **What holds nothing can't have anything inside it.** When the container side of a space, a `>`, `:inside()` or `:has()` can only be kinds that hold no board (a schema card, a note, named straight or through `:is()` or `:where()`), the query is refused (`cannot_contain`), with the kinds that do. Being drawn within a shape's bounds isn't something a query can ask yet.
 
 ```query-error
 /* reason: cannot_contain */
@@ -790,7 +790,7 @@ These are left out on purpose. What they protect is that a query means one thing
 - **CSS with no meaning here.** Shapes have no siblings, order or columns (`+`, `~`, `:nth-child`, `||`), no pseudo-elements, no namespaces, and a query sees no pointer (`:hover`). Each is refused rather than read some other way.
 - **Words that read two ways.** "Parent of" and "child of" are said as `:has(> …)` and `… > *`, and edges' direction words say what the result does. `:source-of` and `:target-of`, an older language's words, and `:neighbor-of`, this one's old name for `:connected-to`, are refused with the word to write.
 - **A space that means two things.** A space is always inside, so one before a test is refused.
-- **Where shapes are drawn.** Inside is a subboard's board. What's inside a rectangle is refused (`cannot_contain`), never read as what's drawn within its bounds.
+- **Where shapes are drawn.** Inside is a subboard's board. What's inside a note is refused (`cannot_contain`), never read as what's drawn within its bounds.
 
 ## Honest limits
 

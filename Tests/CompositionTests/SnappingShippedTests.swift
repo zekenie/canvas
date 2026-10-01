@@ -107,7 +107,7 @@ import TestKit
         defer { pasteboard.releaseGlobally() }
         let a = note(CGRect(x: 400, y: 0, width: 200, height: 200))
         let h = shipped([a], pasteboard)
-        h.key("r")
+        h.key("b")
         h.press(at: CGPoint(x: 100, y: 650))
         let placed = try require(h.editor.selection)
         let frame = try require(h.editor.document[placed]?.box)
@@ -117,7 +117,7 @@ import TestKit
         h.release()
         expectEqual(h.editor.document[placed]?.box?.maxX, 400)
     },
-    test("a note placed with its tool follows the pointer and snaps as a rectangle does, and is typed into once let go; Escape before that takes it away") {
+    test("a note placed with its tool follows the pointer and snaps as a subboard does, and is typed into once let go; Escape before that takes it away") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let a = note(CGRect(x: 400, y: 0, width: 200, height: 200))

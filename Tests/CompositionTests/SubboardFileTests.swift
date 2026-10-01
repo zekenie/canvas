@@ -299,10 +299,10 @@ struct NestedFile {
             #"{ "id" : "\#(id)", "index" : "\#(index)", "kind" : "\#(kind)", "props" : { "frame" : [[0, 0], [10, 10]] } }"#
         }
         let json = """
-        { "format" : 4, "versions" : { "kinds" : { "subboard" : 0, "rectangle" : 0 } },
+        { "format" : 4, "versions" : { "kinds" : { "subboard" : 0, "sticky-note" : 3 } },
           "shapes" : [ \(record(s, "subboard", "a0")), \(record(box, "gadget-box", "a1")) ],
-          "boards" : { "\(s)" : { "shapes" : [ \(record(note, "rectangle", "a0")), \(record(gadget, "gadget", "a1")) ] },
-                       "\(box)" : { "shapes" : [ \(record(inBox, "rectangle", "a0")) ] } } }
+          "boards" : { "\(s)" : { "shapes" : [ \(record(note, "sticky-note", "a0")), \(record(gadget, "gadget", "a1")) ] },
+                       "\(box)" : { "shapes" : [ \(record(inBox, "sticky-note", "a0")) ] } } }
         """
         let board = BoardDocument()
         defer { board.close() }
