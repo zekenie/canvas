@@ -41,7 +41,7 @@ extension NSPasteboard.PasteboardType {
 ///   was.
 @MainActor
 public final class MentionTextView<Scope: MentionScope>: DetailTextView {
-    /// The shape the text is on: never offered in its picker.
+    /// The shape the text is on: the picker measures nearness from it, and may offer it.
     public private(set) var owner: ShapeID?
     public private(set) weak var mentions: MentionState?
     /// Its style; nil for one made without (`init(frame:textContainer:)`), which makes no pills.

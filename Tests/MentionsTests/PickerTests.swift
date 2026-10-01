@@ -74,7 +74,7 @@ private func picker(_ h: EditorHarness, owner: ShapeID?, query: String = "") -> 
         expectEqual(p.read("@qqqq " as NSString, selection: NSRange(location: 6, length: 0), isEdit: true), .spaceWithoutMatch)
     },
 
-    test("an empty query lists Recent then Nearby, the first shape highlighted; never the text's own shape") {
+    test("an empty query lists Recent then Nearby, the first shape highlighted; the text's own shape isn't listed as nearby") {
         let (h, jot) = try pickerBoard { editor in
             editor.add(Plate(CGRect(x: 250, y: 0, width: 100, height: 60)), titled: "Near", id: idA)
             editor.add(Plate(CGRect(x: 5000, y: 0, width: 100, height: 60)), titled: "Far", id: idB)
@@ -92,6 +92,15 @@ private func picker(_ h: EditorHarness, owner: ShapeID?, query: String = "") -> 
         expectEqual(recent.rows[1].candidate?.id, idB)
         expectEqual(recent.highlightedCandidate?.id, idB)
         expectEqual(ids(recent), [idB, idA, idC], "a recent pick isn't listed again as nearby")
+    },
+
+    test("the text's own shape can be mentioned: a typed query finds it, and so does its recent pick") {
+        let (h, jot) = try pickerBoard { editor in
+            editor.add(Plate(CGRect(x: 250, y: 0, width: 100, height: 60)), titled: "Planet", id: idA)
+        }
+        expectEqual(ids(picker(h, owner: jot, query: "plan")), [jot, idA], "\"Plan\" before \"Planet\"")
+        h.editor.mentionState.didPick(jot)
+        expectEqual(ids(picker(h, owner: jot)).first, jot, "recent")
     },
 
     test("a typed query lists the best matches, best first, and a changed query highlights its first row") {

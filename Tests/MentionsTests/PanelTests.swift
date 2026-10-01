@@ -168,7 +168,7 @@ extension MentionTextView {
 @MainActor private let groceries = MentionText([.text("Buy "), .mention(idA, label: "Groceries"), .text(" today")])
 
 @MainActor let panelTests = Suite("Mention text in the panel", [
-    test("the jot's text in its panel: pills tinted, its owner never offered; @gro, ↓, Return writes the canonical text, the typing and the pick one step") {
+    test("the jot's text in its panel: pills tinted, its owner the shape it writes; @gro, ↓, Return writes the canonical text, the typing and the pick one step") {
         let panel = try MentionPanel()
         let jot = panel.editor.add(Jot(CGRect(x: 0, y: 0, width: 200, height: 200)), titled: nil)
         let view = try panel.show(jot)

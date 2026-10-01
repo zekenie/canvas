@@ -382,10 +382,13 @@ public final class MentionState {
         catalog.markRecent(recent, previous: previous)
     }
 
-    /// What the `@` picker lists for `query` in text of `scope`, on `owner` (the text's shape, never
-    /// listed): every mentionable shape the scope admits on any board of the file the editor can
-    /// show, but those kept aside and those its kind gives no name (called by the "Untitled …"
-    /// placeholder: a mention of one stays, but there's no point picking it). An empty query lists recent picks, then the shapes nearest the
+    /// What the `@` picker lists for `query` in text of `scope`, on `owner` (the text's shape, which
+    /// may mention itself: it's left out of an empty query's Nearby, where it would always be
+    /// first, and of a typed query's matches while its name holds what's typed, as a note's does
+    /// when the `@` is in its first line; nearness is measured from it): every mentionable shape
+    /// the scope admits on any board of the file the editor can show, but those kept aside and
+    /// those its kind gives no name (called by the "Untitled …" placeholder: a mention of one
+    /// stays, but there's no point picking it). An empty query lists recent picks, then the shapes nearest the
     /// owner on the board shown and, while there's room, the shapes whose boards it's inside, the
     /// board shown's own first; any other, one ranked list of the best matches (`CaretListMatcher`'s
     /// tiers, then `MentionRanking`'s adjustments, nearness on the board shown among them; ties to
@@ -407,7 +410,7 @@ public final class MentionState {
 
         let q = CaretListMatcher.Query(query)
         guard !q.isEmpty else {
-            let recentShown = Array(recent.lazy.filter { $0 != owner && self.catalog.contains($0) && admits($0) }
+            let recentShown = Array(recent.lazy.filter { self.catalog.contains($0) && admits($0) }
                 .prefix(MentionRanking.recentShown)).map { candidate($0, matched: []) }
             var taken = Set(recentShown.map(\.id))
             if let owner { taken.insert(owner) }
@@ -419,6 +422,11 @@ public final class MentionState {
             return MentionCandidates(recent: recentShown, nearby: nearby.map { candidate($0, matched: []) }, matches: [])
         }
 
+        // A shape named by its own text (a note's first line) holds the `@query` being typed in its
+        // name, so it would match what's typed: it's left out then, listed once its name says more.
+        let typed = "@" + query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let leavesOutOwner = owner.flatMap { catalog.appearance(of: $0) }.map { $0.label.range(of: typed, options: [.caseInsensitive, .diacriticInsensitive]) != nil } ?? false
+
         // Two linear passes over the catalog's keys, as every caret list matches (`rank`): every
         // tier but the typo's, then, if that found few, the typo's over the rest.
         var found: [Found] = []
@@ -427,7 +435,7 @@ public final class MentionState {
                 catalog.entries.withUnsafeBufferPointer { entries in
                     CaretListMatcher.rank(view, count: entries.count, wantSpans: false, label: { slot in
                         let entry = entries[slot]
-                        guard entry.id != owner, admits(entry.id) else { return nil }
+                        guard !(leavesOutOwner && entry.id == owner), admits(entry.id) else { return nil }
                         return UnsafeBufferPointer(rebasing: keys[entry.start..<entry.start + entry.count])
                     }) { slot, score, _ in found.append(Found(slot: slot, score: score)) }
                 }
