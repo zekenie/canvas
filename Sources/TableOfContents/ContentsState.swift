@@ -18,6 +18,10 @@ public struct ContentsEntry: Identifiable {
     /// The rows nested under this one, in document order; nil when there are none, so the list
     /// shows no disclosure triangle.
     public internal(set) var children: [ContentsEntry]?
+    /// The board this row's shape owns (a `BoardOwning` kind's, not kept aside), whose rows the list
+    /// nests under this one's, before `children`: that board's `ContentsState.outline(of:)`, read only
+    /// once the row is expanded. Nil for a shape that owns none. The board may have no shapes yet.
+    public var nestedBoard: BoardID? { row.ownsBoard ? BoardID(owner: id) : nil }
     /// The shape's row, as its kind made it for the shape as listed, with its marks: the same
     /// object until the shape or its marks change.
     var row: ShapeRow
@@ -46,11 +50,15 @@ final class ShapeRow {
     /// Where the shape is in the stack, which orders rows among their siblings. Every shape in a
     /// document has a key.
     let key: StackingKey
+    /// Whether the shape owns a board the editor can show wherever it shows the shape's own
+    /// (`registry.ownsShowableBoard`): that board's rows nest under its row.
+    let ownsBoard: Bool
 
-    init(record: AnyShapeRecord, isListed: Bool, parent: ShapeID?, row: ResolvedRow, symbol: String, marks: [ContentsMark]) {
+    init(record: AnyShapeRecord, isListed: Bool, parent: ShapeID?, ownsBoard: Bool, row: ResolvedRow, symbol: String, marks: [ContentsMark]) {
         self.record = record
         self.isListed = isListed
         self.parent = parent
+        self.ownsBoard = ownsBoard
         view = row.view
         label = row.label
         self.symbol = symbol
@@ -64,6 +72,7 @@ final class ShapeRow {
         record = row.record
         isListed = row.isListed
         parent = row.parent
+        ownsBoard = row.ownsBoard
         if let resolved {
             view = resolved.view
             label = resolved.label
@@ -298,8 +307,14 @@ public final class ContentsState {
     /// What selecting rows does (a click, ⌘- and ⇧-clicks, the arrow keys): selects their shapes,
     /// in document order, and brings them into view, zoomed to fit (no closer than 120%; Selection's
     /// `editor.reveal`). What's listed stays as it was. Selecting what's already selected moves
-    /// nothing.
+    /// nothing. A row of a board nested under its owner's (`nestedBoard`) is of a shape on another
+    /// board, so selecting it goes there, as following a link does (Selection's `editor.goTo`: its
+    /// board shown and it selected, one step back), and leaves the rest of the rows selected behind;
+    /// but only when such rows are all a selection adds: a ⇧-click whose range passes over an open
+    /// board's rows selects the board shown's rows in it, and no others.
     public func select(_ ids: Set<ShapeID>) {
+        let away = elsewhere(ids)
+        if !away.isEmpty, ids.subtracting(editor.selectedShapeIDs).isSubset(of: away) { return editor.goTo(away) }
         let listed = scope
         let ordered = inDocumentOrder(ids)
         let isNew = Set(ordered) != Set(editor.selectedShapeIDs)
@@ -313,9 +328,34 @@ public final class ContentsState {
     /// kind opens to), selecting it first if it isn't the only shape selected. Does nothing for
     /// several rows, or a shape that can't be opened (`editor.canOpen`).
     public func open(_ ids: Set<ShapeID>) {
-        guard ids.count == 1, let id = ids.first, editor.canOpen(id) else { return }
+        guard ids.count == 1, let id = ids.first else { return }
+        // A row of a nested board: going to its shape and opening it there, one step back.
+        guard elsewhere(ids).isEmpty else { return editor.goInto(id) }
+        guard editor.canOpen(id) else { return }
         if editor.selectedShapeIDs != [id] { select(ids) }
         editor.open(id)
+    }
+
+    /// Those of `ids` on a board of the file other than the one shown (rows of a board nested under
+    /// its owner's), in the order the list nests them, so which board several go to (the first's) is
+    /// the one listed first, whatever a set's order.
+    private func elsewhere(_ ids: Set<ShapeID>) -> [ShapeID] {
+        let file = editor.file, board = editor.board
+        return ids.filter { file.board(containing: $0).map { $0 != board } ?? false }
+            .map { ($0, Self.place(of: $0, in: file)) }
+            .sorted { $0.1.lexicographicallyPrecedes($1.1) }.map(\.0)
+    }
+
+    /// Where a shape is listed when every board's rows are under their owner's: its owners' places in
+    /// the stack, the outermost first, then its own. Compared, places order shapes as the list does.
+    private static func place(of id: ShapeID, in file: CanvasFile) -> [Int] {
+        var place: [Int] = [], current = id, met: Set<ShapeID> = []
+        while met.insert(current).inserted, let board = file.board(containing: current), let index = file[board].index(of: current) {
+            place.append(index)
+            guard let owner = board.owner else { break }
+            current = owner
+        }
+        return place.reversed()
     }
 
     /// Lists every shape, keeping the selection, until the selection next changes.
@@ -326,8 +366,10 @@ public final class ContentsState {
     // MARK: Hovering
 
     /// The pointer is on the shape's row (and, called again as it moves there, still is): the
-    /// shape is hovered (`editor.hovered`), as though the pointer were on it on the canvas.
+    /// shape is hovered (`editor.hovered`), as though the pointer were on it on the canvas. A shape
+    /// on another board (a row of a board nested under its owner's) isn't: the canvas doesn't show it.
     public func hover(_ id: ShapeID) {
+        guard editor.document[id] != nil else { return }
         rowHover = id
         editor.hovered = id
     }
@@ -352,12 +394,13 @@ public final class ContentsState {
 
     /// A board's rows as the table of contents lists every shape of it, whether it's shown or not:
     /// what a view of a board of the file lists, the one shown or another (the path's crumb menus,
-    /// each its crumb's board). The rows are those `entries` would list there with nothing selected, less
-    /// their marks, which are the board shown's (validation checks only it). Made on the first read,
-    /// and kept while the board is as it was (its revision) and on the path to the board shown; a
-    /// read after a commit that did more than move shapes makes again the rows that read more than
-    /// their shapes (`affected`, whose answers are the board shown's, can't say which), and keeps
-    /// each unless its label changed. Reading it ties the reader to every commit, as `entries` does.
+    /// each its crumb's board; the rows of a board nested under its owner's, `nestedBoard`). The rows
+    /// are those `entries` would list there with nothing selected, less their marks, which are the
+    /// board shown's (validation checks only it). Made on the first read, and kept while the board is
+    /// as it was (its revision) and, once another board is shown, on the path to it; a read after a
+    /// commit that did more than move shapes makes again the rows that read more than their shapes
+    /// (`affected`, whose answers are the board shown's, can't say which), and keeps each unless its
+    /// label changed. Reading it ties the reader to every commit, as `entries` does.
     public func outline(of board: BoardID) -> [ContentsEntry] {
         let revision = editor.file.revision(of: board), now = editor.revision
         guard var kept = outlines.removeValue(forKey: board), kept.revision == revision else {
@@ -376,6 +419,14 @@ public final class ContentsState {
         }
         outlines[board] = kept
         return kept.entries
+    }
+
+    /// The board a row opens onto (`nestedBoard`), while it has shapes: nil for one with none, so its
+    /// row shows no disclosure triangle. O(1): its rows are read only once the row is expanded
+    /// (`outline(of:)`).
+    func boardToOpen(under entry: ContentsEntry) -> BoardID? {
+        guard let board = entry.nestedBoard, !editor.contents(of: board).shapes.isEmpty else { return nil }
+        return board
     }
 
     /// Every row of `board`, listed as `outline(of:)` lists them.
@@ -445,7 +496,8 @@ public final class ContentsState {
         #if DEBUG
         rowsMade += 1
         #endif
-        return ShapeRow(record: record, isListed: isListed, parent: contribution?.parent?(record), row: resolvedRow(of: record, kind: kind),
+        return ShapeRow(record: record, isListed: isListed, parent: contribution?.parent?(record),
+                        ownsBoard: editor.registry.ownsShowableBoard(record), row: resolvedRow(of: record, kind: kind),
                         symbol: kind.symbol, marks: marked ? marks(of: record, isListed: isListed, kind: kind) : [])
     }
 

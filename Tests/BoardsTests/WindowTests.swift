@@ -156,9 +156,9 @@ import TestKit
         let crumbs = try require(path.editor.boardCrumbs)
         let crumb = path.frame(of: try require(path.buttons.first))
         crumbs.pointerEntered(crumb: .root)
-        path.window.spin { path.menuButtons.count == 2 }
+        path.window.spin { path.menuButtons.count == 3 }
         let rows = path.menuButtons.map(path.frame(of:))
-        expectEqual(rows.count, 2, "the root's: A, and D")
+        expectEqual(rows.count, 3, "the root's: A, and D, with a disclosure triangle before it: its board's rows are under it")
         let first = try require(rows.first)
         expect(first.minY > crumb.maxY + 6 && first.minY < crumb.maxY + 20, "6 points below the crumb, and the menu's padding: \(crumb), \(first)")
         expect(first.minX >= crumb.minX && first.minX < crumb.minX + 30, "lined up with it: \(crumb), \(first)")
@@ -181,6 +181,26 @@ import TestKit
         expectEqual(path.editor.board, nest.pBoard, "B is on the board shown")
         expectEqual(path.editor.selectedShapeIDs, [nest.b])
         expectEqual(crumbs.openMenu, nil)
+    },
+    test("a row whose shape owns a board opens onto that board's rows, as in the table of contents; one picked there goes to its shape, on its board") {
+        let nest = Nest()
+        let path = try menuWindow(nest)
+        expect(path.editor.showBoard(nest.dBoard))
+        path.window.spin { path.buttons.count == 1 }
+        let crumbs = try require(path.editor.boardCrumbs)
+        crumbs.pointerEntered(crumb: .root)
+        path.window.spin { path.menuButtons.count == 3 }            // A; D's triangle, and D
+        path.menuButtons[1].performClick(nil)
+        path.window.spin { path.menuButtons.count == 5 }            // and under D, P's triangle and P
+        expect(path.frame(of: path.menuButtons[4]).minX > path.frame(of: path.menuButtons[2]).minX, "P's row in from D's")
+        path.menuButtons[3].performClick(nil)
+        path.window.spin { path.menuButtons.count == 7 }            // and under P, B and C
+        path.menuButtons[5].performClick(nil)
+        path.window.spin { path.editor.board == nest.pBoard }
+        expectEqual(path.editor.selectedShapeIDs, [nest.b], "B, gone to on P's board")
+        expectEqual(crumbs.openMenu, nil)
+        path.editor.goBack()
+        expectEqual(path.editor.board, nest.dBoard, "one step back")
     },
 ])
 

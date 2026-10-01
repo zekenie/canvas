@@ -3,9 +3,9 @@ import Canvas
 import Selection
 import SwiftUI
 
-/// The table of contents: a Mac source list of the shown board's shapes. The app shows it in the
-/// detail panel when nothing or several shapes are selected (through Composition); it follows the
-/// editor by itself. Clicking a row gives it the keyboard, as a source list does: the arrow keys
+/// The table of contents: a Mac source list of the shown board's shapes, a shape that owns a board
+/// opening onto that board's (`BoardRows`). The app shows it in the detail panel when nothing or
+/// several shapes are selected (through Composition); it follows the editor by itself. Clicking a row gives it the keyboard, as a source list does: the arrow keys
 /// move through the rows, Delete runs the `.delete` command (what Delete on the canvas and Edit ›
 /// Delete run: deleting the selection), a double-click or Return on a row opens its shape (as
 /// Return on the canvas does: Selection's `editor.open`), and Escape calls `onExit`, which gives the keyboard back to the
@@ -90,9 +90,9 @@ struct ContentsList: View {
         } else {
             List(selection: Binding(get: { Set(editor.selectedShapeIDs) }, set: { state.select($0) })) {
                 Section {
-                    OutlineGroup(entries, children: \.children) { entry in
-                        ContentsRow(entry: entry, state: state)
-                            .tag(entry.id)
+                    OutlineGroup(ListedRows(entries, state: state), children: \.children) { listed in
+                        ContentsRow(entry: listed.entry, state: state)
+                            .tag(listed.id)
                     }
                     // A new scope's rows replace the last scope's, rather than coming in around the
                     // rows both list, so they arrive as one run under the header; and so do the rows
@@ -115,6 +115,94 @@ struct ContentsList: View {
             // No menu of its own (the canvas's is the shapes'): a double-click or Return on a row.
             .contextMenu(forSelectionType: ShapeID.self, menu: { _ in }, primaryAction: { state.open($0) })
         }
+    }
+}
+
+/// A row as the list shows it: its entry, and the rows nested under it, if any. Those are the rows
+/// of the board its shape owns (`nestedBoard`), then the rows nested under it on its own board
+/// (`children`): a subboard's row opens onto what's inside it, as a shape's opens onto the arrows
+/// that start from it.
+@MainActor
+struct ListedRow: Identifiable {
+    let id: ShapeID
+    let entry: ContentsEntry
+    let state: ContentsState
+
+    init(_ entry: ContentsEntry, state: ContentsState) {
+        id = entry.id
+        self.entry = entry
+        self.state = state
+    }
+
+    /// Nil for none, so the row shows no disclosure triangle. The list asks for this of every row on
+    /// every update, collapsed or not, so it's cheap: a board's rows are read only once the list asks
+    /// what's in it, which it does only once the row is expanded (`ListedRows`).
+    var children: ListedRows? {
+        if let board = state.boardToOpen(under: entry) {
+            return ListedRows(BoardRows(board, then: entry.children ?? [], state: state), state: state)
+        }
+        return entry.children.map { ListedRows($0, state: state) }
+    }
+}
+
+/// Rows as the list shows them, a level at a time: entries as they are, or a board's rows
+/// (`BoardRows`), read only once something asks for one of them or how many there are.
+@MainActor
+struct ListedRows {
+    private let rows: Rows
+    private let state: ContentsState
+
+    private enum Rows {
+        case entries([ContentsEntry])
+        case board(BoardRows)
+    }
+
+    init(_ entries: [ContentsEntry], state: ContentsState) {
+        rows = .entries(entries)
+        self.state = state
+    }
+
+    init(_ board: BoardRows, state: ContentsState) {
+        rows = .board(board)
+        self.state = state
+    }
+
+    private var entries: [ContentsEntry] {
+        switch rows {
+        case .entries(let entries): entries
+        case .board(let board): board.entries
+        }
+    }
+}
+
+extension ListedRows: @MainActor RandomAccessCollection {
+    var startIndex: Int { 0 }
+    var endIndex: Int { entries.count }
+    subscript(position: Int) -> ListedRow { ListedRow(entries[position], state: state) }
+}
+
+/// The rows of a board a row opens onto (`ContentsState.outline(of:)`), then those nested under the
+/// row on its own board, read the first time they're asked for: the list asks only once the row is
+/// expanded, so a collapsed subboard costs its row and no more, however much its board holds.
+@MainActor
+final class BoardRows {
+    private let board: BoardID
+    private let nested: [ContentsEntry]
+    private let state: ContentsState
+    private var made: [ContentsEntry]?
+
+    init(_ board: BoardID, then nested: [ContentsEntry], state: ContentsState) {
+        self.board = board
+        self.nested = nested
+        self.state = state
+    }
+
+    var entries: [ContentsEntry] {
+        if let made { return made }
+        let inside = state.outline(of: board)
+        let entries = nested.isEmpty ? inside : inside + nested
+        made = entries
+        return entries
     }
 }
 

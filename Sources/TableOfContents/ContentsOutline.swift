@@ -4,8 +4,9 @@ import SwiftUI
 /// A board's rows as the table of contents lists them, for a small panel that names the board (the
 /// path's crumb menus, which Boards shows over the canvas): each row as its kind draws it, on one
 /// line, and the rows nested under it behind a disclosure triangle, collapsed until it's opened, as
-/// in the list. `highlighted`'s row is tinted as a hovered row is in the list (the way you came, in
-/// a crumb's menu), and the row under the pointer is lit. A click on a row picks its shape (`onPick`):
+/// in the list (a subboard's: its board's rows, read once it's opened). `highlighted`'s row is
+/// tinted as a hovered row is in the list (the way you came, in a crumb's menu), and the row under
+/// the pointer is lit. A click on a row picks its shape (`onPick`):
 /// what picking does is the host's. It reads the rows through `ContentsState.outline(of:)`, so it
 /// follows the file while it shows, and makes the views of only the rows in view. As tall as its
 /// rows, up to `maxHeight`, past which it scrolls; it opens at the top. Nothing without the table
@@ -30,22 +31,24 @@ public struct ContentsOutline: View {
         if let state = editor.tableOfContents {
             let entries = state.outline(of: board)
             if !entries.isEmpty {
-                OutlineRows(entries: entries, highlighted: highlighted, maxHeight: maxHeight, onPick: onPick)
+                OutlineRows(state: state, entries: entries, highlighted: highlighted, maxHeight: maxHeight, onPick: onPick)
                     .id(board)          // another board's rows start collapsed, at the top
             }
         }
     }
 }
 
-/// A row of the outline as shown: its entry, and how deep it's nested.
+/// A row of the outline as shown: its entry, how deep it's nested, and whether rows are.
 struct OutlineLine: Identifiable {
     let entry: ContentsEntry
     let depth: Int
+    let isExpandable: Bool
     var id: ShapeID { entry.id }
 }
 
 /// The rows in view, flattened: each row, then, while it's expanded, the rows nested under it.
 struct OutlineRows: View {
+    let state: ContentsState
     let entries: [ContentsEntry]
     let highlighted: ShapeID?
     let maxHeight: CGFloat
@@ -53,7 +56,7 @@ struct OutlineRows: View {
     @State private var expanded: Set<ShapeID> = []
 
     var body: some View {
-        let lines = Self.lines(of: entries, expanded: expanded)
+        let lines = Self.lines(of: entries, expanded: expanded, state: state)
         // It opens at the top, as data-canvas's menus do: scrolling a lazy stack to a row far down
         // lays out the rows before it (some 70 ms to the last of 10,000).
         ScrollView(.vertical) {
@@ -71,14 +74,18 @@ struct OutlineRows: View {
         if expanded.remove(id) == nil { expanded.insert(id) }
     }
 
-    /// The rows shown: every top-level row, and under each row expanded the rows nested under it.
-    static func lines(of entries: [ContentsEntry], expanded: Set<ShapeID>) -> [OutlineLine] {
+    /// The rows shown: every top-level row, and under each row expanded the rows nested under it,
+    /// the rows of the board its shape owns first (`nestedBoard`), as in the list.
+    static func lines(of entries: [ContentsEntry], expanded: Set<ShapeID>, state: ContentsState) -> [OutlineLine] {
         var lines: [OutlineLine] = []
         lines.reserveCapacity(entries.count)
         func add(_ entries: [ContentsEntry], depth: Int) {
             for entry in entries {
-                lines.append(OutlineLine(entry: entry, depth: depth))
-                if let children = entry.children, expanded.contains(entry.id) { add(children, depth: depth + 1) }
+                let board = state.boardToOpen(under: entry)
+                lines.append(OutlineLine(entry: entry, depth: depth, isExpandable: board != nil || entry.children != nil))
+                guard expanded.contains(entry.id) else { continue }
+                if let board { add(state.outline(of: board), depth: depth + 1) }
+                if let children = entry.children { add(children, depth: depth + 1) }
             }
         }
         add(entries, depth: 0)
@@ -99,7 +106,7 @@ struct OutlineRow: View {
     var body: some View {
         HStack(spacing: 0) {
             Color.clear.frame(width: CGFloat(line.depth) * ContentsStyle.outlineIndent)
-            if line.entry.children != nil {
+            if line.isExpandable {
                 Button(action: toggle) {
                     Image(systemName: "chevron.right")
                         .font(.system(size: ContentsStyle.outlineDisclosureSize, weight: .semibold))
