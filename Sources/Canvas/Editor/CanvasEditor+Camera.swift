@@ -35,11 +35,11 @@ extension CanvasEditor {
     public var cameraTarget: Camera { cameraAnimationTarget ?? camera }
 
     /// Pans the camera at once, by as little as it takes, so `rect` (world units from the shape's
-    /// box's origin: an editing view's coordinates) is in the part of the view the host leaves
+    /// editing frame's origin: an editing view's coordinates) is in the part of the view the host leaves
     /// clear, `Style.keepInViewMargin` in from its edges; a rect too big to fit keeps its top-left
     /// corner in view. See `EditContext.keepInView`.
     func keepInView(_ rect: CGRect, of id: ShapeID) {
-        guard session == nil, let box = document[id]?.box else { return }
+        guard session == nil, let box = editingFrame(of: id) else { return }
         let view = unobscuredViewport.insetBy(dx: Style.keepInViewMargin, dy: Style.keepInViewMargin)
         guard view.width > 0, view.height > 0 else { return }
         let shown = camera.toView(rect.offsetBy(dx: box.minX, dy: box.minY))

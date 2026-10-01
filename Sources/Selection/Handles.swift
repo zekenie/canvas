@@ -49,9 +49,10 @@ extension HandleProviding {
 
 extension CanvasEditor {
     /// The only selected shape's handles, in view space, front to back. A read-only shape
-    /// (`registrar.readOnlyShapes`) has none: a press there is a press on the shape.
+    /// (`registrar.readOnlyShapes`) has none: a press there is a press on the shape. Nor does the
+    /// shape being edited (an arrow's label), as in tldraw: its editing view is over them.
     func visibleHandles() -> [(handle: AnyHashable, point: CGPoint)] {
-        guard let id = selection, let record = document[id], !registry.isReadOnly(record),
+        guard let id = selection, id != editingShapeID, let record = document[id], !registry.isReadOnly(record),
               let definition = registry.definition(for: record.kind) as? any HandleProviding else { return [] }
         return definition.erasedHandles(of: record, in: shapeContext).map { ($0.handle, camera.toView($0.point)) }
     }

@@ -1,10 +1,19 @@
 import AppKit
 
 /// Edited in place: from an editing placement, or by any plugin that calls `editor.beginEditing`
-/// (Selection's double-click and Return). The view is laid over the shape's box, with bounds in
-/// world units so AppKit scales it with the zoom.
-public protocol Editable: ShapeDefinition where Props: BoxShapeProps {
+/// (Selection's double-click and Return). The view is laid over the shape's editing frame (a box
+/// kind's box; a kind without one says where, an arrow its label's), with bounds in world units
+/// so AppKit scales it with the zoom.
+public protocol Editable: ShapeDefinition {
     func makeEditingView(for shape: ShapeRecord<Props>, context: EditContext<Props>) -> EditingView
+    /// Where the editing view goes while the shape is edited, in world units: looked at again as the
+    /// shape or the camera changes, so it may grow with what's typed (an arrow's label). A box kind's
+    /// is its box. Nil leaves the view where it was.
+    func editingFrame(of shape: ShapeRecord<Props>, in context: ShapeContext) -> CGRect?
+}
+
+extension Editable where Props: BoxShapeProps {
+    public func editingFrame(of shape: ShapeRecord<Props>, in context: ShapeContext) -> CGRect? { shape.frame }
 }
 
 @MainActor
@@ -19,7 +28,7 @@ public struct EditingView {
 
 /// An editing view's way back into the document.
 @MainActor
-public struct EditContext<Props: BoxShapeProps> {
+public struct EditContext<Props: ShapeProps> {
     public let shapeID: ShapeID
     /// Where editing began, in world units: the press `editor.beginEditing(_:at:)` was given, so a
     /// view can put its selection there (the character pressed). Nil when what began it didn't say
@@ -56,11 +65,15 @@ public struct EditContext<Props: BoxShapeProps> {
     /// Nil once it's gone.
     public var shape: ShapeRecord<Props>? { editor?.document[shapeID]?.typed(as: Props.self) }
 
+    /// Where the editing view is laid over the shape now (`Editable.editingFrame`), in world units:
+    /// the origin of the view's coordinates. Nil once the shape is gone.
+    public var frame: CGRect? { editor?.editingFrame(of: shapeID) }
+
     /// Brings `rect` into view (a caret's, where text is typed past the window's edge: a note
     /// growing downward with what's typed), moving the camera at once, by as little as it takes, into
     /// the part of the view the host leaves clear, 16 points in from its edges; no zoom, and no undo
-    /// step. `rect` is in the editing view's coordinates: world units, with the shape's box at their
-    /// origin, as the view's bounds are. Nothing while a press is under way.
+    /// step. `rect` is in the editing view's coordinates: world units, with the shape's editing frame
+    /// at their origin, as the view's bounds are. Nothing while a press is under way.
     public func keepInView(_ rect: CGRect) { editor?.keepInView(rect, of: shapeID) }
 
     /// The pointer is on part of the view that has a popover (its anchor in the view's coordinates,
@@ -69,7 +82,7 @@ public struct EditContext<Props: BoxShapeProps> {
     /// view. Nothing once this session has ended.
     public func hoverPopover(_ popover: CanvasPopover?) {
         guard let editor, editor.editingShapeID == shapeID else { return }
-        guard let popover, let box = editor.document[shapeID]?.box else {
+        guard let popover, let box = editor.editingFrame(of: shapeID) else {
             editor.hoverPopover(nil)
             return
         }

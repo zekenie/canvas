@@ -9,11 +9,16 @@ public struct ShapeGeometry: Sendable {
     /// Whether the shape has an inside. Open shapes are hit near their outline only by their own
     /// `hitTest`, and nothing can be attached inside them.
     public var isClosed: Bool
+    /// Where its text label is, for a shape whose text is on part of it (an arrow's, tldraw's
+    /// `isLabel` geometry), within `bounds`; nil for none. Kept with the rest, so what's drawn zoomed
+    /// out (a skeleton) and what's hit find it without working it out again.
+    public var label: CGRect?
 
-    public init(outline: [CGPoint], bounds: CGRect? = nil, isClosed: Bool = true) {
+    public init(outline: [CGPoint], bounds: CGRect? = nil, isClosed: Bool = true, label: CGRect? = nil) {
         self.outline = outline
         self.bounds = bounds ?? CGRect(enclosing: outline)
         self.isClosed = isClosed
+        self.label = label
     }
 }
 

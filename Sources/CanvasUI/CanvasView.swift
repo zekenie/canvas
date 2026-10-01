@@ -177,10 +177,10 @@ public final class CanvasView: NSView {
         editor.draw(in: context, bounds: bounds, dirtyRect: dirtyRect)
     }
 
-    /// Keeps the editing view over its shape as the camera or the shape moves. Its frame is in
-    /// view points and its bounds in world units, so AppKit scales it with the zoom.
+    /// Keeps the editing view over its shape's editing frame as the camera or the shape moves. Its
+    /// frame is in view points and its bounds in world units, so AppKit scales it with the zoom.
     private func layoutEditingView() {
-        guard let view = editingView?.view, let id = editor.editingShapeID, let box = editor.document[id]?.box else { return }
+        guard let view = editingView?.view, let box = editor.editingFrame else { return }
         view.frame = editor.camera.toView(box)
         view.bounds = CGRect(origin: .zero, size: box.size)
     }

@@ -170,15 +170,33 @@ extension Drawing {
             swap(&request.fromSide, &request.toSide)
             swap(&request.fromName, &request.toName)
         }
-        let made: AnyShapeRecord
-        do throws(AutomationError) {
-            made = try edging.make(request, match?.record, transaction.shapes)
-        } catch {
-            throw AutomationError(error.message, reason: error.reason, hint: error.hint, invalidParams: error.isInvalidParams,
-                                  line: statement.line, statement: statement.text)
+        func make(changing existing: AnyShapeRecord?) throws(AutomationError) -> AnyShapeRecord {
+            do throws(AutomationError) {
+                return try edging.make(request, existing, transaction.shapes)
+            } catch {
+                throw AutomationError(error.message, reason: error.reason, hint: error.hint, invalidParams: error.isInvalidParams,
+                                      line: statement.line, statement: statement.text)
+            }
         }
+        var made = try make(changing: match?.record)
         guard made.kind == kind else {
             throw AutomationError(statement, .internal, "\(written) came out \(indefinite(made.kind)), not \(indefinite(kind))")
+        }
+        // The kind's own attributes it writes (an arrow's text), set as a shape's are. What the edge
+        // says as written (its heads, by its arrow) has the last word: made again, the connection
+        // keeps every one of them, or one says otherwise.
+        if !edge.settings.isEmpty {
+            do throws(ShapePropertiesError) {
+                made = try registry.shape(made, setting: edge.settings)
+            } catch {
+                throw AutomationError(statement, .invalidValue, "\(written) can't have those attributes: \(error)")
+            }
+            let again = try make(changing: made).propertiesJSON ?? [:], set = made.propertiesJSON ?? [:]
+            if let key = edge.settings.keys.sorted().first(where: { again[$0] != set[$0] }) {
+                let value = edge.edge.attributes.first { $0.key == key }?.value.written ?? ""
+                throw AutomationError(statement, .invalidValue, "\(written): \(key): \(value) isn't what the edge as written says",
+                                      hint: "leave \(key): out; how the edge is written (its arrow, its sides) says it")
+            }
         }
         // What it's bound to is on the board as the script leaves it: nothing would ever let go of one that isn't.
         let document = transaction.document

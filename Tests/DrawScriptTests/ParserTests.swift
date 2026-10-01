@@ -412,15 +412,18 @@ import TestKit
         expectEqual(side?.hint, "from: takes top, right, bottom or left")
         expectEqual(parseError(#"edge "A" -> "B" via: a via: b"#)?.reason, .duplicate)
     },
-    test("an edge takes no style, placement, text or third shape") {
+    test("an edge takes no style, placement or third shape, and what it says is an attribute") {
         expectEqual(parseError(#"edge "A" -> "B" style: s"#)?.message, #"edge "A" -> "B": an edge can't take a style"#)
         expectEqual(parseError(#"edge "A" -> "B" right of "C""#)?.message, #"edge "A" -> "B": an edge goes where its ends are, so it takes no placement (right)"#)
         let chain = parseError(#"edge "A" -> "B" -> "C""#)
         expectEqual(chain?.reason, .unsupported)
         expectEqual(chain?.message, #"edge "A" -> "B": an edge joins two shapes, and this one goes on to a third"#)
         let text = parseError(#"edge "A" -> "B" "calls""#)
-        expectEqual(text?.reason, .unsupported)
-        expectEqual(text?.message, #"edge "A" -> "B": edges can't carry text yet: arrows here have no labels"#)
+        expectEqual(text?.reason, .syntax)
+        expectEqual(text?.message, #"edge "A" -> "B": "calls" is a title where none goes"#)
+        expectEqual(text?.hint, #"what an edge says is written after a key: text: "calls""#)
+        guard case .edge(let edge) = try parse(#"edge "A" -> "B" text: "calls" labelPosition: 0.25"#) else { throw RequireFailed() }
+        expectEqual(edge.attributes.map(\.key), ["text", "labelPosition"])
     },
     test("an edge's ends are quoted titles joined by ->, <- or <->") {
         expectEqual(parseError(#"edge A -> "B""#)?.message, "edge: A isn't quoted, and titles are in double quotes")

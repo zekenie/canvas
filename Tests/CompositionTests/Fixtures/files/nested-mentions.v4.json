@@ -56,6 +56,7 @@
               }
             },
             "endArrowhead" : true,
+            "labelPosition" : 0.5,
             "start" : {
               "bound" : {
                 "isExact" : false,
@@ -67,7 +68,8 @@
                 "shapeID" : "00000002-0000-0000-0000-00000000000A"
               }
             },
-            "startArrowhead" : false
+            "startArrowhead" : false,
+            "text" : ""
           }
         },
         {
@@ -145,6 +147,7 @@
               }
             },
             "endArrowhead" : true,
+            "labelPosition" : 0.5,
             "start" : {
               "bound" : {
                 "isExact" : false,
@@ -156,7 +159,8 @@
                 "shapeID" : "00000003-0000-0000-0000-00000000000A"
               }
             },
-            "startArrowhead" : false
+            "startArrowhead" : false,
+            "text" : ""
           }
         }
       ]
@@ -218,6 +222,7 @@
           }
         },
         "endArrowhead" : true,
+        "labelPosition" : 0.5,
         "start" : {
           "bound" : {
             "isExact" : false,
@@ -229,7 +234,8 @@
             "shapeID" : "00000001-0000-0000-0000-00000000000A"
           }
         },
-        "startArrowhead" : false
+        "startArrowhead" : false,
+        "text" : ""
       }
     },
     {
@@ -258,7 +264,7 @@
       "title" : 0
     },
     "kinds" : {
-      "arrow" : 0,
+      "arrow" : 1,
       "sticky-note" : 3,
       "subboard" : 0
     }

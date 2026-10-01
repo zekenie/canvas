@@ -65,7 +65,11 @@ struct EdgeItem {
     /// The titles its ends are named by.
     let fromTitle: String
     let toTitle: String
+    /// The attributes it gives the plugin that makes edges (DrawEdges'), as written.
     let attributes: [String: String]
+    /// The rest it writes, its kind's own (an arrow's text), read by the kind's schema, set on the
+    /// connection once it's made.
+    let settings: JSONObject
 }
 
 /// A delete statement, resolved: the shape it removes and every connection with an end on it (those
@@ -198,9 +202,17 @@ struct Drawing {
     private func skip() -> AutomationError { AutomationError("", reason: Self.skipped) }
 
     /// Whether the run, placed, changes or deletes this shape (so an edit under way should end
-    /// first): a shape restated as it is isn't changed.
+    /// first): a shape restated as it is isn't changed, nor a connection whose statement writes
+    /// none of its kind's own attributes (an arrow's text) differently (re-aiming it changes
+    /// nothing typed into it).
     func changes(_ id: ShapeID) -> Bool {
-        deleted.contains(id) || items.contains { $0.existing?.id == id && $0.record != $0.existing }
+        if deleted.contains(id) || items.contains(where: { $0.existing?.id == id && $0.record != $0.existing }) { return true }
+        guard !edges.isEmpty, let edging, let record = editor.document[id], record.kind == edgeKind,
+              let ends = edging.ends(record, registry) else { return false }
+        return edges.contains { edge in
+            let joins = (ends.from == edge.from && ends.to == edge.to) || (edge.edge.bothHeads && ends.from == edge.to && ends.to == edge.from)
+            return joins && edge.settings.contains { !Self.alreadyHas(record, $0.key, $0.value, in: registry) }
+        }
     }
 
     // MARK: Names
@@ -735,7 +747,7 @@ struct Drawing {
     // MARK: Edges
 
     private mutating func resolve(_ edge: EdgeStatement, _ statement: Statement) throws(AutomationError) {
-        guard let edging, edgeKind != nil else { throw noEdges(statement) }
+        guard let edging, let edgeKind else { throw noEdges(statement) }
         let written = "\(Keyword.edge.rawValue) \(edge.written)"
         let fromTitle = try folded(edge.from, statement), toTitle = try folded(edge.to, statement)
         func end(_ title: String) throws(AutomationError) -> ShapeID {
@@ -747,15 +759,34 @@ struct Drawing {
             }
         }
         let from = try end(fromTitle), to = try end(toTitle)
-        var attributes: [String: String] = [:]
+        // The edge maker's attributes (a channel), then its kind's own, as a shape's are.
+        var attributes: [String: String] = [:], settings: JSONObject = [:]
+        let connector = vocabulary(of: edgeKind)
         for attribute in edge.attributes {
-            guard edging.attributes.contains(attribute.key) else {
-                let takes = EdgeKey.allCases.map(\.rawValue) + edging.attributes
-                let guess = Suggestions.closest(to: attribute.key, among: takes, limit: 1).first
-                throw AutomationError(statement, .unknownAttribute, "an edge has no \(attribute.key): attribute",
+            let key = attribute.key
+            if edging.attributes.contains(key) {
+                attributes[key] = attribute.value.text
+                continue
+            }
+            guard connector.isAttribute(key) else {
+                if connector.coordinates.contains(key) {
+                    throw AutomationError(statement, .unsupported, "\(key): says where \(written) is, and an edge goes where its ends are",
+                                          hint: "leave \(key): out")
+                }
+                let takes = (EdgeKey.allCases.map(\.rawValue) + edging.attributes + connector.attributes).reduce(into: [String]()) { all, key in
+                    if !all.contains(key) { all.append(key) }
+                }
+                let guess = Suggestions.closest(to: key, among: takes, limit: 1).first
+                throw AutomationError(statement, .unknownAttribute, "an edge has no \(key): attribute",
                                       hint: (guess.map { "did you mean \($0)? " } ?? "") + "an edge takes \(takes.map { "\($0):" }.joined(separator: ", "))")
             }
-            attributes[attribute.key] = attribute.value.text
+            do throws(ValueRefusal) {
+                let value = try connector.value(of: attribute)
+                try fits(value, key, edgeKind, connector)
+                settings[key] = value
+            } catch {
+                throw AutomationError(statement, .invalidValue, "\(written): \(error.message)", hint: error.hint)
+            }
         }
         let pairs = edge.bothHeads ? [(from, to), (to, from)] : [(from, to)]
         if let earlier = edges.first(where: { other in
@@ -765,7 +796,8 @@ struct Drawing {
             throw AutomationError(statement, .duplicate, "\(written) is written twice, here and on line \(earlier.statement.line)",
                                   hint: "say everything about one edge in one statement")
         }
-        edges.append(EdgeItem(statement: statement, edge: edge, from: from, to: to, fromTitle: fromTitle, toTitle: toTitle, attributes: attributes))
+        edges.append(EdgeItem(statement: statement, edge: edge, from: from, to: to, fromTitle: fromTitle, toTitle: toTitle, attributes: attributes,
+                              settings: settings))
     }
 
     // MARK: Styles

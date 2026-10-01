@@ -97,6 +97,9 @@ extension SelectTool: Tool {
             editor.open(id, at: hit.isOnShape ? pointer.world : nil, clickCount: pointer.clickCount)
             return
         }
+        // On a label (`LabeledShape`), a click edits and a drag moves the label: both wait for the
+        // threshold.
+        let onLabel = hit.isOnShape && editor.isOnLabel(id, at: pointer.world)
         // A face waits for the drag threshold, even on a lone box: released within it, it clicks.
         if let face {
             editor.session = PointingShapeSession(shapeID: id, press: pointer.view, didSelectOnPress: !keepsSelection,
@@ -104,22 +107,23 @@ extension SelectTool: Tool {
             return
         }
         // A click on the only selected shape edits it, if its kind is edited in place and it can
-        // be (a locked one is only selected: a click isn't a try); a drag past the threshold moves it.
+        // be (a locked one is only selected: a click isn't a try), on its label if it has one
+        // (tldraw's: a click on an arrow's body only selects it); a drag past the threshold moves it.
         // Not a click on what's drawn for it outside it (a title's pill), which isn't in its text,
         // nor the click that brings the window forward (as Finder's click-to-rename ignores it).
         if isPlain, pointer.clickCount == 1, hit.isOnShape, !pointer.activatesWindow, wasOnlySelection, definition is any Editable,
-           !editor.isReadOnly(id) {
+           onLabel || !(definition is any LabeledShape), !editor.isReadOnly(id) {
             editor.session = PointingShapeSession(shapeID: id, press: pointer.view, didSelectOnPress: false,
-                                                  brushesOnDrag: false, editsOnClick: true)
+                                                  brushesOnDrag: false, editsOnClick: true, onLabel: onLabel)
             return
         }
         // A lone box follows the pointer from the press, with no drag threshold.
-        if !shift, !command, editor.selectedShapeIDs == [id], record.box != nil, !(definition is any CustomTranslation) {
+        if !shift, !command, !onLabel, editor.selectedShapeIDs == [id], record.box != nil, !(definition is any CustomTranslation) {
             editor.session = TranslatingSession(ids: [id], from: pointer.world, in: editor)
             return
         }
         editor.session = PointingShapeSession(shapeID: id, press: pointer.view,
-                                              didSelectOnPress: !keepsSelection, brushesOnDrag: command)
+                                              didSelectOnPress: !keepsSelection, brushesOnDrag: command, onLabel: onLabel)
     }
 
     func pointerMoved(_ pointer: Pointer, in editor: CanvasEditor) {
@@ -144,9 +148,11 @@ extension SelectTool: Tool {
 }
 
 /// A shape was pressed (tldraw's PointingShape). Past the drag threshold the selection moves, or,
-/// if ⌘ was held at the press, a brush starts from the press. Released without a drag, it settles
-/// the selection, or, pressed on a face, selects the shape alone and clicks the face, or, pressed as
-/// the only selected shape of a kind edited in place (`editsOnClick`), edits it from the release.
+/// if ⌘ was held at the press, a brush starts from the press, or, pressed on its label
+/// (`LabeledShape`), the label moves (tldraw's PointingArrowLabel), the shape selected alone (⇧
+/// adds it). Released without a drag, it settles the selection, or, pressed on a face, selects the
+/// shape alone and clicks the face, or, pressed as the only selected shape of a kind edited in place
+/// (`editsOnClick`), edits it from the release.
 @MainActor
 final class PointingShapeSession {
     let shapeID: ShapeID
@@ -155,13 +161,16 @@ final class PointingShapeSession {
     let brushesOnDrag: Bool
     let face: FaceHit?
     let editsOnClick: Bool
-    init(shapeID: ShapeID, press: CGPoint, didSelectOnPress: Bool, brushesOnDrag: Bool, face: FaceHit? = nil, editsOnClick: Bool = false) {
+    let onLabel: Bool
+    init(shapeID: ShapeID, press: CGPoint, didSelectOnPress: Bool, brushesOnDrag: Bool, face: FaceHit? = nil, editsOnClick: Bool = false,
+         onLabel: Bool = false) {
         self.shapeID = shapeID
         self.press = press
         self.didSelectOnPress = didSelectOnPress
         self.brushesOnDrag = brushesOnDrag
         self.face = face
         self.editsOnClick = editsOnClick
+        self.onLabel = onLabel
     }
 }
 
@@ -170,7 +179,14 @@ extension PointingShapeSession: Session {
         guard pointer.view.distance(to: press) > Style.dragThreshold else { return }
         let origin = editor.camera.toWorld(press)
         let next: any Session
-        if brushesOnDrag {
+        if onLabel, !brushesOnDrag, let label = editor.labelDragSession(of: shapeID, from: origin) {
+            if pointer.modifiers.contains(.shift) {
+                if !editor.isSelected(shapeID) { editor.selectedShapeIDs += [shapeID] }
+            } else {
+                editor.selection = shapeID
+            }
+            next = label
+        } else if brushesOnDrag {
             next = BrushingSession(origin: origin, in: editor)
         } else {
             if editor.selectedShapeIDs.isEmpty { editor.selection = shapeID }

@@ -256,6 +256,30 @@ edge "API" -> "Cache" channel: none
         expectEqual(away["warnings"]?.arrayValue?.compactMap { $0["message"]?.stringValue },
                     [#"from: left: "API" is right of "Web", so the line leaves "Web" by its right side — name a side that faces "API", or leave from: out"#])
     },
+    test("canvas draw writes what an arrow says, and where, as attributes of its edge; a head its arrow doesn't say is refused") {
+        try configureBoards()
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        expectEqual(try draw(diagram, on: board, server).status, 0)
+        let labeled = try draw(#"edge "Web" -> "API" text: "Calls" labelPosition: 0.25"#, on: board, server)
+        expectEqual(try JSON(text: labeled.output)["changes"]?.arrayValue?.map { $0["did"] }, ["reconnected"], labeled.error)
+        let editor = board.editor
+        @MainActor func said() -> [String] {
+            editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }.filter(\.props.hasText).map { "\($0.props.text) \($0.props.labelPosition)" }
+        }
+        expectEqual(said(), ["Calls 0.25"])
+        expectEqual(try JSON(text: try draw(#"edge "Web" -> "API""#, on: board, server).output)["changes"]?.arrayValue?.map { $0["did"] }, ["unchanged"],
+                    "restated without it, it keeps what it says")
+        expectEqual(try draw(#"edge "Web" -> "API" text: null"#, on: board, server).status, 0)
+        expectEqual(said(), [])
+        let head = try draw(#"edge "Web" -> "API" startArrowhead: true"#, on: board, server)
+        expectEqual(head.status, 1)
+        expectEqual(try JSON(text: head.error)["error"]?["message"], #"edge "Web" -> "API": startArrowhead: true isn't what the edge as written says"#)
+        let quoted = try draw(#"edge "Web" -> "API" "Calls""#, on: board, server)
+        expectEqual(try JSON(text: quoted.error)["error"]?["hint"], #"what an edge says is written after a key: text: "Calls""#)
+    },
     test("canvas draw --dry-run says what it would do and commits nothing; a script can be the one argument") {
         try configureBoards()
         let board = windowedBoard()

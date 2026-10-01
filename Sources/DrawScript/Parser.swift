@@ -256,7 +256,7 @@ struct LineParser {
                         hint: "write each edge on a line of its own: edge \(quote(to)) -> …")
         }
         if let next = peek(), next.kind == .quoted {
-            throw error(.unsupported, "edges can't carry text yet: arrows here have no labels")
+            throw error("\(next.raw) is a title where none goes", hint: "what an edge says is written after a key: text: \(next.raw)")
         }
         var seen: [(key: String, written: String)] = []
         while let token = peek() {

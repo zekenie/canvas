@@ -1,6 +1,7 @@
 import AppKit
 import Arrows
 @_spi(Host) import Canvas
+import CanvasRPC
 import CanvasTesting
 import CanvasUI
 import Composition
@@ -235,6 +236,65 @@ struct NotePill: Hashable, Sendable {
         expectEqual(editor.undoHistory.undoName, "Typing")
         editor.undo()
         expectEqual(editor.document[note]?.box?.height, 200)
+    },
+    test("a double-click on an arrow edits its label in a view laid over it, which grows with what's typed; Return is a new line, Escape ends it, one step") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        let (window, canvas) = windowed(editor)
+        let id = editor.add(Arrow(start: .free(CGPoint(x: 100, y: 300)), end: .free(CGPoint(x: 600, y: 300))))
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: CGPoint(x: 200, y: 300), clicks: 1, time: 1))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: CGPoint(x: 200, y: 300), clicks: 1, time: 1.05))
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: CGPoint(x: 200, y: 300), clicks: 2, time: 1.2))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: CGPoint(x: 200, y: 300), clicks: 2, time: 1.25))
+        expectEqual(editor.editingShapeID, id)
+        let host = try require(canvas.subviews.first { !($0 is MinimapView) })
+        let empty = try require(editor.editingFrame)
+        expectEqual(host.frame, editor.camera.toView(empty), "over the label, halfway")
+        window.type("calls")
+        let arrow = { editor.document[id]?.typed(as: Arrow.self)?.props }
+        expectEqual(arrow()?.text, "calls")
+        let typed = try require(editor.editingFrame)
+        expect(typed.width > empty.width, "grown: \(typed)")
+        expectEqual(host.frame, editor.camera.toView(typed), "and the view with it")
+        expectEqual(host.bounds.size, typed.size)
+        window.sendEvent(window.keyEvent("\r", code: 36))
+        window.type("back")
+        expectEqual(arrow()?.text, "calls\nback", "Return is a new line")
+        window.firstResponder?.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
+        expectEqual(editor.editingShapeID, nil)
+        expect(window.firstResponder === canvas)
+        expectEqual(editor.undoHistory.undoName, "Typing")
+        editor.undo()
+        expectEqual(arrow()?.text, "")
+    },
+    test("canvas draw writing an arrow's text while its label is typed into ends the typing first, so the next key doesn't type over it") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        let (window, canvas) = windowed(editor)
+        editor.add(StickyNote(frame: CGRect(x: 100, y: 200, width: 200, height: 200)), title: "A")
+        editor.add(StickyNote(frame: CGRect(x: 500, y: 200, width: 200, height: 200)), title: "B")
+        let commands = ShippedPlugins.commands(in: editor.registry)
+        let spec = try require(commands.specs.first { $0.name == "draw" })
+        @MainActor func draw(_ script: String) throws {
+            let params = try spec.params(from: ["-"], standardInput: { script })
+            _ = try awaitResult { try await commands.run(spec.name, .object(params), editor) }
+        }
+        try draw(#"edge "A" -> "B""#)
+        let id = try require(editor.document.shapes.first { $0.kind == Arrow.kind }?.id)
+        let text = { editor.document[id]?.typed(as: Arrow.self)?.props.text }
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: CGPoint(x: 400, y: 300), clicks: 2, time: 1))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: CGPoint(x: 400, y: 300), clicks: 2, time: 1.05))
+        expectEqual(editor.editingShapeID, id)
+        window.type("foo")
+        try draw(#"edge "A" -> "B" from: right"#)
+        expectEqual(editor.editingShapeID, id, "re-aimed, nothing typed changes")
+        try draw(#"edge "A" -> "B" text: "foo""#)
+        expectEqual(editor.editingShapeID, id, "what it says already")
+        try draw(#"edge "A" -> "B" text: "calls""#)
+        expectEqual(editor.editingShapeID, nil)
+        expectEqual(text(), "calls")
+        window.type("x")
+        expectEqual(text(), "calls", "the next key isn't the label's")
+        editor.undo()
+        expectEqual(text(), "foo", "the typing was a step of its own")
     },
     test("⌘↩ in a note's text ends editing and hands the canvas the keyboard, as a key equivalent and as a key") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())

@@ -172,6 +172,16 @@ extension CanvasEditor {
         return definition.erasedEditingView(for: record, editor: self)
     }
 
+    /// Where the shape being edited has its editing view, in world units (`Editable.editingFrame`):
+    /// nil while nothing is edited.
+    @_spi(Host) public var editingFrame: CGRect? { editingShapeID.flatMap(editingFrame(of:)) }
+
+    /// Where a shape of an `Editable` kind has its editing view, in world units.
+    func editingFrame(of id: ShapeID) -> CGRect? {
+        guard let record = document[id], let definition = registry.definition(for: record.kind) as? any Editable else { return nil }
+        return definition.erasedEditingFrame(of: record, in: shapeContext)
+    }
+
     private func sample(_ event: PointerEvent) -> Pointer {
         tracker.sample(event.location, at: event.timestamp)
         return Pointer(view: event.location, world: camera.toWorld(event.location),

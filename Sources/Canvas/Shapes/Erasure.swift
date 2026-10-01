@@ -40,6 +40,9 @@ extension Editable {
                                                           startClickCount: editor.editingStartClickCount, editor: editor))
         }
     }
+    func erasedEditingFrame(of record: AnyShapeRecord, in context: ShapeContext) -> CGRect? {
+        record.typed(as: Props.self).flatMap { editingFrame(of: $0, in: context) }
+    }
 }
 
 extension CustomSkeleton {

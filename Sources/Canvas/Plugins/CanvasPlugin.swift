@@ -169,7 +169,7 @@ extension ShapeRegistrar where Definition.Props: BoxShapeProps {
     }
 }
 
-extension ShapeRegistrar where Definition: Editable {
+extension ShapeRegistrar where Definition: Editable, Definition.Props: BoxShapeProps {
     /// Centered where the canvas is pressed, following the pointer until release, and then being
     /// edited (placed with no press under way, at once).
     public func editingPlacement(size: CGSize, props: @escaping @MainActor () -> Definition.Props) -> Placement {

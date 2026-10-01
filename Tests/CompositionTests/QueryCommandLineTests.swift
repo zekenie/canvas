@@ -120,7 +120,7 @@ func rowIDs(_ output: String) throws -> [String] {
         let link = try query("arrow[channel=note-link]", on: board, server)
         expectEqual(try JSON(text: link.output)["rows"], [[
             "id": "00000000-0000-4000-8000-000000000008", "kind": "arrow", "board": "root",
-            "properties": ["bend": 0, "channel": "note-link", "endArrowhead": true, "startArrowhead": false],
+            "properties": ["bend": 0, "channel": "note-link", "endArrowhead": true, "labelPosition": 0.5, "startArrowhead": false, "text": ""],
             "connection": ["type": "note-link", "from": ["id": "00000000-0000-4000-8000-000000000002", "title": "API gateway"],
                            "to": ["id": "00000000-0000-4000-8000-000000000003", "title": "Auth"]],
         ]])
