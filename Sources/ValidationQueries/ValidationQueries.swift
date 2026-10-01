@@ -42,6 +42,6 @@ public struct ValidationQueriesPlugin: CanvasPlugin {
            case .current(let result)? = editor.validation?.cachedResult(for: record.id) {
             return result?.issues.contains { $0.severity == severity } ?? false
         }
-        return context.registry.validationIssues(of: record, in: context.shapes(on: board)).contains { $0.severity == severity }
+        return context.registry.validationIssues(of: record, in: context.shapes(on: board), editor: editor).contains { $0.severity == severity }
     }
 }

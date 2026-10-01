@@ -13,10 +13,10 @@ public struct ValidationContentsPlugin: CanvasPlugin {
     public var id: PluginID { "validation-contents" }
 
     public func register(into registrar: inout PluginRegistrar) {
-        // A rule may look at other shapes, so a commit may change the issues of shapes it didn't
-        // change: the engine knows which.
+        // A rule may look at other shapes, or read a service, so a commit may change the issues of
+        // shapes it didn't change: the engine knows which.
         registrar.contentsMarkForEveryShape(affected: { changes, context in
-            context.service(ValidationEngine.self)?.dependents(of: changes.shapeIDs) ?? []
+            context.service(ValidationEngine.self)?.affected(by: changes) ?? []
         }) { shape, context in
             guard let result = context.service(ValidationEngine.self)?.result(for: shape.id), let worst = result.worst else { return nil }
             return ContentsMark(color: Color(nsColor: worst.color), help: result.worstFirst.map(\.message).joined(separator: "\n"))

@@ -60,6 +60,7 @@ import ValidationDetails
         validation-details   DetailStatuses in Issues
         validation-contents  ContentsMarks
         mention-validation   ValidationRules
+        title-validation     service TitleIndex · ValidationRules
         clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
         locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu
         snapping             service SnapState · translation adjuster
@@ -132,7 +133,8 @@ import ValidationDetails
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let long = String(repeating: "Groceries ", count: 9)       // 90 characters
         let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Milk"), title: long)
-        let subboard = editor.add(Subboard(frame: CGRect(x: 400, y: 100, width: 240, height: 160)), title: long)
+        // Another title: two shapes of one title are warned about that too (TitleValidation).
+        let subboard = editor.add(Subboard(frame: CGRect(x: 400, y: 100, width: 240, height: 160)), title: String(repeating: "Errands!! ", count: 9))
         let warning = ValidationIssue.warning("Title is 90 characters long, and should be at most 80.", field: "title")
         expectEqual(editor.validation?.result(for: note)?.issues, [warning])
         expectEqual(editor.validation?.result(for: subboard)?.issues, [warning], "a subboard's title is Titles' as a note's is")
@@ -148,6 +150,26 @@ import ValidationDetails
         expectEqual(editor.document[note].flatMap(editor.registry.title(of:)), String(long.dropLast()))
         editor.transact { $0.update(note) { $0[TitleProperty.self] = "Groceries" } }
         expectEqual(editor.validation?.result(for: note), nil)
+    },
+    test("a note and a subboard of one title each warn (TitleValidation): a line in Issues, an orange dot; renamed apart, neither") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Milk"), title: "Kitchen")
+        let subboard = editor.add(Subboard(frame: CGRect(x: 400, y: 100, width: 240, height: 160)), title: "Kitchen")
+        let untitled = editor.add(StickyNote(frame: CGRect(x: 700, y: 100, width: 200, height: 200), text: "Kitchen"))
+        let shared = ValidationIssue.warning("“Kitchen” is another shape’s title too.", field: "title")
+        expectEqual(editor.validation?.result(for: note)?.issues, [shared])
+        expectEqual(editor.validation?.result(for: subboard)?.issues, [shared])
+        expectEqual(editor.validation?.result(for: untitled), nil, "a note's first line is no title")
+        let panel = try require(editor.detailPanel)
+        expectEqual(panel.layout(for: try require(editor.document[note])).statuses(in: .of(IssuesTab.self)),
+                    [DetailStatus(shared.message, tone: .warning)])
+        let marks = Dictionary(uniqueKeysWithValues: try require(editor.tableOfContents).entries.map { ($0.id, $0.marks) })
+        expectEqual(marks[subboard], [ContentsMark(color: Color(nsColor: Severity.warning.color), help: shared.message)])
+        editor.transact { $0.update(note) { $0[TitleProperty.self] = "Pantry" } }
+        expectEqual(editor.validation?.result(for: note), nil)
+        expectEqual(editor.validation?.result(for: subboard), nil)
+        let after = Dictionary(uniqueKeysWithValues: try require(editor.tableOfContents).entries.map { ($0.id, $0.marks) })
+        expectEqual(after[subboard], [], "the subboard's dot goes though the commit didn't change it")
     },
     test("a note that mentions an arrow, or holds what looks like a mention and isn't, warns (MentionValidation): a line in Issues, an orange dot") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())

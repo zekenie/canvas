@@ -33,6 +33,7 @@ import SwiftUI
 import TableOfContents
 import TitleNames
 import TitleQueries
+import TitleValidation
 import Titles
 import Topology
 import Validation
@@ -68,7 +69,8 @@ public enum ShippedPlugins {
             MentionsPlugin(),
             // Getting around a file's boards (a subboard's): opening one, ⌘↑, the path.
             BoardsPlugin(),
-            ValidationDetailsPlugin(), ValidationContentsPlugin(), MentionValidationPlugin(), ClipboardPlugin(pasteboard: pasteboard),
+            ValidationDetailsPlugin(), ValidationContentsPlugin(), MentionValidationPlugin(), TitleValidationPlugin(),
+            ClipboardPlugin(pasteboard: pasteboard),
             LockingPlugin(),
             // What a drag moves snaps to the shapes in view: their edges, their middles and the spaces
             // between them.

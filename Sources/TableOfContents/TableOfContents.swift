@@ -276,7 +276,7 @@ extension PluginRegistrar {
     /// names, with `affected`, the shapes whose marks a commit may change besides those it changes:
     ///
     ///     registrar.contentsMarkForEveryShape(affected: { changes, context in
-    ///         context.service(ValidationEngine.self)?.dependents(of: changes.shapeIDs) ?? []
+    ///         context.service(ValidationEngine.self)?.affected(by: changes) ?? []
     ///     }) { shape, context in ... }
     public mutating func contentsMarkForEveryShape(
         where appliesTo: @escaping @MainActor (ContentsKind) -> Bool = { _ in true },

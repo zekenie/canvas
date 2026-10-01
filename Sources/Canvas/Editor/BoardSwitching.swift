@@ -114,6 +114,13 @@ public struct BoardStash<State> {
         return entry.revision == editor.file.revision(of: board) ? entry.state : nil
     }
 
+    /// Changes what's kept for `board`, if anything is, as of the revision it was kept at: for what
+    /// the state should do once it's taken back (check a shape again).
+    public mutating func modify(_ board: BoardID, _ body: (inout State) -> Void) {
+        guard kept[board] != nil else { return }
+        body(&kept[board]!.state)
+    }
+
     /// Forgets what's kept for these boards.
     public mutating func forget(_ boards: some Sequence<BoardID>) {
         for board in boards where kept.removeValue(forKey: board) != nil { order.removeAll { $0 == board } }
