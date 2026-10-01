@@ -5,11 +5,11 @@ import CanvasTesting
 import Subboards
 import TestKit
 
-// The card at `cardFrame` (40, 40, 240 × 160): its body 72 to 192 down, 40 to 280 across, and the
-// preview fitted into it 12 points in, (52, 84, 216 × 96).
-private let previewRect = CGRect(x: 52, y: 84, width: 216, height: 96)
+// The card at `cardFrame` (40, 40, 240 × 160), and the preview fitted into it 12 points in,
+// (52, 52, 216 × 136).
+private let previewRect = CGRect(x: 52, y: 52, width: 216, height: 136)
 /// The middle of the caption, where "2 shapes" is written, clear of a preview's boxes.
-private let captionMiddle = CGRect(x: 140, y: 124, width: 40, height: 16)
+private let captionMiddle = CGRect(x: 140, y: 112, width: 40, height: 16)
 private let canvasSize = CGSize(width: 320, height: 240)
 
 /// Draws the editor twice: the frame that asks for the previews it shows, and the next, which has
@@ -22,10 +22,10 @@ private let canvasSize = CGSize(width: 320, height: 240)
 }
 
 @MainActor let previewCardTests = Suite("The card's preview", [
-    test("once built, the body shows the board's shapes as silhouettes where they are, fitted; until then, the count") {
+    test("once built, the card shows the board's shapes as silhouettes where they are, fitted; until then, the count") {
         let sub = ShapeRecord(Subboard(frame: cardFrame))
         // A board four times as wide as tall, big enough to be fitted under a tenth of its size:
-        // fitted to the rect's width, 54 tall, in its middle, a box at each end.
+        // fitted to the rect's width, 54 tall, in its middle (93 to 147), a box at each end.
         let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(sub)]),
                               children: [sub.id: CanvasDocument(shapes: [record(ShapeID(), Box(CGRect(x: 0, y: 0, width: 1000, height: 1000))),
                                                                          record(ShapeID(), Box(CGRect(x: 3000, y: 0, width: 1000, height: 1000)))])])
@@ -34,28 +34,27 @@ private let canvasSize = CGSize(width: 320, height: 240)
         expect(darkest(asking, in: captionMiddle) < 170, "the count, while the preview's built")
         expectEqual(darkest(built, in: captionMiddle), 255, "then no caption, and nothing between the boxes")
         for (x, what) in [(78, "the first box"), (240, "the second")] {
-            let silhouette = pixel(built, at: CGPoint(x: CGFloat(x), y: 132))
+            let silhouette = pixel(built, at: CGPoint(x: CGFloat(x), y: 120))
             expect(silhouette[0] < 225 && abs(silhouette[0] - silhouette[2]) < 20, "\(what), in a muted gray: \(silhouette)")
         }
-        for y: CGFloat in [96, 168] {
-            expectColor(pixel(built, at: CGPoint(x: 78, y: y)), [255, 255, 255], "above and below the fitted board, the body at \(y)", within: 2)
+        for y: CGFloat in [70, 170] {
+            expectColor(pixel(built, at: CGPoint(x: 78, y: y)), cardFill, "above and below the fitted board, the card at \(y)", within: 2)
         }
-        expectEqual(changedPixels(asking, built, in: CGRect(x: 40, y: 40, width: 240, height: 32)), 0, "the header as it was")
         expectEqual(h.scheduler.pendingCount, 0, "no frame asked for once it's drawn")
     },
-    test("a board of little is drawn at a tenth of its size, small in the body's middle, not as big as a board of hundreds") {
+    test("a board of little is drawn at a tenth of its size, small in the card's middle, not as big as a board of hundreds") {
         let sub = ShapeRecord(Subboard(frame: cardFrame))
-        // One 200-point box: 20 points across at a tenth, around the rect's middle, (160, 132).
+        // One 200-point box: 20 points across at a tenth, around the rect's middle, (160, 120).
         let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(sub)]),
                               children: [sub.id: CanvasDocument(shapes: [record(ShapeID(), Box(CGRect(x: 500, y: 500, width: 200, height: 200)))])])
         let h = try EditorHarness(plugins: subboardPlugins(), file: file)
         let built = twoFrames(h).built
-        for point in [CGPoint(x: 160, y: 132), CGPoint(x: 152, y: 124), CGPoint(x: 168, y: 140)] {
+        for point in [CGPoint(x: 160, y: 120), CGPoint(x: 152, y: 112), CGPoint(x: 168, y: 128)] {
             let silhouette = pixel(built, at: point)
             expect(silhouette[0] < 225 && abs(silhouette[0] - silhouette[2]) < 20, "the box at \(point): \(silhouette)")
         }
-        for point in [CGPoint(x: 140, y: 132), CGPoint(x: 180, y: 132), CGPoint(x: 160, y: 100), CGPoint(x: 160, y: 164)] {
-            expectColor(pixel(built, at: point), [255, 255, 255], "the body around it, at \(point)", within: 2)
+        for point in [CGPoint(x: 140, y: 120), CGPoint(x: 180, y: 120), CGPoint(x: 160, y: 100), CGPoint(x: 160, y: 140)] {
+            expectColor(pixel(built, at: point), cardFill, "the card around it, at \(point)", within: 2)
         }
     },
     test("after the board is edited, and after an undo, the card never shows the preview it had: the count, then the board as it is") {
@@ -80,18 +79,18 @@ private let canvasSize = CGSize(width: 320, height: 240)
     },
     test("a card with no room for a preview asks for none, whatever its board holds") {
         let nest = Nest()
-        let sub = record(nest.s, Subboard(frame: CGRect(x: 40, y: 40, width: 240, height: 40)))
+        let sub = record(nest.s, Subboard(frame: CGRect(x: 40, y: 40, width: 240, height: 30)))
         let file = CanvasFile(root: CanvasDocument(shapes: [sub]), children: nest.file().children)
         let h = try EditorHarness(plugins: subboardPlugins(), file: file)
         _ = renderBitmap(h.editor, size: canvasSize)
-        expect(!h.editor.boardPreviews.isPending, "the header fills the card: no body")
+        expect(!h.editor.boardPreviews.isPending, "6 points tall inside its inset: too short to show one")
         expectEqual(h.scheduler.pendingCount, 0, "and no frame asked for")
     },
     test("an empty board says so, and asks for no preview") {
         let h = try EditorHarness(plugins: subboardPlugins(), file: Nest().file().removingBoards())
         let (asking, built) = twoFrames(h)
         expect(!h.editor.boardPreviews.isPending, "none asked for")
-        expect(darkest(built, in: captionMiddle) < 170, "\"Empty\"")
+        expect(darkest(built, in: Band.caption) < 170, "\"Empty\"")
         expectEqual(changedPixels(asking, built, in: previewRect), 0)
     },
 ])
