@@ -120,10 +120,15 @@ final class LockState {
     /// Shakes each shape of `ids` on the board shown, unless it's shaking already: a try that comes
     /// while one plays (the eraser dragged across it) doesn't start it over. Locked or not: a shape
     /// whose board (or a board under it) holds a locked shape isn't deleted either, and it's the one
-    /// tried, so it's the one that shakes.
+    /// tried, so it's the one that shakes. A container shakes with what it holds, at any depth, as it
+    /// moves with it (a locked frame, under the notes in it).
     func shake(_ ids: Set<ShapeID>) {
-        let document = editor.document
-        let starting = ids.filter { shakes[$0] == nil && document[$0] != nil }
+        let document = editor.document, kinds = editor.registry.containingKinds
+        var tried = ids
+        if !kinds.isEmpty, document.namesContainers {
+            for id in ids { tried.formUnion(document.descendants(of: id, containingKinds: kinds)) }
+        }
+        let starting = tried.filter { shakes[$0] == nil && document[$0] != nil }
         guard !starting.isEmpty else { return }
         for id in starting { shakes[id] = 0 }
         if nextFrame == nil { scheduleFrame() }

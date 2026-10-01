@@ -507,8 +507,18 @@ public final class MentionState {
     }
 
     private func candidate(_ id: ShapeID, matched: [Range<Int>]) -> MentionCandidate {
-        let isReadOnly = (editor.document[id] ?? editor.file.record(id)).map(registry.isReadOnly) ?? false
-        return MentionCandidate(id: id, appearance: catalog.appearance(of: id)!, isReadOnly: isReadOnly, matched: matched)
+        MentionCandidate(id: id, appearance: catalog.appearance(of: id)!, isReadOnly: isReadOnly(id), matched: matched)
+    }
+
+    /// Whether a shape, on whichever board of the file it's on, can't change, as that board goes by
+    /// it: locked, or in a locked frame, at any depth (`registry.isReadOnly(_:in:)`). O(its depth).
+    private func isReadOnly(_ id: ShapeID) -> Bool {
+        let document = editor.document
+        if let record = document[id] { return registry.isReadOnly(record, in: document) }
+        let file = editor.file
+        guard let board = file.board(containing: id) else { return false }
+        let holding = file[board]
+        return holding[id].map { registry.isReadOnly($0, in: holding) } ?? false
     }
 
     // MARK: Following the document
@@ -758,8 +768,9 @@ private struct Observer {
     let changed: @MainActor (Set<ShapeID>) -> Void
 }
 
-/// A shape the picker can list: how it shows, whether it's read-only (a lock beside its name), and
-/// which characters of its label the query matched (`Character` offsets).
+/// A shape the picker can list: how it shows, whether it's read-only (a lock beside its name: it's
+/// locked, or in a locked frame), and which characters of its label the query matched (`Character`
+/// offsets).
 public struct MentionCandidate: Hashable, Sendable {
     public let id: ShapeID
     public let appearance: MentionAppearance

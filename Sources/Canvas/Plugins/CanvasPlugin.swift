@@ -146,9 +146,19 @@ public struct ShapeRegistrar<Definition: ShapeDefinition> {
     /// A toolbar tool that places this shape where the canvas is pressed. Its id is the kind's,
     /// unless you give one (a kind with two place tools needs to).
     public mutating func tool(_ id: ToolID? = nil, label: String, systemImage: String, placing placement: Placement) {
+        tool(id, label: label, systemImage: systemImage, placing: placement) { _ in PlaceShapeTool(placement) }
+    }
+
+    /// A toolbar tool that puts this shape down its own way (a drag that draws its rect, as the Frame
+    /// tool's does), made per editor by `make`. `placement` is what it places, for the tool to put
+    /// down (`editor.place`, a click's) and for what makes shapes without the pointer, which reads
+    /// it as the kind's tool's (`registry.placement(for:)`: `canvas draw`). Its id is the kind's,
+    /// unless you give one.
+    public mutating func tool(_ id: ToolID? = nil, label: String, systemImage: String, placing placement: Placement,
+                              _ make: @escaping @MainActor (CanvasEditor) -> any Tool) {
         precondition(placement.kind == kind, "\(kind)'s tool must place \(kind), not \(placement.kind)")
         let descriptor = ToolDescriptor(id: id ?? ToolID(placing: kind), label: label, systemImage: systemImage)
-        contributions.append(RawContribution(ToolRegistration(descriptor: descriptor, placement: placement) { _ in PlaceShapeTool(placement) },
+        contributions.append(RawContribution(ToolRegistration(descriptor: descriptor, placement: placement, make: make),
                                              to: CorePoints.Tools.self, for: .any, from: pluginID))
     }
 

@@ -221,6 +221,8 @@ private final class Build {
     private let context: ShapeContext
     private var next = 0
     private var geometries: [ShapeGeometry] = []
+    /// Which of `geometries` are containers' (a frame's), drawn hollow, so what they hold shows.
+    private var hollow: [Bool] = []
     private var bounds = CGRect.null
     private var bitmap: CGContext?
     private var frame = CGRect.null
@@ -246,7 +248,7 @@ private final class Build {
         if let bitmap {
             let end = min(start + count, geometries.count)
             let silhouettes = Silhouettes(pixelsPerWorldUnit: scale)
-            for geometry in geometries[start..<end] { silhouettes.add(geometry) }
+            for i in start..<end { silhouettes.add(geometries[i], hollow: hollow[i]) }
             silhouettes.draw(into: bitmap, color: CGColor(gray: 1, alpha: 1), lineWidth: Style.previewLineWidth / scale)
             next = end
             if end == geometries.count { finish(Self.mask(of: bitmap)) }
@@ -256,6 +258,7 @@ private final class Build {
         for record in shapes[start..<end] where !record.isOpaque {
             guard let geometry = context.geometry(of: record.id), !geometry.outline.isEmpty else { continue }
             geometries.append(geometry)
+            hollow.append(context.registry.isContainer(record))
             bounds = bounds.union(geometry.bounds)
         }
         next = end
@@ -293,6 +296,7 @@ private final class Build {
     private func finish(_ mask: CGImage?) {
         preview = BoardPreviews.Preview(key: key, frame: mask == nil ? .null : frame, mask: mask)
         geometries = []
+        hollow = []
     }
 }
 

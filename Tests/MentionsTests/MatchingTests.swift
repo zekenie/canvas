@@ -3,6 +3,7 @@ import AppKit
 import CanvasTesting
 import Mentions
 import TestKit
+import Titles
 
 // Fuzzy matching (Amendment 1's tiers) and what the picker lists: ranking, Recent and Nearby,
 // caps and exclusions.
@@ -182,6 +183,36 @@ private func plateFrame(_ i: Int) -> CGRect { CGRect(x: i * 150, y: 0, width: 12
         expect(candidate.isReadOnly)
         expectEqual(candidate.appearance.label, "Frozen plate")
         expectEqual(candidate.matched, [0..<2, 3..<4])
+    },
+
+    test("a candidate in a read-only container is read-only too, at any depth, on the board shown or another; out of it, it isn't") {
+        // On the pocket's board, a frozen corral holding a corral that holds "Deep plate".
+        var frozen = AnyShapeRecord(ShapeRecord(Corral(CGRect(x: 0, y: 0, width: 900, height: 900))))
+        frozen[Frozen.self] = true
+        let middle = AnyShapeRecord(ShapeRecord(Corral(CGRect(x: 20, y: 20, width: 800, height: 800))))
+        var deep = ShapeRecord(Plate(plateFrame(0)))
+        deep[TitleProperty.self] = "Deep plate"
+        let pocket = ShapeRecord(Pocket(CGRect(x: 2000, y: 0, width: 100, height: 100)))
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(pocket)]),
+                              children: [pocket.id: CanvasDocument(shapes: [frozen, middle.copy(as: middle.id, container: frozen.id),
+                                                                           AnyShapeRecord(deep).copy(as: deep.id, container: middle.id)])])
+        let h = try EditorHarness(plugins: mentionPlugins([FreezingPlugin(), CorralsPlugin(), PocketsPlugin()]), file: file)
+        let corral = h.editor.add(Corral(CGRect(x: 0, y: 0, width: 600, height: 600)))
+        let plate = h.editor.add(Plate(plateFrame(0)), titled: "Held plate")
+        h.editor.put([plate], in: corral)
+        /// Whether the first match for `query` shows as read-only; nil for none.
+        @MainActor func readOnly(_ query: String) -> Bool? {
+            h.editor.mentionState.candidates(matching: query, in: AnyMentionable.self, for: nil).matches.first?.isReadOnly
+        }
+        expectEqual(readOnly("held"), false)
+        h.editor.freeze([corral])
+        expectEqual(readOnly("held"), true, "in a frozen corral")
+        expectEqual(readOnly("deep"), true, "two corrals down, on another board")
+        h.editor.freeze([corral], false)
+        expectEqual(readOnly("held"), false)
+        h.editor.put([plate], in: nil)
+        h.editor.freeze([corral])
+        expectEqual(readOnly("held"), false, "out of the corral, its lock isn't the plate's")
     },
 
     test("the catalog follows the board: a rename is found by its new name, a deleted shape isn't found, one whose deletion is undone is, and a rename undone is found by its old name") {

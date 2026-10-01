@@ -193,7 +193,7 @@ final class MinimapPicture {
         let silhouettes = Silhouettes(pixelsPerWorldUnit: scale)
         let context = editor.shapeContext
         for record in shapes {
-            if let geometry = context.geometry(of: record.id) { silhouettes.add(geometry) }
+            if let geometry = context.geometry(of: record.id) { silhouettes.add(geometry, hollow: editor.registry.isContainer(record)) }
         }
         bitmap.saveGState()
         defer { bitmap.restoreGState() }

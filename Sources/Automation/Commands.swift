@@ -24,7 +24,8 @@ public struct AutomationPlugin: CanvasPlugin {
                 makes a new one. It's applied all at once, as one step of the app's undo, or not at all, and the \
                 result says what each statement did and where its shape landed. A title names a shape on any board \
                 of the file (the one the window shows first), and in "X" puts a shape on the board X holds (a \
-                subboard's): a run draws on the board what it names is on, else the one the window shows, without \
+                subboard's), or in X, where X holds shapes on its own board (a frame's): a run draws on the board \
+                what it names is on, else the one the window shows, without \
                 moving the window (the result's on says which). The language is taught \
                 by the repository's canvas skill (.claude/skills/canvas); `\(canvas) kinds` lists what can be drawn, \
                 and with what.
@@ -61,7 +62,8 @@ public struct AutomationPlugin: CanvasPlugin {
             "kinds", "List the kinds of shape the app has: what a script can draw, and with what.",
             discussion: """
                 For each kind: whether a script can draw it (and why not), whether its shapes have titles of their own \
-                (named), worked out from them (derived) or none, the size its tool places, each attribute a script can \
+                (named), worked out from them (derived) or none, the size its tool places, what its shapes hold for \
+                in "X" to name (a board of its own, or shapes on the board it's on), each attribute a script can \
                 write and what it takes, and the sides an edge may leave it by, with what it may carry from each. \
                 --schema adds each kind's JSON Schema (draft 2020-12): every property, what it takes, its default and \
                 its bounds.
@@ -102,6 +104,10 @@ struct KindSummary: Encodable {
     let names: String
     /// What its tool places: `200x200`.
     let size: String?
+    /// What a shape of it holds, which `in "X"` names it for: `board`, a board of its own (a
+    /// subboard's, which the shape goes on), or `shapes` on the board it's on (a frame's, which the
+    /// shape goes in); nil for neither.
+    let holds: String?
     /// What a script can write on it, and what each takes: `{"status": "todo|doing|blocked|done"}`.
     let attributes: [String: String]
     /// The sides an edge may leave it by, and what it may carry from each.
@@ -153,6 +159,7 @@ func kinds(_ params: ListKinds, in registry: Registry) throws(AutomationError) -
                            tool: registry.tools.first { $0.id == ToolID(placing: kind) }?.label,
                            drawable: why == nil, why: why, names: names,
                            size: placement.map { Drawing.written($0.size) },
+                           holds: registry.boardOwningKinds.contains(kind) ? "board" : registry.containingKinds.contains(kind) ? "shapes" : nil,
                            attributes: attributes,
                            edges: sides.isEmpty ? nil : Dictionary(uniqueKeysWithValues: sides.map { ($0.key.rawValue, $0.value) }),
                            schema: params.schema ? .object(vocabulary.root) : nil)

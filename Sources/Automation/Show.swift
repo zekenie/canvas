@@ -45,8 +45,9 @@ func show(_ params: ShowParams, in context: AutomationContext) throws(Automation
         guard let title = naming.fold(written) else {
             throw AutomationError("a title can't be blank", reason: "invalid_params", invalidParams: true)
         }
-        switch FileNames(editor, naming: naming).container(called: title) {
-        case .found(let board):
+        // Only what holds a board: a frame holds what's in it on the board it's on, so it holds none.
+        switch FileNames(editor, naming: naming).container(called: title, boards: true) {
+        case .board(let board), .shape(_, on: let board):          // (never a frame, with boards alone)
             target = board
         case .none:
             throw AutomationError("there's no shape called \(quoted(title))", reason: ScriptError.Reason.unknownTitle.rawValue,

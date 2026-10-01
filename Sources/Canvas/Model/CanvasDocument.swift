@@ -5,6 +5,10 @@ public struct CanvasDocument: Equatable, Sendable {
     /// Where each shape is in `shapes`, so lookups by id are constant time: hit testing, drawing
     /// and arrow binding look shapes up by id for every shape.
     private var indices: [ShapeID: Int]
+    /// The shapes that name each container (`AnyShapeRecord.container`), by container: as the board
+    /// keeps them, usable or not, kept by every change, so what a container holds costs what it
+    /// holds, never the board (Containment.swift).
+    private(set) var members: [ShapeID: Set<ShapeID>] = [:]
 
     /// The shapes back to front, as given. Their stacking keys are kept if they already rise in
     /// that order; otherwise every shape gets a fresh one, in order.
@@ -21,6 +25,7 @@ public struct CanvasDocument: Equatable, Sendable {
         self.shapes = shapes
         indices = Dictionary(shapes.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
         precondition(indices.count == shapes.count, "two shapes share an id")
+        for record in shapes where record.namesContainer { members[record.container!, default: []].insert(record.id) }
     }
 
     /// Whether every shape has a key, each above the one before.
@@ -47,10 +52,21 @@ public struct CanvasDocument: Equatable, Sendable {
     mutating func append(_ record: AnyShapeRecord) {
         indices[record.id] = shapes.count
         shapes.append(record)
+        if record.namesContainer { link(record.id, from: nil, to: record.container) }
     }
 
     /// Keeps the shape's key.
-    mutating func replace(at index: Int, with record: AnyShapeRecord) { shapes[index] = record }
+    mutating func replace(at index: Int, with record: AnyShapeRecord) {
+        if shapes[index].containerBits != record.containerBits { link(record.id, from: shapes[index].container, to: record.container) }
+        shapes[index] = record
+    }
+
+    /// The shape now names `new` as its container, and no longer `old`.
+    private mutating func link(_ id: ShapeID, from old: ShapeID?, to new: ShapeID?) {
+        guard old != new else { return }
+        if let old, members[old]?.remove(id) != nil, members[old]?.isEmpty == true { members[old] = nil }
+        if let new { members[new, default: []].insert(id) }
+    }
 
     /// `key` must be above every other.
     mutating func moveToEnd(from index: Int, key: StackingKey) {
@@ -79,9 +95,38 @@ public struct CanvasDocument: Equatable, Sendable {
 
     mutating func remove(_ ids: Set<ShapeID>) {
         guard let first = ids.compactMap({ indices[$0] }).min() else { return }
+        for id in ids { if let index = indices[id], shapes[index].namesContainer { link(id, from: shapes[index].container, to: nil) } }
         shapes.removeAll { ids.contains($0.id) }
         for id in ids { indices[id] = nil }
         reindex(from: first)
+    }
+
+    /// Moves the shapes at `block` (ascending indices), in their order among themselves, to just
+    /// above the shape at `anchor` (an index not in `block`), or to the bottom for nil, giving them
+    /// `keys`, which must rise from above the anchor's key to below the key of the shape after it
+    /// that stays. One pass over the stack, however many move: a container restacked with what it
+    /// holds.
+    mutating func move(_ block: [Int], above anchor: Int?, keys: [StackingKey]) {
+        precondition(block.count == keys.count, "a key for each shape moved")
+        guard let first = block.first else { return }
+        let moving = Set(block)
+        var moved: [AnyShapeRecord] = []
+        moved.reserveCapacity(block.count)
+        for (index, key) in zip(block, keys) {
+            var record = shapes[index]
+            record.stackingKey = key
+            moved.append(record)
+        }
+        var stack: [AnyShapeRecord] = []
+        stack.reserveCapacity(shapes.count)
+        if anchor == nil { stack += moved }
+        for index in shapes.indices where !moving.contains(index) {
+            stack.append(shapes[index])
+            if index == anchor { stack += moved }
+        }
+        shapes = stack
+        reindex(from: min(first, anchor.map { $0 + 1 } ?? 0))
+        assert(Self.keysRise(shapes), "a block moved out of order")
     }
 
     /// Puts each change's `after` record in place of its `before` (removing it where `after` is nil,
@@ -103,6 +148,7 @@ public struct CanvasDocument: Equatable, Sendable {
         var arriving: [AnyShapeRecord] = []
         var lowest = shapes.count
         for (id, change) in delta.changes {
+            if change.before?.containerBits != change.after?.containerBits { link(id, from: change.before?.container, to: change.after?.container) }
             if let before = change.before, let after = change.after, before.stackingKey == after.stackingKey, let index = indices[id] {
                 shapes[index] = after
                 continue

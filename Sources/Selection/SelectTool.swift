@@ -16,9 +16,12 @@ import Geometry
 final class SelectTool {}
 
 extension SelectTool: Tool {
+    /// A canvas button's, over one; a resize handle's resize cursor, over one; the open hand over
+    /// any other handle; else the arrow.
     func cursor(in editor: CanvasEditor) -> CanvasCursor {
         if let button = editor.selectionState?.hoveredButton { return button.source.cursor }
-        return editor.hoveredHandle != nil ? .openHand : .standard
+        guard let handle = editor.hoveredHandle else { return .standard }
+        return (handle.base as? ResizeHandle)?.cursor ?? .openHand
     }
 
     /// The rest of a double-click (a press whose click count is 2 or more) whose first click, on a

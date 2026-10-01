@@ -57,11 +57,11 @@ private func holding(_ error: QueryError?) -> [String]? {
     },
     test("an invention's refusal: where it is, and what to write, its argument put in; where a container goes, once it can hold shapes") {
         expectEqual(try refused(#"card:parent-of("B")"#),
-                    QueryError(.unknownPseudoClass, ":parent-of isn't a pseudo-class.", hint: #"A parent has it directly on its board: :has(> "B")."#, span: at(4, 15)))
-        expectEqual(try refused(":parent-of")?.hint, "A parent has it directly on its board: :has(> …).")
+                    QueryError(.unknownPseudoClass, ":parent-of isn't a pseudo-class.", hint: #"A parent has it directly inside: :has(> "B")."#, span: at(4, 15)))
+        expectEqual(try refused(":parent-of")?.hint, "A parent has it directly inside: :has(> …).")
         let childOf = try require(try refused(":child-of( 'A' )"))
         expectEqual(childOf.hint, nil)
-        expectEqual(childOf.premise?.hint, #"Directly on its board: "A" > *; at any depth: :inside("A")."#)
+        expectEqual(childOf.premise?.hint, #"Directly inside it: "A" > *; at any depth: :inside("A")."#)
         expectEqual(holding(childOf), [#""A""#], "what the hint takes to hold shapes")
         expectEqual(try refused(#":ancestor-of("B")"#)?.hint, #"An ancestor has it inside, at any depth: :has("B")."#)
         expectEqual(try refused(#":descendant-of("A")"#)?.premise?.hint, #"Inside it, at any depth: :inside("A")."#)
@@ -83,14 +83,14 @@ private func holding(_ error: QueryError?) -> [String]? {
         expectEqual(try refused(#":on-page("Payments")"#)?.premise?.hint, #"Shapes inside a board's owner: "Payments" *."#)
         expectEqual(try refused(":current-page")?.hint, "The board the file's window shows: :current-board.")
         expectEqual(try refused(":root"), QueryError(.unsupported, ":root has no meaning here: no shape is the file's root.",
-                                                     hint: "Shapes on the file's top board: :top-level.", span: at(0, 5)))
+                                                     hint: "Shapes inside nothing, on the file's top board: :top-level.", span: at(0, 5)))
         expectEqual(try refused(":empty")?.hint, "Nothing inside it: :not(:has(*)); no text: :not([text]).")
         expectEqual(try refused(":first-child"), QueryError(.unsupported, ":first-child has no meaning here: shapes on a board have no order a query can count.",
                                                             span: at(0, 12)))
         expectEqual(try refused(":hover")?.message, ":hover has no meaning here: a query doesn't see the pointer.")
         expectEqual(try refused(#":near("A")"#),
                     QueryError(.notBuilt, ":near isn't in the language yet: where shapes sit on the canvas isn't something a query can ask.", span: at(0, 10)))
-        expectEqual(try refused(#":within("A")"#)?.hint, nil, "a spatial word: :inside only where A holds a board")
+        expectEqual(try refused(#":within("A")"#)?.hint, nil, "a spatial word: :inside only where A holds shapes")
         expectEqual(try refused(#":within("A")"#)?.premise?.hint, #"Inside it, at any depth: :inside("A")."#)
         expectEqual(try refused(":minimized"), QueryError(.unknownPseudoClass, ":minimized isn't a pseudo-class: shapes here aren't minimized.", span: at(0, 10)))
         expect(try refused(":glows") == nil, "a word nobody invented is the caller's to judge")

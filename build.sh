@@ -389,7 +389,11 @@ audit_sources() {
     # of JSON text), but never in a `case`'s patterns or its `where` (on its line, or the lines a
     # pattern list or a `where` goes on to) or a ternary's (after its `?`, on its line or the next).
     # Any other member's name is a use: a module can't read another's property out of a shape's JSON
-    # (`json["locked"]`) without depending on it. (`id_uses`, above, finds where uses can be.)
+    # (`json["locked"]`) without depending on it. (`id_uses`, above, finds where uses can be.) An id
+    # spelled as the core's own member every box kind has (`BoxShapeProps.frame`), as Frames' kind is,
+    # can't be told from it by its spelling, and every box's props write it: it's an ordinary word, as
+    # a fixture's id is, and owns nothing.
+    ORDINARY_IDS=(frame)
     ID_DECL='((let|var)[[:space:]]+id|static[[:space:]]+(let|var)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*)[[:space:]]*(:[[:space:]]*(ShapeKind|PluginID|ToolID|PropertyKey|ChannelID|EdgeTypeID)[[:space:]]*(=|\{)|=[[:space:]]*(ShapeKind|PluginID|ToolID|PropertyKey|ChannelID|EdgeTypeID)\((rawValue:)?)[[:space:]]*"[^"\\]+"'
     typeset -A ID_OWNERS
     for hit in ${(f)"$(matching $ID_DECL)"}; do
@@ -398,7 +402,7 @@ audit_sources() {
         rest=${hit#*:*:}
         while [[ $rest =~ $ID_DECL ]]; do
             id=${${MATCH%\"}##*\"}
-            ID_OWNERS[$id]+=" $owner"
+            (( ${ORDINARY_IDS[(Ie)$id]} )) || ID_OWNERS[$id]+=" $owner"
             rest=${rest[MEND+1,-1]}
         done
     done

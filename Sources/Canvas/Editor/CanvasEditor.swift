@@ -161,6 +161,8 @@ public final class CanvasEditor {
         get { isPressing ? runningSession : nil }
         set {
             runningSession = newValue
+            // A press's drag goes by where shapes are: a glide under way ends there.
+            if newValue != nil { endGlides() }
             if (newValue != nil) != isPressing { isPressing = newValue != nil }
             if newValue?.scrollsAtEdges != true { stopEdgeScrolling() }
             setNeedsDisplay()
@@ -205,6 +207,9 @@ public final class CanvasEditor {
     @ObservationIgnored var nextPreviewFrame: ScheduledTask?
     /// Shapes drawn away from where they are, in view points (`setDrawingOffset`).
     @ObservationIgnored var drawingOffsets: [ShapeID: CGPoint] = [:]
+    /// The shapes gliding to where they are (Glide.swift), and the glides' next frame.
+    @ObservationIgnored var glides: [ShapeID: Glide] = [:]
+    @ObservationIgnored var glideFrame: ScheduledTask?
     /// The dot grid under the shapes, and the tiles it keeps from frame to frame.
     @ObservationIgnored let dotGrid = DotGrid()
     /// Below this zoom the canvas draws shapes as skeletons (`drawsSkeletons`, `CustomSkeleton`):
@@ -401,15 +406,19 @@ public final class CanvasEditor {
         return result
     }
 
-    /// Whether a plugin's rule says the shape can't change (`registrar.readOnlyShapes`): no
-    /// transaction changes, restacks or deletes it, a drag leaves it where it is, and it isn't
-    /// edited. False for a shape that isn't there.
+    /// Whether the shape can't change: a plugin's rule says so of it (`registrar.readOnlyShapes`), or
+    /// of a container it's in, at any depth (`registry.isReadOnly(_:in:)`). No transaction changes,
+    /// restacks or deletes it, a drag leaves it where it is, and it isn't edited. False for a shape
+    /// that isn't there.
     public func isReadOnly(_ id: ShapeID) -> Bool {
-        document[id].map(registry.isReadOnly) ?? false
+        document[id].map { registry.isReadOnly($0, in: document) } ?? false
     }
 
-    /// Something tried to change these read-only shapes, and didn't: services hear which.
-    func refuseChanges(to ids: Set<ShapeID>) {
+    /// Something tried to change these read-only shapes, and didn't: services hear which
+    /// (`EditorService.didRefuseChanges`: Locking shakes them), as they hear a transaction's
+    /// refusals. A plugin calls it for a change it gave up whole, which no transaction committed to
+    /// refuse (a paste a locked frame would take, thrown out of its transaction so no step is left).
+    public func refuseChanges(to ids: Set<ShapeID>) {
         for service in serviceOrder { service.didRefuseChanges(to: ids, in: self) }
     }
 
@@ -599,11 +608,13 @@ public final class CanvasEditor {
         revision += 1
         shapeIndex.documentDidChange(changes, in: newDocument, registry: registry)
         for id in changes.removed where drawingOffsets[id] != nil { drawingOffsets[id] = nil }
+        // A shape gliding that something changes is where it is now.
+        if !glides.isEmpty { endGlides(changes.shapeIDs.filter { glides[$0] != nil }) }
         // Services drop what no longer names a shape, as the hint's setter does.
         for service in serviceOrder { service.documentDidChange(changes, in: self) }
         hintedShapeID = hintedID
-        // A shape that's gone, or can no longer change, isn't edited.
-        if let editing = editingShapeID, document[editing].map(registry.isReadOnly) ?? true { endEditing() }
+        // A shape that's gone, or can no longer change (it, or a container it's in), isn't edited.
+        if let editing = editingShapeID, document[editing].map({ registry.isReadOnly($0, in: newDocument) }) ?? true { endEditing() }
         setNeedsDisplay()
     }
 
@@ -694,6 +705,9 @@ public final class CanvasEditor {
         shapeIndex = warmIndexes.take(for: target, in: self) ?? ShapeIndex()
         hintedID = nil
         drawingOffsets = [:]
+        glides = [:]
+        glideFrame?.cancel()
+        glideFrame = nil
         // What the board left asked for isn't drawn now; what this one draws asks for its own.
         boardPreviews.stopWaiting()
         revision += 1
@@ -762,28 +776,67 @@ public final class CanvasEditor {
     /// Where place tools (and any plugin with a `Placement`) create shapes: the shape goes in, the
     /// default tool comes back, services hear `didPlace` (the selection selects it), and, while the
     /// press that placed it lasts, the shape follows the pointer (`PlacingSession`), whatever the
-    /// placement; on the release an editing placement's shape is edited, and Escape before it takes
-    /// the shape away and selects again what was selected before (the undo participants' state from
-    /// before the press, as undoing its step would), so the press comes to nothing. Placed with no
-    /// press under way, an editing placement's shape is edited at once. (Other tools create shapes
-    /// with `transact { $0.insert(...) }`, as a port's drag does.)
+    /// placement; on the release it settles (into a container, or out, `Transaction.settle`, gliding
+    /// there), and an editing placement's shape is edited, and Escape before it takes the shape away
+    /// and selects again what was selected before (the undo participants' state from before the
+    /// press, as undoing its step would), so the press comes to nothing. Placed with no press under
+    /// way, it settles at once, in the same step, and an editing placement's shape is edited at once.
+    /// A read-only container (a locked frame) takes nothing: placed into one, the shape doesn't stay,
+    /// and services hear the container refused. (Other tools create shapes with
+    /// `transact { $0.insert(...) }`, as a port's drag does.)
     /// The insert names its undo step "Add" and the placing tool's label ("Add Note").
     public func place(_ placement: Placement, at point: CGPoint) {
-        let record = placement.shape(at: point)
+        put(placement.shape(at: point), placing: placement, from: undoHistory.isPressHeld && session == nil ? point : nil)
+    }
+
+    /// Puts one down with this frame (world units), where `place(_:at:)` centers one of its size on a
+    /// point: what a tool that draws its shape's rect with a drag puts down at the release (the Frame
+    /// tool). As `place(_:at:)` with no press under way: it settles at once (into a container, or out,
+    /// gliding there), in the step under way, a read-only container refusing it (nothing is placed,
+    /// and the container hears it); the default tool comes back, services hear `didPlace`, and an
+    /// editing placement's shape is edited. It never follows the pointer.
+    public func place(_ placement: Placement, in frame: CGRect) {
+        put(placement.make(frame), placing: placement, from: nil)
+    }
+
+    /// `record`, `placement`'s, put down; following the pointer from `point` (world units, the press)
+    /// while the press lasts, or with no point, settled at once.
+    private func put(_ record: AnyShapeRecord, placing placement: Placement, from point: CGPoint?) {
         let tool = ToolID(placing: placement.kind)
         let label = registry.tools.first { $0.id == tool }?.label
-        let follows = undoHistory.isPressHeld && session == nil
+        let follows = point != nil
         let before = follows ? undoHistory.snapshots() : [:]
-        transact("Add \(label ?? "Shape")") { $0.insert(record) }
+        var settled = Settlement.settled(nudges: [:])
+        if follows || registry.containingKinds.isEmpty {
+            transact("Add \(label ?? "Shape")") { $0.insert(record) }
+        } else {
+            // A refusal throws the insert away with it: nothing is placed.
+            try? transact("Add \(label ?? "Shape")") { transaction in
+                transaction.insert(record)
+                settled = transaction.settle([record.id])
+                if case .refused = settled { throw PlacementRefused() }
+            }
+            if case .refused(let container) = settled {
+                refuseChanges(to: [container])
+                return
+            }
+        }
         setTool(registry.defaultTool)
         for service in serviceOrder { service.didPlace(record.id, in: self) }
         let edits = placement.completion == .edit
-        if follows, session == nil {
+        if let point, session == nil {
             session = PlacingSession(record.id, from: point, edits: edits, restoring: before, in: self)
-        } else if edits {
-            beginEditing(record.id)
+            return
         }
+        var nudges = settled.nudges
+        // Its editing view is laid out where it is.
+        if edits { nudges[record.id] = nil }
+        glide(nudges)
+        if edits { beginEditing(record.id) }
     }
+
+    /// What leaves a placement with no press that a read-only container refused (`place`).
+    private struct PlacementRefused: Error {}
 
     // MARK: Commands
 
@@ -838,7 +891,7 @@ public final class CanvasEditor {
     public func beginEditing(_ id: ShapeID, at point: CGPoint? = nil, clickCount: Int = 1) -> Bool {
         endEditing()
         guard let record = document[id], !record.isOpaque, registry.definition(for: record.kind) is any Editable else { return false }
-        guard !registry.isReadOnly(record) else {
+        guard !registry.isReadOnly(record, in: document) else {
             refuseChanges(to: [id])
             return false
         }

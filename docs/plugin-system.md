@@ -36,6 +36,7 @@ maps one onto the other.
 - [Topology](#topology)
 - [Queries](#queries)
 - [Boards](#boards)
+- [Frames](#frames)
 - [The command line](#the-command-line)
 - [Schema cards](#schema-cards)
 - [Language models](#language-models)
@@ -241,6 +242,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Give a tool its key | `shortcut:` on the call that registers the tool (Keyboard's) | [Patches](#your-first-plugin) |
 | Make a key do something, or give a menu's command its key | `registrar.shortcut(chord, "Title") { ... }`, `registrar.command(_:shortcuts:)` | [Keyboard shortcuts](#keyboard-shortcuts) |
 | Give a shape handles to drag | Selection's `HandleProviding` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
+| Let a box kind's shapes be resized: eight handles, ⇧ for proportions, ⌥ from the center, a minimum size | Selection's `x.resizable(minimumSize:)` | [Resizing](#resizing) |
 | Edit a kind's properties beside the canvas | `x.details { DetailSection(...) }` | [Schemas](#the-full-showcase-schema-cards) |
 | Add items to a kind's right-click menu | `x.contextMenu { MenuItem(...) }` | [Boards](#contributing) |
 | Add a right-click item to every shape, or every kind with a capability | `registrar.contextMenuForEveryShape(where:)` | [Reordering](#every-shape-reordering) |
@@ -271,6 +273,8 @@ Once one plugin works, the question is which piece the next feature needs.
 | Make a kind's shapes open onto the boards they own: Open in its menu and panel, ⌘↑ back up, and a name on the path | `x.opensBoard(placeholder:systemImage:)` (Boards), on a `BoardOwning` kind | [Boards](#boards) |
 | Show where you are in a file's boards, and go up | `BoardPath(editor:rootName:)`, over the canvas; `editor.goUp(to:)`, `editor.name(of:root:)` | [Boards](#boards) |
 | Put a board inside the board | `SubboardsPlugin`: the Subboard tool (B) places a card that opens onto a board of its own | [Subboards](#subboards) |
+| Hold shapes in a region of the board that moves them with it, locks them with it and keeps what's put down from sitting across its edge | `ShapeContaining` on a box kind's definition, nothing to implement; `FramesPlugin`, whose Frame tool (F) draws one | [Frames](#frames), [Containers](#containers) |
+| Draw a kind's shape with a drag, from the press to the pointer, and still say what a click places (and `canvas draw`) | `x.tool(label:systemImage:shortcut:placing:_:)`, a tool of your own with the kind's placement; `editor.place(_:in:)` at the release | [Frames](#frames) |
 | Show on a shape what the board it owns holds | `context.drawBoardPreview(ofBoardOwnedBy:in:)` in its render: a rough picture, false until it's built | [Board previews](#the-cores-part-board-previews) |
 | Keep a kind from being selected | `x.unselectable()`, or `x.selectable { ... }` | [Selection](#selection) |
 | Go to shapes, as following a link does (select them, bring them into view, ⌘[ returns), or only bring them into view | Selection's `editor.goTo(_:)`, `editor.reveal(_:)` | [Selection](#selection) |
@@ -299,7 +303,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Hold names of shapes that may outlive them (a mention), renamed when copied with them | A value that adopts `ShapeNaming`; `registry.namingKinds` and `record.forEachNamingValue(in:)` to read them | [Values that name shapes](#values-that-name-shapes) |
 | Ask what's connected to a shape, and how (arrows, mentions), anywhere in the file | `editor.topology?.neighbors(of:)`, `edges(of:_:types:)` with an `EdgeTypeFilter` | [Topology](#the-index-topologyindex) |
 | Say that a kind's shapes connect others: a new kind of edge | An `EdgeType`, `registrar.edgeType(T.self)`, and a source: `x.edges { … }`, `registrar.edges(K.self)`, or `registrar.edges(in: P.self, as: T.self)` over an added property that names shapes | [Topology](#sources) |
-| Ask which shape a shape is inside (the owner of its board, at any depth) | `editor.topology?.parent(of:)`, `ancestors(of:)`, `isInside(_:_:)` | [Containment](#containment) |
+| Ask which shape a shape is inside (its container, else the owner of its board, at any depth) | `editor.topology?.parent(of:)`, `ancestors(of:)`, `isInside(_:_:)` | [Containment](#containment) |
 | Read edges and containment off the main actor, as they were at one instant | `topology.snapshot()`, a Sendable `TopologySnapshot` | [A snapshot for other threads](#a-snapshot-for-other-threads) |
 | Find the shapes of a file a query matches (by kind, title, attribute, what's inside what, what connects to what), from a plugin or an agent | `editor.queries?.run(QueryRequest(#"sticky-note:mentions("Auth")"#))`, answered off the main actor; `canvas query` | [Queries](#queries) |
 | Give queries a plugin's word (a pseudo-class, or a relation over its edges), or say how its text reads in them | A bridge: `registrar.queryPseudoClass`, `queryRelation` or `queryTextFormat` | [What plugins add](#what-plugins-add) |
@@ -409,7 +413,7 @@ Each target is one line, with its layer:
 | foundation | foundation | Geometry, Canvas (the core), and pure libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, and its solver) and QueryLanguage (the language [`canvas query`](#query) reads) |
 | ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
 | horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Adornments, Clipboard, Locking, Ports, Mentions, Topology, Queries, Automation, QueryCommands, LanguageModels, Boards, Snapping |
-| vertical | foundation, horizontal | Arrows, StickyNotes, Schemas, Subboards, Eraser, Reordering |
+| vertical | foundation, horizontal | Arrows, StickyNotes, Schemas, Subboards, Frames, Eraser, Reordering |
 | bridge | foundation, horizontal, vertical | ValidationDetails, ValidationContents, MentionValidation, TitleValidation, ArrowPorts, TitleNames, PortEdges, ValidationChecks, TitleQueries, BoardQueries, MentionQueries, ValidationQueries, SelectionQueries |
 | composition | foundation, horizontal, vertical, bridge, wire | Composition (the shipped plugin list) |
 | app | foundation, ui, composition, wire | InfiniteCanvas |
@@ -440,8 +444,10 @@ What `./build.sh audit` enforces:
   `case`'s patterns or its `where`, on its line or the lines they go on to, nor in a ternary
   (`? "title" : …`, even across a line), nor after an operator (`prefix + "title" : …`). Any other
   member's name counts: reading another plugin's property out of a shape's JSON
-  (`json["locked"]`) needs the dependency. Lookups at run time (a tool by its shortcut or label)
-  aren't audited.
+  (`json["locked"]`) needs the dependency. One id is no module's: Frames' kind is spelled as the
+  core's own member every box has, `frame`, which every box's props write, so the audit can't tell
+  the two apart and takes it as an ordinary word, as a test fixture's id is. Lookups at run time (a
+  tool by its shortcut or label) aren't audited.
 - **The host API is fenced off.** What `CanvasView` calls on the editor (input, the cursor,
   drawing, the delegate) is `@_spi(Host)`. Only modules that `@_spi(Host) import Canvas` see it,
   and only the ui, testsupport and test layers may; a plugin that calls it doesn't compile.
@@ -505,7 +511,13 @@ is compiled by `./test.sh`, even before anything depends on it.
   snaps as any drag does); Escape before the release takes it away and selects again what was
   selected before the press, so the press comes to nothing.
   `editingPlacement` follows the pointer too, and opens the shape for editing on the release (a
-  click's, at once), and exists only for `Editable` kinds, a restriction the compiler checks. Any tool or gesture can also insert a shape itself, with
+  click's, at once), and exists only for `Editable` kinds, a restriction the compiler checks. A
+  kind whose tool puts it down its own way (the Frame tool draws a frame's rect with a drag) still
+  says what it places, `x.tool(label:systemImage:shortcut:placing:_:)`, its tool made per editor by
+  the closure, so what makes shapes without the pointer places it as a click would
+  (`registry.placement(for:)`: `canvas draw`); the tool puts it down with `editor.place(_:at:)`, or
+  `editor.place(_:in:)` with the rect it drew, which is `place` with no press under way: settled at
+  once, the default tool back, `didPlace` heard. Any tool or gesture can also insert a shape itself, with
   `editor.transact { $0.insert(record) }`, as a port's drag does its arrow.
 
 What a real vertical adds on top ([StickyNotes](../Sources/StickyNotes/StickyNotes.swift)):
@@ -671,7 +683,9 @@ The details:
   cancel goes back to its mark, selection and all). What others committed meanwhile stays.
 - **Where a drag puts what it moves** is under the pointer, unless a plugin claims the [translation
   adjuster](#the-cores-part-the-translation-adjuster): Snapping, in the shipped app, snaps it to the
-  shapes in view, and draws its guides with the session. While ⇧ is held (from the press or once
+  shapes in view, and draws its guides with the session. What a container moved holds goes with it,
+  and with containers about, the release settles what was dropped into one or out
+  ([Containers](#containers)), outlined as the drag goes. While ⇧ is held (from the press or once
   the drag is under way, pressed or let go at once), it keeps to one axis, the one the pointer has
   come further along since the press (tldraw's), and stays where it began along the other; at the
   press, ⇧ is still the select tool's, adding to the selection.
@@ -882,36 +896,40 @@ extension TitleProperty: ShapeProperty {
 public enum ShapeTitles {}
 
 extension ShapeTitles: KeyedExtensionPoint {
-    public typealias Contribution = TitleContribution       // a shape's title, whether it's derived, whether it shows a pill, and with its kind's symbol
+    public typealias Contribution = TitleContribution       // a shape's title, whether it's derived, whether it shows a pill, with its kind's symbol, and what it says untitled
     public static var owner: PluginID { .titles }
     public static func uniqueKeys(of _: TitleContribution, for target: ShapeTarget) -> [AnyHashable] { [target] }
 }
 
 /// ③ Sugar, so opting in is one line: `note.title()`.
 extension ShapeRegistrar {
-    public mutating func title(pill: Bool = true, symbolInPill: Bool = false, contents: Bool = true) {
+    public mutating func title(pill: Bool = true, symbolInPill: Bool = false, placeholderInPill: String? = nil, contents: Bool = true) {
         optIn(to: TitleProperty.self)                                     // the property, in the kind's schema
-        title(pill: pill, symbolInPill: symbolInPill, contents: contents, isDerived: false) { $0[TitleProperty.self] }  // its value
+        title(pill: pill, symbolInPill: symbolInPill, placeholderInPill: placeholderInPill, contents: contents, isDerived: false) {
+            $0[TitleProperty.self]                                        // its value
+        }
     }
 
     /// A title derived from what the kind keeps itself: `label.title { $0.props.text }`.
-    public mutating func title(pill: Bool = true, symbolInPill: Bool = false, contents: Bool = true,
+    public mutating func title(pill: Bool = true, symbolInPill: Bool = false, placeholderInPill: String? = nil, contents: Bool = true,
                                _ make: @escaping @MainActor (ShapeRecord<Definition.Props>) -> String?) {
-        title(pill: pill, symbolInPill: symbolInPill, contents: contents, isDerived: true, make)
+        title(pill: pill, symbolInPill: symbolInPill, placeholderInPill: placeholderInPill, contents: contents, isDerived: true, make)
     }
 
-    private mutating func title(pill: Bool, symbolInPill: Bool, contents: Bool, isDerived: Bool,
+    private mutating func title(pill: Bool, symbolInPill: Bool, placeholderInPill: String?, contents: Bool, isDerived: Bool,
                                 _ make: @escaping @MainActor (ShapeRecord<Definition.Props>) -> String?) {
-        contribute(TitleContribution(Definition.Props.self, showsPill: pill, symbolInPill: symbolInPill, isDerived: isDerived, make),
+        contribute(TitleContribution(Definition.Props.self, showsPill: pill, symbolInPill: symbolInPill, pillPlaceholder: placeholderInPill,
+                                     isDerived: isDerived, make),
                    to: ShapeTitles.self)
         if contents { contentsTitle { TitleProperty.folded(make($0)) } }     // TableOfContents' point: the title names the shape's row
     }
 }
 
 extension PluginRegistrar {     // for a kind another plugin registers (bridges use these)
-    public mutating func title<P: ShapeProps>(_: P.Type, pill: Bool = true, symbolInPill: Bool = false, contents: Bool = true) { ... }
-    public mutating func title<P: ShapeProps>(_: P.Type, pill: Bool = true, symbolInPill: Bool = false, contents: Bool = true,
-                                              _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) { ... }
+    public mutating func title<P: ShapeProps>(_: P.Type, pill: Bool = true, symbolInPill: Bool = false, placeholderInPill: String? = nil,
+                                              contents: Bool = true) { ... }
+    public mutating func title<P: ShapeProps>(_: P.Type, pill: Bool = true, symbolInPill: Bool = false, placeholderInPill: String? = nil,
+                                              contents: Bool = true, _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) { ... }
 }
 
 /// ④ The consumers: lookups, and the pill, an adornment Titles places on every titled shape.
@@ -932,9 +950,10 @@ public struct TitlesPlugin: CanvasPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         registrar.declare(TitleProperty.self)
         // On every shape whose kind's title shows a pill (not `pill: false`): its title, after the
-        // kind's symbol if it asks (`symbolInPill`), or none.
+        // kind's symbol if it asks (`symbolInPill`); untitled, the kind's placeholder, dimmed, if it
+        // gives one (`placeholderInPill`: `AdornmentLabel(placeholder:)`); or none.
         registrar.adornmentForEveryShape(TitlePill.self, where: { $0.registry.showsTitlePill($0.kind) }) { shape, context in
-            context.registry.title(of: shape).map { AdornmentLabel($0, systemImage: context.registry.titlePillSymbol(shape.kind)) }
+            context.registry.titlePill(of: shape)
         }
     }
 }
@@ -993,6 +1012,15 @@ splits and joins none of them. What a title brings:
   puts its symbol (`registry.label(of:)`, its tool's) before the title: `symbolInPill: true`, as the
   schema card's `{}` (`curlybraces`), small and a little softer than the text; the capsule is longer
   by the symbol's place, blank too ([the label](#the-label)).
+- **A pill to grab while untitled**, for a kind that asks: `frame.title(placeholderInPill: "Frame")`
+  (any form of the sugar takes it) puts the placeholder in the pill of each of its shapes nobody has
+  named, laid out as a title is (after the symbol where the kind asks, giving way at the row's
+  end), its text dimmed (`AdornmentLabel(placeholder:)`: white at 55%, as secondary text is on a
+  dark surface), blank zoomed out as any pill, and its shape's for the pointer as any adornment is
+  (a press selects the shape, a drag moves it, a right-click opens its menu), so a shape a press
+  mostly goes through has something to grab. It's never a title: `registry.title(of:)` is nil, the
+  row is the kind's own, and a name takes its place. A kind that doesn't ask shows no pill on an
+  untitled shape, and a blank placeholder is none.
 - **Its row's name** in [the table of contents](#the-table-of-contents), through TableOfContents'
   `ContentsTitles`, which names a kind's rows without replacing them: a titled note is listed by
   its title; an untitled one by its text, as before. `contents: false`
@@ -1568,9 +1596,9 @@ that both binds and names.)
 
 Selecting is a horizontal ([`Sources/Selection`](../Sources/Selection)), and the one most others
 build on. It owns what's selected and the way back through it, the hovered shape, the Select
-tool (V) and its marquee, the handles of the one selected shape, and what Delete, Return, ⌘A and
-Back do. The core has never heard of a selection: Selection works through the same generic hooks
-any plugin can use.
+tool (V) and its marquee, the handles of the one selected shape (its kind's own, and a resizable
+kind's: [resizing](#resizing)), and what Delete, Return, ⌘A and Back do. The core has never heard
+of a selection: Selection works through the same generic hooks any plugin can use.
 
 | Core hook | What Selection does with it |
 |---|---|
@@ -1719,6 +1747,9 @@ shakes them).
   canvas places, at most one kind. StickyNotes does, so it can't be installed without Selection.
 - `HandleProviding` is Selection's capability: handles on the only selected shape. The select tool
   finds, draws and hit-tests them; the definition says what a press and a drag do.
+- `x.resizable(minimumSize:)` fills `ShapeResizing`: a box kind's shapes are resized with handles,
+  never smaller than its minimum ([resizing](#resizing)); `registrar.resizable(Kind.self,
+  minimumSize:)` from a bridge.
 - `BrushHitTesting` is Selection's capability for a kind that decides for itself whether the
   marquee touches it. The default is `ShapeGeometry.isHit(byBrush:)`, from its geometry.
 - `x.opens("Open") { shape, editor in … }` fills `ShapeOpening`: what opening one of the kind's
@@ -1773,6 +1804,48 @@ multi-selection's box, then the canvas.
 - Escape while a shape is pressed, before the drag threshold, ends the press; mid-marquee it puts
   back the selection from before. A press on empty canvas ignores Escape until the release, as in
   tldraw.
+
+### Resizing
+
+A box kind's shapes are resized with handles once the kind says so, from its own registrar or a
+bridge, with the smallest they go, in world units:
+
+```swift
+frame.resizable(minimumSize: CGSize(width: 64, height: 64))
+registrar.resizable(Box.self, minimumSize: CGSize(width: 20, height: 10))     // a bridge
+```
+
+That's `ShapeResizing`, Selection's point: one per kind, plus one for every kind, which a kind's own
+overrides; a minimum that isn't above zero and finite either way refuses the plugin list
+(`RegistryError.invalid`).
+
+- **Eight handles** on the only selected shape of a resizable kind, unless it's read-only
+  (`editor.isReadOnly`: a locked one shows none, so a press there presses the shape) or being
+  edited: one on each corner of its box and one in the middle of each side (`ResizeHandle`), after
+  its kind's own handles if it has any, drawn, sized, hit, hovered (`editor.hoveredHandle` holds the
+  `ResizeHandle`) and pressed as those are. They leave the shape room to be pressed itself: none show
+  on a box under 24 view points on screen either way, whose corners' reach would cover it, and a
+  side's only on a side at least 48 long, its reach clear of the corners'
+  (`SelectionStyle.resizeHandleRoom`), so a shape small on screen is moved, not resized.
+- **A drag** on one, past the drag threshold, resizes the box (`ResizingSession`): the corner or
+  side the handle's on follows the pointer from where it was pressed (grabbed off its middle, it
+  doesn't jump), the one opposite staying put, a transaction a drag event and one more at the
+  release, and the press is one undo step, "Resize". The handles follow the box, the one dragged
+  pressed. A click on a handle does nothing.
+- **⇧** keeps the proportions the box had as the drag began: by a corner, as far as the side that
+  grows the most takes it (so the box takes in the pointer); by a side, the other way too, about its
+  middle. **⌥** keeps the box's center: the sides opposite move the other way. Each takes effect as
+  it's pressed or let go, without the pointer moving.
+- **Never smaller than the kind's minimum** along a side the handle moves (keeping proportions,
+  either way), and never inside out: a side dragged past the one opposite stops at the minimum.
+- **Nothing snaps** while it resizes: the translation adjuster isn't asked (Snapping's resize
+  handles aren't built).
+- **Escape** puts the box back as it was as the drag began (its box alone, so what else changed
+  meanwhile stays), and the step comes to nothing.
+- **The cursor** over a resize handle, and while it's pressed and dragged, is the frame-resize
+  cursor for its place (`CanvasCursor.resize(_:)`, the core's, by side or corner): macOS 15's in the
+  app; before it, the left-right and up-down arrows on a side, and the crosshair on a corner, which
+  has no public cursor there. A kind's own handles keep the open hand.
 
 ### Canvas buttons
 
@@ -2095,13 +2168,16 @@ table of contents](#the-table-of-contents)), else "No Selection". With several, 
 over the kinds selected, then the overview (details are per shape: editing several at once isn't
 built). A shape with no sections to show (an arrow, a note without issues) gets its
 header, then "No Options". Without `DetailPanelPlugin` installed, the panel says "No Details". A
-read-only shape (a [locked](#locking) one) shows its whole panel, but nothing in it edits the shape:
-the panel disables its sections' content, and its header (a title field), and leaves going back, the
-tabs and collapsing as they were. A section whose controls change nothing of the shape says so,
-`DetailSection(…) { … }.enabledWhileReadOnly()`, and keeps them working (Boards' Open: a locked
-shape's board is entered like any other's); whatever they write is refused there all the same. It
-asks the registry (`registry.isReadOnly(record)`), not the editor, so the panel doesn't read the
-document.
+read-only shape (a [locked](#locking) one, or one in a locked frame, at any depth) shows its whole
+panel, but nothing in it edits the shape: the panel disables its sections' content, and its header
+(a title field), and leaves going back, the tabs and collapsing as they were. A section whose
+controls change nothing of the shape says so, `DetailSection(…) { … }.enabledWhileReadOnly()`, and
+keeps them working (Boards' Open: a locked shape's board is entered like any other's); whatever they
+write is refused there all the same. Whether the shape can change is asked where the panel's root
+reads the shape's record, on every commit (`registry.isReadOnly(_:in:)`: the rules of the shape and
+of the containers it's in, O(its depth)), and handed to the shape's panel as a value, so the shape's
+panel never reads the document, and draws again when that changes though the shape's record
+doesn't: its frame locked or unlocked.
 
 Sections are stock SwiftUI plus a few primitives, and get the look by following these conventions:
 
@@ -2716,8 +2792,9 @@ CanvasRepresentable(editor: editor, focus: canvasFocus)
 ### Performance
 
 The document changes on every drag event, so the panel does little per change. It re-reads the
-selected shape, its status lines and what `shownWhile` hides, and rebuilds the shape's panel only
-if any of them changed; dragging another shape costs one comparison (`./build.sh bench` holds the
+selected shape, whether it can change (the containers it's in, O(its depth)), its status lines and
+what `shownWhile` hides, and rebuilds the shape's panel only if any of them changed (`panelsDrawn`,
+debug builds, counts it); dragging another shape costs one comparison (`./build.sh bench` holds the
 layout of a subboard 100 notes mention, its Mentioned In tab showing, to 1 ms after a drag event
 of another note and after a mentioner's rename). A section is rebuilt only when its own shape changes.
 Only the current tab is built, a collapsed section's content isn't, and each kind's contributions
@@ -2853,8 +2930,9 @@ registrar.contextMenuForEveryShape(where: { !($0 is any PaintOrderAnchored) }) {
 
 Bring Forward and Send Backward are tldraw's: each shape moves just past the nearest shape that
 overlaps it, in that direction (`transaction.move(id, above: next)`), since moving past one it
-doesn't overlap would change nothing to see. With several selected, they keep their order among
-themselves, and one with nothing to pass stays.
+doesn't overlap would change nothing to see; never one a container holds, which goes with it (a
+frame steps past its neighbor, not its own first note). With several selected, they keep their
+order among themselves, and one with nothing to pass stays.
 
 ### What a right-click does
 
@@ -2915,6 +2993,9 @@ system's rows, selection, disclosure triangles and keyboard.
 │   ▭ Server room                     │   or its title, here PatchTitles'
 │ ▾ ▤ Payments                        │ a subboard: what's on its board, under it
 │     ▤ Refunds                       │   a note on that board
+│ ▾ ▭ Sprint 3                        │ a frame: what it holds, under it, open from the start
+│     ▤ Ship it                       │   a note in it
+│   ▸ ▭ Later                         │   a frame in it, its rows under it, closed by the person
 │   ↗ Arrow                           │ an arrow that starts on nothing, at the top
 └─────────────────────────────────────┘
 ```
@@ -2942,15 +3023,33 @@ note.contentsRow(affected: MentionRows.affected) { note, context in
   with `affected`, the shapes whose rows a commit may change ([below](#rows-read-from-more-than-their-shape)). The table of
   contents keeps each shape's row, and where it's listed, from one commit to the next, and redoes
   only those of the shapes the commit's change set names (and the rows nested under a shape that
-  came or went). So dragging a shape costs its own row, however big the board: well under a
-  millisecond at 10,000 shapes, every one listed. (Plus the marks of the shapes whose marks a
-  drag may change, when a mark reads other shapes: [marks](#marks-validationcontents).)
+  came or went), a commit costing what it changed, however big the board: well under a
+  millisecond at 10,000 shapes, every one listed.
+- **A row says what its shape is, never where it is**, and so do `when`, `nestedUnder` and a name
+  from `contentsTitle`: a commit that only moves a shape (`ChangeSet.moved`: a drag's every
+  event, `translate`, a frame carrying all it holds) keeps its row, the same object, so the list
+  redraws nothing, and reads only its marks again (a mark from a service may follow where a shape
+  is: a validation rule that doesn't ignore moves; [marks](#marks-validationcontents)), on the next
+  read: the commit only notes which shapes moved, so a drag's every event costs the table of
+  contents one set's upkeep, whatever it carries. So a drag makes no row, nor does dragging a frame
+  of 10,000 shapes; a shape changed any other way gets its row made again.
 - **`when`** lists only some of a kind's shapes: `contentsRow(when: { $0.props.isBound }) { ... }`.
-- **`nestedUnder`** names the shape a row goes under. It holds only while that shape is listed
-  too, so a selection of just the child still shows it, at the top. Rows nest as deep as their
-  shapes do, collapsed under a disclosure triangle; a loop keeps the later shape at the top. Arrows
-  nest under the shape they start from, as data-canvas's edges do under their start node. Once
-  shapes can contain shapes, a shape's container will be the default.
+- **`nestedUnder`** names the shape a row goes under; a shape its kind names none for, as every
+  shape of a kind without it, goes under the [container](#containers) it's in, a frame
+  (`registry.container(of:in:)`, as the core goes by it, read from the shape's own record: joining
+  or leaving a container changes it, so its row is made again and placed under the new one). It
+  holds only while that shape is listed too, so a selection of just the child still shows it, at
+  the top. Rows nest as deep as their shapes do (a frame in a frame, what that holds under it); a
+  loop keeps the later shape at the top. Arrows nest under the shape they start from, as
+  data-canvas's edges do under their start node, whatever frame that's in.
+- **Each level opens and closes on its own**, its own disclosure triangle (`ContentsTree`: a
+  `DisclosureGroup` a row, whose rows are trees of their own). A container's row starts expanded
+  (`entry.startsExpanded`): what it holds is on the board shown, inside it on the canvas, as a
+  folder's contents show in a sidebar. Every other row starts collapsed: the arrows under a note,
+  a subboard's board (read only once it's opened, below). A row keeps what the person turns it to
+  (`ContentsState.isExpanded(_:)` and `setExpanded(_:_:)`, by shape, for the editor's life): Show
+  All, the rows replaced, another board shown and back leave it as it was. Each row observes only
+  its own disclosure, so turning one redraws that row and its rows alone.
 - **A board under its owner.** A shape that owns a board (a `BoardOwning` kind's, a subboard)
   opens onto that board's rows: the rows its [outline](#another-boards-outline) lists, each as its
   kind draws it and nested alike, then the rows nested under the shape on its own board. Nothing
@@ -2990,10 +3089,10 @@ note.contentsRow(affected: MentionRows.affected) { note, context in
 |---|---|
 | `component` | The view `contentsRow` builds, usually a `ContentsLabel` |
 | `filter` | `when:` |
-| `getParentShapeId` | `nestedUnder:` |
+| `getParentShapeId` | `nestedUnder:`, else the shape's container |
 | `getZoomConfig` | The shape's geometry bounds, with 100 points of margin, for every kind |
 | `onClick` | Return on a picked row opens its shape, as Return on the canvas does (Selection's `editor.open`); a double-click too, where the list stays on screen ([Opening a row](#whats-listed-and-selecting)) |
-| `getGroupChildren` | The board a shape owns: its rows, under the shape's ([A board under its owner](#a-kinds-row)); groups a kind declares, not built yet |
+| `getGroupChildren` | The board a shape owns: its rows, under the shape's ([A board under its owner](#a-kinds-row)); and what a container holds, under it, open from the start |
 | The "other" row (type and id) | The kind's label and symbol (`registry.label(of:)`) |
 
 ### Rows read from more than their shape
@@ -3115,7 +3214,7 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
   nothing and the whole board is, under "Board"; select one and the panel shows its details. Show
   All lists the board again without deselecting.
 - **A change of what's listed replaces the rows**, so the new scope's come in as one run under the
-  header, not around the rows both scopes list (and nested rows start collapsed again). Rows coming
+  header, not around the rows both scopes list (each open or closed as it was). Rows coming
   in at several places at once, the last row among them, make AppKit measure the last row from
   inside measuring the others (a table whose rows size themselves, as a SwiftUI `List`'s do,
   measures new rows a run at a time and resizes itself after each) and log "a reentrant operation
@@ -3125,10 +3224,10 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
   out from under it), while one that brings them in at one place (an arrow drawn, a paste) keeps
   the rows it has. It does so in a list of any length: a list of 250 rows logs it too, rows brought
   in around those kept, and not when they're replaced. AppKit still logs it when a list first
-  shows 200 rows or more (it measures 200 at a time). Replaced rows start collapsed again, as they
-  do when what's listed changes, and a row that goes lets go only of a hover the pointer on it set
-  (`ContentsState.endHover`), never one the canvas set, so the shape under the pointer stays
-  outlined.
+  shows 200 rows or more (it measures 200 at a time). Replaced rows come in open or closed as they
+  were, a container's open (as one run all the same), and a row that goes lets go only of a hover
+  the pointer on it set (`ContentsState.endHover`), never one the canvas set, so the shape under the
+  pointer stays outlined.
 - **Selecting rows** (a click, ⌘- and ⇧-clicks, the arrow keys) selects their shapes and brings
   them into view: centered, zoomed to fit with 100 points of margin but no closer than 120%, over
   200 ms (data-canvas's click-to-zoom, and tldraw's zoomToBounds): Selection's `editor.reveal`,
@@ -3182,12 +3281,14 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
   through the rows, Delete runs the `.delete` command (deleting the selected shapes, as Delete on
   the canvas does), and Escape gives the keyboard back to the canvas (`onExit`). So does hiding the panel while the list has the keyboard.
 - **Headless**, `ContentsState` (`editor.tableOfContents`) is all of it: `entries` (the rows, a tree),
-  `scope`, `select(_:)`, `showAll()`, and the rows' hover: `hover(_:)` and `endHover(_:)` as the
-  pointer moves onto a row and off it, and `isHovered(_:)` for whether a row shows as hovered. Tests
-  read a row's text, symbol and badge through `entry.label`, its marks through `entry.marks`, and
-  the board its shape owns through `entry.nestedBoard` (its rows, `outline(of:)`, are under it in
-  the list); `open(_:)` is a row's primary action. In debug builds, `rowsRedrawn` counts how often the list
-  has asked a row for its view, and `rowsMade` how many rows it has made.
+  `scope`, `select(_:)`, `showAll()`, the rows' hover: `hover(_:)` and `endHover(_:)` as the
+  pointer moves onto a row and off it, and `isHovered(_:)` for whether a row shows as hovered; and
+  their disclosure, `isExpanded(_:)` and `setExpanded(_:_:)`. Tests read a row's text, symbol and
+  badge through `entry.label`, its marks through `entry.marks`, the board its shape owns through
+  `entry.nestedBoard` (its rows, `outline(of:)`, are under it in the list), and whether it starts
+  expanded through `entry.startsExpanded`; `open(_:)` is a row's primary action. In debug builds,
+  `rowsRedrawn` counts how often the list has asked a row for its view, and `rowsMade` how many rows
+  it has made.
 
 ### Another board's outline
 
@@ -3217,9 +3318,11 @@ ContentsOutline(editor: editor, board: board, highlighted: next, maxHeight: 348)
   23 ms.
 - **`ContentsOutline(editor:board:highlighted:maxHeight:onPick:)`** shows it, for a small panel:
   one line a row, 24 points each, as tall as its rows up to `maxHeight`, past which it scrolls
-  (only the rows in view are made into views); nested rows behind a disclosure triangle, collapsed
-  until it's opened, as in the list, a board under its owner's row too, read once it's opened; `highlighted`'s row tinted as a hovered row is in the list,
-  and the row under the pointer lit. A click on a row picks its shape (`onPick`), and what that
+  (only the rows in view are made into views); nested rows behind a disclosure triangle, as in the
+  list: a container's open, the rest collapsed until it's opened, a board under its owner's row
+  too, read once it's opened, each time the panel shows (the panel keeps what's turned while it
+  shows); `highlighted`'s row tinted as a hovered row is in the list, and the row under the pointer
+  lit. A click on a row picks its shape (`onPick`), and what that
   does is the host's. It opens at the top, as data-canvas's menus do (scrolling a lazy stack to a
   row far down lays out the rows before it: some 70 ms to the last of 10,000). Nothing without the
   plugin, or for a board with no rows.
@@ -3411,6 +3514,10 @@ plugin's look alike, as `ContentsLabel` keeps rows alike:
   goes before it (a kind's mark: Titles' pill on a kind that asks, `symbolInPill`), two points
   smaller than the text, semibold, white at 75%, centered in a place as wide as the text is tall
   (11 points in the row, 10 on the corner), 3 points before the text.
+- **A placeholder**, `AdornmentLabel(placeholder: "Frame")`: text standing in for what isn't there
+  (Titles' pill on an untitled shape whose kind asks for one), laid out as the same text is, a
+  symbol before it too, its text dimmed: white at 55%, as secondary text is on a dark surface
+  (`isPlaceholder`). Blank zoomed out, as any.
 - **A symbol**, `AdornmentLabel(systemImage: "lock.fill")`: an SF Symbol, bold and white, in a
   disc as tall as its place, half as tall as the disc.
 - **`tone`**: `.neutral` (the default), a title pill's dark gray; or `.success`, green, for
@@ -3602,9 +3709,9 @@ giving a shape back the id it had.
 
 | | Does |
 |---|---|
-| ⌘C, Edit › Copy, Copy | Puts copies of the selection's copyable shapes on the pasteboard, back to front, with what the boards they own hold. The board doesn't change. |
+| ⌘C, Edit › Copy, Copy | Puts copies of the selection's copyable shapes on the pasteboard, back to front, with what the boards they own hold, and what the containers among them hold. The board doesn't change. |
 | ⌘X, Edit › Cut, Cut | Copies, marked as a cut's, then deletes what it copied whole, in one transaction. What can't be copied stays, and so does a shape whose board holds one, and a [locked](#locking) shape, copied all the same (it shakes, as with Delete). |
-| ⌘V, Edit › Paste, Paste | Puts what's on the pasteboard on top of the board, and selects it: what a copy put there as copies, with new ids all the way down; what a cut put there moved, under the ids it had. |
+| ⌘V, Edit › Paste, Paste | Puts what's on the pasteboard on top of the board, settled where it lands by the in-or-out rule, and selects it: what a copy put there as copies, with new ids all the way down; what a cut put there moved, under the ids it had. |
 
 - **Copies get new ids, and remember their originals.** Each copy's metadata names the shape it
   was copied from: `record.copiedFrom`, which is `meta[CopiedFrom.self]?.shape`, and its board
@@ -3638,6 +3745,16 @@ giving a shape back the id it had.
   it pastes was copied from. Moving them is
   `transaction.translate(ids, by:)`, which moves every kind as dragging would: boxes by their frame,
   others by their `CustomTranslation`.
+- **What's pasted is put down there as one**, as a drop is, by the in-or-out rule
+  (`transaction.settle`, [Containers](#containers)), in the paste's step: into the container
+  holding most of it, nudged fully in across its edge, or out of any it reaches into, gliding there
+  (`editor.glide`); a container pasted takes in what it lands on. Over all of a container, what's
+  pasted is beside it, not in it: a frame pasted in place, on its original, holds only its own
+  copies, and takes none of the original's. What's selected is what isn't in another shape pasted
+  with it. A read-only container (a locked frame, or a locked frame's copy just pasted) takes
+  nothing: a paste one would take puts nothing down, thrown out of its transaction so no step is
+  left and what there was to redo stays, and services hear the container refused
+  (`editor.refuseChanges(to:)`, the core's: Locking shakes it), as they hear a drop's.
 - **Shapes bound to shapes.** A kind whose props are bound to other shapes (an arrow's bound ends)
   adopts the core's `ShapeReferencing`, which deleting a shape asks too. Copying asks it to let go
   of the shapes left out of the copy, and pasting asks it to bind the copies of those copied with it. So
@@ -3664,6 +3781,16 @@ giving a shape back the id it had.
   inside itself, never a loop. Cut deletes only the shapes copied whole: one whose boards held
   something that couldn't be copied stays, as an uncopyable shape does, with everything under it,
   and its id being in use, it pastes as a copy.
+- **Containers** ([`ShapeContaining`](#containers): a frame) are copied with what they hold, at any
+  depth, as an owner is with its board: each shape in a copied container that can be copied goes
+  too, its copy in the container's copy (`AnyShapeRecord.copy(as:container:)`, the container renamed
+  through the paste's one map, as every id is), and a shape copied without its container is in none,
+  and written so: the pasteboard is format 5 only when a container goes with something it holds, on
+  any board copied. Cut takes a container with what it copied of it, a container being whole without
+  what it holds (deleting it lets go of what stays): what it holds that couldn't be copied, or is
+  read-only (a locked note in an unlocked frame, copied all the same, so it pastes back as a copy, in
+  the frame), stays where it is, let go of. A cut and its paste move a container with what it holds,
+  every id kept, each shape in its container again.
 - **The pasteboard** holds a small board: `BoardCodec`'s JSON, each kind and added property at its version, under the
   app's own type. So one window can paste what another copied, a paste into a newer app migrates as
   opening a board does, and a kind the board doesn't install is left out of a paste, on any board,
@@ -3755,9 +3882,13 @@ registrar.adornmentForEveryShape(LockChip.self, where: { $0.holds(LockedProperty
 registrar.contentsMarkForEveryShape(where: { $0.holds(LockedProperty.self) }) { shape, _ in  // a lock at the end of its row
     shape.isLocked ? ContentsMark(symbol: "lock.fill", color: .secondary, help: "Locked") : nil
 }
-registrar.contextMenuForCanvas {
-    MenuItem("Lock", in: LockMenuGroup.self, when: { !$0.shapes.isEmpty && !$0.allLocked }) { ids, editor in editor.lock(ids) }
-    MenuItem("Unlock", in: LockMenuGroup.self, when: { !$0.shapes.isEmpty && $0.allLocked }) { ids, editor in editor.unlock(ids) }
+registrar.contextMenuForCanvas {                        // of the shapes whose own lock can change
+    MenuItem("Lock", in: LockMenuGroup.self, when: { !$0.lockable.isEmpty && !$0.allLocked }) { ids, editor in
+        editor.lock(ids.filter { !editor.isLockedByContainer($0) })
+    }
+    MenuItem("Unlock", in: LockMenuGroup.self, when: { !$0.lockable.isEmpty && $0.allLocked }) { ids, editor in
+        editor.unlock(ids.filter { !editor.isLockedByContainer($0) })
+    }
 }
 
 extension LockChip: ClickableAdornment {                // a click on the chip
@@ -3773,7 +3904,19 @@ extension LockChip: ClickableAdornment {                // a click on the chip
 - **The menu** has one of two items, in `LockMenuGroup` (order 300, after every other group), as
   tldraw's toggle: Unlock when every shape the menu is for is locked, and otherwise Lock, which locks
   the rest. They're items for the canvas, so a mix of locked and unlocked shapes gets one; on empty
-  canvas, neither. There's no key: the menu is the only way to lock a shape.
+  canvas, neither. There's no key: the menu is the only way to lock a shape. Both go by the shapes'
+  own locks, of those whose lock can change: a shape in a locked frame (below) can't change, its
+  own lock included, so neither item is for it (`isLockedByContainer`, O(its depth)): a menu for
+  only such shapes has neither, and one for some of them and others locks or unlocks the others,
+  trying none of them (so none shakes).
+- **A locked frame locks what it holds**, at any depth: the core makes a shape in a read-only
+  [container](#containers) read-only too, so it refuses every change as a locked shape does, and
+  each try shakes the shape tried (a drag of a note in the frame, Delete on it); nothing joins or
+  leaves the frame. (A frame that isn't locked carries a shape locked on its own as it moves: a
+  lock stops changes to a shape, not its frame carrying it.) Only the frame shows the lock: the
+  chip and the lock on a row are a shape's own lock (`isLocked`), so what it holds shows neither,
+  and a shape locked on its own inside shows its own. Unlocking the frame frees what it holds, at
+  once.
 - **The chip is a button** (`LockChip`, a [clickable adornment](#pointing), so a canvas button): in
   the select tool, a click on a locked shape's chip unlocks it. Then the chip shows the lock open
   for 1.5 s, however the shape was unlocked (the menu too), so a click by mistake can be taken back:
@@ -3802,6 +3945,8 @@ extension LockChip: ClickableAdornment {                // a click on the chip
   doesn't start it over. `LockState` hears the tries (`didRefuseChanges`), and moves how the shape
   is drawn, never the shape: `editor.setDrawingOffset(_:for:)`. Every refused shape shakes, locked
   or not: a shape whose board holds a locked shape isn't deleted either, so it's the one that shakes.
+  A container shakes with what it holds, at any depth, as it moves with it (a locked frame tried
+  shakes with its notes, not under them).
 - **Another board shown** has its own locks: `LockState` takes back the locked shapes it kept for
   the board when it was left (a `BoardStash`, while the board's revision is unchanged), else finds
   them again (one pass, about a millisecond at 10,000, which going back to a board shown lately
@@ -3825,8 +3970,9 @@ extension LockChip: ClickableAdornment {                // a click on the chip
 ### The core's part: read-only shapes
 
 `registrar.readOnlyShapes { record in ... }` says which shapes can't change; a shape is read-only
-when any plugin's rule says so, and `editor.isReadOnly(id)` (or `registry.isReadOnly(record)`,
-which doesn't read the document) asks. The core holds them where every change goes through it:
+when any plugin's rule says so, or one says so of a container it's in, and `editor.isReadOnly(id)`
+(or `registry.isReadOnly(record, in: document)`; `registry.isReadOnly(record)` is the rules alone,
+reading nothing but the record) asks. The core holds them where every change goes through it:
 
 - **Transactions.** A read-only shape that was in the document before the transaction isn't
   changed (`update`), restacked (`bringToFront`, `move(_:above:)`, ...), moved (`translate`) or
@@ -3845,12 +3991,16 @@ which doesn't read the document) asks. The core holds them where every change go
   threshold, once.
 - **Editing.** `beginEditing` refuses a read-only shape, and services hear it; a shape that becomes
   read-only while it's edited stops being edited.
+- **Containers.** A shape in a read-only container, at any depth, is read-only too
+  ([Containers](#containers)): `editor.isReadOnly(_:)` and `registry.isReadOnly(_:in:)` say so; a
+  transaction changes it not at all, its own lock included, and nothing joins or leaves the
+  container; editing it ends. A container that moves carries what it holds, locked or not.
 
 Selection shows no handles on a read-only shape, and the detail panel disables its controls; both
-ask the core, not Locking. A rule reads only the record it's given, since a transaction asks it of a
-shape before and after a change, and the panel of the record it shows (and redraws only when that
-changes). It's asked about every shape a transaction changes, so keep it cheap: Locking's reads one
-added value.
+ask the core (`editor.isReadOnly`, and the panel `registry.isReadOnly(_:in:)` of the shape it shows,
+on every commit), not Locking. A rule reads only the record it's given, since a transaction asks it
+of a shape before and after a change, and of each container a shape is in. It's asked about every
+shape a transaction changes, so keep it cheap: Locking's reads one added value.
 
 ### The core's part: drawing offsets
 
@@ -3863,7 +4013,8 @@ outline. One that culls by the view can grow the rect by `context.worldDrawingRe
 any shape is drawn from where it is (world units, zero unless one is), so a shape drawn into view
 from just outside it is decorated there, as Adornments does. Everything else goes by where the
 shape is: hit testing, handles, arrows bound to it, and pictures of the board (the minimap).
-Deleting a shape drops its offset.
+Deleting a shape drops its offset. The core's glide (`editor.glide(_:)`, a shape nudged into or out
+of a [container](#containers) easing there) is drawing offsets too.
 
 ## Ports
 
@@ -4763,8 +4914,9 @@ notes mention each other two boards apart (`nested-mentions-across.v4.json`).
 
 Topology ([`Sources/Topology`](../Sources/Topology)) is what connects and contains what, whatever
 is where: edges, a typed graph (an arrow bound at both ends, a mention), and containment, a tree
-(which board a shape is on, and so which shape it's inside). Spatial relations (a note that
-happens to sit within another shape's bounds) aren't part of it; they're geometry. It's a horizontal
+of two kinds of link (the [container](#containers) a shape is in on its board, a frame, else the
+board it's on, and so which shapes it's inside). Spatial relations (a note that happens to sit
+within another shape's bounds) aren't part of it; they're geometry. It's a horizontal
 on the core alone: the plugins that own what a connection means (Ports, through its connector, and
 Mentions) say what their shapes carry, and any plugin asks what's connected to a shape, and how,
 without knowing arrows or mentions.
@@ -4774,7 +4926,7 @@ guard let topology = editor.topology else { return }                   // nil wi
 topology.neighbors(of: note)                                            // ["note-link": [a, b], "mention": [c]]
 topology.edges(of: note, .incoming, types: .only(MentionEdge.id))       // who mentions it, anywhere in the file
 topology.edges(ofType: .within(ArrowEdge.id))                           // every arrow bound at both ends, on any channel
-topology.isInside(note, subboard)                                       // on its board, or on a board under it
+topology.isInside(note, subboard)                                       // on its board, in a frame there, or on a board under it
 ```
 
 ### The shapes are the system of record
@@ -4905,18 +5057,34 @@ file. Every query costs what it returns, never a board:
 
 ### Containment
 
-The board tree read as containment, the same for every kind that owns boards: `parent(of:)` is the
-owner of the board a shape is on (nil on the root), `children(of:)` the shapes on the board it owns,
-in document order, `ancestors(of:)` those it's inside, the nearest first, and `isInside(a, b)`
-whether `a` is inside `b` at any depth (never inside itself; O(`a`'s depth)). It needs no index: the
-core knows where every shape is. As with edges, only shapes on boards the editor can show count
-(nil, none, or false for the rest). It's one piece of code, `Containment`, a value over a
-`CanvasFile` and the kinds that own boards, which the index makes over the file as it is for each
-question and a [snapshot](#a-snapshot-for-other-threads) keeps over the file as it was taken, so the
-two answer alike. `containerKinds` (on `Registry`, the index and the snapshot) is which kinds
-contain others: today the kinds that own boards. Containers that aren't boards (frames, groups)
-would join them there, each a source of containment, a point Topology doesn't have yet, and every
-reader, live or not, would follow.
+Containment is a tree, never an edge, of two kinds of link: a board's owner holds the shapes on its
+board, and a [container](#containers) (a frame, a `ShapeContaining` kind's shape) holds the shapes
+on its own board that are in it. One tree, so every reader follows both, whatever kind owns or
+contains:
+
+- **`parent(of:)`** is the container a shape is in on its board, else the owner of the board it's
+  on (nil on the root in no container): a container's parent is its own container, else its
+  board's owner.
+- **`children(of:)`** is what a container holds, back to front, then, for a shape that owns a board,
+  that board's shapes in no container, back to front (a kind that both owns a board and contains
+  lists what it holds first).
+- **`ancestors(of:)`** is what a shape is inside, the nearest first: its containers, its board's
+  owner, that one's containers, and so on up; **`isInside(a, b)`** whether `a` is inside `b` at any
+  depth (never inside itself; O(`a`'s depth)).
+
+It needs no index of its own: the core knows which board every shape is on, and each board keeps
+who's in which container (`CanvasDocument`'s index of who names whom, nonisolated). Only containers
+the core goes by count (`document.container(of:containingKinds:)`: one kept aside, or of a kind that
+holds nothing here, holds nothing, and a shape kept aside is in none). As with edges, only shapes on
+boards the editor can show count (nil, none, or false for the rest). It's one piece of code,
+`Containment`, a value over a `CanvasFile`, the kinds that own boards and the containing kinds,
+which the index makes over the file as it is for each question and a
+[snapshot](#a-snapshot-for-other-threads) keeps over the file as it was taken, so the two answer
+alike. `containerKinds` (on `Registry`, the index and the snapshot) is which kinds contain others:
+those that own boards (`boardOwningKinds`) and those whose shapes hold shapes on theirs
+(`containingKinds`). Containment keeps nothing, so a commit costs it nothing (and a move, a
+container's with what it holds, reads no record for edges either), and a board without containers
+costs each question what it did before there were any (`document.namesContainers`, O(1)).
 
 ### A snapshot for other threads
 
@@ -4939,15 +5107,21 @@ Task.detached {
 Beside the index's questions, it reads the file whole:
 
 - **`forEachShape(inFileOrder:)`**: every shape on a board the app can show, kept-aside ones too,
-  with its board, in file order: the root's shapes back to front, each shape that owns a board
-  followed at once by that board's shapes, and theirs, before the next. It's iterative, so a chain of
-  boards of any depth is walked, and no board twice. An error its body throws stops it, and comes out
-  as the body's own type (`throws(E)`: a query's cancellation is a `QueryError`).
+  with its board, in file order, the tree's, depth first: the root's shapes in no container, back to
+  front, each followed at once by what's inside it (what it holds, back to front, then, for a shape
+  that owns a board, that board's shapes in no container), and theirs, before the next. It's
+  iterative, so a chain of boards or containers of any depth is walked, and no board or container
+  twice. An error its body throws stops it, and comes out as the body's own type (`throws(E)`: a
+  query's cancellation is a `QueryError`).
 - **`fileOrderKey(of:)`**: where a shape comes in that order, as a key that sorts lexicographically
-  (the index of each owner above it on its board, from the root's down, then its own); nil off the
-  boards the app can show. O(its depth): for putting a few shapes in order without walking the file.
-- **`topLevel`**, the root's shapes in document order, and **`descendants(of:)`**, every shape inside
-  a shape at any depth, in file order (O(what's inside it)).
+  (for each shape it's inside, from the outermost down, then for itself, its place among what's
+  directly inside the same shape: its index on its board); nil off the boards the app can show.
+  O(its depth): for putting a few shapes in order without walking the file.
+- **`topLevel`**, the shapes inside nothing (the root's in no container, in document order), and
+  **`isTopLevel(_:)`**, O(1); **`descendants(of:)`**, every shape inside a shape at any depth, in file
+  order (O(what's inside it)); and **`container(of:on:)`**, the container a record on a board is
+  directly in there, O(1), with no lookup for a shape in none: what a query's walk reads for each
+  shape it has, working out what's above each container and each board once.
 - **`shape(_:)`**, a record on a board the app can show, kept aside or not (`isOpaque` tells), nil
   elsewhere (O(its depth)); **`presentTypes`**, the types of the edges the file has, declared or
   not; and **`end(_:)`**, as the index's.
@@ -4993,7 +5167,9 @@ owner isn't installed is `ownerNotInstalled`.
 - **Loose edges.** An arrow with a free end isn't an edge; there's no query for connections
   half-made.
 - **Spatial relations.** A shape that happens to lie within another's bounds isn't inside it;
-  that's geometry (`editor.paintOrder(in:)`, `shapeContext.bounds(of:)`).
+  that's geometry (`editor.paintOrder(in:)`, `shapeContext.bounds(of:)`). What's in a frame is what
+  it holds, which the core's in-or-out rule keeps within it, not what its bounds cover (a locked
+  shape a frame grows over stays out).
 - **Drawing by type.** Agents read the graph with [`canvas query`](#query), through a snapshot
   (`:edge-to`, `:downstream-of`, `"Payments" *`), but `canvas draw` matches an edge it restates by
   its ends, not by its type.
@@ -5021,8 +5197,9 @@ The language, every form, word and refusal, is taught to agents by the canvas sk
 runs on a file of its own, so it can't drift from the app). What a plugin needs of it:
 
 - **A query** is a list of selectors, commas between them, each of compounds joined by a space
-  (inside, at any depth) or `>` (on the board of); a compound is at most one head (a kind, `*`, a
-  title in quotes, a kind with a title right after it, `sticky-note"Checkout"`, as CSS writes
+  (inside, at any depth) or `>` (directly inside: in a container, or on an owner's board in no
+  container); a compound is at most one head (a kind, `*`, a title in quotes, a kind with a title
+  right after it, `sticky-note"Checkout"`, as CSS writes
   `div#id`, or `#` and an id) and then tests with no space between them, attributes in brackets
   and `:word`s: `"Payments" sticky-note[text*="retry" i]:mentions("Auth")`. A selector answers with
   the shapes its last compound matches, as in CSS, and a list with those any of its selectors does,
@@ -5052,7 +5229,7 @@ runs on a file of its own, so it can't drift from the app). What a plugin needs 
   query that runs asked what it says, and a hint is most often the query to write instead. A hint
   that is a query is never one the app would refuse for a reason the query it mends didn't have:
   one that takes for granted what only the app can say (that a title is some shape's, that a
-  kind's shapes can have titles, that what it puts where a container goes holds a board) waits for
+  kind's shapes can have titles, that what it puts where a container goes holds shapes) waits for
   it (`HintPremise`, QueryLanguage's, settled by the kinds and ids as the query resolves and by the
   titles as it's answered: `#Checkout` hints `"Checkout"` only where a shape is titled so).
 
@@ -5061,11 +5238,12 @@ runs on a file of its own, so it can't drift from the app). What a plugin needs 
 - **Every shape on every board the app can show** (`canShow`'s), none kept aside: a kept-aside
   shape has no properties to read and carries no edges, and a board the app can't show is the
   file's, not the app's. `#` with such a shape's id is refused `unknown_id`, saying which it is.
-- **File order**, for every answer: the root's shapes back to front, each shape that owns a board
-  followed at once by that board's shapes, all the way down, the order Topology's snapshot walks in
-  (`forEachShape(inFileOrder:)`, or `fileOrderKey(of:)` for a few shapes), so the engine never walks
-  boards itself. The same query on the same file answers in the same order. Both are Topology's, so
-  without `TopologyPlugin` every query is `no_topology`.
+- **File order**, for every answer: the root's shapes in no container, back to front, each
+  container followed at once by what it holds and each shape that owns a board by that board's
+  shapes, all the way down, the order Topology's snapshot walks in (`forEachShape(inFileOrder:)`, or
+  `fileOrderKey(of:)` for a few shapes), so the engine never walks boards or containers itself. The
+  same query on the same file answers in the same order. Both are Topology's, so without
+  `TopologyPlugin` every query is `no_topology`.
 - **One instant, but for what only the main actor knows.** An answer is the file as it was when the
   app took up the query, but for titles a shape works out from what it holds (a schema card's) and
   validity (`:invalid`, `:warned`), which are as the app has them when the query asks: a shape a
@@ -5106,9 +5284,18 @@ runs on a file of its own, so it can't drift from the app). What a plugin needs 
   mention `@` and the name its target has now, or the name it holds while its target is gone, never
   the stored form with its ids. `:contains("x")` is a substring of the title or of any string in the
   attributes, as they read, in any case: a filter, not search.
-- **Boards named as Boards names them.** A row's `inside` is the names of the boards it's inside,
-  outermost first, as the path over the canvas names them: the owner's title, else its kind's
-  placeholder (through the board names point), else its label.
+- **Containment, Topology's one tree.** A space and `:inside()` are inside at any depth, through
+  boards and [containers](#containers) on them alike; `>` and `:has(> …)` directly inside, a
+  container's own shapes, or the shapes on an owner's board in no container (a shape in a frame on a
+  subboard's board is the frame's child, not the subboard's); `:top-level` is inside nothing (on the
+  top board, in no container), and `:current-board` on the board shown, in a container or not. A
+  kind whose shapes hold shapes, a board of them or shapes on theirs (`containerKinds`), may stand
+  where a container goes; any other is `cannot_contain`.
+- **What a shape is inside, named.** A row's `inside` is the names of the shapes it's inside,
+  outermost first: the boards' owners as the path over the canvas names them (the owner's title,
+  else its kind's placeholder, through the board names point, else its label), and the containers
+  between them by their titles, else their kinds' labels (an untitled frame is "Frame"), which the
+  path doesn't name.
 - **A query changes nothing**: no shape, no selection, no step of undo. It never ends typing: a
   shape being typed into reads as the board has it (a note writes each keystroke, so its text as
   typed so far), and an answer that lists it, or read its text, warns that it may still change
@@ -5137,7 +5324,8 @@ A query costs the main actor what it reads and one turn, and does everything els
 
 1. **Checked**, on the main actor (`check`): parsed and resolved against the vocabulary
    (`queries.vocabulary`, a `QueryVocabulary`, `Sendable`: each kind with its label, how its shapes
-   are named, whether it holds a board and what an untitled one's board is called, and its
+   are named, whether its shapes hold shapes (`holdsShapes`, Topology's `containerKinds`) and
+   whether a board of them (`holdsBoard`), what an untitled one's board is called, and its
    attributes with what each takes; the edge types in the tree's order, with their summaries; the
    words, the language's then plugins', each with its form, what it takes, what it means and an
    example; and `text`, the `<vocabulary>` block `--ask` sends: the kinds, the edge types and the
@@ -5158,16 +5346,18 @@ A query costs the main actor what it reads and one turn, and does everything els
    A compound with a one-step edge word (`:edge-to`, `:edge-from`, `:connected-to`, `:starts-at`,
    `:ends-at`, `:between`, a plugin's relation) and fewer than `QueryBudget.seedFromAnchors` (1,024)
    anchors starts from their edges' far ends, never a walk of every shape: `sticky-note:edge-to(#…)`
-   costs the anchor's degree. Containment walks up from each candidate (its ancestors, worked out once
-   per board), or, when nothing narrowed the candidates, down from the containers, asking only the
-   shapes of `containerKinds` for their boards; transitive words go breadth first from their anchors.
+   costs the anchor's degree. Containment walks up from each candidate (its ancestors: those of the
+   container it's in, from its record, `container(of:on:)`, else its board's, each container's and
+   each board's worked out once), or, when nothing narrowed the candidates, down from the
+   containers, asking only the shapes of `containerKinds` what's inside them; transitive words go
+   breadth first from their anchors.
    Titles and ids are checked here, against the snapshot (`unknown_title` with the titles like it,
    and, for a title standing for an edge word's or a relation's anchor where an edge of the types it
    follows points at a shape the query can't see from a carrier it can, the `:dangling` that finds
    those carriers, of exactly those types: `:mentions("Old ledger")` hints `:dangling(mention)`;
-   `unknown_id`, `cannot_contain` for a title that names only shapes holding no board). The rows are
-   made here too, in file order: the walk's, when every shape was walked, else `fileOrderKey`'s; a
-   count isn't put in order at all.
+   `unknown_id`, `cannot_contain` for a title that names only shapes of kinds that hold none). The
+   rows are made here too, in file order: the walk's, when every shape was walked, else
+   `fileOrderKey`'s; a count isn't put in order at all.
 4. **Asked of the main actor in slices**, for what only it can say: a derived name (the names point's
    `derived`) and a word's verdict (its `onMain`). `MainFacts` asks them in slices, each a
    main-actor job of its own that lasts `QueryBudget.slice` (2 ms of the thread's CPU) and at most the
@@ -5383,9 +5573,9 @@ next step is a warm cache ([Not built yet](#not-built-yet)).
 ### What it doesn't do
 
 - **Where shapes are.** Positions, sizes and overlaps aren't in the language (`:near`, `:left-of`,
-  `:within`, and attributes that hold a place, are `not_built`), and inside is a board's: what's
-  drawn within a shape's bounds isn't inside it (`cannot_contain`, for a container side that can
-  only be kinds holding no board).
+  `:within`, and attributes that hold a place, are `not_built`), and inside is containment's (boards
+  and containers on them): what's drawn within a shape's bounds isn't inside it unless it's in it
+  (`cannot_contain`, for a container side that can only be kinds whose shapes hold no shapes).
 - **Shapes typed by schema cards** (`.Task`, `not_built`), attributes inside attributes (`[a.b]`),
   and `=` on an object.
 - **Edges as answers.** A query lists shapes: a connection is asked for as its arrow
@@ -5413,6 +5603,9 @@ next step is a warm cache ([Not built yet](#not-built-yet)).
   seeded; `:heavy`, off the main actor, counted by `Tally`; `:audited`, asked on it, counted by
   `MainCalls`; `:wired-to(S)`, a relation) and a text format (`text/x-shout`), all in
   `queryPlugins`; `shelf()` and `hiddenShelf()` (a kept-aside owner, a board the app can't show);
+  `yard()` (CanvasTesting's corrals, captioned, nested on the top board and on a pocket's board, one
+  holding a pocket: every containment construct through them, from either side, file order, rows'
+  `inside`, hints and `holdsShapes`);
   `choresHarness` (every schema type, every operator); `storyHarness` (the design's table of every
   construct, on fixtures: `citesPlugin`'s edges from chores' tags, `pickedPlugin`'s selection,
   `faultyPlugin`'s verdicts); and `wiresHarness` and `danglingHarness` (edges). `answer`, `matched`,
@@ -5432,8 +5625,9 @@ next step is a warm cache ([Not built yet](#not-built-yet)).
 - **The bridges' tests** use fixtures only, through `EditorHarness` and `QueryState`: TitleQueriesTests
   CanvasTesting's kinds titled as TitleNamesTests title them (derived names asked on the main actor,
   and read live after a commit lands); BoardQueriesTests a `drawer`, which opens its board with a
-  placeholder, and a `crate`, which doesn't and is called by its label; MentionQueriesTests a
-  `scribble` of mention text, titled pockets to mention, and a `strand` edge type its words ignore;
+  placeholder, and a `crate`, which doesn't and is called by its label, and titled corrals between
+  them, which a row names and the path doesn't; MentionQueriesTests a `scribble` of mention text,
+  titled pockets to mention, and a `strand` edge type its words ignore;
   ValidationQueriesTests card and tag rules that count their runs (the board shown answered from the
   cache, another board by its own rules in slices, and never Validation made to read a board); and
   SelectionQueriesTests a `:shifting` word that changes the selection mid-query. BoardQueriesTests and
@@ -5741,11 +5935,12 @@ never asks.
 
 The picture is the minimap's kind ([Silhouettes.swift](../Sources/Canvas/Rendering/Silhouettes.swift),
 the core's, host API, which the minimap draws with too): every shape on the board as a silhouette of
-its geometry (its outline filled, or stroked when it's open; under 4 pixels both ways, its bounds,
-or a line from its first point to its last when it's open; under a pixel, the pixel it's in: the
-rule, `Silhouettes.form`, that the default [skeleton](#skeletons) goes by too), all in one muted
-gray, and nothing of what a shape draws, no text and no colors, so a
-subboard inside is its rectangle, and a shape costs the same whatever its kind. It's the core's
+its geometry (its outline filled, or stroked when it's open, or a container's, a frame's, so what
+it holds shows on it; under 4 pixels both ways, its bounds, or a line from its first point to its
+last when it's open; under a pixel, the pixel it's in: the rule, `Silhouettes.form`, that the
+default [skeleton](#skeletons) goes by too), all in one muted gray, and nothing of what a shape
+draws, no text and no colors, so a subboard inside is its rectangle, and a shape costs the same
+whatever its kind. It's the core's
 `BoardPreviews` ([BoardPreviews.swift](../Sources/Canvas/Rendering/BoardPreviews.swift), host API,
 `editor.boardPreviews`):
 
@@ -5766,6 +5961,98 @@ subboard inside is its rectangle, and a shape costs the same whatever its kind. 
   another board drops them all), so a frame builds only for what's in view. So ten subboards of
   10,000 shapes in view fill in over sixty to a hundred frames, each one a frame's worth
   (`./build.sh bench`).
+
+## Frames
+
+Frames ([`Sources/Frames`](../Sources/Frames)) is the vertical with shapes in it: the `frame` kind,
+a region of its board that holds what's put down in it. Holding is the core's
+([Containers](#containers)): the definition adopts `ShapeContaining`, with nothing to implement,
+and the core moves what a frame holds with it, paints it above it, holds it read-only while the
+frame is locked, lets go of it when the frame is deleted, and keeps what's put down from sitting
+across its edge. The rest is opt-ins, as a subboard's are
+([Frames.swift](../Sources/Frames/Frames.swift)):
+
+```swift
+registrar.shape(FrameDefinition()) { frame in                     // FrameDefinition: ShapeContaining, BrushHitTesting
+    let place = frame.placement(size: Frame.defaultSize) { Frame() }
+    frame.tool(label: "Frame", systemImage: "rectangle.dashed", shortcut: "f", placing: place) { _ in FrameTool(placing: place) }
+    frame.title(placeholderInPill: "Frame")                        // Titles keeps its name; untitled, a dimmed pill to grab
+    frame.mentionable(tint: { _ in FrameStyle.tint })              // Mentions: by its title; followed, it's gone to
+    frame.resizable(minimumSize: Frame.minimumSize)                // Selection's eight handles
+    frame.frameRow()                                               // the table of contents, named by Titles
+    frame.frameHeader()                                            // renamed in the panel's header
+}
+```
+
+- **Its props are its frame**: `Properties<Frame>(title: "Frame") { Property("frame", \.frame).required() }`.
+  What it's called is the title Titles adds, and what it holds is each held shape's own
+  `container`, the core's, so its props hold neither; it owns no board, so its schema is a plain
+  box's. The kind is spelled as the core's own member every box has, `frame`, which the audit can't
+  tell from it, so there it's an ordinary word that no module owns ([The module graph](#the-module-graph)).
+- **The look** (`FrameStyle`, world units but for the border's width and reach, which are view
+  points): a quiet region, a rounded rect (12) with an opaque surface a step up from the canvas,
+  white on the light canvas and a 0.15 gray on the dark, in a hairline border just inside its edge
+  (a view point at every zoom, black at 12%, white at 14% in the dark), and no shadow: a place on the
+  canvas, not a sheet of paper. The dots stop at its edge, and what it holds sits on it. Its colors
+  are dynamic `NSColor`s resolved in the render, as a subboard's are, and its outline (the
+  selection's, a hover's, the hint a drag into it shows) is its rounded edge. Zoomed out it's its
+  [skeleton](#skeletons) ([FrameSkeleton.swift](../Sources/Frames/FrameSkeleton.swift)): its surface
+  and its border's ring over it, square, two fills, in the colors they are in full; what it holds
+  draws its own skeletons over it, and its pill is Titles', blank. In the minimap and a board's
+  preview it's its outline, as every container's silhouette is (`Silhouettes`, `hollow`), so what it
+  holds shows there too.
+- **Pressed hollow** (its `hitTest`): a frame that holds shapes is pressed and hovered only on its
+  border, 6 view points either side of its edge (`FrameStyle.borderReach`, which its `hitMargin`
+  declares), so a press inside it is the canvas, where a click deselects and a drag is a marquee,
+  and the pointer there hovers nothing; one that holds nothing (`ShapeContext.hasContents`) is
+  pressed anywhere inside too, as any box is. Its title's pill grabs it, as every pill does its
+  shape ([DecorationHits](#drawn-for-a-shape-decorationhits)), and so does an untitled frame's
+  dimmed "Frame", there for that (`title(placeholderInPill:)`). What finds shapes by point
+  (`editor.shape(at:)`: the eraser, an arrow's end) goes by the same test.
+- **The marquee** selects a frame when it reaches the frame's edge, or holds it whole, never when
+  it's drawn wholly inside it, where it selects what the frame holds (Selection's `BrushHitTesting`);
+  with ⌘, only what it holds whole, as ever.
+- **The Frame tool** (F, `FrameTool`): a drag draws one from the press to the pointer
+  (`DrawingFrameSession`), shown over what it's drawn on with its surface at 30%, so what it will
+  take in shows through, and put down at the release; a click places one of 640 × 400
+  (`Frame.defaultSize`) centered on it, and so does a press that goes less than 12 view points from
+  where it began along either axis (`FrameStyle.smallestDrawn`, a click's jitter). Drawn, it's never
+  smaller than `Frame.minimumSize` (96 × 64), grown from the press toward the pointer; ⇧ draws a
+  square and ⌥ draws it about the press, as a resize keeps its proportions and its center, each as
+  it's pressed or let go; the canvas scrolls at its edges; Escape puts nothing down, and the tool
+  stays. Either way it's put down as a placed shape is, through the core's `editor.place` (a drawn
+  one with `place(_:in:)`, the rect it drew): one step, "Add Frame"; settled, so a frame drawn in a
+  frame is in it, and it takes in what it's drawn over that's mostly inside it, nudging in what
+  hangs over its edge and out what's mostly outside, gliding there; selected, with the default tool
+  back. Into a locked frame nothing is put down, and that frame shakes. A click inside a frame too
+  small to hold 640 × 400 puts the new one over it, not in it, since it doesn't fit there, and the
+  frame under it is settled as anything a frame lands on is.
+- **The tool says what it places.** What makes shapes without the pointer places a kind as its
+  tool's placement says (`registry.placement(for:)`: `canvas draw`, `canvas kinds`), and a tool of
+  the kind's own says it too: `frame.tool(label:systemImage:shortcut:placing:_:)` registers
+  `FrameTool`, made per editor by the closure, with `place` as its placement, which the tool puts
+  down itself for a click. So `canvas draw` draws a frame 640 × 400 unless `size:` says otherwise.
+- **Opt-ins.** Titles keeps its name, shown in its pill (untitled, a dimmed "Frame"; no symbol, since
+  its look says what it is), and `TitleHeader` renames it in its panel's header ("Untitled Frame").
+  Mentions offers it by its title, its symbol in its gray (`NSColor.systemGray`, its row's too), and
+  following a mention goes to it (`goTo`), with Mentioned In in its panel and Show What Mentions in
+  its menu; untitled, the picker leaves it out. Selection resizes it, and the core settles, at the
+  end of the resize, what it leaves hanging over its edge and what it grows over
+  ([Containers](#containers)). Its row is its symbol and "Untitled Frame", named by Titles; the
+  table of contents lists what it holds under it. Locking, which opts every kind in, locks it, and
+  with it what it holds. No ports: nothing is drawn from a frame's sides.
+
+It ships after Subboards (the toolbar's Frame, F, between Subboard and Schema: the two ways of
+grouping shapes, a region of the board and a board of its own, side by side), with its fixture,
+`Fixtures/kinds/frame.v0.json`; `Fixtures/files/frames.v5.json` is a whole file, read and written
+back byte for byte: a frame holding a frame, which holds a note and a subboard, and a schema card,
+beside a locked frame holding a note, and a note on the subboard's board (CompositionTests'
+`FrameFile`). FramesTests hold the kind, its hollow test, its marquee, its look and its tool over
+CanvasTesting's boxes, frozen for read-only (`FreezingPlugin`); CompositionTests' FramesShippedTests
+the shipped pieces together: notes dropped in and out, a group across an edge, a locked frame
+refusing a drop, a frame moved with a locked note in it, frames in frames, resizing over notes,
+deleting one, pressing its inside, its pill, the tool, a locked frame's contents, the skeleton, the
+file, and a note mentioning one in the app's canvas view.
 
 ## The command line
 
@@ -5905,7 +6192,8 @@ app can show, whichever the window shows, and names each row's board (`board`, a
 inside). A `draw` never names a board either: it works out the one it draws on from what its
 script names (Automation's `Drawing.board(for:in:)`: a title names a shape on any board of the file
 the app can show, the board shown's first; a new shape goes on the board of what it's placed
-against, or the one `in "X"` names, the board X holds; with neither, the board shown), reads that
+against, or the one `in "X"` names, the board X holds, or, for X a [container](#containers) on its
+board (a frame), the board X is on; with neither, the board shown), reads that
 board through the core's `editor.reading(of:)` (a `BoardReading`: its shapes, a `ShapeContext`
 and paint order over them, and the view it would be shown with, a first visit's fit included), and
 commits there with `transact(on:)`, the window staying where it is; a script that lands on two
@@ -6064,6 +6352,33 @@ steps, the first three against the board as the run starts:
    ([the document](#the-editor-the-document-and-drawing)).
    A dry run is the same transaction, whose body throws its finished result (a private error
    `draw` catches), so on the same board a dry run and a real run say the same.
+
+**Containers** (a frame, [`ShapeContaining`](#containers)) are where the in-or-out rule meets the
+language:
+
+- **`in "X"`, for X a container**, draws on the board X is on and puts the shape in X: it's kept
+  within X, 40 in from each side, as `inside` keeps a box (the layout problem's `Free.holder`,
+  checked as `inside` is, `no_room` when it can't be), wherever its placements put it there; with
+  none, and not in X already (where a restated shape stays), it's placed as `inside "X" top-left`
+  places one, a clause written `in "X"`, so several make a list down from there. X must be on the
+  board as the run starts (`unsupported` for one the script draws: draw it, then what's in it),
+  writable (a read-only one, a locked frame, is `read_only`: nothing goes in it), and neither the
+  shape nor one it holds (`circular`).
+- **What a run puts down settles as by hand**, one by one, as it's applied (`transaction.settle`):
+  a new shape, and a restated one it places or resizes, over a container's edge goes wholly in or
+  out by most of its area, nudged, said in a warning (`"N" was over the edge of "Pen", so it was
+  nudged in`), and glided after a real run (`editor.glide`); a container put down takes in what it
+  lands on, and what it holds over its new edge goes in or out, said too (`a shape over the edge of
+  "Pen" was nudged wholly in or out of it`); a read-only container it would go into refuses the
+  run (`read_only`). So `inside`, `on` and landing on a zone put a shape in a container too, and a
+  container's edge is never a zone's to warn about.
+- **A restated container placed elsewhere takes what it holds along** (`translate`), which is
+  never in its way (`Free.carries`); a placement against what it takes along is `unsupported`,
+  since the layout has that where it was. Containers are applied before what they hold.
+- **Read-only is inherited** (`registry.isReadOnly(_:in:)`): a shape in a locked frame refuses a
+  real change and a delete (`read_only`), as a locked shape does.
+- **`delete` of a container** leaves what it holds where it is, now in what held the container
+  (the core's), a locked shape too, and says nothing more.
 
 Before any of it, a run is refused while a drag is under way on the board (`editor.session`,
 `busy`: its Escape would put back what the script moved), or a press is held
@@ -6262,10 +6577,13 @@ Composition.
   (`QueryError.Reason`, [Queries](#queries)), `no_queries`: the app has no `QueriesPlugin`.
 - **`canvas query-vocabulary`**, an app command (it reads the registry, on no board:
   `QueryVocabulary(registry:)`), is what this app's queries can name: `vocabulary`, the block
-  `--ask` sends the model (the kinds, the edge types and the plugins' words); `kinds`, each `{kind, label, naming, holdsBoard, attributes}`
-  (`naming` is `named`, `derived` or `none`, and not `titles`, Titles' plugin id, which the id audit
-  keeps a module that doesn't depend on Titles from writing; each attribute with what it takes,
-  `KindSchema.compactType`, and how a text format reads it: `text (mentions read as @Name)`);
+  `--ask` sends the model (the kinds, the edge types and the plugins' words); `kinds`, each `{kind,
+  label, naming, holdsShapes, holdsBoard, attributes}` (`naming` is `named`, `derived` or `none`, and
+  not `titles`, Titles' plugin id, which the id audit keeps a module that doesn't depend on Titles
+  from writing; `holdsShapes`, whether shapes can be inside its shapes, a board of them or shapes on
+  theirs, which may stand where a container goes, and `holdsBoard`, whether by a board of their own;
+  each attribute with what it takes, `KindSchema.compactType`, and how a text format reads it: `text
+  (mentions read as @Name)`);
   `edgeTypes`, each `{type, under?, summary?}`, in the tree's order; and `words`, each `{word, takes,
   summary, example, from}`, the language's own first (`from: queries`), then plugins' in plugin
   order. Without `QueriesPlugin` it answers `no_queries` too (`registry.answersQueries`, which looks
@@ -6367,6 +6685,9 @@ by name):
 - `names`: `named` when DrawNames gives its titles a property, else `derived` when DrawNames says
   it works them out, else `none`;
 - `size`, what its tool places (`"200x200"`);
+- `holds`, what its shapes hold for `in "X"` to name: `board`, a board of their own (a subboard's,
+  which the shape goes on), or `shapes` on the board they're on (a frame's, which the shape goes
+  in); absent for neither;
 - `attributes`: each property of its schema a script can write, with a compact type read off the
   schema (`KindSchema.compactType`, which follows a `$ref` as `canvas` does, keywords beside it
   over its target's): `todo|doing|blocked|done`, `number ≥ 0`, `text (≤ 80)`, `true|false`,
@@ -6689,8 +7010,9 @@ description to say what it now holds. `SchemaSync`, the plugin's service, does i
   rewrite, with no Retry, and once the person edits it by hand, the description is written from
   that edit.
 - **Never** while the schema isn't a JSON object (someone's halfway through it, or it's blank), for
-  a read-only (locked) card, for a new card with no fields and no description, for a description
-  cleared (it says nothing about the schema) or only respaced, or without a model. A card seen for
+  a read-only card (locked, or in a locked frame, on whichever board it is), for a new card with no
+  fields and no description, for a description cleared (it says nothing about the schema) or only
+  respaced, or without a model. A card seen for
   the first time (on a board opened or read again, pasted, placed) is taken as in step: that pair
   is its last sync, which the model is told as it would be one made this session (so a field taken
   out of an opened card's description is taken out of its schema; the prompts' contract leaves the
@@ -6701,10 +7023,10 @@ description to say what it now holds. `SchemaSync`, the plugin's service, does i
 - **While a call is out** the side it writes is read-only where it's edited, and the status says so. If it changes anyway
   (by a plugin, a test), the answer is dropped; edits to the other side wait for it: they sync
   when they're committed or 3 s after the last, as ever, or as soon as it lands if either came
-  while it was out; a card deleted or read again meanwhile drops it; a card locked meanwhile gets
-  nothing written (nothing is tried, so nothing's refused) and its pair stays as it was, so its
-  edit syncs once it's unlocked. A failure leaves both sides as typed and says why, with Retry (the
-  next commit tries again too; a key saved in Settings retries the cards that failed for want of
+  while it was out; a card deleted or read again meanwhile drops it; a card locked meanwhile (or
+  the frame it's in) gets nothing written (nothing is tried, so nothing's refused) and its pair
+  stays as it was, so its edit syncs once it's unlocked. A failure leaves both sides as typed and
+  says why, with Retry (the next commit tries again too; a key saved in Settings retries the cards that failed for want of
   one, `languageModelKeyDidChange`); a cancelled call says nothing; `NO_CHANGE` writes nothing and
   makes the pair in step. A
   schema is written as the model wrote it, never laid out again (its order is the model's, which
@@ -6926,6 +7248,7 @@ it, the core or a horizontal.
 | `CustomSkeleton` | Drawn more simply zoomed out. `renderSkeleton` draws in `render`'s place while the canvas draws [skeletons](#skeletons) (the camera's zoom under `editor.skeletonZoom`, 35%), but for the shape being edited: its fills, and bars where its text would be (`context.fillSkeletonText`, each as long as its text's columns, `SkeletonText`), never text, shadows or pictures of its own, cheaply: the shape, its kept geometry and `context.zoom`, and what its plugin already keeps of the shape if it's there, never parsing or laying out text; a picture only through `RenderContext` (a subboard's board preview). Its outline there (selected, hovered, the hint) is its kept geometry's, right for a skeleton that fills its geometry or differs from a rect only by corners rounded a pixel or two, unless it adopts `CustomSkeletonOutline`; a shape a few pixels across is outlined by its bounds. Without it a kind is the default skeleton, its geometry in one gray (`context.drawSkeleton(of:color:)`). | StickyNotes (its yellow, its text greeked), Subboards (fills and its preview), Schemas (square, with an edge, so outlined by its frame, its description greeked as a note's text), Arrows (its arc and heads) |
 | `CustomSkeletonOutline` | A `CustomSkeleton` outlined its own way while skeletons are drawn (selected, hovered, the hint): `skeletonIndicatorPath(of:in:)`, what `renderSkeleton` draws, so the outline and the skeleton agree, made from the shape and its kept geometry, since ⌘A zoomed out asks it of every shape of the kind in view each frame; nil for its kept geometry's. Found once per kind (`registry.skeletonOutlines`), so no other kind's shape is asked; never asked for a shape a few pixels across, outlined by its bounds. | Arrows (the arc, where its kept geometry is three points) |
 | `PaintOrderAnchored` | Painted just above another shape, whatever its place in the document. The anchor follows from the shape's own props and the document's order, since the paint order is kept until one of those changes. | Arrows (above the shapes they join) |
+| `ShapeContaining` | Each shape of the box kind holds shapes on its board, a frame: what names it as its container (`AnyShapeRecord.container`) moves, restacks, locks and is let go with it, and nothing put down sits across its edge (`Transaction.settle`). Nothing to implement. [Containers](#containers). | CanvasTesting's `Corral` |
 | `BoardOwning` | Each shape of the kind owns a board, a subboard, which the file keeps under the shape's id, never in its props (`CanvasFile`, `BoardID(owner:)`). Nothing to implement: deleting a shape takes its board and every board under it, a copy takes what it holds, a file saves every board ([format 4](#boards-on-disk)), and `editor.showBoard` shows one; Boards' `x.opensBoard(placeholder:systemImage:)` opens it. Its schema is marked `x-canvas-board`. [Boards in a file](#boards-in-a-file). | [Subboards](#subboards)' `Subboard`; CanvasTesting's `Pocket` |
 | `ShapeReferencing` | Props bound to other shapes: every kind whose props are adopts it, or it stays bound to a shape once it's gone. `remappingReferences(of:_:in:)` passes each through a map: bound to the shape it gives, or, for nil, let go of where it's drawn. Deleting a shape asks it of every shape bound to it (after `willDelete` handlers, before anything's removed), and copying asks it of each copy (`record.remappingReferences(_:in:)`). It returns nil when it can't let go of a shape it can't find: a deletion leaves it as it was, and a copy leaves it out. These are bindings, which must be on the board; a name that may outlive its shape (a mention) is a value instead, [`ShapeNaming`](#values-that-name-shapes). | Arrows (an end lets go where it's drawn, keeping the curve; a copy stays bound to the copies of its shapes); CanvasTesting's `Tag` |
 
@@ -6969,9 +7292,10 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   their stacking keys: each record carries its own (`stackingKey`, a fractional index as in
   tldraw), so moving a shape in the stack changes that shape alone. The only way to change it is
   `editor.transact { tx in ... }`: `insert` (on top), `update` (typed with `as:`; it can't change a
-  shape's id or key), `bringToFront`, `sendToBack`, `move(_:above:)`, `move(_:below:)`, `delete`,
-  `translate(_:by:)`, which moves shapes as dragging them would, and `moveBox(_:to:)`, which puts
-  a box where a drag does. A record carries its props, the
+  shape's id, key or container), `bringToFront`, `sendToBack`, `move(_:above:)`, `move(_:below:)`,
+  `delete`, `translate(_:by:)`, which moves shapes as dragging them would, `moveBox(_:to:)`, which
+  puts a box where a drag does, and for [containers](#containers), `setContainer(_:to:)` and
+  `settle(_:)`. A record carries its props, the
   values of its [added properties](#added-properties) and its [metadata](#metadata), and
   `record.copy(as:)` is the same shape under another id.
   A transaction commits once, if anything changed, and bumps `editor.revision`. What it did goes
@@ -7081,8 +7405,9 @@ nothing, and the view chooses, as it always has. A note too short for its text a
 - **The view.** `CanvasView` (CanvasUI) is the only AppKit in the loop. It converts events, reports
   its size, hosts the editing view over its shape, hands AppKit the menu for a secondary click, and draws the editor, all through the editor's `@_spi(Host)`
   API. It also hosts the minimap, in its bottom-left corner (`showsMinimap`; View › Show Minimap):
-  every shape as a silhouette of its geometry, the part of the board the canvas shows outlined,
-  and the selection in the accent color. It shows the board shown: on another board it starts a
+  every shape as a silhouette of its geometry (a container's, a frame's, its outline, so what it
+  holds shows on it), the part of the board the canvas shows outlined, and the selection in the
+  accent color. It shows the board shown: on another board it starts a
   picture afresh (never over the old board's), and back on a board whose picture it kept, it shows
   that one at once. On a board with nothing to show (`shapeBounds` null) it's hidden, and the
   corner is the canvas's, with View › Show Minimap still on; it fades in with the first shape (a
@@ -7441,11 +7766,125 @@ each of them:
 | [Validation](#a-horizontal-plugin) | Checks the board shown, keeping each board's issues; a board never shown isn't checked, and a rule's lookups (MentionValidation's targets) find shapes there alone; a rule over a service's state (TitleValidation's titles, the file's) names the shapes a commit changes the issues of on any board, checked once their board is shown. |
 | [Locking](#locking) | A shape whose board holds a locked shape isn't deleted; a locked owner is entered as any other. |
 | [Mentions](#mentions-across-boards) | A mention names a shape on any board, live and followed there (`goTo`, or `goInto` for a kind followed by opening it: a subboard); who mentions whom (Topology's), what each mentioned shape shows and the `@` picker's catalog are the file's (the board shown's first on a tie), so showing another board reads no mention text; so are the Mentioned In tab's and Show What Mentions' mentioners, the board shown's first. |
-| [Topology](#topology) | The file's edges, and containment (a shape's parent is its board's owner), whatever board is shown; showing another board reads nothing. |
+| [Topology](#topology) | The file's edges, and containment (a shape's parent is its container, else its board's owner), whatever board is shown; showing another board reads nothing. |
 | [The clipboard](#the-clipboard) | Copies what a shape holds, all the way down, and pastes the tree with new ids; what a cut took, onto any board, under the ids it had (a move). |
 | [Undo](#undo) | One history per file; a step holds every board it reached, and undoing one made on another board shows that board first. |
 | [Boards on disk](#boards-on-disk) | Format 4 saves every board, in one flat map; the camera on each board, and the board left open, are remembered per file on this Mac. |
 | [The command line](#the-command-line) | A draw works out its board from the titles it names (`in "X"`, the board X holds), whichever the window shows; `canvas show` moves the window. |
+
+## Containers
+
+A board's shapes can be in containers on that board: a container (a frame, [Frames](#frames)'
+kind) holds the shapes there that name it, moves them with it, paints them above it, holds them read-only while it's read-only,
+and keeps what's put down from sitting across its edge. Containers nest, to any depth. Being one is
+a capability, `ShapeContaining`, of a box kind, with nothing to implement, so the core does all of
+it, whatever kind contains ([Model/Containment.swift](../Sources/Canvas/Model/Containment.swift),
+[Settling.swift](../Sources/Canvas/Model/Settling.swift)). Core and horizontal tests contain with
+CanvasTesting's corral ([Corrals.swift](../Tests/CanvasTesting/Corrals.swift)), apart from
+`FixturesPlugin`:
+
+```swift
+public struct Corral: BoxShapeProps {
+    public static let kind: ShapeKind = "corral"
+    public static let properties = Properties<Corral> { Property("frame", \.frame).required() }
+    public var frame: CGRect
+}
+
+struct CorralDefinition {}
+
+extension CorralDefinition: ShapeDefinition {
+    func render(_ shape: ShapeRecord<Corral>, in context: RenderContext) { … }
+}
+
+extension CorralDefinition: ShapeContaining {}       // its shapes hold shapes on its board
+```
+
+- **A shape keeps its container.** `AnyShapeRecord.container` is the container on its board it's
+  directly in, nil on the board directly: structural, as its stacking key is, in no schema, and
+  compared in `==`, so undo and every change set carry it with nothing more. It's set only in a
+  transaction: `setContainer(_:to:)` (of a list of shapes too, which rise together, one look at what
+  the container holds for them all; one at a time, a transaction keeps where each container tops out
+  in the stack while nothing moves in it, so a loop of them costs as much), or an insert of a record
+  that comes with one
+  (`copy(as:container:)`, what a paste makes of a shape copied with its container), which the insert
+  takes if that's a container on the board by then (inserted before it, as back to front puts it)
+  that can take it, and on a board going in with its owner (`insert(_:contents:)`), one below it
+  there. A plain `copy(as:)` is in no container until something puts it in one, and `update` never
+  changes one. Only a box shape is in a container, never in itself or in what it holds.
+- **What the core goes by.** A container the app can't use (kept aside, of a kind not installed, or
+  of one that holds nothing) is kept as written, and saved back, and the shape counts as on its
+  board directly; so does a shape kept aside. `document.container(of:containingKinds:)` is what the
+  core goes by, and `contents(of:containingKinds:)` (back to front), `hasContents`, `descendants` (at
+  any depth, back to front) and `containers(of:)` (the nearest first) read the document's index of
+  who names whom, kept by every change and by `apply`, so each costs what it returns, never the
+  board. They're nonisolated, for what reads a file off the main actor; `ShapeContext` lends
+  `container(of:)`, `contents(of:)` and `hasContents(_:)` with the registry's kinds
+  (`registry.containingKinds`): a frame's hit test reads whether it holds anything (a geometry that
+  reads them is worked out again on every change, as one that reads `document` is).
+- **Moving.** `translate`, and a drag (`TranslatingSession`), move what a container holds with it, at
+  any depth, each shape once however it's asked for, read-only or not: a lock stops changes to a
+  shape, not its container carrying it. The translation adjuster is given what's carried with the
+  rest (`TranslationStart.ids`), so none of it is a snap target. Moving never changes what's in
+  what; arrow keys' nudges (`translate`) settle nothing.
+- **Deleting** a container lets go of what it holds, which stays where it is, now in the
+  container's own container (the nearest one up that isn't deleted too), read-only or not, as letting
+  go of a binding is; undoing the deletion puts it back in. A container holding a locked shape is
+  deleted, and the shape stays, let go.
+- **Read-only.** A shape in a read-only container, at any depth, is read-only:
+  `registry.isReadOnly(_:in:)` says so, and `editor.isReadOnly(_:)` asks it (`registry.isReadOnly(_:)`
+  stays the rules', for what reads one record alone). It changes not at all, not even its own lock;
+  nothing joins or leaves its container (`setContainer` refuses the container, which shakes); and
+  editing it ends.
+- **The stack.** A container's contents paint above it: a shape that joins one rises, with what it
+  holds, just above what the container holds already, if it was below that; restacking a container
+  takes what it holds along, in its order (`bringToFront`, `sendToBack`, `move(_:above:)`,
+  `move(_:below:)`, keys halving between two shapes, so a big frame's grow with the logarithm of what
+  it holds), and a shape in one goes no lower than just above it. A step past a shape a container
+  holds does nothing. So Reordering's Arrange works as it is.
+- **Settling** is the in-or-out rule: nothing sits across a container's edge.
+  `transaction.settle(ids)` judges shapes put down (a drop, a placement, a paste, a draw) by area:
+  more than half of a shape's box inside a container puts it in that one (where containers nest,
+  the innermost holding most of it that it fits in), nudged fully in if it hangs over the edge;
+  otherwise it's in none of them, nudged fully out of any it reaches into, the shortest way clear of
+  them all that keeps it in the container it is in. A nudge ends 16 world units from the edge
+  (`Style.containerGap`), so the edge stays clear to grab. Shapes put down together from one
+  container are judged as one, by their summed area, and nudged by one translation, keeping their
+  arrangement, with what can't be in a container (an arrow) riding along; those from different
+  containers, container by container, so a small drag of a selection across two frames leaves each
+  in its own; a group that doesn't fit the container holding most of it is judged shape by shape,
+  and a shape too big for a container can't be in it. A shape over all of a container is over it,
+  neither in it nor across its edge (a frame's copy pasted on its original stays beside it). Read-only
+  shapes stay as they are, in or out, and a read-only container takes nothing: if anything would go
+  into one, nothing changes, services hear that container refused (`didRefuseChanges`: Locking
+  shakes it), and the answer names it (`Settlement.refused(by:)`), for the caller to send what was
+  dropped back, or to give up what it was doing, throwing out of its transaction so no step is left,
+  and say so itself (`editor.refuseChanges(to:)`, as Clipboard's paste does).
+  Each container put down then takes in what it lands on, `settle(container:)`, which is also what's
+  called after a container is resized: what's in it hanging over its edge is nudged in, or leaves,
+  mostly outside; what's at its level that it reaches is taken in, mostly inside, or nudged out;
+  each alone, read-only ones skipped, and a shape a read-only container would take staying as it is,
+  even one the transaction put down (a locked frame's copy, pasted, takes nothing it lands on).
+  Both hand back what they nudged, by how far, what that carries included (`Settlement.nudges`), for
+  the glide. O(the board), at a gesture's end.
+- **A drag**, once past the drag threshold, outlines the container what it moves would go into as
+  the hint (`hintedShapeID`), never a read-only one, finding the containers once and costing what
+  they are on each event; its release settles what was dropped, in the press's step (a click, short
+  of the threshold, settles nothing), and glides what's nudged. A read-only container refusing the
+  drop sends what was dragged back where it was, gliding from where it was dropped, and the press
+  leaves no step; Escape puts it back at once, settling nothing. A shape placed (`editor.place`)
+  settles on its release, or at once with no press under way, in the placement's step; refused, it's
+  taken away; one placed to be edited isn't glided, since its editing view is laid out where it is.
+- **The glide** (`editor.glide(_:)`, Glide.swift) eases shapes that just moved from where they were
+  drawn to where they are, over 250 ms, going a little past and back (`Style.glideDuration`,
+  `glideOvershoot`), through their [drawing offsets](#the-cores-part-drawing-offsets) on
+  `editor.scheduler`, so hit testing and pictures of the board go by where they are, as with a
+  shake. A new press, a session starting, a commit that touches a gliding shape, or another board
+  shown ends its glide there.
+
+Without a `ShapeContaining` kind installed none of this runs, and with no container on the board a
+drop commits nothing more and glides nothing: the transcript and renders CompositionTests hold to
+the proof of concept are as they were. A file is written as it always was until a shape is in a
+container ([format 5](#boards-on-disk)).
 
 ## Undo
 
@@ -7478,7 +7917,7 @@ aren't changes, and make no step.
 (`editor.transact("Move") { ... }`), else "Typing" for an editing step; Edit › Undo shows it
 ("Undo Move"), or plain "Undo"; while the open step has come back to where it began, Undo names,
 and undoes, the step before it. The core names placing ("Add" and the placing tool's label, "Add
-Note"), moving ("Move") and typing; Selection "Delete"; ContextMenus every item by its title;
+Note"), moving ("Move") and typing; Selection "Delete" and "Resize"; ContextMenus every item by its title;
 Clipboard "Cut" and "Paste"; Locking "Lock" and "Unlock"; Arrows "Add Arrow", "Move Arrow End",
 "Bend Arrow" and "Toggle Arrowhead"; the eraser "Erase"; the detail panel
 "Change" and the section's title ([`ShapeBinding`](#reading-and-writing-shapebinding)); the schema
@@ -7687,6 +8126,13 @@ and `LoadedBoard.file` is what reading gives (`document` is its root): `BoardDoc
 `editor.file` and opens a file with `replaceFile`. An older app refuses format 4 rather than open
 the root and save the other boards away.
 
+**A shape in a container** ([Containers](#containers)) is written with the container's id beside
+its props, `container`, at format 5, which a file is only once some shape on some board is in one;
+read only from 5. Reading drops a container that isn't on the shape's own board, or that would make
+a loop (of shapes naming each other round, the first in the stack is on its board directly), as a
+repair (`LoadReport.Repair.droppedContainer`), and keeps one that can't hold (kept aside, of a kind
+that holds nothing here) as written.
+
 ```json
 {
   "boards" : {
@@ -7800,6 +8246,7 @@ topology             service TopologyIndex
 arrows               shape arrow v1 · label Arrow → arrow · ContentsRows → arrow · service ArrowTargeting · overlay BindingHintsOverlay
 sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
 subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard
+framing              shape frame · tool frame · shortcut F → tool frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeDetails → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame
 schemas              service SchemaSync · overlay SchemaHighlightFrames · ShapePopovers · shape schema-card v1 · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · mention text → schema-card · mentionable → schema-card · ShapeDetails → schema-card · channel schema-link · edge type schema-link
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
 adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
@@ -7954,6 +8401,14 @@ test("Eraser: dragging across shapes deletes them, and an arrow lets go of what 
   click would land on, and `goItems()` the app's menus with Go's items sent to its controller (an
   unshown window isn't the key window); `SubboardFileTests` hold saving, reopening on the board
   left open, the view memory, revert and Delete Hidden Shapes to files of subboards.
+- **Containers** without a real kind: `CorralsPlugin` (CanvasTesting) registers `Corral`, a box whose
+  definition is `ShapeContaining`, with no tool, apart from `FixturesPlugin`; `editor.put(ids, in:)`
+  puts shapes in one (`setContainer`, in one transaction), and `editor.holder(of:)` is the container a
+  shape is in as the core goes by it. CanvasTests' container suites (ContainerTests, SettlingTests)
+  drop shapes with a drag tool of their own (`dragPlugin()`, the select tool's lone box: CanvasTests
+  can't use Selection), read the hint (`hintedShapeID`) and the glide (`drawingOffset(of:)`,
+  `isGliding`) on the `ManualScheduler`, and hold a seeded run of every container operation, undone
+  and redone, to the index and the stack's invariants.
 - **Read-only shapes** without Locking: `FreezingPlugin(log:)` (CanvasTesting) declares `Frozen`, a
   flag every kind opts into, makes frozen shapes read-only, and logs the refusals services hear in
   its `RefusalLog`; `editor.freeze(ids)` sets it. CanvasTests, SelectionTests and DetailPanelTests
@@ -8123,13 +8578,20 @@ test("Eraser: dragging across shapes deletes them, and an arrow lets go of what 
   aside), every way a commit comes (an insert, a change, a removal, a move that reads nothing,
   `recordsRead`; `transact(on:)`, a pocket's deletion and its undo, a paste with boards,
   `replaceFile`, `replaceDocument`, Delete Hidden Shapes undone, a switch that reads nothing),
-  `end(_:)`, containment, `revision(of:)` and
-  `touched`, and `catchUp` from a service made before the index's. Their Snapshots suite holds
-  `snapshot()` to the index on every question, over a seeded run of every kind of commit, switch
-  and undo on pockets two deep beside a board the app can't show (a snapshot taken a step before
-  keeping its old answers), with file order and its keys, orphans and loops, a chain of 2,000
-  boards, reads off the main thread (`offMain`), and no record read or observation made taking
-  one; CanvasTests' ShowableTests hold `file.canShow` to `editor.canShow`. CompositionTests'
+  `end(_:)`, containment, `revision(of:)` and `touched`, and `catchUp` from a service made before
+  the index's. Their Containers suite holds containers on boards as the tree's second link, with
+  CanvasTesting's corrals (`graph(file, more: [CorralsPlugin()])`, `held(_:in:)` for a record in a
+  container, and `Pen`: corrals nested on the root, one holding a pocket whose board holds a corral
+  holding a pocket): parent, children, ancestors, file order and its keys, containers the core
+  doesn't go by (kept aside, of a kind not installed), a move reading no record, a shape put in and
+  taken out, a container deleted and undone, a test-local `Coffer` that both owns a board and
+  contains, and a loop of containers never walked into. Their Snapshots suite holds `snapshot()` to
+  the index on every question, over a seeded run of every kind of commit, switch and undo on pockets
+  two deep beside a board the app can't show, corrals among them (shapes put in and taken out,
+  containers moved with what they hold and deleted, each shape's parent held to the core's reading
+  of its board), a snapshot taken a step before keeping its old answers, with file order and its
+  keys, orphans and loops, a chain of 2,000 boards, reads off the main thread (`offMain`), and no
+  record read or observation made taking one; CanvasTests' ShowableTests hold `file.canShow` to `editor.canShow`. CompositionTests'
   `topologyShippedTests` hold the shipped graph: note-link, schema-link and plain arrows, and
   mentions across a subboard, by type, `.within` against `.only`.
 - **Snapping.** SnappingTests hold `SnapTargets` pure (a rect moved by a delta: where it snaps, and
@@ -8208,9 +8670,12 @@ test("Eraser: dragging across shapes deletes them, and an arrow lets go of what 
   150 rows (a list of 200 or more logs `tableReentrancyWarning` as it first shows) to the one or
   two rows it changes. AffectedRowTests holds a drag of a shape other rows read to redrawing its
   own row alone, and a rename of it to redrawing theirs too. `contents.rowsMade` counts the rows it
-  has made, so a test holds going back to a board to making none. The path counts its redraws the
-  same way (`boardCrumbs.pathRedrawn`), and how often its crumbs are made (`boardCrumbs.remade`), so
-  BoardsTests holds commits on the board shown to redrawing none, and to making none.
+  has made, so a test holds going back to a board to making none, and ContainerTests a corral
+  dragged with all it holds to making none either. The path counts its redraws the same way
+  (`boardCrumbs.pathRedrawn`), and how often its crumbs are made (`boardCrumbs.remade`), so
+  BoardsTests holds commits on the board shown to redrawing none, and to making none. The detail
+  panel counts how often it has drawn a shape's panel (`detailPanel.panelsDrawn`), so ReadOnlyTests
+  holds another shape's commits to drawing it no more, and its container's lock to drawing it again.
 - A test target is `Tests/<Name>Tests` with a `main.swift` that calls `runTests([...])`. Every
   `Suite` must be listed there (`test.sh` checks). `<M>Tests` may depend only on M, what M
   depends on, and the test-support and ui modules.
@@ -8430,7 +8895,7 @@ test("Eraser: dragging across shapes deletes them, and an arrow lets go of what 
 | `.Class` (`node.`, `edge.`) | Refused: `.Task` is `not_built` (shapes typed by schema cards may be one day); a kind is its id, `sticky-note`. |
 | `:source-of`, `:target-of` | `:edge-to`, `:edge-from`, the words data-canvas moved to (#87), kept with `:downstream-of` and `:upstream-of`, over Topology's typed edges; the old words are refused with the word to write. |
 | `:connected-to`, one edge until 8a4d798d, any number after it (with no message) | Picked on purpose, from the first rounds of `--ask`'s evaluation: `:connected-to(S)` is one edge either way, as "connected to" reads (Haiku 4.5 wrote it for "what's connected to Checkout?" even beside the prompt's example of `:neighbor-of`, this language's word until then, now refused with `:connected-to`), and any number of them is `:component-of(S)`, the anchor's connected component. |
-| `:has(S)`: an edge to a shape S matches | CSS's `:has`, containment: S inside it at any depth, `:has(> S)` on its board. The one word whose meaning moved; an edge either way is `:connected-to(S)`. |
+| `:has(S)`: an edge to a shape S matches | CSS's `:has`, containment: S inside it at any depth, `:has(> S)` directly inside it. The one word whose meaning moved; an edge either way is `:connected-to(S)`. |
 | Scope globs, `:on-page` | Containment in the selector: `"Payments" *`, `:top-level`, `:current-board`; `:on-page` is refused with `"Board" *`. |
 | `:selected`, dropped | Back: the engine runs in the live app, over what's selected as the query starts (SelectionQueries). |
 | An unknown pseudo-class accepted and ignored | Refused, with the one like it or the rewrite (`KnownInventions`); every name is resolved against the registry, and every title and id against the file, before anything is answered. |
@@ -8457,16 +8922,19 @@ Each of these adds to the design without changing what plugins are written again
   same socket (an MCP server, say, from the same command descriptions).
 - **Drawing on two boards in one run**: a draw is one transaction on one board, so a subboard and
   what goes in it are two runs (`in "X"` names a shape on the file already); and moving a shape to
-  another board (`in` places a new shape only). `in` is containment's word, meant for any container
-  (frames, when they're built), not only boards.
-- **More of `canvas draw`**: containers and groups, which hold what's in them, grow with it and
-  move as one (a zone is a plain shape today, and what's in it is placed once); edges routed
-  around shapes; extending a
+  another board (`in` a subboard places a new shape only; `in` a frame on the board moves a
+  restated one in). `in` is containment's word, for any container: a subboard's board, a frame.
+- **More of `canvas draw`**: a container and what's in it in one run (`in` a frame the script
+  draws is `unsupported`, though `inside` it settles what's placed there in it), containers growing
+  to fit what's drawn in them, and groups; a placement against what a container the run moves
+  takes along; edges routed around shapes; extending a
   list across runs other than by restating every member; chains (`edge "A" -> "B" -> "C"`);
   naming a shape the user left untitled; mentions written by title in a note's text, which only
   ids write today; a schema card titled in its statement, as other kinds are, where its schema's
   `"title"` names it; and `THIRD_PARTY_NOTICES.md` in the app, which carries reladraw's attribution
   only in the repository today.
+- **More of containers**: groups (a container with no surface of its own, holding what's selected);
+  snapping while a container is resized; and a container growing to fit what's dropped in it.
 - **An arrow end bound to a shape that isn't there** (deleted outside a transaction, or kept aside)
   is drawn at the origin; a binding should keep a point to fall back on.
 - **More of undo**: showing a change that's out of view as it's undone (the camera never moves
@@ -8495,10 +8963,11 @@ Each of these adds to the design without changing what plugins are written again
   `EditContext.shape` reads it as it is, and a schema card's editor shows its description as the
   sync writes it, watching the sync's status for it; a note's hears nothing (undo, a draw and a file
   put in place end editing first).
-- **Canvas features**: resize and rotate handles on the selection box; ⌥-drag to clone; the scribble brush; a long press starting a drag;
+- **Canvas features**: rotate handles, and resize handles on the box around several shapes (one
+  shape's are [built](#resizing)); ⌥-drag to clone; the scribble brush; a long press starting a drag;
   the "move" cursor while moving shapes; and hierarchical tool states once the select tool has more
   than a handful of sessions.
-- **More of snapping**: resize handles snapping as they're dragged, once there are any (tldraw's
+- **More of snapping**: [resize handles](#resizing) snapping as they're dragged (tldraw's
   `snapResizeShapes`), and arrows' ends and other handles (tldraw's handle snapping); a grid; a
   setting that turns snapping off, or makes it tldraw's (only while ⌘ is held); kinds saying what
   they snap by (tldraw's `getBoundsSnapGeometry`: points of their own, or none), which only having
@@ -8533,9 +9002,11 @@ Each of these adds to the design without changing what plugins are written again
 - **More of the keyboard**: a window listing every shortcut; menu items that take their key
   equivalents from Keyboard, so the View menu's zoom keys and Edit › Select All's ⌘A are declared
   once; and keys the user remaps.
-- **More of the table of contents**: nested shapes (a shape's container as the default
-  `nestedUnder`), with each row's disclosure remembered (every nested row starts collapsed today);
-  dragging rows to restack their shapes; per-kind zoom targets (data-canvas's `getZoomConfig`);
+- **More of the table of contents**: each row's disclosure remembered across launches (it's kept
+  for the editor's life); a selection's rows nesting under the nearest container listed (a row
+  nests under its own container only while that's listed, so a frame selected with a note two
+  frames down lists the note at the top); dragging rows to restack their shapes, or into a frame;
+  per-kind zoom targets (data-canvas's `getZoomConfig`);
   a double-click on a row opening its shape in the app's panel, which shows the picked shape's
   panel in the list's place before the second click; arrow rows that name the shapes they join; and rows all of one height, which AppKit
   never measures from inside a measurement, so it would stop logging its reentrancy warning
@@ -8589,14 +9060,16 @@ Each of these adds to the design without changing what plugins are written again
   selection's size, so it opens the first); a line in the Board tab saying what the board holds; a
   preview in another color, or sharper than 256 pixels when a card is shown large; and a board
   addressed from outside the app (the command line's, above).
-- **More of topology**: containers that aren't boards (frames, groups) as sources of containment,
-  a point of their own; `canvas draw` matching an edge it restates by its type as well as its ends;
+- **More of topology**: `canvas draw` matching an edge it restates by its type as well as its ends;
   showing a shape's connections of every type in the app (a Connections section of its panel,
   beside Mentions' Mentioned In); and edges on the boards the app can't show, which carry none
   today.
 - **More of queries**: where shapes sit (`:near`, `:left-of`, `:within`, overlaps, and attributes
-  that hold a place, which are `not_built`; inside is a board's), and positions in rows; shapes typed
-  by schema cards (`.Task`); attributes inside attributes (`[a.b]`) and `=` on an object; ranked or
+  that hold a place, which are `not_built`; inside is containment's, boards and containers on them),
+  and positions in rows; a word for a shape's board as rows say it (`>` is directly inside, so a
+  shape in a frame on a subboard's board isn't a `>` child of the subboard, nor is one in a frame on
+  the top board `:top-level`); shapes typed by schema cards (`.Task`); attributes inside attributes
+  (`[a.b]`) and `=` on an object; ranked or
   semantic search, a horizontal of its own; `--select` and `--reveal` on a query, to show the person
   what it found; a query box in the app, and saved queries; the warm cache that's the next step
   should queries asked again and again miss their budgets (a title index and attributes kept by a

@@ -28,7 +28,7 @@ struct DrawParams: SchemaDefined {
 }
 
 /// What a draw did, a row per thing it made, changed, left as it was or deleted, in script order;
-/// what it drew anyway but should say (issues, pushes, near misses); and, on a dry run, that
+/// what it drew anyway but should say (issues, pushes, nudges, near misses); and, on a dry run, that
 /// nothing changed.
 struct DrawResult: Encodable, Sendable {
     var changes: [DrawChange]
@@ -36,6 +36,13 @@ struct DrawResult: Encodable, Sendable {
     var dryRun: Bool?
     /// The board it drew on (the board shown, unless what the script names is on another).
     var on: DrawBoard?
+    /// What settling nudged into or out of containers, by how far (world units), for the glide;
+    /// never said.
+    var nudges: [ShapeID: CGPoint] = [:]
+
+    enum CodingKeys: String, CodingKey {
+        case changes, warnings, dryRun, on
+    }
 }
 
 /// A board a run drew on: `root`, or the id of the shape that holds it, as `boards`' `shows`; that
@@ -200,6 +207,9 @@ func draw(_ params: DrawParams, in context: AutomationContext) throws(Automation
         }
     }
     var result = try apply(drawing, to: editor, reveals: params.reveal, dryRun: params.dryRun)
+    // What was nudged into or out of a container glides there, as one put down by hand does (on
+    // the board shown).
+    if !params.dryRun { editor.glide(result.nudges) }
     // Revealed on another board, that board is shown first, as following a link to it would.
     if params.reveal, !params.dryRun, editor.session == nil, editor.showBoard(board) { reveal(result, in: editor) }
     result.on = DrawBoard(board, in: editor)

@@ -3,8 +3,9 @@ import SwiftUI
 
 /// A board's rows as the table of contents lists them, for a small panel that names the board (the
 /// path's crumb menus, which Boards shows over the canvas): each row as its kind draws it, on one
-/// line, and the rows nested under it behind a disclosure triangle, collapsed until it's opened, as
-/// in the list (a subboard's: its board's rows, read once it's opened). `highlighted`'s row is
+/// line, and the rows nested under it behind a disclosure triangle, as in the list: a container's
+/// expanded, every other row collapsed until it's opened (a subboard's: its board's rows, read once
+/// it's opened); the panel's own, so each time it shows they start so again. `highlighted`'s row is
 /// tinted as a hovered row is in the list (the way you came, in a crumb's menu), and the row under
 /// the pointer is lit. A click on a row picks its shape (`onPick`):
 /// what picking does is the host's. It reads the rows through `ContentsState.outline(of:)`, so it
@@ -32,17 +33,19 @@ public struct ContentsOutline: View {
             let entries = state.outline(of: board)
             if !entries.isEmpty {
                 OutlineRows(state: state, entries: entries, highlighted: highlighted, maxHeight: maxHeight, onPick: onPick)
-                    .id(board)          // another board's rows start collapsed, at the top
+                    .id(board)          // another board's rows start afresh, at the top
             }
         }
     }
 }
 
-/// A row of the outline as shown: its entry, how deep it's nested, and whether rows are.
+/// A row of the outline as shown: its entry, how deep it's nested, whether rows are, and whether
+/// they show.
 struct OutlineLine: Identifiable {
     let entry: ContentsEntry
     let depth: Int
     let isExpandable: Bool
+    let isExpanded: Bool
     var id: ShapeID { entry.id }
 }
 
@@ -53,16 +56,17 @@ struct OutlineRows: View {
     let highlighted: ShapeID?
     let maxHeight: CGFloat
     let onPick: @MainActor (ShapeID) -> Void
-    @State private var expanded: Set<ShapeID> = []
+    /// The rows turned from how they start (`ContentsEntry.startsExpanded`), here.
+    @State private var turned: Set<ShapeID> = []
 
     var body: some View {
-        let lines = Self.lines(of: entries, expanded: expanded, state: state)
+        let lines = Self.lines(of: entries, turned: turned, state: state)
         // It opens at the top, as data-canvas's menus do: scrolling a lazy stack to a row far down
         // lays out the rows before it (some 70 ms to the last of 10,000).
         ScrollView(.vertical) {
             LazyVStack(spacing: 0) {
                 ForEach(lines) { line in
-                    OutlineRow(line: line, isExpanded: expanded.contains(line.id), isHighlighted: line.id == highlighted,
+                    OutlineRow(line: line, isExpanded: line.isExpanded, isHighlighted: line.id == highlighted,
                                toggle: { toggle(line.id) }, pick: { onPick(line.id) })
                 }
             }
@@ -71,19 +75,22 @@ struct OutlineRows: View {
     }
 
     private func toggle(_ id: ShapeID) {
-        if expanded.remove(id) == nil { expanded.insert(id) }
+        if turned.remove(id) == nil { turned.insert(id) }
     }
 
-    /// The rows shown: every top-level row, and under each row expanded the rows nested under it,
-    /// the rows of the board its shape owns first (`nestedBoard`), as in the list.
-    static func lines(of entries: [ContentsEntry], expanded: Set<ShapeID>, state: ContentsState) -> [OutlineLine] {
+    /// The rows shown: every top-level row, and under each row expanded (a container's, unless it's
+    /// in `turned`; any other row, if it is) the rows nested under it, the rows of the board its
+    /// shape owns first (`nestedBoard`), as in the list.
+    static func lines(of entries: [ContentsEntry], turned: Set<ShapeID>, state: ContentsState) -> [OutlineLine] {
         var lines: [OutlineLine] = []
         lines.reserveCapacity(entries.count)
         func add(_ entries: [ContentsEntry], depth: Int) {
             for entry in entries {
                 let board = state.boardToOpen(under: entry)
-                lines.append(OutlineLine(entry: entry, depth: depth, isExpandable: board != nil || entry.children != nil))
-                guard expanded.contains(entry.id) else { continue }
+                let isExpandable = board != nil || entry.children != nil
+                let isExpanded = isExpandable && entry.startsExpanded != turned.contains(entry.id)
+                lines.append(OutlineLine(entry: entry, depth: depth, isExpandable: isExpandable, isExpanded: isExpanded))
+                guard isExpanded else { continue }
                 if let board { add(state.outline(of: board), depth: depth + 1) }
                 if let children = entry.children { add(children, depth: depth + 1) }
             }

@@ -8,9 +8,10 @@ import QueryLanguage
 import TestKit
 import Topology
 
-// Fixtures of Queries' tests' own, over CanvasTesting's chores, pockets, tiles and links, never a
-// real plugin's: links are wires (a grade makes one hot, a kind of wire, or loose, a tether, which
-// nobody declares); a caption names chores and pockets, and a tile's name is derived from its label;
+// Fixtures of Queries' tests' own, over CanvasTesting's chores, pockets, corrals, tiles and links,
+// never a real plugin's: links are wires (a grade makes one hot, a kind of wire, or loose, a tether,
+// which nobody declares); a caption names chores, pockets and (in the yard) corrals, and a tile's
+// name is derived from its label;
 // an untitled pocket's board is an "Untitled Pocket"; the words are :starred (a set taken up with
 // the file), :heavy (worked out anywhere), :audited (on the main actor) and :wired-to(S) (a
 // relation over wires); and a shout, text read in capitals.
@@ -82,6 +83,11 @@ func captionsPlugin() -> Contributor {
         registrar.optIn(Chore.self, to: Caption.self)
         registrar.optIn(Pocket.self, to: Caption.self)
     }
+}
+
+/// Corrals hold captions too, where they're installed.
+func corralCaptionsPlugin() -> Contributor {
+    Contributor(id: "corral-captions") { $0.optIn(Corral.self, to: Caption.self) }
 }
 
 /// How often the main actor was asked for what only it answers.
@@ -211,6 +217,15 @@ func pocket(_ id: ShapeID, caption: String? = nil) -> AnyShapeRecord {
     return record
 }
 
+func corral(_ id: ShapeID, caption: String? = nil) -> AnyShapeRecord {
+    var record = AnyShapeRecord(ShapeRecord(id: id, Corral(unit)))
+    record[Caption.self] = caption
+    return record
+}
+
+/// The record, in `container` on its board.
+func held(_ record: AnyShapeRecord, in container: ShapeID) -> AnyShapeRecord { record.copy(as: record.id, container: container) }
+
 func tile(_ id: ShapeID, label: String) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(id: id, Tile(unit, label: label))) }
 
 func link(_ id: ShapeID, _ from: ShapeID, _ to: ShapeID, grade: LinkGrade? = nil) -> AnyShapeRecord {
@@ -236,6 +251,30 @@ struct Shelf {
 
 @MainActor func shelf(names: Bool = true, words: Bool = true, more: [any CanvasPlugin] = []) throws -> EditorHarness {
     try EditorHarness(plugins: queryPlugins(names: names, words: words, more: more), file: Shelf().file)
+}
+
+/// Containers within boards: on the top board, chore 1 "Alpha"; corral 5 "Pen" holding chore 6
+/// "Gamma", corral 7 (untitled) holding chore 8, and pocket 2 "Pantry"; then chore 9 and a wire 3
+/// from 1 to 6, in nothing. On the pantry's board, corral 15 "Bin" holding chore 16 "Delta" and
+/// pocket 12 (untitled), whose board holds chore 21; and chore 11 "Beta", in nothing. In file order:
+/// 1, 5, 6, 7, 8, 2, 15, 16, 12, 21, 11, 9, 3.
+struct Yard {
+    static let fileOrder = [1, 5, 6, 7, 8, 2, 15, 16, 12, 21, 11, 9, 3]
+
+    var file: CanvasFile {
+        CanvasFile(root: CanvasDocument(shapes: [chore(id(1), caption: "Alpha"), corral(id(5), caption: "Pen"),
+                                                 held(chore(id(6), caption: "Gamma"), in: id(5)), held(corral(id(7)), in: id(5)),
+                                                 held(chore(id(8)), in: id(7)), held(pocket(id(2), caption: "Pantry"), in: id(5)), chore(id(9)),
+                                                 link(id(3), id(1), id(6))]),
+                   children: [id(2): CanvasDocument(shapes: [corral(id(15), caption: "Bin"), held(chore(id(16), caption: "Delta"), in: id(15)),
+                                                             held(pocket(id(12)), in: id(15)), chore(id(11), caption: "Beta")]),
+                              id(12): CanvasDocument(shapes: [chore(id(21))])])
+    }
+}
+
+/// The fixtures with corrals, captioned, on the yard.
+@MainActor func yard(more: [any CanvasPlugin] = []) throws -> EditorHarness {
+    try EditorHarness(plugins: queryPlugins(more: [CorralsPlugin(), corralCaptionsPlugin()] + more), file: Yard().file)
 }
 
 /// A file read from a board file: on the top board, chore 1, a gadget 10 (a kind nobody installs,

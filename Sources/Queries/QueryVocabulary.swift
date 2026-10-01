@@ -3,10 +3,11 @@ import QueryLanguage
 import Topology
 
 /// What this app's queries can name, read off the registry once (it never changes) and kept, to be
-/// read anywhere: each kind with what it's called, whether its shapes are named and how, whether it
-/// holds a board and what an untitled one's board is called, and its attributes with what each
-/// takes; the edge types, as a tree; and the words, the language's and the plugins'. Its `text` is
-/// the `<vocabulary>` block `--ask` sends the model, and what `canvas query-vocabulary` prints.
+/// read anywhere: each kind with what it's called, whether its shapes are named and how, whether
+/// they hold shapes and whether a board of them (and what an untitled one's board is called), and
+/// its attributes with what each takes; the edge types, as a tree; and the words, the language's and
+/// the plugins'. Its `text` is the `<vocabulary>` block `--ask` sends the model, and what `canvas
+/// query-vocabulary` prints.
 ///
 /// An editor's is `queries.vocabulary`, made on its first query; the command that answers for no
 /// board makes one from a registry alone.
@@ -18,7 +19,11 @@ public struct QueryVocabulary: Sendable {
         public let label: String
         /// Whether its shapes have names, and how (the names point's).
         public let names: QueryNameSource
-        /// Whether its shapes hold a board of shapes (Topology's `containerKinds`).
+        /// Whether its shapes can have shapes inside them (Topology's `containerKinds`): a board of
+        /// them (`holdsBoard`, a subboard), or shapes on the board they're on (a frame). What can
+        /// stand where a container goes (before a space or `>`, in `:inside()`, what `:has()` is on).
+        public let holdsShapes: Bool
+        /// Whether they hold shapes by owning a board of them (`registry.boardOwningKinds`).
         public let holdsBoard: Bool
         /// What the board of one whose owner has no name is called: the board names point's
         /// placeholder, else the label. Nil for a kind that holds no board.
@@ -96,7 +101,7 @@ public struct QueryVocabulary: Sendable {
     let contributedWords: [String: QueryWordDeclaration]
     /// The edge types installed plugins declare, as a tree.
     let edgeTree: EdgeTypeTree
-    /// The kinds whose shapes hold boards.
+    /// The kinds whose shapes can have shapes inside them: a board of them, or shapes on theirs.
     let containerKinds: Set<ShapeKind>
     private let kindIndex: [ShapeKind: Int]
 
@@ -112,7 +117,7 @@ public struct QueryVocabulary: Sendable {
             let schema = KindSchema(registry.schema(for: kind) ?? JSONSchema([:]))
             let label = registry.label(of: kind).name
             let names = naming?.source(kind, registry) ?? .none
-            let holdsBoard = containers.contains(kind)
+            let holdsBoard = registry.boardOwningKinds.contains(kind)
             var attributes: [AttributeEntry] = []
             for name in schema.properties.keys where !schema.holdsPlace(name) && !(names != .none && name == naming?.attribute) {
                 guard let shape = schema.shape(of: name) else { continue }
@@ -128,8 +133,8 @@ public struct QueryVocabulary: Sendable {
             }
             attributes.sort { $0.name < $1.name }
             let boardName = holdsBoard ? boardNaming?.placeholder(kind, registry) ?? label : nil
-            kinds.append(KindEntry(kind: kind, label: label, names: names, holdsBoard: holdsBoard, boardName: boardName,
-                                   attributes: attributes, schema: schema))
+            kinds.append(KindEntry(kind: kind, label: label, names: names, holdsShapes: containers.contains(kind), holdsBoard: holdsBoard,
+                                   boardName: boardName, attributes: attributes, schema: schema))
         }
 
         let tree = registry.edgeTypes
@@ -176,7 +181,11 @@ public struct QueryVocabulary: Sendable {
         var lines = ["Kinds (the id to write; what the app calls it; its attributes and what each takes):"]
         for entry in kinds {
             var about = [entry.label, entry.names.described]
-            if entry.holdsBoard { about.append("holds a board of shapes") }
+            if entry.holdsBoard {
+                about.append("holds a board of shapes")
+            } else if entry.holdsShapes {
+                about.append("holds shapes")
+            }
             let attributes = entry.attributes.map { "\($0.name) \($0.compactType)" + ($0.reads.map { " (\($0))" } ?? "") }
             lines.append("- \(entry.kind) (\(about.joined(separator: "; ")))" + (attributes.isEmpty ? "" : ": " + attributes.joined(separator: ", ")))
         }
@@ -263,9 +272,9 @@ extension Word {
         case .not: "not matched by S"
         case .is: "matched by S"
         case .where: "matched by S, as :is"
-        case .has: "has a shape S matches inside it, at any depth; after >, directly on its board"
+        case .has: "has a shape S matches inside it, at any depth; after >, directly inside it"
         case .inside: "inside a shape S matches, at any depth"
-        case .topLevel: "on the file's top board: inside nothing"
+        case .topLevel: "inside nothing: on the file's top board, held by no shape"
         case .currentBoard: "on the board the file's window shows"
         case .edgeTo: "has an edge to a shape S matches"
         case .edgeFrom: "has an edge from a shape S matches"

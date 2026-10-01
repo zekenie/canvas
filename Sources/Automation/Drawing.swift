@@ -12,7 +12,9 @@ import Geometry
 /// A shape statement, resolved.
 struct ShapeItem {
     let statement: Statement
-    let shape: ShapeStatement
+    /// As written, and, for one `in` a container with nothing else to say where, against its
+    /// top-left (`Drawing.contain`).
+    var shape: ShapeStatement
     let kind: ShapeKind
     /// Its title, folded; nil for an untitled shape.
     let title: String?
@@ -41,6 +43,9 @@ struct ShapeItem {
     /// the shape where it is now, a shape it's placed against, the shape where it lands and others
     /// too, or the view it's placed against or drawn in, and it paints above them.
     var zones: [ShapeID] = []
+    /// What `in "F"` names, when F holds shapes on its own board (a frame), as the run starts: the
+    /// shape goes within it, and in it.
+    var holder: AnyShapeRecord?
 
     /// A box a placement names, found.
     enum Found {
@@ -360,10 +365,10 @@ struct Drawing {
         AutomationError(statement, .noEdges, "nothing here draws edges", hint: "leave the edges out: this app has no plugin that connects shapes")
     }
 
-    /// Refuses to delete a read-only shape (a locked one): `"East" is read-only (locked, say), so it
-    /// can't be deleted`.
+    /// Refuses to delete a read-only shape (a locked one, or one in a locked frame): `"East" is
+    /// read-only (locked, say), so it can't be deleted`.
     private func writable(_ record: AnyShapeRecord, _ statement: Statement, _ subject: String, so consequence: String) throws(AutomationError) {
-        guard registry.isReadOnly(record) else { return }
+        guard registry.isReadOnly(record, in: target.document) else { return }
         throw AutomationError(statement, .readOnly, "\(subject) is read-only (locked, say), so \(consequence)",
                               hint: "leave it out of the script, or ask the user to unlock it")
     }
@@ -449,9 +454,10 @@ struct Drawing {
         return vocabulary
     }
 
-    /// Pass two, once every title is known: the rename, the attributes (and the styles that give
-    /// them), and the placements' targets.
+    /// Pass two, once every title is known: what holds it, the rename, the attributes (and the
+    /// styles that give them), and the placements' targets.
     private mutating func complete(_ index: Int) throws(AutomationError) {
+        try contain(index)
         let item = items[index], statement = item.statement, shape = item.shape
         let vocabulary = vocabulary(of: item.kind)
         let subject = subject(of: item)
@@ -576,6 +582,41 @@ struct Drawing {
             targets.append(found)
         }
         items[index].targets = targets
+    }
+
+    /// What holds a statement's shape, when `in "F"` names a shape that holds others on its own
+    /// board (a frame): the shape goes within F, and in it, as its placements say; with none, and not
+    /// in F already (where it stays), against F's top-left, 40 in, as `inside "F" top-left` places
+    /// it. F must be one the script neither deletes nor is (or holds), and writable: a read-only
+    /// container (a locked frame) takes nothing.
+    private mutating func contain(_ index: Int) throws(AutomationError) {
+        let item = items[index]
+        guard let written = item.shape.container, let fileNames, let title = fold(written),
+              case .shape(let id, _) = fileNames.container(called: title) else { return }
+        let statement = item.statement, subject = subject(of: item)
+        guard let holder = target.document[id] else {
+            throw AutomationError(statement, .internal, "\(quoted(title)) isn't on the board \(subject) is drawn on")
+        }
+        if deletedShapes.contains(id) {
+            throw AutomationError(statement, .unknownTitle, "\(subject) is in \(quoted(title)), which this script deletes",
+                                  hint: "draw \(quoted(title)) again after deleting it, or leave in \(quoted(title)) out")
+        }
+        let kinds = registry.containingKinds
+        if let existing = item.existing, existing.id == id || target.document.containers(of: id, containingKinds: kinds).contains(existing.id) {
+            throw AutomationError(statement, .circular,
+                                  existing.id == id ? "\(subject) is in itself" : "\(subject) holds \(quoted(title)), so it can't be in it",
+                                  hint: "name another shape to hold it")
+        }
+        if registry.isReadOnly(holder, in: target.document) {
+            throw AutomationError(statement, .readOnly, "\(quoted(title)) is read-only (locked, say), so nothing goes in it",
+                                  hint: "leave in \(quoted(title)) out, or ask the user to unlock it")
+        }
+        items[index].holder = holder
+        let isIn = item.existing.map { target.document.containers(of: $0.id, containingKinds: kinds).contains(id) } ?? false
+        if item.shape.clauses.isEmpty, !isIn {
+            items[index].shape.clauses.append(Clause(relation: .inside, targets: [Target(.title(written), part: .topLeft)],
+                                                     written: "in \(quoted(title))"))
+        }
     }
 
     /// The shape with its attributes set, or which one it can't take.

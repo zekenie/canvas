@@ -118,6 +118,20 @@ import TestKit
         try choose("Send Backward")
         expectEqual(order(), [c, a, b, d])
     },
+    test("Reordering: a container steps past the next shape it overlaps that it doesn't hold, what it holds going with it") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), FixturesPlugin(), CorralsPlugin(), ReorderingPlugin()])
+        let corral = h.add(Corral(CGRect(x: 0, y: 0, width: 300, height: 200)))
+        let held = h.add(Box(CGRect(x: 20, y: 20, width: 100, height: 100)))
+        h.editor.put([held], in: corral)
+        let over = h.add(Box(CGRect(x: 250, y: 50, width: 100, height: 100)))       // overlaps the corral, above it
+        @MainActor func order() -> [ShapeID] { h.editor.document.shapes.map(\.id) }
+        expectEqual(order(), [corral, held, over])
+        h.editor.selection = corral
+        try require(h.secondaryClick(at: CGPoint(x: 290, y: 190))).choose("Arrange", "Bring Forward")
+        expectEqual(order(), [over, corral, held], "past the box above it, not its own box, which goes with it")
+        try require(h.secondaryClick(at: CGPoint(x: 290, y: 190))).choose("Arrange", "Send Backward")
+        expectEqual(order(), [corral, held, over])
+    },
     test("Reordering: each Arrange item is one step, and undoing it puts back the order and every stacking key") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), FixturesPlugin(), ReorderingPlugin()])
         let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))

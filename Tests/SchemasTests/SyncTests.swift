@@ -238,6 +238,60 @@ let petSchema = """
         expectEqual(b.message(1), "<prompt>\na pet in my household\n</prompt>\n\n<schema>\n\(SchemaCard.starter)\n</schema>")
         expectEqual(b.card(id)?.schema.text, petSchema)
     },
+    test("a card in a read-only container (a locked frame) is read-only too: it never syncs, nor takes an answer that lands once its container is frozen") {
+        let log = RefusalLog()
+        let b = try SyncBench(more: [FreezingPlugin(log: log), CorralsPlugin()])
+        let corral = b.editor.add(Corral(CGRect(x: -100, y: -100, width: 800, height: 600)))
+        let id = b.place()
+        b.editor.put([id], in: corral)
+        b.typePrompt(id, "a pet in my household")
+        b.editor.freeze([corral])
+        b.sync.commit(id)
+        b.scheduler.advance(by: .seconds(5))
+        b.settle()
+        expectEqual(b.model.requests.count, 0, "frozen with its corral")
+        b.editor.freeze([corral], false)
+        b.model.holdsAnswers = true
+        b.model.queue(petSchema)
+        b.sync.commit(id)
+        spinRunLoop(until: { b.model.waiting == 1 })
+        b.editor.freeze([corral])
+        b.model.release()
+        spinRunLoop(until: { b.status(id) == .idle })
+        expectEqual(b.card(id)?.schema.text, SchemaCard.starter)
+        expectEqual(log.refusals, [], "no write is tried, so nothing is refused (no shake)")
+        b.editor.freeze([corral], false)
+        b.model.holdsAnswers = false
+        b.sync(id, answer: petSchema)
+        expectEqual(b.card(id)?.schema.text, petSchema, "thawed, its edit syncs")
+    },
+    test("a card in a frame locked on a board that isn't shown takes no answer either") {
+        let log = RefusalLog()
+        let pocket = ShapeRecord(Pocket(CGRect(x: 2000, y: 0, width: 100, height: 100)))
+        let b = try SyncBench(file: CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(pocket)])),
+                              more: [FreezingPlugin(log: log), CorralsPlugin(), PocketsPlugin()])
+        let corral = b.editor.add(Corral(CGRect(x: -100, y: -100, width: 800, height: 600)))
+        let id = b.place()
+        b.editor.put([id], in: corral)
+        b.typePrompt(id, "a pet in my household")
+        b.model.holdsAnswers = true
+        b.model.queue(petSchema)
+        b.sync.commit(id)
+        spinRunLoop(until: { b.model.waiting == 1 })
+        expect(b.editor.showBoard(BoardID(owner: pocket.id)))
+        b.editor.transact(on: .root, "Freeze") { $0.update(corral) { $0[Frozen.self] = true } }
+        b.model.release()
+        spinRunLoop(until: { b.status(id) == .idle })
+        @MainActor func schema() -> String? { b.editor.file.record(id)?.typed(as: SchemaCard.self)?.props.schema.text }
+        expectEqual(schema(), SchemaCard.starter)
+        expectEqual(log.refusals, [], "no write is tried")
+        // Its last sync is where it was: thawed, its prompt still asks for the schema.
+        b.editor.transact(on: .root, "Thaw") { $0.update(corral) { $0[Frozen.self] = nil } }
+        b.model.holdsAnswers = false
+        b.sync(id, answer: petSchema)
+        expectEqual(b.model.lastRequest?.system, SchemaPrompts.toSchemaSystem)
+        expectEqual(schema(), petSchema)
+    },
     test("a card seen for the first time is in step: on a board opened, and pasted") {
         var props = card(petSchema, at: .zero)
         props.setPrompt("a pet in my household")

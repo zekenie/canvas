@@ -23,6 +23,13 @@ import Geometry
 /// whose board, or a board under it, holds a read-only shape isn't deleted, as the Finder won't trash
 /// a folder holding a locked file. Shape ids are unique across the file: a shape inserted can't have
 /// the id of one on any board.
+///
+/// Containers (`ShapeContaining`: a frame) hold shapes on their board (`AnyShapeRecord.container`):
+/// what a container holds moves with it (`translate`) and is restacked with it, read-only or not,
+/// paints above it, and is read-only while it is (a shape in a read-only container changes not at
+/// all, and nothing joins or leaves one); deleting a container lets go of what it holds into its own
+/// container. `setContainer` puts a shape in one, and `settle` keeps what's put down from sitting
+/// across a container's edge (Settling.swift).
 @MainActor
 public struct Transaction {
     public private(set) var document: CanvasDocument
@@ -41,13 +48,22 @@ public struct Transaction {
     private(set) var didChange = false
     /// What it did so far, record by record: what the commit hands services.
     private(set) var changes = ChangeSet()
-    /// Read-only shapes it was asked to change, restack or delete, and didn't.
-    private(set) var refused: Set<ShapeID> = []
+    /// Read-only shapes it was asked to change, restack or delete, and didn't (and read-only
+    /// containers that wouldn't take a shape: `setContainer`, `settle`).
+    var refused: Set<ShapeID> = []
     /// Shapes whose willDelete handlers have run in this transaction; removed together at the end
     /// of the outermost `delete`.
     private var deleting: Set<ShapeID> = []
     /// A deletion is keeping the board whole (its handlers, and letting go): nothing is refused.
     private var isCascading = false
+    /// Shapes moved with a container that moves (`translate`, a drag): read-only or not, they go
+    /// with it, as letting go goes through a lock.
+    var carrying: Set<ShapeID> = []
+    /// Where each container worked out so far tops out in the stack, itself and what it holds
+    /// (`topIndex(of:)`): kept while nothing moves in the stack (anything restacked, inserted or
+    /// deleted forgets them all), so shapes joining a container one at a time look at what it holds
+    /// once.
+    private var tops: [ShapeID: Int] = [:]
 
     init(document: CanvasDocument, board: BoardID, registry: Registry, camera: Camera, keys: StackingKeyGenerator, file: FileAccess) {
         self.document = document
@@ -89,14 +105,20 @@ public struct Transaction {
             let owner = owners[next]
             next += 1
             guard let board = contents[owner] else { continue }
-            var records: [AnyShapeRecord] = []
+            var records: [AnyShapeRecord] = [], below: [ShapeID: AnyShapeRecord] = [:]
             for shape in board.shapes {
                 precondition(ids.insert(shape.id).inserted && document[shape.id] == nil && isNewToFile(shape.id),
                              "a shape with id \(shape.id) is already in the file")
                 precondition(registry.definition(for: shape.kind)?.erasedAccepts(shape) == true,
                              "no installed plugin defines \(shape.kind) shapes with these props")
                 guard shape.box?.isFinite ?? true else { continue }
-                records.append(registry.propertyTable.normalized(shape))
+                var record = registry.propertyTable.normalized(shape)
+                // In a container on its own board below it, as the board it came from had it.
+                if let container = record.container, record.box == nil || !(below[container].map(registry.isContainer) ?? false) {
+                    record.container = nil
+                }
+                records.append(record)
+                below[record.id] = record
                 owners.append(shape.id)
             }
             guard !records.isEmpty else { continue }
@@ -124,10 +146,25 @@ public struct Transaction {
         guard record.box?.isFinite ?? true else { return false }
         var record = registry.propertyTable.normalized(record)
         record.stackingKey = keys.key(between: document.shapes.last?.stackingKey, and: nil)
+        // A container it comes with (a paste's copy, `copy(as:container:)`) it's in if that's a
+        // container on the board by now that takes it; else it's on the board directly.
+        if let container = record.container, !takes(container, record) { record.container = nil }
+        tops = [:]
         document.append(record)
         changes.added.insert(record.id)
         changes.reordered = true
         didChange = true
+        return true
+    }
+
+    /// Whether a shape going in can be in `container`: a box, and a container on this board that takes
+    /// it; a read-only one doesn't, and services hear it was refused.
+    private mutating func takes(_ container: ShapeID, _ record: AnyShapeRecord) -> Bool {
+        guard record.box != nil, let holder = document[container], registry.isContainer(holder) else { return false }
+        guard !holds(holder) else {
+            refused.insert(container)
+            return false
+        }
         return true
     }
 
@@ -139,8 +176,9 @@ public struct Transaction {
         return board == self.board && changes.removed.contains(id)
     }
 
-    /// Changes one shape. Its id and stacking key stay as they were, whatever `body` does. A
-    /// read-only shape keeps the change only if it leaves the shape no longer read-only.
+    /// Changes one shape. Its id, stacking key and container stay as they were, whatever `body`
+    /// does (`setContainer` changes a container). A read-only shape keeps the change only if it
+    /// leaves the shape no longer read-only, and a shape in a read-only container keeps none.
     public mutating func update(_ id: ShapeID, _ body: (inout AnyShapeRecord) -> Void) {
         guard let index = document.index(of: id) else { return }
         let old = document.shapes[index]
@@ -148,6 +186,7 @@ public struct Transaction {
         body(&record)
         precondition(record.id == id, "a shape's id can't change")
         record.stackingKey = old.stackingKey
+        record.containerBits = old.containerBits
         // Values only for what its kind opts into.
         if record.added != old.added { record = registry.propertyTable.normalized(record) }
         guard record != old, record.box?.isFinite ?? true, !refuses(old, becoming: record) else { return }
@@ -160,23 +199,39 @@ public struct Transaction {
     }
 
     /// Whether this transaction keeps `old` as it is, and notes that it did: the shape was in the
-    /// document before the transaction, is read-only, and would still be as `new` (nil: deleted,
-    /// or moved in the stack, which leaves it as read-only as it was), and no deletion is keeping
-    /// the board whole.
+    /// document before the transaction, no deletion is keeping the board whole, a container that
+    /// moves isn't carrying it, and it's read-only: by a rule, and would still be as `new` (nil:
+    /// deleted, or moved in the stack, which leaves it as read-only as it was), or in a read-only
+    /// container, which holds it whatever the change.
     private mutating func refuses(_ old: AnyShapeRecord, becoming new: AnyShapeRecord? = nil) -> Bool {
-        guard !isCascading, registry.hasReadOnlyRules, !changes.added.contains(old.id), registry.isReadOnly(old),
-              new.map(registry.isReadOnly) ?? true else { return false }
+        guard !isCascading, registry.hasReadOnlyRules, !changes.added.contains(old.id), carrying.isEmpty || !carrying.contains(old.id),
+              registry.isReadOnly(old) && (new.map(registry.isReadOnly) ?? true) || registry.isInsideReadOnlyContainer(old, in: document)
+        else { return false }
         refused.insert(old.id)
         return true
     }
 
+    /// Whether this transaction holds a shape as it is, as `refuses` would, noting nothing: it was in
+    /// the document before the transaction, and it, or a container it's in, is read-only.
+    func holds(_ record: AnyShapeRecord) -> Bool {
+        !isCascading && registry.hasReadOnlyRules && !changes.added.contains(record.id) && (carrying.isEmpty || !carrying.contains(record.id))
+            && (registry.isReadOnly(record) || registry.isInsideReadOnlyContainer(record, in: document))
+    }
+
     /// Moves shapes by `delta`, in world units, as dragging them that far would: a box by its
     /// frame, a `CustomTranslation` kind by its own rules (every `beginTranslation` first, then the
-    /// boxes, then the rest, as a drag event does), anything else not at all. Read-only shapes
-    /// stay, and the others move without them.
-    public mutating func translate(_ ids: Set<ShapeID>, by delta: CGPoint) {
-        var records = ids.compactMap { document.index(of: $0) }.sorted().map { document.shapes[$0] }
-        records.removeAll { refuses($0) }
+    /// boxes, then the rest, as a drag event does), anything else not at all. What a container holds
+    /// moves with it, at any depth, read-only or not, once however it's asked for. Read-only shapes
+    /// stay (and what's in them), and the others move without them.
+    public mutating func translate(_ ids: Set<ShapeID>, by delta: CGPoint) { _ = translated(ids, by: delta) }
+
+    /// `translate`, saying what moved: the shapes asked for that aren't held, and what they carry.
+    mutating func translated(_ ids: Set<ShapeID>, by delta: CGPoint) -> [ShapeID] {
+        let asked = ids.compactMap { document.index(of: $0) }.sorted().map { document.shapes[$0] }
+        let (records, carried) = moving(asked)
+        let wasCarrying = carrying
+        carrying.formUnion(carried)
+        defer { carrying = wasCarrying }
         let ids = Set(records.map(\.id))
         var boxes: [ShapeID] = []
         var moves: [@MainActor (CGPoint, inout Transaction) -> Void] = []
@@ -191,6 +246,28 @@ public struct Transaction {
             if let box = document[id]?.box { moveBox(id, to: box.origin + delta) }
         }
         for move in moves { move(delta, &self) }
+        return records.map(\.id)
+    }
+
+    /// Of `asked` (back to front), what moves: those that aren't held, and what the containers among
+    /// them hold, at any depth, read-only or not (`carried`), each once, back to front. A shape asked
+    /// for inside another asked for is carried by it, or, if that one is held, held with it.
+    mutating func moving(_ asked: [AnyShapeRecord]) -> (records: [AnyShapeRecord], carried: Set<ShapeID>) {
+        let kinds = registry.containingKinds
+        guard !kinds.isEmpty, document.namesContainers else { return (asked.filter { !refuses($0) }, []) }
+        let askedIDs = Set(asked.map(\.id)), document = document
+        func isInsideAsked(_ record: AnyShapeRecord) -> Bool {
+            record.namesContainer && document.containers(of: record.id, containingKinds: kinds).contains(where: askedIDs.contains)
+        }
+        var roots: [AnyShapeRecord] = []
+        for record in asked where !isInsideAsked(record) && !refuses(record) { roots.append(record) }
+        var carried: Set<ShapeID> = []
+        for root in roots { carried.formUnion(document.descendants(of: root.id, containingKinds: kinds)) }
+        // Asked for inside a container that stays: held with it.
+        for record in asked where !carried.contains(record.id) && isInsideAsked(record) { _ = refuses(record) }
+        guard !carried.isEmpty else { return (roots, []) }
+        let ids = Set(roots.map(\.id)).union(carried)
+        return (ids.compactMap { document.index(of: $0) }.sorted().map { document.shapes[$0] }, carried)
     }
 
     /// Puts a box shape's frame at `origin`, its size as it was: a move, as `translate` and a drag
@@ -204,43 +281,240 @@ public struct Transaction {
         if unchanged, changes.changed.contains(id) { changes.moved.insert(id) }
     }
 
-    /// Paints the shape above every other. Does nothing if it's already on top, or read-only.
+    // Restacking. A container takes what it holds along, at any depth, in its order, just above it
+    // (read-only or not, as moving it does), and a shape in a container goes no lower than just
+    // above it: a container's contents paint above it.
+
+    /// Paints the shape above every other, what it holds just above it. Does nothing if it's already
+    /// on top, or read-only.
     public mutating func bringToFront(_ id: ShapeID) {
-        guard let index = document.index(of: id), index != document.shapes.count - 1, !refuses(document.shapes[index]) else { return }
-        document.moveToEnd(from: index, key: keys.key(between: document.shapes.last?.stackingKey, and: nil))
-        noteChanged(id, reordering: true)
+        guard let index = document.index(of: id) else { return }
+        let block = block(of: id, at: index)
+        // The top shape that stays.
+        var anchor = document.shapes.count - 1, last = block.count - 1
+        while last >= 0, block[last] == anchor {
+            anchor -= 1
+            last -= 1
+        }
+        guard last >= 0, !refuses(document.shapes[index]) else { return }
+        restack(block, above: anchor)
     }
 
-    /// Paints the shape below every other. Does nothing if it's already at the bottom, or read-only.
+    /// Paints the shape below every other, what it holds just above it; one in a container, just
+    /// above its container. Does nothing if it's there already, or read-only.
     public mutating func sendToBack(_ id: ShapeID) {
-        guard let index = document.index(of: id), index != 0, !refuses(document.shapes[index]) else { return }
-        document.moveToStart(from: index, key: keys.key(between: nil, and: document.shapes.first?.stackingKey))
-        noteChanged(id, reordering: true)
+        guard let index = document.index(of: id) else { return }
+        let block = block(of: id, at: index), floor = floor(of: document.shapes[index])
+        guard !Self.isBlock(block, justAbove: floor), !refuses(document.shapes[index]) else { return }
+        restack(block, above: floor)
     }
 
     /// Puts a shape just above another in document order (a step forward, past `other`): a key
-    /// between `other`'s and the next shape's. Does nothing if it's there already, or read-only.
+    /// between `other`'s and the next shape's; what it holds just above it. One in a container goes
+    /// no lower than just above it. Does nothing if it's there already, if `other` is in it, or if
+    /// it's read-only.
     public mutating func move(_ id: ShapeID, above other: ShapeID) {
-        guard id != other, let from = document.index(of: id), let target = document.index(of: other), from != target + 1,
-              !refuses(document.shapes[from]) else { return }
-        let shapes = document.shapes
-        let next = target + 1 < shapes.count ? shapes[target + 1].stackingKey : nil
-        move(id, from: from, to: from < target ? target : target + 1, key: keys.key(between: shapes[target].stackingKey, and: next))
+        guard id != other, let from = document.index(of: id), var anchor = document.index(of: other) else { return }
+        let block = block(of: id, at: from)
+        guard !Self.has(block, anchor) else { return }
+        if let floor = floor(of: document.shapes[from]), anchor < floor { anchor = floor }
+        guard !Self.isBlock(block, justAbove: anchor), !refuses(document.shapes[from]) else { return }
+        restack(block, above: anchor)
     }
 
     /// Puts a shape just below another in document order (a step back, past `other`): a key
-    /// between the previous shape's and `other`'s. Does nothing if it's there already, or read-only.
+    /// between the previous shape's and `other`'s; what it holds just above it. One in a container
+    /// goes no lower than just above it. Does nothing if it's there already, if `other` is in it, or
+    /// if it's read-only.
     public mutating func move(_ id: ShapeID, below other: ShapeID) {
-        guard id != other, let from = document.index(of: id), let target = document.index(of: other), from != target - 1,
-              !refuses(document.shapes[from]) else { return }
-        let shapes = document.shapes
-        let previous = target > 0 ? shapes[target - 1].stackingKey : nil
-        move(id, from: from, to: from < target ? target - 1 : target, key: keys.key(between: previous, and: shapes[target].stackingKey))
+        guard id != other, let from = document.index(of: id), let target = document.index(of: other) else { return }
+        let block = block(of: id, at: from)
+        guard !Self.has(block, target) else { return }
+        // Just above the nearest shape below `other` that stays.
+        var anchor: Int? = target - 1
+        while let below = anchor, below >= 0, Self.has(block, below) { anchor = below - 1 }
+        if anchor == -1 { anchor = nil }
+        if let floor = floor(of: document.shapes[from]), (anchor ?? -1) < floor { anchor = floor }
+        guard !Self.isBlock(block, justAbove: anchor), !refuses(document.shapes[from]) else { return }
+        restack(block, above: anchor)
     }
 
-    private mutating func move(_ id: ShapeID, from: Int, to: Int, key: StackingKey) {
-        document.move(from: from, to: to, key: key)
-        noteChanged(id, reordering: true)
+    /// The shape at `index` and what it holds, at any depth, by their indices, ascending: what
+    /// restacking it moves.
+    private func block(of id: ShapeID, at index: Int) -> [Int] {
+        guard !registry.containingKinds.isEmpty, document.namesContainers, document.shapesNaming(id).isEmpty == false else { return [index] }
+        return ([index] + document.descendantIndices(of: id, containingKinds: registry.containingKinds)).sorted()
+    }
+
+    /// Where the shape's container is in the stack, which it goes no lower than just above; nil for
+    /// a shape on the board directly.
+    private func floor(of record: AnyShapeRecord) -> Int? {
+        guard record.namesContainer else { return nil }
+        return document.container(of: record, containingKinds: registry.containingKinds).flatMap { document.index(of: $0) }
+    }
+
+    /// Whether `block` (ascending) has `index`: a binary search, as a container's block may be long.
+    private static func has(_ block: [Int], _ index: Int) -> Bool {
+        var low = 0, high = block.count
+        while low < high {
+            let middle = (low + high) / 2
+            if block[middle] < index { low = middle + 1 } else { high = middle }
+        }
+        return low < block.count && block[low] == index
+    }
+
+    /// Whether the shapes at `block` are just above `anchor`, one after another (at the bottom, for nil).
+    private static func isBlock(_ block: [Int], justAbove anchor: Int?) -> Bool {
+        let start = (anchor ?? -1) + 1
+        return block.enumerated().allSatisfy { $0.element == start + $0.offset }
+    }
+
+    /// Moves the shapes at `block` (ascending indices, none of them `anchor`) to just above the shape
+    /// at `anchor`, or to the bottom for nil, in their order, with keys between its key and the
+    /// next shape's that stays: a shape alone by one key there, as it always was.
+    private mutating func restack(_ block: [Int], above anchor: Int?) {
+        tops = [:]
+        let shapes = document.shapes
+        var next = (anchor ?? -1) + 1
+        while next < shapes.count, Self.has(block, next) { next += 1 }
+        let low = anchor.map { shapes[$0].stackingKey } ?? nil, high = next < shapes.count ? shapes[next].stackingKey : nil
+        let ids = block.map { shapes[$0].id }
+        if block.count == 1 {
+            let from = block[0]
+            document.move(from: from, to: anchor.map { from < $0 ? $0 : $0 + 1 } ?? 0, key: keys.key(between: low, and: high))
+        } else {
+            document.move(block, above: anchor, keys: stackingKeys(block.count, between: low, and: high))
+        }
+        for id in ids { noteChanged(id, reordering: true) }
+    }
+
+    /// `count` keys rising between `low` and `high`: on top, each above the one before, so they stay
+    /// short; between two, by halving, so they grow with the logarithm of how many.
+    private func stackingKeys(_ count: Int, between low: StackingKey?, and high: StackingKey?) -> [StackingKey] {
+        guard count > 0 else { return [] }
+        guard high != nil else {
+            var made: [StackingKey] = [], previous = low
+            for _ in 0..<count {
+                let key = keys.key(between: previous, and: nil)
+                made.append(key)
+                previous = key
+            }
+            return made
+        }
+        let middle = keys.key(between: low, and: high), lower = (count - 1) / 2
+        return stackingKeys(lower, between: low, and: middle) + [middle] + stackingKeys(count - 1 - lower, between: middle, and: high)
+    }
+
+    // MARK: Containers
+
+    /// Puts a shape in a container on this board (a shape of a `ShapeContaining` kind), or, with nil,
+    /// on the board directly: what it holds goes with it. Joining raises it, with what it holds, just
+    /// above what the container holds already, if it's below that, so it paints above them; leaving
+    /// keeps its place. Only a box shape is put in a container, never in itself or in a shape it
+    /// holds, nor in one on another board: those ask for nothing. Read-only, it's refused, and so is
+    /// a read-only container it would join (services hear it was the container: nothing joins a
+    /// locked frame); a shape in a read-only container is read-only, so nothing leaves one either.
+    public mutating func setContainer(_ id: ShapeID, to container: ShapeID?) { setContainer([id], to: container) }
+
+    /// Puts shapes in a container on this board, or on the board directly, as `setContainer(_:to:)`
+    /// puts each, in one look at what the container holds: those below it rise together, in their
+    /// order. For many shapes at once (a selection grouped), where one at a time would look at what
+    /// the container holds for each.
+    public mutating func setContainer(_ ids: [ShapeID], to container: ShapeID?) {
+        var holder: AnyShapeRecord?
+        if let container {
+            guard let found = document[container], registry.isContainer(found) else { return }
+            holder = found
+        }
+        var joining: [ShapeID] = [], seen: Set<ShapeID> = []
+        for id in ids where seen.insert(id).inserted {
+            guard let record = document[id], record.box != nil, record.container != container else { continue }
+            if let container, let holder {
+                guard !isInside(container, id) else { continue }
+                var joined = record
+                joined.container = container
+                guard !refuses(record, becoming: joined) else { continue }
+                guard !holds(holder) else {
+                    refused.insert(container)
+                    return
+                }
+            } else {
+                guard !refuses(record) else { continue }
+            }
+            joining.append(id)
+        }
+        join(joining, container)
+    }
+
+    /// Whether `shape` is `ancestor`, or in it at any depth, as the board keeps containers (usable or
+    /// not): putting `ancestor` in `shape` would make a loop.
+    private func isInside(_ shape: ShapeID, _ ancestor: ShapeID) -> Bool {
+        var next: ShapeID? = shape, steps = 0
+        while let id = next, steps <= document.shapes.count {
+            if id == ancestor { return true }
+            next = document[id]?.container
+            steps += 1
+        }
+        return false
+    }
+
+    /// `setContainer`, asked nothing, for several shapes at once: what settling does once it's worked
+    /// out what goes where. Those that join a container rise as `raise(_:into:)` says, together.
+    mutating func join(_ ids: [ShapeID], _ container: ShapeID?) {
+        // Where what the container holds tops out before they join it, unless one of them is in it
+        // already (then worked out with them left out, as they rise).
+        var top: Int?
+        if let container, !ids.contains(where: { document.containers(of: $0, containingKinds: registry.containingKinds).contains(container) }) {
+            top = topIndex(of: container)
+        }
+        var joined: [ShapeID] = []
+        for id in ids where name(container, for: id) { joined.append(id) }
+        if let container, !joined.isEmpty { raise(joined, into: container, above: top) }
+    }
+
+    /// Where the topmost of a container and what it holds, at any depth, is in the stack, kept for
+    /// the transaction while nothing moves in it (`tops`).
+    private mutating func topIndex(of container: ShapeID) -> Int? {
+        if let top = tops[container] { return top }
+        guard let index = document.index(of: container) else { return nil }
+        let top = max(index, document.topIndex(heldBy: container, excluding: [], containingKinds: registry.containingKinds) ?? index)
+        tops[container] = top
+        return top
+    }
+
+    /// Names `container` as the shape's, raising nothing; whether that changed it.
+    mutating func name(_ container: ShapeID?, for id: ShapeID) -> Bool {
+        guard let index = document.index(of: id), document.shapes[index].container != container else { return false }
+        // What the containers it leaves hold may top out lower now.
+        if !tops.isEmpty { for left in document.containers(of: id, containingKinds: registry.containingKinds) { tops[left] = nil } }
+        var record = document.shapes[index]
+        record.container = container
+        document.replace(at: index, with: record)
+        noteChanged(id)
+        return true
+    }
+
+    /// Raises shapes that have just joined a container, each with what it holds, to just above what
+    /// the container held already (or the container itself; `top`, where that tops out, if it's
+    /// known), those that are below that, together, in their order. One look at what the container
+    /// holds, however many joined it, and none for one joined after another while the stack stays as
+    /// it is.
+    mutating func raise(_ ids: [ShapeID], into container: ShapeID, above top: Int? = nil) {
+        guard let holder = document.index(of: container) else { return }
+        var blocks: [(index: Int, block: [Int])] = []
+        for id in ids { if let index = document.index(of: id) { blocks.append((index, block(of: id, at: index))) } }
+        let anchor = top ?? max(holder, document.topIndex(heldBy: container, excluding: Set(blocks.lazy.flatMap(\.block)),
+                                                          containingKinds: registry.containingKinds) ?? holder)
+        let rising = Set(blocks.lazy.filter { $0.index < anchor }.flatMap(\.block)).sorted()
+        guard !rising.isEmpty else {
+            // Nothing moved in the stack: what the container, and those it's in, hold tops out higher.
+            let highest = blocks.lazy.compactMap(\.block.last).max() ?? anchor
+            for held in [container] + document.containers(of: container, containingKinds: registry.containingKinds) {
+                if let kept = tops[held] { tops[held] = max(kept, highest) }
+            }
+            return
+        }
+        restack(rising, above: anchor)
     }
 
     /// A shape added in this transaction stays added, however it changes after.
@@ -264,7 +538,10 @@ public struct Transaction {
     /// Each shape deleted takes its board with it, and every board under that (whatever its kind:
     /// the file keeps a board by its owner's id), with no handlers run on them: nothing outside a
     /// board names a shape inside it. A shape asked for whose board, or a board under it, holds a
-    /// read-only shape stays, refused, like a read-only shape.
+    /// read-only shape stays, refused, like a read-only shape. A container deleted lets go of what
+    /// it holds, which stays where it is, now in the container's own container (the nearest one up
+    /// that isn't deleted too), read-only or not; a shape in a read-only container is read-only, so
+    /// it stays, as the container does.
     public mutating func delete(_ ids: Set<ShapeID>) {
         let ids = ids.filter { id in document[id].map { !refuses($0) && !refusesForContents($0) } ?? false }.subtracting(deleting)
         guard !ids.isEmpty else { return }
@@ -276,6 +553,8 @@ public struct Transaction {
         letGo(of: ids)
         isCascading = wasCascading
         guard isOutermost else { return }
+        if document.namesContainers { release(from: deleting) }
+        tops = [:]
         document.remove(deleting)
         var owners: [ShapeID] = []
         for id in deleting {
@@ -292,6 +571,29 @@ public struct Transaction {
         changes.reordered = true
         deleting = []
         didChange = true
+    }
+
+    /// Every shape that names one of `deleted` as its container, and stays, goes into the nearest
+    /// container above that one that isn't deleted, or onto the board directly: as the board keeps
+    /// containers, usable or not, read-only or not, keeping the board whole as letting go does. It
+    /// keeps its place in the stack, which is above that container's.
+    private mutating func release(from deleted: Set<ShapeID>) {
+        for container in deleted {
+            let named = document.shapesNaming(container)
+            guard !named.isEmpty else { continue }
+            var target = document[container]?.container, steps = 0
+            while let id = target, deleted.contains(id), steps <= document.shapes.count {
+                target = document[id]?.container
+                steps += 1
+            }
+            for id in named where !deleted.contains(id) {
+                guard let index = document.index(of: id) else { continue }
+                var record = document.shapes[index]
+                record.container = target
+                document.replace(at: index, with: record)
+                noteChanged(id)
+            }
+        }
     }
 
     /// Whether this transaction keeps a shape because of what its board holds, and notes that it

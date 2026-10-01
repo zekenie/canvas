@@ -12,6 +12,7 @@ import Topology
         expectEqual(vocabulary.kinds.map(\.label), ["Task", "pocket", "Tile", "link"])
         expectEqual(vocabulary.kinds.map(\.names), [.named, .named, .derived, .none])
         expectEqual(vocabulary.kinds.map(\.holdsBoard), [false, true, false, false])
+        expectEqual(vocabulary.kinds.map(\.holdsShapes), [false, true, false, false])
         expectEqual(vocabulary.kinds.map(\.boardName), [nil, "Untitled Pocket", nil, nil])
         let chore = try require(vocabulary.kind("chore"))
         expectEqual(chore.attributes.map(\.name), ["caption", "due", "estimate", "flag", "meta", "note", "ratio", "shout", "status", "tags"])
@@ -60,6 +61,18 @@ import Topology
             - :audited — someone flagged it. Example: :audited
             - :wired-to(S) — it has a wire to a shape the query matches. Example: :wired-to("Pantry")
             """)
+    },
+    test("a kind that holds shapes on its board holds shapes, not a board, and says so; one that owns a board says that") {
+        let vocabulary = try QueryVocabulary(registry: Registry(plugins: queryPlugins(more: [CorralsPlugin(), corralCaptionsPlugin()])))
+        let corral = try require(vocabulary.kind(Corral.kind))
+        expectEqual(corral.holdsShapes, true)
+        expectEqual(corral.holdsBoard, false)
+        expectEqual(corral.boardName, nil, "an untitled one is called by its label")
+        expectEqual(vocabulary.kind(Pocket.kind)?.holdsShapes, true)
+        expectEqual(vocabulary.kind(Pocket.kind)?.holdsBoard, true)
+        expectEqual(vocabulary.kind(Chore.kind)?.holdsShapes, false)
+        expect(vocabulary.text.contains("- corral (corral; titled; holds shapes): caption text (≤ 40)"), vocabulary.text)
+        expect(vocabulary.text.contains("- pocket (pocket; titled; holds a board of shapes)"), vocabulary.text)
     },
     test("without plugins' words, names or edge types, it says so little") {
         let vocabulary = try QueryVocabulary(registry: Registry(plugins: [ChoresPlugin(), PocketsPlugin(), TopologyPlugin(), QueriesPlugin()]))

@@ -24,9 +24,10 @@ import ValidationDetails
     test("the shipped plugin list registers without conflicts") {
         _ = try ShippedPlugins.registry(model: ScriptedLanguageModel())
     },
-    test("the toolbar is Select V, Hand H, Note N, Subboard B, Schema S, Eraser E: arrows are drawn from ports") {
+    test("the toolbar is Select V, Hand H, Note N, Subboard B, Frame F, Schema S, Eraser E: arrows are drawn from ports") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
-        expectEqual(registry.tools.map { ShippedPlugins.help(for: $0, in: registry) }, ["Select (V)", "Hand (H)", "Note (N)", "Subboard (B)", "Schema (S)", "Eraser (E)"])
+        expectEqual(registry.tools.map { ShippedPlugins.help(for: $0, in: registry) },
+                    ["Select (V)", "Hand (H)", "Note (N)", "Subboard (B)", "Frame (F)", "Schema (S)", "Eraser (E)"])
     },
     test("a plugin that needs the key asks for Settings with the action the app's menu item sends") {
         expectEqual(AnthropicSettingsView.showSettingsAction, BoardMenus.showSettings)
@@ -48,6 +49,7 @@ import ValidationDetails
         arrows               shape arrow v1 · label Arrow → arrow · ContentsRows → arrow · service ArrowTargeting · overlay BindingHintsOverlay
         sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
         subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard
+        framing              shape frame · tool frame · shortcut F → tool frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeDetails → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame
         schemas              service SchemaSync · overlay SchemaHighlightFrames · ShapePopovers · shape schema-card v1 · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · mention text → schema-card · mentionable → schema-card · ShapeDetails → schema-card · channel schema-link · edge type schema-link
         validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
         adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
@@ -89,11 +91,11 @@ import ValidationDetails
         let end = try require(guide.range(of: "\n```", range: start..<guide.endIndex)).lowerBound
         expectEqual(String(guide[start..<end]), try ShippedPlugins.registry(model: ScriptedLanguageModel()).report)
     },
-    test("every placed kind has a panel: a note its header, a schema and a subboard their own tabs, an arrow only its header; every nameable kind's header renames it") {
+    test("every placed kind has a panel: a note its header, a schema and a subboard their own tabs, a frame and an arrow only their headers; every nameable kind's header renames it") {
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
         let state = try require(h.editor.detailPanel)
         var panels: [String] = []
-        for (shortcut, x) in [("n", 1000.0), ("s", 1800), ("b", 2200)] {
+        for (shortcut, x) in [("n", 1000.0), ("s", 1800), ("b", 2200), ("f", 2600)] {
             h.key(shortcut)
             h.press(at: CGPoint(x: x, y: 100))
             h.drag(to: CGPoint(x: x + 150, y: 300))
@@ -107,7 +109,7 @@ import ValidationDetails
         panels.append("\(layout.headerText): \(layout.tabs.map(\.title).joined(separator: ", "))")
         // Every header of a kind that can be named renames it: an untitled shape's shows the
         // placeholder. A note placed empty has no issue: its row says Empty Note.
-        expectEqual(panels, ["(Note): ", "(Untitled): Schema", "(Untitled Subboard): Board", "Arrow: "])
+        expectEqual(panels, ["(Note): ", "(Untitled): Schema", "(Untitled Subboard): Board", "(Untitled Frame): ", "Arrow: "])
     },
     test("the table of contents lists the welcome board: each note by its text, each arrow under the note it starts from") {
         let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler(), model: ScriptedLanguageModel())

@@ -79,7 +79,7 @@ EOF
 
 The result goes to standard output: JSON when standard output isn't a terminal (so always, from an agent's shell), and a table for a person at a terminal. A refusal goes to standard error. The exit status is 0 when the query was answered, whatever it counts (a count of 0 is an answer), 1 when the app refused it (read the error), 2 when the command line itself is wrong (an option that isn't one, `--limit many`), and 3 when the app couldn't be reached or didn't answer in time. `build/canvas help query` is the command's own help.
 
-`build/canvas query-vocabulary` is what this app's queries can name: every kind, with what the app calls it, whether its shapes are titled (`named`, `derived` from what they hold, or `none`), whether it holds a board, and each attribute with what it takes; the edge types, each `under` the one it's a kind of; and every pseudo-class, with what it takes, what it means, an example, and the plugin it's `from` (the language's own are `queries`'). `vocabulary` is all of it as one block of text, the one `--ask` sends Claude. It's about the app, so it takes no `--board`.
+`build/canvas query-vocabulary` is what this app's queries can name: every kind, with what the app calls it, whether its shapes are titled (`named`, `derived` from what they hold, or `none`), whether it holds a board (`holdsBoard`: a subboard) and whether it holds shapes (`holdsShapes`: a subboard or a frame, what may stand where a container goes), and each attribute with what it takes; the edge types, each `under` the one it's a kind of; and every pseudo-class, with what it takes, what it means, an example, and the plugin it's `from` (the language's own are `queries`'). `vocabulary` is all of it as one block of text, the one `--ask` sends Claude. It's about the app, so it takes no `--board`.
 
 ## The result
 
@@ -99,7 +99,7 @@ The result goes to standard output: JSON when standard output isn't a terminal (
   - `id`: the shape's id. Use it to name the shape in a later query (`#00000000-…`), and for nothing else: `draw` names shapes only by title.
   - `kind`, and `title`, unless it has none (a schema card's is its schema's `"title"`).
   - `board`: the board it's on, `"root"` for the top board, else the id of the shape that owns it.
-  - `inside`: the names of the boards it's inside, outermost first, as the path over the canvas names them (an untitled subboard's is "Untitled Subboard"). Left out on the top board.
+  - `inside`: the names of the subboards and frames it's inside, outermost first, as the path over the canvas names a board (an untitled subboard's is "Untitled Subboard"), and a frame by its title (an untitled one's is "Frame"). Left out for a shape inside nothing.
   - `properties`: its attributes as they read (`locked` and `channel` only when they're set): text as a person reads it (a mention as `@` and the name of what it mentions), numbers, `true` and `false`. Its title and where it is aren't among them.
   - `cut`: the attributes cut at 500 characters (their text ends with `…`). `--fields` lists them whole.
   - `connection`, for a connection (an arrow bound at both ends): its edge `type`, and the shapes it runs `from` and `to`, each by `id` and `title`.
@@ -124,7 +124,7 @@ A connection's row (`arrow[channel=note-link]`):
 ## What a query sees
 
 - **Every shape the app can show, on every board of the file.** A shape the app keeps aside (a kind this app doesn't have, from a newer app) and a board it can't show aren't in any answer; `#` with such a shape's id says which it is.
-- **File order.** Every answer lists its shapes as the top board holds them, back to front, each subboard followed at once by what its board holds, all the way down. The same query on the same file answers in the same order.
+- **File order.** Every answer lists its shapes as the top board holds them, back to front, each subboard followed at once by what its board holds, and each frame by what's in it, all the way down. The same query on the same file answers in the same order.
 - **When.** An answer is the file as it was when the app took up the query, but for titles a shape works out from what it holds (a schema card's) and whether shapes are valid (`:invalid`, `:warned`), which are as the app has them when the query asks. So a shape changed while the query ran can answer with its newer title or verdict. The board the window shows (`:current-board`) and what's selected (`:selected`) are as they were when the query started.
 - **Names as the app shows them.** A title is a shape's name, derived ones included. Text that mentions shapes reads as a person reads it, each mention `@` and the name of what it mentions now, never the form it's stored in.
 - **A query changes nothing.** No shape, no selection, no step of undo, and it never ends the person's typing: a note being typed into reads as typed so far (its last keystroke), and the answer warns that it may still change.
@@ -348,16 +348,16 @@ arrow[bend=0]
 
 ## Inside
 
-A subboard holds a board of shapes. A shape on that board, or on a board inside it, is inside the subboard. That's the only inside a query knows: never a shape drawn within another's bounds, which is what `draw`'s `inside` places.
+Two kinds hold shapes. A subboard holds a board of shapes: a shape on that board, or on a board inside it, is inside the subboard. A frame holds shapes on the board it's on: a shape in it, or in a frame in it, or on the board of a subboard in it, is inside the frame. It's one tree, whatever holds what, so every form here reads a frame as it reads a subboard: `"Sprint 3" sticky-note` is every note in the frame called Sprint 3, at any depth, `frame"Sprint 3" > *` what's directly in it, and `frame:has("Login bug")` the frames Login bug is in. That's the only inside a query knows: a shape drawn over a note or a subboard's card (what `draw`'s `inside` places) isn't inside it; over a frame, it's in the frame, since nothing sits across a frame's edge.
 
 | form | means |
 |---|---|
 | `A B` | B, inside some A, at any depth |
-| `A > B` | B, directly on the board of some A |
+| `A > B` | B, directly inside some A: on a subboard's board and in no frame there, or in a frame |
 | `:inside(S)` | inside a shape S matches, at any depth: `"Refund policy":inside("Payments")` asks it of one shape |
 | `:has(S)` | has a shape S matches inside it, at any depth |
-| `:has(> S)` | has a shape S matches directly on its board: is its parent |
-| `:top-level` | on the file's top board: inside nothing |
+| `:has(> S)` | has a shape S matches directly inside it: is its parent |
+| `:top-level` | on the file's top board and in no frame: inside nothing |
 | `:current-board` | on the board the file's window shows |
 
 ```query
@@ -409,14 +409,14 @@ sticky-note:top-level
 sticky-note :selected
 ```
 
-Auth, the shape selected, is on the top board, inside no subboard:
+Auth, the shape selected, is on the top board, inside nothing:
 
 ```query
 /* matches: */
 subboard *:selected
 ```
 
-- **What holds nothing can't have anything inside it.** When the container side of a space, a `>`, `:inside()` or `:has()` can only be kinds that hold no board (a schema card, a note, named straight or through `:is()` or `:where()`), the query is refused (`cannot_contain`), with the kinds that do. Being drawn within a shape's bounds isn't something a query can ask yet.
+- **What holds nothing can't have anything inside it.** When the container side of a space, a `>`, `:inside()` or `:has()` can only be kinds that hold no shapes (a schema card, a note, named straight or through `:is()` or `:where()`), the query is refused (`cannot_contain`), with the kinds that do. Being drawn within the bounds of a shape that holds none isn't something a query can ask yet.
 
 ```query-error
 /* reason: cannot_contain */
@@ -680,7 +680,7 @@ The messages are examples. The wording can differ, but the reason doesn't.
 | `invalid_value` | A value the attribute can't take: `arrow[bend>far]`, `[locked=maybe]`. | A value of what the hint says it takes. |
 | `unsupported_operator` | An operator the attribute's type has no meaning for: `sticky-note[text<5]`; `i` on a number. | One the hint names: `*=`, `^=`, `$=` or `=` for text. |
 | `bad_argument` | A word's brackets hold the wrong thing: `:contains(API)`, `:selected("x")`, `:between("Auth")`, `:edge-to("Auth", "Checkout")`. | The hint's form: `:contains("API")`, `:edge-to(:is("Auth", "Checkout"))`. |
-| `cannot_contain` | The container side can only be kinds that hold no board: `:inside("Warehouse")`; `sticky-note "Checkout"`, a title inside a note. | A subboard, or another question: where shapes sit isn't in the language; for a kind and a title, the two together, `sticky-note"Checkout"`. |
+| `cannot_contain` | The container side can only be kinds that hold no shapes: `:inside("Warehouse")`; `sticky-note "Checkout"`, a title inside a note. | A subboard or a frame, or another question: where shapes sit isn't in the language; for a kind and a title, the two together, `sticky-note"Checkout"`. |
 | `no_names` | Nothing in this app names shapes, so titles can't be used. | Kinds, ids and attributes. |
 | `no_topology` | Nothing in this app knows what's on which board, or what connects to what. | Nothing: no query can be answered. |
 | `no_queries` | Nothing in this app answers queries. | Nothing: `canvas query` can't work here. |
@@ -790,11 +790,11 @@ These are left out on purpose. What they protect is that a query means one thing
 - **CSS with no meaning here.** Shapes have no siblings, order or columns (`+`, `~`, `:nth-child`, `||`), no pseudo-elements, no namespaces, and a query sees no pointer (`:hover`). Each is refused rather than read some other way.
 - **Words that read two ways.** "Parent of" and "child of" are said as `:has(> …)` and `… > *`, and edges' direction words say what the result does. `:source-of` and `:target-of`, an older language's words, and `:neighbor-of`, this one's old name for `:connected-to`, are refused with the word to write.
 - **A space that means two things.** A space is always inside, so one before a test is refused.
-- **Where shapes are drawn.** Inside is a subboard's board. What's inside a note is refused (`cannot_contain`), never read as what's drawn within its bounds.
+- **Where shapes are drawn.** Inside is a subboard's board, or a frame. What's inside a note is refused (`cannot_contain`), never read as what's drawn within its bounds.
 
 ## Honest limits
 
-- **Where shapes are isn't read.** A query sees what's inside what by boards, and what's connected to what by edges, never positions, sizes or overlaps.
+- **Where shapes are isn't read.** A query sees what's inside what by boards and frames, and what's connected to what by edges, never positions, sizes or overlaps.
 - **Text being typed** reads as typed so far, and the answer warns that it may still change (`editing`).
 - **Shapes the app keeps aside**, and those on boards it can't show, aren't in any answer.
 - **Derived titles and validity are as the app has them when asked**, so a query that runs while the person edits can answer with a schema card's newer title, or a newer verdict, than the rest of its answer.

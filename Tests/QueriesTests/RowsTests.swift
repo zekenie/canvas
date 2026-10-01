@@ -71,6 +71,26 @@ import Topology
         expectEqual(row.inside, ["pocket", "pocket"])
         expectEqual(row.title, nil)
     },
+    test("inside: the containers a shape is in too, between the boards, outermost first: a container's name, else its kind's label") {
+        let h = try yard()
+        let inside = Dictionary(try answer("*", on: h).rows.map { ($0.id, $0.inside) }, uniquingKeysWith: { first, _ in first })
+        expectEqual(inside[id(1)], [])
+        expectEqual(inside[id(5)], [])
+        expectEqual(inside[id(6)], ["Pen"])
+        expectEqual(inside[id(8)], ["Pen", "corral"], "an untitled corral by its kind's label: it holds no board to have a placeholder")
+        expectEqual(inside[id(2)], ["Pen"])
+        expectEqual(inside[id(15)], ["Pen", "Pantry"])
+        expectEqual(inside[id(16)], ["Pen", "Pantry", "Bin"])
+        expectEqual(inside[id(21)], ["Pen", "Pantry", "Bin", "Untitled Pocket"])
+        expectEqual(inside[id(11)], ["Pen", "Pantry"])
+        let rows = try answer(#""Delta", "Gamma""#, on: h).rows
+        expectEqual(rows.map(\.board), [.root, BoardID(owner: id(2))], "the board it's on, whatever it's in there")
+        // --ask's titles name them as a row does.
+        let queries = try require(h.editor.queries)
+        let titles = try awaitResult { try await queries.titles(for: "Delta", limit: 1) }
+        expectEqual(titles.first?.title, "Delta")
+        expectEqual(titles.first?.inside, ["Pen", "Pantry", "Bin"])
+    },
     test("a connection says where it runs: its type, from the shape it starts on to the one it ends on") {
         let h = try shelf()
         let rows = try answer("link", on: h).rows

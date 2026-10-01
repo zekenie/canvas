@@ -536,7 +536,7 @@ struct Parser {
                     let child = complex.combinators[index] == .child ? "> " : ""
                     rewritten = "\(Printer.compound(complex.compounds[index])):has(\(child)\(rewritten))"
                 }
-                throw QueryError(.unsupported, "Inside :has(), each part stands alone, or after > for what's directly on the board.",
+                throw QueryError(.unsupported, "Inside :has(), each part stands alone, or after > for what's directly inside.",
                                  premise: HintPremise(.holdShapes(Array(complex.compounds.dropLast())), hint: ":has(\(child ? "> " : "")\(rewritten))"),
                                  span: complex.span)
             }
@@ -749,7 +749,7 @@ struct Parser {
         _ = try? probe.lexer.skipSpace()
         let next = (try? probe.compound()).map { written($0.span) } ?? "*"
         return QueryError(.unsupported, "Shapes have no siblings here, so \(combinator) has no meaning.",
-                          hint: "\"Payments\" > \(next) lists those on one board.", span: span(position..<(position + 1)))
+                          hint: "\"Payments\" > \(next) lists those directly inside one shape.", span: span(position..<(position + 1)))
     }
 
     /// `||` at the position.

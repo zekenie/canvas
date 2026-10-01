@@ -30,8 +30,8 @@ public enum KnownInventions {
     /// Every invented word, lowercase and without its colon.
     public static let words: [String: Invention] = Dictionary(uniqueKeysWithValues: [
         // Containment: "parent" and "ancestor" are :has, "inside" is :inside.
-        unknown("parent-of", "A parent has it directly on its board: :has(> …)."),
-        unknown("child-of", "Directly on its board: … > *; at any depth: :inside(…).", holding: true),
+        unknown("parent-of", "A parent has it directly inside: :has(> …)."),
+        unknown("child-of", "Directly inside it: … > *; at any depth: :inside(…).", holding: true),
         unknown("ancestor-of", "An ancestor has it inside, at any depth: :has(…)."),
         unknown("descendant-of", "Inside it, at any depth: :inside(…).", holding: true),
         unknown("in", "Inside it, at any depth: :inside(…).", holding: true),
@@ -49,7 +49,7 @@ public enum KnownInventions {
         unknown("matches", "CSS's old name for :is: :is(…)."),
         ("minimized", Invention(reason: .unknownPseudoClass, message: ":minimized isn't a pseudo-class: shapes here aren't minimized.", write: nil)),
         // CSS with no meaning here.
-        meaningless("root", "no shape is the file's root", "Shapes on the file's top board: :top-level."),
+        meaningless("root", "no shape is the file's root", "Shapes inside nothing, on the file's top board: :top-level."),
         meaningless("empty", "it could mean nothing inside or no text", "Nothing inside it: :not(:has(*)); no text: :not([text])."),
         unordered("first-child"), unordered("last-child"), unordered("only-child"),
         unordered("first-of-type"), unordered("last-of-type"), unordered("only-of-type"),

@@ -70,11 +70,19 @@ public struct KeyStroke: Hashable, Sendable {
     }
 }
 
-public enum CanvasCursor: Sendable {
+public enum CanvasCursor: Hashable, Sendable {
     case standard, crosshair, openHand, closedHand
     /// Over something a click does something with, as a link's or a button's (Selection's canvas
     /// buttons).
     case pointingHand
+    /// Over something that resizes a box from one of its sides or corners, and while it does
+    /// (Selection's resize handles): the frame-resize cursor for that place on the box.
+    case resize(ResizePosition)
+
+    /// Where on a box a resize cursor's handle is: a side, or a corner.
+    public enum ResizePosition: Hashable, Sendable {
+        case top, left, bottom, right, topLeft, topRight, bottomLeft, bottomRight
+    }
 }
 
 /// Pointer position, smoothed speed and smoothed velocity, from event locations and timestamps.

@@ -205,3 +205,11 @@ public protocol ShapeReferencing: ShapeDefinition {
 /// shape whose id keys it, whatever that shape's kind; this says which kinds' shapes own theirs, so
 /// which boards are there to show. Its schema says so (`x-canvas-board`).
 public protocol BoardOwning: ShapeDefinition {}
+
+/// Each shape of this box kind contains shapes on its own board (a frame): a shape it holds names it
+/// as its container (`AnyShapeRecord.container`, set in a transaction, `setContainer`), which isn't
+/// in any schema. Nothing to implement: the core moves what a container holds with it, paints it
+/// above it, holds it read-only while the container is, lets go of it into the container's own
+/// container when the container is deleted, and keeps what's put down from sitting across a
+/// container's edge (`Transaction.settle`). Only box kinds hold, and are held.
+public protocol ShapeContaining: ShapeDefinition where Props: BoxShapeProps {}

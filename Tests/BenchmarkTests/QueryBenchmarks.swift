@@ -5,6 +5,7 @@ import CanvasRPC
 import CanvasTesting
 import Composition
 import Foundation
+import Frames
 import Geometry
 import LanguageModels
 import Mentions
@@ -183,6 +184,33 @@ func arrow(from start: ShapeID, to end: ShapeID) -> AnyShapeRecord {
     return CanvasDocument(shapes: nodes + zip(nodes, nodes.dropFirst()).map { arrow(from: $0.id, to: $1.id) })
 }
 
+
+/// A generated board (`generatedBoard`) whose box shapes are all held: each 20 of them, in the
+/// board's order, by a corral (CanvasTesting's container, standing in for frames) just below them,
+/// and each 5 of those corrals by one more, below them all. Its arrows stay on the board directly.
+@MainActor func corralledBoard(shapes count: Int) -> CanvasDocument {
+    var shapes: [AnyShapeRecord] = [], outer: ShapeID?, inner: ShapeID?, held = 0, inners = 0
+    for record in generatedBoard(shapes: count).shapes {
+        guard record.box != nil else {
+            shapes.append(record)
+            continue
+        }
+        if held % 20 == 0 {
+            if inners % 5 == 0 {
+                let id = ShapeID()
+                shapes.append(AnyShapeRecord(ShapeRecord(id: id, Corral(.zero))))
+                outer = id
+            }
+            let id = ShapeID()
+            shapes.append(AnyShapeRecord(ShapeRecord(id: id, Corral(.zero))).copy(as: id, container: outer))
+            inner = id
+            inners += 1
+        }
+        shapes.append(record.copy(as: record.id, container: inner))
+        held += 1
+    }
+    return CanvasDocument(shapes: shapes)
+}
 
 /// The title of a note on a generated board of `size` shapes, near its middle: "Title 504" of 1,000,
 /// "Title 5004" of 10,000.
@@ -767,6 +795,60 @@ func heldCommitPlugin(_ held: HeldCommit) -> Contributor {
             }
             report(String(format: "%6d shapes, --ask's request without the model: %@ (budget %.0f main, %.0f off)",
                           size, lines.joined(separator: "; "), Budget.askAssemblyMain.at(size), Budget.askAssemblyOffMain.at(size)))
+        }
+    },
+    test("containers cost a query what they hold: a board whose shapes are all held two deep within the scan's, the walks' and the rows' budgets, and one without them what it did beside a kind that holds shapes") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        // The shipped list without frames, so with no kind that holds shapes, and as it ships.
+        let bare = try Registry(plugins: shippedPlugins(pasteboard).filter { $0.id != .framing })
+        let shipped = try Registry(plugins: shippedPlugins(pasteboard))
+        let holding = try Registry(plugins: shippedPlugins(pasteboard) + [CorralsPlugin()])
+        let scan = #"\#(StickyNote.kind.rawValue)[text*="note" i]:not(:inside(*))"#
+        let through = #"\#(Corral.kind.rawValue) \#(StickyNote.kind.rawValue)[text*="note" i]"#
+        let walks = ":is(:has(*), :inside(*)):not(:downstream-of(*)):not(:upstream-of(*)), :component-of(*)"
+        for size in sizes {
+            // No container on the board: the scan with no kind that holds shapes, and with frames
+            // beside it, as the app ships, each first after the file opens, by turns.
+            let document = generatedBoard(shapes: size)
+            var without: [Double] = [], beside: [Double] = []
+            for _ in 0..<7 {
+                for registry in [bare, shipped] {
+                    let editor = CanvasEditor(registry: registry, document: document, scheduler: ManualScheduler())
+                    _ = try require(editor.queries).vocabulary
+                    let off = try queried(scan, on: editor).timings.offMain.milliseconds
+                    if registry.containingKinds.isEmpty { without.append(off) } else { beside.append(off) }
+                }
+            }
+            // Every box shape held, two deep: every note's text read through the containers, the
+            // walks, and every shape's row, its inside naming the corrals it's in.
+            let held = corralledBoard(shapes: size)
+            let editor = CanvasEditor(registry: holding, document: held, scheduler: ManualScheduler())
+            _ = try require(editor.queries).vocabulary
+            var scans: [Double] = [], paths: [Double] = [], rows: [Double] = []
+            var notes = 0, listed: QueryResult?
+            for _ in 0..<5 {
+                let answered = try queried(through, on: editor)
+                scans.append(answered.timings.offMain.milliseconds)
+                notes = answered.count
+                paths.append(try queried(walks, on: editor).timings.offMain.milliseconds)
+                let all = try queried("*", on: editor, limit: QueryBudget.maxRows, properties: .none)
+                rows.append(all.timings.offMain.milliseconds)
+                listed = all
+            }
+            expectEqual(notes, held.shapes.count { $0.kind == StickyNote.kind }, "every note is held, and says “Note”")
+            expectEqual(listed?.rows.first { $0.kind == StickyNote.kind }?.inside, [Corral.kind.rawValue, Corral.kind.rawValue],
+                        "each untitled corral by its kind's label")
+            let plain = middle(without), withKind = middle(beside), scanned = middle(scans), walked = middle(paths), made = middle(rows)
+            report(String(format: "%6d shapes, no container: the scan off the main actor %6.2f ms, %6.2f beside a kind that holds shapes; all held two deep (%d corrals): every held note's text %6.2f (budget %.0f), the walks %6.2f (budget %.0f), %d rows %6.2f (budget %.0f)",
+                          size, plain, withKind, held.shapes.count - document.shapes.count, scanned, Budget.queryScan.at(size), walked,
+                          Budget.queryPathological.at(size), listed?.rows.count ?? 0, made, Budget.queryRows.at(size)))
+            if holdsToBudgets {
+                expect(withKind < max(plain * 1.25, plain + 0.5), "the scan on \(size) shapes took \(withKind) ms beside a kind that holds shapes, \(plain) without")
+                expect(scanned < Budget.queryScan.at(size), "every held note's text on \(size) shapes took \(scanned) ms")
+                expect(walked < Budget.queryPathological.at(size), "the walks on \(size) held shapes took \(walked) ms")
+                expect(made < Budget.queryRows.at(size), "every row of \(size) held shapes took \(made) ms")
+            }
         }
     },
     test("no slice of any query here is longer than 2 ms and the record that crosses it") {

@@ -5,12 +5,14 @@ import DrawScript
 import Geometry
 
 // Applying a placed script, in one transaction: the deletes, the shapes (each after every script
-// shape it's drawn inside or on, new ones added on top, restated ones updated in place and raised
-// above a shape they're moved inside or on, or a zone they sit in where they land), then the
-// edges, through DrawEdges, against the board as the transaction has it (so an end may be new).
-// Then what it did, read from the transaction's document, and what it should say: each shape's
-// issues (DrawChecks), pushes, near misses, edges whose side faces away, shapes out of view.
-// Anything wrong throws, and the transaction commits nothing.
+// shape it's drawn inside or on, or in, new ones added on top, restated ones updated in place and
+// raised above a shape they're moved inside or on, or a zone they sit in where they land; a
+// container moved taking what it holds along), each put down as by hand, settled in or out of the
+// containers it's over (`Transaction.settle`), then the edges, through DrawEdges, against the board
+// as the transaction has it (so an end may be new). Then what it did, read from the transaction's
+// document, and what it should say: each shape's issues (DrawChecks), pushes, nudges, near misses,
+// edges whose side faces away, shapes out of view. Anything wrong throws, and the transaction
+// commits nothing.
 
 extension Drawing {
     func apply(to transaction: inout Transaction, reveals: Bool) throws(AutomationError) -> DrawResult {
@@ -49,19 +51,27 @@ extension Drawing {
             }
         }
 
-        // Shapes, each after what it's drawn inside or on, so it paints above it.
+        // Shapes, each after what it's drawn inside or on, or in, so it paints above it; each put
+        // down as by hand, once there's a container on the board to put it down in or out of
+        // (settling looks at the whole board, so a board without one isn't looked at for each).
+        var nudges: [ShapeID: CGPoint] = [:]
+        var settles = !registry.containingKinds.isEmpty && transaction.document.shapes.contains(where: registry.isContainer)
         for index in applyOrder() {
             let item = items[index]
             if let existing = item.existing {
                 // Raised while it can be: before a change that locks it, or after one that unlocks
                 // it. One read-only before and after is as it was (placing refused any real change
                 // to it), and stays where it paints.
-                if !registry.isReadOnly(existing) {
+                if !registry.isReadOnly(existing, in: transaction.document) {
                     raise(item, in: &transaction)
-                    if item.record != existing { transaction.update(existing.id) { $0 = item.record } }
+                    update(item, existing, in: &transaction)
                 } else {
-                    if item.record != existing { transaction.update(existing.id) { $0 = item.record } }
-                    if let now = transaction.document[existing.id], !registry.isReadOnly(now) { raise(item, in: &transaction) }
+                    update(item, existing, in: &transaction)
+                    if let now = transaction.document[existing.id], !registry.isReadOnly(now, in: transaction.document) { raise(item, in: &transaction) }
+                }
+                // Put down again: moved by a placement, or resized where it is.
+                if settles, item.moves || item.record.box?.size != existing.box?.size {
+                    try settle(item, in: &transaction, nudges: &nudges, warnings: &warnings)
                 }
             } else {
                 guard isNew(item.record.id, in: transaction) else {
@@ -72,6 +82,8 @@ extension Drawing {
                     throw AutomationError(item.statement, .internal, "\(subject(of: item)) couldn't go on the board")
                 }
                 raise(item, in: &transaction)
+                if registry.isContainer(item.record) { settles = true }
+                if settles { try settle(item, in: &transaction, nudges: &nudges, warnings: &warnings) }
             }
         }
 
@@ -144,7 +156,64 @@ extension Drawing {
 
         let rows = changes.enumerated().sorted { ($0.element.line, $0.offset) < ($1.element.line, $1.offset) }.map(\.element)
         let said = warnings.enumerated().sorted { ($0.element.line ?? .max, $0.offset) < ($1.element.line ?? .max, $1.offset) }.map(\.element)
-        return DrawResult(changes: rows, warnings: said)
+        return DrawResult(changes: rows, warnings: said, nudges: nudges)
+    }
+
+    /// A restated shape as the statement leaves it: what it says, and where it's placed. A
+    /// container placed elsewhere takes what it holds along (`translate`), while it can move: after a
+    /// change that unlocks it, before one that locks it. A shape that isn't placed stays where it is
+    /// now (a container this run moved may have taken it along), at its size.
+    private func update(_ item: ShapeItem, _ existing: AnyShapeRecord, in transaction: inout Transaction) {
+        guard let now = transaction.document[existing.id] else { return }
+        var record = item.record
+        if !item.moves, let at = now.box?.origin { record.box?.origin = at }
+        guard item.moves, registry.isContainer(existing), let from = now.box?.origin, let to = record.box?.origin, from != to else {
+            if record != now { transaction.update(existing.id) { $0 = record } }
+            return
+        }
+        if registry.isReadOnly(now, in: transaction.document) {
+            var staying = record
+            staying.box?.origin = from
+            transaction.update(existing.id) { $0 = staying }
+        }
+        transaction.translate([existing.id], by: to - from)
+        if let moved = transaction.document[existing.id], moved != record { transaction.update(existing.id) { $0 = record } }
+    }
+
+    /// Puts a shape down as a person would (`Transaction.settle`): into the container holding most
+    /// of it, nudged wholly in over its edge, or out of those it reaches into, which is said, and what
+    /// it nudged kept for the glide. A container put down takes in what it lands on, and what it holds
+    /// over its edge goes wholly in or out: said too, as what moved that the script didn't name. A
+    /// read-only container (a locked frame) takes nothing: the run is refused.
+    private func settle(_ item: ShapeItem, in transaction: inout Transaction, nudges: inout [ShapeID: CGPoint],
+                        warnings: inout [DrawWarning]) throws(AutomationError) {
+        guard !registry.containingKinds.isEmpty else { return }
+        let id = item.record.id
+        let before = transaction.document[id]?.box
+        switch transaction.settle([id]) {
+        case .refused(let container):
+            let named = transaction.document[container].map { self.named($0) } ?? "a container"
+            throw AutomationError(item.statement, .readOnly, "\(subject(of: item)) would go in \(named), which is read-only (locked, say)",
+                                  hint: "place it clear of \(named), or ask the user to unlock it")
+        case .settled(let moved):
+            for (shape, delta) in moved { nudges[shape] = (nudges[shape] ?? .zero) + delta }
+            let own = moved[id] ?? .zero
+            // What else moved: not what it took along (by as much as it went), but what it took in or
+            // let out across its edge.
+            let others = moved.filter { $0.key != id && $0.value != own }.count
+            if others > 0 {
+                warnings.append(DrawWarning(line: item.statement.line,
+                                            "\(others == 1 ? "a shape" : "\(others) shapes") over the edge of \(subject(of: item)) \(others == 1 ? "was" : "were") nudged wholly in or out of it"))
+            }
+            guard let before, own != .zero, let after = transaction.document[id]?.box else { return }
+            // Said of each container whose edge it was over as it was put down.
+            for container in transaction.document.shapes where container.id != id && registry.isContainer(container) {
+                guard let edge = container.box, Self.overlaps(before, edge), !before.contains(edge), !edge.contains(before) else { continue }
+                let way = edge.contains(after) ? "in" : "out"
+                warnings.append(DrawWarning(line: item.statement.line,
+                                            "\(subject(of: item)) was over the edge of \(self.named(container)), so it was nudged \(way)"))
+            }
+        }
     }
 
     /// Draws one edge, or changes the one drawn (only what the statement names), or leaves it be.
@@ -206,7 +275,7 @@ extension Drawing {
         if let existing = match?.record {
             guard made.id == existing.id else { throw AutomationError(statement, .internal, "\(written) came out another shape") }
             if made == existing { return (existing, .unchanged) }
-            if registry.isReadOnly(existing), registry.isReadOnly(made) {
+            if registry.isReadOnly(existing, in: document), registry.isReadOnly(made, in: document) {
                 throw AutomationError(statement, .readOnly, "\(written) is read-only (locked, say), so it stays as it is",
                                       hint: "leave it out of the script, or ask the user to unlock it")
             }
@@ -220,13 +289,24 @@ extension Drawing {
     }
 
     /// The script's shapes in script order, but each after every script shape (new or restated)
-    /// it's drawn inside or on, so that shape is added, or raised, before it's put above it.
+    /// it's drawn inside or on, or in, so that shape is added, or raised, before it's put above it;
+    /// and each restated shape after the containers holding it the script restates, so one that moves
+    /// takes it along before it's put where it says.
     func applyOrder() -> [Int] {
+        let kinds = registry.containingKinds, document = target.document
+        var restated: [ShapeID: Int] = [:]
+        for index in items.indices { if let id = items[index].existing?.id { restated[id] = index } }
         var after: [Set<Int>] = items.indices.map { index in
             var needs: Set<Int> = []
             for (clause, found) in zip(items[index].shape.clauses, items[index].targets) where clause.relation == .inside || clause.relation == .on {
                 for target in found {
                     if case .item(let other) = target, other != index { needs.insert(other) }
+                }
+            }
+            if let holder = items[index].holder, let other = restated[holder.id], other != index { needs.insert(other) }
+            if !kinds.isEmpty, let existing = items[index].existing {
+                for container in document.containers(of: existing.id, containingKinds: kinds) {
+                    if let other = restated[container], other != index { needs.insert(other) }
                 }
             }
             return needs

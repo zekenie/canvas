@@ -130,7 +130,8 @@ public struct QueryError: Error, Sendable, Equatable, CustomStringConvertible {
 public struct HintPremise: Sendable, Equatable {
     /// What the hint takes for granted.
     public enum Claim: Sendable, Equatable {
-        /// Each of these can hold shapes: some shape it matches holds a board.
+        /// Each of these can hold shapes: some shape it matches is of a kind that holds shapes (a
+        /// board of them, or shapes on its own).
         case holdShapes([Compound])
         /// Some shape the query ranges over is titled this, as written.
         case titled(String)

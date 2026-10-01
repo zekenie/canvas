@@ -68,6 +68,10 @@ public struct ShapeContext {
         return index
     }
 
+    /// A geometry being worked out reads more than one shape: it's worked out again on every change
+    /// of the board, as one that reads `document` is.
+    func currentIndexNotesDocument() { currentIndex?.noteReadingDocument() }
+
     /// A shape, by id.
     public func shape(_ id: ShapeID) -> AnyShapeRecord? {
         currentIndex?.noteRead(id)

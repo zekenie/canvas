@@ -155,10 +155,12 @@ struct Solver {
         var targets: [LayoutProblem.ResolvedTarget]
     }
 
-    /// `inside T`: within T's bounds on one axis, the gap in from each side.
+    /// `inside T` (or `in "T"`, its holder): within T's bounds on one axis, the gap in from each side.
     struct Inside {
         var box: Int
-        var clause: Int
+        /// What keeps it there, as written: the placement (`inside "T" top-left`), or its holder's
+        /// `in "T"`.
+        var written: String
         var axis: Axis
         var target: LayoutProblem.ResolvedTarget
         var gap: CGFloat
@@ -260,6 +262,16 @@ struct Solver {
                 case .direction, .level: break
                 }
             }
+            if let holder = box.holder {
+                switch holder.ref {
+                case .free(let other):
+                    guard problem.free.indices.contains(other), other != index else { throw broken("\(holder.written) names a box there isn't") }
+                case .fixed(let other):
+                    guard problem.fixed.indices.contains(other), problem.fixed[other].rect.isFinite else { throw broken("\(holder.written) names a box there isn't") }
+                case .obstacle:
+                    throw broken("\(holder.written) names an obstacle, not a box")
+                }
+            }
         }
     }
 
@@ -329,11 +341,23 @@ struct Solver {
                     let target = clause.targets[0]
                     exempt(index, target)
                     for axis in Axis.allCases where speaks(index, axis) {
-                        inside.append(Inside(box: index, clause: number, axis: axis, target: target, gap: gap(index, clause, target, inside: true)))
+                        inside.append(Inside(box: index, written: clause.written, axis: axis, target: target, gap: gap(index, clause, target, inside: true)))
                     }
                 }
             }
         }
+        // What holds it keeps it within, as `inside` does, wherever its placements put it there; it
+        // names a shape on the board, as a placement against one does.
+        if let holder = box.holder {
+            let target = LayoutProblem.ResolvedTarget(holder.ref, written: holder.written)
+            if case .fixed = holder.ref { boardTied[index] = true }
+            exempt(index, target)
+            for axis in Axis.allCases where speaks(index, axis) {
+                inside.append(Inside(box: index, written: holder.written, axis: axis, target: target, gap: GapName.tight.value))
+            }
+        }
+        // What goes with it is never in its way.
+        exemptObstacles[index].formUnion(box.carries)
 
         // A lone direction also centers the axis nothing else speaks for; failing that, a restated
         // shape stays where it is on it, and a new one says nothing about it.
@@ -503,12 +527,10 @@ struct Solver {
     func pureCluster(of anchor: Int) -> [Int]? {
         var neighbors = Array(repeating: [Int](), count: count)
         for (index, box) in problem.free.enumerated() {
-            for clause in box.clauses {
-                for target in clause.targets {
-                    if case .free(let other) = target.ref {
-                        neighbors[index].append(other)
-                        neighbors[other].append(index)
-                    }
+            for target in box.clauses.flatMap(\.targets).map(\.ref) + (box.holder.map { [$0.ref] } ?? []) {
+                if case .free(let other) = target {
+                    neighbors[index].append(other)
+                    neighbors[other].append(index)
                 }
             }
         }
@@ -745,7 +767,7 @@ struct Solver {
             guard at > -.infinity, holder > -.infinity else { continue }
             let start = holder + whole.start, end = start + whole.length
             guard at < start + entry.gap - Self.slack || at + placed[entry.box][axis] > end - entry.gap + Self.slack else { continue }
-            let box = problem.free[entry.box], clause = box.clauses[entry.clause]
+            let box = problem.free[entry.box]
             let holderName = name(entry.target.ref)
             var clear: [String] = [], apart: [String] = [], lines = [box.line]
             for separation in separations where separation.axis == axis && separation.moved.contains(entry.box) {
@@ -766,7 +788,7 @@ struct Solver {
             // Only a shape can be made bigger: a script can't widen the view, or the board.
             let grows = if case .fixed(let holder) = entry.target.ref { problem.fixed[holder].word == nil } else { true }
             throw ScriptError(line: lines.max()!, reason: .noRoom,
-                              "\(box.name) is \(clause.written), and there's no room left in \(holderName)"
+                              "\(box.name) is \(entry.written), and there's no room left in \(holderName)"
                                   + (clear.isEmpty ? "" : " clear of \(listed(clear))")
                                   + (apart.isEmpty ? "" : "\(clear.isEmpty ? "" : ",") with \(listed(apart))"),
                               hint: fits && !(clear + apart).isEmpty ? "place it elsewhere, or say overlap: allow"

@@ -13,8 +13,8 @@ import Canvas
 public struct TopologySnapshot: Sendable {
     /// The edge types, as a tree.
     public let types: EdgeTypeTree
-    /// The kinds whose shapes can contain others (`registry.containerKinds`): today the kinds that
-    /// own boards.
+    /// The kinds whose shapes can contain others (`registry.containerKinds`): those that own boards
+    /// (a subboard) and those that hold shapes on the board they're on (a frame).
     public let containerKinds: Set<ShapeKind>
     private let tables: EdgeTables
     private let containment: Containment
@@ -67,40 +67,54 @@ public struct TopologySnapshot: Sendable {
     /// can't show, or in no board of the file. O(its depth).
     public func shape(_ id: ShapeID) -> AnyShapeRecord? { containment.shape(id) }
 
-    /// The shape whose board `id` is on: nil on the root, and for a shape on a board the app can't
+    /// The shape `id` is directly inside: the container it's in on its board (a frame), else the
+    /// owner of its board; nil on the root in no container, and for a shape on a board the app can't
     /// show.
     public func parent(of id: ShapeID) -> ShapeID? { containment.parent(of: id) }
 
-    /// The shapes on the board `id` owns, in document order: none for a shape that owns no board the
-    /// app can show.
+    /// The shapes directly inside `id`: what it holds (a frame's shapes), back to front, then, for a
+    /// shape that owns a board the app can show, that board's shapes in no container, back to front.
+    /// None for any other shape.
     public func children(of id: ShapeID) -> [ShapeID] { containment.children(of: id) }
 
-    /// The shapes `id` is inside, the nearest first: none on the root, and for a shape on a board the
-    /// app can't show.
+    /// The shapes `id` is inside, the nearest first: none on the root in no container, and for a
+    /// shape on a board the app can't show.
     public func ancestors(of id: ShapeID) -> [ShapeID] { containment.ancestors(of: id) }
 
     /// Whether `a` is inside `b`, at any depth; never inside itself. O(`a`'s depth).
     public func isInside(_ a: ShapeID, _ b: ShapeID) -> Bool { containment.isInside(a, b) }
 
-    /// The shapes on the root, inside nothing, in document order.
+    /// The shapes inside nothing: the root's in no container, in document order.
     public var topLevel: [ShapeID] { containment.topLevel }
 
-    /// Every shape inside `id`, at any depth, in file order: none for a shape that owns no board the
-    /// app can show. O(what's inside it).
+    /// Whether a shape is inside nothing: on the root, in no container. O(1).
+    public func isTopLevel(_ id: ShapeID) -> Bool { containment.isTopLevel(id) }
+
+    /// The container a shape on `board` is directly in there (a frame), as the core goes by it: its
+    /// `parent(of:)` when it's in one; nil for a shape on its board directly, which costs no lookup.
+    /// O(1), for a reader that holds the record and knows its board (a query's walk, which
+    /// `forEachShape(inFileOrder:)` hands both) and works out what's above each container and each
+    /// board once.
+    public func container(of record: AnyShapeRecord, on board: BoardID) -> ShapeID? { containment.container(of: record, on: board) }
+
+    /// Every shape inside `id`, at any depth, in file order: none for a shape that holds nothing and
+    /// owns no board the app can show. O(what's inside it).
     public func descendants(of id: ShapeID) -> [ShapeID] { containment.descendants(of: id) }
 
     /// Every shape on a board the app can show, kept aside ones too, with its board, in file order:
-    /// the root's shapes back to front, each shape that owns a board followed at once by that board's
-    /// shapes, and theirs, before the next. O(those shapes). An error `body` throws stops it, and
-    /// comes out as `body`'s own type (a query's, when it's cancelled).
+    /// the root's shapes in no container, back to front, each followed at once by what's inside it
+    /// (what it holds, then, for a shape that owns a board, that board's shapes), and theirs, before
+    /// the next. O(those shapes). An error `body` throws stops it, and comes out as `body`'s own type
+    /// (a query's, when it's cancelled).
     public func forEachShape<E: Error>(inFileOrder body: (AnyShapeRecord, BoardID) throws(E) -> Void) throws(E) {
         try containment.forEachShape(inFileOrder: body)
     }
 
     /// Where a shape comes in file order, as a key that sorts (lexicographically) as
-    /// `forEachShape(inFileOrder:)` visits: the index of each owner above it on its board, from the
-    /// root's down, then its own. Nil for a shape on a board the app can't show, or in no board of
-    /// the file. O(its depth): for putting a few shapes in order without walking the file.
+    /// `forEachShape(inFileOrder:)` visits: for each shape it's inside, from the outermost down, then
+    /// for itself, its place among what's directly inside the same shape (its index on its board).
+    /// Nil for a shape on a board the app can't show, or in no board of the file. O(its depth): for
+    /// putting a few shapes in order without walking the file.
     public func fileOrderKey(of id: ShapeID) -> [Int]? { containment.fileOrderKey(of: id) }
 }
 

@@ -96,18 +96,36 @@ public struct LockingPlugin: CanvasPlugin {
         }
         // One item for the menu's shapes, as tldraw's toggleLock: Unlock when every one is locked,
         // otherwise Lock, which locks the rest. Items for the canvas, so a mix of locked and
-        // unlocked shapes still gets one; with no shapes (empty canvas), neither.
+        // unlocked shapes still gets one; with no shapes (empty canvas), neither. Each goes by the
+        // shapes' own locks, of those that can take one: a shape in a locked frame is locked with
+        // it, and its own lock can't change, so a menu for only such shapes has neither, and one
+        // for some leaves them be.
         registrar.contextMenuForCanvas {
-            MenuItem("Lock", in: LockMenuGroup.self, when: { !$0.shapes.isEmpty && !$0.allLocked }) { ids, editor in
-                editor.lock(ids)
+            MenuItem("Lock", in: LockMenuGroup.self, when: { !$0.lockable.isEmpty && !$0.allLocked }) { ids, editor in
+                editor.lock(ids.filter { !editor.isLockedByContainer($0) })
             }
-            MenuItem("Unlock", in: LockMenuGroup.self, when: { !$0.shapes.isEmpty && $0.allLocked }) { ids, editor in
-                editor.unlock(ids)
+            MenuItem("Unlock", in: LockMenuGroup.self, when: { !$0.lockable.isEmpty && $0.allLocked }) { ids, editor in
+                editor.unlock(ids.filter { !editor.isLockedByContainer($0) })
             }
         }
     }
 }
 
+extension CanvasEditor {
+    /// Whether the shape is in a container that can't change (a locked frame, at any depth), which
+    /// holds it read-only with all it holds, its own lock included: neither Lock nor Unlock is for it.
+    /// O(its depth).
+    func isLockedByContainer(_ id: ShapeID) -> Bool {
+        let document = document
+        guard let record = document[id], let container = registry.container(of: record, in: document) else { return false }
+        return isReadOnly(container)
+    }
+}
+
 extension MenuSubject {
-    fileprivate var allLocked: Bool { shapes.allSatisfy { editor.isLocked($0) } }
+    /// The menu's shapes whose own lock can change: all but those in a locked frame.
+    fileprivate var lockable: [ShapeID] { shapes.filter { !editor.isLockedByContainer($0) } }
+
+    /// Whether every one of them is locked.
+    fileprivate var allLocked: Bool { lockable.allSatisfy { editor.isLocked($0) } }
 }

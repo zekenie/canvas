@@ -18,18 +18,20 @@ import TestKit
 }
 
 /// Names shapes: a tile by its label, a card by its nickname (worked out from its size without
-/// one), a disc by its size, a pocket by its nickname (`namedPockets`). Only the kinds in `nameable` can be given a title.
-@MainActor func namesPlugin(nameable: Set<ShapeKind> = [Card.kind, Tile.kind]) -> Contributor {
+/// one), a disc by its size, a pocket by its nickname (`namedPockets`), a pen by its label. Only the
+/// kinds in `nameable` can be given a title.
+@MainActor func namesPlugin(nameable: Set<ShapeKind> = [Card.kind, Tile.kind, Pen.kind]) -> Contributor {
     Contributor(id: "names") { registrar in
         registrar.drawNames(name: { record, _ in
             if let tile = record.typed(as: Tile.self) { return fold(tile.props.label) }
+            if let pen = record.typed(as: Pen.self) { return fold(pen.props.label) }
             if let disc = record.typed(as: Disc.self) { return "Disc, \(Int(disc.props.frame.width)) × \(Int(disc.props.frame.height))" }
             if record.kind == Pocket.kind { return fold(record[Nickname.self] ?? "") }
             guard let card = record.typed(as: Card.self) else { return nil }
             return fold(record[Nickname.self] ?? "") ?? "Card, \(Int(card.props.frame.width)) × \(Int(card.props.frame.height))"
         }, namingProperty: { kind, _ in
             guard nameable.contains(kind) else { return nil }
-            return kind == Tile.kind ? "label" : kind == Card.kind ? Nickname.key.rawValue : nil
+            return kind == Tile.kind || kind == Pen.kind ? "label" : kind == Card.kind ? Nickname.key.rawValue : nil
         }, isDerived: { kind, _ in kind == Card.kind || kind == Disc.kind }, fold: fold)
     }
 }
@@ -160,9 +162,9 @@ func rows(_ result: JSON) -> [JSON] { result["changes"]?.arrayValue ?? [] }
 /// A result's warnings' messages.
 func messages(_ result: JSON) -> [String] { (result["warnings"]?.arrayValue ?? []).compactMap { $0["message"]?.stringValue } }
 
-/// The board shape called this (a tile's label, a card's nickname).
+/// The board shape called this (a tile's label, a pen's, a card's nickname).
 @MainActor func shape(_ title: String, in editor: CanvasEditor) -> AnyShapeRecord? {
-    editor.document.shapes.first { $0.typed(as: Tile.self)?.props.label == title || $0[Nickname.self] == title }
+    editor.document.shapes.first { $0.typed(as: Tile.self)?.props.label == title || $0.typed(as: Pen.self)?.props.label == title || $0[Nickname.self] == title }
 }
 
 /// Puts a tile on the board, labeled.

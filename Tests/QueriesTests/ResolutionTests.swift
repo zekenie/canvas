@@ -38,7 +38,7 @@ import Topology
         expectEqual(try plan(#"pocket "Beta" > chore"#, on: h).description, """
             all of
               kind chore
-              on the board of
+              directly inside
                 all of
                   titled "Beta", a container
                   inside, at any depth
@@ -99,7 +99,7 @@ import Topology
                     hint: "#\(uuid(11).uppercased())", at: 0, 41),
             Refused(#"[name="Alpha" i]"#, .unknownAttribute, "name isn't an attribute: a shape's name is its caption.",
                     hint: #"[caption="Alpha" i]"#, at: 0, 16),
-            // An owner by title is hinted once the answer finds it holds a board (HintsTests).
+            // An owner by title is hinted once the answer finds it holds shapes (HintsTests).
             Refused(#"[board="Pantry"]"#, .unknownAttribute, "board isn't an attribute: what's on a board is written after the shape that owns it.",
                     at: 0, 16),
             Refused(#"chore[page=Pantry][estimate>3]"#, .unknownAttribute,
@@ -134,9 +134,9 @@ import Topology
             Refused("link:flag", .unknownPseudoClass, ":flag isn't a pseudo-class.", at: 4, 5),
             Refused(":pocket", .unknownPseudoClass, ":pocket isn't a pseudo-class.", hint: "A kind starts its part of the query: pocket.", at: 0, 7),
             Refused(#":parent-of("Beta")"#, .unknownPseudoClass, ":parent-of isn't a pseudo-class.",
-                    hint: #"A parent has it directly on its board: :has(> "Beta")."#, at: 0, 18),
+                    hint: #"A parent has it directly inside: :has(> "Beta")."#, at: 0, 18),
             Refused(":root", .unsupported, ":root has no meaning here: no shape is the file's root.",
-                    hint: "Shapes on the file's top board: :top-level.", at: 0, 5),
+                    hint: "Shapes inside nothing, on the file's top board: :top-level.", at: 0, 5),
             Refused(":near(chore)", .notBuilt,
                     ":near isn't in the language yet: where shapes sit on the canvas isn't something a query can ask.", at: 0, 12),
             Refused(":qwxz", .unknownPseudoClass, ":qwxz isn't a pseudo-class.", at: 0, 5),
@@ -148,7 +148,7 @@ import Topology
             Refused(":starred(chore)", .badArgument, ":starred takes no argument.", hint: ":starred", at: 0, 15),
             Refused(":wired-to", .badArgument, ":wired-to takes shapes.", hint: #":wired-to("Pantry")"#, at: 0, 9),
             Refused(":wired-to( )", .badArgument, ":wired-to takes shapes.", hint: #":wired-to("Pantry")"#, at: 0, 12),
-            // A chore holds no board, so nothing is inside one: the hint writes them together, only.
+            // A chore holds no shapes, so nothing is inside one: the hint writes them together, only.
             Refused(":wired-to(chore :starred)", .straySpace, "A space before :starred asks for shapes inside the one before it.",
                     hint: "Write them together for one shape: chore:starred.", at: 16, 8),
             Refused(":wired-to(pocket :starred)", .straySpace, "A space before :starred asks for shapes inside the one before it.",
@@ -179,26 +179,26 @@ import Topology
                     hint: #":between("Alpha", :is("Pantry", pocket))"#, at: 28, 6),
         ], on: h)
     },
-    test("containers must hold a board") {
+    test("containers must hold shapes") {
         let h = try shelf()
         let notSpatial = "Being drawn within its bounds isn't something a query can ask yet."
-        let holders = "The kinds that hold boards: pocket."
+        let holders = "The kinds that hold shapes: pocket."
         expectRefused([
-            Refused("chore > *", .cannotContain, "A chore holds no board: nothing is inside it. \(notSpatial)", hint: holders, at: 0, 5),
-            Refused("chore[estimate>3] tile", .cannotContain, "A chore holds no board: nothing is inside it. \(notSpatial)", hint: holders, at: 0, 5),
-            Refused(":inside(tile)", .cannotContain, "A tile holds no board: nothing is inside it. \(notSpatial)", hint: holders, at: 8, 4),
-            Refused(":inside(pocket, link)", .cannotContain, "A link holds no board: nothing is inside it. \(notSpatial)", hint: holders, at: 16, 4),
-            Refused("chore:has(*)", .cannotContain, "A chore holds no board: nothing is inside it. \(notSpatial)", hint: holders, at: 0, 5),
+            Refused("chore > *", .cannotContain, "A chore holds no shapes: nothing is inside it. \(notSpatial)", hint: holders, at: 0, 5),
+            Refused("chore[estimate>3] tile", .cannotContain, "A chore holds no shapes: nothing is inside it. \(notSpatial)", hint: holders, at: 0, 5),
+            Refused(":inside(tile)", .cannotContain, "A tile holds no shapes: nothing is inside it. \(notSpatial)", hint: holders, at: 8, 4),
+            Refused(":inside(pocket, link)", .cannotContain, "A link holds no shapes: nothing is inside it. \(notSpatial)", hint: holders, at: 16, 4),
+            Refused("chore:has(*)", .cannotContain, "A chore holds no shapes: nothing is inside it. \(notSpatial)", hint: holders, at: 0, 5),
             Refused("#\(uuid(11)) > *", .cannotContain,
-                    "#\(uuid(11).uppercased()) is a chore, which holds no board: nothing is inside it. \(notSpatial)", hint: holders, at: 0, 37),
+                    "#\(uuid(11).uppercased()) is a chore, which holds no shapes: nothing is inside it. \(notSpatial)", hint: holders, at: 0, 37),
             // What :is and :where hold, in a container's place, is in a container's place too.
-            Refused(":is(tile) *", .cannotContain, "A tile holds no board: nothing is inside it. \(notSpatial)", hint: holders, at: 4, 4),
-            Refused(":where(chore) > *", .cannotContain, "A chore holds no board: nothing is inside it. \(notSpatial)", hint: holders, at: 7, 5),
-            Refused(":inside(:is(pocket, link))", .cannotContain, "A link holds no board: nothing is inside it. \(notSpatial)", hint: holders,
+            Refused(":is(tile) *", .cannotContain, "A tile holds no shapes: nothing is inside it. \(notSpatial)", hint: holders, at: 4, 4),
+            Refused(":where(chore) > *", .cannotContain, "A chore holds no shapes: nothing is inside it. \(notSpatial)", hint: holders, at: 7, 5),
+            Refused(":inside(:is(pocket, link))", .cannotContain, "A link holds no shapes: nothing is inside it. \(notSpatial)", hint: holders,
                     at: 20, 4),
-            Refused(":is(chore):has(> *)", .cannotContain, "A chore holds no board: nothing is inside it. \(notSpatial)", hint: holders, at: 4, 5),
+            Refused(":is(chore):has(> *)", .cannotContain, "A chore holds no shapes: nothing is inside it. \(notSpatial)", hint: holders, at: 4, 5),
             Refused("pocket:is(#\(uuid(11))) > *", .cannotContain,
-                    "#\(uuid(11).uppercased()) is a chore, which holds no board: nothing is inside it. \(notSpatial)", hint: holders, at: 10, 37),
+                    "#\(uuid(11).uppercased()) is a chore, which holds no shapes: nothing is inside it. \(notSpatial)", hint: holders, at: 10, 37),
         ], on: h)
         for text in ["pocket > *", "#\(uuid(2)) *", ":inside(*)", #":inside("Alpha")"#, "#\(uuid(99)) > *", ":has(chore)", "pocket:has(> chore)",
                      ":is(pocket) *", ":is(:starred) > *", "*:not(chore) *", ":is(pocket > *) > *", ":has(:is(chore))"] {
@@ -215,12 +215,12 @@ import Topology
         expectEqual(try plan(#"pocket'Pantry' > chore[estimate>3]"#, on: h).description, """
             all of
               kind chore
-              on the board of
+              directly inside
                 all of
                   titled "Pantry"
                   kind pocket
               [estimate] of chore integer: > 3
-            """, "the kind says it holds a board: no title to check as a container's")
+            """, "the kind says it holds shapes: no title to check as a container's")
         expectEqual(try plan(#"pocket'Pantry' > chore[estimate>3]"#, on: h).canonical, #"pocket"Pantry" > chore[estimate>3]"#)
         let notSpatial = "Being drawn within its bounds isn't something a query can ask yet."
         let together = "Write them together for one shape:"
@@ -229,16 +229,16 @@ import Topology
             Refused(#"zebra"Alpha""#, .unknownKind, "zebra isn't a kind.", hint: "The kinds: chore, pocket, tile, link.", at: 0, 5),
             Refused(#"link"Alpha""#, .unknownAttribute, "link has no captions.", hint: "The kinds whose shapes have captions: chore, pocket, tile.",
                     at: 4, 7),
-            Refused(#"chore"Alpha" > *"#, .cannotContain, "A chore holds no board: nothing is inside it. \(notSpatial)",
-                    hint: "The kinds that hold boards: pocket.", at: 0, 5),
-            // With a space, a title is inside the kind's shapes: where they hold no board, the two written together is what was meant.
-            Refused(#"chore "Alpha""#, .cannotContain, "A chore holds no board: nothing is inside it. \(notSpatial)",
+            Refused(#"chore"Alpha" > *"#, .cannotContain, "A chore holds no shapes: nothing is inside it. \(notSpatial)",
+                    hint: "The kinds that hold shapes: pocket.", at: 0, 5),
+            // With a space, a title is inside the kind's shapes: where they hold no shapes, the two written together is what was meant.
+            Refused(#"chore "Alpha""#, .cannotContain, "A chore holds no shapes: nothing is inside it. \(notSpatial)",
                     hint: #"\#(together) chore"Alpha"."#, at: 0, 5),
-            Refused(#"chore[estimate>3] 'Alpha':starred"#, .cannotContain, "A chore holds no board: nothing is inside it. \(notSpatial)",
+            Refused(#"chore[estimate>3] 'Alpha':starred"#, .cannotContain, "A chore holds no shapes: nothing is inside it. \(notSpatial)",
                     hint: #"\#(together) chore"Alpha"[estimate>3]:starred."#, at: 0, 5),
             // Not for a kind whose shapes have no titles, where the two together would be refused too.
-            Refused(#"link "Alpha""#, .cannotContain, "A link holds no board: nothing is inside it. \(notSpatial)",
-                    hint: "The kinds that hold boards: pocket.", at: 0, 4),
+            Refused(#"link "Alpha""#, .cannotContain, "A link holds no shapes: nothing is inside it. \(notSpatial)",
+                    hint: "The kinds that hold shapes: pocket.", at: 0, 4),
             Refused(#"chore"Alpha"[estimat=3]"#, .unknownAttribute, "chore has no attribute estimat.",
                     hint: "Did you mean estimate? Its attributes: caption, due, estimate, flag, meta, note, ratio, shout, status, tags.", at: 12, 11),
         ], on: h)

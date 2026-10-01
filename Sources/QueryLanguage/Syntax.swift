@@ -35,7 +35,7 @@ public struct ComplexSelector: Sendable, Equatable {
 public enum Combinator: Sendable, Equatable {
     /// `A B`: inside what A matches, at any depth.
     case descendant
-    /// `A > B`: directly on the board of what A matches.
+    /// `A > B`: directly inside what A matches.
     case child
 }
 
@@ -191,8 +191,8 @@ public struct TypeTerm: Sendable, Equatable {
     }
 }
 
-/// One item of `:has(…)`: `> S`, a shape directly on the subject's board, or `S`, one inside it at
-/// any depth. (A struct, since tuples aren't Equatable.)
+/// One item of `:has(…)`: `> S`, a shape directly inside the subject, or `S`, one inside it at any
+/// depth. (A struct, since tuples aren't Equatable.)
 public struct HasItem: Sendable, Equatable {
     public var child: Bool
     public var compound: Compound

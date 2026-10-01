@@ -78,8 +78,8 @@ private let together = "Write them together for one shape:"
     },
     test(":has()'s combinators are written as :has()s of their own only where the parts before them can hold shapes") {
         let h = try shelf()
-        let alone = "Inside :has(), each part stands alone, or after > for what's directly on the board."
-        let holders = "The kinds that hold boards: pocket."
+        let alone = "Inside :has(), each part stands alone, or after > for what's directly inside."
+        let holders = "The kinds that hold shapes: pocket."
         expectRefused([
             Refused(":has(pocket > chore)", .unsupported, alone, hint: ":has(pocket:has(> chore))", at: 5, 14),
             Refused(":has(* chore)", .unsupported, alone, hint: ":has(*:has(chore))", at: 5, 7),
@@ -120,7 +120,7 @@ private let together = "Write them together for one shape:"
     },
     test("the language's own hints that take a title or a kind's titles for granted wait for the answer to find them so") {
         let h = try shelf()
-        let holders = "The kinds that hold boards: pocket."
+        let holders = "The kinds that hold shapes: pocket."
         let hints: KeyValuePairs<String, String?> = [
             // A kind and a title the other way round: the two together, where the kind's shapes have titles.
             #""Alpha"chore"#: #"chore"Alpha""#,
@@ -133,13 +133,13 @@ private let together = "Write them together for one shape:"
             "#Nope": nil,
             "@Alpha": #""Alpha""#,
             "@Nope": nil,
-            // A word people invent for being inside: :inside, where what it names holds a board.
+            // A word people invent for being inside: :inside, where what it names holds shapes.
             #":within("Pantry")"#: #"Inside it, at any depth: :inside("Pantry")."#,
             #":within("Alpha")"#: holders,
             #":within("Nope")"#: nil,
             ":in(pocket)": "Inside it, at any depth: :inside(pocket).",
             ":in(chore)": holders,
-            #"chore:child-of("Pantry")"#: #"Directly on its board: "Pantry" > *; at any depth: :inside("Pantry")."#,
+            #"chore:child-of("Pantry")"#: #"Directly inside it: "Pantry" > *; at any depth: :inside("Pantry")."#,
         ]
         for (query, hint) in hints {
             expectEqual(try answerRefusal(query, on: h).hint, hint, query)
@@ -148,9 +148,9 @@ private let together = "Write them together for one shape:"
         expectEqual(try answerRefusal("#Alpha", on: unnamed).hint, nil, "nothing names shapes")
         expectEqual(try answerRefusal(#""Alpha"chore"#, on: unnamed).hint, nil, "nothing names shapes")
     },
-    test("[board=…] is hinted as a row gives board: root on top, an owner by id or title directly on it, once it holds a board") {
+    test("[board=…] is hinted as a row gives board: root on top, an owner by id or title directly on it, once it holds shapes") {
         let h = try shelf()
-        let holders = "The kinds that hold boards: pocket."
+        let holders = "The kinds that hold shapes: pocket."
         let hints: KeyValuePairs<String, String?> = [
             "chore[board=root]": "chore:top-level",
             "[board=root]": ":top-level",
@@ -175,6 +175,30 @@ private let together = "Write them together for one shape:"
         }
         expectEqual(try matched(#""Pantry" > chore"#, on: h), [id(11)], "the chore directly on it, not the one further in")
         expectEqual(try answerRefusal("chore[board=Pantry]", on: try shelf(names: false)).hint, nil, "nothing names shapes")
+    },
+    test("a container on a board holds shapes as a board's owner does: the hints that put it where a container goes hold for it, by kind, id and title") {
+        let h = try yard()
+        let stray = "A space before :starred asks for shapes inside the one before it."
+        let alone = "Inside :has(), each part stands alone, or after > for what's directly inside."
+        expectRefused([
+            Refused("corral :starred", .straySpace, stray, hint: "\(together) corral:starred; for a shape inside it: corral *:starred.", at: 7, 8),
+            Refused("#\(uuid(7)) :starred", .straySpace, stray, hint: "\(together) #\(uuid(7)):starred; for a shape inside it: #\(uuid(7)) *:starred.",
+                    at: 38, 8),
+            Refused(":has(corral > chore)", .unsupported, alone, hint: ":has(corral:has(> chore))", at: 5, 14),
+        ], on: h)
+        let holders = "The kinds that hold shapes: pocket, corral."
+        let hints: KeyValuePairs<String, String?> = [
+            #""Pen" :starred"#: #"\#(together) "Pen":starred; for a shape inside it: "Pen" *:starred."#,
+            #":has("Bin" > chore)"#: #":has("Bin":has(> chore))"#,
+            #":within("Bin")"#: #"Inside it, at any depth: :inside("Bin")."#,
+            #"chore:child-of("Pen")"#: #"Directly inside it: "Pen" > *; at any depth: :inside("Pen")."#,
+            "chore[board=Pen]": #""Pen" > chore"#,
+            "chore[board=\(uuid(7))]": "#\(uuid(7).uppercased()) > chore",
+            #":within("Gamma")"#: holders,
+        ]
+        for (query, hint) in hints {
+            expectEqual(try answerRefusal(query, on: h).hint, hint, query)
+        }
     },
     test("[kind=…] keeps the head it's on: a title with the kind, where its shapes have titles; an id alone") {
         let h = try shelf()

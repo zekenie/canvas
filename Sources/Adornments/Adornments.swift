@@ -106,12 +106,12 @@ public struct AdornmentButton: Hashable, Sendable {
 
 /// What an adornment shows on one shape. Adornments draws it, so every plugin's look alike (as
 /// `ContentsLabel` does for rows): a capsule in the title pill's dark gray (green for something
-/// done), white text on one line, a small symbol before it if it has one (a kind's mark: a schema
-/// card's title's `{}`), or a symbol alone in a disc. Its height, font and padding are its place's:
-/// 18 points, 11-point text, 7 in, in the row; 16 points, 10-point semibold figures, 5 in, on the
-/// corner. On a shape drawn as a skeleton, zoomed out (`editor.drawsSkeleton(of:)`), it's drawn
-/// blank: the capsule, as long as its symbol's place and its text's columns (`SkeletonText`), or
-/// the disc, alone, in a pale gray (green), its opacity kept.
+/// done), white text on one line (dimmed for a placeholder's), a small symbol before it if it has
+/// one (a kind's mark: a schema card's title's `{}`), or a symbol alone in a disc. Its height, font
+/// and padding are its place's: 18 points, 11-point text, 7 in, in the row; 16 points, 10-point
+/// semibold figures, 5 in, on the corner. On a shape drawn as a skeleton, zoomed out
+/// (`editor.drawsSkeleton(of:)`), it's drawn blank: the capsule, as long as its symbol's place and
+/// its text's columns (`SkeletonText`), or the disc, alone, in a pale gray (green), its opacity kept.
 public struct AdornmentLabel: Hashable, Sendable {
     public enum Tone: Hashable, Sendable {
         case neutral
@@ -127,13 +127,27 @@ public struct AdornmentLabel: Hashable, Sendable {
     public var tone: Tone
     /// How opaque it's drawn: 1, but for one fading away (an open lock).
     public var opacity: CGFloat
+    /// Its text stands in for what isn't there (an untitled shape's pill, `init(placeholder:)`):
+    /// drawn dimmed, as secondary text is.
+    public let isPlaceholder: Bool
 
     /// Text, after a small symbol if `systemImage` names one (a kind's mark: a schema card's `{}`).
     public init(_ text: String, systemImage: String? = nil, tone: Tone = .neutral) {
+        self.init(text: text, systemImage: systemImage, tone: tone, isPlaceholder: false)
+    }
+
+    /// Text standing in for what isn't there, as an untitled shape's pill says "Frame": laid out as
+    /// `init(_:systemImage:tone:)` lays it out, its text dimmed; blank zoomed out, as any.
+    public init(placeholder: String, systemImage: String? = nil) {
+        self.init(text: placeholder, systemImage: systemImage, tone: .neutral, isPlaceholder: true)
+    }
+
+    private init(text: String, systemImage: String?, tone: Tone, isPlaceholder: Bool) {
         self.text = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         self.systemImage = systemImage
         self.tone = tone
         opacity = 1
+        self.isPlaceholder = isPlaceholder
     }
 
     public init(systemImage: String, tone: Tone = .neutral) {
@@ -141,6 +155,7 @@ public struct AdornmentLabel: Hashable, Sendable {
         self.systemImage = systemImage
         self.tone = tone
         opacity = 1
+        isPlaceholder = false
     }
 
     /// The same label, drawn this opaque (0 to 1).

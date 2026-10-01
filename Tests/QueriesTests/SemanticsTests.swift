@@ -481,9 +481,9 @@ func story(_ letters: String) -> [ShapeID] {
             expectEqual(try refusedAnswer(text, on: h)?.reason, reason, text)
         }
         let spatial = try require(refusedAnswer(#":inside("Warehouse")"#, on: h))
-        expectEqual(spatial.message, "Warehouse is a tile, which holds no board: nothing is inside it. "
+        expectEqual(spatial.message, "Warehouse is a tile, which holds no shapes: nothing is inside it. "
                     + "Being drawn within its bounds isn't something a query can ask yet.")
-        expectEqual(spatial.hint, "The kinds that hold boards: pocket.")
+        expectEqual(spatial.hint, "The kinds that hold shapes: pocket.")
         expectEqual(spatial.span, QuerySpan(offset: 8, length: 11))
     },
 ])

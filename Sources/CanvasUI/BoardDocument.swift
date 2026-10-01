@@ -334,7 +334,7 @@ extension LoadReport {
             lines.append("\(n == 1 ? "1 board" : "\(n) boards") in this file can’t be opened\(on), kept as \(n == 1 ? "it was" : "they were") but hidden. Saving keeps \(n == 1 ? "it" : "them").")
         }
         if !repairs.isEmpty {
-            lines.append("\(repairs.count) \(repairs.count == 1 ? "repair was" : "repairs were") made to shapes’ ids, stacking order, metadata or added values. Saving keeps \(repairs.count == 1 ? "it" : "them").")
+            lines.append("\(repairs.count) \(repairs.count == 1 ? "repair was" : "repairs were") made to shapes’ ids, stacking order, metadata, added values or containers. Saving keeps \(repairs.count == 1 ? "it" : "them").")
         }
         let message = !keptAside.isEmpty || !keptBoards.isEmpty ? "Some of this board can’t be shown."
             : !keptValues.isEmpty ? "Some of this board can’t be used here." : "This board was repaired as it opened."

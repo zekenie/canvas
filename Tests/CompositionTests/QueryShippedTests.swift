@@ -175,12 +175,12 @@ struct StoryQuery {
         }
         // Rows 51 to 54, and their hints.
         let stray = try require(try refusal("sticky-note :selected"))
-        expectEqual(stray.hint, "Write them together for one shape: sticky-note:selected.", "a note holds no board: nothing is inside one")
+        expectEqual(stray.hint, "Write them together for one shape: sticky-note:selected.", "a note holds no shapes: nothing is inside one")
         expectEqual(try refusal("subboard :selected")?.hint,
                     "Write them together for one shape: subboard:selected; for a shape inside it: subboard *:selected.")
         let spatial = try require(try refusal(#":inside("Warehouse")"#))
-        expect(spatial.message.hasPrefix("Warehouse is a schema-card, which holds no board"), "\(spatial)")
-        expectEqual(spatial.hint, "The kinds that hold boards: subboard.")
+        expect(spatial.message.hasPrefix("Warehouse is a schema-card, which holds no shapes"), "\(spatial)")
+        expectEqual(spatial.hint, "The kinds that hold shapes: subboard, frame.")
         // Beside the title like it, that mentions point at shapes that aren't there, which :dangling finds.
         let gone = try require(try refusal(#":mentions("Old ledger")"#))
         expectEqual(gone.message, "No shape is titled Old ledger.")

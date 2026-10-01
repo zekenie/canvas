@@ -90,9 +90,8 @@ struct ContentsList: View {
         } else {
             List(selection: Binding(get: { Set(editor.selectedShapeIDs) }, set: { state.select($0) })) {
                 Section {
-                    OutlineGroup(ListedRows(entries, state: state), children: \.children) { listed in
-                        ContentsRow(entry: listed.entry, state: state)
-                            .tag(listed.id)
+                    ForEach(ListedRows(entries, state: state)) { listed in
+                        ContentsTree(listed: listed, state: state)
                     }
                     // A new scope's rows replace the last scope's, rather than coming in around the
                     // rows both list, so they arrive as one run under the header; and so do the rows
@@ -118,10 +117,39 @@ struct ContentsList: View {
     }
 }
 
+/// A row, and under its disclosure triangle, while it's expanded, the rows nested under it, each
+/// level a tree of its own, so each collapses on its own and rows nest as deep as their shapes do.
+/// Whether it's expanded is the state's (`isExpanded`, observed for this row alone): a container's
+/// row starts expanded, every other collapsed, and a row keeps what the person turns it to. A
+/// collapsed row's nested rows aren't read (a subboard's board's, `BoardRows`): the list asks for
+/// them only once it's expanded, as an `OutlineGroup` does.
+struct ContentsTree: View {
+    let listed: ListedRow
+    let state: ContentsState
+
+    var body: some View {
+        if let children = listed.children {
+            let entry = listed.entry
+            let isExpanded = state.isExpanded(entry)
+            DisclosureGroup(isExpanded: Binding(get: { isExpanded }, set: { state.setExpanded(entry, $0) })) {
+                ForEach(children) { child in
+                    ContentsTree(listed: child, state: state)
+                }
+            } label: {
+                ContentsRow(entry: entry, state: state)
+                    .tag(listed.id)
+            }
+        } else {
+            ContentsRow(entry: listed.entry, state: state)
+                .tag(listed.id)
+        }
+    }
+}
+
 /// A row as the list shows it: its entry, and the rows nested under it, if any. Those are the rows
 /// of the board its shape owns (`nestedBoard`), then the rows nested under it on its own board
-/// (`children`): a subboard's row opens onto what's inside it, as a shape's opens onto the arrows
-/// that start from it.
+/// (`children`): a subboard's row opens onto what's inside it, as a frame's opens onto what it
+/// holds and a shape's onto the arrows that start from it.
 @MainActor
 struct ListedRow: Identifiable {
     let id: ShapeID
@@ -305,8 +333,8 @@ struct ContentsHoverHighlight: View {
 }
 
 /// One row, as its kind drew it, then its marks at the trailing end. Skipped (`.equatable()`)
-/// unless its shape changes, so dragging another shape costs one comparison: a row is the same
-/// object until its shape changes, or its marks might.
+/// unless its shape changes, so a drag costs one comparison, whatever it moves: a row is the same
+/// object until its shape changes other than by moving, or its marks do.
 struct ContentsRowView: View, Equatable {
     let entry: ContentsEntry
 

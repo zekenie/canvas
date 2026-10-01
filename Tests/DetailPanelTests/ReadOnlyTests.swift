@@ -79,4 +79,45 @@ struct GoButtonPlugin: CanvasPlugin {
         go.performClick(nil)
         expectEqual(count.runs, 1)
     },
+    test("a shape in a read-only container shows read-only too, at any depth: its panel follows the container's lock, and nothing else draws it again") {
+        let editor = try gadgetEditor([FreezingPlugin(), CorralsPlugin()], scheduler: TaskScheduler())
+        let state = try require(editor.detailPanel)
+        let panel = PanelWindow(editor)
+        let outer = editor.add(Corral(CGRect(x: 0, y: 0, width: 900, height: 700)))
+        let inner = editor.add(Corral(CGRect(x: 40, y: 20, width: 600, height: 500)))
+        let id = editor.add(Gadget(gadgetFrame, name: "Widget"))
+        let other = editor.add(Gadget(CGRect(x: 2000, y: 0, width: 240, height: 160), name: "Other"))
+        editor.put([inner], in: outer)
+        editor.put([id], in: inner)
+        editor.selection = id
+        panel.window.spin { !panel.fields.isEmpty }
+        @MainActor func controls() -> [NSControl] {
+            panel.fields + panel.hosting.descendants(NSSegmentedControl.self) + panel.steppers
+        }
+        expect(controls().count >= 3, "\(controls())")
+        expect(controls().allSatisfy(\.isEnabled))
+        let record = editor.document[id]
+        editor.freeze([outer])                  // two containers up
+        panel.window.spin { controls().allSatisfy { !$0.isEnabled } }
+        expect(editor.isReadOnly(id))
+        expectEqual(editor.document[id], record, "its record as it was: the container's lock is what changed")
+        expectEqual(try panel.field("Widget").stringValue, "Widget", "shown as it is")
+        panel.window.settle()
+        let drawn = state.panelsDrawn
+        editor.transact { $0.translate([other], by: CGPoint(x: 10, y: 0)) }
+        editor.freeze([other])
+        panel.window.settle()
+        expectEqual(state.panelsDrawn, drawn, "another shape's commits draw it no more")
+        editor.freeze([outer], false)
+        panel.window.spin { controls().allSatisfy(\.isEnabled) }
+        editor.freeze([inner])                  // its own container
+        panel.window.spin { controls().allSatisfy { !$0.isEnabled } }
+        editor.freeze([inner], false)
+        panel.window.spin { controls().allSatisfy(\.isEnabled) }
+        editor.put([id], in: nil)               // out of it, the corral's lock isn't the gadget's
+        editor.freeze([inner, outer])
+        panel.window.settle()
+        expect(controls().allSatisfy(\.isEnabled))
+        expect(!editor.isReadOnly(id))
+    },
 ])

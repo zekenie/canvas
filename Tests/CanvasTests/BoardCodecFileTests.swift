@@ -238,7 +238,7 @@ private struct Mutations: RandomNumberGenerator {
         let loaded = try codec.decode(Data(json.utf8))
         expectEqual(loaded.file[BoardID(owner: id(10))].shapes.map(\.id), [id(2)])
         expect(loaded.report.isEmpty, "\(loaded.report)")
-        expectEqual(refusal(json.replacingOccurrences(of: #""format" : 4"#, with: #""format" : 5"#)), .newerFormat(5))
+        expectEqual(refusal(json.replacingOccurrences(of: #""format" : 4"#, with: #""format" : 6"#)), .newerFormat(6))
         let older = try codec.decode(Data(json.replacingOccurrences(of: #""format" : 4"#, with: #""format" : 3"#).utf8))
         expectEqual(older.file.children, [:])
         expectEqual(older.document.shapes.map(\.id), [id(1), id(10)])

@@ -74,6 +74,10 @@ func memo(_ id: ShapeID, notes: [MemoNote] = [], lead: ShapeID? = nil) -> AnySha
     AnyShapeRecord(ShapeRecord(id: id, Memo(unit, notes: notes, lead: lead.map(Citation.init))))
 }
 func board(_ records: AnyShapeRecord...) -> CanvasDocument { CanvasDocument(shapes: records) }
+func corral(_ id: ShapeID) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(id: id, Corral(unit))) }
+
+/// The record, in `container` on its board: what a board read from a file holds.
+func held(_ record: AnyShapeRecord, in container: ShapeID) -> AnyShapeRecord { record.copy(as: record.id, container: container) }
 
 /// The fixtures' plugins with Topology's: `first` before them all (a service made before the
 /// index's), `more` after.
@@ -104,6 +108,23 @@ struct Nest {
     }
     var pBoard: BoardID { BoardID(owner: p) }
     var qBoard: BoardID { BoardID(owner: q) }
+}
+
+/// Containers and boards, one tree: on the root, corral F holding box A, corral G (holding box B) and
+/// pocket P, then box E and link L from A to C, in nothing; P's board holds corral R, holding box C
+/// and pocket Q, and box D in nothing; Q's board holds box K.
+struct Pen {
+    let f = ShapeID(), a = ShapeID(), g = ShapeID(), b = ShapeID(), p = ShapeID(), e = ShapeID(), l = ShapeID()
+    let r = ShapeID(), d = ShapeID(), c = ShapeID(), q = ShapeID(), k = ShapeID()
+    var file: CanvasFile {
+        CanvasFile(root: board(corral(f), held(box(a), in: f), held(corral(g), in: f), held(box(b), in: g), held(pocket(p), in: f), box(e),
+                               link(l, a, c)),
+                   children: [p: board(corral(r), box(d), held(box(c), in: r), held(pocket(q), in: r)), q: board(box(k))])
+    }
+    var pBoard: BoardID { BoardID(owner: p) }
+    var qBoard: BoardID { BoardID(owner: q) }
+    /// Every shape, in file order.
+    var fileOrder: [ShapeID] { [f, a, g, b, p, r, c, q, k, d, e, l] }
 }
 
 func uuid(_ n: Int) -> String { String(format: "00000000-0000-0000-0000-%012d", n) }

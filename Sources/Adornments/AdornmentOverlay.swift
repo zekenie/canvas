@@ -43,6 +43,21 @@ enum AdornmentStyle {
         .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .semibold),
         .foregroundColor: NSColor.white,
     ]
+    /// A placeholder's text (`AdornmentLabel(placeholder:)`), dimmed: its place's, in white as faint
+    /// as secondary text is on a dark surface (`secondaryLabelColor` in the dark).
+    static let placeholderWhite = NSColor(white: 1, alpha: 0.55)
+    private static let rowPlaceholderText = rowText.merging([.foregroundColor: placeholderWhite]) { $1 }
+    private static let cornerPlaceholderText = cornerText.merging([.foregroundColor: placeholderWhite]) { $1 }
+
+    /// What a label's text is set in, in its place: the place's text, dimmed for a placeholder.
+    private static func textAttributes(of label: AdornmentLabel, isCorner: Bool) -> [NSAttributedString.Key: Any] {
+        switch (isCorner, label.isPlaceholder) {
+        case (false, false): rowText
+        case (false, true): rowPlaceholderText
+        case (true, false): cornerText
+        case (true, true): cornerPlaceholderText
+        }
+    }
 
     /// The average advance of a column of the row's text and of the corner's (a narrow character's,
     /// `SkeletonText`), measured once from a sample of each: a label drawn blank is as long as its
@@ -130,7 +145,7 @@ enum AdornmentStyle {
         let height = AdornmentLayout.height(of: placement)
         guard let text = label.text else { return .symbol(label.systemImage.flatMap { symbol($0, height: height) }, width: height) }
         let isCorner = placement == .onTopRightCorner
-        let string = NSAttributedString(string: text, attributes: isCorner ? cornerText : rowText)
+        let string = NSAttributedString(string: text, attributes: textAttributes(of: label, isCorner: isCorner))
         let size = string.size()
         let mark = label.systemImage.map { (image: leadingSymbol($0, in: placement), place: isCorner ? cornerSymbolPlace : rowSymbolPlace) }
         return .text(string, size: size, symbol: mark,

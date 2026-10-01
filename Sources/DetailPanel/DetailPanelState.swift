@@ -85,6 +85,11 @@ public final class DetailPanelState {
     private var collapsed: Set<DetailSectionKey> = []
     /// The shown panel's number being typed, if any (`DetailPanelView` sets it).
     @ObservationIgnored weak var drafts: DraftTracker?
+    #if DEBUG
+    /// How often a shape's panel has been drawn (debug builds only), so tests can hold a commit to
+    /// drawing it again only when what it shows changes.
+    @ObservationIgnored public var panelsDrawn = 0
+    #endif
 
     init(editor: CanvasEditor) { self.editor = editor }
 

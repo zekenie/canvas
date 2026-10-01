@@ -120,6 +120,24 @@ func storeFile() -> CanvasFile {
     try EditorHarness(plugins: boardPlugins(bridge: bridge), file: storeFile())
 }
 
+/// The record, in `container` on its board.
+func held(_ record: AnyShapeRecord, in container: Int) -> AnyShapeRecord { record.copy(as: record.id, container: id(container)) }
+
+/// Containers on boards (CanvasTesting's corrals, titled, which own no board): on the top board,
+/// corral 40, untitled, holding drawer 41 "Cellar", and box 42 in nothing; on the cellar's board,
+/// corral 50 "Rack" holding box 51 and drawer 52, untitled, whose board holds box 61.
+func cellarFile() -> CanvasFile {
+    CanvasFile(root: CanvasDocument(shapes: [shape(40, Corral(unit)), held(shape(41, Drawer(unit), titled: "Cellar"), in: 40), shape(42, Box(unit))]),
+               children: [id(41): CanvasDocument(shapes: [shape(50, Corral(unit), titled: "Rack"), held(shape(51, Box(unit)), in: 50),
+                                                          held(shape(52, Drawer(unit)), in: 50)]),
+                          id(52): CanvasDocument(shapes: [shape(61, Box(unit))])])
+}
+
+@MainActor func cellarHarness() throws -> EditorHarness {
+    let corrals = Contributor(id: "corral-titles") { $0.title(Corral.self, pill: false, contents: false) }
+    return try EditorHarness(plugins: boardPlugins() + [CorralsPlugin(), corrals], file: cellarFile())
+}
+
 /// A query's rows on `h`'s editor, every one, the main run loop turned while it runs.
 @MainActor func rows(_ text: String, on h: EditorHarness, file: StaticString = #fileID, line: UInt = #line) throws -> [QueryRow] {
     let queries = try require(h.editor.queries, file: file, line: line)

@@ -7,9 +7,9 @@ import TestKit
 import Topology
 
 // A snapshot for other threads (`topology.snapshot()`): every question the index answers, answered
-// alike, through seeded commits of every kind, and as the file was once commits land after it; the
-// file in file order; containers; the filters over lists; the types' summaries; and what taking one
-// costs.
+// alike, through seeded commits of every kind (shapes put in containers and taken out among them),
+// and as the file was once commits land after it; the file in file order; containers; the filters
+// over lists; the types' summaries; and what taking one costs.
 
 /// What both the index and a snapshot answer.
 @MainActor private protocol Answering {
@@ -117,7 +117,9 @@ private func everyShape(in file: CanvasFile) -> [AnyShapeRecord] {
 
 /// Holds what only a snapshot answers to what the editor and the index say now: its shapes,
 /// its top level, its present types, file order (and each shape's board and key in it), and each
-/// shape's descendants. Whether it all held.
+/// shape's descendants and the containers it's in on its board; and each shape's parent to the
+/// core's own reading of the board (the container it's in, else its board's owner). Whether it all
+/// held.
 @MainActor @discardableResult
 private func expectFileOrder(_ snapshot: TopologySnapshot, _ h: EditorHarness, _ context: String,
                              file: StaticString = #fileID, line: UInt = #line) -> Bool {
@@ -139,8 +141,16 @@ private func expectFileOrder(_ snapshot: TopologySnapshot, _ h: EditorHarness, _
     check(zip(order, boards).allSatisfy { h.file.board(containing: $0) == $1 }, "each shape's board")
     check(zip(order, records).allSatisfy { h.editor.shape(inFile: $0) == $1 }, "each shape as the editor has it")
     check(Set(order) == Set(every.map(\.id).filter { h.editor.shape(inFile: $0) != nil }), "every shape it can show")
-    check(snapshot.topLevel == h.file.root.shapes.map(\.id), "top level")
+    let kinds = h.editor.registry.containingKinds, root = h.file.root
+    check(snapshot.topLevel == root.shapes.filter { root.container(of: $0, containingKinds: kinds) == nil }.map(\.id), "top level")
     check(snapshot.presentTypes == Set(index.edges(ofType: .all).map(\.type)), "present types")
+    for (id, (board, record)) in zip(order, zip(boards, records)) {
+        check(index.parent(of: id) == (h.file[board].container(of: record, containingKinds: kinds) ?? board.owner), "parent(of: \(name(id)))")
+        let parent = index.parent(of: id)
+        check(snapshot.container(of: record, on: board) == (parent.flatMap { h.file.board(containing: $0) } == board ? parent : nil),
+              "container(of: \(name(id)))")
+        check(snapshot.isTopLevel(id) == (board == .root && index.parent(of: id) == nil), "isTopLevel(\(name(id)))")
+    }
 
     let keys = order.map(snapshot.fileOrderKey(of:))
     check(!keys.contains(nil), "a key for every shape in file order")
@@ -170,18 +180,22 @@ private struct SplitMix: RandomNumberGenerator {
 
 /// Seeded commits of every kind on the hidden file (box 1, link 2 to a missing shape 3, and the
 /// gadget 10, kept aside, whose board the editor can't show), with pocket 100 put in first, whose
-/// board holds pocket 103: pockets two deep. Each commit's new shapes are numbered from 110.
+/// board holds pocket 103 (pockets two deep), whose board holds corral 107 holding box 104 and memo
+/// 106; and corral 108 on the root, holding box 1. Each commit's new shapes are numbered from 110.
 @MainActor private final class Churn {
     let h: EditorHarness
     private var random: SplitMix
     private var next = 110
 
     init(seed: UInt64) throws {
-        h = try graph(try hiddenFile().file)
+        h = try graph(try hiddenFile().file, more: [CorralsPlugin()])
         random = SplitMix(state: seed)
         h.editor.transact("Nest") { t in
             t.insert(pocket(id(100)), contents: [id(100): board(box(id(101)), link(id(102), id(101), id(1)), pocket(id(103))),
-                                                 id(103): board(box(id(104)), link(id(105), id(104), id(101)), memo(id(106), lead: id(1)))])
+                                                 id(103): board(corral(id(107)), held(box(id(104)), in: id(107)), link(id(105), id(104), id(101)),
+                                                                held(memo(id(106), lead: id(1)), in: id(107)))])
+            t.insert(corral(id(108)))
+            t.setContainer(id(1), to: id(108))
         }
     }
 
@@ -189,13 +203,15 @@ private struct SplitMix: RandomNumberGenerator {
     /// about.
     var questioned: [ShapeID] { everyShape(in: h.file).map(\.id) + [id(3), id(99)] }
 
-    /// The shapes that can contain others (pockets), wherever they are, and two that can't.
-    var containers: [ShapeID] { everyShape(in: h.file).filter { $0.kind == Pocket.kind }.map(\.id) + [id(1), id(10)] }
+    /// The shapes that can contain others (pockets and corrals), wherever they are, and two that can't.
+    var containers: [ShapeID] {
+        everyShape(in: h.file).filter { $0.kind == Pocket.kind || $0.kind == Corral.kind }.map(\.id) + [id(1), id(10)]
+    }
 
     /// One commit, a switch or an undo, chosen at random; what it was.
     func step() -> String {
         let shown = h.editor.document.shapes
-        switch Int.random(in: 0..<100, using: &random) {
+        switch Int.random(in: 0..<112, using: &random) {
         case 0..<30:
             let record = newShape()
             h.editor.transact("Add") { t in
@@ -216,8 +232,14 @@ private struct SplitMix: RandomNumberGenerator {
             return "deleting \(doomed.map(name).sorted())"
         case 55..<62:
             guard let record = pick(shown.filter { $0.box != nil }) else { return "nothing" }
-            h.editor.transact("Move") { $0.moveBox(record.id, to: CGPoint(x: Int.random(in: 0...500, using: &random), y: 0)) }
-            return "moving \(name(record.id))"
+            let x = Int.random(in: 0...500, using: &random)
+            if Bool.random(using: &random) {
+                h.editor.transact("Move") { $0.moveBox(record.id, to: CGPoint(x: x, y: 0)) }
+                return "moving \(name(record.id))"
+            }
+            // What a container holds moves with it.
+            h.editor.transact("Move") { $0.translate([record.id], by: CGPoint(x: x, y: 1)) }
+            return "moving \(name(record.id)) and what it holds"
         case 62..<67:
             guard let record = pick(shown) else { return "nothing" }
             let front = Bool.random(using: &random)
@@ -241,9 +263,15 @@ private struct SplitMix: RandomNumberGenerator {
         case 89..<95:
             h.editor.undo()
             return "undo"
-        default:
+        case 95..<100:
             h.editor.redo()
             return "redo"
+        default:
+            // A shape on the board shown put in a container there, or taken out of the one it's in.
+            guard let record = pick(shown.filter { $0.box != nil && !$0.isOpaque }) else { return "nothing" }
+            let into = Bool.random(using: &random) ? pick(shown.filter { $0.kind == Corral.kind })?.id : nil
+            h.editor.transact("Put") { $0.setContainer(record.id, to: into) }
+            return "putting \(name(record.id)) in \(into.map(name) ?? "nothing")"
         }
     }
 
@@ -262,9 +290,10 @@ private struct SplitMix: RandomNumberGenerator {
 
     private func newShape() -> AnyShapeRecord {
         let id = fresh()
-        switch Int.random(in: 0..<6, using: &random) {
+        switch Int.random(in: 0..<7, using: &random) {
         case 0: return box(id)
         case 1: return pocket(id)
+        case 6: return corral(id)
         case 2: return AnyShapeRecord(ShapeRecord(id: id, CitingTag(target: target())))
         case 3: return AnyShapeRecord(ShapeRecord(id: id, Tag(target: target())))
         case 4:
@@ -313,7 +342,9 @@ private struct Tail {
 
 @MainActor let snapshotTests = Suite("Snapshots", [
     test("a snapshot answers as the index does, every question, through seeded commits of every kind, and a snapshot held answers as then") {
-        for seed: UInt64 in [1, 2] {
+        // Seeds whose runs go two boards down, put shapes in corrals and take them out, and delete
+        // and bring back corrals and pockets with what they hold.
+        for seed: UInt64 in [17, 32] {
             let churn = try Churn(seed: seed)
             var held: (snapshot: TopologySnapshot, ids: [ShapeID], containers: [ShapeID], answers: Answers)?
             var changed = 0, boardsShown: Set<BoardID> = []
@@ -336,6 +367,9 @@ private struct Tail {
             expect(boardsShown.count > 2, "boards were shown other than the root (\(boardsShown.count))")
             expect(churn.h.file.shapeCount > 20, "the seed made shapes (\(churn.h.file.shapeCount))")
             expect(churn.h.file.children.count >= 3, "boards of pockets, and the gadget's")
+            let file = churn.h.file
+            let penned = everyShape(in: file).filter { record in churn.h.topology.parent(of: record.id).flatMap { file.record($0) }?.kind == Corral.kind }
+            expect(penned.count >= 2, "shapes in corrals (\(penned.count))")
         }
     },
 
@@ -494,13 +528,16 @@ private struct Tail {
         expectEqual(heard.value, nil, "a commit tells nothing that only took a snapshot")
     },
 
-    test("containers are the kinds that own boards, on the registry, the index and a snapshot") {
-        let h = try graph()
-        expectEqual(h.editor.registry.containerKinds, [Pocket.kind])
-        expectEqual(h.topology.containerKinds, [Pocket.kind])
-        expectEqual(h.topology.snapshot().containerKinds, [Pocket.kind])
+    test("containers are the kinds that own boards and those that hold shapes on theirs, on the registry, the index and a snapshot") {
+        let h = try graph(more: [CorralsPlugin()])
+        expectEqual(h.editor.registry.containerKinds, [Pocket.kind, Corral.kind])
+        expectEqual(h.topology.containerKinds, [Pocket.kind, Corral.kind])
+        expectEqual(h.topology.snapshot().containerKinds, [Pocket.kind, Corral.kind])
+        let boards = try graph()
+        expectEqual(boards.topology.containerKinds, [Pocket.kind])
         let flat = try Registry(plugins: [FixturesPlugin(), LinksPlugin(), TopologyPlugin()])
         expectEqual(flat.containerKinds, [])
+        expectEqual(try Registry(plugins: [FixturesPlugin(), CorralsPlugin(), TopologyPlugin()]).containerKinds, [Corral.kind])
     },
 
     test("the filters over lists are the variadic ones: equal, admitting alike, and answering alike") {

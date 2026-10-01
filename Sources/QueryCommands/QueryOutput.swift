@@ -103,15 +103,18 @@ extension AutomationError {
 // MARK: query-vocabulary
 
 /// What `canvas query-vocabulary` answers: the `<vocabulary>` block `--ask` sends, and the same as
-/// lists: each kind (`naming`, how its shapes are named: `named`, `derived` or `none`; each attribute
-/// and what it takes), each edge type (`under` the one it's a kind of), and each word (`from` the
-/// plugin whose it is: the language's own are `queries`'). Not `titles`, Titles' plugin id, which the
-/// id audit keeps a module that doesn't depend on Titles from writing, as a reader of this would.
+/// lists: each kind (`naming`, how its shapes are named: `named`, `derived` or `none`; `holdsShapes`,
+/// whether shapes can be inside its shapes, and `holdsBoard`, whether by a board of their own; each
+/// attribute and what it takes), each edge type (`under` the one it's a kind of), and each word
+/// (`from` the plugin whose it is: the language's own are `queries`'). Not `titles`, Titles' plugin
+/// id, which the id audit keeps a module that doesn't depend on Titles from writing, as a reader of
+/// this would.
 struct VocabularyAnswer: Encodable {
     struct KindLine: Encodable {
         let kind: String
         let label: String
         let naming: String
+        let holdsShapes: Bool
         let holdsBoard: Bool
         let attributes: [String: String]
     }
@@ -145,7 +148,8 @@ struct VocabularyAnswer: Encodable {
             }
             var attributes: [String: String] = [:]
             for attribute in entry.attributes { attributes[attribute.name] = attribute.compactType + (attribute.reads.map { " (\($0))" } ?? "") }
-            return KindLine(kind: entry.kind.rawValue, label: entry.label, naming: naming, holdsBoard: entry.holdsBoard, attributes: attributes)
+            return KindLine(kind: entry.kind.rawValue, label: entry.label, naming: naming, holdsShapes: entry.holdsShapes,
+                            holdsBoard: entry.holdsBoard, attributes: attributes)
         }
         // Edge types are written as their ids, as they encode themselves.
         edgeTypes = vocabulary.edgeTypes.map { EdgeTypeLine(type: "\($0.type)", under: $0.parent.map { "\($0)" }, summary: $0.summary) }

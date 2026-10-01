@@ -65,17 +65,18 @@ public struct QueryResult: Sendable {
 }
 
 /// A shape that matched: its id (what a follow-up names it by, `#…`), kind, name, the board it's on
-/// ("root" or its owner's id) and the names of the boards it's inside, outermost first, as the path
-/// names them; its attributes as they read (own properties as encoded, added ones when set, text
-/// through its format; none that says where it is, and not its name); which of them were cut; where
-/// it runs, if it's a connection; and whether it's being typed into.
+/// ("root" or its owner's id) and the names of the shapes it's inside, outermost first (the owners
+/// of the boards above it, as the path names them, and the containers it's in, by their names, else
+/// their kinds' labels); its attributes as they read (own properties as encoded, added ones when
+/// set, text through its format; none that says where it is, and not its name); which of them were
+/// cut; where it runs, if it's a connection; and whether it's being typed into.
 public struct QueryRow: Sendable, Equatable {
     public var id: ShapeID
     public var kind: ShapeKind
     /// Nil for an untitled shape.
     public var title: String?
     public var board: BoardID
-    /// Empty on the top board.
+    /// Empty for a shape inside nothing (on the top board, in no container).
     public var inside: [String]
     /// Nil when the request lists none.
     public var properties: JSONObject?
@@ -198,8 +199,8 @@ public struct QueryTimings: Sendable, Equatable {
     }
 }
 
-/// A named shape, for `--ask`'s titles: its name, id, kind, board, and the names of the boards it's
-/// inside, outermost first.
+/// A named shape, for `--ask`'s titles: its name, id, kind, board, and the names of the shapes it's
+/// inside, outermost first, as a row's `inside` names them.
 public struct QueryTitle: Sendable, Equatable {
     public var title: String
     public var id: ShapeID

@@ -44,9 +44,10 @@ private func backToFront(_ ids: [ShapeID], in document: CanvasDocument) -> [Shap
 }
 
 /// tldraw's Bring Forward and Send Backward: each shape moves just past the nearest shape that
-/// overlaps it, in that direction, which isn't moving too; past a shape it doesn't overlap, a move
-/// would change nothing to see. The leading shape moves first, so the shapes keep their order among
-/// themselves. A shape with nothing to pass stays. Shapes painted by anchor don't count.
+/// overlaps it, in that direction, which isn't moving too, nor held in it (a frame's contents go
+/// with it); past a shape it doesn't overlap, a move would change nothing to see. The leading shape
+/// moves first, so the shapes keep their order among themselves. A shape with nothing to pass
+/// stays. Shapes painted by anchor don't count.
 @MainActor
 private func step(_ ids: [ShapeID], forward: Bool, in editor: CanvasEditor) {
     let context = editor.shapeContext
@@ -58,8 +59,10 @@ private func step(_ ids: [ShapeID], forward: Bool, in editor: CanvasEditor) {
             guard let index = transaction.document.index(of: id), let mine = bounds(id) else { continue }
             let shapes = transaction.document.shapes
             let passing = forward ? Array(shapes[(index + 1)...]) : shapes[..<index].reversed()
+            // What a container holds goes with it, so it's never the shape it steps past.
+            let held = Set(transaction.document.descendants(of: id, containingKinds: editor.registry.containingKinds))
             let next = passing.first { other in
-                !moving.contains(other.id) && !(editor.registry.definition(for: other.kind) is any PaintOrderAnchored)
+                !moving.contains(other.id) && !held.contains(other.id) && !(editor.registry.definition(for: other.kind) is any PaintOrderAnchored)
                     && bounds(other.id).map { $0.intersects(mine) } == true
             }
             guard let next else { continue }

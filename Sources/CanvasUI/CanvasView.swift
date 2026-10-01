@@ -210,6 +210,31 @@ public final class CanvasView: NSView {
         case .openHand: .openHand
         case .closedHand: .closedHand
         case .pointingHand: .pointingHand
+        case .resize(let position): Self.resizeCursor(position)
+        }
+    }
+
+    /// The frame-resize cursor for a place on a box: macOS 15's, both ways; before it, the
+    /// left-right and up-down arrows on a side, and on a corner, which has no public cursor there,
+    /// the crosshair.
+    private static func resizeCursor(_ position: CanvasCursor.ResizePosition) -> NSCursor {
+        if #available(macOS 15, *) {
+            let place: NSCursor.FrameResizePosition = switch position {
+            case .top: .top
+            case .left: .left
+            case .bottom: .bottom
+            case .right: .right
+            case .topLeft: .topLeft
+            case .topRight: .topRight
+            case .bottomLeft: .bottomLeft
+            case .bottomRight: .bottomRight
+            }
+            return .frameResize(position: place, directions: .all)
+        }
+        switch position {
+        case .left, .right: return .resizeLeftRight
+        case .top, .bottom: return .resizeUpDown
+        case .topLeft, .topRight, .bottomLeft, .bottomRight: return .crosshair
         }
     }
 

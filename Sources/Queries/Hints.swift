@@ -50,10 +50,11 @@ extension QueryVocabulary {
         return Array(found.prefix(3))
     }
 
-    /// The kinds whose shapes hold boards, as a hint lists them; nil for none.
+    /// The kinds whose shapes can have shapes inside them (a board of them, or shapes on theirs), as
+    /// a hint lists them; nil for none.
     var containersListed: String? {
-        let holders = kinds.filter(\.holdsBoard).map(\.kind.rawValue)
-        return holders.isEmpty ? nil : "The kinds that hold boards: \(holders.joined(separator: ", "))."
+        let holders = kinds.filter(\.holdsShapes).map(\.kind.rawValue)
+        return holders.isEmpty ? nil : "The kinds that hold shapes: \(holders.joined(separator: ", "))."
     }
 
     /// Whether some kind has an attribute of this name (the names point's word too).
@@ -141,11 +142,10 @@ extension QueryVocabulary {
         }
     }
 
-    /// Whether a compound can hold shapes, by its head: a kind that holds boards (with a title or
+    /// Whether a compound can hold shapes, by its head: a kind that holds shapes (with a title or
     /// not), a shape of one by its id, a title some shape of one has; `*` or none can't be known, so
-    /// it may. Nil for a kind
-    /// or an id that isn't one, whose own refusal is the query's, and a title before the titles are
-    /// read, or that no shape has.
+    /// it may. Nil for a kind or an id that isn't one, whose own refusal is the query's, and a title
+    /// before the titles are read, or that no shape has.
     private func holdsShapes(_ compound: Compound, kindOf: (ShapeID) -> ShapeKind?, titled: [String: Set<ShapeKind>]?) -> Bool? {
         switch compound.head {
         case .kind(let name, _)?, .kindTitle(let name, _, _, _)?:
@@ -165,7 +165,7 @@ extension QueryVocabulary {
     private func fold(_ title: String) -> String { naming?.fold(title) ?? title }
 }
 
-/// Why a shape that holds no board contains nothing, whatever's drawn over it.
+/// Why a shape of a kind that holds no shapes contains nothing, whatever's drawn over it.
 let notDrawnWithin = "Being drawn within its bounds isn't something a query can ask yet."
 
 // MARK: Attributes' types

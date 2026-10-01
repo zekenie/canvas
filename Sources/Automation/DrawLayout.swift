@@ -9,7 +9,9 @@ import Geometry
 // restated without placements, `board`, `view`); every closed board shape the script doesn't move
 // or delete is an obstacle. The obstacles are filed once a run (`ObstacleIndex`, a pass over the
 // board), and the solver asks for them by region, each answer kept: however many times it asks, a
-// question costs what's near the box it's about.
+// question costs what's near the box it's about. A shape `in` a container on the board (a frame) is
+// kept within it, as `inside` keeps one; a container that moves takes what it holds along, which is
+// never in its way.
 
 extension Drawing {
     /// Places every shape the script moves, or says why it can't (the solver's first problem), and
@@ -33,13 +35,18 @@ extension Drawing {
         let filed = ObstacleIndex(target.paintOrder(), document: document, context: context, excluding: excluded, resized: resized)
         let obstacles: (CGRect) -> [LayoutProblem.Obstacle] = { area in filed.obstacles(in: area) }
 
-        // The boxes that move, in script order.
+        // The boxes that move, in script order; a container among them with what it holds, which
+        // goes along with it.
+        let kinds = registry.containingKinds
         var free: [LayoutProblem.Free] = []
         for index in items.indices where items[index].moves {
             let item = items[index]
             items[index].free = free.count
+            let carries = item.existing.map { existing in
+                kinds.isEmpty ? [] : Set(document.descendants(of: existing.id, containingKinds: kinds).compactMap { document.index(of: $0) })
+            } ?? []
             free.append(LayoutProblem.Free(line: item.statement.line, name: subject(of: item), size: item.size, gap: item.shape.gap,
-                                           overlapAllowed: item.shape.overlapAllowed, current: item.existing?.box))
+                                           overlapAllowed: item.shape.overlapAllowed, current: item.existing?.box, carries: carries))
         }
 
         // What their placements name.
@@ -114,6 +121,19 @@ extension Drawing {
                 clauses.append(LayoutProblem.ResolvedClause(clause, refs: refs, partRects: parts))
             }
             free[box].clauses = clauses
+            // What holds it (`in "F"`) keeps it within.
+            if let holder = item.holder {
+                let ref: LayoutProblem.Ref
+                if let other = items.firstIndex(where: { $0.existing?.id == holder.id }), let theirs = items[other].free {
+                    ref = .free(theirs)
+                } else if let other = items.firstIndex(where: { $0.existing?.id == holder.id }), let placed = items[other].placed {
+                    ref = fixedShape(holder, rect: placed, gap: items[other].shape.gap)
+                } else {
+                    guard let bounds = context.geometry(of: holder.id)?.bounds, !bounds.isNull, bounds.isFinite else { throw broken(item, "what holds it has no bounds") }
+                    ref = fixedShape(holder, rect: bounds, gap: nil)
+                }
+                free[box].holder = LayoutProblem.Holder(ref, written: "in \(named(holder))")
+            }
         }
 
         // Solve.
@@ -149,6 +169,7 @@ extension Drawing {
             items[index].placed = rect
             items[index].zones = solution.zones[box].map { document.shapes[$0.id].id }
         }
+        try refuseCarriedTargets()
         /// What a box was pushed past, as a row names it and as a message does.
         func pushed(_ ref: LayoutProblem.Ref) -> (plain: String, quoted: String) {
             switch ref {
@@ -212,13 +233,15 @@ extension Drawing {
         // against, where it lands among other shapes, or the view it's placed against or drawn in)
         // isn't in that shape's way, but doesn't keep it in either: one that hangs over its edge
         // is said.
-        // What a shape is `inside` or `on` is no zone of it.
+        // What a shape is `inside` or `on` is no zone of it. Nor is a container's edge said: put down
+        // over one, a shape is nudged wholly in or out (`Transaction.settle`), which is said then.
         for index in items.indices where !items[index].shape.overlapAllowed {
             let item = items[index]
             guard let box = item.free, let placed = item.placed else { continue }
             for zone in solution.zones[box] {
                 guard Self.overlaps(zone.rect, placed, by: Self.overhang), !zone.rect.insetBy(dx: -Self.overhang, dy: -Self.overhang).contains(placed) else { continue }
                 let record = document.shapes[zone.id]
+                if registry.isContainer(record) { continue }
                 notes.append(DrawWarning(line: item.statement.line,
                                          "\(subject(of: item)) hangs over the edge of \(named(record)) — make \(named(record)) bigger, or place \(subject(of: item)) elsewhere"))
             }
@@ -232,20 +255,63 @@ extension Drawing {
             record.box = item.placed
             guard record.box?.isFinite == true else { throw broken(item, "its frame isn't finite") }
             if let title = item.title, item.existing != nil, item.rename == nil { try keepsName(record, title, item) }
-            if let existing = item.existing, record != existing, registry.isReadOnly(existing), registry.isReadOnly(record) {
+            if let existing = item.existing, record != existing, registry.isReadOnly(existing, in: document), registry.isReadOnly(record, in: document) {
                 throw AutomationError(item.statement, .readOnly, "\(subject(of: item)) is read-only (locked, say), so it stays as it is",
                                       hint: "leave it out of the script, or ask the user to unlock it")
             }
             items[index].record = record
             // Resized where it stays, over what's around it.
             if let existing = item.existing, !item.moves, let placed = item.placed, placed.size != existing.box?.size, !item.shape.overlapAllowed {
+                // Over a container's edge, it's put down again, wholly in or out (`Transaction.settle`),
+                // and so is what a container resized holds, or reaches beside it: said then.
+                let level = registry.container(of: existing, in: document)
+                let settles = { (other: AnyShapeRecord) -> Bool in
+                    guard !registry.isContainer(other) else { return true }
+                    guard registry.isContainer(existing) else { return false }
+                    let theirs = registry.container(of: other, in: document)
+                    return theirs == existing.id || theirs == level
+                }
                 let over = filed.entries(in: placed).map { filed.entries[$0] }.filter { other in
                     other.record.id != existing.id && Self.overlaps(other.rect, placed) && !(other.rect.contains(placed) || placed.contains(other.rect))
+                        && !settles(other.record)
                 }.map(\.record)
                 if let first = over.first {
                     notes.append(DrawWarning(line: item.statement.line,
                                               "\(subject(of: item)) was resized where it is, and now overlaps \(named(first)) — place it to move it clear"))
                 }
+            }
+        }
+    }
+
+    /// Refuses a placement against a shape that a container this script moves takes along (a frame's
+    /// contents), and a shape in one (`in`): the layout has it where it was, and it won't be there.
+    private func refuseCarriedTargets() throws(AutomationError) {
+        let kinds = registry.containingKinds, document = target.document
+        guard !kinds.isEmpty else { return }
+        var carriedBy: [ShapeID: AnyShapeRecord] = [:]
+        for item in items where item.free != nil {
+            guard let existing = item.existing, registry.isContainer(existing), let from = existing.box?.origin, let to = item.placed?.origin, from != to else { continue }
+            for id in document.descendants(of: existing.id, containingKinds: kinds) where carriedBy[id] == nil { carriedBy[id] = existing }
+        }
+        guard !carriedBy.isEmpty else { return }
+        for item in items where item.free != nil {
+            var named: [(written: String, shape: AnyShapeRecord)] = []
+            for (clause, found) in zip(item.shape.clauses, item.targets) {
+                for target in found {
+                    switch target {
+                    case .shape(let record): named.append((clause.written, record))
+                    case .item(let other) where items[other].free == nil:
+                        if let existing = items[other].existing { named.append((clause.written, existing)) }
+                    default: break
+                    }
+                }
+            }
+            if let holder = item.holder { named.append(("in \(self.named(holder))", holder)) }
+            for (written, shape) in named {
+                guard let container = carriedBy[shape.id] else { continue }
+                throw AutomationError(item.statement, .unsupported,
+                                      "\(subject(of: item)) is \(written), and \(self.named(shape)) moves with \(self.named(container)), which this script moves",
+                                      hint: "place it against \(self.named(container)), or in a run of its own after this one")
             }
         }
     }
