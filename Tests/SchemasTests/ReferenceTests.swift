@@ -244,7 +244,7 @@ extension SyncBench {
 ])
 
 @MainActor let referenceShownTests = Suite("Schema references shown", [
-    test("a card can be mentioned by its title, in its magenta; the picker offers only titled schema cards, never the card itself; what mentions a card is listed") {
+    test("a card can be mentioned by its title, in its magenta; the picker offers only titled schema cards, the card itself among them; what mentions a card is listed") {
         let b = try SyncBench()
         let address = b.add(addressSchema)
         let untitled = b.add(#"{"type": "object", "properties": {"a": {"type": "string"}}}"#, at: CGPoint(x: 700, y: 0))
@@ -254,7 +254,7 @@ extension SyncBench {
         expectEqual(appearance.systemImage, "curlybraces")
         let offered = try require(b.editor.mentions).candidates(matching: "", in: Only<SchemaCard>.self, for: house).all.map(\.id)
         expect(offered.contains(address), "\(offered)")
-        expect(!offered.contains(house) && !offered.contains(untitled), "\(offered)")
+        expect(!offered.contains(untitled), "\(offered)")
         b.write(house, described("A house: its @", mentioning: address, as: "Address"))
         expect(b.editor.mentions?.isMentioned(address) == true)
         expectEqual(b.editor.mentions?.backlinks(of: address).map(\.id), [house])

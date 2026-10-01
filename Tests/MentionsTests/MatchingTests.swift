@@ -134,14 +134,20 @@ private func plateFrame(_ i: Int) -> CGRect { CGRect(x: i * 150, y: 0, width: 12
         expect(state.resolve(token).isLive, "a mention of it shows it, by the placeholder")
     },
 
-    test("never the text's own shape, a shape kept aside, or one that can't be mentioned") {
+    test("the text's own shape can be listed (not nearby, nor while its name holds what's typed), never a shape kept aside or one that can't be mentioned") {
         let h = try mentionHarness()
         let owner = h.add(Jot(CGRect(x: 0, y: 0, width: 200, height: 200), text: "Alpha jot"))
         let plate = h.editor.add(Plate(plateFrame(3)), titled: "Alpha plate")
         _ = h.add(Box(plateFrame(4)))
         append([try keptAside(Plate.kind, id: idC, in: h.editor.registry)], to: h.editor)
         let state = h.editor.mentionState
-        expectEqual(state.candidates(matching: "alpha", in: AnyMentionable.self, for: owner).matches.map(\.id), [plate])
+        expectEqual(Set(state.candidates(matching: "alpha", in: AnyMentionable.self, for: owner).matches.map(\.id)), [owner, plate],
+                    "the text's own shape too, named by its text")
+        expectEqual(state.candidates(matching: "alpha j", in: AnyMentionable.self, for: owner).matches.first?.id, owner)
+        h.editor.transact { $0.update(owner, as: Jot.self) { $0.props.text = "Alpha jot @alpha" } }
+        expectEqual(state.candidates(matching: "alpha", in: AnyMentionable.self, for: owner).matches.map(\.id), [plate],
+                    "not while its name holds the @alpha being typed")
+        h.editor.transact { $0.update(owner, as: Jot.self) { $0.props.text = "Alpha jot" } }
         expectEqual(Set(state.candidates(matching: "alpha", in: AnyMentionable.self, for: nil).matches.map(\.id)), [owner, plate])
         expectEqual(Set(state.candidates(matching: "untitled", in: AnyMentionable.self, for: nil).matches.map(\.id)), [])
         let empty = state.candidates(matching: "", in: AnyMentionable.self, for: owner)
@@ -161,10 +167,10 @@ private func plateFrame(_ i: Int) -> CGRect { CGRect(x: i * 150, y: 0, width: 12
         state.didPick(plates[6])
         state.didPick(owner)
         empty = state.candidates(matching: "", in: AnyMentionable.self, for: owner)
-        expectEqual(empty.recent.map(\.id), [plates[6], plates[0]], "the latest first, never the owner")
+        expectEqual(empty.recent.map(\.id), [owner, plates[6], plates[0]], "the latest first, the owner's own pick too")
         expectEqual(empty.nearby.map(\.id), [plates[1], plates[2], plates[3], plates[4]], "not what's recent")
         expectEqual(state.candidates(matching: "", in: AnyMentionable.self, for: nil).nearby, [], "no owner, nothing is near")
-        expectEqual(empty.all.count, 6)
+        expectEqual(empty.all.count, 7)
     },
 
     test("a candidate says how its shape shows, whether it's read-only, and what matched") {

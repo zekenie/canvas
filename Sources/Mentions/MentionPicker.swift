@@ -86,7 +86,7 @@ public final class MentionPicker {
         list.onChange = { [weak self] in self?.onChange?() }
     }
 
-    /// A picker listing what `mentions` offers text of `scope` on `owner` (never listed itself).
+    /// A picker listing what `mentions` offers text of `scope` on `owner` (which may mention itself).
     public convenience init<S: MentionScope>(at location: Int, mentions: MentionState, scope: S.Type, owner: ShapeID?) {
         self.init(at: location) { [weak mentions] query in
             mentions?.candidates(matching: query, in: scope, for: owner) ?? MentionCandidates()

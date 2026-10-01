@@ -4380,7 +4380,7 @@ Faces are Selection's, so a plugin list with Mentions needs `SelectionPlugin()` 
 
 The note's editor is a `MentionTextView<AnyMentionable>`, a `DetailTextView` (the panel's text
 view, so the panel's boxes take it too: [In the panel](#in-the-panel-mentiontextarea)) on TextKit 2,
-with the note's style, its shape as `owner` (never offered in its own picker) and the service. On
+with the note's style, its shape as `owner` (the picker may offer it: a shape can mention itself) and the service. On
 the canvas nothing of the panel's is set, so it's the text view it always was:
 
 ```swift
@@ -4479,7 +4479,7 @@ DetailSection("Text", in: FieldsTab.self) { $jot in
 
 - **As on the canvas**: pills, the `@` picker, copy and paste, a click on a pill selecting it and a
   double-click going to its shape, Go to, Show What Mentions and Remove Mention in its menu. Its
-  owner is the shape the binding writes (`$jot.shapeID`), never offered in its picker. The style
+  owner is the shape the binding writes (`$jot.shapeID`), which its picker may offer. The style
   is `MentionStyle.panelText`: the panel's font (`DetailStyle.textFont`), the label's color, and a
   neutral surface, where each pill's symbol takes its target's tint, as in the picker.
 - **Writes.** It writes the field on every change, as the panel's text does: a run of writes is one
@@ -6372,7 +6372,7 @@ registrar.channel(SchemaLink.self)
   render's style, starting a point higher (`SchemaStyle.editorInset`), so its lines fall on
   the render's, pixel for pixel but anti-aliasing, and nothing moves as editing starts
   (SchemasTests' "Schema card description"). `@` where a word starts lists the file's other
-  titled schema cards, on any board, never the card itself, and a pick is a pill
+  titled schema cards, on any board, the card itself too, and a pick is a pill
   ([References between cards](#references-between-cards)). Return is a new line, as in a note; ⌘↩
   and Escape say the description is done and end editing, ⌘↩ while the model writes the
   description too (`DetailTextView.commitsWhileReadOnly`), and so does the keyboard going to a view

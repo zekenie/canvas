@@ -17,7 +17,7 @@ import SwiftUI
 /// of what it mentions redraws its pills and writes nothing. With `onCommit`, Return, ⌘↩ and the
 /// keyboard leaving say the text is done, and ⇧↩ is a new line; without, Return is a new line.
 /// While the picker is open, its keys are the picker's: Return and Tab pick, and Escape or ⌘.
-/// closes it (another leaves the panel). The shape's text never offers itself in its picker.
+/// closes it (another leaves the panel). The shape's text may mention the shape itself.
 /// Read-only (a locked shape, `detailUpdating`), it's dimmed, opens no picker and offers no Remove
 /// Mention, and its clicks still land: a click selects a pill, and a double-click on one goes to
 /// what it names.
