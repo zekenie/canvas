@@ -34,6 +34,23 @@ struct DrawResult: Encodable, Sendable {
     var changes: [DrawChange]
     var warnings: [DrawWarning]
     var dryRun: Bool?
+    /// The board it drew on (the board shown, unless what the script names is on another).
+    var on: DrawBoard?
+}
+
+/// A board a run drew on: `root`, or the id of the shape that holds it, as `boards`' `shows`; that
+/// shape's title; and whether the window shows it.
+struct DrawBoard: Encodable, Sendable {
+    var board: String
+    var title: String?
+    var shown: Bool
+
+    @MainActor
+    init(_ board: BoardID, in editor: CanvasEditor) {
+        self.board = board.description
+        title = board.owner.flatMap { editor.file.record($0) }.flatMap { record in editor.registry.drawNaming?.name(record, editor.registry) }
+        shown = board == editor.board
+    }
 }
 
 /// One shape or edge a statement is about, as the board has it now.
@@ -137,57 +154,74 @@ enum DrawStyle {
 @MainActor
 func draw(_ params: DrawParams, in context: AutomationContext) throws(AutomationError) -> DrawResult {
     let editor = try context.board()
-    // A drag moves shapes from where they were at its press, and its Escape puts them back: what
-    // the script changed would be undone under it.
-    guard editor.session == nil else {
-        throw AutomationError("someone is dragging on this board", reason: ScriptError.Reason.busy.rawValue, hint: "try again in a moment")
-    }
-    // And whatever commits while a press is held is part of the press's undo step: the run would be
-    // taken back with it.
-    guard !editor.undoHistory.isPressHeld else {
-        throw AutomationError("someone is pressing on this board", reason: ScriptError.Reason.busy.rawValue, hint: "try again in a moment")
-    }
     let script: Script
     do throws(ScriptErrors) {
         script = try Script(parsing: params.script)
     } catch {
         throw collected(error.errors.map { AutomationError($0) })
     }
-    var drawing = try Drawing(script, editor: editor)
-    try drawing.place()
+    var (board, names) = try Drawing.board(for: script, in: editor)
+    let shown = board == editor.board
+    if shown {
+        // A drag moves shapes from where they were at its press, and its Escape puts them back: what
+        // the script changed would be undone under it.
+        guard editor.session == nil else {
+            throw AutomationError("someone is dragging on this board", reason: ScriptError.Reason.busy.rawValue, hint: "try again in a moment")
+        }
+        // And whatever commits while a press is held is part of the press's undo step: the run would
+        // be taken back with it. (A run on another board is a step of its own, made on that board.)
+        guard !editor.undoHistory.isPressHeld else {
+            throw AutomationError("someone is pressing on this board", reason: ScriptError.Reason.busy.rawValue, hint: "try again in a moment")
+        }
+    }
+    func worked() throws(AutomationError) -> Drawing {
+        guard let reading = editor.reading(of: board) else {
+            throw AutomationError("the board went away", reason: ScriptError.Reason.internal.rawValue)
+        }
+        var drawing = try Drawing(script, editor: editor, on: reading, fileNames: names)
+        try drawing.place()
+        return drawing
+    }
+    var drawing = try worked()
     // A shape being edited saves what's typed when editing ends: once the run is sure to change it
     // (it's placed, applies without an error, and changes or deletes that shape), end it, so what's
     // typed lands first, and work the script out again if that changed the board. The run is
     // applied once and thrown away first, since some of what it can fail on (an edge that can't be
     // drawn) is found only as it's applied. A run that fails, or leaves the shape as it is, leaves
-    // the typing be, and so does a dry run.
-    if !params.dryRun, let editing = editor.editingShapeID, drawing.changes(editing) {
+    // the typing be, and so does a dry run. The shape edited is on the board shown.
+    if !params.dryRun, shown, let editing = editor.editingShapeID, drawing.changes(editing) {
         _ = try apply(drawing, to: editor, reveals: params.reveal, dryRun: true)
         let revision = editor.revision
         editor.endEditing()
         if editor.revision != revision {
-            drawing = try Drawing(script, editor: editor)
-            try drawing.place()
+            // What was typed may have renamed a shape: the titles are read again, and the board with them.
+            (board, names) = try Drawing.board(for: script, in: editor)
+            drawing = try worked()
         }
     }
-    let result = try apply(drawing, to: editor, reveals: params.reveal, dryRun: params.dryRun)
-    if params.reveal, !params.dryRun { reveal(result, in: editor) }
+    var result = try apply(drawing, to: editor, reveals: params.reveal, dryRun: params.dryRun)
+    // Revealed on another board, that board is shown first, as following a link to it would.
+    if params.reveal, !params.dryRun, editor.session == nil, editor.showBoard(board) { reveal(result, in: editor) }
+    result.on = DrawBoard(board, in: editor)
     return result
 }
 
-/// Applies a placed script in one transaction, one undo step called Draw (Edit › Undo Draw), or,
-/// on a dry run, applies it and throws it away: what it did (or would do), or why it can't. What's
-/// thrown away, or refused, commits nothing and makes no step, so what there was to redo stays.
+/// Applies a placed script in one transaction on its board, one undo step called Draw (Edit › Undo
+/// Draw; on a board not shown, a step made there, whose undo shows it), or, on a dry run, applies
+/// it and throws it away: what it did (or would do), or why it can't. What's thrown away, or
+/// refused, commits nothing and makes no step, so what there was to redo stays.
 @MainActor
 private func apply(_ drawing: Drawing, to editor: CanvasEditor, reveals: Bool, dryRun: Bool) throws(AutomationError) -> DrawResult {
     do {
-        return try editor.transact(DrawStyle.stepName) { transaction in
+        let result = try editor.transact(on: drawing.target.board, DrawStyle.stepName) { transaction in
             // An agent's change, not the person's: what acts on a person's edits leaves it be.
             transaction.byAgent = true
             let result = try drawing.apply(to: &transaction, reveals: reveals)
             if dryRun { throw DryRun(result: DrawResult(changes: result.changes, warnings: result.warnings, dryRun: true)) }
             return result
         }
+        guard let result else { throw AutomationError("the board went away", reason: ScriptError.Reason.internal.rawValue) }
+        return result
     } catch let dryRun as DryRun {
         return dryRun.result
     } catch let error as AutomationError {

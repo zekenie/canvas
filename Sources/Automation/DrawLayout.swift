@@ -15,7 +15,7 @@ extension Drawing {
     /// Places every shape the script moves, or says why it can't (the solver's first problem), and
     /// builds each shape as it will be.
     mutating func place() throws(AutomationError) {
-        let editor = editor, context = editor.shapeContext, document = editor.document, registry = registry
+        let target = target, context = target.shapes, document = target.document, registry = registry
         for index in items.indices where !items[index].moves {
             guard let box = items[index].existing?.box else { throw broken(items[index], "it has no frame") }
             items[index].placed = CGRect(origin: box.origin, size: items[index].size)
@@ -30,7 +30,7 @@ extension Drawing {
                 resized[existing.id] = placed
             }
         }
-        let filed = ObstacleIndex(editor.paintOrder(), document: document, context: context, excluding: excluded, resized: resized)
+        let filed = ObstacleIndex(target.paintOrder(), document: document, context: context, excluding: excluded, resized: resized)
         let obstacles: (CGRect) -> [LayoutProblem.Obstacle] = { area in filed.obstacles(in: area) }
 
         // The boxes that move, in script order.
@@ -121,7 +121,7 @@ extension Drawing {
         let naming = self.naming, boardNames = self.names
         let problem = LayoutProblem(
             free: free, fixed: fixed, obstacles: obstacles, boardBounds: boardBounds,
-            viewMiddle: view.map { CGPoint(x: $0.midX, y: $0.midY) } ?? editor.camera.toWorld(CGPoint.zero), view: view,
+            viewMiddle: view.map { CGPoint(x: $0.midX, y: $0.midY) } ?? target.shapes.camera.toWorld(CGPoint.zero), view: view,
             name: { ref in
                 switch ref {
                 case .free(let box): return freeNames[box]

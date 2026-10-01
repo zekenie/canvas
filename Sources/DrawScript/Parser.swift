@@ -219,6 +219,10 @@ struct LineParser {
                     let key = tokens[at - 2], value = tokens[at - 1]
                     throw error("\(token.raw) isn't a placement", hint: "a value with spaces is quoted: \(key.raw) \(quote(value.text + " " + token.text))")
                 }
+                if token.isWord(Word.in.rawValue) {
+                    try container(of: &statement)
+                    continue
+                }
                 statement.clauses.append(try clause())
             case .quoted:
                 let joined = at > 2 && tokens[at - 1].kind == .quoted
@@ -512,7 +516,36 @@ struct LineParser {
     func startsPlacement(_ token: Token) -> Bool {
         guard token.kind == .word else { return false }
         return Direction(rawValue: token.text) != nil || Part(rawValue: token.text) != nil || AlignSide(rawValue: token.text) != nil
-            || [Word.level, .inside, .outside, .on].contains { $0.rawValue == token.text }
+            || [Word.level, .inside, .outside, .on, .in].contains { $0.rawValue == token.text }
+    }
+
+    /// `in "X"`: the shape that holds it, once.
+    mutating func container(of statement: inout ShapeStatement) throws(ScriptError) {
+        at += 1
+        let opening = Word.in.rawValue
+        guard let token = peek(), token.kind == .quoted else {
+            if let token = peek(), token.kind == .word, PlaceWord(rawValue: token.text) == nil {
+                throw error("\(token.raw) isn't quoted, and titles are in double quotes", hint: "write \(opening) \(quote(token.text))")
+            }
+            throw error("\(opening) names no shape", hint: "write \(opening) \"A\": the shape that holds it")
+        }
+        at += 1
+        let title = try title(token)
+        if let earlier = statement.container {
+            throw error("\(opening) is written twice, \(opening) \(quote(earlier)) and \(opening) \(token.raw)",
+                        hint: "a shape is in one shape: keep one")
+        }
+        // A part (`top-left`), but not a placement starting with a word parts share (`right of`,
+        // `top level with`).
+        if let next = peek(), next.kind == .word, Part(rawValue: next.text) != nil, Direction(rawValue: next.text) == nil,
+           peek(1)?.isWord(Word.level.rawValue) != true {
+            throw error("\(opening) \(token.raw) takes no part: it says what holds the shape, not where in it",
+                        hint: "say where with a placement too: \(opening) \(token.raw) inside view \(next.text)")
+        }
+        if let next = peek(), next.kind == .comma || next.isWord(Word.and.rawValue) {
+            throw error("\(opening) \(token.raw) names one shape, and a shape is in one", hint: "name the one that holds it")
+        }
+        statement.container = title
     }
 
     mutating func clause() throws(ScriptError) -> Clause {

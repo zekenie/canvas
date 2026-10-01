@@ -711,12 +711,40 @@ public final class CanvasEditor {
     /// shapes fitted into the part of the view the host leaves clear there (`unobscuredViewport`), no
     /// closer than 100%, else where a board starts.
     private func arrivalCamera(for target: BoardID) -> Camera {
+        arrivalCamera(for: target) { shapeBounds }
+    }
+
+    /// The same, for a board as its shapes' bounds say (read only for a first visit's fit).
+    private func arrivalCamera(for target: BoardID, bounds: () -> CGRect) -> Camera {
         if let kept = leftCameras[target] ?? rememberedCameras[target] { return kept }
         let view = unobscuredViewport(on: target)
         guard !view.isEmpty else { return Camera() }
-        let bounds = shapeBounds
+        let bounds = bounds()
         guard !bounds.isNull else { return Camera() }
         return Camera(fitting: bounds, in: view, inset: Style.firstVisitInset, maxZoom: 1)
+    }
+
+    /// A board of the file read as it is now, shown or not (`BoardReading`): for what works on a
+    /// board without showing it (`canvas draw --on`). The board shown's is the editor's own (its
+    /// index, its camera where it's headed); another's is worked out afresh from the file, O(its
+    /// shapes), with the camera it would be shown with (`showBoard`'s, a first visit's fit
+    /// included). Nil for a board it can't show (`canShow`). Observed through `document`.
+    public func reading(of target: BoardID) -> BoardReading? {
+        if target == board {
+            let clear = unobscuredViewport
+            return BoardReading(board: board, document: document, shapes: shapeContext, index: shapeIndex,
+                                view: clear.isEmpty ? nil : cameraTarget.toWorld(clear))
+        }
+        guard canShow(target) else { return nil }
+        let contents = file[target]
+        let arrival = arrivalCamera(for: target) {
+            let index = ShapeIndex()
+            return index.bounds(in: ShapeContext(document: contents, registry: registry, camera: Camera(), index: index))
+        }
+        let index = ShapeIndex(), clear = unobscuredViewport(on: target)
+        return BoardReading(board: target, document: contents,
+                            shapes: ShapeContext(document: contents, registry: registry, camera: arrival, index: index), index: index,
+                            view: clear.isEmpty ? nil : arrival.toWorld(clear))
     }
 
     // MARK: Tools

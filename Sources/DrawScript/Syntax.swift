@@ -56,9 +56,12 @@ public struct ShapeStatement: Sendable, Equatable {
     public var attributes: [Attribute]
     /// Where it goes, in the order written.
     public var clauses: [Clause]
+    /// `in "X"`: the title of the shape it goes in (a subboard, whose board it's drawn on), as
+    /// written. Not a placement: it says which shape holds it, not where it sits.
+    public var container: String?
 
     public init(word: String, title: String? = nil, size: CGSize? = nil, gap: Gap? = nil, overlapAllowed: Bool = false,
-                newTitle: String? = nil, styles: [String] = [], attributes: [Attribute] = [], clauses: [Clause] = []) {
+                newTitle: String? = nil, styles: [String] = [], attributes: [Attribute] = [], clauses: [Clause] = [], container: String? = nil) {
         self.word = word
         self.title = title
         self.size = size
@@ -68,6 +71,7 @@ public struct ShapeStatement: Sendable, Equatable {
         self.styles = styles
         self.attributes = attributes
         self.clauses = clauses
+        self.container = container
     }
 }
 

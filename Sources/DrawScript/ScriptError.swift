@@ -31,6 +31,9 @@ public struct ScriptError: Error, Sendable, Equatable, CustomStringConvertible {
         case unsupported
         case nothingToDelete = "nothing_to_delete"
         case busy
+        case boardShown = "board_shown"
+        case severalBoards = "several_boards"
+        case cannotContain = "cannot_contain"
         case emptyScript = "empty_script"
         case `internal`
     }

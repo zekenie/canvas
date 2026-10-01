@@ -286,6 +286,20 @@ import TestKit
         expectEqual(parseError(#"card top level "A""#)?.hint, #"write top level with "A""#)
         expectEqual(parseError(#"card level with "A" (gap: wide)"#)?.message, #"card: level with "A" shares a line rather than leaving a space, so it takes no gap"#)
     },
+    test("in names the one shape that holds it, quoted, with no part, anywhere among the placements") {
+        let card = try shape(#"card "A" right of "B" in "Box""#)
+        expectEqual(card.container, "Box")
+        expectEqual(card.clauses.map(\.written), [#"right of "B""#])
+        expectEqual(try shape(#"card in "Box""#).container, "Box", "an untitled shape")
+        expectEqual(try shape(#"card "A" in "Box" right of "B" top level with "C""#).clauses.map(\.written), [#"right of "B""#, #"top level with "C""#],
+                    "words parts share, opening placements")
+        expectEqual(try shape(#"card "A" in "Box" inside view top-left"#).clauses.map(\.written), ["inside view top-left"])
+        expectEqual(parseError(#"card "A" in Box"#)?.hint, #"write in "Box""#)
+        expectEqual(parseError(#"card "A" in"#)?.message, "card \"A\": in names no shape")
+        expectEqual(parseError(#"card "A" in "Box" in "Crate""#)?.message, #"card "A": in is written twice, in "Box" and in "Crate""#)
+        expectEqual(parseError(#"card "A" in "Box" top-left"#)?.hint, #"say where with a placement too: in "Box" inside view top-left"#)
+        expectEqual(parseError(#"card "A" in "Box" and "Crate""#)?.message, #"card "A": in "Box" names one shape, and a shape is in one"#)
+    },
     test("inside and outside take one shape and a part on its edge, and derive a direction") {
         let card = try shape(#"card inside "Z" top-left outside "Y" right inside view bottom (gap: wide)"#)
         expectEqual(card.clauses.map(\.relation), [.inside, .outside, .inside])
@@ -545,7 +559,7 @@ import TestKit
         let error = ScriptError(line: 3, reason: .syntax, "bad", hint: "fix it")
         expectEqual(error.description, "line 3: bad (fix it)")
         expectEqual(ScriptError.Reason.noRoom.rawValue, "no_room")
-        expectEqual(ScriptError.Reason.allCases.count, 28)
+        expectEqual(ScriptError.Reason.allCases.count, 31)
     },
 ])
 

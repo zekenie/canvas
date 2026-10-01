@@ -18,12 +18,13 @@ import TestKit
 }
 
 /// Names shapes: a tile by its label, a card by its nickname (worked out from its size without
-/// one), a disc by its size. Only the kinds in `nameable` can be given a title.
+/// one), a disc by its size, a pocket by its nickname (`namedPockets`). Only the kinds in `nameable` can be given a title.
 @MainActor func namesPlugin(nameable: Set<ShapeKind> = [Card.kind, Tile.kind]) -> Contributor {
     Contributor(id: "names") { registrar in
         registrar.drawNames(name: { record, _ in
             if let tile = record.typed(as: Tile.self) { return fold(tile.props.label) }
             if let disc = record.typed(as: Disc.self) { return "Disc, \(Int(disc.props.frame.width)) × \(Int(disc.props.frame.height))" }
+            if record.kind == Pocket.kind { return fold(record[Nickname.self] ?? "") }
             guard let card = record.typed(as: Card.self) else { return nil }
             return fold(record[Nickname.self] ?? "") ?? "Card, \(Int(card.props.frame.width)) × \(Int(card.props.frame.height))"
         }, namingProperty: { kind, _ in
