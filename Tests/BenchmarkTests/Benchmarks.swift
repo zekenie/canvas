@@ -113,8 +113,11 @@ enum Budget {
     /// board reads none of them.
     static let enterCold = 250.0
     /// Deleting a shape whose boards hold 10,000 shapes: the commit, and every board under it taken
-    /// with it.
-    static let subboardDeletion = frame
+    /// with it. A frame and 2 ms: the generated file's two nested boards number their notes alike,
+    /// so 2,608 titles are each held twice, and TitleValidation's index takes every one out (some
+    /// 1.7 ms; main was at 15.2 of a frame's 16 before it). The owner chose raising it over keeping
+    /// the index's titles per board and numbering the generated titles across the file.
+    static let subboardDeletion = frame + 2
     /// A drag event's input (its commit, without the frame) on a board beside or inside a subboard,
     /// on 10,000 shapes: some 0.25 ms, so a commit's upkeep of the whole file shows.
     static let dragInput = 1.0

@@ -88,6 +88,7 @@ let package = Package(
         .target(name: "ValidationContents", dependencies: ["Canvas", "TableOfContents", "Validation"]), // layer: bridge
         .target(name: "ArrowPorts", dependencies: ["Arrows", "Canvas", "Ports", "Topology"]), // layer: bridge
         .target(name: "MentionValidation", dependencies: ["Canvas", "Mentions", "Validation"]), // layer: bridge
+        .target(name: "TitleValidation", dependencies: ["Canvas", "Titles", "Validation"]),   // layer: bridge
         .target(name: "TitleNames", dependencies: ["Automation", "Canvas", "Titles"]),        // layer: bridge
         .target(name: "PortEdges", dependencies: ["Automation", "Canvas", "Ports"]),          // layer: bridge
         .target(name: "ValidationChecks", dependencies: ["Automation", "Canvas", "Validation"]), // layer: bridge
@@ -101,7 +102,7 @@ let package = Package(
         .target(name: "Eraser", dependencies: ["Canvas", "Keyboard"], path: "Examples/Eraser"),                         // layer: vertical
         .target(name: "Reordering", dependencies: ["Canvas", "ContextMenus"], path: "Examples/Reordering"),             // layer: vertical
 
-        .target(name: "Composition", dependencies: ["Adornments", "ArrowPorts", "Arrows", "Automation", "BoardQueries", "Boards", "Canvas", "CanvasRPC", "Clipboard", "ContextMenus", "DetailPanel", "Eraser", "Keyboard", "LanguageModels", "Locking", "MentionQueries", "MentionValidation", "Mentions", "PortEdges", "Ports", "Queries", "QueryCommands", "QueryLanguage", "Reordering", "Schemas", "Selection", "SelectionQueries", "Snapping", "StickyNotes", "Subboards", "TableOfContents", "TitleNames", "TitleQueries", "Titles", "Topology", "Validation", "ValidationChecks", "ValidationContents", "ValidationDetails", "ValidationQueries"]), // layer: composition
+        .target(name: "Composition", dependencies: ["Adornments", "ArrowPorts", "Arrows", "Automation", "BoardQueries", "Boards", "Canvas", "CanvasRPC", "Clipboard", "ContextMenus", "DetailPanel", "Eraser", "Keyboard", "LanguageModels", "Locking", "MentionQueries", "MentionValidation", "Mentions", "PortEdges", "Ports", "Queries", "QueryCommands", "QueryLanguage", "Reordering", "Schemas", "Selection", "SelectionQueries", "Snapping", "StickyNotes", "Subboards", "TableOfContents", "TitleNames", "TitleQueries", "TitleValidation", "Titles", "Topology", "Validation", "ValidationChecks", "ValidationContents", "ValidationDetails", "ValidationQueries"]), // layer: composition
         .executableTarget(name: "InfiniteCanvas", dependencies: ["Canvas", "CanvasUI", "Composition"]),           // layer: app
         .executableTarget(name: "CanvasCLI", dependencies: ["CanvasRPC"]),                                        // layer: cli
 
@@ -133,6 +134,7 @@ let package = Package(
         .executableTarget(name: "ArrowPortsTests", dependencies: ["ArrowPorts", "Arrows", "Canvas", "CanvasTesting", "Geometry", "Keyboard", "Ports", "Selection", "TableOfContents", "TestKit", "Topology"], path: "Tests/ArrowPortsTests"), // layer: test
         .executableTarget(name: "MentionsTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "CanvasUI", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "Mentions", "Selection", "TableOfContents", "TestKit", "Titles", "Topology"], path: "Tests/MentionsTests"), // layer: test
         .executableTarget(name: "MentionValidationTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "ContextMenus", "DetailPanel", "Keyboard", "MentionValidation", "Mentions", "Selection", "TableOfContents", "TestKit", "Titles", "Topology", "Validation"], path: "Tests/MentionValidationTests"), // layer: test
+        .executableTarget(name: "TitleValidationTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "Keyboard", "Selection", "TestKit", "TitleValidation", "Titles", "Validation"], path: "Tests/TitleValidationTests"), // layer: test
         .executableTarget(name: "BoardsTests", dependencies: ["Adornments", "Boards", "Canvas", "CanvasTesting", "ContextMenus", "DetailPanel", "Keyboard", "Selection", "TableOfContents", "TestKit", "Titles"], path: "Tests/BoardsTests"), // layer: test
         .executableTarget(name: "SubboardsTests", dependencies: ["Adornments", "Boards", "Canvas", "CanvasTesting", "CanvasUI", "ContextMenus", "DetailPanel", "Keyboard", "Mentions", "Selection", "Subboards", "TableOfContents", "TestKit", "Titles", "Topology"], path: "Tests/SubboardsTests"), // layer: test
         .executableTarget(name: "SnappingTests", dependencies: ["Canvas", "CanvasTesting", "Geometry", "Snapping", "TestKit"], path: "Tests/SnappingTests"), // layer: test

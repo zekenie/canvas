@@ -53,7 +53,8 @@ public enum CachedVerdict: Equatable, Sendable {
 
 /// Rules' only way into the document. The engine notes the shapes a rule looks up, and checks the
 /// shape again when one of them changes; for a rule that ignores moves, not when one only moves.
-/// Add lookups here as rules need them.
+/// What a rule reads of a service (`service(_:)`) is no lookup: its `affected` says what a commit
+/// changes there. Add lookups here as rules need them.
 @MainActor
 public struct ValidationContext {
     /// The shapes rules see: the engine's, the editor's document; `validationIssues(of:in:)`'s,
@@ -66,11 +67,19 @@ public struct ValidationContext {
     /// Validation's own rule's: each shape's schema issues, kept from one check to the next.
     let schemaVerdicts: SchemaVerdicts
     let lookups: Lookups
+    /// The editor whose shapes are checked, if any.
+    let editor: CanvasEditor?
 
     public func shape(_ id: ShapeID) -> AnyShapeRecord? {
         if lookups.ignoringMoves { lookups.steady.insert(id) } else { lookups.placed.insert(id) }
         return shapes.shape(id)
     }
+
+    /// A service of the editor whose shapes are checked: for a rule over what a plugin keeps across
+    /// the file (TitleValidation's titles), whose `affected` names the shapes each commit changes
+    /// that for. Nil where shapes are checked without an editor (`validationIssues(of:in:)` given
+    /// none: what `canvas draw` checks before it commits).
+    public func service<S: EditorService>(_ type: S.Type) -> S? { editor?.service(type) }
 }
 
 /// The shapes a shape's rules looked up while it was checked: by the rules that ignore moves, and
@@ -91,9 +100,17 @@ public struct ValidationRule {
     /// none of them, neither those it moved nor those whose rule looked one of them up: each keeps
     /// what this rule found. A rule that measures distances, or finds overlaps, must not.
     let ignoresMoves: Bool
-    public init(ignoringMoves: Bool = false, _ check: @escaping @MainActor (AnyShapeRecord, ValidationContext) -> [ValidationIssue]) {
+    /// For a rule that reads more than the shapes it looks up (a service's state, across the file):
+    /// given each commit, the shapes it may change the issues of without changing them, or a shape
+    /// they looked up, on any board. The engine hears it as it hears the commit, and checks those on
+    /// the board shown again, and those on a board it keeps, once that board is shown. It runs on
+    /// every commit, so it costs what the commit changed, never the board.
+    let affected: (@MainActor (ChangeSet, CanvasEditor) -> Set<ShapeID>)?
+    public init(ignoringMoves: Bool = false, affected: (@MainActor (ChangeSet, CanvasEditor) -> Set<ShapeID>)? = nil,
+                _ check: @escaping @MainActor (AnyShapeRecord, ValidationContext) -> [ValidationIssue]) {
         self.check = check
         ignoresMoves = ignoringMoves
+        self.affected = affected
     }
 }
 
@@ -106,10 +123,10 @@ public enum ValidationRules: ExtensionPoint {
 
 extension ShapeRegistrar {
     /// A rule for this kind, with its props typed; `ignoringMoves` for one whose issues follow from
-    /// what shapes are, never where (`ValidationRule`).
-    public mutating func validate(ignoringMoves: Bool = false,
+    /// what shapes are, never where, and `affected` for one that reads a service (`ValidationRule`).
+    public mutating func validate(ignoringMoves: Bool = false, affected: (@MainActor (ChangeSet, CanvasEditor) -> Set<ShapeID>)? = nil,
                                   _ rule: @escaping @MainActor (ShapeRecord<Definition.Props>, ValidationContext) -> [ValidationIssue]) {
-        contribute(ValidationRule(ignoringMoves: ignoringMoves) { record, context in
+        contribute(ValidationRule(ignoringMoves: ignoringMoves, affected: affected) { record, context in
             record.typed(as: Definition.Props.self).map { rule($0, context) } ?? []
         }, to: ValidationRules.self)
     }
@@ -118,16 +135,17 @@ extension ShapeRegistrar {
 extension PluginRegistrar {
     /// A rule for a kind another plugin registers.
     public mutating func validate<P: ShapeProps>(_: P.Type, ignoringMoves: Bool = false,
+                                                 affected: (@MainActor (ChangeSet, CanvasEditor) -> Set<ShapeID>)? = nil,
                                                  _ rule: @escaping @MainActor (ShapeRecord<P>, ValidationContext) -> [ValidationIssue]) {
-        contribute(ValidationRule(ignoringMoves: ignoringMoves) { record, context in
+        contribute(ValidationRule(ignoringMoves: ignoringMoves, affected: affected) { record, context in
             record.typed(as: P.self).map { rule($0, context) } ?? []
         }, to: ValidationRules.self, for: .kind(P.kind))
     }
 
     /// A rule for every kind.
-    public mutating func validateEveryShape(ignoringMoves: Bool = false,
+    public mutating func validateEveryShape(ignoringMoves: Bool = false, affected: (@MainActor (ChangeSet, CanvasEditor) -> Set<ShapeID>)? = nil,
                                             _ rule: @escaping @MainActor (AnyShapeRecord, ValidationContext) -> [ValidationIssue]) {
-        contribute(ValidationRule(ignoringMoves: ignoringMoves, rule), to: ValidationRules.self, for: .any)
+        contribute(ValidationRule(ignoringMoves: ignoringMoves, affected: affected, rule), to: ValidationRules.self, for: .any)
     }
 }
 
@@ -135,9 +153,11 @@ extension PluginRegistrar {
 /// change, only those of the shapes it touched and of the shapes whose rules looked one of them up.
 /// A commit that only moves shapes runs none of the rules that ignore moves again (the schema
 /// rule is one): it checks the shapes it moved, and those whose other rules looked one of them up,
-/// with those other rules alone, each keeping what the rest found. It checks the board shown; what
-/// it found on the boards shown last is kept for going back to them, and taken back while those
-/// boards are as they were left (`BoardStash`).
+/// with those other rules alone, each keeping what the rest found. A rule that reads a service names
+/// the shapes each commit changes its issues of (`affected`), which are checked again too. It checks
+/// the board shown; what it found on the boards shown last is kept for going back to them, and taken
+/// back while those boards are as they were left (`BoardStash`), with the shapes rules named there
+/// meanwhile checked again.
 @MainActor
 public final class ValidationEngine {
     /// The shapes each shape's rules looked up, and the other way around.
@@ -174,6 +194,8 @@ public final class ValidationEngine {
         /// What the rules that ignore moves looked up, and what the others did.
         var steadyLookups = LookupTable()
         var placedLookups = LookupTable()
+        /// The shapes rules' `affected` named while the board was kept, not shown.
+        var namedAway: Set<ShapeID> = []
     }
 
     private unowned let editor: CanvasEditor
@@ -188,6 +210,12 @@ public final class ValidationEngine {
     private let schemaVerdicts = SchemaVerdicts()
     /// The boards shown last, as they were left.
     private var kept = BoardStash<Board>()
+    /// Every rule's `affected`, found once: the registry is frozen.
+    private lazy var affectedByRules = editor.registry.contributions(to: ValidationRules.self).compactMap(\.value.affected)
+    /// What they named on the board shown for the last commit heard, and its revision.
+    private var named: (revision: Int, ids: Set<ShapeID>) = (-1, [])
+    /// What they named on the board shown while it was kept, as it was taken back.
+    private var namedAway: Set<ShapeID> = []
     /// Each outlined shape's ring, as the overlay last drew it.
     let rings = ValidationRings()
     #if DEBUG
@@ -232,6 +260,41 @@ public final class ValidationEngine {
             found.formUnion(board.steadyLookups.by[id] ?? [])
             found.formUnion(board.placedLookups.by[id] ?? [])
         }
+    }
+
+    /// The shapes whose issues a commit may change though it doesn't change them, for a plugin that
+    /// keeps what it shows of each shape's issues and redoes it for what each commit changed
+    /// (ValidationContents' marks): those whose rules looked up a shape it changed
+    /// (`dependents(of:)`), and those on the board shown that the rules' `affected` named for it,
+    /// once the engine has heard it (so asked by a service that hears commits after Validation's).
+    /// Given what other boards changed while the board shown wasn't (`elsewhere`: the table of
+    /// contents' catch-up on going back to it), those the rules named on it meanwhile too.
+    public func affected(by changes: ChangeSet) -> Set<ShapeID> {
+        var found = dependents(of: changes.shapeIDs)
+        if named.revision == editor.revision { found.formUnion(named.ids) }
+        if !changes.elsewhere.isEmpty { found.formUnion(namedAway) }
+        return found
+    }
+
+    /// The shapes the rules' `affected` name for a commit: those on the board shown, returned, to
+    /// check again; those on a board it keeps, checked again once that board is taken back.
+    private func name(_ changes: ChangeSet) -> Set<ShapeID> {
+        guard !affectedByRules.isEmpty else { return [] }
+        var here: Set<ShapeID> = []
+        let document = editor.document, file = editor.file, keptBoards = kept.boards
+        for affected in affectedByRules {
+            for id in affected(changes, editor) {
+                if document[id] != nil {
+                    here.insert(id)
+                } else if !keptBoards.isEmpty, let board = file.board(containing: id), keptBoards.contains(board) {
+                    kept.modify(board) { kept in
+                        kept.unchecked.insert(id)
+                        kept.namedAway.insert(id)
+                    }
+                }
+            }
+        }
+        return here
     }
 
     private func refreshIfNeeded() {
@@ -280,7 +343,7 @@ public final class ValidationEngine {
             return
         }
         let lookups = Lookups()
-        let context = ValidationContext(shapes: shapes, registry: shapes.registry, schemaVerdicts: schemaVerdicts, lookups: lookups)
+        let context = ValidationContext(shapes: shapes, registry: shapes.registry, schemaVerdicts: schemaVerdicts, lookups: lookups, editor: editor)
         let kept = onlyPlaced ? board.steadyIssues[shape.id] : nil
         var steady: [Int: [ValidationIssue]] = [:]
         var issues: [ValidationIssue] = []
@@ -314,7 +377,10 @@ extension ValidationEngine: EditorService {
         if outOfTurn { schemaVerdicts.forgetAll() }
         heardRevision = editor.revision
         schemaVerdicts.documentDidChange(changes)
+        let named = name(changes)
+        self.named = (editor.revision, named)
         guard board != nil else { return }                 // every shape is unchecked already
+        board!.unchecked.formUnion(named)
         for id in changes.shapeIDs {
             if changes.moved.contains(id), !outOfTurn {
                 // Only moved: what the rules that ignore moves found of it, and of the shapes whose
@@ -339,6 +405,8 @@ extension ValidationEngine: EditorService {
     /// checked again yet; else every shape, on the next read.
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
         board = kept.take(for: change.to, in: editor)
+        namedAway = board?.namedAway ?? []
+        board?.namedAway = []
         heardRevision = editor.revision
     }
 }
@@ -353,10 +421,13 @@ extension Registry {
     /// `shapes`, a transaction's (`transaction.shapes`) for a shape as it's about to be. Empty for a
     /// shape kept aside, which isn't the app's to judge. For what checks shapes it changes without
     /// waiting for a commit (the command line); the engine keeps every shape's on the board.
-    public func validationIssues(of record: AnyShapeRecord, in shapes: ShapeContext) -> [ValidationIssue] {
+    /// `editor` lends the rules its services (`ValidationContext.service`), for a shape as the
+    /// editor's file has it (a query's, on a board not shown); without it, a rule that reads one
+    /// finds nothing.
+    public func validationIssues(of record: AnyShapeRecord, in shapes: ShapeContext, editor: CanvasEditor? = nil) -> [ValidationIssue] {
         guard !record.isOpaque else { return [] }
         // Verdicts of its own: the engine's are kept by id, for shapes as the board has them.
-        let context = ValidationContext(shapes: shapes, registry: self, schemaVerdicts: SchemaVerdicts(), lookups: Lookups())
+        let context = ValidationContext(shapes: shapes, registry: self, schemaVerdicts: SchemaVerdicts(), lookups: Lookups(), editor: editor)
         return contributions(to: ValidationRules.self, for: record.kind).flatMap { $0.check(record, context) }
     }
 }

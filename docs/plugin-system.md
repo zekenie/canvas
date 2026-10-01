@@ -372,7 +372,8 @@ Opting in goes in one of two directions:
   `ValidationChecks` give [`canvas draw`](#the-command-line) its names, edges and warnings, though
   Automation has never heard of titles, ports or validity, and `MentionValidation` warns
   about mentions that can't work, though Mentions has never heard of validation, nor Validation of
-  mentions. `ArrowPorts` makes arrows what a drag from a port draws, and names their family of edges, though Arrows has never heard
+  mentions, and `TitleValidation` about titles two shapes share, though Titles has never heard of
+  validation either. `ArrowPorts` makes arrows what a drag from a port draws, and names their family of edges, though Arrows has never heard
   of a
   channel or an edge, nor Ports of an arrow. `TitleQueries`, `BoardQueries`, `MentionQueries`,
   `ValidationQueries` and `SelectionQueries` give [queries](#queries) shapes' names, boards' names
@@ -409,7 +410,7 @@ Each target is one line, with its layer:
 | ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
 | horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Adornments, Clipboard, Locking, Ports, Mentions, Topology, Queries, Automation, QueryCommands, LanguageModels, Boards, Snapping |
 | vertical | foundation, horizontal | Arrows, StickyNotes, Schemas, Subboards, Eraser, Reordering |
-| bridge | foundation, horizontal, vertical | ValidationDetails, ValidationContents, MentionValidation, ArrowPorts, TitleNames, PortEdges, ValidationChecks, TitleQueries, BoardQueries, MentionQueries, ValidationQueries, SelectionQueries |
+| bridge | foundation, horizontal, vertical | ValidationDetails, ValidationContents, MentionValidation, TitleValidation, ArrowPorts, TitleNames, PortEdges, ValidationChecks, TitleQueries, BoardQueries, MentionQueries, ValidationQueries, SelectionQueries |
 | composition | foundation, horizontal, vertical, bridge, wire | Composition (the shipped plugin list) |
 | app | foundation, ui, composition, wire | InfiniteCanvas |
 | cli | wire | CanvasCLI (`canvas`, an executable: it knows the wire, never the app) |
@@ -1041,9 +1042,10 @@ The mechanics:
   `ShapeTitles` says how its shapes' titles read and whether the canvas shows the pill.
 - **Contracts should be pure.** Validation rules read the document only through
   `ValidationContext`: `shape(_:)`, a lookup the engine notes, so a change to a shape checks again
-  only that shape and those whose rules looked it up; and `registry`, which never changes, so
-  reading it (which kinds can hold names, which can be mentioned) is no lookup. Design your
-  contexts the same way.
+  only that shape and those whose rules looked it up; `registry`, which never changes, so
+  reading it (which kinds can hold names, which can be mentioned) is no lookup; and `service(_:)`,
+  for a rule over what a plugin keeps across the file, which comes with the rule's `affected`,
+  naming what each commit changes there (below). Design your contexts the same way.
 
 [Validation](../Sources/Validation/Validation.swift) is the full-size version of the same pattern:
 per-kind rules, rules for another plugin's kind, rules for every kind, an engine, and an overlay.
@@ -1070,12 +1072,14 @@ elsewhere, though Validation has never heard of either place: the
 detail panel lists a shape's issues in an Issues tab
 ([ValidationDetails](#a-tab-of-status-lines-from-a-bridge-validationdetails)), and the table of
 contents puts a dot of the same color on the row of each shape with issues, so the board's are
-found at a glance and a click goes to one ([ValidationContents](#marks-validationcontents)). A
-third adds rules: [MentionValidation](#warnings-mentionvalidation) warns about mentions that can't
-work. Outside the engine, `registry.validationIssues(of: record, in: shapes)` runs every rule for a
+found at a glance and a click goes to one ([ValidationContents](#marks-validationcontents)). Two
+add rules: [MentionValidation](#warnings-mentionvalidation) warns about mentions that can't
+work, and [TitleValidation](#warnings-titlevalidation) about titles two shapes share. Outside the
+engine, `registry.validationIssues(of: record, in: shapes)` runs every rule for a
 shape's kind against any `ShapeContext`, a transaction's mid-way included (the rules look other
 shapes up in it): it's how [`canvas draw`](#what-draw-takes-from-other-plugins) warns about what
-it's drawing before it commits (ValidationChecks, a fourth bridge).
+it's drawing before it commits (ValidationChecks, another bridge). Given `editor:`, the rules have
+its services too, as a query's check of a shape on a board not shown does (ValidationQueries).
 
 `editor.validation?.cachedResult(for: id)` is a shape's verdict as the engine holds it, checking
 nothing (`CachedVerdict`): `.current(result)` (nil for no issues) for a shape on the board shown,
@@ -1102,6 +1106,52 @@ and per rule, so a shape's issues stay in its rules' order); the other rules run
 do. Validation's schema rule ignores moves, and so does MentionValidation's, so a drag of a
 subboard 100 notes mention checks none of them again. A rule that measures distances, or finds overlaps,
 must not.
+
+A rule that reads more than the shapes it looks up, what a plugin keeps across the file in a
+service of its own (`context.service(S.self)`), names, given each commit, the shapes whose issues
+the commit may change without changing them or a shape they looked up, on any board:
+
+```swift
+registrar.validateEveryShape(ignoringMoves: true, affected: { changes, editor in
+    editor.service(TitleIndex.self)?.affected(by: changes) ?? []
+}) { shape, context in ... }
+```
+
+The engine asks it as it hears each commit (the service catches up with the commit then, if it
+hasn't heard it yet, as Topology's `catchUp` does), checks those on the board shown again, and
+those on a board it keeps once that board is taken back. It runs on every commit, so it costs what
+the commit changed, never the board. `engine.affected(by: changes)` is what a commit may change the
+issues of beyond what it changed: whose rules looked one up (`dependents(of:)`) and what the rules
+named; given only what changed on other boards while the board shown wasn't (`elsewhere`), what they
+named there meanwhile. Where shapes are checked without an editor (`validationIssues(of:in:)` given
+none: `canvas draw`'s checks), `service` is nil, and such a rule says nothing.
+
+### Warnings: TitleValidation
+
+Nothing refuses two shapes one title: a paste keeps the title of what it copied, and a person
+renames as they like. But titles name shapes (`canvas draw` refuses a title two shapes have, a
+query's `"Title"` finds both), so
+[`TitleValidation`](../Sources/TitleValidation/TitleValidation.swift), a bridge between Titles and
+Validation, warns on each shape whose title another shape in the file has:
+“Checkout” is another shape’s title too., about `title` where Titles keeps it (no field for a
+derived title, a schema card's). Titles as Titles reads them (`registry.title(of:)`: named or
+derived, folded), compared exactly, whatever the kinds; an untitled note's first line is no title.
+On every board the editor can show, but shapes kept aside. A warning: each shape is fine alone.
+
+- **The titles are the file's**, in a service of the bridge's (`TitleIndex`): read whole as the
+  editor opens, as Mentions' catalog is, so no check pays for it (a query's `:invalid` slice), and
+  again for a file put in place or a commit heard out of turn; then kept up to date by each commit,
+  for what it changed on any board (`elsewhere` too), never for a move. What a commit deleted is
+  never named, so deleting a subboard of 10,000 names none of them.
+- **The rule reads no other shape.** It asks the index whether another shape has its title, and the
+  index names, through the rule's `affected`, the shapes whose title a commit changed and those it
+  gave a title's first other holder or took its last from: a rename to a title another shape has
+  warns that one too, as it's shown, wherever it is.
+- **Moves check nothing**: the rule ignores them (`TitleValidationPlugin.titlesChecked`, debug
+  builds, counts the shapes it checks, which tests hold a move to).
+
+Shipped after MentionValidation, its warnings show as any issue does: an orange outline, a line in
+the Issues tab and a dot on the row.
 
 ## Properties
 
@@ -3014,7 +3064,7 @@ shows its Issues tab.
 
 ```swift
 registrar.contentsMarkForEveryShape(affected: { changes, context in
-    context.service(ValidationEngine.self)?.dependents(of: changes.shapeIDs) ?? []
+    context.service(ValidationEngine.self)?.affected(by: changes) ?? []
 }) { shape, context in
     guard let result = context.service(ValidationEngine.self)?.result(for: shape.id), let worst = result.worst else { return nil }
     return ContentsMark(color: Color(nsColor: worst.color), help: result.worstFirst.map(\.message).joined(separator: "\n"))
@@ -3031,7 +3081,11 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
   the next read, and a row is replaced (and redrawn) only if its marks changed, so a shape many
   rules look at costs its dependents' marks when it's dragged, not their rows. Validation's rules
   may look at other shapes (`context.shape(_:)`), and the engine knows whose did
-  (`dependents(of:)`): flattening the box a rule checks marks the shape the rule is for. A mark
+  (`dependents(of:)`): flattening the box a rule checks marks the shape the rule is for. A rule
+  that reads a service names what a commit changes the issues of (`affected`), and the engine
+  hands both over (`affected(by:)`), with what was named on a board while it wasn't shown when
+  it's given that board's `elsewhere` on going back: a rename on the root that gives a title in a
+  subboard a second holder marks its row there. A mark
   read from its shape alone leaves `affected` out. A service that reads the table of contents as
   it hears of a commit, before the table of contents does, gets every row's marks read again,
   since only hearing of the commit says which it affects.
@@ -7384,7 +7438,7 @@ each of them:
 | [Selection](#selection) | Opening a shape (`ShapeOpening`); Back crosses boards, and showing another board is a step; nothing is selected on arrival; `showBoard(_:selecting:)`; `goTo` goes to a shape on any board. |
 | [Boards](#boards) | Opening a kind's boards, ⌘↑, a board's name and symbol, and the path over the canvas. |
 | [The table of contents](#whats-listed-and-selecting) | Lists the board shown, keeps each board's rows, and takes its header from its placer (the board's crumb, in the app). A row may read shapes on other boards ([`elsewhere`](#rows-read-from-more-than-their-shape)). |
-| [Validation](#a-horizontal-plugin) | Checks the board shown, keeping each board's issues; a board never shown isn't checked, and a rule's lookups (MentionValidation's targets) find shapes there alone. |
+| [Validation](#a-horizontal-plugin) | Checks the board shown, keeping each board's issues; a board never shown isn't checked, and a rule's lookups (MentionValidation's targets) find shapes there alone; a rule over a service's state (TitleValidation's titles, the file's) names the shapes a commit changes the issues of on any board, checked once their board is shown. |
 | [Locking](#locking) | A shape whose board holds a locked shape isn't deleted; a locked owner is entered as any other. |
 | [Mentions](#mentions-across-boards) | A mention names a shape on any board, live and followed there (`goTo`, or `goInto` for a kind followed by opening it: a subboard); who mentions whom (Topology's), what each mentioned shape shows and the `@` picker's catalog are the file's (the board shown's first on a tie), so showing another board reads no mention text; so are the Mentioned In tab's and Show What Mentions' mentioners, the board shown's first. |
 | [Topology](#topology) | The file's edges, and containment (a shape's parent is its board's owner), whatever board is shown; showing another board reads nothing. |
@@ -7758,6 +7812,7 @@ board-navigation     service BoardCrumbs · command enclosingBoard · shortcut �
 validation-details   DetailStatuses in Issues
 validation-contents  ContentsMarks
 mention-validation   ValidationRules
+title-validation     service TitleIndex · ValidationRules
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
 locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu
 snapping             service SnapState · translation adjuster
@@ -7804,7 +7859,8 @@ each mentioned shape shows (`MentionState`), tells the text it keeps drawn
 (`MentionTextMemo`) where each frame ends (`MentionFrames`, an overlay that draws nothing), makes
 pills answer clicks (`ShapeFaces`), and puts Show What Mentions in the context menu
 (`CanvasContextMenu`); `mention-validation`'s `ValidationRules`, for every kind, is its warnings
-about mentions that can't work.
+about mentions that can't work, and `title-validation`'s, over the file's titles it keeps
+(`TitleIndex`), its warnings about titles two shapes share.
 Titles places its pill on every shape whose kind's title shows one (`adornment TitlePill → every shape`),
 and Locking its lock; `adornments` lends them their layout and drawing, a canvas button
 (`CanvasButtons`) and their hits (`DecorationHits`), and places none of its own. The automation
@@ -7864,7 +7920,7 @@ test("Eraser: dragging across shapes deletes them, and an arrow lets go of what 
   (`$0.shortcut("c", forTool: ToolID(placing: Card.kind))`). SelectionTests, ArrowsTests,
   ValidationTests, DetailPanelTests, AdornmentsTests, ClipboardTests, TitlesTests,
   ValidationDetailsTests, ValidationContentsTests, LockingTests, PortsTests, AutomationTests,
-  TitleNamesTests, PortEdgesTests, ValidationChecksTests, MentionValidationTests, QueriesTests,
+  TitleNamesTests, PortEdgesTests, ValidationChecksTests, MentionValidationTests, TitleValidationTests, QueriesTests,
   QueryCommandsTests and the five query bridges' tests import no real vertical (only these fixtures, and local test kinds), which proves those plugins are
   shape-agnostic. ArrowPortsTests import one real vertical, Arrows, and join fixtures with its
   arrows.
@@ -8209,7 +8265,8 @@ test("Eraser: dragging across shapes deletes them, and an arrow lets go of what 
   1,000 beside a subboard of 10,000, and inside a subboard of 10,000 while the root holds as many,
   each as on one board, with the drag event's input alone (in 1 ms, and at most 3× what it costs on a file of that
   board alone, since drawing would hide a commit's upkeep of the whole file); the minimap's picture of the board entered, a frame at a time; and deleting
-  a subboard whose boards hold 10,000 shapes (the commit and every board under it, in a frame), and
+  a subboard whose boards hold 10,000 shapes (the commit and every board under it, in a frame and 2 ms: the
+  generated file holds 2,608 titles twice, which TitleValidation's index takes out), and
   undoing and redoing that (with its frame). It only reports the inspector's list replaced on a
   switch between boards of 10,000 (a `List` in an unshown window, against a 50 ms target), and a
   chain of 1,000 boards written, read, walked (`path(to:)`) and shown. `./test.sh` runs it small, in
@@ -8283,6 +8340,13 @@ test("Eraser: dragging across shapes deletes them, and an arrow lets go of what 
   a locked mentioner, the board shown, and moves: a drag of a target or of its mentioner checks
   no text, and a rename of the target checks its mentioner (`MentionValidationPlugin.textsChecked`,
   debug builds, counts the texts the rule checks).
+  TitleValidationTests hold that bridge over CanvasTesting's cards and pockets (named) and discs
+  (derived): the warning and its field, a rename warning the shape it didn't change, three of a
+  title, folding, a delete, a rename and their undo, a title in a pocket against one on the root, a
+  rename on the root warning a shape on a board kept once it's shown (checking that shape alone,
+  and handed to the table of contents' catch-up, `affected(by:)`), a pocket's deletion, a move
+  checking none (`TitleValidationPlugin.titlesChecked`), a file put in place, and a check outside
+  the engine with and without the editor.
   CompositionTests' `mentionsShippedTests` hold the shipped pieces together in a `CanvasView`: a
   titled note picked with `@`, renamed (the editor, the row and the canvas), deleted and undone; the
   pill clicked on the canvas and double-clicked in the text; a locked note's pill; copying and
