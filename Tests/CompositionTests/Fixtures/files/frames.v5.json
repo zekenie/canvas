@@ -1,0 +1,182 @@
+{
+  "boards" : {
+    "F0000000-0000-4000-8000-000000000004" : {
+      "shapes" : [
+        {
+          "id" : "F0000000-0000-4000-8000-000000000008",
+          "index" : "a0",
+          "kind" : "sticky-note",
+          "props" : {
+            "frame" : [
+              [
+                0,
+                0
+              ],
+              [
+                200,
+                200
+              ]
+            ],
+            "text" : "Inside the subboard"
+          }
+        }
+      ]
+    }
+  },
+  "format" : 5,
+  "shapes" : [
+    {
+      "added" : {
+        "title" : "Roadmap"
+      },
+      "id" : "F0000000-0000-4000-8000-000000000001",
+      "index" : "a0",
+      "kind" : "frame",
+      "props" : {
+        "frame" : [
+          [
+            100,
+            100
+          ],
+          [
+            1200,
+            800
+          ]
+        ]
+      }
+    },
+    {
+      "added" : {
+        "title" : "Sprint 3"
+      },
+      "container" : "F0000000-0000-4000-8000-000000000001",
+      "id" : "F0000000-0000-4000-8000-000000000002",
+      "index" : "a1",
+      "kind" : "frame",
+      "props" : {
+        "frame" : [
+          [
+            150,
+            150
+          ],
+          [
+            700,
+            500
+          ]
+        ]
+      }
+    },
+    {
+      "container" : "F0000000-0000-4000-8000-000000000002",
+      "id" : "F0000000-0000-4000-8000-000000000003",
+      "index" : "a2",
+      "kind" : "sticky-note",
+      "props" : {
+        "frame" : [
+          [
+            180,
+            200
+          ],
+          [
+            200,
+            200
+          ]
+        ],
+        "text" : "Interview five customers"
+      }
+    },
+    {
+      "added" : {
+        "title" : "Research"
+      },
+      "container" : "F0000000-0000-4000-8000-000000000002",
+      "id" : "F0000000-0000-4000-8000-000000000004",
+      "index" : "a3",
+      "kind" : "subboard",
+      "props" : {
+        "frame" : [
+          [
+            450,
+            200
+          ],
+          [
+            240,
+            160
+          ]
+        ]
+      }
+    },
+    {
+      "container" : "F0000000-0000-4000-8000-000000000001",
+      "id" : "F0000000-0000-4000-8000-000000000005",
+      "index" : "a4",
+      "kind" : "schema-card",
+      "props" : {
+        "frame" : [
+          [
+            900,
+            200
+          ],
+          [
+            240,
+            52
+          ]
+        ],
+        "prompt" : "",
+        "schema" : "{\"title\": \"Order\", \"type\": \"object\", \"properties\": {\"id\": {\"type\": \"string\"}}}"
+      }
+    },
+    {
+      "added" : {
+        "locked" : true,
+        "title" : "Done"
+      },
+      "id" : "F0000000-0000-4000-8000-000000000006",
+      "index" : "a5",
+      "kind" : "frame",
+      "props" : {
+        "frame" : [
+          [
+            1400,
+            100
+          ],
+          [
+            500,
+            400
+          ]
+        ]
+      }
+    },
+    {
+      "container" : "F0000000-0000-4000-8000-000000000006",
+      "id" : "F0000000-0000-4000-8000-000000000007",
+      "index" : "a6",
+      "kind" : "sticky-note",
+      "props" : {
+        "frame" : [
+          [
+            1450,
+            200
+          ],
+          [
+            200,
+            200
+          ]
+        ],
+        "text" : "Shipped"
+      }
+    }
+  ],
+  "versions" : {
+    "added" : {
+      "locked" : 0,
+      "title" : 0
+    },
+    "kinds" : {
+      "frame" : 0,
+      "schema-card" : 1,
+      "sticky-note" : 3,
+      "subboard" : 0
+    }
+  }
+}

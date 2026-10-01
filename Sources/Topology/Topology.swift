@@ -1,9 +1,10 @@
 import Canvas
 
 /// Topology, as a plugin: what connects and contains what, whatever is where. Edges are a typed
-/// graph (an arrow bound at both ends, a mention in text); containment is a tree (which board a
-/// shape is on, and so which shape it's inside). Spatial relations (a note that happens to sit within
-/// a rectangle's bounds) aren't part of it: they're geometry.
+/// graph (an arrow bound at both ends, a mention in text); containment is a tree (the container a
+/// shape is in on its board, a frame, else the owner of the board it's on, and so on up). Spatial
+/// relations (a note that happens to sit within a rectangle's bounds) aren't part of it: they're
+/// geometry.
 ///
 /// The shapes are the system of record: an arrow's record (its bound ends, its channel) is its edge,
 /// a note's text is its mentions. Plugins say what a record carries (`EdgeSources`: a pure function

@@ -3,9 +3,11 @@ import CoreGraphics
 /// Shapes' rough silhouettes, gathered into one path to fill and one to stroke: a closed outline is
 /// filled and an open one (an arrow, a line) stroked, a shape only a few pixels across is just its
 /// bounds (a line from its first point to its last, if it's open), and every shape under a pixel
-/// across is the pixel it's in, once however many share it. What a picture of a board draws, the
-/// minimap's and a board's preview (`BoardPreviews`): from shapes' geometry alone, so a silhouette
-/// costs the same for every kind, and shows none of what a shape draws (its text, its colors).
+/// across is the pixel it's in, once however many share it. A container (a frame) is `hollow`: its
+/// outline is stroked, as an open shape's is, so what it holds shows on it. What a picture of a
+/// board draws, the minimap's and a board's preview (`BoardPreviews`): from shapes' geometry alone,
+/// so a silhouette costs the same for every kind, and shows none of what a shape draws (its text, its
+/// colors).
 @_spi(Host) @MainActor
 public final class Silhouettes {
     private struct Pixel: Hashable {
@@ -23,21 +25,28 @@ public final class Silhouettes {
         pixel = 1 / pixelsPerWorldUnit
     }
 
-    public func add(_ geometry: ShapeGeometry) {
+    /// `hollow`: a container's (`registry.isContainer`), stroked round its outline, or its bounds
+    /// a few pixels across, rather than filled.
+    public func add(_ geometry: ShapeGeometry, hollow: Bool = false) {
         let outline = geometry.outline, bounds = geometry.bounds
         guard let first = outline.first, let last = outline.last else { return }
         switch Self.form(of: bounds, pixel: pixel) {
         case .pixel:
             pixels.insert(Pixel(x: Int((bounds.midX / pixel).rounded(.down)), y: Int((bounds.midY / pixel).rounded(.down))))
         case .bounds:
-            if geometry.isClosed {
+            if geometry.isClosed, hollow {
+                lines.addRect(bounds)
+            } else if geometry.isClosed {
                 fills.addRect(bounds)
             } else {
                 lines.move(to: first)
                 lines.addLine(to: last)
             }
         case .outline:
-            if geometry.isClosed {
+            if geometry.isClosed, hollow {
+                lines.addLines(between: outline)
+                lines.closeSubpath()
+            } else if geometry.isClosed {
                 // All one way round, as `addRect`'s are: filled together, outlines wound the other
                 // way would cancel where they overlap.
                 fills.addLines(between: Self.area(of: outline) < 0 ? outline.reversed() : outline)

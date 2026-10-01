@@ -210,6 +210,22 @@ func isAccent(_ p: [Int]) -> Bool { p[2] > p[0] + 60 }
         let hinted = pixel(finished(minimap, h), at: onMinimap(CGPoint(x: 250, y: 200), minimap))
         expect(isAccent(hinted), "a shape the canvas outlines is in the accent color: \(hinted)")
     },
+    test("a container is drawn as its outline, so what it holds shows on it; outlined by the canvas, its outline is in the accent color") {
+        let h = try minimapEditor([CorralsPlugin()])
+        let corral = h.add(Corral(CGRect(x: 100, y: 100, width: 1200, height: 800)))
+        let box = h.add(Box(CGRect(x: 700, y: 400, width: 300, height: 200)))
+        h.editor.put([box], in: corral)
+        let (_, _, minimap) = try minimapped(h)
+        var rep = finished(minimap, h)
+        var at = { (world: CGPoint) in pixel(rep, at: onMinimap(world, minimap)) }
+        expect(isSilhouette(at(CGPoint(x: 850, y: 500))), "what it holds: \(at(CGPoint(x: 850, y: 500)))")
+        expect(isBlank(at(CGPoint(x: 400, y: 300))), "its inside, clear: \(at(CGPoint(x: 400, y: 300)))")
+        h.editor.hintedShapeID = corral
+        rep = finished(minimap, h)
+        at = { (world: CGPoint) in pixel(rep, at: onMinimap(world, minimap)) }
+        expect(!isAccent(at(CGPoint(x: 400, y: 300))), "its inside isn't filled in the accent color: \(at(CGPoint(x: 400, y: 300)))")
+        expect(isSilhouette(at(CGPoint(x: 850, y: 500))), "what it holds shows through: \(at(CGPoint(x: 850, y: 500)))")
+    },
     test("its picture keeps up with the board: after each change it's what a new minimap draws") {
         let h = try minimapEditor()
         // The board's corners stay put, so the picture keeps its frame and scale throughout.

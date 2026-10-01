@@ -23,9 +23,10 @@ import Geometry
 /// `added`, by key, beside its props (which are only its kind's own); `versions` then gives each
 /// kind's version and each added property's. Format 4 added the boards shapes own (`CanvasFile`):
 /// `boards`, one flat map, never nested however deep the boards are, each an object with its
-/// `shapes`, records as the root's, under the same `versions`. Members a shape doesn't have are
-/// left out. As with a record's, a member a board entry doesn't have yet needs a newer format: this
-/// one reads only `shapes`, and would save a board without any other.
+/// `shapes`, records as the root's, under the same `versions`. Format 5 added the container a shape
+/// is in on its board (`AnyShapeRecord.container`, a frame's id), in `container`. Members a shape
+/// doesn't have are left out. As with a record's, a member a board entry doesn't have yet needs a
+/// newer format: this one reads only `shapes`, and would save a board without any other.
 ///
 /// Reading never drops a shape and never stops at one: it refuses only a file that isn't a board,
 /// or one in a newer format, or one with an entry in `boards` that isn't a board and can't be kept as
@@ -38,9 +39,10 @@ import Geometry
 public struct BoardCodec: Sendable {
     /// The newest envelope this app reads. It writes the oldest that holds the file: 1, unless a
     /// shape has metadata, which needs 2, or added values, which need 3, or the file has a board
-    /// besides the root, which needs 4. So an older app still opens a file it would save back
-    /// whole, and refuses one it would save without what it doesn't know.
-    public static let format = 4
+    /// besides the root, which needs 4, or a shape on any board is in a container, which needs 5.
+    /// So an older app still opens a file it would save back whole, and refuses one it would save
+    /// without what it doesn't know.
+    public static let format = 5
 
     private let kinds: [ShapeKind: KindCodec]
     private let properties: [PropertyKey: PropertyCodec]
@@ -94,7 +96,8 @@ public struct BoardCodec: Sendable {
             for (owner, document) in children { entries[owner.description] = .board(document.shapes.map(Record.init)) }
             boards = entries
         }
-        let format = boards != nil ? 4 : root.shapes.contains { !$0.added.isEmpty } ? 3 : root.shapes.contains { !$0.meta.isEmpty } ? 2 : 1
+        let containers = root.namesContainers || children.values.contains { $0.namesContainers }
+        let format = containers ? 5 : boards != nil ? 4 : root.shapes.contains { !$0.added.isEmpty } ? 3 : root.shapes.contains { !$0.meta.isEmpty } ? 2 : 1
         return try Self.makeEncoder().encode(Envelope(format: format, versions: versions, shapes: root.shapes.map(Record.init), boards: boards))
     }
 
@@ -199,8 +202,8 @@ public struct BoardCodec: Sendable {
         }
     }
 
-    /// One element of `shapes`. Never throws: what can't be read is kept aside.
-    fileprivate func read(_ decoder: any Decoder, versions: Versions) -> ReadRecord {
+    /// One element of `shapes`, in a file of `format`. Never throws: what can't be read is kept aside.
+    fileprivate func read(_ decoder: any Decoder, versions: Versions, format: Int) -> ReadRecord {
         guard let container = try? decoder.container(keyedBy: RecordKeys.self) else {
             let json = (try? JSONValue(from: decoder)) ?? .null
             return ReadRecord(id: nil, kind: ShapeKind(rawValue: ""), key: nil, props: OpaqueProps(json: json, version: 0),
@@ -210,6 +213,12 @@ public struct BoardCodec: Sendable {
         let id = try? container.decode(ShapeID.self, forKey: .id)
         let kind = ShapeKind(rawValue: (try? container.decode(String.self, forKey: .kind)) ?? "")
         let stackingKey = (try? container.decode(String.self, forKey: .index)).flatMap(StackingKey.init)
+        // From format 5: the container it's in, kept aside or not. One that isn't an id names nothing.
+        var holder: ShapeID?, holderUnread = false
+        if format >= 5, container.contains(.container) {
+            holder = try? container.decode(ShapeID.self, forKey: .container)
+            holderUnread = holder == nil
+        }
         let version = (try? container.decodeIfPresent(Int.self, forKey: .v)) ?? versions.kinds[kind.rawValue] ?? 0
         let (meta, droppedMeta) = Self.meta(Self.member(.meta, of: container))
         // Added values by key, and kept ones by key with their versions. What isn't can't be read
@@ -243,7 +252,8 @@ public struct BoardCodec: Sendable {
                 values.kept[property] = KeptJSON(version: addedVersion(property), json: addedJSON(codingKey))
             }
             return ReadRecord(id: id, kind: kind, key: stackingKey, props: OpaqueProps(json: json, version: version), meta: meta,
-                              added: values, dropped: dropped, keptAside: reason, keptValues: [])
+                              added: values, dropped: dropped.union(holderUnread ? [.container] : []), keptAside: reason, keptValues: [],
+                              container: ContainerBits(holder))
         }
         guard let codec = kinds[kind] else { return keptAside(.unknownKind) }
         guard version <= codec.version else { return keptAside(.newerVersion(file: version, app: codec.version)) }
@@ -301,8 +311,9 @@ public struct BoardCodec: Sendable {
         fillDefaults(&values, kind: kind)
         // By key, so the same board reports the same way every time.
         keptValues.sort { $0.0.rawValue < $1.0.rawValue }
-        return ReadRecord(id: id, kind: kind, key: stackingKey, props: props, meta: meta, added: values, dropped: dropped,
-                          keptAside: nil, keptValues: keptValues)
+        return ReadRecord(id: id, kind: kind, key: stackingKey, props: props, meta: meta, added: values,
+                          dropped: dropped.union(holderUnread ? [.container] : []), keptAside: nil, keptValues: keptValues,
+                          container: ContainerBits(holder))
     }
 
     /// A record's member as JSON, if it has one (`.null` if it doesn't read as JSON).
@@ -354,14 +365,16 @@ public struct BoardCodec: Sendable {
                 }
                 if item.dropped.contains(.meta) { report.repairs.append(.droppedMeta(id)) }
                 if item.dropped.contains(.values) { report.repairs.append(.droppedValues(id)) }
+                if item.dropped.contains(.container) { report.repairs.append(.droppedContainer(id)) }
                 for (key, reason) in item.keptValues {
                     report.keptValues.append(LoadReport.KeptValue(id: id, kind: item.kind, key: key, reason: reason, board: board))
                 }
                 var record = AnyShapeRecord(id: id, kind: item.kind, props: item.props, stackingKey: item.key, meta: item.meta)
                 record.added = item.added
+                record.containerBits = item.container
                 records.append(record)
             }
-            return risingKeys(records, repairs: &report.repairs)
+            return wholeContainers(risingKeys(records, repairs: &report.repairs), repairs: &report.repairs)
         }
 
         /// The boards `records` own that are yet to be read, in their order, each with why it
@@ -410,6 +423,36 @@ public struct BoardCodec: Sendable {
         var file = CanvasFile(root: CanvasDocument(shapes: root), children: children)
         file.unreadableBoards = contents.unreadableBoards.mapValues(\.json)
         return LoadedBoard(file: file, report: report)
+    }
+
+    /// The board's records with every container a shape names on the board, and none in a loop: one
+    /// naming a shape that isn't on the board (or itself) is dropped, and of shapes naming each other
+    /// round in a loop, the first in the stack is on the board directly. A container that's on the
+    /// board but can't hold (kept aside, of a kind that holds nothing here) is kept as written: the
+    /// shape counts as on its board directly, and is saved naming it.
+    private func wholeContainers(_ records: [AnyShapeRecord], repairs: inout [LoadReport.Repair]) -> [AnyShapeRecord] {
+        guard records.contains(where: \.namesContainer) else { return records }
+        let ids = Set(records.map(\.id))
+        var records = records, containers: [ShapeID: ShapeID] = [:]
+        for index in records.indices {
+            guard let container = records[index].container else { continue }
+            if container == records[index].id || !ids.contains(container) {
+                records[index].container = nil
+                repairs.append(.droppedContainer(records[index].id))
+            } else {
+                containers[records[index].id] = container
+            }
+        }
+        for index in records.indices {
+            let id = records[index].id
+            var next = containers[id], met: Set<ShapeID> = [id]
+            while let holder = next, met.insert(holder).inserted { next = containers[holder] }
+            guard next == id else { continue }
+            containers[id] = nil
+            records[index].container = nil
+            repairs.append(.droppedContainer(id))
+        }
+        return records
     }
 
     /// The records, with keys that rise: those with keys in key order, ties broken by id, each key
@@ -598,10 +641,13 @@ public struct LoadReport: Equatable, Sendable {
         /// Some of its added or kept values weren't a value by key (a kept one with its version), so
         /// no property's: they were left out.
         case droppedValues(ShapeID)
+        /// The container it named wasn't a shape on its board (or wasn't an id), or would have made a
+        /// loop: it's on its board directly.
+        case droppedContainer(ShapeID)
     }
 
     /// What a record had that couldn't be read as anything's, and was left out.
-    enum Dropped: Hashable, Sendable { case meta, values }
+    enum Dropped: Hashable, Sendable { case meta, values, container }
 }
 
 /// Why a board won't open.
@@ -664,9 +710,11 @@ private struct ReadRecord {
     let keptAside: LoadReport.KeptShape.Reason?
     /// Its added values the app can't use, on a shape it can.
     let keptValues: [(PropertyKey, LoadReport.KeptValue.Reason)]
+    /// The container it names, as written (from format 5).
+    var container = ContainerBits()
 }
 
-private enum RecordKeys: String, CodingKey { case id, kind, index, props, v, meta, added, kept }
+private enum RecordKeys: String, CodingKey { case id, kind, index, props, v, meta, added, kept, container }
 
 /// Each kind's version and, from format 3, each added property's.
 private struct Versions {
@@ -732,6 +780,7 @@ private struct Record: Encodable {
         try container.encode(record.id, forKey: .id)
         try container.encode(record.kind.rawValue, forKey: .kind)
         try container.encodeIfPresent(record.stackingKey, forKey: .index)
+        try container.encodeIfPresent(record.container, forKey: .container)
         try record.props.encode(to: container.superEncoder(forKey: .props))
         if let opaque = record.opaqueProps { try container.encode(opaque.version, forKey: .v) }
         if !record.meta.isEmpty { try container.encode(record.meta.json, forKey: .meta) }
@@ -776,7 +825,7 @@ private struct Contents: Decodable {
         }
         var shapes = try container.nestedUnkeyedContainer(forKey: .shapes)
         while !shapes.isAtEnd {
-            records.append(codec.read(try shapes.superDecoder(), versions: versions))
+            records.append(codec.read(try shapes.superDecoder(), versions: versions, format: format))
         }
         guard format >= 4, container.contains(.boards) else { return }
         guard let entries = try? container.nestedContainer(keyedBy: PropertyCodingKey.self, forKey: .boards) else {
@@ -789,7 +838,7 @@ private struct Contents: Decodable {
                var shapes = try? board.nestedUnkeyedContainer(forKey: .shapes) {
                 var read: [ReadRecord] = []
                 while !shapes.isAtEnd {
-                    read.append(codec.read(try shapes.superDecoder(), versions: versions))
+                    read.append(codec.read(try shapes.superDecoder(), versions: versions, format: format))
                 }
                 boards[owner] = read
             } else {

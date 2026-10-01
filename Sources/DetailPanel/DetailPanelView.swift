@@ -37,10 +37,12 @@ public struct DetailPanelView: View {
                 if ids.count > 1 {
                     SelectionSummary(header: state.selectionSummary(of: ids.compactMap { editor.document[$0] }), editor: editor, overview: overview)
                 } else if let id = editor.selection, let record = editor.document[id] {
-                    // Status lines and `shownWhile` read services, so they're read here, on every
-                    // commit: the panel below draws again only when they, or its shape, change.
-                    ShapePanel(state: state, editor: editor, record: record, statuses: state.statuses(of: record),
-                               hidden: state.hiddenSections(of: record), contentChanged: reclaimSoon)
+                    // Status lines and `shownWhile` read services, and whether the shape can change
+                    // reads the containers it's in (a locked frame's shapes are locked too: O(its
+                    // depth)), so they're read here, on every commit: the panel below draws again
+                    // only when they, or its shape, change.
+                    ShapePanel(state: state, editor: editor, record: record, isReadOnly: editor.registry.isReadOnly(record, in: editor.document),
+                               statuses: state.statuses(of: record), hidden: state.hiddenSections(of: record), contentChanged: reclaimSoon)
                         .equatable()
                         .id(id)
                 } else if let overview {
@@ -155,28 +157,34 @@ struct SelectionSummary: View {
     }
 }
 
-/// One shape's panel. Skipped (`.equatable()`) unless its record, status lines or the sections
-/// `shownWhile` hides change, so dragging another shape costs one comparison.
+/// One shape's panel. Skipped (`.equatable()`) unless its record, whether it can change, its status
+/// lines or the sections `shownWhile` hides change, so dragging another shape costs one comparison.
 struct ShapePanel: View, Equatable {
     let state: DetailPanelState
     let editor: CanvasEditor
     let record: AnyShapeRecord
+    /// Whether the shape can't change (`registry.isReadOnly(_:in:)`: locked, or in a locked frame):
+    /// it shows its details, but none of them edits it. Read by the panel's root, which reads the
+    /// document, so this view, which doesn't, draws again only when it changes.
+    let isReadOnly: Bool
     let statuses: ShapeStatuses
     let hidden: Set<DetailSectionKey>
     let contentChanged: @MainActor () -> Void
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
-        MainActor.assumeIsolated { a.record == b.record && a.statuses == b.statuses && a.hidden == b.hidden }
+        MainActor.assumeIsolated {
+            a.record == b.record && a.isReadOnly == b.isReadOnly && a.statuses == b.statuses && a.hidden == b.hidden
+        }
     }
 
     var body: some View {
+        #if DEBUG
+        let _ = (state.panelsDrawn += 1)
+        #endif
         let layout = state.layout(for: record, statuses: statuses.tabs, hidden: hidden)
         let current = state.currentTab(in: layout, for: record.kind)
         let sections = current.map { layout.resolved(in: $0) } ?? []
         let lines = current.map { layout.statuses(in: $0) } ?? []
-        // A shape that can't change (a locked one) shows its details, but none of them edits it.
-        // Asked of the record, not the editor, so the panel doesn't read the document.
-        let isReadOnly = editor.registry.isReadOnly(record)
         VStack(spacing: 0) {
             HeaderView(editor: editor, kindName: layout.kindName, kindSymbol: layout.kindSymbol, content: layout.resolvedHeader.view,
                        isReadOnly: isReadOnly)
@@ -467,13 +475,15 @@ struct SectionView: View, Equatable {
     let resolved: ResolvedSection
     let editor: CanvasEditor
     let record: AnyShapeRecord
-    /// Follows from `record`, so comparing records covers it.
+    /// The shape's, which a container's lock changes, though not its record.
     let isReadOnly: Bool
     let isCollapsed: Bool
     let toggle: @MainActor () -> Void
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
-        MainActor.assumeIsolated { a.resolved.key == b.resolved.key && a.record == b.record && a.isCollapsed == b.isCollapsed }
+        MainActor.assumeIsolated {
+            a.resolved.key == b.resolved.key && a.record == b.record && a.isReadOnly == b.isReadOnly && a.isCollapsed == b.isCollapsed
+        }
     }
 
     private var isDisabled: Bool { isReadOnly && !resolved.section.isEnabledWhileReadOnly }

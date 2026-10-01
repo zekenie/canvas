@@ -48,13 +48,22 @@ extension HandleProviding {
 }
 
 extension CanvasEditor {
-    /// The only selected shape's handles, in view space, front to back. A read-only shape
-    /// (`registrar.readOnlyShapes`) has none: a press there is a press on the shape. Nor does the
-    /// shape being edited (an arrow's label), as in tldraw: its editing view is over them.
+    /// The only selected shape's handles, in view space, front to back: its kind's own
+    /// (`HandleProviding`), then, for a resizable kind (`ShapeResizing`), those of its box's corners
+    /// and sides that show there (`ResizeHandle`). A read-only shape (`registrar.readOnlyShapes`)
+    /// has none: a press there is a press on the shape. Nor does the shape being edited (an arrow's
+    /// label), as in tldraw: its editing view is over them.
     func visibleHandles() -> [(handle: AnyHashable, point: CGPoint)] {
-        guard let id = selection, id != editingShapeID, let record = document[id], !registry.isReadOnly(record),
-              let definition = registry.definition(for: record.kind) as? any HandleProviding else { return [] }
-        return definition.erasedHandles(of: record, in: shapeContext).map { ($0.handle, camera.toView($0.point)) }
+        guard let id = selection, id != editingShapeID, let record = document[id], !isReadOnly(id) else { return [] }
+        var handles: [(handle: AnyHashable, point: CGPoint)] = []
+        if let definition = registry.definition(for: record.kind) as? any HandleProviding {
+            handles = definition.erasedHandles(of: record, in: shapeContext).map { ($0.handle, camera.toView($0.point)) }
+        }
+        if let box = record.box, selectionState?.minimumSizes[record.kind] != nil {
+            let view = camera.toView(box)
+            handles += ResizeHandle.shown(on: view).map { (AnyHashable($0), $0.point(on: view)) }
+        }
+        return handles
     }
 
     /// The only selected shape's handle under a view point: the nearest within
@@ -67,16 +76,23 @@ extension CanvasEditor {
             .0
     }
 
+    /// A press on one of the only selected shape's handles: a resize handle's waits for a drag; one
+    /// of its kind's own, as its definition says.
     func pressHandle(_ handle: AnyHashable, with pointer: Pointer) {
-        guard let id = selection, let record = document[id],
-              let definition = registry.definition(for: record.kind) as? any HandleProviding else { return }
+        guard let id = selection, let record = document[id] else { return }
+        if handle.base is ResizeHandle {
+            session = PointingHandleSession(shapeID: id, handle: handle, origin: pointer.view)
+            return
+        }
+        guard let definition = registry.definition(for: record.kind) as? any HandleProviding else { return }
         if definition.erasedPressHandle(handle, of: record, at: pointer, in: self) == .drag {
             session = PointingHandleSession(shapeID: id, handle: handle, origin: pointer.view)
         }
     }
 }
 
-/// A handle was pressed; past the drag threshold, the definition's drag session takes over.
+/// A handle was pressed; past the drag threshold, a resize takes over for a resize handle
+/// (`ResizingSession`), else the definition's drag session.
 @MainActor
 final class PointingHandleSession {
     let shapeID: ShapeID
@@ -90,17 +106,23 @@ final class PointingHandleSession {
 }
 
 extension PointingHandleSession: Session {
-    func cursor(in editor: CanvasEditor) -> CanvasCursor? { .closedHand }
+    /// A resize handle's resize cursor, else the closed hand.
+    func cursor(in editor: CanvasEditor) -> CanvasCursor? { (handle.base as? ResizeHandle)?.cursor ?? .closedHand }
 
     func drag(_ pointer: Pointer, in editor: CanvasEditor) {
-        guard pointer.view.distance(to: origin) > Style.dragThreshold,
-              let record = editor.document[shapeID],
-              let definition = editor.registry.definition(for: record.kind) as? any HandleProviding,
-              let next = definition.erasedDragSession(for: handle, of: record, from: editor.camera.toWorld(origin), in: editor)
-        else { return }
+        guard pointer.view.distance(to: origin) > Style.dragThreshold, let next = dragSession(in: editor) else { return }
         editor.hoveredHandle = nil
         editor.session = next
         next.drag(pointer, in: editor)
+    }
+
+    /// What takes the drag over: a resize, for a resize handle; else the definition's session.
+    private func dragSession(in editor: CanvasEditor) -> (any Session)? {
+        let from = editor.camera.toWorld(origin)
+        if let resize = handle.base as? ResizeHandle { return ResizingSession(shapeID: shapeID, handle: resize, from: from, in: editor) }
+        guard let record = editor.document[shapeID],
+              let definition = editor.registry.definition(for: record.kind) as? any HandleProviding else { return nil }
+        return definition.erasedDragSession(for: handle, of: record, from: from, in: editor)
     }
 
     /// Released without a drag: drop any hint the press showed.
@@ -110,7 +132,8 @@ extension PointingHandleSession: Session {
 }
 
 /// The only selected shape's handles, in view points. They show in the select tool, and hide while
-/// anything but a handle's or a canvas button's press is under way.
+/// anything but a handle's or a canvas button's press, or a resize, is under way: a resize's follow
+/// the box, the one dragged pressed.
 struct HandlesOverlay: CanvasOverlay {
     var space: OverlaySpace { .view }
 
@@ -120,6 +143,7 @@ struct HandlesOverlay: CanvasOverlay {
         switch editor.session {
         case nil, is PressingButtonSession: break
         case let pointing as PointingHandleSession: pressed = pointing.handle
+        case let resizing as ResizingSession: pressed = AnyHashable(resizing.handle)
         default: return
         }
         guard editor.currentToolID == .select else { return }

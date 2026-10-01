@@ -3,13 +3,12 @@ import Foundation
 // QueryLanguage: the language `canvas query` reads, a CSS-like selector over a file's shapes.
 //
 // CSS where CSS has a meaning, with CSS's meaning: a compound is AND (`card[rank>3]:inside("A")`),
-// a comma OR, a space "inside" and `>` "directly on the board of"; `:not`, `:is`, `:where` and
-// `:has` as in Selectors 4, `[a]`, `[a=v]`, `^= $= *= ~= |=`, the `i` and `s` flags and `/* */`
-// comments. A compound starts with at most one head: a kind (`card`), `*`, a title in quotes (as
-// `draw` names shapes), a kind with a title right after it (`card"Payments"`, as CSS writes
-// `div#id`) or an id (`#` and a UUID). What CSS has that the canvas has no counterpart for
-// (siblings, columns, pseudo-elements, namespaces, `:nth-*`, nesting) is refused, never
-// approximated.
+// a comma OR, a space "inside" and `>` "directly inside"; `:not`, `:is`, `:where` and `:has` as in
+// Selectors 4, `[a]`, `[a=v]`, `^= $= *= ~= |=`, the `i` and `s` flags and `/* */` comments. A
+// compound starts with at most one head: a kind (`card`), `*`, a title in quotes (as `draw` names
+// shapes), a kind with a title right after it (`card"Payments"`, as CSS writes `div#id`) or an id
+// (`#` and a UUID). What CSS has that the canvas has no counterpart for (siblings, columns,
+// pseudo-elements, namespaces, `:nth-*`, nesting) is refused, never approximated.
 //
 // This module reads the text into a tree (`SelectorList(parsing:)`), prints it back in its
 // canonical form (`canonical`), and says what's wrong with it (`QueryError`: a reason, a message, a

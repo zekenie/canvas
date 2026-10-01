@@ -35,7 +35,7 @@ extension CanvasEditor {
     /// The session a drag from a shape's label starts, pressed at `origin`; nil for one that's
     /// read-only, or whose kind moves the selection.
     func labelDragSession(of id: ShapeID, from origin: CGPoint) -> (any Session)? {
-        guard let record = document[id], !registry.isReadOnly(record),
+        guard let record = document[id], !isReadOnly(id),
               let definition = registry.definition(for: record.kind) as? any LabeledShape else { return nil }
         return definition.erasedLabelDragSession(of: record, from: origin, in: self)
     }

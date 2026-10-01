@@ -22,8 +22,13 @@ public struct ContentsEntry: Identifiable {
     /// nests under this one's, before `children`: that board's `ContentsState.outline(of:)`, read only
     /// once the row is expanded. Nil for a shape that owns none. The board may have no shapes yet.
     public var nestedBoard: BoardID? { row.ownsBoard ? BoardID(owner: id) : nil }
+    /// Whether the row starts expanded: a container's (`registry.isContainer`), whose nested rows
+    /// are what it holds, on the board shown, as the canvas shows them inside it; every other row
+    /// starts collapsed (the arrows that start from a shape, a subboard's board). What the person
+    /// turns its disclosure triangle to holds after that (`ContentsState.isExpanded(_:)`).
+    public var startsExpanded: Bool { row.startsExpanded }
     /// The shape's row, as its kind made it for the shape as listed, with its marks: the same
-    /// object until the shape or its marks change.
+    /// object until the shape changes other than by moving, or its marks change.
     var row: ShapeRow
 
     init(row: ShapeRow, children: [ContentsEntry]?) {
@@ -34,14 +39,17 @@ public struct ContentsEntry: Identifiable {
 }
 
 /// A shape's row as its kind made it for one version of the shape, with its marks and what places
-/// it in the list. Made again only when the shape changes, copied with its new marks when they
-/// change while the shape doesn't, and shared by every scope that lists it.
+/// it in the list. Made again only when the shape changes other than by moving (a row says what a
+/// shape is, never where it is), copied with its new marks when they change while the shape
+/// doesn't, and shared by every scope that lists it.
 @MainActor
 final class ShapeRow {
-    let record: AnyShapeRecord
+    /// The shape as it is: as the row was made, or moved since (`follow(_:)`).
+    private(set) var record: AnyShapeRecord
     /// Whether the kind lists the shape (`when`).
     let isListed: Bool
-    /// The shape the kind nests it under (`nestedUnder`), listed or not.
+    /// The shape the row nests under, listed or not: the one its kind names (`nestedUnder`), else
+    /// the container it's in, as the core goes by it (`registry.container(of:in:)`).
     let parent: ShapeID?
     let view: AnyView
     let label: ContentsLabel?
@@ -53,12 +61,17 @@ final class ShapeRow {
     /// Whether the shape owns a board the editor can show wherever it shows the shape's own
     /// (`registry.ownsShowableBoard`): that board's rows nest under its row.
     let ownsBoard: Bool
+    /// Whether the row starts expanded: a container's (`registry.isContainer`) that owns no board,
+    /// whose nested rows are of what it holds on the board shown.
+    let startsExpanded: Bool
 
-    init(record: AnyShapeRecord, isListed: Bool, parent: ShapeID?, ownsBoard: Bool, row: ResolvedRow, symbol: String, marks: [ContentsMark]) {
+    init(record: AnyShapeRecord, isListed: Bool, parent: ShapeID?, ownsBoard: Bool, startsExpanded: Bool, row: ResolvedRow, symbol: String,
+         marks: [ContentsMark]) {
         self.record = record
         self.isListed = isListed
         self.parent = parent
         self.ownsBoard = ownsBoard
+        self.startsExpanded = startsExpanded
         view = row.view
         label = row.label
         self.symbol = symbol
@@ -73,6 +86,7 @@ final class ShapeRow {
         isListed = row.isListed
         parent = row.parent
         ownsBoard = row.ownsBoard
+        startsExpanded = row.startsExpanded
         if let resolved {
             view = resolved.view
             label = resolved.label
@@ -85,17 +99,24 @@ final class ShapeRow {
         key = row.key
     }
 
+    /// The shape only moved (`ChangeSet.moved`): the row, which says what it is and not where, stays
+    /// the same object, so no list redraws it, and holds the shape as it is now.
+    func follow(_ moved: AnyShapeRecord) { record = moved }
+
     var id: ShapeID { record.id }
 }
 
 /// Per editor (so per window): what the table of contents lists, and each shape's row, made again
-/// only when that shape changes. What a commit changed is all a read after it redoes: the rows of
-/// the shapes its change set names, and where those nest, and the rows and marks of the shapes
-/// whose rows and marks it may change though it doesn't change them (`affected`). It lists the
-/// board shown; the rows and the listing of every row of the boards shown last are kept for going
-/// back to them, and taken back while those boards are as they were left (`BoardStash`). What
-/// changed on other boards meanwhile is handed to `affected` on going back (as `ChangeSet.elsewhere`),
-/// so a row that reads a shape on another board that was renamed or deleted since is made again.
+/// only when that shape changes other than by moving. What a commit changed is all a read after it
+/// redoes: the rows of the shapes its change set names, and where those nest, but for those it only
+/// moved (a drag's every event, a container carrying what it holds), whose rows stay and whose
+/// marks are read again; and the rows and marks of the shapes whose rows and marks it may change
+/// though it doesn't change them (`affected`). It lists the board shown; the rows and the listing of
+/// every row of the boards shown last are kept for going back to them, and taken back while those
+/// boards are as they were left (`BoardStash`). What changed on other boards meanwhile is handed to
+/// `affected` on going back (as `ChangeSet.elsewhere`), so a row that reads a shape on another board
+/// that was renamed or deleted since is made again. Which rows are expanded is kept too, by shape,
+/// whatever's listed (`isExpanded(_:)`).
 @MainActor
 @Observable
 public final class ContentsState {
@@ -190,6 +211,14 @@ public final class ContentsState {
     /// their shapes may have changed with (a move names nothing anew: a drag's every event).
     @ObservationIgnored private var changesHeard: Int
     @ObservationIgnored private var lastBeyondMoves: Int
+    /// The rows whose disclosure triangle the person turned from how it starts
+    /// (`ContentsEntry.startsExpanded`): observed per row, through `isExpanded(_:)`.
+    @ObservationIgnored private var turned: Set<ShapeID> = []
+    /// The shapes commits only moved since the rows were last read (`ChangeSet.moved`), whose rows,
+    /// if kept, stay: the next read has them hold their shapes as they are, and reads their marks
+    /// again (`followMoves`). So a drag's every event costs the table of contents one set's upkeep,
+    /// whatever it carries (a frame and all it holds), and the rest only once something reads them.
+    @ObservationIgnored private var movedSinceRead: Set<ShapeID> = []
     private var pin: Pin?
     #if DEBUG
     /// How many times the list has asked a row for its view (debug builds only), so tests can hold
@@ -231,6 +260,7 @@ public final class ContentsState {
     /// so a read after a commit costs what the commit changed.
     public var entries: [ContentsEntry] {
         catchUp()
+        followMoves()
         catchUpAway()
         guard let scope else {
             keepUp(&board, scope: nil)
@@ -284,6 +314,8 @@ public final class ContentsState {
         guard heardRevision != editor.revision else { return }
         heardRevision = editor.revision
         let document = editor.document
+        // A row whose shape only moved since it was made isn't the shape's now either: made again.
+        movedSinceRead = []
         rows = rows.filter { document[$0.key] == $0.value.record }
         remakes = rowAffected.isEmpty ? remakes.filter { rows[$0] != nil }
             : Set(rows.lazy.filter { self.kindRows($0.value.record.kind).readsOtherShapes }.map(\.key))
@@ -390,6 +422,30 @@ public final class ContentsState {
     /// and the row it reaches, not every row.
     public func isHovered(_ id: ShapeID) -> Bool { editor.isHovered(id) && !editor.isSelected(id) }
 
+    // MARK: Expanding
+
+    /// Whether the row shows the rows nested under it: as it starts (`startsExpanded`: a container's
+    /// expanded, every other row collapsed) until the person turns its disclosure triangle, then as
+    /// they left it, kept by shape for the editor's life, whatever's listed, so a row stays as it
+    /// was through Show All, the list's rows replaced, or another board shown and back. Observing it
+    /// hears only this row's turning, so turning one redraws that row and its own rows alone.
+    public func isExpanded(_ entry: ContentsEntry) -> Bool {
+        access(keyPath: \.[turned: entry.id])
+        return entry.startsExpanded != turned.contains(entry.id)
+    }
+
+    /// The person turned the row's disclosure triangle (a click on it, → or ← in the list).
+    public func setExpanded(_ entry: ContentsEntry, _ isExpanded: Bool) {
+        guard isExpanded != (entry.startsExpanded != turned.contains(entry.id)) else { return }
+        withMutation(keyPath: \.[turned: entry.id]) {
+            if isExpanded == entry.startsExpanded { turned.remove(entry.id) } else { turned.insert(entry.id) }
+        }
+    }
+
+    /// Only a key: one key path per shape, under which Observation keeps the observers of each row's
+    /// disclosure apart.
+    private subscript(turned id: ShapeID) -> Bool { turned.contains(id) }
+
     // MARK: Another board
 
     /// A board's rows as the table of contents lists every shape of it, whether it's shown or not:
@@ -436,7 +492,7 @@ public final class ContentsState {
         rows.reserveCapacity(document.shapes.count)
         let listing = ContentsListing(scope: nil, shapes: document.shapes.map(\.id)) { id in
             guard let record = document[id] else { return nil }
-            let made = makeRow(of: record, marked: false)
+            let made = makeRow(of: record, in: document, marked: false)
             rows[id] = made
             return made
         }
@@ -461,11 +517,11 @@ public final class ContentsState {
     // MARK: Rows
 
     /// The shape's row: its kind's, else its kind's label; called what `ContentsTitles` names it, if
-    /// it's a `ContentsLabel`; with its marks. Made again after the shape changes; made again when a
-    /// commit may change it without changing the shape (`affected`), and kept unless its label
-    /// changed; and copied with new marks when a commit changes them without changing the shape; nil
-    /// once it's gone. A shape the board keeps aside isn't listed, whatever its kind: nothing on the
-    /// canvas sees it.
+    /// it's a `ContentsLabel`; with its marks. Made again after the shape changes other than by moving;
+    /// made again when a commit may change it without changing the shape (`affected`), and kept
+    /// unless its label changed; and copied with new marks when a commit changes them without
+    /// changing the shape, or moves it; nil once it's gone. A shape the board keeps aside isn't
+    /// listed, whatever its kind: nothing on the canvas sees it.
     private func row(of id: ShapeID) -> ShapeRow? {
         if let made = rows[id] {
             let remake = remakes.remove(id) != nil, remark = remarks.remove(id) != nil
@@ -483,22 +539,29 @@ public final class ContentsState {
             rows[id] = replaced
             return replaced
         }
-        guard let record = editor.document[id] else { return nil }
-        let made = makeRow(of: record, marked: true)
+        let document = editor.document
+        guard let record = document[id] else { return nil }
+        let made = makeRow(of: record, in: document, marked: true)
         rows[id] = made
         return made
     }
 
-    /// A shape's row as its kind makes it, with its marks when `marked` (the board shown's rows are).
-    private func makeRow(of record: AnyShapeRecord, marked: Bool) -> ShapeRow {
-        let kind = kindRows(record.kind), contribution = kind.contribution
+    /// A shape of `document`'s row as its kind makes it, with its marks when `marked` (the board
+    /// shown's rows are). It nests under the shape its kind names (`nestedUnder`), else under the
+    /// container it's in: read from its record, as the core goes by it (a container the board keeps
+    /// aside, or of a kind that holds nothing here, holds nothing). O(1) more than its row.
+    private func makeRow(of record: AnyShapeRecord, in document: CanvasDocument, marked: Bool) -> ShapeRow {
+        let kind = kindRows(record.kind), contribution = kind.contribution, registry = editor.registry
         let isListed = !record.isOpaque && (contribution?.isListed(record) ?? true)
+        let ownsBoard = registry.ownsShowableBoard(record)
         #if DEBUG
         rowsMade += 1
         #endif
-        return ShapeRow(record: record, isListed: isListed, parent: contribution?.parent?(record),
-                        ownsBoard: editor.registry.ownsShowableBoard(record), row: resolvedRow(of: record, kind: kind),
-                        symbol: kind.symbol, marks: marked ? marks(of: record, isListed: isListed, kind: kind) : [])
+        return ShapeRow(record: record, isListed: isListed,
+                        parent: contribution?.parent?(record) ?? registry.container(of: record, in: document),
+                        ownsBoard: ownsBoard, startsExpanded: !ownsBoard && registry.isContainer(record),
+                        row: resolvedRow(of: record, kind: kind), symbol: kind.symbol,
+                        marks: marked ? marks(of: record, isListed: isListed, kind: kind) : [])
     }
 
     /// The shape's row as its kind makes it, else its kind's label, called what `ContentsTitles`
@@ -538,25 +601,36 @@ public final class ContentsState {
 
 extension ContentsState: EditorService {
     /// Forgets the rows of the shapes the commit touched, for the next read to make again and
-    /// place, and notes the shapes whose rows or marks it may change though it doesn't touch them
-    /// (as the rows' and the marks' contributors say), for the next read to make their rows again
-    /// or read their marks again. Each scope's listing notes them all.
+    /// place, but for those it only moved (`ChangeSet.moved`: a drag's every event, a container
+    /// carrying all it holds), whose rows say what they are and not where, so they stay, noted for
+    /// the next read to follow them (`followMoves`); and notes the shapes whose rows or marks it may
+    /// change though it doesn't touch them (as the rows' and the marks' contributors say), for the
+    /// next read to make their rows again or read their marks again. Each scope's listing notes
+    /// them all.
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         changesHeard = editor.revision
         if !changes.onlyMoves { lastBeyondMoves = editor.revision }
-        let touched = changes.shapeIDs
         if heardRevision != editor.revision {          // else read since, and caught up
             heardRevision = editor.revision
-            for id in touched {
+            let moved = changes.moved
+            let forgotten: Set<ShapeID>
+            if moved.isEmpty {
+                forgotten = changes.shapeIDs
+            } else {
+                movedSinceRead.formUnion(moved)
+                let onlyMoved = changes.added.isEmpty && changes.removed.isEmpty && changes.changed.count == moved.count
+                forgotten = onlyMoved ? [] : changes.shapeIDs.subtracting(moved)
+            }
+            for id in forgotten {
                 rows[id] = nil
                 remakes.remove(id)
                 remarks.remove(id)
             }
-            note(touched)
+            note(forgotten)
         }
         guard readsOtherShapes else { return }
         if !kept.boards.isEmpty {
-            for id in touched { touchedAway[id] = editor.revision }
+            for id in changes.shapeIDs { touchedAway[id] = editor.revision }
             for id in changes.elsewhere { touchedAway[id] = editor.revision }
         }
         noteAffected(by: changes)
@@ -564,6 +638,27 @@ extension ContentsState: EditorService {
 
     /// Whether some row or mark reads more than its shape (`affected`).
     private var readsOtherShapes: Bool { !rowAffected.isEmpty || !markAffected.isEmpty }
+
+    /// The shapes commits only moved since the rows were last read, as the rows are read (or kept
+    /// for going back to their board): each kept row stays, the same object, holding its shape as it
+    /// is now, since a row says what a shape is, never where (its kind's row, `when`, `nestedUnder`,
+    /// its name; and its container, which a move never changes); and those listed with marks have
+    /// their marks read again, since a mark from a service may follow where a shape is (a
+    /// validation rule that doesn't ignore moves), each scope's listing noting them. A row made
+    /// again since, or gone, needs nothing.
+    private func followMoves() {
+        guard !movedSinceRead.isEmpty else { return }
+        let document = editor.document
+        var marked: Set<ShapeID> = []
+        for id in movedSinceRead {
+            guard let row = rows[id], let record = document[id] else { continue }
+            row.follow(record)
+            if row.isListed, !kindRows(record.kind).marks.isEmpty { marked.insert(id) }
+        }
+        movedSinceRead = []
+        remarks.formUnion(marked)
+        note(marked)
+    }
 
     /// Notes the shapes whose rows or marks `changes` may change though it doesn't touch them (as
     /// the rows' and the marks' contributors say), for the next read to make their rows again or
@@ -588,6 +683,7 @@ extension ContentsState: EditorService {
     public func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor) {
         guard old != new else { return }            // a file put in place over the board shown
         catchUp()
+        followMoves()
         catchUpAway()
         kept.keep(Kept(rows: rows, remakes: remakes, remarks: remarks, board: board, revision: editor.revision), for: old, in: editor)
         leftAt[old] = editor.revision
@@ -604,6 +700,7 @@ extension ContentsState: EditorService {
             touchedAway = [:]
         }
         let taken = kept.take(for: change.to, in: editor)
+        movedSinceRead = []                 // the board left's, followed as it was kept
         rows = taken?.rows ?? [:]
         remakes = taken?.remakes ?? []
         remarks = taken?.remarks ?? []

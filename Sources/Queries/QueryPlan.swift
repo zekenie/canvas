@@ -22,8 +22,8 @@ public struct QueryPlan: Sendable {
     /// How many nodes and lists it has: their ids are `0..<nodeCount`.
     let nodeCount: Int
     /// The title heads (`.title` nodes) that stand where a container goes (the left of a space or
-    /// `>`, in `:inside()`, what `:has()` is on): the answer refuses one whose shapes all hold no
-    /// board (`cannot_contain`), as resolution refuses such a kind or id.
+    /// `>`, in `:inside()`, what `:has()` is on): the answer refuses one whose shapes are all of kinds
+    /// that hold no shapes (`cannot_contain`), as resolution refuses such a kind or id.
     let containerTitles: Set<PlanNodeID>
 }
 
@@ -67,13 +67,14 @@ indirect enum PlanOp: Sendable {
     case `is`(PlanList)
     /// Inside a shape the list matches, at any depth (`:inside`).
     case inside(PlanList)
-    /// Something the items match is inside it: at any depth, or directly on its board (`child`).
+    /// Something the items match is inside it: at any depth, or directly (`child`).
     case has([PlanHasItem])
-    /// On the board of a shape the list matches (`A > B`'s B).
+    /// Directly inside a shape the list matches: in it, or on its board in no container (`A > B`'s
+    /// B).
     case parentIn(PlanList)
-    /// On the board of a shape the list matches, or a board inside it (`A B`'s B).
+    /// Inside a shape the list matches, at any depth (`A B`'s B).
     case ancestorIn(PlanList)
-    /// On the file's top board.
+    /// Inside nothing: on the file's top board, in no container.
     case topLevel
     /// On the board the file's window shows, as the query started.
     case currentBoard
@@ -92,7 +93,7 @@ indirect enum PlanOp: Sendable {
 
 /// One item of `:has(…)`.
 struct PlanHasItem: Sendable {
-    /// `> S`: directly on the subject's board; else at any depth.
+    /// `> S`: directly inside the subject; else at any depth.
     let child: Bool
     let node: PlanNode
 }
@@ -260,7 +261,7 @@ extension QueryPlan: CustomStringConvertible {
                     }
                 }
             case .parentIn(let inner):
-                lines.append(indent + "on the board of")
+                lines.append(indent + "directly inside")
                 list(inner, depth + 1)
             case .ancestorIn(let inner):
                 lines.append(indent + "inside, at any depth")

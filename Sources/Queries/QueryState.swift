@@ -91,7 +91,7 @@ public final class QueryState {
     /// Answers a query about the whole file as it is when the query takes it up: the shapes that
     /// match, in file order, the first `request.limit` as rows, with its warnings and what it cost.
     /// Refused as `check` refuses it, and for a title or an id no shape it ranges over has
-    /// (`unknown_title`, `unknown_id`), a title standing for a container whose shapes hold no board
+    /// (`unknown_title`, `unknown_id`), a title standing for a container whose shapes hold nothing
     /// (`cannot_contain`), and `cancelled`, `too_slow` and `board_closed`. A refusal's hint that
     /// waits on titles is settled by reading them, as an answer reads them.
     public func run(_ request: QueryRequest) async throws(QueryError) -> QueryResult {

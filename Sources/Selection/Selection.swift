@@ -5,7 +5,8 @@ import Keyboard
 
 /// Selecting shapes, as a plugin: the selection itself (`editor.selection`,
 /// `editor.selectedShapeIDs`) and the way back through it (`editor.goBack()`), the Select tool and
-/// its marquee, the handles of the one selected shape, what Delete, Return, ⌘A and Back do (their
+/// its marquee, the handles of the one selected shape (its kind's own, and a resizable kind's eight:
+/// `ShapeResizing`, `x.resizable(minimumSize:)`), what Delete, Return, ⌘A and Back do (their
 /// keys are registered with Keyboard), what opening a shape does (`ShapeOpening`: a double-click,
 /// Return, ⌘↓), and what a double-click on empty canvas places. Every kind is
 /// selectable unless it opts out (`shape.unselectable()`). The core never learns what a selection

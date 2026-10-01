@@ -7,7 +7,8 @@ import TestKit
 
 // A query's rows naming the boards a shape is inside as the path over the canvas names them
 // (`editor.name(of:root:)`): the owner's title, else the placeholder its kind opens boards with,
-// else its kind's label.
+// else its kind's label; and the containers it's in on them (corrals), which the path doesn't name,
+// by their titles, else their kind's label.
 
 @MainActor let boardQueriesTests = Suite("Boards name boards for queries", [
     test("a row names the boards it's inside as the path does: a titled owner's, an untitled one's by its placeholder, a kind without one by its label") {
@@ -46,6 +47,23 @@ import TestKit
         expectEqual(try inside("box", on: h)[id(22)], ["Kitchen", drawer])
         expectEqual(pathNames(of: id(22), in: h), ["Kitchen", "Untitled Drawer"])
         expectEqual(h.editor.queries?.vocabulary.kind(Drawer.kind)?.boardName, drawer)
+    },
+    test("a row names the containers it's in between the boards, which the path doesn't: a titled one's title, an untitled one by its kind's label") {
+        let h = try cellarHarness()
+        let inside = try inside("*", on: h)
+        expectEqual(inside[id(40)], [])
+        expectEqual(inside[id(42)], [])
+        expectEqual(inside[id(41)], ["corral"], "a corral owns no board, so it has no placeholder: its label")
+        expectEqual(inside[id(50)], ["corral", "Cellar"])
+        expectEqual(inside[id(51)], ["corral", "Cellar", "Rack"])
+        expectEqual(inside[id(52)], ["corral", "Cellar", "Rack"])
+        expectEqual(inside[id(61)], ["corral", "Cellar", "Rack", "Untitled Drawer"])
+        expectEqual(pathNames(of: id(61), in: h), ["Cellar", "Untitled Drawer"], "the path names boards alone")
+        let vocabulary = try require(h.editor.queries).vocabulary
+        expectEqual(vocabulary.kind(Corral.kind)?.holdsShapes, true)
+        expectEqual(vocabulary.kind(Corral.kind)?.holdsBoard, false)
+        expectEqual(vocabulary.kind(Corral.kind)?.boardName, nil, "a placeholder is for kinds that open their boards")
+        expectEqual(vocabulary.kind(Drawer.kind)?.holdsShapes, true)
     },
     test("--ask's board and titles name boards as the path does") {
         let h = try storeHarness()

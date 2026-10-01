@@ -65,10 +65,10 @@ public struct QueryCommandsPlugin: CanvasPlugin {
             "query-vocabulary", "List what this app's queries can name: kinds and their attributes, edge types and words.",
             discussion: """
                 Each kind, with what the app calls it, whether its shapes have titles (named, derived from what they \
-                hold, or none), whether it holds a board of shapes, and each attribute a query can test with what it \
-                takes; the edge types, each under the one it's a kind of; and the pseudo-classes, the language's own \
-                and those this app's plugins add. vocabulary is all of it as the block `\(canvas) query --ask` sends \
-                Claude.
+                hold, or none), whether shapes can be inside its shapes (holdsShapes) and whether by a board of their \
+                own (holdsBoard), and each attribute a query can test with what it takes; the edge types, each under \
+                the one it's a kind of; and the pseudo-classes, the language's own and those this app's plugins add. \
+                vocabulary is all of it as the block `\(canvas) query --ask` sends Claude.
                 """,
             scope: .app, params: VocabularyParams.self,
             examples: [CommandExample("\(canvas) query-vocabulary", "Everything a query can name in this app.")],

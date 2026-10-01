@@ -24,6 +24,9 @@ public struct Registry {
     public let namingKinds: Set<ShapeKind>
     /// Kinds whose shapes own boards (`BoardOwning`).
     public let boardOwningKinds: Set<ShapeKind>
+    /// Kinds whose shapes contain shapes on their own board (`ShapeContaining`: a frame). Without
+    /// one, nothing is in a container, and the core does nothing of containment (Containment.swift).
+    public let containingKinds: Set<ShapeKind>
     /// Kinds that draw a skeleton of their own (`CustomSkeleton`), found once: a frame zoomed out
     /// asks for every shape it draws.
     let customSkeletons: [ShapeKind: any CustomSkeleton]
@@ -70,6 +73,7 @@ public struct Registry {
         }, uniquingKeysWith: { first, _ in first })
         referencingKinds = Set(definitions.filter { $0.value is any ShapeReferencing }.keys)
         boardOwningKinds = Set(definitions.filter { $0.value is any BoardOwning }.keys)
+        containingKinds = Set(definitions.filter { $0.value is any ShapeContaining }.keys)
         customSkeletons = definitions.compactMapValues { $0 as? any CustomSkeleton }
         skeletonOutlines = definitions.compactMapValues { $0 as? any CustomSkeletonOutline }
         readOnlyRules = (byPoint[ObjectIdentifier(CorePoints.ReadOnlyRules.self)] ?? []).map { $0.value as! CorePoints.ReadOnlyRules.Contribution }
@@ -184,8 +188,9 @@ public struct Registry {
     /// board's path, so what walks a file's boards from the root down asks it too.
     public func ownsShowableBoard(_ shape: AnyShapeRecord) -> Bool { !shape.isOpaque && boardOwningKinds.contains(shape.kind) }
 
-    /// Whether a plugin's rule says the shape can't change (`registrar.readOnlyShapes`). A view
-    /// that has the shape asks this rather than the editor, so it doesn't read the document.
+    /// Whether a plugin's rule says the shape can't change (`registrar.readOnlyShapes`), by the record
+    /// alone: what a rule says of one shape. A shape in a read-only container is read-only too, which
+    /// this doesn't see: what goes by a shape in its board asks `isReadOnly(_:in:)`.
     public func isReadOnly(_ shape: AnyShapeRecord) -> Bool {
         readOnlyRules.contains { $0(shape) }
     }

@@ -1,6 +1,6 @@
 ---
 name: canvas
-description: Put, draw or lay out things on a live board in Infinite Canvas (sticky notes, subboards, schema cards and the arrows between them, for plans, flows, architectures, roadmaps, retros) with `canvas draw`, a text language where each line says what a shape is, what it's called, and where it sits against shapes already named; and find out what's on a board with `canvas query`, a CSS-like query, or `--ask` in English. Use when asked to "draw this on the board", "put these on the canvas", "make a diagram in the app", "connect these on the board", "what's on the board", "which notes mention X", "is X inside Y", "what links to X", "how many…", or to turn a plan, list or architecture into shapes in the running app. NOT for changing the app's Swift code, plugins, tests or docs; NOT for reading or writing .canvasboard files (only `canvas` touches a board); NOT for diagrams meant for a file (SVG, Mermaid, images).
+description: Put, draw or lay out things on a live board in Infinite Canvas (sticky notes, frames, subboards, schema cards and the arrows between them, for plans, flows, architectures, roadmaps, retros) with `canvas draw`, a text language where each line says what a shape is, what it's called, and where it sits against shapes already named; and find out what's on a board with `canvas query`, a CSS-like query, or `--ask` in English. Use when asked to "draw this on the board", "put these on the canvas", "make a diagram in the app", "connect these on the board", "what's on the board", "which notes mention X", "is X inside Y", "what links to X", "how many…", or to turn a plan, list or architecture into shapes in the running app. NOT for changing the app's Swift code, plugins, tests or docs; NOT for reading or writing .canvasboard files (only `canvas` touches a board); NOT for diagrams meant for a file (SVG, Mermaid, images).
 ---
 
 # Drawing on and reading a board with canvas
@@ -20,7 +20,7 @@ build/canvas boards
 
 Exit 3 means the app isn't reachable: for `not_running`, start it with `./build.sh && open build/InfiniteCanvas.app`; `unreachable` usually means a sandbox is blocking the socket, so ask the user. If `canvas` says the app speaks another protocol (`protocol_mismatch`), the app running and this checkout were built apart. A second copy of the app doesn't take over from the one running, so don't just open another: ask the user to quit the app, then open this checkout's (`./build.sh && open build/InfiniteCanvas.app`). `boards` lists the open boards. Pick one and pass `--board <id>` on every `draw` and `query` after that, because without it a command goes to whichever board is in front, which changes whenever the user clicks another window. `kinds`, `query-vocabulary`, `status` and `boards` are about the app, and take no `--board`. An id lasts while its board is open.
 
-`--board` picks a file, not a board inside it. A file can hold boards inside shapes (a subboard's), and you never say which one a script draws on: a title names a shape on whatever board it's on (the board the window shows first), a new shape goes on the board of what it's placed against, `in "Payments"` puts it on the board of the subboard called Payments, and a shape with neither goes on the board the rest of the script draws on, else the one the window shows. A run draws on one board and never moves the window; its result's `on` says which board (`"root"`, or the id of the shape that holds it, and that shape's `title`). `boards` says what the window shows, as `shows` and `showsPath` (the boards from the root down to it). To move the window, `build/canvas show "Payments"`, or `build/canvas show --root`.
+`--board` picks a file, not a board inside it. A file can hold boards inside shapes (a subboard's), and you never say which one a script draws on: a title names a shape on whatever board it's on (the board the window shows first), a new shape goes on the board of what it's placed against, `in "Payments"` puts it on the board of the subboard called Payments (and `in "Sprint 3"` in the frame called Sprint 3, on the board that frame is on), and a shape with neither goes on the board the rest of the script draws on, else the one the window shows. A run draws on one board and never moves the window; its result's `on` says which board (`"root"`, or the id of the shape that holds it, and that shape's `title`). `boards` says what the window shows, as `shows` and `showsPath` (the boards from the root down to it). To move the window, `build/canvas show "Payments"`, or `build/canvas show --root`.
 
 ## The loop
 
@@ -104,6 +104,7 @@ style <name> attribute { attribute }             a named set of attributes, for 
 | `sticky-note` | 200x200 | `text` (the note is as tall as its text, at least 200; a `size:` height lasts only until the text changes), `locked` | `note-link`, on its left, right and bottom |
 | `schema-card` | 240x52 | `prompt` (what it holds, in words: the card shows them, and grows to fit), `schema` (a JSON Schema, as text: its panel shows it), `locked` | `schema-link`, on its left, right and bottom |
 | `subboard` | 240x160 | `locked` | none: plain arrows |
+| `frame` | 640x400 | `locked` (locking a frame locks what's in it) | none: plain arrows |
 
 Arrows are what edges are; you don't draw one on its own. An edge takes the arrow's attributes beside `from:`, `to:` and `channel:`: `text:` (what it says, set on its line), `labelPosition:` (where along it, `0` to `1`, halfway by default), `bend:` and `locked:`; its heads are its arrow's (`->`, `<->`). Values: text is quoted (`text: "Two words"`). `true` and `false` are bare words (`locked: true`). `null` puts a property back to its default (but not a title: `title:` only renames). `size: 300x200` is in world units, up to 100000. A value past a bound, like a title over 80 characters, is kept and warned about.
 
@@ -111,6 +112,18 @@ A subboard is a card that holds a board of its own. `in "Payments"` draws a shap
 
 ```draw
 sticky-note "Ship v1" below "API" text: "Cut the release"
+```
+
+A frame is a region of the board that holds shapes: what's in it moves with it and is locked with it, and deleting the frame leaves what's in it where it is. `in "Sprint 3"` puts a shape in it, 40 in from its edges: with no other placement, against its top-left, and several written alike in a list down from there; with placements, where they say, kept within it, or the script fails with `no_room`. A frame doesn't grow, so give it a `size:` with room for what goes in it, and draw it first: `in` a frame the same script draws is `unsupported`. Nothing sits across a frame's edge: whatever a script puts down over one goes wholly in or out by most of its area, nudged, and a warning says which (`"Draft" was over the edge of "Sprint 3", so it was nudged in`). So a shape placed `inside` a frame, `on` it, or against a shape in it, that lands within it, is in it too.
+
+```draw
+frame "Sprint 3" right of "DB" size: 900x600
+```
+
+```draw
+sticky-note "Fix the login" in "Sprint 3" text: "Sessions expire too soon"
+sticky-note "Move billing" in "Sprint 3" text: "Invoices go to the new API"
+sticky-note "Index search" in "Sprint 3" right of "Fix the login" text: "Search the archive too"
 ```
 
 ### Placements
@@ -251,11 +264,11 @@ EOF
            "properties": {"text": "Email and password"}}]}
 ```
 
-- **A row is a shape**: its `id`, `kind`, `title` (none when it's untitled), `board` (`"root"`, or the id of the subboard whose board it's on), `inside` (the names of the subboards it's inside, outermost first) and its attributes, `properties`, text as a person reads it. An arrow's row says where it runs, in `connection`.
+- **A row is a shape**: its `id`, `kind`, `title` (none when it's untitled), `board` (`"root"`, or the id of the subboard whose board it's on), `inside` (the names of the subboards and frames it's inside, outermost first) and its attributes, `properties`, text as a person reads it. An arrow's row says where it runs, in `connection`.
 - **An id names that shape in a later query**, `#7C1E2A04-…`, since titles can repeat. `draw` still names shapes only by title.
 - **A yes-or-no question is a query that matches the shape it asks about, or nothing**: `count` is 1 or 0, and `canvas` exits 0 either way. A title no shape has is refused (`unknown_title`, with the one like it), so a no always means no.
 - **`--count`** returns only how many; **`--brief`** leaves each row's attributes out; **`--fields text`** lists only that attribute, whole (long text is otherwise cut at 500 characters); **`--limit 500`** lists up to 500 rows (100 unless it says).
-- **A space means inside**: `"Payments" sticky-note` is the notes inside the subboard Payments, on its board or a board inside it. So never put a space before a test: `sticky-note:mentions("API")`, not `sticky-note :mentions("API")`, which is refused (`stray_space`). Inside is always a subboard's board, never `draw`'s `inside`, a shape drawn over another.
+- **A space means inside**: `"Payments" sticky-note` is the notes inside the subboard Payments, on its board or a board inside it, and `"Sprint 3" sticky-note` the notes in the frame Sprint 3, at any depth. So never put a space before a test: `sticky-note:mentions("API")`, not `sticky-note :mentions("API")`, which is refused (`stray_space`). Inside is always a subboard's board or a frame, never `draw`'s `inside`, a shape drawn over another (though one drawn over a frame is in it: nothing sits across a frame's edge).
 - **When the person asked in English**, `--ask "their question"` has the app write the query (with the Claude key they saved in Settings), runs it, and says what it wrote, in `query`: check it asks what they meant. Otherwise write the query yourself; [query-prompt.md](query-prompt.md) is what the app tells Claude to write one.
 
 A kind is every shape of that kind, a title in double quotes is the shape called that (right after a kind, with no space, the shapes of that kind called that: `sticky-note"Queue"`), and tests follow with no space: `[text*="email" i]` for text (`i`: in any case), `[title=""]` for no title, `:edge-to(…)` and `:edge-from(…)` for what an edge runs to and from, `:connected-to(…)` for either, `:downstream-of(…)` for what's reached by following edges, and more ([reference/query.md](reference/query.md)). On what this page drew, the notes whose title or text has "email" in it:
@@ -298,7 +311,7 @@ Does Queue have an edge to Worker? It matches, so yes:
 "Queue":edge-to("Worker")
 ```
 
-Backend is a note, and holds no board: a note drawn `inside "Backend"` sits over it, and isn't inside it as a query means inside.
+Backend is a note, and holds no shapes: a note drawn `inside "Backend"` sits over it, and isn't inside it as a query means inside.
 
 ```query-error
 /* reason: cannot_contain */
@@ -326,14 +339,16 @@ sticky-note "Ship 1.0" owner: "Ann"
 - **Between, with nothing on the other axis.** `right of "Web" left of "Cache"` alone is `unplaced`: add `level with "Web"`.
 - **Two unplaced shapes.** Only one per script may say nothing about where it goes; place the rest against it. And there are no coordinates in any form: if a shape is in the wrong place, give it another placement.
 - **Re-running a whole layout script to add one line.** Its placements run again and snap back anything the user has moved since, and its untitled shapes are drawn a second time. Write only the new statements. To change attributes without moving a shape, restate it without placements.
-- **Edges across channels**, and **shapes the user locked**, which refuse changes (`read_only`). Connect like to like or say `channel: none`; tell the user about a locked shape rather than unlocking it.
+- **Edges across channels**, and **shapes the user locked**, which refuse changes (`read_only`), as does everything in a locked frame. Connect like to like or say `channel: none`; tell the user about a locked shape rather than unlocking it.
+- **A frame and what goes in it in one script.** `in` a frame the same script draws is refused (`unsupported`): draw the frame, then what goes in it in a run of its own.
 
 ## Honest limits
 
-- **Queries don't see where shapes are.** A query knows what's inside what (a subboard's board) and what's connected to what, never positions, sizes or overlaps: what's left of what, or drawn within a rectangle, it can't ask.
+- **Queries don't see where shapes are.** A query knows what's inside what (a subboard's board, a frame) and what's connected to what, never positions, sizes or overlaps: what's left of what, or drawn within a rectangle, it can't ask.
 - **Typing may still change.** A note the user is typing into reads as typed so far, and the query's result warns that it may still change (`editing`).
 - **Some shapes aren't in any answer**: shapes the app keeps aside (a kind this app doesn't have), and those on boards it can't show.
-- **Placement happens once.** The board doesn't remember `right of "API"`. When the user moves API, nothing follows it.
+- **Placement happens once.** The board doesn't remember `right of "API"`. When the user moves API, nothing follows it (but what's in a frame moves with the frame).
+- **Frames don't grow.** A frame stays the size it was drawn, so `in` one that's full is `no_room`: restate it with a bigger `size:`.
 - **The result confirms intent, not the picture.** It tells you where each shape landed and what was pushed. It doesn't tell you whether a note's text overflowed (a note grows to fit its text unless you gave it a `size:`, which cuts long text off, so leave `size:` off notes with long text) or whether a line crosses other shapes.
 - **Edges are arcs.** They don't route around shapes. Only closed shapes are kept clear, so a shape can land across an arrow or a drawn line.
 - **Pills overlap when zoomed out.** A title's pill (and a lock's chip, in the same row just above a shape) clears the shape above it in a list down to about 42% zoom.

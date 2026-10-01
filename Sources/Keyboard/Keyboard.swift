@@ -171,6 +171,14 @@ extension ShapeRegistrar {
         tool(id, label: label, systemImage: systemImage, placing: placement)
         contribute(Shortcut(chord: shortcut, effect: .tool(id ?? ToolID(placing: kind))), to: KeyboardShortcuts.self)
     }
+
+    /// A toolbar tool that puts this shape down its own way (`tool(_:label:systemImage:placing:_:)`:
+    /// the Frame tool, which draws its rect), and the key that switches to it.
+    public mutating func tool(_ id: ToolID? = nil, label: String, systemImage: String, shortcut: KeyChord, placing placement: Placement,
+                              _ make: @escaping @MainActor (CanvasEditor) -> any Tool) {
+        tool(id, label: label, systemImage: systemImage, placing: placement, make)
+        contribute(Shortcut(chord: shortcut, effect: .tool(id ?? ToolID(placing: kind))), to: KeyboardShortcuts.self)
+    }
 }
 
 // MARK: Reading them

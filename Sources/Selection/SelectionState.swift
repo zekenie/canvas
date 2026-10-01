@@ -17,6 +17,8 @@ final class SelectionState {
     @ObservationIgnored let openers: [ShapeKind: ShapeOpener]
     /// The zoom each kind that says so reads at (`ReadableZoom`), found once.
     @ObservationIgnored let readableZooms: [ShapeKind: CGFloat]
+    /// The smallest each resizable kind's shapes go (`ShapeResizing`), found once.
+    @ObservationIgnored let minimumSizes: [ShapeKind: CGSize]
     private(set) var selectedIDs: [ShapeID] = []
     /// +1 each time `selectedIDs` changes.
     private(set) var revision = 0
@@ -89,6 +91,7 @@ final class SelectionState {
         rules = editor.registry.contributionByKind(to: ShapeSelectability.self)
         openers = editor.registry.contributionByKind(to: ShapeOpening.self)
         readableZooms = editor.registry.contributionByKind(to: ReadableZoom.self)
+        minimumSizes = editor.registry.contributionByKind(to: ShapeResizing.self)
         buttonSources = editor.registry.contributions(to: CanvasButtons.self).map(\.value)
         decorationHits = editor.registry.contributions(to: DecorationHits.self).map(\.value).reversed()
         faceSources = editor.registry.contributions(to: ShapeFaces.self).map(\.value).reversed()

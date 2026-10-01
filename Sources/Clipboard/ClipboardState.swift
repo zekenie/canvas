@@ -18,6 +18,11 @@ import Selection
 /// moves: each shape keeps its id if nothing in the file goes by it (`CanvasFile.isUnused`), so
 /// whatever names it (a mention) names it again, on whatever board it lands. The first paste's
 /// shapes hold the ids, so pasting again copies; undoing that paste frees them.
+///
+/// A container copied (`ShapeContaining`: a frame) takes what it holds, at any depth, as an owner
+/// takes its board: each copy keeps the container it's in among what's copied, and one whose
+/// container isn't copied is in none. A paste puts its copies in the containers they came in, then
+/// settles what it put down by the in-or-out rule (`Transaction.settle`), where it lands.
 @MainActor
 final class ClipboardState {
     /// This app's shapes on a pasteboard.
@@ -46,10 +51,35 @@ final class ClipboardState {
     /// else copyable.
     func isCopyable(_ record: AnyShapeRecord) -> Bool { !record.isOpaque && (rules[record.kind]?(record) ?? true) }
 
-    /// The shapes of `ids` that can be copied, back to front, each once.
+    /// The shapes of `ids` that can be copied, back to front, each once, with what the containers
+    /// among them hold (a frame's contents), at any depth, that can be copied.
     private func copyable(_ ids: [ShapeID]) -> [AnyShapeRecord] {
-        let document = editor.document
-        return Set(ids).compactMap { document.index(of: $0) }.sorted().map { document.shapes[$0] }.filter(isCopyable)
+        let document = editor.document, kinds = editor.registry.containingKinds
+        var indices: Set<Int> = []
+        for id in Set(ids) {
+            guard let index = document.index(of: id), isCopyable(document.shapes[index]) else { continue }
+            indices.insert(index)
+            guard !kinds.isEmpty else { continue }
+            for held in document.descendants(of: id, containingKinds: kinds) {
+                if let at = document.index(of: held), isCopyable(document.shapes[at]) { indices.insert(at) }
+            }
+        }
+        return indices.sorted().map { document.shapes[$0] }
+    }
+
+    /// `records`, from `document`, each in the container it's in there only if that's one of them
+    /// too: a copy is in the container it was copied with, and in none if that one isn't copied, so
+    /// what's written is whole, and holds no container a board doesn't need.
+    private func keepingContainers(_ records: [AnyShapeRecord], of document: CanvasDocument) -> [AnyShapeRecord] {
+        let kinds = editor.registry.containingKinds
+        var copied: Set<ShapeID>?
+        return records.map { record in
+            guard let named = record.container else { return record }
+            let ids = copied ?? Set(records.map(\.id))
+            copied = ids
+            let kept = document.container(of: record, containingKinds: kinds).flatMap { ids.contains($0) ? $0 : nil }
+            return kept == named ? record : record.copy(as: record.id, container: kept)
+        }
     }
 
     func canCopy(_ ids: [ShapeID]) -> Bool {
@@ -99,8 +129,8 @@ final class ClipboardState {
                 isWhole = false
                 continue
             }
-            let kept = carry(document.shapes.filter(keeping), renaming: { $0 },
-                             in: ShapeContext(document: document, registry: editor.registry))
+            let kept = keepingContainers(carry(document.shapes.filter(keeping), renaming: { $0 },
+                                               in: ShapeContext(document: document, registry: editor.registry)), of: document)
             if kept.count != document.shapes.count { isWhole = false }
             guard !kept.isEmpty else { continue }
             boards[owner.id] = CanvasDocument(shapes: kept)
@@ -110,11 +140,12 @@ final class ClipboardState {
     }
 
     /// Puts copies of the copyable shapes of `ids` on the pasteboard, in place of what was there,
-    /// with what those that own boards hold, marked as a cut's if `cut`. Returns the shapes copied,
-    /// back to front, and those of them copied whole (with everything under them); with none, the
-    /// pasteboard is left as it was.
+    /// with what those that own boards hold, and what the containers among them hold, marked as a
+    /// cut's if `cut`. Returns the shapes copied, back to front, and those of them copied whole (with
+    /// everything under them: a container is whole without what it holds, which a deletion leaves);
+    /// with none, the pasteboard is left as it was.
     private func copyReportingWhole(_ ids: [ShapeID], cut: Bool) -> (copied: [ShapeID], whole: Set<ShapeID>) {
-        let copied = carry(copyable(ids), renaming: { $0 }, in: editor.shapeContext)
+        let copied = keepingContainers(carry(copyable(ids), renaming: { $0 }, in: editor.shapeContext), of: editor.document)
         guard !copied.isEmpty else { return ([], []) }
         var children: [ShapeID: CanvasDocument] = [:], whole: Set<ShapeID> = []
         for record in copied {
@@ -144,7 +175,8 @@ final class ClipboardState {
 
     /// Copies, marked as a cut's, then deletes what it copied whole, in one transaction: what can't
     /// be copied stays, and so does a shape holding a board where something couldn't be (their ids
-    /// are in use, so a paste copies them).
+    /// are in use, so a paste copies them). A container goes with what it holds that was copied;
+    /// what it holds that couldn't be stays, let go of (the core's deletion).
     func cut(_ ids: [ShapeID]) {
         let whole = copyReportingWhole(ids, cut: true).whole
         guard !whole.isEmpty else { return }
@@ -183,42 +215,73 @@ final class ClipboardState {
     /// centered on `point` (world units) when there is one (the context menu's Paste, at its
     /// click); else where they were copied from if any of them would be in view there, and
     /// otherwise centered in the view. A shape that owns a board goes in with what it holds, all
-    /// the way down.
+    /// the way down, and a container with what it holds, each in the container it came in.
     ///
     /// What a copy put there pastes as copies, with new ids, each copy's `CopiedFrom` naming its
     /// original. What a cut put there moves: each shape keeps its id if nothing in the file goes by
     /// it (`isUnused`: the shapes a cut took, until they're pasted), and its `CopiedFrom` stays as
     /// it was, since it's the same shape; the rest are copies. Either way one map renames every id
     /// on every board of what's pasted: a binding or a name (`ShapeNaming`) of a shape pasted with
-    /// it names that shape as pasted, and a name of anything else is kept.
+    /// it names that shape as pasted, a name of anything else is kept, and a container is the
+    /// container as pasted.
+    ///
+    /// Where it lands, what's pasted is put down as one, by the in-or-out rule
+    /// (`Transaction.settle`): into the container holding most of it, nudged in across its edge, or
+    /// out of those it reaches into, gliding there; what's selected is what isn't in another shape
+    /// pasted with it. A read-only container (a locked frame) takes nothing: a paste it would take
+    /// puts nothing down, and services hear the container refused (it shakes).
     func paste(centeredAt point: CGPoint? = nil) {
         let (file, isCut) = pasteable()
         let shapes = file.root.shapes
         guard !shapes.isEmpty else { return }
         editor.endEditing()
-        let target = editor.file
+        let target = editor.file, kinds = editor.registry.containingKinds
         var ids: [ShapeID: ShapeID] = [:]
         for board in [file.root] + file.children.values {
             for record in board.shapes { ids[record.id] = isCut && target.isUnused(record.id) ? record.id : ShapeID() }
         }
-        let pastedIDs = editor.transact("Paste") { transaction -> [ShapeID] in
-            for record in carry(shapes, renaming: { ids[$0]! }, naming: { ids[$0] }, in: transaction.shapes) {
-                transaction.insert(pasted(record, as: ids[record.id]!), contents: pastedBoards(under: record.id, in: file, renaming: ids))
+        let pasting: (selected: [ShapeID], nudges: [ShapeID: CGPoint])
+        do {
+            pasting = try editor.transact("Paste") { transaction -> (selected: [ShapeID], nudges: [ShapeID: CGPoint]) in
+                for record in carry(shapes, renaming: { ids[$0]! }, naming: { ids[$0] }, in: transaction.shapes) {
+                    transaction.insert(pasted(record, as: ids[record.id]!, renaming: ids),
+                                       contents: pastedBoards(under: record.id, in: file, renaming: ids))
+                }
+                let placed = shapes.compactMap { ids[$0.id] }.filter { transaction.document[$0] != nil }
+                let centered = point.flatMap { point in transaction.shapes.bounds(of: placed).map { point - $0.center } }
+                if let offset = centered ?? offset(placing: placed, in: transaction.shapes), offset != .zero {
+                    transaction.translate(Set(placed), by: offset)
+                }
+                switch transaction.settle(placed) {
+                case .settled(let nudges):
+                    let pastedIDs = Set(placed), document = transaction.document
+                    let tops = placed.filter { id in !(document.container(of: id, containingKinds: kinds).map(pastedIDs.contains) ?? false) }
+                    return (tops, nudges)
+                case .refused(let container):
+                    // Thrown, so nothing is put down, and no step is left.
+                    throw PasteRefused(container: container)
+                }
             }
-            let placed = shapes.compactMap { ids[$0.id] }.filter { transaction.document[$0] != nil }
-            let centered = point.flatMap { point in transaction.shapes.bounds(of: placed).map { point - $0.center } }
-            if let offset = centered ?? offset(placing: placed, in: transaction.shapes), offset != .zero {
-                transaction.translate(Set(placed), by: offset)
-            }
-            return placed
+        } catch let refusal as PasteRefused {
+            editor.refuseChanges(to: [refusal.container])
+            return
+        } catch {
+            assertionFailure("a paste failed: \(error)")
+            return
         }
-        editor.selectedShapeIDs = pastedIDs
+        editor.selectedShapeIDs = pasting.selected
+        editor.glide(pasting.nudges)
+    }
+
+    /// What leaves a paste a read-only container would take: nothing goes down.
+    private struct PasteRefused: Error {
+        let container: ShapeID
     }
 
     /// `record` under `id`: under its own, the shape itself, moved; under a new one, a copy, naming
-    /// the shape it's a copy of.
-    private func pasted(_ record: AnyShapeRecord, as id: ShapeID) -> AnyShapeRecord {
-        var shape = record.copy(as: id)
+    /// the shape it's a copy of. In the container it came in, as pasted (`ids`), if one.
+    private func pasted(_ record: AnyShapeRecord, as id: ShapeID, renaming ids: [ShapeID: ShapeID]) -> AnyShapeRecord {
+        var shape = record.copy(as: id, container: record.container.flatMap { ids[$0] })
         if id != record.id { shape.meta[CopiedFrom.self] = CopySource(shape: record.id) }
         return shape
     }
@@ -234,7 +297,7 @@ final class ClipboardState {
             guard let board = file.children[owner] else { continue }
             let carried = carry(board.shapes, renaming: { ids[$0]! }, naming: { ids[$0] },
                                 in: ShapeContext(document: board, registry: editor.registry))
-            boards[ids[owner]!] = CanvasDocument(shapes: carried.map { pasted($0, as: ids[$0.id]!) })
+            boards[ids[owner]!] = CanvasDocument(shapes: carried.map { pasted($0, as: ids[$0.id]!, renaming: ids) })
             owners += carried.map(\.id)
         }
         return boards

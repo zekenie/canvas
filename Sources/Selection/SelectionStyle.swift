@@ -15,6 +15,10 @@ enum SelectionStyle {
     static let handleHitRadius: CGFloat = 12
     /// Below this zoom the handles shrink with the shapes.
     static let handleFullSizeZoom: CGFloat = 0.25
+    /// Resize handles leave their shape room to be pressed itself: none show on a box under this on
+    /// screen either way (its corners' reach would cover its middle), and a side's only on a side
+    /// at least twice this long (its reach clear of the corners').
+    static let resizeHandleRoom: CGFloat = 2 * handleHitRadius
     /// The marquee: tldraw's hsl(0, 0%, 56%), in light and dark alike.
     static let brushFill = NSColor(srgbRed: 0.56, green: 0.56, blue: 0.56, alpha: 0.102)
     static let brushStroke = NSColor(srgbRed: 0.56, green: 0.56, blue: 0.56, alpha: 0.251)

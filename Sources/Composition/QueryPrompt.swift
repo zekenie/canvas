@@ -36,7 +36,7 @@ Reply with exactly one of:
 
 A query selects shapes as a CSS selector selects elements. The answer is every shape that matches, on every board of the file, and how many. A yes/no question is a query that matches the shape it asks about, or nothing: "is Refund policy inside Payments?" → "Refund policy":inside("Payments")
 
-The examples assume a file with the kinds arrow, sticky-note (a note), subboard (holds a board of shapes) and schema-card; the edge types mention and arrow (with note-link under it); and the pseudo-classes :mentions, :mentioned-by, :invalid and :selected. <vocabulary> says what this app really has.
+The examples assume a file with the kinds arrow, sticky-note (a note), subboard (holds a board of shapes), frame (holds shapes on the board it's on) and schema-card; the edge types mention and arrow (with note-link under it); and the pseudo-classes :mentions, :mentioned-by, :invalid and :selected. <vocabulary> says what this app really has.
 
 ## Shapes
 - sticky-note — every shape of that kind. Write the kind's id from <vocabulary>, never its label: sticky-note, not note.
@@ -64,13 +64,14 @@ A part of a query has at most one of these, first.
 A question about a word or a topic finds it in titles and text alike: "anything about tokens" → :contains("tokens"). "Where is retry written?" → :contains("retry")
 
 ## Inside
-A subboard holds a board of shapes. A shape on that board, or on a board inside it, is inside the subboard. Inside never means drawn within another shape's bounds.
+A subboard holds a board of shapes, and a frame holds shapes on the board it's on. A shape on a subboard's board, or in a frame, is inside it, and inside what that's inside, through both. Inside never means drawn within another shape's bounds.
 - "Refund policy":inside("Payments") — is Refund policy inside Payments, at any depth?
 - "Payments" sticky-note — notes inside Payments, at any depth: a space between two parts means "inside"
-- "Payments" > sticky-note — notes directly on Payments' board
+- "Sprint 3" sticky-note — notes in the frame Sprint 3, at any depth: a frame is inside as a subboard is
+- "Payments" > sticky-note — notes directly inside Payments: on its board, in no frame there
 - subboard:has("Refund policy") — subboards Refund policy is inside, at any depth
-- :has(> "Refund policy") — the shape whose board Refund policy is on: its parent
-- :top-level — shapes on the file's top board, inside nothing
+- :has(> "Refund policy") — the shape Refund policy is directly inside: its parent
+- :top-level — shapes inside nothing: on the file's top board, in no frame
 - :current-board — shapes on the board the person is looking at
 "Is A the parent of B?" → "A":has(> "B"). "Is A an ancestor of B?" → "A":has("B"). "Is B directly in A?" → "A" > "B". "What's directly in B?" → "B" > *
 Never put a space right before : or [ — sticky-note:selected, not sticky-note :selected (a space asks for shapes inside notes).
@@ -172,7 +173,7 @@ Your response must be exactly one line: the raw query, or UNANSWERABLE: and a re
         ("[rank=3]", .unknownAttribute), ("[status!=done]", .unknownAttribute), ("[tags~=backend]", .unknownAttribute),
         ("[rank>3]", .unknownAttribute), ("[rank<=3]", .unknownAttribute), ("[due<2026-10-01]", .unknownAttribute),
         // Inside.
-        (#""A":has(> "B")"#, .unknownTitle), (#""A":has("B")"#, .unknownTitle), (#""A" > "B""#, .unknownTitle), (#""B" > *"#, .unknownTitle),
+        (#""Sprint 3" sticky-note"#, .unknownTitle), (#""A":has(> "B")"#, .unknownTitle), (#""A":has("B")"#, .unknownTitle), (#""A" > "B""#, .unknownTitle), (#""B" > *"#, .unknownTitle),
         ("sticky-note :selected", .straySpace),
         // Edges.
         (":edge-to(ANCHOR)", .unknownKind), (":edge-from(ANCHOR)", .unknownKind), (":connected-to(ANCHOR)", .unknownKind),

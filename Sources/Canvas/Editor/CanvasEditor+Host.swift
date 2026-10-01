@@ -32,6 +32,7 @@ extension CanvasEditor {
         dismissPopover()
         tracker.resetVelocity()
         stopCameraMotion()
+        endGlides()
         endEditing()
         undoHistory.pressBegan()
         pressLocation = pointer.view
@@ -57,6 +58,7 @@ extension CanvasEditor {
         dismissPopover()
         tracker.resetVelocity()
         stopCameraMotion()
+        endGlides()
         undoHistory.pressBegan()
         pressLocation = pointer.view
         pressDragged = false

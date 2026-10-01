@@ -148,12 +148,12 @@ import TestKit
         expectEqual(editor.contents.entries.outline, ["Kept"])
     },
     test("a bridge gives another plugin's kind a row, typed as that kind") {
-        let bridge = Contributor(id: "box-rows") { $0.contentsRow(Box.self, when: { $0.frame.width > 50 }) { box in ContentsLabel("Box at \(Int(box.frame.minX))") } }
+        let bridge = Contributor(id: "box-rows") { $0.contentsRow(Box.self, when: { $0.frame.width > 50 }) { box in ContentsLabel("Box \(Int(box.frame.width)) wide") } }
         let editor = try contentsEditor([bridge])
         editor.add(Box(widgetFrame))
         editor.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
         editor.add(Widget(name: "Own"))
-        expectEqual(editor.contents.entries.outline, ["Box at 1000", "Own"])
+        expectEqual(editor.contents.entries.outline, ["Box 100 wide", "Own"])
     },
     test("two rows for one kind conflict, and a row needs the table of contents installed") {
         let twice = Contributor(id: "twice") { $0.contentsRow(Widget.self) { _ in ContentsLabel("again") } }

@@ -47,7 +47,8 @@ final class Evaluation {
     final class KindFacts {
         let names: QueryNameSource
         let label: String
-        /// What an untitled one's board is called; nil for a kind that holds none.
+        /// What an untitled one's board is called; nil for a kind that holds none (an untitled
+        /// container is called by its label).
         let boardName: String?
         /// Its attributes but its name: what a row lists and `:contains` reads.
         let readable: [QueryVocabulary.AttributeEntry]
@@ -145,8 +146,12 @@ final class Evaluation {
     private var encoded: [ShapeID: JSONObject] = [:]
     /// The shapes whose attributes or text the query read.
     private var read: Set<ShapeID> = []
-    /// The shapes each board is inside (its owner, and the owners above it), the nearest first.
+    /// The shapes each board is inside (its owner, the containers that one is in, and so on up), the
+    /// nearest first.
     private var ancestry: [BoardID: [ShapeID]] = [:]
+    /// The shapes a shape each container holds is inside, the nearest first: the container, the
+    /// containers it's in, its board's owner, and so on up.
+    private var holding: [ShapeID: [ShapeID]] = [:]
     private var emptyNameTests: [EmptyNameTest] = []
     private var ticks = 0
     private var stretchStart: UInt64
@@ -249,7 +254,7 @@ final class Evaluation {
             // Only a name some other shape has too can be listed twice.
             var inside: [String]?
             if index.isShared(title) {
-                let names = ancestors(id).reversed().map(boardName)
+                let names = ancestors(id).reversed().map(containerName)
                 guard seen.insert(TitlePlace(title: title, kind: entry.record.kind, inside: names)).inserted else { continue }
                 inside = names
             }
@@ -257,7 +262,7 @@ final class Evaluation {
             // No more of a tier than are listed; and once the first has as many, nothing after it is.
             guard tiers[tier].count < limit else { continue }
             tiers[tier].append(QueryTitle(title: title, id: id, kind: entry.record.kind, board: entry.board,
-                                          inside: inside ?? ancestors(id).reversed().map(boardName)))
+                                          inside: inside ?? ancestors(id).reversed().map(containerName)))
             if tiers[0].count == limit { break }
         }
         return Array(tiers.joined().prefix(limit))
@@ -314,16 +319,16 @@ final class Evaluation {
         let listed = Array(selected.prefix(max(limit, 0)))
         try await readNames(owners + listed)
         let shapes = listed.compactMap { id in entry(id).map { QuerySelected(id: id, kind: $0.record.kind, title: name(id)) } }
-        return QueryWhere(board: snapshot.shown, path: owners.map(boardName), selected: shapes, selectedCount: selected.count)
+        return QueryWhere(board: snapshot.shown, path: owners.map(containerName), selected: shapes, selectedCount: selected.count)
     }
 
     // MARK: Names and ids
 
     /// Refuses, before anything is answered, every id no shape the query ranges over has, every name
-    /// none has, and every name standing where a container goes whose shapes all hold no board: the
-    /// problems in the order they're in the query. A name no shape has that stands for an edge
-    /// word's or a relation's anchor may be one a shape that's gone had: when an edge it follows
-    /// points at a shape that isn't there, the hint says how to find what carries it.
+    /// none has, and every name standing where a container goes whose shapes are all of kinds that
+    /// hold no shapes: the problems in the order they're in the query. A name no shape has that
+    /// stands for an edge word's or a relation's anchor may be one a shape that's gone had: when an
+    /// edge it follows points at a shape that isn't there, the hint says how to find what carries it.
     private func checkNames(in plan: QueryPlan) async throws(QueryError) {
         var titles: [PlanNode] = [], ids: [PlanNode] = []
         var anchoring: [PlanNodeID: [(types: PlanEdgeTypes, end: AnchorEnd)]] = [:]
@@ -439,7 +444,8 @@ final class Evaluation {
         return kinds
     }
 
-    /// A name standing where a container goes, refused when none of its shapes holds a board.
+    /// A name standing where a container goes, refused when none of its shapes is of a kind that
+    /// holds shapes (a board of them, or shapes on its own).
     private func holdsNothing(_ written: String, _ ids: [ShapeID], span: QuerySpan?) -> QueryError? {
         var found: [ShapeKind] = []
         for id in ids {
@@ -448,8 +454,8 @@ final class Evaluation {
             if !found.contains(kind) { found.append(kind) }
         }
         let message = found.count == 1
-            ? "\(written) is \(indefinite(found[0].rawValue)), which holds no board: nothing is inside it. \(notDrawnWithin)"
-            : "No shape titled \(written) holds a board: nothing is inside it. \(notDrawnWithin)"
+            ? "\(written) is \(indefinite(found[0].rawValue)), which holds no shapes: nothing is inside it. \(notDrawnWithin)"
+            : "No shape titled \(written) holds shapes: nothing is inside it. \(notDrawnWithin)"
         return QueryError(.cannotContain, message, hint: vocabulary.containersListed, span: span)
     }
 
@@ -701,7 +707,7 @@ final class Evaluation {
         case .has(let items):
             return try await has(items, among: candidates)
         case .topLevel:
-            return onBoard(.root, among: candidates)
+            return topLevel(among: candidates)
         case .currentBoard:
             return onBoard(snapshot.shown, among: candidates)
         case .edges(let word, let anchor, let second, let types):
@@ -944,16 +950,44 @@ final class Evaluation {
 
     // MARK: Containment
 
-    /// The shapes `id` is inside, the nearest first: its board's owner, and the owners above it,
-    /// as Topology has them.
+    /// The shapes `id` is inside, the nearest first, as Topology has them: the containers it's in on
+    /// its board (frames), then its board's owner, the containers that one is in, and so on up. A
+    /// container's and a board's are worked out once, so a shape's cost a lookup.
     private func ancestors(_ id: ShapeID) -> [ShapeID] {
         guard let entry = entry(id) else { return snapshot.topology.ancestors(of: id) }
-        return ancestors(of: entry.board)
+        guard let container = snapshot.topology.container(of: entry.record, on: entry.board) else { return ancestors(of: entry.board) }
+        return ancestors(heldBy: container, on: entry.board)
     }
 
-    /// The shapes a board of the query's range is inside, the nearest first: worked out once per
-    /// board, going up only as far as a board worked out already. Every owner on the way up is in
-    /// the range, since a board the app can show has every owner above it.
+    /// The shapes a shape `container` holds is inside, the nearest first: the container, the
+    /// containers it's in on `board`, then the board's: worked out once per container, going up only
+    /// as far as a container worked out already. Containers on a board never go round (reading breaks
+    /// a loop), but the walk up stops after as many as the board holds all the same.
+    private func ancestors(heldBy container: ShapeID, on board: BoardID) -> [ShapeID] {
+        if let known = holding[container] { return known }
+        var unknown: [ShapeID] = [], current: ShapeID? = container, above: [ShapeID]?
+        let most = snapshot.file[board].shapes.count
+        while let next = current {
+            if let known = holding[next] {
+                above = known
+                break
+            }
+            unknown.append(next)
+            guard unknown.count <= most, let record = entry(next)?.record else { break }
+            current = snapshot.topology.container(of: record, on: board)
+        }
+        var chain = above ?? ancestors(of: board)
+        for holder in unknown.reversed() {
+            chain = [holder] + chain
+            holding[holder] = chain
+        }
+        return chain
+    }
+
+    /// The shapes a board of the query's range is inside, the nearest first: its owner, the
+    /// containers that one is in on its board, and so on up; worked out once per board, going up only
+    /// as far as a board worked out already. Every owner on the way up is in the range, since a board
+    /// the app can show has every owner above it.
     private func ancestors(of board: BoardID) -> [ShapeID] {
         if let known = ancestry[board] { return known }
         var unknown: [BoardID] = [], current = board, above: [ShapeID] = []
@@ -972,7 +1006,12 @@ final class Evaluation {
         }
         for board in unknown.reversed() {
             guard let owner = board.owner else { continue }
-            above.insert(owner, at: 0)
+            // Its owner, then what the owner is inside: its containers and its own board's.
+            if let place = entry(owner), let container = snapshot.topology.container(of: place.record, on: place.board) {
+                above = [owner] + ancestors(heldBy: container, on: place.board)
+            } else {
+                above = [owner] + above
+            }
             ancestry[board] = above
         }
         return ancestry[board] ?? []
@@ -1009,7 +1048,8 @@ final class Evaluation {
         return found
     }
 
-    /// Directly on a container's board: from the containers' boards for every shape, else from each
+    /// Directly inside a container (what it holds; for one that owns a board, that board's shapes in
+    /// no container): from what's directly inside each container for every shape, else from each
     /// candidate's parent.
     private func directlyOn(_ containers: Set<ShapeID>, among candidates: Candidates) throws(QueryError) -> Set<ShapeID> {
         var found: Set<ShapeID> = []
@@ -1030,8 +1070,8 @@ final class Evaluation {
         return found
     }
 
-    /// `:has(…)`: what each item matches, anywhere, and the shapes it's inside (or directly on the
-    /// board of, after `>`).
+    /// `:has(…)`: what each item matches, anywhere, and the shapes it's inside (or directly inside,
+    /// after `>`).
     private func has(_ items: [PlanHasItem], among candidates: Candidates) async throws(QueryError) -> Set<ShapeID> {
         var found: Set<ShapeID> = []
         for item in items {
@@ -1047,7 +1087,20 @@ final class Evaluation {
         return restrict(found, to: candidates)
     }
 
-    /// On one board (the top one, the one shown).
+    /// Inside nothing: on the top board, in no container.
+    private func topLevel(among candidates: Candidates) -> Set<ShapeID> {
+        let topology = snapshot.topology
+        switch candidates {
+        case .all:
+            return Set(snapshot.file.root.shapes.lazy.filter {
+                !$0.isOpaque && self.kinds[$0.kind] != nil && topology.container(of: $0, on: .root) == nil
+            }.map(\.id))
+        case .only(let ids):
+            return ids.filter(topology.isTopLevel)
+        }
+    }
+
+    /// On one board (the one shown), in a container or not.
     private func onBoard(_ board: BoardID, among candidates: Candidates) -> Set<ShapeID> {
         switch candidates {
         case .all:
@@ -1197,8 +1250,8 @@ final class Evaluation {
 
     // MARK: Rows
 
-    /// Rows for the shapes, in the order given: names read first, the shapes', the owners' of the
-    /// boards they're inside and their connections' ends', derived ones together on the main actor.
+    /// Rows for the shapes, in the order given: names read first, the shapes', those of the shapes
+    /// they're inside and their connections' ends', derived ones together on the main actor.
     private func rows(_ ids: ArraySlice<ShapeID>, properties wanted: QueryRequest.Properties) async throws(QueryError) -> [QueryRow] {
         var runs: [ShapeID: Edge] = [:], named: [ShapeID] = []
         for id in ids {
@@ -1218,7 +1271,7 @@ final class Evaluation {
             guard let entry = entry(id) else { continue }
             let kind = entry.kind
             var row = QueryRow(id: id, kind: entry.record.kind, title: name(id), board: entry.board,
-                               inside: ancestors(id).reversed().map(boardName))
+                               inside: ancestors(id).reversed().map(containerName))
             (row.properties, row.cut) = listed(entry, kind: kind, wanted)
             if let edge = runs[id] {
                 row.connection = QueryConnection(type: edge.type, from: QueryEnd(id: edge.source, title: name(edge.source)),
@@ -1230,11 +1283,13 @@ final class Evaluation {
         return rows
     }
 
-    /// What a board is called, by the shape that owns it: its name, else what its kind calls an
-    /// untitled one's board (the board names point's placeholder, else its label). Boards' own rule.
-    private func boardName(_ owner: ShapeID) -> String {
-        if let title = name(owner) { return title }
-        guard let kind = entry(owner)?.kind else { return owner.description }
+    /// What a shape another is inside is called, in a row's `inside`: its name, else, for one that
+    /// owns a board, what its kind calls an untitled one's board (the board names point's
+    /// placeholder; Boards' own rule, as the path names it), else its kind's label (an untitled
+    /// frame's).
+    private func containerName(_ holder: ShapeID) -> String {
+        if let title = name(holder) { return title }
+        guard let kind = entry(holder)?.kind else { return holder.description }
         return kind.boardName ?? kind.label
     }
 

@@ -70,7 +70,8 @@ public struct SchemaSyncFailure: Equatable, Sendable {
 ///   status says it's too long to rewrite (no Retry), and once the person edits it by hand, the
 ///   prompt follows it.
 /// - Never while the schema isn't a JSON object (the person is halfway through it), for a read-only
-///   (locked) card, for a new card with neither fields nor a prompt, or without a model.
+///   card (locked, or in a locked frame), for a new card with neither fields nor a prompt, or without
+///   a model.
 /// - A card seen for the first time (on a board opened or read again, pasted, placed) is taken as in
 ///   step: that pair is its last sync, and the model is told it (`previous_prompt`,
 ///   `previous_schema`) as it would be one this session's, so a field taken out of an opened card's
@@ -295,7 +296,7 @@ public final class SchemaSync {
         guard let editor, cards[id] != nil, let last = synced[id], let record = editor.file.record(id), let now = Self.sides(of: record) else { return }
         // A new try: an old failure no longer says where things are.
         setStatus(.idle, of: id)
-        guard let model = editor.languageModel, !editor.registry.isReadOnly(record) else { return }
+        guard let model = editor.languageModel, !Self.isReadOnly(record, in: editor) else { return }
         let document = SchemaReadings.reading(of: now.schema, for: id).document
         guard document.error == nil, let root = document.root, root.isObject else { return }
         let prompt = Self.trimmed(now.prompt)
@@ -371,9 +372,10 @@ public final class SchemaSync {
             let needsKey = error == .noKey || error == .unauthorized
             return .failed(SchemaSyncFailure(writing: call.writes, error.message, remedy: needsKey ? .key : .retry))
         }
-        // Locked while it was out: nothing is written, nothing is refused (no shake), and the pair
-        // stays as it was, so what the person changed still syncs once it's unlocked.
-        guard let editor, let record = editor.file.record(id), let now = Self.sides(of: record), !editor.registry.isReadOnly(record) else { return .idle }
+        // Locked while it was out (or put in a frame that's locked, or its frame locked): nothing is
+        // written, nothing is refused (no shake), and the pair stays as it was, so what the person
+        // changed still syncs once it's unlocked.
+        guard let editor, let record = editor.file.record(id), let now = Self.sides(of: record), !Self.isReadOnly(record, in: editor) else { return .idle }
         // The side it writes changed while it was out: the answer is to a question no longer asked.
         guard now[call.writes] == call.sent[call.writes] else { return .idle }
         switch SchemaPrompts.parse(response, call.direction) {
@@ -452,6 +454,13 @@ public final class SchemaSync {
     private subscript(status id: ShapeID) -> SchemaSyncStatus { statuses[id] ?? .idle }
 
     // MARK: Reading cards
+
+    /// Whether a card can't change, as the board it's on goes by it, whichever board of the file
+    /// that is: locked, or in a locked frame, at any depth (`registry.isReadOnly(_:in:)`).
+    private static func isReadOnly(_ record: AnyShapeRecord, in editor: CanvasEditor) -> Bool {
+        guard let board = editor.file.board(containing: record.id) else { return false }
+        return editor.registry.isReadOnly(record, in: editor.contents(of: board))
+    }
 
     private static func sides(of record: AnyShapeRecord) -> Sides? {
         guard record.kind == SchemaCard.kind, let card = record.typed(as: SchemaCard.self)?.props else { return nil }

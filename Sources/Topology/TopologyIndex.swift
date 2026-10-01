@@ -130,23 +130,26 @@ public final class TopologyIndex {
 
     // MARK: Containment
 
-    /// The kinds whose shapes can contain others (`registry.containerKinds`): today the kinds that
-    /// own boards.
+    /// The kinds whose shapes can contain others (`registry.containerKinds`): those that own boards
+    /// (a subboard) and those that hold shapes on the board they're on (a frame).
     public var containerKinds: Set<ShapeKind> { editor.registry.containerKinds }
 
-    /// The shape whose board `id` is on: nil on the root, and for a shape on a board the editor
+    /// The shape `id` is directly inside: the container it's in on its board (a frame), else the
+    /// owner of its board; nil on the root in no container, and for a shape on a board the editor
     /// can't show (or in no board of the file).
     public func parent(of id: ShapeID) -> ShapeID? { containment().parent(of: id) }
 
-    /// The shapes on the board `id` owns, in document order: none for a shape that owns no board the
-    /// editor can show.
+    /// The shapes directly inside `id`: what it holds (a frame's shapes), back to front, then, for a
+    /// shape that owns a board the editor can show, that board's shapes in no container, back to
+    /// front. None for any other shape.
     public func children(of id: ShapeID) -> [ShapeID] { containment().children(of: id) }
 
-    /// The shapes `id` is inside, the nearest first (its parent, its parent's, up to one on the
-    /// root): none on the root, and for a shape on a board the editor can't show.
+    /// The shapes `id` is inside, the nearest first (its parent, its parent's, up to one on the root
+    /// in no container): none on the root in no container, and for a shape on a board the editor
+    /// can't show.
     public func ancestors(of id: ShapeID) -> [ShapeID] { containment().ancestors(of: id) }
 
-    /// Whether `a` is inside `b`, at any depth (on its board, or on a board under it); never inside
+    /// Whether `a` is inside `b`, at any depth (in it, on its board, or below either); never inside
     /// itself. O(`a`'s depth).
     public func isInside(_ a: ShapeID, _ b: ShapeID) -> Bool { containment().isInside(a, b) }
 
@@ -155,7 +158,7 @@ public final class TopologyIndex {
     /// past a commit would make that commit copy the file's tables.
     func containment(observing: Bool = true) -> Containment {
         let file = observing ? editor.file : editor.withoutObservingDocument { editor.file }
-        return Containment(file: file, boardOwningKinds: editor.registry.boardOwningKinds)
+        return Containment(file: file, boardOwningKinds: editor.registry.boardOwningKinds, containingKinds: editor.registry.containingKinds)
     }
 
     // MARK: Following the file

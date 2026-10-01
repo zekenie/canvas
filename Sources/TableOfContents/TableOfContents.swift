@@ -15,9 +15,10 @@ extension PluginID {
 
 /// How a kind's shapes appear in the table of contents. At most one contribution per kind: two
 /// are `RegistryError.conflict` at startup. A kind with none is listed with its label and symbol
-/// (`registry.label(of:)`). A row reads only its shape, unless it also names, with `affected`,
-/// the shapes each commit may change the rows of without changing them: their rows are made again,
-/// and kept unless their labels changed.
+/// (`registry.label(of:)`), nested under the container its shape is in. A row reads only its
+/// shape, unless it also names, with `affected`, the shapes each commit may change the rows of
+/// without changing them: their rows are made again, and kept unless their labels changed. A row
+/// says what its shape is, never where it is: a move keeps it.
 public enum ContentsRows {}
 
 extension ContentsRows: KeyedExtensionPoint {
@@ -173,9 +174,11 @@ extension ShapeRegistrar {
     ///     }
     ///
     /// `when` lists only some shapes; the rest have no row. `nestedUnder` names the shape this one's
-    /// row goes under (an arrow under the shape it starts from), which holds only while that shape
-    /// is listed too: otherwise the row is at the top, so a selection of just this shape still
-    /// shows it.
+    /// row goes under (an arrow under the shape it starts from); a shape it names none for, as every
+    /// shape of a kind without it, goes under the container it's in (a frame). Either holds only while
+    /// that shape is listed too: otherwise the row is at the top, so a selection of just this shape
+    /// still shows it. Both, and the row, say what the shape is, never where it is: a commit that
+    /// only moves the shape keeps its row.
     public mutating func contentsRow<Row: View>(
         when isListed: @escaping @MainActor (ShapeRecord<Definition.Props>) -> Bool = { _ in true },
         nestedUnder parent: (@MainActor (ShapeRecord<Definition.Props>) -> ShapeID?)? = nil,

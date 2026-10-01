@@ -115,6 +115,23 @@ import Topology
         expectEqual(command["count"], 7)
         expectEqual(QueryOutput.lastBuiltOnMainThread, false)
     },
+    test("a row's inside names the containers a shape is in between the boards; > is directly inside one") {
+        // Corral 30 "Bay" on the top board holds chore 31 and pocket 32 "Shed", whose board holds chore 41.
+        let captioned = Contributor(id: "corral-captions") { $0.optIn(Corral.self, to: Caption.self) }
+        var bay = AnyShapeRecord(ShapeRecord(id: id(30), Corral(unit)))
+        bay[Caption.self] = "Bay"
+        let file = CanvasFile(root: CanvasDocument(shapes: [bay, chore(id(31)).copy(as: id(31), container: id(30)),
+                                                            pocket(id(32), caption: "Shed").copy(as: id(32), container: id(30))]),
+                              children: [id(32): CanvasDocument(shapes: [chore(id(41))])])
+        let h = try shelfHarness(commandPlugins() + [CorralsPlugin(), captioned], file: file)
+        let json = try answered(["query", "--brief", "chore"], on: h)
+        let rows = try require(json["rows"]?.arrayValue)
+        expectEqual(rows.map { $0["id"] }, [.string(uuid(31)), .string(uuid(41))])
+        expectEqual(rows.map { $0["inside"] }, [["Bay"], ["Bay", "Shed"]])
+        expectEqual(rows.map { $0["board"] }, ["root", .string(uuid(32))])
+        expectEqual(rowIDs(try answered(["query", #""Bay" > *"#], on: h)), [uuid(31), uuid(32)])
+        expectEqual(try answered(["query", "--count", #""Bay" *"#], on: h)["count"], 3)
+    },
     test("--limit lists the first rows, counting them all; --fields only those, whole; --brief none; --count only how many") {
         let h = try shelfHarness()
         let limited = try answered(["query", "--limit", "2", "chore"], on: h)

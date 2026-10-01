@@ -55,4 +55,30 @@ import TestKit
         expectEqual(h.editor.editingShapeID, nil)
         expectEqual(log.refusals, [[card], [card]])
     },
+    test("a shape in a read-only container is read-only too: no handles, its kind's or its resizing's, and a drag leaves it where it is") {
+        let log = RefusalLog()
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), KnobsPlugin(), CorralsPlugin(), resizableBoxes(),
+                                            FreezingPlugin(log: log)])
+        let corral = h.add(Corral(CGRect(x: -100, y: -100, width: 800, height: 600)))
+        let knob = h.add(Knob(CGRect(x: 0, y: 0, width: 100, height: 100)))       // its handle is at (50, 50)
+        let boxFrame = CGRect(x: 300, y: 100, width: 200, height: 100)
+        let box = h.add(Box(boxFrame))
+        h.editor.put([knob, box], in: corral)
+        h.editor.selection = knob
+        expect(h.editor.handle(atViewPoint: CGPoint(x: 50, y: 50)) != nil)
+        h.editor.freeze([corral])
+        expect(h.editor.isReadOnly(knob) && h.editor.isReadOnly(box))
+        expectEqual(h.editor.handle(atViewPoint: CGPoint(x: 50, y: 50)), nil, "its kind's")
+        h.editor.selection = box
+        for handle in ResizeHandle.allCases {
+            expectEqual(h.editor.handle(atViewPoint: point(of: handle, on: boxFrame)), nil, "\(handle)")
+        }
+        h.press(at: CGPoint(x: 400, y: 150))
+        h.drag(to: CGPoint(x: 440, y: 170))
+        h.release()
+        expectEqual(h.editor.document[box]?.box, boxFrame)
+        expectEqual(log.refusals, [[box]])
+        h.editor.freeze([corral], false)
+        expectEqual(h.editor.handle(atViewPoint: point(of: .bottomRight, on: boxFrame)), AnyHashable(ResizeHandle.bottomRight), "back once it can change")
+    },
 ])

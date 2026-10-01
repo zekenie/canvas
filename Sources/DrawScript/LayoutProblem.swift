@@ -29,9 +29,16 @@ public struct LayoutProblem {
         /// A restated shape's bounds now: on an axis no placement settles, it stays where it is, and
         /// a zone that holds them is one it already sits in. Nil for a new shape.
         public var current: CGRect?
+        /// What holds it (`in "F"`, F a shape that holds others on its board): it's kept within that
+        /// box, the tight gap in from each side, as `inside` keeps a box, or it's `no_room`; and it
+        /// may overlap it. Its placements say where in it. Nil for none.
+        public var holder: Holder?
+        /// The obstacles (by id) that go wherever it goes: what it holds, as a container does. It's
+        /// never kept clear of them, and none of them is a zone of it.
+        public var carries: Set<Int>
 
         public init(line: Int, name: String, size: CGSize, clauses: [ResolvedClause] = [], gap: Gap? = nil,
-                    overlapAllowed: Bool = false, current: CGRect? = nil) {
+                    overlapAllowed: Bool = false, current: CGRect? = nil, holder: Holder? = nil, carries: Set<Int> = []) {
             self.line = line
             self.name = name
             self.size = size
@@ -39,6 +46,20 @@ public struct LayoutProblem {
             self.gap = gap
             self.overlapAllowed = overlapAllowed
             self.current = current
+            self.holder = holder
+            self.carries = carries
+        }
+    }
+
+    /// A box a free box is kept within (`in "F"`): a fixed box, or a free one.
+    public struct Holder {
+        public var ref: Ref
+        /// How a message names what keeps the box there: `in "Sprint 3"`.
+        public var written: String
+
+        public init(_ ref: Ref, written: String) {
+            self.ref = ref
+            self.written = written
         }
     }
 

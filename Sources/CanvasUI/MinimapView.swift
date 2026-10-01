@@ -220,7 +220,9 @@ public final class MinimapView: NSView {
         for (ids, color) in [(outlines.faintShapes, MinimapStyle.faintSelection), (outlines.shapes, MinimapStyle.selection)] {
             let silhouettes = Silhouettes(pixelsPerWorldUnit: layout.zoom * pixelsPerPoint)
             for id in ids {
-                if let geometry = context.geometry(of: id) { silhouettes.add(geometry) }
+                if let geometry = context.geometry(of: id) {
+                    silhouettes.add(geometry, hollow: editor.document[id].map(editor.registry.isContainer) ?? false)
+                }
             }
             silhouettes.draw(into: cg, color: color.cgColor, lineWidth: MinimapStyle.lineWidth / layout.zoom)
         }

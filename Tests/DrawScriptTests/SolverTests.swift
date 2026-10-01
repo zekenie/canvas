@@ -146,6 +146,47 @@ let hub = ("Hub", rect(0, 0, 200, 100))
         let five = draw(Array(repeating: #"card inside "Z" top-left"#, count: 5).joined(separator: "\n"), on: board)
         expectError(five, .noRoom, #"the card on line 1 is inside "Z" top-left, and there's no room left in "Z""#)
     },
+    test("held (in), a box stays within its holder wherever its placements put it there, and may overlap it; out of it, it's no_room") {
+        // Z (0, 0, 800 × 600) holds nothing else, so it's no zone; B is left of it.
+        let z = rect(0, 0, 800, 600), b = rect(-300, 100, 200, 100)
+        let obstacles = [LayoutProblem.Obstacle(id: 0, rect: z), LayoutProblem.Obstacle(id: 1, rect: b)]
+        let far = try shape(#"card right of "B" (gap: 340)"#).clauses[0], near = try shape(#"card right of "B""#).clauses[0]
+        let held = { (clause: Clause, holder: Bool) in
+            LayoutProblem(free: [LayoutProblem.Free(line: 1, name: "\"N\"", size: CGSize(width: 200, height: 100),
+                                                    clauses: [LayoutProblem.ResolvedClause(clause, refs: [.fixed(1)])],
+                                                    holder: holder ? LayoutProblem.Holder(.fixed(0), written: #"in "Z""#) : nil)],
+                          fixed: [LayoutProblem.Fixed(rect: z, obstacle: 0), LayoutProblem.Fixed(rect: b, obstacle: 1)],
+                          obstacles: { area in obstacles.filter { $0.rect.intersects(area) } }, name: { _ in "\"Z\"" })
+        }
+        let within = try held(far, true).solve()
+        expectRect(within.rects[0], rect(240, 100, 200, 100))
+        expectEqual(within.pushes, [], "what holds it isn't in its way")
+        expect(try held(far, false).solve().rects[0].minX >= 800, "without, it's pushed out")
+        let outside = held(near, true)
+        do throws(ScriptError) {
+            _ = try outside.solve()
+            expect(false, "placed out of what holds it")
+        } catch {
+            expectEqual(error.reason, .noRoom)
+            expectEqual(error.message, #""N" is in "Z", and there's no room left in "Z""#)
+        }
+    },
+    test("what a box carries is never in its way: a container moved over where its contents were") {
+        let m = rect(100, 100, 100, 100), l = rect(-300, 0, 200, 100)
+        let clause = try shape(#"card right of "L""#).clauses[0]
+        let moved = { (carrying: Set<Int>) in
+            LayoutProblem(free: [LayoutProblem.Free(line: 1, name: "\"F\"", size: CGSize(width: 400, height: 300),
+                                                    clauses: [LayoutProblem.ResolvedClause(clause, refs: [.fixed(0)])],
+                                                    current: rect(0, 0, 400, 300), carries: carrying)],
+                          fixed: [LayoutProblem.Fixed(rect: l, obstacle: 1)],
+                          obstacles: { area in [LayoutProblem.Obstacle(id: 0, rect: m), LayoutProblem.Obstacle(id: 1, rect: l)].filter { $0.rect.intersects(area) } })
+        }
+        let carrying = try moved([0]).solve()
+        expectRect(carrying.rects[0], rect(-20, -100, 400, 300))
+        expectEqual(carrying.pushes, [])
+        expectEqual(carrying.zones[0], [], "nor a zone of it")
+        expect(try moved([]).solve().pushes.count > 0, "not carrying it, it's kept clear of it")
+    },
     test("moved out of a zone by another pair kept apart, it's no_room naming that pair") {
         // N is kept clear of the zone drawn with it by going down, and takes A, which it's
         // centered on, out of the zone.

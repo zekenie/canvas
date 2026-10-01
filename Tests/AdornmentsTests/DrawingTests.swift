@@ -178,4 +178,25 @@ let longText = "A caption much longer than the box is wide"
         let (full, halfway, none) = (pixel(opaque, at: point)[0], pixel(half, at: point)[0], pixel(plain, at: point)[0])
         expect(full < halfway && halfway < none, "\(full) < \(halfway) < \(none)")
     },
+    test("a placeholder's text is drawn dimmed, on the same capsule, laid out as the same text, in the row and on the corner") {
+        let cases: [(String, any CanvasPlugin, any CanvasPlugin)] = [
+            ("Lobby", everyShape(Caption.self) { _ in AdornmentLabel("Lobby") }, everyShape(Caption.self) { _ in AdornmentLabel(placeholder: "Lobby") }),
+            ("☑ 2/5", everyShape(Count.self) { _ in AdornmentLabel("☑ 2/5") }, everyShape(Count.self) { _ in AdornmentLabel(placeholder: "☑ 2/5") }),
+        ]
+        for (text, plain, dimmed) in cases {
+            let (_, titled, h) = try renders([plain]) { $0.add(Box(boxFrame)) }
+            let (_, placeholder, g) = try renders([dimmed]) { $0.add(Box(boxFrame)) }
+            let frame = try require(viewRects(h, h.editor.document.shapes[0].id).first)
+            expectEqual(viewRects(g, g.editor.document.shapes[0].id), [frame], "\(text): laid out alike")
+            let fill = CGPoint(x: frame.minX + 3, y: frame.midY)                          // in the capsule, before its text
+            expectEqual(pixel(placeholder, at: fill), pixel(titled, at: fill), "\(text): the same capsule")
+            @MainActor func brightest(_ bitmap: NSBitmapImageRep) -> Int {
+                stride(from: frame.minY + 2, to: frame.maxY - 2, by: 1).flatMap { y in
+                    stride(from: frame.minX + 4, to: frame.maxX - 4, by: 1).map { pixel(bitmap, at: CGPoint(x: $0, y: y))[0] }
+                }.max() ?? 0
+            }
+            let (dim, bright, capsule) = (brightest(placeholder), brightest(titled), pixel(titled, at: fill)[0])
+            expect(capsule + 40 < dim && dim + 40 < bright, "\(text): \(capsule) < \(dim) < \(bright)")
+        }
+    },
 ])

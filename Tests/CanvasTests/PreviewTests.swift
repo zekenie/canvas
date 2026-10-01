@@ -124,6 +124,22 @@ private var past: ContinuousClock.Instant { .now - .seconds(1) }
                     [true, true, true, false, false])
         expectEqual(try painted(maxScale: 10, at: [near, far]), [true, true], "a cap past the fit changes nothing")
     },
+    test("a container's silhouette is its outline, stroked, so what it holds shows on it") {
+        let corral = ShapeRecord(Corral(CGRect(x: 0, y: 0, width: 400, height: 200)))
+        let held = AnyShapeRecord(ShapeRecord(Box(CGRect(x: 250, y: 50, width: 100, height: 100)))).copy(as: ShapeID(), container: corral.id)
+        let pocket = ShapeRecord(Pocket(CGRect(x: 0, y: 0, width: 240, height: 160)))
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(pocket)]),
+                              children: [pocket.id: CanvasDocument(shapes: [AnyShapeRecord(corral), held])])
+        let board = BoardID(owner: pocket.id)
+        let previews = BoardPreviews(registry: try Registry(plugins: [FixturesPlugin(), PocketsPlugin(), CorralsPlugin()]))
+        _ = previews.preview(of: board, in: file)
+        previews.build(in: file, until: later)
+        let preview = try require(previews.preview(of: board, in: file))
+        expect(try isShape(preview, at: CGPoint(x: 300, y: 100)), "what it holds")
+        expect(try !isShape(preview, at: CGPoint(x: 100, y: 100)), "its inside, clear")
+        expect(try isShape(preview, at: CGPoint(x: 1, y: 100)), "its edge")
+        expect(try isShape(preview, at: CGPoint(x: 200, y: 199)), "all round")
+    },
     test("an empty board has none, and asks for none") {
         let (file, boards) = pocketFile([[]])
         let previews = BoardPreviews(registry: try previewRegistry())

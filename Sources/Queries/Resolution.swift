@@ -8,12 +8,13 @@ import Topology
 // and bound into a plan. Kinds must be the registry's; an attribute its compound's kind's (or, with
 // no kind, some kind's), and its literal and operator what the property's schema takes; edge types
 // declared, or in the file; words the language's or a plugin's. A container (the left of a space or
-// `>`, `:inside`'s argument, the shape `:has` is on) that can only be a kind holding no board is
-// refused, since nothing is ever inside it. Titles and ids are left for the answer, which checks them
-// against the file it takes up (but an id's kind is checked here, for a container, from the file as
-// the app has it). Every problem that doesn't depend on another is found, up to
-// `QueryLimits.errors`, in the order they are in the query, the first leading: a compound whose kind
-// isn't one has its attributes left unchecked, since what they'd be checked against is unknown.
+// `>`, `:inside`'s argument, the shape `:has` is on) that can only be a kind whose shapes hold no
+// shapes (neither a board of them nor shapes on theirs) is refused, since nothing is ever inside
+// it. Titles and ids are left for the answer, which checks them against the file it takes up (but
+// an id's kind is checked here, for a container, from the file as the app has it). Every problem
+// that doesn't depend on another is found, up to `QueryLimits.errors`, in the order they are in the
+// query, the first leading: a compound whose kind isn't one has its attributes left unchecked,
+// since what they'd be checked against is unknown.
 
 extension QueryPlan {
     /// Resolves a query read against a vocabulary. `presentEdgeTypes` are the edge types the file
@@ -27,7 +28,7 @@ extension QueryPlan {
         for (id, span) in resolver.containerIDs {
             guard let kind = kindOf(id), !vocabulary.containerKinds.contains(kind), vocabulary.kind(kind) != nil else { continue }
             resolver.problem(QueryError(.cannotContain,
-                                        "#\(id.rawValue.uuidString) is \(indefinite(kind.rawValue)), which holds no board: nothing is inside it. \(Resolver.notSpatial)",
+                                        "#\(id.rawValue.uuidString) is \(indefinite(kind.rawValue)), which holds no shapes: nothing is inside it. \(Resolver.notSpatial)",
                                         hint: vocabulary.containersListed, span: span))
         }
         if let problems = resolver.collected { throw problems }
@@ -103,8 +104,8 @@ private struct Resolver {
         return failed ? nil : planList(items)
     }
 
-    /// A complex selector: its subject, on the board of (or inside) what the compound before it
-    /// matches, and so on back.
+    /// A complex selector: its subject, directly inside (or inside, at any depth) what the compound
+    /// before it matches, and so on back.
     mutating func complex(_ selector: ComplexSelector, container: Bool) -> PlanNode? {
         var previous: PlanNode?, failed = false
         for (index, compound) in selector.compounds.enumerated() {
@@ -118,7 +119,7 @@ private struct Resolver {
             }
             let isSubject = index == selector.compounds.count - 1
             // `kind "Title"`, a space between: the shapes titled so inside the kind's. Where the kind
-            // holds no board, what was meant is most likely the two together, one shape, if its
+            // holds no shapes, what was meant is most likely the two together, one shape, if its
             // shapes can have titles at all.
             var together: String?
             if !isSubject, selector.combinators[index] == .descendant, case .kind(let kind, _)? = compound.head,
@@ -211,16 +212,16 @@ private struct Resolver {
     }
 
     /// A compound that must be able to hold shapes (a container): refused when its head is a kind
-    /// that holds no board (a kind with a title too); its id, if it's named by one, checked once the
+    /// that holds no shapes (a kind with a title too); its id, if it's named by one, checked once the
     /// walk is done; its title, if one, left for the answer to check against the shapes it names
     /// (`containerTitles`). `together`: the compound written with the title after its space, the
-    /// hint for a kind that holds no board.
+    /// hint for a kind that holds no shapes.
     mutating func checkContainer(_ compound: Compound, heads: [PlanNode], together: String?) {
         switch compound.head {
         case .kind(let name, let span)?, .kindTitle(let name, let span, _, _)?:
             let kind = ShapeKind(rawValue: name)
             guard vocabulary.kind(kind) != nil, !vocabulary.containerKinds.contains(kind) else { return }
-            problem(QueryError(.cannotContain, "\(indefinite(name).capitalizedFirst) holds no board: nothing is inside it. \(Self.notSpatial)",
+            problem(QueryError(.cannotContain, "\(indefinite(name).capitalizedFirst) holds no shapes: nothing is inside it. \(Self.notSpatial)",
                                hint: together.map { "Write them together for one shape: \($0)." } ?? vocabulary.containersListed, span: span))
         case .id(let id, let span)?:
             containerIDs.append((ShapeID(id), span))
@@ -380,9 +381,10 @@ private struct Resolver {
                               hint: headText(compound.head) + renamed.canonical + rest, span: span)
         case .board, .page:
             // Written as a row gives `board`: "root" for the top board, else its owner's id; or by
-            // the owner's title. A row's board is the one a shape is directly on: `>`, after which a
-            // head goes (`"Pantry" > *[rank>3]`). An owner by id or title is hinted only once it's
-            // known to hold a board (`HintPremise`).
+            // the owner's title. A row's board is the one a shape is on, which `>` says nearest
+            // (directly inside the owner: on its board, in no container), a head after it
+            // (`"Pantry" > *[rank>3]`); and the top board's, `:top-level`. An owner by id or title is
+            // hinted only once it's known to hold shapes (`HintPremise`).
             let message = "\(test.name) isn't an attribute: what's on a board is written after the shape that owns it."
             let inside = (compound.head == nil ? "*" : headText(compound.head)) + rest
             guard let value else { return QueryError(.unknownAttribute, message, span: span) }

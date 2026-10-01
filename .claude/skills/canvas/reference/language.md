@@ -19,6 +19,7 @@ The examples on this page are one story. They run in order on one empty board: e
 - [Keeping clear](#keeping-clear)
 - [A drawing with nothing to hang on](#a-drawing-with-nothing-to-hang-on)
 - [Inside, outside, on, and zones](#inside-outside-on-and-zones)
+- [Frames](#frames)
 - [Edges](#edges)
 - [Styles](#styles)
 - [Restating, renaming, deleting](#restating-renaming-deleting)
@@ -103,6 +104,7 @@ A kind is drawable when a tool places it. These are the shipped ones:
 | `sticky-note` | 200x200 | its title, a pill above its top-left corner | `text:` | `note-link`, left, right and bottom |
 | `schema-card` | 240x52 | its schema's "title", a pill above its top-left corner: never a title of its own | `prompt:`, in words, on the card; `schema:` in its panel | `schema-link`, left, right and bottom |
 | `subboard` | 240x160 | its title, drawn on its card | nothing else: its board is its own | none |
+| `frame` | 640x400 | its title, a pill above its top-left corner | nothing else: it holds what's drawn `in` it | none |
 
 `arrow` is what edges are: write `edge "A" -> "B"`, never `arrow`. A kind that isn't installed is `unknown_kind`, with the drawable kinds listed and the one like it named (`did you mean sticky-note?`). Words from other languages get a hint with what to write instead: `node`, `note` and `box` that a statement starts with its kind, `link` to write `edge "A" -> "B"`, `-->` in an edge the arrow to write, and a line that joins two titles without `edge` (`API --> DB`, `"A" -> "B"`) the edge it means (`edge "API" -> "DB"`).
 
@@ -180,6 +182,7 @@ The shipped kinds' attributes:
 - **sticky-note**: `text` (what it says: past eight lines or so the note grows taller to fit it, from its top. A `size:` holds as drawn only until its text changes, typed by the user or set again by a script without `size:`: then it's as tall as its text again, never under 200, and opening it to edit grows it to its text. So don't use a note as a zone of a set height), `locked`.
 - **schema-card**: `prompt` (what the schema should hold, in words: the card shows it, as a note shows its text, and grows to fit it; with none it's blank; it may mention other schema cards, and only them), `schema` (a JSON Schema, as text: its properties in the order written, shown in the card's panel), `locked`. What a script writes is taken as written: the Claude sync that rewrites one side when the user edits the other isn't asked, so write a prompt and a schema that agree.
 - **subboard**: `locked`.
+- **frame**: `locked` (locking a frame locks what's in it, at any depth).
 - **A note's `text`** is kept as written. In it, `@[label](shape:<id>)` is a mention of a shape, which the note shows as a live pill with that shape's name now. Only the app writes one (an id from a query's rows is for naming the shape in a later query, never in a script), so write plain words: an `@`, or `@[…]` without `(shape:…)`, is only text. (The app writes a mention's form as plain text with `\@[`, which a script's string spells `\\@[`.) A mention of a shape that isn't in the file is kept, and warned about.
 - **`locked: true`** locks a shape, as the context menu's Lock does. A locked shape refuses every later change (`read_only`). Leave locking to the user.
 
@@ -232,7 +235,7 @@ on "A" [<part>]        centered on that part (A's middle if none)
 ### in
 
 ```text
-in "A"                 on the board A holds (a subboard's)
+in "A"                 on the board A holds (a subboard's), or in A, on the board A is on (a frame's)
 ```
 
 ```draw
@@ -250,7 +253,7 @@ Deleting a subboard deletes what's on its board with it, and the result warns ho
 delete "Backend"
 ```
 
-`in` says what holds a shape, not where it sits: `sticky-note "Cache" in "Backend"` draws Cache on the board of the subboard called Backend, the window staying where it is. Write placements beside it as ever; they place the shape on that board, against shapes there (`in "Backend" below "API"`), `board` (that board's shapes) or `view` (the part of it the window shows when it's opened). With none, it's [a drawing with nothing to hang on](#a-drawing-with-nothing-to-hang-on) there. It names one shape that holds others, with no part: `in "Notes"` on a note is `cannot_contain`. The subboard must be on the board already: one this script draws is `unsupported`, so draw it, then what goes in it in a run of its own. `inside` is another thing: `inside "Backend" top-left` puts a shape over its card, on the board the card is on.
+`in` says what holds a shape, not where it sits: `sticky-note "Cache" in "Backend"` draws Cache on the board of the subboard called Backend, the window staying where it is. Write placements beside it as ever; they place the shape on that board, against shapes there (`in "Backend" below "API"`), `board` (that board's shapes) or `view` (the part of it the window shows when it's opened). With none, it's [a drawing with nothing to hang on](#a-drawing-with-nothing-to-hang-on) there. It names one shape that holds others, a subboard or a frame ([Frames](#frames)), with no part: `in "Notes"` on a note is `cannot_contain`. That shape must be on the board already: one this script draws is `unsupported`, so draw it, then what goes in it in a run of its own. `inside` is another thing: `inside "Backend" top-left` puts a shape over its card, on the board the card is on.
 
 ### Targets
 
@@ -296,7 +299,7 @@ sticky-note "Alerts" below "Runbook" (gap: tight) text: "Page the owner"
 A file can hold boards inside shapes, and a script draws on one of them, worked out from what it names:
 
 - A title names a shape on any board of the file: the one the window shows first, and else wherever it is. `sticky-note "Auth" text: "Done"` changes Auth on whatever board it's on.
-- A new shape goes on the board of the shapes it's placed against, or the board `in` names. With neither (unplaced, or against `board` or `view`), it goes on the board the rest of the script draws on, else the one the window shows.
+- A new shape goes on the board of the shapes it's placed against, or the board `in` names (a frame's is the board the frame is on). With neither (unplaced, or against `board` or `view`), it goes on the board the rest of the script draws on, else the one the window shows.
 - A statement with `in "X"` reads its titles on X's board alone: that's how to name a shape whose title is on two boards.
 
 A run draws on one board, as one step of undo: a script whose statements land on two is `several_boards`, and so is an edge between shapes on two boards (an arrow can't leave its board). A title on two boards, neither shown, is `ambiguous_title` until `in` says which. The window never moves for a draw (but `--reveal` shows the board drawn on), and undoing a run on another board shows that board.
@@ -396,7 +399,7 @@ So on an empty board, a script leaves one shape unplaced, or places against `vie
 
 **`on "Z" [<part>]`** centers it on the part, or on Z's middle if none is named, and lets it overlap Z. It's held on both axes, so if it lands on anything else it's `unordered` unless it says `overlap: allow`.
 
-**A zone** is a big shape that others sit on, like a big note for a team or a tier. Draw it in its own script first, then draw what goes in it. Once the zone is on the board, it isn't in the way of a shape placed against one it holds, or of one that lands wholly on it while it already holds other shapes, as long as the zone is at least twice the size of the one it holds or the one landing. Nor is it in the way of a shape restated that already sat on it, or of one placed against `view` while the whole view is on it ([Keeping clear](#keeping-clear)). So a card in one column lined up with a card in the next stays in its own, and `inside view top-right` puts a legend in the corner of a region you're zoomed into, or of one that fills most of the window and holds other shapes. A shape that lands on an empty zone, placed against nothing in it, is pushed past it, and so is every shape the same script lands on it that way: put the first shape in with `inside`, and place the rest against that one. One that can't move off an empty zone (a card restated `left level with` an empty lane) is `unordered`, and its hint says the zone holds nothing yet (or no shape wholly, when one hangs over its edge): place it elsewhere, or, if the zone is meant to hold shapes, place a first one `inside` it. Held on an empty note, the hint is the same, but what goes on a note covers its words: place the shape elsewhere. Only `inside` keeps a shape within the zone: one placed against a shape in it, or restated, isn't held in, and can hang over its edge. The result then warns, `"Dead letters" hangs over the edge of "Backend" — make "Backend" bigger, or place "Dead letters" elsewhere`: place it `inside` the zone, or make the zone bigger. Within one script, only shapes placed `inside` or `on` a shape may overlap it. Drawn in the same script as what goes in it, a zone is in the way of everything but those: a shape placed against something inside it is pushed out of it, and one held inside it with no room left is `no_room`, naming what pushed it. Draw the zone first.
+**A zone** is a big shape that others sit on, like a big note for a team or a tier. Draw it in its own script first, then draw what goes in it. A [frame](#frames) is often the better choice: it holds what's in it. Once the zone is on the board, it isn't in the way of a shape placed against one it holds, or of one that lands wholly on it while it already holds other shapes, as long as the zone is at least twice the size of the one it holds or the one landing. Nor is it in the way of a shape restated that already sat on it, or of one placed against `view` while the whole view is on it ([Keeping clear](#keeping-clear)). So a card in one column lined up with a card in the next stays in its own, and `inside view top-right` puts a legend in the corner of a region you're zoomed into, or of one that fills most of the window and holds other shapes. A shape that lands on an empty zone, placed against nothing in it, is pushed past it, and so is every shape the same script lands on it that way: put the first shape in with `inside`, and place the rest against that one. One that can't move off an empty zone (a card restated `left level with` an empty lane) is `unordered`, and its hint says the zone holds nothing yet (or no shape wholly, when one hangs over its edge): place it elsewhere, or, if the zone is meant to hold shapes, place a first one `inside` it. Held on an empty note, the hint is the same, but what goes on a note covers its words: place the shape elsewhere. Only `inside` keeps a shape within the zone: one placed against a shape in it, or restated, isn't held in, and can hang over its edge. The result then warns, `"Dead letters" hangs over the edge of "Backend" — make "Backend" bigger, or place "Dead letters" elsewhere`: place it `inside` the zone, or make the zone bigger. Within one script, only shapes placed `inside` or `on` a shape may overlap it. Drawn in the same script as what goes in it, a zone is in the way of everything but those: a shape placed against something inside it is pushed out of it, and one held inside it with no room left is `no_room`, naming what pushed it. Draw the zone first.
 
 **Paint order.** New shapes are painted above everything already on the board. A shape placed `inside` or `on` another shape this script draws is painted above that shape. A restated shape moved `inside` or `on` a shape that paints above it is brought above that shape, and so is one moved into a zone that paints above it, or within the one it's in, so a shape drawn before its zone isn't hidden under it; a shape placed `on` or `inside` it in the same script goes above it in turn, whatever order the lines are in. A locked shape isn't moved in the stack, unless the same statement unlocks it (or locks it: it's raised first).
 
@@ -415,6 +418,39 @@ A note stuck across two notes overlaps both on purpose. `on` exempts it from the
 
 ```draw
 sticky-note "Stamp" on "Orders table" right overlap: allow text: "Reviewed"
+```
+
+## Frames
+
+A frame is a region of the board that holds shapes: what's in it moves with it, is drawn above it, is locked with it, and is listed under it. Unlike a zone, it holds what's in it: a shape is in it or out of it, never across its edge.
+
+```draw
+frame "Sprint" below board size: 900x600
+```
+
+`in "Sprint"` puts a shape in the frame, on the board the frame is on, kept 40 in from its edges. With nothing else to say where, it goes against the frame's top-left, as `inside "Sprint" top-left` places one, and shapes written alike make a list down from there. With placements, it goes where they say, kept within the frame, or the script fails with `no_room`.
+
+```draw
+sticky-note "Login bug" in "Sprint" text: "Sessions expire too soon"
+sticky-note "Billing" in "Sprint" text: "Move invoices to the new API"
+sticky-note "Search" in "Sprint" right of "Login bug" text: "Index the archive"
+```
+
+- **Nothing sits across a frame's edge.** Whatever a script puts down over one (a new shape, or one it places or resizes) goes wholly in or out of it by most of its area, nudged to 16 clear of the edge, as by hand, and a warning says which: `"Draft" was over the edge of "Sprint", so it was nudged in`. So a shape placed `inside` a frame, `on` it, or against a shape in it, that lands within it, is in it too. The row's `at` is where it ended up.
+- **A frame placed elsewhere takes what's in it along**, and what's in it is never in its way. Placing another shape against one it takes along, in the same script, is `unsupported`: place it against the frame, or in a run of its own. Resized, a frame leaves what's in it where it is, and what's then over its edge goes wholly in or out (a warning says how many).
+- **A locked frame locks what's in it**, at any depth, and takes nothing new: `in` it, or a script that would put a shape in it, is `read_only`, and so is any change to what's in it.
+- **Draw a frame in its own script first.** `in` a frame the same script draws is `unsupported`. A frame doesn't grow to fit what's drawn in it, so give it a `size:` with room.
+- **Deleting a frame leaves what's in it where it is**, now in what held the frame, or on the board.
+
+```draw-error
+// reason: unsupported
+frame "Later" right of board
+sticky-note "Plan" in "Later"
+```
+
+```draw-error
+// reason: no_room
+sticky-note "Wide" in "Sprint" size: 900x200
 ```
 
 ## Edges
@@ -454,6 +490,7 @@ A channel is what kind of connection an edge is. Each kind has ports on some cha
 | `sticky-note` | `note-link` | left, right, bottom |
 | `schema-card` | `schema-link` | left, right, bottom |
 | `subboard` | none | none |
+| `frame` | none | none |
 
 `build/canvas kinds` lists each kind's channels by side, under `edges`. How an edge's channel is chosen:
 
@@ -624,6 +661,7 @@ The run succeeds with these **warnings**, each with its `severity`, the `line` o
 - titles that nearly match one on the board;
 - how many shapes landed outside the view (`3 shapes landed outside the view — --reveal brings them into view`), unless `--reveal` brought them into view;
 - a shape that hangs over the edge of a zone it sits on (placed against something in it, restated, or placed against the view);
+- a shape nudged into or out of a frame, over whose edge it was put down (`"N" was over the edge of "Sprint", so it was nudged in`), and how many shapes a frame put down or resized nudged across its edge;
 - a restated shape resized in place that now overlaps something;
 - what a shape it drew names that isn't there: a note whose `text:` mentions a shape that isn't in the file, or is on a board the app can't show (`"Plan": text names shapes that aren't in the file: <id>; they show as missing`);
 - a deleted subboard's board, and what was on it.
@@ -656,24 +694,24 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | `unknown_title` | No shape has that title. `right of "Injest"`, with up to 3 near titles · `board` on an empty board | Write the title exactly (`did you mean "Ingest"?`). On an empty board, leave one shape unplaced instead. |
 | `ambiguous_title` | Two or more shapes have the title, each listed with its kind and where it is · the title is on two boards, neither the one the window shows: `"Retry" is on 2 boards: "Payments"'s board and "Billing"'s board` | Ask the user to rename one. Titles only work as names while each is used once. For two boards, say which with `in "Payments"`. |
 | `several_boards` | The script lands on two boards, and a run draws on one. `this script draws on "Payments"'s board ("Retry", line 1) and on the root board ("Ingest")` · an edge, or a placement, between shapes on two boards | Split it into a run for each board. An edge joins shapes on one board. |
-| `cannot_contain` | `in` names a shape that holds no board. `"Notes" is a sticky-note, which holds no shapes` | Name a subboard. To put a shape over another, use `inside` or `on`. |
+| `cannot_contain` | `in` names a shape that holds no shapes: no subboard, and no frame. `"Notes" is a sticky-note, which holds no shapes` | Name a subboard or a frame. To put a shape over another, use `inside` or `on`. |
 | `board_shown` | A delete would take the board the window shows, or one above it: `"Payments" holds the board the window shows, so it can't be deleted` | `build/canvas show --root` (or a board above it) first, if the user wants it gone. |
 | `ambiguous_edge` | `"A" -> "B" is drawn 2 times` | Write `delete edge "A" -> "B"` above the line, then draw it once. |
 | `untitlable` | The kind can't be given a title: `a <kind>'s title is worked out from what it is`, or `a <kind> has no title` | Leave the title out, and don't plan to name it later. |
 | `renames` | The change would take away the name of a shape whose name comes from what it is: a schema card's schema with no title left, `this would leave "Row" without a title` | Keep a schema card's title in its schema. |
 | `wrong_kind` | The title belongs to a shape of another kind. `"Ingest" is a sticky-note` | Use its kind, or change it with `delete "Ingest"` and a new statement in the same script. |
-| `read_only` | The shape or connection is locked, and the change would really change it. `"Ship" is read-only (locked, say), so it can't be deleted` · `one of "Ingest"'s connections is read-only (locked, say), so "Ingest" can't be deleted with it` · a subboard whose board holds a locked shape, deleted | Tell the user. Leave it, or ask them to unlock it. |
+| `read_only` | The shape or connection is locked, or in a locked frame, and the change would really change it. `"Ship" is read-only (locked, say), so it can't be deleted` · `one of "Ingest"'s connections is read-only (locked, say), so "Ingest" can't be deleted with it` · a subboard whose board holds a locked shape, deleted · `"Sprint" is read-only (locked, say), so nothing goes in it` · `"N" would go in "Sprint", which is read-only (locked, say)` | Tell the user. Leave it, or ask them to unlock it. |
 | `unplaced` | Nothing says where a shape sits. `"Between" does not say where it sits vertically: right of "Ingest" and left of "Load" would put it in different places` · `exactly one new shape may say nothing about where it goes, but 2 do: "Idea one" and "Idea two"` · `"N" says nothing about where it sits horizontally` | Add a placement for that axis (the hint names one), or place all but one shape. |
 | `unanchored` | Shapes are placed only against each other, with nothing tying them to the board. `nothing ties "Left half" to the board horizontally` | Place one against a shape on the board, `board` or `view`, or leave exactly one unplaced. |
-| `no_room` | The placements can't all hold. `"Squeeze" is right of "Ingest" and left of "Clean", and there's no room between them` · `… clear of "Q"` · `"N" is inside "Z" top-left, and there's no room left in "Z"` | Drop or change a placement, or ask for a smaller gap. Shapes on the board don't move, so to make room, restate them with placements. |
-| `circular` | `"Loop" is placed against itself`, or two shapes wait on each other: `"N" is level with "A" and "B", but "B" is placed vertically against "N" in turn` | Place one of them against something else. |
+| `no_room` | The placements can't all hold. `"Squeeze" is right of "Ingest" and left of "Clean", and there's no room between them` · `… clear of "Q"` · `"N" is inside "Z" top-left, and there's no room left in "Z"` · `"Wide" is in "Sprint", and there's no room left in "Sprint"` | Drop or change a placement, or ask for a smaller gap. Shapes on the board don't move, so to make room, restate them with placements. |
+| `circular` | `"Loop" is placed against itself`, or in itself (`in`), or two shapes wait on each other: `"N" is level with "A" and "B", but "B" is placed vertically against "N" in turn` | Place one of them against something else. |
 | `unordered` | Two shapes would overlap and nothing says which side of the other either sits on. `"North" and "Far north" overlap, and nothing says which side of the other either one sits on` · `"N" is on "P" and can't move, but it overlaps "Q"` | Place one against the other, place it elsewhere, or say `overlap: allow`. Held on an empty zone, the hint says so: place it elsewhere, or, if the zone is meant to hold shapes, put a first one `inside` it. |
 | `no_channel` | The edge's ends share no channel, on the sides named if any, or the channel written isn't one both ends take. `"Ingest" and "Monday" share no channel: a sticky-note connects on note-link, a subboard has no ports` · `a connection on note-link can't end where it starts` | Connect like to like, name a side that has the port, or say `channel: none`. |
 | `cannot_connect` | The app won't connect that end at all, and the message names the end. | Connect a different shape. |
 | `no_edges` | No plugin in this app draws connections. | Draw shapes only. |
 | `no_names` | No plugin in this app names shapes, so titles can't be matched. | Titled statements can't work in this app. |
 | `no_view` | `view` was named, but the board's window has no size. | Place against a shape or `board`, or leave one shape unplaced. |
-| `unsupported` | Something the language doesn't do. `an edge joins two shapes, and this one goes on to a third` · `frame: says where "N" is, and there are no coordinates here` · `x: would say where "N" is, and there are no coordinates here` · `"N" is new, and title: renames a shape` · `title: null would take the shape's title away, and a script only renames` | Leave it out, write each edge on its own line, place the shape instead, or put the title after the kind. |
+| `unsupported` | Something the language doesn't do. `an edge joins two shapes, and this one goes on to a third` · `in` a subboard or frame this script draws · a placement against a shape in a frame the script moves · `frame: says where "N" is, and there are no coordinates here` · `x: would say where "N" is, and there are no coordinates here` · `"N" is new, and title: renames a shape` · `title: null would take the shape's title away, and a script only renames` | Leave it out, write each edge on its own line, place the shape instead, or put the title after the kind. |
 | `nothing_to_delete` | `delete edge` found no connection. | Check the direction, or use `<->`. |
 | `busy` | Someone is dragging on this board. | Try again in a moment. |
 | `empty_script` | The script has no statements (comments and styles don't count). | Write at least one shape, edge or delete. |
@@ -792,6 +830,7 @@ delete edge "Ingest" -> "Load"
 - `drawable`: whether a script can draw it, with the reason if not (`why`).
 - `names`: `named` (a title you give it), `derived` (worked out from what it is), or `none`.
 - `size`: what its tool places, like `"200x200"`.
+- `holds`: what its shapes hold, for `in` to name: `board` (a subboard's, a board of its own) or `shapes` (a frame's, on the board it's on); absent for neither.
 - `attributes`: each attribute a script can set, with a compact type. The types are a set's words joined by `|`, `true|false`, `number ≥ 0`, `integer`, `text`, `text (≤ 80)`, `date (YYYY-MM-DD or date-time)`, and JSON shapes like `JSON [{done, text}]` (members in alphabetical order; an id nobody writes, like a list item's, isn't listed). Keys a script can't set, like the frame, aren't listed.
 - `edges`: the channels an edge from it can take, by side.
 
@@ -813,10 +852,10 @@ These are left out on purpose. What they protect is that the app never chooses a
 ## Not built yet
 
 - **Reading positions back.** `canvas query` ([query.md](query.md)) lists a file's shapes, their titles and attributes, what's inside what and what's connected to what, but not where a shape is: only a script's result says where what it drew landed.
-- **Drawing on two boards in one run**, a subboard and what goes in it among them: draw the subboard, then its contents with `in` in a run of their own.
-- **Moving a shape to another board.** `in` places a new shape; a shape restated stays on its board.
+- **Drawing on two boards in one run**, a subboard and what goes in it among them: draw the subboard, then its contents with `in` in a run of their own. The same for a frame and what goes in it, though they're on one board.
+- **Moving a shape to another board.** `in` a subboard places a new shape; a shape restated stays on its board. (`in` a frame moves a restated shape into it.)
 - **Mentions by title.** A note's `text:` is kept as written, and a mention in it is written with the shape's id, which only the app writes.
-- **Groups and containers** that grow with what's in them, or that move as one. Zones are plain shapes, and their contents are placed once.
+- **Frames that grow** to fit what's drawn in them, and **groups**. Zones are plain shapes, and their contents are placed once; a frame holds what's in it.
 - **Routing.** A line may cross shapes it has nothing to do with. There's no `between` or `below "X"` for edges yet.
 - **Extending a list** across runs, other than by restating every member.
 - **Naming shapes the user left untitled.** An untitled shape can't be named by a script.

@@ -12,6 +12,7 @@ import ContextMenus
 import CoreGraphics
 import DetailPanel
 import Eraser
+import Frames
 import Keyboard
 import LanguageModels
 import Locking
@@ -62,7 +63,9 @@ public enum ShippedPlugins {
             // What connects to what (arrows, mentions), for the whole file: its index hears each
             // commit before the services that read it (the table of contents', Mentions').
             TopologyPlugin(),
-            ArrowsPlugin(), StickyNotesPlugin(), SubboardsPlugin(), SchemasPlugin(),
+            // The kinds. Frames beside subboards, the two ways of grouping shapes (a region of this
+            // board, a board of its own), after notes: the toolbar's Note, Subboard, Frame, Schema.
+            ArrowsPlugin(), StickyNotesPlugin(), SubboardsPlugin(), FramesPlugin(), SchemasPlugin(),
             // After Validation: what's shown on shapes draws over its outline.
             ValidationPlugin(), AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin(), TitlesPlugin(),
             // After Titles, whose names its pills show, and the table of contents, whose rows it names.

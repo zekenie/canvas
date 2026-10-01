@@ -95,6 +95,18 @@ public enum Style {
     static let popoverDelay: Duration = .milliseconds(500)
     static let popoverWarmth: Duration = .milliseconds(500)
 
+    // Containers (`ShapeContaining`: a frame), and what's put down across their edges.
+    /// How far inside a container's edge a shape nudged in ends, and how far outside one nudged out,
+    /// in world units (`Transaction.settle`): the edge stays clear to grab.
+    nonisolated static let containerGap: CGFloat = 16
+    /// The glide (`CanvasEditor.glide`): a shape settling nudged in or out, or a refused drop going
+    /// back, eases there from where it was drawn over this long, a frame every `glideFrame`...
+    static let glideDuration: Duration = .milliseconds(250)
+    static let glideFrame: Duration = .milliseconds(16)
+    /// ...going a little past where it lands and back (an ease out with this much overshoot, the
+    /// usual 1.70158 going a tenth past; this, about a twentieth).
+    static let glideOvershoot: CGFloat = 1.2
+
     // Scrolling at the canvas's edges while a drag that asks for it runs (tldraw's EdgeScrollManager
     // and its options). Milliseconds and view points.
     /// How near an edge (or past it) the pointer scrolls the canvas: at the edge fully, half as fast
