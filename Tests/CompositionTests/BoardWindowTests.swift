@@ -274,8 +274,9 @@ final class NestedWindow {
         expectEqual(rows.map { $0.label?.text }, ["Plans, first", "Plans, second", "Untitled Subboard"])
         expectEqual(rows.first?.children?.map(\.id), [w.nest.arrow(on: 2)], "the arrow, under the note it starts from")
         crumbs.pointerEntered(crumb: w.nest.sBoard)
-        w.window.spin { w.menuButtons.count == 4 }
-        // Plans, first's disclosure triangle and its row; Plans, second's; and the subboard's, the way you came.
+        w.window.spin { w.menuButtons.count == 5 }
+        // Plans, first's disclosure triangle and its row; Plans, second's; and the subboard's, the way
+        // you came, with a triangle of its own: its board's rows are under it.
         let way = w.onCanvas(try require(w.menuButtons.last))
         expect(!w.isCanvas(w.hit(CGPoint(x: way.midX, y: way.midY))), "the menu takes a click on it")
         w.menuButtons[1].performClick(nil)
@@ -285,8 +286,9 @@ final class NestedWindow {
         expectEqual(w.editor.board, w.nest.tBoard, "one step back")
         w.window.spin { w.crumbs.count == 2 }
         crumbs.pointerEntered(crumb: .root)
-        w.window.spin { w.menuButtons.count == 4 }
-        // The root's: Root, first (and its arrow's triangle), Root, second, and Plans, the way you came.
+        w.window.spin { w.menuButtons.count == 5 }
+        // The root's: Root, first (and its arrow's triangle), Root, second, and Plans (and its board's
+        // triangle), the way you came.
         try require(w.menuButtons.last).performClick(nil)
         w.window.spin { w.editor.board == w.nest.sBoard }
         expectEqual(w.editor.selectedShapeIDs, [], "into Plans")

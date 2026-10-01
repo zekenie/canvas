@@ -2862,6 +2862,8 @@ system's rows, selection, disclosure triangles and keyboard.
 │   {} Untitled                     ● │   no name: the placeholder, dimmed; the dot, red: its error (ValidationContents)
 │   ▭ Patch                           │ a kind with no row: its label and symbol, dimmed while untitled
 │   ▭ Server room                     │   or its title, here PatchTitles'
+│ ▾ ▤ Payments                        │ a subboard: what's on its board, under it
+│     ▤ Refunds                       │   a note on that board
 │   ↗ Arrow                           │ an arrow that starts on nothing, at the top
 └─────────────────────────────────────┘
 ```
@@ -2898,6 +2900,20 @@ note.contentsRow(affected: MentionRows.affected) { note, context in
   shapes do, collapsed under a disclosure triangle; a loop keeps the later shape at the top. Arrows
   nest under the shape they start from, as data-canvas's edges do under their start node. Once
   shapes can contain shapes, a shape's container will be the default.
+- **A board under its owner.** A shape that owns a board (a `BoardOwning` kind's, a subboard)
+  opens onto that board's rows: the rows its [outline](#another-boards-outline) lists, each as its
+  kind draws it and nested alike, then the rows nested under the shape on its own board. Nothing
+  opts in: owning a board is what a kind declares to the core, and its board is what it holds. A
+  board with no shapes has nothing to open, so its owner's row has no disclosure triangle (one
+  whose shapes are all unlisted, kept aside, has one that opens onto nothing). The rows are read
+  only once the row is expanded: SwiftUI's outline asks every row on every update for the
+  collection of its nested rows, but for what's in it only once it's expanded, so the list hands
+  it a lazy one (`BoardRows`), and a collapsed subboard costs its own row, however much its board
+  holds; once open, they follow its board as it changes, though it isn't shown (what a schema
+  card's sync writes there). They're of shapes on another board, so they have
+  no marks (Validation checks the board shown), selecting one goes there (below), and the pointer
+  on one hovers nothing: the canvas doesn't show it. Headless, `entry.nestedBoard` is the board,
+  whether or not it has shapes, and `outline(of:)` its rows.
 - **Without a row**, a kind is listed by its label and symbol (`registry.label(of:)`: "Arrow",
   which Arrows declares, "Patch", its tool's), the fallback the detail panel's header uses. Where another
   plugin names the kind's rows (`contentsTitle`, below) that label is a placeholder, dimmed until a
@@ -2926,7 +2942,7 @@ note.contentsRow(affected: MentionRows.affected) { note, context in
 | `getParentShapeId` | `nestedUnder:` |
 | `getZoomConfig` | The shape's geometry bounds, with 100 points of margin, for every kind |
 | `onClick` | Return on a picked row opens its shape, as Return on the canvas does (Selection's `editor.open`); a double-click too, where the list stays on screen ([Opening a row](#whats-listed-and-selecting)) |
-| `getGroupChildren` | Not built yet |
+| `getGroupChildren` | The board a shape owns: its rows, under the shape's ([A board under its owner](#a-kinds-row)); groups a kind declares, not built yet |
 | The "other" row (type and id) | The kind's label and symbol (`registry.label(of:)`) |
 
 ### Rows read from more than their shape
@@ -3066,6 +3082,13 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
   selected, and the list keeps listing what it listed, so rows can be added and taken out without
   the rest going away. That holds until the selection next changes some other way, which
   `editor.selectionRevision` tells apart from the same shapes selected again.
+- **A row of a board under its owner's** is of a shape that isn't on the board shown, so selecting
+  it goes to it, as following a link does (Selection's `editor.goTo`): its board shown, the shape
+  selected there and brought into view, one step back, leaving whatever else was selected behind.
+  Several such rows go to the board of the one listed first. That's only when such rows are all a
+  selection adds: a ⇧-click whose range passes over an open board's rows selects the rows of the
+  board shown in it. Its primary action (a double-click,
+  Return) goes into it (`editor.goInto`: there, then opened, as one step back).
 - **Hovering links the two.** There's one hovered shape, Selection's `editor.hovered`, and both
   sides set it and show it. The pointer on a row hovers its shape, as the pointer on the shape
   would, and the canvas outlines it faintly. The pointer on a shape on the canvas tints its row:
@@ -3106,8 +3129,9 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
 - **Headless**, `ContentsState` (`editor.tableOfContents`) is all of it: `entries` (the rows, a tree),
   `scope`, `select(_:)`, `showAll()`, and the rows' hover: `hover(_:)` and `endHover(_:)` as the
   pointer moves onto a row and off it, and `isHovered(_:)` for whether a row shows as hovered. Tests
-  read a row's text, symbol and badge through `entry.label`, and its marks through `entry.marks`;
-  `open(_:)` is a row's primary action. In debug builds, `rowsRedrawn` counts how often the list
+  read a row's text, symbol and badge through `entry.label`, its marks through `entry.marks`, and
+  the board its shape owns through `entry.nestedBoard` (its rows, `outline(of:)`, are under it in
+  the list); `open(_:)` is a row's primary action. In debug builds, `rowsRedrawn` counts how often the list
   has asked a row for its view, and `rowsMade` how many rows it has made.
 
 ### Another board's outline
@@ -3124,7 +3148,8 @@ ContentsOutline(editor: editor, board: board, highlighted: next, maxHeight: 348)
 ```
 
 - **The rows are the list's**, each as its kind draws it (`contentsRow`, named by `contentsTitle`),
-  less their marks, which are the board shown's: validation checks only it.
+  less their marks, which are the board shown's: validation checks only it. A board under its
+  owner's row in the list is this outline too.
 - **Made once, kept while the board is as it was.** The first read makes every row of the board;
   another is taken back while the board's revision is unchanged and it's on the path to the board
   shown (showing a board forgets the outlines of boards off its path). A read after a commit that
@@ -3138,7 +3163,7 @@ ContentsOutline(editor: editor, board: board, highlighted: next, maxHeight: 348)
 - **`ContentsOutline(editor:board:highlighted:maxHeight:onPick:)`** shows it, for a small panel:
   one line a row, 24 points each, as tall as its rows up to `maxHeight`, past which it scrolls
   (only the rows in view are made into views); nested rows behind a disclosure triangle, collapsed
-  until it's opened, as in the list; `highlighted`'s row tinted as a hovered row is in the list,
+  until it's opened, as in the list, a board under its owner's row too, read once it's opened; `highlighted`'s row tinted as a hovered row is in the list,
   and the row under the pointer lit. A click on a row picks its shape (`onPick`), and what that
   does is the host's. It opens at the top, as data-canvas's menus do (scrolling a lazy stack to a
   row far down lays out the rows before it: some 70 ms to the last of 10,000). Nothing without the
@@ -5537,7 +5562,8 @@ the board above instead, VS Code's siblings; the owner chose what's in the crumb
   crumb's) and the shape highlighted there, nil on the board shown's; the menu is nil for the board
   shown while it has no shapes (kept as commits change it, `shownIsEmpty`, so the path never reads
   the document), and without the table of contents, whose rows a menu shows. The rows are the table of contents' with nothing selected, each as its kind draws
-  it, nested rows behind a disclosure triangle.
+  it, nested rows behind a disclosure triangle, a subboard's its board's rows, so a menu reaches
+  any shape below its board too.
 - **Picking a row** closes the menu, then goes into its shape if its kind opens its board
   (`opensBoard`: `editor.goInto`, as following a mention of a subboard does), and else to it, shown
   selected on its board (`editor.goTo`). Either is one step back, so ⌘[ returns. The highlighted
