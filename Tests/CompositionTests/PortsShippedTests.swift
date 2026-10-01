@@ -12,6 +12,7 @@ import Mentions
 import Schemas
 import Selection
 import StickyNotes
+import Subboards
 import TestKit
 import Titles
 import Validation
@@ -342,20 +343,16 @@ extension EditorHarness {
             expectEqual(opened.editor.document[arrow]?.typed(as: Arrow.self)?.props.end.binding?.shapeID, bound)
         }
     },
-    test("arrows on no channel keep none: between rectangles the board writes format 1, as the app without arrow-ports does, byte for byte") {
+    test("arrows on no channel keep none: between subboards the board writes format 1, as the app without arrow-ports does, byte for byte") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let h = shipped([], pasteboard)
-        for x in [200.0, 600] {
-            h.key("r")
-            h.click(at: CGPoint(x: x, y: 200))
-        }
-        let rectangles = h.editor.document.shapes.map(\.id)
-        expectEqual(rectangles.count, 2)
+        let subboards = [200.0, 600].map { x in h.add(Subboard(frame: CGRect(x: x, y: 200, width: 240, height: 160))) }
+        expectEqual(h.editor.document.shapes.count, 2)
         func bound(_ id: ShapeID) -> ArrowTerminal {
             .bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))
         }
-        h.add(Arrow(start: bound(rectangles[0]), end: bound(rectangles[1])))
+        h.add(Arrow(start: bound(subboards[0]), end: bound(subboards[1])))
         let data = try BoardCodec(registry: h.editor.registry).encode(h.editor.document)
         let json = try JSONDecoder().decode(JSONValue.self, from: data)
         expectEqual(json["format"], 1)

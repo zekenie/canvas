@@ -302,7 +302,7 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
         let listed = try awaitResult { try await commands.run("kinds", [:], nil) }.arrayValue ?? []
         var kinds: [String: JSON] = [:]
         for kind in listed where kind["drawable"] == true { kinds[kind["kind"]?.stringValue ?? "?"] = kind }
-        expect(kinds.count >= 4, "the shipped kinds: \(kinds.keys.sorted())")
+        expect(kinds.count >= 3, "the shipped kinds: \(kinds.keys.sorted())")
         /// A kind's channels, each with the sides an edge may leave it by on it.
         @MainActor func channels(_ kind: String) -> [String: Set<String>] {
             var sides: [String: Set<String>] = [:]

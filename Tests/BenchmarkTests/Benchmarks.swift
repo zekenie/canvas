@@ -14,7 +14,6 @@ import Geometry
 import LanguageModels
 import Locking
 import Mentions
-import Rectangles
 import Schemas
 import Selection
 import Snapping
@@ -146,22 +145,23 @@ enum Budget {
     static let offscreenBoard = 1.0
 }
 
-/// Notes, subboards, rectangles and schema cards in a grid, with an arrow from every fourth note to
+/// Notes, subboards and schema cards in a grid, with an arrow from every fourth note to
 /// the note after it. Every other note has a title, so frames draw pills and boards save and open
 /// added values; every subboard has a title, which its card draws (a subboard shows no pill), and an empty board, which
-/// the file doesn't keep; every rectangle is locked, so frames draw lock chips; every schema card
+/// the file doesn't keep; every tenth shape is a locked note that mentions nothing, so frames draw lock chips (they're at the back
+/// of the board's order, so its first note is the first of the ones that mention); every schema card
 /// has a schema of its own, so frames read no card's schema again however many different ones there
 /// are; and three notes in ten mention two shapes, so frames draw pills: a subboard (the first 100
 /// of them the first subboard, `mentionedSubboard`, the rest the subboard before them) and a shape
 /// that isn't on the board, which shows as missing.
 @MainActor func generatedBoard(shapes count: Int) -> CanvasDocument {
-    var shapes: [AnyShapeRecord] = []
+    var shapes: [AnyShapeRecord] = [], lockedNotes: [AnyShapeRecord] = []
     let columns = Int(Double(count).squareRoot().rounded(.up))
     var previousNote: ShapeID?
     var firstSubboard: ShapeID?, lastSubboard: ShapeID?
     var notes = 0, mentioning = 0
     var i = 0
-    while shapes.count < count {
+    while shapes.count + lockedNotes.count < count {
         let origin = CGPoint(x: (i % columns) * 260, y: (i / columns) * 260)
         switch i % 10 {
         case 0, 1:
@@ -171,9 +171,10 @@ enum Budget {
             if firstSubboard == nil { firstSubboard = subboard.id }
             lastSubboard = subboard.id
         case 2:
-            var rectangle = AnyShapeRecord(ShapeRecord(Rectangle(frame: CGRect(origin: origin, size: CGSize(width: 160, height: 120)))))
-            rectangle[LockedProperty.self] = true
-            shapes.append(rectangle)
+            var locked = AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(origin: origin, size: CGSize(width: 160, height: 120)),
+                                                               text: MentionText(plain: "Note \(i): locked, and nobody mentions it"))))
+            locked[LockedProperty.self] = true
+            lockedNotes.append(locked)
         case 9:
             var schema = SchemaCard(frame: CGRect(origin: origin, size: SchemaCard.defaultSize))
             schema.schema.text = #"{"title": "Record \#(i)", "type": "object", "properties": {"name": {"type": "string"}, "count\#(i)": {"type": "integer"}, "tags": {"type": "array", "items": {"type": "string"}}}, "required": ["name"]}"#
@@ -191,7 +192,7 @@ enum Budget {
             var note = ShapeRecord(StickyNote(frame: CGRect(origin: origin, size: StickyNote.defaultSize), text: text))
             note[TitleProperty.self] = i % 2 == 0 ? "Title \(i)" : nil
             shapes.append(AnyShapeRecord(note))
-            if let previousNote, i % 4 == 0, shapes.count < count {
+            if let previousNote, i % 4 == 0, shapes.count + lockedNotes.count < count {
                 let bound = { (id: ShapeID) in ArrowTerminal.bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)) }
                 shapes.append(AnyShapeRecord(ShapeRecord(Arrow(start: bound(previousNote), end: bound(note.id)))))
             }
@@ -199,17 +200,17 @@ enum Budget {
         }
         i += 1
     }
-    return CanvasDocument(shapes: shapes)
+    return CanvasDocument(shapes: shapes + lockedNotes)
 }
 
-/// Rectangles in a grid, which can't be mentioned, and three notes that can: one at the top left
-/// (`owner`), one in the middle and one at the bottom right (`others`).
+/// Empty notes in a grid, which can't be mentioned (they have no name), and three notes that can: one
+/// at the top left (`owner`), one in the middle and one at the bottom right (`others`).
 @MainActor func sparseBoard(shapes count: Int) -> (document: CanvasDocument, owner: ShapeID, others: [ShapeID]) {
     let columns = Int(Double(count).squareRoot().rounded(.up))
     var shapes: [AnyShapeRecord] = []
     for i in 0..<count - 3 {
         let origin = CGPoint(x: (i % columns) * 260, y: (i / columns) * 260)
-        shapes.append(AnyShapeRecord(ShapeRecord(Rectangle(frame: CGRect(origin: origin, size: CGSize(width: 160, height: 120))))))
+        shapes.append(AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(origin: origin, size: CGSize(width: 160, height: 120)), text: ""))))
     }
     let far = CGFloat(columns) * 260
     let notes = [CGPoint(x: -300, y: -300), CGPoint(x: far / 2, y: far / 2), CGPoint(x: far, y: far)].map { origin in
@@ -419,7 +420,7 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
                 editor.transact { $0.update(note.id) { $0.box = $0.box?.offsetBy(dx: 1, dy: step) } }
             }) { _ = editor.validation?.results }
             // ⌘A, and a drag from a note, as a user moves the whole board: every shape moves on every
-            // drag event (but the locked rectangles, and the arrows with their notes).
+            // drag event (but the locked notes, and the arrows with their notes).
             let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
             _ = h.editor.validation?.results
             // A drag of the subboard the first 100 mentioning notes mention: each event moves it, and
@@ -744,9 +745,9 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let clock = ContinuousClock()
         for size in sizes {
-            // Rectangles 60 × 40, 96 apart in rows of 125: 10,000 fill 12,000 × 7,680, all in view at 10%.
+            // Empty notes 60 × 40, 96 apart in rows of 125: 10,000 fill 12,000 × 7,680, all in view at 10%.
             let shapes = (0..<size).map { i in
-                AnyShapeRecord(ShapeRecord(Rectangle(frame: CGRect(x: CGFloat(i % 125) * 96, y: CGFloat(i / 125) * 96, width: 60, height: 40))))
+                AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(x: CGFloat(i % 125) * 96, y: CGFloat(i / 125) * 96, width: 60, height: 40), text: "")))
             }
             let h = EditorHarness { CanvasEditor(registry: registry, document: CanvasDocument(shapes: shapes), scheduler: $0) }
             h.editor.viewportDidResize(to: viewport)
@@ -804,7 +805,7 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
                 h.move(to: dot + CGPoint(x: CGFloat(step % 7) - 3, y: 0))
             }
             // Pressed there and dragged round a circle over the rows in view: notes, which take the
-            // arrow, and subboards, rectangles and schema cards, which don't.
+            // arrow, and subboards and schema cards, which don't.
             let around = { (turn: Int) in
                 CGPoint(x: 700 + 300 * cos(CGFloat(turn) * .pi / 21), y: 450 + 300 * sin(CGFloat(turn) * .pi / 21))
             }

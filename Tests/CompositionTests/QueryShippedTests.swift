@@ -38,7 +38,7 @@ struct StoryQuery {
     static let table: [StoryQuery] = [
         StoryQuery(1, "sticky-note", .shapes("C, Y, N2, A, U, N1, L")),
         StoryQuery(2, "*", .shapes("P, C, F, Y, N2, A, U, N1, W, S, V, R1, R2, L")),
-        StoryQuery(3, "subboard, rectangle", .shapes("P, F, W")),
+        StoryQuery(3, "subboard, schema-card", .shapes("P, F, W, S, V")),
         StoryQuery(4, #""Checkout""#, .shapes("C")),
         StoryQuery(4, #"sticky-note"Checkout""#, .shapes("C")),
         StoryQuery(5, #""Order""#, .shapes("S")),
@@ -91,7 +91,7 @@ struct StoryQuery {
         StoryQuery(46, ":invalid", .shapes("V")),
         StoryQuery(46, ":warned", .shapes("")),
         StoryQuery(47, #""Payments" sticky-note[locked]"#, .shapes("Y")),
-        StoryQuery(48, ":is(subboard, rectangle):edge-from(*)", .shapes("P")),
+        StoryQuery(48, ":is(subboard, schema-card):edge-from(*)", .shapes("P")),
         StoryQuery(49, "sticky-note:edge-to(*, note-link)", .shapes("A")),
         StoryQuery(50, #"[title="Chekout"]"#, .shapes("")),
         StoryQuery(51, "sticky-note :selected", .refused(.straySpace)),
@@ -179,7 +179,7 @@ struct StoryQuery {
         expectEqual(try refusal("subboard :selected")?.hint,
                     "Write them together for one shape: subboard:selected; for a shape inside it: subboard *:selected.")
         let spatial = try require(try refusal(#":inside("Warehouse")"#))
-        expect(spatial.message.hasPrefix("Warehouse is a rectangle, which holds no board"), "\(spatial)")
+        expect(spatial.message.hasPrefix("Warehouse is a schema-card, which holds no board"), "\(spatial)")
         expectEqual(spatial.hint, "The kinds that hold boards: subboard.")
         // Beside the title like it, that mentions point at shapes that aren't there, which :dangling finds.
         let gone = try require(try refusal(#":mentions("Old ledger")"#))

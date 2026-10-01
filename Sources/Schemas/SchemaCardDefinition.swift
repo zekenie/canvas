@@ -97,10 +97,9 @@ enum SchemaStyle {
     /// under the other stay apart.
     static func highlightFill(_ line: CGRect) -> CGRect { line.insetBy(dx: 0, dy: 0.5) }
     /// The row's symbol in the table of contents, and its ports' dots (`SchemaLink.color`): magenta
-    /// (hue 314°), clear of the subboard's indigo (241°) and the line tool's, of red, orange and
-    /// green (what validation and snapping say), of the note's yellow and its links' amber, the
-    /// rectangles' teal and the system accent, so color tells a schema from a board. 5.1:1 on
-    /// white, as the indigo was.
+    /// (hue 314°), clear of the subboard's indigo (241°), of red, orange and green (what validation
+    /// and snapping say), of the note's yellow and its links' amber, and the system accent, so color
+    /// tells a schema from a board. 5.1:1 on white, as the indigo was.
     static let accent = NSColor(srgbRed: 0.75, green: 0.18, blue: 0.62, alpha: 1)
 
     /// The description's style, shared by the render and the editor, so its text and its pills don't

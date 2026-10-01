@@ -452,7 +452,7 @@ public final class ContentsState {
     /// The shape's row as its kind makes it, else its kind's label, called what `ContentsTitles`
     /// names it if it's a `ContentsLabel`. A kind whose rows another plugin names has its label as a
     /// placeholder, dimmed until the shape is named, as an untitled note's is: twenty unnamed
-    /// rectangles don't read as named "Rectangle". A kind nobody names (an arrow) has its label at
+    /// shapes of a kind don't read as named after it. A kind nobody names (an arrow) has its label at
     /// full strength: it's all such a shape is called.
     private func resolvedRow(of record: AnyShapeRecord, kind: KindRows) -> ResolvedRow {
         let fallback = kind.title == nil ? ContentsLabel(kind.name) : ContentsLabel("", placeholder: kind.name)

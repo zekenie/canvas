@@ -34,7 +34,7 @@ import Titles
     try run(builtExecutable("CanvasCLI"), ["--socket", server.path] + arguments, input: input)
 }
 
-/// Notes, a rectangle and a subboard, joined: notes on their channel (once from and to named
+/// Notes and two subboards, joined: notes on their channel (once from and to named
 /// sides), and two plain edges, one between kinds without ports and one from a note to one, which
 /// has to say so.
 let diagram = #"""
@@ -42,7 +42,7 @@ sticky-note "Web" text: "Browser app"
 sticky-note "API" right of "Web" text: "Public API"
 sticky-note "Jobs" below "API" text: "Background work"
 sticky-note "Mail" right of "Jobs" text: "Sends email"
-rectangle "Backend" below "Jobs" size: 600x200
+subboard "Backend" below "Jobs" size: 600x200
 subboard "Cache" left of "Backend"
 edge "Web" -> "API"
 edge "Jobs" -> "Mail" from: right to: left
@@ -175,15 +175,15 @@ edge "API" -> "Cache" channel: none
         expectEqual(boards.compactMap { $0["id"]?.intValue }, [first.number, second.number])
         expectEqual(boards.last?["path"], "/tmp/Plans For Q4.canvasboard")
         expectEqual(boards.map { $0["frontmost"] }, [false, false])
-        let ambiguous = try canvas(server, ["draw", "rectangle"])
+        let ambiguous = try canvas(server, ["draw", "sticky-note"])
         expectEqual(ambiguous.status, 1)
         expectEqual(try JSON(text: ambiguous.error)["error"]?["reason"], "ambiguous_board")
-        expectEqual(try canvas(server, ["draw", "rectangle", "--board", "\(second.number)"]).status, 0)
-        expectEqual(try canvas(server, ["draw", "rectangle", "--board", "/tmp/Plans For Q4.canvasboard"]).status, 0)
-        expectEqual(try canvas(server, ["--board", second.displayName, "draw", "rectangle"]).status, 0)
+        expectEqual(try canvas(server, ["draw", "sticky-note", "--board", "\(second.number)"]).status, 0)
+        expectEqual(try canvas(server, ["draw", "sticky-note", "--board", "/tmp/Plans For Q4.canvasboard"]).status, 0)
+        expectEqual(try canvas(server, ["--board", second.displayName, "draw", "sticky-note"]).status, 0)
         expectEqual(second.editor.document.shapes.count, 3)
         expectEqual(first.editor.document.shapes.count, 0)
-        let missing = try canvas(server, ["draw", "rectangle", "--board", "Nope"])
+        let missing = try canvas(server, ["draw", "sticky-note", "--board", "Nope"])
         expectEqual(try JSON(text: missing.error)["error"]?["reason"], "unknown_board")
     },
     test("a board command's result says which board it worked on, as boards lists it; an app command's doesn't") {
@@ -193,13 +193,13 @@ edge "API" -> "Cache" channel: none
         let server = try startCommandServer(boards: [first, second], frontmost: first)
         defer { server.stop() }
         let listed = try JSON(text: canvas(server, ["boards"]).output).arrayValue ?? []
-        let front = try JSON(text: canvas(server, ["draw", "rectangle"]).output)
+        let front = try JSON(text: canvas(server, ["draw", "sticky-note"]).output)
         expectEqual(front["board"], ["id": .number(Double(first.number)), "name": .string(first.displayName), "shows": "root", "showsPath": ["root"]])
         for key in ["id", "name", "shows", "showsPath"] { expectEqual(front["board"]?[key], listed.first?[key], key) }
-        let named = try JSON(text: canvas(server, ["draw", "rectangle", "--board", "\(second.number)"]).output)
+        let named = try JSON(text: canvas(server, ["draw", "sticky-note", "--board", "\(second.number)"]).output)
         expectEqual(named["board"]?["id"], .number(Double(second.number)))
         expect(named["changes"] != nil && named["warnings"] != nil, "beside what the command said")
-        let kinds = try JSON(text: canvas(server, ["kinds", "rectangle"]).output)
+        let kinds = try JSON(text: canvas(server, ["kinds", "sticky-note"]).output)
         expect(kinds.arrayValue != nil, "a list, which has no board")
         let status = try JSON(text: canvas(server, ["status"]).output)
         expectEqual(status["board"], nil)
@@ -269,9 +269,9 @@ edge "API" -> "Cache" channel: none
         expectEqual(said["changes"]?.arrayValue?.count, 10)
         expectEqual(board.editor.document.shapes.count, 0)
         expect(!board.isDocumentEdited)
-        let argument = try canvas(server, ["draw", #"rectangle "Zone" size: 400x200"#])
+        let argument = try canvas(server, ["draw", #"sticky-note "Zone" size: 400x200"#])
         expectEqual(argument.status, 0, argument.error)
-        expectEqual(board.editor.document.shapes.map(\.kind), ["rectangle"])
+        expectEqual(board.editor.document.shapes.map(\.kind), ["sticky-note"])
     },
     test("a script canvas draw refuses changes nothing, and says why on standard error: each line's problem, the first leading") {
         try configureBoards()
@@ -282,7 +282,7 @@ edge "API" -> "Cache" channel: none
         let result = try draw("""
             sticky-note "A" text: "a"
             sticky-note "B" right of "A" locked: maybe
-            rectangle "C" below "A" colr: red
+            sticky-note "C" below "A" colr: red
             """, on: board, server)
         expectEqual(result.status, 1)
         expectEqual(result.output, "")
@@ -295,7 +295,7 @@ edge "API" -> "Cache" channel: none
         let each = error["errors"]?.arrayValue ?? []
         expectEqual(each.map { $0["line"] }, [2, 3])
         expectEqual(each.map { $0["reason"] }, ["invalid_value", "unknown_attribute"])
-        expectEqual(each.last?["statement"], #"rectangle "C" below "A" colr: red"#)
+        expectEqual(each.last?["statement"], #"sticky-note "C" below "A" colr: red"#)
         expectEqual(board.editor.document.shapes.count, 0)
         let text = try draw(#"sticky-note "A" rigth of "B""#, on: board, server, ["--format", "text"])
         expectEqual(text.error, "canvas: line 1: sticky-note \"A\": rigth isn't a placement\n  sticky-note \"A\" rigth of \"B\"\nhint: did you mean right?\n")
@@ -317,19 +317,19 @@ edge "API" -> "Cache" channel: none
         let help = try canvas(server, ["help"]).output
         for command in ["status", "boards", "draw", "kinds"] { expect(help.contains("\n  \(command) "), help) }
     },
-    test("canvas draw says what a habit meant, refuses a kind its tool draws by hand, and deletes an arrow with the shape it leaves") {
+    test("canvas draw says what a habit meant, refuses a kind no tool places, and deletes an arrow with the shape it leaves") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
         // Another language's word for a shape is told the kind like it; its word for a connection, the edge.
         let word = try refusedInProcess(#"note "Idea" text: "Try a cache""#, on: editor)
         expectEqual(word.reason, "unknown_kind")
-        expectEqual(word.hint, #"did you mean sticky-note? the kinds drawn here: rectangle, schema-card, sticky-note, subboard; a statement starts with its kind, as in sticky-note "A""#)
+        expectEqual(word.hint, #"did you mean sticky-note? the kinds drawn here: schema-card, sticky-note, subboard; a statement starts with its kind, as in sticky-note "A""#)
         expectEqual(try refusedInProcess(#"link "A""#, on: editor).hint,
-                    #"to join two shapes, write edge "A" -> "B"; the kinds drawn here: rectangle, schema-card, sticky-note, subboard"#)
-        // A kind its tool draws by hand.
-        let line = try refusedInProcess(#"polyline "Path""#, on: editor)
-        expectEqual(line.reason, "not_placeable")
-        expectEqual(line.message, "a polyline isn't drawn on its own: its tool (Line) draws one by hand, so a script can't place one")
+                    #"to join two shapes, write edge "A" -> "B"; the kinds drawn here: schema-card, sticky-note, subboard"#)
+        // A kind no tool places: an arrow is an edge.
+        let placing = try refusedInProcess(#"arrow "A""#, on: editor)
+        expectEqual(placing.reason, "not_placeable")
+        expectEqual(placing.hint, #"to join two shapes, write edge "A" -> "B""#)
         // A delete takes an arrow that leaves the shape for empty canvas.
         _ = try drawnInProcess(#"sticky-note "Old""#, on: editor)
         let old = try require(editor.document.shapes.first { editor.registry.title(of: $0) == "Old" })
@@ -378,7 +378,7 @@ edge "API" -> "Cache" channel: none
         let text = try canvas(server, ["boards", "--format", "text"]).output
         expect(text.contains("shows") && text.contains(q.id.description), text)
 
-        let drawn = try canvas(server, ["draw", #"rectangle "E""#])
+        let drawn = try canvas(server, ["draw", #"sticky-note "E""#])
         expectEqual(drawn.status, 0, drawn.error)
         expectEqual(try JSON(text: drawn.output)["board"]?["shows"], .string(q.id.description), "it says where it drew")
         expectEqual(board.editor.document.shapes.count, 2, "on the board shown")

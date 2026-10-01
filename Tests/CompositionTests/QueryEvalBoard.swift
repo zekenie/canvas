@@ -9,7 +9,6 @@ import Locking
 import Mentions
 import Ports
 import Queries
-import Rectangles
 import Schemas
 import Selection
 import StickyNotes
@@ -30,7 +29,7 @@ import Titles
 //       note "Roadmap Q4"           Ship @Identity first, then @Billing
 //       note (untitled, …E0006)     Ask legal about GDPR
 //       note "Launch checklist"     Docs, status page, on-call (locked)
-//       rectangle "Frontend" → rectangle "Backend" → rectangle "Database"   (plain arrows)
+//       schema-card "Frontend" → schema-card "Backend" → schema-card "Database"   (plain arrows)
 //       schema-card "User" → schema-card "Account"                          (schema link)
 //       Roadmap Q4 → Launch checklist                                       (note link)
 //     Identity's board:
@@ -38,28 +37,28 @@ import Titles
 //       note "OAuth"                Google and GitHub providers
 //       note "Sessions"             Redis, 24 h TTL
 //       note (untitled, …E0104)     TODO: rotate signing keys
-//       rectangle "Login page" → rectangle "Token store"                    (plain arrow)
+//       schema-card "Login page" → schema-card "Token store"                    (plain arrow)
 //       Auth service → Sessions, OAuth → Auth service                       (note links)
 //       schema-card "Session", subboard "Legacy auth"
 //     Legacy auth's board (inside Identity):
 //       note "LDAP bridge"          Deprecated; remove in 2027 (locked)
 //       note "Password reset"       Emails a link; signs in through @Auth
-//       rectangle "Old DB", Password reset → Old DB                          (plain arrow)
+//       schema-card "Old DB", Password reset → Old DB                          (plain arrow)
 //     Billing's board:
 //       note "Payments API"         Stripe webhooks; refunds through @Refunds
 //       note "Refunds"              Manual over $500
 //       note "Pricing"              Three tiers
 //       note (untitled, …E0304)     Retry failed charges nightly
 //       schema-card "Invoice" → schema-card "Customer"                      (schema link)
-//       Payments API → Refunds (note link), Payments API → rectangle "Stripe" (plain arrow)
+//       Payments API → Refunds (note link), Payments API → schema-card "Stripe" (plain arrow)
 //       subboard "Invoices"
 //     Invoices' board (inside Billing):
 //       note "Invoice PDFs"         Rendered for @Payments API
 //       note "Dunning"              Three reminders, then suspend; checks @Auth service
 //       note "Tax"                  VAT by country (locked)
-//       rectangle "PDF renderer", Invoice PDFs → PDF renderer               (plain arrow)
+//       schema-card "PDF renderer", Invoice PDFs → PDF renderer               (plain arrow)
 //     Infra's board:
-//       rectangle "Kubernetes" → rectangle "Postgres", Kubernetes → rectangle "Redis"   (plain arrows)
+//       schema-card "Kubernetes" → schema-card "Postgres", Kubernetes → schema-card "Redis"   (plain arrows)
 //       note "Backups"              Nightly to S3
 //       Backups → On-call                                                   (note link)
 //       note "On-call"              PagerDuty rotation; see @Launch checklist
@@ -150,13 +149,6 @@ enum QueryEvalBoard {
                 return AnyShapeRecord(subboard)
             }
         }
-        func rectangle(_ id: ShapeID, _ title: String) -> Placed {
-            { origin in
-                var rectangle = ShapeRecord(id: id, Rectangle(frame: CGRect(origin: origin, size: CGSize(width: 240, height: 160))))
-                rectangle[TitleProperty.self] = title
-                return AnyShapeRecord(rectangle)
-            }
-        }
         func card(_ id: ShapeID, _ schema: String) -> Placed {
             { origin in
                 var props = SchemaCard(frame: CGRect(origin: origin, size: SchemaCard.defaultSize), schema: "")
@@ -164,6 +156,9 @@ enum QueryEvalBoard {
                 return AnyShapeRecord(ShapeRecord(id: id, props))
             }
         }
+        /// A box of the file's architecture diagrams, joined by plain arrows: a card for a record of
+        /// that name.
+        func box(_ id: ShapeID, _ title: String) -> Placed { card(id, schema(title, ["id"])) }
         func text(_ runs: MentionRun...) -> MentionText { MentionText(runs) }
         /// A board: its shapes five to a row, and its arrows, each made against those shapes, in the
         /// order `boards` lists them.
@@ -190,7 +185,7 @@ enum QueryEvalBoard {
                                                  .mention(billing, label: "Billing"))),
                 note(gdpr, nil, MentionText(plain: "Ask legal about GDPR")),
                 note(launch, "Launch checklist", MentionText(plain: "Docs, status page, on-call"), locked: true),
-                rectangle(frontend, "Frontend"), rectangle(backend, "Backend"), rectangle(database, "Database"),
+                box(frontend, "Frontend"), box(backend, "Backend"), box(database, "Database"),
                 card(user, schema("User", ["id", "email"])), card(account, schema("Account", ["plan"])),
             ], arrows: [
                 (frontendToBackend, ConnectionRequest(from: frontend, to: backend)),
@@ -204,7 +199,7 @@ enum QueryEvalBoard {
                     note(oauth, "OAuth", MentionText(plain: "Google and GitHub providers")),
                     note(sessions, "Sessions", MentionText(plain: "Redis, 24 h TTL")),
                     note(rotateKeys, nil, MentionText(plain: "TODO: rotate signing keys")),
-                    rectangle(login, "Login page"), rectangle(tokenStore, "Token store"),
+                    box(login, "Login page"), box(tokenStore, "Token store"),
                     card(session, schema("Session", ["token", "expires"])), subboard(legacy, "Legacy auth"),
                 ], arrows: [
                     (loginToTokenStore, ConnectionRequest(from: login, to: tokenStore)),
@@ -214,7 +209,7 @@ enum QueryEvalBoard {
                 legacy: board(legacy, [
                     note(ldap, "LDAP bridge", MentionText(plain: "Deprecated; remove in 2027"), locked: true),
                     note(passwordReset, "Password reset", text(.text("Emails a link; signs in through "), .mention(auth, label: "Auth"))),
-                    rectangle(oldDB, "Old DB"),
+                    box(oldDB, "Old DB"),
                 ], arrows: [(resetToOldDB, ConnectionRequest(from: passwordReset, to: oldDB))]),
                 billing: board(billing, [
                     note(paymentsAPI, "Payments API", text(.text("Stripe webhooks; refunds through "), .mention(refunds, label: "Refunds"))),
@@ -222,7 +217,7 @@ enum QueryEvalBoard {
                     note(pricing, "Pricing", MentionText(plain: "Three tiers")),
                     note(retryCharges, nil, MentionText(plain: "Retry failed charges nightly")),
                     card(invoice, schema("Invoice", ["number", "total"])), card(customer, schema("Customer", ["name", "email"])),
-                    rectangle(stripe, "Stripe"), subboard(invoices, "Invoices"),
+                    box(stripe, "Stripe"), subboard(invoices, "Invoices"),
                 ], arrows: [
                     (invoiceToCustomer, ConnectionRequest(from: invoice, to: customer, channel: SchemaLink.id)),
                     (paymentsToRefunds, ConnectionRequest(from: paymentsAPI, to: refunds, channel: NoteLink.id)),
@@ -232,10 +227,10 @@ enum QueryEvalBoard {
                     note(invoicePDFs, "Invoice PDFs", text(.text("Rendered for "), .mention(paymentsAPI, label: "Payments API"))),
                     note(dunning, "Dunning", text(.text("Three reminders, then suspend; checks "), .mention(authService, label: "Auth service"))),
                     note(tax, "Tax", MentionText(plain: "VAT by country"), locked: true),
-                    rectangle(renderer, "PDF renderer"),
+                    box(renderer, "PDF renderer"),
                 ], arrows: [(pdfsToRenderer, ConnectionRequest(from: invoicePDFs, to: renderer))]),
                 infra: board(infra, [
-                    rectangle(kubernetes, "Kubernetes"), rectangle(postgres, "Postgres"), rectangle(redis, "Redis"),
+                    box(kubernetes, "Kubernetes"), box(postgres, "Postgres"), box(redis, "Redis"),
                     note(backups, "Backups", MentionText(plain: "Nightly to S3")),
                     note(onCall, "On-call", text(.text("PagerDuty rotation; see "), .mention(launch, label: "Launch checklist"))),
                     note(authProxy, "Auth proxy", text(.text("Envoy in front of "), .mention(authService, label: "Auth service"))),

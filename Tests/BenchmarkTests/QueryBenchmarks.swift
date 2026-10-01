@@ -175,7 +175,7 @@ func arrow(from start: ShapeID, to end: ShapeID) -> AnyShapeRecord {
     return AnyShapeRecord(ShapeRecord(Arrow(start: bound(start), end: bound(end))))
 }
 
-/// A generated board's notes, subboards, rectangles and cards (not its arrows), each joined to the
+/// A generated board's notes, subboards and cards (not its arrows), each joined to the
 /// next in the board's order by an arrow bound at both ends: a chain through every note, and every
 /// other shape an arrow can end on, one component of them all, `count` shapes with the arrows.
 @MainActor func chainedBoard(shapes count: Int) -> CanvasDocument {

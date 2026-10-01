@@ -22,25 +22,21 @@ import Titles
 // being edited is drawn in full whatever the zoom; and a mention's pill is no face on a skeleton.
 // The kinds' own tests hold what each skeleton looks like; here, the pieces together.
 
-/// A subboard, a titled note that mentions it, another note with an arrow to it, a locked
-/// rectangle, a schema card and a line: every word on the board said through `say`, so two boards
+/// A subboard, a titled note that mentions it, another note with an arrow to it, a locked empty
+/// note and a schema card: every word on the board said through `say`, so two boards
 /// that say the same number of letters, in different letters, differ only where text is drawn.
 @MainActor
 private struct SkeletonBoard {
-    let subboard = ShapeID(), note = ShapeID(), other = ShapeID(), arrow = ShapeID(), rectangle = ShapeID(), card = ShapeID()
-    let line = ShapeID()
+    let subboard = ShapeID(), note = ShapeID(), other = ShapeID(), arrow = ShapeID(), locked = ShapeID(), card = ShapeID()
     /// Letters no other test's notes say, so the canvas has built nothing of this note's text.
     let token = String(UUID().uuidString.prefix(8))
 
     static let subboardFrame = CGRect(x: 100, y: 100, width: 240, height: 160)
     static let noteFrame = CGRect(x: 400, y: 100, width: 200, height: 200)
     static let otherFrame = CGRect(x: 700, y: 100, width: 200, height: 200)
-    static let rectangleFrame = CGRect(x: 100, y: 400, width: 160, height: 120)
+    static let lockedFrame = CGRect(x: 100, y: 400, width: 160, height: 120)
     /// Between the notes, where the arrow runs.
     static let arrowRect = CGRect(x: 610, y: 180, width: 80, height: 40)
-    /// A zigzag beside the schema card, and what it spans.
-    static let linePoints = [CGPoint(x: 700, y: 450), CGPoint(x: 800, y: 550), CGPoint(x: 900, y: 450), CGPoint(x: 1000, y: 550)]
-    static let lineRect = CGRect(x: 700, y: 450, width: 300, height: 100)
 
     /// `card`: the schema card's id, if not `self.card`. Readings of cards are kept by id, whatever
     /// the editor (`SchemaReadings`), so two boards that say different things each need a card of
@@ -57,34 +53,27 @@ private struct SkeletonBoard {
             ArrowTerminal.bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))
         }
         let arrow = ShapeRecord(id: arrow, Arrow(start: bound(self.note), end: bound(self.other)))
-        let frame = Self.rectangleFrame
-        var rectangle = try editor.registry.shape("rectangle", properties: [
-            "frame": .array([.array([.number(frame.minX), .number(frame.minY)]), .array([.number(frame.width), .number(frame.height)])]),
-        ], id: rectangle)
-        rectangle[LockedProperty.self] = true
+        var locked = ShapeRecord(id: locked, StickyNote(frame: Self.lockedFrame, text: MentionText(plain: "")))
+        locked[LockedProperty.self] = true
         var card = SchemaCard(frame: CGRect(origin: CGPoint(x: 400, y: 400), size: SchemaCard.defaultSize))
         card.schema.text = #"{"title": "\#(say("Pet"))", "type": "object", "properties": {"\#(say("name"))": {"type": "string"}, "\#(say("species"))": {"type": "string"}}, "required": ["\#(say("name"))"]}"#
         card.setPrompt(SchemaPromptText(plain: say("A pet and its name")))
         let schema = ShapeRecord(id: cardID ?? self.card, card)
-        let line = try editor.registry.shape("polyline", properties: [
-            "points": .array(Self.linePoints.map { .array([.number($0.x), .number($0.y)]) }),
-        ], id: line)
         editor.transact { t in
             t.insert(subboard)
             t.insert(note)
             t.insert(other)
             t.insert(arrow)
-            t.insert(rectangle)
+            t.insert(locked)
             t.insert(schema)
-            t.insert(line)
         }
     }
 
-    var ids: [ShapeID] { [subboard, note, other, arrow, rectangle, card, line] }
+    var ids: [ShapeID] { [subboard, note, other, arrow, locked, card] }
 
-    /// Where a shape is drawn, in view points: the arrow, between the notes; the line, where it runs.
+    /// Where a shape is drawn, in view points: the arrow, between the notes.
     func rect(of id: ShapeID, in editor: CanvasEditor) -> CGRect {
-        editor.camera.toView(id == arrow ? Self.arrowRect : id == line ? Self.lineRect : editor.document[id]?.box ?? .null)
+        editor.camera.toView(id == arrow ? Self.arrowRect : editor.document[id]?.box ?? .null)
     }
 }
 
@@ -174,8 +163,8 @@ private let viewSize = CGSize(width: 320, height: 200)
         let pill = try require(editor.adornmentFrames(of: board.note).first { $0.adornment == .of(TitlePill.self) }).rect
         expect(changedPixels(fullA, fullB, in: editor.camera.toView(pill)) > 10, "the pill says its title")
 
-        // At 30%, each shape is its skeleton, where in full it's drawn otherwise (a rectangle only
-        // by its shadow, so each is looked at with a few points around it).
+        // At 30%, each shape is its skeleton, where in full it's drawn otherwise (an empty note only
+        // by its corners and its shadow, so each is looked at with a few points around it).
         editor.camera = far
         let level = editor.skeletonZoom
         let skeletons = renderBitmap(editor, size: viewSize)
@@ -190,21 +179,21 @@ private let viewSize = CGSize(width: 320, height: 200)
         // The lock: a blank disc, so unlocked (the lock open, until it fades) it looks the same; at
         // 35% the lock and the open lock differ.
         @MainActor func chip() throws -> CGRect {
-            editor.camera.toView(try require(editor.adornmentFrames(of: board.rectangle).first { $0.adornment == .of(LockChip.self) }).rect)
+            editor.camera.toView(try require(editor.adornmentFrames(of: board.locked).first { $0.adornment == .of(LockChip.self) }).rect)
         }
         /// Drawn unlocked, the lock open, then locked again.
         @MainActor func unlocked() -> NSBitmapImageRep {
-            editor.unlock([board.rectangle])
-            defer { editor.lock([board.rectangle]) }
+            editor.unlock([board.locked])
+            defer { editor.lock([board.locked]) }
             return renderBitmap(editor, size: viewSize)
         }
         let open = unlocked()
         expect(identical(skeletons, open), "the open lock, blank, is the lock: \(differences(skeletons, open))")
         let blankChip = try chip()
-        editor.unlock([board.rectangle])
+        editor.unlock([board.locked])
         said.wait(2_000)                                                               // it fades
         expect(changedPixels(skeletons, renderBitmap(editor, size: viewSize), in: blankChip) > 20, "the blank disc was drawn")
-        editor.lock([board.rectangle])
+        editor.lock([board.locked])
         editor.camera = near
         let locked = renderBitmap(editor, size: viewSize)
         expect(changedPixels(locked, unlocked(), in: try chip()) > 0, "in full, the open lock isn't the lock")

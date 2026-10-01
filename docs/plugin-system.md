@@ -70,22 +70,23 @@ Two more things hold them together:
 
 ## Your first plugin
 
-[Rectangles](../Examples/Rectangles/Rectangles.swift) is the smallest plugin you can see on the
-canvas: a kind, how it draws, and a tool that places it, with its key (R). These are all the steps it took, from
-an empty directory to a tool in the app's toolbar. A plugin of your own takes the same ones.
+Here is the smallest plugin you can see on the canvas: a kind, how it draws, and a tool that places it, with
+its key (P). A plugin like it ships nowhere, so the steps are written for a made-up one, patches, and are
+the ones any plugin took, from an empty directory to a tool in the app's toolbar. A plugin of your own
+takes the same ones.
 
 **1. Write the module.** Every plugin is a Swift module with a directory of its own:
 `Sources/<Name>`, or `Examples/<Name>` for an example. This is the whole of
-`Examples/Rectangles/Rectangles.swift`:
+`Examples/Patches/Patches.swift`:
 
 ```swift
 import AppKit
 import Canvas
 import Keyboard
 
-public struct Rectangle: BoxShapeProps {
-    public static let kind: ShapeKind = "rectangle"
-    public static let properties = Properties<Rectangle>(title: "Rectangle") {
+public struct Patch: BoxShapeProps {
+    public static let kind: ShapeKind = "patch"
+    public static let properties = Properties<Patch>(title: "Patch") {
         Property("frame", \.frame).required()
     }
     public var frame: CGRect
@@ -93,51 +94,51 @@ public struct Rectangle: BoxShapeProps {
     public init() { self.init(frame: .zero) }
 }
 
-struct RectangleDefinition {}
+struct PatchDefinition {}
 
-extension RectangleDefinition: ShapeDefinition {
-    func render(_ shape: ShapeRecord<Rectangle>, in context: RenderContext) {
-        context.fillWithShadow(CGPath(rect: shape.frame, transform: nil), .systemTeal)
+extension PatchDefinition: ShapeDefinition {
+    func render(_ shape: ShapeRecord<Patch>, in context: RenderContext) {
+        context.fillWithShadow(CGPath(roundedRect: shape.frame, cornerWidth: 12, cornerHeight: 12, transform: nil), .systemPink)
     }
 }
 
-extension RectangleDefinition: CustomSkeleton {
-    func renderSkeleton(_ shape: ShapeRecord<Rectangle>, in context: RenderContext) {
-        context.cg.setFillColor(NSColor.systemTeal.cgColor)
+extension PatchDefinition: CustomSkeleton {
+    func renderSkeleton(_ shape: ShapeRecord<Patch>, in context: RenderContext) {
+        context.cg.setFillColor(NSColor.systemPink.cgColor)
         context.cg.fill(shape.frame)
     }
 }
 
-public struct RectanglesPlugin: CanvasPlugin {
+public struct PatchesPlugin: CanvasPlugin {
     public init() {}
-    public var id: PluginID { "rectangles" }
+    public var id: PluginID { "patches" }
 
     public func register(into registrar: inout PluginRegistrar) {
-        registrar.shape(RectangleDefinition()) { rectangle in
-            let place = rectangle.placement(size: CGSize(width: 160, height: 100)) { Rectangle() }
-            rectangle.tool(label: "Rectangle", systemImage: "rectangle", shortcut: "r", placing: place)
+        registrar.shape(PatchDefinition()) { patch in
+            let place = patch.placement(size: CGSize(width: 160, height: 100)) { Patch() }
+            patch.tool(label: "Patch", systemImage: "square.dashed", shortcut: "p", placing: place)
         }
     }
 }
 ```
 
-`Rectangle` is the kind: its data, named once, with its list of properties (how a board writes it,
+`Patch` is the kind: its data, named once, with its list of properties (how a board writes it,
 and what its JSON Schema says: [Properties](#properties)) and an `init()` that sets every member to
-its default. `RectangleDefinition` says how it looks, in full and zoomed out, where the canvas draws
-every shape more simply (`CustomSkeleton`: its teal in one fill, without the shadow, where it would
+its default. `PatchDefinition` says how it looks, in full and zoomed out, where the canvas draws
+every shape more simply (`CustomSkeleton`: its pink in one fill, without the shadow, where it would
 otherwise be the core's gray: [Skeletons](#skeletons)), and a kind with a frame needs to say nothing
-else. `RectanglesPlugin` registers both, with a tool that puts a
-160 × 100 rectangle where the canvas is pressed, and R, the key that switches to it: `shortcut:` is
+else. `PatchesPlugin` registers both, with a tool that puts a
+160 × 100 patch where the canvas is pressed, and P, the key that switches to it: `shortcut:` is
 the Keyboard horizontal's, which every key is registered with ([Keyboard
 shortcuts](#keyboard-shortcuts)). [A vertical plugin](#a-vertical-plugin) goes through it part by
 part.
 
-**2. Declare it in `Package.swift`**, on one line, with its layer. Rectangles is a vertical (a
+**2. Declare it in `Package.swift`**, on one line, with its layer. Patches is a vertical (a
 feature: a kind and its tool), and the modules of this project it imports are the core and
 Keyboard, for its key:
 
 ```swift
-.target(name: "Rectangles", dependencies: ["Canvas", "Keyboard"], path: "Examples/Rectangles"), // layer: vertical
+.target(name: "Patches", dependencies: ["Canvas", "Keyboard"], path: "Examples/Patches"), // layer: vertical
 ```
 
 `path:` is only for a module outside `Sources`. The dependencies must be exactly the modules the
@@ -145,10 +146,10 @@ code imports, apart from Apple's. `./build.sh audit` checks that in about a seco
 compiling, and says what's wrong in a line:
 
 ```
-Examples/Rectangles/Rectangles.swift:3: Rectangles imports Geometry, but Package.swift doesn't list it as a dependency of Rectangles
-Rectangles lists Geometry in Package.swift but never imports it
-build.sh: Rectangles (vertical) may not depend on StickyNotes (vertical); vertical may use: foundation horizontal
-build.sh: Examples/Stars isn't a target in Package.swift
+Examples/Patches/Patches.swift:3: Patches imports Geometry, but Package.swift doesn't list it as a dependency of Patches
+Patches lists Geometry in Package.swift but never imports it
+build.sh: Patches (vertical) may not depend on StickyNotes (vertical); vertical may use: foundation horizontal
+build.sh: Examples/Patches isn't a target in Package.swift
 ```
 
 Every `./build.sh` and `./test.sh` runs it first. [The module graph](#the-module-graph) lists
@@ -158,7 +159,7 @@ everything it checks.
 `Package.swift`:
 
 ```swift
-.executableTarget(name: "RectanglesTests", dependencies: ["Canvas", "CanvasTesting", "Keyboard", "Rectangles", "TestKit"], path: "Tests/RectanglesTests"), // layer: test
+.executableTarget(name: "PatchesTests", dependencies: ["Canvas", "CanvasTesting", "Keyboard", "Patches", "TestKit"], path: "Tests/PatchesTests"), // layer: test
 ```
 
 Its `main.swift` runs its suites:
@@ -166,35 +167,34 @@ Its `main.swift` runs its suites:
 ```swift
 import TestKit
 
-runTests([rectanglesTests])
+runTests([patchesTests])
 ```
 
-and the tests drive a headless editor as a user would
-([RectanglesTests.swift](../Tests/RectanglesTests/RectanglesTests.swift)):
+and the tests drive a headless editor as a user would:
 
 ```swift
-@MainActor let rectanglesTests = Suite("Rectangles", [
-    test("R and a press place a 160 × 100 rectangle that follows the pointer") {
-        let h = try EditorHarness(plugins: [KeyboardPlugin(), RectanglesPlugin()])
-        expect(h.key("r"))
+@MainActor let patchesTests = Suite("Patches", [
+    test("P and a press place a 160 × 100 patch that follows the pointer") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), PatchesPlugin()])
+        expect(h.key("p"))
         h.press(at: CGPoint(x: 300, y: 200))
         h.drag(to: CGPoint(x: 310, y: 205))
         h.release()
-        let rectangle = try require(h.editor.document.shapes.first)
-        expectEqual(rectangle.kind, Rectangle.kind)
-        expectEqual(rectangle.box, CGRect(x: 230, y: 155, width: 160, height: 100))
+        let patch = try require(h.editor.document.shapes.first)
+        expectEqual(patch.kind, Patch.kind)
+        expectEqual(patch.box, CGRect(x: 230, y: 155, width: 160, height: 100))
         expectEqual(h.editor.currentToolID, .hand)
     },
 ])
 ```
 
 A test may use only its module, what that module depends on, and the test kits (`CanvasTesting`,
-`TestKit`). So this editor has Keyboard, which R needs, and no Selection: its default tool, which
+`TestKit`). So this editor has Keyboard, which P needs, and no Selection: its default tool, which
 placing returns to, is the Hand. A plugin that depends on Selection installs `KeyboardPlugin()` and
 `SelectionPlugin()` first in its tests, as the app does. Run them with:
 
 ```
-TEST_FILTER=Rectangles ./test.sh
+TEST_FILTER=Patches ./test.sh
 ```
 
 `./test.sh` builds every module and runs every test executable. It also fails on a `Suite` that
@@ -205,19 +205,19 @@ plugins](#testing-plugins) has the rest of the kit.
 
 - `Package.swift`: add it to Composition's dependencies.
 - [`ShippedPlugins.swift`](../Sources/Composition/ShippedPlugins.swift): import it, and add
-  `RectanglesPlugin()` to the list in `ShippedPlugins.plugins(pasteboard:model:)`. The list's order
+  `PatchesPlugin()` to the list in `ShippedPlugins.plugins(pasteboard:model:)`. The list's order
   is the toolbar's, and the order overlays draw in.
 - [`ShippedTests.swift`](../Tests/CompositionTests/ShippedTests.swift) pins the toolbar and
-  [the registry report](#the-registry): add the new tool, `"Rectangle (R)"`, and the plugin's line,
-  `rectangles          shape rectangle · tool rectangle · shortcut R → tool rectangle`.
+  [the registry report](#the-registry): add the new tool, `"Patch (P)"`, and the plugin's line,
+  `patches              shape patch · tool patch · shortcut P → tool patch`.
 
-Then `./build.sh && open build/InfiniteCanvas.app`, and press R.
+Then `./build.sh && open build/InfiniteCanvas.app`, and press P.
 
 A plugin list that doesn't register stops the app at launch, and CompositionTests fails before
 that. The error says who clashed over what; the usual one is a key some other plugin has:
 
 ```
-rectangles and stars both claim shortcut R in KeyboardShortcuts
+patches and pens both claim shortcut P in KeyboardShortcuts
 ```
 
 [The registry](#the-registry) lists every error.
@@ -228,17 +228,17 @@ Once one plugin works, the question is which piece the next feature needs.
 
 | I want to… | Use | Example |
 |---|---|---|
-| Add a shape with a frame | `BoxShapeProps`; a `ShapeDefinition` with `render`; a place tool | [Rectangles](#your-first-plugin) |
+| Add a shape with a frame | `BoxShapeProps`; a `ShapeDefinition` with `render`; a place tool | [Patches](#your-first-plugin) |
 | Define a kind's properties: how boards write it, and its JSON Schema | `static let properties = Properties<K> { Property("text", \.text) }`, and `init()`; `registry.schema(for:)` | [Properties](#a-kinds-own-properties) |
 | Bound a property (a length, a range), so a shape outside the bounds gets a validation warning | A modifier: `Property("text", \.text).maxLength(200)`, or an added property's `keywords`; Validation checks every shape against its kind's schema | [Checking shapes](#checking-shapes-against-their-schemas) |
-| Add a shape without a frame (a line, a path) | `ShapeProps`; `geometry`, `hitTest` (with its `hitMargin`) and `CustomTranslation`; a tool that inserts it | [Polylines](#a-shape-without-a-frame) |
+| Add a shape without a frame (a line, a path) | `ShapeProps`; `geometry`, `hitTest` (with its `hitMargin`) and `CustomTranslation`; a tool that inserts it | [A freehand line](#a-shape-without-a-frame) |
 | Work out a kind's geometry from other shapes (a connector) | Look them up through the `ShapeContext`: `shape(_:)`, `geometry(of:)`, `hitTest(_:shape:)` | [Arrows](../Sources/Arrows/Connectables.swift) |
-| Hit or outline a shape more exactly than its frame | Override `geometry`, `hitTest` or `indicatorPath` | [Polylines](#a-shape-without-a-frame), [StickyNotes](../Sources/StickyNotes/StickyNotes.swift)' rounded outline |
-| Draw a kind more simply zoomed out, where its text doesn't read, and cheaply, since thousands are in view | `CustomSkeleton`'s `renderSkeleton`: fills, `context.fillSkeletonText` for bars where its text is (as long as its columns, `SkeletonText.columns(of:)`), or `context.drawSkeleton(of:color:)`, the default, in a color of its own; `CustomSkeletonOutline` for an outline there that isn't its kept geometry's | [Skeletons](#skeletons), [Rectangles](#your-first-plugin) |
+| Hit or outline a shape more exactly than its frame | Override `geometry`, `hitTest` or `indicatorPath` | [A freehand line](#a-shape-without-a-frame), [StickyNotes](../Sources/StickyNotes/StickyNotes.swift)' rounded outline |
+| Draw a kind more simply zoomed out, where its text doesn't read, and cheaply, since thousands are in view | `CustomSkeleton`'s `renderSkeleton`: fills, `context.fillSkeletonText` for bars where its text is (as long as its columns, `SkeletonText.columns(of:)`), or `context.drawSkeleton(of:color:)`, the default, in a color of its own; `CustomSkeletonOutline` for an outline there that isn't its kept geometry's | [Skeletons](#skeletons), [Patches](#your-first-plugin) |
 | Make what an overlay draws, or what answers the pointer, follow what a shape shows zoomed out | `editor.drawsSkeleton(of:)` and `OverlayContext.drawsSkeleton(of:)` (each shape's level: the one being edited is in full), `OverlayContext.drawsSkeletons` (the frame's), and `EditorService.drawsSkeletonsDidChange` for a pointer held still | [Skeletons](#skeletons), [Adornments](#drawing-and-cost) |
 | Edit a shape in place, as text | `Editable`, and an `editingPlacement` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
 | Add a tool that makes no shape | `registrar.tool`, a `Tool` and a `Session` | [Eraser](#tools-and-sessions) |
-| Give a tool its key | `shortcut:` on the call that registers the tool (Keyboard's) | [Rectangles](#your-first-plugin) |
+| Give a tool its key | `shortcut:` on the call that registers the tool (Keyboard's) | [Patches](#your-first-plugin) |
 | Make a key do something, or give a menu's command its key | `registrar.shortcut(chord, "Title") { ... }`, `registrar.command(_:shortcuts:)` | [Keyboard shortcuts](#keyboard-shortcuts) |
 | Give a shape handles to drag | Selection's `HandleProviding` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
 | Edit a kind's properties beside the canvas | `x.details { DetailSection(...) }` | [Schemas](#the-full-showcase-schema-cards) |
@@ -257,7 +257,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Edit an added property in the panel, or from the menu | `details(of: P.self) { DetailSection ... }`, `contextMenu(of: P.self) { MenuItem ... }` | [Added properties](#added-properties), [a flag](#something-the-user-turns-on) |
 | Show a section in the panel only while a service says so (what mentions the shape) | `DetailSection(…).shownWhile { shape, context in … }`, at order 300 for a tab that comes and goes | [Contributing](#contributing-two-points-and-their-sugar), [Mentions](#what-mentions-a-shape) |
 | Edit text that isn't a string in the panel, with a text view of your own | A `DetailTextView` subclass adopting `DetailTextContent`, in a `DetailTextBox` | [Text of a plugin's own](#text-of-a-plugins-own-detailtextbox) |
-| Opt another plugin's kind into a concern | A bridge, which imports both; `registrar.optIn(Kind.self, to:)` for an added property | [RectangleTitles](#a-horizontal-plugin), [ValidationDetails](#a-tab-of-status-lines-from-a-bridge-validationdetails) |
+| Opt another plugin's kind into a concern | A bridge, which imports both; `registrar.optIn(Kind.self, to:)` for an added property | [PatchTitles](#a-horizontal-plugin), [ValidationDetails](#a-tab-of-status-lines-from-a-bridge-validationdetails) |
 | Keep state per editor: an engine, a cache, a timer | `registrar.service`, an `EditorService`; redo what's kept per shape for the shapes each commit's `ChangeSet` names | [Validation](../Sources/Validation/Validation.swift)'s `ValidationEngine`, [TableOfContents](../Sources/TableOfContents/ContentsState.swift)' `ContentsState` |
 | Show something small on shapes, just outside them or on a corner (a pill, a tally, a lock), on kinds you define or not | An `Adornment` type; `x.adornment`, `registrar.adornment(_:on:)` or `registrar.adornmentForEveryShape(_:where:)`, returning an `AdornmentLabel` | [Adornments](#adornments), [Titles](#a-horizontal-plugin) |
 | Let the user put a flag on a shape, and show it | An added property, a menu item that sets it, and an adornment whose label reads it | [Something the user turns on](#something-the-user-turns-on) |
@@ -321,7 +321,7 @@ definition adopts; behavior any plugin can add to any kind is an extension point
 ## Horizontal and vertical
 
 A **vertical** plugin is a feature: a shape kind and the tool that places it, or a tool on its own.
-Sticky notes, arrows, schema cards, subboards, rectangles, polylines and the eraser are verticals.
+Sticky notes, arrows, schema cards, subboards and the eraser are verticals.
 
 A **horizontal** plugin is a concern that cuts across kinds. It declares an extension point, and any
 kind can take part by contributing to it. Validity is the canonical example: *a shape can be valid
@@ -364,8 +364,8 @@ Opting in goes in one of two directions:
 
 - **The vertical imports the horizontal** and contributes from inside its own `register`.
   Schemas does this for Validation: `schema.validate { ... }`.
-- **A bridge imports both**, and neither knows the other. `RectangleTitles` gives rectangles a
-  title, though Rectangles has never heard of titles and Titles has never heard of rectangles. A
+- **A bridge imports both**, and neither knows the other. A `PatchTitles` bridge would give patches a
+  title, though Patches has never heard of titles and Titles has never heard of patches. A
   bridge may join two horizontals: `ValidationDetails` shows each shape's validation issues in an
   Issues tab of the detail panel, and `ValidationContents` marks their rows in the table of contents, though
   Validation has never heard of either, nor either of validity. `TitleNames`, `PortEdges` and
@@ -399,7 +399,7 @@ Each target is one line, with its layer:
 
 ```swift
 .target(name: "StickyNotes", dependencies: ["Canvas", "DetailPanel", "Keyboard", "Mentions", "Ports", "Selection", "TableOfContents", "Titles"]), // layer: vertical
-.target(name: "RectangleTitles", dependencies: ["Canvas", "DetailPanel", "Rectangles", "Titles"], path: "Examples/RectangleTitles"), // layer: bridge
+.target(name: "ValidationDetails", dependencies: ["Canvas", "DetailPanel", "Validation"]), // layer: bridge
 ```
 
 | Layer | May depend on | Modules |
@@ -408,8 +408,8 @@ Each target is one line, with its layer:
 | foundation | foundation | Geometry, Canvas (the core), and pure libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, and its solver) and QueryLanguage (the language [`canvas query`](#query) reads) |
 | ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
 | horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Adornments, Clipboard, Locking, Ports, Mentions, Topology, Queries, Automation, QueryCommands, LanguageModels, Boards, Snapping |
-| vertical | foundation, horizontal | Arrows, StickyNotes, Schemas, Subboards, Rectangles, Polylines, Eraser, Reordering |
-| bridge | foundation, horizontal, vertical | RectangleTitles, ValidationDetails, ValidationContents, MentionValidation, ArrowPorts, TitleNames, PortEdges, ValidationChecks, TitleQueries, BoardQueries, MentionQueries, ValidationQueries, SelectionQueries |
+| vertical | foundation, horizontal | Arrows, StickyNotes, Schemas, Subboards, Eraser, Reordering |
+| bridge | foundation, horizontal, vertical | ValidationDetails, ValidationContents, MentionValidation, ArrowPorts, TitleNames, PortEdges, ValidationChecks, TitleQueries, BoardQueries, MentionQueries, ValidationQueries, SelectionQueries |
 | composition | foundation, horizontal, vertical, bridge, wire | Composition (the shipped plugin list) |
 | app | foundation, ui, composition, wire | InfiniteCanvas |
 | cli | wire | CanvasCLI (`canvas`, an executable: it knows the wire, never the app) |
@@ -460,13 +460,13 @@ is compiled by `./test.sh`, even before anything depends on it.
 
 ## A vertical plugin
 
-[Rectangles](#your-first-plugin) is a whole vertical. What each part of it does:
+[Patches](#your-first-plugin) is a whole vertical. What each part of it does:
 
 - **The kind is its props.** `ShapeProps` values are `Equatable` and `Sendable`, and list their
   properties (`SchemaDefined`): the list makes them `Codable` and gives them a JSON Schema
   ([Properties](#properties)). `BoxShapeProps` adds a `frame`, and with it most behavior for free.
   The document stores each shape as an `AnyShapeRecord` (id, kind, props, and the values of any
-  [added properties](#added-properties)). Definitions get it typed, as `ShapeRecord<Rectangle>`.
+  [added properties](#added-properties)). Definitions get it typed, as `ShapeRecord<Patch>`.
 - **The definition is stateless.** For a box kind, only `render` is required. The rest has defaults:
 
   | Requirement | Default |
@@ -480,7 +480,7 @@ is compiled by `./test.sh`, even before anything depends on it.
   arrows, the minimap (which draws each shape as a silhouette of its outline) and the shape zoomed
   out (the core's default [skeleton](#skeletons), unless the kind draws its own) all follow.
   Override `hitTest` or `indicatorPath` only when you can do better: a sticky note outlines its
-  rounded corners (`indicatorPath`), and a line is hit only near its stroke (Polylines' `hitTest`).
+  rounded corners (`indicatorPath`), and a freehand line is hit only near its stroke (`hitTest`, [below](#a-shape-without-a-frame)).
   A `hitTest` that reaches past the outline (a stroke, a few points of slop) says how far in
   `hitMargin`: the editor asks it only about points that near. A kind that knows better than its
   geometry whether the marquee touches it (Arrows, against its arc) adopts Selection's
@@ -491,13 +491,13 @@ is compiled by `./test.sh`, even before anything depends on it.
   `ShapeContext`: `shape(_:)`, `geometry(of:)` and `hitTest(_:shape:)` keep track. Reading all of
   `context.document`, or `context.camera`, while working out a geometry ties it to every change of
   them.
-- **Conform in an extension**, as Rectangles does, for `ShapeDefinition` and its capabilities,
+- **Conform in an extension**, as Patches does, for `ShapeDefinition` and its capabilities,
   `Tool`, `Session`, `EditorService`, and an extension point that implements `check`. Swift flags a
   member that *nearly* matches a defaulted requirement (a wrong label, a missing return type) only
   in the extension that declares the conformance, and the build fails on it. Declared on the type,
   a near miss compiles and the default silently runs.
-- **The kind is stated once.** Everything registered inside `registrar.shape(...) { rectangle in ... }`
-  is stamped with `"rectangle"`: the tool's id, its report line, and any horizontal contributions.
+- **The kind is stated once.** Everything registered inside `registrar.shape(...) { patch in ... }`
+  is stamped with `"patch"`: the tool's id, its report line, and any horizontal contributions.
 - **Placements create box shapes** for place tools and Selection's double-click claim.
   `placement(size:props:)` centers a new shape on the press, brings back the default tool (Select,
   which selects the new shape), and lets it follow the pointer until release (`PlacingSession`, which
@@ -713,8 +713,8 @@ The details:
 
 A kind with a frame gets three things from it: where the shape is, what hits it, and how it moves.
 A kind without one (a line, a path, a connector) says each itself.
-[`Examples/Polylines`](../Examples/Polylines/Polylines.swift) is a freehand line: the points the
-pointer passes through while it's dragged with the Line tool (L).
+A freehand line, the points the pointer passes through while it's dragged with a Line tool, is the
+example here. It ships nowhere: this is the whole kind, and what it says itself.
 
 ```swift
 public struct Polyline: ShapeProps {
@@ -791,7 +791,7 @@ extension PolylineDefinition: CustomTranslation {
 - **Zoomed out it's the core's default [skeleton](#skeletons)**, its points a view point wide, in
   its own indigo (`CustomSkeleton`, its code shown there), at the default's cost.
 
-**The tool inserts the shape itself.** Placements make box shapes, so the Line tool starts a
+**The tool inserts the shape itself.** Placements make box shapes, so a Line tool starts a
 session, which puts the line in on the first drag (a click draws nothing, as with arrows) and adds
 a point on every drag after that:
 
@@ -959,11 +959,11 @@ shipped kind is both).
 `registry.titleIsDerived(kind)` tells the two apart: true for a kind titled by `title { … }` (a
 schema card), false for one titled only by `title()` (a note) or not at all; a kind that can be
 named opts into `TitleProperty`, so `registry.properties(for: kind)` has its key. The smallest
-bridge, [`Examples/RectangleTitles`](../Examples/RectangleTitles/RectangleTitles.swift), is one
-line, `registrar.title(Rectangle.self)`: rectangles can be named, and an unnamed one has no title;
-a second puts `TitleHeader` in the detail panel's header. The header is a function, not a
-closure: a closure would be built by SwiftUI's `ViewBuilder`, and a file that imports SwiftUI to
-have it sees SwiftUI's own `Rectangle` beside the kind. Every kind a tool places in the app can be
+bridge is one
+line, `registrar.title(Patch.self)`: patches can be named, and an unnamed one has no title;
+a second, `registrar.details(Patch.self, header: Self.header) {}`, puts `TitleHeader` in the detail panel's
+header. The header is a function, not a closure: a closure would be built by SwiftUI's
+`ViewBuilder`, and a file that imports SwiftUI for it would see SwiftUI's own types beside the kind's. Every kind a tool places in the app can be
 named, which is what [`canvas draw`](#draw) needs, since titles are the only names it has, and
 renamed or cleared by a person in the panel, since a name a script gave is theirs to change too.
 
@@ -1236,7 +1236,7 @@ of three ways:
 ```swift
 registrar.declare(TitleProperty.self)                       // the owner, TitlesPlugin; one plugin per key
 note.optIn(to: TitleProperty.self)                          // a kind, inside registrar.shape { note in ... }
-registrar.optIn(Rectangle.self, to: TitleProperty.self)     // another plugin's kind, from a bridge
+registrar.optIn(Patch.self, to: TitleProperty.self)         // another plugin's kind, from a bridge
 registrar.optInEveryShape(to: P.self, where: { !($0 is any PaintOrderAnchored) })   // every kind, or those a definition picks
 ```
 
@@ -1265,8 +1265,8 @@ the record: a note is mentioned by its title, else its text's first line
   same to a document.
 - **Copies keep them**: `record.copy(as:)` takes the values along, as it does the metadata.
 - **A placement can set one** on what it places:
-  `placement(size: size) { Rectangle() }.setting(TitleProperty.self, to: "Zone")` would name every
-  rectangle its tool places "Zone".
+  `placement(size: size) { Patch() }.setting(TitleProperty.self, to: "Zone")` would name every
+  patch its tool places "Zone".
 
 **The registry** refuses an opt-in to a property no installed plugin declares, two declarations of
 one key, a kind opted in twice (by one plugin or two), and a kind opting into a property named like
@@ -1884,7 +1884,7 @@ meaning: a tool's letter, Delete, Return, Escape, ⌘A. The core has never heard
 hands each key pressed on the canvas to the one plugin that claims key strokes, and Keyboard does.
 
 ```swift
-rectangle.tool(label: "Rectangle", systemImage: "rectangle", shortcut: "r", placing: place)            // Rectangles
+sub.tool(label: "Subboard", systemImage: "rectangle.stack", shortcut: "b", placing: place)               // Subboards
 registrar.tool(ToolDescriptor(id: .select, label: "Select", systemImage: "cursorarrow"), shortcut: "v") { _ in SelectTool() }
 registrar.command(.delete, shortcuts: [.delete, .deleteForward]) { $0.deleteSelection() }                // Selection
 registrar.shortcut(.return, "Open Selection") { $0.perform(.openSelection) }
@@ -2042,7 +2042,7 @@ The panel owns all of the chrome, and plugins fill it in:
 With nothing selected the panel shows its overview, a view the host may give it (the app's is [the
 table of contents](#the-table-of-contents)), else "No Selection". With several, it shows "N Shapes"
 over the kinds selected, then the overview (details are per shape: editing several at once isn't
-built). A shape with no sections to show (an arrow, a rectangle, a note without issues) gets its
+built). A shape with no sections to show (an arrow, a note without issues) gets its
 header, then "No Options". Without `DetailPanelPlugin` installed, the panel says "No Details". A
 read-only shape (a [locked](#locking) one) shows its whole panel, but nothing in it edits the shape:
 the panel disables its sections' content, and its header (a title field), and leaves going back, the
@@ -2860,8 +2860,8 @@ system's rows, selection, disclosure triangles and keyboard.
 │   ▤ Groceries                       │ a titled note: its title (Titles), not its text
 │   {} Customer                    2  │ a schema card: its name, and how many fields
 │   {} Untitled                     ● │   no name: the placeholder, dimmed; the dot, red: its error (ValidationContents)
-│   ▭ Rectangle                       │ a kind with no row: its label and symbol, dimmed while untitled
-│   ▭ Server room                     │   or its title, here RectangleTitles'
+│   ▭ Patch                           │ a kind with no row: its label and symbol, dimmed while untitled
+│   ▭ Server room                     │   or its title, here PatchTitles'
 │   ↗ Arrow                           │ an arrow that starts on nothing, at the top
 └─────────────────────────────────────┘
 ```
@@ -2899,9 +2899,9 @@ note.contentsRow(affected: MentionRows.affected) { note, context in
   nest under the shape they start from, as data-canvas's edges do under their start node. Once
   shapes can contain shapes, a shape's container will be the default.
 - **Without a row**, a kind is listed by its label and symbol (`registry.label(of:)`: "Arrow",
-  which Arrows declares, "Rectangle", its tool's), the fallback the detail panel's header uses. Where another
+  which Arrows declares, "Patch", its tool's), the fallback the detail panel's header uses. Where another
   plugin names the kind's rows (`contentsTitle`, below) that label is a placeholder, dimmed until a
-  shape is named, as an untitled note's is, so unnamed rectangles don't read as named "Rectangle";
+  shape is named, as an untitled note's is, so unnamed patches don't read as named "Patch";
   a kind nobody names (an arrow) shows it at full strength. A kind can keep that
   row and still say where it's listed and what it nests under, as Arrows does:
 
@@ -3250,7 +3250,7 @@ extension SizeBadge: Adornment {
     public static var placement: AdornmentPlacement { .onTopRightCorner }
 }
 
-registrar.adornment(SizeBadge.self, on: Rectangle.self) { rectangle in AdornmentLabel("\(Int(rectangle.frame.width)) pt") }
+registrar.adornment(SizeBadge.self, on: Patch.self) { patch in AdornmentLabel("\(Int(patch.frame.width)) pt") }
 ```
 
 ### Places
@@ -4027,7 +4027,7 @@ registrar.arrowBindingRule { query in
   scrolling](#tools-and-sessions)), where tldraw's handle drags don't, so a shape off screen can be
   linked to without zooming out (where dots don't show, under 25%). The app had
   tldraw's arrow tool (A) too, until ports became the way to connect; it's gone, and a person
-  draws arrows from ports alone, so kinds without ports (rectangles, subboards) are connected only
+  draws arrows from ports alone, so kinds without ports (subboards) are connected only
   by `canvas draw`, on no channel.
 - **An arrow bound at both ends is an edge** ([Topology](#sources)): `connects` gives the
   connector's kind an edge source when it has `ends`, one edge from the shape it starts on to the
@@ -4684,7 +4684,7 @@ notes mention each other two boards apart (`nested-mentions-across.v4.json`).
 Topology ([`Sources/Topology`](../Sources/Topology)) is what connects and contains what, whatever
 is where: edges, a typed graph (an arrow bound at both ends, a mention), and containment, a tree
 (which board a shape is on, and so which shape it's inside). Spatial relations (a note that
-happens to sit within a rectangle's bounds) aren't part of it; they're geometry. It's a horizontal
+happens to sit within another shape's bounds) aren't part of it; they're geometry. It's a horizontal
 on the core alone: the plugins that own what a connection means (Ports, through its connector, and
 Mentions) say what their shapes carry, and any plugin asks what's connected to a shape, and how,
 without knowing arrows or mentions.
@@ -5304,7 +5304,7 @@ next step is a warm cache ([Not built yet](#not-built-yet)).
 
 - **Where shapes are.** Positions, sizes and overlaps aren't in the language (`:near`, `:left-of`,
   `:within`, and attributes that hold a place, are `not_built`), and inside is a board's: what's
-  drawn within a rectangle's bounds isn't inside it (`cannot_contain`, for a container side that can
+  drawn within a shape's bounds isn't inside it (`cannot_contain`, for a container side that can
   only be kinds holding no board).
 - **Shapes typed by schema cards** (`.Task`, `not_built`), attributes inside attributes (`[a.b]`),
   and `=` on an object.
@@ -6105,7 +6105,7 @@ connection runs only from a shape with a dot on its channel to one that takes it
 - **`channel: none`** is a plain connection, on no channel, from and to any side.
 - **Unwritten**, it's the first of the start's dot channels (on `from:`'s side, if named; else all
   its dots', in the table's order) that the end takes as a target (on `to:`'s side, if named).
-  With none, it's plain if neither kind has ports on anything (rectangles, subboards), and
+  With none, it's plain if neither kind has ports on anything (subboards), and
   otherwise `no_channel`, whose hint says `channel: none` draws one anyway; a named side narrows
   the channels, so one without a port leaves none.
 - **A connection on a channel never ends where it starts**: a shape joined to itself on one is
@@ -6777,10 +6777,10 @@ registrar.translationAdjuster { editor, start in SnapDrag(start, in: editor) }  
   and one let go counts as held for 150 ms (`editor.effectiveModifiers`), so letting go of ⌘ with
   the mouse leaves what moved where the pointer put it. Kept to one axis with ⇧ (the core's),
   it snaps along that axis alone, and shows only its guides.
-- **Kinds with a frame** (`BoxShapeProps`: notes, schema cards, subboards, rectangles) snap and
+- **Kinds with a frame** (`BoxShapeProps`: notes, schema cards, subboards) snap and
   are snapped to, locked shapes too (they stay put, and don't count in what
   moves). Kinds without one neither snap nor are snapped to: arrows, whose geometry follows the
-  shapes they join (tldraw's arrows can't be snapped to either, `canSnap`), and lines.
+  shapes they join (tldraw's arrows can't be snapped to either, `canSnap`).
 - **Only shapes in view**: the view's world rect when the drag first snaps, read again once the
   camera moves or a shape the drag doesn't move changes (a plugin's write, an agent's). With no view
   (`editor.viewportSize` zero, as in a headless editor), nothing is in view, and nothing snaps.
@@ -6823,11 +6823,11 @@ it, the core or a horizontal.
 | Capability | For | Used by |
 |---|---|---|
 | `Editable` | Edited in place: an editing placement, or opening it (Selection's double-click, Return and ⌘↓), unless its kind has an opener of its own. Supplies an `NSView` laid over the shape; writes go through `EditContext.update`. | StickyNotes, Schemas (its description) |
-| `CustomTranslation` | Moving by its own rules instead of by its frame, when a `TranslatingSession` moves it (dragging the selection, a shape just placed). When a drag starts, `beginTranslation` gets the shape, every shape moving with it and the starting transaction (committed on its own, before the first move), and returns a `ShapeTranslation`: a closure run on every drag event with the drag's delta (the pointer's, or what the [translation adjuster](#the-cores-part-the-translation-adjuster) made of it: Snapping's snap), after the moving boxes have moved. A kind without a frame needs this to be movable at all. | Arrows (alone, bound ends slide on their shapes; with a shape they're bound to, they keep every binding); Polylines (every point by the delta) |
+| `CustomTranslation` | Moving by its own rules instead of by its frame, when a `TranslatingSession` moves it (dragging the selection, a shape just placed). When a drag starts, `beginTranslation` gets the shape, every shape moving with it and the starting transaction (committed on its own, before the first move), and returns a `ShapeTranslation`: a closure run on every drag event with the drag's delta (the pointer's, or what the [translation adjuster](#the-cores-part-the-translation-adjuster) made of it: Snapping's snap), after the moving boxes have moved. A kind without a frame needs this to be movable at all. | Arrows (alone, bound ends slide on their shapes; with a shape they're bound to, they keep every binding) |
 | `HandleProviding` (Selection's) | Draggable handles on the only selected shape. The select tool finds, draws and hit-tests them; `pressHandle` returns `.drag` or `.consumed`, and `dragSession` does the dragging. | Arrows |
 | `BrushHitTesting` (Selection's) | Whether the marquee touches it, when the brush overlaps its bounds without containing them. Default: `ShapeGeometry.isHit(byBrush:)`. | Arrows (against the visible arc) |
 | `DerivedProps` | Props that hold something following from the rest, which the kind's setters keep in step. A shape made from properties written somewhere else, `registry.shape(_:properties:)`, or given some of its own that way, `registry.shape(_:setting:)` (the command line's `draw`), goes through `derive(_:)` first, so it's as its setters would have left it; a board read (a shape is as saved), a paste, and what a person does don't. | Schemas (a card's height, from its description; `draw`'s `size:` still wins), StickyNotes (a note's height, from its text) |
-| `CustomSkeleton` | Drawn more simply zoomed out. `renderSkeleton` draws in `render`'s place while the canvas draws [skeletons](#skeletons) (the camera's zoom under `editor.skeletonZoom`, 35%), but for the shape being edited: its fills, and bars where its text would be (`context.fillSkeletonText`, each as long as its text's columns, `SkeletonText`), never text, shadows or pictures of its own, cheaply: the shape, its kept geometry and `context.zoom`, and what its plugin already keeps of the shape if it's there, never parsing or laying out text; a picture only through `RenderContext` (a subboard's board preview). Its outline there (selected, hovered, the hint) is its kept geometry's, right for a skeleton that fills its geometry or differs from a rect only by corners rounded a pixel or two, unless it adopts `CustomSkeletonOutline`; a shape a few pixels across is outlined by its bounds. Without it a kind is the default skeleton, its geometry in one gray (`context.drawSkeleton(of:color:)`). | StickyNotes (its yellow, its text greeked), Subboards (fills, a title bar, its preview), Schemas (square, with an edge, so outlined by its frame, its description greeked as a note's text), Arrows (its arc and heads), Rectangles (its teal, one fill), Polylines (the default in its indigo) |
+| `CustomSkeleton` | Drawn more simply zoomed out. `renderSkeleton` draws in `render`'s place while the canvas draws [skeletons](#skeletons) (the camera's zoom under `editor.skeletonZoom`, 35%), but for the shape being edited: its fills, and bars where its text would be (`context.fillSkeletonText`, each as long as its text's columns, `SkeletonText`), never text, shadows or pictures of its own, cheaply: the shape, its kept geometry and `context.zoom`, and what its plugin already keeps of the shape if it's there, never parsing or laying out text; a picture only through `RenderContext` (a subboard's board preview). Its outline there (selected, hovered, the hint) is its kept geometry's, right for a skeleton that fills its geometry or differs from a rect only by corners rounded a pixel or two, unless it adopts `CustomSkeletonOutline`; a shape a few pixels across is outlined by its bounds. Without it a kind is the default skeleton, its geometry in one gray (`context.drawSkeleton(of:color:)`). | StickyNotes (its yellow, its text greeked), Subboards (fills, a title bar, its preview), Schemas (square, with an edge, so outlined by its frame, its description greeked as a note's text), Arrows (its arc and heads) |
 | `CustomSkeletonOutline` | A `CustomSkeleton` outlined its own way while skeletons are drawn (selected, hovered, the hint): `skeletonIndicatorPath(of:in:)`, what `renderSkeleton` draws, so the outline and the skeleton agree, made from the shape and its kept geometry, since ⌘A zoomed out asks it of every shape of the kind in view each frame; nil for its kept geometry's. Found once per kind (`registry.skeletonOutlines`), so no other kind's shape is asked; never asked for a shape a few pixels across, outlined by its bounds. | Arrows (the arc, where its kept geometry is three points) |
 | `PaintOrderAnchored` | Painted just above another shape, whatever its place in the document. The anchor follows from the shape's own props and the document's order, since the paint order is kept until one of those changes. | Arrows (above the shapes they join) |
 | `BoardOwning` | Each shape of the kind owns a board, a subboard, which the file keeps under the shape's id, never in its props (`CanvasFile`, `BoardID(owner:)`). Nothing to implement: deleting a shape takes its board and every board under it, a copy takes what it holds, a file saves every board ([format 4](#boards-on-disk)), and `editor.showBoard` shows one; Boards' `x.opensBoard(placeholder:systemImage:)` opens it. Its schema is marked `x-canvas-board`. [Boards in a file](#boards-in-a-file). | [Subboards](#subboards)' `Subboard`; CanvasTesting's `Pocket` |
@@ -7047,8 +7047,8 @@ and 50.0 before, 9.2 and 7.8 after).
   (nothing drawn) draws nothing.
 
 A kind's own is `CustomSkeleton` ([Capabilities](#capabilities)): `renderSkeleton` draws in the
-default's place, given the `RenderContext` a render gets. Rectangles' fills its frame in its teal
-([your first plugin](#your-first-plugin)); Polylines' is the default in a color of its own, so a
+default's place, given the `RenderContext` a render gets. Patches' fills its frame in its pink
+([your first plugin](#your-first-plugin)); a freehand line's is the default in a color of its own, so a
 line drawn by hand still tells from an arrow:
 
 ```swift
@@ -7142,7 +7142,7 @@ What each shipped plugin shows zoomed out is in its own section: a [note](#a-ver
 yellow, its text greeked, and no [mention text](#drawing) or [faces](#on-the-canvas-faces)), a
 [subboard](#subboards) (fills, a title bar and its preview), a [schema card](#schema-cards) (white
 with a light gray edge, and its description greeked as a note's text is), an [arrow](#a-shape-without-a-frame)
-(its arc and heads), a [rectangle](#your-first-plugin) and a [line](#a-shape-without-a-frame);
+(its arc and heads);
 [faces](#faces-clickable-parts-of-a-shape) (none on a skeleton), [adornments](#the-label) (blank
 and pale on a skeleton: a title's [pill](#a-horizontal-plugin) and a [lock](#locking)'s chip), and
 [Validation](#a-horizontal-plugin)'s outlines (rings).
@@ -7384,7 +7384,7 @@ aren't changes, and make no step.
 and undoes, the step before it. The core names placing ("Add" and the placing tool's label, "Add
 Note"), moving ("Move") and typing; Selection "Delete"; ContextMenus every item by its title;
 Clipboard "Cut" and "Paste"; Locking "Lock" and "Unlock"; Arrows "Add Arrow", "Move Arrow End",
-"Bend Arrow" and "Toggle Arrowhead"; the eraser "Erase", polylines "Draw Line"; the detail panel
+"Bend Arrow" and "Toggle Arrowhead"; the eraser "Erase"; the detail panel
 "Change" and the section's title ([`ShapeBinding`](#reading-and-writing-shapebinding)); the schema
 card's sync "Update Schema" and "Update Description", however long after the edit it lands; and
 Automation "Draw", a whole `canvas draw` run (a dry run, or a script refused, is none; a run waits
@@ -7484,9 +7484,9 @@ pretty-printed, so a board diffs cleanly.
   "shapes" : [
     { "added" : { "title" : "Groceries" }, "id" : "…", "index" : "a0", "kind" : "sticky-note", "props" : { "frame" : [[80, 80], [200, 200]], "text" : "…" } },
     { "added" : { "locked" : true }, "id" : "…", "index" : "a1", "kind" : "sticky-note", "meta" : { "clipboard" : { "copiedFrom" : { "shape" : "…" } } }, "props" : { … } },
-    { "id" : "…", "index" : "a2", "kept" : { "confetti" : { "v" : 0, "value" : { "velocity" : 240 } } }, "kind" : "rectangle", "props" : { … } }
+    { "id" : "…", "index" : "a2", "kept" : { "confetti" : { "v" : 0, "value" : { "velocity" : 240 } } }, "kind" : "subboard", "props" : { … } }
   ],
-  "versions" : { "added" : { "locked" : 0, "title" : 0 }, "kinds" : { "rectangle" : 0, "sticky-note" : 3 } }
+  "versions" : { "added" : { "locked" : 0, "title" : 0 }, "kinds" : { "subboard" : 0, "sticky-note" : 3 } }
 }
 ```
 
@@ -7733,10 +7733,7 @@ mention-queries      query word :mentions · query word :mentioned-by · query t
 validation-queries   query word :invalid · query word :warned
 selection-queries    query word :selected
 query-commands       command line query · command line query-vocabulary
-rectangles           shape rectangle · tool rectangle · shortcut R → tool rectangle
-polylines            shape polyline · tool polyline · shortcut L → tool polyline
 eraser               tool eraser · shortcut E → tool eraser
-rectangle-titles     property title → rectangle · ShapeTitles → rectangle · ContentsTitles → rectangle · ShapeDetails → rectangle
 reordering           ShapeContextMenus
 ```
 
@@ -7773,8 +7770,7 @@ line is its commands (`command line draw`, `command line kinds`), and the three 
 bridges that fill its draw points, one each. `queries` is the query engine's service (`QueryState`,
 which hears no commit) and its mark (`query engine`, which `registry.answersQueries` reads); the
 five after it fill its points (names, boards' names, and words and a text format, each by what it
-adds), and `query-commands` is `canvas query` and `query-vocabulary`. `rectangle-titles` opts
-rectangles into Titles' property (`property title → rectangle`) before titling them.
+adds), and `query-commands` is `canvas query` and `query-vocabulary`.
 
 ## Testing plugins
 
@@ -7788,18 +7784,24 @@ selects and drags as a user does installs Keyboard and Selection first
 ([ExamplesTests](../Tests/ExamplesTests/ExamplesTests.swift)):
 
 ```swift
-test("Polylines: the select tool moves a line by its own translation, and Escape puts it back") {
-    let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), PolylinesPlugin()])
-    let points = [CGPoint(x: 100, y: 100), CGPoint(x: 200, y: 100)]
-    let id = h.add(Polyline(points: points))
-    h.press(at: CGPoint(x: 150, y: 101))
-    h.drag(to: CGPoint(x: 180, y: 141))
-    expectEqual(h.editor.selection, id)
-    expectEqual(h.editor.document[id]?.typed(as: Polyline.self)?.props.points, [CGPoint(x: 130, y: 140), CGPoint(x: 230, y: 140)])
-    h.escape()
-    expectEqual(h.editor.document[id]?.typed(as: Polyline.self)?.props.points, points)
-},
-```
+test("Eraser: dragging across shapes deletes them, and an arrow lets go of what was erased") {
+    let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), FixturesPlugin(), EraserPlugin()])
+    let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
+    let b = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
+    let c = h.add(Box(CGRect(x: 400, y: 0, width: 100, height: 100)))
+    let bound = ArrowBinding(shapeID: b, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)
+    let arrow = h.add(Arrow(start: .bound(bound), end: .free(CGPoint(x: 250, y: 300))))
+    expect(h.key("e"))
+    h.press(at: CGPoint(x: 50, y: 50))
+    h.drag(to: CGPoint(x: 250, y: 50))
+    h.release()
+    expectEqual(h.editor.document[a], nil)
+    expectEqual(h.editor.document[b], nil)
+    expect(h.editor.document[c] != nil)
+    let start = try require(h.editor.document[arrow]?.typed(as: Arrow.self)?.props.start)
+    expect(start.binding == nil, "the arrow let go of the erased box")
+    expectEqual(h.editor.currentToolID, .eraser)
+},```
 
 - `EditorHarness` (CanvasTesting) drives a headless editor like a user: `move`, `press`, `drag`
   (optionally at a speed), `release`, `click`, `hold(modifiers)`, `key`, `escape`, `wait(ms)`. One
@@ -7884,7 +7886,7 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   long as its columns, a wide character two, an empty card none, the first frame after an edit and
   its undo, cards 1e21 tall or wide, and drawing reading no schema, `schemasRead`). A test module
   without Geometry can't make a `Camera` to zoom out, so it draws skeletons at 100%, `skeletonZoom`
-  just over 1, where world units are view points (RectanglesTests, ExamplesTests, SubboardsTests'
+  just over 1, where world units are view points (SubboardsTests'
   The card zoomed out, which holds the title's bar to the render's title in Latin, Japanese,
   Chinese, Korean and emoji). A test of what's drawn in full far out sets it to 0 (MentionsTests'
   memo at 20%, PreviewTests' preview too small on screen). CanvasTests' Skeletons hold the core: a
@@ -7914,8 +7916,8 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   MentionsTests' DrawingTests and FaceTests mention text unbuilt on a skeleton, the
   memo trimmed, and its pills no faces (a click selects, a double-click edits, a locked one's is
   refused and goes nowhere). CompositionTests' `skeletonsShippedTests` hold the shipped pieces
-  together: at 30% every shipped shape (a subboard, notes, an arrow, a locked rectangle, a schema
-  card and a line) is its skeleton and says nothing, nor do a title's pill and a lock, at 35% it's
+  together: at 30% every shipped shape (a subboard, notes, an arrow, a locked note and a schema
+  card) is its skeleton and says nothing, nor do a title's pill and a lock, at 35% it's
   all in full, the note being edited is in full at 30%, and in the app's canvas view a mention's
   pill is no face at 30% and is one again at 35%. `renderBitmap` at a scale other
   than 1 reads pixels with `pixel(_:at:scale:)`: `changedPixels` reads one a point, so it holds
@@ -8041,7 +8043,7 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   snap to. `editor.snapGuides` is what shows. ⌘ and ⌃ are `h.hold`, and a key let go counts as held
   until `h.wait(150)`. CanvasTests' TranslationAdjusterTests hold the core's hook with a fixture
   adjuster (x on a grid of 10), and CompositionTests' SnappingShippedTests the shipped pieces through
-  the select tool: notes, an arrow, a rectangle placed with its tool.
+  the select tool: notes, an arrow, a subboard placed with its tool.
 - **The command line.** A test listens on a socket of its own (`temporarySocketPath()`, TestKit),
   never the app's. The app answers on the main actor, so a test that's also the client makes its
   request off the main thread while the main run loop turns (`offMain`), or runs `canvas` as it's
@@ -8131,7 +8133,7 @@ test("Polylines: the select tool moves a line by its own translation, and Escape
   panning and pinching (`Budget.emptyFrame`, 2 ms of the thread's CPU time), a hover on a note's port dot and a drag from it, a hover onto a title's
   pill and onto a mention's, reading the table of contents' rows after a drag event, an insert, a
   delete and a restack, a keystroke in the `@` picker (the `@` that opens it too, on a file of two
-  boards, and among thousands of rectangles where only 3 notes can be mentioned), a rename of a
+  boards, and among thousands of empty notes where only 3 can be mentioned), a rename of a
   subboard mentioned 100 times against one mentioned by none (its commit, and validation's read
   after it), the panel's layout of that subboard, its Mentioned In tab showing, after a drag event
   of another note and after a mentioner's rename (`Budget.panelAfterCommit`, 1 ms; the tab's lines,
@@ -8459,7 +8461,7 @@ Each of these adds to the design without changing what plugins are written again
   arrow where it crosses its shape's edge toward the other end, whichever side that is); a
   channel's title, and a legend of the channels; a line in an arrow's detail panel naming its
   channel; and rules that read connections (which Topology's index can answer: a schema's links,
-  say). Rectangles and subboards have no ports, so a person can't connect them (`canvas draw` still
+  say). Subboards have no ports, so a person can't connect them (`canvas draw` still
   can, on no channel).
 - **More of boards**: moving shapes into a subboard, or up out of one (Move to Subboard), keeping
   their ids as a cut and its paste do, in one step, with a check that no shape goes into its own

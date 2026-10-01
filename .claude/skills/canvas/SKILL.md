@@ -1,6 +1,6 @@
 ---
 name: canvas
-description: Put, draw or lay out things on a live board in Infinite Canvas (sticky notes, subboards, schema cards, rectangles and the arrows between them, for plans, flows, architectures, roadmaps, retros) with `canvas draw`, a text language where each line says what a shape is, what it's called, and where it sits against shapes already named; and find out what's on a board with `canvas query`, a CSS-like query, or `--ask` in English. Use when asked to "draw this on the board", "put these on the canvas", "make a diagram in the app", "connect these on the board", "what's on the board", "which notes mention X", "is X inside Y", "what links to X", "how many…", or to turn a plan, list or architecture into shapes in the running app. NOT for changing the app's Swift code, plugins, tests or docs; NOT for reading or writing .canvasboard files (only `canvas` touches a board); NOT for diagrams meant for a file (SVG, Mermaid, images).
+description: Put, draw or lay out things on a live board in Infinite Canvas (sticky notes, subboards, schema cards and the arrows between them, for plans, flows, architectures, roadmaps, retros) with `canvas draw`, a text language where each line says what a shape is, what it's called, and where it sits against shapes already named; and find out what's on a board with `canvas query`, a CSS-like query, or `--ask` in English. Use when asked to "draw this on the board", "put these on the canvas", "make a diagram in the app", "connect these on the board", "what's on the board", "which notes mention X", "is X inside Y", "what links to X", "how many…", or to turn a plan, list or architecture into shapes in the running app. NOT for changing the app's Swift code, plugins, tests or docs; NOT for reading or writing .canvasboard files (only `canvas` touches a board); NOT for diagrams meant for a file (SVG, Mermaid, images).
 ---
 
 # Drawing on and reading a board with canvas
@@ -79,7 +79,7 @@ A title is how you, the user and later scripts refer to a shape: `draw` never ta
 - **Quote every title** in straight double quotes: `"API"`. A bare word is read as a placement word or a value, and curly or single quotes are refused.
 - **A title on the board means that shape.** A statement whose title is already on the board updates that shape; any other title creates a new one. The match is exact and case matters, so a typo like `"deploy"` for `"Deploy"` draws a second shape. The result warns about near misses, so read the warnings.
 - **Title everything you may touch again.** An untitled shape can't be moved, connected, changed or deleted by a later script. The query `:current-board[title]` lists the titled shapes on the board a script draws on ([Reading the board](#reading-the-board)).
-- **A note's title is the pill above it; what it says is `text:`.** Give notes both. A subboard's title is on its card. Rectangles show a pill.
+- **A note's title is the pill above it; what it says is `text:`.** Give notes both. A subboard's title is on its card.
 - **Keep titles short and specific** ("Auth service", not "Service"). Longer than 80 characters is kept but warned about. A generic title like "Notes" may already be on the board, and your statement would then change the user's shape, so dry-run first on any board you didn't just draw.
 - **Shapes the user made are usually untitled.** A note's words are its text, not a title. A query finds them by what they say (`sticky-note:not([title])[text*="launch"]`), but a script can't name them: place against `board` or `view` instead, or ask the user to title the shapes you need.
 - **A schema card is called by its schema's `"title"`**, and has no title of its own: `schema-card "Order"` is refused (`untitlable`). Draw it untitled, with its title inside `schema:`, and call it by that title from the next script on. Restated with a schema whose title is another, it's renamed (`did: "renamed"`).
@@ -102,7 +102,6 @@ style <name> attribute { attribute }             a named set of attributes, for 
 | kind | size | attributes besides `size`, `gap`, `overlap`, `style`, `title` | edges |
 |---|---|---|---|
 | `sticky-note` | 200x200 | `text` (the note is as tall as its text, at least 200; a `size:` height lasts only until the text changes), `locked` | `note-link`, on its left, right and bottom |
-| `rectangle` | 160x100 | `locked` | none: plain arrows |
 | `schema-card` | 240x52 | `prompt` (what it holds, in words: the card shows them, and grows to fit), `schema` (a JSON Schema, as text: its panel shows it), `locked` | `schema-link`, on its left, right and bottom |
 | `subboard` | 240x160 | `locked` | none: plain arrows |
 
@@ -149,10 +148,10 @@ subboard "Launch" right of board
 
 A target can name a part: a side (`top`, `bottom`, `left`, `right`) or a point (`top-left`, `top-center`, `top-right`, `left-center`, `center`, `right-center`, `bottom-left`, `bottom-center`, `bottom-right`). `inside "A" top-left` tucks the shape into that corner of A, 40 in, and keeps it within A. `outside "A" right` puts it wholly beyond that side. `on "A" top-right` centers it on that point.
 
-A zone is a big shape that others sit on. Draw it in its own script first, then what goes in it. Once it's on the board, it isn't in the way of a shape placed against one it holds, or of one landing wholly on it while it already holds other shapes, as long as it's at least twice the size (in area) of the one it holds or the one landing. A shape your script places counts as one the zone holds only when it's there for a reason of its own (placed `inside` or `on` it, against a shape already in it, or among shapes already on the board in it), never just because another new shape is: two new shapes landing together on an empty zone are both pushed off it. Nor is a zone in the way of a shape you restate that already sat on it, however snugly (lined up with a card in the next column, a card stays in its own), or of one placed against `view` while the whole view is on it (a legend `inside view top-right` while you're zoomed into a region), or of the unplaced shape's drawing there. Whatever else a shape lands on is in the way, however big. An empty note or card is in the way, so a rectangle beside a note is pushed past the next note, not drawn over it. But a note or card that holds a shape of its own, wholly inside it (a badge), is a zone like any other: a smaller shape landing wholly on it is drawn over it, text and all. A shape alone on the board is in the way of anything `inside board`. Put the first shape in an empty zone with `inside`, and place the rest against it. Only `inside` keeps a shape within a zone: one placed against a shape in it, or restated, can hang over its edge, and the result warns (`hangs over the edge of`), so place it `inside` or make the zone bigger. Within one script, only shapes placed `inside` or `on` a shape may overlap it, so a zone drawn in the same script as what goes in it pushes the rest out of it, or the script fails with `no_room`.
+A zone is a big shape that others sit on: a note with a title, no text, and a `size:`. Draw it in its own script first, then what goes in it. Once it's on the board, it isn't in the way of a shape placed against one it holds, or of one landing wholly on it while it already holds other shapes, as long as it's at least twice the size (in area) of the one it holds or the one landing. A shape your script places counts as one the zone holds only when it's there for a reason of its own (placed `inside` or `on` it, against a shape already in it, or among shapes already on the board in it), never just because another new shape is: two new shapes landing together on an empty zone are both pushed off it. Nor is a zone in the way of a shape you restate that already sat on it, however snugly (lined up with a card in the next column, a card stays in its own), or of one placed against `view` while the whole view is on it (a legend `inside view top-right` while you're zoomed into a region), or of the unplaced shape's drawing there. Whatever else a shape lands on is in the way, however big. An empty note or card is in the way, so a small note beside a note is pushed past the next note, not drawn over it. But a note or card that holds a shape of its own, wholly inside it (a badge), is a zone like any other: a smaller shape landing wholly on it is drawn over it, text and all. A shape alone on the board is in the way of anything `inside board`. Put the first shape in an empty zone with `inside`, and place the rest against it. Only `inside` keeps a shape within a zone: one placed against a shape in it, or restated, can hang over its edge, and the result warns (`hangs over the edge of`), so place it `inside` or make the zone bigger. Within one script, only shapes placed `inside` or `on` a shape may overlap it, so a zone drawn in the same script as what goes in it pushes the rest out of it, or the script fails with `no_room`.
 
 ```draw
-rectangle "Backend" below board size: 900x320
+sticky-note "Backend" below board size: 900x320
 ```
 
 ```draw
@@ -173,7 +172,7 @@ edge "Build" -> "Launch"
 
 `<-` is the same edge written the other way round, and `<->` has heads at both ends. `from:` and `to:` name the side each end leaves or arrives on; without them the line runs center to center. An edge statement means "A is connected to B", so written again it updates that edge (`reconnected`) or leaves it alone (`unchanged`), and never draws a second one.
 
-An edge travels on a channel that both ends take: notes connect to notes (`note-link`), schema cards to schema cards (`schema-link`). The edge picks the channel both ends share, and if they share none it's refused. `channel: none` draws a plain arrow between any two shapes. Rectangles and subboards have no channels at all, so an edge between two of them is plain without asking (Design, Build and Launch above); between one of them and a note or a schema card, say `channel: none`.
+An edge travels on a channel that both ends take: notes connect to notes (`note-link`), schema cards to schema cards (`schema-link`). The edge picks the channel both ends share, and if they share none it's refused. `channel: none` draws a plain arrow between any two shapes. Subboards have no channels at all, so an edge between two of them is plain without asking (Design, Build and Launch above); between one of them and a note or a schema card, say `channel: none`.
 
 ```draw-error
 // reason: no_channel
@@ -299,7 +298,7 @@ Does Queue have an edge to Worker? It matches, so yes:
 "Queue":edge-to("Worker")
 ```
 
-Backend is a rectangle, and holds no board: a note drawn `inside "Backend"` sits over it, and isn't inside it as a query means inside.
+Backend is a note, and holds no board: a note drawn `inside "Backend"` sits over it, and isn't inside it as a query means inside.
 
 ```query-error
 /* reason: cannot_contain */

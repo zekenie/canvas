@@ -320,8 +320,8 @@ struct NotePill: Hashable, Sendable {
     test("a key typed on the canvas switches tools; typed in a note, it goes into the note") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let (window, canvas) = windowed(editor)
-        window.press("r")
-        expectEqual(editor.currentToolID, ToolID(placing: "rectangle"))
+        window.press("b")
+        expectEqual(editor.currentToolID, ToolID(placing: "subboard"))
         window.press("v")
         expectEqual(editor.currentToolID, .select)
         canvas.mouseDown(with: window.mouse(.leftMouseDown, at: CGPoint(x: 300, y: 300), clicks: 2, time: 1))

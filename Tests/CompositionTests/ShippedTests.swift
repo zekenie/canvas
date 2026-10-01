@@ -24,9 +24,9 @@ import ValidationDetails
     test("the shipped plugin list registers without conflicts") {
         _ = try ShippedPlugins.registry(model: ScriptedLanguageModel())
     },
-    test("the toolbar is Select V, Hand H, Note N, Subboard B, Schema S, Rectangle R, Line L, Eraser E: arrows are drawn from ports") {
+    test("the toolbar is Select V, Hand H, Note N, Subboard B, Schema S, Eraser E: arrows are drawn from ports") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
-        expectEqual(registry.tools.map { ShippedPlugins.help(for: $0, in: registry) }, ["Select (V)", "Hand (H)", "Note (N)", "Subboard (B)", "Schema (S)", "Rectangle (R)", "Line (L)", "Eraser (E)"])
+        expectEqual(registry.tools.map { ShippedPlugins.help(for: $0, in: registry) }, ["Select (V)", "Hand (H)", "Note (N)", "Subboard (B)", "Schema (S)", "Eraser (E)"])
     },
     test("a plugin that needs the key asks for Settings with the action the app's menu item sends") {
         expectEqual(AnthropicSettingsView.showSettingsAction, BoardMenus.showSettings)
@@ -77,10 +77,7 @@ import ValidationDetails
         validation-queries   query word :invalid · query word :warned
         selection-queries    query word :selected
         query-commands       command line query · command line query-vocabulary
-        rectangles           shape rectangle · tool rectangle · shortcut R → tool rectangle
-        polylines            shape polyline · tool polyline · shortcut L → tool polyline
         eraser               tool eraser · shortcut E → tool eraser
-        rectangle-titles     property title → rectangle · ShapeTitles → rectangle · ContentsTitles → rectangle · ShapeDetails → rectangle
         reordering           ShapeContextMenus
         """)
     },
@@ -91,11 +88,11 @@ import ValidationDetails
         let end = try require(guide.range(of: "\n```", range: start..<guide.endIndex)).lowerBound
         expectEqual(String(guide[start..<end]), try ShippedPlugins.registry(model: ScriptedLanguageModel()).report)
     },
-    test("every placed kind has a panel: a note its header, a schema and a subboard their own tabs, a rectangle and an arrow only their headers; every nameable kind's header renames it") {
+    test("every placed kind has a panel: a note its header, a schema and a subboard their own tabs, an arrow only its header; every nameable kind's header renames it") {
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
         let state = try require(h.editor.detailPanel)
         var panels: [String] = []
-        for (shortcut, x) in [("r", 400.0), ("n", 1000), ("s", 1800), ("b", 2200)] {
+        for (shortcut, x) in [("n", 1000.0), ("s", 1800), ("b", 2200)] {
             h.key(shortcut)
             h.press(at: CGPoint(x: x, y: 100))
             h.drag(to: CGPoint(x: x + 150, y: 300))
@@ -109,20 +106,7 @@ import ValidationDetails
         panels.append("\(layout.headerText): \(layout.tabs.map(\.title).joined(separator: ", "))")
         // Every header of a kind that can be named renames it: an untitled shape's shows the
         // placeholder. A note placed empty has no issue: its row says Empty Note.
-        expectEqual(panels, ["(Rectangle): ", "(Note): ", "(Untitled): Schema", "(Untitled Subboard): Board", "Arrow: "])
-    },
-    test("a line drawn with L is a Line in the panel, with nothing but its header") {
-        let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
-        let state = try require(h.editor.detailPanel)
-        h.key("l")
-        h.press(at: CGPoint(x: 100, y: 100))
-        h.drag(to: CGPoint(x: 300, y: 100))
-        h.release()
-        h.key("v")
-        h.click(at: CGPoint(x: 300, y: 100))
-        let layout = state.layout(for: try require(h.editor.selection.flatMap { h.editor.document[$0] }))
-        expectEqual(layout.header?.title, "Line")
-        expectEqual(layout.tabs.count, 0)
+        expectEqual(panels, ["(Note): ", "(Untitled): Schema", "(Untitled Subboard): Board", "Arrow: "])
     },
     test("the table of contents lists the welcome board: each note by its text, each arrow under the note it starts from") {
         let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler(), model: ScriptedLanguageModel())
@@ -202,15 +186,6 @@ import ValidationDetails
         expect(!shipped[4].contains("⌘"), "a connection released on nothing isn't drawn, so there's nothing not to attach")
         let notes = WelcomeBoard.document().shapes.compactMap { $0.typed(as: StickyNote.self)?.props.text.stored }
         expectEqual(notes, shipped)
-    },
-    test("R then a drag places a rectangle and moves it into place") {
-        let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
-        h.key("r")
-        h.press(at: CGPoint(x: 300, y: 300))
-        h.drag(to: CGPoint(x: 340, y: 320))
-        h.release()
-        expectEqual(h.editor.document.shapes.first?.box, CGRect(x: 260, y: 270, width: 160, height: 100))
-        expectEqual(h.editor.currentToolID, .select)
     },
     test("going to a note or a schema card in view at 70% leaves the camera: their text, a note's, reads there") {
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }

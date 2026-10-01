@@ -175,7 +175,7 @@ extension NSTableView {
         expect(!w.canvasHasKeyboard)
         w.window.pressEscape()
         w.window.spin { w.canvasHasKeyboard }
-        w.window.press("r")
-        expectEqual(w.editor.currentToolID, ToolID(placing: "rectangle"))
+        w.window.press("n")
+        expectEqual(w.editor.currentToolID, ToolID(placing: "sticky-note"))
     },
 ])

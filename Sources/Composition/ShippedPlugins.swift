@@ -18,13 +18,10 @@ import Locking
 import MentionQueries
 import MentionValidation
 import Mentions
-import Polylines
 import PortEdges
 import Ports
 import Queries
 import QueryCommands
-import RectangleTitles
-import Rectangles
 import Reordering
 import Schemas
 import Selection
@@ -90,7 +87,7 @@ public enum ShippedPlugins {
             SelectionQueriesPlugin(),
             QueryCommandsPlugin(askPrompt: QueryPrompt.system),
             // The examples (Examples/). Each is one line here; delete it to leave it out.
-            RectanglesPlugin(), PolylinesPlugin(), EraserPlugin(), RectangleTitlesPlugin(), ReorderingPlugin(),
+            EraserPlugin(), ReorderingPlugin(),
         ]
     }
 

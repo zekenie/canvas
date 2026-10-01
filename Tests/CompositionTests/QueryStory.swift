@@ -11,7 +11,6 @@ import Locking
 import Mentions
 import Ports
 import Queries
-import Rectangles
 import Schemas
 import Selection
 import StickyNotes
@@ -28,7 +27,7 @@ import Titles
 //       A  …02  sticky-note "API gateway"   text: Owns auth. See @Checkout    (mentions C)
 //       U  …03  sticky-note "Auth"          text: JWT, 15 min expiry
 //       N1 …04  sticky-note (untitled)      text: TODO: rate limits
-//       W  …05  rectangle "Warehouse"
+//       W  …05  schema-card                 {"title": "Warehouse", ...}
 //       S  …06  schema-card                 {"title": "Order", ...}, locked
 //       V  …07  schema-card                 {"type": "object" "title": "Invoice"}   (not JSON: untitled, an error)
 //       R1 …08  arrow A → U                 channel note-link
@@ -79,6 +78,8 @@ enum QueryStory {
 
     /// Order's schema: an object with an id.
     static let orderSchema = #"{"title": "Order", "type": "object", "properties": {"id": {"type": "string"}}}"#
+    /// Warehouse's: the same.
+    static let warehouseSchema = #"{"title": "Warehouse", "type": "object", "properties": {"id": {"type": "string"}}}"#
     /// Invoice's: not JSON, a comma left out before its title, so it has none (a card whose text
     /// isn't JSON is named by a title read before what's wrong). Untitled only while this process
     /// hasn't read V's text as a JSON object: Schemas keeps each card's last object by id for the
@@ -110,15 +111,12 @@ enum QueryStory {
             card[LockedProperty.self] = locked ? true : nil
             return AnyShapeRecord(card)
         }
-        var rectangle = ShapeRecord(id: warehouse, Rectangle(frame: CGRect(x: 80, y: 420, width: 240, height: 160)))
-        rectangle[TitleProperty.self] = "Warehouse"
-
         let top = [
             subboard(payments, "Payments", at: 80, 80),
             note(gateway, "API gateway", at: 400, 80, MentionText([.text("Owns auth. See "), .mention(checkout, label: "Checkout")])),
             note(auth, "Auth", at: 700, 80, MentionText(plain: "JWT, 15 min expiry")),
             note(todo, nil, at: 1000, 80, MentionText(plain: "TODO: rate limits")),
-            AnyShapeRecord(rectangle),
+            card(warehouse, warehouseSchema, at: 80, 420),
             card(order, orderSchema, at: 400, 420, locked: true),
             card(invoice, invoiceSchema, at: 700, 420),
         ]
