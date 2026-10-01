@@ -12,6 +12,7 @@ The examples on this page are one story. They run in order on one empty board: e
 - [Shapes and titles](#shapes-and-titles)
 - [Attributes](#attributes)
 - [Placements](#placements)
+- [Which board](#which-board)
 - [How placements combine](#how-placements-combine)
 - [Gaps](#gaps)
 - [Lists](#lists)
@@ -42,7 +43,7 @@ EOF
 - **`--dry-run`** does everything a run does (reading, placing, checking and building the result) and then throws the change away. On the same board, a dry run and a real run say the same, unless the user is typing in a shape the script changes: a real run ends their typing first, so what they typed is part of the shape it changes.
 - **`--reveal`** eases the camera to fit everything the script made or changed. Without it the camera stays where the user left it.
 - **`--board <board>`** names the board by the id `build/canvas boards` gives it (which lasts while that board is open), by its file, or by its name. Without it the script goes to the board in front, which changes whenever the user clicks another window, so pass it on every `draw`. `kinds`, `status` and `boards` are about the app, and take none.
-- **A file's boards.** `--board` names a file, and a file can hold boards inside shapes (a subboard's). The script works on the board inside it that the file's window shows, and on nothing else: its titles, `board`, `view` and what's kept clear are that board's. `build/canvas boards` says which, as `shows` (`"root"`, or the id of the shape that owns it) and `showsPath` (from the root down), and so does every result's `board`. Nothing draws on a board the window doesn't show: to draw on a subboard's, ask the user to open it.
+- **A file's boards.** `--board` names a file, and a file can hold boards inside shapes (a subboard's). A script draws on one of them, and never says which: it's the board the shapes it names are on ([Which board](#which-board)), else the one the file's window shows. The window doesn't move. `build/canvas boards` says what the window shows, as `shows` (`"root"`, or the id of the shape that owns it) and `showsPath` (from the root down), and every result's `on` says where the script drew. To move the window, `build/canvas show "<subboard title>"`, or `build/canvas show --root`.
 - Options can come before or after `draw`. `canvas`'s own options work too: `--format json|text`, and `--timeout <seconds>` (default 10).
 
 The result goes to standard output: JSON when standard output isn't a terminal (so always, from an agent's shell), and text for a person at a terminal. An error goes to standard error. The exit status is 0 when the script was drawn, 1 when the app refused it (read the error), 2 when the command line itself is wrong (standard input that can't be read, or isn't UTF-8, included), and 3 when the app couldn't be reached (`not_running`, `unreachable`, `protocol_mismatch`) or didn't answer in time (`timed_out`).
@@ -111,7 +112,7 @@ A shape is referred to by its title and nothing else. There are no ids in a scri
 
 - **A title is always quoted.** It's folded as the app folds titles: runs of spaces and new lines become one space, and the ends are trimmed. A title that folds to nothing is refused; leave it out for an untitled shape. Keep titles to one line. One longer than 80 characters is kept but warned about.
 - **Matching is exact** on the folded form, and case matters. `"deploy"` is not `"Deploy"`.
-- **Names are read as the board has them when the run starts**, plus the titles the script itself draws. A rename takes effect from the next run.
+- **Names are read as the file has them when the run starts**, every board of it, plus the titles the script itself draws. A rename takes effect from the next run.
 - **A schema card is called by its schema's `"title"`**, and can't be given a title of its own: `schema-card "Order"` is `untitlable`, and so is `title:` on one. Draw it untitled, with the title in `schema:`, and call it by that title from the next run on (not in the same script: another statement can't name a shape drawn without a title). Restated with a schema whose title is another, it's renamed (`did: "renamed"`, with `was`), held to the rules of a rename (`duplicate` for a title that's taken); a schema with no title left is `renames`, since a script can't take a title away.
 - **A schema card refers to another by its id**, which `canvas query`'s rows give: its prompt mentions the card, `@[Address](shape:<id>)`, and its schema points to it with `{\"$ref\": \"urn:uuid:<id, lowercase>\"}` where that field goes (a fragment after it, `#/$defs/zip`, points to a part of it). Write both, as the app keeps them: the mention in words, the `$ref` in JSON.
 
@@ -228,6 +229,29 @@ on "A" [<part>]        centered on that part (A's middle if none)
 
 `inside` and `outside` name one shape and a part on its edge, from which they read a direction: `inside "A" right` is left of A's right side, `inside "A" top-right` is below-left of A's top-right corner, and `outside` is the opposite. `on` names one shape and takes no gap. See [Inside, outside, on, and zones](#inside-outside-on-and-zones).
 
+### in
+
+```text
+in "A"                 on the board A holds (a subboard's)
+```
+
+```draw
+subboard "Backend" right of board
+```
+
+```draw
+sticky-note "Cache" text: "Redis, 5 min TTL" in "Backend"
+sticky-note "Queue" text: "Retries with backoff" in "Backend" right of "Cache"
+```
+
+Deleting a subboard deletes what's on its board with it, and the result warns how much:
+
+```draw
+delete "Backend"
+```
+
+`in` says what holds a shape, not where it sits: `sticky-note "Cache" in "Backend"` draws Cache on the board of the subboard called Backend, the window staying where it is. Write placements beside it as ever; they place the shape on that board, against shapes there (`in "Backend" below "API"`), `board` (that board's shapes) or `view` (the part of it the window shows when it's opened). With none, it's [a drawing with nothing to hang on](#a-drawing-with-nothing-to-hang-on) there. It names one shape that holds others, with no part: `in "Notes"` on a note is `cannot_contain`. The subboard must be on the board already: one this script draws is `unsupported`, so draw it, then what goes in it in a run of its own. `inside` is another thing: `inside "Backend" top-left` puts a shape over its card, on the board the card is on.
+
 ### Targets
 
 A target is a quoted title, optionally followed by a part, or one of two unquoted words:
@@ -265,6 +289,20 @@ sticky-note "Retry" right of "Load" top level with "Nightly schedule" text: "Try
 ```draw
 sticky-note "Runbook" below "Backfill" and "Retry" text: "What to do when a load fails"
 sticky-note "Alerts" below "Runbook" (gap: tight) text: "Page the owner"
+```
+
+## Which board
+
+A file can hold boards inside shapes, and a script draws on one of them, worked out from what it names:
+
+- A title names a shape on any board of the file: the one the window shows first, and else wherever it is. `sticky-note "Auth" text: "Done"` changes Auth on whatever board it's on.
+- A new shape goes on the board of the shapes it's placed against, or the board `in` names. With neither (unplaced, or against `board` or `view`), it goes on the board the rest of the script draws on, else the one the window shows.
+- A statement with `in "X"` reads its titles on X's board alone: that's how to name a shape whose title is on two boards.
+
+A run draws on one board, as one step of undo: a script whose statements land on two is `several_boards`, and so is an edge between shapes on two boards (an arrow can't leave its board). A title on two boards, neither shown, is `ambiguous_title` until `in` says which. The window never moves for a draw (but `--reveal` shows the board drawn on), and undoing a run on another board shows that board.
+
+```text
+sticky-note "Retry" text: "Backoff, 3 tries" in "Payments" below "Charge"
 ```
 
 ## How placements combine
@@ -560,9 +598,10 @@ An illustration (not the board on this page):
  "dryRun": true}
 ```
 
-- **`board`**: the board it ran on, as `build/canvas boards` lists it: the file's `id` and `name`, and the board inside it the window shows, `shows` (`"root"`, or the id of the shape that owns it) and `showsPath` (from the root down).
+- **`board`**: the file it ran on, as `build/canvas boards` lists it: its `id` and `name`, and the board inside it the window shows, `shows` (`"root"`, or the id of the shape that owns it) and `showsPath` (from the root down).
+- **`on`**: the board the script drew on ([Which board](#which-board)): `board` (`"root"`, or the id of the shape that holds it), that shape's `title`, and whether the window `shown` it.
 - **`changes`**: a row for each thing done, with its `line`. `did` is `created`, `updated`, `moved`, `renamed`, `unchanged`, `deleted`, `connected` or `reconnected`. A shape's row has its `kind` and `title`, and `at`, its bounds as `[[x, y], [width, height]]` in world units (top-left first, y down). A connection's row has `from`, `to` and `channel` (if it's on one) instead. No ids appear anywhere, because titles are the names.
-- **`inView`**: whether the shape landed in the window.
+- **`inView`**: whether the shape landed in the window (on a board the window doesn't show, in the part of it the window shows when it's opened).
 - **`pushedPast`**: what the shape was pushed past to keep clear ([Keeping clear](#keeping-clear)).
 - **`was`**: a renamed shape's old title.
 - **`dryRun`**: `true` on a dry run, when nothing was changed.
@@ -606,7 +645,10 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | `invalid_value` | The value doesn't fit the key. `locked: maybe isn't true or false` · `size: huge isn't a size` · `gap: wdie isn't a gap` · a size or gap over 100000 · `from: middle isn't a side` · `channel: note-lnk isn't a channel` · a JSON member the object doesn't have, or a value of the wrong type in it · with `channel:` written, a side the kind has no port on (`from: top: a sticky-note has note-link ports on its left, right and bottom`) · another channel for an edge already drawn (`the edge from "A" to "B" is on note-link, not on schema-link`) | Write a value of the kind the hint names. |
 | `duplicate` | Something is written twice. `"locked" is written twice (true, false)` · a title stated on two lines (`written twice, here and on line 4`) · a rename to a title another shape has · two edges for one pair · a style defined twice | Keep one. |
 | `unknown_title` | No shape has that title. `right of "Injest"`, with up to 3 near titles · `board` on an empty board | Write the title exactly (`did you mean "Ingest"?`). On an empty board, leave one shape unplaced instead. |
-| `ambiguous_title` | Two or more shapes have the title, each listed with its kind and where it is. | Ask the user to rename one. Titles only work as names while each is used once. |
+| `ambiguous_title` | Two or more shapes have the title, each listed with its kind and where it is · the title is on two boards, neither the one the window shows: `"Retry" is on 2 boards: "Payments"'s board and "Billing"'s board` | Ask the user to rename one. Titles only work as names while each is used once. For two boards, say which with `in "Payments"`. |
+| `several_boards` | The script lands on two boards, and a run draws on one. `this script draws on "Payments"'s board ("Retry", line 1) and on the root board ("Ingest")` · an edge, or a placement, between shapes on two boards | Split it into a run for each board. An edge joins shapes on one board. |
+| `cannot_contain` | `in` names a shape that holds no board. `"Notes" is a sticky-note, which holds no shapes` | Name a subboard. To put a shape over another, use `inside` or `on`. |
+| `board_shown` | A delete would take the board the window shows, or one above it: `"Payments" holds the board the window shows, so it can't be deleted` | `build/canvas show --root` (or a board above it) first, if the user wants it gone. |
 | `ambiguous_edge` | `"A" -> "B" is drawn 2 times` | Write `delete edge "A" -> "B"` above the line, then draw it once. |
 | `untitlable` | The kind can't be given a title: `a <kind>'s title is worked out from what it is`, or `a <kind> has no title` | Leave the title out, and don't plan to name it later. |
 | `renames` | The change would take away the name of a shape whose name comes from what it is: a schema card's schema with no title left, `this would leave "Row" without a title` | Keep a schema card's title in its schema. |
@@ -757,7 +799,8 @@ These are left out on purpose. What they protect is that the app never chooses a
 ## Not built yet
 
 - **Reading positions back.** `canvas query` ([query.md](query.md)) lists a file's shapes, their titles and attributes, what's inside what and what's connected to what, but not where a shape is: only a script's result says where what it drew landed.
-- **Drawing on a board the window doesn't show.** A script works on the board its file's window shows; the user opens a subboard for it. A query lists a file's subboards (`subboard`), and what's in each.
+- **Drawing on two boards in one run**, a subboard and what goes in it among them: draw the subboard, then its contents with `in` in a run of their own.
+- **Moving a shape to another board.** `in` places a new shape; a shape restated stays on its board.
 - **Mentions by title.** A note's `text:` is kept as written, and a mention in it is written with the shape's id, which only the app writes.
 - **Text on edges.** Arrows have no labels.
 - **Groups and containers** that grow with what's in them, or that move as one. Zones are plain shapes, and their contents are placed once.

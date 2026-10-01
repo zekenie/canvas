@@ -5824,8 +5824,17 @@ as it took up the file (`QueryResult.shown` and `shownPath`, `:current-board`'s)
 later than its request (it waits its turn, and `--ask` waits on the model), and the server
 completes that `board` with the file's `id` and `name`. A query reads every board of the file the
 app can show, whichever the window shows, and names each row's board (`board`, and `inside`, the path's names for the boards it's
-inside); but no command addresses another board of a file yet ([Not built yet](#not-built-yet)):
-an agent that wants to draw on a subboard's board asks the person to open it.
+inside). A `draw` never names a board either: it works out the one it draws on from what its
+script names (Automation's `Drawing.board(for:in:)`: a title names a shape on any board of the file
+the app can show, the board shown's first; a new shape goes on the board of what it's placed
+against, or the one `in "X"` names, the board X holds; with neither, the board shown), reads that
+board through the core's `editor.reading(of:)` (a `BoardReading`: its shapes, a `ShapeContext`
+and paint order over them, and the view it would be shown with, a first visit's fit included), and
+commits there with `transact(on:)`, the window staying where it is; a script that lands on two
+boards is `several_boards`, since a run is one transaction and one undo step, made on one board.
+Its result's `on` says which (`board`, that shape's `title`, `shown`). `canvas show "<title>"` (or
+`--root`) moves the window, through `editor.showBoard`, and says where it is in a `board` of its
+own, which the server completes.
 
 The app that holds the socket's lock (`canvas.sock.lock`, beside it) is the one listening: a second
 copy of the app gives up and runs without the command line, and a socket that one that crashed left
@@ -7349,7 +7358,7 @@ each of them:
 | [The clipboard](#the-clipboard) | Copies what a shape holds, all the way down, and pastes the tree with new ids; what a cut took, onto any board, under the ids it had (a move). |
 | [Undo](#undo) | One history per file; a step holds every board it reached, and undoing one made on another board shows that board first. |
 | [Boards on disk](#boards-on-disk) | Format 4 saves every board, in one flat map; the camera on each board, and the board left open, are remembered per file on this Mac. |
-| [The command line](#the-command-line) | Commands work on the board a file's window shows. |
+| [The command line](#the-command-line) | A draw works out its board from the titles it names (`in "X"`, the board X holds), whichever the window shows; `canvas show` moves the window. |
 
 ## Undo
 
@@ -7722,7 +7731,7 @@ snapping             service SnapState · translation adjuster
 ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
 arrow-ports          property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowBindingRules
 language-models      service LanguageModelState
-automation           command line draw · command line kinds
+automation           command line draw · command line show · command line kinds
 title-names          draw names
 port-edges           draw edges
 validation-checks    draw checks
@@ -7766,7 +7775,7 @@ about mentions that can't work.
 Titles places its pill on every shape whose kind's title shows one (`adornment TitlePill → every shape`),
 and Locking its lock; `adornments` lends them their layout and drawing, a canvas button
 (`CanvasButtons`) and their hits (`DecorationHits`), and places none of its own. The automation
-line is its commands (`command line draw`, `command line kinds`), and the three after it are the
+line is its commands (`command line draw`, `command line show`, `command line kinds`), and the three after it are the
 bridges that fill its draw points, one each. `queries` is the query engine's service (`QueryState`,
 which hears no commit) and its mark (`query engine`, which `registry.answersQueries` reads); the
 five after it fill its points (names, boards' names, and words and a text format, each by what it
@@ -8345,11 +8354,10 @@ Each of these adds to the design without changing what plugins are written again
   concern (a title, a lock), where `draw` does everything today; opening a board that isn't open;
   putting `canvas` on the PATH from the app (as editors install theirs); and other clients of the
   same socket (an MCP server, say, from the same command descriptions).
-- **Addressing a board of a file from the command line**: a command works on the board a file's
-  window shows (`canvas boards` says which, and a board command's result); naming another
-  (`--board 2/<owner id>`, or a path of titles), so `draw` could reach a subboard's board without
-  the person opening it, is still to come (a query lists a file's boards already, by their owners:
-  `subboard`, each row with its `board` and `inside`).
+- **Drawing on two boards in one run**: a draw is one transaction on one board, so a subboard and
+  what goes in it are two runs (`in "X"` names a shape on the file already); and moving a shape to
+  another board (`in` places a new shape only). `in` is containment's word, meant for any container
+  (frames, when they're built), not only boards.
 - **More of `canvas draw`**: labels on edges (arrows carry no text, so an edge can't either);
   containers and groups, which hold what's in them, grow with it and move as one (a zone is a
   plain shape today, and what's in it is placed once); edges routed around shapes; extending a

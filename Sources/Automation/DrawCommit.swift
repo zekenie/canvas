@@ -16,14 +16,14 @@ extension Drawing {
     func apply(to transaction: inout Transaction, reveals: Bool) throws(AutomationError) -> DrawResult {
         var changes: [DrawChange] = []
         var warnings = notes
-        let before = editor.shapeContext
+        let before = target.shapes
 
         // Deletes, and what they took.
         if !deleted.isEmpty { transaction.delete(deleted) }
         if let kept = deleted.first(where: { transaction.document[$0] != nil }), let delete = deletes.first(where: { item in
             item.shape?.id == kept || item.connections.contains { $0.record.id == kept } || item.loose.contains { $0.id == kept }
         }) {
-            throw AutomationError(delete.statement, .readOnly, "something kept \(named(editor.document[kept]!)) from being deleted",
+            throw AutomationError(delete.statement, .readOnly, "something kept \(named(target.document[kept]!)) from being deleted",
                                   hint: "leave it out of the script")
         }
         for delete in deletes {
@@ -251,7 +251,7 @@ extension Drawing {
     private func isNew(_ id: ShapeID, in transaction: Transaction) -> Bool {
         guard transaction.document[id] == nil else { return false }
         guard let board = editor.file.board(containing: id) else { return true }
-        return board == editor.board && deleted.contains(id)
+        return board == target.board && deleted.contains(id)
     }
 
     /// What a shape drawn names (`ShapeNaming`: a mention in a note's text) that isn't in the file
@@ -271,7 +271,7 @@ extension Drawing {
             var gone: [ShapeID] = [], hidden: [ShapeID] = []
             value.forEachNamedShape { id in
                 guard transaction.document[id] == nil, !gone.contains(id), !hidden.contains(id) else { return }
-                guard let board = file.board(containing: id), board != editor.board, !taken.contains(board) else { return gone.append(id) }
+                guard let board = file.board(containing: id), board != target.board, !taken.contains(board) else { return gone.append(id) }
                 if editor.shape(inFile: id) == nil { hidden.append(id) }
             }
             // Ids, though a script never writes one: these are what it wrote into the value.

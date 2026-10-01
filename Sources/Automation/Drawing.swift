@@ -93,6 +93,8 @@ struct BoardConnection {
 @MainActor
 struct Drawing {
     let editor: CanvasEditor
+    /// The board it draws on, as the run starts: the board shown, or another (`--on`).
+    let target: BoardReading
     let registry: Registry
     let script: Script
     let naming: DrawNaming?
@@ -130,25 +132,34 @@ struct Drawing {
     var notes: [DrawWarning] = []
     private var errors: [AutomationError] = []
 
-    init(_ script: Script, editor: CanvasEditor) throws(AutomationError) {
+    /// The file's names, when the script names shapes: what says a title it can't find here is on
+    /// another board.
+    private let fileNames: FileNames?
+
+    init(_ script: Script, editor: CanvasEditor, on target: BoardReading, fileNames: FileNames? = nil) throws(AutomationError) {
         let registry = editor.registry
         self.editor = editor
+        self.target = target
+        self.fileNames = fileNames
         self.registry = registry
         self.script = script
         naming = registry.drawNaming
         edging = registry.drawEdging
         edgeKind = registry.drawEdging.flatMap { $0.kind(registry) }
         // Where the view is headed, if it's gliding (a --reveal a moment ago): the view the drawing
-        // is seen in once it settles. The part of it the host leaves clear (below the path's pill
-        // over a subboard), as every fit is.
-        let clear = editor.unobscuredViewport
-        view = clear.isEmpty ? nil : editor.cameraTarget.toWorld(clear)
-        if let naming, script.mentionsTitles { names = BoardNames(editor.document, naming: naming, registry: registry) }
+        // is seen in once it settles; on a board not shown, the view it would be shown with. The
+        // part of it the host leaves clear (below the path's pill over a subboard), as every fit is.
+        view = target.view
+        if let fileNames {
+            names = BoardNames(fileNames.entries(on: target.board))
+        } else if let naming, script.mentionsTitles {
+            names = BoardNames(target.document, naming: naming, registry: registry)
+        }
         // What connects to what, for the deletes (edges read the transaction's document).
         let deletes = script.statements.contains { if case .delete = $0.body { true } else { false } }
         if deletes, let edging, let edgeKind {
-            connections = Self.connections(in: editor.document, kind: edgeKind, edging: edging, registry: registry)
-            looseConnections = Self.looseConnections(in: editor.shapeContext, kind: edgeKind, edging: edging)
+            connections = Self.connections(in: target.document, kind: edgeKind, edging: edging, registry: registry)
+            looseConnections = Self.looseConnections(in: target.shapes, kind: edgeKind, edging: edging)
         }
 
         for statement in script.statements {
@@ -222,11 +233,11 @@ struct Drawing {
     func boardShape(called title: String, _ statement: Statement) throws(AutomationError) -> AnyShapeRecord? {
         let found = boardShapes(called: title)
         guard found.count < 2 else {
-            let each = found.compactMap { editor.document[$0] }.map { "\(indefinite($0.kind)) at \(point(middle(of: $0)))" }
+            let each = found.compactMap { target.document[$0] }.map { "\(indefinite($0.kind)) at \(point(middle(of: $0)))" }
             throw AutomationError(statement, .ambiguousTitle, "the board has \(found.count) shapes called \(quoted(title)): \(listed(each))",
                                   hint: "titles name shapes here, so each needs its own: ask the user to rename one")
         }
-        return found.first.flatMap { editor.document[$0] }
+        return found.first.flatMap { target.document[$0] }
     }
 
     /// A shape a statement names by title: one the script draws or restates, else one on the
@@ -239,6 +250,11 @@ struct Drawing {
         if names.ids[title] != nil {
             throw AutomationError(statement, .unknownTitle, "\(what) \(quoted(title)), which this script deletes",
                                   hint: "draw \(quoted(title)) again after deleting it, or leave it out")
+        }
+        if let naming, let other = fileNames?.boards(of: title).first(where: { $0 != target.board }) {
+            throw AutomationError(statement, .severalBoards,
+                                  "\(what) \(quoted(title)), which is on \(FileNames.named(other, in: editor, naming: naming)), and this script draws on \(FileNames.named(target.board, in: editor, naming: naming))",
+                                  hint: "a run draws on one board, and a shape is placed or connected only to shapes on its own")
         }
         let drawn = items.compactMap(\.title)
         let guesses = Suggestions.closest(to: title, among: (names.ordered.filter(isOnBoard) + drawn).filter { $0 != mine })
@@ -266,6 +282,12 @@ struct Drawing {
             // not at all if one of them holds a read-only shape, as the Finder won't trash a folder
             // holding a locked file.
             let file = editor.file, boards = file.subtree(ownedBy: [record.id])
+            // Drawing on a board above the one shown, the window is inside what it'd take.
+            if let shown = boards.first(where: editor.boardPath.contains) {
+                let holds = shown == editor.board ? "the board the window shows" : "a board above the one the window shows"
+                throw AutomationError(statement, .boardShown, "\(quoted(title)) holds \(holds), so it can't be deleted",
+                                      hint: "show a board above it first: \(RPC.commandName) show --root")
+            }
             if boards.contains(where: { file[$0].shapes.contains(where: registry.isReadOnly) }) {
                 throw AutomationError(statement, .readOnly, "\(quoted(title)) holds a read-only shape (locked, say) on its board, so it can't be deleted",
                                       hint: "leave it out of the script, or ask the user to unlock what's on its board")
@@ -648,9 +670,9 @@ struct Drawing {
     /// one on another board of the file is no better. What it only names (a mention, `ShapeNaming`)
     /// may be anywhere in the file, or gone: that's said, not refused (`namingWarnings`).
     private func references(of record: AnyShapeRecord, _ item: ShapeItem) throws(AutomationError) {
-        let away = record.boundShapes(in: editor.shapeContext).filter { editor.document[$0] == nil || deleted.contains($0) }
+        let away = record.boundShapes(in: target.shapes).filter { target.document[$0] == nil || deleted.contains($0) }
         guard let first = away.first else { return }
-        let elsewhere = editor.document[first] == nil && editor.file.record(first) != nil
+        let elsewhere = target.document[first] == nil && editor.file.record(first) != nil
         throw AutomationError(item.statement, .invalidValue,
                               "\(subject(of: item)) is bound to a shape \(elsewhere ? "on another board of the file" : "that isn't on this board")",
                               hint: "a shape can be bound only to shapes on its own board")
@@ -770,14 +792,14 @@ struct Drawing {
 
     /// A board shape's middle.
     func middle(of record: AnyShapeRecord) -> CGPoint {
-        (editor.shapeContext.geometry(of: record.id)?.bounds ?? record.box).map { CGPoint(x: $0.midX, y: $0.midY) } ?? .zero
+        (target.shapes.geometry(of: record.id)?.bounds ?? record.box).map { CGPoint(x: $0.midX, y: $0.midY) } ?? .zero
     }
 
     /// A board shape, named for a message: `"DB"`, or `card at 400,300` (its middle); unquoted, as
     /// a row names it.
     func named(_ record: AnyShapeRecord, quote: Bool = true) -> String {
         guard let title = Drawing.title(of: record, names: names, naming: naming, registry: registry) else {
-            return Drawing.location(of: record, in: editor.shapeContext)
+            return Drawing.location(of: record, in: target.shapes)
         }
         return quote ? quoted(title) : title
     }
@@ -817,14 +839,19 @@ struct BoardNames {
     init() {}
 
     init(_ document: CanvasDocument, naming: DrawNaming, registry: Registry) {
-        for record in document.shapes where !record.isOpaque {
-            guard let name = naming.name(record, registry) else { continue }
+        self.init(document.shapes.lazy.filter { !$0.isOpaque }.compactMap { record in naming.name(record, registry).map { ($0, record.id) } })
+    }
+
+    /// From a board's named shapes, in document order (`FileNames.entries(on:)`, read once for the
+    /// whole file).
+    init(_ entries: some Sequence<(name: String, id: ShapeID)>) {
+        for (name, id) in entries {
             if ids[name] == nil {
                 byLength[Self.comparedLength(name), default: []].append((ordered.count, name))
                 ordered.append(name)
             }
-            ids[name, default: []].append(record.id)
-            byID[record.id] = name
+            ids[name, default: []].append(id)
+            byID[id] = name
         }
     }
 

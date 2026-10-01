@@ -191,6 +191,8 @@ public enum PlaceWord: String, Sendable, CaseIterable {
 /// The language's other words: those that open a placement, join targets, or are a value.
 enum Word: String {
     case of, level, with, and, allow, inside, outside, on
+    /// `in "X"`: the shape that holds this one.
+    case `in`
     /// Not a part here: a shape's text isn't a box.
     case text
     /// A value that puts a property back to its default, which the caller reads; never a title.

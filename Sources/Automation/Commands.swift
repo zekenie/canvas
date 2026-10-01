@@ -22,8 +22,10 @@ public struct AutomationPlugin: CanvasPlugin {
                 where it goes against other shapes: right of "API"), an edge (edge "API" -> "DB"), a delete, or a \
                 style. A statement about a title the board has changes that shape; one about a title it doesn't \
                 makes a new one. It's applied all at once, as one step of the app's undo, or not at all, and the \
-                result says what each statement did and where its shape landed. It draws on the board its file's \
-                window shows, a subboard's if one is open (the result's board says which). The language is taught \
+                result says what each statement did and where its shape landed. A title names a shape on any board \
+                of the file (the one the window shows first), and in "X" puts a shape on the board X holds (a \
+                subboard's): a run draws on the board what it names is on, else the one the window shows, without \
+                moving the window (the result's on says which). The language is taught \
                 by the repository's canvas skill (.claude/skills/canvas); `\(canvas) kinds` lists what can be drawn, \
                 and with what.
                 """,
@@ -34,10 +36,26 @@ public struct AutomationPlugin: CanvasPlugin {
                 CommandExample(#"\#(canvas) draw '<kind> "DB" below "API"'"#, "Another, below it."),
                 CommandExample(#"\#(canvas) draw 'edge "API" -> "DB"'"#, "Connect the two."),
                 CommandExample(#"\#(canvas) draw 'delete "DB"'"#, "Delete one, and what connects to it."),
+                CommandExample(#"\#(canvas) draw '<kind> "Cache" in "Backend"'"#, "A shape on the board of the subboard titled Backend."),
                 CommandExample("\(canvas) draw --dry-run - < plan.txt", "Read the script from standard input, and say what it would do."),
             ]
         ) { params, context throws(AutomationError) in
             try draw(params, in: context)
+        }
+        registrar.automationCommand(
+            "show", "Show another board of the file in its window: a subboard's, by its title, or the top one.",
+            discussion: """
+                Moves the window, as opening a subboard does; it changes nothing on any board, and the board left is \
+                a step of Go › Back. Drawing doesn't need it: a script draws on the board its titles are on, and \
+                in "X" puts a shape on the board X holds.
+                """,
+            params: ShowParams.self, positionals: ["shape"],
+            examples: [
+                CommandExample(#"\#(canvas) show "Q3""#, "Show the board the shape titled Q3 holds."),
+                CommandExample("\(canvas) show --root", "Show the board at the top of the file."),
+            ]
+        ) { params, context throws(AutomationError) in
+            try show(params, in: context)
         }
         registrar.automationCommand(
             "kinds", "List the kinds of shape the app has: what a script can draw, and with what.",

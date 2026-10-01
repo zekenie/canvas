@@ -66,7 +66,7 @@ import ValidationDetails
         ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
         arrow-ports          property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowBindingRules
         language-models      service LanguageModelState
-        automation           command line draw · command line kinds
+        automation           command line draw · command line show · command line kinds
         title-names          draw names
         port-edges           draw edges
         validation-checks    draw checks
