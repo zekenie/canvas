@@ -223,7 +223,8 @@ struct StoryQuery {
 
         let link = try require(byID[QueryStory.gatewayToAuth])
         expectEqual(link.title, nil)
-        expectEqual(link.properties, ["bend": 0, "channel": "note-link", "endArrowhead": true, "startArrowhead": false],
+        expectEqual(link.properties, ["bend": 0, "channel": "note-link", "endArrowhead": true, "labelPosition": 0.5,
+                                         "startArrowhead": false, "text": ""],
                     "no attribute that says where it is")
         expectEqual(byID[QueryStory.warehouseToPayments]?.properties?["channel"], nil, "an arrow drawn on no channel has none")
         expect(rows.allSatisfy { $0.editing == nil }, "nothing is being typed into")

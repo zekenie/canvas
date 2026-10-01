@@ -105,7 +105,7 @@ style <name> attribute { attribute }             a named set of attributes, for 
 | `schema-card` | 240x52 | `prompt` (what it holds, in words: the card shows them, and grows to fit), `schema` (a JSON Schema, as text: its panel shows it), `locked` | `schema-link`, on its left, right and bottom |
 | `subboard` | 240x160 | `locked` | none: plain arrows |
 
-Arrows are what edges are; you don't draw one on its own. Values: text is quoted (`text: "Two words"`). `true` and `false` are bare words (`locked: true`). `null` puts a property back to its default (but not a title: `title:` only renames). `size: 300x200` is in world units, up to 100000. A value past a bound, like a title over 80 characters, is kept and warned about.
+Arrows are what edges are; you don't draw one on its own. An edge takes the arrow's attributes beside `from:`, `to:` and `channel:`: `text:` (what it says, set on its line), `labelPosition:` (where along it, `0` to `1`, halfway by default), `bend:` and `locked:`; its heads are its arrow's (`->`, `<->`). Values: text is quoted (`text: "Two words"`). `true` and `false` are bare words (`locked: true`). `null` puts a property back to its default (but not a title: `title:` only renames). `size: 300x200` is in world units, up to 100000. A value past a bound, like a title over 80 characters, is kept and warned about.
 
 A subboard is a card that holds a board of its own. `in "Payments"` draws a shape on its board, without opening it; `inside "Payments" top-left` puts a shape over its card instead. Draw the subboard first, then what goes in it in a run of its own. Deleting it deletes everything on its board too (the result warns how much). A schema card shows its `prompt:`, what the schema holds in words, as a note shows its text, and grows to fit it; with none it's blank. Its `schema:` is JSON inside a quoted string, so escape each quote: `schema: "{\"title\": \"Order\", \"type\": \"object\"}"`; the user sees it in the card's panel. Give a card both. What you write on one is taken as written: the Claude sync that rewrites one side when the user edits the other isn't asked, so write a prompt and a schema that agree. A card refers to another schema card by its id (from `canvas query`'s rows): its `prompt:` mentions it, `@[Address](shape:<id>)`, and its `schema:` points to it with `{\"$ref\": \"urn:uuid:<id, lowercase>\"}` where that field goes; write both.
 
@@ -307,7 +307,7 @@ sticky-note:inside("Backend")
 
 ## What will bite you
 
-**Habits from other languages**: bare or curly-quoted titles, `node`, `note` or `box` for a kind (the hint lists the kinds, and names the one like it), `link` for an edge, `-->` or a bare `"A" -> "B"`, `#` for a comment (comments are `//`), text on an edge, coordinates (`x:`, `at:`). Each is refused, most with a hint naming what to write instead, and every unreadable line comes back in one pass:
+**Habits from other languages**: bare or curly-quoted titles, `node`, `note` or `box` for a kind (the hint lists the kinds, and names the one like it), `link` for an edge, `-->` or a bare `"A" -> "B"`, `#` for a comment (comments are `//`), a quoted label after an edge (write `text: "…"`), coordinates (`x:`, `at:`). Each is refused, most with a hint naming what to write instead, and every unreadable line comes back in one pass:
 
 ```draw-error
 // reason: syntax
@@ -335,7 +335,7 @@ sticky-note "Ship 1.0" owner: "Ann"
 - **Some shapes aren't in any answer**: shapes the app keeps aside (a kind this app doesn't have), and those on boards it can't show.
 - **Placement happens once.** The board doesn't remember `right of "API"`. When the user moves API, nothing follows it.
 - **The result confirms intent, not the picture.** It tells you where each shape landed and what was pushed. It doesn't tell you whether a note's text overflowed (a note grows to fit its text unless you gave it a `size:`, which cuts long text off, so leave `size:` off notes with long text) or whether a line crosses other shapes.
-- **Edges are plain.** They carry no text, they're arcs, and they don't route around shapes. Only closed shapes are kept clear, so a shape can land across an arrow or a drawn line.
+- **Edges are arcs.** They don't route around shapes. Only closed shapes are kept clear, so a shape can land across an arrow or a drawn line.
 - **Pills overlap when zoomed out.** A title's pill (and a lock's chip, in the same row just above a shape) clears the shape above it in a list down to about 42% zoom.
 - **One board at a time.** A draw works on the board its file's window shows, and can't reach a subboard's board from outside it.
 

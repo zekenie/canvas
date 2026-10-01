@@ -23,14 +23,14 @@ public func renderBitmap(_ editor: CanvasEditor, size: CGSize, scale: CGFloat = 
 }
 
 /// Draws an editor as `renderBitmap(_:size:scale:)` does, then `editing`, the editing view of the
-/// shape being edited (`editor.makeEditingView()`), over it, laid out as `CanvasView` lays it out:
-/// its frame in view points, its bounds in world units, so AppKit scales it by the zoom. It's drawn
+/// shape being edited (`editor.makeEditingView()`), over it, laid out as `CanvasView` lays it out
+/// over its editing frame: its frame in view points, its bounds in world units, so AppKit scales it by the zoom. It's drawn
 /// at the bitmap's scale from an unshown window, and taken out of it again, so a test can go on
 /// typing into it. Only the editor's drawing, when no shape is being edited.
 @MainActor
 public func renderBitmap(_ editor: CanvasEditor, size: CGSize, scale: CGFloat = 1, editing: EditingView) -> NSBitmapImageRep {
     let rep = renderBitmap(editor, size: size, scale: scale)
-    guard let id = editor.editingShapeID, let box = editor.document[id]?.box else { return rep }
+    guard let box = editor.editingFrame else { return rep }
     let host = FlippedView(frame: CGRect(origin: .zero, size: size))
     let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: true)
     window.appearance = NSAppearance(named: .aqua)

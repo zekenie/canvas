@@ -8,7 +8,7 @@ import TestKit
 
 // What `canvas draw` needs from plugins it doesn't know, as tests give it: names (a tile is called
 // by its label, a card by its nickname, else "Card, 100 × 60", worked out from its size), edges
-// (links, with a tone and a head at each end as added properties, and what each kind may carry from
+// (links, with a tone, a head at each end and a caption as added properties, and what each kind may carry from
 // each side), and checks (a card that says nothing, a glossy tile).
 
 /// How the test plugins fold a title: runs of whitespace one space, trimmed; nil if blank.
@@ -50,6 +50,14 @@ extension BothHeads: ShapeProperty {
     static var defaultValue: Bool? { nil }
 }
 
+/// What a link says: an attribute of the link's kind, not the edge maker's, so `draw` sets it.
+enum Caption {}
+
+extension Caption: ShapeProperty {
+    static let key: PropertyKey = "caption"
+    static var defaultValue: String? { nil }
+}
+
 /// What the edges plugin was asked to make: each request, and the connection it was to change.
 @MainActor final class EdgeLog {
     var requests: [EdgeRequest] = []
@@ -64,6 +72,8 @@ extension BothHeads: ShapeProperty {
         registrar.optIn(Link.self, to: Tone.self)
         registrar.declare(BothHeads.self)
         registrar.optIn(Link.self, to: BothHeads.self)
+        registrar.declare(Caption.self)
+        registrar.optIn(Link.self, to: Caption.self)
         registrar.drawEdges(kind: { _ in Link.kind }, attributes: [Tone.key.rawValue], sides: { kind, _ in
             kind == Tile.kind ? [.left: ["warm"], .right: ["warm", "cool"]] : kind == Card.kind ? [.bottom: ["cool"]] : [:]
         }, ends: { record, _ in

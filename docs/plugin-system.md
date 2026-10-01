@@ -1698,7 +1698,8 @@ multi-selection's box, then the canvas.
   instead). A lone box pressed without ⇧ or ⌘ follows the pointer from the press, with no
   threshold, but for a plain click on the only selected shape of an `Editable` kind (a note), which
   waits for the threshold and, released within it, edits the shape from the release, the caret
-  where it's clicked (tldraw's); a read-only one is only selected, and so is one clicked on what's
+  where it's clicked (tldraw's); on a `LabeledShape` (an arrow) only a click on its label edits it,
+  and a drag from its label moves the label, not the shape; a read-only one is only selected, and so is one clicked on what's
   drawn for it outside it (a title's pill, which isn't its text), or by the click that brings its
   window forward (`Pointer.activatesWindow`, as Finder's click-to-rename ignores it). A
   double-click opens a shape, selected alone: its kind's opener, else editing an `Editable` one
@@ -6037,7 +6038,8 @@ order, and never by id, since titles are the names:
 A row's `did` is `created`, `moved` (its bounds changed), `updated`, `renamed` (with `was`),
 `unchanged`, `deleted`, `connected` or `reconnected`. A shape's row has its `kind`, `title` and
 `at` (`[[x, y], [width, height]]`, world units), `inView` while the board is in a window, and
-`pushedPast`; an edge's has `from`, `to` and the attributes DrawEdges declares (`channel`), but a
+`pushedPast`; an edge's has `from`, `to` and the attributes DrawEdges declares (`channel`; not
+its kind's, which are as written), but a
 deleted connection with an end left free has neither end to name. A
 warning (`line`, but none for one about the whole run; `message`; `severity`; and the property
 it's about, `attribute`) is an issue DrawChecks finds on a shape made or changed (an `error`
@@ -6120,6 +6122,13 @@ registrar.drawChecks { record, shapes in
   `style`), one a result's row has of its own (`line`, `did`, `kind`, …: a row carries an edge's
   attributes beside its own members), one a script couldn't write before a colon, and one declared
   twice.
+- **An edge's other attributes are its kind's**, as a shape's are: any key DrawEdges doesn't
+  declare is one of the edge kind's attributes (its schema's, read by `KindVocabulary`: an arrow's
+  `text`, `labelPosition`, `bend`, `locked`), or `unknown_attribute`, read as a shape's value is.
+  `make` never sees them: `draw` sets them on what it returns (`registry.shape(_:setting:)`), then
+  hands that to `make` again as `existing`, and refuses one `make` changes back (`invalid_value`,
+  "… isn't what the edge as written says": an arrow's heads are its arrow's, `->` or `<->`). So
+  an edge restated without one keeps it, as a shape does, and no bridge learns what a kind says.
 - **Checks see the board as the script leaves it** (`transaction.shapes`), so a rule that looks up
   another shape sees the ones drawn with it. Each issue is a warning on the statement's line.
 
@@ -6854,7 +6863,8 @@ it, the core or a horizontal.
 
 | Capability | For | Used by |
 |---|---|---|
-| `Editable` | Edited in place: an editing placement, or opening it (Selection's double-click, Return and ⌘↓), unless its kind has an opener of its own. Supplies an `NSView` laid over the shape; writes go through `EditContext.update`. | StickyNotes, Schemas (its description) |
+| `Editable` | Edited in place: an editing placement, or opening it (Selection's double-click, Return and ⌘↓), unless its kind has an opener of its own. Supplies an `NSView` laid over the shape's editing frame (`editingFrame(of:in:)`, world units, looked at again as the shape or the camera changes: a box kind's box by default; a kind without one says where); writes go through `EditContext.update`. Only a box kind has an editing placement. | StickyNotes, Schemas (its description), Arrows (its label, which grows with what's typed) |
+| `LabeledShape` (Selection's) | An `Editable` kind with a label, text on part of the shape (`labelFrame(of:in:)`, nil while it has none; an arrow's is its kept geometry's `label`, `ShapeGeometry.label`, tldraw's `isLabel` geometry): a click on the only selected shape edits it only on its label, and a drag from its label, past the threshold, is `labelDragSession`'s (the shape selected alone first, ⇧ adding it), not the selection's; a read-only shape's drag is the selection's, refused as ever. tldraw's arrow labels. | Arrows (a drag slides the label along the arrow) |
 | `CustomTranslation` | Moving by its own rules instead of by its frame, when a `TranslatingSession` moves it (dragging the selection, a shape just placed). When a drag starts, `beginTranslation` gets the shape, every shape moving with it and the starting transaction (committed on its own, before the first move), and returns a `ShapeTranslation`: a closure run on every drag event with the drag's delta (the pointer's, or what the [translation adjuster](#the-cores-part-the-translation-adjuster) made of it: Snapping's snap), after the moving boxes have moved. A kind without a frame needs this to be movable at all. | Arrows (alone, bound ends slide on their shapes; with a shape they're bound to, they keep every binding) |
 | `HandleProviding` (Selection's) | Draggable handles on the only selected shape. The select tool finds, draws and hit-tests them; `pressHandle` returns `.drag` or `.consumed`, and `dragSession` does the dragging. | Arrows |
 | `BrushHitTesting` (Selection's) | Whether the marquee touches it, when the brush overlaps its bounds without containing them. Default: `ShapeGeometry.isHit(byBrush:)`. | Arrows (against the visible arc) |
@@ -6880,8 +6890,8 @@ another shape edited, another board shown, an undo), what it wrote committed
 (`EditorService.editingDidEnd`), its step closed unless what ended it is an action still under way
 (an undo about to apply a step, a command, a draw, a file put in place), so a service that answers
 it waits a turn (`editor.scheduler`): a schema card's sync takes its description as done then.
-`keepInView(_:)` brings a rect of the view (in its coordinates: world units, the shape's box at
-their origin) into the part of the canvas the host leaves clear, 16 points in from its edges,
+`keepInView(_:)` brings a rect of the view (in its coordinates: world units, the shape's editing
+frame at their origin, which `frame` says) into the part of the canvas the host leaves clear, 16 points in from its edges,
 panning the camera at once by as little as it takes, with no zoom and no undo step: the canvas
 scrolls no text of its own, so a note's editor keeps its caret in view this way as the note grows
 past the window's bottom with what's typed, or an arrow key moves the caret out of view.
@@ -7733,7 +7743,7 @@ core                 tool hand · command undo · command redo · command zoomIn
 keyboard             service KeyboardState · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit
 selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
 topology             service TopologyIndex
-arrows               shape arrow · label Arrow → arrow · ContentsRows → arrow · service ArrowTargeting · overlay BindingHintsOverlay
+arrows               shape arrow v1 · label Arrow → arrow · ContentsRows → arrow · service ArrowTargeting · overlay BindingHintsOverlay
 sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
 subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard
 schemas              service SchemaSync · overlay SchemaHighlightFrames · ShapePopovers · shape schema-card v1 · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · mention text → schema-card · mentionable → schema-card · ShapeDetails → schema-card · channel schema-link · edge type schema-link
@@ -8370,6 +8380,10 @@ Each of these adds to the design without changing what plugins are written again
   (`ChangeSet`, which services get with `documentDidChange`), and undo keeps the records before and
   after (`DocumentDelta`); what's left of who made it is more than whether an agent did
   (`ChangeSet.byAgent`): which agent, or which person. Sync builds on them.
+- **More of arrow labels**: mentions in them, as a note's text has (the label is plain text, stored
+  as a string, which mention text is too, so a label becomes mention text with no migration:
+  `MentionTextView` for the editor, `x.mentionText` for its pills); highlights of what its words
+  say, as a schema card's description has.
 - **More of the command line**: reading positions back (a query's rows say what a shape is, what
   it's called and which board it's on, never where it sits there, so an agent that places shapes
   against ones it didn't draw can't see where they are); who each change is from (an agent's name
@@ -8381,9 +8395,9 @@ Each of these adds to the design without changing what plugins are written again
   what goes in it are two runs (`in "X"` names a shape on the file already); and moving a shape to
   another board (`in` places a new shape only). `in` is containment's word, meant for any container
   (frames, when they're built), not only boards.
-- **More of `canvas draw`**: labels on edges (arrows carry no text, so an edge can't either);
-  containers and groups, which hold what's in them, grow with it and move as one (a zone is a
-  plain shape today, and what's in it is placed once); edges routed around shapes; extending a
+- **More of `canvas draw`**: containers and groups, which hold what's in them, grow with it and
+  move as one (a zone is a plain shape today, and what's in it is placed once); edges routed
+  around shapes; extending a
   list across runs other than by restating every member; chains (`edge "A" -> "B" -> "C"`);
   naming a shape the user left untitled; mentions written by title in a note's text, which only
   ids write today; a schema card titled in its statement, as other kinds are, where its schema's

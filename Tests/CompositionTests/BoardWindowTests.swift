@@ -146,7 +146,7 @@ final class NestedWindow {
         expectEqual(w.editor.board, .root)
         expectEqual(w.editor.selectedShapeIDs, [w.nest.s], "the subboard left")
         w.editor.selection = w.nest.arrow(on: 1)
-        expect(!w.controller.validateMenuItem(open), "an arrow opens nothing")
+        expect(w.controller.validateMenuItem(open), "an arrow opens: its label is edited")
         w.editor.selection = w.nest.s
         let (menus, _, _) = try w.goItems()
         expect(menus.main.performKeyEquivalent(with: commandArrow(w.window, up: false)), "the menu bar runs Open")

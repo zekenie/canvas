@@ -4,12 +4,19 @@ import CoreGraphics
 /// An arrow: a shape kind with no box. The record's id is the arrow's id.
 public struct Arrow: ShapeProps {
     public static let kind: ShapeKind = "arrow"
+    /// Append only. The count is the version boards record.
+    public static let migrations = [
+        // It may say something, on its body (tldraw's arrow label).
+        PropsMigration("text and labelPosition"),
+    ]
     public static let properties = Properties<Arrow>(title: "Arrow") {
         Property("start", \.start).required()
         Property("end", \.end).required()
         Property("bend", \.bend).description("How far the midpoint is pushed off the straight line, in world units; 0 is straight.")
         Property("startArrowhead", \.startArrowhead)
         Property("endArrowhead", \.endArrowhead)
+        Property("text", \.text).description("What the arrow says, set on its body.")
+        Property("labelPosition", \.labelPosition).minimum(0).maximum(1).description("Where its text sits along it: 0 at its start, 1 at its end, 0.5 halfway.")
     }
     public var start: ArrowTerminal
     public var end: ArrowTerminal
@@ -18,14 +25,28 @@ public struct Arrow: ShapeProps {
     public var bend: CGFloat
     public var startArrowhead: Bool
     public var endArrowhead: Bool
+    /// What it says, set on its body, which gives way to it (its label). Plain text for now; text
+    /// that mentions shapes, as a note's does, is to come (stored as a string all the same).
+    public var text: String
+    /// Where its label's center sits along its visible body, as a fraction of its length: 0 at its
+    /// start, 1 at its end (tldraw's `labelPosition`). The label stays clear of an end that has a
+    /// head or is bound, however near that end this is.
+    public var labelPosition: CGFloat
 
-    public init(start: ArrowTerminal, end: ArrowTerminal, bend: CGFloat = 0, startArrowhead: Bool = false, endArrowhead: Bool = true) {
+    public init(start: ArrowTerminal, end: ArrowTerminal, bend: CGFloat = 0, startArrowhead: Bool = false, endArrowhead: Bool = true,
+                text: String = "", labelPosition: CGFloat = 0.5) {
         self.start = start
         self.end = end
         self.bend = bend
         self.startArrowhead = startArrowhead
         self.endArrowhead = endArrowhead
+        self.text = text
+        self.labelPosition = labelPosition
     }
+
+    /// Whether it says anything: text that isn't all spaces and line breaks. Only then has it a
+    /// label, but while it's being edited.
+    public var hasText: Bool { text.contains { !$0.isWhitespace } }
 
     public init() { self.init(start: .free(.zero), end: .free(.zero)) }
 

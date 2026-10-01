@@ -434,8 +434,12 @@ Both ends are titles: shapes on the board, or shapes the same script draws. An u
 | `from:` | `top`, `right`, `bottom` or `left`: the side the start leaves from |
 | `to:` | `top`, `right`, `bottom` or `left`: the side the end arrives on |
 | `channel:` | a channel's id, or `none` for a plain arrow |
+| `text:` | what the arrow says, quoted, set on its line (`text: "calls"`) |
+| `labelPosition:` | where its text sits along it: `0` at its start, `1` at its end, `0.5` (halfway) by default |
+| `bend:` | how far its middle is pushed off the straight line, in world units; `0` is straight |
+| `locked:` | `true` or `false` |
 
-An edge takes no placement (it goes where its ends are), no style, and no text; edges carry no labels yet. Chains (`edge "A" -> "B" -> "C"`) are refused: write each edge on a line of its own.
+Beside `from:`, `to:` and `channel:`, an edge's attributes are the arrow's, as `build/canvas kinds arrow` lists them, written as a shape's are. Its heads aren't among them: the arrow you write (`->`, `<->`) says them, and `startArrowhead:` or `endArrowhead:` saying otherwise is `invalid_value`. Text goes after `text:`; a quoted string right after the edge is `syntax`. An edge takes no placement (it goes where its ends are) and no style. Chains (`edge "A" -> "B" -> "C"`) are refused: write each edge on a line of its own.
 
 ### Sides
 
@@ -472,6 +476,11 @@ edge "Backfill" -> "Nightly schedule" channel: note-link
 edge "Nightly schedule" -> "Load" channel: none
 ```
 
+```draw
+edge "Ingest" -> "Clean" text: "raw rows"
+edge "Clean" -> "Load" text: "deduplicated" labelPosition: 0.3
+```
+
 ```draw-error
 // reason: no_channel
 edge "Ingest" -> "Monday"
@@ -482,7 +491,7 @@ edge "Ingest" -> "Monday"
 An edge statement means "A is connected to B" (with `<->`, in either direction). It looks for the connections already drawn between the two:
 
 - **None**: it draws one (`did: "connected"`).
-- **One**: it updates only what the statement writes. A named side re-aims that end, and an unnamed side keeps the end as it was. The heads follow the arrow (`->` a head at the end only, `<->` both), and the bend stays. The channel stays too: a different `channel:` is refused (`invalid_value`), with the hint to write `delete edge` above the line and draw it again. Nothing different is `did: "unchanged"`; otherwise it's `did: "reconnected"`.
+- **One**: it updates only what the statement writes. A named side re-aims that end, and an unnamed side keeps the end as it was. The heads follow the arrow (`->` a head at the end only, `<->` both), and the bend and the text stay unless written (`text: null` takes the text away). The channel stays too: a different `channel:` is refused (`invalid_value`), with the hint to write `delete edge` above the line and draw it again. Nothing different is `did: "unchanged"`; otherwise it's `did: "reconnected"`.
 - **Two or more** is `ambiguous_edge`. Delete them (`delete edge "A" -> "B"`) above the line and draw one again.
 - **A locked connection** refuses a change (`read_only`), but a statement that wouldn't change it is fine.
 
@@ -638,11 +647,11 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 
 | reason | what it means, with an example message | the fix |
 |---|---|---|
-| `syntax` | The line can't be read. `sticky-note: Web isn't quoted, and titles are in double quotes` · `edge: --> isn't an arrow` · `--> joins shapes only in an edge statement` · `titles and text are in straight double quotes: "Web"` · `sticky-note "A": rigth isn't a placement` · `# doesn't start a comment here` · `attributes are written key: value, without braces` · `an attribute is written key: value, not key = value` | Follow the hint, which names what to write. |
+| `syntax` | The line can't be read. `sticky-note: Web isn't quoted, and titles are in double quotes` · `edge: --> isn't an arrow` · `--> joins shapes only in an edge statement` · `edge "A" -> "B": "calls" is a title where none goes` (an edge's text is `text: "calls"`) · `titles and text are in straight double quotes: "Web"` · `sticky-note "A": rigth isn't a placement` · `# doesn't start a comment here` · `attributes are written key: value, without braces` · `an attribute is written key: value, not key = value` | Follow the hint, which names what to write. |
 | `unknown_kind` | The first word isn't a kind the app has. `node "Web"`, with the drawable kinds listed, and the one like it named (`note`: `did you mean sticky-note?`) | Use a kind from `build/canvas kinds`. |
 | `not_placeable` | The kind exists but no tool places it, like an arrow. | Draw an arrow as `edge "A" -> "B"`. |
 | `unknown_attribute` | The key isn't one the kind takes. `"Backfill" is a sticky-note and has owner:, which isn't one of a sticky-note's attributes`, with the hint `a sticky-note takes size:, gap:, overlap:, style:, title:, locked:, text:` · a style that gives a shape nothing, or has a key nothing takes | Use one it takes (Did you mean), or drop it. |
-| `invalid_value` | The value doesn't fit the key. `locked: maybe isn't true or false` · `size: huge isn't a size` · `gap: wdie isn't a gap` · a size or gap over 100000 · `from: middle isn't a side` · `channel: note-lnk isn't a channel` · a JSON member the object doesn't have, or a value of the wrong type in it · with `channel:` written, a side the kind has no port on (`from: top: a sticky-note has note-link ports on its left, right and bottom`) · another channel for an edge already drawn (`the edge from "A" to "B" is on note-link, not on schema-link`) | Write a value of the kind the hint names. |
+| `invalid_value` | The value doesn't fit the key. `locked: maybe isn't true or false` · `size: huge isn't a size` · `gap: wdie isn't a gap` · a size or gap over 100000 · `from: middle isn't a side` · `channel: note-lnk isn't a channel` · a JSON member the object doesn't have, or a value of the wrong type in it · with `channel:` written, a side the kind has no port on (`from: top: a sticky-note has note-link ports on its left, right and bottom`) · another channel for an edge already drawn (`the edge from "A" to "B" is on note-link, not on schema-link`) · a head its arrow doesn't say (`edge "A" -> "B": startArrowhead: true isn't what the edge as written says`) | Write a value of the kind the hint names. |
 | `duplicate` | Something is written twice. `"locked" is written twice (true, false)` · a title stated on two lines (`written twice, here and on line 4`) · a rename to a title another shape has · two edges for one pair · a style defined twice | Keep one. |
 | `unknown_title` | No shape has that title. `right of "Injest"`, with up to 3 near titles · `board` on an empty board | Write the title exactly (`did you mean "Ingest"?`). On an empty board, leave one shape unplaced instead. |
 | `ambiguous_title` | Two or more shapes have the title, each listed with its kind and where it is · the title is on two boards, neither the one the window shows: `"Retry" is on 2 boards: "Payments"'s board and "Billing"'s board` | Ask the user to rename one. Titles only work as names while each is used once. For two boards, say which with `in "Payments"`. |
@@ -664,7 +673,7 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | `no_edges` | No plugin in this app draws connections. | Draw shapes only. |
 | `no_names` | No plugin in this app names shapes, so titles can't be matched. | Titled statements can't work in this app. |
 | `no_view` | `view` was named, but the board's window has no size. | Place against a shape or `board`, or leave one shape unplaced. |
-| `unsupported` | Something the language doesn't do. `edges can't carry text yet: arrows here have no labels` · `an edge joins two shapes, and this one goes on to a third` · `frame: says where "N" is, and there are no coordinates here` · `x: would say where "N" is, and there are no coordinates here` · `"N" is new, and title: renames a shape` · `title: null would take the shape's title away, and a script only renames` | Leave it out, write each edge on its own line, place the shape instead, or put the title after the kind. |
+| `unsupported` | Something the language doesn't do. `an edge joins two shapes, and this one goes on to a third` · `frame: says where "N" is, and there are no coordinates here` · `x: would say where "N" is, and there are no coordinates here` · `"N" is new, and title: renames a shape` · `title: null would take the shape's title away, and a script only renames` | Leave it out, write each edge on its own line, place the shape instead, or put the title after the kind. |
 | `nothing_to_delete` | `delete edge` found no connection. | Check the direction, or use `<->`. |
 | `busy` | Someone is dragging on this board. | Try again in a moment. |
 | `empty_script` | The script has no statements (comments and styles don't count). | Write at least one shape, edge or delete. |
@@ -757,8 +766,13 @@ sticky-note "Far north" above "Clean" (gap: wide)
 ```
 
 ```draw-error
-// reason: unsupported
+// reason: syntax
 edge "Ingest" -> "Clean" "then"
+```
+
+```draw-error
+// reason: invalid_value
+edge "Ingest" -> "Clean" startArrowhead: true
 ```
 
 ```draw-error
@@ -802,7 +816,6 @@ These are left out on purpose. What they protect is that the app never chooses a
 - **Drawing on two boards in one run**, a subboard and what goes in it among them: draw the subboard, then its contents with `in` in a run of their own.
 - **Moving a shape to another board.** `in` places a new shape; a shape restated stays on its board.
 - **Mentions by title.** A note's `text:` is kept as written, and a mention in it is written with the shape's id, which only the app writes.
-- **Text on edges.** Arrows have no labels.
 - **Groups and containers** that grow with what's in them, or that move as one. Zones are plain shapes, and their contents are placed once.
 - **Routing.** A line may cross shapes it has nothing to do with. There's no `between` or `below "X"` for edges yet.
 - **Extending a list** across runs, other than by restating every member.

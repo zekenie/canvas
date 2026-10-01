@@ -8,34 +8,56 @@ import Geometry
 /// as its own but never under a view point, as the core's open skeletons are, with butt ends; and
 /// each of its heads a filled triangle, as long as its own and swung the same way, along the arc.
 /// A stroke and a fill. Its outline, selected or hovered, is that arc, not its kept geometry's two
-/// straight segments.
+/// straight segments. With a label, both are cut where the label is, as its kept geometry has it
+/// (`ShapeGeometry.label`: nothing measured here), and its text is greeked there, each line's bar
+/// centered, as the text is.
 extension ArrowDefinition: CustomSkeleton {
     func renderSkeleton(_ shape: ShapeRecord<Arrow>, in context: RenderContext) {
         guard let geometry = context.shapes.geometry(of: shape.id), let body = ArrowSkeleton(geometry, zoom: context.zoom) else { return }
-        let cg = context.cg, color = ArrowStyle.color.cgColor
+        let cg = context.cg, color = ArrowStyle.color.cgColor, arrow = shape.props
+        let label = arrow.hasText ? geometry.label : nil
+        if let label {
+            cg.saveGState()
+            cg.addRect(geometry.bounds.insetBy(dx: -ArrowStyle.strokeWidth * 4, dy: -ArrowStyle.strokeWidth * 4))
+            cg.addRect(label)
+            cg.clip(using: .evenOdd)
+        }
         body.add(to: cg)
         cg.setStrokeColor(color)
         cg.setLineWidth(max(ArrowStyle.strokeWidth, ArrowStyle.skeletonLineWidth / context.zoom))
         cg.strokePath()
-        let arrow = shape.props
-        guard arrow.startArrowhead || arrow.endArrowhead else { return }
-        if arrow.startArrowhead { body.addHead(at: .start, strokeWidth: ArrowStyle.strokeWidth, to: cg) }
-        if arrow.endArrowhead { body.addHead(at: .end, strokeWidth: ArrowStyle.strokeWidth, to: cg) }
-        cg.setFillColor(color)
-        cg.fillPath()
+        if arrow.startArrowhead || arrow.endArrowhead {
+            if arrow.startArrowhead { body.addHead(at: .start, strokeWidth: ArrowStyle.strokeWidth, to: cg) }
+            if arrow.endArrowhead { body.addHead(at: .end, strokeWidth: ArrowStyle.strokeWidth, to: cg) }
+            cg.setFillColor(color)
+            cg.fillPath()
+        }
+        guard let label else { return }
+        cg.restoreGState()
+        let box = label.insetBy(dx: ArrowStyle.labelPadding, dy: ArrowStyle.labelPadding)
+        let bars = SkeletonTextBars(CollectionOfOne(SkeletonTextRun.text(arrow.text)), in: box, metrics: ArrowStyle.skeletonText)
+        context.fillSkeletonText(bars.lazy.map { $0.offsetBy(dx: (box.width - $0.width) / 2, dy: 0) })
     }
 }
 
 extension ArrowDefinition: CustomSkeletonOutline {
     func skeletonIndicatorPath(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> CGPath? {
         guard let geometry = context.geometry(of: shape.id), let body = ArrowSkeleton(geometry, zoom: context.zoom) else { return nil }
-        return body.path
+        guard shape.props.hasText, let label = geometry.label else { return body.path }
+        let path = CGMutablePath()
+        path.addPath(body.path.lineSubtracting(CGPath(rect: label, transform: nil)))
+        path.addRect(label)
+        return path
     }
 }
 
 extension ArrowStyle {
     /// The narrowest a skeleton's body is, in view points: the core's open skeletons' line.
     static let skeletonLineWidth: CGFloat = 1
+    /// The label's 15-point text greeked as a note's 16-point text is: 0.52 em a column, its
+    /// 18-point lines, and each line's bar over the x-height.
+    static let skeletonText = SkeletonTextMetrics(advance: SkeletonTextMetrics.systemFontColumn * labelFont.pointSize,
+                                                  lineHeight: labelLineHeight, barTop: 6, barHeight: 8)
 }
 
 /// An arrow's visible body as its kept geometry has it (`ShapeGeometry.outline`: where it starts,

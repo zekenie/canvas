@@ -250,12 +250,47 @@ import TestKit
         expectEqual(try refused(#"edge "Hub" -> "Hub""#, on: editor).reason, "cannot_connect")
         let unknown = try refused(#"edge "Hub" -> "East" colour: red"#, on: editor)
         expectEqual(unknown.reason, "unknown_attribute")
-        expectEqual(unknown.hint, "an edge takes from:, to:, tone:")
+        expectEqual(unknown.hint, "an edge takes from:, to:, tone:, caption:, heads:")
         expectEqual(try refused(#"edge "Hub" -> "Nope""#, on: editor).reason, "unknown_title")
         expectEqual(try refused(#"""
         edge "Hub" -> "East"
         edge "East" <-> "Hub"
         """#, on: editor).reason, "duplicate")
+    },
+    test("an edge writes its kind's own attributes as a shape does: set as it's drawn, changed, kept when unwritten, and put back with null") {
+        let log = EdgeLog()
+        let editor = try drawEditor(log: log)
+        _ = try drawn(threeShapes, on: editor)
+        @MainActor func caption() -> String? { editor.document.shapes.first { $0.kind == Link.kind }?[Caption.self] }
+        expectEqual(rows(try drawn(#"edge "Hub" -> "East" caption: "calls""#, on: editor)).first?["did"], "connected")
+        expectEqual(caption(), "calls")
+        expectEqual(log.requests.last?.attributes, [:], "the edge maker gets only its own")
+        expectEqual(editor.undoHistory.undoName, "Draw")
+        let revision = editor.revision
+        expectEqual(rows(try drawn(#"edge "Hub" -> "East" caption: "calls""#, on: editor)).first?["did"], "unchanged")
+        expectEqual(rows(try drawn(#"edge "Hub" -> "East""#, on: editor)).first?["did"], "unchanged")
+        expectEqual(editor.revision, revision)
+        expectEqual(caption(), "calls")
+        expectEqual(rows(try drawn(#"edge "Hub" -> "East" caption: "reads" tone: warm"#, on: editor)).first?["did"], "reconnected")
+        expectEqual(caption(), "reads")
+        expectEqual(rows(try drawn(#"edge "Hub" -> "East" caption: null"#, on: editor)).first?["did"], "reconnected")
+        expectEqual(caption(), nil)
+        editor.undo()
+        expectEqual(caption(), "reads")
+    },
+    test("an edge's kind's attribute that says otherwise than the edge as written, or isn't what it takes, is refused") {
+        let editor = try drawEditor()
+        _ = try drawn(threeShapes, on: editor)
+        let heads = try refused(#"edge "Hub" -> "East" heads: true"#, on: editor)
+        expectEqual(heads.reason, "invalid_value")
+        expectEqual(heads.message, #"edge "Hub" -> "East": heads: true isn't what the edge as written says"#)
+        expectEqual(heads.hint, "leave heads: out; how the edge is written (its arrow, its sides) says it")
+        expectEqual(links(in: editor), [])
+        expectEqual(rows(try drawn(#"edge "Hub" <-> "East" heads: true"#, on: editor)).first?["did"], "connected", "what it says anyway")
+        let json = try refused(#"edge "Hub" -> "AB" caption: [1]"#, on: editor)
+        expectEqual(json.reason, "invalid_value")
+        expectEqual(json.message, #"edge "Hub" -> "AB": caption: [1] isn't text: quote it"#)
+        expectEqual(json.hint, "caption: takes text")
     },
     test("two connections drawn between two shapes are ambiguous") {
         let editor = try drawEditor()
@@ -400,6 +435,7 @@ import TestKit
         let connection = try require(editor.document.shapes.first { $0.kind == Link.kind })
         editor.freeze([connection.id])
         expectEqual(try refused(#"edge "Hub" -> "AB" tone: warm"#, on: editor).reason, "read_only")
+        expectEqual(try refused(#"edge "Hub" -> "AB" caption: "calls""#, on: editor).reason, "read_only")
         expectEqual(rows(try drawn(#"edge "Hub" -> "AB""#, on: editor)).first?["did"], "unchanged")
         let hub = try refused(#"delete "Hub""#, on: editor)
         expectEqual(hub.reason, "read_only")

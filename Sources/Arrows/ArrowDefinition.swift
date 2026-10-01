@@ -15,11 +15,15 @@ struct ArrowDefinition {
 }
 
 extension ArrowDefinition: ShapeDefinition {
-    /// Draws in world coordinates; the caller has already applied the camera transform.
+    /// Draws in world coordinates; the caller has already applied the camera transform. With a
+    /// label, the body (heads and all) is cut where it is, and its text is drawn there; while it's
+    /// edited, the editing view draws the text, over the cut, an empty label's too.
     func render(_ shape: ShapeRecord<Arrow>, in context: RenderContext) {
         let geometry = arrowGeometry(shape.props, in: context.shapes)
+        let label = ArrowLabels.frame(of: shape.props, on: geometry, editing: context.isEditing)
         let cg = context.cg
         cg.saveGState()
+        if let label { clip(cg, around: label, beside: geometry) }
         cg.addPath(geometry.bodyPath)
         cg.addPath(geometry.arrowheadsPath(strokeWidth: ArrowStyle.strokeWidth))
         cg.setStrokeColor(ArrowStyle.color.cgColor)
@@ -28,26 +32,55 @@ extension ArrowDefinition: ShapeDefinition {
         cg.setLineJoin(.round)
         cg.strokePath()
         cg.restoreGState()
+        if let label, !context.isEditing { ArrowLabels.drawText(shape.props.text, in: label) }
     }
 
-    /// Open: arrows never bind to arrows.
+    /// Clips to everything around the label's cut: what the body and its heads reach, less the cut.
+    private func clip(_ cg: CGContext, around label: CGRect, beside geometry: ArrowGeometry) {
+        let reach = geometry.bodyPath.boundingBoxOfPath.union(label).insetBy(dx: -ArrowStyle.strokeWidth * 4, dy: -ArrowStyle.strokeWidth * 4)
+        cg.addRect(reach)
+        cg.addPath(ArrowLabels.cut(label))
+        cg.clip(using: .evenOdd)
+    }
+
+    /// Open: arrows never bind to arrows. Its label is part of it (`label`), and its bounds hold
+    /// it, as tldraw's geometry does.
     func geometry(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> ShapeGeometry {
         let geometry = arrowGeometry(shape.props, in: context)
-        return ShapeGeometry(outline: [geometry.start, geometry.middle, geometry.end], bounds: geometry.bodyPath.boundingBoxOfPath, isClosed: false)
+        var bounds = geometry.bodyPath.boundingBoxOfPath
+        let label = ArrowLabels.frame(of: shape.props, on: geometry)
+        if let label { bounds = bounds.union(label) }
+        return ShapeGeometry(outline: [geometry.start, geometry.middle, geometry.end], bounds: bounds, isClosed: false, label: label)
     }
 
+    /// Where its label is, as its geometry has it (kept, so measured once).
+    func labelFrame(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> CGRect? {
+        guard shape.props.hasText else { return nil }
+        return context.geometry(of: shape.id)?.label
+    }
+
+    /// On the body, or anywhere on its label (tldraw's filled label rectangle).
     func hitTest(_ point: CGPoint, on shape: ShapeRecord<Arrow>, in context: ShapeContext) -> Bool {
         let margin = ArrowStyle.hitMargin / context.zoom + ArrowStyle.strokeWidth / 2
-        return arrowGeometry(shape.props, in: context).distance(to: point) <= margin
+        if arrowGeometry(shape.props, in: context).distance(to: point) <= margin { return true }
+        return labelFrame(of: shape, in: context)?.contains(point) ?? false
     }
 
     /// How far `hitTest` reaches past the body (its geometry's bounds): half the stroke, and the margin.
     var hitMargin: HitMargin { HitMargin(world: ArrowStyle.strokeWidth / 2, view: ArrowStyle.hitMargin) }
 
+    /// The body and its heads; with a label, the body less the label's cut, and the cut's outline
+    /// (tldraw's indicator).
     func indicatorPath(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> CGPath {
         let geometry = arrowGeometry(shape.props, in: context)
         let path = CGMutablePath()
-        path.addPath(geometry.bodyPath)
+        if let label = labelFrame(of: shape, in: context) {
+            let cut = ArrowLabels.cut(label)
+            path.addPath(geometry.bodyPath.lineSubtracting(cut))
+            path.addPath(cut)
+        } else {
+            path.addPath(geometry.bodyPath)
+        }
         path.addPath(geometry.arrowheadsPath(strokeWidth: ArrowStyle.strokeWidth))
         return path
     }
@@ -56,9 +89,11 @@ extension ArrowDefinition: ShapeDefinition {
 extension ArrowDefinition: BrushHitTesting {
     /// Exact, against the visible body: a brush in the hollow of a bent arrow's bounds doesn't
     /// select it (arrows are open, as in tldraw), nor does one over only the hidden stub inside a
-    /// bound shape.
+    /// bound shape. A brush that reaches its label selects it too, as tldraw's filled label does.
     func brushHitTest(_ brush: CGRect, on shape: ShapeRecord<Arrow>, in context: ShapeContext) -> Bool {
-        arrowGeometry(shape.props, in: context).crosses(brush.polygon)
+        let geometry = arrowGeometry(shape.props, in: context)
+        if geometry.crosses(brush.polygon) { return true }
+        return labelFrame(of: shape, in: context)?.intersects(brush) ?? false
     }
 }
 
@@ -75,9 +110,15 @@ extension ArrowDefinition: HandleProviding {
         return visible.map { HandleLocation($0, at: geometry.point(for: $0)) }
     }
 
+    /// A double-click on an end toggles its head; on the bend handle, it edits the label, as a
+    /// double-click on the arrow does (tldraw's: a handle's double-click that changes nothing edits).
     func pressHandle(_ handle: ArrowHandle, of shape: ShapeRecord<Arrow>, at pointer: Pointer, in editor: CanvasEditor) -> HandlePress {
         if pointer.clickCount == 2, case .terminal(let end) = handle {
             editor.transact("Toggle Arrowhead") { $0.update(shape.id, as: Arrow.self) { $0.props.toggleArrowhead(at: end) } }
+            return .consumed
+        }
+        if pointer.clickCount == 2, handle == .middle {
+            editor.beginEditing(shape.id, at: pointer.world, clickCount: pointer.clickCount)
             return .consumed
         }
         // Pressing a bound end outlines the shape it's bound to.
@@ -289,9 +330,8 @@ public struct ArrowsPlugin: CanvasPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         registrar.shape(ArrowDefinition()) { arrow in
             // No tool places one (a port's drag draws it, ArrowPorts'), so it names itself.
-            arrow.label("Arrow", systemImage: "arrow.up.right")
-            // In the table of contents, under the shape it starts from (as data-canvas's edges).
-            arrow.contentsRow(nestedUnder: { $0.props.start.binding?.shapeID })
+            arrow.label("Arrow", systemImage: ArrowStyle.symbol)
+            arrow.arrowRow()
         }
         registrar.service { ArrowTargeting(editor: $0) }
         registrar.overlay(BindingHintsOverlay())
@@ -304,5 +344,11 @@ extension CanvasEditor {
     public func arrowGeometry(of id: ShapeID) -> ArrowGeometry? {
         guard let arrow = document[id]?.typed(as: Arrow.self)?.props else { return nil }
         return ArrowDefinition().arrowGeometry(arrow, in: shapeContext)
+    }
+
+    /// Where an arrow's label is, in world units: nil while it says nothing.
+    public func arrowLabelFrame(of id: ShapeID) -> CGRect? {
+        guard let arrow = document[id]?.typed(as: Arrow.self) else { return nil }
+        return ArrowDefinition().labelFrame(of: arrow, in: shapeContext)
     }
 }

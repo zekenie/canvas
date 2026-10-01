@@ -11,6 +11,8 @@ enum ArrowStyle {
     static let color = NSColor(name: nil) {
         $0.isDark ? NSColor(white: 0.92, alpha: 1) : NSColor(white: 0.11, alpha: 1)
     }
+    /// What an arrow is shown by: its row, its kind's label.
+    static let symbol = "arrow.up.right"
     static let strokeWidth: CGFloat = 3.5
     /// How far from an arrow's centerline (beyond its stroke) a click still hits it, in view points.
     static let hitMargin: CGFloat = 3
