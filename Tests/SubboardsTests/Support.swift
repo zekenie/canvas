@@ -1,7 +1,7 @@
 import Adornments
 import AppKit
 import Boards
-import Canvas
+@_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
 import ContextMenus
@@ -67,8 +67,9 @@ extension EditorHarness {
     }
 }
 
-/// The canvas with one subboard at `cardFrame`, titled `title`, whose board holds `inside` boxes.
-@MainActor func render(title: String?, inside: Int = 0) throws -> NSBitmapImageRep {
+/// The canvas with one subboard at `cardFrame`, titled `title`, whose board holds `inside` boxes,
+/// in the light appearance, or the dark.
+@MainActor func render(title: String?, inside: Int = 0, dark: Bool = false) throws -> NSBitmapImageRep {
     var nest = Nest()
     nest.inside = inside
     var file = nest.file(title: title)
@@ -76,7 +77,28 @@ extension EditorHarness {
     file = CanvasFile(root: CanvasDocument(shapes: file.root.shapes.filter { $0.id == nest.s }),
                       children: inside == 0 ? [:] : [nest.s: CanvasDocument(shapes: (file.children[nest.s]?.shapes ?? []).filter { $0.kind == Box.kind })])
     let editor = try CanvasEditor(registry: Registry(plugins: subboardPlugins()), file: file, scheduler: ManualScheduler())
-    return renderBitmap(editor, size: CGSize(width: 320, height: 240))
+    return dark ? renderDark(editor, size: CGSize(width: 320, height: 240)) : renderBitmap(editor, size: CGSize(width: 320, height: 240))
+}
+
+/// The card's fill on the light canvas, a faint indigo over white.
+let cardFill = [250, 250, 255]
+
+/// Draws as `renderBitmap` does, in the dark appearance.
+@MainActor func renderDark(_ editor: CanvasEditor, size: CGSize) -> NSBitmapImageRep {
+    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width), pixelsHigh: Int(size.height),
+                               bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                               colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+    let cg = NSGraphicsContext(bitmapImageRep: rep)!.cgContext
+    cg.translateBy(x: 0, y: size.height)
+    cg.scaleBy(x: 1, y: -1)
+    NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance {
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: cg, flipped: true)
+        let bounds = CGRect(origin: .zero, size: size)
+        editor.draw(in: cg, bounds: bounds, dirtyRect: bounds)
+        NSGraphicsContext.restoreGraphicsState()
+    }
+    return rep
 }
 
 /// The darkest channel of the darkest pixel in `rect`: text drawn dark reads low, the placeholder's
@@ -89,6 +111,16 @@ extension EditorHarness {
         }
     }
     return darkest
+}
+
+/// Whether a pixel in `rect` is the kind's indigo: blue well over red, as its symbol is drawn.
+@MainActor func hasIndigo(_ bitmap: NSBitmapImageRep, in rect: CGRect) -> Bool {
+    stride(from: rect.minY, to: rect.maxY, by: 1).contains { y in
+        stride(from: rect.minX, to: rect.maxX, by: 1).contains { x in
+            let p = pixel(bitmap, at: CGPoint(x: x, y: y))
+            return p[2] > p[0] + 80
+        }
+    }
 }
 
 @MainActor func expectColor(_ actual: [Int], _ expected: [Int], _ what: String, within tolerance: Int = 12,

@@ -1,39 +1,24 @@
 import AppKit
 import Canvas
-import Titles
 
 /// On the main actor as a whole, so its drawing helpers share the protocol's isolation.
 @MainActor
 struct SubboardDefinition {}
 
-/// A card on a stack of two thin plates, all inside the frame, so the shape's extent is its box: a
-/// header band with the symbol and the title ("Untitled Subboard", dimmed, while it has none), over
-/// a body that shows what the board holds: its preview, the core's rough picture of it, fitted; until
-/// that's ready, or with nothing to show, how many shapes ("Empty", "12 shapes"). Everything is
-/// clipped to the card.
+/// A card, the whole frame, so its outline is its edge: a body that shows what its board holds, its
+/// preview, the core's rough picture of it, fitted; until that's ready, how many shapes ("12
+/// shapes"); and with nothing to show, the kind's symbol over "Empty"; in an indigo border. Its title is
+/// Titles' pill above it, after the symbol, as every titled shape's is. Everything is clipped to
+/// the card.
 extension SubboardDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<Subboard>, in context: RenderContext) {
-        let frame = shape.frame, cg = context.cg
-        for plate in SubboardStyle.plates(of: frame) {
-            cg.addPath(SubboardStyle.path(plate))
-            cg.setFillColor(SubboardStyle.plate.cgColor)
-            cg.fillPath()
-            stroke(plate, SubboardStyle.plateBorder, width: SubboardStyle.plateBorderWidth, cg: cg)
-        }
-        let card = SubboardStyle.card(of: frame), path = SubboardStyle.path(card)
+        let card = shape.frame, cg = context.cg, path = SubboardStyle.path(card)
         context.fillWithShadow(path, SubboardStyle.cardFill)
         cg.saveGState()
         cg.addPath(path)
         cg.clip()
-        let header = SubboardStyle.header(of: card)
-        cg.setFillColor(SubboardStyle.headerFill.cgColor)
-        cg.fill(header)
-        cg.setFillColor(SubboardStyle.border.withAlphaComponent(SubboardStyle.ruleAlpha).cgColor)
-        cg.fill(CGRect(x: header.minX, y: header.maxY - SubboardStyle.ruleWidth, width: header.width, height: SubboardStyle.ruleWidth))
-        drawHeader(title: context.shapes.registry.title(of: AnyShapeRecord(shape)), in: header)
-        let body = SubboardStyle.body(of: card, below: header)
-        if !context.drawBoardPreview(ofBoardOwnedBy: shape.id, in: SubboardStyle.preview(in: body), maxScale: SubboardStyle.previewMaxScale) {
-            drawCaption(context.shapeCount(inBoardOwnedBy: shape.id), in: body)
+        if !context.drawBoardPreview(ofBoardOwnedBy: shape.id, in: SubboardStyle.preview(in: card), maxScale: SubboardStyle.previewMaxScale) {
+            drawCaption(context.shapeCount(inBoardOwnedBy: shape.id), in: card)
         }
         cg.restoreGState()
         stroke(card, SubboardStyle.border, width: SubboardStyle.borderWidth, cg: cg)
@@ -43,31 +28,25 @@ extension SubboardDefinition: ShapeDefinition {
         SubboardStyle.path(shape.frame)
     }
 
-    /// The symbol, then the title on one line, truncated, both centered in the band's height.
-    private func drawHeader(title: String?, in header: CGRect) {
-        var x = header.minX + SubboardStyle.padding
-        if let glyph = SubboardStyle.glyph {
-            let size = glyph.size
-            glyph.draw(in: CGRect(x: x, y: header.midY - size.height / 2, width: size.width, height: size.height),
-                       from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-            x += size.width + SubboardStyle.spacing
-        }
-        let text = NSAttributedString(string: title ?? Subboard.placeholder,
-                                      attributes: title == nil ? SubboardStyle.placeholderTitle : SubboardStyle.title)
-        let width = header.maxX - SubboardStyle.padding - x
-        guard width > 0 else { return }
-        let height = SubboardStyle.titleLineHeight
-        text.draw(with: CGRect(x: x, y: header.midY - height / 2, width: width, height: height),
-                  options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
-    }
-
-    /// "Empty", "1 shape", "12 shapes", in the middle of the body, if there's room for a line.
-    private func drawCaption(_ count: Int, in body: CGRect) {
+    /// "1 shape", "12 shapes" in the middle of the card, while its preview is built; for an empty
+    /// board, the symbol over "Empty", the caption alone where there's no room for both; nothing
+    /// where there's none for a line. The symbol isn't drawn for a count, so a card that's about
+    /// to show its preview doesn't flash it.
+    private func drawCaption(_ count: Int, in card: CGRect) {
         let height = SubboardStyle.captionLineHeight
-        guard body.height >= height, body.width > SubboardStyle.padding * 2 else { return }
+        guard card.height >= height, card.width > SubboardStyle.padding * 2 else { return }
+        var top = card.midY - height / 2
+        if count == 0, let glyph = SubboardStyle.glyph {
+            let size = glyph.size, total = size.height + SubboardStyle.captionSpacing + height
+            if total <= card.height - SubboardStyle.padding * 2, size.width <= card.width - SubboardStyle.padding * 2 {
+                let y = card.midY - total / 2
+                glyph.draw(in: CGRect(x: card.midX - size.width / 2, y: y, width: size.width, height: size.height),
+                           from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+                top = y + size.height + SubboardStyle.captionSpacing
+            }
+        }
         let text = NSAttributedString(string: SubboardStyle.caption(of: count), attributes: SubboardStyle.caption)
-        text.draw(with: CGRect(x: body.minX + SubboardStyle.padding, y: body.midY - height / 2,
-                               width: body.width - SubboardStyle.padding * 2, height: height),
+        text.draw(with: CGRect(x: card.minX + SubboardStyle.padding, y: top, width: card.width - SubboardStyle.padding * 2, height: height),
                   options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }
 

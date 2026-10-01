@@ -293,7 +293,7 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         expectEqual(state.layout(for: try require(w.editor.document[written.id])).tabs, [])
         expectEqual(w.issues, [])
     },
-    test("typing a subboard's name in the panel's header redraws its card, and keeps Select") {
+    test("typing a subboard's name in the panel's header gives it a title's pill, and keeps Select") {
         let w = try InspectorWindow()
         w.window.makeFirstResponder(w.canvas)
         w.window.press("b")
@@ -307,9 +307,9 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         expectEqual(w.editor.document[id]?[TitleProperty.self], "base")
         expectEqual(w.editor.currentToolID, .select)
         expectEqual(w.editor.selection, id)
-        // The name's line, in the header band right of the symbol.
-        let name = CGRect(x: frame.minX + 36, y: frame.minY + 6, width: 150, height: 20)
-        expect(changedPixels(untitled, w.render(), in: name) > 20, "the card draws the new name")
+        // Its title's pill, in the row 9 to 27 points above the card.
+        let pill = CGRect(x: frame.minX, y: frame.minY - 28, width: 150, height: 20)
+        expect(changedPixels(untitled, w.render(), in: pill) > 20, "the pill shows the new name")
     },
     test("inside a subboard, with nothing selected, the overview lists its board under its name, with a way up") {
         let nest = NestedFile()

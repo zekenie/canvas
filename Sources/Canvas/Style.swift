@@ -39,9 +39,9 @@ public enum Style {
     /// 16-point text, and a schema card's description, set as a note's, are under 6 points on
     /// screen, which reads as texture, not words. No hysteresis: the level is the zoom's.
     static let skeletonZoom: CGFloat = 0.35
-    /// The default skeleton's fill (and an open one's line): a board preview's muted gray
-    /// (`boardPreview`) on the light canvas, since a preview's silhouettes are the same thing
-    /// (shapes with nothing of their own), and as far from the dark canvas in the dark.
+    /// The default skeleton's fill (and an open one's line): a muted gray on the light canvas, and
+    /// as far from the dark canvas in the dark. A board preview's silhouettes are this gray too
+    /// (`boardPreview`), since they're the same thing: shapes with nothing of their own.
     static let skeleton = NSColor(name: nil) {
         $0.isDark ? NSColor(srgbRed: 0.44, green: 0.46, blue: 0.48, alpha: 1) : NSColor(srgbRed: 0.6, green: 0.62, blue: 0.64, alpha: 1)
     }
@@ -115,9 +115,9 @@ public enum Style {
     // Pictures of boards: the minimap's, and boards' previews (`BoardPreviews`). Sizes in pixels.
     /// A shape under this many pixels across is drawn as its bounds (`Silhouettes`).
     static let detailedSilhouette: CGFloat = 4
-    /// A preview's silhouettes: one muted gray, as the minimap's are on a light canvas, for an
-    /// owner's light body.
-    static let boardPreview = NSColor(srgbRed: 0.6, green: 0.62, blue: 0.64, alpha: 1)
+    /// A preview's silhouettes: the default skeleton's gray (`skeleton`), as the minimap's are on a
+    /// light canvas, and darker in the dark, for an owner's dark body.
+    static let boardPreview = skeleton
     /// No preview is larger on either side; a board's longest side is drawn this long.
     static let previewSide: CGFloat = 256
     /// An open shape's line in a preview.

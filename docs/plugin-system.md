@@ -5598,7 +5598,7 @@ because everything it does is a horizontal's
 registrar.shape(SubboardDefinition()) { sub in                     // SubboardDefinition: BoardOwning
     let place = sub.placement(size: Subboard.defaultSize) { Subboard() }
     sub.tool(label: "Subboard", systemImage: "rectangle.stack", shortcut: "b", placing: place)
-    sub.title(pill: false)                                          // Titles keeps its name; the card draws it
+    sub.title(symbolInPill: true)                                   // Titles keeps its name, in a pill after the symbol
     sub.opensBoard(placeholder: "Untitled Subboard", systemImage: "rectangle.stack")
     sub.mentionable(tint: { _ in SubboardStyle.border }, following: .opens)   // Mentions: by its title; followed, it's entered
     sub.contentsRow { _ in                                          // in the card's indigo, as its mentions are
@@ -5618,35 +5618,32 @@ as SwiftUI sugar is.)
   with no shapes isn't kept.
 - **B places one** where the canvas is pressed, following the pointer until release, as every box
   tool does: one undo step, "Add Subboard".
-- **The card** (`SubboardDefinition.render`, `SubboardStyle`, world units) is a white card with a
-  10-point radius, the canvas's shadow and a 1.5-point indigo border, on two thin plates showing 4
-  points below it, each narrower, all inside the frame, so its extent is its box and the minimap
-  draws its frame. A 32-point header band, tinted indigo, holds the `rectangle.stack` symbol and the
-  title, 15-point semibold on one line (`registry.title(of:)`), or "Untitled Subboard" dimmed. The
-  body shows what its board holds: its preview, the core's rough picture of the board
-  (`context.drawBoardPreview(ofBoardOwnedBy:in:maxScale:)`, fitted 12 points inside the body at no
-  more than a tenth of its size, `SubboardStyle.previewMaxScale`, so a board of one note shows a
-  small note in the middle and one of hundreds fills the body; every shape a
-  silhouette in one muted gray, as the minimap draws, a subboard inside just its rectangle); until
-  that's built, a few frames, and for an empty board, it says how many shapes, from
-  `context.shapeCount(inBoardOwnedBy:)`: "Empty", "1 shape", "12 shapes" (the shapes on its own
-  board, not those further down). A card too small for the plates is the whole frame. The count is
-  read as the card is drawn, and a preview is of one revision of its board, so neither is ever
-  stale: a write to the board while another is shown (`transact(on:)`) redraws the canvas as any
-  commit does.
+- **The card** (`SubboardDefinition.render`, `SubboardStyle`, world units) is the whole frame, so
+  its outline, the selection's and a hover's, is its edge, and its extent is its box: a card with a
+  10-point radius, the canvas's shadow and a 1.5-point indigo border (`NSColor.systemIndigo`). Its
+  colors follow the appearance it's drawn in, each a dynamic `NSColor` resolved in the render: a
+  faint indigo over white on the light canvas, a raised indigo-gray on the dark one, since a
+  subboard is a place on the canvas, not a sheet of paper as a note is. Its title is Titles' pill
+  above it, after the `rectangle.stack` symbol (`symbolInPill: true`, as a schema card's), as every
+  titled shape's is; an untitled one has none. The card shows what its board holds: its preview,
+  the core's rough picture of the board (`context.drawBoardPreview(ofBoardOwnedBy:in:maxScale:)`,
+  fitted 12 points inside the card at no more than a tenth of its size,
+  `SubboardStyle.previewMaxScale`, so a board of one note shows a small note in the middle and one
+  of hundreds fills the card; every shape a silhouette in one muted gray, as the minimap draws, a
+  subboard inside just its rectangle); until that's built, a few frames, how many shapes, from
+  `context.shapeCount(inBoardOwnedBy:)`: "1 shape", "12 shapes" (the shapes on its own board, not
+  those further down); and for an empty board the kind's symbol over "Empty", the caption alone
+  where there's no room for both. The symbol isn't drawn over a count, so a card about to show its
+  preview doesn't flash it. The count is read as the card is drawn, and a preview is of one
+  revision of its board, so neither is ever stale: a write to the board while another is shown
+  (`transact(on:)`) redraws the canvas as any commit does.
 - **Zoomed out** the card is its [skeleton](#skeletons) ([SubboardSkeleton.swift](../Sources/Subboards/SubboardSkeleton.swift)):
   fills alone, square (its corners are 3.5 points on screen at most there, so its outline is its
-  frame's, as the core draws it), with no shadow, symbol, text or count. Its plates are one fill in
-  what they show from afar (their fill, with a quarter of their border's indigo); the card is the
-  border's indigo under its header band and its white body, the border never under half a view
-  point (just under 35% the card's own 1.5 is about that, so nothing jumps); a bar stands where the
-  title is, after the symbol's place, 0.52 em a column of its 15-point semibold
-  (`SkeletonText.columns(of:)`: a CJK character or an emoji two, so a title in Japanese or Chinese
-  is about as long as in full), no longer than the header leaves it, the placeholder's at half
-  strength; and its board's preview is asked for as the full card asks for it, in the same rect
-  at no more than a tenth of its board, drawn once it's built and big enough on screen, else
-  nothing. Five fills and the preview (`SubboardStyle.plate(_:behind:)` makes a plate without an
-  array).
+  frame's, as the core draws it), with no shadow, symbol or count: its border's indigo, never under
+  half a view point (just under 35% the card's own 1.5 is about that, so nothing jumps), the card
+  inside it, and its board's preview, asked for as the full card asks for it, in the same rect at
+  no more than a tenth of its board, drawn once it's built and big enough on screen, else nothing.
+  Two fills and the preview; its title's pill is Titles', blank there as every pill is.
 - **Opening it** is Boards': a double-click, Return, Enter or ⌘↓ with it the only one selected, Open
   first in its menu, the Open button in its panel's Board tab, and Return once its row is picked (a
   double-click on the row only where the list stays put, not in the app's panel). ⌘↑ comes back with it selected, and ⌘[ retraces. Its panel's header renames it, a run of
@@ -6862,7 +6859,7 @@ it, the core or a horizontal.
 | `HandleProviding` (Selection's) | Draggable handles on the only selected shape. The select tool finds, draws and hit-tests them; `pressHandle` returns `.drag` or `.consumed`, and `dragSession` does the dragging. | Arrows |
 | `BrushHitTesting` (Selection's) | Whether the marquee touches it, when the brush overlaps its bounds without containing them. Default: `ShapeGeometry.isHit(byBrush:)`. | Arrows (against the visible arc) |
 | `DerivedProps` | Props that hold something following from the rest, which the kind's setters keep in step. A shape made from properties written somewhere else, `registry.shape(_:properties:)`, or given some of its own that way, `registry.shape(_:setting:)` (the command line's `draw`), goes through `derive(_:)` first, so it's as its setters would have left it; a board read (a shape is as saved), a paste, and what a person does don't. | Schemas (a card's height, from its description; `draw`'s `size:` still wins), StickyNotes (a note's height, from its text) |
-| `CustomSkeleton` | Drawn more simply zoomed out. `renderSkeleton` draws in `render`'s place while the canvas draws [skeletons](#skeletons) (the camera's zoom under `editor.skeletonZoom`, 35%), but for the shape being edited: its fills, and bars where its text would be (`context.fillSkeletonText`, each as long as its text's columns, `SkeletonText`), never text, shadows or pictures of its own, cheaply: the shape, its kept geometry and `context.zoom`, and what its plugin already keeps of the shape if it's there, never parsing or laying out text; a picture only through `RenderContext` (a subboard's board preview). Its outline there (selected, hovered, the hint) is its kept geometry's, right for a skeleton that fills its geometry or differs from a rect only by corners rounded a pixel or two, unless it adopts `CustomSkeletonOutline`; a shape a few pixels across is outlined by its bounds. Without it a kind is the default skeleton, its geometry in one gray (`context.drawSkeleton(of:color:)`). | StickyNotes (its yellow, its text greeked), Subboards (fills, a title bar, its preview), Schemas (square, with an edge, so outlined by its frame, its description greeked as a note's text), Arrows (its arc and heads) |
+| `CustomSkeleton` | Drawn more simply zoomed out. `renderSkeleton` draws in `render`'s place while the canvas draws [skeletons](#skeletons) (the camera's zoom under `editor.skeletonZoom`, 35%), but for the shape being edited: its fills, and bars where its text would be (`context.fillSkeletonText`, each as long as its text's columns, `SkeletonText`), never text, shadows or pictures of its own, cheaply: the shape, its kept geometry and `context.zoom`, and what its plugin already keeps of the shape if it's there, never parsing or laying out text; a picture only through `RenderContext` (a subboard's board preview). Its outline there (selected, hovered, the hint) is its kept geometry's, right for a skeleton that fills its geometry or differs from a rect only by corners rounded a pixel or two, unless it adopts `CustomSkeletonOutline`; a shape a few pixels across is outlined by its bounds. Without it a kind is the default skeleton, its geometry in one gray (`context.drawSkeleton(of:color:)`). | StickyNotes (its yellow, its text greeked), Subboards (fills and its preview), Schemas (square, with an edge, so outlined by its frame, its description greeked as a note's text), Arrows (its arc and heads) |
 | `CustomSkeletonOutline` | A `CustomSkeleton` outlined its own way while skeletons are drawn (selected, hovered, the hint): `skeletonIndicatorPath(of:in:)`, what `renderSkeleton` draws, so the outline and the skeleton agree, made from the shape and its kept geometry, since ⌘A zoomed out asks it of every shape of the kind in view each frame; nil for its kept geometry's. Found once per kind (`registry.skeletonOutlines`), so no other kind's shape is asked; never asked for a shape a few pixels across, outlined by its bounds. | Arrows (the arc, where its kept geometry is three points) |
 | `PaintOrderAnchored` | Painted just above another shape, whatever its place in the document. The anchor follows from the shape's own props and the document's order, since the paint order is kept until one of those changes. | Arrows (above the shapes they join) |
 | `BoardOwning` | Each shape of the kind owns a board, a subboard, which the file keeps under the shape's id, never in its props (`CanvasFile`, `BoardID(owner:)`). Nothing to implement: deleting a shape takes its board and every board under it, a copy takes what it holds, a file saves every board ([format 4](#boards-on-disk)), and `editor.showBoard` shows one; Boards' `x.opensBoard(placeholder:systemImage:)` opens it. Its schema is marked `x-canvas-board`. [Boards in a file](#boards-in-a-file). | [Subboards](#subboards)' `Subboard`; CanvasTesting's `Pocket` |

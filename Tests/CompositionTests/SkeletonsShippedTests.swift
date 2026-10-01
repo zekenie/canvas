@@ -157,11 +157,13 @@ private let viewSize = CGSize(width: 320, height: 200)
         #if DEBUG
         expect(MentionDrawingCounts.stringsBuilt > built, "the note's mention text built")
         #endif
-        for id in [board.subboard, board.note, board.other, board.card] {
+        for id in [board.note, board.other, board.card] {
             expect(changedPixels(fullA, fullB, in: board.rect(of: id, in: editor)) > 20, "\(editor.document[id]?.kind.rawValue ?? "?") says its words")
         }
-        let pill = try require(editor.adornmentFrames(of: board.note).first { $0.adornment == .of(TitlePill.self) }).rect
-        expect(changedPixels(fullA, fullB, in: editor.camera.toView(pill)) > 10, "the pill says its title")
+        for id in [board.note, board.subboard] {
+            let pill = try require(editor.adornmentFrames(of: id).first { $0.adornment == .of(TitlePill.self) }).rect
+            expect(changedPixels(fullA, fullB, in: editor.camera.toView(pill)) > 10, "\(editor.document[id]?.kind.rawValue ?? "?")'s pill says its title")
+        }
 
         // At 30%, each shape is its skeleton, where in full it's drawn otherwise (an empty note only
         // by its corners and its shadow, so each is looked at with a few points around it).
