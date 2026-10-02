@@ -150,8 +150,8 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         w.click(CGPoint(x: 200, y: 200))
         w.window.spin { w.titleField != nil }
         w.window.focus(try require(w.titleField))
-        w.window.type("anev")     // the arrow, note, eraser and select shortcuts, on the canvas
-        expectEqual(w.editor.document[shape.id]?[TitleProperty.self], "anev")
+        w.window.type("hnbfs")     // the Hand, Note, Subboard, Frame and Schema shortcuts, on the canvas
+        expectEqual(w.editor.document[shape.id]?[TitleProperty.self], "hnbfs")
         expectEqual(w.editor.currentToolID, .select)
         expectEqual(w.editor.selection, shape.id)
     },
@@ -263,7 +263,7 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         let field = try require(w.titleField)
         expectEqual(field.placeholderString, "Note")
         w.window.focus(field)
-        w.window.type("Groceries")      // e is the eraser's shortcut, on the canvas
+        w.window.type("Groceries")      // s is the schema tool's shortcut, on the canvas
         w.window.settle()
         expectEqual(w.editor.document[shape.id]?[TitleProperty.self], "Groceries")
         expectEqual(w.editor.currentToolID, .select)

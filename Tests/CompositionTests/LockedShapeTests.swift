@@ -105,20 +105,17 @@ import Titles
         expect(h.editor.drawingOffset(of: arrow) != .zero)
         h.release()
     },
-    test("the eraser leaves a locked note and shakes it; Arrange › Bring to Front leaves it where it is in the stack") {
+    test("Delete leaves a locked note and shakes it; Arrange › Bring to Front leaves it where it is in the stack") {
         let h = emptyBoard()
         let back = h.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Back"))
         let front = h.add(StickyNote(frame: CGRect(x: 200, y: 200, width: 200, height: 200), text: "Front"))
         h.editor.lock([back])
-        h.key("e")
-        h.press(at: CGPoint(x: 120, y: 150))
-        h.drag(to: CGPoint(x: 180, y: 150))
-        h.release()
+        h.editor.selection = back
+        h.editor.perform(.delete)
         expect(h.editor.document[back] != nil)
         h.wait(16)
         expect(h.editor.drawingOffset(of: back) != .zero)
         h.wait(400)
-        h.key("v")
         try require(h.secondaryClick(at: CGPoint(x: 120, y: 150))).choose("Arrange", "Bring to Front")
         expectEqual(h.editor.document.shapes.map(\.id), [back, front])
         h.wait(16)

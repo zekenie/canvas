@@ -5,7 +5,7 @@ import SwiftUI
 import TableOfContents
 
 /// Locking, as a plugin: a shape can be locked, and then nothing changes it (not a drag, Delete,
-/// the eraser, editing, the panel or a menu item) until it's unlocked. Every try shakes it, a lock
+/// editing, the panel or a menu item) until it's unlocked. Every try shakes it, a lock
 /// chip sits just above its top-right corner, and its row in the table of contents ends in a lock,
 /// so the list says which are locked at a glance. Shapes are locked from the context menu, and
 /// unlocked there or with a click on the chip, which then shows the lock open for a moment (a click

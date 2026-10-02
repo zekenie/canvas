@@ -458,11 +458,6 @@ let welcomeNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x:
             b.window.pressDelete()
         }
         try step("bring to front") { try require(b.menu(at: welcomeNotes[3])).choose("Arrange", "Bring to Front") }
-        try step("erase") {
-            b.window.press("e")
-            b.drag(from: CGPoint(x: 800, y: 520), to: CGPoint(x: 1080, y: 520))
-            b.window.press("v")
-        }
         try step("connect two notes") {
             let leftDot = CGPoint(x: 588, y: 760)                           // the placed note's
             b.move(to: CGPoint(x: 700, y: 760))
@@ -470,7 +465,7 @@ let welcomeNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x:
             b.drag(from: leftDot, to: welcomeNotes[3])
         }
         try step("delete hidden shapes") { b.board.deleteHiddenShapes() }
-        expectEqual(names, ["Move", "Add Note", "Change Note", "Lock", "Paste", "Delete", "Bring to Front", "Erase", "Add Arrow",
+        expectEqual(names, ["Move", "Add Note", "Change Note", "Lock", "Paste", "Delete", "Bring to Front", "Add Arrow",
                             "Delete Hidden Shapes"])
 
         @MainActor func expectAsFresh(_ when: String) {
