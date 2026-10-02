@@ -238,7 +238,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Draw a kind more simply zoomed out, where its text doesn't read, and cheaply, since thousands are in view | `CustomSkeleton`'s `renderSkeleton`: fills, `context.fillSkeletonText` for bars where its text is (as long as its columns, `SkeletonText.columns(of:)`), or `context.drawSkeleton(of:color:)`, the default, in a color of its own; `CustomSkeletonOutline` for an outline there that isn't its kept geometry's | [Skeletons](#skeletons), [Patches](#your-first-plugin) |
 | Make what an overlay draws, or what answers the pointer, follow what a shape shows zoomed out | `editor.drawsSkeleton(of:)` and `OverlayContext.drawsSkeleton(of:)` (each shape's level: the one being edited is in full), `OverlayContext.drawsSkeletons` (the frame's), and `EditorService.drawsSkeletonsDidChange` for a pointer held still | [Skeletons](#skeletons), [Adornments](#drawing-and-cost) |
 | Edit a shape in place, as text | `Editable`, and an `editingPlacement` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
-| Add a tool that makes no shape | `registrar.tool`, a `Tool` and a `Session` | [Eraser](#tools-and-sessions) |
+| Add a tool that handles its own press and drag | `registrar.tool` (or a kind's `x.tool(...)`), a `Tool` and a `Session` | [The Frame tool](#tools-and-sessions) |
 | Give a tool its key | `shortcut:` on the call that registers the tool (Keyboard's) | [Patches](#your-first-plugin) |
 | Make a key do something, or give a menu's command its key | `registrar.shortcut(chord, "Title") { ... }`, `registrar.command(_:shortcuts:)` | [Keyboard shortcuts](#keyboard-shortcuts) |
 | Give a shape handles to drag | Selection's `HandleProviding` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
@@ -324,8 +324,9 @@ definition adopts; behavior any plugin can add to any kind is an extension point
 
 ## Horizontal and vertical
 
-A **vertical** plugin is a feature: a shape kind and the tool that places it, or a tool on its own.
-Sticky notes, arrows, schema cards, subboards and the eraser are verticals.
+A **vertical** plugin is a feature: a shape kind and the tool that places it, or what every kind with a capability gets
+(Reordering's Arrange menu).
+Sticky notes, arrows, schema cards, subboards and frames are verticals.
 
 A **horizontal** plugin is a concern that cuts across kinds. It declares an extension point, and any
 kind can take part by contributing to it. Validity is the canonical example: *a shape can be valid
@@ -413,7 +414,7 @@ Each target is one line, with its layer:
 | foundation | foundation | Geometry, Canvas (the core), and pure libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, and its solver) and QueryLanguage (the language [`canvas query`](#query) reads) |
 | ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
 | horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Adornments, Clipboard, Locking, Ports, Mentions, Topology, Queries, Automation, QueryCommands, LanguageModels, Boards, Snapping |
-| vertical | foundation, horizontal | Arrows, StickyNotes, Schemas, Subboards, Frames, Eraser, Reordering |
+| vertical | foundation, horizontal | Arrows, StickyNotes, Schemas, Subboards, Frames, Reordering |
 | bridge | foundation, horizontal, vertical | ValidationDetails, ValidationContents, MentionValidation, TitleValidation, ArrowPorts, TitleNames, PortEdges, ValidationChecks, TitleQueries, BoardQueries, MentionQueries, ValidationQueries, SelectionQueries |
 | composition | foundation, horizontal, vertical, bridge, wire | Composition (the shipped plugin list) |
 | app | foundation, ui, composition, wire | InfiniteCanvas |
@@ -579,64 +580,66 @@ show. It's a class with one instance per editor, so it can keep state. A **sessi
 press-drag-release. It lives on the editor, not the tool, so it outlives tool switches. A place tool
 switches back to the default tool and keeps dragging its new shape.
 
-[`Examples/Eraser`](../Examples/Eraser/Eraser.swift) is a tool with no shape:
+[Frames' tool](../Sources/Frames/FrameTool.swift) is the smallest tool that draws as the pointer
+moves: a press starts a session, which shows the frame being drawn and puts it down on the release.
 
 ```swift
-import Canvas
-import CoreGraphics
-import Keyboard
-
-extension ToolID {
-    public static let eraser: ToolID = "eraser"
+@MainActor
+final class FrameTool {
+    let placement: Placement
+    init(placing placement: Placement) { self.placement = placement }
 }
 
-public struct EraserPlugin: CanvasPlugin {
-    public init() {}
-    public var id: PluginID { "eraser" }
-
-    public func register(into registrar: inout PluginRegistrar) {
-        registrar.tool(ToolDescriptor(id: .eraser, label: "Eraser", systemImage: "eraser"), shortcut: "e") { _ in EraserTool() }
-    }
-}
-
-final class EraserTool {}
-
-extension EraserTool: Tool {
+extension FrameTool: Tool {
     func pointerDown(_ pointer: Pointer, in editor: CanvasEditor) {
-        let session = ErasingSession()
-        editor.session = session
-        session.drag(pointer, in: editor)
+        editor.session = DrawingFrameSession(placing: placement, from: pointer)
     }
 }
 
 @MainActor
-final class ErasingSession {
-    private var last: CGPoint?
+final class DrawingFrameSession {
+    private let placement: Placement
+    private let origin: CGPoint          // where it was pressed, in world units
+    private var last: Pointer
+    private var isDrawing = false        // until the pointer has gone far enough, it's a click
+    // ...
 }
 
-extension ErasingSession: Session {
-    /// Tests the whole path since the last event, so a quick stroke doesn't skip a thin shape.
+extension DrawingFrameSession: Session {
+    var scrollsAtEdges: Bool { true }
+
     func drag(_ pointer: Pointer, in editor: CanvasEditor) {
-        let from = last ?? pointer.world, to = pointer.world
-        last = to
-        let step = 2 / editor.shapeContext.zoom               // every 2 view points
-        let count = max(1, Int((hypot(to.x - from.x, to.y - from.y) / step).rounded(.up)))
-        var hits: Set<ShapeID> = []
-        for i in 0...count {
-            let t = CGFloat(i) / CGFloat(count)
-            if let id = editor.shape(at: CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t)) {
-                hits.insert(id)
-            }
+        last = pointer
+        // ... isDrawing once the pointer is `FrameStyle.smallestDrawn` from the press
+        if isDrawing { editor.setNeedsDisplay() }
+    }
+
+    func end(_ pointer: Pointer, in editor: CanvasEditor) {
+        drag(pointer, in: editor)
+        if let rect = drawn {
+            editor.place(placement, in: rect)
+        } else {
+            editor.place(placement, at: origin)
         }
-        guard !hits.isEmpty else { return }
-        editor.transact { $0.delete(hits) }
+    }
+
+    func cancel(in editor: CanvasEditor) -> Bool { true }       // Escape: nothing is put down
+
+    func draw(in context: OverlayContext) {
+        guard let rect = drawn else { return }
+        FrameStyle.draw(rect, zoom: context.zoom, fillOpacity: FrameStyle.previewFillOpacity, in: context.cg)
     }
 }
 ```
 
-When the eraser deletes a shape an arrow is bound to, the arrow lets go of it by itself: arrows
-adopt `ShapeReferencing`, which the core asks as it deletes a shape. The eraser never heard of
-arrows.
+The plugin registers it with its kind, `frame.tool(label:systemImage:shortcut:placing:_:)`, which
+also gives the kind its placement. A tool that makes no shape registers with
+`registrar.tool(ToolDescriptor(id:label:systemImage:), shortcut:) { _ in MyTool() }`.
+
+A deletion made by a tool or a session goes through a transaction like any change, so other plugins
+react on their own: when a shape an arrow is bound to is deleted, the arrow lets go of it by itself.
+Arrows adopt `ShapeReferencing`, which the core asks as it deletes a shape, so nothing that deletes
+needs to know about arrows.
 
 The details:
 
@@ -697,7 +700,7 @@ The details:
   hand, which is how the arrows' 600/320/150 ms timers are pinned to the millisecond, and how the
   hand tool's slide plays frame by frame.
 - **Keys** are [Keyboard's](#keyboard-shortcuts): a tool's is `shortcut:` on the call that registers
-  it (the eraser's E, above). A tool id used twice is a registry error, and so is a key.
+  it (Frames' F). A tool id used twice is a registry error, and so is a key.
 - **The toolbar** is the default tool, then the rest in plugin-list order, the core's Hand first. It
   follows `editor.currentToolID`, which is observable.
 - **Redrawing**: the core redraws whenever the document, camera, tool or session changes. A plugin
@@ -830,7 +833,7 @@ extension DrawingSession: Session {
 }
 ```
 
-The tool stays current after a line, as the eraser does. Its id is the kind's,
+The tool stays current after a line. Its id is the kind's,
 `ToolID(placing: Polyline.kind)`, as a place tool's is, so a line is called after the tool
 (`registry.label(of:)`): "Line", with the tool's symbol, in the detail panel's header and its row.
 
@@ -1728,7 +1731,7 @@ registrar.shape(GhostDefinition()) { ghost in ghost.selectable { $0.props.isShow
 The select tool sees through such a shape: a press lands on whatever is beneath it (or on the
 canvas, where a drag is a marquee), and the marquee and ⌘A pass it by, so it's never selected,
 outlined on hover, or shown in the detail panel. It still draws, and everything else treats it as
-usual: arrows bind to it, the eraser erases it, code moves and deletes it. A place tool still puts
+usual: arrows bind to it, code moves and deletes it. A place tool still puts
 one down and drags it, with nothing selected; a double-click on it goes to what's beneath, so an
 unselectable `Editable` kind is edited only as it's placed. A shape that stops being selectable
 leaves the selection with the change that did it. The rule is `ShapeSelectability`: at most one per
@@ -1884,7 +1887,7 @@ registrar.canvasButtons(at: { editor, viewPoint in state.dot(atViewPoint: viewPo
   move). A plugin whose buttons show
   only while the pointer is near them goes by it (a port's dots).
 - **Only in the select tool.** In any other tool a button is only drawn, and a press there is the
-  tool's: the hand pans over a lock chip, and the eraser erases under it.
+  tool's: the hand pans over a lock chip.
 - **Buttons that come and go** with the document are looked for again under a still pointer after
   each commit, and with the [skeleton](#skeletons) level as it changes (Selection's
   `drawsSkeletonsDidChange`). One that comes or goes some other way (a chip fading out) calls
@@ -1917,7 +1920,7 @@ registrar.decorationHits { editor, point, include in editor.adornmentState?.shap
   press and the hover, so a clickable adornment (the lock) is clicked, and anything else drawn for
   a shape is the shape. A right-click asks no button, so on the lock it opens its shape's menu.
 - **Only what the select tool and the menu see.** The core's `editor.shape(at:)` is as it was, so
-  the marquee and ⌘A (which go by geometry), the eraser and an arrow's end (it never binds through
+  the marquee and ⌘A (which go by geometry) and an arrow's end (it never binds through
   a pill) go by the shapes alone, and the hand tool pans over it.
 - **Keep it cheap**: the select tool asks it as the pointer moves. Adornments looks in a thin strip
   around the point, through `editor.paintOrder(in:)`.
@@ -3926,7 +3929,7 @@ extension LockChip: ClickableAdornment {                // a click on the chip
   nothing. A right-click on it is on its shape, as on any adornment: the menu offers Unlock.
 - **Everything refuses a locked shape**, since everything changes shapes through a transaction.
   A drag leaves it where it is and moves the rest of the selection (a click, even one that jitters
-  under the drag threshold, doesn't count as a try); Delete, Cut and the eraser leave it and take
+  under the drag threshold, doesn't count as a try); Delete and Cut leave it and take
   the rest; Return and a double-click don't edit it (a kind that opens some other way, into its
   board, still opens); it shows no handles; Arrange doesn't restack it;
   a menu item that edits it changes nothing. Each of those shakes it.
@@ -3941,7 +3944,7 @@ extension LockChip: ClickableAdornment {                // a click on the chip
   it. A try a lock refuses (a drag, Delete) changes nothing, so it records nothing: the next ⌘Z
   undoes the step before it.
 - **The shake** is a password field's: side to side, 5 points at most, 3 times over 360 ms, dying
-  away, a frame every 16 ms on `editor.scheduler`. A try while it plays (the eraser dragged across)
+  away, a frame every 16 ms on `editor.scheduler`. A try while it plays (Delete pressed again)
   doesn't start it over. `LockState` hears the tries (`didRefuseChanges`), and moves how the shape
   is drawn, never the shape: `editor.setDrawingOffset(_:for:)`. Every refused shape shakes, locked
   or not: a shape whose board holds a locked shape isn't deleted either, so it's the one that shakes.
@@ -6008,7 +6011,7 @@ registrar.shape(FrameDefinition()) { frame in                     // FrameDefini
   pressed anywhere inside too, as any box is. Its title's pill grabs it, as every pill does its
   shape ([DecorationHits](#drawn-for-a-shape-decorationhits)), and so does an untitled frame's
   dimmed "Frame", there for that (`title(placeholderInPill:)`). What finds shapes by point
-  (`editor.shape(at:)`: the eraser, an arrow's end) goes by the same test.
+  (`editor.shape(at:)`: an arrow's end) goes by the same test.
 - **The marquee** selects a frame when it reaches the frame's edge, or holds it whole, never when
   it's drawn wholly inside it, where it selects what the frame holds (Selection's `BrushHitTesting`);
   with ⌘, only what it holds whole, as ever.
@@ -7919,7 +7922,7 @@ aren't changes, and make no step.
 and undoes, the step before it. The core names placing ("Add" and the placing tool's label, "Add
 Note"), moving ("Move") and typing; Selection "Delete" and "Resize"; ContextMenus every item by its title;
 Clipboard "Cut" and "Paste"; Locking "Lock" and "Unlock"; Arrows "Add Arrow", "Move Arrow End",
-"Bend Arrow" and "Toggle Arrowhead"; the eraser "Erase"; the detail panel
+"Bend Arrow" and "Toggle Arrowhead"; the detail panel
 "Change" and the section's title ([`ShapeBinding`](#reading-and-writing-shapebinding)); the schema
 card's sync "Update Schema" and "Update Description", however long after the edit it lands; and
 Automation "Draw", a whole `canvas draw` run (a dry run, or a script refused, is none; a run waits
@@ -8277,7 +8280,6 @@ mention-queries      query word :mentions · query word :mentioned-by · query t
 validation-queries   query word :invalid · query word :warned
 selection-queries    query word :selected
 query-commands       command line query · command line query-vocabulary
-eraser               tool eraser · shortcut E → tool eraser
 reordering           ShapeContextMenus
 ```
 
@@ -8325,28 +8327,24 @@ this toolchain, and there's no XCTest). `./test.sh` builds and runs them all. `T
 from an unshown window) is opt-in: `TEST_UI_MENUS=1 ./test.sh`. There are two: BoardsTests' check of
 the path's "…" menu, and CompositionTests' check that AppKit gives a Control-click to the context
 menu before `mouseDown`. [Your first plugin](#your-first-plugin) sets up a test target. A test that
-selects and drags as a user does installs Keyboard and Selection first
+selects and clicks as a user does installs Keyboard and Selection first
 ([ExamplesTests](../Tests/ExamplesTests/ExamplesTests.swift)):
 
 ```swift
-test("Eraser: dragging across shapes deletes them, and an arrow lets go of what was erased") {
-    let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), FixturesPlugin(), EraserPlugin()])
+test("Reordering: every kind but those painted by anchor gets Arrange; to front and to back keep the selection's order") {
+    let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), FixturesPlugin(), ReorderingPlugin()])
     let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
     let b = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
     let c = h.add(Box(CGRect(x: 400, y: 0, width: 100, height: 100)))
-    let bound = ArrowBinding(shapeID: b, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)
-    let arrow = h.add(Arrow(start: .bound(bound), end: .free(CGPoint(x: 250, y: 300))))
-    expect(h.key("e"))
-    h.press(at: CGPoint(x: 50, y: 50))
-    h.drag(to: CGPoint(x: 250, y: 50))
-    h.release()
-    expectEqual(h.editor.document[a], nil)
-    expectEqual(h.editor.document[b], nil)
-    expect(h.editor.document[c] != nil)
-    let start = try require(h.editor.document[arrow]?.typed(as: Arrow.self)?.props.start)
-    expect(start.binding == nil, "the arrow let go of the erased box")
-    expectEqual(h.editor.currentToolID, .eraser)
-},```
+    h.editor.selectedShapeIDs = [c, a]
+    let menu = try require(h.secondaryClick(at: CGPoint(x: 50, y: 50)))
+    expectEqual(menu.outline, ["Arrange ▸", "  Bring to Front", "  Bring Forward", "  Send Backward", "  Send to Back", "—", "Delete"])
+    try menu.choose("Arrange", "Send to Back")
+    expectEqual(h.editor.document.shapes.map(\.id), [a, c, b])
+    try require(h.secondaryClick()).choose("Arrange", "Bring to Front")
+    expectEqual(h.editor.document.shapes.map(\.id), [b, a, c])
+},
+```
 
 - `EditorHarness` (CanvasTesting) drives a headless editor like a user: `move`, `press`, `drag`
   (optionally at a speed), `release`, `click`, `hold(modifiers)`, `key`, `escape`, `wait(ms)`. One

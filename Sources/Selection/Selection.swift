@@ -52,7 +52,7 @@ extension ShapeRegistrar {
     /// The select tool sees through this kind's shapes: a press lands on what's beneath them (or
     /// on the canvas, where a drag is a marquee), and the marquee and ⌘A pass them by, so they're
     /// never selected or outlined on hover. They still draw, and everything else treats them as
-    /// usual: arrows bind to them, the eraser erases them, code moves them.
+    /// usual: arrows bind to them, code moves them.
     public mutating func unselectable() {
         contribute({ _ in false }, to: ShapeSelectability.self)
     }

@@ -118,7 +118,7 @@ final class LockState {
     // MARK: Shaking
 
     /// Shakes each shape of `ids` on the board shown, unless it's shaking already: a try that comes
-    /// while one plays (the eraser dragged across it) doesn't start it over. Locked or not: a shape
+    /// while one plays (Delete pressed again) doesn't start it over. Locked or not: a shape
     /// whose board (or a board under it) holds a locked shape isn't deleted either, and it's the one
     /// tried, so it's the one that shakes. A container shakes with what it holds, at any depth, as it
     /// moves with it (a locked frame, under the notes in it).

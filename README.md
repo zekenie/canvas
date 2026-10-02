@@ -143,7 +143,6 @@ Sources/
   Composition/          the shipped plugin list, and the welcome board
   InfiniteCanvas/       the SwiftUI app
 Examples/               the smallest plugin for each pattern
-  Eraser/               a tool with no shape, and a session
   Reordering/           menu items for every kind with a capability: the Arrange submenu
 Tests/                  test executables (the core, each plugin with logic of its own, the examples,
                         the shipped app) and their support libraries, on a small macro-free kit

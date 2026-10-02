@@ -11,7 +11,6 @@ import Clipboard
 import ContextMenus
 import CoreGraphics
 import DetailPanel
-import Eraser
 import Frames
 import Keyboard
 import LanguageModels
@@ -91,8 +90,8 @@ public enum ShippedPlugins {
             QueriesPlugin(), TitleQueriesPlugin(), BoardQueriesPlugin(), MentionQueriesPlugin(), ValidationQueriesPlugin(),
             SelectionQueriesPlugin(),
             QueryCommandsPlugin(askPrompt: QueryPrompt.system),
-            // The examples (Examples/). Each is one line here; delete it to leave it out.
-            EraserPlugin(), ReorderingPlugin(),
+            // The example (Examples/): one line here; delete it to leave it out.
+            ReorderingPlugin(),
         ]
     }
 

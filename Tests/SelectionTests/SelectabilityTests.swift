@@ -52,7 +52,7 @@ import TestKit
         h.move(to: CGPoint(x: 50, y: 50))
         expectEqual(h.editor.hovered, nil)
     },
-    test("an unselectable shape still draws, and the core still hits it (for arrows, the eraser)") {
+    test("an unselectable shape still draws, and the core still hits it (for arrows)") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), GhostsPlugin()])
         let size = CGSize(width: 100, height: 100)
         let empty = renderBitmap(h.editor, size: size)

@@ -24,10 +24,10 @@ import ValidationDetails
     test("the shipped plugin list registers without conflicts") {
         _ = try ShippedPlugins.registry(model: ScriptedLanguageModel())
     },
-    test("the toolbar is Select V, Hand H, Note N, Subboard B, Frame F, Schema S, Eraser E: arrows are drawn from ports") {
+    test("the toolbar is Select V, Hand H, Note N, Subboard B, Frame F, Schema S: arrows are drawn from ports") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         expectEqual(registry.tools.map { ShippedPlugins.help(for: $0, in: registry) },
-                    ["Select (V)", "Hand (H)", "Note (N)", "Subboard (B)", "Frame (F)", "Schema (S)", "Eraser (E)"])
+                    ["Select (V)", "Hand (H)", "Note (N)", "Subboard (B)", "Frame (F)", "Schema (S)"])
     },
     test("a plugin that needs the key asks for Settings with the action the app's menu item sends") {
         expectEqual(AnthropicSettingsView.showSettingsAction, BoardMenus.showSettings)
@@ -80,7 +80,6 @@ import ValidationDetails
         validation-queries   query word :invalid · query word :warned
         selection-queries    query word :selected
         query-commands       command line query · command line query-vocabulary
-        eraser               tool eraser · shortcut E → tool eraser
         reordering           ShapeContextMenus
         """)
     },

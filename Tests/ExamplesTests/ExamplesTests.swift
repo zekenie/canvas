@@ -3,7 +3,6 @@ import Arrows
 import CanvasTesting
 import ContextMenus
 import CoreGraphics
-import Eraser
 import Keyboard
 import Reordering
 import Selection
@@ -12,66 +11,14 @@ import TestKit
 
 /// The examples' tests: each works on CanvasTesting's boxes, so none depends on a shipped kind.
 @MainActor let examplesTests = Suite("Examples", [
-    test("Eraser: dragging across shapes deletes them, and an arrow lets go of what was erased") {
-        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), FixturesPlugin(), EraserPlugin()])
-        let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
-        let b = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
-        let c = h.add(Box(CGRect(x: 400, y: 0, width: 100, height: 100)))
-        let bound = ArrowBinding(shapeID: b, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)
-        let arrow = h.add(Arrow(start: .bound(bound), end: .free(CGPoint(x: 250, y: 300))))
-        expect(h.key("e"))
-        h.press(at: CGPoint(x: 50, y: 50))
-        h.drag(to: CGPoint(x: 250, y: 50))
-        h.release()
-        expectEqual(h.editor.document[a], nil)
-        expectEqual(h.editor.document[b], nil)
-        expect(h.editor.document[c] != nil)
-        let start = try require(h.editor.document[arrow]?.typed(as: Arrow.self)?.props.start)
-        expect(start.binding == nil, "the arrow let go of the erased box")
-        expectEqual(h.editor.currentToolID, .eraser)
-    },
-    test("Eraser: a stroke is one step, however many shapes it takes as it goes; undoing it puts them back where they were, and the arrow bound again") {
-        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), FixturesPlugin(), EraserPlugin()])
-        let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
-        let b = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
-        h.add(Box(CGRect(x: 400, y: 0, width: 100, height: 100)))
-        let bound = ArrowBinding(shapeID: b, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)
-        h.add(Arrow(start: .bound(bound), end: .free(CGPoint(x: 250, y: 300))))
-        h.editor.replaceDocument(with: h.editor.document)
-        let before = h.editor.document
-        expect(h.key("e"))
-        h.press(at: CGPoint(x: 50, y: 50))
-        h.drag(to: CGPoint(x: 150, y: 50))
-        expectEqual(h.editor.document[a], nil, "gone mid-stroke")
-        h.drag(to: CGPoint(x: 250, y: 50))
-        h.release()
-        expectEqual(h.editor.document[b], nil)
-        expectEqual(h.editor.undoHistory.undoName, "Erase")
-        h.editor.undo()
-        expectEqual(h.editor.document, before)
-        expect(!h.editor.canUndo, "one step")
-    },
-    test("Eraser: a quick stroke erases what it crosses between two events, even a thin arrow") {
-        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), FixturesPlugin(), EraserPlugin()])
-        let arrow = h.add(Arrow(start: .free(CGPoint(x: 100, y: 300)), end: .free(CGPoint(x: 300, y: 300))))
-        let thin = h.add(Box(CGRect(x: 391, y: 0, width: 4, height: 100)))
-        expect(h.key("e"))
-        h.press(at: CGPoint(x: 200, y: 250))
-        h.drag(to: CGPoint(x: 200, y: 350), speed: 1)       // events land 14 pt apart, either side of the arrow
-        h.release()
-        expectEqual(h.editor.document[arrow], nil)
-        h.press(at: CGPoint(x: 300, y: 50))
-        h.drag(to: CGPoint(x: 500, y: 50), speed: 3)       // 48 pt apart, jumping the 4 pt box
-        h.release()
-        expectEqual(h.editor.document[thin], nil)
-    },
     test("the examples' report: who contributes what") {
-        let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), EraserPlugin()])
+        let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), ReorderingPlugin()])
         expectEqual(registry.report, """
-        core          tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
-        keyboard      service KeyboardState · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit
-        selection     service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
-        eraser        tool eraser · shortcut E → tool eraser
+        core           tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
+        keyboard       service KeyboardState · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit
+        selection      service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
+        context-menus  service ContextMenuState · secondary-click menu · CanvasContextMenu
+        reordering     ShapeContextMenus
         """)
     },
     test("Reordering: every kind but those painted by anchor gets Arrange; to front and to back keep the selection's order") {
