@@ -68,7 +68,7 @@ public enum ShippedPlugins {
             ArrowsPlugin(), StickyNotesPlugin(), SubboardsPlugin(), FramesPlugin(), SchemasPlugin(),
             // After Validation: what's shown on shapes draws over its outline.
             ValidationPlugin(), AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
-            // Slash commands: the list at a `/` in the text views Mentions hosts it in. Locking offers the one that ships, `/lock`.
+            // Slash commands: the list at a `/` in the text views Mentions hosts it in. Titles offers `/title`, Locking `/lock`.
             SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(),
             // After Titles, whose names its pills show, and the table of contents, whose rows it names.
             MentionsPlugin(),

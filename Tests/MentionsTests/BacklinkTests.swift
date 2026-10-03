@@ -8,6 +8,7 @@ import Keyboard
 import Mentions
 import Observation
 import Selection
+import SlashCommands
 import TableOfContents
 import TestKit
 import Titles
@@ -140,7 +141,7 @@ let tiesPlugin = Contributor(id: "ties") { registrar in
     test("a list with Mentions needs ContextMenus, for Show What Mentions") {
         expectThrows(RegistryError.ownerNotInstalled(point: "CanvasContextMenu", owner: .contextMenus, contributor: .mentions)) {
             _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), MentionFixturesPlugin(), AdornmentsPlugin(),
-                                       DetailPanelPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin()])
+                                       DetailPanelPlugin(), SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin()])
         }
     },
 

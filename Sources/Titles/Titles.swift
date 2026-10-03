@@ -1,5 +1,6 @@
 import Adornments
 import Canvas
+import SlashCommands
 import TableOfContents
 
 /// Titles, as a plugin: what a shape is called, a trait any kind can opt into. A kind's title is
@@ -8,8 +9,8 @@ import TableOfContents
 /// schema card's, its schema's `"title"`). Any shape of a titled kind may have none. A titled shape shows its title in a
 /// pill just outside its top-left corner (`TitlePill`, an adornment), an untitled one there its
 /// kind's placeholder, dimmed, where the kind gives one to grab, and its row in the table of
-/// contents is called by its title; `TitleHeader` renames it in the detail panel. The core never
-/// learns what a title is.
+/// contents is called by its title; `TitleHeader` renames it in the detail panel, and `/title` from
+/// a line of its text. The core never learns what a title is.
 extension PluginID {
     public static let titles: PluginID = "titles"
 }
@@ -210,7 +211,7 @@ extension Registry {
 
 /// A horizontal any kind can opt into: a title, kept in the property this plugin adds to the kind or
 /// derived from the kind's own, in a pill on the canvas and naming the shape's row in the table of
-/// contents. This plugin places the pill, and `TitleHeader` renames it.
+/// contents. This plugin places the pill and offers `/title`, and `TitleHeader` renames it.
 public struct TitlesPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .titles }
@@ -220,6 +221,12 @@ public struct TitlesPlugin: CanvasPlugin {
         // The pill, on every shape whose kind's title shows one: Titles places it, and defines no kind.
         registrar.adornmentForEveryShape(TitlePill.self, where: { $0.registry.showsTitlePill($0.kind) }) { shape, context in
             context.registry.titlePill(of: shape)
+        }
+        // `/title Groceries` typed on a line of a shape's text: names the shape, on the kinds that can
+        // be named. A derived title (a schema card's) isn't Titles' to set, and is renamed where it's
+        // derived from; a pill in the line is its name, "@Label", as the argument's text reads it.
+        registrar.slashCommandsForEveryShape(where: { $0.holds(TitleProperty.self) }) {
+            SlashCommand("title", argument: "title") { shape, arguments in shape[TitleProperty.self] = arguments.text }
         }
     }
 }

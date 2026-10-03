@@ -9,6 +9,7 @@ import DetailPanel
 import Keyboard
 import Mentions
 import Selection
+import SlashCommands
 import Subboards
 import SwiftUI
 import TableOfContents
@@ -17,11 +18,11 @@ import Titles
 import Topology
 
 /// Every plugin a subboard contributes to (Boards, and through it Selection, ContextMenus and the
-/// panel; Titles, Mentions, the table of contents and the keys), and CanvasTesting's fixtures, for
-/// boxes.
+/// panel; Titles, and slash commands for its `/title`; Mentions, the table of contents and the keys),
+/// and CanvasTesting's fixtures, for boxes.
 @MainActor func subboardPlugins() -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), SubboardsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
-     TableOfContentsPlugin(), AdornmentsPlugin(), TitlesPlugin(), MentionsPlugin(), BoardsPlugin()]
+     SlashCommandsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(), TitlesPlugin(), MentionsPlugin(), BoardsPlugin()]
 }
 
 func record<P: ShapeProps>(_ id: ShapeID, _ props: P) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(id: id, props)) }

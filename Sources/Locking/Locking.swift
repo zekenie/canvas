@@ -110,9 +110,9 @@ public struct LockingPlugin: CanvasPlugin {
                 editor.unlock(ids.filter { !editor.isLockedByContainer($0) })
             }
         }
-        // `/lock` typed on a line of a shape's text: the first command that ships. On the kinds that
-        // can be locked, while the shape isn't. There is no `/unlock`: a locked shape's text can't
-        // be edited, so it couldn't be typed.
+        // `/lock` typed on a line of a shape's text (Titles offers `/title`, the other command that
+        // ships): on the kinds that can be locked, while the shape isn't. There is no `/unlock`: a
+        // locked shape's text can't be edited, so it couldn't be typed.
         registrar.slashCommandsForEveryShape(where: { $0.holds(LockedProperty.self) }) {
             SlashCommand("lock", when: { !$0.isLocked }) { id, _, editor in editor.lock([id]) }
         }

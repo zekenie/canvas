@@ -7,6 +7,7 @@ import ContextMenus
 import DetailPanel
 import Keyboard
 import Selection
+import SlashCommands
 import SwiftUI
 import TestKit
 import Titles
@@ -58,10 +59,10 @@ struct DrawersPlugin: CanvasPlugin {
 }
 
 /// Every plugin opening a board takes: keys, the selection, the panel, menus and titles (with the
-/// adornments that show their pills).
+/// adornments that show their pills, and the slash commands they offer).
 @MainActor func boardsPlugins(_ more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), CardsPlugin(), PocketsPlugin(), DrawersPlugin(), DetailPanelPlugin(),
-     ContextMenusPlugin(), AdornmentsPlugin(), TitlesPlugin(), BoardsPlugin(), pocketBoards()] + more
+     ContextMenusPlugin(), AdornmentsPlugin(), SlashCommandsPlugin(), TitlesPlugin(), BoardsPlugin(), pocketBoards()] + more
 }
 
 func record<P: ShapeProps>(_ id: ShapeID, _ props: P) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(id: id, props)) }

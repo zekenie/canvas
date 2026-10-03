@@ -6,6 +6,7 @@ import CanvasUI
 import DetailPanel
 import Keyboard
 import Selection
+import SlashCommands
 import SwiftUI
 import TableOfContents
 import TestKit
@@ -66,11 +67,11 @@ struct CardTitlesPlugin: CanvasPlugin {
 
 let plaqueFrame = CGRect(x: 60, y: 100, width: 200, height: 120)
 
-/// The keyboard, the selection, the fixtures, plaques, adornments (the pill's), titles, the table of
-/// contents and the panel, then `more`.
+/// The keyboard, the selection, the fixtures, plaques, adornments (the pill's), slash commands (the
+/// title's), titles, the table of contents and the panel, then `more`.
 @MainActor func titleEditor(_ more: [any CanvasPlugin] = [], scheduler: any Scheduler = ManualScheduler()) throws -> CanvasEditor {
     CanvasEditor(registry: try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), PlaquesPlugin(), AdornmentsPlugin(),
-                                                  TitlesPlugin(), TableOfContentsPlugin(), DetailPanelPlugin()] + more),
+                                                  SlashCommandsPlugin(), TitlesPlugin(), TableOfContentsPlugin(), DetailPanelPlugin()] + more),
                  scheduler: scheduler)
 }
 
