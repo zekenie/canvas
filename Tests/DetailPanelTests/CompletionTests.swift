@@ -5,6 +5,7 @@ import DetailPanel
 import Selection
 import SwiftUI
 import TestKit
+import TextEditing
 
 // A code editor's completions (`DetailCodeEditor`'s `completions:`) in the panel, in an unshown
 // window: the keys that open, move through, pick from and close the list, what it lists as it's
@@ -60,7 +61,7 @@ struct BareCodePlugin: CanvasPlugin {
 
 extension PanelWindow {
     /// The code editor's list, while it's open.
-    var completions: CaretListWindow? { (code as? DetailTextView)?.caretListWindow }
+    var completions: CaretListWindow? { (code as? EditingTextView)?.caretListWindow }
     /// What it lists, top to bottom.
     var listed: [String] { completions?.list.rows.compactMap { $0.item?.title } ?? [] }
     var highlighted: String? { completions?.list.highlightedItem?.title }
@@ -115,7 +116,7 @@ extension PanelWindow {
         let list = try require(panel.completions, "open")
         expectEqual(panel.listed, bowl.map(\.label), "nothing typed: every item, as offered")
         expectEqual(panel.highlighted, "apple")
-        expect((code as? DetailTextView)?.holdsKeys == true)
+        expect((code as? EditingTextView)?.holdsKeys == true)
         expect(!list.isVisible, "never shown while the text's window isn't")
         let anchor = code.firstRect(forCharacterRange: NSRange(location: 0, length: 0), actualRange: nil)
         expectEqual(list.frame.width, 410)
@@ -150,7 +151,7 @@ extension PanelWindow {
         expectEqual(editor.props(id, as: Gadget.self)?.remark, "apple")
         expectEqual(codeWrites, 1, "one edit")
         expectEqual(code.selectedRange(), NSRange(location: 5, length: 0))
-        expect(panel.completions == nil && (code as? DetailTextView)?.holdsKeys == false, "closed")
+        expect(panel.completions == nil && (code as? EditingTextView)?.holdsKeys == false, "closed")
         panel.window.settle()
         try require(code.undoManager).undo()
         expectEqual(code.string, "ap", "what was typed, as it was")
@@ -304,7 +305,7 @@ extension PanelWindow {
         panel.controlSpace()
         panel.window.settle()
         expectEqual(code.string, "app")
-        expect(panel.completions == nil && (code as? DetailTextView)?.holdsKeys == false)
+        expect(panel.completions == nil && (code as? EditingTextView)?.holdsKeys == false)
         expect(panel.window.childWindows?.isEmpty ?? true)
         expectEqual(panel.exits, 0)
         panel.optionEscape()
@@ -318,7 +319,7 @@ extension PanelWindow {
         let (id, code) = try panel.focusCode("ap")
         panel.controlSpace()
         panel.commandReturn()
-        expect(panel.completions == nil && (code as? DetailTextView)?.holdsKeys == false, "closed")
+        expect(panel.completions == nil && (code as? EditingTextView)?.holdsKeys == false, "closed")
         expectEqual(codeCommits, 1, "committed")
         panel.controlSpace()
         panel.window.press("\r", code: 36, modifiers: .command)       // a key down alone
@@ -403,14 +404,14 @@ extension PanelWindow {
         let (_, code) = try panel.focusCode("ap")
         panel.controlSpace()
         panel.window.makeFirstResponder(panel.canvas)
-        expect(panel.completions == nil && (code as? DetailTextView)?.holdsKeys == false)
+        expect(panel.completions == nil && (code as? EditingTextView)?.holdsKeys == false)
         expectEqual(codeCommits, 1)
         panel.focus(code)
         panel.controlSpace()
         let open = try require(panel.completions)
         editor.selection = nil
         panel.window.spin { panel.code == nil && panel.canvasHasKeyboard }
-        expect((code as? DetailTextView)?.caretListWindow == nil, "closed as its view left the window")
+        expect((code as? EditingTextView)?.caretListWindow == nil, "closed as its view left the window")
         expect(open.list.onChange == nil)
     },
     test("a click on a row picks its item") {

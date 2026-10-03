@@ -2,6 +2,7 @@ import AppKit
 import Canvas
 import Selection
 import SwiftUI
+import TextEditing
 
 /// The panel. The app places it (in `.inspector`, through Composition); it follows the editor's
 /// selection by itself. `onExit` gives the keyboard back to the canvas: the panel calls it on
@@ -81,7 +82,7 @@ public struct DetailPanelView: View {
     /// it is (the panel hears keys before the view with the keyboard does), or, for ⌥⎋, one that
     /// completes what's typed (a code editor's `complete:`). Whether it left.
     private func exitByKey(withOption: Bool) -> Bool {
-        let text = window.window?.firstResponder as? DetailTextView
+        let text = window.window?.firstResponder as? EditingTextView
         if text?.holdsKeys == true || (withOption && text?.offersCompletions == true) { return false }
         drafts.revert()
         onExit()

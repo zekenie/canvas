@@ -1,4 +1,5 @@
 import AppKit
+import TextEditing
 
 // A code editor's completions (`DetailCodeEditor`'s `completions:`): a plugin says what can be
 // typed at the caret, in its language, and the editor lists it there, in the app's one caret list

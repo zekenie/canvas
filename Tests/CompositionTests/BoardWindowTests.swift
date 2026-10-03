@@ -16,6 +16,7 @@ import StickyNotes
 import SwiftUI
 import TableOfContents
 import TestKit
+import TextEditing
 import Titles
 
 /// A menu item's target that counts what it's sent.
@@ -479,11 +480,11 @@ final class NestedWindow {
 extension NestedWindow {
     /// A new schema card on the root, selected, its JSON in the panel with the keyboard, the caret
     /// at `caret`.
-    func schemaCode(caret: Int) throws -> DetailTextView {
+    func schemaCode(caret: Int) throws -> EditingTextView {
         editor.selection = editor.add(SchemaCard(frame: CGRect(x: 40, y: 400, width: 240, height: 67)))
         let content = try require(window.contentView)
         window.spin { content.descendants(NSTextView.self).contains { $0.font?.isFixedPitch == true } }
-        let code = try require(content.descendants(DetailTextView.self).first { $0.font?.isFixedPitch == true })
+        let code = try require(content.descendants(EditingTextView.self).first { $0.font?.isFixedPitch == true })
         window.makeFirstResponder(code)
         code.setSelectedRange(NSRange(location: caret, length: 0))
         window.settle()

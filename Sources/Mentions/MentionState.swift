@@ -1,8 +1,8 @@
 import AppKit
 import Canvas
-import DetailPanel
 import Observation
 import Selection
+import TextEditing
 import Titles
 import Topology
 

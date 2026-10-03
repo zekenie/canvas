@@ -1,5 +1,5 @@
-import DetailPanel
 import Foundation
+import TextEditing
 
 /// How well a query matches a label: its score (the tier's, up to `MentionRanking.exact`), and the
 /// label's matched characters, as ranges of `Character` offsets, for the picker to set in semibold.

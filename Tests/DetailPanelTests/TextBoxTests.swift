@@ -6,6 +6,7 @@ import DetailPanel
 import Selection
 import SwiftUI
 import TestKit
+import TextEditing
 
 // A box of a plugin's own text in the panel (`DetailTextBox`): a text view of its own class whose
 // value isn't a string, as a plugin's text may be (mentions of shapes), and whose keys it may hold.
@@ -18,7 +19,7 @@ struct Keyed: Equatable {
 /// A plugin's text view: its value is `Keyed`, it holds keys while `holds` says so (as a list it
 /// shows over its text would), and it logs the commands its keys come to, its changes and what it
 /// was shown.
-final class KeyedTextView: DetailTextView, DetailTextContent {
+final class KeyedTextView: EditingTextView, DetailTextContent {
     var holds = false
     override var holdsKeys: Bool { holds }
     /// Every command a key came to, in order.

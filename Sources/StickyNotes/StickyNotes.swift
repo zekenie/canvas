@@ -5,6 +5,7 @@ import Keyboard
 import Mentions
 import Ports
 import Selection
+import TextEditing
 import Titles
 
 public struct StickyNote: BoxShapeProps {

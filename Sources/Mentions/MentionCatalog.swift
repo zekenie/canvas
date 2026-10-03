@@ -1,5 +1,5 @@
 import Canvas
-import DetailPanel
+import TextEditing
 
 /// Every mentionable shape on the boards of a file the editor can show, ready for the picker to
 /// match: each shape's appearance and board, and its label folded once (`CaretListMatcher.Label`),

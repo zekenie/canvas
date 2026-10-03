@@ -24,7 +24,7 @@ public struct CaretListItem: Equatable {
     /// (`CaretListMatch.matched`).
     public var matched: [Range<Int>]
     /// The title's font (a code editor's, say), its matched characters in its bold; nil for the
-    /// list's, the system's at `DetailStyle.caretListLabelSize`, matched in its semibold.
+    /// list's, the system's at `TextEditingStyle.caretListLabelSize`, matched in its semibold.
     public var font: NSFont?
     /// An SF Symbol before the title; nil for none, and no room kept for one.
     public var symbol: String?
@@ -52,7 +52,7 @@ public struct CaretListItem: Equatable {
 
 /// How big a caret list is: its owner's, since each list has its own (the `@` picker's rows are
 /// its shapes, taller than a completion's). Its look (insets, fonts, corners) is every list's,
-/// `DetailStyle`'s. Points, the same at any zoom.
+/// `TextEditingStyle`'s. Points, the same at any zoom.
 public struct CaretListMetrics: Equatable, Sendable {
     public var width: CGFloat
     public var rowHeight: CGFloat

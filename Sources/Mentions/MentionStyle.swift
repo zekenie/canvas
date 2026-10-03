@@ -1,5 +1,6 @@
 import AppKit
 import DetailPanel
+import TextEditing
 import Titles
 
 /// Mentions' UI constants. A pill's metrics are fractions of its text's font size (an em), so a

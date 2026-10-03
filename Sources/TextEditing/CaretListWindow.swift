@@ -15,11 +15,11 @@ public typealias CaretListPost = @MainActor (_ element: Any, _ notification: NSA
 ///
 /// Its owner makes it as the list opens, calls `listDidChange()` after each change to the list, and
 /// `dismiss()` as it closes. Meanwhile the window follows its anchor as every view the text is in
-/// moves or is scaled (the canvas moves an editing view on every pan and zoom; the panel scrolls),
+/// moves or is scaled (the canvas moves an editing view on every pan and zoom; a scroll view scrolls it),
 /// and asks its owner to close the list (`close`) once the anchor leaves what's visible of the text
 /// or the text's window stops being key. What a pick inserts is the owner's: a click on an item's
 /// row highlights it and hands its index to `pick`. What the keys do is the text view's, and every
-/// `DetailTextView`'s alike: through `pickHighlighted()` and `closeList()`, which run the owner's.
+/// `EditingTextView`'s alike: through `pickHighlighted()` and `closeList()`, which run the owner's.
 ///
 /// VoiceOver hears its list change (the highlighted row said, or the empty state) and go, through
 /// `post`. It's never ordered in while its parent window isn't visible (so an unshown window's
@@ -66,7 +66,7 @@ public final class CaretListWindow: NSPanel {
         effect.material = .menu
         effect.blendingMode = .behindWindow
         effect.state = .active
-        effect.maskImage = Self.mask(radius: DetailStyle.caretListCornerRadius)
+        effect.maskImage = Self.mask(radius: TextEditingStyle.caretListCornerRadius)
         contentView = effect
 
         scrollView.drawsBackground = false
@@ -142,7 +142,7 @@ public final class CaretListWindow: NSPanel {
     /// How tall it is for its rows: as many as show at once, and its insets.
     private var fittedHeight: CGFloat {
         let metrics = list.metrics
-        return CGFloat(min(max(list.rows.count, 1), metrics.rowsShown)) * metrics.rowHeight + 2 * DetailStyle.caretListInset
+        return CGFloat(min(max(list.rows.count, 1), metrics.rowsShown)) * metrics.rowHeight + 2 * TextEditingStyle.caretListInset
     }
 
     /// Puts the window under its anchor, shown if the text's window is; asks the owner to close the
@@ -162,7 +162,7 @@ public final class CaretListWindow: NSPanel {
     private func place(below anchor: CGRect, on screen: CGRect?) {
         let metrics = list.metrics
         let size = CGSize(width: metrics.width, height: fittedHeight)
-        var origin = CGPoint(x: anchor.minX - DetailStyle.caretListRowInset - DetailStyle.caretListTextInset,
+        var origin = CGPoint(x: anchor.minX - TextEditingStyle.caretListRowInset - TextEditingStyle.caretListTextInset,
                              y: anchor.minY - metrics.offset - size.height)
         if let screen {
             if origin.y < screen.minY { origin.y = anchor.maxY + metrics.offset }
@@ -175,7 +175,7 @@ public final class CaretListWindow: NSPanel {
             invalidateShadow()
         }
         let content = CGRect(origin: .zero, size: size)
-        scrollView.frame = content.insetBy(dx: 0, dy: DetailStyle.caretListInset)
+        scrollView.frame = content.insetBy(dx: 0, dy: TextEditingStyle.caretListInset)
         rowsView.fit(width: size.width)
     }
 
@@ -324,11 +324,11 @@ final class CaretListRowsView: NSView {
             guard rect.intersects(dirtyRect) else { continue }
             switch list.rows[index] {
             case .header(let title):
-                draw(title, font: .systemFont(ofSize: DetailStyle.caretListHeaderSize, weight: .semibold), color: .secondaryLabelColor,
-                     in: rect, from: DetailStyle.caretListRowInset + DetailStyle.caretListTextInset)
+                draw(title, font: .systemFont(ofSize: TextEditingStyle.caretListHeaderSize, weight: .semibold), color: .secondaryLabelColor,
+                     in: rect, from: TextEditingStyle.caretListRowInset + TextEditingStyle.caretListTextInset)
             case .empty(let words):
-                draw(words, font: .systemFont(ofSize: DetailStyle.caretListLabelSize), color: .secondaryLabelColor,
-                     in: rect, from: DetailStyle.caretListRowInset + DetailStyle.caretListTextInset)
+                draw(words, font: .systemFont(ofSize: TextEditingStyle.caretListLabelSize), color: .secondaryLabelColor,
+                     in: rect, from: TextEditingStyle.caretListRowInset + TextEditingStyle.caretListTextInset)
             case .item(let item):
                 draw(item, in: rect, highlighted: list.highlighted == index)
             }
@@ -338,32 +338,32 @@ final class CaretListRowsView: NSView {
     private func draw(_ text: String, font: NSFont, color: NSColor, in rect: CGRect, from x: CGFloat) {
         let string = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color])
         let height = string.size().height
-        string.draw(with: CGRect(x: rect.minX + x, y: rect.midY - height / 2, width: rect.width - x - DetailStyle.caretListRowInset * 2,
+        string.draw(with: CGRect(x: rect.minX + x, y: rect.midY - height / 2, width: rect.width - x - TextEditingStyle.caretListRowInset * 2,
                                  height: height), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }
 
     private func draw(_ item: CaretListItem, in rect: CGRect, highlighted: Bool) {
-        let row = rect.insetBy(dx: DetailStyle.caretListRowInset, dy: 0)
+        let row = rect.insetBy(dx: TextEditingStyle.caretListRowInset, dy: 0)
         if highlighted {
             NSColor.selectedContentBackgroundColor.setFill()
-            NSBezierPath(roundedRect: row, xRadius: DetailStyle.caretListHighlightRadius, yRadius: DetailStyle.caretListHighlightRadius).fill()
+            NSBezierPath(roundedRect: row, xRadius: TextEditingStyle.caretListHighlightRadius, yRadius: TextEditingStyle.caretListHighlightRadius).fill()
         }
         let onHighlight = NSColor.alternateSelectedControlTextColor
         let primary = highlighted ? onHighlight : .labelColor
         let secondary = highlighted ? onHighlight.withAlphaComponent(0.75) : .secondaryLabelColor
 
         // The symbol, in the item's tint.
-        var x = row.minX + DetailStyle.caretListTextInset
+        var x = row.minX + TextEditingStyle.caretListTextInset
         if let name = item.symbol {
             let symbolColor = highlighted ? onHighlight : item.tint ?? .secondaryLabelColor
             if let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: DetailStyle.caretListLabelSize, weight: .regular)
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: TextEditingStyle.caretListLabelSize, weight: .regular)
                     .applying(NSImage.SymbolConfiguration(paletteColors: [symbolColor]))) {
                 let size = symbol.size
-                symbol.draw(in: CGRect(x: x + (DetailStyle.caretListSymbolWidth - size.width) / 2, y: row.midY - size.height / 2,
+                symbol.draw(in: CGRect(x: x + (TextEditingStyle.caretListSymbolWidth - size.width) / 2, y: row.midY - size.height / 2,
                                        width: size.width, height: size.height))
             }
-            x += DetailStyle.caretListSymbolWidth + DetailStyle.caretListGap
+            x += TextEditingStyle.caretListSymbolWidth + TextEditingStyle.caretListGap
         }
 
         // The detail, at the trailing end, then the title in what's left, its symbol after it. The
@@ -371,26 +371,26 @@ final class CaretListRowsView: NSView {
         // row, where both are long.
         let label = Self.label(item, color: primary)
         let trailing = item.trailingSymbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) }?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: DetailStyle.caretListDetailSize, weight: .regular)
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: TextEditingStyle.caretListDetailSize, weight: .regular)
                 .applying(NSImage.SymbolConfiguration(paletteColors: [secondary])))
-        let trailingWidth = trailing.map { $0.size.width + DetailStyle.caretListGap } ?? 0
+        let trailingWidth = trailing.map { $0.size.width + TextEditingStyle.caretListGap } ?? 0
         let detail = NSAttributedString(string: item.detail ?? "", attributes: [
-            .font: NSFont.systemFont(ofSize: DetailStyle.caretListDetailSize), .foregroundColor: secondary])
-        let leftByTitle = row.maxX - DetailStyle.caretListTextInset - x - ceil(label.size().width) - trailingWidth - DetailStyle.caretListGap
-        let detailWidth = max(0, min(ceil(detail.size().width), max(leftByTitle, row.width * DetailStyle.caretListDetailShare)))
-        let detailX = row.maxX - DetailStyle.caretListTextInset - detailWidth
+            .font: NSFont.systemFont(ofSize: TextEditingStyle.caretListDetailSize), .foregroundColor: secondary])
+        let leftByTitle = row.maxX - TextEditingStyle.caretListTextInset - x - ceil(label.size().width) - trailingWidth - TextEditingStyle.caretListGap
+        let detailWidth = max(0, min(ceil(detail.size().width), max(leftByTitle, row.width * TextEditingStyle.caretListDetailShare)))
+        let detailX = row.maxX - TextEditingStyle.caretListTextInset - detailWidth
         let detailHeight = detail.size().height
         detail.draw(with: CGRect(x: detailX, y: row.midY - detailHeight / 2, width: detailWidth, height: detailHeight),
                     options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
 
-        let room = max(0, detailX - DetailStyle.caretListGap - x - trailingWidth)
+        let room = max(0, detailX - TextEditingStyle.caretListGap - x - trailingWidth)
         let labelWidth = min(ceil(label.size().width), room)
         let labelHeight = label.size().height
         label.draw(with: CGRect(x: x, y: row.midY - labelHeight / 2, width: labelWidth, height: labelHeight),
                    options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
         if let trailing {
             let size = trailing.size
-            trailing.draw(in: CGRect(x: x + labelWidth + DetailStyle.caretListGap, y: row.midY - size.height / 2, width: size.width,
+            trailing.draw(in: CGRect(x: x + labelWidth + TextEditingStyle.caretListGap, y: row.midY - size.height / 2, width: size.width,
                                      height: size.height))
         }
     }
@@ -398,7 +398,7 @@ final class CaretListRowsView: NSView {
     /// An item's title, its matched characters in semibold, cut short with "…".
     static func label(_ item: CaretListItem, color: NSColor) -> NSAttributedString {
         let text = item.title
-        let font = item.font ?? NSFont.systemFont(ofSize: DetailStyle.caretListLabelSize)
+        let font = item.font ?? NSFont.systemFont(ofSize: TextEditingStyle.caretListLabelSize)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
         let string = NSMutableAttributedString(string: text, attributes: [.font: font, .foregroundColor: color, .paragraphStyle: paragraph])
@@ -447,25 +447,4 @@ final class CaretListRowsView: NSView {
         case .item(let item): item.spoken
         }
     }
-}
-
-extension DetailStyle {
-    // MARK: Caret lists (`CaretListWindow`)
-
-    /// Between the window's edge and its first and last rows.
-    static let caretListInset: CGFloat = 5
-    /// Between the window's sides and a row's highlight.
-    static let caretListRowInset: CGFloat = 5
-    /// Between a row's highlight and its symbol (or its title), and its detail.
-    static let caretListTextInset: CGFloat = 7
-    static let caretListSymbolWidth: CGFloat = 16
-    static let caretListGap: CGFloat = 6
-    static let caretListHighlightRadius: CGFloat = 4
-    static let caretListCornerRadius: CGFloat = 8
-    static let caretListLabelSize: CGFloat = 13
-    static let caretListDetailSize: CGFloat = 11
-    static let caretListHeaderSize: CGFloat = 11
-    /// What of a row its detail keeps however long the title: the title comes first, and the
-    /// detail takes the rest of the row, or this share of it, whichever is more.
-    static let caretListDetailShare: CGFloat = 0.4
 }

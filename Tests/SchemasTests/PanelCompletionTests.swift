@@ -7,13 +7,14 @@ import LanguageModels
 import Mentions
 import Schemas
 import TestKit
+import TextEditing
 
 // The card's JSON completed in its panel, as a person does it: ⌃Space, what's typed, Return. The
 // engine and its candidates are CompletionTests'; the keys and the list are DetailPanel's.
 
 extension SchemaPanelWindow {
     /// The JSON's list, while it's open, and what it lists, top to bottom.
-    var completions: CaretListWindow? { (code as? DetailTextView)?.caretListWindow }
+    var completions: CaretListWindow? { (code as? EditingTextView)?.caretListWindow }
     var listed: [CaretListItem] { completions?.list.rows.compactMap(\.item) ?? [] }
     var highlighted: String? { completions?.list.highlightedItem?.title }
 
@@ -158,7 +159,7 @@ private func described(_ keyword: String) -> String? { MetaSchema.root["properti
         let code = try require(panel.code)
         panel.focus(code, caret: 1)
         panel.controlSpace()
-        expect(panel.completions == nil && (code as? DetailTextView)?.holdsKeys == false)
+        expect(panel.completions == nil && (code as? EditingTextView)?.holdsKeys == false)
         expectEqual(code.string, SchemaCard.starter)
         panel.model.release()
         panel.window.spin { panel.code?.isEditable == true && panel.code?.string == petSchema }
