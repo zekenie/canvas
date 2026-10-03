@@ -129,7 +129,7 @@ Sources/
                         any plugin, laid out so none overlap, drawn in one overlay
   Clipboard/            the clipboard horizontal: cut, copy and paste, which kinds may opt out of
   Titles/               a horizontal any kind opts into: a title, a property it adds (or derived), in a pill
-                        and the table of contents, and a header that renames it
+                        and the table of contents, and a header, or /title, that renames it
   Locking/              a horizontal every kind is in: a lock from the context menu or /lock, its chip and its shake
   Ports/                a horizontal any kind opts into: dots beside its sides that a drag connects from,
                         on channels that say what may connect to what

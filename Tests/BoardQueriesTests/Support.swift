@@ -10,6 +10,7 @@ import Foundation
 import Keyboard
 import Queries
 import Selection
+import SlashCommands
 import TestKit
 import Titles
 import Topology
@@ -90,10 +91,11 @@ func namesPlugin() -> Contributor {
 }
 
 /// What opening a board takes (keys, the selection, the panel, menus), titles (with the adornments
-/// their pills are), Topology, Boards, Queries and the fixtures' names, then the bridge.
+/// their pills are, and the slash commands they offer), Topology, Boards, Queries and the fixtures'
+/// names, then the bridge.
 @MainActor func boardPlugins(bridge: Bool = true) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), StorePlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
-     AdornmentsPlugin(), TitlesPlugin(), BoardsPlugin(), QueriesPlugin(), namesPlugin()] + (bridge ? [BoardQueriesPlugin()] : [])
+     AdornmentsPlugin(), SlashCommandsPlugin(), TitlesPlugin(), BoardsPlugin(), QueriesPlugin(), namesPlugin()] + (bridge ? [BoardQueriesPlugin()] : [])
 }
 
 func uuid(_ n: Int) -> String { String(format: "00000000-0000-4000-8000-%012d", n) }

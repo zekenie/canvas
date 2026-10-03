@@ -7,6 +7,7 @@ import Keyboard
 import Queries
 import QueryLanguage
 import Selection
+import SlashCommands
 import TestKit
 import TitleQueries
 import Titles
@@ -26,11 +27,11 @@ import Topology
     }
 }
 
-/// The keyboard and the selection (which Titles' pills need), Topology, the fixtures, Titles and
-/// Queries, then the bridge, then `more`.
+/// The keyboard and the selection (which Titles' pills need), Topology, the fixtures, Titles (with
+/// the slash commands it offers) and Queries, then the bridge, then `more`.
 @MainActor func titledPlugins(bridge: Bool = true, more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
-    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(), AdornmentsPlugin(), TitlesPlugin(),
-     fixtureTitles(), QueriesPlugin()] + (bridge ? [TitleQueriesPlugin()] : []) + more
+    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(), AdornmentsPlugin(), SlashCommandsPlugin(),
+     TitlesPlugin(), fixtureTitles(), QueriesPlugin()] + (bridge ? [TitleQueriesPlugin()] : []) + more
 }
 
 func uuid(_ n: Int) -> String { String(format: "00000000-0000-4000-8000-%012d", n) }

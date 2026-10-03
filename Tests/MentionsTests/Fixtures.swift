@@ -7,6 +7,7 @@ import DetailPanel
 import Keyboard
 import Mentions
 import Selection
+import SlashCommands
 import TableOfContents
 import TestKit
 import Titles
@@ -261,11 +262,11 @@ struct MentionFixturesPlugin: CanvasPlugin {
 
 /// The standard list: the keyboard, the selection and Topology first, CanvasTesting's fixtures
 /// (boxes, discs, tags), this target's, adornments (Titles' pills), the detail panel, the context
-/// menu (where Mentions puts Show What Mentions), the table of contents, titles, then Mentions, then
-/// `more`.
+/// menu (where Mentions puts Show What Mentions), slash commands (which Titles' `/title` needs), the
+/// table of contents, titles, then Mentions, then `more`.
 @MainActor func mentionPlugins(_ more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), MentionFixturesPlugin(), AdornmentsPlugin(), DetailPanelPlugin(),
-     ContextMenusPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin()] + more
+     ContextMenusPlugin(), SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin()] + more
 }
 
 extension EditorHarness {
