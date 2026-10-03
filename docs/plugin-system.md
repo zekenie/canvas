@@ -25,6 +25,7 @@ maps one onto the other.
 - [Properties](#properties)
 - [Selection](#selection)
 - [Keyboard shortcuts](#keyboard-shortcuts)
+- [TextEditing](#textediting)
 - [The detail panel](#the-detail-panel)
 - [Context menus](#context-menus)
 - [The table of contents](#the-table-of-contents)
@@ -258,7 +259,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Give that concern menu items on the kinds that opt in | A `MenuGroup` at order 50, and `contextMenu` from the same sugar | [Boards](#a-feature-that-comes-with-menu-items-boards) |
 | Edit an added property in the panel, or from the menu | `details(of: P.self) { DetailSection ... }`, `contextMenu(of: P.self) { MenuItem ... }` | [Added properties](#added-properties), [a flag](#something-the-user-turns-on) |
 | Show a section in the panel only while a service says so (what mentions the shape) | `DetailSection(…).shownWhile { shape, context in … }`, at order 300 for a tab that comes and goes | [Contributing](#contributing-two-points-and-their-sugar), [Mentions](#what-mentions-a-shape) |
-| Edit text that isn't a string in the panel, with a text view of your own | A `DetailTextView` subclass adopting `DetailTextContent`, in a `DetailTextBox` | [Text of a plugin's own](#text-of-a-plugins-own-detailtextbox) |
+| Edit text that isn't a string in the panel, with a text view of your own | An `EditingTextView` subclass adopting `DetailTextContent`, in a `DetailTextBox` | [Text of a plugin's own](#text-of-a-plugins-own-detailtextbox) |
 | Opt another plugin's kind into a concern | A bridge, which imports both; `registrar.optIn(Kind.self, to:)` for an added property | [PatchTitles](#a-horizontal-plugin), [ValidationDetails](#a-tab-of-status-lines-from-a-bridge-validationdetails) |
 | Keep state per editor: an engine, a cache, a timer | `registrar.service`, an `EditorService`; redo what's kept per shape for the shapes each commit's `ChangeSet` names | [Validation](../Sources/Validation/Validation.swift)'s `ValidationEngine`, [TableOfContents](../Sources/TableOfContents/ContentsState.swift)' `ContentsState` |
 | Show something small on shapes, just outside them or on a corner (a pill, a tally, a lock), on kinds you define or not | An `Adornment` type; `x.adornment`, `registrar.adornment(_:on:)` or `registrar.adornmentForEveryShape(_:where:)`, returning an `AdornmentLabel` | [Adornments](#adornments), [Titles](#a-horizontal-plugin) |
@@ -404,14 +405,14 @@ compiles each module on its own, with only its dependency closure on the include
 Each target is one line, with its layer:
 
 ```swift
-.target(name: "StickyNotes", dependencies: ["Canvas", "DetailPanel", "Keyboard", "Mentions", "Ports", "Selection", "TableOfContents", "Titles"]), // layer: vertical
+.target(name: "StickyNotes", dependencies: ["Canvas", "DetailPanel", "Keyboard", "Mentions", "Ports", "Selection", "TableOfContents", "TextEditing", "Titles"]), // layer: vertical
 .target(name: "ValidationDetails", dependencies: ["Canvas", "DetailPanel", "Validation"]), // layer: bridge
 ```
 
 | Layer | May depend on | Modules |
 |---|---|---|
 | wire | wire | CanvasRPC (what the app and its [command line](#the-command-line) say to each other) |
-| foundation | foundation | Geometry, Canvas (the core), and pure libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, and its solver) and QueryLanguage (the language [`canvas query`](#query) reads) |
+| foundation | foundation | Geometry, Canvas (the core), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, and its solver) and QueryLanguage (the language [`canvas query`](#query) reads), pure, and TextEditing ([the text view and the caret list](#textediting) every editable text is built on) |
 | ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
 | horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Adornments, Clipboard, Locking, Ports, Mentions, Topology, Queries, Automation, QueryCommands, LanguageModels, Boards, Snapping |
 | vertical | foundation, horizontal | Arrows, StickyNotes, Schemas, Subboards, Frames, Reordering |
@@ -2126,12 +2127,106 @@ What the shipped app's keys do:
   being edited), the pointer leaves the canvas there, as a left press's release does. One press at a
   time: a left press during the middle button's pan ends the pan and is the press from then on.
 
+## TextEditing
+
+TextEditing ([`Sources/TextEditing`](../Sources/TextEditing)) is the text under every editable text
+in the app, and the one list shown at a caret. It's a foundation module that depends on no other
+module of the project, so it knows no canvas, registry, plugin or panel, and a plugin that types
+into text imports it without importing the inspector: Arrows for an arrow's label, StickyNotes and
+Schemas for their editors on the canvas, DetailPanel for its text boxes, Mentions for its text view
+and its picker. It holds `EditingTextView`, the caret list (`CaretList`, `CaretListWindow` and
+`CaretListMatcher`) and the metrics they draw by (`TextEditingStyle`, internal). TextEditingTests
+hold the list, its window and its matcher, on TestKit and CanvasTesting alone.
+
+### The text view
+
+`EditingTextView` is an open `NSTextView` with what a host needs and SwiftUI's `TextEditor` doesn't
+give, which a plugin subclasses for text of its own: Mentions' `MentionTextView` is one (a note's
+editor on the canvas, a schema card's description's, and the panel's `MentionTextArea`'s), and so
+is every view the panel's boxes adopt `DetailTextContent` on ([Text of a plugin's own:
+`DetailTextBox`](#text-of-a-plugins-own-detailtextbox)). An arrow's label is typed into one as it
+is.
+
+- **What it adds does nothing until it's set**, so the same class with none of it set is a plain
+  text view (a note's editor on the canvas is a `MentionTextView` with only `onCommit` set, which
+  ends editing, and `commitsOnLeaving` off):
+  `onCommit` (⌘↩, the keyboard leaving, and the view leaving its window with the keyboard, a turn
+  later; without it ⌘↩ goes on as any key does), `commitsOnReturn` (with `onCommit`, Return
+  commits and ⇧↩ is a new line), `commitsOnLeaving` (on unless set: off, only ⌘↩ commits, for
+  text a host ends itself: a note's and a schema card's on the canvas, which end with editing, the
+  card's too as the keyboard goes to a view outside the canvas), `commitsWhileReadOnly` (⌘↩ commits
+  read-only text too, for a commit that only ends editing: a schema card's description while the
+  model writes it), `onLeave` (the keyboard left, whatever for, after any commit: the card's
+  editor looks where it went), `onExit` (Escape: a host's hand-back to the canvas, the panel's) and
+  `placeholder`.
+- **Keys the view holds.** A view that shows a list at its caret ([below](#a-list-at-the-caret):
+  Mentions' `@` picker, a code editor's completions) keeps its window and says so, `override var
+  caretListWindow: CaretListWindow? { pickerWindow }`, and `EditingTextView` does the rest, for
+  every such list alike. While one's open, the view `holdsKeys`: the list's commands
+  (`CaretList.perform`) go to it before the delegate's turn, a pick and a close through the
+  window's `pickHighlighted()` and `closeList()`, which run its owner's; Return and Escape are never
+  `onCommit`'s or `onExit`'s, and ⌘↩, where the text commits, closes the list and commits, as it
+  does with none. ⌘. comes as no key: the window sends `cancelOperation:` up the responder chain
+  from the view, which closes an open list; with none, the view doesn't answer it
+  (`responds(to:)`), and it goes on up as though the view weren't there. The keyboard leaving the
+  view, the view leaving its window and its being made read-only close the list too. What's left
+  to the subclass is when a list opens, what it lists, and what a pick puts in. A subclass that
+  holds keys for something else says so, `override var holdsKeys`. A view that `offersCompletions`
+  (a code editor with completions, while it can be written) has ⌥⎋ for its own too, list or not:
+  AppKit's `complete:`. Tests read where a list is placed and what it lists through
+  `caretListWindow`.
+- **Enabled or dimmed.** `showEnabled(_:)` shows the text as its host does: enabled, or dimmed
+  (read-only, or something else writing it). By default the text's color, the label's or the
+  secondary label's, set only when it changes; a view that colors its text itself says how
+  (`MentionTextView` fades whole, text and pills, by its `alphaValue`). A host dims it through
+  this and never by SwiftUI, so read-only text is still selected and copied, and the view still
+  hears clicks.
+- **The placeholder** is drawn dimmed where the text starts while there's none, in the view's
+  font, else `TextEditingStyle.placeholderFont` (the system's, 11 pt).
+- **TextKit 2.** AppKit gives a text view whose class overrides `draw(_:)` TextKit 1, so
+  `EditingTextView` draws its placeholder in `drawBackground(in:)`, and a subclass that needs TextKit
+  2 (pills are attachments, laid out as the canvas lays them out) keeps it. On TextKit 2 it also
+  puts the selection where a press began editing (`placeSelection(at:selectingWord:)`) and says
+  where the caret is (`caretFrame`), as the editors on the canvas use them ([Editing:
+  `MentionTextView`](#editing-mentiontextview)).
+
+### A list at the caret
+
+What a view shows over its text at its caret is the app's one caret list, whatever the text
+(Mentions' `@` picker and a code editor's completions are built on it). Its model, `CaretList`, is
+headless: rows (`CaretListRow`: a header, an item, or the one row an empty list shows), the
+highlight (the first item as rows are set; ↑ ↓ wrap, a page of `rowsShown` stops at the ends), and
+`perform(_:)`, which says what a text view
+command does to it (↑ ↓ ⌃P ⌃N and Page Up and Down move, Return and Tab pick, but aren't taken
+with nothing highlighted, Escape, ⌥⎋ and F5 close; every other command is the text's). An item
+(`CaretListItem`) is what its row shows, one line: a title with its matched characters in
+semibold (in the item's `font`, if it has one), a symbol in its tint before it, a
+`trailingSymbol` after it (a read-only shape's lock), a `detail` at the trailing end, and what
+VoiceOver says, the title and detail unless it says otherwise. Its size is its owner's
+(`CaretListMetrics`: width, row height, rows shown, the offset below the anchor), its look
+`TextEditingStyle`'s. `CaretListWindow(list, accessibilityLabel:over:anchor:pick:close:post:)` shows
+it: a borderless child of the text's window that never takes the keyboard (not deferred, so a
+click's events name it, shown or not; a board's window, which ends a run of panel writes on a
+click in another window, leaves clicks in its children alone), under the anchor
+range's `firstRect` (its rows' text under the anchor's start; above the line where there's no
+room below; on screen), following every view the text is in as it moves or scales, and asking
+its owner to `close` once the anchor leaves the text's visible rect or the window stops being
+key; VoiceOver hears it change and go through `post`, which an owner may route (Mentions counts
+what its picker says). The owner decides the rest: when it opens and closes, what the query is,
+what it lists (`setRows`), and what a pick inserts (`pick` gets the row's index); it calls
+`listDidChange()` after each change and `dismiss()` as it closes. Both lists rank typed text
+alike, with `CaretListMatcher` (Mentions' tiers, `CaretListRanking`): `rank` is the two passes
+every list makes, every tier but the typo's over the labels it gives (nil for one it leaves
+out), then the typo's over the rest only when fewer than 8 matched, which Mentions' catalog
+makes over its keys and `matches(_:in:)` over a list of labels.
+
 ## The detail panel
 
 The detail panel is the inspector beside the canvas, after Keynote's: it shows the selected shape
 and edits its properties. It's a horizontal ([`Sources/DetailPanel`](../Sources/DetailPanel)) like
 any other. It declares two extension points, kinds and other plugins contribute to them, and the
-core has never heard of it.
+core has never heard of it. Its text boxes are built on [TextEditing](#textediting)'s text view and
+caret list.
 
 ### Anatomy and conventions
 
@@ -2232,7 +2327,7 @@ Sections are stock SwiftUI plus a few primitives, and get the look by following 
   and `isRelevant`). ⌃Space opens the list (so does AppKit's `complete:`, ⌥⎋ and F5, since macOS
   may keep ⌃Space for switching input sources) while the text can be written, where something's
   offered: nothing opens elsewhere, and nothing beeps. It's the app's one caret list (Mentions' `@`
-  picker's, [below](#text-of-a-plugins-own-detailtextbox)), under what's typed, each row the label
+  picker's too: [TextEditing](#a-list-at-the-caret)), under what's typed, each row the label
   in the code's font, what's typed matched in its semibold, then the detail, which takes what the label leaves (cut short with "…" past that),
   VoiceOver saying both; no header, no footer. While it's open ↑ ↓ (⌃P ⌃N) and Page Up and Down
   move through it, Return, Enter and Tab pick, Escape, ⌘., ⌃Space, ⌥⎋ and F5 close it (the panel
@@ -2652,24 +2747,17 @@ public var body: some View {
 }
 ```
 
-- **The view** is a subclass of `DetailTextView` (an open `NSTextView`) that adopts
-  `DetailTextContent`: its `value`, of a type of its own (`ScopedMentionText`), and `show(_:)`.
-  Adopt it on the subclass: `DetailTextView` adopting it would fix every subclass's `Value`. The
+- **The view** is a subclass of [`EditingTextView`](#the-text-view) (an open `NSTextView`, TextEditing's)
+  that adopts `DetailTextContent`: its `value`, of a type of its own (`ScopedMentionText`), and `show(_:)`.
+  Adopt it on the subclass: `EditingTextView` adopting it would fix every subclass's `Value`. The
   panel's own boxes (`DetailCodeEditor`, and a `DetailTextArea` with `onCommit:`) are the same,
   over an internal `PlainTextView` whose value is a string, on TextKit 1 as they always were; a
   `DetailTextArea` without `onCommit:` is SwiftUI's `TextEditor`.
-- **What it adds does nothing until it's set**, so the same class outside the panel is a plain
-  text view (a note's editor on the canvas is a `MentionTextView` with only `onCommit` set, which
-  ends editing, and `commitsOnLeaving` off):
-  `onCommit` (⌘↩, the keyboard leaving, and the view leaving its window with the keyboard, a turn
-  later; without it ⌘↩ goes on as any key does), `commitsOnReturn` (with `onCommit`, Return
-  commits and ⇧↩ is a new line), `commitsOnLeaving` (on unless set: off, only ⌘↩ commits, for
-  text a host ends itself: a note's and a schema card's on the canvas, which end with editing, the
-  card's too as the keyboard goes to a view outside the canvas), `commitsWhileReadOnly` (⌘↩ commits
-  read-only text too, for a commit that only ends editing: a schema card's description while the
-  model writes it), `onLeave` (the keyboard left, whatever for, after any commit: the card's
-  editor looks where it went), `onExit` (Escape: the panel's hand-back to the canvas) and
-  `placeholder`. The box sets them from its arguments.
+- **What it adds** is [`EditingTextView`'s](#the-text-view), which does nothing until it's set, so
+  the same class outside the panel is a plain text view (a note's editor on the canvas is a
+  `MentionTextView` with only `onCommit` set, which ends editing, and `commitsOnLeaving` off). The
+  box sets `onCommit`, `commitsOnReturn`, `onExit` (Escape: the panel's hand-back to the canvas) and
+  `placeholder` from its arguments.
 - **The binding.** The box writes `value` to the binding after every change the view reports, so a
   field's run of writes is one undo step, as a text area's is. It calls `show(_:)` only when the
   binding changed from outside (an undo of the board, another plugin's write), never for a change
@@ -2678,64 +2766,22 @@ public var body: some View {
   `didChangeText`, since the box may call it while the board applies an undo step, when nothing
   may commit; then the box drops what typing registered with its undo. In a board's window, Edit
   › Undo is the text's own while it has the keyboard ([Undo](#undo)).
-- **Keys the view holds.** A view that shows a list at its caret (below: Mentions' `@` picker, a
-  code editor's completions) keeps its window and says so, `override var caretListWindow:
-  CaretListWindow? { pickerWindow }`, and `DetailTextView` does the rest, for every such list
-  alike. While one's open, the view `holdsKeys`: the list's commands (`CaretList.perform`) go to it
-  before the delegate's turn, a pick and a close through the window's `pickHighlighted()` and
-  `closeList()`, which run its owner's; Return and Escape are never `onCommit`'s or `onExit`'s, and
-  ⌘↩, where the text commits, closes the list and commits, as it does with none.
-  The panel's root hears Escape before the view with the keyboard does, and leaves the panel, so
-  it lets Escape through only to a `DetailTextView` holding keys: with the list open, Escape closes
-  it, and a second leaves the panel. ⌘. comes as no key: the window sends `cancelOperation:` up
-  the responder chain from the view, which closes an open list; with none, it goes on up as though
-  the view didn't answer it, so the panel's root hears it (`onExitCommand`) and leaves the panel as
-  for Escape. The keyboard leaving the view, the view leaving its window and its being made
-  read-only close the list too. What's left to the subclass is when a list opens, what it lists,
-  and what a pick puts in. A subclass that holds keys for something else says so, `override var
-  holdsKeys`. A view that `offersCompletions` (a code editor with completions, while it can be
-  written) has ⌥⎋ for its own too, list or not: the panel lets Escape with ⌥ through to it, for
-  AppKit's `complete:`, and leaves on it anywhere else. Tests read where a list is placed and what
-  it lists through `caretListWindow`.
-- **A list at the caret.** What such a view shows over its text is the app's one caret list,
-  DetailPanel's, whatever the text (Mentions' `@` picker and a code editor's completions are
-  built on it). Its model, `CaretList`, is headless: rows (`CaretListRow`: a header, an
-  item, or the one row an empty list shows), the highlight (the first item as rows are set; ↑ ↓
-  wrap, a page of `rowsShown` stops at the ends), and `perform(_:)`, which says what a text view
-  command does to it (↑ ↓ ⌃P ⌃N and Page Up and Down move, Return and Tab pick, but aren't taken
-  with nothing highlighted, Escape, ⌥⎋ and F5 close; every other command is the text's). An item
-  (`CaretListItem`) is what its row shows, one line: a title with its matched characters in
-  semibold (in the item's `font`, if it has one), a symbol in its tint before it, a
-  `trailingSymbol` after it (a read-only shape's lock), a `detail` at the trailing end, and what
-  VoiceOver says, the title and detail unless it says otherwise. Its size is its owner's
-  (`CaretListMetrics`: width, row height, rows shown, the offset below the anchor), its look
-  `DetailStyle`'s. `CaretListWindow(list, accessibilityLabel:over:anchor:pick:close:post:)` shows
-  it: a borderless child of the text's window that never takes the keyboard (not deferred, so a
-  click's events name it, shown or not; a board's window, which ends a run of panel writes on a
-  click in another window, leaves clicks in its children alone), under the anchor
-  range's `firstRect` (its rows' text under the anchor's start; above the line where there's no
-  room below; on screen), following every view the text is in as it moves or scales, and asking
-  its owner to `close` once the anchor leaves the text's visible rect or the window stops being
-  key; VoiceOver hears it change and go through `post`, which an owner may route (Mentions counts
-  what its picker says). The owner decides the rest: when it opens and closes, what the query is,
-  what it lists (`setRows`), and what a pick inserts (`pick` gets the row's index); it calls
-  `listDidChange()` after each change and `dismiss()` as it closes. Both lists rank typed text
-  alike, with `CaretListMatcher` (Mentions' tiers, `CaretListRanking`): `rank` is the two passes
-  every list makes, every tier but the typo's over the labels it gives (nil for one it leaves
-  out), then the typo's over the rest only when fewer than 8 matched, which Mentions' catalog
-  makes over its keys and `matches(_:in:)` over a list of labels.
+- **Keys the view holds.** A view that shows a list at its caret holds keys while it's open
+  ([a list at the caret](#a-list-at-the-caret): Mentions' `@` picker, a code editor's
+  completions), and the panel's root, which hears Escape before the view with the keyboard does
+  and leaves the panel, lets Escape through only to an `EditingTextView` holding keys: with the
+  list open, Escape closes it, and a second leaves the panel. ⌘. comes as no key, the window
+  sending `cancelOperation:` up the responder chain; a view with no list open doesn't answer it, so
+  the panel's root hears it (`onExitCommand`) and leaves the panel as for Escape. A view that
+  `offersCompletions` has ⌥⎋ for its own too, list or not: the panel lets Escape with ⌥ through to
+  it, for AppKit's `complete:`, and leaves on it anywhere else.
 - **Enabled or dimmed.** A read-only shape, or `detailUpdating` (any `disabled` around the box),
-  makes the view read-only, and the box asks `showEnabled(_:)` on every update: by default the
-  text's color, the label's or the secondary label's. A view that colors its text itself says how
-  (`MentionTextView` fades whole, text and pills, by its `alphaValue`). The box is dimmed by its
-  view alone, and SwiftUI sees it enabled, since SwiftUI takes every click over a disabled
-  representable: so read-only text can still be selected and copied, and its view still hears
-  clicks (a pill's double-click follows it).
-- **TextKit 2.** AppKit gives a text view whose class overrides `draw(_:)` TextKit 1, so
-  `DetailTextView` draws its placeholder in `drawBackground(in:)`, and a subclass that needs TextKit
-  2 (pills are attachments, laid out as the canvas lays them out) keeps it. The box builds its
-  scroll view by hand around the view `make` returns: `scrollableTextView()` would make the class
-  with `init(frame:)`, and a plugin's view may need more to be made.
+  makes the view read-only, and the box asks `showEnabled(_:)` on every update
+  ([a view dims itself](#the-text-view)). The box is dimmed by its view alone, and SwiftUI sees it
+  enabled, since SwiftUI takes every click over a disabled representable: so read-only text can
+  still be selected and copied, and its view still hears clicks (a pill's double-click follows it).
+- **The scroll view** is built by hand around the view `make` returns: `scrollableTextView()` would
+  make the class with `init(frame:)`, and a plugin's view may need more to be made.
 - **The font** is `DetailStyle.textFont`, the panel's text (11 pt), which a plugin's style takes
   (`MentionStyle.panelText`).
 
@@ -4339,7 +4385,8 @@ Ports are the part of data-canvas's that notes and schema cards need to prove th
 Mentions ([`Sources/Mentions`](../Sources/Mentions)) lets text mention other shapes: `@` in a
 note, a few letters of another note's title, Return, and the note says "Ask ⟨▤ Ship the beta⟩
 first", the mention an inline pill with the note's symbol and name. It's a horizontal on
-Selection, the context menu, the detail panel, the table of contents, Titles and [Topology](#topology) (each mention is an edge of the
+Selection, the context menu, the detail panel, the table of contents, [TextEditing](#textediting) (the text view and the picker's
+list), Titles and [Topology](#topology) (each mention is an edge of the
 file's graph), and three kinds opt
 in: sticky notes, whose text holds mentions and which can be mentioned, subboards, which can
 be mentioned (following a mention of one enters it), and schema cards, whose descriptions mention
@@ -4566,7 +4613,7 @@ follows undo and redo, during which nothing may):
   shapes as the board has in the catalog, when reading those costs less: a board with few
   mentionable shapes reads them), then, while there's room, the shapes whose boards it's inside,
   and for any other the best 50 matches. Every caret list's matcher (`CaretListMatcher`,
-  DetailPanel's) scores the folded query (case and diacritics ignored) against each name, each
+  TextEditing's) scores the folded query (case and diacritics ignored) against each name, each
   taking its best tier: exact 1000, a prefix 800, each word a prefix of a word, in order, 600, a
   substring 400, a subsequence (fzf-style: word starts, runs and the first character count, gaps
   cost) at most 300, and, for a query of 4 or more that found fewer than 8 above, one typo (a
@@ -4612,8 +4659,8 @@ Faces are Selection's, so a plugin list with Mentions needs `SelectionPlugin()` 
 
 ### Editing: `MentionTextView`
 
-The note's editor is a `MentionTextView<AnyMentionable>`, a `DetailTextView` (the panel's text
-view, so the panel's boxes take it too: [In the panel](#in-the-panel-mentiontextarea)) on TextKit 2,
+The note's editor is a `MentionTextView<AnyMentionable>`, an `EditingTextView` ([TextEditing's](#the-text-view),
+so the panel's boxes take it too: [In the panel](#in-the-panel-mentiontextarea)) on TextKit 2,
 with the note's style, its shape as `owner` (the picker may offer it: a shape can mention itself) and the service. On
 the canvas nothing of the panel's is set, so it's the text view it always was:
 
@@ -4668,8 +4715,8 @@ func textDidChange(_ notification: Notification) {
   Note"), or why it isn't live ("…, deleted"). Writing Tools leave pills alone.
 - **The picker.** `@` typed where a word starts (at the start, after whitespace or an opening
   bracket or quote, never in `name@example.com`) opens it: `textView.picker`, a `MentionPicker`,
-  the picker's model, headless, built on DetailPanel's caret list ([A list at the
-  caret](#text-of-a-plugins-own-detailtextbox): its `CaretList`, shown in a `CaretListWindow`, a
+  the picker's model, headless, built on TextEditing's caret list ([A list at the
+  caret](#a-list-at-the-caret): its `CaretList`, shown in a `CaretListWindow`, a
   child window that never takes the keyboard, at the picker's own size). What's
   typed after the `@` is the query: Recent and Nearby for an empty one, else the matches, the
   matched characters semibold; "No matches" or "Nothing to mention" when there's none. ↑ and ↓
@@ -6794,7 +6841,7 @@ registrar.channel(SchemaLink.self)
   titled schema cards, on any board, the card itself too, and a pick is a pill
   ([References between cards](#references-between-cards)). Return is a new line, as in a note; ⌘↩
   and Escape say the description is done and end editing, ⌘↩ while the model writes the
-  description too (`DetailTextView.commitsWhileReadOnly`), and so does the keyboard going to a view
+  description too (`EditingTextView.commitsWhileReadOnly`), and so does the keyboard going to a view
   outside the canvas (heard through `onLeave`). Its highlights (words linked to the parts of the schema
   they say, `SchemaHighlighter`, asking Sonnet 5.5) are filled by the render under its text, while
   it's edited too, where the canvas draws the words, pills and all (Mentions'
@@ -8494,18 +8541,18 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   (`PanelWindow.hit(_:in:)`, `clickThroughWindow(at:in:)`), since SwiftUI takes the clicks over
   what it disables: a view's own `mouseDown`, called directly, would never meet that. `PanelWindow(editor, inBoardWindow: true)` hosts the panel in a `BoardWindow`,
   for Edit › Undo. A plugin's text box is held with a fixture view (DetailPanelTests'
-  `KeyedTextView`, a `DetailTextView` whose value wraps a string, with a `holdsKeys` a test sets,
+  `KeyedTextView`, an `EditingTextView` whose value wraps a string, with a `holdsKeys` a test sets,
   logging the commands it gets, its `didChangeText`s and its `show`s): in the panel, a view that
   doesn't hold keys never hears Escape, which the panel's root takes first. `shownWhile` is held
   with a service of the test's own (`Watchers`), and a commit on another shape showing and hiding
   the section, with its tab, while nothing else is built (`countedBuilds`). The caret list is held
-  without an owner of the app's (DetailPanelTests' Caret lists): its model and matcher headlessly,
-  its window over a plain `DetailTextView` in an unshown window (`ListedText`, whose list opens
-  under a range and counts what closes it and what VoiceOver hears), where it's placed but never
-  ordered in: read `frame`, call the rows view's mouse methods for a click, and render it with
-  `cacheDisplay`; and a subclass's list's keys and closing, which are `DetailTextView`'s
-  (`ListingTextView`). A code editor's completions are held in the panel (DetailPanelTests' Code
-  completions: `CodeBoxesPlugin`'s code editor completes fruit, `fruitCompletions`, with a basket
+  without a panel or a plugin, in TextEditingTests (TestKit and CanvasTesting alone): its model and
+  matcher headlessly, its window over a plain `EditingTextView` in an unshown window
+  (`ListedText`, whose list opens under a range and counts what closes it and what VoiceOver
+  hears), where it's placed but never ordered in: read `frame`, call the rows view's mouse methods
+  for a click, and render it with `cacheDisplay`; and a subclass's list's keys and closing, which
+  are `EditingTextView`'s (`ListingTextView`). A code editor's completions are held in the panel
+  (DetailPanelTests' Code completions: `CodeBoxesPlugin`'s code editor completes fruit, `fruitCompletions`, with a basket
   that reopens, a cherry whose count a pick selects, and a word after an x whose range is
   elsewhere, and logs what `onCompleting` hears, `codeCompleting`; `BareCodePlugin`'s has none):
   read the list through the text view's

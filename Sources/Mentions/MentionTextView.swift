@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import DetailPanel
+import TextEditing
 
 extension NSPasteboard.PasteboardType {
     /// Mention text on the pasteboard, in its stored form: what a mention text view copies beside
@@ -24,7 +25,7 @@ extension NSPasteboard.PasteboardType {
 /// - `@` typed where a word starts opens the picker (`MentionPicker`, shown in a child window that
 ///   never takes the keyboard: every caret list's, `CaretListWindow`, the view's `caretListWindow`):
 ///   what's typed after it is the query, the keys that move and pick come to it first (as they do
-///   to every `DetailTextView`'s list), and a pick puts the pill in the query's place, then a space,
+///   to every `EditingTextView`'s list), and a pick puts the pill in the query's place, then a space,
 ///   as one undoable change.
 /// - Copy writes the stored form (`.mentionText`) and the plain one ("@Label"); paste reads the
 ///   stored form first, then plain text, where a whole `@[label](shape:UUID)` becomes a pill.
@@ -34,13 +35,13 @@ extension NSPasteboard.PasteboardType {
 ///   either, it shows the pills put back as their targets are now and, if the text differs from
 ///   what it last reported, reports it (`didChangeText`), in any window. A board's window tells the
 ///   text it changed after its undo too; the text is reported by then, so the host writes once.
-/// - It's a `DetailTextView`, so the panel's boxes take it (`MentionTextArea`): while its picker is
+/// - It's an `EditingTextView`, so the panel's boxes take it (`MentionTextArea`): while its picker is
 ///   open it holds keys (`holdsKeys`, every caret list's), so Return, ⌘↩ and Escape are the
 ///   picker's, not the box's commit or the panel's exit, and a box shows it text from outside with
 ///   `show(_:)`. On the canvas, where nothing of the panel's is set, it's the text view it always
 ///   was.
 @MainActor
-public final class MentionTextView<Scope: MentionScope>: DetailTextView {
+public final class MentionTextView<Scope: MentionScope>: EditingTextView {
     /// The shape the text is on: the picker measures nearness from it, and may offer it.
     public private(set) var owner: ShapeID?
     public private(set) weak var mentions: MentionState?
@@ -73,7 +74,7 @@ public final class MentionTextView<Scope: MentionScope>: DetailTextView {
     private var tookPillPress = false
 
     /// The picker's window, while it's open: the list at the caret, whose keys (Return and Tab
-    /// pick, Escape closes) are the view's own, as every `DetailTextView`'s are, and which closes
+    /// pick, Escape closes) are the view's own, as every `EditingTextView`'s are, and which closes
     /// as the keyboard or the window goes, or the view is made read-only (a lock landing, something
     /// else writing the text).
     public override var caretListWindow: CaretListWindow? { pickerWindow }

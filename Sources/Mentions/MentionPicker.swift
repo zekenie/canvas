@@ -1,6 +1,6 @@
 import AppKit
 import Canvas
-import DetailPanel
+import TextEditing
 
 /// One row of the `@` picker: a section's header, a shape that can be picked, or the one row an
 /// empty list shows instead (quiet: "No matches", "Nothing to mention"). Only a shape's row can be

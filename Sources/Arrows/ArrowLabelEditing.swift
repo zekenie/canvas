@@ -1,8 +1,8 @@
 import AppKit
 import Canvas
-import DetailPanel
 import Geometry
 import Selection
+import TextEditing
 
 /// An arrow's label is edited in place (tldraw's): a double-click on the arrow, Return with it
 /// selected, or a click on the label of the only selected arrow, which puts the caret where it's
@@ -75,13 +75,13 @@ extension ArrowLabelDragSession: Session {
 /// edges. Each change is written to the arrow, which the label grows with, and the canvas lays the
 /// view over the label again. Escape and ⌘↩ end editing; Return is a new line, as in tldraw.
 final class ArrowLabelEditor: NSView, NSTextViewDelegate {
-    let textView: DetailTextView
+    let textView: EditingTextView
     private let context: EditContext<Arrow>
 
     init(arrow: ShapeRecord<Arrow>, context: EditContext<Arrow>) {
         self.context = context
         let frame = context.frame ?? .zero
-        textView = DetailTextView(frame: CGRect(origin: .zero, size: frame.size))
+        textView = EditingTextView(frame: CGRect(origin: .zero, size: frame.size))
         super.init(frame: .zero)
         textView.isRichText = false
         textView.allowsUndo = true

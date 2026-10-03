@@ -1,4 +1,4 @@
 import TestKit
 
 runTests([layoutTests, bindingTests, propertySectionTests, stateTests, windowTests, readOnlyPanelTests, textViewTests, coalescingTests, boardPanelTests,
-          textBoxTests, shownWhileTests, caretListTests, completionTests])
+          textBoxTests, shownWhileTests, completionTests])

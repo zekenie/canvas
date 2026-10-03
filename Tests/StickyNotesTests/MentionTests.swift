@@ -8,6 +8,7 @@ import StickyNotes
 import SwiftUI
 import TableOfContents
 import TestKit
+import TextEditing
 import Titles
 
 // A note's text may mention shapes: its third version, its emptiness, its row, how it's mentioned,

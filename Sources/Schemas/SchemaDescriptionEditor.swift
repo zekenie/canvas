@@ -1,8 +1,8 @@
 import AppKit
 import Canvas
-import DetailPanel
 import Mentions
 import Observation
+import TextEditing
 
 /// A text view laid over the card being edited, for its description, as a note's editor is laid
 /// over the note: its frame in view points and its bounds in world units, the card's frame at their

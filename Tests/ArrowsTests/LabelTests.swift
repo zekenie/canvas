@@ -3,12 +3,12 @@ import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
-import DetailPanel
 import Geometry
 import Keyboard
 import Selection
 import TableOfContents
 import TestKit
+import TextEditing
 
 // An arrow's label (tldraw's): text set on its body, which gives way to it; placed by tldraw's
 // rules, edited in place, and dragged along the arrow.
@@ -26,8 +26,8 @@ import TestKit
 }
 
 /// The label editor's text view, while the arrow is edited.
-@MainActor private func labelTextView(_ view: EditingView) throws -> DetailTextView {
-    try require(view.firstResponder as? DetailTextView)
+@MainActor private func labelTextView(_ view: EditingView) throws -> EditingTextView {
+    try require(view.firstResponder as? EditingTextView)
 }
 
 @MainActor private func isInked(_ color: [Int]) -> Bool { color.prefix(3).allSatisfy { $0 < 100 } }

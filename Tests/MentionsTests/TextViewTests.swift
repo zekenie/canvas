@@ -5,6 +5,7 @@ import DetailPanel
 import Mentions
 import Selection
 import TestKit
+import TextEditing
 import Titles
 
 // The mention text view, as a jot's editor, in an unshown window: typing, the picker's keys, pills
@@ -400,7 +401,7 @@ final class NotificationCount: @unchecked Sendable {
     test("the picker is its view's list at the caret, as every caret list is: its window while it's open, closed as the view is made read-only") {
         let session = try EditedJot("")
         session.type("@")
-        let view: DetailTextView = session.textView
+        let view: EditingTextView = session.textView
         let list = try require(view.caretListWindow, "the list open at its caret")
         expectEqual(list.frame, session.textView.pickerFrame)
         expectEqual(list.list.rows.count, session.textView.picker?.rows.count, "the picker's rows")

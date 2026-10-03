@@ -8,6 +8,7 @@ import Mentions
 import Schemas
 import Selection
 import TestKit
+import TextEditing
 
 // A card's description mentions another schema card, and its schema refers to that card's schema
 // with a `$ref` to its URI (`urn:uuid:` and the card's id): the two kept in step through the model,

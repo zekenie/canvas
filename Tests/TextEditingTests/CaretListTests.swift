@@ -1,7 +1,7 @@
 import AppKit
 import CanvasTesting
-import DetailPanel
 import TestKit
+import TextEditing
 
 // Every caret list's pieces, without an owner of the app's: the model (rows, the highlight, the
 // keys), the matcher both lists rank typed text with, and the window over a text view in an
@@ -23,7 +23,7 @@ private final class ListedText {
     let window: NSWindow
     /// The text view's superview, which a test moves as the canvas moves an editing view.
     let holder: NSView
-    let textView: DetailTextView
+    let textView: EditingTextView
     var list: CaretList?
     var listWindow: CaretListWindow?
     var anchor = NSRange(location: 6, length: 1)
@@ -39,7 +39,7 @@ private final class ListedText {
         window.contentView = content
         holder = NSView(frame: CGRect(x: 100, y: 100, width: 300, height: 200))
         content.addSubview(holder)
-        textView = DetailTextView(frame: CGRect(x: 0, y: 0, width: 300, height: 200))
+        textView = EditingTextView(frame: CGRect(x: 0, y: 0, width: 300, height: 200))
         textView.string = "apple banana cherry"
         holder.addSubview(textView)
         window.makeFirstResponder(textView)
@@ -88,9 +88,9 @@ private final class ListedText {
 
 /// A text view that keeps a list at its caret, as Mentions' and a code editor's do, saying only what
 /// it lists and what a pick does (it closes the list, as theirs do): the keys, and what closes it,
-/// are every `DetailTextView`'s. In an unshown window, with the keyboard.
+/// are every `EditingTextView`'s. In an unshown window, with the keyboard.
 @MainActor
-private final class ListingTextView: DetailTextView {
+private final class ListingTextView: EditingTextView {
     private(set) var listWindow: CaretListWindow?
     private(set) var picks: [Int] = []
     private(set) var closes = 0
