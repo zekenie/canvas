@@ -3,7 +3,7 @@
 Everything on the canvas comes from a plugin: sticky notes, arrows, schema cards, subboards,
 validation, titles, the pills and chips shown on shapes (adornments), the detail panel
 and the table of contents beside the canvas, selecting itself, copying and pasting, locking, the
-ports arrows are dragged from, text's mentions of shapes, the graph of what connects to what, the queries that find shapes in a file, snapping what's dragged to the shapes around it, what each key does, what the command line can do, the language model plugins ask, even the examples.
+ports arrows are dragged from, text's mentions of shapes, the commands a line of text can run, the graph of what connects to what, the queries that find shapes in a file, snapping what's dragged to the shapes around it, what each key does, what the command line can do, the language model plugins ask, even the examples.
 The core (`Sources/Canvas`) knows how to hold shapes, run tools, draw, and wire plugins together,
 and nothing about any particular shape or concern. Its one built-in tool is tldraw's Hand, which
 pans (a flung release slides on). Select, which selects (a click, ⇧-click, or a marquee dragged
@@ -34,6 +34,7 @@ maps one onto the other.
 - [Locking](#locking)
 - [Ports](#ports)
 - [Mentions](#mentions)
+- [Slash commands](#slash-commands)
 - [Topology](#topology)
 - [Queries](#queries)
 - [Boards](#boards)
@@ -247,6 +248,10 @@ Once one plugin works, the question is which piece the next feature needs.
 | Edit a kind's properties beside the canvas | `x.details { DetailSection(...) }` | [Schemas](#the-full-showcase-schema-cards) |
 | Add items to a kind's right-click menu | `x.contextMenu { MenuItem(...) }` | [Boards](#contributing) |
 | Add a right-click item to every shape, or every kind with a capability | `registrar.contextMenuForEveryShape(where:)` | [Reordering](#every-shape-reordering) |
+| Let a shape offer a command typed on a line of its text (`/lock`), conditionally, as menu items are | `x.slashCommands { SlashCommand("turn-on", when: { !$0.isOn }) { lamp, _ in … } }`; `registrar.slashCommands(K.self)` or `slashCommands(of: P.self)` from a bridge | [Registering commands](#registering-commands) |
+| Offer a command to every shape that holds an added property, and only those | `registrar.slashCommandsForEveryShape(where: { $0.holds(LockedProperty.self) }) { … }` | [Registering commands](#registering-commands), [Locking](#locking) |
+| Ask what a shape offers as slash commands, or run one without typing it | `editor.slashCommands?.commands(for:)`, `run(_:on:with:)` | [What a shape offers](#what-a-shape-offers-and-running-a-command) |
+| Type slash commands in a text view of your own | Make a `SlashCommandTyping(over:owner:commands:)` and call `didType`, `didChange(isEdit:)` and `takesKey`; return its `window` as the view's `caretListWindow` | [Hosting in a text view](#hosting-in-a-text-view-slashcommandtyping) |
 | Say how a kind's shapes appear in the table of contents | `x.contentsRow { ContentsLabel(...) }` | [StickyNotes](#the-table-of-contents) |
 | Show in a kind's row what other shapes say (the names of the shapes it mentions), kept up to date | `x.contentsRow(affected: { changes, context in ... }) { shape, context in ContentsLabel(...) }` | [Rows read from more than their shape](#rows-read-from-more-than-their-shape) |
 | Give a kind a title: a `title` in its schema, a pill on the canvas, and its row's name | `x.title()`, which Titles keeps (1 to 80 characters); or `x.title { ... }`, derived; or both, derived for the shapes nobody named | [Titles](#a-horizontal-plugin), [Schemas](#schema-cards) (derived) |
@@ -356,7 +361,10 @@ end on, while the plugin that owns a channel's meaning declares it. So is what's
 [Adornments](#adornments) lays out and draws what any plugin puts on them, a title's pill beside a
 lock, so none overlaps another. So are [mentions](#mentions): any kind can be mentioned, and any
 kind's text can hold mentions, while Mentions owns the stored form, the pills, the picker, what
-mentions each shape and what keeps them in step with the shapes they name. So is what connects and contains what:
+mentions each shape and what keeps them in step with the shapes they name. So are [slash commands](#slash-commands): any
+shape can offer a command typed on a line of its text, while SlashCommands owns what a shape offers,
+the list at the slash and running the line, the plugin that owns a meaning says what the command
+does (Locking's `/lock`), and the text view that hosts it is where it's typed (Mentions'). So is what connects and contains what:
 [Topology](#topology) keeps the file's graph of edges (an arrow bound at both ends, a mention),
 typed by the plugins that own what each means and read out of the shapes that carry them, while
 Ports and Mentions only say what their shapes carry. So is finding shapes: [Queries](#queries)
@@ -414,7 +422,7 @@ Each target is one line, with its layer:
 | wire | wire | CanvasRPC (what the app and its [command line](#the-command-line) say to each other) |
 | foundation | foundation | Geometry, Canvas (the core), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, and its solver) and QueryLanguage (the language [`canvas query`](#query) reads), pure, and TextEditing ([the text view and the caret list](#textediting) every editable text is built on) |
 | ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
-| horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, TableOfContents, Adornments, Clipboard, Locking, Ports, Mentions, Topology, Queries, Automation, QueryCommands, LanguageModels, Boards, Snapping |
+| horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, SlashCommands, TableOfContents, Adornments, Clipboard, Locking, Ports, Mentions, Topology, Queries, Automation, QueryCommands, LanguageModels, Boards, Snapping |
 | vertical | foundation, horizontal | Arrows, StickyNotes, Schemas, Subboards, Frames, Reordering |
 | bridge | foundation, horizontal, vertical | ValidationDetails, ValidationContents, MentionValidation, TitleValidation, ArrowPorts, TitleNames, PortEdges, ValidationChecks, TitleQueries, BoardQueries, MentionQueries, ValidationQueries, SelectionQueries |
 | composition | foundation, horizontal, vertical, bridge, wire | Composition (the shipped plugin list) |
@@ -2134,8 +2142,9 @@ in the app, and the one list shown at a caret. It's a foundation module that dep
 module of the project, so it knows no canvas, registry, plugin or panel, and a plugin that types
 into text imports it without importing the inspector: Arrows for an arrow's label, StickyNotes and
 Schemas for their editors on the canvas, DetailPanel for its text boxes, Mentions for its text view
-and its picker. It holds `EditingTextView`, the caret list (`CaretList`, `CaretListWindow` and
-`CaretListMatcher`) and the metrics they draw by (`TextEditingStyle`, internal). TextEditingTests
+and its picker, SlashCommands for its list at a slash. It holds `EditingTextView`, the caret list
+(`CaretList`, `CaretListWindow` and `CaretListMatcher`), `CaretListSubstitutions` and the metrics they
+draw by (`TextEditingStyle`, internal). TextEditingTests
 hold the list, its window and its matcher, on TestKit and CanvasTesting alone.
 
 ### The text view
@@ -2160,7 +2169,7 @@ is.
   editor looks where it went), `onExit` (Escape: a host's hand-back to the canvas, the panel's) and
   `placeholder`.
 - **Keys the view holds.** A view that shows a list at its caret ([below](#a-list-at-the-caret):
-  Mentions' `@` picker, a code editor's completions) keeps its window and says so, `override var
+  Mentions' `@` picker and slash commands' list, a code editor's completions) keeps its window and says so, `override var
   caretListWindow: CaretListWindow? { pickerWindow }`, and `EditingTextView` does the rest, for
   every such list alike. While one's open, the view `holdsKeys`: the list's commands
   (`CaretList.perform`) go to it before the delegate's turn, a pick and a close through the
@@ -2193,7 +2202,7 @@ is.
 ### A list at the caret
 
 What a view shows over its text at its caret is the app's one caret list, whatever the text
-(Mentions' `@` picker and a code editor's completions are built on it). Its model, `CaretList`, is
+(Mentions' `@` picker, slash commands' list and a code editor's completions are built on it). Its model, `CaretList`, is
 headless: rows (`CaretListRow`: a header, an item, or the one row an empty list shows), the
 highlight (the first item as rows are set; ↑ ↓ wrap, a page of `rowsShown` stops at the ends), and
 `perform(_:)`, which says what a text view
@@ -2214,11 +2223,17 @@ its owner to `close` once the anchor leaves the text's visible rect or the windo
 key; VoiceOver hears it change and go through `post`, which an owner may route (Mentions counts
 what its picker says). The owner decides the rest: when it opens and closes, what the query is,
 what it lists (`setRows`), and what a pick inserts (`pick` gets the row's index); it calls
-`listDidChange()` after each change and `dismiss()` as it closes. Both lists rank typed text
+`listDidChange()` after each change and `dismiss()` as it closes. Every list ranks typed text
 alike, with `CaretListMatcher` (Mentions' tiers, `CaretListRanking`): `rank` is the two passes
 every list makes, every tier but the typo's over the labels it gives (nil for one it leaves
 out), then the typo's over the rest only when fewer than 8 matched, which Mentions' catalog
 makes over its keys and `matches(_:in:)` over a list of labels.
+
+A list over text its own substitutions would rewrite (an `@query`, a `/name`) takes them as it opens
+and turns them off while it's open: `CaretListSubstitutions(of: view)` holds the view's spelling
+correction, text replacement, smart quotes and smart dashes, `CaretListSubstitutions.off` is all
+four off, and `apply(to:)` sets a view's, so its owner puts them back as they were when the list
+closes.
 
 ## The detail panel
 
@@ -3911,10 +3926,11 @@ nil.
 A locked shape can't be changed: not moved, restacked, resized, edited or deleted, whatever tries,
 until it's unlocked. Each try shakes it a little, and a lock chip sits just above its top-right
 corner, and a lock at the end of its row in the table of contents. Shapes are locked from the
-context menu, and unlocked there or with a click on the chip, which shows the lock open for a
-moment, where a click locks the shape again. It's a horizontal
+context menu, or by `/lock` typed on a line of their text, and unlocked from the menu or with a
+click on the chip, which shows the lock open for a moment, where a click locks the shape again.
+It's a horizontal
 ([`Sources/Locking`](../Sources/Locking)) that every kind is in, built on Adornments, ContextMenus,
-Selection and TableOfContents; the core has never heard of a lock. It lends two generic things, read-only shapes
+Selection, SlashCommands and TableOfContents; the core has never heard of a lock. It lends two generic things, read-only shapes
 and drawing offsets, [Adornments](#adornments) lays out, draws and points the chip (a clickable
 adornment, so a [canvas button](#canvas-buttons)), and Locking does the rest
 ([Locking.swift](../Sources/Locking/Locking.swift)):
@@ -3939,6 +3955,9 @@ registrar.contextMenuForCanvas {                        // of the shapes whose o
         editor.unlock(ids.filter { !editor.isLockedByContainer($0) })
     }
 }
+registrar.slashCommandsForEveryShape(where: { $0.holds(LockedProperty.self) }) {    // `/lock`, where a shape can be locked, while it isn't
+    SlashCommand("lock", when: { !$0.isLocked }) { id, _, editor in editor.lock([id]) }
+}
 
 extension LockChip: ClickableAdornment {                // a click on the chip
     public static func click(on shape: ShapeID, in editor: CanvasEditor) { editor.service(LockState.self)?.click(shape) }
@@ -3953,11 +3972,21 @@ extension LockChip: ClickableAdornment {                // a click on the chip
 - **The menu** has one of two items, in `LockMenuGroup` (order 300, after every other group), as
   tldraw's toggle: Unlock when every shape the menu is for is locked, and otherwise Lock, which locks
   the rest. They're items for the canvas, so a mix of locked and unlocked shapes gets one; on empty
-  canvas, neither. There's no key: the menu is the only way to lock a shape. Both go by the shapes'
+  canvas, neither. There's no key: the menu and `/lock` are the ways to lock a shape. Both go by the shapes'
   own locks, of those whose lock can change: a shape in a locked frame (below) can't change, its
   own lock included, so neither item is for it (`isLockedByContainer`, O(its depth)): a menu for
   only such shapes has neither, and one for some of them and others locks or unlocks the others,
   trying none of them (so none shakes).
+- **`/lock` is a [slash command](#slash-commands)**: typed on a line of its own in a shape's text (a
+  note's, a schema card's description), it locks the shape, as the menu's Lock does. It's offered
+  on every kind that holds `LockedProperty` (`slashCommandsForEveryShape(where:)`, so by what a
+  kind opted into), `when` the shape isn't locked, and takes no arguments (`/lock now` stays
+  text). Return takes the line out of the text first, then locks, which ends the editing a
+  read-only shape can't be in: the text keeps its other lines, the lock is a step named "Lock", and
+  the typing before it, with the line's removal in it, is the step before
+  ([Undoing a command](#undoing-a-command)). There is no `/unlock`: a locked shape's text can't be
+  edited, so nothing could be typed there. A plugin list with Locking needs `SlashCommandsPlugin()`
+  (`ownerNotInstalled` otherwise), which the shipped list has; the text it's typed in is Mentions'.
 - **A locked frame locks what it holds**, at any depth: the core makes a shape in a read-only
   [container](#containers) read-only too, so it refuses every change as a locked shape does, and
   each try shakes the shape tried (a drag of a note in the frame, Delete on it); nothing joins or
@@ -3984,8 +4013,8 @@ extension LockChip: ClickableAdornment {                // a click on the chip
   follows it, locked or not, since its props don't change; and a locked arrow still lets go of a
   shape that's deleted (`ShapeReferencing`), which keeps it where it's drawn. The detail panel shows
   a locked shape's details, disabled.
-- **Undo.** Each lock and unlock is a step of its own, "Lock" or "Unlock" (from the menu or the
-  chip). Undo is below the read-only rule, so undoing Lock unlocks the shape without a shake (its
+- **Undo.** Each lock and unlock is a step of its own, "Lock" or "Unlock" (from the menu, the
+  chip or `/lock`). Undo is below the read-only rule, so undoing Lock unlocks the shape without a shake (its
   chip shows open, as for any unlock), redoing it locks it again, and undoing a chip's Unlock locks
   it. A try a lock refuses (a drag, Delete) changes nothing, so it records nothing: the next ⌘Z
   undoes the step before it.
@@ -4386,7 +4415,7 @@ Mentions ([`Sources/Mentions`](../Sources/Mentions)) lets text mention other sha
 note, a few letters of another note's title, Return, and the note says "Ask ⟨▤ Ship the beta⟩
 first", the mention an inline pill with the note's symbol and name. It's a horizontal on
 Selection, the context menu, the detail panel, the table of contents, [TextEditing](#textediting) (the text view and the picker's
-list), Titles and [Topology](#topology) (each mention is an edge of the
+list), [SlashCommands](#slash-commands) (its text view hosts them), Titles and [Topology](#topology) (each mention is an edge of the
 file's graph), and three kinds opt
 in: sticky notes, whose text holds mentions and which can be mentioned, subboards, which can
 be mentioned (following a mention of one enters it), and schema cards, whose descriptions mention
@@ -4725,9 +4754,20 @@ func textDidChange(_ notification: Notification) {
   that matches nothing. A pick puts the pill in the query's place, then a space, one step of the text's
   undo, which gives back the query as typed. Undo while it's open closes it: the text's, taking
   back the `@` typed, or the board's, ending editing. While it's open, the highlighted shape is hovered on the canvas,
-  and autocorrection is off. VoiceOver hears its list change as the highlight moves (the row, or
+  and the text's spelling correction, text replacement, smart quotes and smart dashes are off
+  (TextEditing's `CaretListSubstitutions`). VoiceOver hears its list change as the highlight moves (the row, or
   the empty state, said) and go as it closes (`MentionAccessibility`, which the list's window
   posts through).
+- **Slash commands.** The view hosts them ([Hosting in a text view](#hosting-in-a-text-view-slashcommandtyping))
+  when it has an owner and its editor has the service (`textView.slashCommands`, a
+  `SlashCommandTyping`; else nil, and a slash is a slash): a `/` typed on an empty line lists what
+  the owner offers in the same kind of list, and Return on a line that is a command runs it and
+  takes the line out of the text, which the host commits as it commits typing. A pill in a command
+  line is a shape the command is given. `caretListWindow` is the picker's or the slash list's,
+  whichever is open; the picker's keys come first while it's open, so Return picks the shape (and a
+  second Return runs the line), opening the picker closes the slash list, and `show(_:)` closes
+  both. Mentions contributes no command and needs no `SlashCommandsPlugin()`; without it none of
+  its views has slash commands.
 - **Where editing began.** `placeSelection(at:selectingWord:)` puts the selection where a press
   at a point in the view would (`selectPill(at:)` selects only a pill): the note calls it with
   `EditContext.startPoint`, so a click on a pill on the canvas has that pill selected in the
@@ -4774,7 +4814,8 @@ DetailSection("Text", in: FieldsTab.self) { $jot in
 - **Keys.** Without `onCommit` (a jot's), Return is a new line; with it (a brief's), Return, ⌘↩
   and the keyboard leaving say the text is done, and ⇧↩ is a new line. While the picker is open its keys
   are the picker's (`holdsKeys`): Return and Tab pick and commit nothing, and Escape (or ⌘.)
-  closes it; a second leaves the panel.
+  closes it; a second leaves the panel. Slash commands take Return first too: a command line runs
+  and commits nothing.
 - **Read-only** (a locked shape, `detailUpdating`), it's dimmed as one, text and pills
   (`showEnabled`, by `alphaValue`), opens no picker (a lock landing closes an open one), and its
   menu has no Remove Mention; its clicks still land, so a click selects a pill, text is selected
@@ -4959,6 +5000,299 @@ deleted, a locked note's pill double-clicked, a subboard copied with the notes i
 it, one cut and pasted with every id kept, a note cut inside one and pasted on the root, and
 `canvas draw` naming a note two boards down); `SubboardFileTests` a saved file whose
 notes mention each other two boards apart (`nested-mentions-across.v4.json`).
+
+## Slash commands
+
+Slash commands ([`Sources/SlashCommands`](../Sources/SlashCommands)) let a line of a shape's text
+run a command the shape offers: a `/` on a new line of a note lists what the note offers, `/lock`
+and Return, and the line is gone from the note and the note is locked. It's a horizontal on
+[TextEditing](#textediting), whose caret list is the list at the slash. It declares one extension
+point, which kinds and other plugins fill as they fill the [context menu](#context-menus), each
+command offered `when` the shape says so, and a text view that hosts it is where it's typed:
+Mentions' `MentionTextView` does, so every text where mentions are typed (a note's editor, a
+schema card's description's, the panel's [`MentionTextArea`](#in-the-panel-mentiontextarea)) takes
+slash commands. The core has never heard of a command, and SlashCommands has never heard of a
+mention: a command's arguments are runs of text and shapes, and a pill is a shape only because the
+text view that reads the line says so. Locking's `/lock` is the one command that ships.
+
+```swift
+// In LockingPlugin.register:
+registrar.slashCommandsForEveryShape(where: { $0.holds(LockedProperty.self) }) {   // on the kinds that can be locked
+    SlashCommand("lock", when: { !$0.isLocked }) { id, _, editor in editor.lock([id]) }
+}
+```
+
+```
+┌──────────────────────────────┐
+│ Ask about the beta           │   a note being edited
+│ /lo                          │   a "/" typed on an empty line, then what narrows the list
+│ ┌────────────────────┐       │
+│ │ lock               │       │   the list: the app's one caret list, under the slash
+│ └────────────────────┘       │   Return: the note is locked, the line is gone
+└──────────────────────────────┘
+```
+
+### Registering commands
+
+A command is contributed as a context menu item is: sugar on the registrars, collected by a result
+builder (`SlashCommandBuilder`, as `MenuBuilder` is: `if`, `if`/`else` and `for` work in it).
+
+| Sugar | For |
+|---|---|
+| `x.slashCommands { commands }` | This kind's commands, over its props, inside `registrar.shape { x in ... }`. A horizontal's opt-in sugar may call it too, so opting into its feature brings its commands. |
+| `x.slashCommands(of: P.self) { commands }` | An [added property](#added-properties), over its value: this kind's shapes that hold one offer them, and the rest don't. |
+| `registrar.slashCommands(K.self) { commands }` | Another plugin's kind, typed as its own props (bridges). |
+| `registrar.slashCommands(of: P.self) { commands }` | An added property, over its value, on every shape that has one. |
+| `registrar.slashCommandsForEveryShape(where:) { commands }` | Every shape, over `AnyShapeRecord`. `where:` picks kinds by their definition and by what else they take part in, asked once per kind: it gets a `SlashCommandKind` (`kind`, `definition`, `registry`, and `holds(P.self)`, whether the kind opted into an added property), so a feature's every-shape command goes only on the kinds that opted into the feature (`$0.holds(LockedProperty.self)`); `when:` picks shapes. |
+
+A lamp, a kind of SlashCommandsTests' own, offers commands in two of those ways
+([Lamps.swift](../Tests/SlashCommandsTests/Lamps.swift)):
+
+```swift
+registrar.shape(LampDefinition()) { lamp in
+    lamp.optIn(to: Flagged.self)
+    lamp.slashCommands {
+        SlashCommand("turn-on", when: { !$0.isOn }) { lamp, _ in lamp.isOn = true }
+        SlashCommand("turn-off", when: { $0.isOn }) { lamp, _ in lamp.isOn = false }
+        SlashCommand("level", argument: "1-3", accepts: { (1...3).contains(Int($0.text) ?? 0) }) { lamp, arguments in
+            lamp.level = Int(arguments.text) ?? lamp.level
+        }
+    }
+    lamp.slashCommands(of: Flagged.self) {
+        SlashCommand("unflag", when: { $0 }) { flagged, _ in flagged = false }
+    }
+}
+```
+
+- **`SlashCommand(name, argument:, when:, accepts:)` and an action**, over `Value` (the kind's
+  props, the added property's value, or the record). The action has the two forms of a
+  `MenuItem`: `edit: { value, arguments in ... }` edits the shape the line is on, on its live value
+  in one transaction (setting what it already has commits nothing), and `perform: { id, arguments,
+  editor in ... }` is for what editing the shape can't do (locking it, moving it, putting it
+  somewhere), which changes the document only through `editor.transact`. Whatever either commits is
+  one undo step ([Undoing a command](#undoing-a-command)).
+- **A name** is lowercase ASCII letters and digits, words joined by single hyphens (`set-title`,
+  `h2`: `SlashCommandLine.isName`), since it's what can be typed and completed. Any other refuses
+  the plugin list (`invalid`: "lamps offers /Turn On, which can't be typed as a command's name:
+  lowercase letters and digits, words joined by hyphens"). Typed, it's matched folded to lowercase.
+- **`argument` is the hint, `accepts` is the rule.** `argument` (`"title"`, `"@shape"`) is shown
+  beside the name in the list, and says the command takes one. `accepts` says which arguments the
+  command runs with: by default none for a command without an `argument`, and anything but nothing
+  for one with; given, it replaces that rule entirely (`accepts: { _ in true }` runs with nothing
+  too; `accepts: { !$0.shapes.isEmpty }` needs a pill). Arguments a command doesn't accept leave the
+  line as text and the command never runs: `/lock now` and a bare `/set-title` stay text.
+- **`SlashArguments`** is what's typed after the name, trimmed at both ends, adjacent text merged:
+  `runs` (`.text(String)`, `.shape(ShapeID, label:)`, in order), `text` (each shape as "@" and the
+  name it shows: "near @Groceries"), `shapes` (in order, each once) and `isEmpty`. It's an
+  `ExpressibleByStringLiteral`, so a test writes `"now"`.
+- **`when` leaves a command out; it's the shape's state.** A shape offers a command while `when`
+  holds for it as it is, so `/turn-on` is offered to a lamp that's off and `/turn-off` once it's on,
+  with no upkeep, and one over an added property only while the shape holds a value.
+- **Keyed.** Each contribution claims its target and name, so two plugins offering one name to a
+  kind, or to every shape (`registrar.slashCommands(of:)`'s are every shape's too), are a
+  `conflict` ("box /flip", "* /rename"), and so is one builder repeating a name; a kind's own
+  command takes the place of an every-shape one of the same name, offered or not. The report shows
+  each call of the sugar as one entry, its commands, then the kind they're for or "every shape"
+  (`/turn-on /turn-off /level → lamp`, `/lock → every shape`).
+- **`SlashCommandsPlugin()` is the owner.** It registers the service and nothing else: it
+  contributes no command and claims no key. A plugin that contributes a command needs it in the
+  list (`ownerNotInstalled` otherwise), and a bridge needs the kind's plugin (`unknownKind`).
+
+### What a shape offers, and running a command
+
+`SlashCommandState` (`editor.slashCommands`, nil without the plugin) is the service. It keeps
+nothing per shape: each kind's commands are gathered once (the registry is frozen), and what a
+shape offers is asked of its record each time, so `when` follows the shape. It hears no commit and
+nothing on a switch of board (`boardDidChange` is overridden with nothing, as ContextMenus' is).
+
+```swift
+let state = editor.slashCommands
+state.commands(for: lamp).map(\.name)              // ["turn-on", "level", "unflag"]: what a flagged lamp that's off offers
+state.command(named: "TURN-ON", for: lamp)         // folded to lowercase; nil if it isn't offered now
+state.run("level", on: lamp, with: "3")            // true: one undo step, "Level"
+```
+
+- **`commands(for:)`** is the shape's kind's contributions, then every shape's, each in plugin and
+  builder order, those whose `when` holds, as `OfferedSlashCommand`s (`name`, `argument`, `title`,
+  `accepts(_:)`). None for a shape that isn't on the board shown or is kept aside.
+- **`run(_:on:with:)`**, by an `OfferedSlashCommand` or a name, runs a command on a shape with
+  what was typed after its name: in `undoHistory.group(command.title)`, one step named for the
+  command in words, each word capitalized (`set-title` is "Set Title"), and none if the command
+  commits nothing. It does nothing and returns false for a shape that's gone or kept aside, and
+  arguments the command doesn't accept. An `OfferedSlashCommand` is run as it was found: `when`
+  isn't asked again, since the caller got it from `commands(for:)` a moment ago (and may have
+  changed the shape's text since, as a text view does by taking the command's line out). A name is
+  resolved when it's run, so a command the shape doesn't offer then is false. It needs no text
+  view: a plugin that wants a command run by something else (a button, a script) calls it.
+
+### The list at a slash
+
+A `/` typed on an empty line opens the list. "Empty" is the text's start, or right after a line
+break (`\n`, `\r`, `\r\n`, U+0085, U+2028 or U+2029), with nothing after the `/` on its line. Not at
+the start of a line that has text: a line is evaluated whole, so a command chosen there would take
+that text with it. Nowhere else either, so the slash in `and/or` is a slash, and so is one a paste,
+an undo or an input method put there, one in a view that can't be written, one while another caret
+list is open, and one where the shape offers no command at all.
+
+- **The list** is `SlashCommandPicker`, headless, built on TextEditing's [caret
+  list](#a-list-at-the-caret): a `CaretList` shown in a `CaretListWindow`, a child window that never
+  takes the keyboard, under the `/` (240 wide, rows 24 tall, 8 shown, 4 below, "Commands" to
+  VoiceOver). What's typed after the `/` is the query. An empty one lists every command the shape
+  offers, in the order offered; else the commands whose names it matches, ranked with
+  `CaretListMatcher` (best tier first, then as offered), the matched characters in semibold; one
+  row, "No matches", when none does, with nothing highlighted. Each row is the command's name, with
+  its `argument` as the detail (VoiceOver reads "width, takes points"). The first is
+  highlighted.
+- **It closes** when the caret leaves the name (before the `/`, past what was typed, or a
+  selection), the `/` is deleted, what's typed holds what a name can't (whitespace, which ends the
+  name, a line break, a pill, punctuation: a name is ASCII letters, digits and hyphens, matched
+  folded) or is past 40 characters (`SlashCommandPicker.Closing`, what `read` says); and on Escape
+  or ⌘., or when the keyboard or the window goes, as every caret list does. The `/` stays as typed,
+  and nothing opens again until another is typed. While it's open the text's spelling correction,
+  text replacement, smart quotes and smart dashes are off, and put back as they were when it
+  closes (TextEditing's `CaretListSubstitutions`, which Mentions' picker uses too).
+- **Keys** are every caret list's: ↑ ↓ ⌃P ⌃N and Page Up and Down move (one at a time they wrap,
+  a page stops at the ends), Tab picks, Escape and ⌘. close. Return is this list's own, below.
+- **A pick completes, and runs nothing.** Tab, or a click on a row, replaces the `/` and the
+  name token it is in (the caret may be in the middle of one: `/gr|ow`) with `/` and the command's
+  name, and a space if it takes an argument and no whitespace follows on its line (a line break
+  doesn't count: the argument is typed on the line, not run into the one below), the caret after,
+  as one step of the text's undo. Typing the argument is then the person's.
+
+### Return, and what runs
+
+The line is evaluated when Return is pressed, not as it's typed: a plain Return, with no ⌘, ⇧, ⌥
+or ⌃ (⇧↩ is a new line, as it always was), and no text being composed. The slash list's Return and
+a command line's are the same key, and one object decides which it is, before the view's own turn:
+
+| Return | Does |
+|---|---|
+| With the list open, on a highlighted command that takes nothing, with only whitespace after its name on the line | Runs it at once: the line goes, the command runs. |
+| With the list open, on any other highlighted command | Completes it, as Tab does, so its argument can be typed. |
+| With the list open, with nothing highlighted ("No matches") | A new line, which closes the list. |
+| With the list closed, no selection and the caret after the `/`, on a line that is `/name` and what follows, where the shape offers a command of that name now and it accepts what follows | Takes the line out of the text and runs the command. |
+| Anything else: not a command, one the shape doesn't offer, arguments it doesn't accept, a selection, the caret before the `/` | Return as ever: a new line, or what the host does with it (a box's commit). |
+
+A command line is its text from the `/` to the line's end, not its line break: `/name`, whitespace,
+and what the command takes, trimmed at both ends. The caret may be anywhere after the `/`. The name
+is matched folded, so `/LOCK` runs `lock`. In a box that commits on Return (`commitsOnReturn`, the
+panel's), a command line runs and doesn't commit, and Return anywhere else commits as it does.
+
+- **The line goes first.** The command runs after its line is taken out, never before: a command
+  that makes the shape read-only (`/lock`) would refuse the text's write after it. The text is
+  written through the view as an edit of the person's: undoable, heard by the host
+  (`shouldChangeText`, `didChangeText`, so the host commits the shorter text as it commits typing),
+  its own steps of the text's undo, the view's typing attributes, the caret left at the line's
+  start on the now empty line, its list closed before and its own callbacks ignored meanwhile. The
+  line break stays: a command takes a line's text and leaves the lines around it.
+- **The command is the shape's as it is when Return is pressed.** It's asked of the shape then: a
+  command not offered by now, or not accepting what was typed, takes nothing out, and Return is a
+  Return that isn't a command's. A command that reads the text (offered only while it isn't
+  blank, say) is still run once the line is gone: it's run as it was found, not asked again.
+
+### Undoing a command
+
+Two undo managers, as with every text: the board's steps and the text's own ([Undo](#undo)).
+
+- **The board.** While the shape is edited, the editing session is one step, "Typing" (or the
+  action that began it), and the line's removal is in it. The command is any other commit while a
+  shape is being edited, which closes the editing step first ([Undo](#undo)), so it's a step
+  between the typing before it and the typing after: the board's Undo takes back "Undo Lock"
+  first, then "Undo Typing", which leaves the text without the line, and typing after the command
+  is a step of its own. A command that commits nothing makes no step.
+- **The text.** ⌘Z while the text is edited is the text's own, and brings the line's text back
+  (the person's last edit was taking it out) and leaves the command done: text undo is the text's,
+  and the command is the board's.
+- **Editing ends where the core ends it.** A command that makes the shape read-only (`/lock`),
+  deletes it or shows another board ends editing as any such change does, and the line's removal,
+  written first, is already in the step.
+
+### Hosting in a text view: `SlashCommandTyping`
+
+A text view takes part by making a `SlashCommandTyping(over:owner:commands:arguments:)`: for one
+shape's text (`owner`, whose commands it asks), over an `EditingTextView`, with `commands`, the
+service. It holds the view and the service weakly. `arguments` reads a range of the text as runs
+(the default reads it as plain text). Mentions' `MentionTextView<Scope>` makes one in `init` when it
+has an owner and its editor has the service (`slashCommands`; else nil, and a slash is a slash),
+and calls it where a text view's events are ([Editing: `MentionTextView`](#editing-mentiontextview)):
+
+```swift
+slashCommands = SlashCommandTyping(over: self, owner: owner, commands: commands) { [weak self] in self?.arguments(in: $0) ?? SlashArguments([]) }
+
+override var caretListWindow: CaretListWindow? { pickerWindow ?? slashCommands?.window }   // its list is the view's own
+override func insertText(_ string: Any, replacementRange: NSRange) {                      // what a person typed, not composed
+    ...
+    if !wasComposing, !hasMarkedText() { slashCommands?.didType(typed) }
+}
+override func keyDown(with event: NSEvent) {                                              // a plain Return, first
+    if picker == nil, slashCommands?.takesKey(event) == true { return }
+    super.keyDown(with: event)
+}
+// slashCommands?.didChange(isEdit: true) after the text changes, (isEdit: false) after the caret moves
+// alone (not while the view is changing text) and after the view's own undo; slashCommands?.close()
+// when text is shown from outside, and before the @ picker opens.
+```
+
+- **What the host tells it**: `didType(_:)` after the view inserts what a person typed (a `/`
+  opens the list), `didChange(isEdit:)` after the text changed or the caret moved alone (the list
+  reads the query again, and closes if that's what it says), `takesKey(_:)` before the view's own
+  keys (a plain Return or Enter: `takesReturn()` is the same, without the event), and `close()`.
+  It opens a list only while the view is editable, has no marked text and shows no other caret
+  list.
+- **Its list is the view's own**: the host returns its `window` from `caretListWindow`, so the view
+  `holdsKeys` while it's open and every key and close is `EditingTextView`'s ([A list at the
+  caret](#a-list-at-the-caret)); a pick and a close go through the window's closures, which run
+  the object's.
+- **It writes the text only through the view**, as an edit of the person's (`write`: break undo
+  coalescing, `shouldChangeText`, replace, the caret, `didChangeText`, break again), so the host
+  hears what it hears for typing and nothing else is special.
+- **Mentions** passes `arguments` that reads the attributed text: each pill's character a
+  `.shape(pill.target, label: pill.shownLabel)`, the rest text. So a pill in a command line is a
+  shape the command is given (`/near @Groceries` gives `arguments.shapes == [groceries]`). The
+  `@` picker's keys come first while it's open (Return picks the shape, and a second Return runs
+  the line), opening the picker closes the slash list, and `show(_:)` closes both.
+
+### Testing slash commands
+
+- **SlashCommandsTests** hold the plugin over fixtures only: CanvasTesting's boxes, discs and cards,
+  chores' added `Flagged`, `Lamp`, a kind of the target's own that offers commands in every way a
+  kind can (`LampsPlugin`: its own, and over the flag it holds), and `CardCommandsPlugin(log:)`,
+  whose cards have commands to type (`grow` and `width` edit, `log` and `ping` perform, `wide` is
+  offered only while the card is wide, `any` accepts even nothing); `slashHarness` is an
+  `EditorHarness` over them and `SlashCommandsPlugin()`. They hold registration (every form of the
+  sugar and the report's line for each, `where` with `holds`, a kind's own command over an
+  every-shape one, conflicts, names refused, `ownerNotInstalled`, `unknownKind`), resolution
+  (`commands(for:)`'s order, `when`, a shape that's gone, off the board shown or kept aside
+  offering none, `accepts` by default and given, an edit command in one transaction and one step
+  named for it, a `perform` command, `run`'s false), and `SlashCommandLine`, `SlashArguments` and
+  `SlashCommandPicker` headlessly (every kind of line break, the rows and their ranking, each way it
+  closes). The typing object is held in an unshown window over a card being edited: `SlashTextView`
+  is an `EditingTextView` of the target's own that forwards to `SlashCommandTyping` as
+  `MentionTextView` does, `SlashHost` is the card's editor (it writes the text to the board and
+  counts `commits`), and `SlashSession` drives them (`type`, `down`, `tab`, `returnKey(_:)`,
+  `set(_:caret:)`, `list`, `rows`). They hold where the list opens and where a slash is a slash
+  (mid-line, before text, nothing offered, read-only, pasted, undone, composed), narrowing and each
+  way it closes, the substitutions off while it's open and back after, completing (with and without
+  the space, in the middle of a name, a click on a row), Return from the list and on a whole line,
+  what isn't a command being Return as ever (⇧↩, a selection, the caret before the slash, text
+  being composed), the text's own undo bringing the line back while the board's undo undoes the
+  command by its name with the typing next, the command's step closing the editing session's, a
+  box that commits on Return not committing a command line, and a command no longer offered when
+  its line is entered left as text.
+- **MentionsTests' `slashTests`** (`SlashFixturesPlugin(log:)`: `ping` and `near` for jots, `ping`
+  for briefs) hold a mention text view hosting it, in `EditedJot` and in the panel's
+  `MentionPanel`: the list as the view's own, a pill in a command line as a shape, the `@` picker's
+  Return picking and a second running the line, `show(_:)` and the keyboard leaving closing the
+  list, no hosting without `SlashCommandsPlugin()` or an owner, and a box with `onCommit` running a
+  command line without committing.
+- **LockingTests' `lockSlashTests`** hold `/lock`: offered only on the kinds that can be locked and
+  only while the shape isn't, run as one step named "Lock", undone and redone, and refused
+  arguments. A plugin list with Locking needs `SlashCommandsPlugin()`; `lockingHarness` has it.
+- **CompositionTests' `slashCommandsShippedTests`** type `/lock` into a note's editor in the app's
+  canvas view: a slash mid-line is a slash, on a new line it lists `lock`, Return locks the note,
+  ends editing and takes the line out of its text, "Undo Lock" is followed by the typing, and
+  `/lock now` stays text. The registry's report (ShippedTests, and the guide's copy of it) holds
+  `slash-commands` and Locking's `/lock → every shape`.
 
 ## Topology
 
@@ -7967,8 +8301,8 @@ aren't changes, and make no step.
 (`editor.transact("Move") { ... }`), else "Typing" for an editing step; Edit › Undo shows it
 ("Undo Move"), or plain "Undo"; while the open step has come back to where it began, Undo names,
 and undoes, the step before it. The core names placing ("Add" and the placing tool's label, "Add
-Note"), moving ("Move") and typing; Selection "Delete" and "Resize"; ContextMenus every item by its title;
-Clipboard "Cut" and "Paste"; Locking "Lock" and "Unlock"; Arrows "Add Arrow", "Move Arrow End",
+Note"), moving ("Move") and typing; Selection "Delete" and "Resize"; ContextMenus every item by its title; SlashCommands every command
+by its name in words ("Set Title"); Clipboard "Cut" and "Paste"; Locking "Lock" and "Unlock"; Arrows "Add Arrow", "Move Arrow End",
 "Bend Arrow" and "Toggle Arrowhead"; the detail panel
 "Change" and the section's title ([`ShapeBinding`](#reading-and-writing-shapebinding)); the schema
 card's sync "Update Schema" and "Update Description", however long after the edit it lands; and
@@ -8302,6 +8636,7 @@ validation           service ValidationEngine · overlay ValidationOverlay · Va
 adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
 detail-panel         service DetailPanelState
 context-menus        service ContextMenuState · secondary-click menu · CanvasContextMenu
+slash-commands       service SlashCommandState
 table-of-contents    service ContentsState
 titles               property title · adornment TitlePill → every shape
 mentions             service MentionState · edge type mention · edges → every shape · overlay MentionFrames · ShapeFaces · CanvasContextMenu
@@ -8311,7 +8646,7 @@ validation-contents  ContentsMarks
 mention-validation   ValidationRules
 title-validation     service TitleIndex · ValidationRules
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
-locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu
+locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu · /lock → every shape
 snapping             service SnapState · translation adjuster
 ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
 arrow-ports          property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowBindingRules
@@ -8364,7 +8699,11 @@ line is its commands (`command line draw`, `command line show`, `command line ki
 bridges that fill its draw points, one each. `queries` is the query engine's service (`QueryState`,
 which hears no commit) and its mark (`query engine`, which `registry.answersQueries` reads); the
 five after it fill its points (names, boards' names, and words and a text format, each by what it
-adds), and `query-commands` is `canvas query` and `query-vocabulary`.
+adds), and `query-commands` is `canvas query` and `query-vocabulary`. `slash-commands` is the service that
+says what a shape offers (`SlashCommandState`, which hears no commit) and contributes no command;
+the one that ships is Locking's, the last entry on its line (`/lock → every shape`: each call of the
+sugar is one entry, its commands as `/name`, then the kind they're for or "every shape":
+[Registering commands](#registering-commands)).
 
 ## Testing plugins
 
@@ -8574,7 +8913,8 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   short of a lock changes no pixel beside it); and `editor.hoveredButton` on a clickable one is
   `AdornmentButton(A.self, on: id)`. A test's own adornment types are internal, not private, so a
   conflict key names one as `Module.Name`. A plugin list with Titles or Locking needs
-  `KeyboardPlugin()`, `SelectionPlugin()` and `AdornmentsPlugin()`, which goes before the plugins
+  `KeyboardPlugin()`, `SelectionPlugin()` and `AdornmentsPlugin()` (and one with Locking
+  `SlashCommandsPlugin()`, for its `/lock`), which goes before the plugins
   that place adornments, as the shipped list has it. In debug builds, `editor.adornmentsKept`
   counts the shapes whose labels are kept, so a test holds a deleted shape to being forgotten, and
   `adornmentFacesKept` and `adornmentFacesMade` the shapes whose faces are kept and the faces made
@@ -8873,6 +9213,9 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   note and of a subboard in the shipped panel, in a `BoardWindow` (a line goes to its mentioner,
   and Back returns); ShippedTests a MentionValidation warning in Issues and on its row; and
   CommandLineTests `draw` notes that mention shapes, on the board or not.
+- **Slash commands.** SlashCommandsTests, MentionsTests' `slashTests`, LockingTests' `lockSlashTests`
+  and CompositionTests' `slashCommandsShippedTests`: [Testing slash
+  commands](#testing-slash-commands).
 - **Board previews.** CanvasTests' PreviewTests drive a `BoardPreviews` of their own over a
   `CanvasFile` (`preview(of:in:)`, `build(in:until:)`: a deadline already past builds one chunk,
   one far off everything; `waiting`, `keptKeys`, and the mask's pixels), and an editor's through
@@ -9139,6 +9482,22 @@ Each of these adds to the design without changing what plugins are written again
   paste does, so mentions stay live; the command line reading and listing what can be mentioned,
   and helpers for writing mentions; more kinds mentionable (through bridges); and making a shape
   from the picker.
+- **More of slash commands**: more commands (`/lock` ships; the rest are only imagined so far: `/turn-into`
+  for a shape's kind, `/set-title`, `/move-near @shape` and `/move-into @subboard`, each a
+  `SlashCommand` over a kind or every shape with arguments that may be shapes, the last two needing
+  a way to move a shape that isn't a drag, and Move to Subboard in More of boards); completing arguments (the
+  list stops at the name: `/set-title` could list titles and `/move-into` the subboards and frames
+  of the file, as the `@` picker lists shapes, where `argument`'s hint says "@shape" and nothing
+  checks that a pill is one); saying why a command line doesn't run (a Return that isn't a
+  command's is a new line and the text stays, so a misspelled name, a command not offered or
+  arguments it doesn't accept leave `/lcok` in the note without a word; a row in the list or a
+  line under the text would say which); plain-text surfaces (an arrow's label, a field in the panel
+  that isn't mention text: only Mentions' text view hosts the typing today, so a plain
+  `EditingTextView` has none); ⌘Z right after a command undoing the command (the text's undo is
+  the text's: it brings the line back and leaves the command done, and the board's Undo, once
+  editing is over, undoes the command); and a schema card's sync waiting while a command line is
+  typed (it takes the description as done when editing ends or 3 s after the last change, and a
+  half-typed `/set-title` is not a description to rewrite the schema from).
 - **More of the detail panel**: editing several selected shapes at once (it shows "N Shapes"
   today); every-shape sections over the record (there are every-box ones over the frame, and those
   over an added property; so `mentionableEveryShape` brings no Mentioned In tab), and every-box

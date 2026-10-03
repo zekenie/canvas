@@ -26,6 +26,7 @@ import Reordering
 import Schemas
 import Selection
 import SelectionQueries
+import SlashCommands
 import Snapping
 import StickyNotes
 import Subboards
@@ -66,7 +67,9 @@ public enum ShippedPlugins {
             // board, a board of its own), after notes: the toolbar's Note, Subboard, Frame, Schema.
             ArrowsPlugin(), StickyNotesPlugin(), SubboardsPlugin(), FramesPlugin(), SchemasPlugin(),
             // After Validation: what's shown on shapes draws over its outline.
-            ValidationPlugin(), AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin(), TitlesPlugin(),
+            ValidationPlugin(), AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
+            // Slash commands: the list at a `/` in the text views Mentions hosts it in. Locking offers the one that ships, `/lock`.
+            SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(),
             // After Titles, whose names its pills show, and the table of contents, whose rows it names.
             MentionsPlugin(),
             // Getting around a file's boards (a subboard's): opening one, ⌘↑, the path.

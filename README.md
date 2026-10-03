@@ -110,6 +110,7 @@ Sources/
   Canvas/               the core: model, plugin registry, editor, the hand tool, drawing
   CanvasRPC/            what the app and its command line say to each other: JSON-RPC over a socket
   DrawScript/           the language canvas draw reads, and the solver that places what it says: pure, beneath the plugins
+  TextEditing/          the text view and the caret list under every editable text, beneath the plugins
   CanvasUI/             the AppKit view, the SwiftUI toolbar, CanvasFocus, and the command line's server
   CanvasCLI/            canvas, the command line
   Keyboard/             the keyboard horizontal: every shortcut, registered by the plugin whose key it is
@@ -121,13 +122,15 @@ Sources/
   Validation/           the validation horizontal: rules, engine, outline
   DetailPanel/          the detail panel horizontal: tabs, sections, bindings, the inspector view
   ContextMenus/         the context menu horizontal: right-click items, groups, the selection's menu
+  SlashCommands/        a horizontal: commands a shape offers, typed as /name on a line of its text (the list
+                        at a slash, Return runs the line)
   TableOfContents/      the table of contents horizontal: a row per shape, in the detail panel
   Adornments/           a horizontal: what's shown on a shape (a title's pill, a lock chip), placed by
                         any plugin, laid out so none overlap, drawn in one overlay
   Clipboard/            the clipboard horizontal: cut, copy and paste, which kinds may opt out of
   Titles/               a horizontal any kind opts into: a title, a property it adds (or derived), in a pill
                         and the table of contents, and a header that renames it
-  Locking/              a horizontal every kind is in: a lock from the context menu, its chip and its shake
+  Locking/              a horizontal every kind is in: a lock from the context menu or /lock, its chip and its shake
   Ports/                a horizontal any kind opts into: dots beside its sides that a drag connects from,
                         on channels that say what may connect to what
   Automation/           the command line's horizontal: every command canvas runs, draw and kinds its own

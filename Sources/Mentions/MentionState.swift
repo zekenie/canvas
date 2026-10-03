@@ -2,6 +2,7 @@ import AppKit
 import Canvas
 import Observation
 import Selection
+import SlashCommands
 import TextEditing
 import Titles
 import Topology
@@ -90,6 +91,9 @@ public final class MentionState {
         trackMentioned()
         readCatalog()
     }
+
+    /// The editor's slash commands, if it has them: what a mention text view hosts for its shape.
+    var slashCommandState: SlashCommandState? { editor.service(SlashCommandState.self) }
 
     /// Resolves every shape that's mentioned anywhere in the file.
     private func trackMentioned() {
