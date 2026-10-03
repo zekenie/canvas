@@ -6,6 +6,7 @@ import CanvasTesting
 import CoreGraphics
 import Keyboard
 import Selection
+import SlashCommands
 import TestKit
 import TitleNames
 import Titles
@@ -26,10 +27,11 @@ import Titles
     }
 }
 
-/// An editor 800 × 600 points, its view (0, 0) to (800, 600), with Titles and the bridge.
+/// An editor 800 × 600 points, its view (0, 0) to (800, 600), with Titles (and the slash commands it
+/// offers) and the bridge.
 @MainActor func namedEditor(tilesNamed: Bool = true, bridge: Bool = true) throws -> CanvasEditor {
     let plugins: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), AutomationPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(),
-                                       AdornmentsPlugin(), TitlesPlugin(), fixtureTitles(tilesNamed: tilesNamed)] + (bridge ? [TitleNamesPlugin()] : [])
+                                       AdornmentsPlugin(), SlashCommandsPlugin(), TitlesPlugin(), fixtureTitles(tilesNamed: tilesNamed)] + (bridge ? [TitleNamesPlugin()] : [])
     let editor = CanvasEditor(registry: try Registry(plugins: plugins))
     editor.viewportDidResize(to: CGSize(width: 800, height: 600))
     return editor

@@ -11,6 +11,7 @@ import Mentions
 import Queries
 import QueryLanguage
 import Selection
+import SlashCommands
 import TableOfContents
 import TestKit
 import Titles
@@ -83,12 +84,12 @@ func namesPlugin() -> Contributor {
 }
 
 /// The keyboard, the selection and Topology first, the fixtures, what Mentions builds on and its
-/// opt-ins need (the panel, the context menu, titles with their adornments), Mentions, Queries and
-/// the fixtures' names, then the bridge.
+/// opt-ins need (the panel, the context menu, titles with their adornments and slash commands),
+/// Mentions, Queries and the fixtures' names, then the bridge.
 @MainActor func mentionPlugins(bridge: Bool = true) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PocketsPlugin(), LinksPlugin(), ScribblesPlugin(),
-     AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), QueriesPlugin(),
-     namesPlugin()] + (bridge ? [MentionQueriesPlugin()] : [])
+     AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(),
+     QueriesPlugin(), namesPlugin()] + (bridge ? [MentionQueriesPlugin()] : [])
 }
 
 func uuid(_ n: Int) -> String { String(format: "00000000-0000-4000-8000-%012d", n) }

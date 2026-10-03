@@ -9,6 +9,7 @@ import Keyboard
 import MentionValidation
 import Mentions
 import Selection
+import SlashCommands
 import TableOfContents
 import TestKit
 import Titles
@@ -142,12 +143,12 @@ struct ValidationFixturesPlugin: CanvasPlugin {
 
 /// The keyboard, the selection and Topology (whose edges Mentions' are) first, CanvasTesting's
 /// fixtures (boxes; pockets, whose boards nest; frozen shapes), this target's, the pieces Mentions
-/// builds on (the context menu, where it puts Show What Mentions, among them), Mentions,
-/// Validation, then the bridge.
+/// builds on (the context menu, where it puts Show What Mentions, among them, and slash commands,
+/// which Titles' `/title` needs), Mentions, Validation, then the bridge.
 @MainActor func validationPlugins(_ more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PocketsPlugin(), FreezingPlugin(), ValidationFixturesPlugin(),
-     AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), ValidationPlugin(),
-     MentionValidationPlugin()] + more
+     AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(),
+     ValidationPlugin(), MentionValidationPlugin()] + more
 }
 
 @MainActor func validationHarness(document: CanvasDocument = CanvasDocument()) throws -> EditorHarness {

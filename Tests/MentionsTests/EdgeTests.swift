@@ -7,6 +7,7 @@ import DetailPanel
 import Keyboard
 import Mentions
 import Selection
+import SlashCommands
 import TableOfContents
 import TestKit
 import Titles
@@ -66,7 +67,7 @@ extension EarlyProbe: EditorService {
         let probe = EarlyProbe { jot }
         let plugins: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), Contributor(id: "early") { $0.service { _ in probe } }, TopologyPlugin(),
                                            FixturesPlugin(), MentionFixturesPlugin(), AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
-                                           TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin()]
+                                           SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin()]
         let h = try EditorHarness(plugins: plugins)
         let topology = try require(h.editor.topology)
         let groceries = h.editor.add(Plate(CGRect(x: 400, y: 0, width: 120, height: 80)), titled: "Groceries")

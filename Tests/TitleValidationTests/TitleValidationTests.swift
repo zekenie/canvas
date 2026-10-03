@@ -4,6 +4,7 @@ import CanvasTesting
 import CoreGraphics
 import Keyboard
 import Selection
+import SlashCommands
 import TestKit
 import TitleValidation
 import Titles
@@ -21,10 +22,10 @@ import Validation
     }
 }
 
-/// A harness on `file`, with Titles, Validation and the bridge.
+/// A harness on `file`, with Titles (and the slash commands it offers), Validation and the bridge.
 @MainActor private func harness(_ file: CanvasFile = CanvasFile()) throws -> EditorHarness {
     try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), CardsPlugin(), PocketsPlugin(), ValidationPlugin(),
-                                AdornmentsPlugin(), TitlesPlugin(), fixtureTitles, TitleValidationPlugin()], file: file)
+                                AdornmentsPlugin(), SlashCommandsPlugin(), TitlesPlugin(), fixtureTitles, TitleValidationPlugin()], file: file)
 }
 
 /// A card called `title`.

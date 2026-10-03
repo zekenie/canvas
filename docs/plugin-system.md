@@ -364,7 +364,7 @@ kind's text can hold mentions, while Mentions owns the stored form, the pills, t
 mentions each shape and what keeps them in step with the shapes they name. So are [slash commands](#slash-commands): any
 shape can offer a command typed on a line of its text, while SlashCommands owns what a shape offers,
 the list at the slash and running the line, the plugin that owns a meaning says what the command
-does (Locking's `/lock`), and the text view that hosts it is where it's typed (Mentions'). So is what connects and contains what:
+does (Titles' `/title`, Locking's `/lock`), and the text view that hosts it is where it's typed (Mentions'). So is what connects and contains what:
 [Topology](#topology) keeps the file's graph of edges (an arrow bound at both ends, a mention),
 typed by the plugins that own what each means and read out of the shapes that carry them, while
 Ports and Mentions only say what their shapes carry. So is finding shapes: [Queries](#queries)
@@ -967,6 +967,11 @@ public struct TitlesPlugin: CanvasPlugin {
         registrar.adornmentForEveryShape(TitlePill.self, where: { $0.registry.showsTitlePill($0.kind) }) { shape, context in
             context.registry.titlePill(of: shape)
         }
+        // `/title Groceries` on a line of a shape's text, on the kinds that can be named (a derived
+        // title is renamed where it's derived from).
+        registrar.slashCommandsForEveryShape(where: { $0.holds(TitleProperty.self) }) {
+            SlashCommand("title", argument: "title") { shape, arguments in shape[TitleProperty.self] = arguments.text }
+        }
     }
 }
 ```
@@ -1039,10 +1044,18 @@ splits and joins none of them. What a title brings:
   leaves the kind's row as it is.
 - **A rename in the detail panel**, for a kind that wants one: [`TitleHeader`](#renaming-in-the-header-titleheader),
   which the kind puts in its header.
+- **A rename from a line of text**, on every kind that keeps a title: `/title`, a
+  [slash command](#slash-commands) typed on a line of its own in a shape's text (a note's).
+  `/title Groceries` and Return take the line out of the text and name the shape, one step called
+  "Title"; a pill in the line is part of the name, as "@Label", and `/title` with nothing after it
+  isn't entered, so Return is a new line. It's offered on the kinds that hold `TitleProperty`, so
+  on notes, subboards and frames, and not on a schema card, whose title is derived from its
+  schema's `"title"` and renamed there.
 
-So Titles builds on three horizontals: it imports Adornments, TableOfContents
-and DetailPanel, and a plugin list with a titled kind needs `TitlesPlugin`, `AdornmentsPlugin`
-(with Keyboard and Selection, which it builds on) and `TableOfContentsPlugin` (without one,
+So Titles builds on four horizontals: it imports Adornments, TableOfContents, DetailPanel
+and SlashCommands, and a plugin list with a titled kind needs `TitlesPlugin`, `AdornmentsPlugin`
+(with Keyboard and Selection, which it builds on), `SlashCommandsPlugin` (for `/title`) and
+`TableOfContentsPlugin` (without one,
 `ownerNotInstalled` names it).
 
 The mechanics:
@@ -5013,7 +5026,7 @@ Mentions' `MentionTextView` does, so every text where mentions are typed (a note
 schema card's description's, the panel's [`MentionTextArea`](#in-the-panel-mentiontextarea)) takes
 slash commands. The core has never heard of a command, and SlashCommands has never heard of a
 mention: a command's arguments are runs of text and shapes, and a pill is a shape only because the
-text view that reads the line says so. Locking's `/lock` is the one command that ships.
+text view that reads the line says so. Titles' `/title` and Locking's `/lock` are the commands that ship.
 
 ```swift
 // In LockingPlugin.register:
@@ -5279,20 +5292,30 @@ override func keyDown(with event: NSEvent) {                                    
   command by its name with the typing next, the command's step closing the editing session's, a
   box that commits on Return not committing a command line, and a command no longer offered when
   its line is entered left as text.
-- **MentionsTests' `slashTests`** (`SlashFixturesPlugin(log:)`: `ping` and `near` for jots, `ping`
-  for briefs) hold a mention text view hosting it, in `EditedJot` and in the panel's
-  `MentionPanel`: the list as the view's own, a pill in a command line as a shape, the `@` picker's
-  Return picking and a second running the line, `show(_:)` and the keyboard leaving closing the
-  list, no hosting without `SlashCommandsPlugin()` or an owner, and a box with `onCommit` running a
-  command line without committing.
+- **MentionsTests' `slashTests`** (`SlashFixturesPlugin(log:)`: `ping` and `near` for jots, which
+  are titled, so their list ends with Titles' `title`, and `ping` for briefs, which aren't) hold a
+  mention text view hosting it, in `EditedJot` and in the panel's `MentionPanel`: the list as the
+  view's own, a pill in a command line as a shape, the `@` picker's Return picking and a second
+  running the line, `show(_:)` and the keyboard leaving closing the list, no hosting without an
+  owner, a slash that is a slash where the shape offers nothing (the brief's box: every list there
+  has Titles, so `SlashCommandsPlugin()`, and a text with an owner always hosts slash commands),
+  and a box with `onCommit` running a command line without committing.
 - **LockingTests' `lockSlashTests`** hold `/lock`: offered only on the kinds that can be locked and
   only while the shape isn't, run as one step named "Lock", undone and redone, and refused
-  arguments. A plugin list with Locking needs `SlashCommandsPlugin()`; `lockingHarness` has it.
-- **CompositionTests' `slashCommandsShippedTests`** type `/lock` into a note's editor in the app's
-  canvas view: a slash mid-line is a slash, on a new line it lists `lock`, Return locks the note,
-  ends editing and takes the line out of its text, "Undo Lock" is followed by the typing, and
-  `/lock now` stays text. The registry's report (ShippedTests, and the guide's copy of it) holds
-  `slash-commands` and Locking's `/lock → every shape`.
+  arguments. A plugin list with Titles or Locking needs `SlashCommandsPlugin()`; `lockingHarness`
+  and TitlesTests' `titleEditor` have it.
+- **TitlesTests' `titleSlashTests`** hold `/title`: offered on the kinds that keep a title (a
+  plaque), not on one with none (a box) nor on one titled only by derivation (a card), run as one
+  step named "Title" that undo takes back (from a named shape and an unnamed one), not accepted
+  with nothing typed, a pill in the line read as "@Label", and Titles refused without
+  `SlashCommandsPlugin()`.
+- **CompositionTests' `slashCommandsShippedTests`** type `/lock` and `/title` into a note's editor
+  in the app's canvas view: a slash mid-line is a slash, on a new line it lists `title` and
+  `lock`, Return locks the note, ends editing and takes the line out of its text, "Undo Lock" is
+  followed by the typing, and `/lock now` stays text; `/title Groceries` names the note and
+  editing goes on, "Undo Title" is followed by the typing, and `/title ` alone is a new line. The
+  registry's report (ShippedTests, and the guide's copy of it) holds `slash-commands`, Titles'
+  `/title → every shape` and Locking's `/lock → every shape`.
 
 ## Topology
 
@@ -8638,7 +8661,7 @@ detail-panel         service DetailPanelState
 context-menus        service ContextMenuState · secondary-click menu · CanvasContextMenu
 slash-commands       service SlashCommandState
 table-of-contents    service ContentsState
-titles               property title · adornment TitlePill → every shape
+titles               property title · adornment TitlePill → every shape · /title → every shape
 mentions             service MentionState · edge type mention · edges → every shape · overlay MentionFrames · ShapeFaces · CanvasContextMenu
 board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
 validation-details   DetailStatuses in Issues
@@ -8701,8 +8724,9 @@ which hears no commit) and its mark (`query engine`, which `registry.answersQuer
 five after it fill its points (names, boards' names, and words and a text format, each by what it
 adds), and `query-commands` is `canvas query` and `query-vocabulary`. `slash-commands` is the service that
 says what a shape offers (`SlashCommandState`, which hears no commit) and contributes no command;
-the one that ships is Locking's, the last entry on its line (`/lock → every shape`: each call of the
-sugar is one entry, its commands as `/name`, then the kind they're for or "every shape":
+the ones that ship are Titles' and Locking's, the last entry on their lines (`/title → every shape`,
+`/lock → every shape`: each call of the sugar is one entry, its commands as `/name`, then the kind
+they're for or "every shape":
 [Registering commands](#registering-commands)).
 
 ## Testing plugins
@@ -8913,8 +8937,8 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   short of a lock changes no pixel beside it); and `editor.hoveredButton` on a clickable one is
   `AdornmentButton(A.self, on: id)`. A test's own adornment types are internal, not private, so a
   conflict key names one as `Module.Name`. A plugin list with Titles or Locking needs
-  `KeyboardPlugin()`, `SelectionPlugin()` and `AdornmentsPlugin()` (and one with Locking
-  `SlashCommandsPlugin()`, for its `/lock`), which goes before the plugins
+  `KeyboardPlugin()`, `SelectionPlugin()` and `AdornmentsPlugin()` (and one with either
+  `SlashCommandsPlugin()`, for their `/title` and `/lock`), which goes before the plugins
   that place adornments, as the shipped list has it. In debug builds, `editor.adornmentsKept`
   counts the shapes whose labels are kept, so a test holds a deleted shape to being forgotten, and
   `adornmentFacesKept` and `adornmentFacesMade` the shapes whose faces are kept and the faces made
@@ -9213,8 +9237,8 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   note and of a subboard in the shipped panel, in a `BoardWindow` (a line goes to its mentioner,
   and Back returns); ShippedTests a MentionValidation warning in Issues and on its row; and
   CommandLineTests `draw` notes that mention shapes, on the board or not.
-- **Slash commands.** SlashCommandsTests, MentionsTests' `slashTests`, LockingTests' `lockSlashTests`
-  and CompositionTests' `slashCommandsShippedTests`: [Testing slash
+- **Slash commands.** SlashCommandsTests, MentionsTests' `slashTests`, LockingTests' `lockSlashTests`,
+  TitlesTests' `titleSlashTests` and CompositionTests' `slashCommandsShippedTests`: [Testing slash
   commands](#testing-slash-commands).
 - **Board previews.** CanvasTests' PreviewTests drive a `BoardPreviews` of their own over a
   `CanvasFile` (`preview(of:in:)`, `build(in:until:)`: a deadline already past builds one chunk,
@@ -9482,11 +9506,11 @@ Each of these adds to the design without changing what plugins are written again
   paste does, so mentions stay live; the command line reading and listing what can be mentioned,
   and helpers for writing mentions; more kinds mentionable (through bridges); and making a shape
   from the picker.
-- **More of slash commands**: more commands (`/lock` ships; the rest are only imagined so far: `/turn-into`
-  for a shape's kind, `/set-title`, `/move-near @shape` and `/move-into @subboard`, each a
-  `SlashCommand` over a kind or every shape with arguments that may be shapes, the last two needing
+- **More of slash commands**: more commands (`/title` and `/lock` ship; the rest are only imagined so far: `/turn-into`
+  for a shape's kind, `/move-near @shape` and `/move-into @subboard`, each a
+  `SlashCommand` over a kind or every shape with arguments that may be shapes, both needing
   a way to move a shape that isn't a drag, and Move to Subboard in More of boards); completing arguments (the
-  list stops at the name: `/set-title` could list titles and `/move-into` the subboards and frames
+  list stops at the name: `/move-near` and `/move-into` could list the shapes, and the subboards and frames
   of the file, as the `@` picker lists shapes, where `argument`'s hint says "@shape" and nothing
   checks that a pill is one); saying why a command line doesn't run (a Return that isn't a
   command's is a new line and the text stays, so a misspelled name, a command not offered or
@@ -9497,7 +9521,7 @@ Each of these adds to the design without changing what plugins are written again
   the text's: it brings the line back and leaves the command done, and the board's Undo, once
   editing is over, undoes the command); and a schema card's sync waiting while a command line is
   typed (it takes the description as done when editing ends or 3 s after the last change, and a
-  half-typed `/set-title` is not a description to rewrite the schema from).
+  half-typed `/lock` is not a description to rewrite the schema from).
 - **More of the detail panel**: editing several selected shapes at once (it shows "N Shapes"
   today); every-shape sections over the record (there are every-box ones over the frame, and those
   over an added property; so `mentionableEveryShape` brings no Mentioned In tab), and every-box
