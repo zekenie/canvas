@@ -55,6 +55,7 @@ import ValidationDetails
         adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
         detail-panel         service DetailPanelState
         context-menus        service ContextMenuState · secondary-click menu · CanvasContextMenu
+        slash-commands       service SlashCommandState
         table-of-contents    service ContentsState
         titles               property title · adornment TitlePill → every shape
         mentions             service MentionState · edge type mention · edges → every shape · overlay MentionFrames · ShapeFaces · CanvasContextMenu
@@ -64,7 +65,7 @@ import ValidationDetails
         mention-validation   ValidationRules
         title-validation     service TitleIndex · ValidationRules
         clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
-        locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu
+        locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu · /lock → every shape
         snapping             service SnapState · translation adjuster
         ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
         arrow-ports          property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowBindingRules

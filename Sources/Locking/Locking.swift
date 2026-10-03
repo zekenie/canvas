@@ -1,6 +1,7 @@
 import Adornments
 import Canvas
 import ContextMenus
+import SlashCommands
 import SwiftUI
 import TableOfContents
 
@@ -9,7 +10,8 @@ import TableOfContents
 /// chip sits just above its top-right corner, and its row in the table of contents ends in a lock,
 /// so the list says which are locked at a glance. Shapes are locked from the context menu, and
 /// unlocked there or with a click on the chip, which then shows the lock open for a moment (a click
-/// on it locks the shape again) before it goes. Whether a shape is locked is something it knows
+/// on it locks the shape again) before it goes; a shape's text can lock it too, with `/lock` on a line
+/// of its own (slash commands). Whether a shape is locked is something it knows
 /// (tldraw's `isLocked`): an added property every kind opts into, `locked`. What makes it hold is
 /// the core's: this plugin says locked shapes are read-only (`registrar.readOnlyShapes`), and the
 /// core refuses changes to them.
@@ -107,6 +109,12 @@ public struct LockingPlugin: CanvasPlugin {
             MenuItem("Unlock", in: LockMenuGroup.self, when: { !$0.lockable.isEmpty && $0.allLocked }) { ids, editor in
                 editor.unlock(ids.filter { !editor.isLockedByContainer($0) })
             }
+        }
+        // `/lock` typed on a line of a shape's text: the first command that ships. On the kinds that
+        // can be locked, while the shape isn't. There is no `/unlock`: a locked shape's text can't
+        // be edited, so it couldn't be typed.
+        registrar.slashCommandsForEveryShape(where: { $0.holds(LockedProperty.self) }) {
+            SlashCommand("lock", when: { !$0.isLocked }) { id, _, editor in editor.lock([id]) }
         }
     }
 }

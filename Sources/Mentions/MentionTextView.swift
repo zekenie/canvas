@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import DetailPanel
+import SlashCommands
 import TextEditing
 
 extension NSPasteboard.PasteboardType {
@@ -12,8 +13,8 @@ extension NSPasteboard.PasteboardType {
     static let legacyString = NSPasteboard.PasteboardType("NSStringPboardType")
 }
 
-/// The text view for editable mention text (TextKit 2): its pills, the `@` picker, copy and paste,
-/// accessibility, live labels. A host sets its delegate as usual and reads the text back as
+/// The text view for editable mention text (TextKit 2): its pills, the `@` picker, slash commands,
+/// copy and paste, accessibility, live labels. A host sets its delegate as usual and reads the text back as
 /// `mentionText` in `textDidChange`; the view's own keys run first.
 ///
 /// - A pill is one character, U+FFFC, holding a `MentionAttachment`: the caret steps over it, a
@@ -27,6 +28,11 @@ extension NSPasteboard.PasteboardType {
 ///   what's typed after it is the query, the keys that move and pick come to it first (as they do
 ///   to every `EditingTextView`'s list), and a pick puts the pill in the query's place, then a space,
 ///   as one undoable change.
+/// - It hosts slash commands (`SlashCommandTyping`, with `SlashCommandsPlugin` installed and a shape
+///   to own the text): a `/` typed on an empty line lists what the shape offers in the same kind of
+///   list, and Return on a line that is a command runs it and takes the line out of the text. A
+///   pill in a command line is a shape it's given (`SlashArguments`). The `@` picker's keys come
+///   first while it's open, so Return in the picker picks.
 /// - Copy writes the stored form (`.mentionText`) and the plain one ("@Label"); paste reads the
 ///   stored form first, then plain text, where a whole `@[label](shape:UUID)` becomes a pill.
 /// - Each pill shows its target as it's called now: the view observes its targets
@@ -62,8 +68,11 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
     /// The open picker, and the window its list shows in.
     public private(set) var picker: MentionPicker?
     private var pickerWindow: CaretListWindow?
+    /// The slash commands typed in the text: nil without a shape that owns it, or without the
+    /// plugin that offers them.
+    public private(set) var slashCommands: SlashCommandTyping?
     /// The substitutions the picker turned off while it's open, to put back as they were.
-    private var substitutions: Substitutions?
+    private var substitutions: CaretListSubstitutions?
     /// The target the picker's highlight hovers, and the one the pointer hovers.
     private var pickerHover: ShapeID?
     private var pointerHover: ShapeID?
@@ -73,11 +82,11 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
     /// view's too, so none of them reaches the canvas behind it.
     private var tookPillPress = false
 
-    /// The picker's window, while it's open: the list at the caret, whose keys (Return and Tab
-    /// pick, Escape closes) are the view's own, as every `EditingTextView`'s are, and which closes
-    /// as the keyboard or the window goes, or the view is made read-only (a lock landing, something
-    /// else writing the text).
-    public override var caretListWindow: CaretListWindow? { pickerWindow }
+    /// The list open at the caret: the `@` picker's window, or the slash commands'. Its keys (Return
+    /// and Tab pick, Escape closes) are the view's own, as every `EditingTextView`'s are, and it
+    /// closes as the keyboard or the window goes, or the view is made read-only (a lock landing,
+    /// something else writing the text).
+    public override var caretListWindow: CaretListWindow? { pickerWindow ?? slashCommands?.window }
 
     /// What the host last heard the text is, to tell after an undo whether it changed.
     private var reported: ScopedMentionText<Scope>?
@@ -97,6 +106,9 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         textStorage?.setAttributedString(style.attributedString(text, width: pillWidth) { [weak mentions] in mentions?.resolve($0) ?? .missing })
         reported = mentionText
         observeTargets()
+        if let owner, let commands = mentions?.slashCommandState {
+            slashCommands = SlashCommandTyping(over: self, owner: owner, commands: commands) { [weak self] in self?.arguments(in: $0) ?? SlashArguments([]) }
+        }
     }
 
     /// What NSTextView's `init(frame:)` calls on itself: a view made this way has no style, so it
@@ -177,6 +189,20 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         return style.attributedString(text, width: pillWidth) { [weak mentions] in mentions?.resolve($0) ?? .missing }
     }
 
+    /// What's typed in a range, as a command's arguments: each pill the shape it names, the rest text.
+    private func arguments(in range: NSRange) -> SlashArguments {
+        guard let storage = textStorage, range.length > 0, NSMaxRange(range) <= storage.length else { return SlashArguments([]) }
+        var runs: [SlashArguments.Run] = []
+        storage.enumerateAttribute(.attachment, in: range) { value, run, _ in
+            if let pill = value as? MentionAttachment {
+                runs += Array(repeating: .shape(pill.target, label: pill.shownLabel), count: run.length)
+            } else {
+                runs.append(.text((storage.string as NSString).substring(with: run)))
+            }
+        }
+        return SlashArguments(runs)
+    }
+
     /// Replaces a range with `replacement`, as an edit a person makes: undoable, and heard by the
     /// host (`shouldChangeText`, `didChangeText`), its own step of undo. The caret lands after it.
     @discardableResult
@@ -216,6 +242,7 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         observeTargets()
         toolTipsAreStale = true
         readPicker(isEdit: true)
+        slashCommands?.didChange(isEdit: true)
     }
 
     /// Dimmed as one, text and pills alike, while its box is read-only (the text keeps its style's
@@ -306,7 +333,10 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
     public override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
         super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
         showSelectedPills()
-        if !isChangingText { readPicker(isEdit: false) }
+        if !isChangingText {
+            readPicker(isEdit: false)
+            slashCommands?.didChange(isEdit: false)
+        }
     }
 
     /// Draws each pill in the selection in the selection's colors: the system's highlight is
@@ -498,16 +528,24 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
 
     // MARK: The picker
 
-    /// An `@` typed where a word starts opens the picker; nothing else does (a paste, an undo, what
-    /// an input method is still composing).
+    /// An `@` typed where a word starts opens the picker, and a `/` typed on an empty line the slash
+    /// commands' list; nothing else does (a paste, an undo, what an input method is still composing).
     public override func insertText(_ string: Any, replacementRange: NSRange) {
         let wasComposing = hasMarkedText()
         super.insertText(string, replacementRange: replacementRange)
         let typed = (string as? String) ?? (string as? NSAttributedString)?.string ?? ""
+        if !wasComposing, !hasMarkedText() { slashCommands?.didType(typed) }
         guard !wasComposing, !hasMarkedText(), typed.hasSuffix("@"), picker == nil, let storage = textStorage else { return }
         let at = selectedRange().location - 1
         guard selectedRange().length == 0, MentionPicker.opens(in: storage.string as NSString, at: at) else { return }
         openPicker(at: at)
+    }
+
+    /// A Return that runs a command line, or picks from the slash commands' list, is the commands'
+    /// before the view's own; the `@` picker's keys come first while it's open.
+    public override func keyDown(with event: NSEvent) {
+        if picker == nil, slashCommands?.takesKey(event) == true { return }
+        super.keyDown(with: event)
     }
 
     /// Opens the picker for the `@` at `location`: its list in a window under the `@` (every caret
@@ -515,10 +553,11 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
     /// view or the window stops being key), what VoiceOver hears counted (`MentionAccessibility`).
     private func openPicker(at location: Int) {
         guard let mentions, style != nil, isEditable else { return }
+        slashCommands?.close()
         let picker = MentionPicker(at: location, mentions: mentions, scope: Scope.self, owner: owner)
         self.picker = picker
-        substitutions = Substitutions(of: self)
-        Substitutions.off.apply(to: self)
+        substitutions = CaretListSubstitutions(of: self)
+        CaretListSubstitutions.off.apply(to: self)
         pickerWindow = CaretListWindow(picker.list, accessibilityLabel: MentionStyle.pickerAccessibilityLabel, over: self,
                                        anchor: { [weak self] in self?.pickerAnchor },
                                        pick: { [weak self] row in self?.pick(row: row) },
@@ -644,6 +683,7 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         refreshPills(of: nil)
         observeTargets()
         readPicker(isEdit: false)
+        slashCommands?.didChange(isEdit: false)
         if mentionText != reported { didChangeText() } else { holdWrittenLabels() }
     }
 
@@ -739,11 +779,12 @@ extension MentionTextView: DetailTextContent {
 
     /// Shows `text` in place of what's there, as something other than typing does (an undo of the
     /// board, a write from elsewhere): the storage alone, its pills as their targets are now and
-    /// fitted to the line, the caret where it was as far as the new text reaches, the picker
-    /// closed. It never calls `didChangeText`, so nothing is written back, and what the host last
+    /// fitted to the line, the caret where it was as far as the new text reaches, the picker and
+    /// the slash commands' list closed. It never calls `didChangeText`, so nothing is written back, and what the host last
     /// heard is the text shown.
     public func show(_ text: ScopedMentionText<Scope>) {
         closePicker()
+        slashCommands?.close()
         guard let storage = textStorage else { return }
         let caret = selectedRange().location
         storage.setAttributedString(attributed(text))
@@ -768,39 +809,6 @@ extension MentionStyle {
         case .missing: "\(pill.shownLabel), deleted"
         case .unavailable: "\(pill.shownLabel), not available"
         }
-    }
-}
-
-/// The substitutions that could rewrite `@query` as it's typed: off while the picker is open, and
-/// put back as they were once it closes.
-@MainActor
-private struct Substitutions {
-    var spelling: Bool
-    var replacement: Bool
-    var quotes: Bool
-    var dashes: Bool
-
-    static let off = Substitutions(spelling: false, replacement: false, quotes: false, dashes: false)
-
-    init(spelling: Bool, replacement: Bool, quotes: Bool, dashes: Bool) {
-        self.spelling = spelling
-        self.replacement = replacement
-        self.quotes = quotes
-        self.dashes = dashes
-    }
-
-    init(of view: NSTextView) {
-        spelling = view.isAutomaticSpellingCorrectionEnabled
-        replacement = view.isAutomaticTextReplacementEnabled
-        quotes = view.isAutomaticQuoteSubstitutionEnabled
-        dashes = view.isAutomaticDashSubstitutionEnabled
-    }
-
-    func apply(to view: NSTextView) {
-        view.isAutomaticSpellingCorrectionEnabled = spelling
-        view.isAutomaticTextReplacementEnabled = replacement
-        view.isAutomaticQuoteSubstitutionEnabled = quotes
-        view.isAutomaticDashSubstitutionEnabled = dashes
     }
 }
 
