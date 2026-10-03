@@ -10,7 +10,8 @@ import TableOfContents
 /// pill just outside its top-left corner (`TitlePill`, an adornment), an untitled one there its
 /// kind's placeholder, dimmed, where the kind gives one to grab, and its row in the table of
 /// contents is called by its title; `TitleHeader` renames it in the detail panel, and `/title` from
-/// a line of its text. The core never learns what a title is.
+/// a line of its text. Zoomed out, where shapes are skeletons and adornments aren't shown, a titled
+/// shape says its title on itself, large (`TitleCoverStyle`). The core never learns what a title is.
 extension PluginID {
     public static let titles: PluginID = "titles"
 }
@@ -182,9 +183,9 @@ extension Registry {
 /// (`placeholderInPill`), the placeholder, dimmed (`AdornmentLabel(placeholder:)`), so the shape has
 /// something to grab. Titles places it, though it defines no shape; Adornments lays it out: as
 /// long as the title, no longer than the row leaves it (the shape's width, less whatever is at the
-/// row's right end, a lock, and 4 points), ending in "…". Zoomed out, on a shape drawn as a
-/// skeleton, it's a blank capsule, as long as the symbol's place and the title's columns (a CJK
-/// character or an emoji two); on the shape being edited, drawn in full, its title.
+/// row's right end, a lock, and 4 points), ending in "…". Zoomed out, a shape drawn as a skeleton
+/// shows no pill (no adornment is): its title is said on the shape itself, large (`TitleCoverStyle`,
+/// its cover); the shape being edited, drawn in full, keeps its pill.
 public enum TitlePill {}
 
 extension TitlePill: Adornment {
@@ -207,6 +208,13 @@ extension Registry {
         if let title = titles.title(shape) { return AdornmentLabel(title, systemImage: symbol) }
         return titles.pillPlaceholder.map { AdornmentLabel(placeholder: $0, systemImage: symbol) }
     }
+
+    /// What a shape's cover says (`TitleCoverStyle`): its title, for a kind that shows one in a pill;
+    /// nil for an untitled shape (a placeholder is its pill's alone), and a kind with no pill.
+    func titleCover(of shape: AnyShapeRecord) -> String? {
+        guard let titles = contributions(to: ShapeTitles.self, for: shape.kind).first, titles.showsPill else { return nil }
+        return titles.title(shape)
+    }
 }
 
 /// A horizontal any kind can opt into: a title, kept in the property this plugin adds to the kind or
@@ -228,5 +236,7 @@ public struct TitlesPlugin: CanvasPlugin {
         registrar.slashCommandsForEveryShape(where: { $0.holds(TitleProperty.self) }) {
             SlashCommand("title", argument: "title") { shape, arguments in shape[TitleProperty.self] = arguments.text }
         }
+        // Zoomed out, where a skeleton has no pill, the title is said on the shape.
+        registrar.overlay(TitleCoverOverlay())
     }
 }

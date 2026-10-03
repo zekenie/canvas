@@ -1019,21 +1019,44 @@ splits and joins none of them. What a title brings:
   gone; with under 30 points left (44 with a symbol before the title), there's no pill. The pill is `TitlePill`, an
   [adornment](#adornments): Titles places it on every shape whose kind's title shows one, though it
   defines no kind, and Adornments lays it out with whatever else the shape shows, so it never meets
-  the lock. It keeps its size on screen, shrinking with the shapes below 25% zoom, is a blank
-  capsule below 35% on a shape drawn as a [skeleton](#skeletons), as long as the title's columns (a
-  CJK character or an emoji two), and in full on the shape being edited
-  ([adornments zoomed out](#the-label)), goes where its shape is drawn (it shakes with a locked
+  the lock. It keeps its size on screen, shrinking with the shapes below 25% zoom (a shape's
+  [skeleton](#skeletons) never has one: below 35% no adornment is shown, and the title is
+  [said on the shape](#a-cover-zoomed-out) instead; the shape being edited keeps its pill in full,
+  [adornments zoomed out](#the-label)), goes where its shape is drawn (it shakes with a locked
   shape), and is its shape's for the pointer: a click on it
   selects the shape, a drag moves it, and a double-click edits a note. A kind that draws its title
-  itself leaves it out: `sub.title(pill: false)`. A kind whose look alone doesn't say what it is
+  itself leaves it out: `sub.title(pill: false)` (it gets no cover either). A kind whose look alone doesn't say what it is
   puts its symbol (`registry.label(of:)`, its tool's) before the title: `symbolInPill: true`, as the
   schema card's `{}` (`curlybraces`), small and a little softer than the text; the capsule is longer
-  by the symbol's place, blank too ([the label](#the-label)).
+  by the symbol's place ([the label](#the-label)).
+- <a id="a-cover-zoomed-out"></a>**A cover, zoomed out.** A shape the canvas draws as a
+  [skeleton](#skeletons) (below 35%, but for the one being edited) shows no pill, and Titles puts
+  its title on the shape instead, large, so a board zoomed out reads from afar. Titles' own
+  overlay draws it (`TitleCoverOverlay`), over every shape back to front, so a frame's title isn't
+  hidden by what the frame holds: the title in white on a dark plate, the pill's gray, which reads
+  on a note's yellow, a card's white, a frame's surface and a subboard's indigo in either
+  appearance; centered on the shape, or at the top left of a container (`registry.isContainer`: a
+  frame), where its pill is in full. It's as large as the shape's room allows, between 9 and 30
+  view points, the title wrapped on as many lines as fit: the size follows from the room (the
+  shape less a 3-point inset and the plate's padding, the inset giving way where the shape is short),
+  the title's columns (`SkeletonText.columns(of:)`, a CJK character or an emoji two) at the
+  font's measured advance, and its longest word, so a word isn't broken that needn't be. **Ellipses**:
+  a title longer than 120 characters is cut there and ends in "…" before anything is laid out, so a
+  title of thousands costs what one of a hundred does; and a title that doesn't fit the room, at
+  the smallest size, wraps and has its last line truncated by AppKit, ending in "…", the plate
+  never outside the shape. A shape under 48 × 15 points on screen has none (there's no room for a
+  word at the smallest size, only an ellipsis), and nor has an untitled shape (a placeholder is for
+  grabbing a shape by, and a skeleton has no pill), a kind with `pill: false`, or the shape being
+  edited. Before a title is even looked up, a shape's kept bounds say whether it's big enough, so a
+  board of thousands zoomed out costs a look at each shape in view, and only the shapes big enough
+  lay text out. `editor.titleCover(of:)` is where one is (world units), what it says and how large
+  its text is; it's no face and no decoration for the pointer, so a frame zoomed out is pressed on
+  its border as ever.
 - **A pill to grab while untitled**, for a kind that asks: `frame.title(placeholderInPill: "Frame")`
   (any form of the sugar takes it) puts the placeholder in the pill of each of its shapes nobody has
   named, laid out as a title is (after the symbol where the kind asks, giving way at the row's
   end), its text dimmed (`AdornmentLabel(placeholder:)`: white at 55%, as secondary text is on a
-  dark surface), blank zoomed out as any pill, and its shape's for the pointer as any adornment is
+  dark surface), not shown zoomed out as no adornment is (nor does it get a cover), and its shape's for the pointer as any adornment is
   (a press selects the shape, a drag moves it, a right-click opens its menu), so a shape a press
   mostly goes through has something to grab. It's never a title: `registry.title(of:)` is nil, the
   row is the kind's own, and a name takes its place. A kind that doesn't ask shows no pill on an
@@ -1634,7 +1657,7 @@ of a selection: Selection works through the same generic hooks any plugin can us
 | `Tool.ignoresPress` | The rest of a double-click whose first click, on a face, went somewhere (changed the selection or moved the camera) is ignored, so the camera goes on and nothing is placed or edited where it's brought. |
 | `EditorService.documentDidChange`, `didPlace` | Drops shapes that are gone (or no longer selectable) from the selection and the hover; selects a shape just placed. |
 | `EditorService.boardDidChange`, `editor.showBoard` | Another board shown: what was selected on the board left is a step back, and nothing is selected on arrival. |
-| `EditorService.drawsSkeletonsDidChange` | The canvas started or stopped drawing [skeletons](#skeletons) under a pointer that may be still: in the select tool, with nothing under way, it looks again at what the pointer rests on, as a move there would, so a face's hovered target gives way to its shape. Buttons are looked for first, as on a move, so a button that comes or goes with the level (one that shows only in full, a blank label's shorter or longer reach) takes or gives up the hover without its plugin saying so. |
+| `EditorService.drawsSkeletonsDidChange` | The canvas started or stopped drawing [skeletons](#skeletons) under a pointer that may be still: in the select tool, with nothing under way, it looks again at what the pointer rests on, as a move there would, so a face's hovered target gives way to its shape. Buttons are looked for first, as on a move, so a button that comes or goes with the level (one that shows only in full, a lock chip) takes or gives up the hover without its plugin saying so. |
 | `Session.draw(in:)` | The marquee draws itself. |
 | `TranslatingSession`, `editor.shape(at:where:)` | Dragging the selection moves it; presses and hover find the front-most selectable shape. |
 
@@ -3525,8 +3548,8 @@ has them too), in view points:
 | `.onTopRightCorner` | The top-right corner: 16 points tall, centered on the top edge, from 6 points past the right edge leftward. | None (a tally, as above) |
 
 In a place, adornments sit 4 points apart. They keep their size on screen down to 25% zoom, and
-shrink with the shapes below it (0.4× at 10%); below 35% they're drawn blank on a shape drawn as a
-skeleton, and in full on the shape being edited ([the label](#the-label)). A shape without an
+shrink with the shapes below it (0.4× at 10%); below 35% a shape drawn as a skeleton shows none, but
+the shape being edited, drawn in full, keeps its own ([the label](#the-label)). A shape without an
 outline (nothing drawn) shows none, and neither does one its
 board keeps aside. On a 200-point note, in points from its top-left
 corner, y down:
@@ -3594,7 +3617,7 @@ plugin's look alike, as `ContentsLabel` keeps rows alike:
 - **A placeholder**, `AdornmentLabel(placeholder: "Frame")`: text standing in for what isn't there
   (Titles' pill on an untitled shape whose kind asks for one), laid out as the same text is, a
   symbol before it too, its text dimmed: white at 55%, as secondary text is on a dark surface
-  (`isPlaceholder`). Blank zoomed out, as any.
+  (`isPlaceholder`).
 - **A symbol**, `AdornmentLabel(systemImage: "lock.fill")`: an SF Symbol, bold and white, in a
   disc as tall as its place, half as tall as the disc.
 - **`tone`**: `.neutral` (the default), a title pill's dark gray; or `.success`, green, for
@@ -3604,21 +3627,14 @@ plugin's look alike, as `ContentsLabel` keeps rows alike:
 A clickable one draws lighter hovered and darker pressed. A label can't draw itself (a sparkline):
 that's [not built yet](#not-built-yet).
 
-**Zoomed out**, below 35%, each label follows its own shape's level (`editor.drawsSkeleton(of:)`).
-On a shape drawn as a [skeleton](#skeletons) it's drawn blank: its capsule or its disc alone, no
-text or symbol, in an opaque pale gray of the skeletons' hue, a little off the canvas
-(`AdornmentStyle.blankFill`, sRGB 0.84, 0.85, 0.86 on the light canvas and 0.21, 0.22, 0.23 on the
-dark: lighter than a shape's skeleton on the light one, darker on the dark), so it's there without
-weighing more than the greeked text beside it, and stays gray over a note's yellow (`.success` as
-pale a green: 0.70, 0.86, 0.74 light, 0.18, 0.29, 0.21 dark). Being opaque, it lets no grid dot
-show through. It keeps its opacity (an open lock still fades) and a clickable one's lighter hovered and darker
-pressed. Text's capsule is as long as its columns (`SkeletonText.columns(of:)`: a CJK character or
-an emoji two, a combining mark none) at its place's average column advance (measured once, from a
-sample, in the place's font), after its symbol's place if it has one, with its padding, and laid out as a measured one is (at the row's left
-end, it gives way), so nothing is set or measured on a skeleton: "iiiiiiii" and "WWWWWWWW" are as
-long, and "東京の会議メモ" is about as long as in full (91 points blank, 90 in full, as measured).
-The shape being edited is drawn in full, so its labels are too, drawn and pointed at in full, while
-its neighbors' are blank.
+**Zoomed out**, below 35%, each shape follows its own level (`editor.drawsSkeleton(of:)`). A shape
+drawn as a [skeleton](#skeletons) shows no adornments: none is drawn, laid out
+(`editor.adornmentFrames(of:)` is empty), pointed at (a lock can't be clicked, and a point where a
+pill would be is empty canvas, or whatever's there), made or kept. A skeleton is what a shape is
+and where, so what's said just outside it is left off as its text is greeked, and what a title
+says is said on the shape itself: Titles' [cover](#a-cover-zoomed-out). The shape being edited is
+drawn in full, so its adornments are too, drawn and pointed at in full, while its neighbors' aren't
+shown.
 
 ### One of each on a shape
 
@@ -3648,9 +3664,9 @@ changes, and a service's state (`context.service(S.self)`), but only a service t
 Adornments when what it keeps changes: `editor.adornmentsDidChange(for: ids)`. `LockState` keeps
 how far each just-unlocked shape's open lock has faded, and says so each frame of the fade.
 
-Adornments makes a shape's labels once, whatever the zoom, and keeps them until a commit names the
-shape (its `ChangeSet`) or `adornmentsDidChange` does; drawn in full, it measures them too
-([Drawing and cost](#drawing-and-cost)). So a label read from anything else (another
+Adornments makes a shape's labels once, when it first draws or points at the shape in full, and
+keeps them until a commit names the shape (its `ChangeSet`) or `adornmentsDidChange` does, with
+their faces ([Drawing and cost](#drawing-and-cost)); a shape drawn as a skeleton has none made. So a label read from anything else (another
 shape, the clock, a service that doesn't say) goes stale. `adornmentsDidChange` also redraws the
 canvas, and has the select tool look again for a button under a still pointer
 (`canvasButtonsDidChange`), so a lock that comes or goes under it is hovered, or no longer is. A
@@ -3675,15 +3691,16 @@ never stale, and nothing else is thrown away.
   it is (`context.worldDrawingReach`, zero unless one is), so a shape just outside the view that a
   shake draws toward it shows what of its adornments reaches in.
 - **Kept, not remade.** `AdornmentState`, a service, finds each kind's adornments once (the
-  registry is frozen), and keeps each shape's labels, made once whatever the zoom, with how long
-  each is drawn blank, and, apart, the faces of those drawn or pointed at in full (the text set and
-  measured, the symbol's image), dropping both for the shapes each commit's change set names. As
-  the canvas starts drawing skeletons (`drawsSkeletonsDidChange`) it lets the faces go (the shape
-  being edited makes its own again as it's drawn); zoomed back in, it makes the faces of what a
-  frame draws. It doesn't look under the pointer itself: Selection hears the level change too and
-  looks again, buttons first, and the layouts answer at the new level whichever hears first. So
-  zooming out over a thousand adorned shapes measures nothing, and zooming in again measures what's
-  in view. Where they go is worked out when it's asked, from what's kept, since it follows the zoom
+  registry is frozen), and keeps each shape's labels with their faces (the text set and measured,
+  the symbol's image), made when the shape is drawn or pointed at in full, dropping them for the
+  shapes each commit's change set names. As the canvas starts drawing skeletons
+  (`drawsSkeletonsDidChange`) it lets everything go (the shape being edited makes its own again as
+  it's drawn); zoomed back in, it makes those of what a frame draws. It doesn't look under the
+  pointer itself: Selection hears the level change too and looks again, buttons first, and the
+  layouts answer at the new level whichever hears first. So zooming out over a thousand adorned
+  shapes makes and measures nothing (a frame zoomed out has no adornment to look at: the overlay
+  returns at once, but for the shape being edited), and zooming in again makes what's in view.
+  Where they go is worked out when it's asked, from what's kept, since it follows the zoom
   and geometry that follows other shapes: a few additions per adorned shape in view. So a frame
   costs a lookup and the drawing per adorned shape in view, and a drag the labels of what moves.
   Once labels are kept, a frame allocates nothing per adorned shape: one buffer of slots a frame
@@ -3692,14 +3709,6 @@ never stale, and nothing else is thrown away.
   and 155 locks in view, the overlay took about a millisecond, as measured, with no array a shape
   or box a lock). `./build.sh bench` holds a hover and a drag at 10,000 shapes, with pills and locks
   in view, and a hover onto a pill, to a frame (16 ms).
-- **Blank, a run at a time.** Zoomed out, where thousands are in view, blank labels are filled a
-  run at a time: one path while they're alike (tone, look and opacity), filled once the next isn't,
-  in paint order, so what's over what is as when each is filled alone, and, being opaque, where two
-  meet is no darker. A capsule's ends are flattened to chords within 0.2 device pixels, since Core
-  Graphics fills a path of many curves more slowly than filling each alone: 7,200 labels at 10%
-  took some 5 ms as lines in one path, where as curves they took 12 filled one at a time and 24 in
-  one path. A label drawn in full among them (the shape being edited's) fills the run first, so
-  it's over the blank ones behind it.
 
 ### Pointing
 
@@ -3711,18 +3720,18 @@ never stale, and nothing else is thrown away.
 - **A hit** is within 3 points of the adornment's capsule, so a disc's is a circle, 12 points from
   its middle, and not its box's corner. Of one shape's adornments the nearest takes it; of several
   shapes', the front-most shape's, as they're drawn, so a front shape's pill over a back shape's
-  lock takes the press. Hits go by where a shape is, not where a shake draws it, each shape's laid
-  out at its level (`editor.drawsSkeleton(of:)`), as it's drawn: on a skeleton, a blank label is
-  hit where its capsule is, so a point past a blank title's end, which the title in full would
-  cover, hits nothing, and a blank lock still unlocks; the shape being edited's are hit in full. An
+  lock takes the press. Hits go by where a shape is, not where a shake draws it, as it's drawn:
+  a shape drawn as a skeleton (`editor.drawsSkeleton(of:)`) shows no adornments, so none is hit
+  there (a lock can't be clicked); the shape being edited's are hit in full. An
   unselectable shape's adornments are seen through, as it is, but a button isn't: a lock is clicked
   whatever its shape.
 - **`editor.hoveredButton`** and `editor.pressedButton` hold an `AdornmentButton` on a clickable
   one: `AdornmentButton(LockChip.self, on: id)`, the type and the shape.
 - **`editor.adornmentFrames(of: id)`** is where each of a shape's adornments is now: an
   `AdornmentFrame` each (`adornment`, as `.of(TitlePill.self)`; its `label`; and its `rect`, in
-  world units at the current zoom, where the shape is, blank on a skeleton), in the order they're
-  claimed, leaving out those without room. It's empty for a shape with none.
+  world units at the current zoom, where the shape is), in the order they're
+  claimed, leaving out those without room. It's empty for a shape with none, and for one drawn as
+  a skeleton.
 
 ### Something the user turns on
 
@@ -4048,9 +4057,8 @@ extension LockChip: ClickableAdornment {                // a click on the chip
   row just above the shape, ending at its right edge. Its order is 300, a state that comes and
   goes, so it's farthest out of what's at that end, and a title's pill at the other end stops 4
   points short of it. Adornments lays it out with the rest, keeps its size on screen down to 25%,
-  draws it blank below 35% on a shape drawn as a [skeleton](#skeletons), as a locked shape always
-  is, since it can't be edited (a disc with no lock, locked or open and fading, which a click unlocks
-  or locks as ever: [the label](#the-label)), and draws it
+  shows none below 35% on a shape drawn as a [skeleton](#skeletons), as a locked shape always
+  is, since it can't be edited (so it can't be clicked there either: [the label](#the-label)), and draws it
   where its shape is drawn, so it shakes with it. A click within 3 points of its edge
   still clicks it. The open lock, fading, is a label from what `LockState` keeps
   (`openLockOpacity(of:)`: nil but for a shape just unlocked), and `LockState` tells Adornments
@@ -6299,7 +6307,7 @@ as SwiftUI sugar is.)
   half a view point (just under 35% the card's own 1.5 is about that, so nothing jumps), the card
   inside it, and its board's preview, asked for as the full card asks for it, in the same rect at
   no more than a tenth of its board, drawn once it's built and big enough on screen, else nothing.
-  Two fills and the preview; its title's pill is Titles', blank there as every pill is.
+  Two fills and the preview; its title is Titles' [cover](#a-cover-zoomed-out), over it, as there's no pill zoomed out.
 - **Opening it** is Boards': a double-click, Return, Enter or ⌘↓ with it the only one selected, Open
   first in its menu, the Open button in its panel's Board tab, and Return once its row is picked (a
   double-click on the row only where the list stays put, not in the app's panel). ⌘↑ comes back with it selected, and ⌘[ retraces. Its panel's header renames it, a run of
@@ -6405,7 +6413,7 @@ registrar.shape(FrameDefinition()) { frame in                     // FrameDefini
   selection's, a hover's, the hint a drag into it shows) is its rounded edge. Zoomed out it's its
   [skeleton](#skeletons) ([FrameSkeleton.swift](../Sources/Frames/FrameSkeleton.swift)): its surface
   and its border's ring over it, square, two fills, in the colors they are in full; what it holds
-  draws its own skeletons over it, and its pill is Titles', blank. In the minimap and a board's
+  draws its own skeletons over it, and its title is Titles' [cover](#a-cover-zoomed-out), over both, at its top left (there's no pill zoomed out). In the minimap and a board's
   preview it's its outline, as every container's silhouette is (`Silhouettes`, `hollow`), so what it
   holds shows there too.
 - **Pressed hollow** (its `hitTest`): a frame that holds shapes is pressed and hovered only on its
@@ -7244,7 +7252,7 @@ registrar.channel(SchemaLink.self)
   of 0.9 gray (`SchemaStyle.skeletonEdge`), where the full card's shadow showed as a pixel or two of
   gray on the light canvas (a softer rim on the dark one), and its description greeked as a note's
   text is, by the core's `SkeletonTextBars` with the note's metrics (`SchemaStyle.skeletonText`);
-  its name is its pill's, drawn blank above it. Three fills, whatever it says (the edge, the card
+  its name is Titles' [cover](#a-cover-zoomed-out), over it. Three fills, whatever it says (the edge, the card
   inside it, and every bar in one `fillSkeletonText`), and nothing read or measured: a frame draws
   thousands. The edge is the frame filled under the white inset, not an even-odd ring, which cost
   about three times as much (as measured). The card is square (its corners are under 2 points on
@@ -7843,8 +7851,9 @@ shadows and the pills is most of such a frame. So there the canvas draws each sh
 text would be, never text, shadows or pictures of its own. Zoomed back in past the level, each
 shape is itself again. At 10,000 shapes zoomed out as far as the zoom goes (10%, some 1,700 in
 view), the first frame took 166.9 ms before skeletons, and each after 89.1; with them, and
-[adornments](#the-label) drawn blank too, 13.4 and 11.2 (at 1,000 shapes, all in view at 11%, 96.9
-and 50.0 before, 9.2 and 7.8 after).
+[adornments](#the-label) drawn blank too (since left off, with a title said on a shape big enough on
+screen instead), 13.4 and 11.2 (at 1,000 shapes, all in view at 11%, 96.9 and 50.0 before, 9.2 and
+7.8 after).
 
 - **One level for the canvas.** `editor.drawsSkeletons` is true while the camera's zoom is under
   `editor.skeletonZoom`, 35%. It's the zoom's, frame by frame, with no hysteresis or debounce
@@ -7921,8 +7930,8 @@ so call it with no path of your own under way.
   it counts nothing, since the sequence draws one emoji (a family is two columns). One pass over the
   text's UTF-8, a byte at a time while it's ASCII. A bar is its columns at an average narrow
   advance: a note's lines, a schema card's description and a subboard's title at 0.52 em a column
-  (calibrated against string drawing, `SkeletonTextMetrics.systemFontColumn`), a blank adornment's
-  at an advance measured once from a sample. So every kind's bars count alike, and text in Japanese or in emoji is about as
+  (calibrated against string drawing, `SkeletonTextMetrics.systemFontColumn`), and a title's cover
+  sized by them, at an advance measured once from a sample. So every kind's bars count alike, and text in Japanese or in emoji is about as
   long greeked as in full, where a column a character would make it half. A script set wider or
   narrower than two columns' 1.04 em is off by the difference: in a subboard's 15-point title,
   Hangul measured about 0.85 em a character and emoji about 1.3.
@@ -7953,26 +7962,28 @@ so call it with no path of your own under way.
   either way. A pointer held still says nothing, so a service whose hit testing goes by what a
   shape shows lets go here of what the level doesn't show now: Selection looks again at what the
   pointer rests on, buttons first, as a move does, so a button that comes or goes with the level (a
-  blank label's shorter or longer reach) takes or gives up the hover without its plugin saying so;
-  Adornments lets go of the faces it measured as skeletons start, and looks for nothing itself, its
+  lock chip, shown only in full) takes or gives up the hover without its plugin saying so;
+  Adornments lets go of what it made as skeletons start, and looks for nothing itself, its
   layouts answering at the new level whichever service hears first.
 - **Batch what's drawn per shape**, in an overlay too, since zoomed out a frame draws it thousands
   of times: Core Graphics fills many rects, or lines, in one path for a fraction of what filling
-  each alone costs, while a path of many curves costs more than each filled alone. So Adornments
-  flattens its blank capsules' ends to chords before it fills a run as one path, and Validation, as
+  each alone costs, while a path of many curves costs more than each filled alone. So Validation, as
   the core's outlines do, fills square-cornered rings, where rounded ones stroked together cost ten
   times what each stroked alone does. Keep the order where it shows: a run of one look at a time,
   in paint order, so what's over what doesn't change. And make nothing per shape a frame, no array
   or boxed value: the core builds its rings and lines point by point, and Adornments lays each
-  shape's labels out into one buffer a frame.
+  shape's labels out into one buffer a frame. Look at a shape's kept bounds before anything that
+  costs more, as Titles' covers do (a shape too small on screen is passed over before its title
+  is looked up), so only the shapes big enough lay text out.
 
 What each shipped plugin shows zoomed out is in its own section: a [note](#a-vertical-plugin) (its
 yellow, its text greeked, and no [mention text](#drawing) or [faces](#on-the-canvas-faces)), a
-[subboard](#subboards) (fills, a title bar and its preview), a [schema card](#schema-cards) (white
+[subboard](#subboards) (fills and its preview), a [schema card](#schema-cards) (white
 with a light gray edge, and its description greeked as a note's text is), an [arrow](#a-shape-without-a-frame)
 (its arc and heads);
-[faces](#faces-clickable-parts-of-a-shape) (none on a skeleton), [adornments](#the-label) (blank
-and pale on a skeleton: a title's [pill](#a-horizontal-plugin) and a [lock](#locking)'s chip), and
+[faces](#faces-clickable-parts-of-a-shape) (none on a skeleton), [adornments](#the-label) (none on a
+skeleton: a title's [pill](#a-horizontal-plugin) and a [lock](#locking)'s chip are left off, and a
+title is said on the shape, its [cover](#a-cover-zoomed-out)), and
 [Validation](#a-horizontal-plugin)'s outlines (rings).
 
 ## Boards in a file
@@ -8661,7 +8672,7 @@ detail-panel         service DetailPanelState
 context-menus        service ContextMenuState · secondary-click menu · CanvasContextMenu
 slash-commands       service SlashCommandState
 table-of-contents    service ContentsState
-titles               property title · adornment TitlePill → every shape · /title → every shape
+titles               property title · adornment TitlePill → every shape · /title → every shape · overlay TitleCoverOverlay
 mentions             service MentionState · edge type mention · edges → every shape · overlay MentionFrames · ShapeFaces · CanvasContextMenu
 board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
 validation-details   DetailStatuses in Issues
@@ -8865,20 +8876,23 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   looked at again as the level changes (from the camera and from `skeletonZoom`; not off the
   canvas, mid-press or in the hand tool), and the kept selection bounds
   (`selectionBoundsWorkedOut`, through drags, undo, a link whose end moved and a switch);
-  AdornmentsTests' Adornments zoomed out the blank labels (one flat color in their frames, within
-  anti-aliasing of the curves they're flattened from, width by columns, Japanese and Korean titles
-  within 15% of their width in full and emoji within 30%, hit where drawn, no faces made or kept, a
-  button let go and found again and a caption cut shorter as `skeletonZoom` moves under a still
-  pointer, Selection's look alone, and the edited shape's labels laid out, drawn pixel for pixel as
-  in full and hovered in full at 30% while another's are blank); TitlesTests and LockingTests the
-  blank pill and the blank chip that still unlocks; ValidationTests the rings (none grown from an
+  AdornmentsTests' Adornments zoomed out that no adornment is drawn, laid out, made or kept for a
+  shape below 35% (and each is drawn in its frame at 35%), a button let go and found again as
+  `skeletonZoom` moves under a still pointer (Selection's look alone), a point where an adornment
+  would be pointing at nothing, and the edited shape's laid out, drawn pixel for pixel as in full
+  and hovered in full at 30% while another's aren't shown; TitlesTests' `CoverTests` the cover (the
+  title on a dark plate inside the shape and nowhere else, centered or at a container's top left,
+  from 30 points down to 9, none for an untitled, a too small or a no-pill shape, a title cut to
+  120 characters ending in an ellipsis and a long one held inside a small shape, a card-sized shape
+  still having one, a shake moving it) and no pill at 30%, LockingTests no chip on a skeleton and
+  none to click; ValidationTests the rings (none grown from an
   outline, none on the shape being edited), and crossing rings in full against an in-test copy of
   the stroke from before the line width and join were set once a frame, pixel for pixel;
   MentionsTests' DrawingTests and FaceTests mention text unbuilt on a skeleton, the
   memo trimmed, and its pills no faces (a click selects, a double-click edits, a locked one's is
   refused and goes nowhere). CompositionTests' `skeletonsShippedTests` hold the shipped pieces
   together: at 30% every shipped shape (a subboard, notes, an arrow, a locked note and a schema
-  card) is its skeleton and says nothing, nor do a title's pill and a lock, at 35% it's
+  card) is its skeleton and says nothing but its title, on it, with no pill and no lock, at 35% it's
   all in full, the note being edited is in full at 30%, and in the app's canvas view a mention's
   pill is no face at 30% and is one again at 35%. `renderBitmap` at a scale other
   than 1 reads pixels with `pixel(_:at:scale:)`: `changedPixels` reads one a point, so it holds
@@ -8941,8 +8955,8 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   `SlashCommandsPlugin()`, for their `/title` and `/lock`), which goes before the plugins
   that place adornments, as the shipped list has it. In debug builds, `editor.adornmentsKept`
   counts the shapes whose labels are kept, so a test holds a deleted shape to being forgotten, and
-  `adornmentFacesKept` and `adornmentFacesMade` the shapes whose faces are kept and the faces made
-  in all, so one holds zooming out to measuring nothing.
+  `adornmentFacesKept` and `adornmentFacesMade` the shapes that show something, their faces kept, and
+  the faces made in all, so one holds zooming out to making and measuring nothing.
 - **The clipboard.** A test that copies gives the clipboard a pasteboard of its own, so it never
   touches the user's: `ClipboardPlugin(pasteboard: NSPasteboard.withUniqueName())`, or
   `ShippedPlugins.makeEditor(pasteboard:model:)` (and `releaseGlobally()` it after). Two editors on one
@@ -9114,8 +9128,8 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   grid (150 ms, time the window doesn't draw), the minimap's first picture (a frame at a time) and
   a drag frame with it, ten subboards' previews filling in (the longest frame, and how many), the
   first frame and each after zoomed out to fit the board (at 10,000, as far as the 10% zoom goes),
-  where shapes are [skeletons](#skeletons) and adornments blank (the first makes the labels of
-  every adorned shape in view; a frame each), a pan's frame with every shape selected (⌘A) at 100%
+  where shapes are [skeletons](#skeletons), which show no adornments (the first frame, and a frame
+  each; a frame just under 35%, with covers on the titled shapes in view, is reported), a pan's frame with every shape selected (⌘A) at 100%
   (the camera a point from the last frame's, so the box around them is worked out again, as in a
   pan), what a board all out of view adds to an empty board's frame, at 100% and 10%, with nothing
   selected and with every shape (1 ms: nothing off screen is drawn, and a shape outlined out of view
@@ -9401,9 +9415,16 @@ Each of these adds to the design without changing what plugins are written again
   adornments that draw themselves (data-canvas's 22-point sparkline, which needs a taller row);
   adornments painted with their shape, so a shape in front covers a back shape's, and a press
   there is the front shape's (a per-shape drawing hook in the core); a tooltip on each (the lock's
-  among them); telling agents what a shape shows; and labels not made at all zoomed far out (drawn
-  blank, none is measured, but the first frame there still asks every adorned shape in view for
-  its labels).
+  among them); and telling agents what a shape shows.
+- **Covers**: a title's cover only goes on a shape big enough on screen (48 × 15 points), so a
+  default subboard (240 × 160) has none below about 20% zoom, and a note below about 24%; a label
+  that overhangs a small shape, as a map's names do, with collisions between labels settled by
+  paint order or size, would reach further out; the cover isn't a decoration for the pointer (a
+  frame zoomed out is pressed on its border only, where its pill was a handle in full); its look
+  is one for every kind (white on the pill's gray), not each kind's own; and a cover's text isn't
+  kept between frames (each is laid out as it's drawn, some tens of microseconds, which a board of
+  thousands of titled shapes just over the size it needs would feel; `./build.sh bench` reports a
+  frame just under 35%).
 - **More of skeletons**: a level that holds while the zoom hovers about it (hysteresis, or tldraw's
   debounce, which keeps a big board's level from when the camera started moving until it stops),
   since today a pinch across 35% flips every shape each time it crosses; zooming in by degrees,

@@ -7,8 +7,8 @@ import TestKit
 import Titles
 
 // A card zoomed out (`CustomSkeleton`): its fills alone (an indigo border, the card inside it) and
-// its board's preview once built; no shadow, symbol or count. Its title's pill is Titles', blank. The camera is Geometry's, which these tests don't import, so the level
-// moves instead: `skeletonZoom` just over 100% draws skeletons at 100%, where world units are view
+// its board's preview once built; no shadow, symbol or count. Its title is Titles' cover, on it. The
+// camera is Geometry's, which these tests don't import, so the level moves instead: `skeletonZoom` just over 100% draws skeletons at 100%, where world units are view
 // points, as `cardTests` draw the card.
 
 private let canvas = CGSize(width: 320, height: 240)
@@ -58,10 +58,12 @@ private let canvas = CGSize(width: 320, height: 240)
         let border = pixel(drawn, at: CGPoint(x: 40, y: 120))
         expect(border[2] > border[0] + 60 && border[2] > 200, "the border, in indigo: \(border)")
     },
-    test("its title is a blank pill above it, the card unchanged") {
+    test("its title is on it, Titles' cover, and there's no pill above it") {
         let kitchen = try skeleton(title: "Kitchen"), untitled = try skeleton(title: nil)
-        expect(changedPixels(untitled, kitchen, in: Band.pill) > 150, "the pill")
-        expectEqual(changedPixels(untitled, kitchen, in: cardFrame), 0, "nothing of the title on the card")
+        expectEqual(changedPixels(untitled, kitchen, in: Band.pill), 0, "no pill")
+        expect(changedPixels(untitled, kitchen, in: cardFrame) > 500, "the title on the card")
+        expectEqual(changedPixels(untitled, kitchen, in: CGRect(origin: .zero, size: canvas)), changedPixels(untitled, kitchen, in: cardFrame),
+                    "and nowhere else")
     },
     test("its board's preview shows as the card's does once it's built, at no more than a tenth of its board, and nothing while it builds") {
         let h = try skeletonCard(title: nil, inside: 2)

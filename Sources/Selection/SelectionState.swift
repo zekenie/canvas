@@ -347,10 +347,10 @@ extension SelectionState: EditorService {
     /// A placed shape is the only one selected.
     func didPlace(_ id: ShapeID, in editor: CanvasEditor) { select([id]) }
 
-    /// Shapes are drawn as skeletons now, or in full again, so their faces went or came (a note's
-    /// pills) under a pointer that may be still: what it hovers is looked for again where it rests,
-    /// as a move there would, in the select tool with nothing under way. A pill's target hovered
-    /// as the level drops gives way to its note.
+    /// Shapes are drawn as skeletons now, or in full again, so their faces and adornments went or
+    /// came (a note's pills, a lock chip) under a pointer that may be still: what it hovers is looked
+    /// for again where it rests, as a move there would, in the select tool with nothing under way. A
+    /// pill's target hovered as the level drops gives way to its note.
     func drawsSkeletonsDidChange(in editor: CanvasEditor) {
         guard editor.currentToolID == .select, editor.session == nil, let point = lastPointer else { return }
         hover(atViewPoint: point)
