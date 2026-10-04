@@ -1,0 +1,27 @@
+---
+paths:
+  - "Sources/Canvas/Editor/UndoHistory.swift"
+  - "Sources/Canvas/Editor/CanvasEditor+Undo.swift"
+  - "Sources/Canvas/Model/DocumentDelta.swift"
+  - "Sources/CanvasUI/BoardWindow.swift"
+  - "Tests/CanvasTests/Undo*.swift"
+  - "Tests/CanvasTests/DocumentDeltaTests.swift"
+  - "Tests/CompositionTests/Undo*.swift"
+  - "Tests/CanvasUITests/BoardWindowTests.swift"
+---
+
+# Undo
+
+The core's undo: steps, groups and coalescing, `DocumentDelta`, one history across a file's boards, and testing it.
+
+Related: [editor](editor.md), [boards in a file](boards-in-a-file.md), [boards on disk](boards-on-disk.md), [selection](selection.md), [editing](editing.md) ([every topic](../../CLAUDE.md#map)).
+
+In the guide, `docs/plugin-system.md`: [Undo](../../docs/plugin-system.md#undo).
+
+## Architecture
+
+- Undo (the core's, `editor.undoHistory`, `docs/plugin-system.md` "Undo") records every commit into steps, tldraw's model, not `NSUndoManager`'s: a step is an action (a press to its release, a key on the canvas with its repeats while it's held, until it's let go (`editor.keyUp`, `keysReleased`) or anything else happens, so a held arrow key's nudges are one step, a command, `undoHistory.group("Name") { … }`; nested, the outermost counts), an editing session (with the action that began it: placing a note and typing is one step), a run of `transact(coalescing: key)` commits at no action's depth (a panel field typed into, until another commit, an action or `undoHistory.seal()`), or else one commit. A step that ends where it began, or whose changes were all refused, is dropped; opening one clears redo. It's named by its outermost group, else its first named transaction (`transact("Move")`), else "Typing". `editor.undo()`/`redo()` (`canUndo`, `canRedo`: not while a session runs) end editing, close the open step, and apply its `DocumentDelta` (each touched record before and after, exact: keys, meta, added and kept values, opaque records) as an ordinary commit with an exact `ChangeSet`, below the read-only rule (undoing Lock unlocks, no shake), never through a transaction (so no service may transact in `documentDidChange`); `UndoParticipant` services get back their snapshot (Selection's selection: undoing Delete reselects); the camera never moves (a board shown for a step has the camera it was left with). The core claims `.undo`/`.redo`, Keyboard gives them ⌘Z/⇧⌘Z. A file has one history, whatever board is shown: a step is made on the board shown (`DocumentDelta.board`; a switch closes the one under way and is no step, nor is entering or leaving a board), and undoing or redoing one from another board shows its board first (`showBoard`), then applies it there, its selection with it. A step holds every other board it reached whole, before and after (`DocumentDelta.boards`, and `unreadableBoards`): the boards a deletion took under a shape, a paste brought (`insert(_:contents:)`), or Delete Hidden Shapes deleted from (`ChangeSet.boardsChanged`), so undoing a deletion brings back every board under the shape with every id, and undoing a paste takes its boards out; each board a step changes gets a new revision, so nothing kept of it is taken back stale. `DocumentDelta` is the one before/after type and `CanvasEditor.apply(_:restoring:)` the one place a step is applied. `replaceFile` (and `replaceDocument`) clears the history.
+
+## Testing
+
+- For undo, `h.editor.undo()`/`redo()` and `undoHistory.undoName` headlessly, `undoHistory.seal()` between panel writes where a user would click elsewhere; compare round trips with `==` and `BoardCodec` bytes. Change counts are synchronous (no run-loop spin for `isDocumentEdited`). For Edit › Undo, use a `BoardWindow` with `window.editor` set: `validateMenuItem` for the title, `window.undo(nil)` to run it (CanvasUITests' BoardWindowTests, CompositionTests' UndoTests).

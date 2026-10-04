@@ -1,0 +1,20 @@
+---
+paths:
+  - "Sources/Keyboard/**"
+  - "Tests/KeyboardTests/**"
+  - "Sources/CanvasUI/BoardMenus.swift"
+  - "Sources/CanvasUI/BoardWindowController.swift"
+  - "Tests/CompositionTests/MenuRoutingTests.swift"
+---
+
+# Keyboard shortcuts
+
+Keyboard: one shortcut per chord, who registers which, how a key reaches the canvas, AppKit's key bindings and the menu bar.
+
+Related: [selection](selection.md), [editor](editor.md), [undo](undo.md), [boards](boards.md) ([every topic](../../CLAUDE.md#map)).
+
+In the guide, `docs/plugin-system.md`: [Keyboard shortcuts](../../docs/plugin-system.md#keyboard-shortcuts).
+
+## Architecture
+
+- Keyboard shortcuts (Keyboard, a surface, first in the shipped list): every key the canvas answers is registered with it, one shortcut per chord (`KeyChord`: `"v"`, `KeyChord("a", .command)`, `.escape`), by the plugin that gives it its meaning: `x.tool(label:systemImage:shortcut:placing:)` and `registrar.tool(descriptor, shortcut:)` for a tool's key (`x.tool(label:systemImage:shortcut:placing:_:)` for a kind's tool of its own that still says what it places, the core's `ShapeRegistrar.tool(_:label:systemImage:placing:_:)`: the Frame tool, which draws, while `registry.placement(for:)`, what `canvas draw` places, is its placement), `registrar.command(.delete, shortcuts: [...], isEnabled:)` for a command a menu item also runs (its keys pass while it can't run, as its item dims: ⌘[ and Go › Back, ⌘↓ and `.openSelection`), `registrar.shortcut(chord, "Title", when:, repeats:) { editor in … }` for anything else, and `registrar.shortcut(chord, forTool:)` for another plugin's tool, and `registrar.shortcut(chord, forCommand:, repeats:)` for another's command (Keyboard gives the core's Hand H, Space held its pan (`registrar.shortcut(chord, "Title", whileHeld:released:)`: down, `editor.isHandHeld`; up, or every key let go, not), Undo ⌘Z and Redo ⇧⌘Z, held again and again, Escape and ⌘. `editor.cancel()`, and ⌘=, ⌘- (held, again and again), ⌘0 and ⇧1 the zoom commands). The core knows no key: `CanvasView.keyDown` hands every key to the editor as a `KeyStroke` (host API `editor.keyDown`), which passes it to the plugin that claims key strokes, and so does `CanvasView.performKeyEquivalent` for a ⌘ key while the canvas has the keyboard, before the menu bar (so ⌘A is Keyboard's there; with a field focused, the menu's). A held key's repeats run a shortcut again only with `repeats:`, and only while the canvas has seen the key go down (one held down in the table of contents, whose pick gives the canvas the keyboard, repeats there as nothing). A key no shortcut takes goes on to AppKit's key bindings, and the standard actions they send that have a key of their own (`deleteBackward:`, `deleteForward:`, `insertNewline:`, `cancelOperation:`) come back to the shortcuts as ⌫, ⌦, ↩ and ⎋, so ⌃H does what Delete does; the moves they send (`moveLeft:`, `scrollPageDown:`) and typing (`insertText:`) stop at the canvas, so a stray key doesn't beep. ⇧ counts when a chord asks for it; a key held with ⇧ answers the chord without it too when ⇧ may be only what typed it (⇧ alone, or punctuation, a symbol or a digit: ⌘? is ⇧⌘/), never for a letter with ⌘, ⌥ or ⌃ (⇧⌘Z isn't ⌘Z). A digit's chord is its key on the number row, whatever the layout types with it (`KeyStroke.numberRowKey`, from the key code: ⇧1 is the key that types "!" on a US keyboard), and the menu bar (`MenuBar`) answers a View item's ⇧1 and ⇧2 the same way, and never takes a key without ⌘, ⌃ or ⌥ from text, where it types (one held with fn, 🌐E's Emoji & Symbols, is AppKit's as ever). The table of contents' list runs the `.delete` command on Delete, as the canvas does. Every plugin with a key imports Keyboard, so any plugin list with Selection or a shipped tool needs `KeyboardPlugin()`. The toolbar's tooltips ("Note (N)") come from `ShippedPlugins.help(for:in:)`, since CanvasUI can't see Keyboard; a button that runs a command names its key the same way (`registry.help(_:forCommand:)`: "Enclosing Board (⌘↑)"). The inspector's toolbar button is Inspector, its tooltip "Show Inspector" or "Hide Inspector" as View › Show Inspector (⌃⌘I) is titled.

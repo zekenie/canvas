@@ -1,0 +1,27 @@
+---
+paths:
+  - "Sources/Canvas/Shapes/Capabilities.swift"
+  - "Sources/StickyNotes/**"
+  - "Tests/StickyNotesTests/**"
+  - "Tests/CanvasTesting/EditableCard.swift"
+  - "Sources/TextEditing/EditingTextView.swift"
+  - "Sources/Mentions/MentionTextView.swift"
+  - "Sources/Schemas/SchemaDescriptionEditor.swift"
+  - "Sources/Connections/ArrowLabelEditing.swift"
+---
+
+# Editing in place
+
+Editing a shape in place (`Editable`): the editing view and its frame, where editing begins, `EditContext`; and holding an editor's text to its shape's render, as a note's is.
+
+Related: [editor](editor.md), [text editing](text-editing.md), [mentions](mentions.md), [selection](selection.md), [undo](undo.md), [schema cards](schema-cards.md), [arrows](arrows.md), [drawing](drawing.md) ([every topic](../../CLAUDE.md#map)).
+
+In the guide, `docs/plugin-system.md`: [Capabilities](../../docs/plugin-system.md#capabilities), [A vertical plugin](../../docs/plugin-system.md#a-vertical-plugin).
+
+## Architecture
+
+- Editing in place (`Editable`): the editing view is laid over the shape's editing frame (`editingFrame(of:in:)`, world units, looked at again as the shape or the camera changes: a box kind's box by default, so only a kind without one implements it, an arrow its label's, which grows with what's typed; host SPI `editor.editingFrame`, and `EditContext.frame`, the origin of the view's coordinates); only a box kind has an editing placement. `editor.beginEditing(id, at: point, clickCount:)` says where the press that began it was (world units) and how many clicks it was, which the editing view reads as `EditContext.startPoint` and `startClickCount` to put its selection there as a text view would (a caret, a double-click's word), and the editor keeps as `editingStartPoint` and `editingStartClickCount` while editing lasts; Selection's double-click passes its press and count, a click on the only selected shape of an `Editable` kind edits it from the release (tldraw's: that press waits for the drag threshold, as a face's does, and a read-only shape is only selected), each only for a press on the shape itself (on what's drawn for it outside, a title's pill, a double-click passes no point and a click doesn't edit), and not for the click that brings the window forward (`Pointer.activatesWindow`, from `CanvasView.acceptsFirstMouse`); Return and a placement pass none, and the view chooses as it always has (an `EditingTextView` puts it there with `placeSelection(at:selectingWord:)`, TextKit 2's, as a note's editor and a schema card's do). A note too short for its text as editing begins (saved before it grew with its text, or drawn with `size:`) grows to it then, in the editing's step, and so does a schema card too short for its description. `EditContext.service(_:)` lends an editing view the editor's services, as the panel's, the table of contents' and adornments' contexts do; `EditContext.shape` is the shape as it is now (what something other than typing writes while it's edited: a schema card's description the model writes, read as the sync's status says it landed, since the document observed hears every commit); `EditContext.end()` ends only its own session, so a view may end it a turn later (the card's, as the keyboard leaves the canvas); and `EditContext.keepInView(_:)` brings a rect of it (in its coordinates: world units from the shape's box) into the clear part of the view, 16 points in, panning at once, no step: a note's editor keeps its caret in view (`EditingTextView.caretFrame`) as the note grows past the window's edge, or an arrow key moves it. Services hear editing end, however it ends (Escape, a click elsewhere, another board, an undo), what it wrote committed (`EditorService.editingDidEnd`), its step closed unless what ended it is an action still under way (an undo about to apply a step, a command, a draw, a file put in place), so a service that answers it waits a turn (`editor.scheduler`): a schema card's sync takes its description as done then.
+
+## Testing
+
+- For an editing view's text against its shape's render, `renderBitmap(editor, size:scale:editing:)` (CanvasTesting) draws the view from `editor.makeEditingView()` over the canvas as `CanvasView` lays it out (frame in view points, bounds in world units); `lineTops(_:over:in:scale:)` is where each line starts, against the same drawing without the text, and `largestDifference(_:_:in:scale:)` holds every pixel to anti-aliasing (StickyNotesTests' `noteEditorTests`, at 1× and 2×, zoomed in and out). The note's render (string drawing) and its editor (TextKit 2) share `NoteStyle.text` (a `MentionTextStyle`), whose paragraph fixes each line at 19 points, string drawing's own pitch, and the editor's text starts a point higher (`NoteStyle.editorInset`), since TextKit 2 sets a line's glyphs a point lower in it; so nothing moves when editing starts. A note is as tall as its text, never shorter than 200 (`NoteStyle.fittedHeight`, string drawing's measure, pills and all): its editor writes the height with the text, one step, and its text view grows with the editor over it; `DerivedProps` fits a note made from properties (`canvas draw`). With pills, each pill's frame in the editor (TextKit 2's frame for its attachment) equals the canvas's (`editor.mentionPills(of:)`), and every pixel off the pills is held to anti-aliasing; at a whole number of pixels to a point the lines start alike and the pills' pixels are within a quarter, while at 60% string drawing draws a pill part way into a pixel and TextKit 2 on the nearest, a pixel apart.
