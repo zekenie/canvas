@@ -6,6 +6,15 @@ enum TextEditingStyle {
     /// The font a view's placeholder is drawn in when the view has none of its own: the system's, 11 points.
     static let placeholderFont = NSFont.systemFont(ofSize: 11)
 
+    // MARK: Highlights (`EditingTextView.highlights`)
+
+    /// A highlight is a mention's pill drawn behind text, so its metrics are the pill's, as fractions
+    /// of the text's font size (an em): 17 points tall at 16, its corners 4.
+    static let highlightHeight: CGFloat = 17.0 / 16
+    static let highlightCornerRadius: CGFloat = 4.0 / 16
+    /// How far it reaches past the text at each end, in points.
+    static let highlightPadding: CGFloat = 2
+
     // MARK: Caret lists (`CaretListWindow`)
 
     /// Between the window's edge and its first and last rows.
