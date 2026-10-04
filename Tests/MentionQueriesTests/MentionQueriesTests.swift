@@ -1,9 +1,9 @@
 import Canvas
 import CanvasTesting
-import MentionQueries
 import Mentions
 import Queries
 import QueryLanguage
+import QueryLexicon
 import TestKit
 
 // Mentions in queries: mention text read as a person reads it (each mention "@" and the name its

@@ -2,8 +2,8 @@ import Canvas
 import CanvasTesting
 import Queries
 import QueryLanguage
+import QueryLexicon
 import Selection
-import SelectionQueries
 import TestKit
 
 // `:selected`, the person's selection as the query took up the file, and what `--ask` says is

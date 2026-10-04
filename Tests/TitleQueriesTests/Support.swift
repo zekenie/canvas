@@ -6,10 +6,10 @@ import Foundation
 import Keyboard
 import Queries
 import QueryLanguage
+import QueryLexicon
 import Selection
 import SlashCommands
 import TestKit
-import TitleQueries
 import Titles
 import Topology
 
@@ -28,7 +28,7 @@ import Topology
 }
 
 /// The keyboard and the selection (which Titles' pills need), Topology, the fixtures, Titles (with
-/// the slash commands it offers) and Queries, then the bridge, then `more`.
+/// the slash commands it offers) and Queries, then `TitleQueriesPlugin`, then `more`.
 @MainActor func titledPlugins(bridge: Bool = true, more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(), AdornmentsPlugin(), SlashCommandsPlugin(),
      TitlesPlugin(), fixtureTitles(), QueriesPlugin()] + (bridge ? [TitleQueriesPlugin()] : []) + more

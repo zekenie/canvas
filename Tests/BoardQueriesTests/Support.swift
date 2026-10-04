@@ -1,6 +1,5 @@
 import Adornments
 import AppKit
-import BoardQueries
 import Boards
 import Canvas
 import CanvasTesting
@@ -9,6 +8,7 @@ import DetailPanel
 import Foundation
 import Keyboard
 import Queries
+import QueryLexicon
 import Selection
 import SlashCommands
 import TestKit
@@ -18,7 +18,8 @@ import Topology
 // Fixtures only: CanvasTesting's boxes and two kinds of this target's that own boards, drawers,
 // which open onto them with a placeholder of their own, and crates, which don't open (so have no
 // placeholder) and are called by their label. Both are named by Titles, and a fixture names shapes
-// for queries by the title Titles keeps: BoardQueries' closure has no TitleQueries.
+// for queries by the title Titles keeps: of QueryLexicon's plugins, only `BoardQueriesPlugin` is
+// installed here.
 
 /// A box that owns a board and opens onto it, called "Untitled Drawer" while untitled.
 struct Drawer: BoxShapeProps {
@@ -92,7 +93,7 @@ func namesPlugin() -> Contributor {
 
 /// What opening a board takes (keys, the selection, the panel, menus), titles (with the adornments
 /// their pills are, and the slash commands they offer), Topology, Boards, Queries and the fixtures'
-/// names, then the bridge.
+/// names, then `BoardQueriesPlugin`.
 @MainActor func boardPlugins(bridge: Bool = true) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), StorePlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
      AdornmentsPlugin(), SlashCommandsPlugin(), TitlesPlugin(), BoardsPlugin(), QueriesPlugin(), namesPlugin()] + (bridge ? [BoardQueriesPlugin()] : [])

@@ -2,10 +2,10 @@ import Canvas
 import CanvasTesting
 import Queries
 import QueryLanguage
+import QueryLexicon
 import TestKit
 import Topology
 import Validation
-import ValidationQueries
 
 // `:invalid` and `:warned` on every board of the file: from Validation's cache on the board shown
 // while it's current, else by running the shape's rules against the board it's on as the app has

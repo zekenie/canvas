@@ -2,8 +2,8 @@ import Canvas
 import CanvasTesting
 import Queries
 import QueryLanguage
+import QueryLexicon
 import TestKit
-import TitleQueries
 import Titles
 
 // Queries naming shapes by their titles, as Titles has them: a named title read from the shape on

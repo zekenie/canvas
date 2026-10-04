@@ -5,8 +5,8 @@ import Foundation
 import Keyboard
 import Queries
 import QueryLanguage
+import QueryLexicon
 import Selection
-import SelectionQueries
 import TestKit
 import Topology
 
@@ -37,8 +37,8 @@ func shiftingPlugin() -> Contributor {
     }
 }
 
-/// The keyboard and the selection first, Topology, the fixtures, Queries and the names, then the
-/// bridge.
+/// The keyboard and the selection first, Topology, the fixtures, Queries and the names, then
+/// `SelectionQueriesPlugin`.
 @MainActor func selectionPlugins(bridge: Bool = true) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), TilesPlugin(), QueriesPlugin(), namesPlugin(), shiftingPlugin()]
         + (bridge ? [SelectionQueriesPlugin()] : [])

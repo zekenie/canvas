@@ -3,14 +3,14 @@ import Mentions
 import Queries
 import Topology
 
-/// A bridge between two horizontals: mentions in queries. `:mentions(S)` is a shape whose text
-/// mentions a shape S matches, and `:mentioned-by(S)` one a shape S matches mentions: Topology's
-/// mention edges (`MentionEdge`), from the shape whose text holds the mention to the shape it names,
-/// on any board, a shape's mention of itself too. And mention text (a string whose schema says
+/// Mentions in queries, in QueryLexicon: `:mentions(S)` is a shape whose text mentions a shape S
+/// matches, and `:mentioned-by(S)` one a shape S matches mentions: Topology's mention edges
+/// (`MentionEdge`), from the shape whose text holds the mention to the shape it names, on any
+/// board, a shape's mention of itself too. And mention text (a string whose schema says
 /// `contentMediaType: text/x-canvas-mentions`) reads in queries and rows as a person reads it: plain
 /// text, each mention "@" and the name its target has now (`MentionState.labels`, taken as the query
 /// takes up the file), or the name it holds while its target is gone, never the stored form with its
-/// ids. Queries has never heard of mentions, nor Mentions of queries.
+/// ids.
 public struct MentionQueriesPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { "mention-queries" }
