@@ -152,10 +152,10 @@ private let viewSize = CGSize(width: 320, height: 200)
         expectEqual(editor.titleCover(of: board.subboard)?.text, "Roadmap")
         expectEqual(editor.titleCover(of: board.note)?.text, "Groceries")
         expectEqual(editor.adornmentFrames(of: board.note), [], "and no pill above it")
-        let plate = editor.camera.toView(try require(editor.titleCover(of: board.note)).rect).insetBy(dx: -1, dy: -1).integral
+        let text = editor.camera.toView(try require(editor.titleCover(of: board.note)).rect).insetBy(dx: -1, dy: -1).integral
         let covered = renderBitmap(editor, size: viewSize)
         editor.transact { $0.update(board.note) { $0[TitleProperty.self] = nil } }
-        expect(changedPixels(covered, renderBitmap(editor, size: viewSize), in: plate) > 100, "the note's title, drawn on it")
+        expect(changedPixels(covered, renderBitmap(editor, size: viewSize), in: text) > 30, "the note's title, drawn on it")
         editor.transact { $0.update(board.note) { $0[TitleProperty.self] = "Groceries" } }
 
         // At 35%, all of it in full: each shape's words, and the pills'. The other board's titles

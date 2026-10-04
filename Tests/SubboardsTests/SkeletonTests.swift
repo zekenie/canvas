@@ -61,7 +61,7 @@ private let canvas = CGSize(width: 320, height: 240)
     test("its title is on it, Titles' cover, and there's no pill above it") {
         let kitchen = try skeleton(title: "Kitchen"), untitled = try skeleton(title: nil)
         expectEqual(changedPixels(untitled, kitchen, in: Band.pill), 0, "no pill")
-        expect(changedPixels(untitled, kitchen, in: cardFrame) > 500, "the title on the card")
+        expect(changedPixels(untitled, kitchen, in: cardFrame) > 300, "the title on the card")
         expectEqual(changedPixels(untitled, kitchen, in: CGRect(origin: .zero, size: canvas)), changedPixels(untitled, kitchen, in: cardFrame),
                     "and nowhere else")
     },

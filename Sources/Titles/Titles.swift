@@ -1,4 +1,5 @@
 import Adornments
+import AppKit
 import Canvas
 import SlashCommands
 import TableOfContents
@@ -85,14 +86,18 @@ public struct TitleContribution {
     let pillPlaceholder: String?
     /// Made by what `make` says (`title { … }`), not only read from `TitleProperty` (`title()`).
     let isDerived: Bool
+    /// What the kind's skeleton is mostly drawn on, which a cover's ink is chosen to read on; nil
+    /// for the default skeleton's gray.
+    let coverSurface: NSColor?
 
-    init<P: ShapeProps>(_: P.Type, showsPill: Bool, symbolInPill: Bool, pillPlaceholder: String?, isDerived: Bool,
+    init<P: ShapeProps>(_: P.Type, showsPill: Bool, symbolInPill: Bool, pillPlaceholder: String?, isDerived: Bool, coverSurface: NSColor?,
                         _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) {
         title = { TitleProperty.folded($0.typed(as: P.self).flatMap(make)) }
         self.showsPill = showsPill
         self.symbolInPill = symbolInPill
         self.pillPlaceholder = TitleProperty.folded(pillPlaceholder)
         self.isDerived = isDerived
+        self.coverSurface = coverSurface
     }
 }
 
@@ -105,12 +110,16 @@ extension ShapeRegistrar {
     /// (for a kind whose look doesn't say what it is: a schema card's `{}`), and it names the
     /// shape's row in the table of contents, unless `contents` is false (for a kind whose row says
     /// more). An untitled shape shows no pill, unless the kind gives one to grab:
-    /// `placeholderInPill`, what the pill says there, dimmed ("Frame"), laid out as a title is. To
-    /// rename it in the detail panel, put a `TitleHeader` in the kind's header:
-    /// `note.details(header: { $note in TitleHeader($note) }) {}`.
-    public mutating func title(pill: Bool = true, symbolInPill: Bool = false, placeholderInPill: String? = nil, contents: Bool = true) {
+    /// `placeholderInPill`, what the pill says there, dimmed ("Frame"), laid out as a title is. Zoomed
+    /// out, where a skeleton has no pill, the title is said on the shape, in an ink that reads on
+    /// what the kind's skeleton is drawn on: `coverSurface`, a note's yellow (a dynamic color follows
+    /// the appearance); the default skeleton's gray without one. To rename it in the detail panel,
+    /// put a `TitleHeader` in the kind's header: `note.details(header: { $note in TitleHeader($note) }) {}`.
+    public mutating func title(pill: Bool = true, symbolInPill: Bool = false, placeholderInPill: String? = nil, contents: Bool = true,
+                               coverSurface: NSColor? = nil) {
         optIn(to: TitleProperty.self)
-        title(pill: pill, symbolInPill: symbolInPill, placeholderInPill: placeholderInPill, contents: contents, isDerived: false) {
+        title(pill: pill, symbolInPill: symbolInPill, placeholderInPill: placeholderInPill, contents: contents, isDerived: false,
+              coverSurface: coverSurface) {
             $0[TitleProperty.self]
         }
     }
@@ -120,14 +129,15 @@ extension ShapeRegistrar {
     /// what it's made from, and isn't in the kind's schema; one that someone names is `title()`.
     /// The pill and the row are as there.
     public mutating func title(pill: Bool = true, symbolInPill: Bool = false, placeholderInPill: String? = nil, contents: Bool = true,
-                               _ make: @escaping @MainActor (ShapeRecord<Definition.Props>) -> String?) {
-        title(pill: pill, symbolInPill: symbolInPill, placeholderInPill: placeholderInPill, contents: contents, isDerived: true, make)
+                               coverSurface: NSColor? = nil, _ make: @escaping @MainActor (ShapeRecord<Definition.Props>) -> String?) {
+        title(pill: pill, symbolInPill: symbolInPill, placeholderInPill: placeholderInPill, contents: contents, isDerived: true,
+              coverSurface: coverSurface, make)
     }
 
     private mutating func title(pill: Bool, symbolInPill: Bool, placeholderInPill: String?, contents: Bool, isDerived: Bool,
-                                _ make: @escaping @MainActor (ShapeRecord<Definition.Props>) -> String?) {
+                                coverSurface: NSColor?, _ make: @escaping @MainActor (ShapeRecord<Definition.Props>) -> String?) {
         contribute(TitleContribution(Definition.Props.self, showsPill: pill, symbolInPill: symbolInPill, pillPlaceholder: placeholderInPill,
-                                     isDerived: isDerived, make),
+                                     isDerived: isDerived, coverSurface: coverSurface, make),
                    to: ShapeTitles.self)
         if contents { contentsTitle { TitleProperty.folded(make($0)) } }
     }
@@ -137,9 +147,10 @@ extension PluginRegistrar {
     /// A title Titles keeps, for a kind another plugin registers (bridges), as `title()` on a kind's
     /// own registrar.
     public mutating func title<P: ShapeProps>(_: P.Type, pill: Bool = true, symbolInPill: Bool = false, placeholderInPill: String? = nil,
-                                              contents: Bool = true) {
+                                              contents: Bool = true, coverSurface: NSColor? = nil) {
         optIn(P.self, to: TitleProperty.self)
-        title(P.self, pill: pill, symbolInPill: symbolInPill, placeholderInPill: placeholderInPill, contents: contents, isDerived: false) {
+        title(P.self, pill: pill, symbolInPill: symbolInPill, placeholderInPill: placeholderInPill, contents: contents, isDerived: false,
+              coverSurface: coverSurface) {
             $0[TitleProperty.self]
         }
     }
@@ -149,14 +160,16 @@ extension PluginRegistrar {
     /// derive a title for the shapes nobody named: `TitleProperty.folded(shape[TitleProperty.self])
     /// ?? what it derives`.
     public mutating func title<P: ShapeProps>(_: P.Type, pill: Bool = true, symbolInPill: Bool = false, placeholderInPill: String? = nil,
-                                              contents: Bool = true, _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) {
-        title(P.self, pill: pill, symbolInPill: symbolInPill, placeholderInPill: placeholderInPill, contents: contents, isDerived: true, make)
+                                              contents: Bool = true, coverSurface: NSColor? = nil,
+                                              _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) {
+        title(P.self, pill: pill, symbolInPill: symbolInPill, placeholderInPill: placeholderInPill, contents: contents, isDerived: true,
+              coverSurface: coverSurface, make)
     }
 
     private mutating func title<P: ShapeProps>(_: P.Type, pill: Bool, symbolInPill: Bool, placeholderInPill: String?, contents: Bool,
-                                               isDerived: Bool, _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) {
+                                               isDerived: Bool, coverSurface: NSColor?, _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) {
         contribute(TitleContribution(P.self, showsPill: pill, symbolInPill: symbolInPill, pillPlaceholder: placeholderInPill,
-                                     isDerived: isDerived, make),
+                                     isDerived: isDerived, coverSurface: coverSurface, make),
                    to: ShapeTitles.self, for: .kind(P.kind))
         if contents { contentsTitle(P.self) { TitleProperty.folded(make($0)) } }
     }
@@ -209,11 +222,13 @@ extension Registry {
         return titles.pillPlaceholder.map { AdornmentLabel(placeholder: $0, systemImage: symbol) }
     }
 
-    /// What a shape's cover says (`TitleCoverStyle`): its title, for a kind that shows one in a pill;
-    /// nil for an untitled shape (a placeholder is its pill's alone), and a kind with no pill.
-    func titleCover(of shape: AnyShapeRecord) -> String? {
-        guard let titles = contributions(to: ShapeTitles.self, for: shape.kind).first, titles.showsPill else { return nil }
-        return titles.title(shape)
+    /// What a shape's cover says (`TitleCoverStyle`) and what its kind's skeleton is drawn on: its
+    /// title, for a kind that shows one in a pill; nil for an untitled shape (a placeholder is its
+    /// pill's alone), and a kind with no pill.
+    func titleCover(of shape: AnyShapeRecord) -> (title: String, surface: NSColor?)? {
+        guard let titles = contributions(to: ShapeTitles.self, for: shape.kind).first, titles.showsPill,
+              let title = titles.title(shape) else { return nil }
+        return (title, titles.coverSurface)
     }
 }
 

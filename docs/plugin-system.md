@@ -1033,25 +1033,33 @@ splits and joins none of them. What a title brings:
   [skeleton](#skeletons) (below 35%, but for the one being edited) shows no pill, and Titles puts
   its title on the shape instead, large, so a board zoomed out reads from afar. Titles' own
   overlay draws it (`TitleCoverOverlay`), over every shape back to front, so a frame's title isn't
-  hidden by what the frame holds: the title in white on a dark plate, the pill's gray, which reads
-  on a note's yellow, a card's white, a frame's surface and a subboard's indigo in either
-  appearance; centered on the shape, or at the top left of a container (`registry.isContainer`: a
-  frame), where its pill is in full. It's as large as the shape's room allows, between 9 and 30
-  view points, the title wrapped on as many lines as fit: the size follows from the room (the
-  shape less a 3-point inset and the plate's padding, the inset giving way where the shape is short),
-  the title's columns (`SkeletonText.columns(of:)`, a CJK character or an emoji two) at the
-  font's measured advance, and its longest word, so a word isn't broken that needn't be. **Ellipses**:
-  a title longer than 120 characters is cut there and ends in "…" before anything is laid out, so a
-  title of thousands costs what one of a hundred does; and a title that doesn't fit the room, at
-  the smallest size, wraps and has its last line truncated by AppKit, ending in "…", the plate
-  never outside the shape. A shape under 48 × 15 points on screen has none (there's no room for a
-  word at the smallest size, only an ellipsis), and nor has an untitled shape (a placeholder is for
-  grabbing a shape by, and a skeleton has no pill), a kind with `pill: false`, or the shape being
-  edited. Before a title is even looked up, a shape's kept bounds say whether it's big enough, so a
-  board of thousands zoomed out costs a look at each shape in view, and only the shapes big enough
-  lay text out. `editor.titleCover(of:)` is where one is (world units), what it says and how large
-  its text is; it's no face and no decoration for the pointer, so a frame zoomed out is pressed on
-  its border as ever.
+  hidden by what the frame holds. It's plain text, no plate: in a dark ink on a light surface and
+  a light one on a dark surface, by the surface the kind says its skeleton is drawn on
+  (`x.title(coverSurface: NoteStyle.color)`, or `registrar.title(K.self, coverSurface:)`; a dynamic
+  color follows the appearance, so a frame's ink flips with the canvas; the default skeleton's
+  gray, which dark ink reads on, without one), with a halo of that surface around the glyphs so it
+  stays clear over what lies under it (a frame's notes, a note's greeked lines). It's centered on
+  the shape, or at the top left of a container (`registry.isContainer`: a frame), where its pill is
+  in full.
+  Its **size follows the shape's, not the title's**, so equal shapes have equal titles: 0.22 of
+  the shorter side, between 9 and 28 view points, to half points. It's made smaller only as far as
+  the title needs: where the title wouldn't fill the room (the shape less a 4-point inset, which
+  gives way where the shape is short; the title's columns, `SkeletonText.columns(of:)`, at the
+  font's measured advance), where a line would be taller than the room, and until the widest word,
+  as it's measured at that size, fits a line. **A word is never broken**: the title wraps on
+  whole words. (A word over 16 columns, or text with no spaces, as in Japanese, breaks where the
+  line does; a word that can't fit even at 9 points sets the title on one line, truncated.)
+  **Ellipses**: a title longer than 120 characters is cut there and ends in "…" before anything is
+  laid out, so a title of thousands costs what one of a hundred does; and a title that doesn't fit
+  the room wraps and has its last line truncated by AppKit, ending in "…", never outside the shape.
+  A shape under 40 × 15 points on screen has none (there's no room for a word at the smallest
+  size, only an ellipsis), and nor has an untitled shape (a placeholder is for grabbing a shape by,
+  and a skeleton has no pill), a kind with `pill: false`, or the shape being edited. Before a title
+  is even looked up, a shape's kept bounds say whether it's big enough, so a board of thousands
+  zoomed out costs a look at each shape in view, and only the shapes big enough lay text out.
+  `editor.titleCover(of:)` is where one's text is (world units), what it says and how large it is;
+  it's no face and no decoration for the pointer, so a frame zoomed out is pressed on its border
+  as ever.
 - **A pill to grab while untitled**, for a kind that asks: `frame.title(placeholderInPill: "Frame")`
   (any form of the sugar takes it) puts the placeholder in the pill of each of its shapes nobody has
   named, laid out as a title is (after the symbol where the kind asks, giving way at the row's
@@ -8881,10 +8889,11 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   `skeletonZoom` moves under a still pointer (Selection's look alone), a point where an adornment
   would be pointing at nothing, and the edited shape's laid out, drawn pixel for pixel as in full
   and hovered in full at 30% while another's aren't shown; TitlesTests' `CoverTests` the cover (the
-  title on a dark plate inside the shape and nowhere else, centered or at a container's top left,
-  from 30 points down to 9, none for an untitled, a too small or a no-pill shape, a title cut to
-  120 characters ending in an ellipsis and a long one held inside a small shape, a card-sized shape
-  still having one, a shake moving it) and no pill at 30%, LockingTests no chip on a skeleton and
+  title as plain text inside the shape and nowhere else, centered or at a container's top left,
+  its ink by the kind's surface, its size the shape's and equal for equal shapes, no word broken,
+  none for an untitled, a too small or a no-pill shape, a title cut to 120 characters ending in an
+  ellipsis and a long one held inside a small shape, a card-sized shape still having one, a shake
+  moving it) and no pill at 30%, LockingTests no chip on a skeleton and
   none to click; ValidationTests the rings (none grown from an
   outline, none on the shape being edited), and crossing rings in full against an in-test copy of
   the stroke from before the line width and join were set once a frame, pixel for pixel;
@@ -9416,12 +9425,12 @@ Each of these adds to the design without changing what plugins are written again
   adornments painted with their shape, so a shape in front covers a back shape's, and a press
   there is the front shape's (a per-shape drawing hook in the core); a tooltip on each (the lock's
   among them); and telling agents what a shape shows.
-- **Covers**: a title's cover only goes on a shape big enough on screen (48 × 15 points), so a
-  default subboard (240 × 160) has none below about 20% zoom, and a note below about 24%; a label
+- **Covers**: a title's cover only goes on a shape big enough on screen (40 × 15 points), so a
+  default subboard (240 × 160) has none below about 17% zoom, and a note below about 20%; a label
   that overhangs a small shape, as a map's names do, with collisions between labels settled by
   paint order or size, would reach further out; the cover isn't a decoration for the pointer (a
-  frame zoomed out is pressed on its border only, where its pill was a handle in full); its look
-  is one for every kind (white on the pill's gray), not each kind's own; and a cover's text isn't
+  frame zoomed out is pressed on its border only, where its pill was a handle in full); the greeked
+  lines of a note show beside its cover (the note's skeleton doesn't know of it); and a cover's text isn't
   kept between frames (each is laid out as it's drawn, some tens of microseconds, which a board of
   thousands of titled shapes just over the size it needs would feel; `./build.sh bench` reports a
   frame just under 35%).

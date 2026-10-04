@@ -125,7 +125,7 @@ extension CornerDisc: Adornment {
             on[zoom] = changedPixels(untitled, titled, in: view)
         }
         expectEqual(above[0.3], 0, "no pill at 30%")
-        expect((on[0.3] ?? 0) > 800, "the title on the shape at 30%: \(on)")
+        expect((on[0.3] ?? 0) > 300, "the title on the shape at 30%: \(on)")
         expect((above[0.35] ?? 0) > 300, "the pill at 35%: \(above)")
         expectEqual(on[0.35], 0, "and nothing on the shape")
     },
