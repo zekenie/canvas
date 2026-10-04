@@ -85,7 +85,7 @@ let canvasView = CGRect(x: 0, y: 0, width: 400, height: 300)
     test("no cover on an untitled or blank-titled shape, a shape too small on screen to say anything on, or a kind that shows no pill; a card-sized one has it") {
         let editor = try titleEditor([Contributor(id: "disc-titles") { $0.title(Disc.self, pill: false) { _ in "Disc" } }])
         editor.camera = Camera(origin: .zero, zoom: 0.3)
-        func plaque(_ frame: CGRect, named name: String? = nil) -> ShapeID { editor.add(Plaque(world(frame, atZoom: 0.3)), named: name) }
+        @MainActor func plaque(_ frame: CGRect, named name: String? = nil) -> ShapeID { editor.add(Plaque(world(frame, atZoom: 0.3)), named: name) }
         let none = plaque(CGRect(x: 20, y: 20, width: 100, height: 60))
         let blank = plaque(CGRect(x: 140, y: 20, width: 100, height: 60), named: "  ")
         let narrow = plaque(CGRect(x: 20, y: 120, width: 36, height: 60), named: "Narrow")
@@ -106,7 +106,7 @@ let canvasView = CGRect(x: 0, y: 0, width: 400, height: 300)
     test("the size follows the shape's, not the title's: equal shapes, equal sizes, whatever they say; a bigger shape bigger; 28 points at most") {
         let editor = try titleEditor()
         editor.camera = Camera(origin: .zero, zoom: 0.3)
-        func plaque(_ frame: CGRect, _ title: String) -> ShapeID { editor.add(Plaque(world(frame, atZoom: 0.3)), named: title) }
+        @MainActor func plaque(_ frame: CGRect, _ title: String) -> ShapeID { editor.add(Plaque(world(frame, atZoom: 0.3)), named: title) }
         let a = plaque(CGRect(x: 20, y: 20, width: 120, height: 80), "cli")
         let b = plaque(CGRect(x: 160, y: 20, width: 120, height: 80), "Lock")
         let c = plaque(CGRect(x: 20, y: 120, width: 120, height: 80), "Front desk")
