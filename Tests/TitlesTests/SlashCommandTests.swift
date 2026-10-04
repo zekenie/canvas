@@ -77,6 +77,9 @@ import Titles
         }
         let report = try titleEditor().registry.report
         let titles = try require(report.split(separator: "\n").first { $0.hasPrefix("titles") })
-        expect(titles.hasSuffix("property title · adornment TitlePill → every shape · /title → every shape"), report)
+        // Titles' line goes on past `/title` (the cover overlay, `overlay TitleCoverOverlay`), whose whole line
+        // TitlesTests' report test pins; here only that the three come one after another, so what Titles adds
+        // after them doesn't make this test about something else.
+        expect(String(titles).contains("property title · adornment TitlePill → every shape · /title → every shape"), report)
     },
 ])
