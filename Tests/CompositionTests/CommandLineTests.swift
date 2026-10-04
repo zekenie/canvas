@@ -1,14 +1,13 @@
 import AppKit
-import Arrows
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
 import Composition
+import Connections
 import Foundation
 import LanguageModels
 import Mentions
-import Ports
 import Schemas
 import StickyNotes
 import SwiftUI

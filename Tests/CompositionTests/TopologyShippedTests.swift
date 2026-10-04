@@ -1,12 +1,11 @@
 import AppKit
-import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
 import Composition
+import Connections
 import CoreGraphics
 import LanguageModels
 import Mentions
-import Ports
 import Schemas
 import StickyNotes
 import Subboards

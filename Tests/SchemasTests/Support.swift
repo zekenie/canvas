@@ -2,12 +2,12 @@ import Adornments
 import AppKit
 import Canvas
 import CanvasTesting
+import Connections
 import ContextMenus
 import DetailPanel
 import Keyboard
 import LanguageModels
 import Mentions
-import Ports
 import Schemas
 import Selection
 import SlashCommands

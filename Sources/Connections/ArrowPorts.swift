@@ -1,7 +1,5 @@
-import Arrows
 import Canvas
 import CoreGraphics
-import Ports
 import Topology
 
 extension PluginID {
@@ -9,8 +7,8 @@ extension PluginID {
 }
 
 /// The family of edges arrows drawn between shapes are: a plain arrow's type, and every channel's
-/// parent. Its id is the arrow kind's name, `arrow`, taken from the kind rather than written again:
-/// the build's id audit gives a string one owner to depend on, and that's Arrows.
+/// parent. Its id is the arrow kind's name, `arrow`, taken from the kind rather than written again,
+/// so the string is said once.
 public enum ArrowEdge {}
 
 extension ArrowEdge: EdgeType {
@@ -18,16 +16,16 @@ extension ArrowEdge: EdgeType {
     public static let summary: String? = "an arrow bound at both ends, from the shape it starts on to the shape it ends on, whatever its arrowheads"
 }
 
-/// Arrows are what ports draw, though neither plugin has heard of the other: a drag from a port
-/// draws an arrow, its end binding (by tldraw's rules, as a re-aimed end does) only to shapes that
-/// take one of the port's channels, and an arrow so drawn keeps its channel (`ChannelProperty`).
-/// Released on nothing, nothing is drawn. An arrow with a channel, re-aimed or moved, binds only to
-/// shapes that take its channel, at that end; one without (`canvas draw`'s `channel: none`, a
-/// board's from before ports), or with a channel no installed plugin declares, binds wherever an
-/// arrow can. Without a drag (`registry.connection`),
+/// Arrows are what ports draw: a drag from a port draws an arrow, its end binding (by tldraw's
+/// rules, as a re-aimed end does) only to shapes that take one of the port's channels, and an arrow
+/// so drawn keeps its channel (`ChannelProperty`). Released on nothing, nothing is drawn. An arrow
+/// with a channel, re-aimed or moved, binds only to shapes that take its channel, at that end; one
+/// without (`canvas draw`'s `channel: none`, a board's from before ports), or with a channel no
+/// installed plugin declares, binds wherever an arrow can. Without a drag (`registry.connection`),
 /// an arrow is made bound at both ends (`ArrowConnections`), and its ends are the shapes it's bound
 /// to. An arrow bound at both ends is an edge (Topology's) of the `arrow` family, or of its
-/// channel's type, under it.
+/// channel's type, under it. It's a plugin of its own, so a list can have arrows without ports (as
+/// ArrowsTests do) or ports with a connector of its own (as PortsTests do).
 public struct ArrowPortsPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .arrowPorts }

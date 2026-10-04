@@ -1,13 +1,13 @@
 import Canvas
 import CanvasTesting
+import Connections
 import CoreGraphics
 import Keyboard
-import Ports
 import Selection
 import TestKit
 import Topology
 
-// Connections as Topology's edges: the connector names the family (`Hookup` here), each channel is
+// ConnectionLog as Topology's edges: the connector names the family (`Hookup` here), each channel is
 // an edge type under it, and a connection bound at both ends is one edge, of its channel's type.
 
 private func type(_ channel: ChannelID) -> EdgeTypeID { EdgeTypeID(rawValue: channel.rawValue) }
@@ -35,7 +35,7 @@ extension Remark: EdgeType {
     return link.id
 }
 
-@MainActor let edgeTests = Suite("Connections as edges", [
+@MainActor let edgeTests = Suite("ConnectionLog as edges", [
     test("each channel is an edge type of its declarer's, under the connector's family; without a connector, a root") {
         let types = try linksHarness().editor.registry.edgeTypes
         expectEqual(types.declared, [type(Wire.id), type(Pipe.id), Hookup.id])

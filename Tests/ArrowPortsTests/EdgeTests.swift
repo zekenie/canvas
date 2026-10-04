@@ -1,9 +1,7 @@
-import ArrowPorts
-import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
+import Connections
 import CoreGraphics
-import Ports
 import TestKit
 import Topology
 

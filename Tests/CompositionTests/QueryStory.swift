@@ -4,12 +4,12 @@ import CanvasRPC
 import CanvasTesting
 import CanvasUI
 import Composition
+import Connections
 import CoreGraphics
 import Foundation
 import LanguageModels
 import Locking
 import Mentions
-import Ports
 import Queries
 import Schemas
 import Selection
@@ -90,8 +90,8 @@ enum QueryStory {
     /// The view a board of the story is shown in, as the skill's boards are.
     static let viewport = CGSize(width: 1440, height: 900)
 
-    /// The file, its arrows made by the shipped connector as a connection made by name is (ArrowPorts:
-    /// both ends bound at their shapes' centers, R1 on the note-link channel).
+    /// The file, its arrows made by the shipped connector as a connection made by name is
+    /// (`ArrowPortsPlugin`: both ends bound at their shapes' centers, R1 on the note-link channel).
     static func file(in registry: Registry) -> CanvasFile {
         func note(_ id: ShapeID, _ title: String?, at x: CGFloat, _ y: CGFloat, _ text: MentionText, locked: Bool = false) -> AnyShapeRecord {
             var note = ShapeRecord(id: id, StickyNote(frame: CGRect(origin: CGPoint(x: x, y: y), size: StickyNote.defaultSize), text: text))

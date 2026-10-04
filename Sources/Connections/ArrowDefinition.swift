@@ -329,7 +329,7 @@ public struct ArrowsPlugin: CanvasPlugin {
     public var id: PluginID { .arrows }
     public func register(into registrar: inout PluginRegistrar) {
         registrar.shape(ArrowDefinition()) { arrow in
-            // No tool places one (a port's drag draws it, ArrowPorts'), so it names itself.
+            // No tool places one (a port's drag draws it, through `ArrowPortsPlugin`), so it names itself.
             arrow.label("Arrow", systemImage: ArrowStyle.symbol)
             arrow.arrowRow()
         }

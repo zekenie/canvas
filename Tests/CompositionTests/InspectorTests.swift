@@ -1,10 +1,10 @@
 import AppKit
-import Arrows
 import Boards
 import Canvas
 import CanvasTesting
 import CanvasUI
 import Composition
+import Connections
 import DetailPanel
 import Geometry
 import LanguageModels

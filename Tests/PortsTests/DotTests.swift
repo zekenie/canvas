@@ -1,10 +1,10 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Connections
 import CoreGraphics
 import Geometry
 import Keyboard
-import Ports
 import Selection
 import TestKit
 import Topology
@@ -60,7 +60,7 @@ import Topology
         expectEqual(h.editor.hoveredButton, nil)
     },
     test("a shape the connector can't start from has no dots") {
-        let connections = Connections()
+        let connections = ConnectionLog()
         let h = try portsHarness(connections)
         let box = h.add(Box(boxFrame))
         connections.canConnect = { $0 != box }
@@ -151,7 +151,7 @@ import Topology
         for (side, center) in boxDots { expectEqual(dotPixels(plain, released, at: center + CGPoint(x: 20, y: 0)), 16, "\(side)") }
     },
     test("a dot whose middle another shape covers isn't drawn, nor hovered, and a press there presses that shape") {
-        let connections = Connections()
+        let connections = ConnectionLog()
         let h = try portsHarness(connections, more: [diamondsPlugin()])
         h.add(Box(boxFrame))
         let cover = h.add(Diamond(CGRect(x: 302, y: 135, width: 30, height: 30)))      // over the right dot's middle
@@ -187,7 +187,7 @@ import Topology
         expectEqual(dotPixels(plain, second, at: leftDot), 0, "the first's are gone")
     },
     test("a shape lying on a bigger one shows its dots over it, and a drag from one there connects") {
-        let connections = Connections()
+        let connections = ConnectionLog()
         let h = try portsHarness(connections, more: [diamondsPlugin()])
         h.add(Diamond(wholeView))                                    // under the box, and under each of its dots
         let box = h.add(Box(boxFrame))
@@ -217,7 +217,7 @@ import Topology
         expectEqual(dotPixels(plain, render(h), at: rightDot), 16, "off the handle, back")
     },
     test("a read-only shape keeps its ports: its dots show, and a drag from one connects without trying to change it") {
-        let connections = Connections(), log = RefusalLog()
+        let connections = ConnectionLog(), log = RefusalLog()
         let h = try portsHarness(connections, more: [FreezingPlugin(log: log)])
         let box = h.add(Box(boxFrame))
         h.editor.freeze([box])
@@ -274,7 +274,7 @@ import Topology
     test("a channel without a color of its own draws gray, and a side on two channels draws in the first's") {
         let pipesFirst = Contributor(id: "pipes-first") { $0.ports(Box.self, on: Pipe.self, sides: [.right]) }
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin(), pipesFirst, channelsPlugin(),
-                                            connectorPlugin(Connections())])
+                                            connectorPlugin(ConnectionLog())])
         h.add(Box(boxFrame))
         h.hoverDot(rightDot)
         let lit = pixel(render(h), at: rightDot)

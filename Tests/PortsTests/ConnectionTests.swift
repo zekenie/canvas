@@ -1,11 +1,11 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Connections
 import CoreGraphics
 import Foundation
 import Geometry
 import Keyboard
-import Ports
 import Selection
 import TestKit
 import Topology
@@ -57,7 +57,7 @@ func endsList(_ ends: (from: ShapeID, to: ShapeID)?) -> [ShapeID]? { ends.map { 
 @MainActor let connectionTests = Suite("Ports without a drag", [
     test("the port table has one order, plugin order: the lookups, a drag's channels and where it ends agree") {
         for pipesFirst in [true, false] {
-            let connections = Connections()
+            let connections = ConnectionLog()
             let plugins: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin()]
                 + (pipesFirst ? [pipedBoxesPlugin(), channelsPlugin()] : [channelsPlugin(), pipedBoxesPlugin()]) + [connectorPlugin(connections)]
             let h = try EditorHarness(plugins: plugins)
@@ -141,7 +141,7 @@ func endsList(_ ends: (from: ShapeID, to: ShapeID)?) -> [ShapeID]? { ends.map { 
         expect(!none.canConnect(box, in: ShapeContext(document: h.editor.document, registry: none)), "no connector")
     },
     test("a shape the board keeps aside can't be connected, whatever the connector says") {
-        let (h, kept) = try harnessKeepingABoxAside(Connections())
+        let (h, kept) = try harnessKeepingABoxAside(ConnectionLog())
         expect(!h.editor.registry.canConnect(kept, in: h.editor.shapeContext))
     },
     test("the dots ask the connector in the editor's document, as it is now") {

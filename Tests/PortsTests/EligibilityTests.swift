@@ -1,10 +1,10 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Connections
 import CoreGraphics
 import Geometry
 import Keyboard
-import Ports
 import Selection
 import TestKit
 import Topology
@@ -25,13 +25,13 @@ let discTop = CGRect(x: discFrame.midX - 15, y: discFrame.minY - 3, width: 30, h
 /// The board, with the test connector.
 @MainActor struct EligibilityBoard {
     let h: EditorHarness
-    let connections: Connections
+    let connections: ConnectionLog
     let start: ShapeID
     let above: ShapeID
     let below: ShapeID
     let disc: ShapeID
 
-    init(_ connections: Connections = Connections(), boxRole: PortRole = .both, plugins: [any CanvasPlugin]? = nil) throws {
+    init(_ connections: ConnectionLog = ConnectionLog(), boxRole: PortRole = .both, plugins: [any CanvasPlugin]? = nil) throws {
         self.connections = connections
         if let plugins {
             h = try EditorHarness(plugins: plugins)
@@ -74,7 +74,7 @@ let discTop = CGRect(x: discFrame.midX - 15, y: discFrame.minY - 3, width: 30, h
     },
     test("ports that only take connections take them, but give the kind no dot on their channel") {
         let wiredDiscs = Contributor(id: "wired-discs") { $0.ports(Disc.self, on: Wire.self, role: .target) }
-        let connections = Connections()
+        let connections = ConnectionLog()
         let board = try EligibilityBoard(connections, plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin(),
                                                                 channelsPlugin(), connectorPlugin(connections), wiredDiscs])
         let connection = try board.startConnecting()
@@ -87,7 +87,7 @@ let discTop = CGRect(x: discFrame.midX - 15, y: discFrame.minY - 3, width: 30, h
         expectEqual(fromDisc.channels, [Pipe.id])
     },
     test("a shape the board keeps aside takes nothing, whatever its kind") {
-        let connections = Connections()
+        let connections = ConnectionLog()
         let (h, kept) = try harnessKeepingABoxAside(connections)
         h.add(Box(boxFrame))
         let other = h.add(Box(aboveFrame))
@@ -98,7 +98,7 @@ let discTop = CGRect(x: discFrame.midX - 15, y: discFrame.minY - 3, width: 30, h
     },
     test("a side with ports on two channels begins connections on both, in plugin order, each drawn on the first its end takes") {
         let pipedBoxes = Contributor(id: "piped-boxes") { $0.ports(Box.self, on: Pipe.self, sides: [.right]) }
-        let connections = Connections()
+        let connections = ConnectionLog()
         let board = try EligibilityBoard(connections, plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin(),
                                                                 channelsPlugin(), connectorPlugin(connections), pipedBoxes])
         let plain = render(board.h)
@@ -115,7 +115,7 @@ let discTop = CGRect(x: discFrame.midX - 15, y: discFrame.minY - 3, width: 30, h
     },
     test("plugin order decides which channel comes first: ports on the pipe given before the wire's put it first") {
         let pipesFirst = Contributor(id: "pipes-first") { $0.ports(Box.self, on: Pipe.self, sides: [.right]) }
-        let connections = Connections()
+        let connections = ConnectionLog()
         let board = try EligibilityBoard(connections, plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin(),
                                                                 pipesFirst, channelsPlugin(), connectorPlugin(connections)])
         let right = try board.startConnecting()
@@ -166,7 +166,7 @@ let discTop = CGRect(x: discFrame.midX - 15, y: discFrame.minY - 3, width: 30, h
         expect(changedPixels(hintAlone, drawing, in: topEdge(of: belowFrame)) > 100, "the other box, faintly")
     },
     test("a shape the connector can't connect to isn't outlined, nor one whose kind only starts connections") {
-        let connections = Connections()
+        let connections = ConnectionLog()
         let board = try EligibilityBoard(connections)
         connections.canConnect = { $0 != board.below }
         let plain = render(board.h)

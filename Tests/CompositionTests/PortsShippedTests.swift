@@ -1,9 +1,9 @@
 import AppKit
-import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
 import Clipboard
 import Composition
+import Connections
 import CoreGraphics
 import Foundation
 import LanguageModels
@@ -17,9 +17,10 @@ import TestKit
 import Titles
 import Validation
 
-// Ports as shipped, on real notes and schema cards: a note links to a note, a schema to a schema. This target doesn't import Ports, so it reads an arrow's channel where
-// the board keeps it (its added values, as BoardCodec writes them), and finds the dots by where
-// they're drawn: 12 points out from the middle of a side, at zoom 1.
+// Ports as shipped, on real notes and schema cards: a note links to a note, a schema to a schema.
+// This file uses none of Ports' own API (`ChannelProperty`, `PortSide`), so it reads an arrow's
+// channel where the board keeps it (its added values, as BoardCodec writes them), and finds the
+// dots by where they're drawn: 12 points out from the middle of a side, at zoom 1.
 
 /// A side of a shape, and where its dot would be.
 private enum Side: CaseIterable {
