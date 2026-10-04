@@ -55,7 +55,7 @@ public struct FramesPlugin: CanvasPlugin {
             // What a click places, and what `canvas draw` places; a drag draws its own rect.
             let place = frame.placement(size: Frame.defaultSize) { Frame() }
             frame.tool(label: "Frame", systemImage: Frame.systemImage, shortcut: "f", placing: place) { _ in FrameTool(placing: place) }
-            frame.title(placeholderInPill: Frame.pillPlaceholder)           // Titles keeps its name, in a pill above it
+            frame.title(placeholderInPill: Frame.pillPlaceholder, coverSurface: FrameStyle.fill)  // Titles keeps its name, in a pill above it
             frame.mentionable(tint: { _ in FrameStyle.tint })               // by its name; followed, it's gone to
             frame.resizable(minimumSize: Frame.minimumSize)                 // eight handles, Selection's
             frame.frameRow()                                                // the table of contents, named by Titles

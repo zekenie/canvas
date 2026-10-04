@@ -4,15 +4,14 @@ import Geometry
 import Selection
 
 /// Per editor: which adornments each kind's shapes may show, found once per kind (the registry is
-/// frozen), and what each shape shows, its labels made once and kept until a commit names the shape
-/// or `adornmentsDidChange` does. How they're laid out is their shape's level's
-/// (`editor.drawsSkeleton(of:)`): in full, each label's face made (its text set and measured, its
-/// symbol's image) and kept beside it; on a skeleton, zoomed out, blank, each as long as its text's
-/// columns (`SkeletonText`), with nothing measured, and the faces kept go but the edited shape's,
-/// which is drawn in full. Where they go is worked out when it's asked, from what's kept: it follows
-/// the zoom, and geometry that follows other shapes, neither of which reaches a service. Drawing
-/// and hit testing go through the same layout at the same level, so what answers the pointer is
-/// what's drawn.
+/// frozen), and what each shape shows, laid out: its labels made once, with their faces (text set
+/// and measured, symbols' images), and kept until a commit names the shape or
+/// `adornmentsDidChange` does. A shape drawn as a skeleton, zoomed out (`editor.drawsSkeleton(of:)`),
+/// shows none: nothing is made, drawn or pointed at for it, and what was kept goes as the canvas
+/// starts drawing skeletons, but for the shape being edited, drawn in full, which has its own.
+/// Where they go is worked out when it's asked, from what's kept: it follows the zoom, and
+/// geometry that follows other shapes, neither of which reaches a service. Drawing and hit
+/// testing go through the same layout, so what answers the pointer is what's drawn.
 @MainActor
 final class AdornmentState {
     private unowned let editor: CanvasEditor
@@ -24,13 +23,10 @@ final class AdornmentState {
     /// `where` lets it in, less those of a type it has its own of; sorted by order, then first
     /// appearance.
     private var candidates: [ShapeKind: [AdornmentContribution]] = [:]
-    /// Each shape's shown adornments (none, for most), laid out blank: its labels, whatever the
-    /// level. Dropped for the shapes each commit names and `adornmentsDidChange` names.
+    /// Each shape's shown adornments (none, for most), laid out: its labels, each with its face.
+    /// Dropped for the shapes each commit names and `adornmentsDidChange` names, and for all of them
+    /// as the canvas starts drawing skeletons.
     private var kept: [ShapeID: LaidOutAdornments] = [:]
-    /// The same shapes' adornments that are laid out in full, their faces made and measured: those
-    /// drawn or pointed at in full since the canvas last started drawing skeletons, when they all
-    /// went (zoomed out, only the shape being edited, or last edited, has any).
-    private var keptInFull: [ShapeID: LaidOutAdornments] = [:]
     /// The revision `kept` is up to date with. Read before this service has heard of a commit (by
     /// a service that hears first: Selection, looking for a button under a still pointer), what's
     /// asked for is made afresh and not kept, so it's never stale and nothing else is thrown away.
@@ -49,47 +45,40 @@ final class AdornmentState {
     }
 
     var keptCount: Int { kept.count }
-    var keptInFullCount: Int { keptInFull.count }
+    /// Those of them that show something: their faces are made.
+    var keptShowingCount: Int { kept.values.reduce(0) { $0 + ($1.shown.isEmpty ? 0 : 1) } }
 
     // MARK: What a shape shows
 
     /// The adornments a shape shows, in claim order (its kind's candidates whose labels say
-    /// something: text that isn't blank, or a symbol), laid out `blank` (zoomed out) or in full;
-    /// nil for none, and on a shape kept aside.
-    func laidOut(_ record: AnyShapeRecord, blank: Bool) -> LaidOutAdornments? {
+    /// something: text that isn't blank, or a symbol), each with its face; nil for none, and on a
+    /// shape kept aside. Callers go by `editor.drawsSkeleton(of:)` first: a skeleton shows none.
+    func laidOut(_ record: AnyShapeRecord) -> LaidOutAdornments? {
         guard !isEmpty, !record.isOpaque else { return nil }
         let candidates = candidates(for: record.kind)
         guard !candidates.isEmpty else { return nil }
         let isHeard = heardRevision == editor.revision
-        if !blank, isHeard, let known = keptInFull[record.id] { return known }
-        let labels: LaidOutAdornments
-        if isHeard, let known = kept[record.id] {
-            labels = known
-        } else {
-            let context = AdornmentContext(editor: editor)
-            let made = candidates.compactMap { candidate in
-                candidate.label(record, context).flatMap { ShownAdornment(candidate, label: $0) }
-            }
-            labels = LaidOutAdornments(shown: made, items: made.map { $0.item(width: $0.blankWidth) }, faces: [])
-            if isHeard { kept[record.id] = labels }
+        if isHeard, let known = kept[record.id] { return known.shown.isEmpty ? nil : known }
+        let context = AdornmentContext(editor: editor)
+        let shown = candidates.compactMap { candidate in
+            candidate.label(record, context).flatMap { ShownAdornment(candidate, label: $0) }
         }
-        guard !labels.shown.isEmpty else { return nil }
-        if blank { return labels }
-        let faces = labels.shown.map { AdornmentStyle.face(of: $0.label, in: $0.id.placement) }
+        guard !shown.isEmpty else {
+            if isHeard { kept[record.id] = LaidOutAdornments(shown: [], items: [], faces: []) }
+            return nil
+        }
+        let faces = shown.map { AdornmentStyle.face(of: $0.label, in: $0.id.placement) }
         #if DEBUG
         facesMade += faces.count
         #endif
-        let full = LaidOutAdornments(shown: labels.shown, items: zip(labels.shown, faces).map { $0.item(width: $1.width) }, faces: faces)
-        if isHeard { keptInFull[record.id] = full }
-        return full
+        let laidOut = LaidOutAdornments(shown: shown, items: zip(shown, faces).map { $0.item(width: $1.width) }, faces: faces)
+        if isHeard { kept[record.id] = laidOut }
+        return laidOut
     }
 
     /// These shapes' labels are made again when they're next asked for.
     func forget(_ ids: Set<ShapeID>) {
-        for id in ids {
-            kept[id] = nil
-            keptInFull[id] = nil
-        }
+        for id in ids { kept[id] = nil }
     }
 
     private func candidates(for kind: ShapeKind) -> [AdornmentContribution] {
@@ -116,9 +105,9 @@ final class AdornmentState {
         return geometry.bounds
     }
 
-    /// Where a shape's adornments are now, in world units, at its level.
+    /// Where a shape's adornments are now, in world units: none on a shape drawn as a skeleton.
     func frames(of record: AnyShapeRecord) -> [AdornmentFrame] {
-        guard let laidOut = laidOut(record, blank: editor.drawsSkeleton(of: record.id)),
+        guard !editor.drawsSkeleton(of: record.id), let laidOut = laidOut(record),
               let bounds = Self.bounds(of: record.id, in: editor.shapeContext) else { return [] }
         let scale = AdornmentLayout.scale(atZoom: editor.camera.zoom)
         let slots = AdornmentLayout.slots(of: laidOut.items, width: bounds.width / scale)
@@ -130,13 +119,14 @@ final class AdornmentState {
     // MARK: Pointing
 
     /// The front-most adornment within `hitMargin` of a world point, of the shapes `include`
-    /// accepts, where they are (not where a shake draws them), each shape's laid out at its level,
-    /// as it's drawn: of one shape's, the nearest.
+    /// accepts, where they are (not where a shake draws them), as it's drawn: of one shape's, the
+    /// nearest. None on a shape drawn as a skeleton, which shows none.
     func hit(at point: CGPoint, where include: (AnyShapeRecord) -> Bool) -> (shape: ShapeID, adornment: ShownAdornment)? {
-        guard !isEmpty else { return nil }
+        guard !isEmpty, !editor.drawsSkeletons || editor.editingShapeID != nil else { return nil }
         let scale = AdornmentLayout.scale(atZoom: editor.camera.zoom), shapes = editor.shapeContext
-        for record in editor.paintOrder(in: AdornmentLayout.area(around: point, scale: scale)).reversed() where include(record) {
-            guard let laidOut = laidOut(record, blank: editor.drawsSkeleton(of: record.id)),
+        for record in editor.paintOrder(in: AdornmentLayout.area(around: point, scale: scale)).reversed()
+        where include(record) && !editor.drawsSkeleton(of: record.id) {
+            guard let laidOut = laidOut(record),
                   let bounds = Self.bounds(of: record.id, in: shapes) else { continue }
             var nearest: (index: Int, distance: CGFloat)?
             for (index, slot) in AdornmentLayout.slots(of: laidOut.items, width: bounds.width / scale).enumerated() {
@@ -188,34 +178,29 @@ extension AdornmentState: EditorService {
     func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
         heardRevision = editor.revision
         kept = [:]
-        keptInFull = [:]
     }
 
-    /// The canvas started or stopped drawing skeletons: adornments are laid out the other way, blank
-    /// or in full, so each text's is as long as it's drawn now. Zoomed out, the faces kept go (the
-    /// labels stay, and are drawn blank; the shape being edited makes its faces again as it's
-    /// drawn); zoomed in, the faces of what's in view are made again as it's drawn. What's under a
-    /// still pointer, a button come or gone or a pill cut shorter, the select tool looks for again
-    /// (Selection hears this too, first), and the layouts it reads answer at the new level whether
-    /// this has heard it or not.
+    /// The canvas started or stopped drawing skeletons: zoomed out, a skeleton shows no adornments, so
+    /// what's kept goes (the shape being edited makes its own again as it's drawn); zoomed in, the
+    /// labels and faces of what's in view are made again as it's drawn. What's under a still
+    /// pointer, a button come or gone, the select tool looks for again (Selection hears this too,
+    /// first), and the layouts it reads answer at the new level whether this has heard it or not.
     func drawsSkeletonsDidChange(in editor: CanvasEditor) {
-        if editor.drawsSkeletons { keptInFull = [:] }
+        if editor.drawsSkeletons { kept = [:] }
     }
 }
 
-/// A shape's adornments, laid out at one level: each label, with how wide it's laid out (its face's
-/// width in full, its estimate blank), and, in full, each one's face.
+/// A shape's adornments, laid out: each label, with how wide it's laid out (its face's width), and
+/// each one's face.
 @MainActor
 struct LaidOutAdornments {
     let shown: [ShownAdornment]
     let items: [AdornmentLayout.Item]
-    /// Empty, laid out blank.
     let faces: [AdornmentStyle.Face]
 }
 
 /// One adornment as a shape shows it: its label, which says something (text that isn't blank, or a
-/// symbol), how wide it's drawn blank, from its text's length, never measured, and how far its text
-/// starts past its padding (a symbol before it).
+/// symbol), and how far its text starts past its padding (a symbol before it).
 @MainActor
 struct ShownAdornment {
     let id: AdornmentID
@@ -223,7 +208,6 @@ struct ShownAdornment {
     let isClickable: Bool
     /// Text, which gives way at the row's left end; otherwise a symbol's disc.
     let isText: Bool
-    let blankWidth: CGFloat
     let lead: CGFloat
 
     /// Nil for a label that shows nothing: blank text, or neither text nor a symbol.
@@ -237,7 +221,6 @@ struct ShownAdornment {
         self.label = label
         isClickable = contribution.click != nil
         isText = label.text != nil
-        blankWidth = AdornmentStyle.blankWidth(of: label, in: id.placement)
         lead = AdornmentStyle.lead(of: label, in: id.placement)
     }
 

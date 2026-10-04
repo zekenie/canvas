@@ -1,5 +1,5 @@
 import Adornments
-import Canvas
+@_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
 import Foundation
@@ -155,9 +155,12 @@ extension CanvasEditor {
         expectEqual(h.editor.rects(box), [CGRect(x: 282, y: 73, width: 18, height: 18)])
         h.editor.camera = Camera(origin: CGPoint(x: -40, y: 30), zoom: 2)
         expectEqual(h.editor.rects(box), [CGRect(x: 291, y: 86.5, width: 9, height: 9)])
+        h.editor.skeletonZoom = 0                                   // in full at every zoom: below 35% a skeleton shows none
         h.editor.camera = Camera(origin: .zero, zoom: 0.125)
         expectEqual(h.editor.rects(box), [CGRect(x: 228, y: -8, width: 72, height: 72)])
         h.editor.setDrawingOffset(CGPoint(x: 5, y: 0), for: box)
         expectEqual(h.editor.rects(box), [CGRect(x: 228, y: -8, width: 72, height: 72)])
+        h.editor.skeletonZoom = 0.35
+        expectEqual(h.editor.rects(box), [], "as a skeleton, it has none")
     },
 ])

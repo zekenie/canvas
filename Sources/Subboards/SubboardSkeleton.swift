@@ -5,7 +5,7 @@ import Canvas
 /// on screen at most here, and its outline is its frame's, as the core draws it), with no shadow,
 /// symbol or count: its border's indigo, the card inside it, and its board's preview, the one
 /// picture it draws, as the card asks for it: drawn once it's built and while it's big enough on
-/// screen, else nothing. Two fills and the preview; its title's pill is Titles', blank here.
+/// screen, else nothing. Two fills and the preview; its title is Titles' cover, drawn over it.
 extension SubboardDefinition: CustomSkeleton {
     func renderSkeleton(_ shape: ShapeRecord<Subboard>, in context: RenderContext) {
         let card = shape.frame, cg = context.cg

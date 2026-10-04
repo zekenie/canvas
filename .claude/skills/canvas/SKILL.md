@@ -351,7 +351,7 @@ sticky-note "Ship 1.0" owner: "Ann"
 - **Frames don't grow.** A frame stays the size it was drawn, so `in` one that's full is `no_room`: restate it with a bigger `size:`.
 - **The result confirms intent, not the picture.** It tells you where each shape landed and what was pushed. It doesn't tell you whether a note's text overflowed (a note grows to fit its text unless you gave it a `size:`, which cuts long text off, so leave `size:` off notes with long text) or whether a line crosses other shapes.
 - **Edges are arcs.** They don't route around shapes. Only closed shapes are kept clear, so a shape can land across an arrow or a drawn line.
-- **Pills overlap when zoomed out.** A title's pill (and a lock's chip, in the same row just above a shape) clears the shape above it in a list down to about 42% zoom.
+- **Pills overlap when zoomed out.** A title's pill (and a lock's chip, in the same row just above a shape) clears the shape above it in a list down to about 42% zoom (below 35% shapes are skeletons: no pill or chip is drawn, and a title is said on the shape instead).
 - **One board at a time.** A draw works on the board its file's window shows, and can't reach a subboard's board from outside it.
 
 ## Reference

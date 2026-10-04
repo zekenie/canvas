@@ -338,7 +338,7 @@ A placement's gap is the first of these that applies:
 3. The larger of the shape's `gap:` and its target's `gap:`, when the target is also stated in this script.
 4. `normal`.
 
-Other spacing is fixed. A list steps 64. Shapes pushed apart keep 40 between them side by side, and 64 one above the other. The extra room is for the row just above a shape, where its title's pill and a lock's chip go, which sits 27 units above it at 100% zoom and 54 at 50%, so it clears the shape above down to about 42% zoom.
+Other spacing is fixed. A list steps 64. Shapes pushed apart keep 40 between them side by side, and 64 one above the other. The extra room is for the row just above a shape, where its title's pill and a lock's chip go, which sits 27 units above it at 100% zoom and 54 at 50%, so it clears the shape above down to about 42% zoom (below 35%, where shapes are skeletons, no pill or chip is drawn).
 
 ## Lists
 

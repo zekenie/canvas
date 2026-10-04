@@ -138,8 +138,8 @@ enum Budget {
     static let emptyFrame = 2.0
     /// A frame zoomed out to fit the board (as far as the zoom goes: 10% for 10,000 shapes, some
     /// 1,700 of them in view, 11% for 1,000, all of them), where shapes are drawn as their
-    /// skeletons and adornments blank: the first, which makes the labels of every adorned shape in
-    /// view, and each after.
+    /// skeletons, which show no adornments (a title is said on a shape big enough on screen, its
+    /// cover, which each frame decides by the shape's kept bounds): the first frame, and each after.
     static let zoomedOut = frame
     /// What a board of 10,000 shapes, all out of view, adds to a frame over an empty board's, at
     /// 100% and at 10%, with nothing selected and with every shape (⌘A): nothing off screen is
@@ -591,11 +591,12 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
             // Each run a board of its own: new ids, so nothing the canvas keeps by what a shape says
             // or by its id (Mentions' memo of mention text, the schema cards' readings) is another
             // run's. Opened and drawn at 100% at its top left (validation's first read done), then
-            // zoomed out to fit it, where the first frame makes every adorned shape's labels in
-            // view; then zoomed in to 35% on its middle, where shapes are drawn in full again and
-            // every text in view is laid out, none of it before.
+            // zoomed out to fit it, where shapes are skeletons with no adornments; then zoomed in to
+            // 35% on its middle, where shapes are drawn in full again and every text in view is laid
+            // out, none of it before; and, for the first run, to just under it, where every titled
+            // shape in view big enough on screen has its cover (reported).
             var firsts: [Double] = [], zoomedIn: [Double] = []
-            var next = 0.0, fitted = Camera(), inView = 0, inViewNear = 0
+            var next = 0.0, covers = 0.0, fitted = Camera(), inView = 0, inViewNear = 0
             for run in 0..<5 {
                 let document = generatedBoard(shapes: size)
                 let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
@@ -614,10 +615,16 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
                 expect(!h.editor.drawsSkeletons, "at 35%, in full")
                 zoomedIn.append(threadCPUTime { draw(h.editor, into: context, size: viewport) }.milliseconds)
                 inViewNear = h.editor.paintOrder(in: near.toWorld(CGRect(origin: .zero, size: viewport))).count
+                if run == 0 {
+                    h.editor.camera = camera(centering: h.editor.shapeBounds, at: 0.34, in: viewport)
+                    expect(h.editor.drawsSkeletons, "just under 35%, skeletons")
+                    draw(h.editor, into: context, size: viewport)
+                    covers = median(runs: 11, onThread: true) { draw(h.editor, into: context, size: viewport) }
+                }
             }
             let first = firsts.sorted()[firsts.count / 2], zoomIn = zoomedIn.sorted()[zoomedIn.count / 2]
-            report(String(format: "%6d shapes zoomed out to fit the board (%.0f%%, %d in view): the first frame %5.1f ms, the next %5.1f (budget %.0f); zoomed in to 35%% (%d in view), the first frame in full %5.1f (reported)",
-                          size, fitted.zoom * 100, inView, first, next, Budget.zoomedOut, inViewNear, zoomIn))
+            report(String(format: "%6d shapes zoomed out to fit the board (%.0f%%, %d in view): the first frame %5.1f ms, the next %5.1f (budget %.0f); zoomed in to 35%% (%d in view), the first frame in full %5.1f, and just under it, with covers, each frame %5.1f (reported)",
+                          size, fitted.zoom * 100, inView, first, next, Budget.zoomedOut, inViewNear, zoomIn, covers))
             if holdsToBudgets {
                 expect(first < Budget.zoomedOut, "the first frame zoomed out over \(size) shapes took \(first) ms")
                 expect(next < Budget.zoomedOut, "a frame zoomed out over \(size) shapes took \(next) ms")
