@@ -3,7 +3,6 @@ import CanvasTesting
 import CoreGraphics
 import Foundation
 import Keyboard
-import MentionValidation
 import Mentions
 import Selection
 import TestKit
@@ -207,7 +206,7 @@ private let a = idA.rawValue.uuidString
         let aside = try keptAside(Letter.kind, id: idA, in: registry)
         expectEqual(registry.mentionProblems(of: aside, lookup: lookup), [])
     },
-    test("the bridge needs Validation, whose rules it adds to") {
+    test("MentionValidationPlugin needs Validation, whose rules it adds to") {
         expectThrows(RegistryError.ownerNotInstalled(point: "ValidationRules", owner: .validation, contributor: "mention-validation")) {
             _ = try Registry(plugins: validationPlugins().filter { $0.id != .validation })
         }

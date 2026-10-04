@@ -17,10 +17,10 @@ import TestKit
 import Titles
 import Topology
 
-// Fixtures only, as MentionValidationTests keep theirs: scribbles, titled boxes of mention text that
-// can be mentioned, and CanvasTesting's pockets (titled and mentionable here, whose boards nest) and
-// links, which carry strands, edges that aren't mentions. A fixture names shapes for queries by the
-// title Titles keeps: MentionQueries' closure has no TitleQueries.
+// Fixtures only, as MentionsTests' mention validation tests keep theirs: scribbles, titled boxes of
+// mention text that can be mentioned, and CanvasTesting's pockets (titled and mentionable here,
+// whose boards nest) and links, which carry strands, edges that aren't mentions. A fixture names
+// shapes for queries by the title Titles keeps: MentionQueries' closure has no TitleQueries.
 
 /// A titled box of text that may mention any shape that can be mentioned.
 struct Scribble: BoxShapeProps {
