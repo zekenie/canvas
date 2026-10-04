@@ -9,7 +9,7 @@ import Topology
 /// (`registrar.channel(NoteLink.self)`); a kind has ports on the channels it opts into
 /// (`note.ports(NoteLink.self)`), and a connection drawn on one keeps it (`ChannelProperty`). What a
 /// connection is, is the connector's business: one plugin draws them (`registrar.connects(Arrow.self,
-/// edgeType: ArrowEdge.self) { … }`, a bridge's), and this one never learns what an arrow is. A
+/// edgeType: ArrowEdge.self) { … }`, `ArrowPortsPlugin`'s), and the ports code reads no arrow. A
 /// connection bound at both ends is an edge in Topology's graph, of its channel's type (each channel
 /// is an edge type, under the family the connector names), or the family's without one. The dots
 /// are canvas buttons (Selection's `CanvasButtons`), dragged rather than clicked.
@@ -309,8 +309,8 @@ extension CanvasEditor {
 // MARK: The plugin
 
 /// A horizontal any kind can opt into: ports, dots on its shapes' sides that a drag connects from,
-/// on channels that say what may connect to what. The connector (a bridge: `ArrowPorts`) draws the
-/// connections. Needs Selection, whose canvas buttons the dots are.
+/// on channels that say what may connect to what. The connector (arrows, through `ArrowPortsPlugin`)
+/// draws the connections. Needs Selection, whose canvas buttons the dots are.
 public struct PortsPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .ports }

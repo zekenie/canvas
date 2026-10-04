@@ -1,9 +1,9 @@
 import Canvas
 import CanvasTesting
+import Connections
 import CoreGraphics
 import Foundation
 import Keyboard
-import Ports
 import Selection
 import TestKit
 import Topology
@@ -139,7 +139,7 @@ extension Strand: EdgeType {
         }
     },
     test("a shape the board keeps aside accepts nothing, whatever its kind") {
-        let (h, kept) = try harnessKeepingABoxAside(Connections())
+        let (h, kept) = try harnessKeepingABoxAside(ConnectionLog())
         let record = try require(h.editor.document[kept])
         expect(record.isOpaque)
         expectEqual(record.kind, Box.kind)

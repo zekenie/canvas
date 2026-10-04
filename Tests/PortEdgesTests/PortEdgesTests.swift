@@ -2,8 +2,8 @@ import Automation
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasTesting
+import Connections
 import CoreGraphics
-import Ports
 import TestKit
 
 @MainActor let channelTests = Suite("An edge's channel", [

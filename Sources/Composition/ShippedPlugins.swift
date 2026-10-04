@@ -1,13 +1,12 @@
 import Adornments
 import AppKit
-import ArrowPorts
-import Arrows
 import Automation
 import BoardQueries
 import Boards
 import Canvas
 import CanvasRPC
 import Clipboard
+import Connections
 import ContextMenus
 import CoreGraphics
 import DetailPanel
@@ -18,7 +17,6 @@ import Locking
 import MentionQueries
 import Mentions
 import PortEdges
-import Ports
 import Queries
 import QueryCommands
 import Reordering
@@ -76,8 +74,8 @@ public enum ShippedPlugins {
             // What a drag moves snaps to the shapes in view: their edges, their middles and the spaces
             // between them.
             SnappingPlugin(),
-            // Ports, whose arrows the bridge draws. After Adornments: a shape's dots draw above its
-            // adornments (the lock chip among them), and are found before them.
+            // Ports, whose arrows `ArrowPortsPlugin` draws. After Adornments: a shape's dots draw
+            // above its adornments (the lock chip among them), and are found before them.
             PortsPlugin(), ArrowPortsPlugin(),
             LanguageModelsPlugin(model: model),
             // The command line's commands, and what `canvas draw` takes from the plugins that own a

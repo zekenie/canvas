@@ -1,9 +1,9 @@
 import AppKit
 import Canvas
+import Connections
 import DetailPanel
 import Keyboard
 import Mentions
-import Ports
 import Selection
 import TextEditing
 import Titles

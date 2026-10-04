@@ -2,9 +2,9 @@ import Canvas
 
 // What `canvas draw` needs from concerns it doesn't own, each an extension point with at most one
 // contribution, from the bridge that joins this plugin to the plugin that owns the concern: what a
-// shape is called (DrawNames, Titles'), what an edge is (DrawEdges, Ports'), and what's wrong with
-// a shape drawn (DrawChecks, Validation's). Without one, `draw` does without: no titles (a titled
-// statement is `no_names`), no edges (`no_edges`), and only the schemas' bounds checked.
+// shape is called (DrawNames, Titles'), what an edge is (DrawEdges, Connections'), and what's
+// wrong with a shape drawn (DrawChecks, Validation's). Without one, `draw` does without: no titles
+// (a titled statement is `no_names`), no edges (`no_edges`), and only the schemas' bounds checked.
 
 // MARK: Names
 

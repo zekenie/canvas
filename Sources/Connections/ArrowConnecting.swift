@@ -1,9 +1,10 @@
 import Canvas
 import CoreGraphics
 
-// What other plugins may say about arrows, without Arrows knowing why: what an end may bind to
-// (tldraw's canBind), and an arrow drawn for their own gesture (a port's drag, through the
-// ArrowPorts bridge). Arrows never learns what a channel is.
+// What any plugin may say about arrows: what an end may bind to (tldraw's canBind,
+// `ArrowBindingRules`), and an arrow drawn for a port's drag (`beginArrow`, which
+// `ArrowPortsPlugin` calls). The arrow code reads no channel: `ArrowPortsPlugin`'s binding
+// rule does.
 
 /// Rules for what an arrow's end may bind to (tldraw's canBind), from any plugin: an end binds only
 /// to a shape every rule allows, and looks through the rest to the shapes behind, as it's drawn,
@@ -77,8 +78,8 @@ extension CanvasEditor {
     /// its end is bound to); released free, or on Escape, it's deleted, so nothing is drawn. The
     /// selection and the tool are left alone. Returns the session that drags it, for the caller to
     /// hand the drag to; nil if an arrow can't bind to `shape`.
-    public func beginArrow(from shape: ShapeID, at origin: CGPoint, canBind: @escaping @MainActor (AnyShapeRecord) -> Bool,
-                           complete: @escaping @MainActor (inout AnyShapeRecord, ShapeID) -> Void) -> (any Session)? {
+    func beginArrow(from shape: ShapeID, at origin: CGPoint, canBind: @escaping @MainActor (AnyShapeRecord) -> Bool,
+                    complete: @escaping @MainActor (inout AnyShapeRecord, ShapeID) -> Void) -> (any Session)? {
         guard canBindArrow(to: shape), let targeting = service(ArrowTargeting.self) else { return nil }
         targeting.cancelPreciseTimer()
         let start = ArrowBinding(shapeID: shape, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)

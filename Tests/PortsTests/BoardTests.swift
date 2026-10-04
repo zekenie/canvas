@@ -1,9 +1,9 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Connections
 import CoreGraphics
 import Geometry
-import Ports
 import Selection
 import TestKit
 

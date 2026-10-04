@@ -1,10 +1,8 @@
-import ArrowPorts
-import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
+import Connections
 import CoreGraphics
 import Geometry
-import Ports
 import TestKit
 
 // A connection drawn from a port is one undo step, named for what it adds, and none at all when
