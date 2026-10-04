@@ -137,9 +137,9 @@ let canvasView = CGRect(x: 0, y: 0, width: 400, height: 300)
     test("a word is never broken: the size is made smaller until the widest word fits a line; where it can't at 9 points, one line, truncated") {
         let editor = try titleEditor()
         editor.camera = Camera(origin: .zero, zoom: 0.3)
-        // Words of a plugin list, on notes of 80 and 60 points, where the title at the shape's size
+        // Long words, on notes of 80 and 60 points, where the title at the shape's size
         // would need a word wider than the line.
-        for (shapeWidth, words) in [(80, ["adornments", "mentions", "slash commands", "validation", "topology"]), (60, ["mentions", "boards", "arrows"])] {
+        for (shapeWidth, words) in [(80, ["adornments", "annotations", "slash commands", "navigation", "geometry"]), (60, ["borders", "headers", "labels"])] {
             for (i, title) in words.enumerated() {
                 let frame = CGRect(x: 20 + CGFloat(i % 4) * 90, y: 20 + CGFloat(i / 4) * 90, width: CGFloat(shapeWidth), height: 60)
                 let id = editor.add(Plaque(world(frame, atZoom: 0.3)), named: title)
