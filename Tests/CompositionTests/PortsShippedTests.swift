@@ -106,30 +106,25 @@ extension EditorHarness {
 }
 
 @MainActor let portsShippedTests = Suite("Ports, as shipped", [
-    test("hovering a note or a schema card shows its dots on the left, right and bottom, none on top, where its pill is; each in its channel's color, with the open hand") {
+    test("hovering a note or a schema card shows its dots on all four sides, the top one too; each in its channel's color, with the open hand") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200), cardFrame = CGRect(x: 440, y: 100, width: 240, height: 89)
         let h = shipped([note(noteFrame), schemaCard(cardFrame, title: "Customer")], pasteboard)
         let size = CGSize(width: 740, height: 360)
         let rest = renderBitmap(h.editor, size: size)
-        for (frame, sides, color, name) in [(noteFrame, [Side.right, .bottom, .left], NoteLink.color, "note"),
-                                            (cardFrame, [Side.right, .bottom, .left], SchemaLink.color, "card")] {
+        for (frame, color, name) in [(noteFrame, NoteLink.color, "note"), (cardFrame, SchemaLink.color, "card")] {
             h.move(to: center(frame))
             let hovered = renderBitmap(h.editor, size: size)
             for side in Side.allCases {
                 let dot = side.dot(of: frame)
-                if sides.contains(side) {
-                    expect(changedPixels(rest, hovered, in: around(dot)) > 40, "the \(name)'s \(side) dot shows")
-                    expectNear(pixel(hovered, at: dot), restingDot(color, over: pixel(rest, at: dot)), "the \(name)'s \(side) dot")
-                } else {
-                    expectEqual(changedPixels(rest, hovered, in: around(dot)), 0, "the \(name) has no \(side) dot")
-                }
+                expect(changedPixels(rest, hovered, in: around(dot)) > 40, "the \(name)'s \(side) dot shows")
+                expectNear(pixel(hovered, at: dot), restingDot(color, over: pixel(rest, at: dot)), "the \(name)'s \(side) dot")
             }
             for side in Side.allCases {
                 h.move(to: side.dot(of: frame))
-                expectEqual(h.editor.hoveredButton != nil, sides.contains(side), "the pointer on the \(name)'s \(side) dot")
-                expectEqual(h.editor.cursor, sides.contains(side) ? .openHand : .standard, "the \(name)'s \(side)")
+                expect(h.editor.hoveredButton != nil, "the pointer on the \(name)'s \(side) dot")
+                expectEqual(h.editor.cursor, .openHand, "the \(name)'s \(side)")
             }
         }
     },
@@ -183,7 +178,7 @@ extension EditorHarness {
         h.connect(from: .right, of: aFrame, to: CGPoint(x: 620, y: 200))
         expectEqual(arrows(h).first?.props.end.binding?.shapeID, b.id)
     },
-    test("a schema card's dots are on its sides and bottom, in its accent; a drag from one to another card draws an arrow on the schema-link channel, bound to both, and to a note nothing") {
+    test("a schema card's dots are on all four sides, in its accent; a drag from one to another card draws an arrow on the schema-link channel, bound to both, and to a note nothing") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let aFrame = CGRect(x: 100, y: 100, width: 240, height: 89), bFrame = CGRect(x: 100, y: 400, width: 240, height: 89)
@@ -194,7 +189,7 @@ extension EditorHarness {
         let rest = renderBitmap(h.editor, size: size)
         h.move(to: center(aFrame))
         let hovered = renderBitmap(h.editor, size: size)
-        for side in [Side.right, .bottom, .left] {
+        for side in Side.allCases {
             let dot = side.dot(of: aFrame)
             expect(changedPixels(rest, hovered, in: around(dot)) > 40, "the card's \(side) dot shows")
             expectNear(pixel(hovered, at: dot), restingDot(SchemaLink.color, over: pixel(rest, at: dot)), "the card's \(side) dot")
@@ -209,12 +204,15 @@ extension EditorHarness {
         expectEqual(arrow.props.end.binding?.shapeID, b.id)
         expectEqual(try channel(of: arrow.id, in: h.editor), schemaLink)
     },
-    test("a titled, locked note shows its dots whole: no pixel is both a dot's and the pill's or the lock chip's") {
+    test("a titled, locked note shows its dots whole: no pixel is both a dot's and the pill's or the lock chip's, but its top dot's, which a long title runs under: it's drawn over the pill") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let frame = CGRect(x: 100, y: 100, width: 200, height: 200)
         let size = CGSize(width: 400, height: 340)
+        // The sides the pill and the lock chip are clear of. The top dot is in the pill's row, 12 points above
+        // the middle of the top edge, so a long title runs under it.
         let sides = [Side.right, .bottom, .left]
+        let topDot = Side.top.dot(of: frame)
         // The note plain or with both, at rest and with the pointer on each dot (lit, with its halo).
         @MainActor func renders(decorated: Bool) -> (rest: NSBitmapImageRep, lit: [Side: NSBitmapImageRep]) {
             var record = note(frame, text: "Buy milk")
@@ -225,7 +223,7 @@ extension EditorHarness {
             let h = shipped([record], pasteboard)
             let rest = renderBitmap(h.editor, size: size)
             var lit: [Side: NSBitmapImageRep] = [:]
-            for side in sides {
+            for side in Side.allCases {
                 h.move(to: center(frame))
                 h.move(to: side.dot(of: frame))
                 lit[side] = renderBitmap(h.editor, size: size)
@@ -235,27 +233,33 @@ extension EditorHarness {
         let plain = renders(decorated: false), decorated = renders(decorated: true)
         expect(changedPixels(plain.rest, decorated.rest, in: CGRect(x: 100, y: 75, width: 170, height: 12)) > 1000, "the pill")
         expect(changedPixels(plain.rest, decorated.rest, in: CGRect(x: 286, y: 77, width: 10, height: 10)) > 90, "the lock")
-        for side in sides {
+        for side in Side.allCases {
             let plainLit = try require(plain.lit[side]), lit = try require(decorated.lit[side])
             for dot in sides.map({ $0.dot(of: frame) }) {
-                expectEqual(changedPixels(plainLit, lit, in: around(dot, 13)), 0, "with the \(side) dot lit, every dot as a plain note's")
+                expectEqual(changedPixels(plainLit, lit, in: around(dot, 13)), 0, "with the \(side) dot lit, every other dot as a plain note's")
             }
             var both = 0
             for y in 50..<340 {
                 for x in 50..<360 {
                     let point = CGPoint(x: x, y: y), under = pixel(decorated.rest, at: point)
+                    if around(topDot, 13).contains(point) { continue }
                     if pixel(lit, at: point) != under && pixel(plain.rest, at: point) != under { both += 1 }
                 }
             }
-            expectEqual(both, 0, "with the \(side) dot lit, no pixel is both a dot's and a decoration's")
+            expectEqual(both, 0, "with the \(side) dot lit, no pixel but the top dot's is both a dot's and a decoration's")
         }
+        // Lit, the top dot's middle is its channel's color at full strength, over the pill as over a plain note.
+        let plainTop = try require(plain.lit[.top]), litTop = try require(decorated.lit[.top])
+        expectEqual(pixel(litTop, at: topDot), pixel(plainTop, at: topDot), "the top dot, over the pill")
     },
-    test("a titled, locked schema card shows its dots whole: no pixel is both a dot's and the pill's or the lock chip's") {
+    test("a titled, locked schema card shows its dots whole: no pixel is both a dot's and the pill's or the lock chip's, but its top dot's, which a long title runs under: it's drawn over the pill") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let frame = CGRect(x: 100, y: 100, width: 240, height: 200)
         let size = CGSize(width: 440, height: 340)
+        // The sides the pill and the lock chip are clear of; the top dot is in the pill's row, as a note's.
         let sides = [Side.right, .bottom, .left]
+        let topDot = Side.top.dot(of: frame)
         // The card untitled and unlocked, or with both, at rest and with the pointer on each dot (lit, with its halo).
         @MainActor func renders(decorated: Bool) -> (rest: NSBitmapImageRep, lit: [Side: NSBitmapImageRep]) {
             var record = schemaCard(frame, title: decorated ? "A title much longer than the card is wide" : nil)
@@ -263,7 +267,7 @@ extension EditorHarness {
             let h = shipped([record], pasteboard)
             let rest = renderBitmap(h.editor, size: size)
             var lit: [Side: NSBitmapImageRep] = [:]
-            for side in sides {
+            for side in Side.allCases {
                 h.move(to: center(frame))
                 h.move(to: side.dot(of: frame))
                 lit[side] = renderBitmap(h.editor, size: size)
@@ -273,20 +277,24 @@ extension EditorHarness {
         let plain = renders(decorated: false), decorated = renders(decorated: true)
         expect(changedPixels(plain.rest, decorated.rest, in: CGRect(x: 100, y: 75, width: 200, height: 12)) > 1000, "the pill")
         expect(changedPixels(plain.rest, decorated.rest, in: CGRect(x: 326, y: 77, width: 10, height: 10)) > 90, "the lock")
-        for side in sides {
+        for side in Side.allCases {
             let plainLit = try require(plain.lit[side]), lit = try require(decorated.lit[side])
             for dot in sides.map({ $0.dot(of: frame) }) {
-                expectEqual(changedPixels(plainLit, lit, in: around(dot, 13)), 0, "with the \(side) dot lit, every dot as a plain card's")
+                expectEqual(changedPixels(plainLit, lit, in: around(dot, 13)), 0, "with the \(side) dot lit, every other dot as a plain card's")
             }
             var both = 0
             for y in 50..<340 {
                 for x in 50..<400 {
                     let point = CGPoint(x: x, y: y), under = pixel(decorated.rest, at: point)
+                    if around(topDot, 13).contains(point) { continue }
                     if pixel(lit, at: point) != under && pixel(plain.rest, at: point) != under { both += 1 }
                 }
             }
-            expectEqual(both, 0, "with the \(side) dot lit, no pixel is both a dot's and a decoration's")
+            expectEqual(both, 0, "with the \(side) dot lit, no pixel but the top dot's is both a dot's and a decoration's")
         }
+        // Lit, the top dot's middle is its channel's color at full strength, over the pill as over a plain card.
+        let plainTop = try require(plain.lit[.top]), litTop = try require(decorated.lit[.top])
+        expectEqual(pixel(litTop, at: topDot), pixel(plainTop, at: topDot), "the top dot, over the pill")
     },
     test("in another tool a note shows no dots, and back in the select tool they show again") {
         let pasteboard = NSPasteboard.withUniqueName()
@@ -408,7 +416,7 @@ extension EditorHarness {
         h.key("\u{1b}")
         expectEqual(h.editor.document, before)
         let held = renderBitmap(h.editor, size: size)
-        for side in [Side.left, .bottom, .right] {
+        for side in Side.allCases {
             expectEqual(changedPixels(rest, held, in: around(side.dot(of: aFrame))), 0, "the first note's \(side) dot, 300 points from the pointer")
         }
         h.release()
@@ -459,7 +467,7 @@ extension EditorHarness {
         let shaking = renderBitmap(h.editor, size: size)
         h.editor.pointerExited()
         let withoutDots = renderBitmap(h.editor, size: size)
-        for side in [Side.right, .bottom, .left] {
+        for side in Side.allCases {
             // The middle of the dot's pixels near where it should be now, clear of the note's
             // outline (10 points in): a dot left behind would pull it 2 points or more away.
             let dot = side.dot(of: frame), shaken = CGPoint(x: dot.x + offset.x, y: dot.y + offset.y)

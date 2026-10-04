@@ -101,8 +101,8 @@ A kind is drawable when a tool places it. These are the shipped ones:
 
 | kind | size | named by | what it says | edges |
 |---|---|---|---|---|
-| `sticky-note` | 200x200 | its title, a pill above its top-left corner | `text:` | `note-link`, left, right and bottom |
-| `schema-card` | 240x52 | its schema's "title", a pill above its top-left corner: never a title of its own | `prompt:`, in words, on the card; `schema:` in its panel | `schema-link`, left, right and bottom |
+| `sticky-note` | 200x200 | its title, a pill above its top-left corner | `text:` | `note-link`, all four sides |
+| `schema-card` | 240x52 | its schema's "title", a pill above its top-left corner: never a title of its own | `prompt:`, in words, on the card; `schema:` in its panel | `schema-link`, all four sides |
 | `subboard` | 240x160 | its title, drawn on its card | nothing else: its board is its own | none |
 | `frame` | 640x400 | its title, a pill above its top-left corner | nothing else: it holds what's drawn `in` it | none |
 
@@ -487,8 +487,8 @@ A channel is what kind of connection an edge is. Each kind has ports on some cha
 
 | kind | channel | sides |
 |---|---|---|
-| `sticky-note` | `note-link` | left, right, bottom |
-| `schema-card` | `schema-link` | left, right, bottom |
+| `sticky-note` | `note-link` | all four |
+| `schema-card` | `schema-link` | all four |
 | `subboard` | none | none |
 | `frame` | none | none |
 
@@ -497,7 +497,7 @@ A channel is what kind of connection an edge is. Each kind has ports on some cha
 - **`channel: <id>`**: that channel. The start's kind must have ports on it, and the end's kind must accept it. Otherwise it's `no_channel`, and the message says what each end takes, side by side. A word that isn't a channel is `invalid_value`, and the hint lists the channels.
 - **`channel: none`**: a plain arrow, on no channel, between any two shapes, from and to any sides.
 - **Unwritten**: the first of the start's channels (on the `from:` side, if named) that the end accepts (on the `to:` side, if named). If there's none, and neither kind has ports on any channel, it's a plain arrow, from and to any sides named. If there's none and either kind does have ports, it's `no_channel`: `"Ingest" and "Monday" share no channel: a sticky-note connects on note-link, a subboard has no ports`, with the hint `channel: none draws a plain arrow between them anyway`.
-- **A side a kind has no port on** is refused. With `channel:` written, it's `invalid_value`: `a sticky-note has note-link ports on its left, right and bottom`. With the channel unwritten, no channel fits that side, so it's `no_channel`.
+- **A side a kind has no port on** is refused. With `channel:` written, it's `invalid_value`, and the message says which sides the kind does have ports on. With the channel unwritten, no channel fits that side, so it's `no_channel`. Notes and schema cards have ports on all four sides, so every side is fine for them; this is for a kind with ports on fewer.
 - **An edge from a shape to itself** on a channel is refused. With `channel: none` it's a short straight arrow inside the shape (from its middle, or between the sides named), not a loop around it. To show a loop, draw it through a second shape.
 
 ```draw
@@ -689,7 +689,7 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | `unknown_kind` | The first word isn't a kind the app has. `node "Web"`, with the drawable kinds listed, and the one like it named (`note`: `did you mean sticky-note?`) | Use a kind from `build/canvas kinds`. |
 | `not_placeable` | The kind exists but no tool places it, like an arrow. | Draw an arrow as `edge "A" -> "B"`. |
 | `unknown_attribute` | The key isn't one the kind takes. `"Backfill" is a sticky-note and has owner:, which isn't one of a sticky-note's attributes`, with the hint `a sticky-note takes size:, gap:, overlap:, style:, title:, locked:, text:` · a style that gives a shape nothing, or has a key nothing takes | Use one it takes (Did you mean), or drop it. |
-| `invalid_value` | The value doesn't fit the key. `locked: maybe isn't true or false` · `size: huge isn't a size` · `gap: wdie isn't a gap` · a size or gap over 100000 · `from: middle isn't a side` · `channel: note-lnk isn't a channel` · a JSON member the object doesn't have, or a value of the wrong type in it · with `channel:` written, a side the kind has no port on (`from: top: a sticky-note has note-link ports on its left, right and bottom`) · another channel for an edge already drawn (`the edge from "A" to "B" is on note-link, not on schema-link`) · a head its arrow doesn't say (`edge "A" -> "B": startArrowhead: true isn't what the edge as written says`) | Write a value of the kind the hint names. |
+| `invalid_value` | The value doesn't fit the key. `locked: maybe isn't true or false` · `size: huge isn't a size` · `gap: wdie isn't a gap` · a size or gap over 100000 · `from: middle isn't a side` · `channel: note-lnk isn't a channel` · a JSON member the object doesn't have, or a value of the wrong type in it · with `channel:` written, a side the kind has no port on · another channel for an edge already drawn (`the edge from "A" to "B" is on note-link, not on schema-link`) · a head its arrow doesn't say (`edge "A" -> "B": startArrowhead: true isn't what the edge as written says`) | Write a value of the kind the hint names. |
 | `duplicate` | Something is written twice. `"locked" is written twice (true, false)` · a title stated on two lines (`written twice, here and on line 4`) · a rename to a title another shape has · two edges for one pair · a style defined twice | Keep one. |
 | `unknown_title` | No shape has that title. `right of "Injest"`, with up to 3 near titles · `board` on an empty board | Write the title exactly (`did you mean "Ingest"?`). On an empty board, leave one shape unplaced instead. |
 | `ambiguous_title` | Two or more shapes have the title, each listed with its kind and where it is · the title is on two boards, neither the one the window shows: `"Retry" is on 2 boards: "Payments"'s board and "Billing"'s board` | Ask the user to rename one. Titles only work as names while each is used once. For two boards, say which with `in "Payments"`. |

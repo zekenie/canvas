@@ -101,8 +101,8 @@ style <name> attribute { attribute }             a named set of attributes, for 
 
 | kind | size | attributes besides `size`, `gap`, `overlap`, `style`, `title` | edges |
 |---|---|---|---|
-| `sticky-note` | 200x200 | `text` (the note is as tall as its text, at least 200; a `size:` height lasts only until the text changes), `locked` | `note-link`, on its left, right and bottom |
-| `schema-card` | 240x52 | `prompt` (what it holds, in words: the card shows them, and grows to fit), `schema` (a JSON Schema, as text: its panel shows it), `locked` | `schema-link`, on its left, right and bottom |
+| `sticky-note` | 200x200 | `text` (the note is as tall as its text, at least 200; a `size:` height lasts only until the text changes), `locked` | `note-link`, on all four sides |
+| `schema-card` | 240x52 | `prompt` (what it holds, in words: the card shows them, and grows to fit), `schema` (a JSON Schema, as text: its panel shows it), `locked` | `schema-link`, on all four sides |
 | `subboard` | 240x160 | `locked` | none: plain arrows |
 | `frame` | 640x400 | `locked` (locking a frame locks what's in it) | none: plain arrows |
 
