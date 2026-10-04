@@ -20,19 +20,23 @@ cd "${SELF:h}"
 
 die() { print -u2 "build.sh: $*"; exit 1 }
 
-# Which layers each layer may depend on (Package.swift's header says the same in prose).
+# Which layers each layer may depend on (Package.swift's header says the same in prose). The plugins
+# any kind can opt into are in three tiers, so the direction of an edge between two of them follows
+# from their tiers: a concern imports the surfaces it shows itself on, a language the concerns its
+# words are about, and nothing imports upward.
 typeset -A MAY_USE=(
     wire        "wire"
     foundation  "foundation"
     ui          "foundation wire"
-    horizontal  "foundation horizontal wire"
-    vertical    "foundation horizontal"
-    bridge      "foundation horizontal vertical"
-    composition "foundation horizontal vertical bridge wire"
+    surface     "foundation surface"
+    concern     "foundation surface concern"
+    language    "foundation surface concern language wire"
+    vertical    "foundation surface concern"
+    composition "foundation surface concern language vertical wire"
     app         "foundation ui composition wire"
     cli         "wire"
     testsupport "foundation testsupport"
-    test        "wire foundation ui horizontal vertical bridge composition testsupport"
+    test        "wire foundation ui surface concern language vertical composition testsupport"
 )
 typeset -A EXECUTABLE_LAYER=(app 1 test 1 cli 1)
 # What the command line's executable (the cli layer's) is called once it's built: in the app's
