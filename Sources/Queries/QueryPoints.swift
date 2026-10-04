@@ -2,8 +2,8 @@ import Canvas
 import QueryLanguage
 import Topology
 
-// What queries take from the plugins that own a concern, each an extension point filled by a
-// bridge: what shapes are called (QueryNames, Titles'), what an untitled owner's board is called
+// What queries take from the plugins that own a concern, each an extension point filled by
+// QueryLexicon (QueriesTests fill them with fixtures of their own): what shapes are called (QueryNames, Titles'), what an untitled owner's board is called
 // (QueryBoardNames, Boards'), words a query may use beyond the language's (QueryWords: a
 // pseudo-class, `:selected`, or a relation over edges, `:mentions(S)`), and how text of a media
 // type reads (QueryTextFormats: mention text as plain text with live names). Without one, a query
@@ -275,7 +275,7 @@ func isIdentifier(_ text: String) -> Bool {
     return text.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
 }
 
-// MARK: Sugar (what bridges write)
+// MARK: Sugar (what QueryLexicon writes)
 
 extension PluginRegistrar {
     /// Names shapes for queries, for `"Title"` heads, the attribute `attribute` (`[title^="API"]`),

@@ -77,7 +77,7 @@ import Validation
         _ = h.editor.validation?.results
         expectEqual(runs.count, 12, "Validation reads the board shown itself, as it would have with no query")
     },
-    test("the vocabulary lists the words, from the bridge; without it, they're refused") {
+    test("the vocabulary lists the words, from ValidationQueriesPlugin; without it, they're refused") {
         let runs = RuleRuns()
         let vocabulary = try require(try checkedHarness(runs).editor.queries).vocabulary
         let words = vocabulary.words.filter { $0.from == ValidationQueriesPlugin().id }

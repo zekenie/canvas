@@ -95,8 +95,8 @@ import Titles
         expectEqual(titles.map(\.title), ["API gateway", "Auth service", "Kiosk", "Lobby", "Disc, 120 × 80"])
         expectEqual(titles.map(\.id), [1, 2, 4, 5, 6].map(id))
     },
-    test("without the bridge, nothing names shapes: a title head is refused") {
-        let h = try titledHarness(bridge: false)
+    test("without TitleQueriesPlugin, nothing names shapes: a title head is refused") {
+        let h = try titledHarness(withPlugin: false)
         expectEqual(h.editor.queries?.vocabulary.nameAttribute, nil)
         expectEqual(try refusal(#""API gateway""#, on: h)?.reason, .noNames)
     },

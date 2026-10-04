@@ -94,9 +94,9 @@ func namesPlugin() -> Contributor {
 /// What opening a board takes (keys, the selection, the panel, menus), titles (with the adornments
 /// their pills are, and the slash commands they offer), Topology, Boards, Queries and the fixtures'
 /// names, then `BoardQueriesPlugin`.
-@MainActor func boardPlugins(bridge: Bool = true) -> [any CanvasPlugin] {
+@MainActor func boardPlugins(withPlugin: Bool = true) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), StorePlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
-     AdornmentsPlugin(), SlashCommandsPlugin(), TitlesPlugin(), BoardsPlugin(), QueriesPlugin(), namesPlugin()] + (bridge ? [BoardQueriesPlugin()] : [])
+     AdornmentsPlugin(), SlashCommandsPlugin(), TitlesPlugin(), BoardsPlugin(), QueriesPlugin(), namesPlugin()] + (withPlugin ? [BoardQueriesPlugin()] : [])
 }
 
 func uuid(_ n: Int) -> String { String(format: "00000000-0000-4000-8000-%012d", n) }
@@ -119,8 +119,8 @@ func storeFile() -> CanvasFile {
                           id(21): CanvasDocument(shapes: [shape(31, Box(unit))])])
 }
 
-@MainActor func storeHarness(bridge: Bool = true) throws -> EditorHarness {
-    try EditorHarness(plugins: boardPlugins(bridge: bridge), file: storeFile())
+@MainActor func storeHarness(withPlugin: Bool = true) throws -> EditorHarness {
+    try EditorHarness(plugins: boardPlugins(withPlugin: withPlugin), file: storeFile())
 }
 
 /// The record, in `container` on its board.

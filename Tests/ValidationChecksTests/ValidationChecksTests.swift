@@ -29,9 +29,9 @@ let fixtureRules = Contributor(id: "fixture-rules") { registrar in
 }
 
 /// An editor 800 × 600 points with Validation, the rules, and (unless not) `ValidationChecksPlugin`.
-@MainActor func checkedEditor(bridge: Bool = true) throws -> CanvasEditor {
+@MainActor func checkedEditor(withPlugin: Bool = true) throws -> CanvasEditor {
     let plugins: [any CanvasPlugin] = [AutomationPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(), ValidationPlugin(), fixtureRules]
-        + (bridge ? [ValidationChecksPlugin()] : [])
+        + (withPlugin ? [ValidationChecksPlugin()] : [])
     let editor = CanvasEditor(registry: try Registry(plugins: plugins))
     editor.viewportDidResize(to: CGSize(width: 800, height: 600))
     return editor
@@ -78,8 +78,8 @@ func warnings(_ result: JSON) -> [String] {
         let again = try drawn("tile finish: matte", on: editor)
         expectEqual(warnings(again), [], "a matte tile glares at no one")
     },
-    test("without the bridge, only the schema's bounds are checked") {
-        let editor = try checkedEditor(bridge: false)
+    test("without ValidationChecksPlugin, only the schema's bounds are checked") {
+        let editor = try checkedEditor(withPlugin: false)
         let result = try drawn(#"card nickname: "Longer""#, on: editor)
         let said = warnings(result)
         expectEqual(said.count, 1, "\(said)")

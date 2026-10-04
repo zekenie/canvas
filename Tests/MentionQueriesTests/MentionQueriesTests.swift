@@ -93,7 +93,7 @@ import TestKit
         expectMatches([#":mentions("Checkout")"#: [1]], on: h)
         expectEqual(try refusal(":mentions(Nobody)", on: h)?.hint.map { $0.hasPrefix("The kinds: ") }, true, "no shape's title: the kinds")
     },
-    test("the vocabulary lists the words, from the bridge") {
+    test("the vocabulary lists the words, from MentionQueriesPlugin") {
         let vocabulary = try require(try mentionHarness().editor.queries).vocabulary
         let words = vocabulary.words.filter { $0.from == MentionQueriesPlugin().id }
         expectEqual(words.map(\.form), [":mentions(S)", ":mentioned-by(S)"])
@@ -101,8 +101,8 @@ import TestKit
         expect(vocabulary.text.contains(#"- :mentions(S) — its text mentions a shape S matches. Example: :mentions("Checkout")"#), vocabulary.text)
         expect(vocabulary.text.contains("text text (mentions read as @Name)"), vocabulary.text)
     },
-    test("without the bridge, no word follows mentions, and text reads as it's stored") {
-        let h = try mentionHarness(bridge: false)
+    test("without MentionQueriesPlugin, no word follows mentions, and text reads as it's stored") {
+        let h = try mentionHarness(withPlugin: false)
         expectEqual(try refusal(":mentions(*)", on: h)?.reason, .unknownPseudoClass)
         expectEqual(try refusal(":mentioned-by(*)", on: h)?.reason, .unknownPseudoClass)
         expect(try texts(on: h)[id(1)]?.contains("(shape:\(uuid(11)))") == true, "the stored form")

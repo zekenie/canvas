@@ -149,8 +149,7 @@ enum EdgeChannels {
             try checkSides(request, from: from, to: to, on: wanted, written: true, in: registry)
             channel = wanted
         case .unwritten:
-            let candidates = registry.dotChannels(of: from.kind, side: request.fromSide?.port)
-            if let first = candidates.first(where: { registry.takes(to.kind, $0, as: .target, side: request.toSide?.port) }) {
+            if let first = registry.connectionChannel(from: from.kind, fromSide: request.fromSide?.port, to: to.kind, toSide: request.toSide?.port) {
                 channel = first
             } else if !registry.hasPorts(from.kind), !registry.hasPorts(to.kind) {
                 return nil

@@ -128,10 +128,10 @@ let fixtureNames = Contributor(id: "fixture-names") { registrar in
 
 /// An editor 800 × 600 points with the fixtures, Ports, the channels, the link connector, names
 /// and `PortEdgesPlugin` (unless not).
-@MainActor func edgesEditor(_ requests: Requests = Requests(), cards: Bool = true, makes: Bool = true, bridge: Bool = true) throws -> CanvasEditor {
+@MainActor func edgesEditor(_ requests: Requests = Requests(), cards: Bool = true, makes: Bool = true, withPlugin: Bool = true) throws -> CanvasEditor {
     let plugins: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), AutomationPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(),
                                        LinksPlugin(), PortsPlugin(), channelsPlugin(cards: cards), linkConnector(requests, makes: makes),
-                                       fixtureNames] + (bridge ? [PortEdgesPlugin()] : [])
+                                       fixtureNames] + (withPlugin ? [PortEdgesPlugin()] : [])
     let editor = CanvasEditor(registry: try Registry(plugins: plugins))
     editor.viewportDidResize(to: CGSize(width: 800, height: 600))
     return editor
