@@ -157,7 +157,7 @@ for name in $ORDER; do
 done
 
 # A test target named after a module (<M>Tests) tests M on its own: it may use M, what M uses,
-# and testsupport and ui modules, so that (say) ArrowsTests can't lean on a shape kind.
+# and testsupport and ui modules, so that (say) SelectionTests can't lean on a shape kind.
 for name in $NAMES; do
     subject=${name%Tests}
     [[ $LAYER[$name] == test && $subject != $name && -n ${DEPS[$subject]+1} ]] || continue
@@ -373,7 +373,7 @@ audit_sources() {
     done
 
     # Ids: a module may write another module's ShapeKind, PluginID, ToolID, PropertyKey, ChannelID
-    # (Ports') or EdgeTypeID (Topology's) as a string only if it depends on that module. The graph
+    # (Connections') or EdgeTypeID (Topology's) as a string only if it depends on that module. The graph
     # already keeps a module from naming another's types; this keeps it from reaching that module's
     # shapes, tools, plugins, added properties, channels or edge types by string instead. A module owns
     # the ids its non-test code declares: as a static member (`static let kind: ShapeKind = "sticky-note"`,

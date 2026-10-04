@@ -1,12 +1,12 @@
 import Adornments
 import AppKit
-import Arrows
 import Boards
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
 import Composition
+import Connections
 import CoreGraphics
 import DetailPanel
 import Foundation

@@ -1,6 +1,6 @@
 import AppKit
 import Canvas
-import Ports
+import Connections
 
 /// What a note's ports draw: a link from a note to a note, the only connection a note takes. It says
 /// nothing more yet; a channel is where a connection's meaning would go (data-canvas's `references`).

@@ -1,19 +1,19 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Connections
 import CoreGraphics
 import Geometry
-import Ports
 import Selection
 import TestKit
 
 // A press on a dot, dragged past the drag threshold (4 points), hands the drag to the connector's
 // session for a connection from the dot's shape and side, on the dot's channels, from where it was
-// pressed. The test connector records what it's asked to draw (`Connections`).
+// pressed. The test connector records what it's asked to draw (`ConnectionLog`).
 
 @MainActor let dragTests = Suite("Dragging from a port", [
     test("past the drag threshold, a drag from a dot begins a connection from where it was pressed, and its session gets the drag") {
-        let connections = Connections()
+        let connections = ConnectionLog()
         let h = try portsHarness(connections)
         h.editor.camera = Camera(zoom: 2)
         let box = h.add(Box(world(boxFrame, zoom: 2)))       // shown where boxFrame is
@@ -42,7 +42,7 @@ import TestKit
         expectEqual(h.editor.document[box]?.box, world(boxFrame, zoom: 2), "the shape stays where it is")
     },
     test("each side's dot begins a connection from its side") {
-        let connections = Connections()
+        let connections = ConnectionLog()
         let h = try portsHarness(connections)
         let box = h.add(Box(boxFrame))
         for (side, center) in boxDots {
@@ -55,7 +55,7 @@ import TestKit
         expectEqual(connections.begun.count, 4)
     },
     test("released without a drag, a press on a dot does nothing: nothing begins, and the selection stays") {
-        let connections = Connections()
+        let connections = ConnectionLog()
         let h = try portsHarness(connections)
         let box = h.add(Box(boxFrame))
         let other = h.add(Box(CGRect(x: 400, y: 250, width: 100, height: 100)))
@@ -74,7 +74,7 @@ import TestKit
         expectEqual(h.editor.hoveredButton, AnyHashable(PortDot(shape: box, side: .left)), "still on the dot")
     },
     test("Escape lets go of a pressed dot, and the drag that follows does nothing") {
-        let connections = Connections()
+        let connections = ConnectionLog()
         let h = try portsHarness(connections)
         let box = h.add(Box(boxFrame))
         h.hoverDot(rightDot)
@@ -89,7 +89,7 @@ import TestKit
         expectEqual(h.editor.document[box]?.box, boxFrame)
     },
     test("a connector that draws nothing from a dot ends the press: the rest of the drag does nothing") {
-        let connections = Connections()
+        let connections = ConnectionLog()
         connections.draws = false
         let h = try portsHarness(connections)
         let box = h.add(Box(boxFrame))
@@ -141,7 +141,7 @@ import TestKit
         expectEqual(dotPixels(plain, render(h), at: leftDot), 0, "released away from the shape")
     },
     test("a double-click on a dot is no double-click on the canvas: nothing is made") {
-        let connections = Connections()
+        let connections = ConnectionLog()
         let h = try portsHarness(connections, more: [CardsPlugin { card, place in card.createOnDoubleClick(place) }])
         h.add(Box(boxFrame))
         h.hoverDot(rightDot)
@@ -152,7 +152,7 @@ import TestKit
         expectEqual(h.editor.selectedShapeIDs, [])
     },
     test("a drag from a dot in a view zoomed out to a quarter still connects") {
-        let connections = Connections()
+        let connections = ConnectionLog()
         let h = try portsHarness(connections)
         h.editor.camera = Camera(zoom: 0.25)
         let box = h.add(Box(world(boxFrame, zoom: 0.25)))

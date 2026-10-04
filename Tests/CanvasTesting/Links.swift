@@ -3,7 +3,7 @@ import CoreGraphics
 
 /// A connection from one shape to another, by id, as an arrow bound at both ends is: the kind a
 /// fixture connector draws (a Ports connector's, an edge maker's), so tests that connect shapes
-/// needn't depend on Arrows. It has no box: its geometry is the segment from its start's center to
+/// needn't use arrows. It has no box: its geometry is the segment from its start's center to
 /// its end's (open, so nothing presses it), and nothing while an end names no shape it can find.
 public struct Link: ShapeProps {
     public static let kind: ShapeKind = "link"

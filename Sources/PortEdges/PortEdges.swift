@@ -1,14 +1,14 @@
 import Automation
 import Canvas
-import Ports
+import Connections
 
-/// A bridge between two horizontals: `canvas draw`'s edges are Ports' connections. An edge is what
-/// the connector draws (`registry.connectorKind`, while it makes connections without a drag), it
-/// takes a channel (`channel:`, Ports' key), its sides are where a kind has ports, and it's made by
-/// the connector (`registry.connection`), on the channel this bridge picks from the port table, as a
-/// drag from a port would: a connection runs only from a shape with ports on its channel to one
-/// that takes it. Automation has never heard of ports or channels, nor Ports of the command line;
-/// this module's imports are the only edge between them.
+/// A bridge between two horizontals: `canvas draw`'s edges are Connections' connections. An edge is
+/// what the connector draws (`registry.connectorKind`, while it makes connections without a drag),
+/// it takes a channel (`channel:`, Connections' key), its sides are where a kind has ports, and
+/// it's made by the connector (`registry.connection`), on the channel this bridge picks from the
+/// port table, as a drag from a port would: a connection runs only from a shape with ports on its
+/// channel to one that takes it. Automation has never heard of ports or channels, nor Connections
+/// of the command line; this module's imports are the only edge between them.
 public struct PortEdgesPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { "port-edges" }

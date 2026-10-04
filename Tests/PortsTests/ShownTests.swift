@@ -1,10 +1,10 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Connections
 import CoreGraphics
 import Geometry
 import Keyboard
-import Ports
 import Selection
 import TestKit
 
@@ -18,7 +18,7 @@ import TestKit
 
 @MainActor let shownTests = Suite("Dots that show, and only those", [
     test("a kind with ports on one side has that dot hidden by a shape on top, as one with several has") {
-        let connections = Connections()
+        let connections = ConnectionLog()
         let h = try portsHarness(connections, boxSides: [.right], more: [diamondsPlugin()])
         h.add(Box(boxFrame))
         let cover = h.add(Diamond(CGRect(x: 302, y: 135, width: 30, height: 30)))      // over the right dot's middle
@@ -49,7 +49,7 @@ import TestKit
         expectEqual(dotPixels(render(h), released, at: rightDot + CGPoint(x: 60, y: 0)), 0, "none, as with the pointer away")
     },
     test("a shape the select tool sees through doesn't hide a dot: it shows, and a drag from it connects") {
-        let connections = Connections()
+        let connections = ConnectionLog()
         let h = try portsHarness(connections, more: [unselectableDiamondsPlugin()])
         let box = h.add(Box(boxFrame))
         h.add(Diamond(CGRect(x: 302, y: 135, width: 30, height: 30)))
@@ -62,7 +62,7 @@ import TestKit
         expectEqual(connections.begun.map(\.shape), [box])
     },
     test("just after a tool change, before the pointer moves, a press by a dot presses the canvas: no dot shows there to take it") {
-        let connections = Connections()
+        let connections = ConnectionLog()
         let h = try portsHarness(connections)
         h.add(Box(boxFrame))
         h.hoverDot(rightDot)

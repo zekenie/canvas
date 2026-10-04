@@ -1,6 +1,6 @@
 import AppKit
 import Canvas
-import Ports
+import Connections
 
 /// What a schema card's ports draw: a link from a schema to a schema, the only connection a card
 /// takes, as a note's is a note's. It says nothing more yet; a channel is where a connection's

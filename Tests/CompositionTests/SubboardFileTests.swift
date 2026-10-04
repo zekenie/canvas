@@ -1,10 +1,10 @@
 import AppKit
-import Arrows
 import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
 import Composition
+import Connections
 import CoreGraphics
 import Foundation
 import Geometry

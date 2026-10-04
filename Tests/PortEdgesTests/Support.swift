@@ -3,15 +3,15 @@ import Automation
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasTesting
+import Connections
 import CoreGraphics
 import Keyboard
 import PortEdges
-import Ports
 import Selection
 import TestKit
 import Topology
 
-// `canvas draw`'s edges as Ports' connections, over fixtures: tiles (named by their label) have
+// `canvas draw`'s edges as Connections' connections, over fixtures: tiles (named by their label) have
 // ports on the wire, on every side; cards (named by their text) on the pipe, on their right and
 // bottom, and take the wire on their left, but have no dot there. The connector draws links
 // (CanvasTesting's), without a drag: it notes each request, keeps the sides a request names and

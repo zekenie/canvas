@@ -2,12 +2,12 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import Composition
+import Connections
 import CoreGraphics
 import Foundation
 import LanguageModels
 import Locking
 import Mentions
-import Ports
 import Queries
 import Schemas
 import Selection

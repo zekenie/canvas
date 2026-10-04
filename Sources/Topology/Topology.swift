@@ -19,7 +19,7 @@ extension PluginID {
 
 /// An edge type's id: what a query filters by (`EdgeTypeFilter`). Only its type writes it
 /// (`static let id: EdgeTypeID = "mention"`); the build's id audit refuses another module that
-/// writes it without depending on the type's. A channel's type has the channel's id (Ports).
+/// writes it without depending on the type's. A channel's type has the channel's id (Connections).
 public struct EdgeTypeID: RawRepresentable, Hashable, Codable, Sendable, ExpressibleByStringLiteral, CustomStringConvertible {
     public let rawValue: String
     public init(rawValue: String) { self.rawValue = rawValue }

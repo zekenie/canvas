@@ -1,6 +1,6 @@
-import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
+import Connections
 import ContextMenus
 import CoreGraphics
 import Keyboard
