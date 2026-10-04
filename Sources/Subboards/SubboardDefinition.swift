@@ -5,11 +5,12 @@ import Canvas
 @MainActor
 struct SubboardDefinition {}
 
-/// A card, the whole frame, so its outline is its edge: a body that shows what its board holds, its
-/// preview, the core's rough picture of it, fitted; until that's ready, how many shapes ("12
-/// shapes"); and with nothing to show, the kind's symbol over "Empty"; in an indigo border. Its title is
-/// Titles' pill above it, after the symbol, as every titled shape's is. Everything is clipped to
-/// the card.
+/// A card, the whole frame: a body that shows what its board holds, its preview, the core's rough
+/// picture of it, fitted; until that's ready, how many shapes ("12 shapes"); and with nothing to
+/// show, the kind's symbol over "Empty"; in an indigo border. Its title is Titles' pill above it,
+/// after the symbol, as every titled shape's is. Everything is clipped to the card. Its outline,
+/// the selection's, a hover's and the hint, stands off its edge (`SubboardStyle.outlineGap`), so
+/// the accent line isn't drawn over the border it's hard to tell from.
 extension SubboardDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<Subboard>, in context: RenderContext) {
         let card = shape.frame, cg = context.cg, path = SubboardStyle.path(card)
@@ -24,8 +25,10 @@ extension SubboardDefinition: ShapeDefinition {
         stroke(card, SubboardStyle.border, width: SubboardStyle.borderWidth, cg: cg)
     }
 
+    /// The card's rounded edge grown by a few view points, so the line stands clear of the border.
+    /// Validation's ring grows from it too, so a card with issues has its ring that much further out.
     func indicatorPath(of shape: ShapeRecord<Subboard>, in context: ShapeContext) -> CGPath {
-        SubboardStyle.path(shape.frame)
+        SubboardStyle.outline(of: shape.frame, zoom: context.zoom)
     }
 
     /// "1 shape", "12 shapes" in the middle of the card, while its preview is built; for an empty
