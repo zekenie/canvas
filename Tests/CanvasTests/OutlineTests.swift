@@ -97,7 +97,7 @@ private let outlineCanvas = CGSize(width: 320, height: 240)
         let plain = renderBitmap(h.editor, size: outlineCanvas)
         round.shapes = [plaque]
         let drawn = renderBitmap(h.editor, size: outlineCanvas)
-        func changed(_ x: CGFloat, _ y: CGFloat) -> Int { changedPixels(plain, drawn, in: CGRect(x: x, y: y, width: 1, height: 1)) }
+        @MainActor func changed(_ x: CGFloat, _ y: CGFloat) -> Int { changedPixels(plain, drawn, in: CGRect(x: x, y: y, width: 1, height: 1)) }
         expectEqual(changed(40, 40), 1, "on the rounded corner, 16 from its center")
         expectEqual(changed(39, 39), 0, "not where a rect grown 4 with the shape's own radius would be")
         expectEqual(changed(36, 36), 0, "nor at a square corner")
