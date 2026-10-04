@@ -6,6 +6,7 @@ import Connections
 import CoreGraphics
 import Frames
 import LanguageModels
+import Mentions
 import Schemas
 import Selection
 import StickyNotes
