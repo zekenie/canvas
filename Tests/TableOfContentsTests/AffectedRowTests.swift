@@ -78,9 +78,9 @@ extension RefIndex: EditorService {
 /// How often a ref's row has been made.
 @MainActor var refRowsMade = 0
 
-/// Refs, with their index, and their rows: `bridged` gives the kind its row as a bridge would.
+/// Refs, with their index, and their rows: `fromOutside` gives the kind its row as another plugin would.
 struct RefsPlugin: CanvasPlugin {
-    var bridged = false
+    var fromOutside = false
     var id: PluginID { "refs" }
 
     func register(into registrar: inout PluginRegistrar) {
@@ -93,17 +93,17 @@ struct RefsPlugin: CanvasPlugin {
             return ContentsLabel("→ " + (context.service(RefIndex.self)?.name(of: ref.props.target) ?? "?"), systemImage: "arrow.right")
         }
         registrar.shape(RefDefinition()) { ref in
-            if !bridged { ref.contentsRow(affected: affected, row) }
+            if !fromOutside { ref.contentsRow(affected: affected, row) }
         }
-        if bridged { registrar.contentsRow(Ref.self, affected: affected, row) }
+        if fromOutside { registrar.contentsRow(Ref.self, affected: affected, row) }
     }
 }
 
 /// The keyboard, the selection, the fixtures, widgets, refs, then `more`, and the table of
 /// contents, so the refs' index hears of each commit before the table of contents does.
-@MainActor func refsEditor(bridged: Bool = false, _ more: [any CanvasPlugin] = [], file: CanvasFile = CanvasFile(),
+@MainActor func refsEditor(fromOutside: Bool = false, _ more: [any CanvasPlugin] = [], file: CanvasFile = CanvasFile(),
                            scheduler: any Scheduler = ManualScheduler()) throws -> CanvasEditor {
-    CanvasEditor(registry: try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), WidgetsPlugin(), RefsPlugin(bridged: bridged)]
+    CanvasEditor(registry: try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), WidgetsPlugin(), RefsPlugin(fromOutside: fromOutside)]
                                             + more + [TableOfContentsPlugin()]),
                  file: file, scheduler: scheduler)
 }
@@ -124,9 +124,9 @@ struct RefsPlugin: CanvasPlugin {
         expectEqual(editor.contents.entries.outline, ["Renamed", "C", "→ Renamed", "→ nothing", "→ nothing"])
         expectEqual(refRowsMade, made + 2, "the ref to B's")
     },
-    test("given as a bridge gives it, the row is the same, and a name from another plugin still takes the place of its title") {
+    test("given as another plugin would give it, the row is the same, and a name from another plugin still takes the place of its title") {
         let names = Contributor(id: "names") { r in r.contentsTitle(Ref.self) { $0.props.target == nil ? "Aimless" : nil } }
-        let editor = try refsEditor(bridged: true, [names])
+        let editor = try refsEditor(fromOutside: true, [names])
         let (a, _, _) = threeWidgets(editor)
         editor.add(Ref(to: a))
         editor.add(Ref(to: nil))

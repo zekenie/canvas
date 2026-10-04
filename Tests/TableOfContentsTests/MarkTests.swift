@@ -11,12 +11,12 @@ import TestKit
 /// The shapes flagged, which `flags` marks: state kept outside the shapes, as a service's is.
 @MainActor var flagged: Set<ShapeID> = []
 /// The shapes flagged or unflagged since the last commit, which `flags` says that commit affects,
-/// as a bridge names the shapes a commit may change the marks of.
+/// as another plugin names the shapes a commit may change the marks of.
 @MainActor var reflagged: Set<ShapeID> = []
 /// How often `flags` has made a mark.
 @MainActor var marksMade = 0
 
-/// An orange mark on each flagged shape's row, read through a service, as a bridge reads an engine.
+/// An orange mark on each flagged shape's row, read through a service, as another plugin reads an engine.
 let flags = Contributor(id: "flags") { r in
     r.contentsMarkForEveryShape(affected: { _, _ in
         defer { reflagged = [] }

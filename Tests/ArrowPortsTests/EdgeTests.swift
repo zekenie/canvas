@@ -29,7 +29,7 @@ private func type(_ channel: ChannelID) -> EdgeTypeID { EdgeTypeID(rawValue: cha
         let plain = board.addArrow(channel: nil)
         expectEqual(topology.edges(carriedBy: plain), [Edge(type: ArrowEdge.id, source: board.a, target: board.b, carrier: plain)])
         expectEqual(topology.neighbors(of: board.a, .outgoing), [type(Wire.id): [board.b], ArrowEdge.id: [board.b]])
-        expectEqual(topology.edges(ofType: .within(ArrowEdge.id)).map(\.carrier), [plain, drawn.id], "type by type, as their plugins declare them: the family (the bridge), then the wire")
+        expectEqual(topology.edges(ofType: .within(ArrowEdge.id)).map(\.carrier), [plain, drawn.id], "type by type, as their plugins declare them: the family (ArrowPortsPlugin), then the wire")
         expectEqual(topology.edges(ofType: .only(ArrowEdge.id)).map(\.carrier), [plain])
 
         // Its end let go: no longer an edge; bound again: one.

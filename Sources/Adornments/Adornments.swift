@@ -191,7 +191,7 @@ public struct AdornableKind {
 
 // MARK: The extension point
 
-/// The adornments on each kind's shapes: a kind's own (or a bridge's), and every shape's that
+/// The adornments on each kind's shapes: a kind's own (or another plugin's for it), and every shape's that
 /// `where` lets in. Keyed: one of each adornment per kind, and one for every kind, so two plugins
 /// putting one adornment on a kind is `RegistryError.conflict`. A kind's own takes the place of an
 /// every-shape one of the same type, as a kind's own menu item does.
@@ -256,7 +256,7 @@ extension ShapeRegistrar {
 }
 
 extension PluginRegistrar {
-    /// `A` on the shapes of a kind another plugin registers (bridges), as `adornment` does on a
+    /// `A` on the shapes of a kind another plugin registers, as `adornment` does on a
     /// kind's own registrar.
     public mutating func adornment<A: Adornment, P: ShapeProps>(_: A.Type, on _: P.Type,
                                                                 _ label: @escaping @MainActor (ShapeRecord<P>) -> AdornmentLabel?) {

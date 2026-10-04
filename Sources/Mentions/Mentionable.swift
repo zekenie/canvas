@@ -149,7 +149,7 @@ extension ShapeRegistrar {
 }
 
 extension PluginRegistrar {
-    /// Another plugin's kind can be mentioned (bridges), with the same options as `mentionable` on
+    /// Another plugin's kind can be mentioned, with the same options as `mentionable` on
     /// a kind's own registrar, and its Mentioned In tab.
     public mutating func mentionable<P: ShapeProps>(_: P.Type, label: (@MainActor (ShapeRecord<P>) -> String?)? = nil,
                                                     untitled: (@MainActor (ShapeRecord<P>) -> String?)? = nil,

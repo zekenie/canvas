@@ -19,9 +19,9 @@ final class AdornmentState {
     let isEmpty: Bool
     /// Some adornment is clickable. Without one, no point is looked at for a button.
     private let hasButtons: Bool
-    /// Each kind's contributions in claim order: its own (and bridges'), then every-shape ones whose
-    /// `where` lets it in, less those of a type it has its own of; sorted by order, then first
-    /// appearance.
+    /// Each kind's contributions in claim order: its own (and other plugins' for it), then every-shape
+    /// ones whose `where` lets it in, less those of a type it has its own of; sorted by order, then
+    /// first appearance.
     private var candidates: [ShapeKind: [AdornmentContribution]] = [:]
     /// Each shape's shown adornments (none, for most), laid out: its labels, each with its face.
     /// Dropped for the shapes each commit names and `adornmentsDidChange` names, and for all of them

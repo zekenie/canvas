@@ -89,7 +89,7 @@ extension Registry {
 // MARK: Sugar
 
 extension PluginRegistrar {
-    /// The edges `K`'s shapes carry, for a kind another plugin registers (a bridge's, a horizontal's
+    /// The edges `K`'s shapes carry, for a kind another plugin registers (a horizontal's
     /// over a kind it's given): `emit` gets each record of the kind (`record.typed(as: K.self)` for
     /// its props) and says what it carries. Pure: see `EdgeEmitter`.
     public mutating func edges<K: ShapeProps>(_ kind: K.Type, _ emit: @escaping EdgeEmitter) {

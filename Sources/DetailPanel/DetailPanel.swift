@@ -329,7 +329,7 @@ public struct DetailContext {
     public func service<S: EditorService>(_ type: S.Type) -> S? { editor.service(S.self) }
 }
 
-// MARK: Sugar (what verticals, horizontals and bridges write)
+// MARK: Sugar (what verticals and horizontals write)
 
 extension ShapeRegistrar {
     /// This kind's sections, in one call (one contribution, one report line). A horizontal's opt-in
@@ -371,12 +371,12 @@ extension PluginRegistrar {
         contribute(DetailContribution(property: P.self, sections: sections()), to: ShapeDetails.self, for: .any)
     }
 
-    /// Sections for a kind another plugin registers (bridges). Typed as the kind's own.
+    /// Sections for a kind another plugin registers. Typed as the kind's own.
     public mutating func details<P: ShapeProps>(_: P.Type, @DetailSectionsBuilder<P> _ sections: () -> [DetailSection<P>]) {
         contribute(DetailContribution(P.self, sections: sections()), to: ShapeDetails.self, for: .kind(P.kind))
     }
 
-    /// Header and sections for a kind another plugin registers (bridges), as `details(header:)` on
+    /// Header and sections for a kind another plugin registers, as `details(header:)` on
     /// a kind's own registrar.
     public mutating func details<P: ShapeProps, Header: View>(
         _: P.Type, @ViewBuilder header: @escaping (ShapeBinding<P>) -> Header,

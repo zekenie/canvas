@@ -12,7 +12,7 @@ import Titles
 }
 
 @MainActor let boardPlaceholderTests = Suite("A board's placeholder", [
-    test("is its owner's kind's, from the kind's own sugar or a bridge; nil for a kind that doesn't open its boards") {
+    test("is its owner's kind's, from the kind's own sugar or another plugin; nil for a kind that doesn't open its boards") {
         let h = try nestHarness(Nest())
         let registry = h.editor.registry
         expectEqual(registry.boardPlaceholder(of: Drawer.kind), "Untitled Drawer")
@@ -33,7 +33,7 @@ import Titles
             rename(owner, on: on, nil, in: h)
             expectEqual(h.editor.name(of: board, root: "Plans"), registry.boardPlaceholder(of: kind))
         }
-        // Without the bridge, a pocket has none, and its board is called by its kind.
+        // Without `pocketBoards()`, a pocket has none, and its board is called by its kind.
         let pocket = ShapeID()
         let lone = CanvasFile(root: CanvasDocument(shapes: [record(pocket, Pocket(CGRect(x: 0, y: 0, width: 100, height: 100)))]))
         let plain = try EditorHarness(plugins: [KeyboardPlugin(), PocketsPlugin(), BoardsPlugin()], file: lone)

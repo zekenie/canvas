@@ -11,7 +11,7 @@ import TestKit
     try Registry(plugins: slashPlugins([LampsPlugin()] + more))
 }
 
-/// A plugin that offers one command to boxes through the bridge form.
+/// A plugin that offers one command to boxes through the form for another plugin's kind.
 private func offering(_ name: String, id: PluginID) -> Contributor {
     Contributor(id: id) { registrar in
         registrar.slashCommands(Box.self) { SlashCommand(name) { _, _ in } }
@@ -19,7 +19,7 @@ private func offering(_ name: String, id: PluginID) -> Contributor {
 }
 
 @MainActor let slashRegistrationTests = Suite("Slash command registration", [
-    test("every form of the sugar: a kind's own, over an added property, a bridge's for a kind and for a property, and for every shape") {
+    test("every form of the sugar: a kind's own, over an added property, another plugin's for a kind and for a property, and for every shape") {
         let r = try registry([Contributor(id: "bridge") { registrar in
             registrar.slashCommands(Box.self) {
                 SlashCommand("flip") { _, _ in }

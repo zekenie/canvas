@@ -56,7 +56,7 @@ extension AlertsTab: DetailTab {
             _ = try Registry(plugins: [KeyboardPlugin(), GadgetsPlugin(), RemarksPlugin()])
         }
     },
-    test("within a tab: the kind's sections, then a bridge's, then every-box ones, each in plugin order") {
+    test("within a tab: the kind's sections, then another plugin's for the kind, then every-box ones, each in plugin order") {
         let editor = try gadgetEditor([
             Contributor(id: "bridge") { r in
                 r.details(Gadget.self) {

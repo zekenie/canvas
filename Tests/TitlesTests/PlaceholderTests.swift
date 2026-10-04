@@ -9,10 +9,10 @@ import TableOfContents
 import TestKit
 import Titles
 
-// A pill to grab on an untitled shape (`placeholderInPill`): boxes (CanvasTesting's) titled from a
-// bridge, whose untitled pill says "Crate", dimmed.
+// A pill to grab on an untitled shape (`placeholderInPill`): boxes (CanvasTesting's) titled from
+// another plugin, whose untitled pill says "Crate", dimmed.
 
-/// Boxes titled from a bridge, Titles keeping the title, with "Crate" in the pill while untitled.
+/// Boxes titled from another plugin, Titles keeping the title, with "Crate" in the pill while untitled.
 @MainActor func crateTitles(_ placeholder: String = "Crate", pill: Bool = true) -> Contributor {
     Contributor(id: "crate-titles") { $0.title(Box.self, pill: pill, placeholderInPill: placeholder) }
 }
