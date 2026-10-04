@@ -1,4 +1,5 @@
 import CoreGraphics
+import Geometry
 
 // What the core strokes for a closed shape's outline: its kind's `indicatorPath` grown outward by
 // `CanvasEditor.outlineStandoff` view points, so every kind's selection, hover and hint stand off
