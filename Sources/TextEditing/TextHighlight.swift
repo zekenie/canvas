@@ -35,8 +35,15 @@ extension EditingTextView {
         var frames: [CGRect] = []
         layout.enumerateTextSegments(in: range, type: .standard, options: []) { _, segment, _, _ in
             let height = min(segment.height, highlightHeight)
-            frames.append(CGRect(x: segment.minX - padding + origin.x, y: segment.midY - height / 2 + origin.y,
-                                 width: segment.width + 2 * padding, height: height))
+            let frame = CGRect(x: segment.minX - padding + origin.x, y: segment.midY - height / 2 + origin.y,
+                               width: segment.width + 2 * padding, height: height)
+            // A line can come in more than one segment (a wrapped line's trailing space, a run of other
+            // attributes): one rect a line, or two translucent fills would overlap in a darker seam.
+            if let last = frames.last, abs(last.midY - frame.midY) < max(height, 1) / 2 {
+                frames[frames.count - 1] = last.union(frame)
+            } else {
+                frames.append(frame)
+            }
             return true
         }
         return frames

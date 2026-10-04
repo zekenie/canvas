@@ -13,16 +13,30 @@ private func mark(_ location: Int, _ length: Int) -> TextHighlight {
     TextHighlight(range: NSRange(location: location, length: length), fill: sand)
 }
 
-/// A text view in an unshown window, the keyboard in it.
-@MainActor private func highlightedText(_ string: String = "apple banana cherry") -> (window: NSWindow, view: EditingTextView) {
+/// A text view of the kind `make` makes, in an unshown window, the keyboard in it.
+@MainActor private func textInWindow<View: EditingTextView>(_ string: String, _ make: (CGRect) -> View) -> (window: NSWindow, view: View) {
     let window = NSWindow(contentRect: CGRect(x: 200, y: 200, width: 300, height: 200), styleMask: [.titled], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
     window.appearance = NSAppearance(named: .aqua)
-    let view = EditingTextView(frame: CGRect(x: 0, y: 0, width: 300, height: 200))
+    let view = make(CGRect(x: 0, y: 0, width: 300, height: 200))
     view.string = string
     window.contentView = view
     window.makeFirstResponder(view)
     return (window, view)
+}
+
+@MainActor private func highlightedText(_ string: String = "apple banana cherry") -> (window: NSWindow, view: EditingTextView) {
+    textInWindow(string) { EditingTextView(frame: $0) }
+}
+
+/// A text view that counts the times it was told to be drawn again. (`needsDisplay` can't say: AppKit
+/// keeps the dirty rects an earlier request left, so it doesn't go back to false when set to it.)
+@MainActor private final class RedrawCountingText: EditingTextView {
+    private(set) var redraws = 0
+
+    override var needsDisplay: Bool {
+        didSet { if needsDisplay { redraws += 1 } }
+    }
 }
 
 @MainActor let highlightTests = Suite("Highlights", [
@@ -45,8 +59,8 @@ private func mark(_ location: Int, _ length: Int) -> TextHighlight {
     test("a range that wraps is a rect a line") {
         let (_, view) = highlightedText(String(repeating: "banana ", count: 40))
         let frames = view.frames(of: mark(0, 280))
-        expect(frames.count >= 3, "\(frames.count) lines")
-        for (above, below) in zip(frames, frames.dropFirst()) { expect(below.minY > above.minY, "one under the other") }
+        expect(frames.count >= 3, "\(frames.count) lines: \(frames)")
+        for (above, below) in zip(frames, frames.dropFirst()) { expect(below.minY > above.minY, "one under the other: \(above), \(below)") }
         for frame in frames { expect(frame.minX >= 0 && frame.maxX <= view.bounds.width + 4, "within the view: \(frame)") }
     },
 
@@ -61,19 +75,19 @@ private func mark(_ location: Int, _ length: Int) -> TextHighlight {
     },
 
     test("the view is drawn again when its highlights change, and not when they don't; read-only, it lets go of them") {
-        let (_, view) = highlightedText()
-        view.needsDisplay = false
+        let (_, view) = textInWindow("apple banana cherry") { RedrawCountingText(frame: $0) }
+        let first = view.redraws
         view.highlights = [mark(0, 5)]
-        expect(view.needsDisplay)
-        view.needsDisplay = false
+        expect(view.redraws > first, "a change draws again")
+        let drawn = view.redraws
         view.highlights = [mark(0, 5)]
-        expect(!view.needsDisplay, "the same highlights")
+        expectEqual(view.redraws, drawn, "the same highlights draw nothing again")
         view.highlights = [mark(0, 5), mark(6, 6)]
-        expect(view.needsDisplay)
-        view.needsDisplay = false
+        expect(view.redraws > drawn, "another change does")
+        let changed = view.redraws
         view.isEditable = false
         expectEqual(view.highlights, [])
-        expect(view.needsDisplay)
+        expect(view.redraws > changed, "and letting go of them")
         view.isEditable = true
         expectEqual(view.highlights, [], "and they don't come back")
     },
@@ -89,10 +103,11 @@ private func mark(_ location: Int, _ length: Int) -> TextHighlight {
         @MainActor func color(_ x: CGFloat, _ y: CGFloat) -> NSColor? {
             rep.colorAt(x: Int(x * scale), y: Int(y * scale))?.usingColorSpace(.deviceRGB)
         }
-        // Where the text can't be: the highlight's padding before its first letter, and below the line.
-        let padding = try require(color(frame.minX + 0.75, frame.midY))
-        expect(abs(padding.redComponent - 1) < 0.06 && abs(padding.greenComponent - 0.9) < 0.06 && abs(padding.blueComponent - 0.4) < 0.1,
-               "the fill: \(padding)")
+        // Where the text can't be: the highlight's padding before its first letter (2 points, so a point
+        // and a half in is past the rect's anti-aliased edge and short of the glyph), and below the line.
+        // The fill is sand, (1, 0.9, 0.4): pale in red and green, well under the background in blue.
+        let padding = try require(color(frame.minX + 1.5, frame.midY))
+        expect(padding.redComponent > 0.95 && padding.greenComponent > 0.85 && padding.blueComponent < 0.7, "the fill: \(padding)")
         let beside = try require(color(frame.minX + 4, frame.maxY + 60))
         expect(beside.redComponent > 0.95 && beside.greenComponent > 0.95 && beside.blueComponent > 0.95, "the view's background: \(beside)")
         // The rounded corner leaves its corner pixel to the background.
