@@ -4,10 +4,10 @@ import CoreGraphics
 import Foundation
 import Queries
 import QueryLanguage
+import QueryLexicon
 import TestKit
 import Topology
 import Validation
-import ValidationQueries
 
 // Fixtures only: CanvasTesting's cards, tags and pockets (whose boards nest), with rules of this
 // target's, each counting its runs: a card whose text starts "bad" has an error and one whose text

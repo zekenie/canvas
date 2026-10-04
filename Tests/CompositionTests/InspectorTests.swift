@@ -1,10 +1,10 @@
 import AppKit
-import Arrows
 import Boards
 import Canvas
 import CanvasTesting
 import CanvasUI
 import Composition
+import Connections
 import DetailPanel
 import Geometry
 import LanguageModels
@@ -17,7 +17,7 @@ import SwiftUI
 import TableOfContents
 import TestKit
 import Titles
-import ValidationDetails
+import Validation
 
 /// The app's window (a `BoardWindow`), unshown: the canvas (through `CanvasRepresentable`) with the shipped detail
 /// panel in an `.inspector`, wired by a `CanvasFocus` as the app wires them. The editor keeps real
@@ -63,7 +63,7 @@ final class InspectorWindow {
     var backButton: NSButton? { host.descendants(NSButton.self).first { $0.isInPanelHeader(of: host) } }
     var canvasHasKeyboard: Bool { window.firstResponder === canvas }
 
-    /// The lines of the selected shape's Issues tab (ValidationDetails'), as the panel shows them.
+    /// The lines of the selected shape's Issues tab (Validation's), as the panel shows them.
     var issues: [String] {
         guard let id = editor.selection, let record = editor.document[id], let state = editor.detailPanel else { return [] }
         return state.layout(for: record).statuses(in: .of(IssuesTab.self)).map(\.text)
@@ -274,7 +274,7 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         w.editor.selection = nil
         expectEqual(w.editor.tableOfContents?.entries.map { $0.label?.text }, ["Groceries"])
     },
-    test("a note whose title is too long has an Issues tab that says so, through the validation-details bridge; a note without issues has no such tab") {
+    test("a note whose title is too long has an Issues tab that says so, through ValidationDetailsPlugin; a note without issues has no such tab") {
         let w = try InspectorWindow()
         var long = note("Hi")
         long[TitleProperty.self] = String(repeating: "Groceries ", count: 9)

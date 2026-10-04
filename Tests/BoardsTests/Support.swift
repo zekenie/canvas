@@ -7,6 +7,7 @@ import ContextMenus
 import DetailPanel
 import Keyboard
 import Selection
+import SlashCommands
 import SwiftUI
 import TestKit
 import Titles
@@ -15,7 +16,7 @@ import Titles
 // the horizontal knows no real kind.
 
 /// A box that owns a board, opened through the kind's own sugar (`drawer.opensBoard`), and named
-/// by Titles; pockets (CanvasTesting's) open through the bridge form.
+/// by Titles; pockets (CanvasTesting's) open through the form for another plugin's kind.
 struct Drawer: BoxShapeProps {
     static let kind: ShapeKind = "drawer"
     static let properties = Properties<Drawer> {
@@ -49,7 +50,7 @@ struct DrawersPlugin: CanvasPlugin {
     }
 }
 
-/// Pockets open onto their boards from a bridge, and are named by Titles.
+/// Pockets open onto their boards from another plugin, and are named by Titles.
 @MainActor func pocketBoards() -> Contributor {
     Contributor(id: "pocket-boards") { r in
         r.title(Pocket.self, pill: false, contents: false)
@@ -58,10 +59,10 @@ struct DrawersPlugin: CanvasPlugin {
 }
 
 /// Every plugin opening a board takes: keys, the selection, the panel, menus and titles (with the
-/// adornments that show their pills).
+/// adornments that show their pills, and the slash commands they offer).
 @MainActor func boardsPlugins(_ more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), CardsPlugin(), PocketsPlugin(), DrawersPlugin(), DetailPanelPlugin(),
-     ContextMenusPlugin(), AdornmentsPlugin(), TitlesPlugin(), BoardsPlugin(), pocketBoards()] + more
+     ContextMenusPlugin(), AdornmentsPlugin(), SlashCommandsPlugin(), TitlesPlugin(), BoardsPlugin(), pocketBoards()] + more
 }
 
 func record<P: ShapeProps>(_ id: ShapeID, _ props: P) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(id: id, props)) }

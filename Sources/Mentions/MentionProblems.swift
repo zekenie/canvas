@@ -2,7 +2,7 @@ import Canvas
 
 /// Something wrong with the mentions in a shape's text: a mention of a shape that can't be
 /// mentioned, or not by that text (its scope), or text that looks like a mention but isn't one.
-/// What a rule warns about (MentionValidation), in the words a person reads.
+/// What a rule warns about (`MentionValidationPlugin`), in the words a person reads.
 public struct MentionProblem: Hashable, Sendable {
     /// The property the text is in: the shape's own (`text`), or an added one.
     public let property: String

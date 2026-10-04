@@ -140,4 +140,12 @@ enum SlashCommandStyle {
     static let accessibilityLabel = "Commands"
     /// The longest name that's typed to list by, in characters.
     static let nameLimit = 40
+
+    // MARK: The command as typed (`SlashCommandTyping`'s highlights)
+
+    /// A command typed on a line is marked as a mention's pill is, behind the text and in the text's
+    /// own color so it follows whatever surface the text is on (a pill's is 10%): the `/name` firmly,
+    /// and what the command is given in a lighter shade of it.
+    static let commandFill: CGFloat = 0.18
+    static let argumentsFill: CGFloat = 0.08
 }

@@ -5,6 +5,7 @@ import CoreGraphics
 import DetailPanel
 import Keyboard
 import Selection
+import SlashCommands
 import TableOfContents
 import TestKit
 import Titles
@@ -24,7 +25,7 @@ import Titles
         expectEqual(editor.title(id), "Front desk")
         expectEqual(try require(editor.tableOfContents).entries.map { $0.label?.text }, ["Front desk"])
     },
-    test("a title may be derived: a bridge titles another plugin's kind from its props, and it follows them") {
+    test("a title may be derived: another plugin titles a kind it doesn't register from its props, and it follows them") {
         let editor = try titleEditor([CardsPlugin(), CardTitlesPlugin()])
         let card = editor.add(Card(plaqueFrame, text: "Hello"))
         expectEqual(editor.title(card), "Hello")
@@ -41,12 +42,12 @@ import Titles
             _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), PlaquesPlugin(), TableOfContentsPlugin(), DetailPanelPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ContentsTitles", owner: .tableOfContents, contributor: "plaques")) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), PlaquesPlugin(), TitlesPlugin(), DetailPanelPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), PlaquesPlugin(), SlashCommandsPlugin(), TitlesPlugin(), DetailPanelPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeAdornments", owner: .adornments, contributor: .titles)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), TitlesPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), SlashCommandsPlugin(), TitlesPlugin()])
         }
-        _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), AdornmentsPlugin(), TitlesPlugin(),
+        _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), AdornmentsPlugin(), SlashCommandsPlugin(), TitlesPlugin(),
                                    Contributor(id: "box-titles") { $0.title(Box.self, contents: false) { _ in "Box" } }])
     },
     test("a title Titles keeps is its property: in the kind's schema with its bounds and owner, and in the report") {
@@ -65,7 +66,7 @@ import Titles
         expectEqual(registry.properties(for: Card.kind), [])
         expectEqual(registry.schema(for: Card.kind)?.json["properties"]?["title"], nil)
     },
-    test("a bridge gives another plugin's kind a title Titles keeps, one line") {
+    test("another plugin gives a kind it doesn't register a title Titles keeps, one line") {
         let registry = try titleEditor([Contributor(id: "box-titles") { $0.title(Box.self) }]).registry
         expectEqual(registry.properties(for: Box.kind), ["title"])
         expect(registry.report.contains("box-titles         property title → box · ShapeTitles → box · ContentsTitles → box"), registry.report)
@@ -114,7 +115,7 @@ import Titles
         expectEqual(TitleProperty.folded(" Title"), "Title")
         expectEqual(TitleProperty.folded("Title\u{A0}5004"), "Title 5004", "a no-break space is whitespace too")
     },
-    test("a kind's title is derived when a bridge makes it from what the kind keeps; named only, or none, it isn't") {
+    test("a kind's title is derived when another plugin makes it from what the kind keeps; named only, or none, it isn't") {
         let registry = try titleEditor([CardsPlugin(), CardTitlesPlugin(), Contributor(id: "disc-titles") { r in
             // Named, and derived for the discs nobody named.
             r.optIn(Disc.self, to: TitleProperty.self)
@@ -133,8 +134,8 @@ import Titles
         expectEqual(registry.title(of: disc), "Disc", "a blank name falls back to the derived one")
     },
     test("a title is two lines in the report, its own and its row's name; without the row's, one") {
-        let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), AdornmentsPlugin(), TitlesPlugin(),
-                                              TableOfContentsPlugin(), Contributor(id: "fixture-titles") { r in
+        let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), AdornmentsPlugin(), SlashCommandsPlugin(),
+                                              TitlesPlugin(), TableOfContentsPlugin(), Contributor(id: "fixture-titles") { r in
             r.title(Box.self) { _ in "Box" }
             r.title(Disc.self, pill: false, contents: false) { _ in "Disc" }
         }])
@@ -144,7 +145,8 @@ import Titles
         selection          service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
         fixtures           shape box · shape disc · shape tag
         adornments         service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
-        titles             property title · adornment TitlePill → every shape
+        slash-commands     service SlashCommandState
+        titles             property title · adornment TitlePill → every shape · /title → every shape · overlay TitleCoverOverlay
         table-of-contents  service ContentsState
         fixture-titles     ShapeTitles → box · ContentsTitles → box · ShapeTitles → disc
         """)

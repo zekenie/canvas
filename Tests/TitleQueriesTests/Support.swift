@@ -6,9 +6,10 @@ import Foundation
 import Keyboard
 import Queries
 import QueryLanguage
+import QueryLexicon
 import Selection
+import SlashCommands
 import TestKit
-import TitleQueries
 import Titles
 import Topology
 
@@ -26,11 +27,11 @@ import Topology
     }
 }
 
-/// The keyboard and the selection (which Titles' pills need), Topology, the fixtures, Titles and
-/// Queries, then the bridge, then `more`.
-@MainActor func titledPlugins(bridge: Bool = true, more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
-    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(), AdornmentsPlugin(), TitlesPlugin(),
-     fixtureTitles(), QueriesPlugin()] + (bridge ? [TitleQueriesPlugin()] : []) + more
+/// The keyboard and the selection (which Titles' pills need), Topology, the fixtures, Titles (with
+/// the slash commands it offers) and Queries, then `TitleQueriesPlugin`, then `more`.
+@MainActor func titledPlugins(withPlugin: Bool = true, more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
+    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(), AdornmentsPlugin(), SlashCommandsPlugin(),
+     TitlesPlugin(), fixtureTitles(), QueriesPlugin()] + (withPlugin ? [TitleQueriesPlugin()] : []) + more
 }
 
 func uuid(_ n: Int) -> String { String(format: "00000000-0000-4000-8000-%012d", n) }
@@ -55,8 +56,8 @@ func titledFile() -> CanvasFile {
     ]))
 }
 
-@MainActor func titledHarness(bridge: Bool = true, more: [any CanvasPlugin] = []) throws -> EditorHarness {
-    try EditorHarness(plugins: titledPlugins(bridge: bridge, more: more), file: titledFile())
+@MainActor func titledHarness(withPlugin: Bool = true, more: [any CanvasPlugin] = []) throws -> EditorHarness {
+    try EditorHarness(plugins: titledPlugins(withPlugin: withPlugin, more: more), file: titledFile())
 }
 
 /// A query's answer on `h`'s editor, every row, the main run loop turned while it runs.

@@ -1,6 +1,5 @@
 import Adornments
 import AppKit
-import BoardQueries
 import Boards
 import Canvas
 import CanvasTesting
@@ -9,7 +8,9 @@ import DetailPanel
 import Foundation
 import Keyboard
 import Queries
+import QueryLexicon
 import Selection
+import SlashCommands
 import TestKit
 import Titles
 import Topology
@@ -17,7 +18,8 @@ import Topology
 // Fixtures only: CanvasTesting's boxes and two kinds of this target's that own boards, drawers,
 // which open onto them with a placeholder of their own, and crates, which don't open (so have no
 // placeholder) and are called by their label. Both are named by Titles, and a fixture names shapes
-// for queries by the title Titles keeps: BoardQueries' closure has no TitleQueries.
+// for queries by the title Titles keeps: of QueryLexicon's plugins, only `BoardQueriesPlugin` is
+// installed here.
 
 /// A box that owns a board and opens onto it, called "Untitled Drawer" while untitled.
 struct Drawer: BoxShapeProps {
@@ -90,10 +92,11 @@ func namesPlugin() -> Contributor {
 }
 
 /// What opening a board takes (keys, the selection, the panel, menus), titles (with the adornments
-/// their pills are), Topology, Boards, Queries and the fixtures' names, then the bridge.
-@MainActor func boardPlugins(bridge: Bool = true) -> [any CanvasPlugin] {
+/// their pills are, and the slash commands they offer), Topology, Boards, Queries and the fixtures'
+/// names, then `BoardQueriesPlugin`.
+@MainActor func boardPlugins(withPlugin: Bool = true) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), StorePlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
-     AdornmentsPlugin(), TitlesPlugin(), BoardsPlugin(), QueriesPlugin(), namesPlugin()] + (bridge ? [BoardQueriesPlugin()] : [])
+     AdornmentsPlugin(), SlashCommandsPlugin(), TitlesPlugin(), BoardsPlugin(), QueriesPlugin(), namesPlugin()] + (withPlugin ? [BoardQueriesPlugin()] : [])
 }
 
 func uuid(_ n: Int) -> String { String(format: "00000000-0000-4000-8000-%012d", n) }
@@ -116,8 +119,8 @@ func storeFile() -> CanvasFile {
                           id(21): CanvasDocument(shapes: [shape(31, Box(unit))])])
 }
 
-@MainActor func storeHarness(bridge: Bool = true) throws -> EditorHarness {
-    try EditorHarness(plugins: boardPlugins(bridge: bridge), file: storeFile())
+@MainActor func storeHarness(withPlugin: Bool = true) throws -> EditorHarness {
+    try EditorHarness(plugins: boardPlugins(withPlugin: withPlugin), file: storeFile())
 }
 
 /// The record, in `container` on its board.

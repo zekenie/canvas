@@ -62,8 +62,7 @@ extension LockMenuGroup: MenuGroup {
 /// A shape's lock chip: a lock in a disc at the right end of the row just above a locked shape,
 /// where a title's pill starts at the other end, farthest out of what's there, as a state that
 /// comes and goes. For a moment after a shape is unlocked it shows the lock open, fading. Zoomed
-/// out, on a shape drawn as a skeleton, it's a blank disc, open or not, and a click on it does as
-/// ever.
+/// out, on a shape drawn as a skeleton, it isn't shown (as no adornment is), and so can't be clicked.
 public enum LockChip {}
 
 extension LockChip: Adornment {
@@ -110,9 +109,9 @@ public struct LockingPlugin: CanvasPlugin {
                 editor.unlock(ids.filter { !editor.isLockedByContainer($0) })
             }
         }
-        // `/lock` typed on a line of a shape's text: the first command that ships. On the kinds that
-        // can be locked, while the shape isn't. There is no `/unlock`: a locked shape's text can't
-        // be edited, so it couldn't be typed.
+        // `/lock` typed on a line of a shape's text (Titles offers `/title`, the other command that
+        // ships): on the kinds that can be locked, while the shape isn't. There is no `/unlock`: a
+        // locked shape's text can't be edited, so it couldn't be typed.
         registrar.slashCommandsForEveryShape(where: { $0.holds(LockedProperty.self) }) {
             SlashCommand("lock", when: { !$0.isLocked }) { id, _, editor in editor.lock([id]) }
         }

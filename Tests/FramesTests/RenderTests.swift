@@ -48,7 +48,7 @@ import TestKit
         }
         expectEqual(dots, 0, "one white inside it: the dots stop at its edge")
     },
-    test("zoomed out, two fills, square: its border's ring to the corner, and its surface inside; its pill blank; nothing past its frame") {
+    test("zoomed out, two fills, square: its border's ring to the corner, and its surface inside; no pill; nothing past its frame") {
         let h = try board(holding: true)
         h.editor.camera = Camera(origin: .zero, zoom: 0.3)
         let skeleton = render(h.editor)
@@ -64,9 +64,7 @@ import TestKit
         let canvas = render(blank.editor)
         let around = CGRect(x: 0, y: 0, width: 600, height: 500)
         let ring = CGRect(x: 30, y: 30, width: 120, height: 90)
-        let pill = CGRect(x: 30, y: 0, width: 120, height: 30)
-        expectEqual(changedPixels(canvas, skeleton, in: around), changedPixels(canvas, skeleton, in: ring) + changedPixels(canvas, skeleton, in: pill),
-                    "drawn within its frame, and its pill's row")
+        expectEqual(changedPixels(canvas, skeleton, in: around), changedPixels(canvas, skeleton, in: ring), "drawn within its frame: no pill above it")
     },
     test("zoomed out in the dark: the raised gray in a lighter ring") {
         let h = try board()

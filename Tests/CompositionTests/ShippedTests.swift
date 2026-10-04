@@ -1,9 +1,9 @@
 import AppKit
-import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
 import Composition
+import Connections
 import CoreGraphics
 import DetailPanel
 import Geometry
@@ -18,7 +18,6 @@ import TableOfContents
 import TestKit
 import Titles
 import Validation
-import ValidationDetails
 
 @MainActor let shippedTests = Suite("Shipped plugins", [
     test("the shipped plugin list registers without conflicts") {
@@ -57,7 +56,7 @@ import ValidationDetails
         context-menus        service ContextMenuState · secondary-click menu · CanvasContextMenu
         slash-commands       service SlashCommandState
         table-of-contents    service ContentsState
-        titles               property title · adornment TitlePill → every shape
+        titles               property title · adornment TitlePill → every shape · /title → every shape · overlay TitleCoverOverlay
         mentions             service MentionState · edge type mention · edges → every shape · overlay MentionFrames · ShapeFaces · CanvasContextMenu
         board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
         validation-details   DetailStatuses in Issues
@@ -135,7 +134,7 @@ import ValidationDetails
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let long = String(repeating: "Groceries ", count: 9)       // 90 characters
         let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Milk"), title: long)
-        // Another title: two shapes of one title are warned about that too (TitleValidation).
+        // Another title: two shapes of one title are warned about that too (TitleValidationPlugin).
         let subboard = editor.add(Subboard(frame: CGRect(x: 400, y: 100, width: 240, height: 160)), title: String(repeating: "Errands!! ", count: 9))
         let warning = ValidationIssue.warning("Title is 90 characters long, and should be at most 80.", field: "title")
         expectEqual(editor.validation?.result(for: note)?.issues, [warning])
@@ -153,7 +152,7 @@ import ValidationDetails
         editor.transact { $0.update(note) { $0[TitleProperty.self] = "Groceries" } }
         expectEqual(editor.validation?.result(for: note), nil)
     },
-    test("a note and a subboard of one title each warn (TitleValidation): a line in Issues, an orange dot; renamed apart, neither") {
+    test("a note and a subboard of one title each warn (TitleValidationPlugin): a line in Issues, an orange dot; renamed apart, neither") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Milk"), title: "Kitchen")
         let subboard = editor.add(Subboard(frame: CGRect(x: 400, y: 100, width: 240, height: 160)), title: "Kitchen")
@@ -173,7 +172,7 @@ import ValidationDetails
         let after = Dictionary(uniqueKeysWithValues: try require(editor.tableOfContents).entries.map { ($0.id, $0.marks) })
         expectEqual(after[subboard], [], "the subboard's dot goes though the commit didn't change it")
     },
-    test("a note that mentions an arrow, or holds what looks like a mention and isn't, warns (MentionValidation): a line in Issues, an orange dot") {
+    test("a note that mentions an arrow, or holds what looks like a mention and isn't, warns (MentionValidationPlugin): a line in Issues, an orange dot") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let arrow = editor.add(Arrow(start: .free(CGPoint(x: 100, y: 400)), end: .free(CGPoint(x: 300, y: 400))))
         let groceries = editor.add(Subboard(frame: CGRect(x: 400, y: 100, width: 240, height: 160)), title: "Buy milk")

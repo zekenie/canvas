@@ -1,11 +1,11 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Connections
 import CoreGraphics
 import Foundation
 import Geometry
 import Keyboard
-import Ports
 import Selection
 import Topology
 
@@ -33,7 +33,7 @@ extension Hookup: EdgeType {
 
 /// What the test connector saw: each connection begun, and each drag its session got.
 @MainActor
-final class Connections {
+final class ConnectionLog {
     var begun: [Connection] = []
     var drags: [CGPoint] = []
     /// Which shapes the connector says it can start from and end on.
@@ -44,8 +44,8 @@ final class Connections {
 
 /// The session the test connector hands back: it records where it's dragged, in view points.
 final class RecordingSession {
-    let connections: Connections
-    init(_ connections: Connections) { self.connections = connections }
+    let connections: ConnectionLog
+    init(_ connections: ConnectionLog) { self.connections = connections }
 }
 
 extension RecordingSession: Session {
@@ -53,7 +53,7 @@ extension RecordingSession: Session {
 }
 
 /// A connector: tags are what connections are, and it records what it's asked to draw.
-@MainActor func connectorPlugin(_ connections: Connections) -> Contributor {
+@MainActor func connectorPlugin(_ connections: ConnectionLog) -> Contributor {
     Contributor(id: "tag-connector") { registrar in
         registrar.connects(Tag.self, edgeType: Hookup.self, canConnect: { id, _ in connections.canConnect(id) }) { connection, _ in
             guard connections.draws else { return nil }
@@ -74,7 +74,7 @@ extension RecordingSession: Session {
 }
 
 /// What the app has around Ports: the keys, the selection, the fixtures, the channels and a connector.
-@MainActor func portsHarness(_ connections: Connections = Connections(), boxSides: [PortSide] = PortSide.allCases,
+@MainActor func portsHarness(_ connections: ConnectionLog = ConnectionLog(), boxSides: [PortSide] = PortSide.allCases,
                              boxRole: PortRole = .both, discRole: PortRole = .both, more: [any CanvasPlugin] = []) throws -> EditorHarness {
     try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin(),
                                 channelsPlugin(boxSides: boxSides, boxRole: boxRole, discRole: discRole), connectorPlugin(connections)] + more)
@@ -172,7 +172,7 @@ extension DialDefinition: ShapeDefinition, HandleProviding {
 
 /// An editor like `portsHarness`'s, whose board also holds a box it keeps aside (its props don't
 /// read), returned with it.
-@MainActor func harnessKeepingABoxAside(_ connections: Connections) throws -> (h: EditorHarness, kept: ShapeID) {
+@MainActor func harnessKeepingABoxAside(_ connections: ConnectionLog) throws -> (h: EditorHarness, kept: ShapeID) {
     let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin(), channelsPlugin(),
                                           connectorPlugin(connections)])
     let kept = ShapeID()

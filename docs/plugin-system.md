@@ -235,7 +235,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Define a kind's properties: how boards write it, and its JSON Schema | `static let properties = Properties<K> { Property("text", \.text) }`, and `init()`; `registry.schema(for:)` | [Properties](#a-kinds-own-properties) |
 | Bound a property (a length, a range), so a shape outside the bounds gets a validation warning | A modifier: `Property("text", \.text).maxLength(200)`, or an added property's `keywords`; Validation checks every shape against its kind's schema | [Checking shapes](#checking-shapes-against-their-schemas) |
 | Add a shape without a frame (a line, a path) | `ShapeProps`; `geometry`, `hitTest` (with its `hitMargin`) and `CustomTranslation`; a tool that inserts it | [A freehand line](#a-shape-without-a-frame) |
-| Work out a kind's geometry from other shapes (a connector) | Look them up through the `ShapeContext`: `shape(_:)`, `geometry(of:)`, `hitTest(_:shape:)` | [Arrows](../Sources/Arrows/Connectables.swift) |
+| Work out a kind's geometry from other shapes (a connector) | Look them up through the `ShapeContext`: `shape(_:)`, `geometry(of:)`, `hitTest(_:shape:)` | [Arrows](../Sources/Connections/Connectables.swift) |
 | Hit or outline a shape more exactly than its frame | Override `geometry`, `hitTest` or `indicatorPath` | [A freehand line](#a-shape-without-a-frame), [StickyNotes](../Sources/StickyNotes/StickyNotes.swift)' rounded outline |
 | Draw a kind more simply zoomed out, where its text doesn't read, and cheaply, since thousands are in view | `CustomSkeleton`'s `renderSkeleton`: fills, `context.fillSkeletonText` for bars where its text is (as long as its columns, `SkeletonText.columns(of:)`), or `context.drawSkeleton(of:color:)`, the default, in a color of its own; `CustomSkeletonOutline` for an outline there that isn't its kept geometry's | [Skeletons](#skeletons), [Patches](#your-first-plugin) |
 | Make what an overlay draws, or what answers the pointer, follow what a shape shows zoomed out | `editor.drawsSkeleton(of:)` and `OverlayContext.drawsSkeleton(of:)` (each shape's level: the one being edited is in full), `OverlayContext.drawsSkeletons` (the frame's), and `EditorService.drawsSkeletonsDidChange` for a pointer held still | [Skeletons](#skeletons), [Adornments](#drawing-and-cost) |
@@ -243,12 +243,12 @@ Once one plugin works, the question is which piece the next feature needs.
 | Add a tool that handles its own press and drag | `registrar.tool` (or a kind's `x.tool(...)`), a `Tool` and a `Session` | [The Frame tool](#tools-and-sessions) |
 | Give a tool its key | `shortcut:` on the call that registers the tool (Keyboard's) | [Patches](#your-first-plugin) |
 | Make a key do something, or give a menu's command its key | `registrar.shortcut(chord, "Title") { ... }`, `registrar.command(_:shortcuts:)` | [Keyboard shortcuts](#keyboard-shortcuts) |
-| Give a shape handles to drag | Selection's `HandleProviding` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
+| Give a shape handles to drag | Selection's `HandleProviding` | [Arrows](../Sources/Connections/ArrowDefinition.swift) |
 | Let a box kind's shapes be resized: eight handles, ⇧ for proportions, ⌥ from the center, a minimum size | Selection's `x.resizable(minimumSize:)` | [Resizing](#resizing) |
 | Edit a kind's properties beside the canvas | `x.details { DetailSection(...) }` | [Schemas](#the-full-showcase-schema-cards) |
 | Add items to a kind's right-click menu | `x.contextMenu { MenuItem(...) }` | [Boards](#contributing) |
 | Add a right-click item to every shape, or every kind with a capability | `registrar.contextMenuForEveryShape(where:)` | [Reordering](#every-shape-reordering) |
-| Let a shape offer a command typed on a line of its text (`/lock`), conditionally, as menu items are | `x.slashCommands { SlashCommand("turn-on", when: { !$0.isOn }) { lamp, _ in … } }`; `registrar.slashCommands(K.self)` or `slashCommands(of: P.self)` from a bridge | [Registering commands](#registering-commands) |
+| Let a shape offer a command typed on a line of its text (`/lock`), conditionally, as menu items are | `x.slashCommands { SlashCommand("turn-on", when: { !$0.isOn }) { lamp, _ in … } }`; `registrar.slashCommands(K.self)` or `slashCommands(of: P.self)` for another plugin's kind | [Registering commands](#registering-commands) |
 | Offer a command to every shape that holds an added property, and only those | `registrar.slashCommandsForEveryShape(where: { $0.holds(LockedProperty.self) }) { … }` | [Registering commands](#registering-commands), [Locking](#locking) |
 | Ask what a shape offers as slash commands, or run one without typing it | `editor.slashCommands?.commands(for:)`, `run(_:on:with:)` | [What a shape offers](#what-a-shape-offers-and-running-a-command) |
 | Type slash commands in a text view of your own | Make a `SlashCommandTyping(over:owner:commands:)` and call `didType`, `didChange(isEdit:)` and `takesKey`; return its `window` as the view's `caretListWindow` | [Hosting in a text view](#hosting-in-a-text-view-slashcommandtyping) |
@@ -258,20 +258,20 @@ Once one plugin works, the question is which piece the next feature needs.
 | Rename a shape in the detail panel's header | `x.details(header: { $x in TitleHeader($x) }) {}` | [StickyNotes](#renaming-in-the-header-titleheader) |
 | Name a kind's rows in the table of contents from another plugin | `x.contentsTitle { ... }` | [Titles](#a-horizontal-plugin) |
 | Add a concern any kind can opt into | An `ExtensionPoint`, sugar on `ShapeRegistrar`, and whatever reads the point | [Titles](#a-horizontal-plugin), [Validation](../Sources/Validation/Validation.swift) |
-| Warn about something on a shape, without running again on every drag event | A validation rule, `x.validate(ignoringMoves: true) { … }` (or `validateEveryShape`), for one that reads what shapes are, never where | [Validation](#a-horizontal-plugin), [MentionValidation](#warnings-mentionvalidation) |
+| Warn about something on a shape, without running again on every drag event | A validation rule, `x.validate(ignoringMoves: true) { … }` (or `validateEveryShape`), for one that reads what shapes are, never where | [Validation](#a-horizontal-plugin), [Mentions' warnings](#warnings-mentions-that-cant-work) |
 | Give the shapes of the kinds that opt in something to hold (a title) | A `ShapeProperty`, `registrar.declare`, and `optIn(to:)` from the concern's sugar | [Titles](#added-properties) |
 | Give that concern a tab on the kinds that opt in | A `DetailTab` at order 50, contributed from the same sugar | [Boards](#a-horizontals-feature-tab-boards) |
 | Give that concern menu items on the kinds that opt in | A `MenuGroup` at order 50, and `contextMenu` from the same sugar | [Boards](#a-feature-that-comes-with-menu-items-boards) |
 | Edit an added property in the panel, or from the menu | `details(of: P.self) { DetailSection ... }`, `contextMenu(of: P.self) { MenuItem ... }` | [Added properties](#added-properties), [a flag](#something-the-user-turns-on) |
 | Show a section in the panel only while a service says so (what mentions the shape) | `DetailSection(…).shownWhile { shape, context in … }`, at order 300 for a tab that comes and goes | [Contributing](#contributing-two-points-and-their-sugar), [Mentions](#what-mentions-a-shape) |
 | Edit text that isn't a string in the panel, with a text view of your own | An `EditingTextView` subclass adopting `DetailTextContent`, in a `DetailTextBox` | [Text of a plugin's own](#text-of-a-plugins-own-detailtextbox) |
-| Opt another plugin's kind into a concern | A bridge, which imports both; `registrar.optIn(Kind.self, to:)` for an added property | [PatchTitles](#a-horizontal-plugin), [ValidationDetails](#a-tab-of-status-lines-from-a-bridge-validationdetails) |
+| Opt another plugin's kind into a concern | From a plugin whose module imports both (a kind's own plugin opts in with the concern's sugar, `patch.title()`): `registrar.optIn(Kind.self, to:)` for an added property, `registrar.title(Kind.self)` and the like for the sugar | [Titles](#a-horizontal-plugin) |
 | Keep state per editor: an engine, a cache, a timer | `registrar.service`, an `EditorService`; redo what's kept per shape for the shapes each commit's `ChangeSet` names | [Validation](../Sources/Validation/Validation.swift)'s `ValidationEngine`, [TableOfContents](../Sources/TableOfContents/ContentsState.swift)' `ContentsState` |
 | Show something small on shapes, just outside them or on a corner (a pill, a tally, a lock), on kinds you define or not | An `Adornment` type; `x.adornment`, `registrar.adornment(_:on:)` or `registrar.adornmentForEveryShape(_:where:)`, returning an `AdornmentLabel` | [Adornments](#adornments), [Titles](#a-horizontal-plugin) |
 | Let the user put a flag on a shape, and show it | An added property, a menu item that sets it, and an adornment whose label reads it | [Something the user turns on](#something-the-user-turns-on) |
 | Keep a service's state for going back to a board | `EditorService.boardWillChange` and `boardDidChange`, with a `BoardStash` (else a switch is heard as a commit of every shape) | [Showing a board](#showing-a-board) |
 | Write to a shape on a board that isn't shown (an answer that lands late), as an undo step made there | `editor.transact(on: board, "Name") { … }`; services hear it in `ChangeSet.boardsChanged` and `elsewhere` | [Boards that aren't shown](#boards-that-arent-shown) |
-| Draw above every shape something that isn't one shape's adornment (a status outline, hints) | `registrar.overlay`, a `CanvasOverlay`; `editor.paintOrder(in: context.visibleRect)` | [Validation](../Sources/Validation/Validation.swift), [Arrows](../Sources/Arrows/ArrowDefinition.swift)' binding hints |
+| Draw above every shape something that isn't one shape's adornment (a status outline, hints) | `registrar.overlay`, a `CanvasOverlay`; `editor.paintOrder(in: context.visibleRect)` | [Validation](../Sources/Validation/Validation.swift), [Arrows](../Sources/Connections/ArrowDefinition.swift)' binding hints |
 | Act on shapes about to be deleted (delete what depends on them) | `registrar.willDelete` | [The document](#the-editor-the-document-and-drawing) |
 | Create a kind with a double-click on empty canvas | `x.createOnDoubleClick(place)` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
 | Give each shape of a kind a board of its own, saved, deleted and copied with it | `BoardOwning` on its definition, nothing to implement; `editor.showBoard(BoardID(owner:))` shows one | [Boards in a file](#boards-in-a-file) |
@@ -289,20 +289,20 @@ Once one plugin works, the question is which piece the next feature needs.
 | Put a button on the canvas that a click does something with (a chip), or a drag starts something from (a port's dot) | Selection's `registrar.canvasButtons(at:click:)` or `canvasButtons(at:drag:)`, drawn in an overlay with `editor.hoveredButton` and `editor.pressedButton`; or make an adornment a `ClickableAdornment` | [Canvas buttons](#canvas-buttons), [Locking](#locking), [Ports](#ports) |
 | Make what you draw for a shape outside it count as the shape (a press, a hover, a right-click) | Selection's `registrar.decorationHits`; adornments already do | [DecorationHits](#drawn-for-a-shape-decorationhits) |
 | Make part of a shape's content answer a click without taking the shape's press (a mention's pill, a link, a checkbox) | Selection's `registrar.shapeFaces(at:click:doubleClick:hovering:)` | [Faces](#faces-clickable-parts-of-a-shape) |
-| Connect shapes with arrows: dots beside a kind's sides, dragged to another shape | `x.ports(C.self, sides:role:)`, on a channel; ArrowPorts draws the arrow | [Ports](#a-kinds-ports), [ArrowPorts](#the-connector-arrowports) |
+| Connect shapes with arrows: dots beside a kind's sides, dragged to another shape | `x.ports(C.self, sides:role:)`, on a channel; `ArrowPortsPlugin` draws the arrow | [Ports](#a-kinds-ports), [`ArrowPortsPlugin`](#the-connector-arrows) |
 | Declare a channel: a kind of connection, and which kinds take it | A `Channel` type, `registrar.channel(C.self)`; `ports` on each kind that takes it | [Channels](#channels) |
-| Say what an arrow's end may bind to (tldraw's canBind) | Arrows' `registrar.arrowBindingRule { query in ... }` | [ArrowPorts](#the-connector-arrowports) |
+| Say what an arrow's end may bind to (tldraw's canBind) | Connections' `registrar.arrowBindingRule { query in ... }` | [`ArrowPortsPlugin`](#the-connector-arrows) |
 | Connect two shapes without a drag, as a connector would from a port | `make` and `ends` on `registrar.connects`; `registry.connection(_:existing:in:)`, `registry.connectionEnds(of:)` | [Connecting without a drag](#connecting-without-a-drag) |
 | Let agents (or scripts) do something to a board from outside the app | `registrar.automationCommand("name", "…", params: P.self) { params, context in … }`: a `canvas` command | [The command line](#the-command-line) |
 | Have a command answer later (it waits on a model, or runs off the main actor), its output written off the main actor | `registrar.automationCommand(…, runAsync: { params, context async throws(AutomationError) in … })` | [A command may be async](#a-command-may-be-async) |
 | Read text as a kind's property reads it (a value typed by its schema), or say briefly what a property takes | The core's `KindSchema(schema)`, over `registry.schema(for:)` | [A kind's schema](#a-kinds-schema) |
-| Let `canvas draw` name shapes, draw edges, or warn about what it draws, from the plugin that owns the concern | A bridge: `registrar.drawNames`, `drawEdges` or `drawChecks` | [TitleNames, PortEdges, ValidationChecks](#what-draw-takes-from-other-plugins) |
+| Let `canvas draw` name shapes, draw edges, or warn about what it draws, from the plugin that owns the concern | A plugin in DrawLexicon, which imports Automation and the concern: `registrar.drawNames`, `drawEdges` or `drawChecks` | [DrawLexicon](#what-draw-takes-from-other-plugins) |
 | Make or change a shape without the pointer: what a kind's tool places, a shape from its JSON, or some of a shape's properties set from JSON | `registry.placement(for:)`, `placement.shape(at:)`; `registry.shape(_:properties:)`, `registry.shape(_:setting:)` | [The command line](#making-and-changing-shapes-without-the-pointer) |
 | Draw a shape away from where it is, for an animation (a shake) | `editor.setDrawingOffset(_:for:)`; adornments follow by themselves, and an overlay with `context.worldDrawingOffset(of:)` | [Locking](#locking) |
 | Change where a drag puts the shapes it moves (snap them, keep them on a grid), and draw while it does | `registrar.translationAdjuster { editor, start in … }`, a `TranslationAdjuster`: Snapping claims it | [The translation adjuster](#the-cores-part-the-translation-adjuster) |
 | Ask Claude something (and test it without the network) | `editor.languageModel?.respond(to: ModelRequest(...))`; `ScriptedLanguageModel` in tests | [Language models](#language-models) |
-| Keep what a kind's props are bound to right as shapes are deleted and copied (a connector) | `ShapeReferencing` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
-| Let a kind's shapes be mentioned in text, as pills, with a tab listing what mentions each | `x.mentionable(untitled:symbol:…)` (Mentions), or `registrar.mentionable(K.self)` from a bridge | [Mentions](#mentionable-kinds) |
+| Keep what a kind's props are bound to right as shapes are deleted and copied (a connector) | `ShapeReferencing` | [Arrows](../Sources/Connections/ArrowDefinition.swift) |
+| Let a kind's shapes be mentioned in text, as pills, with a tab listing what mentions each | `x.mentionable(untitled:symbol:…)` (Mentions), or `registrar.mentionable(K.self)` for another plugin's kind | [Mentions](#mentionable-kinds) |
 | Let a kind's text mention shapes, drawn with pills and edited with a picker | A `MentionText` property; `x.mentionText { … }` and `context.drawMentionText`; a `MentionTextView` editor, or `MentionTextArea` in the panel | [Mentions](#mention-text-and-its-stored-form), [In the panel](#in-the-panel-mentiontextarea) |
 | Go to what mentions a shape | `mentions.backlinks(of:)`, `showWhatMentions(_:)`; Show What Mentions in the context menu | [What mentions a shape](#what-mentions-a-shape) |
 | Restrict what a text may mention to some kinds | `ScopedMentionText<Only<Kind>>`, or a declared scope: `registrar.mentionScope(S.self)` and `x.mentionable(in: S.self)` | [Scopes](#scopes-what-a-text-may-mention) |
@@ -312,15 +312,15 @@ Once one plugin works, the question is which piece the next feature needs.
 | Ask which shape a shape is inside (its container, else the owner of its board, at any depth) | `editor.topology?.parent(of:)`, `ancestors(of:)`, `isInside(_:_:)` | [Containment](#containment) |
 | Read edges and containment off the main actor, as they were at one instant | `topology.snapshot()`, a Sendable `TopologySnapshot` | [A snapshot for other threads](#a-snapshot-for-other-threads) |
 | Find the shapes of a file a query matches (by kind, title, attribute, what's inside what, what connects to what), from a plugin or an agent | `editor.queries?.run(QueryRequest(#"sticky-note:mentions("Auth")"#))`, answered off the main actor; `canvas query` | [Queries](#queries) |
-| Give queries a plugin's word (a pseudo-class, or a relation over its edges), or say how its text reads in them | A bridge: `registrar.queryPseudoClass`, `queryRelation` or `queryTextFormat` | [What plugins add](#what-plugins-add) |
+| Give queries a plugin's word (a pseudo-class, or a relation over its edges), or say how its text reads in them | A plugin in QueryLexicon, which imports Queries and the concern: `registrar.queryPseudoClass`, `queryRelation` or `queryTextFormat` | [What plugins add](#what-plugins-add) |
 | Put an editing view's selection where the press that began editing was | `editor.beginEditing(id, at: point, clickCount:)`, read as `EditContext.startPoint` and `startClickCount` | [Capabilities](#capabilities) |
 | Name an undo step, or make several changes one | `editor.transact("Name") { ... }`; `editor.undoHistory.group("Name") { ... }`; `transact(coalescing:)` for a run of writes | [Undo](#undo) |
 | Put a service's state back with undo (a selection) | `UndoParticipant` | [Undo](#undo) |
 | Change the board for an agent, without starting what follows a person's edits (a sync) | `transaction.byAgent = true`; a service reads `changes.byAgent` | [The command line](#draw) |
 | Keep something about any shape beside its props (where it came from) | A `ShapeMetaKey`, and `record.meta[Key.self]` | [Metadata](#metadata) |
 | Add a right-click item that isn't one shape's, in every menu and on empty canvas | `registrar.contextMenuForCanvas { ... }` | [The clipboard](#the-clipboard) |
-| Show a shape's state in the panel: at its foot, or in a tab that shows while there's something to say | `registrar.detailStatusForEveryShape`, with `in: SomeTab.self` for a tab | [ValidationDetails](#a-tab-of-status-lines-from-a-bridge-validationdetails) |
-| Show a shape's state at a glance in the table of contents: a dot or a symbol on its row | `registrar.contentsMarkForEveryShape` | [ValidationContents](#marks-validationcontents) |
+| Show a shape's state in the panel: at its foot, or in a tab that shows while there's something to say | `registrar.detailStatusForEveryShape`, with `in: SomeTab.self` for a tab | [Validation's Issues tab](#a-tab-of-status-lines-validations-issues-tab) |
+| Show a shape's state at a glance in the table of contents: a dot or a symbol on its row | `registrar.contentsMarkForEveryShape` | [Validation's dots](#marks-validations-dots) |
 | Change a shipped kind's props | A migration in its `static let migrations`, and a fixture for the new version | [Boards on disk](#boards-on-disk) |
 | Move a kind's own member onto an added property | `PropsMigration.handOver("title", to: TitleProperty.self)` in the kind's migrations | [StickyNotes](#boards-on-disk) |
 | Change how an added property's value encodes | A `PropertyMigration` in the property's `migrations`, and a fixture in `Fixtures/added` | [Boards on disk](#boards-on-disk) |
@@ -332,10 +332,10 @@ definition adopts; behavior any plugin can add to any kind is an extension point
 
 A **vertical** plugin is a feature: a shape kind and the tool that places it, or what every kind with a capability gets
 (Reordering's Arrange menu).
-Sticky notes, arrows, schema cards, subboards and frames are verticals.
+Sticky notes, schema cards, subboards and frames are verticals.
 
-A **horizontal** plugin is a concern that cuts across kinds. It declares an extension point, and any
-kind can take part by contributing to it. Validity is the canonical example: *a shape can be valid
+A **horizontal** plugin cuts across kinds. It declares an extension point, and any kind can take
+part by contributing to it. Validity is the canonical example: *a shape can be valid
 or invalid* is horizontal; *a schema card that isn't JSON is invalid* is one vertical opting in. Titles are
 another. The horizontal owns the contract, the engine, and whatever it draws. Shapes never know
 they're invalid; the validation plugin outlines them.
@@ -356,52 +356,97 @@ show the selected shape. So are the keys: [Keyboard](#keyboard-shortcuts) holds 
 and a plugin whose tool or command has a key registers it there. So is [locking](#locking): any
 shape can be locked, and Locking owns the lock, its chip (an adornment) and its shake, while the
 core only refuses to change the shapes a plugin says are read-only. So are [ports](#ports): any
-kind can have them, on the channels it takes, and Ports owns the dots and what a drag from one may
-end on, while the plugin that owns a channel's meaning declares it. So is what's shown on shapes:
+kind can have them, on the channels it takes, and Connections owns the dots, what a drag from one
+may end on and the arrow it draws, while the plugin that owns a channel's meaning declares it. So is what's shown on shapes:
 [Adornments](#adornments) lays out and draws what any plugin puts on them, a title's pill beside a
 lock, so none overlaps another. So are [mentions](#mentions): any kind can be mentioned, and any
 kind's text can hold mentions, while Mentions owns the stored form, the pills, the picker, what
 mentions each shape and what keeps them in step with the shapes they name. So are [slash commands](#slash-commands): any
 shape can offer a command typed on a line of its text, while SlashCommands owns what a shape offers,
 the list at the slash and running the line, the plugin that owns a meaning says what the command
-does (Locking's `/lock`), and the text view that hosts it is where it's typed (Mentions'). So is what connects and contains what:
+does (Titles' `/title`, Locking's `/lock`), and the text view that hosts it is where it's typed (Mentions'). So is what connects and contains what:
 [Topology](#topology) keeps the file's graph of edges (an arrow bound at both ends, a mention),
 typed by the plugins that own what each means and read out of the shapes that carry them, while
-Ports and Mentions only say what their shapes carry. So is finding shapes: [Queries](#queries)
+Connections and Mentions only say what their shapes carry. So is finding shapes: [Queries](#queries)
 answers a query about the whole file (kinds, attributes by their schemas, what's inside what, what
-connects to what), while the plugins that own a concern say through bridges what shapes are called
-and what more a query may ask. And a horizontal may declare no point at
+connects to what), while [QueryLexicon](#what-plugins-add) says, for the plugins that own each
+concern, what shapes are called and what more a query may ask. And a horizontal may declare no point at
 all and only lend something:
 [LanguageModels](#language-models) lends every editor the model plugins ask.
 
-Opting in goes in one of two directions:
+Horizontals are four layers, which say which way an edge between two of them goes:
+
+- **Surfaces** are what the others show themselves on or build on: the keys, the selection, the
+  detail panel, context menus, slash commands, the table of contents, adornments, the graph
+  ([Topology](#topology)) and the language model. They know no concern.
+- **Concerns** are meanings a kind opts into (validity, titles, locks, connections, mentions,
+  boards, the clipboard, snapping), shown on the surfaces they import. One may build on another
+  (Mentions imports Titles, whose names its pills show), and one may own the kind it's drawn as
+  (Connections' arrow). They know no language.
+- **Languages** are what agents read and write the canvas in: the [command line](#the-command-line)
+  and `draw` (Automation), [queries](#queries) (Queries), and the commands that run them
+  (QueryCommands). What a language says of a concern comes through its points, so it knows no
+  concern.
+- **Lexicons** are a language's words for the app's concerns (DrawLexicon, QueryLexicon): the one
+  place a language and the concerns meet.
+
+A vertical builds on surfaces and concerns, and imports no language.
+
+Opting in goes in one of three directions:
 
 - **The vertical imports the horizontal** and contributes from inside its own `register`.
   Schemas does this for Validation: `schema.validate { ... }`.
-- **A bridge imports both**, and neither knows the other. A `PatchTitles` bridge would give patches a
-  title, though Patches has never heard of titles and Titles has never heard of patches. A
-  bridge may join two horizontals: `ValidationDetails` shows each shape's validation issues in an
-  Issues tab of the detail panel, and `ValidationContents` marks their rows in the table of contents, though
-  Validation has never heard of either, nor either of validity. `TitleNames`, `PortEdges` and
-  `ValidationChecks` give [`canvas draw`](#the-command-line) its names, edges and warnings, though
-  Automation has never heard of titles, ports or validity, and `MentionValidation` warns
-  about mentions that can't work, though Mentions has never heard of validation, nor Validation of
-  mentions, and `TitleValidation` about titles two shapes share, though Titles has never heard of
-  validation either. `ArrowPorts` makes arrows what a drag from a port draws, and names their family of edges, though Arrows has never heard
-  of a
-  channel or an edge, nor Ports of an arrow. `TitleQueries`, `BoardQueries`, `MentionQueries`,
-  `ValidationQueries` and `SelectionQueries` give [queries](#queries) shapes' names, boards' names
+- **A concern imports the surfaces it shows itself on.** A module that owns a meaning imports the
+  module whose surface shows it: Validation imports DetailPanel and TableOfContents, for its Issues
+  tab and its rows' dots, as Titles imports them for its header and its rows' names, and Titles and
+  Mentions import Validation, for the rules they add (warnings about titles two shapes share, and
+  about mentions that can't work). A face a plugin list should be able to leave out is a plugin
+  value of its own in the owner's module (`ValidationDetailsPlugin`, `ValidationContentsPlugin`,
+  `MentionValidationPlugin` and `TitleValidationPlugin`): the registry refuses a contribution whose
+  point's owner isn't installed, so a list with Validation and no panel installs `ValidationPlugin()`
+  alone.
+- **A lexicon imports a language and the concerns it gives words to.** A language knows no concern:
+  [`canvas draw`](#the-command-line) (Automation's) and [queries](#queries) take what shapes are
+  called, what an edge is, what's wrong with a shape drawn, what a board is called and what more a
+  query may ask from points of their own, and one module fills each language's points with this
+  app's words. DrawLexicon gives `draw` its names, edges and warnings, though Automation has never
+  heard of titles, ports or validity, and QueryLexicon gives queries shapes' names, boards' names
   and words (`:mentions`, `:invalid`, `:selected`), though Queries has never heard of titles,
-  boards, mentions, validity or the selection, nor any of them of queries.
+  boards, mentions, validity or the selection, nor any of them of queries. A lexicon isn't a
+  dependency left without a direction: its direction is settled, and checked (a language can't
+  import a concern), since a language that knew a concern couldn't be tested with fixtures in its place (AutomationTests and QueriesTests fill the
+  points with their own, which is why they stay points though one module fills each), and what a
+  lexicon holds means something of its own, the app's words in a language. Each holds a plugin
+  value for each concern (DrawLexicon's `TitleNamesPlugin`, `PortEdgesPlugin` and
+  `ValidationChecksPlugin`; QueryLexicon's `TitleQueriesPlugin`, `BoardQueriesPlugin`,
+  `MentionQueriesPlugin`, `ValidationQueriesPlugin` and `SelectionQueriesPlugin`), so a list
+  without a concern leaves its words out. What names the shipped kinds stays in Composition, the
+  one module that depends on them all: `--ask`'s prompt (`QueryPrompt`), whose examples write
+  `sticky-note` and `subboard`.
 
-Either way the edge is visible in `Package.swift`, and the dependency always points from the
-vertical (or bridge) to the horizontal, never back.
+No module joins two others but a lexicon. There's no bridge, a module that imports two others to
+join them where it isn't settled which should know the other (a `PatchTitles` bridge would give
+patches a title, though Patches has never heard of titles and Titles has never heard of patches):
+the layers settle it, and Patches would import Titles and say `patch.title()`, as notes do.
+`build.sh` refuses an edge the layers don't allow: a surface importing a concern, a concern or a
+vertical importing a language, a language importing a concern. In each direction the edge is
+visible in `Package.swift`, and the dependency always points from the vertical to the horizontal,
+from a concern to the surfaces that show it, or from a lexicon to its language and its concerns,
+never back.
+
+A concern may also own the one kind it's drawn as, so that nothing has to join them:
+[Connections](#ports) holds ports, channels and the arrow, the shape a connection is drawn as, and
+notes and schema cards import it to declare their channels without importing a vertical. Each part
+is a plugin value of its own (`PortsPlugin`, `ArrowsPlugin` and `ArrowPortsPlugin`, which makes
+arrows what a drag from a port draws and is the only code in the module that knows both arrows and
+channels), so a list can have arrows without ports, or ports with a connector of its own.
 
 ## The module graph
 
-Every plugin is its own Swift module, and `Package.swift` is the single place the dependencies
-between them are written. `build.sh` reads it, refuses to build anything it doesn't match, and
-compiles each module on its own, with only its dependency closure on the include path.
+Every plugin lives in a Swift module (a module may hold several plugin values: Connections holds
+three), and `Package.swift` is the single place the dependencies between modules are written.
+`build.sh` reads it, refuses to build anything it doesn't match, and compiles each module on its
+own, with only its dependency closure on the include path.
 
 ```
 ./build.sh graph      each module's layer, what it depends on, and what depends on it
@@ -413,8 +458,8 @@ compiles each module on its own, with only its dependency closure on the include
 Each target is one line, with its layer:
 
 ```swift
-.target(name: "StickyNotes", dependencies: ["Canvas", "DetailPanel", "Keyboard", "Mentions", "Ports", "Selection", "TableOfContents", "TextEditing", "Titles"]), // layer: vertical
-.target(name: "ValidationDetails", dependencies: ["Canvas", "DetailPanel", "Validation"]), // layer: bridge
+.target(name: "StickyNotes", dependencies: ["Canvas", "Connections", "DetailPanel", "Keyboard", "Mentions", "Selection", "TableOfContents", "TextEditing", "Titles"]), // layer: vertical
+.target(name: "DrawLexicon", dependencies: ["Automation", "Canvas", "Connections", "Titles", "Validation"]), // layer: lexicon
 ```
 
 | Layer | May depend on | Modules |
@@ -422,10 +467,12 @@ Each target is one line, with its layer:
 | wire | wire | CanvasRPC (what the app and its [command line](#the-command-line) say to each other) |
 | foundation | foundation | Geometry, Canvas (the core), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, and its solver) and QueryLanguage (the language [`canvas query`](#query) reads), pure, and TextEditing ([the text view and the caret list](#textediting) every editable text is built on) |
 | ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
-| horizontal | foundation, horizontal, wire | Keyboard, Selection, Validation, Titles, DetailPanel, ContextMenus, SlashCommands, TableOfContents, Adornments, Clipboard, Locking, Ports, Mentions, Topology, Queries, Automation, QueryCommands, LanguageModels, Boards, Snapping |
-| vertical | foundation, horizontal | Arrows, StickyNotes, Schemas, Subboards, Frames, Reordering |
-| bridge | foundation, horizontal, vertical | ValidationDetails, ValidationContents, MentionValidation, TitleValidation, ArrowPorts, TitleNames, PortEdges, ValidationChecks, TitleQueries, BoardQueries, MentionQueries, ValidationQueries, SelectionQueries |
-| composition | foundation, horizontal, vertical, bridge, wire | Composition (the shipped plugin list) |
+| surface | foundation, surface | Keyboard, Selection, DetailPanel, ContextMenus, SlashCommands, TableOfContents, Adornments, LanguageModels, Topology |
+| concern | foundation, surface, concern | Validation, Clipboard, Titles, Locking, Connections, Mentions, Boards, Snapping |
+| language | foundation, surface, language, wire | Automation, Queries, QueryCommands |
+| lexicon | foundation, surface, concern, language | DrawLexicon, QueryLexicon |
+| vertical | foundation, surface, concern | StickyNotes, Schemas, Subboards, Frames, Reordering |
+| composition | foundation, surface, concern, language, lexicon, vertical, wire | Composition (the shipped plugin list) |
 | app | foundation, ui, composition, wire | InfiniteCanvas |
 | cli | wire | CanvasCLI (`canvas`, an executable: it knows the wire, never the app) |
 | testsupport, test | (see Package.swift) | TestKit, CanvasTesting, `*Tests` |
@@ -433,8 +480,13 @@ Each target is one line, with its layer:
 What `./build.sh audit` enforces:
 
 - **No cycles.** The graph is sorted topologically; a cycle is printed as a path.
-- **Layers.** A horizontal can't import a vertical, a vertical can't import another vertical, the
-  app reaches plugins only through Composition, and nothing but the app and tests sees CanvasUI.
+- **Layers.** A horizontal can't import a vertical, and a vertical can't import another vertical
+  or a language. A surface can't import a concern, a concern can't import a language, and a
+  language can't import a concern: only a lexicon joins a language to concerns. The app reaches
+  plugins only through Composition, and nothing but the app and tests sees CanvasUI.
+- **A test of a module tests it alone.** `<M>Tests`, or a test target that says it tests a plugin
+  of M (`// layer: test of M`, as QueryLexicon's TitleQueriesTests does), may use only M, what M
+  uses, and the test-support and ui modules, so a plugin's tests can't lean on a shipped kind.
 - **Imports match the manifest, both ways.** The compiler lists each module's imports. An import
   that isn't a declared dependency fails, and so does a declared dependency that's never imported.
   `@_exported`, `@_implementationOnly` and `@testable` are banned, since each hides an edge, and
@@ -445,8 +497,8 @@ What `./build.sh audit` enforces:
   `PluginID`, `PropertyKey`, `ChannelID` or `EdgeTypeID` (`static let id: ChannelID =
   "note-link"`), or as its plugin's `id`. A string two modules declare is both of theirs, so a
   module that writes it depends on both: an id that must equal another module's takes it from that
-  module's constant rather than declaring it again (`ArrowEdge.id` is the arrow kind's name,
-  [Topology](#types)). A kind's own property names (`Property("title", ...)`) are only that kind's, so they're
+  module's constant rather than declaring it again (a channel's edge type is made from the
+  channel's id, [Topology](#types)). A kind's own property names (`Property("title", ...)`) are only that kind's, so they're
   exempt, and so is a JSON member named by one of JSON Schema's keywords, which schemas write
   wherever they're built or read, and which ordinary words, and so ids, may also be (Titles'
   `title` property): a subscript's key (`json["title"]`) or a key before a colon where a member's
@@ -672,7 +724,7 @@ The details:
   `editor.hintedShapeID` clears it when it ends.
 - **Scrolling at the edges** is tldraw's (its EdgeScrollManager and options), for a session that
   asks (`scrollsAtEdges`: `TranslatingSession`, and so a placed shape following the pointer;
-  Selection's marquee; a connection drawn from a port, ArrowPorts'): once the pointer has gone past
+  Selection's marquee; a connection drawn from a port, `ArrowPortsPlugin`'s): once the pointer has gone past
   the drag threshold from the press, while it's within 8 view points of an edge of the view or past
   it, for longer than 200 ms, the camera pans that way a frame (16 ms) at a time, at 25 view points
   a 60 Hz frame at the edge or past it, less further in, eased in (a cubic) over the next 200 ms, and
@@ -848,14 +900,15 @@ The tool stays current after a line. Its id is the kind's,
 `ToolID(placing: Polyline.kind)`, as a place tool's is, so a line is called after the tool
 (`registry.label(of:)`): "Line", with the tool's symbol, in the detail panel's header and its row.
 
-[Arrows](../Sources/Arrows/ArrowDefinition.swift) is the full-size version: a kind without a frame
+[Arrows](../Sources/Connections/ArrowDefinition.swift) is the full-size version: a kind without a frame
 that also has handles (`HandleProviding`), an exact marquee test (`BrushHitTesting`), a paint order
-of its own (`PaintOrderAnchored`), and a translation that keeps its bindings. It lends other
-plugins two things, and knows nothing of why ([ArrowConnecting.swift](../Sources/Arrows/ArrowConnecting.swift)):
-rules for what an arrow's end may bind to (`ArrowBindingRules`, tldraw's canBind), and an arrow
-drawn for a gesture of theirs (`editor.beginArrow`), which is how [ports](#the-connector-arrowports)
-draw theirs, the only way a person draws one. No tool places an arrow, so it says what its kind is
-called itself:
+of its own (`PaintOrderAnchored`), and a translation that keeps its bindings. It's the arrow of
+[Connections](#ports), the horizontal that owns it with ports. It lends other plugins one thing, and
+knows no channel ([ArrowConnecting.swift](../Sources/Connections/ArrowConnecting.swift)): rules for what
+an arrow's end may bind to (`ArrowBindingRules`, tldraw's canBind). An arrow drawn for a port's drag
+(`editor.beginArrow`) is internal to Connections: [`ArrowPortsPlugin`](#the-connector-arrows) calls it,
+which is how ports draw theirs, the only way a person draws one. No tool places an arrow, so it says
+what its kind is called itself:
 
 ```swift
 arrow.label("Arrow", systemImage: "arrow.up.right")
@@ -867,7 +920,7 @@ what the kind declares (`ShapeRegistrar.label`, one per kind), else its placing 
 symbol ("Note"), else its id, with no symbol.
 
 Zoomed out, an arrow draws a [skeleton](#skeletons) of its own
-([ArrowSkeleton.swift](../Sources/Arrows/ArrowSkeleton.swift)), since its render looks up the
+([ArrowSkeleton.swift](../Sources/Connections/ArrowSkeleton.swift)), since its render looks up the
 shapes it joins and clips its ends every frame: `ArrowSkeleton` reads only its kept geometry's
 three points (its start, the middle of its body, its end) and works nothing out again, drawing the
 arc through them, or the line from start to end where the middle is less than a quarter of a view
@@ -939,7 +992,7 @@ extension ShapeRegistrar {
     }
 }
 
-extension PluginRegistrar {     // for a kind another plugin registers (bridges use these)
+extension PluginRegistrar {     // for a kind another plugin registers
     public mutating func title<P: ShapeProps>(_: P.Type, pill: Bool = true, symbolInPill: Bool = false, placeholderInPill: String? = nil,
                                               contents: Bool = true) { ... }
     public mutating func title<P: ShapeProps>(_: P.Type, pill: Bool = true, symbolInPill: Bool = false, placeholderInPill: String? = nil,
@@ -969,6 +1022,11 @@ public struct TitlesPlugin: CanvasPlugin {
         registrar.adornmentForEveryShape(TitlePill.self, where: { $0.registry.showsTitlePill($0.kind) }) { shape, context in
             context.registry.titlePill(of: shape)
         }
+        // `/title Groceries` on a line of a shape's text, on the kinds that can be named (a derived
+        // title is renamed where it's derived from).
+        registrar.slashCommandsForEveryShape(where: { $0.holds(TitleProperty.self) }) {
+            SlashCommand("title", argument: "title") { shape, arguments in shape[TitleProperty.self] = arguments.text }
+        }
     }
 }
 ```
@@ -985,15 +1043,15 @@ theirs over ([Boards on disk](#boards-on-disk)).
 
 A title may be derived instead, from what the kind keeps itself: then it isn't data, and isn't in
 the schema. A [schema card](#schema-cards)'s is its schema's `"title"`
-(`schema.title(symbolInPill: true) { … }`), so there's one place to say it. A kind may be both: a bridge
+(`schema.title(symbolInPill: true) { … }`), so there's one place to say it. A kind may be both: a plugin
 opts it into the title Titles keeps and derives one for the shapes nobody named,
 `TitleProperty.folded(shape[TitleProperty.self]) ?? what it derives` (TitlesTests' discs; no
 shipped kind is both).
 
 `registry.titleIsDerived(kind)` tells the two apart: true for a kind titled by `title { … }` (a
 schema card), false for one titled only by `title()` (a note) or not at all; a kind that can be
-named opts into `TitleProperty`, so `registry.properties(for: kind)` has its key. The smallest
-bridge is one
+named opts into `TitleProperty`, so `registry.properties(for: kind)` has its key. Titling another
+plugin's kind is one
 line, `registrar.title(Patch.self)`: patches can be named, and an unnamed one has no title;
 a second, `registrar.details(Patch.self, header: Self.header) {}`, puts `TitleHeader` in the detail panel's
 header. The header is a function, not a closure: a closure would be built by SwiftUI's
@@ -1016,21 +1074,52 @@ splits and joins none of them. What a title brings:
   gone; with under 30 points left (44 with a symbol before the title), there's no pill. The pill is `TitlePill`, an
   [adornment](#adornments): Titles places it on every shape whose kind's title shows one, though it
   defines no kind, and Adornments lays it out with whatever else the shape shows, so it never meets
-  the lock. It keeps its size on screen, shrinking with the shapes below 25% zoom, is a blank
-  capsule below 35% on a shape drawn as a [skeleton](#skeletons), as long as the title's columns (a
-  CJK character or an emoji two), and in full on the shape being edited
-  ([adornments zoomed out](#the-label)), goes where its shape is drawn (it shakes with a locked
+  the lock. It keeps its size on screen, shrinking with the shapes below 25% zoom (a shape's
+  [skeleton](#skeletons) never has one: below 35% no adornment is shown, and the title is
+  [said on the shape](#a-cover-zoomed-out) instead; the shape being edited keeps its pill in full,
+  [adornments zoomed out](#the-label)), goes where its shape is drawn (it shakes with a locked
   shape), and is its shape's for the pointer: a click on it
   selects the shape, a drag moves it, and a double-click edits a note. A kind that draws its title
-  itself leaves it out: `sub.title(pill: false)`. A kind whose look alone doesn't say what it is
+  itself leaves it out: `sub.title(pill: false)` (it gets no cover either). A kind whose look alone doesn't say what it is
   puts its symbol (`registry.label(of:)`, its tool's) before the title: `symbolInPill: true`, as the
   schema card's `{}` (`curlybraces`), small and a little softer than the text; the capsule is longer
-  by the symbol's place, blank too ([the label](#the-label)).
+  by the symbol's place ([the label](#the-label)).
+- <a id="a-cover-zoomed-out"></a>**A cover, zoomed out.** A shape the canvas draws as a
+  [skeleton](#skeletons) (below 35%, but for the one being edited) shows no pill, and Titles puts
+  its title on the shape instead, large, so a board zoomed out reads from afar. Titles' own
+  overlay draws it (`TitleCoverOverlay`), over every shape back to front, so a frame's title isn't
+  hidden by what the frame holds. It's plain text, no plate: in a dark ink on a light surface and
+  a light one on a dark surface, by the surface the kind says its skeleton is drawn on
+  (`x.title(coverSurface: NoteStyle.color)`, or `registrar.title(K.self, coverSurface:)`; a dynamic
+  color follows the appearance, so a frame's ink flips with the canvas; the default skeleton's
+  gray, which dark ink reads on, without one), with a halo of that surface around the glyphs so it
+  stays clear over what lies under it (a frame's notes, a note's greeked lines). It's centered on
+  the shape, or at the top left of a container (`registry.isContainer`: a frame), where its pill is
+  in full.
+  Its **size follows the shape's, not the title's**, so equal shapes have equal titles: 0.22 of
+  the shorter side, between 9 and 28 view points, to half points. It's made smaller only as far as
+  the title needs: where the title wouldn't fill the room (the shape less a 4-point inset, which
+  gives way where the shape is short; the title's columns, `SkeletonText.columns(of:)`, at the
+  font's measured advance), where a line would be taller than the room, and until the widest word,
+  as it's measured at that size, fits a line. **A word is never broken**: the title wraps on
+  whole words. (A word over 16 columns, or text with no spaces, as in Japanese, breaks where the
+  line does; a word that can't fit even at 9 points sets the title on one line, truncated.)
+  **Ellipses**: a title longer than 120 characters is cut there and ends in "…" before anything is
+  laid out, so a title of thousands costs what one of a hundred does; and a title that doesn't fit
+  the room wraps and has its last line truncated by AppKit, ending in "…", never outside the shape.
+  A shape under 40 × 15 points on screen has none (there's no room for a word at the smallest
+  size, only an ellipsis), and nor has an untitled shape (a placeholder is for grabbing a shape by,
+  and a skeleton has no pill), a kind with `pill: false`, or the shape being edited. Before a title
+  is even looked up, a shape's kept bounds say whether it's big enough, so a board of thousands
+  zoomed out costs a look at each shape in view, and only the shapes big enough lay text out.
+  `editor.titleCover(of:)` is where one's text is (world units), what it says and how large it is;
+  it's no face and no decoration for the pointer, so a frame zoomed out is pressed on its border
+  as ever.
 - **A pill to grab while untitled**, for a kind that asks: `frame.title(placeholderInPill: "Frame")`
   (any form of the sugar takes it) puts the placeholder in the pill of each of its shapes nobody has
   named, laid out as a title is (after the symbol where the kind asks, giving way at the row's
   end), its text dimmed (`AdornmentLabel(placeholder:)`: white at 55%, as secondary text is on a
-  dark surface), blank zoomed out as any pill, and its shape's for the pointer as any adornment is
+  dark surface), not shown zoomed out as no adornment is (nor does it get a cover), and its shape's for the pointer as any adornment is
   (a press selects the shape, a drag moves it, a right-click opens its menu), so a shape a press
   mostly goes through has something to grab. It's never a title: `registry.title(of:)` is nil, the
   row is the kind's own, and a name takes its place. A kind that doesn't ask shows no pill on an
@@ -1041,11 +1130,20 @@ splits and joins none of them. What a title brings:
   leaves the kind's row as it is.
 - **A rename in the detail panel**, for a kind that wants one: [`TitleHeader`](#renaming-in-the-header-titleheader),
   which the kind puts in its header.
+- **A rename from a line of text**, on every kind that keeps a title: `/title`, a
+  [slash command](#slash-commands) typed on a line of its own in a shape's text (a note's).
+  `/title Groceries` and Return take the line out of the text and name the shape, one step called
+  "Title"; a pill in the line is part of the name, as "@Label", and `/title` with nothing after it
+  isn't entered, so Return is a new line. It's offered on the kinds that hold `TitleProperty`, so
+  on notes, subboards and frames, and not on a schema card, whose title is derived from its
+  schema's `"title"` and renamed there.
 
-So Titles builds on three horizontals: it imports Adornments, TableOfContents
-and DetailPanel, and a plugin list with a titled kind needs `TitlesPlugin`, `AdornmentsPlugin`
-(with Keyboard and Selection, which it builds on) and `TableOfContentsPlugin` (without one,
-`ownerNotInstalled` names it).
+So Titles builds on five horizontals: it imports Adornments, TableOfContents, DetailPanel,
+SlashCommands and Validation, and a plugin list with a titled kind needs `TitlesPlugin`, `AdornmentsPlugin`
+(with Keyboard and Selection, which it builds on), `SlashCommandsPlugin` (for `/title`) and
+`TableOfContentsPlugin` (without one,
+`ownerNotInstalled` names it); `ValidationPlugin` is needed only by `TitleValidationPlugin`
+([below](#warnings-titles-two-shapes-share)), the one part of Titles that imports it.
 
 The mechanics:
 
@@ -1109,19 +1207,22 @@ where the problems are. There, with thousands in view, each is a ring around its
 corners, grown from no outline, and a run of one color, in paint order, is filled as one path, so a
 front shape's ring still covers a back one's: Core Graphics fills rects in one path for a fraction
 of what stroking each costs (4,800 at 10%: 2.7 ms, against 21), while rounded outlines in one path,
-stroked or filled, cost ten times what each stroked alone does. Two bridges show the issues
-elsewhere, though Validation has never heard of either place: the
+stroked or filled, cost ten times what each stroked alone does. Two plugin values of Validation's
+own show the issues elsewhere (it imports DetailPanel and TableOfContents for them, and a list may
+leave either out): the
 detail panel lists a shape's issues in an Issues tab
-([ValidationDetails](#a-tab-of-status-lines-from-a-bridge-validationdetails)), and the table of
+([`ValidationDetailsPlugin`](#a-tab-of-status-lines-validations-issues-tab)), and the table of
 contents puts a dot of the same color on the row of each shape with issues, so the board's are
-found at a glance and a click goes to one ([ValidationContents](#marks-validationcontents)). Two
-add rules: [MentionValidation](#warnings-mentionvalidation) warns about mentions that can't
-work, and [TitleValidation](#warnings-titlevalidation) about titles two shapes share. Outside the
+found at a glance and a click goes to one ([`ValidationContentsPlugin`](#marks-validations-dots)).
+Two more add rules from the modules that own what they check: Mentions'
+[`MentionValidationPlugin`](#warnings-mentions-that-cant-work) warns about mentions that can't
+work, and Titles' [`TitleValidationPlugin`](#warnings-titles-two-shapes-share) about titles two
+shapes share. Outside the
 engine, `registry.validationIssues(of: record, in: shapes)` runs every rule for a
 shape's kind against any `ShapeContext`, a transaction's mid-way included (the rules look other
 shapes up in it): it's how [`canvas draw`](#what-draw-takes-from-other-plugins) warns about what
-it's drawing before it commits (ValidationChecks, another bridge). Given `editor:`, the rules have
-its services too, as a query's check of a shape on a board not shown does (ValidationQueries).
+it's drawing before it commits (DrawLexicon's `ValidationChecksPlugin`). Given `editor:`, the rules have
+its services too, as a query's check of a shape on a board not shown does (QueryLexicon's `ValidationQueriesPlugin`).
 
 `editor.validation?.cachedResult(for: id)` is a shape's verdict as the engine holds it, checking
 nothing (`CachedVerdict`): `.current(result)` (nil for no issues) for a shape on the board shown,
@@ -1130,7 +1231,7 @@ checked again (it changed or moved, or a shape its rules looked up did); `.unkno
 only running its rules can say (`validationIssues(of:in:)`). It never runs a rule, so it's for a
 reader that mustn't make the engine read a board (`result(for:)` checks every shape that's waiting,
 or a whole board it hasn't read, in one turn): a query's `:invalid` and `:warned`, asked about many
-shapes in slices ([ValidationQueries](#what-plugins-add)), take it where it's current and run the
+shapes in slices ([`ValidationQueriesPlugin`](#what-plugins-add)), take it where it's current and run the
 rules where it isn't. ValidationTests' CachedResultTests hold it, counting rule runs, with a service
 that hears each commit before the engine.
 
@@ -1145,7 +1246,7 @@ A commit that only moves shapes (`ChangeSet.moved`: `Transaction.moveBox`, which
 `translate` use) runs such a rule for none of them, neither the shapes it moved nor those whose
 rule looked one of them up, and each keeps what the rule found last (the engine keeps it per shape
 and per rule, so a shape's issues stay in its rules' order); the other rules run as they always
-do. Validation's schema rule ignores moves, and so does MentionValidation's, so a drag of a
+do. Validation's schema rule ignores moves, and so does `MentionValidationPlugin`'s, so a drag of a
 subboard 100 notes mention checks none of them again. A rule that measures distances, or finds overlaps,
 must not.
 
@@ -1168,19 +1269,20 @@ named; given only what changed on other boards while the board shown wasn't (`el
 named there meanwhile. Where shapes are checked without an editor (`validationIssues(of:in:)` given
 none: `canvas draw`'s checks), `service` is nil, and such a rule says nothing.
 
-### Warnings: TitleValidation
+### Warnings: titles two shapes share
 
 Nothing refuses two shapes one title: a paste keeps the title of what it copied, and a person
 renames as they like. But titles name shapes (`canvas draw` refuses a title two shapes have, a
 query's `"Title"` finds both), so
-[`TitleValidation`](../Sources/TitleValidation/TitleValidation.swift), a bridge between Titles and
-Validation, warns on each shape whose title another shape in the file has:
+[`TitleValidationPlugin`](../Sources/Titles/TitleValidation.swift), a plugin value of Titles' own
+that imports Validation (a list with Titles and no Validation leaves it out), warns on each shape
+whose title another shape in the file has:
 “Checkout” is another shape’s title too., about `title` where Titles keeps it (no field for a
 derived title, a schema card's). Titles as Titles reads them (`registry.title(of:)`: named or
 derived, folded), compared exactly, whatever the kinds; an untitled note's first line is no title.
 On every board the editor can show, but shapes kept aside. A warning: each shape is fine alone.
 
-- **The titles are the file's**, in a service of the bridge's (`TitleIndex`): read whole as the
+- **The titles are the file's**, in a service of the plugin's (`TitleIndex`): read whole as the
   editor opens, as Mentions' catalog is, so no check pays for it (a query's `:invalid` slice), and
   again for a file put in place or a commit heard out of turn; then kept up to date by each commit,
   for what it changed on any board (`elsewhere` too), never for a move. What a commit deleted is
@@ -1192,7 +1294,7 @@ On every board the editor can show, but shapes kept aside. A warning: each shape
 - **Moves check nothing**: the rule ignores them (`TitleValidationPlugin.titlesChecked`, debug
   builds, counts the shapes it checks, which tests hold a move to).
 
-Shipped after MentionValidation, its warnings show as any issue does: an orange outline, a line in
+Shipped after `MentionValidationPlugin`, its warnings show as any issue does: an orange outline, a line in
 the Issues tab and a dot on the row.
 
 ## Properties
@@ -1249,7 +1351,7 @@ the two never disagree:
   `PropertyModifiers`, which an added property's `keywords` take too.
 - **A string enum** adopts `SchemaCases` and titles its cases (`schemaTitle`): its schema is
   `oneOf` a `const` per case, with its title.
-- **A struct in the props** is `SchemaDefined` too, with a list of its own (Arrows' `ArrowBinding`),
+- **A struct in the props** is `SchemaDefined` too, with a list of its own (Connections' `ArrowBinding`),
   written out where it's used. Given a name, it's a shared definition instead, which each use refers
   to: CanvasTesting's `Properties<MemoNote>(definition: "memo-note")` is `canvastesting.memo-note`
   in a schema, named after the module that declares the type, so a type has one name wherever it's
@@ -1257,7 +1359,7 @@ the two never disagree:
   name, and its definition then refers to itself.
 - **A dictionary keyed by strings** is an object whose members, named anything, are each its
   value's type (`additionalProperties`).
-- **A type that codes itself by hand** writes its schema by hand, as a `SchemaDescribed`: Arrows'
+- **A type that codes itself by hand** writes its schema by hand, as a `SchemaDescribed`: Connections'
   `ArrowTerminal`, an object with one member, `free` or `bound`, is `oneOf` the two.
 - **A value that names shapes** (`ShapeNaming`, a mention) is found through the lists: a struct
   that holds one adopts `ShapeNaming` too, and the registry refuses one that doesn't ([Values that
@@ -1328,7 +1430,7 @@ of three ways:
 ```swift
 registrar.declare(TitleProperty.self)                       // the owner, TitlesPlugin; one plugin per key
 note.optIn(to: TitleProperty.self)                          // a kind, inside registrar.shape { note in ... }
-registrar.optIn(Patch.self, to: TitleProperty.self)         // another plugin's kind, from a bridge
+registrar.optIn(Patch.self, to: TitleProperty.self)         // another plugin's kind, from a plugin that imports both
 registrar.optInEveryShape(to: P.self, where: { !($0 is any PaintOrderAnchored) })   // every kind, or those a definition picks
 ```
 
@@ -1400,7 +1502,7 @@ with each of its own properties, then each added property it opts into, marked w
 `required`, and nothing else is allowed. A kind whose shapes own boards (`BoardOwning`) is marked
 `"x-canvas-board" : true`.
 Shared definitions are under `$defs`, named after the modules that declare them (`core.rect`, `mentions.text`,
-`arrows.terminal`), and every `$ref` is local. The sticky note's, abbreviated (CompositionTests pins
+`connections.terminal`), and every `$ref` is local. The sticky note's, abbreviated (CompositionTests pins
 it whole):
 
 ```json
@@ -1623,7 +1725,7 @@ of a selection: Selection works through the same generic hooks any plugin can us
 | `Tool.ignoresPress` | The rest of a double-click whose first click, on a face, went somewhere (changed the selection or moved the camera) is ignored, so the camera goes on and nothing is placed or edited where it's brought. |
 | `EditorService.documentDidChange`, `didPlace` | Drops shapes that are gone (or no longer selectable) from the selection and the hover; selects a shape just placed. |
 | `EditorService.boardDidChange`, `editor.showBoard` | Another board shown: what was selected on the board left is a step back, and nothing is selected on arrival. |
-| `EditorService.drawsSkeletonsDidChange` | The canvas started or stopped drawing [skeletons](#skeletons) under a pointer that may be still: in the select tool, with nothing under way, it looks again at what the pointer rests on, as a move there would, so a face's hovered target gives way to its shape. Buttons are looked for first, as on a move, so a button that comes or goes with the level (one that shows only in full, a blank label's shorter or longer reach) takes or gives up the hover without its plugin saying so. |
+| `EditorService.drawsSkeletonsDidChange` | The canvas started or stopped drawing [skeletons](#skeletons) under a pointer that may be still: in the select tool, with nothing under way, it looks again at what the pointer rests on, as a move there would, so a face's hovered target gives way to its shape. Buttons are looked for first, as on a move, so a button that comes or goes with the level (one that shows only in full, a lock chip) takes or gives up the hover without its plugin saying so. |
 | `Session.draw(in:)` | The marquee draws itself. |
 | `TranslatingSession`, `editor.shape(at:where:)` | Dragging the selection moves it; presses and hover find the front-most selectable shape. |
 
@@ -1694,7 +1796,7 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   (`SelectionStyle.readableZoom`: a note's 16-point text reads at 11.2 points there, just over
   `NSFont.smallSystemFontSize`, the smallest macOS sets text to be read at), or closer for a kind
   whose text is set smaller than a note's, which says the zoom its shapes read at
-  (`x.readableZoom(1)`, `registrar.readableZoom(K.self, _:)` for bridges; the `ReadableZoom`
+  (`x.readableZoom(1)`, `registrar.readableZoom(K.self, _:)` for another plugin's kind; the `ReadableZoom`
   point, one per kind, each above zero and at most 120%, `ReadableZoom.maximum`, as close as `reveal`
   brings shapes; `editor.readableZoom(of:)`): 11-point text reads at 100%, so going to a shape of
   such a kind at 70% brings it closer (every shipped kind's text reads at 70%). Going to several,
@@ -1763,23 +1865,24 @@ shakes them).
   finds, draws and hit-tests them; the definition says what a press and a drag do.
 - `x.resizable(minimumSize:)` fills `ShapeResizing`: a box kind's shapes are resized with handles,
   never smaller than its minimum ([resizing](#resizing)); `registrar.resizable(Kind.self,
-  minimumSize:)` from a bridge.
+  minimumSize:)` for another plugin's kind.
 - `BrushHitTesting` is Selection's capability for a kind that decides for itself whether the
   marquee touches it. The default is `ShapeGeometry.isHit(byBrush:)`, from its geometry.
 - `x.opens("Open") { shape, editor in … }` fills `ShapeOpening`: what opening one of the kind's
   shapes does, in place of editing it, as a board-owning kind shows its board
-  (`editor.showBoard(BoardID(owner: shape.id))`); `registrar.opens(Kind.self, "Open") { … }` from a
-  bridge. At most one per kind, plus one for every kind, which a kind's own overrides. A
+  (`editor.showBoard(BoardID(owner: shape.id))`); `registrar.opens(Kind.self, "Open") { … }` for
+  another plugin's kind. At most one per kind, plus one for every kind, which a kind's own overrides. A
   double-click on a shape, Return, Enter, ⌘↓ and `.openSelection` open it: `editor.open(id)` runs
   its kind's opener, else edits an `Editable` shape (`beginEditing`). `editor.canOpen(id)` says
   whether there's anything to do: a shape on the board shown whose kind has an opener or is
   `Editable`; a read-only shape of an `Editable` kind counts, since opening it is refused and the
   refusal shows (a locked note shakes), while an opener runs whatever the shape's lock (entering a
   board changes nothing). The title names it where it's offered (a menu item).
-- Arrows (to select the arrow it draws, and for its handles), DetailPanel (to follow the selection),
-  ContextMenus (the menu is for the selection), TableOfContents (to list and select shapes) and
-  Ports (its dots are [canvas buttons](#canvas-buttons)) and Adornments (a clickable adornment is a
-  canvas button, and every adornment is its shape's through `DecorationHits`) import Selection too.
+- Connections (to select the arrow it draws, for its handles, and for its dots, which are [canvas
+  buttons](#canvas-buttons)), DetailPanel (to follow the selection), ContextMenus (the menu is for
+  the selection), TableOfContents (to list and select shapes) and Adornments (a clickable adornment
+  is a canvas button, and every adornment is its shape's through `DecorationHits`) import Selection
+  too.
 
 **The select tool** follows tldraw's states. A plugin's [canvas buttons](#canvas-buttons) win,
 then handles, then the selectable shape under the pointer, or [something drawn for it outside
@@ -1821,12 +1924,12 @@ multi-selection's box, then the canvas.
 
 ### Resizing
 
-A box kind's shapes are resized with handles once the kind says so, from its own registrar or a
-bridge, with the smallest they go, in world units:
+A box kind's shapes are resized with handles once the kind says so, from its own registrar or
+another plugin's, with the smallest they go, in world units:
 
 ```swift
 frame.resizable(minimumSize: CGSize(width: 64, height: 64))
-registrar.resizable(Box.self, minimumSize: CGSize(width: 20, height: 10))     // a bridge
+registrar.resizable(Box.self, minimumSize: CGSize(width: 20, height: 10))     // another plugin's kind
 ```
 
 That's `ShapeResizing`, Selection's point: one per kind, plus one for every kind, which a kind's own
@@ -2142,7 +2245,7 @@ What the shipped app's keys do:
 TextEditing ([`Sources/TextEditing`](../Sources/TextEditing)) is the text under every editable text
 in the app, and the one list shown at a caret. It's a foundation module that depends on no other
 module of the project, so it knows no canvas, registry, plugin or panel, and a plugin that types
-into text imports it without importing the inspector: Arrows for an arrow's label, StickyNotes and
+into text imports it without importing the inspector: Connections for an arrow's label, StickyNotes and
 Schemas for their editors on the canvas, DetailPanel for its text boxes, Mentions for its text view
 and its picker, SlashCommands for its list at a slash. It holds `EditingTextView`, the caret list
 (`CaretList`, `CaretListWindow` and `CaretListMatcher`), `CaretListSubstitutions` and the metrics they
@@ -2194,6 +2297,13 @@ is.
   hears clicks.
 - **The placeholder** is drawn dimmed where the text starts while there's none, in the view's
   font, else `TextEditingStyle.placeholderFont` (the system's, 11 pt).
+- **Highlights.** `highlights` is a list of `TextHighlight`s (a range of the text and a fill), drawn
+  with the background, so the text is over them, as rounded rects the height of a mention's pill in
+  the text's font, reaching 2 points past the text at both ends, one for each line a range wraps
+  over (`frames(of:)` says where, in the view's coordinates; TextKit 2 only, as `caretFrame` is).
+  It's how an owner marks text that means something to it, with nothing for a host to forward: the
+  view redraws when they change, and lets go of them when it's made read-only. Pass a fill that
+  follows the surface the text is on, the text's own color at a low alpha, as a pill's does.
 - **TextKit 2.** AppKit gives a text view whose class overrides `draw(_:)` TextKit 1, so
   `EditingTextView` draws its placeholder in `drawBackground(in:)`, and a subclass that needs TextKit
   2 (pills are attachments, laid out as the canvas lays them out) keeps it. On TextKit 2 it also
@@ -2392,7 +2502,7 @@ it. Tabs sort by `order`, then by first appearance, in these bands:
 | 0 (the default) | A kind's own tabs (Schema) |
 | 50 | Feature tabs a horizontal brings to the kinds that opt into it (Boards' Board) |
 | 100 | `StyleTab`: appearance, shared by every kind |
-| 300 | A tab of the shape's state that comes and goes with it (ValidationDetails' `IssuesTab`, Mentions' `MentionsTab`): last, so the others keep their order |
+| 300 | A tab of the shape's state that comes and goes with it (Validation's `IssuesTab`, Mentions' `MentionsTab`): last, so the others keep their order |
 
 Use the shared `StyleTab` rather than a near-duplicate. Two tab types with one title
 would show as two identical tabs, so they're a registry error (`invalid`, below), whether sections
@@ -2410,7 +2520,7 @@ Plugins write the sugar, not the points:
 | Sugar | For |
 |---|---|
 | `x.details(header:) { sections }` | This kind's header and sections, inside `registrar.shape { x in ... }`. The header is a view made from the shape's binding ([the header](#the-header)). |
-| `registrar.details(P.self, header:) { sections }` | Another plugin's kind, typed as its own (bridges). |
+| `registrar.details(P.self, header:) { sections }` | Another plugin's kind, typed as its own. |
 | `registrar.detailsForEveryBox { sections }` | Every shape with a frame, editing the frame. Arrows have none, so they don't get these. |
 | `x.details(of: P.self) { sections }`, `registrar.details(of: P.self) { sections }` | An [added property](#added-properties), editing its value: on this kind's shapes that have one, or on every shape that has one. |
 | `registrar.detailStatusForEveryShape { shape, context in ... }` | Footer lines for every shape. Return `[]` when there's nothing to say. |
@@ -2459,7 +2569,7 @@ How it resolves, per shape:
 
 | What | Order |
 |---|---|
-| Sections in a tab | The kind's own (from its vertical, a horizontal it opts into, or a bridge), in plugin order and builder order; then every kind's (every-box sections, and those over an added property on every shape that has it), in plugin order. |
+| Sections in a tab | The kind's own (from its vertical, a horizontal it opts into, or another plugin that imports it), in plugin order and builder order; then every kind's (every-box sections, and those over an added property on every shape that has it), in plugin order. |
 | Tabs | By `order`, then first appearance over the same sequence, then status lines'. A tab with no shown section (by `when` and `shownWhile`) and no status line is dropped. |
 | Status lines, the footer's and each tab's | The kind's, then every kind's, each in plugin order. |
 | Header | The kind's own; else the kind's label and symbol (`registry.label(of:)`: what the kind declares, else its placing tool's, else its id). A header without a symbol takes the kind's. |
@@ -2566,9 +2676,9 @@ extension ShapeRegistrar where Definition: BoardOwning {
 ```
 
 - **Opting in.** Subboards writes `sub.opensBoard(placeholder: "Untitled Subboard", systemImage:
-  "rectangle.stack")`, and a bridge `registrar.opensBoard(P.self, placeholder:systemImage:)`. The
+  "rectangle.stack")`, and another plugin's kind opts in with `registrar.opensBoard(P.self, placeholder:systemImage:)`. The
   kind declares nothing. Its definition must be `BoardOwning`, which the sugar's `where` holds it
-  to, and `BoardKinds.check` holds a bridge's to, since its form can't say so in its types.
+  to, and `BoardKinds.check` holds the form for another plugin's kind to, since that form can't say so in its types.
 - **The graph.** Subboards imports Boards and never ContextMenus or Selection, yet its shapes open
   and have Open in their menu. The requirement shows up at startup instead: a list with Subboards
   but without `BoardsPlugin`, `SelectionPlugin`, `ContextMenusPlugin` or `DetailPanelPlugin` is
@@ -2584,18 +2694,18 @@ items over its value (`details(of:)`, `contextMenu(of:)`; [added properties](#ad
 sugar that contributes them all from the kind's registrar; and whatever consumes it (a lookup on
 `Registry`, an adornment).
 
-### A tab of status lines, from a bridge: ValidationDetails
+### A tab of status lines: Validation's Issues tab
 
 Status lines are a shape's state, not its settings: at the foot of the panel, on every tab, or in
 a tab of their own, which shows only while the shape has lines there.
-[ValidationDetails](../Sources/ValidationDetails/ValidationDetails.swift) lists each shape's
-validation issues in an Issues tab. It's a bridge between two horizontals, and its imports are
-the only edge between them:
+[`ValidationDetailsPlugin`](../Sources/Validation/IssuesTab.swift) lists each shape's
+validation issues in an Issues tab. Validation, which owns what an issue is, imports DetailPanel
+for it, the only edge between them, and the plugin is a value of its own, so a list can leave the
+panel out:
 
 ```swift
 import Canvas
 import DetailPanel
-import Validation
 
 public struct ValidationDetailsPlugin: CanvasPlugin {
     public init() {}
@@ -2673,7 +2783,7 @@ Three plugins fill one card's panel:
 |---|---|---|
 | Header | the name, renamed in place ("Untitled", dimmed, while there's none), over how many fields it has: "2 fields" | Schemas, with Titles' `TitleHeader` |
 | Schema (0) | the JSON, its issues and the sync's status under it | Schemas |
-| Issues (300) | the card's issues, worst first ("A schema must be a JSON object."), while it has any | ValidationDetails |
+| Issues (300) | the card's issues, worst first ("A schema must be a JSON object."), while it has any | Validation's `ValidationDetailsPlugin` |
 
 ### Reading and writing: `ShapeBinding`
 
@@ -2704,7 +2814,7 @@ A section's content closure gets a `ShapeBinding`. Take it as a `$` parameter, a
   property whose default is nil). It reads back its last write, as the key paths' bindings do.
   `TitleHeader($note)` renames through it.
 - **Three kinds of binding, three write paths.** A kind's own sections get its props, typed, only
-  from contributing for the kind: from its own plugin, a horizontal it opts into, or a bridge.
+  from contributing for the kind: from its own plugin, a horizontal it opts into, or another plugin that imports it.
   Every-box sections get a `ShapeBinding<CGRect>`, the frame, whatever the kind. Sections over an
   added property get its value (`ShapeBinding<P.Value>`), on the shapes that have one. Any
   of them binds an added property of its shape by its type (`$x[P.self]`), through the whole
@@ -2910,7 +3020,7 @@ right-click does nothing.
 | Sugar | For |
 |---|---|
 | `x.contextMenu { items }` | This kind's items, inside `registrar.shape { x in ... }`. A horizontal's opt-in sugar calls it too. |
-| `registrar.contextMenu(P.self) { items }` | Another plugin's kind, typed as its own (bridges). |
+| `registrar.contextMenu(P.self) { items }` | Another plugin's kind, typed as its own. |
 | `x.contextMenu(of: P.self) { items }`, `registrar.contextMenu(of: P.self) { items }` | An [added property](#added-properties), over its value: on this kind's shapes that have one, or on every shape that has one. |
 | `registrar.contextMenuForEveryShape(where:) { items }` | Every shape, over `AnyShapeRecord`. `where:` picks kinds by their definition, and so by capability (`{ !($0 is any PaintOrderAnchored) }`); `when:` picks shapes (`{ $0.box != nil }` for those with a frame). |
 | `registrar.contextMenuForCanvas { items }` | Items that aren't one shape's (Cut, Copy, Paste; Show What Mentions, since whether a shape is mentioned is what a service knows; Delete and Select All), over the menu's `MenuSubject`: its shapes (none on empty canvas), where it was asked for (`point`, world units) and the editor. In every menu, after the shapes' own in their groups' order, and alone on empty canvas. Each is asked once per menu, not per shape. |
@@ -2969,7 +3079,8 @@ sections go in `details(of:)`: a flag's Flagged is over the flag
 A future horizontal does the same inside its own sugar: its point, its tab, its menu items (over
 its property's value, if it adds one), one line on the kind. The edge comes with it: Boards imports
 ContextMenus, so a list with a kind that opens boards needs `ContextMenusPlugin` too. A feature
-whose menu items should be optional puts them in a bridge instead.
+whose menu items should be optional puts them in a plugin value of its own, as Validation puts its
+Issues tab in `ValidationDetailsPlugin`.
 
 ### Every shape: Reordering
 
@@ -3054,9 +3165,9 @@ system's rows, selection, disclosure triangles and keyboard.
 │     ↗ Arrow                         │   an arrow, under the shape it starts from
 │   ▤ Groceries                       │ a titled note: its title (Titles), not its text
 │   {} Customer                    2  │ a schema card: its name, and how many fields
-│   {} Untitled                     ● │   no name: the placeholder, dimmed; the dot, red: its error (ValidationContents)
+│   {} Untitled                     ● │   no name: the placeholder, dimmed; the dot, red: its error (Validation's)
 │   ▭ Patch                           │ a kind with no row: its label and symbol, dimmed while untitled
-│   ▭ Server room                     │   or its title, here PatchTitles'
+│   ▭ Server room                     │   or its title, from Titles
 │ ▾ ▤ Payments                        │ a subboard: what's on its board, under it
 │     ▤ Refunds                       │   a note on that board
 │ ▾ ▭ Sprint 3                        │ a frame: what it holds, under it, open from the start
@@ -3095,7 +3206,7 @@ note.contentsRow(affected: MentionRows.affected) { note, context in
   from `contentsTitle`: a commit that only moves a shape (`ChangeSet.moved`: a drag's every
   event, `translate`, a frame carrying all it holds) keeps its row, the same object, so the list
   redraws nothing, and reads only its marks again (a mark from a service may follow where a shape
-  is: a validation rule that doesn't ignore moves; [marks](#marks-validationcontents)), on the next
+  is: a validation rule that doesn't ignore moves; [marks](#marks-validations-dots)), on the next
   read: the commit only notes which shapes moved, so a drag's every event costs the table of
   contents one set's upkeep, whatever it carries. So a drag makes no row, nor does dragging a frame
   of 10,000 shapes; a shape changed any other way gets its row made again.
@@ -3131,17 +3242,17 @@ note.contentsRow(affected: MentionRows.affected) { note, context in
   on one hovers nothing: the canvas doesn't show it. Headless, `entry.nestedBoard` is the board,
   whether or not it has shapes, and `outline(of:)` its rows.
 - **Without a row**, a kind is listed by its label and symbol (`registry.label(of:)`: "Arrow",
-  which Arrows declares, "Patch", its tool's), the fallback the detail panel's header uses. Where another
+  which `ArrowsPlugin` declares, "Patch", its tool's), the fallback the detail panel's header uses. Where another
   plugin names the kind's rows (`contentsTitle`, below) that label is a placeholder, dimmed until a
   shape is named, as an untitled note's is, so unnamed patches don't read as named "Patch";
   a kind nobody names (an arrow) shows it at full strength. A kind can keep that
-  row and still say where it's listed and what it nests under, as Arrows does:
+  row and still say where it's listed and what it nests under, as `ArrowsPlugin` does:
 
   ```swift
   arrow.contentsRow(nestedUnder: { $0.props.start.binding?.shapeID })
   ```
 
-  `registrar.contentsRow(OtherKind.self) { ... }` gives another plugin's kind a row (bridges). A
+  `registrar.contentsRow(OtherKind.self) { ... }` gives another plugin's kind a row. A
   kind has at most one row: two are a `conflict`.
 - **A name from another plugin.** `x.contentsTitle { ... }` (the `ContentsTitles` point, or
   `registrar.contentsTitle(OtherKind.self)`) names a kind's rows without replacing them: a name
@@ -3214,14 +3325,14 @@ ref.contentsRow(affected: { changes, context in
   changes, [another board's outline](#another-boards-outline) makes these rows again after a commit
   that did more than move shapes, and not after a move (a drag's every event).
 - `registrar.contentsRow(OtherKind.self, affected:) { shape, context in ... }` is the same for
-  another plugin's kind (bridges). The row that reads only its shape keeps its forms,
+  another plugin's kind. The row that reads only its shape keeps its forms,
   `x.contentsRow { ... }` and `x.contentsRow(when:nestedUnder:)`.
 
-### Marks: ValidationContents
+### Marks: Validation's dots
 
 A mark is a small dot, or an SF Symbol (`ContentsMark(symbol:color:help:)`), at the trailing end
-of a shape's row, from any plugin: a state worth seeing at a glance down the list. [ValidationContents](../Sources/ValidationContents/ValidationContents.swift),
-a bridge between Validation and the table of contents, marks each shape with issues in the color
+of a shape's row, from any plugin: a state worth seeing at a glance down the list. [`ValidationContentsPlugin`](../Sources/Validation/IssueMarks.swift),
+a plugin value of Validation's own, which imports TableOfContents for it, marks each shape with issues in the color
 the canvas outlines it in, red with an error and orange with warnings alone, and the dot's tooltip
 lists them, worst first. So the table of contents is where a board's issues are found: look down
 the list for dots, and click a row to select its shape and bring it into view, where the panel
@@ -3480,7 +3591,7 @@ registrar.adornmentForEveryShape(LockChip.self, where: { $0.holds(LockedProperty
 | Sugar | For |
 |---|---|
 | `x.adornment(A.self) { shape in ... }` | This kind's shapes, inside `registrar.shape { x in ... }`, typed as its own (`ShapeRecord<Props>`). A horizontal's opt-in sugar may call it, so opting in brings its adornment. |
-| `registrar.adornment(A.self, on: Kind.self) { shape in ... }` | Another plugin's kind, typed as its own (bridges). |
+| `registrar.adornment(A.self, on: Kind.self) { shape in ... }` | Another plugin's kind, typed as its own. |
 | `registrar.adornmentForEveryShape(A.self, where:) { shape, context in ... }` | Every shape of the kinds `where` picks (every kind by default), over `AnyShapeRecord`: what a horizontal places on shapes it doesn't define. |
 
 `where` sees each kind once, as an `AdornableKind`: the `kind`, its `definition` (so its
@@ -3490,7 +3601,7 @@ where the property does (Locking's lock: `{ $0.holds(LockedProperty.self) }`, th
 locked). Titles places its pill this way, on the kinds that opted into its own point with a title
 that shows one (`$0.registry.showsTitlePill($0.kind)`, [Titles](#a-horizontal-plugin)). So
 `note.title()` brings the pill, a kind that draws its own says `pill: false`, and the report says
-Titles, which defines no kind, places the pill (`adornment TitlePill → every shape`). A bridge puts
+Titles, which defines no kind, places the pill (`adornment TitlePill → every shape`). A plugin puts
 one on a kind it doesn't define, typed:
 
 ```swift
@@ -3514,8 +3625,8 @@ has them too), in view points:
 | `.onTopRightCorner` | The top-right corner: 16 points tall, centered on the top edge, from 6 points past the right edge leftward. | None (a tally, as above) |
 
 In a place, adornments sit 4 points apart. They keep their size on screen down to 25% zoom, and
-shrink with the shapes below it (0.4× at 10%); below 35% they're drawn blank on a shape drawn as a
-skeleton, and in full on the shape being edited ([the label](#the-label)). A shape without an
+shrink with the shapes below it (0.4× at 10%); below 35% a shape drawn as a skeleton shows none, but
+the shape being edited, drawn in full, keeps its own ([the label](#the-label)). A shape without an
 outline (nothing drawn) shows none, and neither does one its
 board keeps aside. On a 200-point note, in points from its top-left
 corner, y down:
@@ -3583,7 +3694,7 @@ plugin's look alike, as `ContentsLabel` keeps rows alike:
 - **A placeholder**, `AdornmentLabel(placeholder: "Frame")`: text standing in for what isn't there
   (Titles' pill on an untitled shape whose kind asks for one), laid out as the same text is, a
   symbol before it too, its text dimmed: white at 55%, as secondary text is on a dark surface
-  (`isPlaceholder`). Blank zoomed out, as any.
+  (`isPlaceholder`).
 - **A symbol**, `AdornmentLabel(systemImage: "lock.fill")`: an SF Symbol, bold and white, in a
   disc as tall as its place, half as tall as the disc.
 - **`tone`**: `.neutral` (the default), a title pill's dark gray; or `.success`, green, for
@@ -3593,27 +3704,20 @@ plugin's look alike, as `ContentsLabel` keeps rows alike:
 A clickable one draws lighter hovered and darker pressed. A label can't draw itself (a sparkline):
 that's [not built yet](#not-built-yet).
 
-**Zoomed out**, below 35%, each label follows its own shape's level (`editor.drawsSkeleton(of:)`).
-On a shape drawn as a [skeleton](#skeletons) it's drawn blank: its capsule or its disc alone, no
-text or symbol, in an opaque pale gray of the skeletons' hue, a little off the canvas
-(`AdornmentStyle.blankFill`, sRGB 0.84, 0.85, 0.86 on the light canvas and 0.21, 0.22, 0.23 on the
-dark: lighter than a shape's skeleton on the light one, darker on the dark), so it's there without
-weighing more than the greeked text beside it, and stays gray over a note's yellow (`.success` as
-pale a green: 0.70, 0.86, 0.74 light, 0.18, 0.29, 0.21 dark). Being opaque, it lets no grid dot
-show through. It keeps its opacity (an open lock still fades) and a clickable one's lighter hovered and darker
-pressed. Text's capsule is as long as its columns (`SkeletonText.columns(of:)`: a CJK character or
-an emoji two, a combining mark none) at its place's average column advance (measured once, from a
-sample, in the place's font), after its symbol's place if it has one, with its padding, and laid out as a measured one is (at the row's left
-end, it gives way), so nothing is set or measured on a skeleton: "iiiiiiii" and "WWWWWWWW" are as
-long, and "東京の会議メモ" is about as long as in full (91 points blank, 90 in full, as measured).
-The shape being edited is drawn in full, so its labels are too, drawn and pointed at in full, while
-its neighbors' are blank.
+**Zoomed out**, below 35%, each shape follows its own level (`editor.drawsSkeleton(of:)`). A shape
+drawn as a [skeleton](#skeletons) shows no adornments: none is drawn, laid out
+(`editor.adornmentFrames(of:)` is empty), pointed at (a lock can't be clicked, and a point where a
+pill would be is empty canvas, or whatever's there), made or kept. A skeleton is what a shape is
+and where, so what's said just outside it is left off as its text is greeked, and what a title
+says is said on the shape itself: Titles' [cover](#a-cover-zoomed-out). The shape being edited is
+drawn in full, so its adornments are too, drawn and pointed at in full, while its neighbors' aren't
+shown.
 
 ### One of each on a shape
 
 `ShapeAdornments` is keyed: a contribution claims its target and its type, so an adornment is
 placed on a kind at most once, and on every shape at most once. Two plugins putting one adornment
-on a kind (a kind's own and a bridge's), or two putting one on every shape, are a `conflict`, and
+on a kind (a kind's own and another plugin's), or two putting one on every shape, are a `conflict`, and
 a contribution without Adornments is `ownerNotInstalled`:
 
 ```
@@ -3631,15 +3735,15 @@ The report shows each on its placer's line: `adornment TitlePill → every shape
 
 ### What a label reads
 
-A kind's own label, and a bridge's, reads only its shape. One for every shape also gets an
+A kind's own label, and another plugin's for the kind, reads only its shape. One for every shape also gets an
 `AdornmentContext`, with what else it may read: the registry (`context.registry`), which never
 changes, and a service's state (`context.service(S.self)`), but only a service that tells
 Adornments when what it keeps changes: `editor.adornmentsDidChange(for: ids)`. `LockState` keeps
 how far each just-unlocked shape's open lock has faded, and says so each frame of the fade.
 
-Adornments makes a shape's labels once, whatever the zoom, and keeps them until a commit names the
-shape (its `ChangeSet`) or `adornmentsDidChange` does; drawn in full, it measures them too
-([Drawing and cost](#drawing-and-cost)). So a label read from anything else (another
+Adornments makes a shape's labels once, when it first draws or points at the shape in full, and
+keeps them until a commit names the shape (its `ChangeSet`) or `adornmentsDidChange` does, with
+their faces ([Drawing and cost](#drawing-and-cost)); a shape drawn as a skeleton has none made. So a label read from anything else (another
 shape, the clock, a service that doesn't say) goes stale. `adornmentsDidChange` also redraws the
 canvas, and has the select tool look again for a button under a still pointer
 (`canvasButtonsDidChange`), so a lock that comes or goes under it is hovered, or no longer is. A
@@ -3664,15 +3768,16 @@ never stale, and nothing else is thrown away.
   it is (`context.worldDrawingReach`, zero unless one is), so a shape just outside the view that a
   shake draws toward it shows what of its adornments reaches in.
 - **Kept, not remade.** `AdornmentState`, a service, finds each kind's adornments once (the
-  registry is frozen), and keeps each shape's labels, made once whatever the zoom, with how long
-  each is drawn blank, and, apart, the faces of those drawn or pointed at in full (the text set and
-  measured, the symbol's image), dropping both for the shapes each commit's change set names. As
-  the canvas starts drawing skeletons (`drawsSkeletonsDidChange`) it lets the faces go (the shape
-  being edited makes its own again as it's drawn); zoomed back in, it makes the faces of what a
-  frame draws. It doesn't look under the pointer itself: Selection hears the level change too and
-  looks again, buttons first, and the layouts answer at the new level whichever hears first. So
-  zooming out over a thousand adorned shapes measures nothing, and zooming in again measures what's
-  in view. Where they go is worked out when it's asked, from what's kept, since it follows the zoom
+  registry is frozen), and keeps each shape's labels with their faces (the text set and measured,
+  the symbol's image), made when the shape is drawn or pointed at in full, dropping them for the
+  shapes each commit's change set names. As the canvas starts drawing skeletons
+  (`drawsSkeletonsDidChange`) it lets everything go (the shape being edited makes its own again as
+  it's drawn); zoomed back in, it makes those of what a frame draws. It doesn't look under the
+  pointer itself: Selection hears the level change too and looks again, buttons first, and the
+  layouts answer at the new level whichever hears first. So zooming out over a thousand adorned
+  shapes makes and measures nothing (a frame zoomed out has no adornment to look at: the overlay
+  returns at once, but for the shape being edited), and zooming in again makes what's in view.
+  Where they go is worked out when it's asked, from what's kept, since it follows the zoom
   and geometry that follows other shapes: a few additions per adorned shape in view. So a frame
   costs a lookup and the drawing per adorned shape in view, and a drag the labels of what moves.
   Once labels are kept, a frame allocates nothing per adorned shape: one buffer of slots a frame
@@ -3681,14 +3786,6 @@ never stale, and nothing else is thrown away.
   and 155 locks in view, the overlay took about a millisecond, as measured, with no array a shape
   or box a lock). `./build.sh bench` holds a hover and a drag at 10,000 shapes, with pills and locks
   in view, and a hover onto a pill, to a frame (16 ms).
-- **Blank, a run at a time.** Zoomed out, where thousands are in view, blank labels are filled a
-  run at a time: one path while they're alike (tone, look and opacity), filled once the next isn't,
-  in paint order, so what's over what is as when each is filled alone, and, being opaque, where two
-  meet is no darker. A capsule's ends are flattened to chords within 0.2 device pixels, since Core
-  Graphics fills a path of many curves more slowly than filling each alone: 7,200 labels at 10%
-  took some 5 ms as lines in one path, where as curves they took 12 filled one at a time and 24 in
-  one path. A label drawn in full among them (the shape being edited's) fills the run first, so
-  it's over the blank ones behind it.
 
 ### Pointing
 
@@ -3700,18 +3797,18 @@ never stale, and nothing else is thrown away.
 - **A hit** is within 3 points of the adornment's capsule, so a disc's is a circle, 12 points from
   its middle, and not its box's corner. Of one shape's adornments the nearest takes it; of several
   shapes', the front-most shape's, as they're drawn, so a front shape's pill over a back shape's
-  lock takes the press. Hits go by where a shape is, not where a shake draws it, each shape's laid
-  out at its level (`editor.drawsSkeleton(of:)`), as it's drawn: on a skeleton, a blank label is
-  hit where its capsule is, so a point past a blank title's end, which the title in full would
-  cover, hits nothing, and a blank lock still unlocks; the shape being edited's are hit in full. An
+  lock takes the press. Hits go by where a shape is, not where a shake draws it, as it's drawn:
+  a shape drawn as a skeleton (`editor.drawsSkeleton(of:)`) shows no adornments, so none is hit
+  there (a lock can't be clicked); the shape being edited's are hit in full. An
   unselectable shape's adornments are seen through, as it is, but a button isn't: a lock is clicked
   whatever its shape.
 - **`editor.hoveredButton`** and `editor.pressedButton` hold an `AdornmentButton` on a clickable
   one: `AdornmentButton(LockChip.self, on: id)`, the type and the shape.
 - **`editor.adornmentFrames(of: id)`** is where each of a shape's adornments is now: an
   `AdornmentFrame` each (`adornment`, as `.of(TitlePill.self)`; its `label`; and its `rect`, in
-  world units at the current zoom, where the shape is, blank on a skeleton), in the order they're
-  claimed, leaving out those without room. It's empty for a shape with none.
+  world units at the current zoom, where the shape is), in the order they're
+  claimed, leaving out those without room. It's empty for a shape with none, and for one drawn as
+  a skeleton.
 
 ### Something the user turns on
 
@@ -4037,9 +4134,8 @@ extension LockChip: ClickableAdornment {                // a click on the chip
   row just above the shape, ending at its right edge. Its order is 300, a state that comes and
   goes, so it's farthest out of what's at that end, and a title's pill at the other end stops 4
   points short of it. Adornments lays it out with the rest, keeps its size on screen down to 25%,
-  draws it blank below 35% on a shape drawn as a [skeleton](#skeletons), as a locked shape always
-  is, since it can't be edited (a disc with no lock, locked or open and fading, which a click unlocks
-  or locks as ever: [the label](#the-label)), and draws it
+  shows none below 35% on a shape drawn as a [skeleton](#skeletons), as a locked shape always
+  is, since it can't be edited (so it can't be clicked there either: [the label](#the-label)), and draws it
   where its shape is drawn, so it shakes with it. A click within 3 points of its edge
   still clicks it. The open lock, fading, is a label from what `LockState` keeps
   (`openLockOpacity(of:)`: nil but for a shape just unlocked), and `LockState` tells Adornments
@@ -4101,15 +4197,19 @@ of a [container](#containers) easing there) is drawing offsets too.
 Ports are data-canvas's: dots just outside the sides of the shape the pointer is over, from which a
 drag draws an arrow to another shape. Not to any shape: each port is on a channel, a kind of
 connection, and the arrow may end only on a shape that takes its channel, so a note links to a note
-and a schema card to a schema card, never one to the other. It's a horizontal ([`Sources/Ports`](../Sources/Ports))
-any kind opts into, built on Selection, whose [canvas buttons](#canvas-buttons) the dots are; the
-core has never heard of a port, and Ports has never heard of an arrow: a bridge,
-[ArrowPorts](#the-connector-arrowports), makes arrows what a drag from a port draws. The same
+and a schema card to a schema card, never one to the other. They belong to Connections
+([`Sources/Connections`](../Sources/Connections)), a horizontal any kind opts into, built on
+Selection, whose [canvas buttons](#canvas-buttons) the dots are (and on TableOfContents and
+TextEditing, for the arrow's row and its label's editor). It holds ports, channels and the arrow, in
+three plugin values, `PortsPlugin`, `ArrowsPlugin` and `ArrowPortsPlugin`, so a list can have arrows
+without ports, or ports with a connector of its own. The core has never heard of a port, the ports
+code has never heard of an arrow, nor the arrow code of a channel: `ArrowPortsPlugin`
+([below](#the-connector-arrows)) makes arrows what a drag from a port draws. The same
 rules hold for a connection made by name, with no drag ([Connecting without a
-drag](#connecting-without-a-drag)), as `canvas draw`'s edges are. Ports builds on
+drag](#connecting-without-a-drag)), as `canvas draw`'s edges are. Connections builds on
 [Topology](#topology) too: a connection bound at both ends is an edge of the file's graph, of its
-channel's type. Ports itself
-([Ports.swift](../Sources/Ports/Ports.swift)):
+channel's type. `PortsPlugin` itself
+([Ports.swift](../Sources/Connections/Ports.swift)):
 
 ```swift
 registrar.declare(ChannelProperty.self)                 // `channel` on a connection drawn from a port
@@ -4164,17 +4264,17 @@ already what a connection is in Topology's graph: its edge type.
   imports that plugin's module. StickyNotes declares `NoteLink` for its notes, and Schemas
   `SchemaLink` for its cards; a channel that joins kinds of several plugins would be declared by the
   horizontal whose meaning it is (data-canvas's `registerHostChannel` calls come from such a
-  feature), and given to their kinds by bridges.
+  feature), and given to their kinds by a plugin that imports both.
 - **A channel is an edge type too.** `registrar.channel(C.self)` also declares Topology's edge type
   of the same name (`note-link`), under the family of edges the connector draws (`arrow`,
-  [below](#the-connector-arrowports)), a root without a connector: so a query for every arrow
+  [below](#the-connector-arrows)), a root without a connector: so a query for every arrow
   (`.within("arrow")`) finds those on every channel, and one for a channel finds its own. A
   channel's id that's another edge type's is a `conflict`, as two channels of one id are.
 - **The id never changes once shipped**, since connections keep it. The id audit holds a
   `ChannelID` literal to the module that declares it, as it does a kind
   ([The module graph](#the-module-graph)).
 - **What a connection knows is its channel**: `ChannelProperty` (key `channel`), an [added
-  property](#added-properties) Ports declares and the connector's kind opts into. It has no
+  property](#added-properties) `PortsPlugin` declares and the connector's kind opts into. It has no
   default, so only a connection drawn on a channel has one, from a port or by name
   (`"added" : { "channel" : "note-link" }`), and an arrow drawn by `canvas draw` with `channel:
   none` has none. In the arrow's schema it's a string of at least
@@ -4184,7 +4284,7 @@ already what a connection is in Topology's graph: its edge type.
 ### A kind's ports
 
 `x.ports(C.self, sides:role:)` gives a kind ports on a channel (`registrar.ports(K.self, on:
-C.self, sides:role:)` for another plugin's kind, from a bridge). It's the `ShapePorts` point, one
+C.self, sides:role:)` for another plugin's kind). It's the `ShapePorts` point, one
 contribution per kind and channel, and a kind may have ports on several:
 
 - **`sides`** (`PortSide`: `.top`, `.right`, `.bottom`, `.left`; all four by default) are where
@@ -4207,7 +4307,7 @@ Its report shows `ports note-link → sticky-note` on the line of the plugin tha
 ports, and `channel note-link` on the declarer's.
 
 **One port table.** Everything that asks about ports reads one table of each kind's ports
-([PortTable.swift](../Sources/Ports/PortTable.swift): `KindPorts`, built on demand from the frozen
+([PortTable.swift](../Sources/Connections/PortTable.swift): `KindPorts`, built on demand from the frozen
 registry, and kept whole by each editor's `PortState`): the dots and a drag from one,
 `editor.channel(of:endingAt:)`, `accepts`, and the lookups below. So a kind's channels are in one
 order everywhere, plugin order: the order of the `ShapePorts` contributions in the plugin list,
@@ -4222,6 +4322,7 @@ only one there, its role and its sides. A drag and a connection asked for by nam
 | `hasPorts(kind)`, `portChannels(of: kind)` | Whether a kind has ports on any channel, and on which, in the table's order. |
 | `dotChannels(of: kind, side:)` | The channels a drag from its dot on that side starts connections on, as `Connection.channels` has them; with no side, all its dots' channels, each once. A `.target` port has no dot. |
 | `takes(kind, channel, as: role, side:)`, `portSides(of: kind, on: channel, as: role)` | Whether its ports on a channel let it be a `.source` or a `.target` (on a side, if named), and on which sides. |
+| `connectionChannel(from: kind, fromSide:, to: target, toSide:)` | The channel a connection from a shape of `kind` to one of `target` is on when none is named, as a drag picks one (`editor.channel(of:endingAt:)`): the first of `kind`'s dot channels (on `fromSide`, if named) that `target` takes as a target (on `toSide`, if named); nil if they share none. An edge `canvas draw` draws with no channel written is on it ([`PortEdgesPlugin`](#edges-and-their-channels-portedgesplugin)). |
 | `accepts(shape, on: channel, as: role)`, `declares(channel)` | `takes` for a shape (none for one kept aside), and whether some installed plugin declares the channel: what rules about connections already drawn go by. |
 | `canConnect(id, in: shapes)` | The connector's `canConnect`, for a shape in any `ShapeContext`: the editor's, or a transaction's, which has the shapes it inserted. |
 | `connection(_:existing:in:)`, `connectionEnds(of:)` | A connection made, or changed, without a drag, and the shapes one joins ([below](#connecting-without-a-drag)). |
@@ -4263,7 +4364,7 @@ one shape at a time, the host, as data-canvas's show on the hovered shape:
   whatever is under it. Where the select tool hasn't seen the pointer move (just after a tool
   change, or a first click into the window) no dot shows, so none takes the press: it's the
   canvas's, or the shape's. Past the drag threshold, the connector draws a connection from it;
-  released without a drag, nothing happens; Escape lets go. Ports comes after Adornments in the
+  released without a drag, nothing happens; Escape lets go. `PortsPlugin` comes after `AdornmentsPlugin` in the
   shipped list, so a dot is found before an adornment it overlaps (a lock chip, a clickable
   adornment, among them), and draws above it.
 - **While a connection is drawn** the dots are gone, and each shape in view it could end on is
@@ -4279,9 +4380,9 @@ one shape at a time, the host, as data-canvas's show on the hovered shape:
   `editor.paintOrder(in:)` with the visible rect. `./build.sh bench` holds a hover on a note's dot
   and a drag from it at 10,000 shapes to a frame.
 
-### The connector: ArrowPorts
+### The connector: arrows
 
-Ports never learns what a connection is. One plugin draws them, the connector
+The ports code never learns what a connection is. One plugin draws them, the connector
 (`registrar.connects(K.self, edgeType: F.self, canConnect:make:ends:begin:)`, the `Connectors`
 point, at most one). `K` is what connections are, and opts into `ChannelProperty`; `F` is the
 family of edges they are in Topology's graph (an `EdgeType`, which this declares, and every
@@ -4291,9 +4392,9 @@ transaction's, for a connection asked for by name); `make` and `ends`, both opti
 shapes [without a drag](#connecting-without-a-drag); and `begin`, given the drag's `Connection`
 (the port's shape and side, the dot's channels in the port table's order, and where it was
 pressed, in world units), returns the session that draws it, which the dot's press hands the drag
-to, or nil to draw nothing. The bridge ([ArrowPorts.swift](../Sources/ArrowPorts/ArrowPorts.swift))
-makes arrows the connector, though Arrows has never heard of a channel, and names their family of
-edges:
+to, or nil to draw nothing. `ArrowPortsPlugin` ([ArrowPorts.swift](../Sources/Connections/ArrowPorts.swift))
+makes arrows the connector, though the arrow code has never heard of a channel, and names their
+family of edges:
 
 ```swift
 public enum ArrowEdge {}
@@ -4347,11 +4448,11 @@ registrar.arrowBindingRule { query in
   declares carries an edge of that type, kept as written, unless it's another edge type's id (a
   file whose arrow says `mention`): a connection is never an edge of a type that isn't a channel's,
   so that one is the family's, and Mentions never takes an arrow for a mention. `ArrowEdge.id` is
-  the arrow kind's name, taken from `Arrow.kind` rather than written again, since the id audit
-  gives `"arrow"` to Arrows. A connector without `ends` carries no edges.
+  the arrow kind's name, taken from `Arrow.kind` rather than written again, so the string is said
+  once. A connector without `ends` carries no edges.
 
-What Arrows lends, it lends any plugin, and it knows no channel
-([ArrowConnecting.swift](../Sources/Arrows/ArrowConnecting.swift)):
+The arrow code knows no channel ([ArrowConnecting.swift](../Sources/Connections/ArrowConnecting.swift)),
+and lends any plugin what follows, but for `beginArrow`, which is internal:
 
 - **`ArrowBindingRules`** (`registrar.arrowBindingRule { query in ... }`, a list) is tldraw's
   canBind: an end binds only to a shape every rule allows, looking through the rest. A rule gets an
@@ -4365,22 +4466,22 @@ What Arrows lends, it lends any plugin, and it knows no channel
   arrow. **`registry.arrowMayBind(arrow, end, to: shape)`** is whether the binding rules let an
   end bind to a shape, the same check a dragged end's targeting and a lone arrow's translation make
   (`ArrowBindingQuery.isAllowed`), for an arrow made without a pointer.
-- **`editor.beginArrow(from:at:canBind:complete:)`** draws an arrow for another plugin's gesture:
-  it inserts one, its start bound to the shape (imprecise) and its end at `origin`, and returns the
-  session that drags its end, for the caller to hand the drag to (nil if an arrow can't bind to the
-  shape). Released bound, `complete` gets the arrow's record and the shape its end is bound to, in
-  the transaction that finishes it.
+- **`editor.beginArrow(from:at:canBind:complete:)`**, internal (only `ArrowPortsPlugin` calls it),
+  draws an arrow for a port's drag: it inserts one, its start bound to the shape (imprecise) and
+  its end at `origin`, and returns the session that drags its end, for the caller to hand the drag
+  to (nil if an arrow can't bind to the shape). Released bound, `complete` gets the arrow's record
+  and the shape its end is bound to, in the transaction that finishes it.
 - **`BindingHintsOverlay`** draws the hints of the arrow being dragged, else the selected arrow's,
   so an arrow drawn from a port, which leaves the selection alone, hints as a re-aimed one does.
 
 ### Connecting without a drag
 
 A connection can be asked for by name, as
-[`canvas draw`](#edges-and-their-channels-portedges)'s edges are:
+[`canvas draw`](#edges-and-their-channels-portedgesplugin)'s edges are:
 `registry.connection(request, existing:, in: shapes)`, which the connector's `make` answers. A
 `ConnectionRequest` says from which shape to which, aimed at which of their sides (none: where the
 connector aims by itself, an arrow at the shape's center), on which channel (none: a plain
-connection), and whether it has a head at its start too. Ports only
+connection), and whether it has a head at its start too. The ports code only
 passes it on: the caller picks the channel, as a drag from a port would (`dotChannels`, `takes`),
 and asks `canConnect` of both ends first (`registry.canConnect(_:in:)`). What comes back:
 
@@ -4397,7 +4498,7 @@ and asks `canConnect` of both ends first (`registry.canConnect(_:in:)`). What co
 `registry.connectionEnds(of: record)` is which shapes a connection starts and ends on, by the
 connector's `ends`: nil for anything else, or one not bound at both ends.
 
-ArrowPorts' `make` (`ArrowConnections`) binds both ends: an end with no side named at its shape's
+`ArrowPortsPlugin`'s `make` (`ArrowConnections`) binds both ends: an end with no side named at its shape's
 center, imprecise, as a port's drag starts one, and a named side at its middle, precise but not
 exact, so the arrow stops at the outline with its head's gap, as an end dragged in slowly does. Where a named side faces away from the other shape, the arrow still leaves by the side facing
 it: an end is clipped where the line first crosses the outline, as tldraw's is. A changed arrow
@@ -4417,8 +4518,8 @@ Mentions ([`Sources/Mentions`](../Sources/Mentions)) lets text mention other sha
 note, a few letters of another note's title, Return, and the note says "Ask ⟨▤ Ship the beta⟩
 first", the mention an inline pill with the note's symbol and name. It's a horizontal on
 Selection, the context menu, the detail panel, the table of contents, [TextEditing](#textediting) (the text view and the picker's
-list), [SlashCommands](#slash-commands) (its text view hosts them), Titles and [Topology](#topology) (each mention is an edge of the
-file's graph), and three kinds opt
+list), [SlashCommands](#slash-commands) (its text view hosts them), Titles, [Topology](#topology) (each mention is an edge of the
+file's graph) and Validation (for [the warnings](#warnings-mentions-that-cant-work) it adds), and three kinds opt
 in: sticky notes, whose text holds mentions and which can be mentioned, subboards, which can
 be mentioned (following a mention of one enters it), and schema cards, whose descriptions mention
 each other, each mention a `$ref` in the card's schema ([References between cards](#references-between-cards)). A mentioned shape's panel lists what mentions
@@ -4449,7 +4550,7 @@ schema.mentionable(tint: { _ in SchemaStyle.accent })            // by its title
 ### Mentionable kinds
 
 A kind opts into being mentioned with `x.mentionable(label:untitled:symbol:detail:tint:following:)`, one per
-kind (the `ShapeMentions` point; `registrar.mentionable(K.self, …)` from a bridge, and
+kind (the `ShapeMentions` point; `registrar.mentionable(K.self, …)` for another plugin's kind, and
 `registrar.mentionableEveryShape(where:)` for a composition that wants every kind, which a kind's
 own takes the place of). Every closure reads only the shape, as a title does, so a pill changes
 only when its shape does:
@@ -4537,13 +4638,13 @@ admits a shape, and what its schema says of it (`x-canvas-mentions`, beside the 
   vertical imports another: `ScopedMentionText<Only<SchemaCard>>`.
 - A **declared scope** (`DeclaredMentionScope`, with a `title`), which the plugin that owns its
   meaning declares, `registrar.mentionScope(Blockers.self)` (the `MentionScopes` point; no two
-  titled alike), and kinds join from their own plugin or a bridge, `x.mentionable(in:
+  titled alike), and kinds join from their own plugin or another plugin, `x.mentionable(in:
   Blockers.self)` or `registrar.mentionable(Subboard.self, in: Blockers.self)` (a kind must be
   mentionable to join, and the scope declared).
 
 A scope limits what the picker offers, and the schema says it. It never refuses a mention that's
 there (pasted, or written by an agent), as a bound is a guideline, though
-[MentionValidation](#warnings-mentionvalidation) warns about it. A note's text mentions any
+[`MentionValidationPlugin`](#warnings-mentions-that-cant-work) warns about it. A note's text mentions any
 mentionable shape; a schema card's description (`SchemaPromptText`) only schema cards, whose
 schemas it refers to. MentionsTests hold scopes with
 fixtures (a `Brief` holds text of `Only<Plate>` and of `Blockers`, which plates and tokens join).
@@ -4593,7 +4694,7 @@ func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
 - **Where pills are.** `editor.mentionPills(of:)` is each pill's frame, in world units, with
   `isLive`, from the same placements, as string drawing puts them: a line that doesn't fit, or a
   pill the "…" of a cut-short last line covers, has none. The `MentionTexts` point (`x.mentionText`,
-  `registrar.mentionText(K.self)` from a bridge, `registry.mentionTextPlacements(of:)`) is what the
+  `registrar.mentionText(K.self)` for another plugin's kind, `registry.mentionTextPlacements(of:)`) is what the
   faces read.
 
 ### The service: `MentionState`
@@ -4628,7 +4729,7 @@ follows undo and redo, during which nothing may):
   costs nothing: they share what the state keeps, which its next change (a rename, a shape
   mentioned anew) copies once while they're held. They're as of the last commit the state heard (a
   rename after they're taken isn't in them): a query takes them as it takes up the file, and reads
-  mention text with them off the main actor ([MentionQueries](#what-plugins-add)). MentionsTests'
+  mention text with them off the main actor ([`MentionQueriesPlugin`](#what-plugins-add)). MentionsTests'
   LabelsTests hold them to `plainText`, read on a detached task.
 - **Following changes**: `observe(_:_:)` tells an AppKit view which of its targets' resolutions a
   commit changed (the text view's pills), `labelRevision(of:)` observes one target for SwiftUI, and
@@ -4885,13 +4986,13 @@ So a list with a mentionable kind needs `DetailPanelPlugin()`, and one with Ment
 `ContextMenusPlugin()`; the report shows the tab as `ShapeDetails → sticky-note` after the kind's
 `mentionable`, and the menu item as `CanvasContextMenu` on the `mentions` line.
 
-### Warnings: MentionValidation
+### Warnings: mentions that can't work
 
 A mention that's there is never refused, as a scope never refuses one, but some can't work, and a
-bridge between two horizontals says so:
-[`MentionValidation`](../Sources/MentionValidation/MentionValidation.swift), which neither Mentions
-nor Validation knows. Mentions finds the problems (`registry.mentionProblems(of:lookup:)`, each a
-`MentionProblem`: the property the text is in, and a sentence), and the bridge makes each a warning
+rule says so: [`MentionValidationPlugin`](../Sources/Mentions/MentionValidation.swift), a plugin
+value of Mentions' own that imports Validation (a list with Mentions and no Validation leaves it
+out). Mentions finds the problems (`registry.mentionProblems(of:lookup:)`, each a
+`MentionProblem`: the property the text is in, and a sentence), and the plugin makes each a warning
 about that property:
 
 ```swift
@@ -4926,7 +5027,7 @@ registrar.validateEveryShape(ignoringMoves: true) { shape, context in
   mention, or of the whole board, runs it for none of them (`MentionValidationPlugin.textsChecked`,
   debug builds, counts the texts it checks, which tests hold a drag to).
 
-Shipped after ValidationContents, its warnings show as any issue does: an orange outline, a line in
+Shipped after `ValidationContentsPlugin`, its warnings show as any issue does: an orange outline, a line in
 the Issues tab and a dot on the row.
 
 ### Mentions across boards
@@ -4991,7 +5092,7 @@ shape on any board of it, and shows it as it's called now, wherever it is:
 - **So are backlinks.** The Mentioned In tab and Show What Mentions list the mentioners on every
   board, the board shown's first; a line goes to its mentioner's board, and so does Show What
   Mentions when none is on the board shown.
-- **But not warnings.** MentionValidation looks a mention's target up on the board shown, so a
+- **But not warnings.** `MentionValidationPlugin` looks a mention's target up on the board shown, so a
   mention of a shape on another board is checked no more than a missing one is
   ([Not built yet](#not-built-yet) across boards).
 
@@ -5015,7 +5116,7 @@ Mentions' `MentionTextView` does, so every text where mentions are typed (a note
 schema card's description's, the panel's [`MentionTextArea`](#in-the-panel-mentiontextarea)) takes
 slash commands. The core has never heard of a command, and SlashCommands has never heard of a
 mention: a command's arguments are runs of text and shapes, and a pill is a shape only because the
-text view that reads the line says so. Locking's `/lock` is the one command that ships.
+text view that reads the line says so. Titles' `/title` and Locking's `/lock` are the commands that ship.
 
 ```swift
 // In LockingPlugin.register:
@@ -5043,7 +5144,7 @@ builder (`SlashCommandBuilder`, as `MenuBuilder` is: `if`, `if`/`else` and `for`
 |---|---|
 | `x.slashCommands { commands }` | This kind's commands, over its props, inside `registrar.shape { x in ... }`. A horizontal's opt-in sugar may call it too, so opting into its feature brings its commands. |
 | `x.slashCommands(of: P.self) { commands }` | An [added property](#added-properties), over its value: this kind's shapes that hold one offer them, and the rest don't. |
-| `registrar.slashCommands(K.self) { commands }` | Another plugin's kind, typed as its own props (bridges). |
+| `registrar.slashCommands(K.self) { commands }` | Another plugin's kind, typed as its own props. |
 | `registrar.slashCommands(of: P.self) { commands }` | An added property, over its value, on every shape that has one. |
 | `registrar.slashCommandsForEveryShape(where:) { commands }` | Every shape, over `AnyShapeRecord`. `where:` picks kinds by their definition and by what else they take part in, asked once per kind: it gets a `SlashCommandKind` (`kind`, `definition`, `registry`, and `holds(P.self)`, whether the kind opted into an added property), so a feature's every-shape command goes only on the kinds that opted into the feature (`$0.holds(LockedProperty.self)`); `when:` picks shapes. |
 
@@ -5098,7 +5199,7 @@ registrar.shape(LampDefinition()) { lamp in
   (`/turn-on /turn-off /level → lamp`, `/lock → every shape`).
 - **`SlashCommandsPlugin()` is the owner.** It registers the service and nothing else: it
   contributes no command and claims no key. A plugin that contributes a command needs it in the
-  list (`ownerNotInstalled` otherwise), and a bridge needs the kind's plugin (`unknownKind`).
+  list (`ownerNotInstalled` otherwise), and a contribution for another plugin's kind needs that plugin (`unknownKind`).
 
 ### What a shape offers, and running a command
 
@@ -5192,6 +5293,27 @@ panel's), a command line runs and doesn't commit, and Return anywhere else commi
   Return that isn't a command's. A command that reads the text (offered only while it isn't
   blank, say) is still run once the line is gone: it's run as it was found, not asked again.
 
+### Marking the command
+
+A command is marked as it's typed, as a mention's pill is marked, so a line that Return would run
+looks unlike one that is only text. `SlashCommandTyping` sets the view's `highlights`
+([TextEditing](#the-text-view)) after every change of the text or the caret, in the text's own color
+(its typing attributes') at a strength of it, so the marks follow whatever surface the text is on:
+
+- **The `/name`**, at `SlashCommandStyle.commandFill` (18%; a pill's is 10%). With the list open it's
+  the `/` and the name there (past the caret too, if it's in the middle of one), so long as the list
+  lists a command for it: "No matches" marks nothing. With the list closed it's the name of the
+  line the caret is on (`SlashCommandLine.nameRange`), if the shape offers a command of that name
+  now, and the caret is after the `/`: the same line Return would run, whether or not its arguments
+  suit the command.
+- **What it's given**, at `argumentsFill` (8%), a lighter shade of the same: the line's arguments,
+  only when the command accepts them. `/lock now`, which stays text, marks `/lock` alone; `/title
+  Groceries` marks both; a pill in the arguments is inside the mark.
+- **Nothing else.** Other lines, a line whose name the shape doesn't offer (`/wide` while the card
+  isn't wide), a selection, the caret before the `/`, and a view that can't be written (which lets go
+  of its highlights as it's made read-only) have no marks. Running the command takes the line out of
+  the text, and its marks with it.
+
 ### Undoing a command
 
 Two undo managers, as with every text: the board's steps and the text's own ([Undo](#undo)).
@@ -5245,6 +5367,8 @@ override func keyDown(with event: NSEvent) {                                    
   `holdsKeys` while it's open and every key and close is `EditingTextView`'s ([A list at the
   caret](#a-list-at-the-caret)); a pick and a close go through the window's closures, which run
   the object's.
+- **It marks the command through the view too**: `view.highlights` is the whole of it, so a host
+  forwards nothing to draw ([Marking the command](#marking-the-command)).
 - **It writes the text only through the view**, as an edit of the person's (`write`: break undo
   coalescing, `shouldChangeText`, replace, the caret, `didChangeText`, break again), so the host
   hears what it hears for typing and nothing else is special.
@@ -5281,20 +5405,30 @@ override func keyDown(with event: NSEvent) {                                    
   command by its name with the typing next, the command's step closing the editing session's, a
   box that commits on Return not committing a command line, and a command no longer offered when
   its line is entered left as text.
-- **MentionsTests' `slashTests`** (`SlashFixturesPlugin(log:)`: `ping` and `near` for jots, `ping`
-  for briefs) hold a mention text view hosting it, in `EditedJot` and in the panel's
-  `MentionPanel`: the list as the view's own, a pill in a command line as a shape, the `@` picker's
-  Return picking and a second running the line, `show(_:)` and the keyboard leaving closing the
-  list, no hosting without `SlashCommandsPlugin()` or an owner, and a box with `onCommit` running a
-  command line without committing.
+- **MentionsTests' `slashTests`** (`SlashFixturesPlugin(log:)`: `ping` and `near` for jots, which
+  are titled, so their list ends with Titles' `title`, and `ping` for briefs, which aren't) hold a
+  mention text view hosting it, in `EditedJot` and in the panel's `MentionPanel`: the list as the
+  view's own, a pill in a command line as a shape, the `@` picker's Return picking and a second
+  running the line, `show(_:)` and the keyboard leaving closing the list, no hosting without an
+  owner, a slash that is a slash where the shape offers nothing (the brief's box: every list there
+  has Titles, so `SlashCommandsPlugin()`, and a text with an owner always hosts slash commands),
+  and a box with `onCommit` running a command line without committing.
 - **LockingTests' `lockSlashTests`** hold `/lock`: offered only on the kinds that can be locked and
   only while the shape isn't, run as one step named "Lock", undone and redone, and refused
-  arguments. A plugin list with Locking needs `SlashCommandsPlugin()`; `lockingHarness` has it.
-- **CompositionTests' `slashCommandsShippedTests`** type `/lock` into a note's editor in the app's
-  canvas view: a slash mid-line is a slash, on a new line it lists `lock`, Return locks the note,
-  ends editing and takes the line out of its text, "Undo Lock" is followed by the typing, and
-  `/lock now` stays text. The registry's report (ShippedTests, and the guide's copy of it) holds
-  `slash-commands` and Locking's `/lock → every shape`.
+  arguments. A plugin list with Titles or Locking needs `SlashCommandsPlugin()`; `lockingHarness`
+  and TitlesTests' `titleEditor` have it.
+- **TitlesTests' `titleSlashTests`** hold `/title`: offered on the kinds that keep a title (a
+  plaque), not on one with none (a box) nor on one titled only by derivation (a card), run as one
+  step named "Title" that undo takes back (from a named shape and an unnamed one), not accepted
+  with nothing typed, a pill in the line read as "@Label", and Titles refused without
+  `SlashCommandsPlugin()`.
+- **CompositionTests' `slashCommandsShippedTests`** type `/lock` and `/title` into a note's editor
+  in the app's canvas view: a slash mid-line is a slash, on a new line it lists `title` and
+  `lock`, Return locks the note, ends editing and takes the line out of its text, "Undo Lock" is
+  followed by the typing, and `/lock now` stays text; `/title Groceries` names the note and
+  editing goes on, "Undo Title" is followed by the typing, and `/title ` alone is a new line. The
+  registry's report (ShippedTests, and the guide's copy of it) holds `slash-commands`, Titles'
+  `/title → every shape` and Locking's `/lock → every shape`.
 
 ## Topology
 
@@ -5357,17 +5491,16 @@ kept aside (`record.isOpaque`) carries none, nor does a shape on a board the edi
   EdgeTypes: more declares edge type spark under fire, which no installed plugin declares
   EdgeTypes: more declares edge type spark under itself: spark → flame → spark
   ```
-- **Shipped:** `arrow` (`ArrowEdge`, ArrowPorts'), a plain arrow's type, and under it each channel's,
+- **Shipped:** `arrow` (`ArrowEdge`, Connections'), a plain arrow's type, and under it each channel's,
   `note-link` and `schema-link`; and `mention` (`MentionEdge`, Mentions'), a root. A channel is an
   edge type of the same name, which `registrar.channel(C.self)` declares with it
   ([Channels](#channels)), under the family the connector names (`connects(_:edgeType:…)`), so its
   parent follows from the registry as built: `registrar.edgeType(_:parent:)` is that form, the
   parent a closure over the frozen registry. `ArrowEdge.id` is `EdgeTypeID(rawValue:
-  Arrow.kind.rawValue)`: the audit gives a string to every module that declares it, so a second
-  declaration of `"arrow"` would have Arrows, which writes it, depend on ArrowPorts.
+  Arrow.kind.rawValue)`, so the family's id is the arrow kind's name, said once.
 - **What a type means** is its `summary`: a lowercase line, no period, saying what it joins and
   which way it runs, which a [query's vocabulary](#queries) shows beside it
-  (`EdgeTypeTree.summary(of:)`; `edgeType(_:parent:summary:)` carries one, and Ports' `Channel.summary`,
+  (`EdgeTypeTree.summary(of:)`; `edgeType(_:parent:summary:)` carries one, and Connections' `Channel.summary`,
   nil by default, is passed on by `registrar.channel(C.self)` to the type it declares). Shipped:
   `arrow`, "an arrow bound at both ends, from the shape it starts on to the shape it ends on, whatever
   its arrowheads"; `note-link`, "an arrow drawn on the note-link channel", and `schema-link` likewise;
@@ -5394,7 +5527,7 @@ carry what each of its sources emits, in plugin order, with no precedence.
 ```swift
 // A kind's own, typed:
 x.edges { shape, registry, sink in … }
-// A kind another plugin registers (a bridge's, or a horizontal's over a kind it's given):
+// A kind another plugin registers (from a plugin that imports it, or a horizontal's over a kind it's given):
 registrar.edges(K.self) { record, registry, sink in … }
 // Every kind `where` picks, asked once per kind:
 registrar.edgesForEveryShape(where: { kind, registry in registry.namingKinds.contains(kind) }) { record, registry, sink in … }
@@ -5411,7 +5544,7 @@ registrar.edges(in: BlockedByProperty.self, as: BlockedByEdge.self)
   counts it again; edges keep the order they were first emitted in (a text's order).
 - **Ports' source** is the connector's: `connects(K.self, edgeType: F.self, …, ends:)` emits one
   edge for a connection `ends` finds bound at both ends, typed by its channel or, drawn on none, by
-  `F` ([ArrowPorts](#the-connector-arrowports)). **Mentions'** is over the kinds that can hold
+  `F` ([`ArrowPortsPlugin`](#the-connector-arrows)). **Mentions'** is over the kinds that can hold
   names: each mention in mention text wherever a shape keeps it (`record.forEachNamingValue(in:)`,
   then `forEachNamingLeaf`), in the slot of the property it's in.
 - **The property rule**, `registrar.edges(in: P.self, as: T.self)` for an added property whose
@@ -5637,7 +5770,7 @@ runs on a file of its own, so it can't drift from the app). What a plugin needs 
   and one gone since has no title and fails the word. So no main-actor code is ever handed a record
   the app has since replaced, and no plugin's cache keeps one. The board shown (`:current-board`) and
   what's selected (`:selected`) are as they were when it started.
-- **Titles through the names point** (Titles', through TitleQueries). A head `"Checkout"` is every
+- **Titles through the names point** (Titles', through QueryLexicon's `TitleQueriesPlugin`). A head `"Checkout"` is every
   shape whose title, folded as Titles folds one, is the literal folded, case and all, named or
   derived; several shapes may share it, and it names them all. A title no shape has is refused, so
   a no always means the shape is there: `[title="X"]`, which folds its literal the same way, is how
@@ -5785,30 +5918,31 @@ snapshot held from one without (below).
 
 Queries knows no plugin: what shapes are called, what an untitled owner's board is called, words
 beyond the language's, how text of a media type reads, and what's selected come through points
-Queries declares ([QueryPoints.swift](../Sources/Queries/QueryPoints.swift)), each filled by a
-bridge between Queries and the plugin that owns the concern. Without one, a query does without:
+Queries declares ([QueryPoints.swift](../Sources/Queries/QueryPoints.swift)), which QueryLexicon
+fills with this app's words, a plugin value for each concern it imports (QueriesTests fill them
+with words of their own). Without one, a query does without:
 
 | Point | Sugar | What a query gets | Without it | Shipped |
 |---|---|---|---|---|
-| `QueryNames` | `registrar.queryNames(attribute:source:named:derived:fold:)` | The attribute names are tested by; per kind, whether its shapes are named, derived or neither; a named shape's name, read anywhere; a derived one's, on the main actor; how a title a query writes is folded | No titles: a title head is `no_names`, and rows have none | TitleQueries |
-| `QueryBoardNames` | `registrar.queryBoardNames(placeholder:)` | What an untitled owner's board is called, per kind | Its kind's label | BoardQueries |
-| `QueryWords` | `registrar.queryPseudoClass(_:_:example:prepare:seeds:matches:onMain:)`, `querySelection(_:_:example:selected:)`, `queryRelation(_:_:example:types:direction:)` | A word: a pseudo-class, the person's selection, or a relation over edges of exactly some types | The word is `unknown_pseudo_class` | MentionQueries, ValidationQueries, SelectionQueries |
-| `QueryTextFormats` | `registrar.queryTextFormat(mediaType:describes:prepare:read:)` | How strings of a `contentMediaType` read, anywhere | Text read as stored | MentionQueries |
+| `QueryNames` | `registrar.queryNames(attribute:source:named:derived:fold:)` | The attribute names are tested by; per kind, whether its shapes are named, derived or neither; a named shape's name, read anywhere; a derived one's, on the main actor; how a title a query writes is folded | No titles: a title head is `no_names`, and rows have none | TitleQueriesPlugin |
+| `QueryBoardNames` | `registrar.queryBoardNames(placeholder:)` | What an untitled owner's board is called, per kind | Its kind's label | BoardQueriesPlugin |
+| `QueryWords` | `registrar.queryPseudoClass(_:_:example:prepare:seeds:matches:onMain:)`, `querySelection(_:_:example:selected:)`, `queryRelation(_:_:example:types:direction:)` | A word: a pseudo-class, the person's selection, or a relation over edges of exactly some types | The word is `unknown_pseudo_class` | MentionQueriesPlugin, ValidationQueriesPlugin, SelectionQueriesPlugin |
+| `QueryTextFormats` | `registrar.queryTextFormat(mediaType:describes:prepare:read:)` | How strings of a `contentMediaType` read, anywhere | Text read as stored | MentionQueriesPlugin |
 | `QueryEngines` | none: `QueriesPlugin`'s mark, which only Queries makes | That the app answers queries (`registry.answersQueries`), for what has a registry and no editor | `canvas query` and `query-vocabulary` answer `no_queries` | QueriesPlugin |
 
 `QueryNames` and `QueryBoardNames` take one contribution each, `QueryWords` one a word and
 `QueryTextFormats` one a media type (their report lines: `query names`, `query board names`, `query
-word :mentions`, `query text text/x-canvas-mentions`; `query engine` on queries'). The five bridges'
-registrations, whole (each bridge's words are its own nested `enum Word: String`, and
-ValidationQueries registers each of its two in a helper, whose `has` is below)
-([TitleQueries.swift](../Sources/TitleQueries/TitleQueries.swift),
-[BoardQueries.swift](../Sources/BoardQueries/BoardQueries.swift),
-[MentionQueries.swift](../Sources/MentionQueries/MentionQueries.swift),
-[ValidationQueries.swift](../Sources/ValidationQueries/ValidationQueries.swift),
-[SelectionQueries.swift](../Sources/SelectionQueries/SelectionQueries.swift)):
+word :mentions`, `query text text/x-canvas-mentions`; `query engine` on queries'). QueryLexicon's
+five registrations, whole (each plugin's words are its own nested `enum Word: String`, and
+`ValidationQueriesPlugin` registers each of its two in a helper, whose `has` is below)
+([TitleQueries.swift](../Sources/QueryLexicon/TitleQueries.swift),
+[BoardQueries.swift](../Sources/QueryLexicon/BoardQueries.swift),
+[MentionQueries.swift](../Sources/QueryLexicon/MentionQueries.swift),
+[ValidationQueries.swift](../Sources/QueryLexicon/ValidationQueries.swift),
+[SelectionQueries.swift](../Sources/QueryLexicon/SelectionQueries.swift)):
 
 ```swift
-// TitleQueries: a shape is called what Titles calls it; a named title read off the record anywhere,
+// TitleQueriesPlugin: a shape is called what Titles calls it; a named title read off the record anywhere,
 // a derived one on the main actor.
 registrar.queryNames(attribute: TitleProperty.key.rawValue,
                      source: { kind, registry in
@@ -5819,10 +5953,10 @@ registrar.queryNames(attribute: TitleProperty.key.rawValue,
                      derived: { record, registry in registry.title(of: record) },
                      fold: { TitleProperty.folded($0) })
 
-// BoardQueries: an untitled owner's board is called what the path calls it.
+// BoardQueriesPlugin: an untitled owner's board is called what the path calls it.
 registrar.queryBoardNames { kind, registry in registry.boardPlaceholder(of: kind) }
 
-// MentionQueries: Topology's mention edges as two words, and mention text as a person reads it.
+// MentionQueriesPlugin: Topology's mention edges as two words, and mention text as a person reads it.
 registrar.queryRelation(Word.mentions.rawValue, "its text mentions a shape S matches", example: #":mentions("Checkout")"#,
                         types: [MentionEdge.id], direction: .outgoing)
 registrar.queryRelation(Word.mentionedBy.rawValue, "a shape S matches mentions it", example: #":mentioned-by("API gateway")"#,
@@ -5831,13 +5965,13 @@ registrar.queryTextFormat(mediaType: MentionTextFormat.mediaType, describes: "me
                           prepare: { $0.editor.mentions?.labels ?? MentionLabels() },
                           read: { stored, labels in MentionText(stored: stored).plainText { labels.label(of: $0) } })
 
-// ValidationQueries: :invalid and :warned, which only the main actor can say.
+// ValidationQueriesPlugin: :invalid and :warned, which only the main actor can say.
 registrar.queryPseudoClass(word.rawValue, summary, example: ":\(word.rawValue)",
                            prepare: { _ in () },
                            matches: { _, _ in .onMain },
                            onMain: { record, board, _, context in has(severity, record, on: board, context) })
 
-// SelectionQueries: the person's selection, as the query takes up the file.
+// SelectionQueriesPlugin: the person's selection, as the query takes up the file.
 registrar.querySelection(Word.selected.rawValue, "the person has it selected", example: ":selected") { $0.selectedShapeIDs }
 ```
 
@@ -5848,9 +5982,9 @@ registrar.querySelection(Word.selected.rawValue, "the person has it selected", e
   the main actor can say which; else `.none`. `source` is asked once per kind, as the vocabulary is
   made. The attribute must be a word a query writes bare (`QueryNames.check`), and `[title="X"]`
   folds its literal through `fold`, so it matches exactly what the head `"X"` does. The rule is
-  `draw`'s own ([TitleNames](#what-draw-takes-from-other-plugins)), so the two name shapes alike.
+  `draw`'s own (DrawLexicon's [`TitleNamesPlugin`](#what-draw-takes-from-other-plugins)), so the two name shapes alike.
 - **Boards are named by Boards' rule**: the owner's name, else `placeholder` for its kind (asked once
-  per kind), else its label (`registry.label(of:)`). BoardQueries' is `registry.boardPlaceholder(of:)`,
+  per kind), else its label (`registry.label(of:)`). `BoardQueriesPlugin`'s is `registry.boardPlaceholder(of:)`,
   which [`editor.name(of:root:)`](#boards) reads, so a row's `inside` says what the path's crumbs say.
 - **A pseudo-class** (`:invalid`) takes no argument. `prepare` runs on the main actor in the turn the
   query takes up the file, taking what it needs there, O(1) or O(what it holds) (a set of ids, a
@@ -5871,7 +6005,7 @@ registrar.querySelection(Word.selected.rawValue, "the person has it selected", e
 - **A relation** (`:mentions(S)`) is `:edge-to(S, only t)` under a word of its own: `.outgoing`, the
   result has an edge of exactly one of `types` (none under them) to a shape S matches; `.incoming`,
   a shape S matches has one to the result. Its types must be ones an installed plugin declares.
-  MentionQueries' follow `MentionEdge.id` alone, so a shape that mentions itself counts (Mentions'
+  `MentionQueriesPlugin`'s follow `MentionEdge.id` alone, so a shape that mentions itself counts (Mentions'
   `isMentioned` leaves it out).
 - **A text format** makes a stored string what a person reads, anywhere (`read`), with what `prepare`
   took; `describes` says so in the vocabulary, beside the attribute (`text (mentions read as
@@ -5887,15 +6021,17 @@ registrar.querySelection(Word.selected.rawValue, "the person has it selected", e
   in one turn) is never a query's.
 
 **What a plugin list needs.** `QueriesPlugin()` needs `TopologyPlugin()` (without it, every query
-is `no_topology`). Each bridge needs `QueriesPlugin()` (a contribution to a point whose owner isn't
-installed is `ownerNotInstalled`) and its own concern's plugin: MentionQueries is refused without
-`MentionsPlugin()`, whose `mention` edge type its words follow, while TitleQueries, ValidationQueries
-and SelectionQueries find nothing without Titles, Validation or Selection (every kind untitled, no
-shape invalid, nothing selected), as `draw`'s bridges do without theirs. `QueryCommandsPlugin`
-needs `AutomationPlugin()`, and `--ask` `LanguageModelsPlugin` (else `no_model`). The shipped list
-has them after `draw`'s bridges: `QueriesPlugin(), TitleQueriesPlugin(), BoardQueriesPlugin(),
+is `no_topology`). Each of QueryLexicon's plugins needs `QueriesPlugin()` (a contribution to a
+point whose owner isn't installed is `ownerNotInstalled`) and its own concern's plugin:
+`MentionQueriesPlugin` is refused without `MentionsPlugin()`, whose `mention` edge type its words
+follow, while `TitleQueriesPlugin`, `ValidationQueriesPlugin` and `SelectionQueriesPlugin` find
+nothing without Titles, Validation or Selection (every kind untitled, no shape invalid, nothing
+selected), as DrawLexicon's do without theirs. `QueryCommandsPlugin` needs `AutomationPlugin()`,
+and `--ask` `LanguageModelsPlugin` (else `no_model`). The shipped list has them after
+DrawLexicon's: `QueriesPlugin(), TitleQueriesPlugin(), BoardQueriesPlugin(),
 MentionQueriesPlugin(), ValidationQueriesPlugin(), SelectionQueriesPlugin()`, then
-`QueryCommandsPlugin(askPrompt: QueryPrompt.system)`.
+`QueryCommandsPlugin(askPrompt: QueryPrompt.system)`, whose prompt stays in Composition, since its
+examples name the shipped kinds.
 
 ### What it costs
 
@@ -6008,7 +6144,7 @@ next step is a warm cache ([Not built yet](#not-built-yet)).
   a box a word empties). A word whose `prepare` commits lands a commit in the turn the query takes
   up the file: attributes are the capture's, a derived name the live record's. UpkeepTests hold zero
   upkeep.
-- **The bridges' tests** use fixtures only, through `EditorHarness` and `QueryState`: TitleQueriesTests
+- **QueryLexicon's tests** use fixtures only, through `EditorHarness` and `QueryState`: TitleQueriesTests
   CanvasTesting's kinds titled as TitleNamesTests title them (derived names asked on the main actor,
   and read live after a commit lands); BoardQueriesTests a `drawer`, which opens its board with a
   placeholder, and a `crate`, which doesn't and is called by its label, and titled corrals between
@@ -6018,7 +6154,7 @@ next step is a warm cache ([Not built yet](#not-built-yet)).
   cache, another board by its own rules in slices, and never Validation made to read a board); and
   SelectionQueriesTests a `:shifting` word that changes the selection mid-query. BoardQueriesTests and
   MentionQueriesTests name shapes with a names contribution of their own over `TitleProperty`, since
-  they have no TitleQueries.
+  they have no `TitleQueriesPlugin`.
 - **QueryCommandsTests** run `query`, `query-vocabulary` and `--ask` as the server does (`start`,
   `finish`, `run`, `answered`, `refused`) over chores, pockets and links, captions naming them,
   "Untitled Pocket" boards, and a `Desk`: `:picked`, the selection word, and `:slow`, asked on the
@@ -6076,7 +6212,7 @@ registrar.shape(SubboardDefinition()) { sub in                 // SubboardDefini
 }
 ```
 
-or, from a bridge, `registrar.opensBoard(Pocket.self, placeholder:systemImage:)`. The sugar
+or, for another plugin's kind, `registrar.opensBoard(Pocket.self, placeholder:systemImage:)`. The sugar
 contributes to Boards' `BoardKinds` point (at most one per kind; its report line reads
 `board → subboard "Untitled Subboard"`) and brings, in the same call:
 
@@ -6092,7 +6228,7 @@ contributes to Boards' `BoardKinds` point (at most one per kind; its report line
   `DetailCommandButton("Open", …, command: .openSelection)`, in a section `enabledWhileReadOnly()`,
   so a locked shape's is enabled too.
 
-`BoardKinds.check` refuses a kind whose definition isn't `BoardOwning` (a bridge's form can't say so
+`BoardKinds.check` refuses a kind whose definition isn't `BoardOwning` (the form for another plugin's kind can't say so
 in its types), and a contribution for every kind: only a kind that owns boards has one to open. So
 a plugin list with `opensBoard` in it needs Selection, ContextMenus and DetailPanel installed, as a
 list with a mentionable kind needs DetailPanel, for its Mentioned In tab.
@@ -6118,7 +6254,7 @@ registrar.command(.enclosingBoard, shortcuts: [KeyChord(KeyChord.upArrow.key, .c
   heading and the path both read them. `registry.boardPlaceholder(of: kind)` is the placeholder a
   kind opens its boards with (nil for a kind that doesn't), the registry's alone, which both read,
   and so does a [query](#queries): its rows name the boards a shape is inside by the same rule,
-  through BoardQueries (BoardsTests' "A board's placeholder" holds it).
+  through QueryLexicon's `BoardQueriesPlugin` (BoardsTests' "A board's placeholder" holds it).
 - **In the app** (Composition and the app's window): the table of contents' header names the
   board shown, with its symbol and a way up (`ShippedPlugins.contentsHeading(for:rootName:)`, the
   board shown's crumb as a `ContentsHeading` with `up: .enclosingBoard`, called Enclosing Board as
@@ -6294,7 +6430,7 @@ as SwiftUI sugar is.)
   half a view point (just under 35% the card's own 1.5 is about that, so nothing jumps), the card
   inside it, and its board's preview, asked for as the full card asks for it, in the same rect at
   no more than a tenth of its board, drawn once it's built and big enough on screen, else nothing.
-  Two fills and the preview; its title's pill is Titles', blank there as every pill is.
+  Two fills and the preview; its title is Titles' [cover](#a-cover-zoomed-out), over it, as there's no pill zoomed out.
 - **Opening it** is Boards': a double-click, Return, Enter or ⌘↓ with it the only one selected, Open
   first in its menu, the Open button in its panel's Board tab, and Return once its row is picked (a
   double-click on the row only where the list stays put, not in the app's panel). ⌘↑ comes back with it selected, and ⌘[ retraces. Its panel's header renames it, a run of
@@ -6400,7 +6536,7 @@ registrar.shape(FrameDefinition()) { frame in                     // FrameDefini
   selection's, a hover's, the hint a drag into it shows) is its rounded edge. Zoomed out it's its
   [skeleton](#skeletons) ([FrameSkeleton.swift](../Sources/Frames/FrameSkeleton.swift)): its surface
   and its border's ring over it, square, two fills, in the colors they are in full; what it holds
-  draws its own skeletons over it, and its pill is Titles', blank. In the minimap and a board's
+  draws its own skeletons over it, and its title is Titles' [cover](#a-cover-zoomed-out), over both, at its top left (there's no pill zoomed out). In the minimap and a board's
   preview it's its outline, as every container's silhouette is (`Silhouettes`, `hollow`), so what it
   holds shows there too.
 - **Pressed hollow** (its `hitTest`): a frame that holds shapes is pressed and hovered only on its
@@ -6483,13 +6619,13 @@ The modules, one job each:
 | CanvasRPC | wire | What the app and `canvas` say to each other: JSON-RPC 2.0, a message a line, over a Unix-domain socket (`~/Library/Application Support/InfiniteCanvas/canvas.sock`, or `CANVAS_SOCKET`) only this user can reach; what a command is (`CommandSpec`, its params a JSON Schema) and how its params are spelled as arguments; the client, and the listener, which answers each request as a main-actor task of its own (one that waits holds up neither the main actor nor another connection), each connection's answers in the order its requests came, and cancels the requests still running (not notifications) once its client hangs up. Knows no canvas, plugin or AppKit. |
 | CanvasCLI | cli | `canvas`: reads its own options, asks the app what it runs (`describe`), reads the rest as one of those commands, runs it, and prints what comes back. Knows only the wire. |
 | CanvasUI's `CommandServer` | ui | The app's end: it listens, describes the app, and answers each request on the main actor. `status` and `boards` are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows, each in a task kept against its board, and a board command's result, when it's an object, gains `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the command's own job just before it runs, so an agent sees which board it worked on (a command that knows better says `shows` and `showsPath` in a `board` object of its own, which the server completes: a query's is the board shown as it took up the file). A client gone is answered `cancelled`, and a board closed (`BoardDocument.close()`) answers its running commands `board_closed`, at once, their tasks cancelled and what they return later dropped. |
-| Automation | horizontal | The commands plugins give the command line (`AutomationCommands`), its own two, `draw` and `kinds`, and the three points `draw` takes what it doesn't own from. The app hands the commands to its server through Composition (`ShippedPlugins.commands(in:)`, async). |
+| Automation | language | The commands plugins give the command line (`AutomationCommands`), its own two, `draw` and `kinds`, and the three points `draw` takes what it doesn't own from. The app hands the commands to its server through Composition (`ShippedPlugins.commands(in:)`, async). |
 | DrawScript | foundation | The language `draw` reads (`Script(parsing:)`), and the solver that places what it says (`LayoutProblem.solve()`): pure, it knows no canvas, registry, kind or plugin. |
-| TitleNames, PortEdges, ValidationChecks | bridge | What `draw` takes from Titles (names), Ports (edges) and Validation (warnings), each joining Automation to the plugin that owns the concern. |
-| QueryCommands | horizontal | `query` and `query-vocabulary`, and `--ask` (on Automation, Queries, LanguageModels and the wire; it declares no point). |
+| DrawLexicon | lexicon | What `draw` takes from Titles (names), Connections (edges) and Validation (warnings): a plugin value for each concern (`TitleNamesPlugin`, `PortEdgesPlugin`, `ValidationChecksPlugin`), joining Automation to the plugin that owns it. |
+| QueryCommands | language | `query` and `query-vocabulary`, and `--ask` (on Automation, Queries, LanguageModels and the wire; it declares no point). |
 | QueryLanguage | foundation | The language `query` reads (`SelectorList(parsing:)`) and its canonical form: pure, it knows no canvas, registry or plugin. |
-| Queries | horizontal | The engine that answers a query about a file ([Queries](#queries)), and its points. |
-| TitleQueries, BoardQueries, MentionQueries, ValidationQueries, SelectionQueries | bridge | What queries take from Titles (names), Boards (boards' names), Mentions (`:mentions`, `:mentioned-by`, mention text as it reads), Validation (`:invalid`, `:warned`) and Selection (`:selected`), each joining Queries to the plugin that owns the concern. |
+| Queries | language | The engine that answers a query about a file ([Queries](#queries)), and its points. |
+| QueryLexicon | lexicon | What queries take from Titles (names), Boards (boards' names), Mentions (`:mentions`, `:mentioned-by`, mention text as it reads), Validation (`:invalid`, `:warned`) and Selection (`:selected`): a plugin value for each concern (`TitleQueriesPlugin`, `BoardQueriesPlugin`, `MentionQueriesPlugin`, `ValidationQueriesPlugin`, `SelectionQueriesPlugin`), joining Queries to the plugin that owns it. |
 
 **The commands are the app's, so `canvas` never changes for one.** It knows no command but `help`:
 each run asks the app to describe itself, and makes its commands, their arguments and their help
@@ -6684,7 +6820,7 @@ steps, the first three against the board as the run starts:
    attribute that isn't the language's own is a key and a value, left for Automation to check
    against the kind. The language's own words are enums with implicit raw values (`Keyword`,
    `LanguageKey`, `EdgeKey`, `Direction`, …), never string literals, so the id audit never sees
-   another module's id there (Ports' `channel`, Titles' `title`). Every line that can't be read is
+   another module's id there (Connections' `channel`, Titles' `title`). Every line that can't be read is
    reported, up to 20.
 2. **Resolve** (`Drawing`): each kind word against the registry (a kind is drawable when a tool
    places it, `registry.placement(for:)`); each title, through DrawNames, to the one board shape it
@@ -6830,22 +6966,23 @@ read as it began.
 
 ### What draw takes from other plugins
 
-Automation knows no title, port or validity. `draw` takes each from a point Automation declares,
-keyed so it takes at most one contribution, from a bridge between Automation and the plugin that
-owns the concern ([DrawPoints.swift](../Sources/Automation/DrawPoints.swift)). Without one, `draw`
-does without:
+Automation knows no title, port or validity. `draw` takes each from a point Automation declares
+([DrawPoints.swift](../Sources/Automation/DrawPoints.swift)), keyed so it takes at most one
+contribution, which DrawLexicon makes, a plugin value for each concern it imports (AutomationTests
+make their own, over fixtures). Without one, `draw` does without:
 
 | Point | Sugar | What `draw` gets | Without it | Shipped |
 |---|---|---|---|---|
-| `DrawNames` | `registrar.drawNames(name:namingProperty:isDerived:fold:)` | What a shape is called; the property of its kind's schema a title is written to (nil: its shapes can't be named); whether the kind works names out itself; how a title a script writes is folded | No titles: a titled statement is `no_names` | TitleNames |
-| `DrawEdges` | `registrar.drawEdges(kind:attributes:sides:ends:make:)` | The kind edges are (nil while nothing makes them); the attribute keys an edge takes beside `from:` and `to:`; what an edge may leave a kind on, by side (for `kinds`); which shapes a connection joins; a connection made or changed | No edges: an edge statement is `no_edges` | PortEdges |
-| `DrawChecks` | `registrar.drawChecks { record, shapes in … }` | What's wrong with a shape made or changed, as the script leaves the board: `DrawIssue`s (a message, whether it's an error, the property it's about) | Each shape checked against its kind's schema (`registry.schemaViolations(of:)`) | ValidationChecks |
+| `DrawNames` | `registrar.drawNames(name:namingProperty:isDerived:fold:)` | What a shape is called; the property of its kind's schema a title is written to (nil: its shapes can't be named); whether the kind works names out itself; how a title a script writes is folded | No titles: a titled statement is `no_names` | TitleNamesPlugin |
+| `DrawEdges` | `registrar.drawEdges(kind:attributes:sides:ends:make:)` | The kind edges are (nil while nothing makes them); the attribute keys an edge takes beside `from:` and `to:`; what an edge may leave a kind on, by side (for `kinds`); which shapes a connection joins; a connection made or changed | No edges: an edge statement is `no_edges` | PortEdgesPlugin |
+| `DrawChecks` | `registrar.drawChecks { record, shapes in … }` | What's wrong with a shape made or changed, as the script leaves the board: `DrawIssue`s (a message, whether it's an error, the property it's about) | Each shape checked against its kind's schema (`registry.schemaViolations(of:)`) | ValidationChecksPlugin |
 
-The three bridges, whole but for PortEdges' policy ([TitleNames.swift](../Sources/TitleNames/TitleNames.swift),
-[PortEdges.swift](../Sources/PortEdges/PortEdges.swift), [ValidationChecks.swift](../Sources/ValidationChecks/ValidationChecks.swift)):
+DrawLexicon's three registrations, whole but for `PortEdgesPlugin`'s policy
+([TitleNames.swift](../Sources/DrawLexicon/TitleNames.swift),
+[PortEdges.swift](../Sources/DrawLexicon/PortEdges.swift), [ValidationChecks.swift](../Sources/DrawLexicon/ValidationChecks.swift)):
 
 ```swift
-// TitleNames: a shape is called what Titles calls it, and a title is written to the one Titles keeps.
+// TitleNamesPlugin: a shape is called what Titles calls it, and a title is written to the one Titles keeps.
 registrar.drawNames(name: { record, registry in registry.title(of: record) },
                     namingProperty: { kind, registry in
                         registry.properties(for: kind).contains(TitleProperty.key) ? TitleProperty.key.rawValue : nil
@@ -6853,7 +6990,7 @@ registrar.drawNames(name: { record, registry in registry.title(of: record) },
                     isDerived: { kind, registry in registry.titleIsDerived(kind) },
                     fold: { TitleProperty.folded($0) })
 
-// PortEdges: an edge is the connector's connection, on the channel this bridge picks.
+// PortEdgesPlugin: an edge is the connector's connection, on the channel this plugin picks.
 registrar.drawEdges(kind: { registry in registry.makesConnections ? registry.connectorKind : nil },
                     attributes: [ChannelProperty.key.rawValue],
                     sides: { kind, registry in EdgeChannels.sides(of: kind, in: registry) },
@@ -6862,7 +6999,7 @@ registrar.drawEdges(kind: { registry in registry.makesConnections ? registry.con
                         try EdgeChannels.connection(for: request, existing: existing, in: shapes)
                     })
 
-// ValidationChecks: what's wrong is what Validation finds, schema bounds included.
+// ValidationChecksPlugin: what's wrong is what Validation finds, schema bounds included.
 registrar.drawChecks { record, shapes in
     shapes.registry.validationIssues(of: record, in: shapes).map { issue in
         DrawIssue(issue.message, isError: issue.severity == .error, field: issue.field)
@@ -6870,20 +7007,20 @@ registrar.drawChecks { record, shapes in
 }
 ```
 
-- **Names are titles.** A kind is named when it opts into the title Titles keeps (`title()`, or a
-  bridge's `registrar.title(K.self)`), derived when Titles works its titles out (`title { … }`),
+- **Names are titles.** A kind is named when it opts into the title Titles keeps (`title()`, or
+  `registrar.title(K.self)` for another plugin's kind), derived when Titles works its titles out (`title { … }`),
   and may be both (no shipped kind is): a derived name names a shape only while it's the only one
   so called, and a statement that would change it is refused (`renames`). The
-  board's names are read once a run, from the shapes that aren't kept aside. None of the bridges
-  writes another module's id: TitleNames reaches `title` through `TitleProperty.key`, and PortEdges
-  `channel` through `ChannelProperty.key`.
+  board's names are read once a run, from the shapes that aren't kept aside. None of DrawLexicon's
+  plugins writes another module's id: `TitleNamesPlugin` reaches `title` through
+  `TitleProperty.key`, and `PortEdgesPlugin` `channel` through `ChannelProperty.key`.
 - **An edge statement is an upsert.** `ends`, over the transaction's document, finds the
   connections already drawn from one shape to the other (either way round for `<->`; one drawn the
   other way round is asked for its own way). None: `make` gets `existing` nil, and draws one
   (`connected`). One: `make` changes it, or hands back `existing` itself when nothing would change,
   which is how `draw` tells `unchanged` from `reconnected` (`==`). More is `ambiguous_edge`. `make`
   gets an `EdgeRequest`: its ends by id, the sides named (`EdgeRequest.Side`, Automation's own,
-  since a bridge that imports only Automation can't read DrawScript's), whether `<->` puts a head
+  since DrawLexicon imports Automation, not DrawScript), whether `<->` puts a head
   at its start too, the attributes it declares as written, and its ends' names and the edge as
   written, for messages. It returns the connection, not inserted, and throws
   `AutomationError(message, reason:, hint:)`, which `draw` gives the statement's line; its closure
@@ -6899,14 +7036,14 @@ registrar.drawChecks { record, shapes in
   `make` never sees them: `draw` sets them on what it returns (`registry.shape(_:setting:)`), then
   hands that to `make` again as `existing`, and refuses one `make` changes back (`invalid_value`,
   "… isn't what the edge as written says": an arrow's heads are its arrow's, `->` or `<->`). So
-  an edge restated without one keeps it, as a shape does, and no bridge learns what a kind says.
+  an edge restated without one keeps it, as a shape does, and DrawLexicon never learns what a kind says.
 - **Checks see the board as the script leaves it** (`transaction.shapes`), so a rule that looks up
   another shape sees the ones drawn with it. Each issue is a warning on the statement's line.
 
-### Edges and their channels: PortEdges
+### Edges and their channels: `PortEdgesPlugin`
 
 An edge is a connection the connector makes [without a drag](#connecting-without-a-drag), on a
-channel PortEdges picks from Ports' [port table](#a-kinds-ports) as a drag from a port would: a
+channel `PortEdgesPlugin` picks from Connections' [port table](#a-kinds-ports) as a drag from a port would: a
 connection runs only from a shape with a dot on its channel to one that takes it. The policy,
 `EdgeChannels`:
 
@@ -6916,8 +7053,8 @@ connection runs only from a shape with a dot on its channel to one that takes it
   without such a port is `invalid_value`.
 - **`channel: none`** is a plain connection, on no channel, from and to any side.
 - **Unwritten**, it's the first of the start's dot channels (on `from:`'s side, if named; else all
-  its dots', in the table's order) that the end takes as a target (on `to:`'s side, if named).
-  With none, it's plain if neither kind has ports on anything (subboards), and
+  its dots', in the table's order) that the end takes as a target (on `to:`'s side, if named):
+  `registry.connectionChannel(from:fromSide:to:toSide:)`, Connections'. With none, it's plain if neither kind has ports on anything (subboards), and
   otherwise `no_channel`, whose hint says `channel: none` draws one anyway; a named side narrows
   the channels, so one without a port leaves none.
 - **A connection on a channel never ends where it starts**: a shape joined to itself on one is
@@ -7239,7 +7376,7 @@ registrar.channel(SchemaLink.self)
   of 0.9 gray (`SchemaStyle.skeletonEdge`), where the full card's shadow showed as a pixel or two of
   gray on the light canvas (a softer rim on the dark one), and its description greeked as a note's
   text is, by the core's `SkeletonTextBars` with the note's metrics (`SchemaStyle.skeletonText`);
-  its name is its pill's, drawn blank above it. Three fills, whatever it says (the edge, the card
+  its name is Titles' [cover](#a-cover-zoomed-out), over it. Three fills, whatever it says (the edge, the card
   inside it, and every bar in one `fillSkeletonText`), and nothing read or measured: a frame draws
   thousands. The edge is the frame filled under the white inset, not an even-odd ring, which cost
   about three times as much (as measured). The card is square (its corners are under 2 points on
@@ -7656,7 +7793,7 @@ it, the core or a horizontal.
 
 The rule of thumb: behavior intrinsic to a kind is a capability; behavior anyone can add, to any
 kind, from any plugin, is an extension point. What a kind shows in the detail panel is an extension
-point, not a capability: the kind's own plugin, a horizontal it opts into, and a bridge can all add
+point, not a capability: the kind's own plugin, a horizontal it opts into, and any other plugin that imports it can all add
 to it.
 
 An editing view's `EditContext` is its way back into the editor: `update` changes the shape in a
@@ -7838,8 +7975,9 @@ shadows and the pills is most of such a frame. So there the canvas draws each sh
 text would be, never text, shadows or pictures of its own. Zoomed back in past the level, each
 shape is itself again. At 10,000 shapes zoomed out as far as the zoom goes (10%, some 1,700 in
 view), the first frame took 166.9 ms before skeletons, and each after 89.1; with them, and
-[adornments](#the-label) drawn blank too, 13.4 and 11.2 (at 1,000 shapes, all in view at 11%, 96.9
-and 50.0 before, 9.2 and 7.8 after).
+[adornments](#the-label) drawn blank too (since left off, with a title said on a shape big enough on
+screen instead), 13.4 and 11.2 (at 1,000 shapes, all in view at 11%, 96.9 and 50.0 before, 9.2 and
+7.8 after).
 
 - **One level for the canvas.** `editor.drawsSkeletons` is true while the camera's zoom is under
   `editor.skeletonZoom`, 35%. It's the zoom's, frame by frame, with no hysteresis or debounce
@@ -7916,8 +8054,8 @@ so call it with no path of your own under way.
   it counts nothing, since the sequence draws one emoji (a family is two columns). One pass over the
   text's UTF-8, a byte at a time while it's ASCII. A bar is its columns at an average narrow
   advance: a note's lines, a schema card's description and a subboard's title at 0.52 em a column
-  (calibrated against string drawing, `SkeletonTextMetrics.systemFontColumn`), a blank adornment's
-  at an advance measured once from a sample. So every kind's bars count alike, and text in Japanese or in emoji is about as
+  (calibrated against string drawing, `SkeletonTextMetrics.systemFontColumn`), and a title's cover
+  sized by them, at an advance measured once from a sample. So every kind's bars count alike, and text in Japanese or in emoji is about as
   long greeked as in full, where a column a character would make it half. A script set wider or
   narrower than two columns' 1.04 em is off by the difference: in a subboard's 15-point title,
   Hangul measured about 0.85 em a character and emoji about 1.3.
@@ -7948,26 +8086,28 @@ so call it with no path of your own under way.
   either way. A pointer held still says nothing, so a service whose hit testing goes by what a
   shape shows lets go here of what the level doesn't show now: Selection looks again at what the
   pointer rests on, buttons first, as a move does, so a button that comes or goes with the level (a
-  blank label's shorter or longer reach) takes or gives up the hover without its plugin saying so;
-  Adornments lets go of the faces it measured as skeletons start, and looks for nothing itself, its
+  lock chip, shown only in full) takes or gives up the hover without its plugin saying so;
+  Adornments lets go of what it made as skeletons start, and looks for nothing itself, its
   layouts answering at the new level whichever service hears first.
 - **Batch what's drawn per shape**, in an overlay too, since zoomed out a frame draws it thousands
   of times: Core Graphics fills many rects, or lines, in one path for a fraction of what filling
-  each alone costs, while a path of many curves costs more than each filled alone. So Adornments
-  flattens its blank capsules' ends to chords before it fills a run as one path, and Validation, as
+  each alone costs, while a path of many curves costs more than each filled alone. So Validation, as
   the core's outlines do, fills square-cornered rings, where rounded ones stroked together cost ten
   times what each stroked alone does. Keep the order where it shows: a run of one look at a time,
   in paint order, so what's over what doesn't change. And make nothing per shape a frame, no array
   or boxed value: the core builds its rings and lines point by point, and Adornments lays each
-  shape's labels out into one buffer a frame.
+  shape's labels out into one buffer a frame. Look at a shape's kept bounds before anything that
+  costs more, as Titles' covers do (a shape too small on screen is passed over before its title
+  is looked up), so only the shapes big enough lay text out.
 
 What each shipped plugin shows zoomed out is in its own section: a [note](#a-vertical-plugin) (its
 yellow, its text greeked, and no [mention text](#drawing) or [faces](#on-the-canvas-faces)), a
-[subboard](#subboards) (fills, a title bar and its preview), a [schema card](#schema-cards) (white
+[subboard](#subboards) (fills and its preview), a [schema card](#schema-cards) (white
 with a light gray edge, and its description greeked as a note's text is), an [arrow](#a-shape-without-a-frame)
 (its arc and heads);
-[faces](#faces-clickable-parts-of-a-shape) (none on a skeleton), [adornments](#the-label) (blank
-and pale on a skeleton: a title's [pill](#a-horizontal-plugin) and a [lock](#locking)'s chip), and
+[faces](#faces-clickable-parts-of-a-shape) (none on a skeleton), [adornments](#the-label) (none on a
+skeleton: a title's [pill](#a-horizontal-plugin) and a [lock](#locking)'s chip are left off, and a
+title is said on the shape, its [cover](#a-cover-zoomed-out)), and
 [Validation](#a-horizontal-plugin)'s outlines (rings).
 
 ## Boards in a file
@@ -8165,7 +8305,7 @@ each of them:
 | [Selection](#selection) | Opening a shape (`ShapeOpening`); Back crosses boards, and showing another board is a step; nothing is selected on arrival; `showBoard(_:selecting:)`; `goTo` goes to a shape on any board. |
 | [Boards](#boards) | Opening a kind's boards, ⌘↑, a board's name and symbol, and the path over the canvas. |
 | [The table of contents](#whats-listed-and-selecting) | Lists the board shown, keeps each board's rows, and takes its header from its placer (the board's crumb, in the app). A row may read shapes on other boards ([`elsewhere`](#rows-read-from-more-than-their-shape)). |
-| [Validation](#a-horizontal-plugin) | Checks the board shown, keeping each board's issues; a board never shown isn't checked, and a rule's lookups (MentionValidation's targets) find shapes there alone; a rule over a service's state (TitleValidation's titles, the file's) names the shapes a commit changes the issues of on any board, checked once their board is shown. |
+| [Validation](#a-horizontal-plugin) | Checks the board shown, keeping each board's issues; a board never shown isn't checked, and a rule's lookups (`MentionValidationPlugin`'s targets) find shapes there alone; a rule over a service's state (`TitleValidationPlugin`'s titles, the file's) names the shapes a commit changes the issues of on any board, checked once their board is shown. |
 | [Locking](#locking) | A shape whose board holds a locked shape isn't deleted; a locked owner is entered as any other. |
 | [Mentions](#mentions-across-boards) | A mention names a shape on any board, live and followed there (`goTo`, or `goInto` for a kind followed by opening it: a subboard); who mentions whom (Topology's), what each mentioned shape shows and the `@` picker's catalog are the file's (the board shown's first on a tie), so showing another board reads no mention text; so are the Mentioned In tab's and Show What Mentions' mentioners, the board shown's first. |
 | [Topology](#topology) | The file's edges, and containment (a shape's parent is its container, else its board's owner), whatever board is shown; showing another board reads nothing. |
@@ -8656,7 +8796,7 @@ detail-panel         service DetailPanelState
 context-menus        service ContextMenuState · secondary-click menu · CanvasContextMenu
 slash-commands       service SlashCommandState
 table-of-contents    service ContentsState
-titles               property title · adornment TitlePill → every shape
+titles               property title · adornment TitlePill → every shape · /title → every shape · overlay TitleCoverOverlay
 mentions             service MentionState · edge type mention · edges → every shape · overlay MentionFrames · ShapeFaces · CanvasContextMenu
 board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
 validation-details   DetailStatuses in Issues
@@ -8713,14 +8853,15 @@ about mentions that can't work, and `title-validation`'s, over the file's titles
 Titles places its pill on every shape whose kind's title shows one (`adornment TitlePill → every shape`),
 and Locking its lock; `adornments` lends them their layout and drawing, a canvas button
 (`CanvasButtons`) and their hits (`DecorationHits`), and places none of its own. The automation
-line is its commands (`command line draw`, `command line show`, `command line kinds`), and the three after it are the
-bridges that fill its draw points, one each. `queries` is the query engine's service (`QueryState`,
+line is its commands (`command line draw`, `command line show`, `command line kinds`), and the three after it are
+DrawLexicon's plugins, which fill Automation's draw points, one each. `queries` is the query engine's service (`QueryState`,
 which hears no commit) and its mark (`query engine`, which `registry.answersQueries` reads); the
 five after it fill its points (names, boards' names, and words and a text format, each by what it
 adds), and `query-commands` is `canvas query` and `query-vocabulary`. `slash-commands` is the service that
 says what a shape offers (`SlashCommandState`, which hears no commit) and contributes no command;
-the one that ships is Locking's, the last entry on its line (`/lock → every shape`: each call of the
-sugar is one entry, its commands as `/name`, then the kind they're for or "every shape":
+the ones that ship are Titles' and Locking's, the last entry on their lines (`/title → every shape`,
+`/lock → every shape`: each call of the sugar is one entry, its commands as `/name`, then the kind
+they're for or "every shape":
 [Registering commands](#registering-commands)).
 
 ## Testing plugins
@@ -8762,17 +8903,18 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   `TilesPlugin` adds `Tile`, a second kind a tool places (120 × 80, a label and a finish, one of
   two words), for tests that make shapes of more than one kind, and `LinksPlugin` adds `Link`, a
   connection from one shape to another by id, with no box, for tests that connect shapes without
-  Arrows; `ChoresPlugin` adds `Chore` (kind `chore`, labelled "Task", no tool), a box with a property of
+  arrows; `ChoresPlugin` adds `Chore` (kind `chore`, labelled "Task", no tool), a box with a property of
   every sort a schema has, and the added `Flagged`, for tests that read shapes by their schemas
   (queries). Their tools have no keys (CanvasTesting can't import Keyboard): a test picks one with
   `h.editor.setTool`, or registers a key for it
   (`$0.shortcut("c", forTool: ToolID(placing: Card.kind))`). SelectionTests, ArrowsTests,
-  ValidationTests, DetailPanelTests, AdornmentsTests, ClipboardTests, TitlesTests,
-  ValidationDetailsTests, ValidationContentsTests, LockingTests, PortsTests, AutomationTests,
-  TitleNamesTests, PortEdgesTests, ValidationChecksTests, MentionValidationTests, TitleValidationTests, QueriesTests,
-  QueryCommandsTests and the five query bridges' tests import no real vertical (only these fixtures, and local test kinds), which proves those plugins are
-  shape-agnostic. ArrowPortsTests import one real vertical, Arrows, and join fixtures with its
-  arrows.
+  ValidationTests (its `IssuesTabTests.swift` and `IssueMarksTests.swift` hold the Issues tab and
+  the dots), DetailPanelTests, AdornmentsTests, ClipboardTests, TitlesTests,
+  MentionsTests, LockingTests, PortsTests, AutomationTests,
+  TitleNamesTests, PortEdgesTests, ValidationChecksTests, QueriesTests,
+  QueryCommandsTests and QueryLexicon's tests import no real vertical (only these fixtures, and local test kinds), which proves those plugins are
+  shape-agnostic. ArrowPortsTests join fixtures with the arrows that come with Connections, so they
+  import no real vertical either.
 - **Names of shapes** without a real kind that holds them: `NamingPlugin()` (CanvasTesting) registers
   `Memo`, whose props name shapes in a struct in a list (`MemoNote`), an optional and a dictionary,
   and which opts into `CitationsProperty`, an added set of names; and `CitingTag`, bound to its
@@ -8786,7 +8928,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   boards, `h.file` is its file, and `h.enter(owner)` shows the board a shape owns; `openingPockets()`
   (in SelectionTests, TableOfContentsTests and CompositionTests) makes pockets open onto their
   boards (`registrar.opens(Pocket.self, …)`), for a double-click, Return or a row. BoardsTests
-  open pockets from a bridge (`registrar.opensBoard(Pocket.self, …)`) and a local `Drawer` kind
+  open pockets from another plugin (`registrar.opensBoard(Pocket.self, …)`) and a local `Drawer` kind
   through its own sugar, and host `BoardPath` in an `NSHostingView` in an unshown window to click
   its crumbs. SwiftUI draws a borderless button's title itself, so an `NSButton` there has no
   `title`: a test reads the crumbs' titles headlessly (`editor.boardCrumbs`, `layout(rootName:)`)
@@ -8859,20 +9001,24 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   looked at again as the level changes (from the camera and from `skeletonZoom`; not off the
   canvas, mid-press or in the hand tool), and the kept selection bounds
   (`selectionBoundsWorkedOut`, through drags, undo, a link whose end moved and a switch);
-  AdornmentsTests' Adornments zoomed out the blank labels (one flat color in their frames, within
-  anti-aliasing of the curves they're flattened from, width by columns, Japanese and Korean titles
-  within 15% of their width in full and emoji within 30%, hit where drawn, no faces made or kept, a
-  button let go and found again and a caption cut shorter as `skeletonZoom` moves under a still
-  pointer, Selection's look alone, and the edited shape's labels laid out, drawn pixel for pixel as
-  in full and hovered in full at 30% while another's are blank); TitlesTests and LockingTests the
-  blank pill and the blank chip that still unlocks; ValidationTests the rings (none grown from an
+  AdornmentsTests' Adornments zoomed out that no adornment is drawn, laid out, made or kept for a
+  shape below 35% (and each is drawn in its frame at 35%), a button let go and found again as
+  `skeletonZoom` moves under a still pointer (Selection's look alone), a point where an adornment
+  would be pointing at nothing, and the edited shape's laid out, drawn pixel for pixel as in full
+  and hovered in full at 30% while another's aren't shown; TitlesTests' `CoverTests` the cover (the
+  title as plain text inside the shape and nowhere else, centered or at a container's top left,
+  its ink by the kind's surface, its size the shape's and equal for equal shapes, no word broken,
+  none for an untitled, a too small or a no-pill shape, a title cut to 120 characters ending in an
+  ellipsis and a long one held inside a small shape, a card-sized shape still having one, a shake
+  moving it) and no pill at 30%, LockingTests no chip on a skeleton and
+  none to click; ValidationTests the rings (none grown from an
   outline, none on the shape being edited), and crossing rings in full against an in-test copy of
   the stroke from before the line width and join were set once a frame, pixel for pixel;
   MentionsTests' DrawingTests and FaceTests mention text unbuilt on a skeleton, the
   memo trimmed, and its pills no faces (a click selects, a double-click edits, a locked one's is
   refused and goes nowhere). CompositionTests' `skeletonsShippedTests` hold the shipped pieces
   together: at 30% every shipped shape (a subboard, notes, an arrow, a locked note and a schema
-  card) is its skeleton and says nothing, nor do a title's pill and a lock, at 35% it's
+  card) is its skeleton and says nothing but its title, on it, with no pill and no lock, at 35% it's
   all in full, the note being edited is in full at 30%, and in the app's canvas view a mention's
   pill is no face at 30% and is one again at 35%. `renderBitmap` at a scale other
   than 1 reads pixels with `pixel(_:at:scale:)`: `changedPixels` reads one a point, so it holds
@@ -8931,12 +9077,12 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   short of a lock changes no pixel beside it); and `editor.hoveredButton` on a clickable one is
   `AdornmentButton(A.self, on: id)`. A test's own adornment types are internal, not private, so a
   conflict key names one as `Module.Name`. A plugin list with Titles or Locking needs
-  `KeyboardPlugin()`, `SelectionPlugin()` and `AdornmentsPlugin()` (and one with Locking
-  `SlashCommandsPlugin()`, for its `/lock`), which goes before the plugins
+  `KeyboardPlugin()`, `SelectionPlugin()` and `AdornmentsPlugin()` (and one with either
+  `SlashCommandsPlugin()`, for their `/title` and `/lock`), which goes before the plugins
   that place adornments, as the shipped list has it. In debug builds, `editor.adornmentsKept`
   counts the shapes whose labels are kept, so a test holds a deleted shape to being forgotten, and
-  `adornmentFacesKept` and `adornmentFacesMade` the shapes whose faces are kept and the faces made
-  in all, so one holds zooming out to measuring nothing.
+  `adornmentFacesKept` and `adornmentFacesMade` the shapes that show something, their faces kept, and
+  the faces made in all, so one holds zooming out to making and measuring nothing.
 - **The clipboard.** A test that copies gives the clipboard a pasteboard of its own, so it never
   touches the user's: `ClipboardPlugin(pasteboard: NSPasteboard.withUniqueName())`, or
   `ShippedPlugins.makeEditor(pasteboard:model:)` (and `releaseGlobally()` it after). Two editors on one
@@ -8954,10 +9100,10 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   (TestKit's `spinRunLoop(until:)`, `awaitResult { … }`). LanguageModelsTests stub the network
   itself with a `URLProtocol` (the request's body, `model` and `effort` among it; UnwrapTests,
   `ModelAnswer.unwrapped`).
-- **Ports.** PortsTests hold the horizontal without an arrow: `portsHarness` installs Keyboard,
+- **Ports.** PortsTests hold Connections' ports without an arrow: `portsHarness` installs Keyboard,
   Selection, Topology, the fixtures, Ports, `channelsPlugin` (boxes have ports on its `Wire` channel, with the
   `sides:` and `role:` a test asks for, and discs on `Pipe`) and a connector over CanvasTesting's
-  `Tag` that only records (`connectorPlugin(Connections())`: `begun` lists each `Connection`, its
+  `Tag` that only records (`connectorPlugin(ConnectionLog())`: `begun` lists each `Connection`, its
   session appends each drag to `drags`, and `canConnect` and `draws` make it refuse; its family of
   edges is `Hookup`, and its `edgeTests` hold connections as edges over CanvasTesting's `Link`: a
   channel's type, the family's, none half-bound, an undeclared channel kept as written, one named
@@ -8969,7 +9115,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   `Wire`, and a disc C below B taking `Pipe`; `board.connect(to:speed:release:)` hovers A and drags
   from its right dot (`aRightDot`), `fast` or `slow`, and `board.arrows` are the arrows drawn, with
   their bindings and `ChannelProperty` (and `arrowEdgeTests`, their edges).
-- **Topology.** TopologyTests hold it over fixtures only, never Ports, Mentions or a shipped kind:
+- **Topology.** TopologyTests hold it over fixtures only, never Connections, Mentions or a shipped kind:
   `GraphPlugin` declares edge types (`wire`, `hot-wire` under it, `quote`, `cite`) and sources over
   CanvasTesting's kinds (a `Link` bound at both ends is a wire, a `CitingTag`'s target a hot wire, a
   `Tag`'s a `tether` nobody declares, a `Memo`'s own names quotes in their property's slot, and its
@@ -9023,14 +9169,14 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   `CommandServer` on boards configured as the app configures them (and a `Lingering` board command
   on a server of its own: a closed board answered `board_closed`, and `canvas --timeout` cancelling
   the command).
-- **`canvas draw`.** AutomationTests hold `draw` over fixtures, with test plugins in the bridges'
-  places (DrawSupport.swift): `namesPlugin` names a tile by its label and a card by its nickname (an
+- **`canvas draw`.** AutomationTests hold `draw` over fixtures, with test plugins in DrawLexicon's
+  place (DrawSupport.swift): `namesPlugin` names a tile by its label and a card by its nickname (an
   unnamed one "Card, 100 × 60", worked out from its size), `edgesPlugin` makes
   links, with a tone and heads as added properties, and logs each request (`EdgeLog`), and
   `checksPlugin` warns about a card that says nothing and calls a glossy tile an error. `drawEditor`
   installs them with Automation and the fixtures in an 800 × 600 view; `drawn(script, on:)` is what
   a run that succeeds says, `refused` why one failed, and `rows` and `messages` read a result. The
-  bridges' tests do the same over their own plugin and fixtures: TitleNamesTests over Titles
+  tests of DrawLexicon's plugins do the same over their own plugin and fixtures: TitleNamesTests over Titles
   (cards named, tiles named or worked out, discs worked out), PortEdgesTests over channels of their
   own (`Wire`, `Pipe`) and a link connector that logs its requests, ValidationChecksTests over
   fixture rules. CompositionTests run `draw` through `canvas` as built, on the shipped kinds:
@@ -9056,7 +9202,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   SKILL.md's description is held to 1,024 characters. `SKILL_DUMP=1` prints what each example said.
   So a change to either language, their messages, a shipped kind, word or edge type changes the
   skill with it, or CompositionTests fails.
-- **Queries.** QueryLanguageTests, QueriesTests, the five bridges' tests, QueryCommandsTests,
+- **Queries.** QueryLanguageTests, QueriesTests, QueryLexicon's tests, QueryCommandsTests,
   CompositionTests' query suites and BenchmarkTests' Query benchmarks: [Testing
   queries](#testing-queries).
 - **What AppKit logs.** Some of AppKit's complaints go only to standard error (NSLog), and the test
@@ -9081,7 +9227,12 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   holds another shape's commits to drawing it no more, and its container's lock to drawing it again.
 - A test target is `Tests/<Name>Tests` with a `main.swift` that calls `runTests([...])`. Every
   `Suite` must be listed there (`test.sh` checks). `<M>Tests` may depend only on M, what M
-  depends on, and the test-support and ui modules.
+  depends on, and the test-support and ui modules, and so may a target named for a plugin of M
+  that says so in its line, `// layer: test of M`: ArrowsTests, PortsTests and ArrowPortsTests, of
+  Connections; TitleNamesTests, PortEdgesTests and ValidationChecksTests, of DrawLexicon; and
+  TitleQueriesTests, BoardQueriesTests, MentionQueriesTests, ValidationQueriesTests and
+  SelectionQueriesTests, of QueryLexicon. Each depends on its module, and is a target of its own
+  so the plugins' tests run side by side.
 - **Boards.** `expectKindFixtures(kinds, in: registry, directory:)` (CanvasTesting) holds kinds to
   their fixtures, and `expectPropertyFixtures(keys, in: registry, directory:)` added properties to
   theirs ([Boards on disk](#boards-on-disk)); CompositionTests runs them for every shipped kind
@@ -9108,8 +9259,8 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   grid (150 ms, time the window doesn't draw), the minimap's first picture (a frame at a time) and
   a drag frame with it, ten subboards' previews filling in (the longest frame, and how many), the
   first frame and each after zoomed out to fit the board (at 10,000, as far as the 10% zoom goes),
-  where shapes are [skeletons](#skeletons) and adornments blank (the first makes the labels of
-  every adorned shape in view; a frame each), a pan's frame with every shape selected (⌘A) at 100%
+  where shapes are [skeletons](#skeletons), which show no adornments (the first frame, and a frame
+  each; a frame just under 35%, with covers on the titled shapes in view, is reported), a pan's frame with every shape selected (⌘A) at 100%
   (the camera a point from the last frame's, so the box around them is worked out again, as in a
   pan), what a board all out of view adds to an empty board's frame, at 100% and 10%, with nothing
   selected and with every shape (1 ms: nothing off screen is drawn, and a shape outlined out of view
@@ -9134,7 +9285,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   each as on one board, with the drag event's input alone (in 1 ms, and at most 3× what it costs on a file of that
   board alone, since drawing would hide a commit's upkeep of the whole file); the minimap's picture of the board entered, a frame at a time; and deleting
   a subboard whose boards hold 10,000 shapes (the commit and every board under it, in a frame and 2 ms: the
-  generated file holds 2,608 titles twice, which TitleValidation's index takes out), and
+  generated file holds 2,608 titles twice, which Titles' `TitleIndex` (`TitleValidationPlugin`'s service) takes out), and
   undoing and redoing that (with its frame). It only reports the inspector's list replaced on a
   switch between boards of 10,000 (a `List` in an unshown window, against a 50 ms target), and a
   chain of 1,000 boards written, read, walked (`path(to:)`) and shown. `./test.sh` runs it small, in
@@ -9201,14 +9352,16 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   for its attachment, is the canvas's; at a whole number of pixels to a point, the lines start
   alike and the pills' pixels are within a quarter; at 60%, string drawing draws a pill part way
   into a pixel and TextKit 2 on the nearest, so there only the pixels off the pills are held).
-  MentionValidationTests hold the bridge with fixtures of their own (`Card` and `Sheet`
+  MentionsTests' `MentionValidationTests.swift` hold `MentionValidationPlugin`
+  with fixtures of their own (`MentionValidationFixtures.swift`: `Card` and `Sheet`
   mentionable, `Blob` not, `Letter` holding `MentionText` and `ScopedMentionText<Only<Card>>`, and
   `Postscript`, an added property of mention text): each warning and its field, missing and
   kept-aside targets, delete and undo, scope, look-alikes (fuzzed: text made from runs has none),
   a locked mentioner, the board shown, and moves: a drag of a target or of its mentioner checks
   no text, and a rename of the target checks its mentioner (`MentionValidationPlugin.textsChecked`,
   debug builds, counts the texts the rule checks).
-  TitleValidationTests hold that bridge over CanvasTesting's cards and pockets (named) and discs
+  TitlesTests' `TitleValidationTests.swift` hold `TitleValidationPlugin`
+  over CanvasTesting's cards and pockets (named) and discs
   (derived): the warning and its field, a rename warning the shape it didn't change, three of a
   title, folding, a delete, a rename and their undo, a title in a pocket against one on the root, a
   rename on the root warning a shape on a board kept once it's shown (checking that shape alone,
@@ -9229,10 +9382,10 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   were; and going to a mention to no step, with Back beside Undo. `backlinksShippedTests` hold Show
   What Mentions among a subboard's own items and the clipboard's, and the Mentioned In tab of a
   note and of a subboard in the shipped panel, in a `BoardWindow` (a line goes to its mentioner,
-  and Back returns); ShippedTests a MentionValidation warning in Issues and on its row; and
+  and Back returns); ShippedTests a `MentionValidationPlugin` warning in Issues and on its row; and
   CommandLineTests `draw` notes that mention shapes, on the board or not.
-- **Slash commands.** SlashCommandsTests, MentionsTests' `slashTests`, LockingTests' `lockSlashTests`
-  and CompositionTests' `slashCommandsShippedTests`: [Testing slash
+- **Slash commands.** SlashCommandsTests, MentionsTests' `slashTests`, LockingTests' `lockSlashTests`,
+  TitlesTests' `titleSlashTests` and CompositionTests' `slashCommandsShippedTests`: [Testing slash
   commands](#testing-slash-commands).
 - **Board previews.** CanvasTests' PreviewTests drive a `BoardPreviews` of their own over a
   `CanvasFile` (`preview(of:in:)`, `build(in:until:)`: a deadline already past builds one chunk,
@@ -9287,7 +9440,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
 | `ToolIdle` / `ToolPointing` click-to-create | `Placement` (follow the pointer, or edit), used by place tools and the double-click claim. |
 | `toolbarItems` with a decorative `kbd` | A key registered with the Keyboard horizontal (`shortcut:`), collision-checked, that the canvas answers and the tooltip names. |
 | `defineChannel({ id, color, ... })`, `registerHostChannel(type, channel)` | A `Channel` type (`id`, `color`) declared by the plugin that owns its meaning, `registrar.channel(C.self)`, and `x.ports(C.self, sides:role:)` on each kind that takes it (`role:` is a port's `end`), collision-checked; an arrow keeps its channel as an added property, `ChannelProperty` ([Ports](#ports)). |
-| `EdgeMidpointDots`, the port drag, and `canBind` refusing what a channel doesn't take | Ports' dots, Selection's canvas buttons, whose drag goes to the one connector (ArrowPorts: `editor.beginArrow`), and `registrar.arrowBindingRule`, Arrows' canBind, for arrows already drawn. Released on nothing, nothing is drawn. |
+| `EdgeMidpointDots`, the port drag, and `canBind` refusing what a channel doesn't take | Ports' dots, Selection's canvas buttons, whose drag goes to the one connector (`ArrowPortsPlugin`: `editor.beginArrow`), and `registrar.arrowBindingRule`, Arrows' canBind, for arrows already drawn. Released on nothing, nothing is drawn. |
 | A subboard's `targetPageId`: a tldraw page per subboard, all in one store, the tree worked out from which page holds which subboard | A `BoardOwning` kind, whose board the file keeps under the shape's id (`CanvasFile`, `BoardID(owner:)`), never in its props, so the tree follows from where shapes are ([Boards in a file](#boards-in-a-file)). |
 | The page lifecycle's guards: duplicates, cycles, cascade delete, and the orphan sweep with its recovery shapes | Not needed: keyed by its owner, a board can't have two owners or be its own ancestor, deleting a shape takes every board under it in the same commit (one undo step), and a copy has a new id, so a board of its own. Only a file edited by hand breaks the tree, and reading keeps what it can't show, reports it and writes it back (`LoadReport.keptBoards`). |
 | `editor.setCurrentPage(targetPageId)`: entering and exiting | `editor.showBoard`, through Selection's opener (`x.opensBoard`: a double-click, Return, ⌘↓, the row, Open), and ⌘↑ (`goToEnclosingBoard`); never an undo step, and each board keeps its camera. |
@@ -9303,7 +9456,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
 | `:connected-to`, one edge until 8a4d798d, any number after it (with no message) | Picked on purpose, from the first rounds of `--ask`'s evaluation: `:connected-to(S)` is one edge either way, as "connected to" reads (Haiku 4.5 wrote it for "what's connected to Checkout?" even beside the prompt's example of `:neighbor-of`, this language's word until then, now refused with `:connected-to`), and any number of them is `:component-of(S)`, the anchor's connected component. |
 | `:has(S)`: an edge to a shape S matches | CSS's `:has`, containment: S inside it at any depth, `:has(> S)` directly inside it. The one word whose meaning moved; an edge either way is `:connected-to(S)`. |
 | Scope globs, `:on-page` | Containment in the selector: `"Payments" *`, `:top-level`, `:current-board`; `:on-page` is refused with `"Board" *`. |
-| `:selected`, dropped | Back: the engine runs in the live app, over what's selected as the query starts (SelectionQueries). |
+| `:selected`, dropped | Back: the engine runs in the live app, over what's selected as the query starts (QueryLexicon's `SelectionQueriesPlugin`). |
 | An unknown pseudo-class accepted and ignored | Refused, with the one like it or the rewrite (`KnownInventions`); every name is resolved against the registry, and every title and id against the file, before anything is answered. |
 | `nl-translate.ts`'s prompt, and the task's move from Haiku 4.5 to Sonnet 4.5 | `QueryPrompt.system`, ported where it still applies (the output contract, the direction procedure, "do not invent new ones"), taught on the story file and held to the language by tests; `--ask` runs on either model through `AskStyle`, and the live evaluation's bar picks the cheaper that clears it: Sonnet 5.5, in round 2. |
 
@@ -9395,9 +9548,16 @@ Each of these adds to the design without changing what plugins are written again
   adornments that draw themselves (data-canvas's 22-point sparkline, which needs a taller row);
   adornments painted with their shape, so a shape in front covers a back shape's, and a press
   there is the front shape's (a per-shape drawing hook in the core); a tooltip on each (the lock's
-  among them); telling agents what a shape shows; and labels not made at all zoomed far out (drawn
-  blank, none is measured, but the first frame there still asks every adorned shape in view for
-  its labels).
+  among them); and telling agents what a shape shows.
+- **Covers**: a title's cover only goes on a shape big enough on screen (40 × 15 points), so a
+  default subboard (240 × 160) has none below about 17% zoom, and a note below about 20%; a label
+  that overhangs a small shape, as a map's names do, with collisions between labels settled by
+  paint order or size, would reach further out; the cover isn't a decoration for the pointer (a
+  frame zoomed out is pressed on its border only, where its pill was a handle in full); the greeked
+  lines of a note show beside its cover (the note's skeleton doesn't know of it); and a cover's text isn't
+  kept between frames (each is laid out as it's drawn, some tens of microseconds, which a board of
+  thousands of titled shapes just over the size it needs would feel; `./build.sh bench` reports a
+  frame just under 35%).
 - **More of skeletons**: a level that holds while the zoom hovers about it (hysteresis, or tldraw's
   debounce, which keeps a big board's level from when the camera started moving until it stops),
   since today a pinch across 35% flips every shape each time it crosses; zooming in by degrees,
@@ -9495,16 +9655,16 @@ Each of these adds to the design without changing what plugins are written again
   shape its schema bounds, for the first read of a large board (10,000 shapes take about 30 ms).
 - **More of mentions**: a shipped text in the panel that holds mentions (`MentionTextArea` is
   there for one); saying in the `@` picker which board a shape on
-  another board is on; validation across boards (MentionValidation checks a mention of a shape on
+  another board is on; validation across boards (`MentionValidationPlugin` checks a mention of a shape on
   another board no more than a missing one); a move that isn't a cut and paste (Move to Subboard, below), keeping ids as a cut's
   paste does, so mentions stay live; the command line reading and listing what can be mentioned,
-  and helpers for writing mentions; more kinds mentionable (through bridges); and making a shape
+  and helpers for writing mentions; more kinds mentionable; and making a shape
   from the picker.
-- **More of slash commands**: more commands (`/lock` ships; the rest are only imagined so far: `/turn-into`
-  for a shape's kind, `/set-title`, `/move-near @shape` and `/move-into @subboard`, each a
-  `SlashCommand` over a kind or every shape with arguments that may be shapes, the last two needing
+- **More of slash commands**: more commands (`/title` and `/lock` ship; the rest are only imagined so far: `/turn-into`
+  for a shape's kind, `/move-near @shape` and `/move-into @subboard`, each a
+  `SlashCommand` over a kind or every shape with arguments that may be shapes, both needing
   a way to move a shape that isn't a drag, and Move to Subboard in More of boards); completing arguments (the
-  list stops at the name: `/set-title` could list titles and `/move-into` the subboards and frames
+  list stops at the name: `/move-near` and `/move-into` could list the shapes, and the subboards and frames
   of the file, as the `@` picker lists shapes, where `argument`'s hint says "@shape" and nothing
   checks that a pill is one); saying why a command line doesn't run (a Return that isn't a
   command's is a new line and the text stays, so a misspelled name, a command not offered or
@@ -9515,7 +9675,7 @@ Each of these adds to the design without changing what plugins are written again
   the text's: it brings the line back and leaves the command done, and the board's Undo, once
   editing is over, undoes the command); and a schema card's sync waiting while a command line is
   typed (it takes the description as done when editing ends or 3 s after the last change, and a
-  half-typed `/set-title` is not a description to rewrite the schema from).
+  half-typed `/lock` is not a description to rewrite the schema from).
 - **More of the detail panel**: editing several selected shapes at once (it shows "N Shapes"
   today); every-shape sections over the record (there are every-box ones over the frame, and those
   over an added property; so `mentionableEveryShape` brings no Mentioned In tab), and every-box

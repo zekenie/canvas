@@ -5,6 +5,7 @@ import CanvasTesting
 import Keyboard
 import Mentions
 import Selection
+import SlashCommands
 import TableOfContents
 import TestKit
 import Titles
@@ -145,7 +146,7 @@ private let frame = CGRect(x: 0, y: 0, width: 100, height: 80)
     test("a list with a mentionable kind needs Mentions") {
         expectThrows(RegistryError.ownerNotInstalled(point: "MentionScopes", owner: .mentions, contributor: "mention-fixtures")) {
             _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), MentionFixturesPlugin(), AdornmentsPlugin(),
-                                       TableOfContentsPlugin(), TitlesPlugin()])
+                                       SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin()])
         }
     },
 ])

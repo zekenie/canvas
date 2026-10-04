@@ -35,7 +35,7 @@ extension SchemaDescribed {
 }
 
 /// The definitions a schema shares (its `$defs`), each named after the module that declares its
-/// type (`mentions.text`, `arrows.terminal`; the core's geometry is `core.<name>`), so a type has
+/// type (`mentions.text`, `connections.terminal`; the core's geometry is `core.<name>`), so a type has
 /// one name wherever it's described, and two modules' definitions never collide. Every `$ref` is
 /// local (`#/$defs/...`). Each type is described once, however often it's used, and a type that
 /// holds itself refers to its own definition.

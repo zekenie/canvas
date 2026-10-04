@@ -61,6 +61,7 @@ private func rowText(_ row: CaretListRow) -> String {
     test("a line is a slash, a name ended by whitespace or the line's end, then the arguments: ranges, the name folded") {
         let command = try require(line("/lock"))
         expectEqual(command.range, NSRange(location: 0, length: 5))
+        expectEqual(command.nameRange, NSRange(location: 0, length: 5), "the slash and the name")
         expectEqual(command.name, "lock")
         expectEqual(command.arguments, NSRange(location: 5, length: 0))
 
@@ -68,6 +69,7 @@ private func rowText(_ row: CaretListRow) -> String {
         let titled = try require(line(text))
         expectEqual(titled.name, "set-title")
         expectEqual(titled.range, NSRange(location: 0, length: 26))
+        expectEqual(substring(text, titled.nameRange), "/Set-Title", "as typed, not folded")
         expectEqual(substring(text, titled.arguments), "Hello  world", "after the whitespace that follows the name, less what trails")
 
         let blank = try require(line("/lock   "))

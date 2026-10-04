@@ -53,7 +53,7 @@ extension ContentsTitles: KeyedExtensionPoint {
 }
 
 /// Marks at the trailing end of a shape's row, from any plugin: a state worth seeing at a glance down
-/// the list (ValidationContents marks a shape with issues with a red or orange dot, Locking a locked
+/// the list (Validation marks a shape with issues with a red or orange dot, Locking a locked
 /// one with a lock). A list: the kind's contributions, then every kind's that apply to it, each in
 /// plugin order, and a row shows every mark it gets. A
 /// mark is part of the row, made with it, and made again with it when a commit changes the shape.
@@ -164,7 +164,7 @@ extension ContentsContribution {
     }
 }
 
-// MARK: Sugar (what verticals, horizontals and bridges write)
+// MARK: Sugar (what verticals and horizontals write)
 
 extension ShapeRegistrar {
     /// This kind's row in the table of contents, a view that reads only this shape:
@@ -239,7 +239,7 @@ extension ShapeRegistrar {
 }
 
 extension PluginRegistrar {
-    /// The row for a kind another plugin registers (bridges). Typed as the kind's own.
+    /// The row for a kind another plugin registers. Typed as the kind's own.
     public mutating func contentsRow<P: ShapeProps, Row: View>(
         _: P.Type,
         when isListed: @escaping @MainActor (ShapeRecord<P>) -> Bool = { _ in true },
@@ -249,7 +249,7 @@ extension PluginRegistrar {
         contribute(ContentsContribution(P.self, isListed: isListed, parent: parent, row: row), to: ContentsRows.self, for: .kind(P.kind))
     }
 
-    /// The row, read from more than its shape, for a kind another plugin registers (bridges), as
+    /// The row, read from more than its shape, for a kind another plugin registers, as
     /// `ShapeRegistrar`'s `contentsRow(when:nestedUnder:affected:_:)`.
     public mutating func contentsRow<P: ShapeProps>(
         _: P.Type,
@@ -262,7 +262,7 @@ extension PluginRegistrar {
                    to: ContentsRows.self, for: .kind(P.kind))
     }
 
-    /// What the rows of a kind another plugin registers are called (bridges), as above.
+    /// What the rows of a kind another plugin registers are called, as above.
     public mutating func contentsTitle<P: ShapeProps>(_: P.Type, _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) {
         contribute({ $0.typed(as: P.self).flatMap(make) }, to: ContentsTitles.self, for: .kind(P.kind))
     }

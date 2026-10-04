@@ -20,19 +20,24 @@ cd "${SELF:h}"
 
 die() { print -u2 "build.sh: $*"; exit 1 }
 
-# Which layers each layer may depend on (Package.swift's header says the same in prose).
+# Which layers each layer may depend on (Package.swift's header says the same in prose). The plugins
+# any kind can opt into (horizontals) are four layers, so the direction of an edge between two of them
+# follows from their layers: a concern imports the surfaces it shows itself on, a language knows no
+# concern, and only a lexicon joins a language to the concerns its words are about.
 typeset -A MAY_USE=(
     wire        "wire"
     foundation  "foundation"
     ui          "foundation wire"
-    horizontal  "foundation horizontal wire"
-    vertical    "foundation horizontal"
-    bridge      "foundation horizontal vertical"
-    composition "foundation horizontal vertical bridge wire"
+    surface     "foundation surface"
+    concern     "foundation surface concern"
+    language    "foundation surface language wire"
+    lexicon     "foundation surface concern language"
+    vertical    "foundation surface concern"
+    composition "foundation surface concern language lexicon vertical wire"
     app         "foundation ui composition wire"
     cli         "wire"
     testsupport "foundation testsupport"
-    test        "wire foundation ui horizontal vertical bridge composition testsupport"
+    test        "wire foundation ui surface concern language lexicon vertical composition testsupport"
 )
 typeset -A EXECUTABLE_LAYER=(app 1 test 1 cli 1)
 # What the command line's executable (the cli layer's) is called once it's built: in the app's
@@ -66,9 +71,9 @@ MANIFEST_READ=$(stat -f '%Fm %z %N' -- Package.swift)
 
 # --- 1. Read the manifest's target table --------------------------------------------------------
 typeset -a NAMES
-typeset -A DEPS KIND DIR LAYER PATH_ARG
+typeset -A DEPS KIND DIR LAYER PATH_ARG SUBJECT
 integer lineno=0
-TARGET_RE='^[[:space:]]*\.(target|executableTarget)\(name: "([A-Za-z][A-Za-z0-9]*)", dependencies: \[(("[A-Za-z][A-Za-z0-9]*"(, "[A-Za-z][A-Za-z0-9]*")*)?)\](, path: "([^"]+)")?\),[[:space:]]*// layer: ([a-z]+)[[:space:]]*$'
+TARGET_RE='^[[:space:]]*\.(target|executableTarget)\(name: "([A-Za-z][A-Za-z0-9]*)", dependencies: \[(("[A-Za-z][A-Za-z0-9]*"(, "[A-Za-z][A-Za-z0-9]*")*)?)\](, path: "([^"]+)")?\),[[:space:]]*// layer: ([a-z]+)( of ([A-Za-z][A-Za-z0-9]*))?[[:space:]]*$'
 while IFS= read -r line || [[ -n $line ]]; do
     lineno+=1
     [[ $line =~ '^[[:space:]]*//' ]] && continue
@@ -81,6 +86,7 @@ while IFS= read -r line || [[ -n $line ]]; do
         PATH_ARG[$name]=$match[7]
         DIR[$name]=${match[7]:-Sources/$name}
         LAYER[$name]=$match[8]
+        [[ -n $match[10] ]] && SUBJECT[$name]=$match[10]
         (( ${+MAY_USE[$LAYER[$name]]} )) || die "Package.swift:$lineno: unknown layer '$LAYER[$name]' (layers: ${(k)MAY_USE})"
     elif [[ $line =~ '\.[A-Za-z]+\([[:space:]]*name:' || $line == *[Tt]arget\(* ]]; then
         die "Package.swift:$lineno: this target doesn't match the one-line form at the top of the file:\n    $line"
@@ -157,10 +163,21 @@ for name in $ORDER; do
 done
 
 # A test target named after a module (<M>Tests) tests M on its own: it may use M, what M uses,
-# and testsupport and ui modules, so that (say) ArrowsTests can't lean on a shape kind.
+# and testsupport and ui modules, so that (say) SelectionTests can't lean on a shape kind. One named
+# after a plugin of M rather than M (TitleQueriesTests, of QueryLexicon) says so, `// layer: test
+# of M`, and is held the same way.
 for name in $NAMES; do
-    subject=${name%Tests}
-    [[ $LAYER[$name] == test && $subject != $name && -n ${DEPS[$subject]+1} ]] || continue
+    if (( ${+SUBJECT[$name]} )); then
+        subject=$SUBJECT[$name]
+        [[ $LAYER[$name] == test ]] || die "$name: only a test target says what it tests (// layer: test of $subject)"
+        [[ -n ${DEPS[$subject]+1} ]] || die "$name tests $subject, which isn't a module here"
+        [[ $LAYER[$subject] != test* ]] || die "$name tests $subject, a $LAYER[$subject] target: a test is of a module"
+        [[ -n ${DEPS[${name%Tests}]+1} ]] && die "$name is named after ${name%Tests}, so it tests that: drop 'of $subject'"
+        (( ${${=DEPS[$name]}[(Ie)$subject]} )) || die "$name tests $subject, so it depends on $subject"
+    else
+        subject=${name%Tests}
+        [[ $LAYER[$name] == test && $subject != $name && -n ${DEPS[$subject]+1} ]] || continue
+    fi
     for dep in ${=DEPS[$name]}; do
         [[ $dep == $subject || $LAYER[$dep] == (testsupport|ui) ]] && continue
         (( ${${=CLOSURE[$subject]}[(Ie)$dep]} )) ||
@@ -373,7 +390,7 @@ audit_sources() {
     done
 
     # Ids: a module may write another module's ShapeKind, PluginID, ToolID, PropertyKey, ChannelID
-    # (Ports') or EdgeTypeID (Topology's) as a string only if it depends on that module. The graph
+    # (Connections') or EdgeTypeID (Topology's) as a string only if it depends on that module. The graph
     # already keeps a module from naming another's types; this keeps it from reaching that module's
     # shapes, tools, plugins, added properties, channels or edge types by string instead. A module owns
     # the ids its non-test code declares: as a static member (`static let kind: ShapeKind = "sticky-note"`,

@@ -1,10 +1,11 @@
 import Canvas
 
 // What `canvas draw` needs from concerns it doesn't own, each an extension point with at most one
-// contribution, from the bridge that joins this plugin to the plugin that owns the concern: what a
-// shape is called (DrawNames, Titles'), what an edge is (DrawEdges, Ports'), and what's wrong with
-// a shape drawn (DrawChecks, Validation's). Without one, `draw` does without: no titles (a titled
-// statement is `no_names`), no edges (`no_edges`), and only the schemas' bounds checked.
+// contribution, from DrawLexicon, which binds them to the plugins that own the concerns
+// (AutomationTests bind them to fixtures of their own): what a
+// shape is called (DrawNames, Titles'), what an edge is (DrawEdges, Connections'), and what's
+// wrong with a shape drawn (DrawChecks, Validation's). Without one, `draw` does without: no titles
+// (a titled statement is `no_names`), no edges (`no_edges`), and only the schemas' bounds checked.
 
 // MARK: Names
 
@@ -159,7 +160,7 @@ struct DrawPointKey: Hashable, CustomStringConvertible {
     var description: String { name }
 }
 
-// MARK: Sugar (what bridges write)
+// MARK: Sugar (what DrawLexicon writes)
 
 extension PluginRegistrar {
     /// Names shapes for `canvas draw`: `name` is what a shape is called (folded, as `fold` folds a

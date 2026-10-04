@@ -1,47 +1,35 @@
 import Adornments
 import AppKit
-import ArrowPorts
-import Arrows
 import Automation
-import BoardQueries
 import Boards
 import Canvas
 import CanvasRPC
 import Clipboard
+import Connections
 import ContextMenus
 import CoreGraphics
 import DetailPanel
+import DrawLexicon
 import Frames
 import Keyboard
 import LanguageModels
 import Locking
-import MentionQueries
-import MentionValidation
 import Mentions
-import PortEdges
-import Ports
 import Queries
 import QueryCommands
+import QueryLexicon
 import Reordering
 import Schemas
 import Selection
-import SelectionQueries
 import SlashCommands
 import Snapping
 import StickyNotes
 import Subboards
 import SwiftUI
 import TableOfContents
-import TitleNames
-import TitleQueries
-import TitleValidation
 import Titles
 import Topology
 import Validation
-import ValidationChecks
-import ValidationContents
-import ValidationDetails
-import ValidationQueries
 
 /// The static composition point: which plugins ship, in which order (the toolbar's order, and the
 /// order overlays draw in). Tests import this, so they check exactly what ships.
@@ -68,7 +56,7 @@ public enum ShippedPlugins {
             ArrowsPlugin(), StickyNotesPlugin(), SubboardsPlugin(), FramesPlugin(), SchemasPlugin(),
             // After Validation: what's shown on shapes draws over its outline.
             ValidationPlugin(), AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
-            // Slash commands: the list at a `/` in the text views Mentions hosts it in. Locking offers the one that ships, `/lock`.
+            // Slash commands: the list at a `/` in the text views Mentions hosts it in. Titles offers `/title`, Locking `/lock`.
             SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(),
             // After Titles, whose names its pills show, and the table of contents, whose rows it names.
             MentionsPlugin(),
@@ -80,8 +68,8 @@ public enum ShippedPlugins {
             // What a drag moves snaps to the shapes in view: their edges, their middles and the spaces
             // between them.
             SnappingPlugin(),
-            // Ports, whose arrows the bridge draws. After Adornments: a shape's dots draw above its
-            // adornments (the lock chip among them), and are found before them.
+            // Ports, whose arrows `ArrowPortsPlugin` draws. After Adornments: a shape's dots draw
+            // above its adornments (the lock chip among them), and are found before them.
             PortsPlugin(), ArrowPortsPlugin(),
             LanguageModelsPlugin(model: model),
             // The command line's commands, and what `canvas draw` takes from the plugins that own a

@@ -23,6 +23,13 @@ import TextEditing
 ///   of the person's, leaving the caret on the now empty line, and runs the command. Anything else
 ///   is Return as ever: a new line, or what the host does with it (a box's commit).
 ///
+/// - The command is marked as it's typed, as a mention's pill is marked (`EditingTextView.highlights`,
+///   drawn by the view under the text, in the text's own color): the `/name` on the line the caret is
+///   on, while the list lists something for it and, with the list closed, while the shape offers the
+///   command, and what it's given in a lighter shade, if it accepts that. So a line that Return
+///   would run looks different from one that is only text. Nothing is marked in a view that can't
+///   be written.
+///
 /// It writes the text only through the view, as a person's edit (undoable, heard by the host), its
 /// list closed first, and ignores its own callbacks while it does. The command runs after the text
 /// is written, so a command that makes the shape read-only has its line gone already. Running is the
@@ -74,6 +81,7 @@ public final class SlashCommandTyping {
     public func didChange(isEdit: Bool) {
         guard !isWriting else { return }
         read(isEdit: isEdit)
+        showCommand()
     }
 
     /// Closes the list, if it's open: its `/` stays as typed, and nothing opens until another is
@@ -87,6 +95,7 @@ public final class SlashCommandTyping {
         let closing = window
         window = nil
         closing?.dismiss()
+        showCommand()
     }
 
     private func open(at location: Int, offering offered: [OfferedSlashCommand], over view: EditingTextView) {
@@ -101,6 +110,7 @@ public final class SlashCommandTyping {
         picker.list.onChange = { [weak self] in self?.window?.listDidChange() }
         read(isEdit: true)
         if self.picker != nil { window?.listDidChange() }
+        showCommand()
     }
 
     /// Where the list goes: under its `/`, while it's in the text.
@@ -209,6 +219,45 @@ public final class SlashCommandTyping {
         view.setSelectedRange(NSRange(location: range.location + (string as NSString).length, length: 0))
         view.didChangeText()
         view.breakUndoCoalescing()
+        showCommand()
         return true
+    }
+
+    // MARK: Marking the command
+
+    /// Marks what's typed as a command, as the view draws it under the text: the `/name`, and what
+    /// it's given in a lighter shade. While the list is open it's the `/` and the name there, if the
+    /// list lists a command for it (not "No matches", which is no command); with the list closed it's
+    /// the line the caret is on, if it's a command line whose command the shape offers now, and the
+    /// arguments only if the command accepts them (so `/lock now`, which stays text, marks `/lock`
+    /// alone). The color is the text's own, so the marks follow the surface the text is on.
+    private func showCommand() {
+        guard let view else { return }
+        view.highlights = marks(over: view)
+    }
+
+    private func marks(over view: EditingTextView) -> [TextHighlight] {
+        guard view.isEditable, let storage = view.textStorage else { return [] }
+        if let picker {
+            guard !picker.listed.isEmpty, NSMaxRange(picker.nameRange) <= storage.length else { return [] }
+            return [mark(picker.nameRange, SlashCommandStyle.commandFill, over: view)]
+        }
+        let selection = view.selectedRange()
+        guard let commands, selection.length == 0,
+              let line = SlashCommandLine(in: storage.string as NSString, caret: selection.location),
+              let command = commands.command(named: line.name, for: owner) else { return [] }
+        var found = [mark(line.nameRange, SlashCommandStyle.commandFill, over: view)]
+        if line.arguments.length > 0, command.accepts(arguments(in: line.arguments)) {
+            found.append(mark(line.arguments, SlashCommandStyle.argumentsFill, over: view))
+        }
+        return found
+    }
+
+    /// A range marked in the text's own color at `strength` of what it is (a pill's fill is the
+    /// text's color at 10%), so the mark follows the surface the text is on.
+    private func mark(_ range: NSRange, _ strength: CGFloat, over view: EditingTextView) -> TextHighlight {
+        let color = view.typingAttributes[.foregroundColor] as? NSColor ?? .labelColor
+        let alpha = color.usingColorSpace(.deviceRGB)?.alphaComponent ?? 1
+        return TextHighlight(range: range, fill: color.withAlphaComponent(strength * alpha))
     }
 }

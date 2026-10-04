@@ -2,10 +2,10 @@ import Canvas
 import CanvasTesting
 import Queries
 import QueryLanguage
+import QueryLexicon
 import TestKit
 import Topology
 import Validation
-import ValidationQueries
 
 // `:invalid` and `:warned` on every board of the file: from Validation's cache on the board shown
 // while it's current, else by running the shape's rules against the board it's on as the app has
@@ -77,7 +77,7 @@ import ValidationQueries
         _ = h.editor.validation?.results
         expectEqual(runs.count, 12, "Validation reads the board shown itself, as it would have with no query")
     },
-    test("the vocabulary lists the words, from the bridge; without it, they're refused") {
+    test("the vocabulary lists the words, from ValidationQueriesPlugin; without it, they're refused") {
         let runs = RuleRuns()
         let vocabulary = try require(try checkedHarness(runs).editor.queries).vocabulary
         let words = vocabulary.words.filter { $0.from == ValidationQueriesPlugin().id }

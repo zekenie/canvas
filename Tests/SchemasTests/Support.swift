@@ -2,27 +2,30 @@ import Adornments
 import AppKit
 import Canvas
 import CanvasTesting
+import Connections
 import ContextMenus
 import DetailPanel
 import Keyboard
 import LanguageModels
 import Mentions
-import Ports
 import Schemas
 import Selection
+import SlashCommands
 import TableOfContents
 import TestKit
 import Titles
 import Topology
 import Validation
 
-/// Every plugin a schema card contributes to (validation, the table of contents, titles, mentions and
-/// the context menu their Show What Mentions is in, the detail panel, ports), with the keyboard and
-/// the selection, to place and select one as a person does, Adornments, which Titles places its pill
-/// with, and the language model its sync asks: a scripted one, so no test reaches the network.
+/// Every plugin a schema card contributes to (validation, the table of contents, titles and the slash
+/// commands they offer, mentions and the context menu their Show What Mentions is in, the detail
+/// panel, ports), with the keyboard and the selection, to place and select one as a person does,
+/// Adornments, which Titles places its pill with, and the language model its sync asks: a scripted
+/// one, so no test reaches the network.
 @MainActor func schemaPlugins(model: any LanguageModel = ScriptedLanguageModel()) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), SchemasPlugin(), ValidationPlugin(), AdornmentsPlugin(), ContextMenusPlugin(),
-     TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), DetailPanelPlugin(), PortsPlugin(), LanguageModelsPlugin(model: model)]
+     SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), DetailPanelPlugin(), PortsPlugin(),
+     LanguageModelsPlugin(model: model)]
 }
 
 @MainActor func schemaEditor(scheduler: any Scheduler = ManualScheduler(), model: any LanguageModel = ScriptedLanguageModel(),

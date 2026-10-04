@@ -1,18 +1,16 @@
-import ArrowPorts
-import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
+import Connections
 import CoreGraphics
 import Geometry
 import Keyboard
-import Ports
 import Selection
 import TableOfContents
 import Topology
 
-// Fixture shapes only, with channels of the tests' own, so nothing here imports a real vertical but
-// Arrows: boxes take the wire channel, discs the pipe. Boxes A and B sit where the POC's first two
-// welcome notes do, and a disc below.
+// Fixture shapes only, with channels of the tests' own, so nothing here imports a real vertical
+// (the arrows come with Connections): boxes take the wire channel, discs the pipe. Boxes A and B
+// sit where the POC's first two welcome notes do, and a disc below.
 enum Wire {}
 extension Wire: Channel {
     static let id: ChannelID = "wire"
@@ -48,7 +46,7 @@ struct PortBoard {
         c = h.add(Disc(discC))
     }
 
-    /// What every board here has: the keys, the selection, the fixtures, arrows, ports, the bridge,
+    /// What every board here has: the keys, the selection, the fixtures, arrows, ports, `ArrowPortsPlugin`,
     /// and the tests' channels (boxes on the wire, discs on the pipe), then `more`.
     static func plugins(more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
         let channels = Contributor(id: "channels") { registrar in

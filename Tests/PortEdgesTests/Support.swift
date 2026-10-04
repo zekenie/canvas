@@ -3,15 +3,15 @@ import Automation
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasTesting
+import Connections
 import CoreGraphics
+import DrawLexicon
 import Keyboard
-import PortEdges
-import Ports
 import Selection
 import TestKit
 import Topology
 
-// `canvas draw`'s edges as Ports' connections, over fixtures: tiles (named by their label) have
+// `canvas draw`'s edges as Connections' connections, over fixtures: tiles (named by their label) have
 // ports on the wire, on every side; cards (named by their text) on the pipe, on their right and
 // bottom, and take the wire on their left, but have no dot there. The connector draws links
 // (CanvasTesting's), without a drag: it notes each request, keeps the sides a request names and
@@ -127,11 +127,11 @@ let fixtureNames = Contributor(id: "fixture-names") { registrar in
 }
 
 /// An editor 800 × 600 points with the fixtures, Ports, the channels, the link connector, names
-/// and the bridge (unless not).
-@MainActor func edgesEditor(_ requests: Requests = Requests(), cards: Bool = true, makes: Bool = true, bridge: Bool = true) throws -> CanvasEditor {
+/// and `PortEdgesPlugin` (unless not).
+@MainActor func edgesEditor(_ requests: Requests = Requests(), cards: Bool = true, makes: Bool = true, withPlugin: Bool = true) throws -> CanvasEditor {
     let plugins: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), AutomationPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(),
                                        LinksPlugin(), PortsPlugin(), channelsPlugin(cards: cards), linkConnector(requests, makes: makes),
-                                       fixtureNames] + (bridge ? [PortEdgesPlugin()] : [])
+                                       fixtureNames] + (withPlugin ? [PortEdgesPlugin()] : [])
     let editor = CanvasEditor(registry: try Registry(plugins: plugins))
     editor.viewportDidResize(to: CGSize(width: 800, height: 600))
     return editor

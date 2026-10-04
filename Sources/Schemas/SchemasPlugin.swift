@@ -1,8 +1,8 @@
 import Canvas
+import Connections
 import CoreGraphics
 import Keyboard
 import Mentions
-import Ports
 import Selection
 import SwiftUI
 import TableOfContents
@@ -38,7 +38,7 @@ public struct SchemasPlugin: CanvasPlugin {
             let place = schema.editingPlacement(size: SchemaCard.defaultSize) { SchemaCard() }
             schema.tool(label: "Schema", systemImage: "curlybraces", shortcut: "s", placing: place)
             schema.validate { shape, _ in SchemaReadings.reading(of: shape).issues }
-            schema.title(symbolInPill: true) { SchemaReadings.reading(of: $0).shown.title }
+            schema.title(symbolInPill: true, coverSurface: SchemaStyle.card) { SchemaReadings.reading(of: $0).shown.title }
             schema.contentsRow { shape in
                 let shown = SchemaReadings.reading(of: shape).shown
                 return ContentsLabel(shown.title ?? "", placeholder: SchemaCard.untitled, systemImage: "curlybraces",

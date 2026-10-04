@@ -2,9 +2,9 @@ import Canvas
 import CoreGraphics
 
 /// Context menus, as a plugin: a right-click (or Control-click) on a shape opens the items that
-/// apply to it, contributed by its kind, by horizontals it opts into, by bridges, and by any plugin
-/// for every shape. Nothing applies, and the click does nothing. The core only passes the click
-/// along (`registrar.menuForSecondaryClick`); it never learns what's in a menu.
+/// apply to it, contributed by its kind, by horizontals it opts into, by other plugins for its kind,
+/// and by any plugin for every shape. Nothing applies, and the click does nothing. The core only
+/// passes the click along (`registrar.menuForSecondaryClick`); it never learns what's in a menu.
 extension PluginID {
     public static let contextMenus: PluginID = "context-menus"
 }
@@ -129,7 +129,7 @@ extension ContextMenuContribution {
     }
 }
 
-// MARK: Sugar (what verticals, horizontals and bridges write)
+// MARK: Sugar (what verticals and horizontals write)
 
 extension ShapeRegistrar {
     /// This kind's items in its context menu, in one call (one contribution, one report line):
@@ -153,7 +153,7 @@ extension ShapeRegistrar {
 }
 
 extension PluginRegistrar {
-    /// Items for a kind another plugin registers (bridges). Typed as the kind's own.
+    /// Items for a kind another plugin registers. Typed as the kind's own.
     public mutating func contextMenu<P: ShapeProps>(_: P.Type, @MenuBuilder<P> _ items: () -> [MenuEntry<P>]) {
         contribute(ContextMenuContribution(P.self, items()), to: ShapeContextMenus.self, for: .kind(P.kind))
     }

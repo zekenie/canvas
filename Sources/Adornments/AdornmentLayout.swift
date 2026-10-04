@@ -39,11 +39,10 @@ public enum AdornmentLayout {
     /// Below this zoom adornments shrink with the shapes.
     public static let fullSizeZoom: CGFloat = 0.25
 
-    /// One adornment to lay out: its place, how wide it is (text as long as it's drawn, measured in
-    /// full and counted from its columns drawn blank, zoomed out; a symbol's disc as wide as its
-    /// place is tall), whether it's text, which gives way at the row's left end, and for text, how
-    /// far it starts past its padding (`lead`: a symbol before it, and the gap after that), which it
-    /// needs room for besides `minTextRoom`.
+    /// One adornment to lay out: its place, how wide it is (text as long as it's drawn, measured; a
+    /// symbol's disc as wide as its place is tall), whether it's text, which gives way at the row's
+    /// left end, and for text, how far it starts past its padding (`lead`: a symbol before it, and
+    /// the gap after that), which it needs room for besides `minTextRoom`.
     public struct Item: Equatable, Sendable {
         public var placement: AdornmentPlacement
         public var width: CGFloat

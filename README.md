@@ -92,34 +92,37 @@ check before running it again). To run it as just `canvas`, put the link on your
 
 A shape with an issue (a schema card that isn't JSON, a title past 80 characters) gets an outline (the validation
 plugin: red for an error, orange for a warning; none while it's being edited), says why in an Issues tab of the detail
-panel (the validation-details bridge), and gets a dot of the same color on its row in the table of contents (the
-validation-contents bridge).
-A titled shape shows its title in a pill above its top-left corner, and in the table of contents (the titles plugin).
+panel (the validation-details plugin), and gets a dot of the same color on its row in the table of contents (the
+validation-contents plugin).
+A titled shape shows its title in a pill above its top-left corner (zoomed out below 35%, where shapes are skeletons and show no pill, on the shape itself, large), and in the table of contents (the titles plugin).
 Name a note or a subboard in the detail panel's header. A title is
 part of its shape's schema, at most 80 characters: a longer one gets a warning, as does any value outside the
 bounds its schema sets (the validation plugin checks every shape against its kind's schema).
 A note's dots link it only to another note, and a schema card's only to another schema card: each kind has a channel of its own
-(the ports plugin), and the link is an arrow (the arrow-ports bridge) that keeps to its channel when an end is re-aimed.
+(Connections' ports), and the link is an arrow (`ArrowPortsPlugin`) that keeps to its channel when an end is re-aimed.
 
 ## Layout
 
 ```
-Package.swift           the module graph: one line per module, with its layer
+Package.swift           the module graph: one line per module, with its layer (a horizontal's is surface,
+                        concern, language or lexicon)
 Sources/
   Geometry/             vector math, arcs, Camera
   Canvas/               the core: model, plugin registry, editor, the hand tool, drawing
   CanvasRPC/            what the app and its command line say to each other: JSON-RPC over a socket
   DrawScript/           the language canvas draw reads, and the solver that places what it says: pure, beneath the plugins
+  QueryLanguage/        the language canvas query reads, and the one form it prints: pure, beneath the plugins
   TextEditing/          the text view and the caret list under every editable text, beneath the plugins
   CanvasUI/             the AppKit view, the SwiftUI toolbar, CanvasFocus, and the command line's server
   CanvasCLI/            canvas, the command line
   Keyboard/             the keyboard horizontal: every shortcut, registered by the plugin whose key it is
   Selection/            the selection horizontal: the select tool, marquee, handles, Delete and ⌘A
-  Arrows/               arrows (a port of tldraw's arrow geometry and binding)
   StickyNotes/          sticky notes, with in-place editing
   Schemas/              schema cards: a JSON Schema on the canvas, as a card that lists its fields, written in its
                         panel in words or as JSON, the two kept in step by Claude
-  Validation/           the validation horizontal: rules, engine, outline
+  Subboards/            subboards: a card that holds a board of its own, entered with a double-click
+  Frames/               frames: a region of a board that holds shapes, which move and lock with it
+  Validation/           the validation horizontal: rules, engine, outline, the Issues tab and the rows' dots
   DetailPanel/          the detail panel horizontal: tabs, sections, bindings, the inspector view
   ContextMenus/         the context menu horizontal: right-click items, groups, the selection's menu
   SlashCommands/        a horizontal: commands a shape offers, typed as /name on a line of its text (the list
@@ -129,20 +132,26 @@ Sources/
                         any plugin, laid out so none overlap, drawn in one overlay
   Clipboard/            the clipboard horizontal: cut, copy and paste, which kinds may opt out of
   Titles/               a horizontal any kind opts into: a title, a property it adds (or derived), in a pill
-                        and the table of contents, and a header that renames it
+                        and the table of contents, and a header, or /title, that renames it
   Locking/              a horizontal every kind is in: a lock from the context menu or /lock, its chip and its shake
-  Ports/                a horizontal any kind opts into: dots beside its sides that a drag connects from,
-                        on channels that say what may connect to what
+  Connections/          a horizontal: ports (dots beside a shape's sides that a drag connects from), channels that
+                        say what may connect to what, and the arrow (a port of tldraw's arrow geometry and
+                        binding) a drag from a dot draws, bound only where its channel goes
+  Mentions/             a horizontal: text that mentions shapes, each mention a live pill, with the @ picker and
+                        a Mentioned In tab
+  Boards/               a horizontal: getting around a file's boards (opening one, ⌘↑, the path over the canvas)
+  Topology/             a horizontal: what connects and contains what across the file (arrows, mentions, frames
+                        and boards), read from the shapes that carry it
   Automation/           the command line's horizontal: every command canvas runs, draw and kinds its own
+  Queries/              a horizontal: the engine that answers canvas query about the whole file
+  QueryCommands/        canvas query, query-vocabulary, and --ask (Claude writes the query)
   LanguageModels/       a horizontal that lends every editor a language model (Claude Haiku), its key in Settings
   Snapping/             a horizontal: what a drag moves snaps to the shapes in view (edges, middles, even
                         spaces), with guides
-  ValidationDetails/    a bridge between two horizontals: validation issues in the panel's Issues tab
-  ValidationContents/   a bridge between two horizontals: a dot on the row of each shape with issues
-  ArrowPorts/           a bridge: arrows are what a drag from a port draws, bound only where its channel goes
-  TitleNames/           a bridge: canvas draw names shapes by their titles
-  PortEdges/            a bridge: canvas draw's edges are the connector's connections, on a channel both ends take
-  ValidationChecks/     a bridge: canvas draw warns about each shape it draws as validation finds it
+  DrawLexicon/          canvas draw's words for this app: shapes named by their titles, edges as the connector's
+                        connections (on a channel both ends take), and warnings as validation finds them
+  QueryLexicon/         canvas query's words for this app: titles, boards' names, mentions, validity and the
+                        selection
   Composition/          the shipped plugin list, and the welcome board
   InfiniteCanvas/       the SwiftUI app
 Examples/               the smallest plugin for each pattern
