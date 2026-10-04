@@ -103,8 +103,10 @@ extension Budget {
                 let kinds = h.editor.registry.containingKinds
                 expectEqual(h.editor.document.descendants(of: frame, containingKinds: kinds).count, held.count, "\(name): held")
                 // Pressed on its top border, which grabs a frame that holds shapes, where no shape in it
-                // has a port's dot (a note's on its left would take the press).
-                let border = CGPoint(x: region.midX + 130, y: region.minY)
+                // has a port's dot (a note's or a card's top dot, 12 above the middle of its top edge,
+                // would take the press) or a title's pill. The grid's columns are 260 apart, and its
+                // shapes' middles 80 to 120 into a column, so a point 200 into one is clear of both.
+                let border = CGPoint(x: region.minX + 220, y: region.minY)
                 h.editor.selection = nil
                 h.move(to: h.view(border))
                 h.press(at: h.view(border))

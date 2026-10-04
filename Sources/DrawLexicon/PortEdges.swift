@@ -185,8 +185,8 @@ enum EdgeChannels {
     // MARK: Messages
 
     /// What some kinds connect on, as a message says it: `a sticky-note connects on note-link, a
-    /// schema-card on schema-link`; by side, `a sticky-note has note-link ports on its left, right and
-    /// bottom`; `a subboard has no ports`.
+    /// schema-card on schema-link`; by side, `a sticky-note has note-link ports on its top, right,
+    /// bottom and left`; `a subboard has no ports`.
     static func described(_ kinds: [ShapeKind], sides: Bool, in registry: Registry) -> String {
         var said: [String] = []
         var seen: Set<ShapeKind> = []

@@ -232,7 +232,8 @@ extension ShapeRegistrar {
     /// Gives this kind ports on `channel`: a dot just outside the middle of each of `sides`, shown as
     /// the pointer comes near one of its shapes in the select tool, from which a drag draws a
     /// connection on the channel (unless `role` is `.target`); and connections on it may end on its
-    /// shapes (unless `role` is `.source`). `note.ports(NoteLink.self, sides: [.left, .right, .bottom])`.
+    /// shapes (unless `role` is `.source`). `note.ports(NoteLink.self)` is on all four sides, and
+    /// `note.ports(NoteLink.self, sides: [.left, .right])` on two.
     public mutating func ports<C: Channel>(_ channel: C.Type, sides: [PortSide] = PortSide.allCases, role: PortRole = .both) {
         contribute(PortContribution(channel: C.id, sides: sides, role: role), to: ShapePorts.self)
     }
