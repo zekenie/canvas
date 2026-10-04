@@ -9,12 +9,12 @@ import Connections
 import ContextMenus
 import CoreGraphics
 import DetailPanel
+import DrawLexicon
 import Frames
 import Keyboard
 import LanguageModels
 import Locking
 import Mentions
-import PortEdges
 import Queries
 import QueryCommands
 import QueryLexicon
@@ -27,11 +27,9 @@ import StickyNotes
 import Subboards
 import SwiftUI
 import TableOfContents
-import TitleNames
 import Titles
 import Topology
 import Validation
-import ValidationChecks
 
 /// The static composition point: which plugins ship, in which order (the toolbar's order, and the
 /// order overlays draw in). Tests import this, so they check exactly what ships.

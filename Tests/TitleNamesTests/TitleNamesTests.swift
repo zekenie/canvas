@@ -4,11 +4,11 @@ import Automation
 import CanvasRPC
 import CanvasTesting
 import CoreGraphics
+import DrawLexicon
 import Keyboard
 import Selection
 import SlashCommands
 import TestKit
-import TitleNames
 import Titles
 
 // `canvas draw` naming shapes by their titles, as Titles has them: cards are named (the title
@@ -28,7 +28,7 @@ import Titles
 }
 
 /// An editor 800 × 600 points, its view (0, 0) to (800, 600), with Titles (and the slash commands it
-/// offers) and the bridge.
+/// offers) and `TitleNamesPlugin`.
 @MainActor func namedEditor(tilesNamed: Bool = true, bridge: Bool = true) throws -> CanvasEditor {
     let plugins: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), AutomationPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(),
                                        AdornmentsPlugin(), SlashCommandsPlugin(), TitlesPlugin(), fixtureTitles(tilesNamed: tilesNamed)] + (bridge ? [TitleNamesPlugin()] : [])
