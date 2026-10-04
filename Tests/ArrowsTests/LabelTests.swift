@@ -285,7 +285,7 @@ private let size = CGSize(width: 40, height: 26)
 ])
 
 @MainActor let labelDrawingTests = Suite("Arrow labels: drawn", [
-    test("the body is cut where the label is, and its text drawn there; zoomed out, greeked in its place") {
+    test("the body is cut where the label is, and its text drawn there; zoomed out, it runs whole and the label is left off") {
         let (h, id) = try labelHarness("calls")
         let frame = try require(h.editor.arrowLabelFrame(of: id))
         let drawn = renderBitmap(h.editor, size: CGSize(width: 600, height: 400), scale: 2)
@@ -293,11 +293,19 @@ private let size = CGSize(width: 40, height: 26)
         expect(!isInked(pixel(drawn, at: CGPoint(x: frame.minX + 1, y: 200), scale: 2)), "cut at the label's edge")
         expect(inkedPixels(drawn, in: frame.insetBy(dx: 4.25, dy: 4.25), scale: 2) > 20, "its text")
 
+        // A cut that far out reads as a gap in the arrow, so there the body is whole, and the
+        // label no more than a label-less arrow's: nothing of it drawn.
         h.editor.camera = Camera(origin: .zero, zoom: 0.3)
-        let far = renderBitmap(h.editor, size: CGSize(width: 180, height: 120), scale: 4)
+        let farSize = CGSize(width: 180, height: 120)
+        let far = renderBitmap(h.editor, size: farSize, scale: 4)
         @MainActor func at(_ world: CGPoint) -> [Int] { pixel(far, at: CGPoint(x: world.x * 0.3, y: world.y * 0.3), scale: 4) }
-        expect(isInked(at(CGPoint(x: frame.minX - 10, y: 200))), "the body, before it")
-        expect(!isInked(at(CGPoint(x: frame.minX + 2, y: 200))), "cut where it is")
+        for x: CGFloat in [frame.minX - 10, frame.minX + 2, frame.midX, frame.maxX - 2, frame.maxX + 10] {
+            expect(isInked(at(CGPoint(x: x, y: 200))), "the body, whole at \(x)")
+        }
+        let (bare, _) = try labelHarness("")
+        bare.editor.camera = Camera(origin: .zero, zoom: 0.3)
+        expectEqual(largestDifference(far, renderBitmap(bare.editor, size: farSize, scale: 4), in: CGRect(origin: .zero, size: farSize), scale: 4), 0,
+                    "no different from the arrow without a label")
     },
 ])
 
