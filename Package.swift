@@ -15,14 +15,27 @@ import PackageDescription
 //                                                        plugins (DrawScript): knows no plugin
 //     ui           -> foundation, wire                   the AppKit/SwiftUI shell around the core, and
 //                                                        the app's end of the command line
-//     horizontal   -> foundation, horizontal, wire       declares extension points that other
-//                                                        plugins opt into; knows no vertical
-//     vertical     -> foundation, horizontal             a feature (shape kinds, tools); knows no
-//                                                        other vertical
-//     bridge       -> foundation, horizontal, vertical   glue that connects a vertical to a
-//                                                        horizontal, or two horizontals, without
-//                                                        either knowing the other
-//     composition  -> foundation, horizontal, vertical, bridge, wire   the shipped plugin list
+//   the plugins any kind can opt into (horizontals) are four layers:
+//     surface      -> foundation, surface                what the others show themselves on or build
+//                                                        on (keys, the selection, the panel, menus, the
+//                                                        table of contents, adornments, slash commands,
+//                                                        the graph, the language model); declares
+//                                                        extension points; knows no concern
+//     concern      -> foundation, surface, concern       a meaning a kind opts into (validity, titles,
+//                                                        locks, connections, mentions, boards, the
+//                                                        clipboard, snapping), shown on the surfaces it
+//                                                        imports, and may own the kind it's drawn as
+//                                                        (Connections' arrow); knows no language
+//     language     -> foundation, surface, language,     what agents read and write the canvas in (the
+//                     wire                               command line, draw, queries): what it says of
+//                                                        a concern comes through its points; knows no
+//                                                        concern
+//     lexicon      -> foundation, surface, concern,      a language's words for the app's concerns
+//                     language                           (DrawLexicon, QueryLexicon): the one place a
+//                                                        language and the concerns meet
+//     vertical     -> foundation, surface, concern       a feature (shape kinds, tools); knows no other
+//                                                        vertical, and no language
+//     composition  -> foundation, surface, concern, language, lexicon, vertical, wire   the shipped plugin list
 //     app          -> foundation, ui, composition, wire
 //     cli          -> wire                               the command line (`canvas`), an executable:
 //                                                        knows only the wire, never the app
@@ -30,6 +43,12 @@ import PackageDescription
 //     test         -> anything but app, cli and test; a test named <M>Tests may use only M, M's
 //                     dependencies, and testsupport and ui modules, and so may one named after a
 //                     plugin of M that says so: `// layer: test of M` (TitleQueriesTests)
+//
+// So an edge between two horizontals goes the way their layers say, and within a layer from the module
+// that owns a meaning to the one it builds on (Mentions imports Titles, whose names its pills show). A
+// face a plugin list should be able to leave out (Validation's Issues tab) is a plugin value of its own
+// in its owner's module, never a module that joins two others: only a lexicon joins modules, and only
+// a language to concerns.
 //
 // build.sh refuses to build when:
 //   - the graph has a cycle, or an edge the layers above forbid;
@@ -61,28 +80,31 @@ let package = Package(
         .target(name: "CanvasRPC", dependencies: []),                                         // layer: wire
         .target(name: "CanvasUI", dependencies: ["Canvas", "CanvasRPC", "Geometry"]),         // layer: ui
 
-        .target(name: "Keyboard", dependencies: ["Canvas"]),                                  // layer: horizontal
-        .target(name: "Selection", dependencies: ["Canvas", "Geometry", "Keyboard"]),         // layer: horizontal
-        .target(name: "Validation", dependencies: ["Canvas", "DetailPanel", "TableOfContents"]), // layer: horizontal
-        .target(name: "DetailPanel", dependencies: ["Canvas", "Selection", "TextEditing"]),   // layer: horizontal
-        .target(name: "ContextMenus", dependencies: ["Canvas", "Selection"]),                 // layer: horizontal
-        .target(name: "SlashCommands", dependencies: ["Canvas", "TextEditing"]),              // layer: horizontal
-        .target(name: "TableOfContents", dependencies: ["Canvas", "Selection"]),              // layer: horizontal
-        .target(name: "Adornments", dependencies: ["Canvas", "Geometry", "Selection"]),       // layer: horizontal
-        .target(name: "Clipboard", dependencies: ["Canvas", "ContextMenus", "Geometry", "Keyboard", "Selection"]), // layer: horizontal
-        .target(name: "Titles", dependencies: ["Adornments", "Canvas", "DetailPanel", "SlashCommands", "TableOfContents", "Validation"]),  // layer: horizontal
-        .target(name: "Locking", dependencies: ["Adornments", "Canvas", "ContextMenus", "Selection", "SlashCommands", "TableOfContents"]), // layer: horizontal
-        .target(name: "Connections", dependencies: ["Canvas", "Geometry", "Selection", "TableOfContents", "TextEditing", "Topology"]), // layer: horizontal
-        .target(name: "Automation", dependencies: ["Canvas", "CanvasRPC", "DrawScript", "Geometry"]), // layer: horizontal
-        .target(name: "LanguageModels", dependencies: ["Canvas"]),                            // layer: horizontal
-        .target(name: "Mentions", dependencies: ["Canvas", "ContextMenus", "DetailPanel", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Topology", "Validation"]), // layer: horizontal
-        .target(name: "Boards", dependencies: ["Canvas", "ContextMenus", "DetailPanel", "Keyboard", "Selection", "TableOfContents", "Titles"]), // layer: horizontal
-        .target(name: "Snapping", dependencies: ["Canvas", "Geometry"]),                      // layer: horizontal
-        .target(name: "Topology", dependencies: ["Canvas"]),                                  // layer: horizontal
-        .target(name: "Queries", dependencies: ["Canvas", "DrawScript", "QueryLanguage", "Topology"]), // layer: horizontal
-        .target(name: "QueryCommands", dependencies: ["Automation", "Canvas", "CanvasRPC", "LanguageModels", "Queries", "QueryLanguage"]), // layer: horizontal
-        .target(name: "QueryLexicon", dependencies: ["Boards", "Canvas", "Mentions", "Queries", "Selection", "Titles", "Topology", "Validation"]), // layer: horizontal
-        .target(name: "DrawLexicon", dependencies: ["Automation", "Canvas", "Connections", "Titles", "Validation"]), // layer: horizontal
+        .target(name: "Keyboard", dependencies: ["Canvas"]),                                  // layer: surface
+        .target(name: "Selection", dependencies: ["Canvas", "Geometry", "Keyboard"]),         // layer: surface
+        .target(name: "DetailPanel", dependencies: ["Canvas", "Selection", "TextEditing"]),   // layer: surface
+        .target(name: "ContextMenus", dependencies: ["Canvas", "Selection"]),                 // layer: surface
+        .target(name: "SlashCommands", dependencies: ["Canvas", "TextEditing"]),              // layer: surface
+        .target(name: "TableOfContents", dependencies: ["Canvas", "Selection"]),              // layer: surface
+        .target(name: "Adornments", dependencies: ["Canvas", "Geometry", "Selection"]),       // layer: surface
+        .target(name: "LanguageModels", dependencies: ["Canvas"]),                            // layer: surface
+        .target(name: "Topology", dependencies: ["Canvas"]),                                  // layer: surface
+
+        .target(name: "Validation", dependencies: ["Canvas", "DetailPanel", "TableOfContents"]), // layer: concern
+        .target(name: "Clipboard", dependencies: ["Canvas", "ContextMenus", "Geometry", "Keyboard", "Selection"]), // layer: concern
+        .target(name: "Titles", dependencies: ["Adornments", "Canvas", "DetailPanel", "SlashCommands", "TableOfContents", "Validation"]),  // layer: concern
+        .target(name: "Locking", dependencies: ["Adornments", "Canvas", "ContextMenus", "Selection", "SlashCommands", "TableOfContents"]), // layer: concern
+        .target(name: "Connections", dependencies: ["Canvas", "Geometry", "Selection", "TableOfContents", "TextEditing", "Topology"]), // layer: concern
+        .target(name: "Mentions", dependencies: ["Canvas", "ContextMenus", "DetailPanel", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Topology", "Validation"]), // layer: concern
+        .target(name: "Boards", dependencies: ["Canvas", "ContextMenus", "DetailPanel", "Keyboard", "Selection", "TableOfContents", "Titles"]), // layer: concern
+        .target(name: "Snapping", dependencies: ["Canvas", "Geometry"]),                      // layer: concern
+
+        .target(name: "Automation", dependencies: ["Canvas", "CanvasRPC", "DrawScript", "Geometry"]), // layer: language
+        .target(name: "Queries", dependencies: ["Canvas", "DrawScript", "QueryLanguage", "Topology"]), // layer: language
+        .target(name: "QueryCommands", dependencies: ["Automation", "Canvas", "CanvasRPC", "LanguageModels", "Queries", "QueryLanguage"]), // layer: language
+
+        .target(name: "QueryLexicon", dependencies: ["Boards", "Canvas", "Mentions", "Queries", "Selection", "Titles", "Topology", "Validation"]), // layer: lexicon
+        .target(name: "DrawLexicon", dependencies: ["Automation", "Canvas", "Connections", "Titles", "Validation"]), // layer: lexicon
 
         .target(name: "StickyNotes", dependencies: ["Canvas", "Connections", "DetailPanel", "Keyboard", "Mentions", "Selection", "TableOfContents", "TextEditing", "Titles"]), // layer: vertical
         .target(name: "Schemas", dependencies: ["Canvas", "Connections", "DetailPanel", "Keyboard", "LanguageModels", "Mentions", "Selection", "TableOfContents", "TextEditing", "Titles", "Validation"]), // layer: vertical

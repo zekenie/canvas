@@ -17,7 +17,7 @@ extension PluginID {
 }
 
 /// The extension point: which kinds' shapes open onto their boards, and what a board is called
-/// before its owner is named. At most one per kind. Only a `BoardOwning` kind can open one: a bridge
+/// before its owner is named. At most one per kind. Only a `BoardOwning` kind can open one: a plugin
 /// naming another (`registrar.opensBoard(P.self, …)`) is `RegistryError.invalid` at startup.
 public enum BoardKinds {}
 

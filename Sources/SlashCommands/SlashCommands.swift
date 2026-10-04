@@ -3,10 +3,10 @@ import Canvas
 /// Slash commands, as a plugin: a `/` typed at the start of a new line of a shape's text lists the
 /// commands that shape offers; a line that is `/name` and what the command takes, entered with
 /// Return, runs the command and goes, leaving only what the command did. Contributed the way
-/// context menu items are: by a kind, by horizontals it opts into, by bridges, and by any plugin for
-/// every shape, each command offered when its `when` says so. The core never learns what a command
-/// is. A text view takes part by hosting `SlashCommandTyping` (Mentions' does, for every text where
-/// mentions are typed). Where a shape offers no command, a slash is a slash.
+/// context menu items are: by a kind, by horizontals it opts into, by other plugins for that kind,
+/// and by any plugin for every shape, each command offered when its `when` says so. The core never
+/// learns what a command is. A text view takes part by hosting `SlashCommandTyping` (Mentions' does,
+/// for every text where mentions are typed). Where a shape offers no command, a slash is a slash.
 extension PluginID {
     public static let slashCommands: PluginID = "slash-commands"
 }
@@ -105,7 +105,7 @@ public struct SlashCommandKind {
     public func holds<P: ShapeProperty>(_: P.Type) -> Bool { registry.properties(for: kind).contains(P.key) }
 }
 
-// MARK: Sugar (what verticals, horizontals and bridges write)
+// MARK: Sugar (what verticals and horizontals write)
 
 extension ShapeRegistrar {
     /// This kind's commands, in one call (one contribution, one report line):
@@ -128,7 +128,7 @@ extension ShapeRegistrar {
 }
 
 extension PluginRegistrar {
-    /// Commands for a kind another plugin registers (bridges). Typed as the kind's own.
+    /// Commands for a kind another plugin registers. Typed as the kind's own.
     public mutating func slashCommands<P: ShapeProps>(_: P.Type, @SlashCommandBuilder<P> _ commands: () -> [SlashCommand<P>]) {
         contribute(SlashCommandContribution(P.self, commands()), to: ShapeSlashCommands.self, for: .kind(P.kind))
     }

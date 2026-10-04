@@ -34,7 +34,7 @@ extension ShapeRegistrar {
 }
 
 extension PluginRegistrar {
-    /// How a kind another plugin registers opens (bridges), as `opens` on a kind's own registrar.
+    /// How a kind another plugin registers opens, as `opens` on a kind's own registrar.
     public mutating func opens<P: ShapeProps>(_: P.Type, _ title: String, _ open: @escaping @MainActor (ShapeRecord<P>, CanvasEditor) -> Void) {
         contribute(ShapeOpener(P.self, title: title, open), to: ShapeOpening.self, for: .kind(P.kind))
     }

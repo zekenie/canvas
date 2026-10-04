@@ -144,7 +144,7 @@ extension ShapeRegistrar {
 }
 
 extension PluginRegistrar {
-    /// A title Titles keeps, for a kind another plugin registers (bridges), as `title()` on a kind's
+    /// A title Titles keeps, for a kind another plugin registers, as `title()` on a kind's
     /// own registrar.
     public mutating func title<P: ShapeProps>(_: P.Type, pill: Bool = true, symbolInPill: Bool = false, placeholderInPill: String? = nil,
                                               contents: Bool = true, coverSurface: NSColor? = nil) {
@@ -155,8 +155,8 @@ extension PluginRegistrar {
         }
     }
 
-    /// A derived title for a kind another plugin registers (bridges), as `title { ... }` on a kind's
-    /// own registrar. A bridge that also opts the kind into `TitleProperty` (`optIn(_:to:)`) can
+    /// A derived title for a kind another plugin registers, as `title { ... }` on a kind's
+    /// own registrar. A plugin that also opts the kind into `TitleProperty` (`optIn(_:to:)`) can
     /// derive a title for the shapes nobody named: `TitleProperty.folded(shape[TitleProperty.self])
     /// ?? what it derives`.
     public mutating func title<P: ShapeProps>(_: P.Type, pill: Bool = true, symbolInPill: Bool = false, placeholderInPill: String? = nil,

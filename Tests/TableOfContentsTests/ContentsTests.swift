@@ -147,7 +147,7 @@ import TestKit
         editor.transact { $0.delete([widget]) }
         expectEqual(editor.contents.entries.outline, ["Kept"])
     },
-    test("a bridge gives another plugin's kind a row, typed as that kind") {
+    test("another plugin gives a kind it doesn't register a row, typed as that kind") {
         let bridge = Contributor(id: "box-rows") { $0.contentsRow(Box.self, when: { $0.frame.width > 50 }) { box in ContentsLabel("Box \(Int(box.frame.width)) wide") } }
         let editor = try contentsEditor([bridge])
         editor.add(Box(widgetFrame))

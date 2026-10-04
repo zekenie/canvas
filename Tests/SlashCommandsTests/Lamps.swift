@@ -4,7 +4,7 @@ import CoreGraphics
 import SlashCommands
 
 // A kind of this target's own, which offers commands in every way a kind can: its own, over an
-// added property it holds, and (a bridge's, in the tests) every shape's.
+// added property it holds, and (another plugin's, in the tests) every shape's.
 
 /// A lamp: on or off, at level 1, 2 or 3, and flaggable.
 struct Lamp: BoxShapeProps {

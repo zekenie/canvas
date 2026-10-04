@@ -46,7 +46,7 @@ struct PortBoard {
         c = h.add(Disc(discC))
     }
 
-    /// What every board here has: the keys, the selection, the fixtures, arrows, ports, the bridge,
+    /// What every board here has: the keys, the selection, the fixtures, arrows, ports, `ArrowPortsPlugin`,
     /// and the tests' channels (boxes on the wire, discs on the pipe), then `more`.
     static func plugins(more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
         let channels = Contributor(id: "channels") { registrar in

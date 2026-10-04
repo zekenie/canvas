@@ -6,12 +6,12 @@ import Keyboard
 import Selection
 import TestKit
 
-// Resizing a container (CanvasTesting's corrals, resizable from a bridge): on the release, not while
+// Resizing a container (CanvasTesting's corrals, resizable from another plugin): on the release, not while
 // it goes, what it now reaches or lets go of settles in or out of it, gliding there, in the resize's
 // step; and a shape in a container never grows across its edge. The camera is at the origin at 100%,
 // so view points and world units agree.
 
-/// Corrals that resize, from a bridge, never smaller than 20 by 20.
+/// Corrals that resize, from another plugin, never smaller than 20 by 20.
 @MainActor func resizableCorrals() -> Contributor {
     Contributor(id: "resizable-corrals") { $0.resizable(Corral.self, minimumSize: CGSize(width: 20, height: 20)) }
 }

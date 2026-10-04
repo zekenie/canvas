@@ -37,7 +37,7 @@ extension OtherBlockers: DeclaredMentionScope {
         expectEqual(admitted(Only<Box>.self), [false, false, false, false, false], "a kind that isn't mentionable admits nothing")
         expectEqual(admitted(Blockers.self), [true, true, false, false, false])
         expect(registry.joins(Plate.kind, Blockers.self))
-        expect(registry.joins(Token.kind, Blockers.self), "joined from outside the kind's block, as a bridge does")
+        expect(registry.joins(Token.kind, Blockers.self), "joined from outside the kind's block, as another plugin would")
         expect(!registry.joins(Jot.kind, Blockers.self))
     },
 

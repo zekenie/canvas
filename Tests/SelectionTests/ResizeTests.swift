@@ -6,11 +6,11 @@ import Keyboard
 import Selection
 import TestKit
 
-// Resizing (`ShapeResizing`): CanvasTesting's boxes opted in from a bridge, never smaller than 20 by
+// Resizing (`ShapeResizing`): CanvasTesting's boxes opted in from another plugin, never smaller than 20 by
 // 10, and its cards from their own registrar. The camera starts at the origin at 100%, so view
 // points and world units agree until a test zooms.
 
-/// Boxes (CanvasTesting's) that resize, from a bridge.
+/// Boxes (CanvasTesting's) that resize, from another plugin.
 @MainActor func resizableBoxes(minimumSize: CGSize = CGSize(width: 20, height: 10)) -> Contributor {
     Contributor(id: "resizable-boxes") { $0.resizable(Box.self, minimumSize: minimumSize) }
 }

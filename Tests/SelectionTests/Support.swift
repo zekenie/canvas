@@ -47,7 +47,7 @@ final class DisplayCounter: CanvasEditorDelegate {
     func editorEditingDidChange(_ editor: CanvasEditor) {}
 }
 
-/// Pockets (CanvasTesting's board-owning kind) that open onto their boards, from a bridge
+/// Pockets (CanvasTesting's board-owning kind) that open onto their boards, from another plugin
 /// (`registrar.opens(Pocket.self, …)`), as a board-owning kind's plugin would.
 @MainActor func openingPockets() -> Contributor {
     Contributor(id: "opening-pockets") { r in

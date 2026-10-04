@@ -55,7 +55,7 @@ struct PlaquesPlugin: CanvasPlugin {
     }
 }
 
-/// Gives cards (CanvasTesting's) a title from outside, derived from their text, as a bridge does,
+/// Gives cards (CanvasTesting's) a title from outside, derived from their text, as another plugin would,
 /// and a header that renames them by editing that text: a title that's blank while untitled.
 struct CardTitlesPlugin: CanvasPlugin {
     var id: PluginID { "card-titles" }

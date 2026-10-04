@@ -16,7 +16,7 @@ import TestKit
         expectThrows(RegistryError.conflict(point: "ShapeAdornments", key: "box AdornmentsTests.Flag", plugins: ["a", "b"])) {
             _ = try Registry(plugins: base + [boxFlag("a"), boxFlag("b")])
         }
-        // A kind's own and a bridge's.
+        // A kind's own and another plugin's for it.
         expectThrows(RegistryError.conflict(point: "ShapeAdornments", key: "sign AdornmentsTests.Flag", plugins: ["signs", "b"])) {
             _ = try Registry(plugins: base + [Contributor(id: "b") { $0.adornment(Flag.self, on: Sign.self) { _ in flagLabel } }])
         }
@@ -28,7 +28,7 @@ import TestKit
         _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), SignsPlugin(), AdornmentsPlugin(),
                                    everyShape(Flag.self) { _ in flagLabel }])
     },
-    test("an adornment needs Adornments, and Adornments needs Selection; a bridge's needs its kind") {
+    test("an adornment needs Adornments, and Adornments needs Selection; one on another plugin's kind needs that kind") {
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeAdornments", owner: .adornments, contributor: "flags")) {
             _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), everyShape(Flag.self, id: "flags") { _ in flagLabel }])
         }
