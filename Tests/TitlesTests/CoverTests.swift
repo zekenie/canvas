@@ -52,7 +52,13 @@ let canvasView = CGRect(x: 0, y: 0, width: 400, height: 300)
         expect(plaqueFrame.contains(text), "inside the shape: \(text)")
         expectClose(text.midX, plaqueFrame.midX, within: 1.5)
         expectClose(text.midY, plaqueFrame.midY, within: 1.5)
-        let drawn = changedPixels(untitled, titled, in: text.insetBy(dx: -3, dy: -3).integral)
+        // The text's halo is the surface's color stroked round the glyphs, 12% of the font size wide
+        // (`TitleCoverStyle.haloWidth`, internal to Titles), so it reaches half of that past them, and
+        // more at a sharp corner, where a miter join points out a few half-widths (2.6 at 45°, as at the
+        // foot of a "k"), with the text set up to half a point right of its rect and a point of
+        // anti-aliasing: twice the stroke's width is four half-widths, and room for the rest.
+        let reach = (2 * 0.12 * cover.fontSize).rounded(.up)
+        let drawn = changedPixels(untitled, titled, in: text.insetBy(dx: -reach, dy: -reach).integral)
         expect(drawn > 150, "the text: \(drawn)")
         expectEqual(changedPixels(untitled, titled, in: canvasView) - drawn, 0, "and nowhere else: no pill above the shape, no plate")
         expect(inkPixels(titled, in: text, dark: true) > 40, "in a dark ink")
