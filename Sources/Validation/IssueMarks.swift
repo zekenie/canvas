@@ -1,13 +1,13 @@
 import Canvas
 import SwiftUI
 import TableOfContents
-import Validation
 
-/// A bridge between two horizontals: a dot on the row of each shape with issues, in the color the
-/// canvas outlines it in (red with an error, orange with only warnings), whose tooltip lists them,
-/// worst first. So the table of contents shows where the issues are across the board, and a click
-/// on a row goes to its shape. Validation has never heard of the table of contents, nor the table
-/// of contents of validity; this module's imports are the only edge between them in Package.swift.
+/// Validation's marks in the table of contents: a dot on the row of each shape with issues, in the
+/// color the canvas outlines it in (red with an error, orange with only warnings), whose tooltip
+/// lists them, worst first. So the table of contents shows where the issues are across the board,
+/// and a click on a row goes to its shape. A plugin of its own, so a list can have Validation
+/// without the table of contents (the registry refuses a contribution to a point whose owner isn't
+/// installed).
 public struct ValidationContentsPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { "validation-contents" }

@@ -280,7 +280,7 @@ extension DetailTabID {
 }
 
 /// Lines of a shape's state, not its settings: pinned at the foot of the panel, on every tab, or in
-/// a tab of their own, which shows only while the shape has lines there (ValidationDetails lists a
+/// a tab of their own, which shows only while the shape has lines there (Validation lists a
 /// shape's issues in an Issues tab). A list: the kind's contributions, then every kind's, each in
 /// plugin order. Re-read on every document change, so keep them cheap (read a cached service, like
 /// validation's engine).

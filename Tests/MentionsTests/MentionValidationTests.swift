@@ -3,7 +3,6 @@ import CanvasTesting
 import CoreGraphics
 import Foundation
 import Keyboard
-import MentionValidation
 import Mentions
 import Selection
 import TestKit

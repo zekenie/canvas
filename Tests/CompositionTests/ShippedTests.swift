@@ -18,7 +18,6 @@ import TableOfContents
 import TestKit
 import Titles
 import Validation
-import ValidationDetails
 
 @MainActor let shippedTests = Suite("Shipped plugins", [
     test("the shipped plugin list registers without conflicts") {
@@ -135,7 +134,7 @@ import ValidationDetails
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let long = String(repeating: "Groceries ", count: 9)       // 90 characters
         let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Milk"), title: long)
-        // Another title: two shapes of one title are warned about that too (TitleValidation).
+        // Another title: two shapes of one title are warned about that too (TitleValidationPlugin).
         let subboard = editor.add(Subboard(frame: CGRect(x: 400, y: 100, width: 240, height: 160)), title: String(repeating: "Errands!! ", count: 9))
         let warning = ValidationIssue.warning("Title is 90 characters long, and should be at most 80.", field: "title")
         expectEqual(editor.validation?.result(for: note)?.issues, [warning])

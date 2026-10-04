@@ -1,3 +1,0 @@
-import TestKit
-
-runTests([validationContentsTests])

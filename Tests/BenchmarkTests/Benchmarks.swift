@@ -114,9 +114,9 @@ enum Budget {
     static let enterCold = 250.0
     /// Deleting a shape whose boards hold 10,000 shapes: the commit, and every board under it taken
     /// with it. A frame and 2 ms: the generated file's two nested boards number their notes alike,
-    /// so 2,608 titles are each held twice, and TitleValidation's index takes every one out (some
-    /// 1.7 ms; main was at 15.2 of a frame's 16 before it). The owner chose raising it over keeping
-    /// the index's titles per board and numbering the generated titles across the file.
+    /// so 2,608 titles are each held twice, and `TitleValidationPlugin`'s index takes every one out
+    /// (some 1.7 ms; main was at 15.2 of a frame's 16 before it). The owner chose raising it over
+    /// keeping the index's titles per board and numbering the generated titles across the file.
     static let subboardDeletion = frame + 2
     /// A drag event's input (its commit, without the frame) on a board beside or inside a subboard,
     /// on 10,000 shapes: some 0.25 ms, so a commit's upkeep of the whole file shows.
@@ -427,7 +427,7 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
             let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
             _ = h.editor.validation?.results
             // A drag of the subboard the first 100 mentioning notes mention: each event moves it, and
-            // checks those notes again, as their rules looked it up (MentionValidation's).
+            // checks those notes again, as their rules looked it up (`MentionValidationPlugin`'s).
             let subboard = try require(mentionedSubboard(in: document))
             expectEqual(h.editor.validation?.dependents(of: [subboard]), Set(h.editor.mentions?.mentioners(of: subboard) ?? []), "its mentioners looked it up")
             let subboardBox = try require(document[subboard]?.box)

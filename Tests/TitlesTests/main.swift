@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([titlesTests, pillTests, placeholderTests, contentsTests, headerTests, titleSlashTests])
+runTests([titlesTests, pillTests, placeholderTests, contentsTests, headerTests, titleSlashTests, titleValidationTests])

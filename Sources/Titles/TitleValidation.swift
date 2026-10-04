@@ -1,21 +1,21 @@
 import Canvas
-import Titles
 import Validation
 
-/// A bridge between two horizontals: a warning on each shape whose title another shape in the file
-/// also has (“Checkout” is another shape’s title too.), about its `title` where Titles keeps it. A
-/// title is what names a shape for everything that finds one by it (`canvas draw`, a query, the
-/// `@` picker), and two shapes called one thing are found by it no longer: `draw` refuses the
-/// title. Titles as Titles reads them (`registry.title(of:)`: named, or derived, as a schema
-/// card's), folded, compared exactly; an untitled note's first line is no title. On every board the
-/// editor can show, but shapes kept aside. A warning, never an error: each shape is fine alone.
+/// Titles' warning, as a Validation rule: a warning on each shape whose title another shape in
+/// the file also has (“Checkout” is another shape’s title too.), about its `title` where Titles
+/// keeps it. A title is what names a shape for everything that finds one by it (`canvas draw`, a
+/// query, the `@` picker), and two shapes called one thing are found by it no longer: `draw`
+/// refuses the title. Titles as Titles reads them (`registry.title(of:)`: named, or derived, as a
+/// schema card's), folded, compared exactly; an untitled note's first line is no title. On every
+/// board the editor can show, but shapes kept aside. A warning, never an error: each shape is fine
+/// alone.
 ///
 /// The titles are the file's, in an index of its own (`TitleIndex`), read as the editor opens
 /// and kept up to date by each commit, wherever it changed a title, so the rule reads no other
 /// shape: it names, with `affected`, the shapes a commit gives a title's first other holder or takes
 /// its last from, which Validation checks again, on the board shown or once theirs is. Where shapes
-/// are is nothing it reads, so it ignores moves. Titles has never heard of validation, nor
-/// Validation of titles; this module's imports are the only edge between them.
+/// are is nothing it reads, so it ignores moves. A plugin of its own, so a list can have Titles
+/// without Validation (the registry refuses its rule where Validation isn't installed).
 public struct TitleValidationPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { "title-validation" }

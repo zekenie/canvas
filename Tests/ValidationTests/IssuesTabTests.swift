@@ -5,7 +5,6 @@ import DetailPanel
 import SwiftUI
 import TestKit
 import Validation
-import ValidationDetails
 
 /// A box with no size has three issues, from two rules, in no particular order of severity.
 let emptyBoxRules = Contributor(id: "rules") { r in

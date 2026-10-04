@@ -6,7 +6,6 @@ import ContextMenus
 import DetailPanel
 import Foundation
 import Keyboard
-import MentionValidation
 import Mentions
 import Selection
 import SlashCommands
@@ -16,9 +15,11 @@ import Titles
 import Topology
 import Validation
 
-// Fixtures only, so these tests show the bridge knows no real kind: two kinds that can be
+// Fixtures only, so these tests show Mentions' validation knows no real kind: two kinds that can be
 // mentioned, one that can't (and CanvasTesting's boxes, which can't either, and have no tool), and
-// a kind whose text may mention any of them, beside text that may mention only cards.
+// a kind whose text may mention any of them, beside text that may mention only cards. The ids, the
+// titling helpers (`add(_:titled:)`, `rename`) and `keptAside` are the rest of this target's
+// (Fixtures.swift), as `SplitMix` is (TextTests.swift).
 
 /// A titled box that can be mentioned: the one kind a letter's `to` admits.
 struct Card: BoxShapeProps {
@@ -142,9 +143,9 @@ struct ValidationFixturesPlugin: CanvasPlugin {
 }
 
 /// The keyboard, the selection and Topology (whose edges Mentions' are) first, CanvasTesting's
-/// fixtures (boxes; pockets, whose boards nest; frozen shapes), this target's, the pieces Mentions
+/// fixtures (boxes; pockets, whose boards nest; frozen shapes), this file's, the pieces Mentions
 /// builds on (the context menu, where it puts Show What Mentions, among them, and slash commands,
-/// which Titles' `/title` needs), Mentions, Validation, then the bridge.
+/// which Titles' `/title` needs), Mentions, Validation, then Mentions' validation.
 @MainActor func validationPlugins(_ more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PocketsPlugin(), FreezingPlugin(), ValidationFixturesPlugin(),
      AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(),
@@ -156,50 +157,8 @@ struct ValidationFixturesPlugin: CanvasPlugin {
 }
 
 extension CanvasEditor {
-    /// Inserts a shape titled `title`, in a transaction of its own.
-    @discardableResult
-    func add<P: ShapeProps>(_ props: P, titled title: String) -> ShapeID {
-        var shape = ShapeRecord(props)
-        shape[TitleProperty.self] = title
-        transact { $0.insert(shape) }
-        return shape.id
-    }
-
-    func rename(_ id: ShapeID, _ title: String) {
-        transact { $0.update(id) { $0[TitleProperty.self] = title } }
-    }
-
     /// Each issue of a shape, as "field: message", in the rules' order.
     func issues(of id: ShapeID) -> [String] {
         (validation?.results[id]?.issues ?? []).map { "\($0.field ?? "-"): \($0.message)" }
-    }
-}
-
-/// Fixed ids, so a test's stored text is the same every run.
-let idA = ShapeID(UUID(uuidString: "7C1E0B8A-2F4D-4A6B-9C3E-5D2F1A0B9C8D")!)
-let idB = ShapeID(UUID(uuidString: "0A1B2C3D-4E5F-4061-8293-A4B5C6D7E8F9")!)
-
-/// A shape of `kind` a board keeps aside, as one from a newer version of its kind: read from a
-/// board, as nothing else makes one.
-@MainActor func keptAside(_ kind: ShapeKind, id: ShapeID, in registry: Registry) throws -> AnyShapeRecord {
-    let json = """
-    { "format" : 1, "schema" : { "\(kind.rawValue)" : 99 }, "shapes" : [
-      { "id" : "\(id)", "kind" : "\(kind.rawValue)", "index" : "a0", "props" : { "frame" : [[0, 0], [10, 10]] } } ] }
-    """
-    let record = try require(BoardCodec(registry: registry).decode(Data(json.utf8)).document[id])
-    expect(record.isOpaque)
-    return record
-}
-
-/// A deterministic generator, so the fuzz is the same every run.
-struct SplitMix: RandomNumberGenerator {
-    var state: UInt64
-    init(seed: UInt64) { state = seed }
-    mutating func next() -> UInt64 {
-        state &+= 0x9E37_79B9_7F4A_7C15
-        var z = state
-        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
-        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
-        return z ^ (z >> 31)
     }
 }

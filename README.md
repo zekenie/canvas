@@ -92,8 +92,8 @@ check before running it again). To run it as just `canvas`, put the link on your
 
 A shape with an issue (a schema card that isn't JSON, a title past 80 characters) gets an outline (the validation
 plugin: red for an error, orange for a warning; none while it's being edited), says why in an Issues tab of the detail
-panel (the validation-details bridge), and gets a dot of the same color on its row in the table of contents (the
-validation-contents bridge).
+panel (the validation-details plugin), and gets a dot of the same color on its row in the table of contents (the
+validation-contents plugin).
 A titled shape shows its title in a pill above its top-left corner, and in the table of contents (the titles plugin).
 Name a note or a subboard in the detail panel's header. A title is
 part of its shape's schema, at most 80 characters: a longer one gets a warning, as does any value outside the
@@ -119,7 +119,7 @@ Sources/
   StickyNotes/          sticky notes, with in-place editing
   Schemas/              schema cards: a JSON Schema on the canvas, as a card that lists its fields, written in its
                         panel in words or as JSON, the two kept in step by Claude
-  Validation/           the validation horizontal: rules, engine, outline
+  Validation/           the validation horizontal: rules, engine, outline, the Issues tab and the rows' dots
   DetailPanel/          the detail panel horizontal: tabs, sections, bindings, the inspector view
   ContextMenus/         the context menu horizontal: right-click items, groups, the selection's menu
   SlashCommands/        a horizontal: commands a shape offers, typed as /name on a line of its text (the list
@@ -137,8 +137,6 @@ Sources/
   LanguageModels/       a horizontal that lends every editor a language model (Claude Haiku), its key in Settings
   Snapping/             a horizontal: what a drag moves snaps to the shapes in view (edges, middles, even
                         spaces), with guides
-  ValidationDetails/    a bridge between two horizontals: validation issues in the panel's Issues tab
-  ValidationContents/   a bridge between two horizontals: a dot on the row of each shape with issues
   ArrowPorts/           a bridge: arrows are what a drag from a port draws, bound only where its channel goes
   TitleNames/           a bridge: canvas draw names shapes by their titles
   PortEdges/            a bridge: canvas draw's edges are the connector's connections, on a channel both ends take

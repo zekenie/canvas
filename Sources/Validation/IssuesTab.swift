@@ -1,11 +1,10 @@
 import Canvas
 import DetailPanel
-import Validation
 
-/// A bridge between two horizontals: each shape's validation issues, worst first, in an Issues tab
-/// of the detail panel, which shows only while the shape has some. Validation has never heard of
-/// the panel, nor the panel of validity; this module's imports are the only edge between them in
-/// Package.swift.
+/// Validation's Issues tab: each shape's validation issues, worst first, in an Issues tab of the
+/// detail panel, which shows only while the shape has some. A plugin of its own, so a list can
+/// install Validation without the detail panel (the registry refuses a contribution to a point
+/// whose owner isn't installed).
 public struct ValidationDetailsPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { "validation-details" }

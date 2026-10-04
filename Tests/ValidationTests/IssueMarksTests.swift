@@ -5,7 +5,6 @@ import SwiftUI
 import TableOfContents
 import TestKit
 import Validation
-import ValidationContents
 
 /// A box with no height has an error, one with no width a warning. A tag's rule looks up the shape
 /// it points at: pointing at nothing is an error, and at a flat box a warning.
