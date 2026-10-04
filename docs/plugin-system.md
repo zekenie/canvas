@@ -549,7 +549,9 @@ is compiled by `./test.sh`, even before anything depends on it.
   arrows, the minimap (which draws each shape as a silhouette of its outline) and the shape zoomed
   out (the core's default [skeleton](#skeletons), unless the kind draws its own) all follow.
   Override `hitTest` or `indicatorPath` only when you can do better: a sticky note outlines its
-  rounded corners (`indicatorPath`), and a freehand line is hit only near its stroke (`hitTest`, [below](#a-shape-without-a-frame)).
+  rounded corners (`indicatorPath`), a subboard's stands a few view points off its edge so the line
+  isn't drawn over its border ([Subboards](#subboards)), and a freehand line is hit only near its
+  stroke (`hitTest`, [below](#a-shape-without-a-frame)).
   A `hitTest` that reaches past the outline (a stroke, a few points of slop) says how far in
   `hitMargin`: the editor asks it only about points that near. A kind that knows better than its
   geometry whether the marquee touches it (Arrows, against its arc) adopts Selection's
@@ -6387,9 +6389,9 @@ as SwiftUI sugar is.)
   with no shapes isn't kept.
 - **B places one** where the canvas is pressed, following the pointer until release, as every box
   tool does: one undo step, "Add Subboard".
-- **The card** (`SubboardDefinition.render`, `SubboardStyle`, world units) is the whole frame, so
-  its outline, the selection's and a hover's, is its edge, and its extent is its box: a card with a
-  10-point radius, the canvas's shadow and a 1.5-point indigo border (`NSColor.systemIndigo`). Its
+- **The card** (`SubboardDefinition.render`, `SubboardStyle`, world units) is the whole frame, and
+  its extent is its box: a card with a 10-point radius, the canvas's shadow and a 1.5-point indigo
+  border (`NSColor.systemIndigo`). Its
   colors follow the appearance it's drawn in, each a dynamic `NSColor` resolved in the render: a
   faint indigo over white on the light canvas, a raised indigo-gray on the dark one, since a
   subboard is a place on the canvas, not a sheet of paper as a note is. Its title is Titles' pill
@@ -6406,9 +6408,25 @@ as SwiftUI sugar is.)
   preview doesn't flash it. The count is read as the card is drawn, and a preview is of one
   revision of its board, so neither is ever stale: a write to the board while another is shown
   (`transact(on:)`) redraws the canvas as any commit does.
+- **Its outline** (`indicatorPath`: the selection's, a hover's, the hint) stands off the card's edge
+  instead of lying on it. The core strokes every outline a constant 1.5 view points wide in the
+  accent color (2.5 and fainter for a hover), and drawn on the edge that line would cover the
+  indigo border and hardly tell from it, so a selected card would barely read as selected. So the
+  path is the card's rounded edge grown by `SubboardStyle.outlineGap`, 4 view points, its corners growing with
+  it (at 100%, a 14-point radius round the card's 10), leaving a gap of the canvas between the border and
+  the line. The gap is in view points, so it's the same at every zoom: `indicatorPath` divides it
+  by `context.zoom` (an outline may read the camera, as a geometry the editor keeps from frame to
+  frame may not), and costs what the plain rounded rect did, a path made per outlined shape in
+  view. Anything that grows from the outline follows it: Validation's ring (3 view points past the
+  outline, [Validation](#a-horizontal-plugin)) stands that much further out on a card with issues.
+  The title's pill, 9 points above the top edge, stays clear of it.
 - **Zoomed out** the card is its [skeleton](#skeletons) ([SubboardSkeleton.swift](../Sources/Subboards/SubboardSkeleton.swift)):
   fills alone, square (its corners are 3.5 points on screen at most there, so its outline is its
-  frame's, as the core draws it), with no shadow, symbol or count: its border's indigo, never under
+  frame's, as the core draws every rect's: a ring filled on the edge, over the half-point border it
+  covers, so a selected card shows there as the accent color three times as wide in place of the
+  indigo; it doesn't stand off as it does in full, since a `CustomSkeletonOutline` would stroke each
+  subboard in view where a ring is a fraction of that, and ⌘A zoomed out outlines every one of them),
+  with no shadow, symbol or count: its border's indigo, never under
   half a view point (just under 35% the card's own 1.5 is about that, so nothing jumps), the card
   inside it, and its board's preview, asked for as the full card asks for it, in the same rect at
   no more than a tenth of its board, drawn once it's built and big enough on screen, else nothing.

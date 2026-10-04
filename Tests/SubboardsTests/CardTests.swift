@@ -2,6 +2,7 @@ import AppKit
 import Boards
 import Canvas
 import CanvasTesting
+import Selection
 import Subboards
 import TestKit
 import Titles
@@ -60,6 +61,38 @@ enum Band {
         h.add(Box(CGRect(x: 0, y: -200, width: 50, height: 50)))
         h.editor.goToEnclosingBoard()
         expect(changedPixels(before, renderBitmap(h.editor, size: size), in: Band.caption) > 5, "3 shapes, then 4")
+    },
+    test("selected or hovered, it's outlined clear of its border: the line stands 4 points off its edge, a gap of the canvas between, and never over the card") {
+        let h = try EditorHarness(plugins: subboardPlugins())
+        let id = h.add(Subboard(frame: cardFrame))
+        let size = CGSize(width: 320, height: 240)
+        let rest = renderBitmap(h.editor, size: size)
+        // Its right edge, at 280, clear of the corners (the outline's arcs run from 50 down to 190):
+        // the line, 1.5 points centered 4 out, covers columns 283 and 284; the faint one, 2.5 points,
+        // 283 and 284 and a quarter of 282 and 285. Its corners hang past the card's: the outline's
+        // arc, 14 points round where the card's is 10, crosses the corner of its box, so the card is
+        // looked at 6 points in, and its edge where it's straight.
+        let line = CGRect(x: 283, y: 60, width: 2, height: 120)
+        let card = cardFrame.insetBy(dx: 6, dy: 6)
+
+        let shape = try require(h.editor.document[id])
+        let outline = try require(h.editor.registry.indicatorPath(of: shape, in: h.editor.shapeContext))
+        let box = outline.boundingBoxOfPath, grown = cardFrame.insetBy(dx: -4, dy: -4)
+        expect(box.insetBy(dx: -0.01, dy: -0.01).contains(grown) && grown.insetBy(dx: -0.01, dy: -0.01).contains(box),
+               "the card's edge grown by 4 view points, which are 4 units at 100%: \(box)")
+
+        h.editor.selection = id
+        let selected = renderBitmap(h.editor, size: size)
+        expectEqual(changedPixels(rest, selected, in: card), 0, "the card as it was")
+        expectEqual(changedPixels(rest, selected, in: CGRect(x: 276, y: 60, width: 7, height: 120)), 0, "its border, and the gap to the line, as they were")
+        expect(changedPixels(rest, selected, in: line) > 200, "the selection's line")
+
+        h.editor.selection = nil
+        h.editor.hovered = id
+        let hovered = renderBitmap(h.editor, size: size)
+        expectEqual(changedPixels(rest, hovered, in: card), 0, "the card, hovered")
+        expectEqual(changedPixels(rest, hovered, in: CGRect(x: 276, y: 60, width: 6, height: 120)), 0, "its border and the gap, hovered")
+        expect(changedPixels(rest, hovered, in: line) > 200, "the hover's line")
     },
     test("a card sized small still draws, never outside its frame and its shadow") {
         let blank = renderBitmap(try CanvasEditor(registry: Registry(plugins: subboardPlugins()), scheduler: ManualScheduler()),
