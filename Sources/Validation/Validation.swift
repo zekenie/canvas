@@ -76,9 +76,9 @@ public struct ValidationContext {
     }
 
     /// A service of the editor whose shapes are checked: for a rule over what a plugin keeps across
-    /// the file (TitleValidation's titles), whose `affected` names the shapes each commit changes
-    /// that for. Nil where shapes are checked without an editor (`validationIssues(of:in:)` given
-    /// none: what `canvas draw` checks before it commits).
+    /// the file (`TitleValidationPlugin`'s titles), whose `affected` names the shapes each commit
+    /// changes that for. Nil where shapes are checked without an editor (`validationIssues(of:in:)`
+    /// given none: what `canvas draw` checks before it commits).
     public func service<S: EditorService>(_ type: S.Type) -> S? { editor?.service(type) }
 }
 
@@ -253,7 +253,7 @@ public final class ValidationEngine {
 
     /// The shapes whose rules looked one of `ids` up when they were last checked: those a change to
     /// it may check again, besides itself. For a plugin that keeps what it shows of each shape's
-    /// issues and redoes it for what each commit changed (ValidationContents' marks).
+    /// issues and redoes it for what each commit changed (`ValidationContentsPlugin`'s marks).
     public func dependents(of ids: Set<ShapeID>) -> Set<ShapeID> {
         guard let board else { return [] }
         return ids.reduce(into: []) { found, id in
@@ -264,7 +264,7 @@ public final class ValidationEngine {
 
     /// The shapes whose issues a commit may change though it doesn't change them, for a plugin that
     /// keeps what it shows of each shape's issues and redoes it for what each commit changed
-    /// (ValidationContents' marks): those whose rules looked up a shape it changed
+    /// (`ValidationContentsPlugin`'s marks): those whose rules looked up a shape it changed
     /// (`dependents(of:)`), and those on the board shown that the rules' `affected` named for it,
     /// once the engine has heard it (so asked by a service that hears commits after Validation's).
     /// Given what other boards changed while the board shown wasn't (`elsewhere`: the table of
@@ -433,7 +433,8 @@ extension Registry {
 }
 
 extension Severity {
-    /// What the outline is drawn in, for a bridge that shows the severity elsewhere to match.
+    /// What the outline is drawn in, for a plugin that shows the severity elsewhere to match (the
+    /// dots of `ValidationContentsPlugin`).
     @MainActor public var color: NSColor {
         switch self {
         case .error: ValidationStyle.error
@@ -623,8 +624,9 @@ final class SchemaVerdicts {
 /// Validation, as a plugin: any plugin gives any kind rules (`x.validate { ... }`), each finding
 /// errors or warnings on a shape, and every shape is checked against its kind's schema, each place it
 /// breaks it a warning; the engine keeps every shape's issues, and the overlay outlines the shapes
-/// that have any. Where else they show is for bridges: the detail panel's Issues tab
-/// (ValidationDetails), a dot on a shape's row in the table of contents (ValidationContents).
+/// that have any. They also show in the detail panel's Issues tab (`ValidationDetailsPlugin`) and
+/// as a dot on a shape's row in the table of contents (`ValidationContentsPlugin`), plugins of
+/// their own in this module.
 public struct ValidationPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .validation }

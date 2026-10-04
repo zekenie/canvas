@@ -6,12 +6,11 @@ import Keyboard
 import Selection
 import SlashCommands
 import TestKit
-import TitleValidation
 import Titles
 import Validation
 
-// Fixtures only, so these tests show the bridge knows no real kind: cards and pockets are named
-// (the title Titles keeps), discs' titles are worked out from their size, and boxes have none.
+// Fixtures only, so these tests show Titles' validation knows no real kind: cards and pockets are
+// named (the title Titles keeps), discs' titles are worked out from their size, and boxes have none.
 
 /// Titles for the fixtures: cards and pockets named, discs worked out.
 @MainActor private var fixtureTitles: Contributor {
@@ -22,7 +21,8 @@ import Validation
     }
 }
 
-/// A harness on `file`, with Titles (and the slash commands it offers), Validation and the bridge.
+/// A harness on `file`, with Titles (and the slash commands it offers), Validation and
+/// `TitleValidationPlugin`.
 @MainActor private func harness(_ file: CanvasFile = CanvasFile()) throws -> EditorHarness {
     try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), CardsPlugin(), PocketsPlugin(), ValidationPlugin(),
                                 AdornmentsPlugin(), SlashCommandsPlugin(), TitlesPlugin(), fixtureTitles, TitleValidationPlugin()], file: file)

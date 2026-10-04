@@ -389,7 +389,7 @@ struct BackButton: View {
 }
 
 /// The tabs, the one shown filled. A tab whose status lines warn or err (`DetailLayout.alert(in:)`,
-/// ValidationDetails' Issues) has its worst tone's symbol before its title, in the tone's color,
+/// Validation's Issues) has its worst tone's symbol before its title, in the tone's color,
 /// as the lines draw it, so it reads as a tab of problems from any tab; no count.
 struct TabStrip: View {
     let tabs: [DetailTabID]
