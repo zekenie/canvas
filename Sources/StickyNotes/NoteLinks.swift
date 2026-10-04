@@ -14,8 +14,10 @@ extension NoteLink: Channel {
 }
 
 extension ShapeRegistrar where Definition == StickyNoteDefinition {
-    /// Ports on every side but the top, where a titled note's pill is.
+    /// Ports on all four sides, the top too. A titled note's pill is in the row above its top edge, so
+    /// a long title runs under the top dot, which draws above it and is pressed before it, as it is
+    /// before a lock chip.
     mutating func noteLinks() {
-        ports(NoteLink.self, sides: [.left, .right, .bottom])
+        ports(NoteLink.self)
     }
 }

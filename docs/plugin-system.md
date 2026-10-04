@@ -4233,9 +4233,11 @@ extension NoteLink: Channel {
 }
 
 extension ShapeRegistrar where Definition == StickyNoteDefinition {
-    /// Ports on every side but the top, where a titled note's pill is.
+    /// Ports on all four sides, the top too. A titled note's pill is in the row above its top edge, so
+    /// a long title runs under the top dot, which draws above it and is pressed before it, as it is
+    /// before a lock chip.
     mutating func noteLinks() {
-        ports(NoteLink.self, sides: [.left, .right, .bottom])
+        ports(NoteLink.self)
     }
 }
 
@@ -4248,8 +4250,7 @@ registrar.channel(NoteLink.self)                       // which this plugin decl
 ```
 
 [Schema cards](#schema-cards) do the same with `SchemaLink` (`schema-link`, the card's accent), on
-every side but the top too, where a titled card's pill is
-([SchemaLinks.swift](../Sources/Schemas/SchemaLinks.swift)). The channels say nothing more yet: a
+all four sides too ([SchemaLinks.swift](../Sources/Schemas/SchemaLinks.swift)). The channels say nothing more yet: a
 channel is where a connection's meaning would go (one schema referring to another, say), and it's
 already what a connection is in Topology's graph: its edge type.
 
@@ -4366,7 +4367,10 @@ one shape at a time, the host, as data-canvas's show on the hovered shape:
   canvas's, or the shape's. Past the drag threshold, the connector draws a connection from it;
   released without a drag, nothing happens; Escape lets go. `PortsPlugin` comes after `AdornmentsPlugin` in the
   shipped list, so a dot is found before an adornment it overlaps (a lock chip, a clickable
-  adornment, among them), and draws above it.
+  adornment, among them), and draws above it. A note's or a card's top dot is 12 points out from the
+  middle of its top edge, in the row its title's pill is in: a title long enough to reach the
+  middle runs under the dot, which is pressed and drawn over it, and the rest of the pill is still
+  the shape's to grab.
 - **While a connection is drawn** the dots are gone, and each shape in view it could end on is
   outlined faintly, as a hovered shape is (2.5 points, the accent at 60%); the shape it would end
   on now gets the full outline, the hint.
@@ -7396,7 +7400,7 @@ registrar.channel(SchemaLink.self)
   Validation's own rule checks a card against its kind's schema, as it does every shape: `schema`
   and `prompt` are strings without bounds, so no text breaks it.
 - **Ports.** As notes do, a card has ports on a channel of its own: `SchemaLink`
-  (`schema-link`, the card's accent), on every side but the top, where its pill is, as a note's
+  (`schema-link`, the card's accent), on all four sides, as a note's
   ([SchemaLinks.swift](../Sources/Schemas/SchemaLinks.swift)). A schema links only to a schema,
   and the link says nothing more yet.
 - **The panel** is where the schema is written. Its header is a `TitleHeader` over the root
