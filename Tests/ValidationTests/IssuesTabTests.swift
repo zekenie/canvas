@@ -87,12 +87,12 @@ extension EditorHarness {
         let h = try harness([DetailPanelPlugin(), ValidationDetailsPlugin()])
         expectEqual(try h.layout(h.add(Box(.zero))).tabs, [])
     },
-    test("without the panel installed, the bridge is refused") {
+    test("without the panel installed, the Issues tab's plugin is refused") {
         expectThrows(RegistryError.ownerNotInstalled(point: "DetailStatuses", owner: .detailPanel, contributor: "validation-details")) {
             _ = try Registry(plugins: [FixturesPlugin(), ValidationPlugin(), ValidationDetailsPlugin()])
         }
     },
-    test("the bridge is one line in the report, and contributes to Validation nothing") {
+    test("the Issues tab's plugin is one line in the report, and contributes to Validation nothing") {
         let registry = try Registry(plugins: [ValidationPlugin(), DetailPanelPlugin(), ValidationDetailsPlugin()])
         expectEqual(registry.report, """
         core                tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit

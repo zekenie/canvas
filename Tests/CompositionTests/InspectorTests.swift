@@ -274,7 +274,7 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         w.editor.selection = nil
         expectEqual(w.editor.tableOfContents?.entries.map { $0.label?.text }, ["Groceries"])
     },
-    test("a note whose title is too long has an Issues tab that says so, through the validation-details bridge; a note without issues has no such tab") {
+    test("a note whose title is too long has an Issues tab that says so, through ValidationDetailsPlugin; a note without issues has no such tab") {
         let w = try InspectorWindow()
         var long = note("Hi")
         long[TitleProperty.self] = String(repeating: "Groceries ", count: 9)

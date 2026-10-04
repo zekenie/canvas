@@ -68,12 +68,12 @@ extension CanvasEditor {
         let editor = try editor([TableOfContentsPlugin(), ValidationContentsPlugin()])
         expectEqual(try editor.marks(editor.add(Box(.zero))), [])
     },
-    test("without the table of contents installed, the bridge is refused") {
+    test("without the table of contents installed, the marks' plugin is refused") {
         expectThrows(RegistryError.ownerNotInstalled(point: "ContentsMarks", owner: .tableOfContents, contributor: "validation-contents")) {
             _ = try Registry(plugins: [FixturesPlugin(), ValidationPlugin(), ValidationContentsPlugin()])
         }
     },
-    test("the bridge is one line in the report, and contributes to Validation nothing") {
+    test("the marks' plugin is one line in the report, and contributes to Validation nothing") {
         let registry = try Registry(plugins: [ValidationPlugin(), TableOfContentsPlugin(), ValidationContentsPlugin()])
         expectEqual(registry.report, """
         core                 tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit

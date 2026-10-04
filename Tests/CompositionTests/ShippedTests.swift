@@ -152,7 +152,7 @@ import Validation
         editor.transact { $0.update(note) { $0[TitleProperty.self] = "Groceries" } }
         expectEqual(editor.validation?.result(for: note), nil)
     },
-    test("a note and a subboard of one title each warn (TitleValidation): a line in Issues, an orange dot; renamed apart, neither") {
+    test("a note and a subboard of one title each warn (TitleValidationPlugin): a line in Issues, an orange dot; renamed apart, neither") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Milk"), title: "Kitchen")
         let subboard = editor.add(Subboard(frame: CGRect(x: 400, y: 100, width: 240, height: 160)), title: "Kitchen")
@@ -172,7 +172,7 @@ import Validation
         let after = Dictionary(uniqueKeysWithValues: try require(editor.tableOfContents).entries.map { ($0.id, $0.marks) })
         expectEqual(after[subboard], [], "the subboard's dot goes though the commit didn't change it")
     },
-    test("a note that mentions an arrow, or holds what looks like a mention and isn't, warns (MentionValidation): a line in Issues, an orange dot") {
+    test("a note that mentions an arrow, or holds what looks like a mention and isn't, warns (MentionValidationPlugin): a line in Issues, an orange dot") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let arrow = editor.add(Arrow(start: .free(CGPoint(x: 100, y: 400)), end: .free(CGPoint(x: 300, y: 400))))
         let groceries = editor.add(Subboard(frame: CGRect(x: 400, y: 100, width: 240, height: 160)), title: "Buy milk")
