@@ -88,7 +88,7 @@ let canvasView = CGRect(x: 0, y: 0, width: 400, height: 300)
         let title = "A name much longer than the plaque is wide, which wraps"
         let short = editor.add(Plaque(world(plaqueFrame, atZoom: 0.3)), named: "Hi")
         let long = editor.add(Plaque(world(plaqueFrame.offsetBy(dx: 0, dy: 140), atZoom: 0.3)), named: title)
-        let small = editor.add(Plaque(world(CGRect(x: 280, y: 100, width: 100, height: 60), atZoom: 0.3)), named: "Hi")
+        let small = editor.add(Plaque(world(CGRect(x: 280, y: 100, width: 100, height: 60), atZoom: 0.3)), named: title)
         let sizes = try [short, long, small].map { try require(editor.titleCover(of: $0)).fontSize }
         expectEqual(sizes[0], 30, "a short title, large: the most")
         expect(sizes[1] >= 9 && sizes[1] < sizes[0], "a long title in the same shape: \(sizes[1])")

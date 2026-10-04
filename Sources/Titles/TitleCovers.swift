@@ -201,7 +201,7 @@ struct TitleCoverOverlay: CanvasOverlay {
             cg.translateBy(x: found.bounds.minX + offset.x, y: found.bounds.minY + offset.y)
             // From here in view points, y down, from the shape's top-left corner.
             cg.scaleBy(x: scale, y: scale)
-            let radius = min(plate.height / 2, TitleCoverStyle.cornerRadius)
+            let radius = min(min(plate.width, plate.height) / 2, TitleCoverStyle.cornerRadius)
             cg.addPath(CGPath(roundedRect: plate, cornerWidth: radius, cornerHeight: radius, transform: nil))
             cg.setFillColor(TitleCoverStyle.plateColor.cgColor)
             cg.fillPath()
