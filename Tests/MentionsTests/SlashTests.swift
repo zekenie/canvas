@@ -76,6 +76,25 @@ struct SlashFixturesPlugin: CanvasPlugin {
         expectEqual(session.committed, MentionText(plain: ""))
     },
 
+    test("a command typed in a jot's editor is marked under the text, and a pill it's given in a lighter shade; the mark goes with the line") {
+        let log = SlashLog()
+        let session = try EditedJot("", plugins: [SlashFixturesPlugin(log: log)])
+        let view = session.textView
+        session.type("/ne")
+        expectEqual(view.highlights.map(\.range), [NSRange(location: 0, length: 3)], "the name so far, while the list is open")
+        session.type("ar ")
+        expectEqual(view.highlights.map(\.range), [NSRange(location: 0, length: 5)], "the name; nothing is given yet")
+        session.type("@gro")
+        expect(view.picker != nil)
+        expectEqual(view.highlights.map(\.range), [NSRange(location: 0, length: 5)], "@gro isn't a shape yet, and /near needs one")
+        session.window.pressReturn()
+        expectEqual(session.pills.map(\.pill.target), [idA])
+        expectEqual(view.highlights.map(\.range), [NSRange(location: 0, length: 5), NSRange(location: 6, length: 1)], "the pill is what it's given")
+        session.window.pressReturn()
+        expectEqual(log.runs, ["near A @Groceries"])
+        expectEqual(view.highlights, [], "the line is gone")
+    },
+
     test("a line without the shape a command needs is a new line, pill or no pill; ⇧↩ doesn't run it") {
         let log = SlashLog()
         let session = try EditedJot("", plugins: [SlashFixturesPlugin(log: log)])

@@ -23,6 +23,9 @@ import AppKit
 ///   does, and leaves itself. ⌘. never comes to the view as a key: the window sends
 ///   `cancelOperation:` up the responder chain, which the view leaves to the panel's root.)
 /// - `placeholder` is drawn, dimmed, where the text starts while there's none.
+/// - `highlights` are ranges of the text drawn on a rounded background under it, as a mention's pill
+///   is (`TextHighlight`): how an owner marks text that means something to it, with nothing for a
+///   host to forward. Made read-only, the view lets go of them.
 ///
 /// A subclass may show a list at its caret (`caretListWindow`: Mentions' `@` picker, a code
 /// editor's completions), the app's one caret list; when it opens, what it lists and what a pick
@@ -57,6 +60,11 @@ open class EditingTextView: NSTextView {
     public var placeholder: String? {
         didSet { if placeholder != oldValue { needsDisplay = true } }
     }
+    /// Ranges of the text drawn on a rounded background under it. Set by the owner that marks them,
+    /// and taken away when the view is made read-only.
+    public var highlights: [TextHighlight] = [] {
+        didSet { if highlights != oldValue { needsDisplay = true } }
+    }
 
     /// Whether Return, ⌘↩ and Escape are the view's own just now: while a list is open at its caret
     /// (though ⌘↩, where it commits, closes the list and commits), unless a subclass says otherwise.
@@ -72,9 +80,13 @@ open class EditingTextView: NSTextView {
     open var caretListWindow: CaretListWindow? { nil }
 
     /// Made read-only (a locked shape's, something else writing the text), it closes the list at
-    /// its caret.
+    /// its caret and lets go of its highlights: text that can't be written acts on nothing.
     open override var isEditable: Bool {
-        didSet { if !isEditable { caretListWindow?.closeList() } }
+        didSet {
+            guard !isEditable else { return }
+            caretListWindow?.closeList()
+            highlights = []
+        }
     }
 
     /// Shows the text as its box is: enabled, or dimmed (read-only, or something else writing it).
@@ -239,11 +251,13 @@ open class EditingTextView: NSTextView {
         if placeholder != nil { needsDisplay = true }
     }
 
-    /// The placeholder is drawn with the background, under where the text would be: overriding
-    /// `draw(_:)` would opt every subclass out of TextKit 2 (AppKit makes a text view whose class
-    /// draws for itself with TextKit 1), which a subclass may need (a mention text view's pills).
+    /// The highlights and the placeholder are drawn with the background, under where the text is
+    /// (would be): overriding `draw(_:)` would opt every subclass out of TextKit 2 (AppKit makes a
+    /// text view whose class draws for itself with TextKit 1), which a subclass may need (a mention
+    /// text view's pills).
     open override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
+        drawHighlights(in: rect)
         guard let placeholder, string.isEmpty else { return }
         let origin = textContainerOrigin, padding = textContainer?.lineFragmentPadding ?? 0
         NSAttributedString(string: placeholder, attributes: [.font: font ?? TextEditingStyle.placeholderFont, .foregroundColor: NSColor.placeholderTextColor])

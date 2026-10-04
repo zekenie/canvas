@@ -6,6 +6,9 @@ public struct SlashCommandLine: Equatable, Sendable {
     /// The line's text, from its `/` to its end, without its line break: what running the command
     /// takes out of the text.
     public let range: NSRange
+    /// The `/` and the name as typed: the line's start to the name's end, what a text view marks as
+    /// the command.
+    public let nameRange: NSRange
     /// The name as typed, folded to lowercase.
     public let name: String
     /// What follows the name and the whitespace after it, to the line's end, less trailing
@@ -31,6 +34,7 @@ public struct SlashCommandLine: Equatable, Sendable {
         var argumentsEnd = contentsEnd
         while argumentsEnd > argumentsStart, Self.isWhitespace(text.character(at: argumentsEnd - 1)) { argumentsEnd -= 1 }
         range = NSRange(location: start, length: contentsEnd - start)
+        nameRange = NSRange(location: start, length: nameEnd - start)
         name = text.substring(with: NSRange(location: start + 1, length: nameEnd - start - 1)).lowercased()
         arguments = NSRange(location: argumentsStart, length: argumentsEnd - argumentsStart)
     }

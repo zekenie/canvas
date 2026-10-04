@@ -514,7 +514,130 @@ private let idA = ShapeID(UUID(uuidString: "7C1E0B8A-2F4D-4A6B-9C3E-5D2F1A0B9C8D
         expect(blank.h.editor.slashCommands?.command(named: "filled", for: blank.card) == nil, "offered only while there's text")
         expect(blank.h.editor.slashCommands?.run("filled", on: blank.card, with: SlashArguments([])) == false, "and by name it is asked")
     },
+
+    // MARK: Marking the command
+
+    test("while the list is open the slash and the name typed are marked, so long as it lists something") {
+        let s = try SlashSession()
+        expectEqual(s.marked, [])
+        s.type("/")
+        expectEqual(s.marked, [NSRange(location: 0, length: 1)], "the slash alone")
+        s.type("wid")
+        expectEqual(s.marked, [NSRange(location: 0, length: 4)], "and as much of the name as is typed")
+        s.type("zz")
+        expectEqual(s.rows, ["- No matches"])
+        expectEqual(s.marked, [], "no command is no mark")
+        s.window.pressDelete()
+        s.window.pressDelete()
+        expectEqual(s.marked, [NSRange(location: 0, length: 4)], "and back once it lists one")
+
+        let middle = try SlashSession()
+        middle.type("/grow")
+        middle.left()
+        middle.left()
+        expectEqual(middle.marked, [NSRange(location: 0, length: 5)], "the whole name, past the caret too")
+    },
+
+    test("with the list closed a line the shape offers a command on is marked: the name, and what it takes in a lighter shade") {
+        let s = try SlashSession()
+        s.type("/width")
+        s.type(" 50")
+        expect(s.list == nil)
+        expectEqual(s.marked, [NSRange(location: 0, length: 6), NSRange(location: 7, length: 2)])
+        let name = try require(s.view.highlights.first), arguments = try require(s.view.highlights.last)
+        expect(s.alpha(of: name) > s.alpha(of: arguments), "the command firmly, what it's given lighter")
+        expect(s.alpha(of: arguments) > 0)
+
+        s.type(" and more")
+        expectEqual(s.marked, [NSRange(location: 0, length: 6), NSRange(location: 7, length: 11)], "to the line's end")
+        s.window.pressDelete()
+        expectEqual(s.marked, [NSRange(location: 0, length: 6), NSRange(location: 7, length: 10)], "following what's typed")
+
+        let bare = try SlashSession()
+        bare.type("/ping")
+        bare.pressEscapeKey()
+        expect(bare.list == nil)
+        expectEqual(bare.marked, [NSRange(location: 0, length: 5)], "Escape closes the list; the line is still a command's")
+        bare.type(" ")
+        expectEqual(bare.marked, [NSRange(location: 0, length: 5)], "trailing whitespace is nothing it takes")
+    },
+
+    test("arguments the command doesn't accept are text and unmarked; one that accepts anything marks them") {
+        let s = try SlashSession()
+        s.type("/ping now")
+        expectEqual(s.marked, [NSRange(location: 0, length: 5)], "/ping takes nothing, so \"now\" stays text")
+        s.set("/any x")
+        expectEqual(s.marked, [NSRange(location: 0, length: 4), NSRange(location: 5, length: 1)])
+        s.set("/width")
+        expectEqual(s.marked, [NSRange(location: 0, length: 6)], "/width given nothing is not accepted, and there is nothing to mark")
+    },
+
+    test("only a line the shape offers a command on, with the caret on it after the slash, is marked") {
+        let s = try SlashSession()
+        s.set("/nope here")
+        expectEqual(s.marked, [], "not a command it offers")
+        s.set("/wide")
+        expectEqual(s.marked, [], "/wide is offered only while the card is wide")
+
+        s.set("/ping\nplain", caret: 3)
+        expectEqual(s.marked, [NSRange(location: 0, length: 5)])
+        s.set("/ping\nplain", caret: 8)
+        expectEqual(s.marked, [], "the caret on another line")
+        s.set("/ping\nplain", caret: 0)
+        expectEqual(s.marked, [], "the caret before the slash")
+        s.set("a\n/log x", caret: 4)
+        expectEqual(s.marked, [NSRange(location: 2, length: 4), NSRange(location: 7, length: 1)], "on a later line")
+        s.view.setSelectedRange(NSRange(location: 2, length: 4))
+        expectEqual(s.marked, [], "a selection")
+        s.set("/PING")
+        expectEqual(s.marked, [NSRange(location: 0, length: 5)], "the name folded, as Return reads it")
+    },
+
+    test("Tab marks what it completes, and Return, which takes the line out, marks nothing") {
+        let s = try SlashSession()
+        s.type("/wi")
+        s.tab()
+        expectEqual(s.string, "/width ")
+        expectEqual(s.marked, [NSRange(location: 0, length: 6)])
+
+        let grow = try SlashSession()
+        grow.type("/gr")
+        grow.tab()
+        expectEqual(grow.marked, [NSRange(location: 0, length: 5)])
+        grow.returnKey()
+        expectEqual(grow.string, "")
+        expectEqual(grow.marked, [], "the line is gone")
+
+        let list = try SlashSession()
+        list.type("/gr")
+        expectEqual(list.marked, [NSRange(location: 0, length: 3)])
+        list.returnKey()
+        expectEqual(list.marked, [])
+    },
+
+    test("nothing is marked in a view that can't be written, and a mark is taken away as one is made read-only") {
+        let s = try SlashSession()
+        s.type("/ping")
+        expect(!s.marked.isEmpty)
+        s.view.isEditable = false
+        expectEqual(s.marked, [], "taken away")
+        s.view.slashCommands?.didChange(isEdit: false)
+        expectEqual(s.marked, [], "and not made while it can't be written")
+        s.view.isEditable = true
+        s.view.slashCommands?.didChange(isEdit: false)
+        expectEqual(s.marked, [NSRange(location: 0, length: 5)])
+    },
 ])
+
+extension SlashSession {
+    /// The ranges the view marks as a command, in order.
+    var marked: [NSRange] { view.highlights.map(\.range) }
+
+    /// How strong a mark's fill is: the alpha of the text's color it was made from.
+    func alpha(of highlight: TextHighlight) -> CGFloat {
+        highlight.fill.usingColorSpace(.deviceRGB)?.alphaComponent ?? 0
+    }
+}
 
 extension SlashSession {
     func pressEscapeKey() { window.pressEscape() }
