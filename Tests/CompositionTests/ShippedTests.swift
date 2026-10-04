@@ -56,7 +56,7 @@ import Validation
         context-menus        service ContextMenuState · secondary-click menu · CanvasContextMenu
         slash-commands       service SlashCommandState
         table-of-contents    service ContentsState
-        titles               property title · adornment TitlePill → every shape · /title → every shape
+        titles               property title · adornment TitlePill → every shape · /title → every shape · overlay TitleCoverOverlay
         mentions             service MentionState · edge type mention · edges → every shape · overlay MentionFrames · ShapeFaces · CanvasContextMenu
         board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
         validation-details   DetailStatuses in Issues

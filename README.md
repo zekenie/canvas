@@ -94,7 +94,7 @@ A shape with an issue (a schema card that isn't JSON, a title past 80 characters
 plugin: red for an error, orange for a warning; none while it's being edited), says why in an Issues tab of the detail
 panel (the validation-details plugin), and gets a dot of the same color on its row in the table of contents (the
 validation-contents plugin).
-A titled shape shows its title in a pill above its top-left corner, and in the table of contents (the titles plugin).
+A titled shape shows its title in a pill above its top-left corner (zoomed out below 35%, where shapes are skeletons and show no pill, on the shape itself, large), and in the table of contents (the titles plugin).
 Name a note or a subboard in the detail panel's header. A title is
 part of its shape's schema, at most 80 characters: a longer one gets a warning, as does any value outside the
 bounds its schema sets (the validation plugin checks every shape against its kind's schema).

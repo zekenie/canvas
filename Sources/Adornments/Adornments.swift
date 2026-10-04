@@ -8,9 +8,9 @@ import Selection
 /// shape overlaps another, and draws them; a point on one is a point on its shape, for the select
 /// tool, hover and the context menu (Selection's `DecorationHits`), but a clickable one (the lock)
 /// is a canvas button, its shape's only for the context menu. Zoomed out, on a shape the canvas
-/// draws as a skeleton (`editor.drawsSkeleton(of:)`: every shape but the one being edited), every
-/// adornment is drawn blank, its capsule or disc with no text or symbol, and is pointed at where
-/// it's drawn. An adornment is never a shape or a record: it's made from its shape's data, so it
+/// draws as a skeleton (`editor.drawsSkeleton(of:)`: every shape but the one being edited), none is
+/// drawn or pointed at: a skeleton is the shape alone, and what it's called is said on it (Titles'
+/// cover). An adornment is never a shape or a record: it's made from its shape's data, so it
 /// moves, copies, deletes and saves with the shape. The core never learns what an adornment is.
 extension PluginID {
     public static let adornments: PluginID = "adornments"
@@ -110,8 +110,7 @@ public struct AdornmentButton: Hashable, Sendable {
 /// one (a kind's mark: a schema card's title's `{}`), or a symbol alone in a disc. Its height, font
 /// and padding are its place's: 18 points, 11-point text, 7 in, in the row; 16 points, 10-point
 /// semibold figures, 5 in, on the corner. On a shape drawn as a skeleton, zoomed out
-/// (`editor.drawsSkeleton(of:)`), it's drawn blank: the capsule, as long as its symbol's place and
-/// its text's columns (`SkeletonText`), or the disc, alone, in a pale gray (green), its opacity kept.
+/// (`editor.drawsSkeleton(of:)`), it isn't drawn.
 public struct AdornmentLabel: Hashable, Sendable {
     public enum Tone: Hashable, Sendable {
         case neutral
@@ -137,7 +136,7 @@ public struct AdornmentLabel: Hashable, Sendable {
     }
 
     /// Text standing in for what isn't there, as an untitled shape's pill says "Frame": laid out as
-    /// `init(_:systemImage:tone:)` lays it out, its text dimmed; blank zoomed out, as any.
+    /// `init(_:systemImage:tone:)` lays it out, its text dimmed.
     public init(placeholder: String, systemImage: String? = nil) {
         self.init(text: placeholder, systemImage: systemImage, tone: .neutral, isPlaceholder: true)
     }
@@ -294,9 +293,9 @@ public struct AdornmentFrame: Equatable {
 }
 
 extension CanvasEditor {
-    /// A shape's adornments as they're laid out now, in the order they're claimed, blank while the
-    /// canvas draws the shape as a skeleton (`drawsSkeleton(of:)`); those left out for want of room
-    /// aren't listed. Empty for a shape with none, without bounds, or not there.
+    /// A shape's adornments as they're laid out now, in the order they're claimed; those left out
+    /// for want of room aren't listed. Empty for a shape with none, without bounds, or not there,
+    /// and while the canvas draws the shape as a skeleton (`drawsSkeleton(of:)`), which shows none.
     public func adornmentFrames(of id: ShapeID) -> [AdornmentFrame] {
         guard let state = adornmentState, let record = document[id] else { return [] }
         return state.frames(of: record)
@@ -316,10 +315,10 @@ extension CanvasEditor {
     /// How many shapes' adornments are kept, their labels made (debug builds only), so tests can
     /// hold a shape that's gone to being forgotten.
     public var adornmentsKept: Int { adornmentState?.keptCount ?? 0 }
-    /// How many shapes' adornments are kept laid out in full, their faces made and measured, and
-    /// how many faces have been made in all (debug builds only): zoomed out, where adornments are
-    /// drawn blank, none are made and none kept, but the shape being edited's.
-    public var adornmentFacesKept: Int { adornmentState?.keptInFullCount ?? 0 }
+    /// How many of those show something, their faces made and measured, and how many faces have
+    /// been made in all (debug builds only): zoomed out, where skeletons show no adornments, none
+    /// are made and none kept, but the shape being edited's.
+    public var adornmentFacesKept: Int { adornmentState?.keptShowingCount ?? 0 }
     public var adornmentFacesMade: Int { adornmentState?.facesMade ?? 0 }
     #endif
 

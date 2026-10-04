@@ -146,7 +146,7 @@ import Titles
         fixtures           shape box · shape disc · shape tag
         adornments         service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
         slash-commands     service SlashCommandState
-        titles             property title · adornment TitlePill → every shape · /title → every shape
+        titles             property title · adornment TitlePill → every shape · /title → every shape · overlay TitleCoverOverlay
         table-of-contents  service ContentsState
         fixture-titles     ShapeTitles → box · ContentsTitles → box · ShapeTitles → disc
         """)
