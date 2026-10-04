@@ -459,6 +459,9 @@ What `./build.sh audit` enforces:
 - **No cycles.** The graph is sorted topologically; a cycle is printed as a path.
 - **Layers.** A horizontal can't import a vertical, a vertical can't import another vertical, the
   app reaches plugins only through Composition, and nothing but the app and tests sees CanvasUI.
+- **A test of a module tests it alone.** `<M>Tests`, or a test target that says it tests a plugin
+  of M (`// layer: test of M`, as QueryLexicon's TitleQueriesTests does), may use only M, what M
+  uses, and the test-support and ui modules, so a plugin's tests can't lean on a shipped kind.
 - **Imports match the manifest, both ways.** The compiler lists each module's imports. An import
   that isn't a declared dependency fails, and so does a declared dependency that's never imported.
   `@_exported`, `@_implementationOnly` and `@testable` are banned, since each hides an edge, and
@@ -1191,8 +1194,8 @@ shapes share. Outside the
 engine, `registry.validationIssues(of: record, in: shapes)` runs every rule for a
 shape's kind against any `ShapeContext`, a transaction's mid-way included (the rules look other
 shapes up in it): it's how [`canvas draw`](#what-draw-takes-from-other-plugins) warns about what
-it's drawing before it commits (ValidationChecks, a bridge). Given `editor:`, the rules have
-its services too, as a query's check of a shape on a board not shown does (ValidationQueries).
+it's drawing before it commits (DrawLexicon's `ValidationChecksPlugin`). Given `editor:`, the rules have
+its services too, as a query's check of a shape on a board not shown does (QueryLexicon's `ValidationQueriesPlugin`).
 
 `editor.validation?.cachedResult(for: id)` is a shape's verdict as the engine holds it, checking
 nothing (`CachedVerdict`): `.current(result)` (nil for no issues) for a shape on the board shown,
@@ -1201,7 +1204,7 @@ checked again (it changed or moved, or a shape its rules looked up did); `.unkno
 only running its rules can say (`validationIssues(of:in:)`). It never runs a rule, so it's for a
 reader that mustn't make the engine read a board (`result(for:)` checks every shape that's waiting,
 or a whole board it hasn't read, in one turn): a query's `:invalid` and `:warned`, asked about many
-shapes in slices ([ValidationQueries](#what-plugins-add)), take it where it's current and run the
+shapes in slices ([`ValidationQueriesPlugin`](#what-plugins-add)), take it where it's current and run the
 rules where it isn't. ValidationTests' CachedResultTests hold it, counting rule runs, with a service
 that hears each commit before the engine.
 
@@ -4691,7 +4694,7 @@ follows undo and redo, during which nothing may):
   costs nothing: they share what the state keeps, which its next change (a rename, a shape
   mentioned anew) copies once while they're held. They're as of the last commit the state heard (a
   rename after they're taken isn't in them): a query takes them as it takes up the file, and reads
-  mention text with them off the main actor ([MentionQueries](#what-plugins-add)). MentionsTests'
+  mention text with them off the main actor ([`MentionQueriesPlugin`](#what-plugins-add)). MentionsTests'
   LabelsTests hold them to `plainText`, read on a detached task.
 - **Following changes**: `observe(_:_:)` tells an AppKit view which of its targets' resolutions a
   commit changed (the text view's pills), `labelRevision(of:)` observes one target for SwiftUI, and
@@ -5709,7 +5712,7 @@ runs on a file of its own, so it can't drift from the app). What a plugin needs 
   and one gone since has no title and fails the word. So no main-actor code is ever handed a record
   the app has since replaced, and no plugin's cache keeps one. The board shown (`:current-board`) and
   what's selected (`:selected`) are as they were when it started.
-- **Titles through the names point** (Titles', through TitleQueries). A head `"Checkout"` is every
+- **Titles through the names point** (Titles', through QueryLexicon's `TitleQueriesPlugin`). A head `"Checkout"` is every
   shape whose title, folded as Titles folds one, is the literal folded, case and all, named or
   derived; several shapes may share it, and it names them all. A title no shape has is refused, so
   a no always means the shape is there: `[title="X"]`, which folds its literal the same way, is how
@@ -6083,7 +6086,7 @@ next step is a warm cache ([Not built yet](#not-built-yet)).
   a box a word empties). A word whose `prepare` commits lands a commit in the turn the query takes
   up the file: attributes are the capture's, a derived name the live record's. UpkeepTests hold zero
   upkeep.
-- **The bridges' tests** use fixtures only, through `EditorHarness` and `QueryState`: TitleQueriesTests
+- **QueryLexicon's tests** use fixtures only, through `EditorHarness` and `QueryState`: TitleQueriesTests
   CanvasTesting's kinds titled as TitleNamesTests title them (derived names asked on the main actor,
   and read live after a commit lands); BoardQueriesTests a `drawer`, which opens its board with a
   placeholder, and a `crate`, which doesn't and is called by its label, and titled corrals between
@@ -6093,7 +6096,7 @@ next step is a warm cache ([Not built yet](#not-built-yet)).
   cache, another board by its own rules in slices, and never Validation made to read a board); and
   SelectionQueriesTests a `:shifting` word that changes the selection mid-query. BoardQueriesTests and
   MentionQueriesTests name shapes with a names contribution of their own over `TitleProperty`, since
-  they have no TitleQueries.
+  they have no `TitleQueriesPlugin`.
 - **QueryCommandsTests** run `query`, `query-vocabulary` and `--ask` as the server does (`start`,
   `finish`, `run`, `answered`, `refused`) over chores, pockets and links, captions naming them,
   "Untitled Pocket" boards, and a `Desk`: `:picked`, the selection word, and `:slow`, asked on the
@@ -6193,7 +6196,7 @@ registrar.command(.enclosingBoard, shortcuts: [KeyChord(KeyChord.upArrow.key, .c
   heading and the path both read them. `registry.boardPlaceholder(of: kind)` is the placeholder a
   kind opens its boards with (nil for a kind that doesn't), the registry's alone, which both read,
   and so does a [query](#queries): its rows name the boards a shape is inside by the same rule,
-  through BoardQueries (BoardsTests' "A board's placeholder" holds it).
+  through QueryLexicon's `BoardQueriesPlugin` (BoardsTests' "A board's placeholder" holds it).
 - **In the app** (Composition and the app's window): the table of contents' header names the
   board shown, with its symbol and a way up (`ShippedPlugins.contentsHeading(for:rootName:)`, the
   board shown's crumb as a `ContentsHeading` with `up: .enclosingBoard`, called Enclosing Board as
@@ -8776,8 +8779,8 @@ about mentions that can't work, and `title-validation`'s, over the file's titles
 Titles places its pill on every shape whose kind's title shows one (`adornment TitlePill → every shape`),
 and Locking its lock; `adornments` lends them their layout and drawing, a canvas button
 (`CanvasButtons`) and their hits (`DecorationHits`), and places none of its own. The automation
-line is its commands (`command line draw`, `command line show`, `command line kinds`), and the three after it are the
-bridges that fill its draw points, one each. `queries` is the query engine's service (`QueryState`,
+line is its commands (`command line draw`, `command line show`, `command line kinds`), and the three after it are
+DrawLexicon's plugins, which fill Automation's draw points, one each. `queries` is the query engine's service (`QueryState`,
 which hears no commit) and its mark (`query engine`, which `registry.answersQueries` reads); the
 five after it fill its points (names, boards' names, and words and a text format, each by what it
 adds), and `query-commands` is `canvas query` and `query-vocabulary`. `slash-commands` is the service that
@@ -8835,7 +8838,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   the dots), DetailPanelTests, AdornmentsTests, ClipboardTests, TitlesTests,
   MentionsTests, LockingTests, PortsTests, AutomationTests,
   TitleNamesTests, PortEdgesTests, ValidationChecksTests, QueriesTests,
-  QueryCommandsTests and the five query bridges' tests import no real vertical (only these fixtures, and local test kinds), which proves those plugins are
+  QueryCommandsTests and QueryLexicon's tests import no real vertical (only these fixtures, and local test kinds), which proves those plugins are
   shape-agnostic. ArrowPortsTests join fixtures with the arrows that come with Connections, so they
   import no real vertical either.
 - **Names of shapes** without a real kind that holds them: `NamingPlugin()` (CanvasTesting) registers
@@ -9092,14 +9095,14 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   `CommandServer` on boards configured as the app configures them (and a `Lingering` board command
   on a server of its own: a closed board answered `board_closed`, and `canvas --timeout` cancelling
   the command).
-- **`canvas draw`.** AutomationTests hold `draw` over fixtures, with test plugins in the bridges'
-  places (DrawSupport.swift): `namesPlugin` names a tile by its label and a card by its nickname (an
+- **`canvas draw`.** AutomationTests hold `draw` over fixtures, with test plugins in DrawLexicon's
+  place (DrawSupport.swift): `namesPlugin` names a tile by its label and a card by its nickname (an
   unnamed one "Card, 100 × 60", worked out from its size), `edgesPlugin` makes
   links, with a tone and heads as added properties, and logs each request (`EdgeLog`), and
   `checksPlugin` warns about a card that says nothing and calls a glossy tile an error. `drawEditor`
   installs them with Automation and the fixtures in an 800 × 600 view; `drawn(script, on:)` is what
   a run that succeeds says, `refused` why one failed, and `rows` and `messages` read a result. The
-  bridges' tests do the same over their own plugin and fixtures: TitleNamesTests over Titles
+  tests of DrawLexicon's plugins do the same over their own plugin and fixtures: TitleNamesTests over Titles
   (cards named, tiles named or worked out, discs worked out), PortEdgesTests over channels of their
   own (`Wire`, `Pipe`) and a link connector that logs its requests, ValidationChecksTests over
   fixture rules. CompositionTests run `draw` through `canvas` as built, on the shipped kinds:
@@ -9125,7 +9128,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   SKILL.md's description is held to 1,024 characters. `SKILL_DUMP=1` prints what each example said.
   So a change to either language, their messages, a shipped kind, word or edge type changes the
   skill with it, or CompositionTests fails.
-- **Queries.** QueryLanguageTests, QueriesTests, the five bridges' tests, QueryCommandsTests,
+- **Queries.** QueryLanguageTests, QueriesTests, QueryLexicon's tests, QueryCommandsTests,
   CompositionTests' query suites and BenchmarkTests' Query benchmarks: [Testing
   queries](#testing-queries).
 - **What AppKit logs.** Some of AppKit's complaints go only to standard error (NSLog), and the test
@@ -9150,9 +9153,12 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   holds another shape's commits to drawing it no more, and its container's lock to drawing it again.
 - A test target is `Tests/<Name>Tests` with a `main.swift` that calls `runTests([...])`. Every
   `Suite` must be listed there (`test.sh` checks). `<M>Tests` may depend only on M, what M
-  depends on, and the test-support and ui modules (ArrowsTests, PortsTests and ArrowPortsTests are
-  named for Connections' plugins, not for a module, so none of that binds them: each depends on
-  Connections).
+  depends on, and the test-support and ui modules, and so may a target named for a plugin of M
+  that says so in its line, `// layer: test of M`: ArrowsTests, PortsTests and ArrowPortsTests, of
+  Connections; TitleNamesTests, PortEdgesTests and ValidationChecksTests, of DrawLexicon; and
+  TitleQueriesTests, BoardQueriesTests, MentionQueriesTests, ValidationQueriesTests and
+  SelectionQueriesTests, of QueryLexicon. Each depends on its module, and is a target of its own
+  so the plugins' tests run side by side.
 - **Boards.** `expectKindFixtures(kinds, in: registry, directory:)` (CanvasTesting) holds kinds to
   their fixtures, and `expectPropertyFixtures(keys, in: registry, directory:)` added properties to
   theirs ([Boards on disk](#boards-on-disk)); CompositionTests runs them for every shipped kind
@@ -9376,7 +9382,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
 | `:connected-to`, one edge until 8a4d798d, any number after it (with no message) | Picked on purpose, from the first rounds of `--ask`'s evaluation: `:connected-to(S)` is one edge either way, as "connected to" reads (Haiku 4.5 wrote it for "what's connected to Checkout?" even beside the prompt's example of `:neighbor-of`, this language's word until then, now refused with `:connected-to`), and any number of them is `:component-of(S)`, the anchor's connected component. |
 | `:has(S)`: an edge to a shape S matches | CSS's `:has`, containment: S inside it at any depth, `:has(> S)` directly inside it. The one word whose meaning moved; an edge either way is `:connected-to(S)`. |
 | Scope globs, `:on-page` | Containment in the selector: `"Payments" *`, `:top-level`, `:current-board`; `:on-page` is refused with `"Board" *`. |
-| `:selected`, dropped | Back: the engine runs in the live app, over what's selected as the query starts (SelectionQueries). |
+| `:selected`, dropped | Back: the engine runs in the live app, over what's selected as the query starts (QueryLexicon's `SelectionQueriesPlugin`). |
 | An unknown pseudo-class accepted and ignored | Refused, with the one like it or the rewrite (`KnownInventions`); every name is resolved against the registry, and every title and id against the file, before anything is answered. |
 | `nl-translate.ts`'s prompt, and the task's move from Haiku 4.5 to Sonnet 4.5 | `QueryPrompt.system`, ported where it still applies (the output contract, the direction procedure, "do not invent new ones"), taught on the story file and held to the language by tests; `--ask` runs on either model through `AskStyle`, and the live evaluation's bar picks the cheaper that clears it: Sonnet 5.5, in round 2. |
 

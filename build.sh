@@ -66,9 +66,9 @@ MANIFEST_READ=$(stat -f '%Fm %z %N' -- Package.swift)
 
 # --- 1. Read the manifest's target table --------------------------------------------------------
 typeset -a NAMES
-typeset -A DEPS KIND DIR LAYER PATH_ARG
+typeset -A DEPS KIND DIR LAYER PATH_ARG SUBJECT
 integer lineno=0
-TARGET_RE='^[[:space:]]*\.(target|executableTarget)\(name: "([A-Za-z][A-Za-z0-9]*)", dependencies: \[(("[A-Za-z][A-Za-z0-9]*"(, "[A-Za-z][A-Za-z0-9]*")*)?)\](, path: "([^"]+)")?\),[[:space:]]*// layer: ([a-z]+)[[:space:]]*$'
+TARGET_RE='^[[:space:]]*\.(target|executableTarget)\(name: "([A-Za-z][A-Za-z0-9]*)", dependencies: \[(("[A-Za-z][A-Za-z0-9]*"(, "[A-Za-z][A-Za-z0-9]*")*)?)\](, path: "([^"]+)")?\),[[:space:]]*// layer: ([a-z]+)( of ([A-Za-z][A-Za-z0-9]*))?[[:space:]]*$'
 while IFS= read -r line || [[ -n $line ]]; do
     lineno+=1
     [[ $line =~ '^[[:space:]]*//' ]] && continue
@@ -81,6 +81,7 @@ while IFS= read -r line || [[ -n $line ]]; do
         PATH_ARG[$name]=$match[7]
         DIR[$name]=${match[7]:-Sources/$name}
         LAYER[$name]=$match[8]
+        [[ -n $match[10] ]] && SUBJECT[$name]=$match[10]
         (( ${+MAY_USE[$LAYER[$name]]} )) || die "Package.swift:$lineno: unknown layer '$LAYER[$name]' (layers: ${(k)MAY_USE})"
     elif [[ $line =~ '\.[A-Za-z]+\([[:space:]]*name:' || $line == *[Tt]arget\(* ]]; then
         die "Package.swift:$lineno: this target doesn't match the one-line form at the top of the file:\n    $line"
@@ -157,10 +158,21 @@ for name in $ORDER; do
 done
 
 # A test target named after a module (<M>Tests) tests M on its own: it may use M, what M uses,
-# and testsupport and ui modules, so that (say) SelectionTests can't lean on a shape kind.
+# and testsupport and ui modules, so that (say) SelectionTests can't lean on a shape kind. One named
+# after a plugin of M rather than M (TitleQueriesTests, of QueryLexicon) says so, `// layer: test
+# of M`, and is held the same way.
 for name in $NAMES; do
-    subject=${name%Tests}
-    [[ $LAYER[$name] == test && $subject != $name && -n ${DEPS[$subject]+1} ]] || continue
+    if (( ${+SUBJECT[$name]} )); then
+        subject=$SUBJECT[$name]
+        [[ $LAYER[$name] == test ]] || die "$name: only a test target says what it tests (// layer: test of $subject)"
+        [[ -n ${DEPS[$subject]+1} ]] || die "$name tests $subject, which isn't a module here"
+        [[ $LAYER[$subject] != test* ]] || die "$name tests $subject, a $LAYER[$subject] target: a test is of a module"
+        [[ -n ${DEPS[${name%Tests}]+1} ]] && die "$name is named after ${name%Tests}, so it tests that: drop 'of $subject'"
+        (( ${${=DEPS[$name]}[(Ie)$subject]} )) || die "$name tests $subject, so it depends on $subject"
+    else
+        subject=${name%Tests}
+        [[ $LAYER[$name] == test && $subject != $name && -n ${DEPS[$subject]+1} ]] || continue
+    fi
     for dep in ${=DEPS[$name]}; do
         [[ $dep == $subject || $LAYER[$dep] == (testsupport|ui) ]] && continue
         (( ${${=CLOSURE[$subject]}[(Ie)$dep]} )) ||

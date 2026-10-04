@@ -137,9 +137,8 @@ Sources/
   LanguageModels/       a horizontal that lends every editor a language model (Claude Haiku), its key in Settings
   Snapping/             a horizontal: what a drag moves snaps to the shapes in view (edges, middles, even
                         spaces), with guides
-  TitleNames/           a bridge: canvas draw names shapes by their titles
-  PortEdges/            a bridge: canvas draw's edges are the connector's connections, on a channel both ends take
-  ValidationChecks/     a bridge: canvas draw warns about each shape it draws as validation finds it
+  DrawLexicon/          canvas draw's words for this app: shapes named by their titles, edges as the connector's
+                        connections (on a channel both ends take), and warnings as validation finds them
   Composition/          the shipped plugin list, and the welcome board
   InfiniteCanvas/       the SwiftUI app
 Examples/               the smallest plugin for each pattern
