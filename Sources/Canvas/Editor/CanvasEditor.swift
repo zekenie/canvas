@@ -223,6 +223,23 @@ public final class CanvasEditor {
             tellSkeletonLevel()
         }
     }
+    /// How far, in view points, the outline of a closed shape (the selection's, a hover's, the hint)
+    /// stands off its edge: `Style.outlineStandoff`, 4, unless the host says otherwise. 0 outlines
+    /// every shape right on its own path, as the proof of concept drew (a test held to pictures
+    /// drawn before outlines stood off). Setting it redraws. Plugins that draw along an outline go
+    /// by `outlineGap` and `outlinePath(of:)`, never the number.
+    @_spi(Host) @ObservationIgnored public var outlineStandoff: CGFloat = Style.outlineStandoff {
+        didSet {
+            guard outlineStandoff != oldValue else { return }
+            setNeedsDisplay()
+        }
+    }
+    #if DEBUG
+    /// How many closed outlines have been stood off by path arithmetic (debug builds), which costs
+    /// far more than adding a rounded rect, as a rect or a rounded rect (every shipped box kind) is
+    /// grown directly: a test holds the shipped kinds to none.
+    @_spi(Host) @ObservationIgnored public internal(set) var outlinesGrownByArithmetic = 0
+    #endif
     /// What services last heard of `drawsSkeletons` (`drawsSkeletonsDidChange`), which the camera
     /// and `skeletonZoom` are held to as they change.
     @ObservationIgnored private var toldDrawsSkeletons = false

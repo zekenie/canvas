@@ -15,11 +15,6 @@ enum SubboardStyle {
     /// card, so the two don't look alike.
     static let previewMaxScale: CGFloat = 0.1
     static let borderWidth: CGFloat = 1.5
-    /// How far the card's outline (the selection's, a hover's, the hint) stands off its edge, in view
-    /// points: the core strokes an outline a constant 1.5 points wide in the accent color, which on
-    /// the edge lies over the card's indigo border and hardly tells from it, while stood off it, a
-    /// gap of the canvas between the two, the card reads as selected at once.
-    static let outlineGap: CGFloat = 4
     /// Between the symbol and the caption under it, where the card says what its board holds.
     static let captionSpacing: CGFloat = 6
 
@@ -60,14 +55,6 @@ enum SubboardStyle {
     static func path(_ rect: CGRect, radius: CGFloat = cornerRadius) -> CGPath {
         let radius = max(0, min(radius, rect.width / 2, rect.height / 2))
         return CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
-    }
-
-    /// The outline the core strokes for the card at `card` (world units) with the camera at `zoom`:
-    /// its rounded edge grown by `outlineGap` view points, corners and all, so the line keeps that
-    /// far from the border all the way round at every zoom.
-    static func outline(of card: CGRect, zoom: CGFloat) -> CGPath {
-        let gap = outlineGap / zoom
-        return path(card.insetBy(dx: -gap, dy: -gap), radius: cornerRadius + gap)
     }
 
     private static func oneLine(_ alignment: NSTextAlignment = .natural) -> NSParagraphStyle {

@@ -23,7 +23,12 @@ import TestKit
 // 15%, would differ in the shapes and their outlines. What its golden holds the app to is how an
 // arrow is re-aimed and drawn in full (its outline, binding hints and handles), so every board
 // here is drawn in full at every zoom (`skeletonZoom = 0`, host SPI), as the POC drew it; what the
-// app draws below 35% is held by the skeleton tests. The goldens stay as the POC recorded them.
+// app draws below 35% is held by the skeleton tests. A second intended deviation: the POC outlined
+// a shape on its own edge (B outlined as the arrow's target hugs it in "re-aiming-into-b"), where
+// the app stands every closed shape's outline off its edge by 4 view points (`Style.outlineStandoff`),
+// so every board here is drawn with no standoff (`outlineStandoff = 0`, host SPI), as the POC drew
+// it; what the app draws is held by CanvasTests' outline tests. The goldens stay as the POC
+// recorded them.
 
 /// Compares a snapshot of `view` with Fixtures/poc-<name>.png; on a difference, writes the
 /// snapshot to build/parity-<name>.png.
@@ -70,6 +75,7 @@ let pocWelcomeTexts = [
     test("the welcome board, a selected bent arrow, and a zoomed selection render identically") {
         let editor = ShippedPlugins.makeEditor(document: WelcomeBoard.document(texts: pocWelcomeTexts), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         editor.skeletonZoom = 0     // in full at every zoom, as the POC drew (above)
+        editor.outlineStandoff = 0  // outlines on the shapes' edges, as the POC drew (above)
         let canvas = CanvasView(editor: editor)
         canvas.frame = CGRect(x: 0, y: 0, width: 1200, height: 800)
         let arrows = editor.document.shapes.filter { $0.kind == Arrow.kind }.map(\.id)
@@ -88,6 +94,7 @@ let pocWelcomeTexts = [
             // In full at every zoom, as the POC drew: "re-aimed-zoomed-out" is at 15%, where the app
             // draws skeletons on purpose (above).
             board.editor.skeletonZoom = 0
+            board.editor.outlineStandoff = 0        // and B outlined as the target on its edge, as the POC drew
             board.player.play(steps)
             try expectMatchesPOC(board.canvas, name)
         }

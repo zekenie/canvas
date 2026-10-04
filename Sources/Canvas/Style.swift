@@ -65,6 +65,15 @@ public enum Style {
     /// strokes a hover like the selection.
     static let faintIndicatorWidth: CGFloat = 2.5
     static let faintIndicatorOpacity: CGFloat = 0.6
+    /// How far a closed shape's outline (the selection's, a hover's, the hint) stands off its edge,
+    /// in view points, for every kind alike: the line is drawn this far outside the shape, corners
+    /// concentric, a gap of the canvas between the two, so it never lies over a border or a shadow
+    /// of the shape's own and reads the same on every kind. Not tldraw's, whose outlines are on the
+    /// edge (`CanvasEditor.outlineStandoff`, host API, 0 outlines each shape on its own path, as the
+    /// proof of concept did). An open shape (an arrow) has no inside to stand off, so keeps the line
+    /// on its own path, and zoomed out, where shapes are skeletons, an outline is a ring on its
+    /// frame.
+    public static let outlineStandoff: CGFloat = 4
     public static let dragThreshold: CGFloat = 4
 
     /// Releasing a modifier takes effect this much later, so letting go of it and the mouse

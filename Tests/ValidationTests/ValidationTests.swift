@@ -291,6 +291,46 @@ struct OneAtATime: CanvasOverlay {
         expect(error[0] > 200 && error[1] < 100 && error[2] < 100, "red outline: \(error)")
         expect(clean[0] < 250 && abs(clean[0] - clean[2]) < 10, "no outline: \(clean)")
     },
+    test("a closed shape's ring stands 3 view points outside the outline, which stands off its edge: 7 out at any zoom, clear of the outline's line; an open shape's is 3 out; it follows the standoff") {
+        let h = try EditorHarness(plugins: [FixturesPlugin(), LinksPlugin(), ValidationPlugin(), Rules { r in
+            r.validate(Box.self) { _, _ in [.error("always")] }
+            r.validate(Link.self) { _, _ in [.error("always")] }
+        }])
+        h.editor.outlineStandoff = 4                       // what ships: EditorHarness outlines on the edge
+        let a = h.add(Box(CGRect(x: 40, y: 40, width: 40, height: 40)))
+        let b = h.add(Box(CGRect(x: 140, y: 40, width: 40, height: 40)))
+        h.add(Link(from: a, to: b))                        // the segment from (60, 60) to (160, 60)
+        let size = CGSize(width: 400, height: 300)
+        @MainActor func red(_ rep: NSBitmapImageRep, _ point: CGPoint) -> Bool {
+            let p = pixel(rep, at: point)
+            return p[0] > 200 && p[1] < 100 && p[2] < 100
+        }
+        for zoom: CGFloat in [1, 2] {
+            h.editor.camera = Camera(origin: .zero, zoom: zoom)
+            let rep = renderBitmap(h.editor, size: size)
+            // The first box's top edge, 40 down, and the ring's line, 2 wide, centered 7 above it.
+            let ring = CGPoint(x: 60 * zoom, y: 40 * zoom - 7)
+            expect(red(rep, ring), "7 out at \(zoom * 100)%: \(pixel(rep, at: ring))")
+            expect(!red(rep, CGPoint(x: 60 * zoom, y: 40 * zoom - 3)), "not where it would be on the shape's own outline")
+            // A selection's outline (the hint, as it's drawn alike) is between, 4 out, and clear of it.
+            h.editor.hintedShapeID = a
+            let outlined = renderBitmap(h.editor, size: size)
+            h.editor.hintedShapeID = nil
+            expectEqual(pixel(outlined, at: ring), pixel(rep, at: ring), "the outline doesn't touch the ring, at \(zoom * 100)%")
+            let line = CGPoint(x: 60 * zoom, y: 40 * zoom - 4)
+            expect(pixel(outlined, at: line) != pixel(rep, at: line), "the outline's own line, 4 out, between the shape and its ring")
+        }
+        h.editor.camera = Camera(origin: .zero, zoom: 1)
+        // The link has no inside to stand off from: its ring is 3 above its line, at y = 57, as it was.
+        let rep = renderBitmap(h.editor, size: size)
+        expect(red(rep, CGPoint(x: 110, y: 57)), "an open shape's ring, 3 out: \(pixel(rep, at: CGPoint(x: 110, y: 57)))")
+        expect(!red(rep, CGPoint(x: 110, y: 53)), "not 7")
+        // With no standoff the ring is 3 out of a box's edge again, and not where it was.
+        h.editor.outlineStandoff = 0
+        let bare = renderBitmap(h.editor, size: size)
+        expect(red(bare, CGPoint(x: 60, y: 37)), "3 out, no standoff: \(pixel(bare, at: CGPoint(x: 60, y: 37)))")
+        expect(!red(bare, CGPoint(x: 60, y: 33)), "and not 7")
+    },
     test("the shape being edited isn't outlined, since what it says is still being written; once editing ends, it is") {
         let h = try EditorHarness(plugins: [CardsPlugin(), ValidationPlugin(), Rules { r in
             r.validate(Card.self) { card, _ in card.props.text.isEmpty ? [.warning("empty")] : [] }

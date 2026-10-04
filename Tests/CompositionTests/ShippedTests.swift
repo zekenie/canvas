@@ -144,9 +144,12 @@ import Validation
                     [DetailStatus(warning.message, tone: .warning)])
         let marks = Dictionary(uniqueKeysWithValues: try require(editor.tableOfContents).entries.map { ($0.id, $0.marks) })
         expectEqual(marks[note], [ContentsMark(color: Color(nsColor: Severity.warning.color), help: warning.message)])
-        // The note's top edge, 3 points out, clear of the pill above it.
-        let outline = pixel(renderBitmap(editor, size: CGSize(width: 700, height: 340)), at: CGPoint(x: 200, y: 97))
+        // The note's top edge, 7 points out: the 4 the outlines stand off the shape by, and the ring's 3
+        // beyond them, clear of the pill above it. Where the ring would be on the edge's 3 is clear.
+        let rep = renderBitmap(editor, size: CGSize(width: 700, height: 340))
+        let outline = pixel(rep, at: CGPoint(x: 200, y: 93))
         expect(outline[0] > 200 && outline[1] > 110 && outline[2] < 100, "orange: \(outline)")
+        expect(pixel(rep, at: CGPoint(x: 200, y: 97))[2] > 150, "clear of the shape, between it and its ring: \(pixel(rep, at: CGPoint(x: 200, y: 97)))")
         // Kept as typed, the title still shows (cut off); back within bounds, the warning goes.
         expectEqual(editor.document[note].flatMap(editor.registry.title(of:)), String(long.dropLast()))
         editor.transact { $0.update(note) { $0[TitleProperty.self] = "Groceries" } }
