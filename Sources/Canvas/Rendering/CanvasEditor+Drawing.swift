@@ -219,10 +219,10 @@ extension CanvasEditor {
 
     /// Every plugin's outlines (unless the session hides them), then the hint, in one pass at a
     /// constant screen width; under them, in a wider, lighter pass of their own, the faint ones.
-    /// Only what meets `area` (world units, what the shapes were drawn for) is asked for its path
-    /// and stroked: a shape outlined out of view costs a look at its kept extent, however it's
-    /// outlined. `skeletonPixel` is how big a pixel is (world units) while shapes are drawn as
-    /// skeletons, nil while they aren't.
+    /// Only what meets `area` (world units, what the shapes were drawn for, and in full grown by what
+    /// an outline stands off by) is asked for its path and stroked: a shape outlined out of view costs
+    /// a look at its kept extent, however it's outlined. `skeletonPixel` is how big a pixel is (world units)
+    /// while shapes are drawn as skeletons, nil while they aren't.
     private func drawOutlines(in context: CGContext, shapes: ShapeContext, around area: CGRect, skeletonPixel: CGFloat?) {
         let outlines = self.outlines
         strokeOutlines(of: outlines.faintShapes, rects: [], in: Style.accent.withAlphaComponent(Style.faintIndicatorOpacity),
@@ -232,6 +232,15 @@ extension CanvasEditor {
     }
 
     /// `width` is in view points. A shape drawn away from where it is has its outline there too.
+    ///
+    /// Drawn in full, a closed shape's outline stands off its edge, `outlineStandoff` view points
+    /// (`Style.outlineStandoff`) all the way round, the same for every kind: its kind's
+    /// `indicatorPath` grown outward (`addOutline`: a rect and a rounded rect, which every box kind's
+    /// is, are built grown directly, corners concentric, so a shape costs what it did; any other
+    /// closed outline is grown by path arithmetic), and the box around several shapes (`rects`) the
+    /// same, so it holds the shapes' own. An open shape's (an arrow's) is stroked on its own path,
+    /// as it has no inside to stand off from, and a closed shape's is on its edge with a standoff
+    /// of zero, as the proof of concept drew it.
     ///
     /// Drawn as a skeleton, a shape's outline is its skeleton's rather than its `indicatorPath`: its
     /// kind's own (`CustomSkeletonOutline`), else its kept geometry's, as the default skeleton fills
@@ -246,7 +255,11 @@ extension CanvasEditor {
                                 skeletonPixel: CGFloat?, context: CGContext, shapes: ShapeContext) {
         guard !ids.isEmpty || !rects.isEmpty else { return }
         let zoom = camera.zoom, line = width / zoom
-        let area = area.insetBy(dx: -line, dy: -line)
+        // What a closed shape's outline drawn in full stands off its edge by, in world units; the area
+        // reaches that far too, but not zoomed out, where nothing stands off (but the shape being edited).
+        let gap = outlineStandoff / zoom
+        let reach = line + (skeletonPixel == nil ? gap : 0)
+        let area = area.insetBy(dx: -reach, dy: -reach)
         let skeletonOutlines = registry.skeletonOutlines, editing = editingShapeID
         let strokes = CGMutablePath(), rings = CGMutablePath()
         for id in ids {
@@ -282,11 +295,17 @@ extension CanvasEditor {
             }
             if let record = shapes.storedDocument[id],
                let indicator = registry.definition(for: record.kind)?.erasedIndicatorPath(of: record, in: shapes) {
-                strokes.addPath(indicator, transform: shift)
+                addOutline(of: indicator, geometry: entry.geometry, standingOff: gap, to: strokes, transform: shift)
             }
         }
         for rect in rects where rect.touches(area) {
-            if skeletonPixel == nil { strokes.addRect(rect) } else { Self.addRing(around: rect, line: line, to: rings) }
+            if skeletonPixel != nil {
+                Self.addRing(around: rect, line: line, to: rings)
+            } else if gap > 0 {
+                strokes.addRoundedRect(in: rect.insetBy(dx: -gap, dy: -gap), cornerWidth: gap, cornerHeight: gap)
+            } else {
+                strokes.addRect(rect)
+            }
         }
         guard !strokes.isEmpty || !rings.isEmpty else { return }
         context.saveGState()

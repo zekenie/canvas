@@ -176,9 +176,11 @@ public struct Registry {
 
     public func definition(for kind: ShapeKind) -> (any ShapeDefinition)? { definitions[kind] }
 
-    /// The outline the core strokes for a shape (its kind's `indicatorPath`: a selection, a hover,
-    /// the hint), in world units, for an overlay that decorates a shape along it (Validation's
-    /// ring). Nil for a shape kept aside, or of a kind no plugin defines.
+    /// A shape's outline as its kind draws it (its kind's `indicatorPath`), in world units: on the
+    /// shape's own edge, which the core grows outward before it strokes a selection, a hover or the
+    /// hint (`CanvasEditor.outlinePath(of:)`, `outlineGap`). For an overlay that decorates a shape
+    /// along it and grows the outline itself (Validation's ring). Nil for a shape kept aside, or of
+    /// a kind no plugin defines.
     public func indicatorPath(of shape: AnyShapeRecord, in context: ShapeContext) -> CGPath? {
         shape.isOpaque ? nil : definition(for: shape.kind)?.erasedIndicatorPath(of: shape, in: context)
     }

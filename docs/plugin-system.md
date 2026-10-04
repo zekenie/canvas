@@ -543,15 +543,16 @@ is compiled by `./test.sh`, even before anything depends on it.
   | `geometry(of:in:)` | the frame (box kinds); every other kind must say ([a shape without a frame](#a-shape-without-a-frame)) |
   | `hitTest(_:on:in:)` | inside the geometry's closed outline |
   | `hitMargin` | none: how far past its geometry's bounds `hitTest` can still say yes |
-  | `indicatorPath(of:in:)` | the geometry's outline (the target hint, and hover and selection outlines, drawn in full; zoomed out, [the skeleton's](#skeletons)) |
+  | `indicatorPath(of:in:)` | the geometry's outline, on the shape's edge: what the core strokes for the target hint, and hover and selection outlines, drawn in full, [stood off the edge](#outlines) for a closed shape; zoomed out, [the skeleton's](#skeletons) |
 
   `geometry` is the one source of truth. Override it and hit testing, the outline, the marquee,
   arrows, the minimap (which draws each shape as a silhouette of its outline) and the shape zoomed
   out (the core's default [skeleton](#skeletons), unless the kind draws its own) all follow.
   Override `hitTest` or `indicatorPath` only when you can do better: a sticky note outlines its
-  rounded corners (`indicatorPath`), a subboard's stands a few view points off its edge so the line
-  isn't drawn over its border ([Subboards](#subboards)), and a freehand line is hit only near its
-  stroke (`hitTest`, [below](#a-shape-without-a-frame)).
+  rounded corners (`indicatorPath`: the shape's own edge, which the core stands off by the same
+  distance for every kind, so a rect or a rounded rect of the frame costs nothing extra,
+  [Outlines](#outlines)), and a freehand line is hit only near its stroke (`hitTest`,
+  [below](#a-shape-without-a-frame)).
   A `hitTest` that reaches past the outline (a stroke, a few points of slop) says how far in
   `hitMargin`: the editor asks it only about points that near. A kind that knows better than its
   geometry whether the marquee touches it (Arrows, against its arc) adopts Selection's
@@ -1196,15 +1197,20 @@ each place a shape breaks its kind's schema is a warning, about the property it'
 ([Checking shapes](#checking-shapes-against-their-schemas)). The overlay outlines a shape with issues in its worst
 one's color, red for an error and orange for warnings alone, and a shape without issues not at
 all, nor one being edited, whose text is still being written. In full, each ring is stroked alone
-and follows the shape's own outline, 3 view points out, as a selection's follows it: the outline
-the core strokes for its kind (`registry.indicatorPath(of:in:)`, which any overlay that decorates a
-shape along it reads) grown by the padding, so a card's ring keeps its rounded corners and an
-arrow's hugs its line. Growing an outline is path arithmetic, so each shape's ring is kept until the
-shape or its outline changes, or the zoom by more than a tenth (a pinch grows it once a tenth, not
-every frame), and a shape under 32 points on screen gets a rounded rect around its bounds, which
-looks the same there. Zoomed out, where shapes are [skeletons](#skeletons), the rings are a map of
-where the problems are. There, with thousands in view, each is a ring around its bounds with square
-corners, grown from no outline, and a run of one color, in paint order, is filled as one path, so a
+and follows the shape's own outline, 3 view points outside where the canvas strokes that, as a
+selection's follows it: a closed shape's [outline stands off its edge](#outlines) (`editor.outlineGap`,
+4 view points), so its ring is 7 out of the edge, the same for every kind and never under a selected
+shape's accent line, while an open shape's is on its line, so an arrow's ring is 3 out of it. The
+ring is the outline the core strokes for its kind (`registry.indicatorPath(of:in:)`, on the edge,
+which any overlay that decorates a shape along it reads) grown by both
+(`CGPath.grownOutward(by:isClosed:)`, which the core uses for any outline that isn't a rect), so a
+card's ring keeps its rounded corners and an arrow's hugs its line. Growing an outline is path
+arithmetic, so each shape's ring is kept until the shape or its outline changes, or the zoom by more
+than a tenth (a pinch grows it once a tenth, not every frame), or the standoff, and a shape under 32
+points on screen gets a rounded rect around its bounds, grown the same, which looks the same there.
+Zoomed out, where shapes are [skeletons](#skeletons), the rings are a map of where the problems are,
+and nothing stands off. There, with thousands in view, each is a ring around its bounds with square
+corners, 3 out of the frame, grown from no outline, and a run of one color, in paint order, is filled as one path, so a
 front shape's ring still covers a back one's: Core Graphics fills rects in one path for a fraction
 of what stroking each costs (4,800 at 10%: 2.7 ms, against 21), while rounded outlines in one path,
 stroked or filled, cost ten times what each stroked alone does. Two plugin values of Validation's
@@ -1943,7 +1949,10 @@ overrides; a minimum that isn't above zero and finite either way refuses the plu
   `ResizeHandle`) and pressed as those are. They leave the shape room to be pressed itself: none show
   on a box under 24 view points on screen either way, whose corners' reach would cover it, and a
   side's only on a side at least 48 long, its reach clear of the corners'
-  (`SelectionStyle.resizeHandleRoom`), so a shape small on screen is moved, not resized.
+  (`SelectionStyle.resizeHandleRoom`), so a shape small on screen is moved, not resized. They sit on
+  the box itself, not on the shape's outline, which [stands off the edge](#outlines) 4 view points:
+  the handles are drawn over the line, so it runs under their discs (a side's handle just reaches
+  it), and hit as before.
 - **A drag** on one, past the drag threshold, resizes the box (`ResizingSession`): the corner or
   side the handle's on follows the pointer from where it was pressed (grabbed off its middle, it
   doesn't jump), the one opposite staying put, a transaction a drag event and one more at the
@@ -6412,24 +6421,22 @@ as SwiftUI sugar is.)
   preview doesn't flash it. The count is read as the card is drawn, and a preview is of one
   revision of its board, so neither is ever stale: a write to the board while another is shown
   (`transact(on:)`) redraws the canvas as any commit does.
-- **Its outline** (`indicatorPath`: the selection's, a hover's, the hint) stands off the card's edge
-  instead of lying on it. The core strokes every outline a constant 1.5 view points wide in the
-  accent color (2.5 and fainter for a hover), and drawn on the edge that line would cover the
-  indigo border and hardly tell from it, so a selected card would barely read as selected. So the
-  path is the card's rounded edge grown by `SubboardStyle.outlineGap`, 4 view points, its corners growing with
-  it (at 100%, a 14-point radius round the card's 10), leaving a gap of the canvas between the border and
-  the line. The gap is in view points, so it's the same at every zoom: `indicatorPath` divides it
-  by `context.zoom` (an outline may read the camera, as a geometry the editor keeps from frame to
-  frame may not), and costs what the plain rounded rect did, a path made per outlined shape in
-  view. Anything that grows from the outline follows it: Validation's ring (3 view points past the
-  outline, [Validation](#a-horizontal-plugin)) stands that much further out on a card with issues.
-  The title's pill, 9 points above the top edge, stays clear of it.
+- **Its outline** (the selection's, a hover's, the hint) is the core's, the card's rounded edge
+  (`indicatorPath`) [stood off it](#outlines) like every closed shape's: the core strokes every
+  outline a constant 1.5 view points wide in the accent color (2.5 and fainter for a hover), and
+  drawn on the edge that line would cover the card's indigo border, which it's close to in hue and
+  width, so a selected card would barely read as selected; stood off 4 view points, its corners
+  growing with it (at 100%, a 14-point radius round the card's 10), a gap of the canvas lies between
+  the border and the line. The card does nothing for it: the kind says only its edge. Validation's
+  ring, [Validation](#a-horizontal-plugin), stands 3 view points past the outline, and the title's
+  pill, 9 points above the top edge, stays clear of both.
 - **Zoomed out** the card is its [skeleton](#skeletons) ([SubboardSkeleton.swift](../Sources/Subboards/SubboardSkeleton.swift)):
   fills alone, square (its corners are 3.5 points on screen at most there, so its outline is its
   frame's, as the core draws every rect's: a ring filled on the edge, over the half-point border it
   covers, so a selected card shows there as the accent color three times as wide in place of the
-  indigo; it doesn't stand off as it does in full, since a `CustomSkeletonOutline` would stroke each
-  subboard in view where a ring is a fraction of that, and ⌘A zoomed out outlines every one of them),
+  indigo; no outline stands off zoomed out as it does in full, since stroking each subboard in view,
+  which is what a standoff would be, costs far more than the ring, and ⌘A zoomed out outlines every
+  one of them),
   with no shadow, symbol or count: its border's indigo, never under
   half a view point (just under 35% the card's own 1.5 is about that, so nothing jumps), the card
   inside it, and its board's preview, asked for as the full card asks for it, in the same rect at
@@ -7911,8 +7918,9 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   (`registrar.outlines`: selection, the box around several; none while the session
   `hidesOutlines`) and the hint, in one pass at a constant screen width, over the faint ones
   (`Outlines.faintShapes`: the hover), drawn first, wider and lighter, each asked for its path and
-  stroked only if its shape's kept extent meets the area the shapes were drawn for (a plugin's rects
-  too; zoomed out, a skeleton's outline, and a rect filled as a ring: [Skeletons](#skeletons));
+  stroked only if its shape's kept extent meets the area the shapes were drawn for, grown by what
+  an outline [stands off its shape](#outlines) by (a plugin's rects too; zoomed out, a skeleton's
+  outline, and a rect filled as a ring: [Skeletons](#skeletons));
   world overlays; the running session's `draw(in:)` (the marquee, Snapping's guides); view overlays
   (Selection's handles first). Each shape, overlay and session draws with a fresh graphics state.
   Sizes meant as view points are divided by `zoom` in world space. So outlines cost what's in view
@@ -7969,6 +7977,55 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   `editor.pointerOverCanvas` is nil there (a note being edited hides its port dots while the
   pointer is over its text). The canvas leaves their cursor alone meanwhile. Once editing ends,
   where the editing view was is the canvas again, for the next move.
+
+### Outlines
+
+The canvas outlines shapes in the accent color: the selection's, a hover's (wider and fainter), and
+the hint, a target outlined whatever the tool (the shape an arrow's end is aimed at, the container a
+drag would drop into). Every plugin's `registrar.outlines` and the hint go through one pass of the
+core, which draws a closed shape's outline off its edge rather than on it, whatever its kind.
+
+- **Stood off.** A closed shape's outline is its kind's `indicatorPath` grown outward by
+  `editor.outlineStandoff` view points (`Style.outlineStandoff`, 4), all the way round, its corners
+  concentric: a rounded rect of radius r is outlined by one of radius r + 4 about the same centers,
+  and a plain rect's outline has corners of radius 4. A kind does nothing and can't opt out, which is
+  the point: a line on the edge lies over whatever the shape draws there (a subboard's indigo border,
+  a frame's hairline, a note's shadow), a different amount for each kind, and a gap of the canvas
+  between the shape and the line makes every kind read as outlined at once, and alike. It's not
+  tldraw's or the proof of concept's, whose outlines are on the edge (an intended deviation: the
+  hint on a shape an arrow's end is aimed at, [Arrows](#the-connector-arrows), stands off too).
+- **In view points.** The gap is divided by the zoom where it's drawn, so it's 4 points on screen at
+  every zoom, as the line's width is. An outline's path, `editor.outlinePath(of:)`, is in world
+  units at the zoom the camera has.
+- **Open outlines aren't stood off.** An arrow's or a line's (its kept geometry isn't closed) has no
+  inside to stand off from, and is stroked on its own path, as tldraw strokes it.
+- **The box around several shapes** (`Outlines.rects`, Selection's) stands off the same way, so it
+  encloses the shapes' own outlines where they're outermost.
+- **What it costs.** A frame costs what's in view, and ⌘A outlines thousands, so a rect or a rounded
+  rect, which is what every box kind's `indicatorPath` is, is grown directly: the core reads the
+  path twice, over its end points and with nothing made (its straight edges lie on the sides of the
+  kept geometry's bounds and leave the same room at both ends, which is the corner radius, whatever
+  the corners' curves are made of), and adds a rounded rect in its place. Any other closed outline (a
+  polygon, an ellipse, a path of your own) is grown by path arithmetic, `CGPath.grownOutward(by:isClosed:)`,
+  the same Validation's rings are grown with, which costs far more than a rounded rect, for every shape
+  every frame it's outlined: a kind with thousands of shapes outlined together keeps its `indicatorPath` a rect
+  or a rounded rect of its box, or says nothing and takes the cost (debug builds count it,
+  `outlinesGrownByArithmetic`).
+- **Zoomed out** an outline is the [skeleton's](#skeletons), a ring on the frame, and nothing stands
+  off: below 35% it's on the edge, and from 35% up it stands off, so a selected shape's line steps
+  out 4 points as the zoom crosses the level, as its text and shadow come in. The shape being
+  edited, drawn in full at any zoom, is stood off.
+- **Around it.** What draws along an outline goes by the same gap, never the number. Validation's
+  ring is 3 view points outside the outline, so 7 out of a closed shape's edge ([Validation](#a-horizontal-plugin));
+  Ports outlines the shapes a connection could end on along `editor.outlinePath(of:)`, as a hover
+  is. Resize handles are on the box itself, not the outline, drawn over it: the line runs under
+  them, as it did when it lay on the edge they sit on. A title's pill (9 points above the top edge)
+  and Locking's lock stay clear of the line; port dots are 12 points out.
+- **Hosts and tests.** `editor.outlineStandoff` is host API: 0 outlines every shape on its own path,
+  as the proof of concept drew, which its goldens are drawn with (CompositionTests' ParityTests) and
+  CanvasTesting's `EditorHarness` draws with, so pixel tests that read an outline on a shape's
+  edge go on measuring it; a test of the standoff sets it to what ships. Plugins read
+  `editor.outlineGap`, which is it, and `editor.outlinePath(of:)`.
 
 ## Skeletons
 
@@ -8065,8 +8122,8 @@ so call it with no path of your own under way.
   Hangul measured about 0.85 em a character and emoji about 1.3.
 - **Its outline** (selected, hovered, the hint) is its skeleton's, not its `indicatorPath`: its
   kind's own if the kind adopts `CustomSkeletonOutline` (`skeletonIndicatorPath(of:in:)`, nil for
-  its kept geometry's), else its kept geometry's outline, the default skeleton's; the shape being
-  edited keeps its own. The registry finds the kinds that adopt it once
+  its kept geometry's), else its kept geometry's outline, the default skeleton's, with no
+  [standoff](#outlines); the shape being edited keeps its own, stood off. The registry finds the kinds that adopt it once
   (`registry.skeletonOutlines`), so no other kind's shape is asked. ⌘A zoomed out outlines every
   shape in view each frame, and stroking a path costs far more than filling one, so there a rect
   (most shapes' geometry, and a plugin's rects, the box around several) is filled as a ring, what

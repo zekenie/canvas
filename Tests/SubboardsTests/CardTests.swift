@@ -1,6 +1,6 @@
 import AppKit
 import Boards
-import Canvas
+@_spi(Host) import Canvas
 import CanvasTesting
 import Selection
 import Subboards
@@ -62,8 +62,9 @@ enum Band {
         h.editor.goToEnclosingBoard()
         expect(changedPixels(before, renderBitmap(h.editor, size: size), in: Band.caption) > 5, "3 shapes, then 4")
     },
-    test("selected or hovered, it's outlined clear of its border: the line stands 4 points off its edge, a gap of the canvas between, and never over the card") {
+    test("selected or hovered, the core's outline stands 4 points off its edge, a gap of the canvas between it and the indigo border, and never over the card") {
         let h = try EditorHarness(plugins: subboardPlugins())
+        h.editor.outlineStandoff = Style.outlineStandoff          // what ships: EditorHarness outlines on the edge
         let id = h.add(Subboard(frame: cardFrame))
         let size = CGSize(width: 320, height: 240)
         let rest = renderBitmap(h.editor, size: size)
@@ -76,10 +77,14 @@ enum Band {
         let card = cardFrame.insetBy(dx: 6, dy: 6)
 
         let shape = try require(h.editor.document[id])
-        let outline = try require(h.editor.registry.indicatorPath(of: shape, in: h.editor.shapeContext))
+        let outline = try require(h.editor.outlinePath(of: shape))
         let box = outline.boundingBoxOfPath, grown = cardFrame.insetBy(dx: -4, dy: -4)
         expect(box.insetBy(dx: -0.01, dy: -0.01).contains(grown) && grown.insetBy(dx: -0.01, dy: -0.01).contains(box),
                "the card's edge grown by 4 view points, which are 4 units at 100%: \(box)")
+        // The card's corners are 10 about (50, 50); its outline's, 14 about the same center: (41, 41)
+        // is inside it and (39, 39) outside, where a rect grown by 4 with the card's own 10, or with
+        // square corners, would hold it.
+        expect(outline.contains(CGPoint(x: 41, y: 41)) && !outline.contains(CGPoint(x: 39, y: 39)), "its corners concentric with the card's")
 
         h.editor.selection = id
         let selected = renderBitmap(h.editor, size: size)
