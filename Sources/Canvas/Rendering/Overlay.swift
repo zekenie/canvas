@@ -12,6 +12,10 @@ public enum OverlaySpace: Sendable {
 /// world rects. The core strokes every plugin's outlines and the hint in one pass, in the accent
 /// color at a constant screen width, just above the shapes. `faintShapes` are stroked first, wider
 /// and lighter (a hover beside a selection); a shape outlined in full too is stroked only in full.
+/// A closed shape's outline is stroked standing off its edge, the same distance for every kind
+/// (`CanvasEditor.outlinePath(of:)`, `outlineGap`: 4 view points), and so is a rect, which holds
+/// the shapes' own; an open shape's is stroked on its own path. Zoomed out, where shapes are
+/// skeletons, an outline is a ring on its frame.
 public struct Outlines {
     public var shapes: [ShapeID]
     /// World units.

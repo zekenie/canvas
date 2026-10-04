@@ -83,6 +83,7 @@ private let canvas = CGSize(width: 320, height: 240)
     },
     test("selected, it's outlined on its frame, as every rect is (a ring over the half-point border), not stood off it as the full card's is") {
         let h = try skeletonCard(title: nil)
+        h.editor.outlineStandoff = Style.outlineStandoff          // what ships: EditorHarness outlines on the edge
         let rest = renderBitmap(h.editor, size: canvas)
         h.editor.selection = try require(h.editor.document.shapes.first?.id)
         let selected = renderBitmap(h.editor, size: canvas)

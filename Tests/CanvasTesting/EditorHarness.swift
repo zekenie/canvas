@@ -19,6 +19,9 @@ public final class EditorHarness {
         scheduler = ManualScheduler()
         editor = try makeEditor(scheduler)
         editor.liveModifiers = { [unowned self] in held }
+        // Outlines drawn on the edge of their shapes, as the pixel tests written before they stood off
+        // it read them; the tests of the standoff itself set `outlineStandoff` to what ships.
+        editor.outlineStandoff = 0
     }
 
     public convenience init(plugins: [any CanvasPlugin], document: CanvasDocument = CanvasDocument()) throws {
