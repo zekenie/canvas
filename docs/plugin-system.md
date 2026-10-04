@@ -2295,6 +2295,13 @@ is.
   hears clicks.
 - **The placeholder** is drawn dimmed where the text starts while there's none, in the view's
   font, else `TextEditingStyle.placeholderFont` (the system's, 11 pt).
+- **Highlights.** `highlights` is a list of `TextHighlight`s (a range of the text and a fill), drawn
+  with the background, so the text is over them, as rounded rects the height of a mention's pill in
+  the text's font, reaching 2 points past the text at both ends, one for each line a range wraps
+  over (`frames(of:)` says where, in the view's coordinates; TextKit 2 only, as `caretFrame` is).
+  It's how an owner marks text that means something to it, with nothing for a host to forward: the
+  view redraws when they change, and lets go of them when it's made read-only. Pass a fill that
+  follows the surface the text is on, the text's own color at a low alpha, as a pill's does.
 - **TextKit 2.** AppKit gives a text view whose class overrides `draw(_:)` TextKit 1, so
   `EditingTextView` draws its placeholder in `drawBackground(in:)`, and a subclass that needs TextKit
   2 (pills are attachments, laid out as the canvas lays them out) keeps it. On TextKit 2 it also
@@ -5284,6 +5291,27 @@ panel's), a command line runs and doesn't commit, and Return anywhere else commi
   Return that isn't a command's. A command that reads the text (offered only while it isn't
   blank, say) is still run once the line is gone: it's run as it was found, not asked again.
 
+### Marking the command
+
+A command is marked as it's typed, as a mention's pill is marked, so a line that Return would run
+looks unlike one that is only text. `SlashCommandTyping` sets the view's `highlights`
+([TextEditing](#the-text-view)) after every change of the text or the caret, in the text's own color
+(its typing attributes') at a strength of it, so the marks follow whatever surface the text is on:
+
+- **The `/name`**, at `SlashCommandStyle.commandFill` (18%; a pill's is 10%). With the list open it's
+  the `/` and the name there (past the caret too, if it's in the middle of one), so long as the list
+  lists a command for it: "No matches" marks nothing. With the list closed it's the name of the
+  line the caret is on (`SlashCommandLine.nameRange`), if the shape offers a command of that name
+  now, and the caret is after the `/`: the same line Return would run, whether or not its arguments
+  suit the command.
+- **What it's given**, at `argumentsFill` (8%), a lighter shade of the same: the line's arguments,
+  only when the command accepts them. `/lock now`, which stays text, marks `/lock` alone; `/title
+  Groceries` marks both; a pill in the arguments is inside the mark.
+- **Nothing else.** Other lines, a line whose name the shape doesn't offer (`/wide` while the card
+  isn't wide), a selection, the caret before the `/`, and a view that can't be written (which lets go
+  of its highlights as it's made read-only) have no marks. Running the command takes the line out of
+  the text, and its marks with it.
+
 ### Undoing a command
 
 Two undo managers, as with every text: the board's steps and the text's own ([Undo](#undo)).
@@ -5337,6 +5365,8 @@ override func keyDown(with event: NSEvent) {                                    
   `holdsKeys` while it's open and every key and close is `EditingTextView`'s ([A list at the
   caret](#a-list-at-the-caret)); a pick and a close go through the window's closures, which run
   the object's.
+- **It marks the command through the view too**: `view.highlights` is the whole of it, so a host
+  forwards nothing to draw ([Marking the command](#marking-the-command)).
 - **It writes the text only through the view**, as an edit of the person's (`write`: break undo
   coalescing, `shouldChangeText`, replace, the caret, `didChangeText`, break again), so the host
   hears what it hears for typing and nothing else is special.
