@@ -99,7 +99,7 @@ Name a note or a subboard in the detail panel's header. A title is
 part of its shape's schema, at most 80 characters: a longer one gets a warning, as does any value outside the
 bounds its schema sets (the validation plugin checks every shape against its kind's schema).
 A note's dots link it only to another note, and a schema card's only to another schema card: each kind has a channel of its own
-(the ports plugin), and the link is an arrow (the arrow-ports bridge) that keeps to its channel when an end is re-aimed.
+(Connections' ports), and the link is an arrow (`ArrowPortsPlugin`) that keeps to its channel when an end is re-aimed.
 
 ## Layout
 
@@ -115,7 +115,6 @@ Sources/
   CanvasCLI/            canvas, the command line
   Keyboard/             the keyboard horizontal: every shortcut, registered by the plugin whose key it is
   Selection/            the selection horizontal: the select tool, marquee, handles, Delete and ⌘A
-  Arrows/               arrows (a port of tldraw's arrow geometry and binding)
   StickyNotes/          sticky notes, with in-place editing
   Schemas/              schema cards: a JSON Schema on the canvas, as a card that lists its fields, written in its
                         panel in words or as JSON, the two kept in step by Claude
@@ -131,13 +130,13 @@ Sources/
   Titles/               a horizontal any kind opts into: a title, a property it adds (or derived), in a pill
                         and the table of contents, and a header, or /title, that renames it
   Locking/              a horizontal every kind is in: a lock from the context menu or /lock, its chip and its shake
-  Ports/                a horizontal any kind opts into: dots beside its sides that a drag connects from,
-                        on channels that say what may connect to what
+  Connections/          a horizontal: ports (dots beside a shape's sides that a drag connects from), channels that
+                        say what may connect to what, and the arrow (a port of tldraw's arrow geometry and
+                        binding) a drag from a dot draws, bound only where its channel goes
   Automation/           the command line's horizontal: every command canvas runs, draw and kinds its own
   LanguageModels/       a horizontal that lends every editor a language model (Claude Haiku), its key in Settings
   Snapping/             a horizontal: what a drag moves snaps to the shapes in view (edges, middles, even
                         spaces), with guides
-  ArrowPorts/           a bridge: arrows are what a drag from a port draws, bound only where its channel goes
   TitleNames/           a bridge: canvas draw names shapes by their titles
   PortEdges/            a bridge: canvas draw's edges are the connector's connections, on a channel both ends take
   ValidationChecks/     a bridge: canvas draw warns about each shape it draws as validation finds it

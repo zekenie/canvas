@@ -4,7 +4,7 @@ import Geometry
 import Selection
 
 /// Dragging an arrow's handle: an end (binding as it goes) or the bend handle; or the end of an
-/// arrow drawn for another plugin's gesture (`connecting`: a port's drag).
+/// arrow drawn for a port's drag (`connecting`).
 @MainActor
 final class ArrowHandleDragSession {
     let arrowID: ShapeID
@@ -14,7 +14,7 @@ final class ArrowHandleDragSession {
     /// Whether the dragged end aims precisely: after pausing on a shape, or arriving slowly.
     private(set) var isPrecise: Bool
     let targeting: ArrowTargeting
-    /// This drag is drawing an arrow for another plugin's gesture (`CanvasEditor.beginArrow`).
+    /// This drag is drawing an arrow for a port's drag (`CanvasEditor.beginArrow`).
     let connecting: ArrowConnecting?
 
     init(arrowID: ShapeID, handle: ArrowHandle, handleOffset: CGPoint, isPrecise: Bool, targeting: ArrowTargeting,
@@ -31,7 +31,7 @@ final class ArrowHandleDragSession {
 extension ArrowHandleDragSession: Session {
     func cursor(in editor: CanvasEditor) -> CanvasCursor? { .closedHand }
     var hidesOutlines: Bool { true }
-    /// A connection drawn for another plugin's gesture (a port's) scrolls the canvas at its edges, so
+    /// A connection drawn for a port's drag scrolls the canvas at its edges, so
     /// it can reach a shape off screen; a handle's drag doesn't, as tldraw's doesn't.
     var scrollsAtEdges: Bool { connecting != nil }
 
@@ -54,7 +54,7 @@ extension ArrowHandleDragSession: Session {
         editor.selection = arrowID
     }
 
-    /// An arrow drawn for another plugin's gesture: bound, it's finished by that plugin; free, it's
+    /// An arrow drawn for a port's drag: bound, it's finished by `ArrowPortsPlugin`; free, it's
     /// deleted, so nothing is drawn. The selection is left as it was.
     private func finish(_ connecting: ArrowConnecting, in editor: CanvasEditor) {
         guard case .terminal(let end) = handle, let target = targeting.arrow(arrowID)?[end].binding?.shapeID else {
@@ -64,7 +64,7 @@ extension ArrowHandleDragSession: Session {
         editor.transact { $0.update(arrowID) { connecting.complete(&$0, target) } }
     }
 
-    /// Escape while drawing an arrow for another plugin's gesture deletes it, leaving the selection
+    /// Escape while drawing an arrow for a port's drag deletes it, leaving the selection
     /// as it was. Escape while re-aiming an existing end does nothing.
     func cancel(in editor: CanvasEditor) -> Bool {
         guard connecting != nil else { return false }

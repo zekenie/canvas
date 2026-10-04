@@ -58,7 +58,7 @@ extension ShapeContext {
     public func canBindArrow(to id: ShapeID) -> Bool { Connectables(shapes: self)[id] != nil }
 }
 
-/// A drag drawing an arrow for another plugin's gesture (`beginArrow`): where its end may bind, and
+/// A drag drawing an arrow for a port's drag (`beginArrow`): where its end may bind, and
 /// what finishes it once it has.
 @MainActor
 struct ArrowConnecting {
@@ -71,7 +71,7 @@ extension CanvasEditor {
     /// (`ShapeContext.canBindArrow(to:)`, of the editor's document).
     public func canBindArrow(to id: ShapeID) -> Bool { shapeContext.canBindArrow(to: id) }
 
-    /// An arrow drawn from `shape` for another plugin's gesture (a port's drag): its start bound to
+    /// An arrow drawn from `shape` for a port's drag (`ArrowPortsPlugin`'s): its start bound to
     /// the shape, aiming at its center (imprecise), and its end at `origin` (world units), then
     /// following the pointer and binding by tldraw's rules, as a re-aimed end does, but only to
     /// shapes `canBind` accepts, looking through the rest. Released bound, `complete` finishes it (in the transaction that does, with the shape
