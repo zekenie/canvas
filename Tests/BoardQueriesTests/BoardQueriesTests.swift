@@ -1,8 +1,8 @@
-import BoardQueries
 import Boards
 import Canvas
 import CanvasTesting
 import Queries
+import QueryLexicon
 import TestKit
 
 // A query's rows naming the boards a shape is inside as the path over the canvas names them
@@ -41,8 +41,8 @@ import TestKit
         expectEqual(vocabulary.kind(Drawer.kind)?.holdsBoard, true)
         expectEqual(vocabulary.kind(Crate.kind)?.holdsBoard, true)
     },
-    test("without the bridge, an untitled owner's board is called by its kind's label, not as the path calls it") {
-        let h = try storeHarness(bridge: false)
+    test("without BoardQueriesPlugin, an untitled owner's board is called by its kind's label, not as the path calls it") {
+        let h = try storeHarness(withPlugin: false)
         let drawer = h.editor.registry.label(of: Drawer.kind).name
         expectEqual(try inside("box", on: h)[id(22)], ["Kitchen", drawer])
         expectEqual(pathNames(of: id(22), in: h), ["Kitchen", "Untitled Drawer"])

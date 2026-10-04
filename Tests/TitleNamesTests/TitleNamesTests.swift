@@ -4,11 +4,11 @@ import Automation
 import CanvasRPC
 import CanvasTesting
 import CoreGraphics
+import DrawLexicon
 import Keyboard
 import Selection
 import SlashCommands
 import TestKit
-import TitleNames
 import Titles
 
 // `canvas draw` naming shapes by their titles, as Titles has them: cards are named (the title
@@ -28,10 +28,10 @@ import Titles
 }
 
 /// An editor 800 × 600 points, its view (0, 0) to (800, 600), with Titles (and the slash commands it
-/// offers) and the bridge.
-@MainActor func namedEditor(tilesNamed: Bool = true, bridge: Bool = true) throws -> CanvasEditor {
+/// offers) and `TitleNamesPlugin`.
+@MainActor func namedEditor(tilesNamed: Bool = true, withPlugin: Bool = true) throws -> CanvasEditor {
     let plugins: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), AutomationPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(),
-                                       AdornmentsPlugin(), SlashCommandsPlugin(), TitlesPlugin(), fixtureTitles(tilesNamed: tilesNamed)] + (bridge ? [TitleNamesPlugin()] : [])
+                                       AdornmentsPlugin(), SlashCommandsPlugin(), TitlesPlugin(), fixtureTitles(tilesNamed: tilesNamed)] + (withPlugin ? [TitleNamesPlugin()] : [])
     let editor = CanvasEditor(registry: try Registry(plugins: plugins))
     editor.viewportDidResize(to: CGSize(width: 800, height: 600))
     return editor
@@ -124,8 +124,8 @@ struct Unexpected: Error {}
         let kinds = try run(["kinds", Tile.kind.rawValue], on: editor).get()
         expectEqual(kinds.arrayValue?.first?["names"], "derived")
     },
-    test("without the bridge, nothing is named: a titled statement is no_names") {
-        let editor = try namedEditor(bridge: false)
+    test("without TitleNamesPlugin, nothing is named: a titled statement is no_names") {
+        let editor = try namedEditor(withPlugin: false)
         expectEqual(try refused(#"card "API""#, on: editor)["reason"], "no_names")
         expectEqual(try drawn("card", on: editor)["changes"]?.arrayValue?.count, 1, "untitled shapes still draw")
     },

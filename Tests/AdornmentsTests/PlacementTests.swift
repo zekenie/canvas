@@ -50,7 +50,7 @@ extension CanvasEditor {
         h.editor.transact { $0.update(sign, as: Sign.self) { $0.props.text = "" } }
         expectEqual(h.editor.adornments(sign), [.of(Flag.self)], "nil: nothing on that shape")
     },
-    test("a bridge's, on a kind another plugin registers, and on no other kind") {
+    test("another plugin's, on a kind it doesn't register, and on no other kind") {
         let h = try adornedHarness([Contributor(id: "box-counts") { $0.adornment(Count.self, on: Box.self) { _ in AdornmentLabel("3") } }])
         let box = h.add(Box(boxFrame)), disc = h.add(Disc(boxFrame))
         expectEqual(h.editor.adornments(box), [.of(Count.self)])

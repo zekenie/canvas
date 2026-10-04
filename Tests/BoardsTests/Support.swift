@@ -16,7 +16,7 @@ import Titles
 // the horizontal knows no real kind.
 
 /// A box that owns a board, opened through the kind's own sugar (`drawer.opensBoard`), and named
-/// by Titles; pockets (CanvasTesting's) open through the bridge form.
+/// by Titles; pockets (CanvasTesting's) open through the form for another plugin's kind.
 struct Drawer: BoxShapeProps {
     static let kind: ShapeKind = "drawer"
     static let properties = Properties<Drawer> {
@@ -50,7 +50,7 @@ struct DrawersPlugin: CanvasPlugin {
     }
 }
 
-/// Pockets open onto their boards from a bridge, and are named by Titles.
+/// Pockets open onto their boards from another plugin, and are named by Titles.
 @MainActor func pocketBoards() -> Contributor {
     Contributor(id: "pocket-boards") { r in
         r.title(Pocket.self, pill: false, contents: false)

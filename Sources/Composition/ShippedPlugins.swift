@@ -1,7 +1,6 @@
 import Adornments
 import AppKit
 import Automation
-import BoardQueries
 import Boards
 import Canvas
 import CanvasRPC
@@ -10,32 +9,27 @@ import Connections
 import ContextMenus
 import CoreGraphics
 import DetailPanel
+import DrawLexicon
 import Frames
 import Keyboard
 import LanguageModels
 import Locking
-import MentionQueries
 import Mentions
-import PortEdges
 import Queries
 import QueryCommands
+import QueryLexicon
 import Reordering
 import Schemas
 import Selection
-import SelectionQueries
 import SlashCommands
 import Snapping
 import StickyNotes
 import Subboards
 import SwiftUI
 import TableOfContents
-import TitleNames
-import TitleQueries
 import Titles
 import Topology
 import Validation
-import ValidationChecks
-import ValidationQueries
 
 /// The static composition point: which plugins ship, in which order (the toolbar's order, and the
 /// order overlays draw in). Tests import this, so they check exactly what ships.

@@ -715,8 +715,8 @@ func heldCommitPlugin(_ held: HeldCommit) -> Contributor {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let shipped = try Registry(plugins: shippedPlugins(pasteboard))
-        // Without Queries, and so without the bridges and the commands that build on it: those between
-        // them in the shipped list.
+        // Without Queries, and so without QueryLexicon's plugins and the commands that build on it:
+        // those between them in the shipped list.
         var plugins = shippedPlugins(pasteboard)
         let first = try require(plugins.firstIndex { $0.id == .queries }), last = try require(plugins.firstIndex { $0.id == .queryCommands })
         plugins.removeSubrange(first...last)

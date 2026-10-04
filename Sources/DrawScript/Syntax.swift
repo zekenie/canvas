@@ -87,8 +87,8 @@ public struct EdgeStatement: Sendable, Equatable {
     public var fromSide: EdgeSide?
     /// `to:`, the side its end aims at.
     public var toSide: EdgeSide?
-    /// Every other attribute, for the caller to check (the channel it's on, from Connections'
-    /// bridge).
+    /// Every other attribute, for the caller to check (the channel it's on, from DrawLexicon's
+    /// `PortEdgesPlugin`).
     public var attributes: [Attribute]
 
     public init(from: String, to: String, arrow: EdgeArrow = .forward, fromSide: EdgeSide? = nil, toSide: EdgeSide? = nil,

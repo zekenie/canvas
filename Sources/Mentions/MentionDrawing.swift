@@ -70,7 +70,7 @@ extension ShapeRegistrar {
 }
 
 extension PluginRegistrar {
-    /// Where another plugin's kind draws mention text (bridges).
+    /// Where another plugin's kind draws mention text.
     public mutating func mentionText<P: ShapeProps>(_: P.Type, _ place: @escaping @MainActor (ShapeRecord<P>) -> [MentionTextPlacement]) {
         contribute(MentionTextContribution(P.self, place), to: MentionTexts.self, for: .kind(P.kind))
     }
