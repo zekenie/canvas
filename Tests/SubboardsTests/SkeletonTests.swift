@@ -2,6 +2,7 @@ import AppKit
 import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
+import Selection
 import Subboards
 import TestKit
 import Titles
@@ -77,6 +78,16 @@ private let canvas = CGSize(width: 320, height: 240)
         expectEqual(darkest(built, in: CGRect(x: 52, y: 52, width: 26, height: 136)), 255, "at a tenth: 160 across, from x 80")
         expectEqual(changedPixels(built, full, in: preview), 0, "as the card draws it")
         expectEqual(h.scheduler.pendingCount, 0, "no frame asked for once it's drawn")
+    },
+    test("selected, it's outlined on its frame, as every rect is (a ring over the half-point border), not stood off it as the full card's is") {
+        let h = try skeletonCard(title: nil)
+        let rest = renderBitmap(h.editor, size: canvas)
+        h.editor.selection = try require(h.editor.document.shapes.first?.id)
+        let selected = renderBitmap(h.editor, size: canvas)
+        // The right edge, at 280: the ring is 1.5 points centered on it, columns 279 and 280.
+        expect(changedPixels(rest, selected, in: CGRect(x: 279, y: 60, width: 2, height: 120)) > 200, "the ring, on the edge")
+        expectEqual(changedPixels(rest, selected, in: CGRect(x: 281, y: 60, width: 9, height: 120)), 0, "nothing stood off it")
+        expectEqual(changedPixels(rest, selected, in: cardFrame.insetBy(dx: 2, dy: 2)), 0, "nor over the card inside its border")
     },
     test("a card with no room for a preview asks for none") {
         let h = try skeletonCard(title: nil, inside: 2, frame: CGRect(x: 40, y: 40, width: 240, height: 30))
