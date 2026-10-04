@@ -1,5 +1,5 @@
 import Adornments
-import Canvas
+@_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
 import Geometry
@@ -98,8 +98,9 @@ extension CornerDisc: Adornment {
         expect(changedPixels(untitled, titled, in: CGRect(x: 60, y: 95, width: 36, height: 12)) > 300, "9 to 27 points above the corner")
         expectEqual(changedPixels(untitled, titled, in: CGRect(x: 60, y: 60, width: 200, height: 32)), 0, "not up to 54, as it would be zoomed")
     },
-    test("below 25% the pill shrinks with the shapes, as every adornment does, and it's blank, as below 35%") {
+    test("with skeletons off, below 25% the pill shrinks with the shapes, as every adornment does") {
         let editor = try titleEditor()
+        editor.skeletonZoom = 0                             // in full at every zoom
         let id = editor.add(Plaque(CGRect(x: 480, y: 960, width: 800, height: 480)))
         editor.camera = Camera(origin: .zero, zoom: 0.125)  // at (60, 120), 100 points wide: the pill half size, 4.5 to 13.5 points above
         let untitled = render(editor)
@@ -107,30 +108,26 @@ extension CornerDisc: Adornment {
         let titled = render(editor)
         expect(changedPixels(untitled, titled, in: CGRect(x: 60, y: 108, width: 16, height: 6)) > 60, "the pill, half size")
         expectEqual(changedPixels(untitled, titled, in: CGRect(x: 60, y: 85, width: 100, height: 20)), 0, "not full size")
-        // Its straight middle, 4.5 points in from each end, is one color: no text.
-        let pill = editor.camera.toView(try require(editor.adornmentFrames(of: id).first).rect)
-        let middle = pill.insetBy(dx: pill.height / 2 + 1, dy: 2)
-        let colors = Set(stride(from: middle.minY, to: middle.maxY, by: 1).flatMap { y in
-            stride(from: middle.minX, to: middle.maxX, by: 1).map { x in pixel(titled, at: CGPoint(x: x, y: y)) }
-        })
-        expect(middle.width > 8, "\(pill)")
-        expectEqual(colors.count, 1, "blank: \(colors)")
     },
-    test("below 35%, where shapes are skeletons, the pill is its capsule alone; at 35% it has its text") {
+    test("below 35%, where shapes are skeletons, there's no pill above a shape and its title is on it; at 35% the pill is there and nothing is on the shape") {
         let editor = try titleEditor()
-        let id = editor.add(Plaque(CGRect(x: 60 / 0.3, y: 100 / 0.3, width: 200 / 0.3, height: 120 / 0.3)), named: "Front desk")
-        var counts: [CGFloat: Int] = [:]
+        let frame = CGRect(x: 60 / 0.3, y: 100 / 0.3, width: 200 / 0.3, height: 120 / 0.3)
+        let id = editor.add(Plaque(frame))
+        var above: [CGFloat: Int] = [:], on: [CGFloat: Int] = [:]
         for zoom in [0.3, 0.35] as [CGFloat] {
             editor.camera = Camera(origin: .zero, zoom: zoom)
-            let pill = editor.camera.toView(try require(editor.adornmentFrames(of: id).first).rect)
-            let middle = pill.insetBy(dx: pill.height / 2, dy: 3)
-            let rendered = render(editor)
-            counts[zoom] = Set(stride(from: middle.minY, to: middle.maxY, by: 1).flatMap { y in
-                stride(from: middle.minX, to: middle.maxX, by: 1).map { x in pixel(rendered, at: CGPoint(x: x, y: y)) }
-            }).count
+            let view = editor.camera.toView(frame)
+            editor.rename(id, nil)
+            let untitled = render(editor)
+            editor.rename(id, "Front desk")
+            let titled = render(editor)
+            above[zoom] = changedPixels(untitled, titled, in: CGRect(x: view.minX, y: view.minY - 25, width: 36, height: 12))
+            on[zoom] = changedPixels(untitled, titled, in: view)
         }
-        expectEqual(counts[0.3], 1, "blank at 30%")
-        expect((counts[0.35] ?? 0) > 3, "its text at 35%: \(counts)")
+        expectEqual(above[0.3], 0, "no pill at 30%")
+        expect((on[0.3] ?? 0) > 300, "the title on the shape at 30%: \(on)")
+        expect((above[0.35] ?? 0) > 300, "the pill at 35%: \(above)")
+        expectEqual(on[0.35], 0, "and nothing on the shape")
     },
     test("a shape just below the view shows its pill at the view's foot") {
         let editor = try titleEditor()

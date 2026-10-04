@@ -84,9 +84,12 @@ extension Pins: EditorService {}
         let button = AnyHashable(AdornmentButton(Pin.self, on: box))
         h.editor.setDrawingOffset(CGPoint(x: 5, y: 0), for: box)
         expectEqual(h.editor.button(atViewPoint: CGPoint(x: flagCenter.x - 11, y: flagCenter.y)), button)
+        h.editor.skeletonZoom = 0                                    // in full at every zoom: a skeleton shows no pin
         h.editor.camera = Camera(origin: .zero, zoom: 0.125)         // the box's top-right corner at (37.5, 12.5); the pin 9 across
         expectEqual(h.editor.button(atViewPoint: CGPoint(x: 33, y: 1)), button)
         expectEqual(h.editor.button(atViewPoint: CGPoint(x: 33, y: 10.5)), nil)
+        h.editor.skeletonZoom = 0.35
+        expectEqual(h.editor.button(atViewPoint: CGPoint(x: 33, y: 1)), nil, "none on a skeleton")
     },
     test("a front shape's caption over a back shape's pin takes the press, as it's drawn over it") {
         clicked = []

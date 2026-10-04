@@ -310,7 +310,7 @@ final class NestedWindow {
         w.move(to: CGPoint(x: crumb.midX, y: crumb.maxY + 60), time: 1.3)
         expectEqual(w.editor.hovered, under, "and back off it")
     },
-    test("a subboard's first visit fits its board below the path's pill: the top note's title pill is clear of the crumbs") {
+    test("a subboard's first visit fits its board below the path's pill: the top note, and its title pill in full, are clear of the crumbs") {
         let w = try NestedWindow()
         defer { w.board.close() }
         let (note, _) = w.nest.notes(on: 2)
@@ -320,9 +320,13 @@ final class NestedWindow {
         }
         expect(w.editor.showBoard(w.nest.sBoard))
         w.window.spin { !w.crumbs.isEmpty }
-        let pill = try require(w.editor.adornmentFrames(of: note).first { $0.adornment == .of(TitlePill.self) }, "the title's pill")
+        // A board this tall is fitted far out, where shapes are skeletons and show no pill: the note's
+        // top is clear of the crumbs then, and its pill, 27 points above it, in full.
+        let box = try require(w.editor.document[note]?.box)
+        let pill = w.editor.adornmentFrames(of: note).first { $0.adornment == .of(TitlePill.self) }?.rect
         let crumbsBottom = try require(w.crumbs.map { w.onCanvas($0).maxY }.max())
-        expect(w.editor.camera.toView(pill.rect).minY >= crumbsBottom, "the pill at \(w.editor.camera.toView(pill.rect)), the crumbs down to \(crumbsBottom)")
+        let top = w.editor.camera.toView(pill ?? box)
+        expect(top.minY >= crumbsBottom, "the \(pill == nil ? "note" : "pill") at \(top), the crumbs down to \(crumbsBottom)")
     },
     test("⌃Space in a schema card's JSON, which no menu takes, opens its completions there") {
         let w = try NestedWindow()

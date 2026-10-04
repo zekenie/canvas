@@ -1,3 +1,4 @@
+import Adornments
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
@@ -49,6 +50,9 @@ func isRed(_ pixel: [Int]) -> Bool { pixel[0] > 180 && pixel[1] < 110 && pixel[2
     bitmap.size = size   // two pixels a point, so `pixel` and `any` take points
     return bitmap
 }
+
+/// The pet schema with no title: a card of it has no name, so no cover.
+private let untitledPetSchema = petSchema.replacingOccurrences(of: "  \"title\": \"Pet\",\n", with: "")
 
 // A card at (40, 40), 240 wide: its description from x 56 to 264, line i from y 56 + 19 i, 19 tall;
 // its title's pill is above it, from x 40, y 13 to 31.
@@ -102,7 +106,7 @@ let petPrompt = "A pet in my household: its name, its species (a dog or a cat), 
     test("below 35%, a card is its skeleton: white with a light gray edge and no shadow, and a bar where each of its description's lines is") {
         let size = CGSize(width: 120, height: 90), cardRect = CGRect(x: 12, y: 12, width: 72, height: cardHeight(lines: 5) * 0.3)
         let editor = try schemaEditor()
-        editor.add(card(petSchema, prompt: petPrompt))
+        editor.add(card(untitledPetSchema, prompt: petPrompt))             // untitled: a title's cover is on its own test's
         editor.camera = Camera(zoom: 0.3)
         let skeleton = render(editor, size: size)
         expect(!any(skeleton, in: cardRect, isText), "no text")
@@ -112,7 +116,7 @@ let petPrompt = "A pet in my household: its name, its species (a dog or a cat), 
             expect(isAbout(Palette.skeletonEdge, within: 3)(pixel(skeleton, at: edge)), "the edge at \(edge): \(pixel(skeleton, at: edge))")
             expect(isAbout(Palette.card, within: 2)(pixel(skeleton, at: inside)), "white inside it at \(inside)")
         }
-        expect(!any(skeleton, in: cardRect, isAccent), "no mark: its name is its pill's")
+        expect(!any(skeleton, in: cardRect, isAccent), "no mark")
         for i in 0..<5 {
             expect(isAbout(Palette.textBar, within: 6)(pixel(skeleton, at: CGPoint(x: 18, y: skeletonBar(i)))), "line \(i)'s bar")
         }
@@ -130,6 +134,14 @@ let petPrompt = "A pet in my household: its name, its species (a dog or a cat), 
         // At 35%, the card as ever.
         let near = try render([card(petSchema, prompt: petPrompt)], zoom: 0.35, size: CGSize(width: 140, height: 100))
         expect(any(near, in: CGRect(x: 19.6, y: 19.6, width: 72.8, height: 6.65), isText), "the first line's text at 35%")
+    },
+    test("below 35%, a titled card has its title on it, Titles' cover, and no pill above it") {
+        let editor = try schemaEditor()
+        let id = editor.add(card(petSchema, prompt: petPrompt))
+        expectEqual(editor.adornmentFrames(of: id).map(\.label), [AdornmentLabel("Pet", systemImage: "curlybraces")], "in full, its pill")
+        editor.camera = Camera(zoom: 0.3)
+        expectEqual(editor.adornmentFrames(of: id), [], "no pill on a skeleton")
+        expectEqual(editor.titleCover(of: id)?.text, "Pet")
     },
     test("zoomed out, a bar is as long as its line's columns (a wide character two); an empty card has none; what it says now is what's drawn") {
         let size = CGSize(width: 120, height: 90)

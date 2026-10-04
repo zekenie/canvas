@@ -1,6 +1,6 @@
 import Adornments
 import AppKit
-import Canvas
+@_spi(Host) import Canvas
 import CanvasTesting
 import Geometry
 import TestKit
@@ -88,16 +88,22 @@ let longText = "A caption much longer than the box is wide"
             expect(color[0] < 100, "dark enough for white text: \(color)")
         }
     },
-    test("an adornment keeps its size on screen zoomed in, and shrinks with the shapes below 25%") {
+    test("an adornment keeps its size on screen zoomed in, and, with skeletons off, shrinks with the shapes below 25%") {
         for (zoom, size) in [(CGFloat(2), CGFloat(18)), (0.125, 9)] {
             let world = CGRect(x: boxFrame.minX / zoom, y: boxFrame.minY / zoom, width: boxFrame.width / zoom, height: boxFrame.height / zoom)
-            let (plain, adorned, h) = try renders([everyShape(Flag.self) { _ in flagLabel }], zoom: zoom) { $0.add(Box(world)) }
+            let plain = try adornedHarness(), h = try adornedHarness([everyShape(Flag.self) { _ in flagLabel }])
+            for board in [plain, h] {
+                board.editor.skeletonZoom = 0                       // every shape in full at every zoom
+                board.editor.camera = Camera(origin: .zero, zoom: zoom)
+                board.add(Box(world))
+            }
+            let (before, after) = (render(plain), render(h))
             let frame = try require(viewRects(h, h.editor.document.shapes[0].id).first)
             expectClose(frame.width, size)
             expectClose(frame.maxX, boxFrame.maxX)
             let grown = frame.insetBy(dx: -1, dy: -1).integral
-            expect(changedPixels(plain, adorned, in: grown) > Int(size * size / 2), "at \(zoom)")
-            expectEqual(changedPixels(plain, adorned, in: wholeView), changedPixels(plain, adorned, in: grown), "at \(zoom), nowhere else")
+            expect(changedPixels(before, after, in: grown) > Int(size * size / 2), "at \(zoom)")
+            expectEqual(changedPixels(before, after, in: wholeView), changedPixels(before, after, in: grown), "at \(zoom), nowhere else")
         }
     },
     test("a shape just outside the view shows what of its adornments reaches in") {

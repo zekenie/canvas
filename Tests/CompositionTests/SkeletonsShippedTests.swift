@@ -17,14 +17,16 @@ import Subboards
 import TestKit
 import Titles
 
-// Skeletons as shipped: below 35% every shipped kind draws its skeleton, which says nothing, and
-// so do the adornments on it (a title's pill, a lock); at 35% all of it is drawn in full; the note
-// being edited is drawn in full whatever the zoom; and a mention's pill is no face on a skeleton.
-// The kinds' own tests hold what each skeleton looks like; here, the pieces together.
+// Skeletons as shipped: below 35% every shipped kind draws its skeleton, which says nothing but
+// what a shape is called (Titles' cover, on it), and no adornment is shown on it (a title's pill,
+// a lock); at 35% all of it is drawn in full; the note being edited is drawn in full whatever the
+// zoom; and a mention's pill is no face on a skeleton. The kinds' own tests hold what each
+// skeleton looks like; here, the pieces together.
 
 /// A subboard, a titled note that mentions it, another note with an arrow to it, a locked empty
-/// note and a schema card: every word on the board said through `say`, so two boards
-/// that say the same number of letters, in different letters, differ only where text is drawn.
+/// note and a schema card: every word on the board said through `say`, but the titles (a cover
+/// says its shape's), so two boards that say the same number of letters, in different letters,
+/// differ only where text is drawn.
 @MainActor
 private struct SkeletonBoard {
     let subboard = ShapeID(), note = ShapeID(), other = ShapeID(), arrow = ShapeID(), locked = ShapeID(), card = ShapeID()
@@ -43,11 +45,11 @@ private struct SkeletonBoard {
     /// their own, or each would read as a card whose text changed (and draw bars by its id).
     func place(on editor: CanvasEditor, card cardID: ShapeID? = nil, _ say: (String) -> String = { $0 }) throws {
         var subboard = ShapeRecord(id: subboard, Subboard(frame: Self.subboardFrame))
-        subboard[TitleProperty.self] = say("Roadmap")
+        subboard[TitleProperty.self] = "Roadmap"
         var note = ShapeRecord(id: note, StickyNote(frame: Self.noteFrame, text: MentionText([
             .text(say("Ask \(token) ")), .mention(self.subboard, label: say("Roadmap")), .text(say(" about the launch")),
         ])))
-        note[TitleProperty.self] = say("Groceries")
+        note[TitleProperty.self] = "Groceries"
         let other = ShapeRecord(id: other, StickyNote(frame: Self.otherFrame, text: MentionText(plain: say("See you there"))))
         let bound = { (id: ShapeID) in
             ArrowTerminal.bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))
@@ -56,7 +58,7 @@ private struct SkeletonBoard {
         var locked = ShapeRecord(id: locked, StickyNote(frame: Self.lockedFrame, text: MentionText(plain: "")))
         locked[LockedProperty.self] = true
         var card = SchemaCard(frame: CGRect(origin: CGPoint(x: 400, y: 400), size: SchemaCard.defaultSize))
-        card.schema.text = #"{"title": "\#(say("Pet"))", "type": "object", "properties": {"\#(say("name"))": {"type": "string"}, "\#(say("species"))": {"type": "string"}}, "required": ["\#(say("name"))"]}"#
+        card.schema.text = #"{"title": "Pet", "type": "object", "properties": {"\#(say("name"))": {"type": "string"}, "\#(say("species"))": {"type": "string"}}, "required": ["\#(say("name"))"]}"#
         card.setPrompt(SchemaPromptText(plain: say("A pet and its name")))
         let schema = ShapeRecord(id: cardID ?? self.card, card)
         editor.transact { t in
@@ -119,7 +121,7 @@ private func rot13(_ text: String) -> String {
 private let viewSize = CGSize(width: 320, height: 200)
 
 @MainActor let skeletonsShippedTests = Suite("Skeletons, as shipped", [
-    test("at 30% every shape is its skeleton and says nothing, nor do its title's pill and its lock; at 35% it's all in full; the note being edited is in full at 30%") {
+    test("at 30% every shape is its skeleton and says nothing but its title, which is on it, with no pill and no lock; at 35% it's all in full; the note being edited is in full at 30%") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let board = SkeletonBoard()
@@ -129,8 +131,8 @@ private let viewSize = CGSize(width: 320, height: 200)
         let editor = said.editor
         let far = Camera(zoom: 0.3), near = Camera(zoom: 0.35)
 
-        // At 30%, two boards that say different letters draw alike: no text anywhere, the pills'
-        // and the lock's included (a blank capsule as long as its title, a blank disc).
+        // At 30%, two boards that say different letters draw alike: no text anywhere but the titles'
+        // covers, which say the same, and no pill and no lock.
         editor.camera = far
         other.editor.camera = far
         expect(editor.drawsSkeletons)
@@ -146,7 +148,23 @@ private let viewSize = CGSize(width: 320, height: 200)
         expectEqual(MentionDrawingCounts.stringsBuilt, built, "no mention text built")
         #endif
 
-        // At 35%, all of it in full: each shape's words, and the pills'.
+        // The titles are on the shapes: the subboard's and the note's.
+        expectEqual(editor.titleCover(of: board.subboard)?.text, "Roadmap")
+        expectEqual(editor.titleCover(of: board.note)?.text, "Groceries")
+        expectEqual(editor.adornmentFrames(of: board.note), [], "and no pill above it")
+        let text = editor.camera.toView(try require(editor.titleCover(of: board.note)).rect).insetBy(dx: -1, dy: -1).integral
+        let covered = renderBitmap(editor, size: viewSize)
+        editor.transact { $0.update(board.note) { $0[TitleProperty.self] = nil } }
+        expect(changedPixels(covered, renderBitmap(editor, size: viewSize), in: text) > 30, "the note's title, drawn on it")
+        editor.transact { $0.update(board.note) { $0[TitleProperty.self] = "Groceries" } }
+
+        // At 35%, all of it in full: each shape's words, and the pills'. The other board's titles
+        // say other letters now.
+        other.editor.transact { transaction in
+            for id in [board.note, board.subboard] {
+                transaction.update(id) { $0[TitleProperty.self] = $0[TitleProperty.self].map(rot13) }
+            }
+        }
         editor.camera = near
         other.editor.camera = near
         expect(!editor.drawsSkeletons)
@@ -178,8 +196,8 @@ private let viewSize = CGSize(width: 320, height: 200)
                    "\(editor.document[id]?.kind.rawValue ?? "?") is its skeleton")
         }
 
-        // The lock: a blank disc, so unlocked (the lock open, until it fades) it looks the same; at
-        // 35% the lock and the open lock differ.
+        // The lock isn't shown on a skeleton: shut, or open (until it fades), the board draws alike;
+        // at 35% the lock and the open lock differ.
         @MainActor func chip() throws -> CGRect {
             editor.camera.toView(try require(editor.adornmentFrames(of: board.locked).first { $0.adornment == .of(LockChip.self) }).rect)
         }
@@ -189,13 +207,9 @@ private let viewSize = CGSize(width: 320, height: 200)
             defer { editor.lock([board.locked]) }
             return renderBitmap(editor, size: viewSize)
         }
+        expectEqual(editor.adornmentFrames(of: board.locked), [], "no chip on a skeleton")
         let open = unlocked()
-        expect(identical(skeletons, open), "the open lock, blank, is the lock: \(differences(skeletons, open))")
-        let blankChip = try chip()
-        editor.unlock([board.locked])
-        said.wait(2_000)                                                               // it fades
-        expect(changedPixels(skeletons, renderBitmap(editor, size: viewSize), in: blankChip) > 20, "the blank disc was drawn")
-        editor.lock([board.locked])
+        expect(identical(skeletons, open), "no lock, shut or open: \(differences(skeletons, open))")
         editor.camera = near
         let locked = renderBitmap(editor, size: viewSize)
         expect(changedPixels(locked, unlocked(), in: try chip()) > 0, "in full, the open lock isn't the lock")

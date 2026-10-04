@@ -8,7 +8,8 @@ import Selection
 import TestKit
 
 // What a shape shows is made once, and again only when a commit names the shape or
-// `adornmentsDidChange` does: never by drawing, hovering, panning or zooming.
+// `adornmentsDidChange` does: never by drawing, hovering, panning or zooming in full (zooming out
+// to skeletons lets what's kept go, since they show none).
 
 /// How many times each shape's caption label was made.
 @MainActor final class Calls {

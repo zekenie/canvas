@@ -48,28 +48,18 @@ let elsewhere = CGPoint(x: 380, y: 280)
         expectEqual(changedPixels(unlocked, locked, in: CGRect(x: 0, y: 0, width: 400, height: 71)), 0, "no bigger")
         expectEqual(changedPixels(unlocked, locked, in: CGRect(x: 0, y: 0, width: 230, height: 300)), 0)
     },
-    test("below 35%, where shapes are skeletons, the chip is a blank disc; a click on it still unlocks, and the open lock, blank too, still fades") {
+    test("below 35%, where shapes are skeletons, a locked shape shows no chip, so a click where it would be unlocks nothing; at 35% the chip is there") {
         let h = try lockingHarness()
         let box = h.add(Box(CGRect(x: chipBox.minX / 0.3, y: chipBox.minY / 0.3, width: chipBox.width / 0.3, height: chipBox.height / 0.3)))
         h.editor.camera = Camera(origin: .zero, zoom: 0.3)                          // the box where `chipBox` is at 100%
         let plain = render(h)
         h.editor.lock([box])
-        let locked = render(h)
-        expect(changedPixels(plain, locked, in: chipMiddle) > 90, "the chip")
-        let colors = Set(stride(from: chipMiddle.minY, to: chipMiddle.maxY, by: 1).flatMap { y in
-            stride(from: chipMiddle.minX, to: chipMiddle.maxX, by: 1).map { x in pixel(locked, at: CGPoint(x: x, y: y)) }
-        })
-        expectEqual(colors.count, 1, "one color, no lock: \(colors)")
+        expectEqual(changedPixels(plain, render(h), in: wholeView), 0, "no chip, nor anything else")
+        expectEqual(h.editor.adornmentFrames(of: box), [], "none laid out")
         h.click(at: chipCenter)
-        expect(!h.editor.isLocked(box))
-        h.move(to: elsewhere)
-        let open = render(h)
-        expectEqual(changedPixels(locked, open, in: wholeView), 0, "open, the same blank disc")
-        h.wait(1484 + 160)                                                          // halfway through the fade
-        let fading = pixel(render(h), at: chipCenter)[0]
-        expect(pixel(open, at: chipCenter)[0] < fading && fading < pixel(plain, at: chipCenter)[0], "fading")
-        h.wait(400)
-        expectEqual(changedPixels(plain, render(h), in: wholeView), 0, "then gone")
+        expect(h.editor.isLocked(box), "nothing there to click")
+        h.editor.skeletonZoom = 0.2                                                 // in full at 30%
+        expect(changedPixels(plain, render(h), in: chipMiddle) > 90, "in full, the chip")
     },
     test("the chip shakes with its shape") {
         let h = try lockingHarness()

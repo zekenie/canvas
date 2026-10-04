@@ -57,7 +57,7 @@ public struct StickyNotesPlugin: CanvasPlugin {
             let place = note.editingPlacement(size: NoteStyle.size) { StickyNote() }
             note.tool(label: "Note", systemImage: "note.text", shortcut: "n", placing: place)
             note.createOnDoubleClick(place)                    // opts into the selection's double-click
-            note.title()                                       // and titles: a title, its pill, and its row's name
+            note.title(coverSurface: NoteStyle.color)          // and titles: a title, its pill, its cover, and its row's name
             note.noteHeader()                                  // renamed in the detail panel's header
             note.noteRow()                                     // and the table of contents
             note.noteLinks()                                   // and ports: arrows from a note to a note

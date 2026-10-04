@@ -47,7 +47,7 @@ public struct SubboardsPlugin: CanvasPlugin {
         registrar.shape(SubboardDefinition()) { sub in
             let place = sub.placement(size: Subboard.defaultSize) { Subboard() }
             sub.tool(label: "Subboard", systemImage: Subboard.systemImage, shortcut: "b", placing: place)
-            sub.title(symbolInPill: true)                  // Titles keeps its name, in a pill after the symbol
+            sub.title(symbolInPill: true, coverSurface: SubboardStyle.cardFill)  // Titles keeps its name, in a pill after the symbol
             sub.opensBoard(placeholder: Subboard.placeholder, systemImage: Subboard.systemImage)
             sub.mentionable(tint: { _ in SubboardStyle.border }, following: .opens)   // by its name, else "Untitled Subboard"; followed, it's entered
             sub.subboardRow()                              // the table of contents, named by Titles

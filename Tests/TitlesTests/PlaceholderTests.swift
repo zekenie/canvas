@@ -93,20 +93,16 @@ extension CanvasEditor {
         expect(dim > fill + 100, "its text shows: \(dim) over a fill of \(fill)")
         expect(bright > dim + 100, "fainter than a title's: \(dim), against \(bright)")
     },
-    test("below 35%, on a shape drawn as a skeleton, it's a blank capsule, as long as the same title's") {
+    test("below 35%, on a shape drawn as a skeleton, an untitled shape has no pill and no cover, where a titled one has its title on it") {
         let editor = try titleEditor([crateTitles()])
         let untitled = editor.add(Box(CGRect(x: 60 / 0.3, y: 100 / 0.3, width: 200 / 0.3, height: 120 / 0.3)))
         let titled = editor.add(Box(CGRect(x: 60 / 0.3, y: 400 / 0.3, width: 200 / 0.3, height: 120 / 0.3)), named: "Crate")
+        expectEqual(editor.adornmentFrames(of: untitled).map(\.label), [AdornmentLabel(placeholder: "Crate")], "its pill, in full")
         editor.camera = Camera(origin: .zero, zoom: 0.3)
-        let pill = editor.camera.toView(try require(editor.adornmentFrames(of: untitled).first).rect)
-        expectClose(pill.width, editor.camera.toView(try require(editor.adornmentFrames(of: titled).first).rect).width, within: 0.001)
-        let rendered = render(editor)
-        let middle = pill.insetBy(dx: pill.height / 2, dy: 3)
-        let colors = Set(stride(from: middle.minY, to: middle.maxY, by: 1).flatMap { y in
-            stride(from: middle.minX, to: middle.maxX, by: 1).map { x in pixel(rendered, at: CGPoint(x: x, y: y)) }
-        })
-        expect(middle.width > 8, "\(pill)")
-        expectEqual(colors.count, 1, "blank: \(colors)")
+        expectEqual(editor.adornmentFrames(of: untitled), [], "no pill on a skeleton")
+        expectEqual(editor.adornmentFrames(of: titled), [])
+        expectEqual(editor.titleCover(of: untitled), nil, "a placeholder is for grabbing a shape by, which a skeleton's pill no longer is")
+        expectEqual(editor.titleCover(of: titled)?.text, "Crate")
     },
     test("it's its shape's for the select tool and hover, as any pill: a press selects the shape, a drag moves it, and the menu is the shape's") {
         let h = try EditorHarness { try titleEditor([crateTitles()], scheduler: $0) }
