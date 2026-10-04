@@ -928,7 +928,9 @@ arc through them, or the line from start to end where the middle is less than a 
 point off it, in its color as wide as its own stroke but never under a view point, with butt ends,
 and each head a filled triangle, as long as the render's chevron and swung as far. A stroke and a
 fill. Its outline there is that arc (`CustomSkeletonOutline`), not its geometry's two straight
-segments. That departs on purpose from tldraw, whose arrows only trade a drawn style for a solid
+segments. A label is left off, and the arc runs whole where it is: a few pixels of text aren't
+worth drawing, and the render's cut, with its greeked bars as dark as the canvas, reads as a gap
+in the arrow. That departs on purpose from tldraw, whose arrows only trade a drawn style for a solid
 one, below 25%, and from the render's round caps and open chevrons, below 35% alone: the POC's
 transcript and every render at 35% and above are as they were.
 
@@ -8165,7 +8167,7 @@ What each shipped plugin shows zoomed out is in its own section: a [note](#a-ver
 yellow, its text greeked, and no [mention text](#drawing) or [faces](#on-the-canvas-faces)), a
 [subboard](#subboards) (fills and its preview), a [schema card](#schema-cards) (white
 with a light gray edge, and its description greeked as a note's text is), an [arrow](#a-shape-without-a-frame)
-(its arc and heads);
+(its arc and heads, a label left off);
 [faces](#faces-clickable-parts-of-a-shape) (none on a skeleton), [adornments](#the-label) (none on a
 skeleton: a title's [pill](#a-horizontal-plugin) and a [lock](#locking)'s chip are left off, and a
 title is said on the shape, its [cover](#a-cover-zoomed-out)), and
@@ -9039,7 +9041,8 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   text; text typed in the app, bridged, drawing what a Swift string does; a paragraph of a million
   characters drawing, and costing, what one that fills the box does; notes 1e21 tall or wide; no
   shadow; no mention text built, `MentionDrawingCounts`), ArrowsTests' Arrow skeletons (the arc,
-  bent either way, not the chord or the two segments, and a selected arrow's outline on it),
+  bent either way, not the chord or the two segments, and a selected arrow's outline on it; a
+  labelled arrow whole, drawn as one without the label, in LabelTests),
   SchemasTests' render tests (no text, the edge, a bar where each line of the description is, as
   long as its columns, a wide character two, an empty card none, the first frame after an edit and
   its undo, cards 1e21 tall or wide, and drawing reading no schema, `schemasRead`). A test module

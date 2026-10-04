@@ -97,7 +97,7 @@ private let outlineCanvas = CGSize(width: 320, height: 240)
         let plain = renderBitmap(h.editor, size: outlineCanvas)
         round.shapes = [plaque]
         let drawn = renderBitmap(h.editor, size: outlineCanvas)
-        func changed(_ x: CGFloat, _ y: CGFloat) -> Int { changedPixels(plain, drawn, in: CGRect(x: x, y: y, width: 1, height: 1)) }
+        @MainActor func changed(_ x: CGFloat, _ y: CGFloat) -> Int { changedPixels(plain, drawn, in: CGRect(x: x, y: y, width: 1, height: 1)) }
         expectEqual(changed(40, 40), 1, "on the rounded corner, 16 from its center")
         expectEqual(changed(39, 39), 0, "not where a rect grown 4 with the shape's own radius would be")
         expectEqual(changed(36, 36), 0, "nor at a square corner")
@@ -229,10 +229,13 @@ private let outlineCanvas = CGSize(width: 320, height: 240)
     test("`outlinePath(of:)` is what the canvas strokes: a closed shape's outline grown by the gap in world units, an open one's as it is") {
         let h = try outlineHarness(Outlined())
         let frame = CGRect(x: 40, y: 40, width: 80, height: 40)
-        let box = try require(h.editor.document[h.add(Box(frame))])
-        let plaque = try require(h.editor.document[h.add(Plaque(frame.offsetBy(dx: 0, dy: 100)))])
-        let diamond = try require(h.editor.document[h.add(Diamond(frame.offsetBy(dx: 120, dy: 0)))])
-        let line = try require(h.editor.document[h.add(Link(from: box.id, to: plaque.id))])
+        // The document is a value: read it after the shape is added, not before (as an argument's
+        // base `h.editor.document[h.add(…)]` would, copying it first).
+        @MainActor func record(_ id: ShapeID) throws -> AnyShapeRecord { try require(h.editor.document[id]) }
+        let box = try record(h.add(Box(frame)))
+        let plaque = try record(h.add(Plaque(frame.offsetBy(dx: 0, dy: 100))))
+        let diamond = try record(h.add(Diamond(frame.offsetBy(dx: 120, dy: 0))))
+        let line = try record(h.add(Link(from: box.id, to: plaque.id)))
         expectEqual(h.editor.outlineGap, 4)
         expectBox(try require(h.editor.outlinePath(of: box)).boundingBoxOfPath, frame.insetBy(dx: -4, dy: -4), "a box, 4 out")
         expectBox(try require(h.editor.outlinePath(of: plaque)).boundingBoxOfPath, frame.offsetBy(dx: 0, dy: 100).insetBy(dx: -4, dy: -4), "a plaque")
