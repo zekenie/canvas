@@ -25,7 +25,7 @@ import Titles
         expectEqual(editor.title(id), "Front desk")
         expectEqual(try require(editor.tableOfContents).entries.map { $0.label?.text }, ["Front desk"])
     },
-    test("a title may be derived: a bridge titles another plugin's kind from its props, and it follows them") {
+    test("a title may be derived: another plugin titles a kind it doesn't register from its props, and it follows them") {
         let editor = try titleEditor([CardsPlugin(), CardTitlesPlugin()])
         let card = editor.add(Card(plaqueFrame, text: "Hello"))
         expectEqual(editor.title(card), "Hello")
@@ -66,7 +66,7 @@ import Titles
         expectEqual(registry.properties(for: Card.kind), [])
         expectEqual(registry.schema(for: Card.kind)?.json["properties"]?["title"], nil)
     },
-    test("a bridge gives another plugin's kind a title Titles keeps, one line") {
+    test("another plugin gives a kind it doesn't register a title Titles keeps, one line") {
         let registry = try titleEditor([Contributor(id: "box-titles") { $0.title(Box.self) }]).registry
         expectEqual(registry.properties(for: Box.kind), ["title"])
         expect(registry.report.contains("box-titles         property title → box · ShapeTitles → box · ContentsTitles → box"), registry.report)
@@ -115,7 +115,7 @@ import Titles
         expectEqual(TitleProperty.folded(" Title"), "Title")
         expectEqual(TitleProperty.folded("Title\u{A0}5004"), "Title 5004", "a no-break space is whitespace too")
     },
-    test("a kind's title is derived when a bridge makes it from what the kind keeps; named only, or none, it isn't") {
+    test("a kind's title is derived when another plugin makes it from what the kind keeps; named only, or none, it isn't") {
         let registry = try titleEditor([CardsPlugin(), CardTitlesPlugin(), Contributor(id: "disc-titles") { r in
             // Named, and derived for the discs nobody named.
             r.optIn(Disc.self, to: TitleProperty.self)

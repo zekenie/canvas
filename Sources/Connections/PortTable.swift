@@ -99,6 +99,15 @@ extension Registry {
         return entry.sides
     }
 
+    /// The channel a connection from a shape of `kind` (leaving by `fromSide`, if one is named) to a
+    /// shape of `target` (arriving by `toSide`, if one is named) is on, as a drag from a port picks
+    /// one (`CanvasEditor.channel(of:endingAt:)`): the first of `kind`'s dot channels, in the port
+    /// table's order, that `target` takes as a target; nil if they share none. What connects shapes
+    /// by name goes by it (DrawLexicon's `PortEdgesPlugin`), so a script's edge picks as a drag does.
+    public func connectionChannel(from kind: ShapeKind, fromSide: PortSide? = nil, to target: ShapeKind, toSide: PortSide? = nil) -> ChannelID? {
+        dotChannels(of: kind, side: fromSide).first { takes(target, $0, as: .target, side: toSide) }
+    }
+
     /// Whether `shape`'s kind has ports on `channel` that let it be `role`: where a connection starts
     /// (`.source`), or where it ends (`.target`). What rules for connections already drawn go by. A
     /// shape kept aside takes nothing.

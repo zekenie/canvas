@@ -40,7 +40,7 @@ extension ShapeRegistrar where Definition.Props: BoxShapeProps {
 }
 
 extension PluginRegistrar {
-    /// The shapes of a box kind another plugin registers are resized with handles (bridges), as
+    /// The shapes of a box kind another plugin registers are resized with handles, as
     /// `resizable` on a kind's own registrar.
     public mutating func resizable<P: BoxShapeProps>(_: P.Type, minimumSize: CGSize) {
         contribute(minimumSize, to: ShapeResizing.self, for: .kind(P.kind))

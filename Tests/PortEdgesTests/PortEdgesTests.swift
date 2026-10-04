@@ -161,7 +161,7 @@ import TestKit
     },
 ])
 
-@MainActor let edgesPointTests = Suite("What the bridge tells canvas draw", [
+@MainActor let edgesPointTests = Suite("What PortEdgesPlugin tells canvas draw", [
     test("canvas kinds lists the channels an edge may leave each kind by, side by side") {
         let editor = try edgesEditor()
         let kinds = try run(["kinds"], on: editor).get().arrayValue ?? []
@@ -173,11 +173,11 @@ import TestKit
         expectEqual(link?["drawable"], false)
         expect(link?["why"]?.stringValue?.contains("edge") == true, "links are edges")
     },
-    test("with a connector that only draws from a port, or without the bridge, there are no edges") {
+    test("with a connector that only draws from a port, or without PortEdgesPlugin, there are no edges") {
         let dragOnly = try edgesEditor(makes: false)
         _ = try drawn(board, on: dragOnly)
         expectEqual(try refused(#"edge "A" -> "B""#, on: dragOnly)["reason"], "no_edges")
-        let none = try edgesEditor(bridge: false)
+        let none = try edgesEditor(withPlugin: false)
         _ = try drawn(board, on: none)
         expectEqual(try refused(#"edge "A" -> "B""#, on: none)["reason"], "no_edges")
     },

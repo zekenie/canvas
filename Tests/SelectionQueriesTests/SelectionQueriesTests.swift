@@ -2,8 +2,8 @@ import Canvas
 import CanvasTesting
 import Queries
 import QueryLanguage
+import QueryLexicon
 import Selection
-import SelectionQueries
 import TestKit
 
 // `:selected`, the person's selection as the query took up the file, and what `--ask` says is
@@ -48,12 +48,12 @@ import TestKit
         h.editor.selectedShapeIDs = []
         expectEqual(try whereThePersonIs(on: h).selected, [])
     },
-    test("the vocabulary lists :selected, from the bridge; without it, nothing says what's selected") {
+    test("the vocabulary lists :selected, from SelectionQueriesPlugin; without it, nothing says what's selected") {
         let h = try selectionHarness()
         let words = try require(h.editor.queries).vocabulary.words.filter { $0.from == SelectionQueriesPlugin().id }
         expectEqual(words.map(\.form), [":selected"])
         expectEqual(words.map(\.summary), ["the person has it selected"])
-        let bare = try selectionHarness(bridge: false)
+        let bare = try selectionHarness(withPlugin: false)
         bare.editor.selectedShapeIDs = [id(1)]
         expectEqual(try refusal(":selected", on: bare)?.reason, .unknownPseudoClass)
         let place = try whereThePersonIs(on: bare)

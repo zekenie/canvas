@@ -12,7 +12,7 @@ import Foundation
 /// `automationCommands` and `runAutomationCommand`), which does the talking: this plugin never sees
 /// a socket, and the core never sees a command. Its own are `draw` and `kinds` (Commands.swift);
 /// `draw` takes what it doesn't own (names, edges, checks) from the points in DrawPoints.swift,
-/// which bridges fill.
+/// which DrawLexicon fills (and AutomationTests with fixtures of their own).
 extension PluginID {
     public static let automation: PluginID = "automation"
 }

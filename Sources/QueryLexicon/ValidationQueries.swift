@@ -2,14 +2,13 @@ import Canvas
 import Queries
 import Validation
 
-/// A bridge between two horizontals: `:invalid` (a shape with an error) and `:warned` (one with a
-/// warning), on every board of the file, not only the one shown. Only the main actor can say
-/// (Validation's rules), so each is asked there, in the query's slices, about the shape as the app
-/// has it then: from Validation's cache while that's current (the board shown, no commit since the
-/// query started, and the shape not waiting to be checked again: `cachedResult(for:)`, which never
-/// checks anything), else by running its kind's rules against the board it's on as the app has it
-/// (`registry.validationIssues(of:in:)`), as Validation would once that board is shown. Queries has
-/// never heard of Validation, nor Validation of queries.
+/// `:invalid` and `:warned`, in QueryLexicon: a shape with an error and one with a warning, on
+/// every board of the file, not only the one shown. Only the main actor can say (Validation's
+/// rules), so each is asked there, in the query's slices, about the shape as the app has it then:
+/// from Validation's cache while that's current (the board shown, no commit since the query
+/// started, and the shape not waiting to be checked again: `cachedResult(for:)`, which never checks
+/// anything), else by running its kind's rules against the board it's on as the app has it
+/// (`registry.validationIssues(of:in:)`), as Validation would once that board is shown.
 public struct ValidationQueriesPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { "validation-queries" }

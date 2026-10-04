@@ -6,10 +6,10 @@ import ContextMenus
 import DetailPanel
 import Foundation
 import Keyboard
-import MentionQueries
 import Mentions
 import Queries
 import QueryLanguage
+import QueryLexicon
 import Selection
 import SlashCommands
 import TableOfContents
@@ -20,7 +20,8 @@ import Topology
 // Fixtures only, as MentionsTests' mention validation tests keep theirs: scribbles, titled boxes of
 // mention text that can be mentioned, and CanvasTesting's pockets (titled and mentionable here,
 // whose boards nest) and links, which carry strands, edges that aren't mentions. A fixture names
-// shapes for queries by the title Titles keeps: MentionQueries' closure has no TitleQueries.
+// shapes for queries by the title Titles keeps: of QueryLexicon's plugins, only
+// `MentionQueriesPlugin` is installed here.
 
 /// A titled box of text that may mention any shape that can be mentioned.
 struct Scribble: BoxShapeProps {
@@ -85,11 +86,11 @@ func namesPlugin() -> Contributor {
 
 /// The keyboard, the selection and Topology first, the fixtures, what Mentions builds on and its
 /// opt-ins need (the panel, the context menu, titles with their adornments and slash commands),
-/// Mentions, Queries and the fixtures' names, then the bridge.
-@MainActor func mentionPlugins(bridge: Bool = true) -> [any CanvasPlugin] {
+/// Mentions, Queries and the fixtures' names, then `MentionQueriesPlugin`.
+@MainActor func mentionPlugins(withPlugin: Bool = true) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PocketsPlugin(), LinksPlugin(), ScribblesPlugin(),
      AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(),
-     QueriesPlugin(), namesPlugin()] + (bridge ? [MentionQueriesPlugin()] : [])
+     QueriesPlugin(), namesPlugin()] + (withPlugin ? [MentionQueriesPlugin()] : [])
 }
 
 func uuid(_ n: Int) -> String { String(format: "00000000-0000-4000-8000-%012d", n) }
@@ -126,8 +127,8 @@ func mentionFile() -> CanvasFile {
     ])])
 }
 
-@MainActor func mentionHarness(bridge: Bool = true) throws -> EditorHarness {
-    try EditorHarness(plugins: mentionPlugins(bridge: bridge), file: mentionFile())
+@MainActor func mentionHarness(withPlugin: Bool = true) throws -> EditorHarness {
+    try EditorHarness(plugins: mentionPlugins(withPlugin: withPlugin), file: mentionFile())
 }
 
 /// A query's answer on `h`'s editor, every row, the main run loop turned while it runs.

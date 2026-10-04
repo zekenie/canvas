@@ -41,7 +41,7 @@ extension Only: MentionScope {
 }
 
 /// A scope any plugin declares (`registrar.mentionScope(S.self)`) and kinds join, from their own
-/// plugin or a bridge (`x.mentionable(in: S.self)`): what a plan may depend on, say, which notes
+/// plugin or another plugin (`x.mentionable(in: S.self)`): what a plan may depend on, say, which notes
 /// and subboards join though neither plugin knows the other. The type is the key, as a detail tab's is;
 /// its title only names it, and no two declared scopes share one. Nothing about a scope is saved
 /// in a board, so it has no id.
@@ -137,7 +137,7 @@ extension PluginRegistrar {
         contribute(MentionScopeDeclaration(S.self), to: MentionScopes.self)
     }
 
-    /// Another plugin's kind joins a declared scope (bridges). The kind must be mentionable.
+    /// Another plugin's kind joins a declared scope. The kind must be mentionable.
     public mutating func mentionable<P: ShapeProps, S: DeclaredMentionScope>(_: P.Type, in _: S.Type) {
         contribute(MentionScopeDeclaration(S.self), to: MentionScopeJoins.self, for: .kind(P.kind))
     }

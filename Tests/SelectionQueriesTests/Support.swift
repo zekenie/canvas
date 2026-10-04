@@ -5,8 +5,8 @@ import Foundation
 import Keyboard
 import Queries
 import QueryLanguage
+import QueryLexicon
 import Selection
-import SelectionQueries
 import TestKit
 import Topology
 
@@ -37,11 +37,11 @@ func shiftingPlugin() -> Contributor {
     }
 }
 
-/// The keyboard and the selection first, Topology, the fixtures, Queries and the names, then the
-/// bridge.
-@MainActor func selectionPlugins(bridge: Bool = true) -> [any CanvasPlugin] {
+/// The keyboard and the selection first, Topology, the fixtures, Queries and the names, then
+/// `SelectionQueriesPlugin`.
+@MainActor func selectionPlugins(withPlugin: Bool = true) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), TilesPlugin(), QueriesPlugin(), namesPlugin(), shiftingPlugin()]
-        + (bridge ? [SelectionQueriesPlugin()] : [])
+        + (withPlugin ? [SelectionQueriesPlugin()] : [])
 }
 
 func uuid(_ n: Int) -> String { String(format: "00000000-0000-4000-8000-%012d", n) }
@@ -52,8 +52,8 @@ let unit = CGRect(x: 0, y: 0, width: 120, height: 80)
 func record<P: ShapeProps>(_ n: Int, _ props: P) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(id: id(n), props)) }
 
 /// On one board: tile 1 "Kiosk", box 2, tile 3 "Booth" and box 4.
-@MainActor func selectionHarness(bridge: Bool = true) throws -> EditorHarness {
-    try EditorHarness(plugins: selectionPlugins(bridge: bridge), file: CanvasFile(root: CanvasDocument(shapes: [
+@MainActor func selectionHarness(withPlugin: Bool = true) throws -> EditorHarness {
+    try EditorHarness(plugins: selectionPlugins(withPlugin: withPlugin), file: CanvasFile(root: CanvasDocument(shapes: [
         record(1, Tile(unit, label: "Kiosk")), record(2, Box(unit)), record(3, Tile(unit, label: "Booth")), record(4, Box(unit)),
     ])))
 }

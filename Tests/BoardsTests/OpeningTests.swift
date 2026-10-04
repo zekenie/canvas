@@ -48,7 +48,7 @@ final class BoardPanelWindow {
         h.hold([])
         expectEqual(h.editor.board, nest.dBoard, "⌘↓")
     },
-    test("a pocket opens onto its board from the bridge form") {
+    test("a pocket opens onto its board from the form for another plugin's kind") {
         let nest = Nest()
         let h = try nestHarness(nest)
         expect(h.enter(nest.d))
@@ -99,7 +99,7 @@ final class BoardPanelWindow {
         open.performClick(nil)
         expectEqual(editor.board, nest.dBoard)
     },
-    test("only a kind that owns boards may open one: a bridge naming another refuses the plugin list") {
+    test("only a kind that owns boards may open one: a plugin naming another refuses the plugin list") {
         expectThrows(RegistryError.invalid(point: "BoardKinds", reason: "box-boards opens the boards of box, whose definition isn't BoardOwning")) {
             _ = try Registry(plugins: boardsPlugins([Contributor(id: "box-boards") { r in
                 r.opensBoard(Box.self, placeholder: "Box", systemImage: "square")

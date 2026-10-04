@@ -31,7 +31,7 @@ extension ShapeRegistrar where Definition: BoardOwning {
 }
 
 extension PluginRegistrar {
-    /// The same for a kind another plugin registers (bridges). Its definition must be `BoardOwning`:
+    /// The same for a kind another plugin registers. Its definition must be `BoardOwning`:
     /// the registry refuses the plugin list otherwise (`BoardKinds.check`).
     public mutating func opensBoard<P: ShapeProps>(_: P.Type, placeholder: String, systemImage: String) {
         contribute(BoardKind(placeholder: placeholder, systemImage: systemImage), to: BoardKinds.self, for: .kind(P.kind))

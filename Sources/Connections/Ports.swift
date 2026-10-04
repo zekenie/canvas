@@ -247,7 +247,7 @@ extension PluginRegistrar {
         edgeType(EdgeTypeID(C.id), parent: { $0.connector?.edgeType }, summary: C.summary)
     }
 
-    /// Ports on `channel` for a kind another plugin registers (bridges), as `ports` on a kind's own
+    /// Ports on `channel` for a kind another plugin registers, as `ports` on a kind's own
     /// registrar.
     public mutating func ports<K: ShapeProps, C: Channel>(_ kind: K.Type, on channel: C.Type, sides: [PortSide] = PortSide.allCases,
                                                           role: PortRole = .both) {

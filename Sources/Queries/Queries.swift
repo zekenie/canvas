@@ -9,7 +9,8 @@ import Canvas
 // A horizontal on Topology, which it reads containment and edges from, and on the core. It knows no
 // plugin: what shapes are called, what an untitled owner's board is called, words beyond the
 // language's and how text of a media type reads come through its points (`QueryNames`,
-// `QueryBoardNames`, `QueryWords`, `QueryTextFormats`), which bridges fill. Kinds, attributes and
+// `QueryBoardNames`, `QueryWords`, `QueryTextFormats`), which QueryLexicon fills with this app's
+// words (and QueriesTests with words of their own). Kinds, attributes and
 // edge types come from the query's text and are checked against the registry as it resolves;
 // DrawScript lends it only "did you mean" (`Suggestions`).
 //
@@ -22,7 +23,7 @@ extension PluginID {
     public static let queries: PluginID = "queries"
 }
 
-/// The query engine's plugin: its service (`editor.queries`), and the points bridges fill. Every
+/// The query engine's plugin: its service (`editor.queries`), and the points QueryLexicon fills. Every
 /// plugin list with it needs `TopologyPlugin`: without Topology every query is refused
 /// (`no_topology`), since what a query ranges over and its order are Topology's.
 public struct QueriesPlugin: CanvasPlugin {

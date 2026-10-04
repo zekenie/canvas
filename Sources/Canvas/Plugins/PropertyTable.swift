@@ -9,7 +9,7 @@ extension PluginRegistrar {
         contribute(PropertyDeclaration(P.self), to: CorePoints.PropertyDeclarations.self)
     }
 
-    /// Opts another plugin's kind into an added property: a bridge's form, for a kind whose plugin
+    /// Opts another plugin's kind into an added property: the form for a kind whose plugin
     /// has never heard of the property.
     public mutating func optIn<K: ShapeProps, P: ShapeProperty>(_: K.Type, to _: P.Type) {
         contribute(PropertyOptIn(key: P.key, appliesTo: nil), to: CorePoints.PropertyOptIns.self, for: .kind(K.kind))

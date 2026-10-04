@@ -104,12 +104,14 @@ A note's dots link it only to another note, and a schema card's only to another 
 ## Layout
 
 ```
-Package.swift           the module graph: one line per module, with its layer
+Package.swift           the module graph: one line per module, with its layer (a horizontal's is surface,
+                        concern, language or lexicon)
 Sources/
   Geometry/             vector math, arcs, Camera
   Canvas/               the core: model, plugin registry, editor, the hand tool, drawing
   CanvasRPC/            what the app and its command line say to each other: JSON-RPC over a socket
   DrawScript/           the language canvas draw reads, and the solver that places what it says: pure, beneath the plugins
+  QueryLanguage/        the language canvas query reads, and the one form it prints: pure, beneath the plugins
   TextEditing/          the text view and the caret list under every editable text, beneath the plugins
   CanvasUI/             the AppKit view, the SwiftUI toolbar, CanvasFocus, and the command line's server
   CanvasCLI/            canvas, the command line
@@ -118,6 +120,8 @@ Sources/
   StickyNotes/          sticky notes, with in-place editing
   Schemas/              schema cards: a JSON Schema on the canvas, as a card that lists its fields, written in its
                         panel in words or as JSON, the two kept in step by Claude
+  Subboards/            subboards: a card that holds a board of its own, entered with a double-click
+  Frames/               frames: a region of a board that holds shapes, which move and lock with it
   Validation/           the validation horizontal: rules, engine, outline, the Issues tab and the rows' dots
   DetailPanel/          the detail panel horizontal: tabs, sections, bindings, the inspector view
   ContextMenus/         the context menu horizontal: right-click items, groups, the selection's menu
@@ -133,13 +137,21 @@ Sources/
   Connections/          a horizontal: ports (dots beside a shape's sides that a drag connects from), channels that
                         say what may connect to what, and the arrow (a port of tldraw's arrow geometry and
                         binding) a drag from a dot draws, bound only where its channel goes
+  Mentions/             a horizontal: text that mentions shapes, each mention a live pill, with the @ picker and
+                        a Mentioned In tab
+  Boards/               a horizontal: getting around a file's boards (opening one, ⌘↑, the path over the canvas)
+  Topology/             a horizontal: what connects and contains what across the file (arrows, mentions, frames
+                        and boards), read from the shapes that carry it
   Automation/           the command line's horizontal: every command canvas runs, draw and kinds its own
+  Queries/              a horizontal: the engine that answers canvas query about the whole file
+  QueryCommands/        canvas query, query-vocabulary, and --ask (Claude writes the query)
   LanguageModels/       a horizontal that lends every editor a language model (Claude Haiku), its key in Settings
   Snapping/             a horizontal: what a drag moves snaps to the shapes in view (edges, middles, even
                         spaces), with guides
-  TitleNames/           a bridge: canvas draw names shapes by their titles
-  PortEdges/            a bridge: canvas draw's edges are the connector's connections, on a channel both ends take
-  ValidationChecks/     a bridge: canvas draw warns about each shape it draws as validation finds it
+  DrawLexicon/          canvas draw's words for this app: shapes named by their titles, edges as the connector's
+                        connections (on a channel both ends take), and warnings as validation finds them
+  QueryLexicon/         canvas query's words for this app: titles, boards' names, mentions, validity and the
+                        selection
   Composition/          the shipped plugin list, and the welcome board
   InfiniteCanvas/       the SwiftUI app
 Examples/               the smallest plugin for each pattern

@@ -41,7 +41,7 @@ extension ShapeRegistrar {
 }
 
 extension PluginRegistrar {
-    /// The zoom a kind another plugin registers reads at (bridges), as `readableZoom` on a kind's
+    /// The zoom a kind another plugin registers reads at, as `readableZoom` on a kind's
     /// own registrar.
     public mutating func readableZoom<P: ShapeProps>(_: P.Type, _ zoom: CGFloat) {
         contribute(zoom, to: ReadableZoom.self, for: .kind(P.kind))
