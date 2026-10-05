@@ -15,10 +15,23 @@ public struct OfferedSlashCommand {
         argument = command.argument
     }
 
-    /// The name in words, each capitalized: "Set Title". The undo step it makes is named for it.
+    /// The name in words, in title case as a macOS menu has it: every word capitalized but the
+    /// articles, coordinating conjunctions and short prepositions (`minorWords`), which stay lowercase
+    /// unless first or last: "Set Title", "Move to Back", "Turn into Subboard". The undo step the
+    /// command makes is named for it, so it reads as the menu item that does the same does.
     public var title: String {
-        name.split(separator: "-").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
+        let words = name.split(separator: "-")
+        return words.enumerated().map { index, word in
+            let isMinor = index > 0 && index < words.count - 1 && Self.minorWords.contains(String(word))
+            return isMinor ? String(word) : word.prefix(1).uppercased() + word.dropFirst()
+        }.joined(separator: " ")
     }
+
+    /// The words a title keeps lowercase in the middle: articles, coordinating conjunctions and
+    /// prepositions of four letters or fewer.
+    private static let minorWords: Set<String> = [
+        "a", "an", "and", "as", "at", "but", "by", "for", "from", "in", "into", "nor", "of", "on", "onto", "or", "the", "to", "with"
+    ]
 
     /// Whether it can run with what was typed after its name (`SlashCommand`'s `accepts`).
     public func accepts(_ arguments: SlashArguments) -> Bool { command.accepts(arguments) }

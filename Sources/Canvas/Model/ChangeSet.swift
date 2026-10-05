@@ -34,12 +34,14 @@ public struct ChangeSet: Equatable, Sendable {
     /// language model) takes the shapes it changed as it takes shapes it sees for the first time.
     public internal(set) var byAgent = false
     /// Boards it brought into the file with the shapes that own them (`insert(_:contents:)`: a
-    /// paste), and boards it took out of the file with theirs (every board under a deleted shape).
-    /// Neither is the board the commit was on, whose shapes are the ones named above.
+    /// paste), or made for shapes it moved onto the board a shape owns (`move(_:toBoardOwnedBy:)`),
+    /// and boards it took out of the file with theirs (every board under a deleted shape). Neither is
+    /// the board the commit was on, whose shapes are the ones named above.
     public internal(set) var boardsAdded: Set<BoardID> = []
     public internal(set) var boardsRemoved: Set<BoardID> = []
     /// Boards it changed the shapes of while another was shown, keeping them in the file: Delete
-    /// Hidden Shapes deleting what's kept aside on them, and undo putting that back.
+    /// Hidden Shapes deleting what's kept aside on them, undo putting that back, and the shapes a
+    /// transaction moved onto a board that held shapes already (`move(_:toBoardOwnedBy:)`).
     public internal(set) var boardsChanged: Set<BoardID> = []
 
     /// Every board it reached but its own: added, removed or changed.
@@ -47,10 +49,10 @@ public struct ChangeSet: Equatable, Sendable {
     /// The shapes it touched on the boards it reached: every shape of a board it brought
     /// (`boardsAdded`) or took (`boardsRemoved`), and those it added, changed or removed on a board
     /// it changed (`boardsChanged`); for a whole file put in place over the board shown, those its
-    /// other boards don't have as they were. None is a shape of the board the commit was on, so what
-    /// a service keeps of that board's shapes needn't follow them, but what reads shapes anywhere in
-    /// the file does: a row showing the name of a shape on another board, which went with the board
-    /// its owner took.
+    /// other boards don't have as they were. None is a shape that stays on the board the commit was
+    /// on (what moved off it is `removed` there, and here), so what a service keeps of that board's
+    /// shapes needn't follow them, but what reads shapes anywhere in the file does: a row showing the
+    /// name of a shape on another board, which went with the board its owner took.
     public internal(set) var elsewhere: Set<ShapeID> = []
 
     /// Every shape the commit touched.

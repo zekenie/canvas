@@ -105,6 +105,26 @@ private struct CardInPocket {
         spinRunLoop(until: { b.model.requests.count == 3 && !b.isUpdating(tree.card) })
         expectEqual(b.message(2), b.message(1), "its prompt is still ahead of what it last synced, and asked for as before")
     },
+    test("a card moved onto another board while its call is out keeps the call, and the answer is written there") {
+        // A frame turned into a subboard takes what it held onto its board: the same cards, moved.
+        let p = ShapeID(), id = ShapeID()
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: p, Pocket(CGRect(x: 0, y: 300, width: 100, height: 100)))),
+                                                            AnyShapeRecord(ShapeRecord(id: id, SchemaCard(frame: CGRect(x: 0, y: 0, width: 240, height: 89))))]))
+        let b = try SyncBench(file: file, more: [PocketsPlugin()])
+        b.typePrompt(id, "a pet in my household")
+        b.model.holdsAnswers = true
+        b.model.queue(petSchema)
+        b.sync.commit(id)
+        spinRunLoop(until: { b.model.waiting == 1 })
+        b.editor.transact("Move In") { $0.move([id], toBoardOwnedBy: p) }
+        expectEqual(b.editor.file.board(containing: id), BoardID(owner: p))
+        expect(b.isUpdating(id), "still waiting for its answer")
+        b.model.release()
+        spinRunLoop(until: { !b.isUpdating(id) })
+        expectEqual(card(b, id)?.schema.text, petSchema, "written on the pocket's board")
+        expectEqual(b.editor.board, .root)
+        expectEqual(b.model.requests.count, 1, "asked once")
+    },
     test("a file put in place over another board takes every card afresh: a call out for one it changed is dropped") {
         let tree = CardInPocket()
         let b = try bench(tree)

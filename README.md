@@ -83,6 +83,7 @@ check before running it again). To run it as just `canvas`, put the link on your
 | Find a shape from the list | Click its row: it's selected and the canvas zooms to it. Pointing at a row outlines its shape faintly, and pointing at a shape tints its row |
 | Go back to the previous selection | The back button in the detail panel's header, or ⌘[ (Go › Back): what was selected before, and the view as it was then (from a row's details, the list) |
 | Name a note or a subboard | Select it and click its title in the detail panel's header; Return or Escape goes back to the canvas |
+| Turn a frame into a subboard | Right-click it and choose Turn into Subboard: the same shape, a subboard at its corner, with everything the frame held on its board; Undo brings the frame back |
 | Delete shapes or arrows | Select them and press Delete, or right-click and choose Delete |
 | Cut, copy and paste shapes | ⌘X, ⌘C and ⌘V (Edit menu, or right-click a shape; right-click empty space to paste). ⌘V lands a paste where the originals were if they're in view, else in the middle of the view; Paste from a right-click lands it centered where you clicked. Arrows copied with their shapes stay attached to the copies |
 | Link a note to a note, or a schema card to a schema card | With the select tool, point at one: dots show just outside its four sides (zoomed out below 25%, none show). Drag from a dot to another of its kind: those it could link to are outlined faintly as you drag, and released anywhere else, nothing is drawn. The link is an arrow; there's no arrow tool. Arriving quickly aims at the shape's center; arriving slowly, or pausing inside the shape, aims at that exact spot |
@@ -151,6 +152,8 @@ Sources/
   LanguageModels/       a horizontal that lends every editor a language model (Claude Haiku), its key in Settings
   Snapping/             a horizontal: what a drag moves snaps to the shapes in view (edges, middles, even
                         spaces), with guides
+  Transform/            a horizontal: turning a shape into another kind through channels (a frame into a
+                        subboard: one kind offers a channel, another takes it), from its menu or /turn-into-…
   DrawLexicon/          canvas draw's words for this app: shapes named by their titles, edges as the connector's
                         connections (on a channel both ends take), and warnings as validation finds them
   QueryLexicon/         canvas query's words for this app: titles, boards' names, mentions, validity and the

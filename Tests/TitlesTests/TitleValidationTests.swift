@@ -161,6 +161,20 @@ private func shared(_ title: String) -> [String] { ["“\(title)” is another s
         h.editor.undo()
         expectEqual(h.warnings, [outer.id: shared("API")])
     },
+    test("shapes moved onto a pocket's board keep their titles, and so do they when undo brings them back as it takes the board") {
+        // More shapes move than the file has titles: undo hands every one of them over as on a board
+        // taken (`elsewhere`) and as back on the root (`added`), and none of them is gone.
+        let outer = card("API"), moved = card("API", x: 200), box = pocket(x: 300)
+        let quiet = (0..<3).map { card(nil, x: 400 + CGFloat($0) * 120) }
+        let h = try harness(file([outer, moved, box] + quiet))
+        expectEqual(h.warnings, [outer.id: shared("API"), moved.id: shared("API")])
+        h.editor.transact("Move In") { $0.move(Set([moved.id] + quiet.map(\.id)), toBoardOwnedBy: box.id) }
+        expectEqual(h.warnings, [outer.id: shared("API")], "the one moved is warned on its own board")
+        h.editor.undo()
+        expectEqual(h.warnings, [outer.id: shared("API"), moved.id: shared("API")])
+        h.editor.redo()
+        expectEqual(h.warnings, [outer.id: shared("API")])
+    },
     test("a pocket's title counts against a card's, wherever its board is") {
         let outer = card("Payments"), box = pocket("Payments", x: 300)
         let h = try harness(file([outer, box]))

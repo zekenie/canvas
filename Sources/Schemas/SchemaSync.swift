@@ -495,8 +495,10 @@ public final class SchemaSync {
 }
 
 extension SchemaSync: EditorService {
-    /// Cards that came are seen for the first time; cards that went are dropped, with their call; a
-    /// card whose prompt or schema the person changed waits `idleDelay` for more; one whose sides
+    /// Cards that came are seen for the first time; cards that left the file are dropped, with their
+    /// call, but one moved to another board (a frame turned into a subboard takes what it held onto
+    /// its board) keeps its wait and its call, since `write` finds its board as it writes, and is the
+    /// same card there; a card whose prompt or schema the person changed waits `idleDelay` for more; one whose sides
     /// undo or redo changed stops (`stop`). The same for the cards on other boards a commit reached
     /// (`ChangeSet.elsewhere`: a board taken with its owner, brought by a paste or an undo, a card
     /// written where it isn't shown). A file put in place over the board shown (a revert, a board
@@ -509,7 +511,11 @@ extension SchemaSync: EditorService {
             takeEveryCardAfresh(in: editor)
             return
         }
-        for id in changes.removed { forgetCard(id) }
+        // Off the board shown, but still in the file (moved onto another board): the same card.
+        if !changes.removed.isEmpty {
+            let file = editor.file
+            for id in changes.removed where file.record(id) == nil { forgetCard(id) }
+        }
         for id in changes.added {
             guard let record = editor.document[id] else { continue }
             came(record, changes)

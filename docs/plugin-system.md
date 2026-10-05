@@ -3,7 +3,7 @@
 Everything on the canvas comes from a plugin: sticky notes, arrows, schema cards, subboards,
 validation, titles, the pills and chips shown on shapes (adornments), the detail panel
 and the table of contents beside the canvas, selecting itself, copying and pasting, locking, the
-ports arrows are dragged from, text's mentions of shapes, the commands a line of text can run, the graph of what connects to what, the queries that find shapes in a file, snapping what's dragged to the shapes around it, what each key does, what the command line can do, the language model plugins ask, even the examples.
+ports arrows are dragged from, text's mentions of shapes, the commands a line of text can run, the graph of what connects to what, the queries that find shapes in a file, snapping what's dragged to the shapes around it, turning a shape into another kind, what each key does, what the command line can do, the language model plugins ask, even the examples.
 The core (`Sources/Canvas`) knows how to hold shapes, run tools, draw, and wire plugins together,
 and nothing about any particular shape or concern. Its one built-in tool is tldraw's Hand, which
 pans (a flung release slides on). Select, which selects (a click, ⇧-click, or a marquee dragged
@@ -39,6 +39,7 @@ maps one onto the other.
 - [Queries](#queries)
 - [Boards](#boards)
 - [Frames](#frames)
+- [Transform](#transform)
 - [The command line](#the-command-line)
 - [Schema cards](#schema-cards)
 - [Language models](#language-models)
@@ -281,6 +282,9 @@ Once one plugin works, the question is which piece the next feature needs.
 | Put a board inside the board | `SubboardsPlugin`: the Subboard tool (B) places a card that opens onto a board of its own | [Subboards](#subboards) |
 | Hold shapes in a region of the board that moves them with it, locks them with it and keeps what's put down from sitting across its edge | `ShapeContaining` on a box kind's definition, nothing to implement; `FramesPlugin`, whose Frame tool (F) draws one | [Frames](#frames), [Containers](#containers) |
 | Draw a kind's shape with a drag, from the press to the pointer, and still say what a click places (and `canvas draw`) | `x.tool(label:systemImage:shortcut:placing:_:)`, a tool of your own with the kind's placement; `editor.place(_:in:)` at the release | [Frames](#frames) |
+| Let a kind's shapes be turned into another kind's (a frame into a subboard), from their menu and as a command, without either kind naming the other | `x.turnable(through: ContainerChannel.self)` on the kind that offers it; `registrar.turnable(into: P.self, through: C.self) { source, transaction in … }` on the kind that takes it, turning with `transaction.turn` and `transaction.move` | [Transform](#transform) |
+| Say what a shape hands over when it turns into another kind (what its target is given) | A `TransformChannel`: `name`, `admits(_:)` and `source(of:in:)`; `ContainerChannel` is the one that ships | [Offering and taking a channel](#offering-and-taking-a-channel), [The container channel](#the-container-channel) |
+| Make a shape another kind under its id, so what binds or names it goes on doing so, and move shapes onto the board below | `transaction.turn(_:into:)` and `transaction.move(_:toBoardOwnedBy:)`, the core's | [Containers](#containers), [Boards in a file](#the-editor-and-the-file) |
 | Show on a shape what the board it owns holds | `context.drawBoardPreview(ofBoardOwnedBy:in:)` in its render: a rough picture, false until it's built | [Board previews](#the-cores-part-board-previews) |
 | Keep a kind from being selected | `x.unselectable()`, or `x.selectable { ... }` | [Selection](#selection) |
 | Go to shapes, as following a link does (select them, bring them into view, ⌘[ returns), or only bring them into view | Selection's `editor.goTo(_:)`, `editor.reveal(_:)` | [Selection](#selection) |
@@ -370,7 +374,10 @@ typed by the plugins that own what each means and read out of the shapes that ca
 Connections and Mentions only say what their shapes carry. So is finding shapes: [Queries](#queries)
 answers a query about the whole file (kinds, attributes by their schemas, what's inside what, what
 connects to what), while [QueryLexicon](#what-plugins-add) says, for the plugins that own each
-concern, what shapes are called and what more a query may ask. And a horizontal may declare no point at
+concern, what shapes are called and what more a query may ask. So is turning a shape into another kind:
+[Transform](#transform) owns the channels, the menu item, the command and the turn itself, all or nothing,
+while one kind offers a channel and another takes it, so Frames and Subboards meet in one and neither
+names the other. And a horizontal may declare no point at
 all and only lend something:
 [LanguageModels](#language-models) lends every editor the model plugins ask.
 
@@ -380,7 +387,7 @@ Horizontals are four layers, which say which way an edge between two of them goe
   detail panel, context menus, slash commands, the table of contents, adornments, the graph
   ([Topology](#topology)) and the language model. They know no concern.
 - **Concerns** are meanings a kind opts into (validity, titles, locks, connections, mentions,
-  boards, the clipboard, snapping), shown on the surfaces they import. One may build on another
+  boards, the clipboard, snapping, transforms), shown on the surfaces they import. One may build on another
   (Mentions imports Titles, whose names its pills show), and one may own the kind it's drawn as
   (Connections' arrow). They know no language.
 - **Languages** are what agents read and write the canvas in: the [command line](#the-command-line)
@@ -468,7 +475,7 @@ Each target is one line, with its layer:
 | foundation | foundation | Geometry, Canvas (the core), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, and its solver) and QueryLanguage (the language [`canvas query`](#query) reads), pure, and TextEditing ([the text view and the caret list](#textediting) every editable text is built on) |
 | ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
 | surface | foundation, surface | Keyboard, Selection, DetailPanel, ContextMenus, SlashCommands, TableOfContents, Adornments, LanguageModels, Topology |
-| concern | foundation, surface, concern | Validation, Clipboard, Titles, Locking, Connections, Mentions, Boards, Snapping |
+| concern | foundation, surface, concern | Validation, Clipboard, Titles, Locking, Connections, Mentions, Boards, Snapping, Transform |
 | language | foundation, surface, language, wire | Automation, Queries, QueryCommands |
 | lexicon | foundation, surface, concern, language | DrawLexicon, QueryLexicon |
 | vertical | foundation, surface, concern | StickyNotes, Schemas, Subboards, Frames, Reordering |
@@ -3022,7 +3029,9 @@ every shape has Lock (or Unlock) too, and every copyable shape Cut and Copy, ite
 which are in every menu with shapes; an arrow's menu is those alone, since Arrange leaves it out. A
 shape something mentions has Show What Mentions too, after its own items (Mentions', for the
 canvas, in `MentionsMenuGroup`, order 50), which goes to what mentions it
-([What mentions a shape](#what-mentions-a-shape)). On empty canvas the menu is the canvas's items
+([What mentions a shape](#what-mentions-a-shape)). A shape that can be turned into another kind has Turn
+into … after it (Transform's, in `TransformMenuGroup`, order 60: a frame's is Turn into Subboard,
+[Transform](#transform)). On empty canvas the menu is the canvas's items
 that apply there alone: Paste, once there's something to paste, which lands centered where the
 menu was asked for (⌘V keeps its own rule), and Select All (ContextMenus' own, Selection's
 `.selectAll`) while the board has shapes. An empty board with nothing to paste has no menu: the
@@ -3036,7 +3045,7 @@ right-click does nothing.
 | `registrar.contextMenu(P.self) { items }` | Another plugin's kind, typed as its own. |
 | `x.contextMenu(of: P.self) { items }`, `registrar.contextMenu(of: P.self) { items }` | An [added property](#added-properties), over its value: on this kind's shapes that have one, or on every shape that has one. |
 | `registrar.contextMenuForEveryShape(where:) { items }` | Every shape, over `AnyShapeRecord`. `where:` picks kinds by their definition, and so by capability (`{ !($0 is any PaintOrderAnchored) }`); `when:` picks shapes (`{ $0.box != nil }` for those with a frame). |
-| `registrar.contextMenuForCanvas { items }` | Items that aren't one shape's (Cut, Copy, Paste; Show What Mentions, since whether a shape is mentioned is what a service knows; Delete and Select All), over the menu's `MenuSubject`: its shapes (none on empty canvas), where it was asked for (`point`, world units) and the editor. In every menu, after the shapes' own in their groups' order, and alone on empty canvas. Each is asked once per menu, not per shape. |
+| `registrar.contextMenuForCanvas { items }` | Items that aren't one shape's (Cut, Copy, Paste; Show What Mentions, since whether a shape is mentioned is what a service knows; Turn into …, since what a shape can turn into is what the registry knows; Delete and Select All), over the menu's `MenuSubject`: its shapes (none on empty canvas), where it was asked for (`point`, world units) and the editor. In every menu, after the shapes' own in their groups' order, and alone on empty canvas. Each is asked once per menu, not per shape. |
 
 Boards' Open, which a board-owning kind's opt-in brings it ([OpensBoard.swift](../Sources/Boards/OpensBoard.swift)):
 
@@ -3072,6 +3081,7 @@ contextMenu {
   |---|---|
   | 0 (the default) | A kind's own items (`ShapeMenuGroup`) |
   | 50 | A horizontal's feature, on the kinds that opt in (a flag's `FlagMenuGroup`, [below](#something-the-user-turns-on)), or on the shapes it knows something of (`MentionsMenuGroup`) |
+  | 60 | What a feature brings to the shapes it can act on, after the first band (Transform's Turn into …, `TransformMenuGroup`) |
   | 100 and up | Shared by every kind (`ClipboardMenuGroup`, 100; `ReorderMenuGroup`, 200; `LockMenuGroup`, 300; `SelectionMenuGroup`, 400, ContextMenus' own Delete and Select All) |
 
 - **Keyed.** Each item claims its target, group and `id` (the title by default), and an item in a
@@ -4184,6 +4194,11 @@ reading nothing but the record) asks. The core holds them where every change goe
   ([Containers](#containers)): `editor.isReadOnly(_:)` and `registry.isReadOnly(_:in:)` say so; a
   transaction changes it not at all, its own lock included, and nothing joins or leaves the
   container; editing it ends. A container that moves carries what it holds, locked or not.
+- **Changing everything or nothing.** `transaction.refusedShapes` is the read-only shapes the
+  transaction was asked to change, restack, move or delete so far and didn't (and the read-only
+  containers that wouldn't take a shape). A plugin whose change makes no sense in part (a shape
+  turned into another kind that must take what it held with it) reads it, throws so nothing commits
+  and no step is left, and says so itself (`editor.refuseChanges(to:)`), as Clipboard's paste does.
 
 Selection shows no handles on a read-only shape, and the detail panel disables its controls; both
 ask the core (`editor.isReadOnly`, and the panel `registry.isReadOnly(_:in:)` of the shape it shows,
@@ -5133,7 +5148,7 @@ Mentions' `MentionTextView` does, so every text where mentions are typed (a note
 schema card's description's, the panel's [`MentionTextArea`](#in-the-panel-mentiontextarea)) takes
 slash commands. The core has never heard of a command, and SlashCommands has never heard of a
 mention: a command's arguments are runs of text and shapes, and a pill is a shape only because the
-text view that reads the line says so. Titles' `/title` and Locking's `/lock` are the commands that ship.
+text view that reads the line says so. Titles' `/title`, Locking's `/lock` and Transform's `/turn-into-…` are the commands that ship.
 
 ```swift
 // In LockingPlugin.register:
@@ -5237,8 +5252,9 @@ state.run("level", on: lamp, with: "3")            // true: one undo step, "Leve
   `accepts(_:)`). None for a shape that isn't on the board shown or is kept aside.
 - **`run(_:on:with:)`**, by an `OfferedSlashCommand` or a name, runs a command on a shape with
   what was typed after its name: in `undoHistory.group(command.title)`, one step named for the
-  command in words, each word capitalized (`set-title` is "Set Title"), and none if the command
-  commits nothing. It does nothing and returns false for a shape that's gone or kept aside, and
+  command in words, in title case as a macOS menu has it (`set-title` is "Set Title",
+  `turn-into-subboard` "Turn into Subboard": articles, coordinating conjunctions and prepositions of four
+  letters or fewer stay lowercase unless first or last), and none if the command commits nothing. It does nothing and returns false for a shape that's gone or kept aside, and
   arguments the command doesn't accept. An `OfferedSlashCommand` is run as it was found: `when`
   isn't asked again, since the caller got it from `commands(for:)` a moment ago (and may have
   changed the shape's text since, as a text view does by taking the command's line out). A name is
@@ -5407,7 +5423,7 @@ override func keyDown(with event: NSEvent) {                                    
   every-shape one, conflicts, names refused, `ownerNotInstalled`, `unknownKind`), resolution
   (`commands(for:)`'s order, `when`, a shape that's gone, off the board shown or kept aside
   offering none, `accepts` by default and given, an edit command in one transaction and one step
-  named for it, a `perform` command, `run`'s false), and `SlashCommandLine`, `SlashArguments` and
+  named for it, a command's title in title case (`move-to-back` is "Move to Back"), a `perform` command, `run`'s false), and `SlashCommandLine`, `SlashArguments` and
   `SlashCommandPicker` headlessly (every kind of line break, the rows and their ranking, each way it
   closes). The typing object is held in an unshown window over a card being edited: `SlashTextView`
   is an `EditingTextView` of the target's own that forwards to `SlashCommandTyping` as
@@ -5445,7 +5461,7 @@ override func keyDown(with event: NSEvent) {                                    
   followed by the typing, and `/lock now` stays text; `/title Groceries` names the note and
   editing goes on, "Undo Title" is followed by the typing, and `/title ` alone is a new line. The
   registry's report (ShippedTests, and the guide's copy of it) holds `slash-commands`, Titles'
-  `/title → every shape` and Locking's `/lock → every shape`.
+  `/title → every shape`, Locking's `/lock → every shape` and Subboards' `/turn-into-subboard → every shape`.
 
 ## Topology
 
@@ -6455,6 +6471,11 @@ as SwiftUI sugar is.)
   (`following: .opens`, Selection's `goInto`), from its board or another, one step back.
 - **Deleting it** deletes its board and every board under it, as one step, like any shape's;
   undoing it brings them all back with every id.
+- **Turning a frame into one** is Transform's ([Transform](#transform)): Subboards takes the container
+  channel after its shape block, `registrar.turnable(into: Subboard.self, through: ContainerChannel.self) { … }`,
+  which brings Turn into Subboard to the menu of a shape that holds shapes, and `/turn-into-subboard`. The
+  subboard keeps the frame's id and title, sits at its corner at 240 × 160, and holds on its board what the
+  frame held.
 
 It ships after the sticky note (the toolbar's Subboard, B), with Boards after Titles, and its props
 have a fixture (`Fixtures/kinds/subboard.v0.json`) as every shipped kind's do; a whole file of
@@ -6534,6 +6555,7 @@ registrar.shape(FrameDefinition()) { frame in                     // FrameDefini
     frame.resizable(minimumSize: Frame.minimumSize)                // Selection's eight handles
     frame.frameRow()                                               // the table of contents, named by Titles
     frame.frameHeader()                                            // renamed in the panel's header
+    frame.turnable(through: ContainerChannel.self)                 // Transform: turned into whatever takes the container channel
 }
 ```
 
@@ -6593,19 +6615,211 @@ registrar.shape(FrameDefinition()) { frame in                     // FrameDefini
   end of the resize, what it leaves hanging over its edge and what it grows over
   ([Containers](#containers)). Its row is its symbol and "Untitled Frame", named by Titles; the
   table of contents lists what it holds under it. Locking, which opts every kind in, locks it, and
-  with it what it holds. No ports: nothing is drawn from a frame's sides.
+  with it what it holds. No ports: nothing is drawn from a frame's sides. Transform's container channel
+  (`frame.turnable(through: ContainerChannel.self)`, the last of its opt-ins) makes it something that can be
+  turned into whatever takes the channel, a subboard in the app, from its menu ([Transform](#transform));
+  Frames only offers the channel, names no kind that takes it, and brings no item or command of its own.
 
 It ships after Subboards (the toolbar's Frame, F, between Subboard and Schema: the two ways of
 grouping shapes, a region of the board and a board of its own, side by side), with its fixture,
 `Fixtures/kinds/frame.v0.json`; `Fixtures/files/frames.v5.json` is a whole file, read and written
 back byte for byte: a frame holding a frame, which holds a note and a subboard, and a schema card,
 beside a locked frame holding a note, and a note on the subboard's board (CompositionTests'
-`FrameFile`). FramesTests hold the kind, its hollow test, its marquee, its look and its tool over
+`FrameFile`). FramesTests hold the kind, its hollow test, its marquee, its look, its tool and what it offers
+Transform (TurnTests, with CanvasTesting's pocket taking the channel) over
 CanvasTesting's boxes, frozen for read-only (`FreezingPlugin`); CompositionTests' FramesShippedTests
 the shipped pieces together: notes dropped in and out, a group across an edge, a locked frame
 refusing a drop, a frame moved with a locked note in it, frames in frames, resizing over notes,
 deleting one, pressing its inside, its pill, the tool, a locked frame's contents, the skeleton, the
-file, and a note mentioning one in the app's canvas view.
+file, and a note mentioning one in the app's canvas view; TransformShippedTests turn one into a
+subboard ([Transform](#transform)).
+
+## Transform
+
+Transform ([`Sources/Transform`](../Sources/Transform)) turns a shape into another kind: a frame into a
+subboard, from its context menu or as a command. It's a concern on [context menus](#context-menus) and
+[slash commands](#slash-commands), and it exists because the two kinds can't meet any other way. A vertical
+imports no other vertical, so Frames can't name Subboards (the audit refuses even the string `"subboard"`
+in Frames) and Subboards can't name Frames. What turns into what is a graph, and its edges are
+**channels**: a kind *offers* one, another kind *takes* it and says how, and a shape can turn into each
+kind that takes a channel its own kind offers. The core knows none of it. It lends two generic things, the
+transaction's `turn(_:into:)` and `move(_:toBoardOwnedBy:)` ([Containers](#containers), [Boards in a
+file](#the-editor-and-the-file)), which a target turns with.
+
+```
+┌─────────┐  offers   ┌───────────────────┐   takes  ┌───────────┐
+│  frame  │ ────────▶ │ container channel │ ◀─────── │ subboard  │
+└─────────┘           └───────────────────┘          └───────────┘
+ Frames imports Transform, and so does Subboards; neither imports the other
+```
+
+```swift
+// In FramesPlugin.register, last of the frame's opt-ins:
+frame.turnable(through: ContainerChannel.self)
+
+// In SubboardsPlugin.register, after its shape block:
+registrar.turnable(into: Subboard.self, through: ContainerChannel.self) { container, transaction in
+    guard transaction.turn(container.id, into: Subboard(frame: CGRect(origin: container.frame.origin, size: Subboard.defaultSize))) else { return }
+    transaction.move(container.held, toBoardOwnedBy: container.id)
+}
+```
+
+### Offering and taking a channel
+
+A channel is a type conforming to `TransformChannel`
+([Transform.swift](../Sources/Transform/Transform.swift)): the `Source` a shape coming through it hands the
+target, a `name` (what the registry's report calls it), `admits(_:)`, which kinds may offer it (given a
+`TransformKind`: the kind, its definition, so its capabilities, and the registry; every kind by default),
+and `source(of:in:)`, which reads what the shape hands over in the transaction that turns it, before the
+target changes anything. A channel that has nothing to hand over for a shape returns nil: the target's turn
+doesn't run, and the shape stays as it is. Conform in an extension, as with every protocol that has a
+default (`admits` is the one that could be misspelled). The sugar:
+
+| Sugar | For |
+|---|---|
+| `x.turnable(through: C.self)` | This kind's shapes can be turned into whatever takes the channel, inside `registrar.shape { x in ... }`. |
+| `registrar.turnable(K.self, through: C.self)` | The same, for another plugin's kind. |
+| `registrar.turnable(into: P.self, through: C.self, label:) { source, transaction in ... }` | Shapes of the kinds that offer the channel can be turned into `P`'s, and the closure is how: it gets what the channel handed over and the transaction. |
+
+- **Offering is keyed by kind and channel** (`TransformSources`): a kind offers a channel once, and two
+  claims are a `conflict` ("corral offering container"). The point's `check` refuses a kind the channel
+  doesn't admit (`invalid`: "bad offers the container channel on box, which can't offer it"), and a
+  channel offered by every kind. Only a kind offers one, so there's no sugar for every shape.
+- **Taking is keyed by the kind turned into** (`TransformTargets`): a shape turns into a kind one way, so a
+  kind takes one channel, and a second claim is a `conflict` ("disc"): a second channel into one kind would
+  share its menu item and its command. If one is ever needed, that's where it's decided.
+- **The graph** is `registry.turnTargets(of: kind)`: each kind whose target takes a channel `kind` offers,
+  in plugin order, never `kind` itself.
+- **`TransformPlugin()` is the owner.** It registers the service and nothing else, and a list with a kind
+  that offers a channel or takes one needs it (`ownerNotInstalled`). A target brings a menu item and a
+  command, so it needs `ContextMenusPlugin()` and `SlashCommandsPlugin()` too, and a kind whose id can't be
+  typed as a command's name ("odd_one") is refused (`invalid`, from the commands' point).
+- **The report** shows each contribution: `offers channel container → frame` on Frames' line and `takes
+  channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape` on Subboards',
+  and `service TransformState` on its own ([The registry](#the-registry)).
+
+### What a target brings
+
+Taking a channel is the whole of a feature: the same call brings its menu item and its command, as an
+opt-in does for a horizontal.
+
+- **Turn into `label`** in the context menu: an item for the canvas, as Show What Mentions is, since what
+  a shape can turn into is what the registry knows, not the shape. It's in `TransformMenuGroup`
+  (order 60: after Mentions' 50, before Cut, Copy and Paste, 100), shown when every shape the menu is for
+  can turn into the kind, so a menu for a frame and a note has none. The label is what the target kind's
+  schema is titled (a subboard's is "Subboard"), else its id, unless the call gives one.
+- **`/turn-into-<kind id>`** on the kinds that offer the channel, the target's own kind apart (it has
+  nothing to turn into): a command for every shape (`slashCommandsForEveryShape`), taking no arguments.
+  Typed on a line of a shape's text, it turns the shape; a frame has no text, so nothing ships that types
+  it yet, though it's offered (`commands(for:)`) and runs (`run(_:on:with:)`). Where a kind that offers
+  the channel does have text, it lists before `title` and `lock`: every shape's commands are offered in the
+  order of the plugins that contribute them, and Subboards is before Titles and Locking.
+- **One undo step**, "Turn into Subboard", named as the item is. Slash commands name their steps in title
+  case for this: "Turn Into Subboard" beside the menu's item would read as a mistake
+  ([Running a command](#what-a-shape-offers-and-running-a-command)).
+
+### Turning
+
+`TransformState` (`editor.transforms`, nil without the plugin) is the service. It keeps nothing per shape
+(each kind's targets are worked out once, the registry being frozen, so `boardDidChange` is overridden with
+nothing), and it's what the item and the command call:
+
+```swift
+let transforms = editor.transforms
+transforms.targets(of: frame)                    // [Subboard.kind]: none for a shape off the board shown or kept aside
+transforms.canTurn(frame, into: Subboard.kind)   // true: a read-only shape can too, and turning it is refused
+transforms.turn([frame], into: Subboard.kind)    // true: one undo step, "Turn into Subboard"
+```
+
+- **`turn(_:into:)`** turns those of its shapes that can, each once, **innermost first** (the deepest in
+  containers, then back to front), in one `editor.transact`. A frame inside another turns first and moves
+  what it held onto its own board, so by the time the outer one reads what it holds, the inner one is a
+  subboard in it. A frame selected with the frames inside it turns them all.
+- **It keeps the container it's in, then it's put down as a placement is.** A turned shape comes out a
+  different size (a subboard is 240 × 160), so it may hang over the container it's in, or reach into
+  another. One that hangs over its container is shifted back inside it, `Settlement.gap` in, where it
+  fits, since the in-or-out rule judges by area and would put a shape mostly outside out; then
+  `transaction.settle(turned)` is that rule ([Containers](#containers)), nudging it clear of another
+  container it reaches, and the editor glides it there.
+- **Once one is refused, no other target runs**: the turn will be thrown away. The rest are still checked
+  for read-only, so every one that is shakes.
+- **All or nothing for read-only shapes.** A shape that's locked, or in a locked container, isn't turned,
+  and neither is one that holds a locked shape: the target moves everything, so if anything it would move
+  is read-only (`transaction.refusedShapes`), or a read-only container would take the turned shape, the
+  whole turn throws out of its transaction. Nothing changes, no step is made, and the refused shapes are
+  heard (`editor.refuseChanges(to:)`, so Locking shakes them). A shape that's read-only is refused before
+  its target runs. A target that throws turns nothing either. `turn` returns whether it turned any.
+
+### The container channel
+
+`ContainerChannel` ([ContainerChannel.swift](../Sources/Transform/ContainerChannel.swift)) is the first
+channel, and the only one that ships: it's offered by the kinds whose shapes hold shapes
+(`ShapeContaining`: `admits` is that, so the registry refuses it on a box), and hands the target a
+`TurningContainer`: the container's `id` and `frame`, and what it `held`. That's the shapes in it at any
+depth (read when its turn comes, so fewer by what an inner container that turned before it took onto
+its own board), and every shape whose props bind shapes (`ShapeReferencing`: an arrow) that is bound to
+some of those and to nothing else. An arrow between two of its notes goes with them; one bound to anything
+that stays, the container included, or to nothing, stays.
+
+### A frame into a subboard
+
+Frames offers the channel and Subboards takes it; each is one line, and neither knows the other. The
+turn is the target's: `transaction.turn` makes the frame a subboard, and `transaction.move` puts what it
+held on the subboard's board. A turn that took is followed by a move; one that didn't (the guard) leaves
+a frame, which owns no board for `move` to move onto (`move` would move nothing and say false).
+
+- **The subboard is a subboard's size at the frame's top-left corner**, `Subboard.defaultSize` (240 × 160),
+  whatever size the frame was.
+- **It keeps the frame's id**, and with it everything that goes by id: the arrows bound to it and what
+  mentions it (a mention is live, its pill shows the subboard now, and following it enters the board),
+  its place in the stack, the frame it's in, and its title, which both kinds hold (`TitleProperty`: Titles
+  keeps it, and `turn` carries over the added values the new kind holds too). The values it doesn't hold
+  go, and what the new kind holds that the old one didn't is a default.
+- **What it held goes onto the subboard's board**, under the same ids and in the same places (world
+  coordinates are kept) and in the order they were. A frame owns no board, so the subboard's is new to
+  the file, or, for a frame with nothing in it, none is kept. Frames inside stay frames there, holding
+  what they held, and a subboard inside takes the board it owns with it, as every board goes with its owner.
+- **Bindings** are to shapes on the same board, so the turn lets go of those across the edge, as a cut
+  does: an arrow bound to a note inside and a note outside keeps its end on the one outside, and the
+  other end stays where it's drawn. Arrows between shapes that all move go along, bound. A name, a mention
+  of a note that moved, is kept: it never cared which board the note is on.
+- **Undo** puts back the frame, every shape in it and every binding, in one step.
+- **What isn't built**: the reverse (a subboard into a frame), a transform in `canvas draw`, and a `/` typed
+  on the canvas. A shape with text that offers the channel would get `/turn-into-subboard` for free.
+
+### Testing transform
+
+- **TransformTests** hold the mechanism over fixtures only, since Transform knows no shipped kind:
+  CanvasTesting's corrals (they hold shapes, as a frame does) offer the container channel and turn into
+  pockets (they own a board, as a subboard does), with a target written as Subboards' is
+  ([Support.swift](../Tests/TransformTests/Support.swift): `corralsTurnIntoPockets()`), a `Tagline` added
+  property both kinds hold, as both hold a title, and a channel of the tests' own, `BoxChannel` (only a box
+  offers it, and it hands over the box's id if the box is narrow), turning boxes into discs, so that the
+  mechanism is held apart from containers. They hold registration (the report's entries, the graph in plugin
+  order, conflicts, a channel's `admits`, `ownerNotInstalled` and `unknownKind`, a command name that can't be
+  typed), resolution (`targets(of:)`, `canTurn`), the menu (a right-click: the item in its band, choosing
+  it, nested corrals selected together turning innermost first, a corral and a box showing none, one item
+  for each target, a source that says no), the command (offered where it should be, one step named as the
+  item is), all or nothing (a frozen box in the corral, a frozen corral, one in a frozen corral, one deep
+  in nested corrals, a target never run for a read-only shape, a target that throws), the in-or-out rule
+  and bindings.
+- **FramesTests' and SubboardsTests' `TurnTests.swift`** hold each end of the edge over a partner of its
+  own, since neither can use the other: Frames offers the channel with a pocket as the target (the title
+  carried over, a frame inside still a frame holding its box, no item or command until a kind takes the
+  channel, a locked box or frame refusing); Subboards takes it from corrals that offer it (the size and
+  the corner, what the corral held on its board, a link inside riding and one across let go, the table
+  of contents, Return entering it, `/turn-into-subboard`, an empty corral).
+- **CompositionTests' `transformShippedTests`** hold the shipped pieces together, on a pasteboard of
+  their own: a frame titled Groceries, holding two notes and a frame that holds a note, a note beside it
+  that mentions it, and arrows bound to the notes, turned from its context menu (the item between Show
+  What Mentions and Cut; the subboard, its title, its board; the mention live and the pill, the row and
+  the panel of a subboard; one arrow riding along and one letting go; the canvas drawn without what
+  moved, and as it was after Undo), as a command, with a locked note or a locked frame leaving everything
+  as it was, a frame turned with the frame inside it, a frame on a subboard's board turned there (and Undo
+  from the root showing that board), the frames file's Roadmap (a frame holding a frame,
+  a subboard with a board of its own and a schema card) turned with every board in its place, and the file
+  after a turn read back through `BoardCodec`. The registry's report holds `transform`, Frames' `offers
+  channel container → frame` and Subboards' `takes channel container → subboard`.
 
 ## The command line
 
@@ -7848,16 +8062,19 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   `editor.transact { tx in ... }`: `insert` (on top), `update` (typed with `as:`; it can't change a
   shape's id, key or container), `bringToFront`, `sendToBack`, `move(_:above:)`, `move(_:below:)`,
   `delete`, `translate(_:by:)`, which moves shapes as dragging them would, `moveBox(_:to:)`, which
-  puts a box where a drag does, and for [containers](#containers), `setContainer(_:to:)` and
-  `settle(_:)`. A record carries its props, the
+  puts a box where a drag does, `turn(_:into:)`, which makes a shape another kind under its id
+  ([Containers](#containers)), `move(_:toBoardOwnedBy:)`, which takes shapes onto the board a shape on
+  this one owns ([Boards in a file](#the-editor-and-the-file)), and for [containers](#containers),
+  `setContainer(_:to:)` and `settle(_:)`. A record carries its props, the
   values of its [added properties](#added-properties) and its [metadata](#metadata), and
   `record.copy(as:)` is the same shape under another id.
   A transaction commits once, if anything changed, and bumps `editor.revision`. What it did goes
   with it, record by record: its `ChangeSet` names the shapes it added, changed and removed, and
   of those changed, the ones it only moved (`moveBox`, as a drag and `translate` do, and nothing
   else), says whether the stack changed, and the boards it took out of the file or brought in
-  (`boardsRemoved`, `boardsAdded`: [Boards in a file](#the-editor-and-the-file)), or changed while another was shown (`boardsChanged`:
-  Delete Hidden Shapes, undoing it, and `transact(on:)`; `boardsReached` is all three), with the
+  (`boardsRemoved`, `boardsAdded`: [Boards in a file](#the-editor-and-the-file)), or changed
+  (`boardsChanged`: shapes moved onto a board that held some, Delete Hidden Shapes, undoing it, and
+  `transact(on:)`; `boardsReached` is all three), with the
   shapes it touched on them (`elsewhere`), and whether an agent made it (`byAgent`, which the
   transaction says: `transaction.byAgent`). Transactions don't nest. A body that throws commits
   nothing, whatever it changed first: services hear of no change and no refusal, the board isn't
@@ -8239,8 +8456,8 @@ shown from `document`, and never list shapes from `file`. `editor.contents(of: b
 board's shapes, and `editor.owner(of:)` the shape that owns it, wherever it is.
 
 A transaction is on the board shown (`transaction.board`) and never holds the file: it reads it
-through the editor, so a commit, a drag's every event, costs what it changed, not the file. Two
-things reach past it, both in the one commit:
+through the editor, so a commit, a drag's every event, costs what it changed, not the file. Three
+things reach past it, all in the one commit:
 
 - **Deleting a shape takes the board it owns, and every board under that** (the cascade), whatever
   its kind, since the file keeps a board by its owner's id (`ChangeSet.boardsRemoved`), with no
@@ -8252,6 +8469,22 @@ things reach past it, both in the one commit:
   its id and those below under theirs (a paste; `boardsAdded`): a board it doesn't reach, or whose
   owner can't go in (a frame that isn't finite, deleted in the same transaction), is left out.
   `transaction.contents(ofBoardOwnedBy:)` is a board as the transaction leaves it.
+- **Shapes can move onto the board below**, `transaction.move(ids, toBoardOwnedBy: owner)`: shapes
+  of this board go onto the board a shape on this board owns, under their ids (so whatever names
+  them still does), in their order, on top of what that board holds, with what a container among
+  them holds at any depth and the boards they own (a board goes with its owner, wherever that is).
+  A shape stays in a container that moves with it, and is in none there otherwise. The board is new
+  to the file (`boardsAdded`) or, if the file held shapes there, changed (`boardsChanged`); the
+  shapes are removed from this one. Bindings ([`ShapeReferencing`](#values-that-name-shapes)) are to
+  shapes on the same board, so what's bound across the edge is let go of, both ways, as a deletion
+  lets go: a shape that stays lets go of what moves (an arrow's end stays where it's drawn), and one
+  that moves of what stays, locked or not; names (a mention) are kept. It's all or nothing for
+  [read-only shapes](#the-cores-part-read-only-shapes): if the owner, or a shape that would move, is
+  read-only or in a read-only container, nothing moves, `move` returns false, and
+  `transaction.refusedShapes` says which. The owner must already be of a kind that owns boards (a
+  precondition, so a plugin that turns it first moves only once `turn` took), and can't be deleted
+  in the same transaction (another; no flow does). With `turn` it's a frame turned into a
+  subboard that holds what the frame held, in one step.
 
 Shape ids are unique across the file: an insert's must be on no board (unless the transaction
 deleted it from its own). An undo step holds the boards a commit takes out or brings in, whole, as
@@ -8339,11 +8572,11 @@ crosses boards.
 ### Boards that aren't shown
 
 A commit says what it did beyond the board it's on: `ChangeSet.elsewhere` is every shape of the
-boards it took or brought, and those it changed on a board it kept (and, for a file put in place
-over the board shown, the shapes its other boards don't have as they were). No shape there is the
-board shown's, so what a service keeps of the board shown needn't follow them; what reads shapes
-anywhere in the file does (a row showing the name of a shape on another board, gone with the board
-its owner took).
+boards it took or brought, and those it changed, or moved onto, on a board it kept (and, for a file
+put in place over the board shown, the shapes its other boards don't have as they were). No shape
+there stays on the board shown (one moved off it is removed from it too), so what a service keeps of
+the board shown needn't follow them; what reads shapes anywhere in the file does (a row showing the
+name of a shape on another board, gone with the board its owner took).
 
 Two things edit a board that isn't shown: Delete Hidden Shapes (`discardKeptAside`, [the editor
 and the file](#the-editor-and-the-file)), which takes shapes kept aside from whatever boards hold
@@ -8355,9 +8588,10 @@ on the board shown (a press, a field typed into) stays open and comes after it. 
 a commit that changed that board (`boardsChanged`, its shapes in `elsewhere`), the board shown as it
 was, and the canvas redraws, so an owner's card on the board shown shows what it holds now. Nothing
 shows what it refused (a read-only shape isn't shown to shake), and a transaction that would take
-the board shown, or one above it, commits nothing. It returns nil for a board the editor can't
-show. Every other change to a board is made while it's shown, or with a shape on the board shown
-(a deletion takes the boards under it, a paste brings them).
+the board shown, or one above it, or reaches it (shapes moved onto it, which would leave `document`
+stale), commits nothing. It returns nil for a board the editor can't show. Every other change to a
+board is made while it's shown, or with a shape on the board shown (a deletion takes the boards
+under it, a paste brings them, a move takes shapes onto one).
 
 ### Boards across the plugins
 
@@ -8437,6 +8671,21 @@ extension CorralDefinition: ShapeContaining {}       // its shapes hold shapes o
   container's own container (the nearest one up that isn't deleted too), read-only or not, as letting
   go of a binding is; undoing the deletion puts it back in. A container holding a locked shape is
   deleted, and the shape stays, let go.
+- **Turning.** `transaction.turn(id, into: record)` (or `into:` props) makes a shape another kind
+  under its id: the record's kind and props in place of its own, the same shape otherwise, so
+  whatever binds or names it (an arrow's end, a mention), its place in the stack, its container, its
+  metadata and the values of the added properties both kinds hold (a title) go on as they were, and
+  the record's added values (defaults, or what a placement set) fill in the rest. A container turned
+  into a kind that holds nothing lets go of what it holds, as deleting it does: those shapes stay
+  where they are, in its own container; turned into another container kind, it keeps them. A kind
+  with no box can't be in a container, so a shape turned into one is on the board directly. It
+  returns false, and changes nothing, for a shape that isn't on the board or is kept aside and for a
+  frame that isn't finite, and a [read-only](#the-cores-part-read-only-shapes) shape (or one in a
+  read-only container) is refused as `update` refuses it. A shape of a kind that owns boards whose
+  board holds shapes can only become a kind that owns boards, or the board would have no owner: a
+  precondition (`move(_:toBoardOwnedBy:)` takes the shapes out first). A corral turned into a
+  pocket, with what it held moved onto the pocket's board in the same transaction, is a frame
+  turned into a subboard ([Transform](#transform) does it for the app, with the menu item and the command).
 - **Read-only.** A shape in a read-only container, at any depth, is read-only:
   `registry.isReadOnly(_:in:)` says so, and `editor.isReadOnly(_:)` asks it (`registry.isReadOnly(_:)`
   stays the rules', for what reads one record alone). It changes not at all, not even its own lock;
@@ -8861,8 +9110,8 @@ selection            service SelectionState · tool select · shortcut V → too
 topology             service TopologyIndex
 arrows               shape arrow v1 · label Arrow → arrow · ContentsRows → arrow · service ArrowTargeting · overlay BindingHintsOverlay
 sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
-subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard
-framing              shape frame · tool frame · shortcut F → tool frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeDetails → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame
+subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
+framing              shape frame · tool frame · shortcut F → tool frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeDetails → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame
 schemas              service SchemaSync · overlay SchemaHighlightFrames · ShapePopovers · shape schema-card v1 · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · mention text → schema-card · mentionable → schema-card · ShapeDetails → schema-card · channel schema-link · edge type schema-link
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
 adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
@@ -8873,6 +9122,7 @@ table-of-contents    service ContentsState
 titles               property title · adornment TitlePill → every shape · /title → every shape · overlay TitleCoverOverlay
 mentions             service MentionState · edge type mention · edges → every shape · overlay MentionFrames · ShapeFaces · CanvasContextMenu
 board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
+transform            service TransformState
 validation-details   DetailStatuses in Issues
 validation-contents  ContentsMarks
 mention-validation   ValidationRules
@@ -8933,10 +9183,14 @@ which hears no commit) and its mark (`query engine`, which `registry.answersQuer
 five after it fill its points (names, boards' names, and words and a text format, each by what it
 adds), and `query-commands` is `canvas query` and `query-vocabulary`. `slash-commands` is the service that
 says what a shape offers (`SlashCommandState`, which hears no commit) and contributes no command;
-the ones that ship are Titles' and Locking's, the last entry on their lines (`/title → every shape`,
-`/lock → every shape`: each call of the sugar is one entry, its commands as `/name`, then the kind
+the ones that ship are Titles', Locking's and Transform's, which Subboards brings, the last entry on their lines (`/title → every shape`,
+`/lock → every shape`, `/turn-into-subboard → every shape`: each call of the sugar is one entry, its commands as `/name`, then the kind
 they're for or "every shape":
-[Registering commands](#registering-commands)).
+[Registering commands](#registering-commands)). `transform` is the service that says what a shape can
+turn into (`TransformState`, which hears no commit) and contributes nothing else: what offers and takes a
+channel is on their lines, last on Frames' (`offers channel container → frame`) and on Subboards'
+(`takes channel container → subboard`, then what taking it brings: the canvas's menu item,
+`CanvasContextMenu`, and the command, `/turn-into-subboard → every shape`; [Transform](#transform)).
 
 ## Testing plugins
 

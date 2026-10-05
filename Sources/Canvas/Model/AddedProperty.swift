@@ -121,6 +121,20 @@ struct AddedValues: Equatable, Sendable {
         values = [:]
     }
 
+    /// `other`'s values over these: for each key `other` holds a value for, typed or kept aside, its
+    /// value replaces what these hold for the key (so a key is never both). What a shape turned into
+    /// another kind takes with it (`Transaction.turn`).
+    mutating func overlay(_ other: AddedValues) {
+        for (key, value) in other.values {
+            kept[key] = nil
+            self[key] = value
+        }
+        for (key, aside) in other.kept {
+            self[key] = nil
+            kept[key] = aside
+        }
+    }
+
     static func == (a: Self, b: Self) -> Bool {
         a.kept == b.kept && a.values.count == b.values.count
             && a.values.allSatisfy { key, value in b.values[key].map(value.isEqual) ?? false }

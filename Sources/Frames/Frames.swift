@@ -4,6 +4,7 @@ import Keyboard
 import Mentions
 import Selection
 import Titles
+import Transform
 
 extension PluginID {
     /// Not "frames", which DetailPanelTests' fixture plugin goes by: an id two modules write is
@@ -45,7 +46,8 @@ extension Frame {
 /// its border and its title's pill grab it, and its inside is the canvas, unless it holds nothing. It
 /// opts into Titles (its name, in a pill above it, dimmed "Frame" while untitled), Mentions (by its
 /// name; following a mention goes to it; a Mentioned In tab), Selection's resizing, the table of
-/// contents (a row Titles names) and the detail panel (a header that renames it).
+/// contents (a row Titles names), the detail panel (a header that renames it) and Transform (it offers
+/// the container channel, so it can be turned into whatever takes that: a subboard, in the app).
 public struct FramesPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .framing }
@@ -60,6 +62,7 @@ public struct FramesPlugin: CanvasPlugin {
             frame.resizable(minimumSize: Frame.minimumSize)                 // eight handles, Selection's
             frame.frameRow()                                                // the table of contents, named by Titles
             frame.frameHeader()                                             // renamed in the panel's header
+            frame.turnable(through: ContainerChannel.self)                  // turned through the container channel: into a subboard, where Subboards takes it
         }
     }
 }
