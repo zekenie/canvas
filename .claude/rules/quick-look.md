@@ -1,0 +1,31 @@
+---
+paths:
+  - "Sources/CanvasQuickLook/**"
+  - "Sources/CanvasUI/BoardPicture.swift"
+  - "Tests/CanvasUITests/BoardPictureTests.swift"
+  - "Tests/CompositionTests/PicturesShippedTests.swift"
+---
+
+# Quick Look
+
+A board file's Quick Look preview (space in the Finder) and its thumbnail (its icon): `BoardPicture`, the app's Quick Look extension, how it's built, signed and registered, and how to check it.
+
+Related: [drawing](drawing.md), [boards on disk](boards-on-disk.md), [build](build.md) ([every topic](../../CLAUDE.md#map)).
+
+In the guide, `docs/plugin-system.md`: [Boards on disk](../../docs/plugin-system.md#boards-on-disk).
+
+## Architecture
+
+- `BoardPicture` (CanvasUI) is a picture of a file's root board, drawn by the editor's own drawing (`editor.draw`, host API) with nothing selected, so a kind needs nothing for it: it reads the file as the app opens one (`BoardCodec`, then `replaceFile`), fits the whole board into the picture, centered, with `inset` of margin in all (a first visit's, `CanvasEditor.firstVisitInset`, host API), no closer than `maxZoom` (1) and as far out as it takes (past the canvas's 10%, down to 1%, `Camera(fitting:in:inset:minZoom:maxZoom:)`), and builds every board preview its cards ask for in the one picture: it draws, and if any was asked for, draws again, which builds them first (`PictureStyle.previewBudget`, 5 s for all). Under 35% its shapes are skeletons, as on the canvas. `size(within:minimum:)` is the size that shows the board at `maxZoom`, or as close as fits the limit; `draw(in:size:appearance:)` draws into a context y up (a bitmap's, Quick Look's); `image(size:scale:appearance:)` is an sRGB image.
+- The extension is CanvasQuickLook (layer `appex`): one executable, in two extensions (`Contents/PlugIns`), with the shipped plugins (`BoardPictures.registry`; nothing it draws asks the model, which in its sandbox could read no key and reach no network). `PreviewProvider` (com.apple.quicklook.preview, data-based) replies with a PNG at the deepest screen's pixels to a point, saying its size in points by its pixels to an inch: Quick Look makes a reply's own context a pixel to a point. The preview is the board at no more than 100%, at least 480 × 320 and at most 1600 × 1200, in the system's appearance. `ThumbnailProvider` (com.apple.quicklook.thumbnail) fills the context Quick Look gives it, whatever its scale: the board as close as fits the request's `maximumSize` (to 800%), the picture no smaller than its `minimumSize` either way (a reply's context may not be), a margin of an eighth of its shorter side, always in the light appearance, since Quick Look keeps a thumbnail across a switch of the system's; an empty board has none, so it shows the document icon, and so does a size under 32 points (`QLThumbnailMinimumDimension`). Quick Look asks for a thumbnail off the main thread, and `QLThumbnailProvider` has no async form to override, so it waits on the main thread for the picture; it asks for a preview async, which hops there.
+
+## Building, signing and registering
+
+- `build.sh` (app mode) links the appex layer's executable to start in Foundation's `NSExtensionMain` (`-e _NSExtensionMain`, as Xcode links an extension), and puts it in `QuickLookPreview.appex` and `QuickLookThumbnail.appex`, each with an Info.plist it writes (the point, the principal class, `QLSupportedContentTypes`: the app's exported type, `com.example.InfiniteCanvas.board`) and signed ad hoc with the sandbox entitlement, which Quick Look requires of an extension; the app isn't signed, and needn't be. Each is signed as a copy, then what changed is installed: the same files sign ad hoc to the same bytes, so a build that changed nothing changes no file in the bundle. The entry point is only in `build.sh`'s link (the one-line manifest can't carry a linker flag), so SwiftPM can't link the extension.
+- Opening the app registers its extensions (`pluginkit -m -v -i com.example.InfiniteCanvas.QuickLookThumbnail` lists one). Without opening it, `pluginkit -a` on each `.appex` registers them; `lsregister -f` alone (`/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister`) registers the app but has dropped its extensions from PlugInKit, so follow it with `pluginkit -a`.
+- Quick Look's thumbnail agent (`com.apple.quicklook.ThumbnailsAgent`) settles which extension makes a type's thumbnails the first time it's asked for one, and keeps to it until it restarts, extensions installed since or not: a Mac that showed board files as JSON before the app carried its extensions goes on doing so after it's opened, until the user logs out and back in. The agent ignores SIGTERM, and under SIP `launchctl kickstart` can't restart it; `pkill -KILL -f com.apple.quicklook.ThumbnailsAgent` does (launchd starts it again on the next request). `qlmanage -r` resets quicklookd, not the agent. Which registered copy of the app carries the extensions doesn't matter (every worktree's build is registered too): any one's serve the type.
+
+## Testing
+
+- CanvasUITests' Board picture holds `BoardPicture` with fixture kinds (a cabinet shows its board's preview, as a subboard's card does): its size at 100% with the margin, the limit and the minimum; the board centered and upright; a board too big for 10% shown whole; a card's preview built in the one picture; the appearances; an image's scale; reading a file and refusing what isn't one. CompositionTests' Board pictures, shipped: the welcome board's notes where they are, a subboard's card with its preview, and a fixture file in an older format read and drawn.
+- The extension is checked by hand: `qlmanage -t -x -s 512 -o <dir> <file>` writes the thumbnail Quick Look makes, through its agent and in the sandbox, with a fresh copy of the file each time (a thumbnail is kept per file), once the agent has been restarted since the extensions were registered (above). `qlmanage -p` can't host a data-based preview extension on this macOS (it throws, for Apple's own too), so a preview needs a host: a `QLPreviewView` in a window placed off every screen, or the Finder.

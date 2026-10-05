@@ -6,7 +6,7 @@
 # if the real graph differs from the declared one.
 #
 #   ./build.sh              build build/InfiniteCanvas.app (release), with the command line in it
-#                           (build/canvas links to it)
+#                           (build/canvas links to it) and its Quick Look extensions
 #   ./build.sh tests        build every module but the app, test executables included (debug)
 #   ./build.sh bench        build BenchmarkTests (release) and run it: the performance budgets
 #   ./build.sh audit        check the graph and every import, compile nothing
@@ -35,11 +35,12 @@ typeset -A MAY_USE=(
     vertical    "foundation surface concern"
     composition "foundation surface concern language lexicon vertical wire"
     app         "foundation ui composition wire"
+    appex       "foundation ui composition"
     cli         "wire"
     testsupport "foundation testsupport"
     test        "wire foundation ui surface concern language lexicon vertical composition testsupport"
 )
-typeset -A EXECUTABLE_LAYER=(app 1 test 1 cli 1)
+typeset -A EXECUTABLE_LAYER=(app 1 appex 1 test 1 cli 1)
 # What the command line's executable (the cli layer's) is called once it's built: in the app's
 # bundle, at Contents/Helpers/canvas, and build/canvas, a link to it.
 CLI_NAME=canvas
@@ -498,7 +499,7 @@ typeset -aU WANTED=()
 case $MODE in
 app)   WANTED=(InfiniteCanvas ${=CLOSURE[InfiniteCanvas]})
        for name in $NAMES; do
-           if [[ $LAYER[$name] == cli && $KIND[$name] == executableTarget ]]; then WANTED+=($name ${=CLOSURE[$name]}); fi
+           if [[ $LAYER[$name] == (cli|appex) && $KIND[$name] == executableTarget ]]; then WANTED+=($name ${=CLOSURE[$name]}); fi
        done ;;
 tests) for name in $NAMES; do [[ $LAYER[$name] == app ]] || WANTED+=$name; done ;;
 bench) WANTED=(BenchmarkTests ${=CLOSURE[BenchmarkTests]}) ;;
@@ -611,7 +612,9 @@ build_job() {
         print -r -- "$RAN_WITH" > $STAMP
         print compiled ;;
     link)
-        local libs=() objects=($dir/objects/*.o(Nn)) debugger=()
+        local libs=() objects=($dir/objects/*.o(Nn)) debugger=() entry=()
+        # An app extension has no main: it starts in Foundation's NSExtensionMain, as Xcode links one.
+        [[ $LAYER[$name] == appex ]] && entry=(-Xlinker -e -Xlinker _NSExtensionMain)
         INPUTS=($objects)
         if [[ $CONFIG == debug ]]; then
             debugger=(-Xlinker -add_ast_path -Xlinker $dir/$name.swiftmodule)
@@ -621,7 +624,7 @@ build_job() {
             libs+=(-Xlinker -force_load -Xlinker $OUT/$dep/lib$dep.a)
             INPUTS+=($OUT/$dep/lib$dep.a)
         done
-        local link=($SWIFTC $objects $libs $debugger -o $dir/$name)
+        local link=($SWIFTC $objects $libs $debugger $entry -o $dir/$name)
         STAMP=$dir/.linked
         [[ -e $dir/$name ]] || rm -f -- $STAMP
         up_to_date $link && return 0
@@ -807,7 +810,84 @@ app)
 </plist>
 PLIST
     install_changed $AUDIT/Info.plist $APP/Contents/Info.plist
+    # Quick Look's preview of a board file (space in the Finder) and its thumbnail (its icon), an
+    # extension each (Contents/PlugIns), each the appex layer's one executable with its extension
+    # point, its principal class and what it says to that point. Quick Look runs an extension only
+    # in the sandbox, so each is signed with that entitlement: ad hoc, to run on this Mac (the app
+    # isn't signed, and needn't be). Each is signed as a copy, then what changed is installed: ad hoc,
+    # the same files sign to the same bytes. Opening the app registers them.
+    typeset -a appexes=()
+    for name in $NAMES; do
+        if [[ $LAYER[$name] == appex && $KIND[$name] == executableTarget ]]; then appexes+=$name; fi
+    done
+    (( ${#appexes} == 1 )) || die "the appex layer should have one executable, the Quick Look extension; it has ${#appexes}"
+    cat > $AUDIT/appex.entitlements <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+</dict>
+</plist>
+PLIST
+    for appex point principal attributes in \
+        QuickLookPreview com.apple.quicklook.preview PreviewProvider \
+            '<key>QLIsDataBasedPreview</key><true/><key>QLSupportsSearchableItems</key><false/>' \
+        QuickLookThumbnail com.apple.quicklook.thumbnail ThumbnailProvider \
+            '<key>QLThumbnailMinimumDimension</key><integer>32</integer>'
+    do
+        staged=$AUDIT/$appex.appex
+        mkdir -p $staged/Contents/MacOS
+        cp -- $OUT/$appexes[1]/$appexes[1] $staged/Contents/MacOS/$appexes[1]
+        cat > $staged/Contents/Info.plist <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>$appex</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.example.InfiniteCanvas.$appex</string>
+    <key>CFBundleExecutable</key>
+    <string>$appexes[1]</string>
+    <key>CFBundlePackageType</key>
+    <string>XPC!</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>NSExtension</key>
+    <dict>
+        <key>NSExtensionPointIdentifier</key>
+        <string>$point</string>
+        <key>NSExtensionPrincipalClass</key>
+        <string>$appexes[1].$principal</string>
+        <key>NSExtensionAttributes</key>
+        <dict>
+            <key>QLSupportedContentTypes</key>
+            <array>
+                <string>com.example.InfiniteCanvas.board</string>
+            </array>
+            $attributes
+        </dict>
+    </dict>
+</dict>
+</plist>
+PLIST
+        codesign --force --sign - --entitlements $AUDIT/appex.entitlements $staged 2> $AUDIT/codesign.log ||
+            die "signing $appex.appex failed:\n$(<$AUDIT/codesign.log)"
+        for file in $staged/**/*(.DN); do
+            installed=$APP/Contents/PlugIns/$appex.appex/${file#$staged/}
+            mkdir -p ${installed:h}
+            install_changed $file $installed
+        done
+    done
     for file in $APP/**/*(.DN); do (( ${bundled[(Ie)$file]} )) || rm -f -- $file; done
-    print "Built $APP, and build/$CLI_NAME (its command line)"
+    print "Built $APP, with its Quick Look extensions, and build/$CLI_NAME (its command line)"
     ;;
 esac

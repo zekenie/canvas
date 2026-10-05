@@ -37,10 +37,13 @@ import PackageDescription
 //                                                        vertical, and no language
 //     composition  -> foundation, surface, concern, language, lexicon, vertical, wire   the shipped plugin list
 //     app          -> foundation, ui, composition, wire
+//     appex        -> foundation, ui, composition        an app extension, an executable the app
+//                                                        carries that macOS runs on its own (Quick
+//                                                        Look's preview and thumbnail of a board file)
 //     cli          -> wire                               the command line (`canvas`), an executable:
 //                                                        knows only the wire, never the app
 //     testsupport  -> foundation, testsupport
-//     test         -> anything but app, cli and test; a test named <M>Tests may use only M, M's
+//     test         -> anything but app, appex, cli and test; a test named <M>Tests may use only M, M's
 //                     dependencies, and testsupport and ui modules, and so may one named after a
 //                     plugin of M that says so: `// layer: test of M` (TitleQueriesTests)
 //
@@ -117,6 +120,7 @@ let package = Package(
 
         .target(name: "Composition", dependencies: ["Adornments", "Automation", "Boards", "Canvas", "CanvasRPC", "Clipboard", "Connections", "ContextMenus", "DetailPanel", "DrawLexicon", "Frames", "Keyboard", "LanguageModels", "Locking", "Mentions", "Queries", "QueryCommands", "QueryLanguage", "QueryLexicon", "Reordering", "Schemas", "Selection", "SlashCommands", "Snapping", "StickyNotes", "Subboards", "TableOfContents", "Titles", "Topology", "Validation"]), // layer: composition
         .executableTarget(name: "InfiniteCanvas", dependencies: ["Canvas", "CanvasUI", "Composition"]),           // layer: app
+        .executableTarget(name: "CanvasQuickLook", dependencies: ["Canvas", "CanvasUI", "Composition"]),          // layer: appex
         .executableTarget(name: "CanvasCLI", dependencies: ["CanvasRPC"]),                                        // layer: cli
 
         .target(name: "TestKit", dependencies: [], path: "Tests/TestKit"),                                        // layer: testsupport

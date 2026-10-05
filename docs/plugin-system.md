@@ -474,6 +474,7 @@ Each target is one line, with its layer:
 | vertical | foundation, surface, concern | StickyNotes, Schemas, Subboards, Frames, Reordering |
 | composition | foundation, surface, concern, language, lexicon, vertical, wire | Composition (the shipped plugin list) |
 | app | foundation, ui, composition, wire | InfiniteCanvas |
+| appex | foundation, ui, composition | CanvasQuickLook (an extension the app carries: Quick Look's preview and thumbnail of a board file, [Boards on disk](#boards-on-disk)) |
 | cli | wire | CanvasCLI (`canvas`, an executable: it knows the wire, never the app) |
 | testsupport, test | (see Package.swift) | TestKit, CanvasTesting, `*Tests` |
 
@@ -483,7 +484,8 @@ What `./build.sh audit` enforces:
 - **Layers.** A horizontal can't import a vertical, and a vertical can't import another vertical
   or a language. A surface can't import a concern, a concern can't import a language, and a
   language can't import a concern: only a lexicon joins a language to concerns. The app reaches
-  plugins only through Composition, and nothing but the app and tests sees CanvasUI.
+  plugins only through Composition, and nothing but the app, its Quick Look extension and tests
+  sees CanvasUI.
 - **A test of a module tests it alone.** `<M>Tests`, or a test target that says it tests a plugin
   of M (`// layer: test of M`, as QueryLexicon's TitleQueriesTests does), may use only M, what M
   uses, and the test-support and ui modules, so a plugin's tests can't lean on a shipped kind.
@@ -3534,7 +3536,7 @@ Bringing shapes into view is Selection's `editor.reveal`, which the table of con
 takes two generic things from the core: `editor.viewportSize`, which
 `CanvasView` reports as it's resized, and `editor.animateCamera(to:duration:)`, eased like
 tldraw's camera moves and stopped by any other camera change, as the hand tool's slide is.
-`Camera(fitting:in:inset:maxZoom:)` (Geometry) does the fit.
+`Camera(fitting:in:inset:minZoom:maxZoom:)` (Geometry) does the fit.
 
 ## Adornments
 
@@ -7934,7 +7936,7 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   selected (0.56 ms at 100%, 0.62 at 10%, as measured; `./build.sh bench` holds it to 1 ms).
 - **The camera** is `editor.camera`, which anyone may set; setting it stops any camera motion
   running. `editor.animateCamera(to:duration:)` moves it there, eased (tldraw's cubic), a frame
-  every 16 ms, and `Camera(fitting:in:inset:maxZoom:)` (Geometry) makes one that shows a rect, in
+  every 16 ms, and `Camera(fitting:in:inset:minZoom:maxZoom:)` (Geometry) makes one that shows a rect, in
   a view's size or a rect of it.
   `editor.cameraTarget` is where an animation is headed while it runs, else the camera: what to
   remember a view as mid-motion (Selection's steps back do).
@@ -7967,8 +7969,8 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   first shape placed under it by a press, or edited as it's placed, isn't covered as it arrives:
   the minimap waits for the press and the editing to end), and on another board shows or hides at
   once. It moves the camera as tldraw's minimap does, and knows
-  no shape or plugin. Only the app and tests can import CanvasUI, and no plugin can see the host
-  API, so no plugin can reach around the editor.
+  no shape or plugin. Only the app, its Quick Look extension and tests can import CanvasUI, and no
+  plugin can see the host API, so no plugin can reach around the editor.
 - **The views the canvas hosts have the pointer where they are.** Over the minimap or the editing
   view the pointer isn't over the canvas, though AppKit tells the canvas it moved (its tracking
   area covers them): the tool hears it leave (`pointerExited`), once, as it moves there or is
@@ -8646,6 +8648,15 @@ most lately, 50 in all, in `recent`'s order, the one shown last first, which `ed
 and the last session's `recent` give): the file opens on that board, if it can still show
 it, as a file put in place there (`replaceFile(with:showing:)`), so it isn't a step back, nor an
 edit; each board has its camera as it was left (`rememberedCameras`).
+
+**Quick Look.** In the Finder, a board file's Quick Look preview (space) and its thumbnail (its
+icon) are its root board as the app draws it, with nothing selected: CanvasUI's `BoardPicture`
+reads the file as the app opens one, fits the whole board into the picture, no closer than 100%
+and as far out as it takes, past the canvas's 10%, builds the previews its cards show in the one
+frame, and draws it with the editor's own drawing, skeletons and all, so a kind needs nothing for
+it. The app's Quick Look extension (CanvasQuickLook, the `appex` layer, in `Contents/PlugIns`)
+draws it with the shipped plugins: the preview in the system's appearance, the thumbnail in the
+light one, filling the icon.
 
 **Edited, and saved.** A board is edited as a step begins, and counted back as a step comes to
 nothing or is undone ([Undo](#undo)): `BoardDocument` makes NSDocument's own change-count calls as
