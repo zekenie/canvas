@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import TextEditing
 
 /// Where a shape draws one mention text on the canvas: what it says, its box (world units), its
 /// style, and at most how many lines. Made from the shape alone: its props or its added values.
@@ -213,6 +214,10 @@ final class MentionTextMemo {
     final class Entry {
         let string: NSAttributedString
         private var laidOut: (size: CGSize, pills: [MentionTextLayout.Pill])?
+        /// The text laid out as string drawing lays it out, its pills' stand-ins in their place: made
+        /// when a range's rects are first asked (Find's hits) and kept with the text, so they are a
+        /// lookup. Drawing keeps none: it uses one already kept, else lays one out for the call.
+        private var layout: StringDrawingLayout?
 
         init(string: NSAttributedString) { self.string = string }
 
@@ -220,9 +225,32 @@ final class MentionTextMemo {
         /// drawing shows them.
         func pills(in size: CGSize, style: MentionTextStyle) -> [MentionTextLayout.Pill] {
             if let laidOut, laidOut.size == size { return laidOut.pills }
-            let pills = MentionTextLayout.pills(of: string, in: size, style: style)
+            let pills = MentionTextLayout.pills(of: string, in: size, style: style) { keptLayout(width: size.width) }
             laidOut = (size, pills)
             return pills
+        }
+
+        /// Where each of `ranges` (UTF-16, of `string`: a pill is one character) is drawn in a box
+        /// of `size`: a rect a line, from the box's top-left (`MentionTextLayout.lineRects`).
+        func lineRects(of ranges: [NSRange], in size: CGSize, style: MentionTextStyle) -> [[CGRect]] {
+            layout(width: size.width, style: style).lineRects(of: ranges, height: size.height)
+        }
+
+        /// The layout kept, if it's for this width.
+        private func keptLayout(width: CGFloat) -> StringDrawingLayout? {
+            if let layout, layout.width == width { return layout }
+            return nil
+        }
+
+        /// The layout for this width, kept: only what asks for rects keeps one.
+        private func layout(width: CGFloat, style: MentionTextStyle) -> StringDrawingLayout {
+            if let kept = keptLayout(width: width) { return kept }
+            let made = MentionTextLayout.layout(of: string, width: width, style: style)
+            layout = made
+            #if DEBUG
+            MentionDrawingCounts.layoutsKept += 1
+            #endif
+            return made
         }
     }
 
@@ -361,12 +389,14 @@ extension MentionFrames: CanvasOverlay {
 }
 
 #if DEBUG
-/// How often the canvas has built mention text and laid out its pills, and how many texts it keeps
-/// (debug builds), so tests can hold a frame to what changed.
+/// How often the canvas has built mention text and laid out its pills, how many text layouts the
+/// memo has kept (Find's, never drawing's), and how many texts it keeps (debug builds), so tests can
+/// hold a frame to what changed.
 @MainActor
 public enum MentionDrawingCounts {
     public static var stringsBuilt = 0
     public static var layoutsBuilt = 0
+    public static var layoutsKept = 0
     public static var kept: Int { MentionTextMemo.shared.count }
     public static var capacity: Int { MentionTextMemo.shared.capacity }
 }
@@ -393,37 +423,23 @@ enum MentionTextLayout {
 
     /// The pills of `string` shown in a box of `size`: those on lines that fit, less any that the
     /// "…" string drawing ends a cut-short last line with would cover.
-    static func pills(of string: NSAttributedString, in size: CGSize, style: MentionTextStyle) -> [Pill] {
+    static func pills(of string: NSAttributedString, in size: CGSize, style: MentionTextStyle,
+                      layout: () -> StringDrawingLayout? = { nil }) -> [Pill] {
         #if DEBUG
         MentionDrawingCounts.layoutsBuilt += 1
         #endif
-        // Laid out with stand-ins of the pills' size: a layout manager may give an attachment it lays
-        // out a cell of its own, and the drawn pills stay as string drawing had them.
-        let laid = NSMutableAttributedString(attributedString: string)
         var found: [(index: Int, pill: MentionAttachment)] = []
         string.enumerateAttribute(.attachment, in: NSRange(location: 0, length: string.length)) { value, range, _ in
             guard let pill = value as? MentionAttachment else { return }
-            laid.addAttribute(.attachment, value: standIn(pill.bounds), range: range)
             for index in range.location..<NSMaxRange(range) { found.append((index, pill)) }
         }
         guard !found.isEmpty else { return [] }
-        let (storage, manager) = layOut(laid, width: size.width)
-        defer { withExtendedLifetime(storage) {} }
-        let lineHeight = lineHeight(of: style)
-
+        let laidOut = layout() ?? self.layout(of: string, width: size.width, style: style)
+        defer { withExtendedLifetime(laidOut) {} }
+        let manager = laidOut.layoutManager
         // Each line's glyphs, top and height, as string drawing stacks them, while they fit.
-        var lines: [(glyphs: NSRange, top: CGFloat, height: CGFloat)] = []
-        var top: CGFloat = 0, isCut = false
-        manager.enumerateLineFragments(forGlyphRange: NSRange(location: 0, length: manager.numberOfGlyphs)) { rect, _, _, glyphs, stop in
-            let height = max(rect.height, lineHeight)
-            guard top + height <= size.height + 0.01 else {
-                isCut = true
-                stop.pointee = true
-                return
-            }
-            lines.append((glyphs, top, height))
-            top += height
-        }
+        let (shown, isCut) = laidOut.lines(fitting: size.height)
+        let lines = Array(shown)
         // Text that doesn't fit ends its last shown line in "…", over whatever reaches past the
         // box's width less the "…"'s.
         let ellipsis = ("\u{2026}" as NSString).size(withAttributes: [.font: style.font]).width
@@ -445,36 +461,20 @@ enum MentionTextLayout {
     /// as wide as the range's glyphs there and as tall as the line as string drawing stacks them
     /// (`pills(of:in:style:)`), from the box's top-left; none on a line past the box.
     static func lineRects(of ranges: [NSRange], in string: NSAttributedString, size: CGSize, style: MentionTextStyle) -> [[CGRect]] {
+        layout(of: string, width: size.width, style: style).lineRects(of: ranges, height: size.height)
+    }
+
+    /// `string` laid out `width` wide as string drawing lays it out (TextEditing's
+    /// `StringDrawingLayout`), with stand-ins of its pills' size in their place (a layout manager
+    /// may give an attachment it lays out a cell of its own, and the drawn pills stay as string
+    /// drawing had them), every line at least as tall as a line of the style's text.
+    static func layout(of string: NSAttributedString, width: CGFloat, style: MentionTextStyle) -> StringDrawingLayout {
         let laid = NSMutableAttributedString(attributedString: string)
         string.enumerateAttribute(.attachment, in: NSRange(location: 0, length: string.length)) { value, range, _ in
             guard let pill = value as? MentionAttachment else { return }
             laid.addAttribute(.attachment, value: standIn(pill.bounds), range: range)
         }
-        let (storage, manager) = layOut(laid, width: size.width)
-        defer { withExtendedLifetime(storage) {} }
-        guard let container = manager.textContainers.first else { return ranges.map { _ in [] } }
-        let lineHeight = lineHeight(of: style)
-        var lines: [(glyphs: NSRange, top: CGFloat, height: CGFloat)] = []
-        var top: CGFloat = 0
-        manager.enumerateLineFragments(forGlyphRange: NSRange(location: 0, length: manager.numberOfGlyphs)) { rect, _, _, glyphs, stop in
-            let height = max(rect.height, lineHeight)
-            guard top + height <= size.height + 0.01 else {
-                stop.pointee = true
-                return
-            }
-            lines.append((glyphs, top, height))
-            top += height
-        }
-        return ranges.map { range in
-            guard range.length > 0, NSMaxRange(range) <= storage.length else { return [] }
-            let glyphs = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-            return lines.compactMap { line in
-                let part = NSIntersectionRange(glyphs, line.glyphs)
-                guard part.length > 0 else { return nil }
-                let bounds = manager.boundingRect(forGlyphRange: part, in: container)
-                return CGRect(x: bounds.minX, y: line.top, width: bounds.width, height: line.height)
-            }
-        }
+        return StringDrawingLayout(laid, width: width, minimumLineHeight: lineHeight(of: style))
     }
 
     /// An attachment of a pill's size, with nothing to draw.
@@ -483,20 +483,6 @@ enum MentionTextLayout {
         standIn.image = NSImage(size: bounds.size)             // a layout manager reads an attachment's size from its image
         standIn.bounds = bounds
         return standIn
-    }
-
-    /// `string` laid out `width` wide, every line, by a layout manager with the 10.2 typesetter,
-    /// and the storage that holds it (which the manager doesn't keep).
-    private static func layOut(_ string: NSAttributedString, width: CGFloat) -> (NSTextStorage, NSLayoutManager) {
-        let storage = NSTextStorage(attributedString: string)
-        let manager = NSLayoutManager()
-        manager.typesetterBehavior = .behavior_10_2_WithCompatibility
-        let container = NSTextContainer(size: CGSize(width: width, height: .greatestFiniteMagnitude))
-        container.lineFragmentPadding = 0
-        manager.addTextContainer(container)
-        storage.addLayoutManager(manager)
-        manager.ensureLayout(for: container)
-        return (storage, manager)
     }
 
     /// How far above the bottom of a line of the style's text a pill with these bounds is drawn:
@@ -509,8 +495,9 @@ enum MentionTextLayout {
         let pill = NSMutableAttributedString(attachment: standIn(CGRect(x: 0, y: bounds.minY, width: 10, height: bounds.height)))
         pill.addAttributes(style.attributes, range: NSRange(location: 0, length: pill.length))
         line.append(pill)
-        let (storage, manager) = layOut(line, width: 1000)
-        defer { withExtendedLifetime(storage) {} }
+        let laidOut = StringDrawingLayout(line, width: 1000)
+        defer { withExtendedLifetime(laidOut) {} }
+        let manager = laidOut.layoutManager
         let fragment = manager.lineFragmentRect(forGlyphAt: 1, effectiveRange: nil)
         let gap = fragment.height - manager.location(forGlyphAt: 1).y
         gaps[key] = gap

@@ -14,8 +14,9 @@ import TestKit
 
 /// Boards as the app configures them, with the app's content less its toolbar, and their clipboard
 /// on `pasteboard` (a test that copies passes its own).
-@MainActor func configureBoards(pasteboard: NSPasteboard = .general) throws {
-    BoardDocument.configuration = BoardConfiguration(registry: try ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel()),
+/// `extra`: plugins after the shipped list.
+@MainActor func configureBoards(pasteboard: NSPasteboard = .general, extra: [any CanvasPlugin] = []) throws {
+    BoardDocument.configuration = BoardConfiguration(registry: try Registry(plugins: ShippedPlugins.plugins(pasteboard: pasteboard, model: ScriptedLanguageModel()) + extra),
                                                      coveredTop: ShippedPlugins.coveredTop(on:), boardName: ShippedPlugins.boardName(of:)) { board in
         AnyView(InspectorHost(editor: board.editor, focus: board.focus, showsDetails: board.view.showsDetails, showsMinimap: board.view.showsMinimap,
                               view: board.view))
@@ -318,6 +319,19 @@ let boardType = "com.example.InfiniteCanvas.board"
         expectEqual(recent.items.map { $0.action.map(NSStringFromSelector) }, ["clearRecentDocuments:"])
         try check("Edit", "Delete", "delete:")
         try check("Edit", "Select All", "selectAll:", "a")
+        let edit = try require(menus.main.item(withTitle: "Edit")?.submenu)
+        let all = edit.indexOfItem(withTitle: "Select All")
+        expect(edit.item(at: all + 1)?.isSeparatorItem == true, "a separator after Select All")
+        expectEqual(edit.item(at: all + 2)?.title, "Find", "the Find submenu follows")
+        let find = try require(edit.item(at: all + 2)?.submenu)
+        expectEqual(find.items.map(\.title), ["Find…", "Find Next", "Find Previous"])
+        expectEqual(find.items.map { $0.action.map(NSStringFromSelector) }, ["showFind:", "findNextMatch:", "findPreviousMatch:"],
+                    "selectors no AppKit responder answers")
+        expectEqual(find.items.map(\.keyEquivalent), ["f", "g", "g"])
+        expectEqual(find.items.map(\.keyEquivalentModifierMask), [.command, .command, [.command, .shift]])
+        let go = try require(menus.main.item(withTitle: "Go")?.submenu)
+        expectEqual(go.items.map(\.title), ["Back", "Enclosing Board", "Open Selection", "", "Jump To…"], "Jump To follows Open Selection, after a separator")
+        try check("Go", "Jump To…", "showJumpTo:", "k")
         try check("View", "Show Inspector", "toggleDetails:", "i", [.command, .control])
         try check("View", "Show Minimap", "toggleMinimap:", "m", [.command, .control])
         try check("View", "Zoom In", "zoomIn:", "=")

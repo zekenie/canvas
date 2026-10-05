@@ -16,12 +16,12 @@ public enum CaretListRow: Equatable {
 
 /// What an item's row shows, one line: a symbol in its tint, the title with its matched characters
 /// in semibold, a symbol after the title (a read-only shape's lock), and a detail at the trailing
-/// end, in the secondary color. A title cut short ends in "…". What the item is to its list's
+/// end, in the secondary color, its matched characters in semibold too. A title cut short ends in "…". What the item is to its list's
 /// owner (a shape, a keyword) is the owner's: it knows its items by their rows' indexes.
 public struct CaretListItem: Equatable {
     public var title: String
     /// The title's characters the query matched, as ranges of `Character` offsets
-    /// (`CaretListMatch.matched`).
+    /// (`FuzzyMatch.matched`).
     public var matched: [Range<Int>]
     /// The title's font (a code editor's, say), its matched characters in its bold; nil for the
     /// list's, the system's at `TextEditingStyle.caretListLabelSize`, matched in its semibold.
@@ -31,6 +31,12 @@ public struct CaretListItem: Equatable {
     /// The symbol's color; nil for the secondary label's.
     public var tint: NSColor?
     public var detail: String?
+    /// The detail's characters the query matched, as ranges of `Character` offsets in `detail`, set
+    /// in semibold as the title's are (a path's names, in Jump To). They aren't said: `spoken` is.
+    public var detailMatched: [Range<Int>]
+    /// The detail's characters set fainter, as ranges of `Character` offsets in `detail`: a path's
+    /// untitled container, shown by its kind's name, never matched.
+    public var detailDimmed: [Range<Int>]
     /// An SF Symbol right after the title, in the detail's color.
     public var trailingSymbol: String?
     /// What VoiceOver says for the row.
@@ -38,13 +44,15 @@ public struct CaretListItem: Equatable {
 
     /// `spoken` nil: the title, then the detail ("type, keyword").
     public init(_ title: String, matched: [Range<Int>] = [], font: NSFont? = nil, symbol: String? = nil, tint: NSColor? = nil,
-                detail: String? = nil, trailingSymbol: String? = nil, spoken: String? = nil) {
+                detail: String? = nil, detailMatched: [Range<Int>] = [], detailDimmed: [Range<Int>] = [], trailingSymbol: String? = nil, spoken: String? = nil) {
         self.title = title
         self.matched = matched
         self.font = font
         self.symbol = symbol
         self.tint = tint
         self.detail = detail
+        self.detailMatched = detailMatched
+        self.detailDimmed = detailDimmed
         self.trailingSymbol = trailingSymbol
         self.spoken = spoken ?? detail.map { "\(title), \($0)" } ?? title
     }

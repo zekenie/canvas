@@ -74,6 +74,17 @@ public final class BoardWindowController: NSWindowController {
     /// subboard shows its board).
     @objc public func openSelection(_ sender: Any?) { board?.editor.perform(.openSelection) }
 
+    /// Edit › Find › Find…, Find Next and Find Previous (⌘F, ⌘G, ⇧⌘G): the commands a plugin claims
+    /// (Find's). Named so no AppKit responder answers them (not `performFindPanelAction:`, which a
+    /// text view takes), and not in `textKeys`: they work from the canvas, text being edited, a
+    /// panel's field and the list.
+    @objc public func showFind(_ sender: Any?) { board?.editor.perform(.find) }
+    @objc public func findNextMatch(_ sender: Any?) { board?.editor.perform(.findNext) }
+    @objc public func findPreviousMatch(_ sender: Any?) { board?.editor.perform(.findPrevious) }
+
+    /// Go › Jump To… (⌘K): the command a plugin claims (JumpTo's), from wherever the keyboard is.
+    @objc public func showJumpTo(_ sender: Any?) { board?.editor.perform(.jumpTo) }
+
     // Edit › Cut, Copy and Paste: the commands a plugin claims (Clipboard's, on the selection).
     @objc public func cut(_ sender: Any?) { board?.editor.perform(.cut) }
     @objc public func copy(_ sender: Any?) { board?.editor.perform(.copy) }
@@ -82,6 +93,8 @@ public final class BoardWindowController: NSWindowController {
     /// The menu items that run a command, enabled while it can run.
     private static let commands: [Selector: CanvasCommand] = [
         #selector(goBack(_:)): .goBack, #selector(enclosingBoard(_:)): .enclosingBoard, #selector(openSelection(_:)): .openSelection,
+        #selector(showFind(_:)): .find, #selector(findNextMatch(_:)): .findNext, #selector(findPreviousMatch(_:)): .findPrevious,
+        #selector(showJumpTo(_:)): .jumpTo,
         #selector(cut(_:)): .cut, #selector(copy(_:)): .copy, #selector(paste(_:)): .paste,
         #selector(zoomIn(_:)): .zoomIn, #selector(zoomOut(_:)): .zoomOut, #selector(zoomToActualSize(_:)): .zoomToActualSize,
         #selector(zoomToFit(_:)): .zoomToFit, #selector(zoomToSelection(_:)): .zoomToSelection,

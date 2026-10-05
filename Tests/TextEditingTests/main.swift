@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([caretListTests, highlightTests])
+runTests([caretListTests, highlightTests, stringDrawingTests])

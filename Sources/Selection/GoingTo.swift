@@ -48,6 +48,14 @@ extension PluginRegistrar {
     }
 }
 
+/// Where the editor was as a way around that spans many calls began (`editor.navigationStart`):
+/// what Back returns to after it (`editor.navigate(from:_:)`).
+public struct NavigationStart: Equatable, Sendable {
+    public let board: BoardID
+    public let selection: [ShapeID]
+    public let camera: Camera
+}
+
 // Going to shapes, one way for every plugin that brings shapes into view: the table of contents
 // (a row's click), and whatever links to a shape (a mention in text). data-canvas's navigateToShape.
 extension CanvasEditor {
@@ -108,6 +116,23 @@ extension CanvasEditor {
             if canOpen(id) { open(id) }
         }
         if let selectionState { selectionState.asOneStep(go) } else { go() }
+    }
+
+    /// Where the editor is now (its board, selection and camera, where it's headed), for a way
+    /// around that spans many calls (Find's stepping through its hits, board to board) to come back
+    /// to as one step back (`navigate(from:_:)`). Nil without the Selection plugin.
+    public var navigationStart: NavigationStart? {
+        selectionState.map { _ in NavigationStart(board: board, selection: selectedShapeIDs, camera: cameraTarget) }
+    }
+
+    /// Runs `body` (showing boards, revealing shapes) as part of one step back to `start`, however
+    /// many calls make it up: nothing `body` does records a step of its own, and the first call
+    /// that moves the board, the selection or the camera puts `start` on the history as the step
+    /// back, once (a later call finds it there and adds none, whatever the person did between). As `asOneStep`, but
+    /// for a way around the person takes a step at a time: Back after it returns to where it began.
+    public func navigate(from start: NavigationStart, _ body: () -> Void) {
+        guard let state = selectionState else { return body() }
+        state.asOneStep(from: SelectionHistory.Entry(board: start.board, selection: start.selection, camera: start.camera), body)
     }
 
     /// A trackpad's smart zoom (a two-finger double-tap, `.smartMagnify`), as Safari's and Preview's:

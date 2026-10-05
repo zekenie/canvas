@@ -10,7 +10,9 @@ import ContextMenus
 import CoreGraphics
 import DetailPanel
 import DrawLexicon
+import Find
 import Frames
+import JumpTo
 import Keyboard
 import LanguageModels
 import Locking
@@ -63,6 +65,18 @@ public enum ShippedPlugins {
             MentionsPlugin(),
             // Getting around a file's boards (a subboard's): opening one, ⌘↑, the path.
             BoardsPlugin(),
+            // Finding text on the board shown and every board under it (⌘F, ⌘G): after Adornments, so a
+            // hit's ring draws over a title's pill, and Topology, whose walk of the file orders the hits.
+            FindPlugin(),
+            // What Find searches, from the plugins that draw it, each after Find and its owner: titles,
+            // mention text (a note's, a schema card's description), arrows' labels.
+            TitleFindPlugin(), MentionFindPlugin(), ArrowFindPlugin(),
+            // Jump To (⌘K): goes to a shape by its title and where it is. After Titles, whose titles it
+            // lists, and Boards, whose way of following a shape it takes. Its rows' symbols are tinted as
+            // a mention of the shape is (JumpTo doesn't import Mentions).
+            JumpToPlugin(appearance: { record, registry in
+                registry.mentionAppearance(of: record).map { JumpToAppearance(systemImage: $0.systemImage, tint: $0.tint) }
+            }),
             // Turning shapes into other kinds: a frame into a subboard, from its menu.
             TransformPlugin(),
             ValidationDetailsPlugin(), ValidationContentsPlugin(), MentionValidationPlugin(), TitleValidationPlugin(),
@@ -113,11 +127,22 @@ public enum ShippedPlugins {
     /// board, or the selection), as data-canvas's details panel does. `onExit` must give the
     /// keyboard back to the canvas. Inside a subboard, the list's header names its board, with
     /// its symbol and a button up (⌘↑'s `.enclosingBoard`); on the root it's `rootName` (the
-    /// file's name, as the window and the path's root crumb call it), else "Board".
+    /// file's name, as the window and the path's root crumb call it), else "Board". While Find is
+    /// open, its panel takes the panel over (Escape and ⌘. there close it), its boards named as the
+    /// path names them and each shape's symbol tinted as a mention of it is.
     public static func detailPanel(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void, rootName: String = "") -> some View {
-        DetailPanelView(editor: editor, onExit: onExit) {
+        DetailPanelView(editor: editor, onExit: onExit, overview: {
             TableOfContentsView(editor: editor, onExit: onExit, heading: { contentsHeading(for: $0, rootName: rootName) })
-        }
+        }, takeover: DetailTakeover(isActive: { $0.find?.isActive ?? false }, onEscape: { editor.find?.close() }) {
+            FindPanel(editor: editor, onExit: onExit, heading: { findHeading(of: $0, in: editor, rootName: rootName) },
+                      tint: { editor.registry.mentionAppearance(of: $0)?.tint })
+        })
+    }
+
+    /// A board's heading over its rows in Find's panel: named as the path names it (Boards'), the
+    /// root `rootName`, else "Board".
+    public static func findHeading(of board: BoardID, in editor: CanvasEditor, rootName: String = "") -> FindHeading {
+        FindHeading(editor.name(of: board, root: rootName.isEmpty ? "Board" : rootName), systemImage: editor.symbol(of: board))
     }
 
     /// The table of contents' heading in `detailPanel`: the board shown's crumb (Boards'), so it's

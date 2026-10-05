@@ -84,6 +84,14 @@ public struct CanvasCommand: Hashable, Sendable, ExpressibleByStringLiteral, Cus
     public static let openSelection: CanvasCommand = "openSelection"
     /// Go › Enclosing Board (⌘↑): the board holding the shown board's owner.
     public static let enclosingBoard: CanvasCommand = "enclosingBoard"
+    /// Edit › Find… (⌘F), Find Next (⌘G) and Find Previous (⇧⌘G): for the plugin that searches the
+    /// text in shapes (Find's), whatever has the keyboard, text included.
+    public static let find: CanvasCommand = "find"
+    public static let findNext: CanvasCommand = "findNext"
+    public static let findPrevious: CanvasCommand = "findPrevious"
+    /// Go › Jump To… (⌘K): for the plugin that goes to a shape by its title and where it sits in the
+    /// containment tree (JumpTo's), whatever has the keyboard, text included.
+    public static let jumpTo: CanvasCommand = "jumpTo"
     /// View › Zoom In, Zoom Out and Actual Size: the core's own, the camera to the next of the zoom
     /// stops (`Camera.zoomStops`) in or out, or to 100%, around the view's center.
     public static let zoomIn: CanvasCommand = "zoomIn"

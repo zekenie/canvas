@@ -1,4 +1,5 @@
 import AppKit
+import FuzzyMatching
 import TextEditing
 
 /// The list a text view shows at a `/`, while it's open: what's typed after the slash (the query),
@@ -98,14 +99,14 @@ public final class SlashCommandPicker {
 
     /// Lists what the query finds, the first command highlighted: every command in the order it was
     /// offered for an empty query; else those whose names it matches, best tier first
-    /// (`CaretListRanking`), then in the order offered; or the one row that says nothing matches.
+    /// (`FuzzyRanking`), then in the order offered; or the one row that says nothing matches.
     private func setRows(for query: String) {
         self.query = query
         let found: [(command: OfferedSlashCommand, matched: [Range<Int>])]
         if query.isEmpty {
             found = offered.map { ($0, []) }
         } else {
-            let matches = CaretListMatcher.matches(query, in: offered.map(\.name))
+            let matches = FuzzyMatcher.matches(query, in: offered.map(\.name))
             found = offered.indices.compactMap { index in matches[index].map { (index, $0) } }
                 .sorted { a, b in a.1.score != b.1.score ? a.1.score > b.1.score : a.0 < b.0 }
                 .map { (offered[$0.0], $0.1.matched) }

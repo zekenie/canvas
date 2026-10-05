@@ -26,6 +26,7 @@ maps one onto the other.
 - [Selection](#selection)
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [TextEditing](#textediting)
+- [FuzzyMatching](#fuzzymatching)
 - [The detail panel](#the-detail-panel)
 - [Context menus](#context-menus)
 - [The table of contents](#the-table-of-contents)
@@ -35,10 +36,12 @@ maps one onto the other.
 - [Ports](#ports)
 - [Mentions](#mentions)
 - [Slash commands](#slash-commands)
+- [Find](#find)
 - [Topology](#topology)
 - [Queries](#queries)
 - [Boards](#boards)
 - [Frames](#frames)
+- [Jump To](#jump-to)
 - [Transform](#transform)
 - [The command line](#the-command-line)
 - [Schema cards](#schema-cards)
@@ -316,6 +319,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Ask which shape a shape is inside (its container, else the owner of its board, at any depth) | `editor.topology?.parent(of:)`, `ancestors(of:)`, `isInside(_:_:)` | [Containment](#containment) |
 | Read edges and containment off the main actor, as they were at one instant | `topology.snapshot()`, a Sendable `TopologySnapshot` | [A snapshot for other threads](#a-snapshot-for-other-threads) |
 | Find the shapes of a file a query matches (by kind, title, attribute, what's inside what, what connects to what), from a plugin or an agent | `editor.queries?.run(QueryRequest(#"sticky-note:mentions("Auth")"#))`, answered off the main actor; `canvas query` | [Queries](#queries) |
+| Make text a kind draws findable with ⌘F, highlighted where it's drawn | `registrar.findableTexts(_:where:…)` (Find), or `x.findableTexts(_:…)` for a kind's own: its texts and where each range is drawn | [Find](#find) |
 | Give queries a plugin's word (a pseudo-class, or a relation over its edges), or say how its text reads in them | A plugin in QueryLexicon, which imports Queries and the concern: `registrar.queryPseudoClass`, `queryRelation` or `queryTextFormat` | [What plugins add](#what-plugins-add) |
 | Put an editing view's selection where the press that began editing was | `editor.beginEditing(id, at: point, clickCount:)`, read as `EditContext.startPoint` and `startClickCount` | [Capabilities](#capabilities) |
 | Name an undo step, or make several changes one | `editor.transact("Name") { ... }`; `editor.undoHistory.group("Name") { ... }`; `transact(coalescing:)` for a run of writes | [Undo](#undo) |
@@ -472,13 +476,13 @@ Each target is one line, with its layer:
 | Layer | May depend on | Modules |
 |---|---|---|
 | wire | wire | CanvasRPC (what the app and its [command line](#the-command-line) say to each other) |
-| foundation | foundation | Geometry, Canvas (the core), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, and its solver) and QueryLanguage (the language [`canvas query`](#query) reads), pure, and TextEditing ([the text view and the caret list](#textediting) every editable text is built on) |
+| foundation | foundation | Geometry, Canvas (the core), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, and its solver) and QueryLanguage (the language [`canvas query`](#query) reads), pure, TextEditing ([the text view and the caret list](#textediting) every editable text is built on) and FuzzyMatching ([the matcher](#fuzzymatching) every list ranks typed text with, and Find and Jump To's) |
 | ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
-| surface | foundation, surface | Keyboard, Selection, DetailPanel, ContextMenus, SlashCommands, TableOfContents, Adornments, LanguageModels, Topology |
+| surface | foundation, surface | Keyboard, Selection, DetailPanel, ContextMenus, SlashCommands, TableOfContents, Adornments, LanguageModels, Topology, Find |
 | concern | foundation, surface, concern | Validation, Clipboard, Titles, Locking, Connections, Mentions, Boards, Snapping, Transform |
 | language | foundation, surface, language, wire | Automation, Queries, QueryCommands |
 | lexicon | foundation, surface, concern, language | DrawLexicon, QueryLexicon |
-| vertical | foundation, surface, concern | StickyNotes, Schemas, Subboards, Frames, Reordering |
+| vertical | foundation, surface, concern | StickyNotes, Schemas, Subboards, Frames, JumpTo, Reordering |
 | composition | foundation, surface, concern, language, lexicon, vertical, wire | Composition (the shipped plugin list) |
 | app | foundation, ui, composition, wire | InfiniteCanvas |
 | appex | foundation, ui, composition | CanvasQuickLook (an extension the app carries: Quick Look's preview and thumbnail of a board file, [Boards on disk](#boards-on-disk)) |
@@ -1314,6 +1318,11 @@ On every board the editor can show, but shapes kept aside. A warning: each shape
 Shipped after `MentionValidationPlugin`, its warnings show as any issue does: an orange outline, a line in
 the Issues tab and a dot on the row.
 
+[Find](#find) searches titles too: `TitleFindPlugin` (a plugin value of Titles' own, after Find and
+Titles) gives each title (`registry.title(of:)`) on the kinds that hold `TitleProperty` or derive
+one; a hit rings the whole pill (which may cut the title short), and zoomed out the cover is
+tinted.
+
 ## Properties
 
 A shape's data is its properties. Most are its kind's own, which the kind lists. Others are added
@@ -1828,6 +1837,14 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   `goTo` does nothing mid-gesture, or when none of the shapes is on a board it can show; without
   `SelectionPlugin` it ends editing, shows their board and reveals. data-canvas's navigateToShape
   always zooms.
+- `navigationStart` and `navigate(from:_:)`: a way around that the person takes a call at a time
+  ([Find](#find)'s stepping from hit to hit, board to board) as one step back. Take
+  `editor.navigationStart` (a `NavigationStart`: the board, the selection, the camera where it's
+  headed) as it begins, and make each move inside `editor.navigate(from: start) { … }`: nothing in
+  it records a step of its own, and the first call that moves the board, the selection or the
+  camera puts the start on the history as the step back, once (a later call finds it there and adds
+  none, even after a click or a pan between; a call that moves nothing adds none). Back after it
+  returns to where it began.
 - `goInto(_:)` follows a link into what it names (a mention of a subboard enters it): `goTo`, then
   `open` there if it opens (`canOpen`), as one step back, to the board and selection it was
   followed from, whatever boards it went through (the selection state runs both as one step,
@@ -2212,6 +2229,12 @@ What the shipped app's keys do:
   shortcuts: [KeyChord("a", .command)]) { ... }` claims the command and gives it its key in one
   call, so ⌘A and the menu item do one thing. While a command can't run (its `isEnabled:`, which
   dims its menu item), its keys go on as if there were no shortcut: ⌘[ with nowhere to go back to.
+  The core also names the commands of two features, for plugins to claim: `.find`, `.findNext` and
+  `.findPrevious` (Edit › Find › Find…, Find Next and Find Previous: ⌘F, ⌘G, ⇧⌘G; [Find](#find)'s
+  plugin claims them) and `.jumpTo` (Go › Jump To…, ⌘K; JumpTo's, to come). Their items are in the menus, sent to
+  the window controller's own selectors (never AppKit's find actions, which a text view takes),
+  dimmed while nothing claims the command, and not among the items that leave their keys to text,
+  so they work from a note being edited or a panel's field too.
 - **A ⌘ key a menu item also has** is the shortcut's while the canvas has the keyboard. AppKit asks
   the key window's views for a key equivalent before the menu bar, and the canvas asks the
   shortcuts (`CanvasView.performKeyEquivalent`), so ⌘A goes through Keyboard like any other key, and
@@ -2268,9 +2291,10 @@ module of the project, so it knows no canvas, registry, plugin or panel, and a p
 into text imports it without importing the inspector: Connections for an arrow's label, StickyNotes and
 Schemas for their editors on the canvas, DetailPanel for its text boxes, Mentions for its text view
 and its picker, SlashCommands for its list at a slash. It holds `EditingTextView`, the caret list
-(`CaretList`, `CaretListWindow` and `CaretListMatcher`), `CaretListSubstitutions` and the metrics they
-draw by (`TextEditingStyle`, internal). TextEditingTests
-hold the list, its window and its matcher, on TestKit and CanvasTesting alone.
+(`CaretList` and `CaretListWindow`), `CaretListSubstitutions`, `StringDrawingLayout` ([where string
+drawing puts text](#where-string-drawing-puts-text)) and the metrics they draw by
+(`TextEditingStyle`, internal). TextEditingTests hold the list and its window, on TestKit and
+CanvasTesting alone. What a list ranks typed text with isn't here but in [FuzzyMatching](#fuzzymatching).
 
 ### The text view
 
@@ -2342,8 +2366,9 @@ command does to it (↑ ↓ ⌃P ⌃N and Page Up and Down move, Return and Tab 
 with nothing highlighted, Escape, ⌥⎋ and F5 close; every other command is the text's). An item
 (`CaretListItem`) is what its row shows, one line: a title with its matched characters in
 semibold (in the item's `font`, if it has one), a symbol in its tint before it, a
-`trailingSymbol` after it (a read-only shape's lock), a `detail` at the trailing end, and what
-VoiceOver says, the title and detail unless it says otherwise. Its size is its owner's
+`trailingSymbol` after it (a read-only shape's lock), a `detail` at the trailing end (its
+`detailMatched` characters in semibold too, as a title's, and its `detailDimmed` ones fainter: Jump To's path), and what
+VoiceOver says, the title and detail unless it says otherwise (matched characters aren't said). Its size is its owner's
 (`CaretListMetrics`: width, row height, rows shown, the offset below the anchor), its look
 `TextEditingStyle`'s. `CaretListWindow(list, accessibilityLabel:over:anchor:pick:close:post:)` shows
 it: a borderless child of the text's window that never takes the keyboard (not deferred, so a
@@ -2352,20 +2377,105 @@ click in another window, leaves clicks in its children alone), under the anchor
 range's `firstRect` (its rows' text under the anchor's start; above the line where there's no
 room below; on screen), following every view the text is in as it moves or scales, and asking
 its owner to `close` once the anchor leaves the text's visible rect or the window stops being
-key; VoiceOver hears it change and go through `post`, which an owner may route (Mentions counts
+key. A list that isn't at the text's caret takes a rect of its own instead:
+`CaretListWindow(list, accessibilityLabel:over:anchorRect:pick:close:post:)`, a closure giving a rect
+in screen coordinates (asked each time the window is placed; nil leaves it where it is), which the
+window sits centered under at its metrics' width, below it or above it where there's no room, on
+screen; the text view is then only its parent window's and what it follows, and the anchor can't
+leave it (Jump To's palette, whose field is an `EditingTextView` and whose list is under the
+capsule); VoiceOver hears it change and go through `post`, which an owner may route (Mentions counts
 what its picker says). The owner decides the rest: when it opens and closes, what the query is,
 what it lists (`setRows`), and what a pick inserts (`pick` gets the row's index); it calls
 `listDidChange()` after each change and `dismiss()` as it closes. Every list ranks typed text
-alike, with `CaretListMatcher` (Mentions' tiers, `CaretListRanking`): `rank` is the two passes
-every list makes, every tier but the typo's over the labels it gives (nil for one it leaves
-out), then the typo's over the rest only when fewer than 8 matched, which Mentions' catalog
-makes over its keys and `matches(_:in:)` over a list of labels.
+alike, with [`FuzzyMatcher`](#fuzzymatching), not TextEditing's: a list's owner imports FuzzyMatching
+for it.
 
 A list over text its own substitutions would rewrite (an `@query`, a `/name`) takes them as it opens
 and turns them off while it's open: `CaretListSubstitutions(of: view)` holds the view's spelling
 correction, text replacement, smart quotes and smart dashes, `CaretListSubstitutions.off` is all
 four off, and `apply(to:)` sets a view's, so its owner puts them back as they were when the list
 closes.
+
+### Where string drawing puts text
+
+The canvas draws text with string drawing (`NSAttributedString.draw(with:options:
+.usesLineFragmentOrigin)`: a note's, an arrow's label), which says nothing of where it put each
+character. `StringDrawingLayout(string, width:minimumLineHeight:)` does: an offscreen
+`NSLayoutManager` with the 10.2 typesetter, which breaks lines and sets glyphs across them as string
+drawing does (an alignment the paragraph names included), its lines stacked down the box as string
+drawing stacks them, each at least `minimumLineHeight` (`lines`, `lines(fitting:)` for a box's
+height). `lineRects(of:height:)` is where each range (UTF-16) is drawn: a rect a line it's on, as
+wide as a selection of it would be (`enumerateEnclosingRects`: `boundingRect(forGlyphRange:)`
+misplaces part of a centered line with that typesetter), as tall as the line, none past the box. It
+lays out once, as it's made, so one kept per text and width makes a range's rects a lookup: what
+[Find](#find)'s highlights are drawn from (Mentions keeps one with each built text, with its pills'
+stand-ins in it, Connections one per label).
+
+## FuzzyMatching
+
+FuzzyMatching ([`Sources/FuzzyMatching`](../Sources/FuzzyMatching)) matches what's typed against
+text: three matchers on one folding, and a heap for the best few of what they match, a foundation module that depends on no other module of the
+project (it knows no canvas, registry or plugin, and not TextEditing), pure and nonisolated, so any
+thread runs it and its values are `Sendable`. FuzzyMatchingTests hold it on TestKit alone.
+
+- **`FuzzyMatcher`** ranks a query against labels, as every list that ranks typed text does
+  (Mentions' `@` picker, slash commands' list, a code editor's completions, and Jump To), so they
+  agree. A `Query` is the typed text folded once (lowercased, without diacritics, each run of
+  whitespace one space) and a `Label` a label folded once (each scalar marked where it starts a
+  word, with the `Character` it came from); a label takes its best tier (`FuzzyRanking`): exact 1000,
+  prefix 800, each word of the query a prefix of a word of the label in order 600, substring 400, a
+  subsequence at most 300 (fzf's scoring: word starts, runs and the first character count, gaps
+  cost), and, for a query of 4 characters or more that matched nothing above, one typo 100 (a
+  Damerau edit of a word's prefix). `match(_:in:)` gives a `FuzzyMatch`: the score and the label's
+  matched characters, as ranges of `Character` offsets, for a list to set in semibold.
+  `matches(_:in:)` matches a list of labels, and `rank` is the two passes a list over many labels
+  makes (every tier but the typo's over the labels it gives by index, nil for one it leaves out,
+  then the typo's over the rest only when fewer than 8 matched), which Mentions' catalog makes
+  over its keys, kept back to back in one buffer (`appendKeys`).
+- **`TextSearch`** is Find's matcher: a query, a phrase of words, searched for in texts. A text is
+  folded once (`FoldedText`) the way a label is, but a Unicode scalar at a time (a decomposed `e`
+  and acute accent folds to `e`, as `é` does; whitespace is a space; `ß` is `ss`), into UTF-16
+  units, with a table back to the original's units kept only if folding changed any scalar's length
+  (ASCII, the usual text, folds in one pass over its bytes and keeps nothing). `hits(in:)` gives
+  `TextHit`s, each a range of the original's UTF-16 units (a text view's, `NSString`'s) and whether
+  it's `isExact`, in text order, at most `TextSearch.hitCap` (100): first every place the query's
+  text is, mid-word too, one after another and never overlapping (as a browser's: "aa" in "aaaa" is two; whitespace runs equal to one
+  another, so a phrase finds its words across a line break); then, from a word's start, the places
+  it would be but for typos, each word of four letters or more with one edit (a letter changed,
+  added, left out, or two swapped), the first letter of every word right, shorter words exact, the
+  last word allowed to be a prefix of the text's word (typing mid-word keeps its hits), the end
+  chosen as the matcher's typo tier does (no edit, then nearest the query's length) and never over
+  a space of the text. A fuzzy hit that overlaps an exact one is dropped, so a hit is never twice.
+  The query is made once per keystroke (`TextSearch(_:)`) and each text once; `hits(in:isCancelled:)`
+  allocates only its hits and the ranges it finds on the way, and asks `isCancelled` every 64K units of a text (what it's found
+  so far comes back, for the caller that cancelled to drop), so a keystroke can replace a search
+  inside one long text, not only between texts.
+- **`BoundedHeap`** keeps the best `capacity` of what's inserted, in a heap with the worst on top (the
+  caller's `isWorse` says which), so an insert costs a logarithm of the capacity and `sorted()` gives
+  the best first: Mentions' `@` picker and Jump To's list both keep their few rows' worth of matches
+  in one, instead of sorting every match.
+- **`PathMatcher`** is Jump To's: a query for a shape by the containers on the way to it, as VS Code's
+  file switcher takes a path. A path is segments from the outermost container to the shape's own
+  title, the leaf. The query splits on whitespace into pieces, which go into the segments in order,
+  a group of neighbors to a segment (several pieces in one segment are one `FuzzyMatcher` query of
+  the words joined), segments may be skipped, and the last group goes in the leaf. A group in a
+  container may score only the exact, prefix, word-prefix, substring and typo tiers, never a bare
+  subsequence (a container is named, the leaf is looked for); the leaf's, any tier. The score is
+  `PathRanking.leafWeight` (2) × the leaf group's tier score, plus the containers' groups' scores,
+  less `PathRanking.skipPenalty` (25) for each segment skipped, which is one that holds no group
+  once a piece has gone into an earlier one (what's above the first group is unmentioned, not
+  skipped). A query is at most `PathRanking.maximumPieces` (8) pieces, the words after the last
+  part of it.
+  `match(path:)` takes a path as strings and gives the score and, per segment, the matched
+  characters (`Character` offsets, and `PathMatcher.utf16Ranges(_:in:)` converts them to UTF-16
+  offsets), and how many segments it skipped. A caller that ranks thousands of shapes in a tree
+  doesn't: it keeps a `PathMatcher.Row` per container, the best score for each count of pieces placed
+  so far along the chain from the root through that container, found from the parent's row
+  (`advance(_:through:)`, nil for an untitled container, a skip; it costs a match of every group of
+  the pieces that fit, at most 28 at eight pieces, once per container, not per shape beneath it), and a leaf's score is
+  `leafScore(after:label:)` from its parent container's row, which costs one match of each group of
+  its label, a few for a few pieces. A one-piece query has no path in it: that's `FuzzyMatcher` over
+  the leaves.
 
 ## The detail panel
 
@@ -2481,7 +2591,7 @@ Sections are stock SwiftUI plus a few primitives, and get the look by following 
   stays; a second Escape leaves it), ⌘↩ closes it and commits, as ever (the list's key is Return,
   never ⌘↩), and every other key is the text's. After each keystroke and
   move of the caret it asks again and ranks what's offered by what's typed, with
-  `CaretListMatcher`'s tiers (nothing typed: as offered; else the best tier first, then what
+  `FuzzyMatcher`'s tiers (nothing typed: as offered; else the best tier first, then what
   `isRelevant`, then as offered; what doesn't match is left out), and closes once nothing's left,
   the caret leaves the place it opened for (the range starts elsewhere), the text is shown from
   outside or can't be written (`detailUpdating`, a locked shape), the keyboard or the window goes,
@@ -2980,10 +3090,21 @@ brings resizing, collapsing in narrow windows, and View › Show Inspector (⌃�
 ```swift
 CanvasRepresentable(editor: editor, focus: canvasFocus)
     .focusedSceneValue(\.canvasFocus, canvasFocus)
-    .inspector(isPresented: $showsDetails) {
-        ShippedPlugins.detailPanel(editor: editor, onExit: canvasFocus.take)
-    }
+    .modifier(ShippedPlugins.boardChrome(editor: editor, showsDetails: $showsDetails, rootName: name, onExit: canvasFocus.take))
 ```
+
+where `boardChrome` (Composition) adds the path, [Jump To's](#jump-to) palette (an overlay, drawing
+nothing until it's open) and the `.inspector` that holds `detailPanel`.
+
+### The takeover slot
+
+`DetailPanelView(editor:onExit:overview:takeover:)` also takes a `DetailTakeover`: `isActive`
+(read in the panel's body, so on observable state: the panel redraws when it flips), `onEscape` and
+a content view. While it's active the panel shows the content in place of everything else: "No
+Details", the overview and every selection branch, in the panel's own environment, frame and
+width. Escape and ⌘. in the panel call `onEscape`, then `onExit` (a text view holding keys still
+hears Escape first). The panel doesn't know what it shows; Composition fills the slot with
+[Find](#find)'s panel, active while Find is open, `onEscape` closing it.
 
 ### Performance
 
@@ -3366,7 +3487,8 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
     context.service(ValidationEngine.self)?.affected(by: changes) ?? []
 }) { shape, context in
     guard let result = context.service(ValidationEngine.self)?.result(for: shape.id), let worst = result.worst else { return nil }
-    return ContentsMark(color: Color(nsColor: worst.color), help: result.worstFirst.map(\.message).joined(separator: "\n"))
+    return ContentsMark(color: Color(nsColor: worst.color), help: result.worstFirst.map(\.message).joined(separator: "\
+"))
 }
 ```
 
@@ -3528,6 +3650,14 @@ ContentsOutline(editor: editor, board: board, highlighted: next, maxHeight: 348)
   plugin, or for a board with no rows.
 
 ### Hosting
+
+(The app's window wraps the canvas in `ShippedPlugins.boardChrome(editor:showsDetails:rootName:onExit:)`, a
+view modifier in Composition that adds the path, Jump To's palette (`JumpToPalette`, over the canvas,
+given `onExit` to give the keyboard back),
+the inspector with this panel and its toolbar button, and a hook that shows the inspector on
+request (each of Find's ⌘F, `FindState.focusRequest`, with the inspector hidden; and hides it again
+as Find closes, if it showed it: `revealedInspector`); it takes bindings and closures, never a CanvasUI type, and CompositionTests'
+`InspectorHost` applies the same modifier. The toolbar and the frame stay the app's.)
 
 `DetailPanelView` takes an optional overview, a view it shows where it has no shape to show: in
 place of "No Selection", and under the header of several (data-canvas's details panel takes an
@@ -4505,6 +4635,9 @@ and lends any plugin what follows, but for `beginArrow`, which is internal:
   and the shape its end is bound to, in the transaction that finishes it.
 - **`BindingHintsOverlay`** draws the hints of the arrow being dragged, else the selected arrow's,
   so an arrow drawn from a port, which leaves the selection alone, hints as a re-aimed one does.
+- **For [Find](#find)**, `ArrowFindPlugin` (Connections', after Find) gives an arrow's label,
+  washed where it's drawn (over the canvas), from the label's own string-drawing layout, centered,
+  kept by text and width (`ArrowLabels.layout(of:width:)`).
 
 ### Connecting without a drag
 
@@ -4550,7 +4683,7 @@ Mentions ([`Sources/Mentions`](../Sources/Mentions)) lets text mention other sha
 note, a few letters of another note's title, Return, and the note says "Ask ⟨▤ Ship the beta⟩
 first", the mention an inline pill with the note's symbol and name. It's a horizontal on
 Selection, the context menu, the detail panel, the table of contents, [TextEditing](#textediting) (the text view and the picker's
-list), [SlashCommands](#slash-commands) (its text view hosts them), Titles, [Topology](#topology) (each mention is an edge of the
+list), [FuzzyMatching](#fuzzymatching) (what ranks the picker's names), [SlashCommands](#slash-commands) (its text view hosts them), Titles, [Topology](#topology) (each mention is an edge of the
 file's graph) and Validation (for [the warnings](#warnings-mentions-that-cant-work) it adds), and three kinds opt
 in: sticky notes, whose text holds mentions and which can be mentioned, subboards, which can
 be mentioned (following a mention of one enters it), and schema cards, whose descriptions mention
@@ -4727,7 +4860,15 @@ func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
   `isLive`, from the same placements, as string drawing puts them: a line that doesn't fit, or a
   pill the "…" of a cut-short last line covers, has none. The `MentionTexts` point (`x.mentionText`,
   `registrar.mentionText(K.self)` for another plugin's kind, `registry.mentionTextPlacements(of:)`) is what the
-  faces read.
+  faces read. A built text keeps its layout once asked (TextEditing's `StringDrawingLayout`, over
+  the string with stand-ins of its pills' size, per width), so a pill's place, or a range's line
+  rects, is a lookup.
+- **For [Find](#find)**, `MentionFindPlugin` (a plugin value of Mentions' own, after Find and
+  Mentions in the shipped list) gives every kind with placements its text as it reads, each
+  mention its target's live name, so a name is found where its pill is, and a hit in a name marks
+  the whole pill (one character of the drawn text); its rects come from that kept layout. A rename
+  changes what its mentioners read: those are what `rowsAffected(by:)` names, which Find asks before
+  it reads any text.
 
 ### The service: `MentionState`
 
@@ -4776,8 +4917,8 @@ follows undo and redo, during which nothing may):
   board shown (looked for in squares around it, grown until one holds enough, or holds as many
   shapes as the board has in the catalog, when reading those costs less: a board with few
   mentionable shapes reads them), then, while there's room, the shapes whose boards it's inside,
-  and for any other the best 50 matches. Every caret list's matcher (`CaretListMatcher`,
-  TextEditing's) scores the folded query (case and diacritics ignored) against each name, each
+  and for any other the best 50 matches. Every list's matcher (`FuzzyMatcher`,
+  [FuzzyMatching's](#fuzzymatching)) scores the folded query (case and diacritics ignored) against each name, each
   taking its best tier: exact 1000, a prefix 800, each word a prefix of a word, in order, 600, a
   substring 400, a subsequence (fzf-style: word starts, runs and the first character count, gaps
   cost) at most 300, and, for a query of 4 or more that found fewer than 8 above, one typo (a
@@ -5264,7 +5405,9 @@ state.run("level", on: lamp, with: "3")            // true: one undo step, "Leve
 ### The list at a slash
 
 A `/` typed on an empty line opens the list. "Empty" is the text's start, or right after a line
-break (`\n`, `\r`, `\r\n`, U+0085, U+2028 or U+2029), with nothing after the `/` on its line. Not at
+break (`\
+`, `\r`, `\r\
+`, U+0085, U+2028 or U+2029), with nothing after the `/` on its line. Not at
 the start of a line that has text: a line is evaluated whole, so a command chosen there would take
 that text with it. Nowhere else either, so the slash in `and/or` is a slash, and so is one a paste,
 an undo or an input method put there, one in a view that can't be written, one while another caret
@@ -5275,7 +5418,7 @@ list is open, and one where the shape offers no command at all.
   takes the keyboard, under the `/` (240 wide, rows 24 tall, 8 shown, 4 below, "Commands" to
   VoiceOver). What's typed after the `/` is the query. An empty one lists every command the shape
   offers, in the order offered; else the commands whose names it matches, ranked with
-  `CaretListMatcher` (best tier first, then as offered), the matched characters in semibold; one
+  `FuzzyMatcher` (best tier first, then as offered), the matched characters in semibold; one
   row, "No matches", when none does, with nothing highlighted. Each row is the command's name, with
   its `argument` as the detail (VoiceOver reads "width, takes points"). The first is
   highlighted.
@@ -5462,6 +5605,173 @@ override func keyDown(with event: NSEvent) {                                    
   editing goes on, "Undo Title" is followed by the typing, and `/title ` alone is a new line. The
   registry's report (ShippedTests, and the guide's copy of it) holds `slash-commands`, Titles'
   `/title → every shape`, Locking's `/lock → every shape` and Subboards' `/turn-into-subboard → every shape`.
+
+## Find
+
+Find ([`Sources/Find`](../Sources/Find)) is ⌘F: it searches the board shown and every board under
+it for text that matches what's typed, as a browser's ⌘F searches a page, highlights each hit where
+its shape draws it, and lists the shapes it's in, in the detail panel's place. Matching is
+[FuzzyMatching](#fuzzymatching)'s `TextSearch`: folded (case, diacritics, width), a phrase, every
+exact place first, then word-anchored places one typo off for words of four letters or more, at
+most 100 hits a text. Find is a surface (on Canvas, DetailPanel, FuzzyMatching, Geometry, Keyboard,
+Selection and Topology) and knows no kind and no concern: what a shape shows as text, and where it
+draws it, the plugins that draw it say. Its plugin is `FindPlugin()`, id `find-in-boards` (never
+`find`, which is the command's name, `CanvasCommand.find`). It never transacts.
+
+### What's searched: `FindableTexts`
+
+A contribution says, for the kinds it's for, what a shape shows as text and where:
+
+```swift
+registrar.findableTexts("title", where: { $0.holds(TitleProperty.self) || $0.registry.titleIsDerived($0.kind) },
+                        look: .ring, followsZoom: true,
+                        zoomedOut: { record, _, context in context.editor.titleCover(of: record.id)?.rect },
+                        texts: { record, context in
+                            context.registry.title(of: record).map { [FindableText(field: "title", text: $0)] } ?? []
+                        },
+                        rects: { record, _, ranges, context in … })   // the pill's frame, from the shape's bounds' top-left
+```
+
+- **`texts`**: the shape's texts as it shows them, plain (`FindableText(field:text:)`: `field` is
+  the contribution's own name for the text, handed back to `rects`). Cheap: Find reads them into
+  its index as commits change the shape.
+- **`rects`**: where each range (UTF-16, of that field's text) is drawn now, a list of line rects
+  per range, in world units from the shape's kept bounds' top-left (`shapes.geometry(of:)`). Asked
+  only for shapes in view with hits, and kept by Find for the query while the shape's size stays
+  (and the zoom, with `followsZoom`, for text sized in view points: a title's pill), so a move asks
+  nothing. Keep what you lay out by text and width, so asking again is a lookup: TextEditing's
+  [`StringDrawingLayout`](#where-string-drawing-puts-text) lays text out as string drawing does.
+- **`zoomedOut`**: where the text is said on a shape drawn as a skeleton (a title's cover); none, or
+  nil, tints the shape's bounds.
+- **`affected`**: the shapes a commit changes the texts of without changing them (a note showing
+  another shape's live name), O(what it changed), as a row's `affected` is.
+- **`look`** (`FindLook`): `.marker`, a highlighter, multiplied over the shape's own surface, the
+  text as dark over it as it was (the default: a note's text, a card's); `.wash`, translucent, for
+  text over the canvas, whose color follows the appearance (an arrow's label); `.ring`, round a dark
+  badge a mark would hide (a title's pill).
+
+`registrar.findableTexts(_:where:…)` is for every shape of the kinds `where` picks (a
+`FindableKind`, asked once per kind: keep it to the kinds that opted into what's drawn, never `{ _ in
+true }`), `registrar.findableTexts(_:of:…)` for a kind another plugin registers, `x.findableTexts(_:…)`
+for a kind's own. The point (`FindableTexts`) is keyed by kind and name (two "title"s on one kind
+conflict; a blank name is refused) and its owner is Find's, so a contribution needs `FindPlugin()`
+installed. Shipped, each a plugin value of its owner's own, after Find and its owner in the list, so
+a list without Find leaves them out:
+
+| Contributor | Texts | Where |
+|---|---|---|
+| Titles' `TitleFindPlugin` | each title, named or derived (`registry.title(of:)`), on the kinds that hold `TitleProperty` or derive one | the pill's whole capsule, ringed (it may cut the title short); zoomed out, the cover |
+| Mentions' `MentionFindPlugin` | each `MentionTexts` placement's text (a note's, a schema card's description), each mention its live name | from the render's own layout, which Find's asking keeps with the drawn text (`MentionTextMemo`; drawing keeps none); a hit in a name is the whole pill; `affected`: `rowsAffected(by:)` |
+| Connections' `ArrowFindPlugin` | an arrow's label | from the label's string-drawing layout, centered, washed |
+
+### The index, and the search off the main actor
+
+- **Nothing before the first ⌘F.** Find's index is built then; until then a commit costs a
+  revision noted. Built, it holds every text every shape shows on every board the editor can show
+  (none kept aside), folded once, by shape (never in file order). The build reads the boards' ids,
+  then shapes a slice of 2 ms of the main actor at a time (`FindStyle.buildSlice`) on the editor's
+  scheduler, the field showing a spinner meanwhile, so a first ⌘F on a big file drops no frame.
+- **Each commit after it reads only what it changed**: contributions' `affected` first (so Mentions
+  has heard the commit, and its names are the commit's), then what it removed, added, changed other
+  than by moving, touched `elsewhere` (a subboard's deletion drops its boards' texts, going through
+  whichever is fewer), and what `affected` named. One heard out of turn, or a file put in place,
+  reads everything again; a switch of board reads nothing.
+- **A search a keystroke, off the main actor.** The query is folded on the main actor, and the
+  index's entries (a value, shared until the next commit copies the table once) and the scope's
+  order are handed whole to a detached task (`@concurrent`), which a newer keystroke cancels;
+  cancellation is asked every 256 shapes and every 64K units of a text, and an older answer is
+  dropped. The scope's order is kept from one search to the next while nothing but moves changed
+  the file, else worked out there from Topology's snapshot (`forEachShape(inFileOrder:)`). Results
+  are compact (a shape, its count, its first hit); a shape's hits are worked out again when they're
+  needed (in view, current, a listed row) by matching its one text.
+- **While Find is open, a commit patches the results** for the shapes it changed: a count, a shape
+  without hits gone, in place; a shape gaining its first hit has the scope searched again, off the
+  main actor. A move patches nothing. A commit that lands while a search is under way starts it
+  again instead (it read the index as it began, and its answer would undo the patch), landing as it
+  would have. Any commit but a move drops the scope's kept order, query or not.
+
+### Scope, order, and stepping
+
+- **Scope**: the board shown when the query last changed (or ⌘F opened Find), and every board under
+  it. Stepping and rows don't scope again; typing does, and so does the scope's board no longer
+  being showable (deleted, or a file put in place without it): scoped again to the board shown,
+  searched again, nothing retyped. **Order**: the scope board's shapes in file
+  order (what a frame holds after the frame), then each board under it, depth first, in file order.
+  The count ("3 of 12") counts hits, exact and typos alike; rows are one per shape.
+- **Typing** makes current the first hit on the board shown that's in view, else its first,
+  brought into view (`reveal`), else the first anywhere, without showing its board: typing never
+  switches boards. The first 64 results on the board shown are asked their bounds; past them, the
+  shapes in view (`paintOrder(in:)`) are looked up among the results, so thousands of hits out of
+  view cost what's in view.
+- **Stepping** (Return and ⇧Return in the field, ⌘G and ⇧⌘G anywhere, the panel's buttons) goes hit
+  by hit, wrapping, showing a hit's board and bringing it into view unless it's there. A row's
+  click makes its shape's first hit current, the same way, and leaves the keyboard in the field.
+  With Find closed and something typed, ⌘G opens it and lands on the first hit in view, which is its
+  step, and ⇧⌘G opens it, lands there and steps back.
+- **One step back.** Nothing Find does changes the selection (though showing another board empties
+  it, as every switch does), and a session's way around is one step back: Selection's
+  `navigate(from:_:)`, from `navigationStart` taken as Find opens. Back after Find returns to where
+  it began.
+- **Edits keep the current hit**: its shape and which of its hits, clamped to those left, else the
+  next shape's; the camera stays.
+
+### ⌘F, and closing
+
+`.find` (⌘F, Edit › Find › Find…) opens Find, or, open, focuses its field with its text selected;
+it ends editing first, and what's selected in the text being edited (`editor.editingSelectedText`),
+one line of it, is what's typed (an attachment in it that adopts `ReadsAsText`, a mention's pill,
+reads as its text, any other attachment is dropped, so a selection across a pill is searched for by
+the pill's name). It's refused mid-gesture. `.findNext` (⌘G) and `.findPrevious`
+(⇧⌘G) run while there are hits, or with Find closed and a query. Closing (Escape or ⌘. in the
+panel, the takeover's `onEscape`, or Done) takes the highlights away, shows the panel the
+selection says, and gives the canvas the keyboard; what's typed is kept, for the next ⌘F to select.
+Escape on the canvas is the canvas's own (Find stays open), and so is a click on a shape.
+
+### The highlights
+
+`FindOverlay` draws nothing, and asks for no shapes, while Find is closed or has no hits. In full,
+each hit in view is drawn where its shape is drawn (its bounds' origin and `worldDrawingOffset(of:)`),
+a path per look, the current one deeper with a thin line (`FindStyle`: an orange, which reads on a
+note's yellow, where a browser's yellow would vanish, and on a card's white, alike in either
+appearance). A frame lays out the shapes it hasn't before for 2 ms at most (`FindStyle.layoutBudget`,
+always one), tinting the rest's bounds meanwhile and asking for another frame. Zoomed out, where
+shapes are skeletons with no text, each shape with hits is washed over lightly (or where its text is
+said, `zoomedOut`), so a title said on it still reads, the current one washed alike and lined round,
+a shape under a device pixel its pixel, once. A hit under a shape in front shows through it.
+
+### The panel, and the host
+
+`FindPanel(editor:onExit:heading:tint:)` is Find's panel: its own header (no Back): the field, with
+a spinner while the index is built; Done; the count with Previous and Next (tooltips from
+`registry.help(_:forCommand:)`: "Next (⌘G)"); and a row per shape with hits, the window of 200 around
+the current one in a lazy stack, under its board's heading (named by `heading`, which the placer
+supplies: Composition passes the path's names), each the kind's symbol (tinted by `tint`), the text
+around its first hit with its hits semibold (cut on whole characters, never inside a surrogate
+pair), and its count when it has more than one; "No matches". Return steps unless an input method is
+composing in the field.
+Composition puts it in the detail panel's [takeover slot](#the-takeover-slot) while
+`editor.find?.isActive`, with `onEscape` closing Find, and `boardChrome` shows a hidden inspector
+when `focusRequest` changes (and hides it again as Find closes, if it showed it,
+`revealedInspector`); hiding the inspector while Find is open closes Find. `FindState` (`editor.find`, `@Observable`) is what views read: `isActive`,
+`query`, `results`, `total`, `current`, `currentNumber`, `focusRequest`, `isIndexing`.
+
+### What it costs
+
+A commit before the first ⌘F costs a revision noted; a drag with Find open, nothing; an edit, the
+shapes it changed. A keystroke costs the main actor a fold and a handover, and the search runs off
+it. A frame costs the shapes in view with hits, their layouts once each. `./build.sh bench` holds
+them (Find's suite, `.claude/rules/benchmarks.md`).
+
+### Testing Find
+
+FindTests hold Find on fixtures of their own (memos, text in a monospaced grid, whose hits' rects are
+known; badges, an every-shape contribution that rings and follows the zoom; pockets two deep): the
+point, the index and its upkeep, scope and order, typing, stepping and its one step back, edits,
+the highlights' pixels in full and zoomed out, the frame's budget, and the panel in an unshown
+window beside the canvas. Each contributor's tests hold its texts and rects to its render's ink
+(MentionsTests, TitlesTests, ArrowsTests), and CompositionTests the shipped wiring: Edit › Find's
+items from the canvas, Find's field and a note being edited, a hidden inspector shown, the shipped
+kinds' texts found and highlighted, a subboard's contents from the root.
 
 ## Topology
 
@@ -6301,7 +6611,8 @@ registrar.command(.enclosingBoard, shortcuts: [KeyChord(KeyChord.upArrow.key, .c
   file's display name, `BoardViewState.fileName`); and the Go menu has Back (⌘[), Enclosing Board
   (⌘↑) and Open Selection (⌘↓), sent to the board's window controller wherever the keyboard is, and dimmed
   while text has it, where the menu bar leaves those keys to the text (`MenuBar`: AppKit's menus
-  take a disabled item's key and beep), so they move its caret. The file opens on the board left
+  take a disabled item's key and beep), so they move its caret. Jump To… (⌘K), JumpTo's, will follow
+  them after a separator (the command `.jumpTo` is named; nothing claims it yet). The file opens on the board left
   open, with each board's camera as it was left (`BoardViewMemory`; below).
 
 ### The path
@@ -6368,9 +6679,11 @@ the board above instead, VS Code's siblings; the owner chose what's in the crumb
   the document), and without the table of contents, whose rows a menu shows. The rows are the table of contents' with nothing selected, each as its kind draws
   it, nested rows behind a disclosure triangle, a subboard's its board's rows, so a menu reaches
   any shape below its board too.
-- **Picking a row** closes the menu, then goes into its shape if its kind opens its board
-  (`opensBoard`: `editor.goInto`, as following a mention of a subboard does), and else to it, shown
-  selected on its board (`editor.goTo`). Either is one step back, so ⌘[ returns. The highlighted
+- **Picking a row** closes the menu, then follows its shape, `editor.follow(id)`: into it if its
+  kind opens its board (`opensBoard`: `editor.goInto`, as following a mention of a subboard does),
+  and else to it, shown selected on its board (`editor.goTo`). Either is one step back, so ⌘[
+  returns. `follow` is Boards' rule for picking a shape from anywhere in the file, written once:
+  the crumbs' menus and Jump To's palette both call it. The highlighted
   row goes back into the board it's the way to, and a row of the board shown's own menu selects
   its shape there.
 - **Hover intent**, data-canvas's timers (through `editor.scheduler`, so a test's clock drives
@@ -6821,6 +7134,74 @@ a frame, which owns no board for `move` to move onto (`move` would move nothing 
   after a turn read back through `BoardCodec`. The registry's report holds `transform`, Frames' `offers
   channel container → frame` and Subboards' `takes channel container → subboard`.
 
+## Jump To
+
+Jump To ([`Sources/JumpTo`](../Sources/JumpTo)) is ⌘K, and Go › Jump To…: a palette that goes to a
+shape by what it's called and where it is, as VS Code's file switcher goes to a file. Name a
+subboard, skip one, name another two levels down, then the shape, and the list narrows. It looks at
+titles and the containment tree and never at contents (that's Find's). It's a vertical that no kind
+opts into and nothing imports, as [Reordering](#every-shape-reordering) is one: a shape is listed
+when its kind has a title ([Titles](#a-horizontal-plugin), named or derived), and that's all a kind
+does for it. It builds on Boards (a pick is `editor.follow`, below), Titles, Topology (the tree),
+Keyboard, TextEditing (its field and its list), FuzzyMatching and Geometry. It doesn't import
+Mentions: a row's symbol is its kind's label's, and its tint, the one color a kind has in the list,
+the picker and Mentioned In, comes from a closure the host injects (`JumpToPlugin(appearance:)`,
+which Composition builds from `registry.mentionAppearance(of:)`; none, and rows are untinted).
+
+```
+ ╭────────────────────────────────────────────────╮
+ │  alpha gamma check                             │   a capsule at the top middle, below the path
+ ╰────────────────────────────────────────────────╯
+   ┌──────────────────────────────────────────────┐
+   │ ▭ Checkout          Alpha › Beta › Gamma      │   the app's caret list, under it, 560 wide,
+   │ ▭ Checkout    Alpha › Beta › Gamma › Epsilon  │   10 rows shown: the kind's symbol, the title,
+   └──────────────────────────────────────────────┘   the path, what matched in semibold
+```
+
+- **`JumpToPlugin`** (id `jump-to`) registers a service, `JumpToState` (`editor.jumpTo`), and
+  `registrar.command(.jumpTo, shortcuts: [⌘K], isEnabled:)`: it ends editing, then opens the palette,
+  or, open, asks its field for the keyboard again with its text selected; never mid-gesture. It
+  changes no document, so it leaves no step of undo. The menu item is the same command, so ⌘K
+  works from a note being edited and a panel's field too, where it's the menu bar's key.
+- **The catalog** is every titled shape on every board the editor can show, named or derived, none
+  kept aside, each with the container it's directly in (a frame, else the owner of its board), its
+  title's folded keys in one buffer, as Mentions' catalog keeps its labels. It's built the first
+  time the palette opens, in slices of 2 ms on the main actor (`editor.scheduler`; the first at once),
+  so a commit before then costs a note of its revision; after, a commit costs what it changed (a
+  move reads nothing; a rename reads the shape; shapes on other boards a commit reached, a deleted
+  subboard's or a paste's, are taken out or read as well), and a file put in place, or a commit
+  heard out of turn, reads it again. A commit while it's being built is applied to what's read so far,
+  the shapes on boards not read yet read when their turn comes, so commits that never stop (an
+  agent's draw, a sync) can't keep it from finishing. It keeps no path: a container's rename costs nothing in it.
+- **Ranking.** A word names titles alone, `FuzzyMatcher.rank` over the buffer (the `@` picker's
+  workload). Several words are pieces placed in order along a path, a group of neighbors to a
+  name, names skipped as they like, the last in the shape's own title (`PathMatcher`): the last
+  piece is matched against every title first, and only what it matches is scored by its path, a
+  container's row (the best score of placing the first g pieces along the chain to it) made once per
+  query for everything under it, so a shape costs one match for each group the last could be in. A
+  container's name must be a name, never a scatter of its letters (a bare subsequence matches only
+  the shape's own title); an untitled container is on the path by what its kind is called, dimmed,
+  and is never matched. Ties go to the fewer names skipped, the shallower path, a recent pick, and
+  the file's order.
+- **An empty query** lists "Recent" (up to five of this window's picks) and "Nearby" (up to five
+  titled shapes in view on the board shown, nearest the middle of the view).
+- **The palette** is `JumpToPalette(editor:onExit:)`, which Composition's `boardChrome` places over
+  the canvas: closed it's nothing; open, a scrim (a clear button, so a click lands on it, closes the
+  palette and isn't the canvas's), and a capsule below the part of the canvas the host leaves clear,
+  taken as it opened (so below the path over a subboard), with an `EditingTextView` in one line. Its
+  list is the app's one caret list (`CaretList` in a `CaretListWindow` made with `anchorRect:`,
+  [TextEditing](#a-list-at-the-caret)). ↑ ↓ ⌃P ⌃N and Page Up and Down move, Return and Tab pick,
+  Escape and ⌘. close; the keyboard goes back to the canvas as the person closes it, and the palette
+  closes by itself once anything else takes the keyboard (Find's field, the panel's).
+- **A pick** is `editor.follow(id)` ([Boards](#a-crumbs-menu)), one step back: into a shape whose
+  kind opens its board, else to it, a frame fitted into view, never forced to a readable zoom.
+
+JumpToTests hold it over CanvasTesting's boxes, pockets and corrals, titled through Titles' property:
+the catalog's laziness, slices and upkeep, the ranking over a story file ("alpha gamma checkout"),
+the empty query, picks and the palette in a window; CompositionTests' JumpToShippedTests as the app
+wires it. `./build.sh bench` holds a keystroke (one piece ≤ 2 ms over 10,000 shapes, several ≤ 4 ms),
+the build's slices (≤ 3 ms) and what a commit costs with the plugin in the list.
+
 ## The command line
 
 `canvas` is the app's command line, for agents first and people too: it runs commands on the
@@ -6850,6 +7231,8 @@ The modules, one job each:
 | CanvasUI's `CommandServer` | ui | The app's end: it listens, describes the app, and answers each request on the main actor. `status` and `boards` are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows, each in a task kept against its board, and a board command's result, when it's an object, gains `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the command's own job just before it runs, so an agent sees which board it worked on (a command that knows better says `shows` and `showsPath` in a `board` object of its own, which the server completes: a query's is the board shown as it took up the file). A client gone is answered `cancelled`, and a board closed (`BoardDocument.close()`) answers its running commands `board_closed`, at once, their tasks cancelled and what they return later dropped. |
 | Automation | language | The commands plugins give the command line (`AutomationCommands`), its own two, `draw` and `kinds`, and the three points `draw` takes what it doesn't own from. The app hands the commands to its server through Composition (`ShippedPlugins.commands(in:)`, async). |
 | DrawScript | foundation | The language `draw` reads (`Script(parsing:)`), and the solver that places what it says (`LayoutProblem.solve()`): pure, it knows no canvas, registry, kind or plugin. |
+| FuzzyMatching | foundation | What's typed matched against text ([FuzzyMatching](#fuzzymatching)): `FuzzyMatcher` (every list's tiers), `TextSearch` (Find's, over folded texts) and `PathMatcher` (Jump To's, over containment paths): pure, it knows no canvas, registry or plugin. |
+| JumpTo | vertical | Jump To (⌘K, [Jump To](#jump-to)): a palette that goes to a shape by its title and where it is, over Titles' titles and the containment tree; no kind opts into it, and nothing imports it. |
 | DrawLexicon | lexicon | What `draw` takes from Titles (names), Connections (edges) and Validation (warnings): a plugin value for each concern (`TitleNamesPlugin`, `PortEdgesPlugin`, `ValidationChecksPlugin`), joining Automation to the plugin that owns it. |
 | QueryCommands | language | `query` and `query-vocabulary`, and `--ask` (on Automation, Queries, LanguageModels and the wire; it declares no point). |
 | QueryLanguage | foundation | The language `query` reads (`SelectorList(parsing:)`) and its canonical form: pure, it knows no canvas, registry or plugin. |
@@ -8101,7 +8484,10 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   `bounds(of:)` is the union of shapes' geometry: what boxes a selection, or brings shapes into
   view.
 - **The hint** (`hintedShapeID`, a target outlined whatever the tool) always names a shape that
-  exists, and so does `editingShapeID`, the shape being edited. After every transaction that
+  exists, and so does `editingShapeID`, the shape being edited (and `editingSelectedText` what's
+  selected in its editing view, if that's text: the host says, `CanvasEditorDelegate`, so headless
+  it's nil; [Find](#find)'s ⌘F types it; an attachment that adopts the core's `ReadsAsText`, a
+  mention's pill, reads as its text in it and any other is dropped). After every transaction that
   changed the document, services hear `documentDidChange` with its change set: they drop what's
   gone (the selection does), and redo what they keep per shape for just those shapes (validation
   does). `replaceDocument` (a board read again: a revert, a reload after the file changed on disk)
@@ -8567,7 +8953,8 @@ boards](#mentions-across-boards); `editor.shape(inFile:)` outside a render), on 
 alone, so geometry and hit tests never depend on another board. The core names the commands
 `.openSelection` and `.enclosingBoard` for plugins to claim: Selection claims `.openSelection` (⌘↓;
 [opening a shape](#selection)), [Boards](#boards) claims `.enclosingBoard` (⌘↑), and going back
-crosses boards.
+crosses boards. `.find`, `.findNext`, `.findPrevious` and `.jumpTo` are named the same way, for
+[Find](#find)'s plugin (which claims the first three) and JumpTo's, which doesn't exist yet.
 
 ### Boards that aren't shown
 
@@ -9122,6 +9509,11 @@ table-of-contents    service ContentsState
 titles               property title · adornment TitlePill → every shape · /title → every shape · overlay TitleCoverOverlay
 mentions             service MentionState · edge type mention · edges → every shape · overlay MentionFrames · ShapeFaces · CanvasContextMenu
 board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
+find-in-boards       service FindState · overlay FindOverlay · command find · shortcut ⌘F → command find · command findNext · shortcut ⌘G → command findNext · command findPrevious · shortcut ⇧⌘G → command findPrevious
+title-find           findable title → every shape
+mention-find         findable mention text → every shape
+arrow-find           findable label → arrow
+jump-to              service JumpToState · command jumpTo · shortcut ⌘K → command jumpTo
 transform            service TransformState
 validation-details   DetailStatuses in Issues
 validation-contents  ContentsMarks
@@ -9378,8 +9770,8 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   doesn't hold keys never hears Escape, which the panel's root takes first. `shownWhile` is held
   with a service of the test's own (`Watchers`), and a commit on another shape showing and hiding
   the section, with its tab, while nothing else is built (`countedBuilds`). The caret list is held
-  without a panel or a plugin, in TextEditingTests (TestKit and CanvasTesting alone): its model and
-  matcher headlessly, its window over a plain `EditingTextView` in an unshown window
+  without a panel or a plugin, in TextEditingTests (TestKit and CanvasTesting alone): its model
+  headlessly (the matcher is FuzzyMatchingTests'), its window over a plain `EditingTextView` in an unshown window
   (`ListedText`, whose list opens under a range and counts what closes it and what VoiceOver
   hears), where it's placed but never ordered in: read `frame`, call the rows view's mouse methods
   for a click, and render it with `cacheDisplay`; and a subclass's list's keys and closing, which
@@ -9531,6 +9923,12 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   SKILL.md's description is held to 1,024 characters. `SKILL_DUMP=1` prints what each example said.
   So a change to either language, their messages, a shipped kind, word or edge type changes the
   skill with it, or CompositionTests fails.
+- **Fuzzy matching.** FuzzyMatchingTests (TestKit alone): the matcher's tiers and passes, `TextSearch`
+  (folding with offsets for `ß`, `é`, `İ`, emoji, CJK and combining marks; every exact place; each
+  kind of typo; the cap and the cancellation; and seeded texts and queries against a naive search
+  written in the test, hit for hit, and seeded texts of `ß`, emoji, CJK and combining marks for hits in bounds and whole) and `PathMatcher` (skips, groups, tiers, the ranking of a small
+  story, and `leafScore` over memoized rows and `match(path:)` on seeded random trees, each against a
+  brute force written in the test that tries every placement of the pieces).
 - **Queries.** QueryLanguageTests, QueriesTests, QueryLexicon's tests, QueryCommandsTests,
   CompositionTests' query suites and BenchmarkTests' Query benchmarks: [Testing
   queries](#testing-queries).
@@ -9947,7 +10345,7 @@ Each of these adds to the design without changing what plugins are written again
   (it shows only for the pointer), and the boards "…" folds each with a menu of its own;
   renaming a board from inside it (the path's last crumb, or the table of contents' header), which
   writes its owner's title on the board above, with `transact(on:)`; a mark on a shape's row (and
-  its card) for issues on the boards inside it, and validation and Find across a file's boards (the
+  its card) for issues on the boards inside it, and validation across a file's boards (the
   engine checks the board shown: More of validation, above); two windows on different boards of one
   file (one editor holds the file and shows one board, so a window is a file's: a store of boards,
   each window's editor showing one, would keep every host's `let editor`); Open in a menu for

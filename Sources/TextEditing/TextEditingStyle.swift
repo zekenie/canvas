@@ -33,4 +33,6 @@ enum TextEditingStyle {
     /// What of a row its detail keeps however long the title: the title comes first, and the
     /// detail takes the rest of the row, or this share of it, whichever is more.
     static let caretListDetailShare: CGFloat = 0.4
+    /// How much of its color a dimmed part of a detail keeps.
+    static let caretListDimmedAlpha: CGFloat = 0.5
 }

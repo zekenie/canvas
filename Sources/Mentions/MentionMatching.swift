@@ -1,5 +1,5 @@
 import Foundation
-import TextEditing
+import FuzzyMatching
 
 /// How well a query matches a label: its score (the tier's, up to `MentionRanking.exact`), and the
 /// label's matched characters, as ranges of `Character` offsets, for the picker to set in semibold.
@@ -13,26 +13,26 @@ public struct MentionMatch: Hashable, Sendable {
     }
 }
 
-/// The picker's weights: the tiers a match falls in (every caret list's, `CaretListRanking`), and
+/// The picker's weights: the tiers a match falls in (every caret list's, `FuzzyRanking`), and
 /// what's added or taken away for the shape (a placeholder label, a recent pick, nearness). Pure,
 /// so nonisolated.
 public enum MentionRanking {
     /// The label is the query.
-    public static let exact = CaretListRanking.exact
+    public static let exact = FuzzyRanking.exact
     /// The label starts with the query.
-    public static let prefix = CaretListRanking.prefix
+    public static let prefix = FuzzyRanking.prefix
     /// Each word of the query starts a word of the label, in order ("gro li", "Grocery List").
-    public static let wordPrefixes = CaretListRanking.wordPrefixes
+    public static let wordPrefixes = FuzzyRanking.wordPrefixes
     /// The query is in the label, anywhere.
-    public static let substring = CaretListRanking.substring
+    public static let substring = FuzzyRanking.substring
     /// The query's characters are in the label in order ("grcy"): at most this.
-    public static let subsequence = CaretListRanking.subsequence
+    public static let subsequence = FuzzyRanking.subsequence
     /// A word of the label starts with the query but for one typo, for a query this long or longer
     /// that matched nothing better.
-    public static let typo = CaretListRanking.typo
-    public static let typoMinimumQuery = CaretListRanking.typoMinimumQuery
+    public static let typo = FuzzyRanking.typo
+    public static let typoMinimumQuery = FuzzyRanking.typoMinimumQuery
     /// The typo pass runs only when the other tiers found fewer than this many shapes.
-    public static let typoPassBelow = CaretListRanking.typoPassBelow
+    public static let typoPassBelow = FuzzyRanking.typoPassBelow
 
     /// Added for a recent pick: this for the latest, less for each pick back.
     public static let recentBonus = 100
@@ -52,11 +52,11 @@ public enum MentionRanking {
 }
 
 /// Fuzzy matching of what's typed after `@` against shapes' labels: every caret list's matcher
-/// (`CaretListMatcher`, DetailPanel's), which the catalog's two passes over its folded labels use
+/// (`FuzzyMatcher`, DetailPanel's), which the catalog's two passes over its folded labels use
 /// too (`MentionState.candidates`).
 public enum MentionMatcher {
     /// How `query` matches `label`; nil for not at all.
     public static func match(_ query: String, in label: String) -> MentionMatch? {
-        CaretListMatcher.match(query, in: label).map { MentionMatch(score: $0.score, matched: $0.matched) }
+        FuzzyMatcher.match(query, in: label).map { MentionMatch(score: $0.score, matched: $0.matched) }
     }
 }

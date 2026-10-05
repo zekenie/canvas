@@ -153,17 +153,13 @@ public final class BoardCrumbs {
         if openMenu != nil { openMenu = nil }
     }
 
-    /// A row of the menu that shows, picked: the menu closes, then its shape is gone into if its kind
-    /// opens its board (`opensBoard`), which shows the board, as following a mention of it does
-    /// (`goInto`), and else gone to, shown selected on its board (`goTo`). Either is one step back.
+    /// A row of the menu that shows, picked: the menu closes, then its shape is followed
+    /// (`editor.follow`): gone into if its kind opens its board (`opensBoard`), which shows the
+    /// board, as following a mention of it does (`goInto`), and else gone to, shown selected on its
+    /// board (`goTo`). Either is one step back.
     public func pick(_ id: ShapeID) {
         closeMenu()
-        guard let record = editor.file.record(id) else { return }
-        if editor.registry.contributions(to: BoardKinds.self, for: record.kind).isEmpty {
-            editor.goTo([id])
-        } else {
-            editor.goInto(id)
-        }
+        editor.follow(id)
     }
 
     private func closeSoon() {

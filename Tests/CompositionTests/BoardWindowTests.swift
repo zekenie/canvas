@@ -9,6 +9,7 @@ import CoreGraphics
 import DetailPanel
 import Foundation
 import Geometry
+import Keyboard
 import Mentions
 import Schemas
 import Selection
@@ -36,8 +37,9 @@ final class NestedWindow {
     let nest = NestedFile()
     var editor: CanvasEditor { board.editor }
 
-    init() throws {
-        try configureBoards()
+    /// `extra`: plugins after the shipped list.
+    init(extra: [any CanvasPlugin] = []) throws {
+        try configureBoards(extra: extra)
         board = try nestedDocument()
         board.makeWindowControllers()
         controller = try require(board.windowControllers.first as? BoardWindowController)

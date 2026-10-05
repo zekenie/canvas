@@ -1,9 +1,9 @@
 import AppKit
 import Canvas
+import FuzzyMatching
 import Observation
 import Selection
 import SlashCommands
-import TextEditing
 import Titles
 import Topology
 
@@ -394,7 +394,7 @@ public final class MentionState {
     /// those its kind gives no name (called by the "Untitled …" placeholder: a mention of one
     /// stays, but there's no point picking it). An empty query lists recent picks, then the shapes nearest the
     /// owner on the board shown and, while there's room, the shapes whose boards it's inside, the
-    /// board shown's own first; any other, one ranked list of the best matches (`CaretListMatcher`'s
+    /// board shown's own first; any other, one ranked list of the best matches (`FuzzyMatcher`'s
     /// tiers, then `MentionRanking`'s adjustments, nearness on the board shown among them; ties to
     /// the shorter label, then the front-most shape, the board shown's before any other's).
     public func candidates<S: MentionScope>(matching query: String, in scope: S.Type, for owner: ShapeID?) -> MentionCandidates {
@@ -412,7 +412,7 @@ public final class MentionState {
             return Double(hypot(bounds.midX - origin.x, bounds.midY - origin.y))
         }
 
-        let q = CaretListMatcher.Query(query)
+        let q = FuzzyMatcher.Query(query)
         guard !q.isEmpty else {
             let recentShown = Array(recent.lazy.filter { self.catalog.contains($0) && admits($0) }
                 .prefix(MentionRanking.recentShown)).map { candidate($0, matched: []) }
@@ -437,7 +437,7 @@ public final class MentionState {
         q.withView { view in
             catalog.keys.withUnsafeBufferPointer { keys in
                 catalog.entries.withUnsafeBufferPointer { entries in
-                    CaretListMatcher.rank(view, count: entries.count, wantSpans: false, label: { slot in
+                    FuzzyMatcher.rank(view, count: entries.count, wantSpans: false, label: { slot in
                         let entry = entries[slot]
                         guard !(leavesOutOwner && entry.id == owner), admits(entry.id) else { return nil }
                         return UnsafeBufferPointer(rebasing: keys[entry.start..<entry.start + entry.count])
@@ -473,7 +473,7 @@ public final class MentionState {
         let matches = ranked.prefix(MentionRanking.maxMatches).map { found in
             let id = entries[found.slot].id
             let label = catalog.appearances[found.slot].label
-            return candidate(id, matched: CaretListMatcher.match(q, in: CaretListMatcher.Label(label))?.matched ?? [])
+            return candidate(id, matched: FuzzyMatcher.match(q, in: FuzzyMatcher.Label(label))?.matched ?? [])
         }
         return MentionCandidates(recent: [], nearby: [], matches: matches)
     }
@@ -810,54 +810,4 @@ public struct MentionCandidates: Hashable, Sendable {
 private struct Found {
     let slot: Int
     var score: Int
-}
-
-/// The best `capacity` of what's inserted: a heap with the worst on top, so each insert costs a
-/// logarithm of the capacity, whatever was inserted before.
-struct BoundedHeap<Element> {
-    let capacity: Int
-    let isWorse: (Element, Element) -> Bool
-    private var heap: [Element] = []
-
-    init(capacity: Int, isWorse: @escaping (Element, Element) -> Bool) {
-        self.capacity = capacity
-        self.isWorse = isWorse
-    }
-
-    mutating func insert(_ element: Element) {
-        guard capacity > 0 else { return }
-        if heap.count < capacity {
-            heap.append(element)
-            siftUp(heap.count - 1)
-        } else if isWorse(heap[0], element) {
-            heap[0] = element
-            siftDown(0)
-        }
-    }
-
-    /// Best first.
-    func sorted() -> [Element] { heap.sorted { isWorse($1, $0) } }
-
-    private mutating func siftUp(_ index: Int) {
-        var child = index
-        while child > 0 {
-            let parent = (child - 1) / 2
-            guard isWorse(heap[child], heap[parent]) else { return }
-            heap.swapAt(child, parent)
-            child = parent
-        }
-    }
-
-    private mutating func siftDown(_ index: Int) {
-        var parent = index
-        while true {
-            let left = 2 * parent + 1, right = left + 1
-            var worst = parent
-            if left < heap.count, isWorse(heap[left], heap[worst]) { worst = left }
-            if right < heap.count, isWorse(heap[right], heap[worst]) { worst = right }
-            guard worst != parent else { return }
-            heap.swapAt(parent, worst)
-            parent = worst
-        }
-    }
 }

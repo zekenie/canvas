@@ -62,6 +62,12 @@ public enum BoardMenus {
             item("Paste", NSSelectorFromString("paste:"), "v"),
             item("Delete", NSSelectorFromString("delete:")),
             item("Select All", NSSelectorFromString("selectAll:"), "a"),
+            .separator(),
+            submenu("Find", menu("Find", [
+                item("Find…", #selector(BoardWindowController.showFind(_:)), "f"),
+                item("Find Next", #selector(BoardWindowController.findNextMatch(_:)), "g"),
+                item("Find Previous", #selector(BoardWindowController.findPreviousMatch(_:)), "g", [.command, .shift]),
+            ])),
         ])
         let view = menu("View", [
             item("Show Toolbar", #selector(NSWindow.toggleToolbarShown(_:)), "t", [.command, .option]),
@@ -80,6 +86,8 @@ public enum BoardMenus {
             item("Back", #selector(BoardWindowController.goBack(_:)), "["),
             item("Enclosing Board", #selector(BoardWindowController.enclosingBoard(_:)), upArrow),
             item("Open Selection", #selector(BoardWindowController.openSelection(_:)), downArrow),
+            .separator(),
+            item("Jump To…", #selector(BoardWindowController.showJumpTo(_:)), "k"),
         ])
         let windows = menu("Window", [
             item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
@@ -125,11 +133,23 @@ public enum BoardMenus {
 /// key it names, whatever the layout types with it, and leaves it while it's disabled. A key held
 /// with fn (🌐) is AppKit's as ever, text or not: the items it adds for them (Edit › Emoji & Symbols,
 /// 🌐E; Start Dictation, 🌐D; View › Enter Full Screen, 🌐F) answer only as key equivalents.
+/// A ⇧⌘ letter goes to the item that names ⇧ (Edit › Find › Find Previous, ⇧⌘G), never to the
+/// one with ⌘ alone (Find Next) that comes first.
 final class MenuBar: NSMenu {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.type == .keyDown, let item = arrowItem(for: event, in: self) {
             item.menu?.update()
             if !item.isEnabled { return false }
+        }
+        // A ⇧⌘ letter goes to the item that names ⇧ (Find Previous, ⇧⌘G), not to the one with the same
+        // letter and ⌘ alone (Find Next), which a menu may take it for, whichever comes first.
+        if event.type == .keyDown, event.modifierFlags.isSuperset(of: [.command, .shift]),
+           let key = event.charactersIgnoringModifiers?.lowercased(), key.count == 1, key.first?.isLetter == true,
+           let (menu, index) = typedItem(Character(key), event, in: self) {
+            menu.update()
+            guard let item = menu.item(at: index), item.isEnabled else { return false }
+            menu.performActionForItem(at: index)
+            return true
         }
         if event.type == .keyDown, event.modifierFlags.isDisjoint(with: [.command, .control, .option, .function]) {
             // Menus are asked on the main thread.
@@ -146,12 +166,12 @@ final class MenuBar: NSMenu {
         return super.performKeyEquivalent(with: event)
     }
 
-    /// The item, in `menu` or a menu under it, whose key equivalent is `digit` with `event`'s ⇧ (or
-    /// none), and where it is.
+    /// The item, in `menu` or a menu under it, whose key equivalent is `digit` (or a letter, in any
+    /// case) with `event`'s modifiers (⇧ or none, for a digit), and where it is.
     private func typedItem(_ digit: Character, _ event: NSEvent, in menu: NSMenu) -> (NSMenu, Int)? {
         let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
         for (index, item) in menu.items.enumerated() {
-            if item.keyEquivalent == String(digit), item.keyEquivalentModifierMask.intersection([.command, .shift, .option, .control]) == modifiers {
+            if item.keyEquivalent.lowercased() == String(digit).lowercased(), item.keyEquivalentModifierMask.intersection([.command, .shift, .option, .control]) == modifiers {
                 return (menu, index)
             }
             if let submenu = item.submenu, let found = typedItem(digit, event, in: submenu) { return found }

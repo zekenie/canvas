@@ -17,11 +17,15 @@ public protocol CanvasEditorDelegate: AnyObject {
     /// Another board is shown (`board`): swap whatever is kept of the board it left (the minimap's
     /// picture). Editing has ended by now, and the canvas is to be redrawn.
     func editorBoardDidChange(_ editor: CanvasEditor)
+    /// The text selected in the editing view, if it shows text and some is selected: what
+    /// `editingSelectedText` answers.
+    func editorEditingSelectedText(_ editor: CanvasEditor) -> String?
 }
 
 @_spi(Host) extension CanvasEditorDelegate {
     public func editorBoardDidChange(_ editor: CanvasEditor) {}
     public func editorPopoverDidChange(_ editor: CanvasEditor) {}
+    public func editorEditingSelectedText(_ editor: CanvasEditor) -> String? { nil }
 }
 
 /// The canvas's brain, with no view: document, camera, tools, sessions and input.
@@ -937,6 +941,14 @@ public final class CanvasEditor {
         delegate?.editorEditingDidChange(self)
         setNeedsDisplay()
         return true
+    }
+
+    /// The text selected in the shape being edited's view, while one is edited and its view is text
+    /// with something selected (nil otherwise, and with no view: headless): what a search seeds its
+    /// query with, as a browser's ⌘F takes what's selected.
+    public var editingSelectedText: String? {
+        guard editingShapeID != nil else { return nil }
+        return delegate?.editorEditingSelectedText(self)
     }
 
     /// What the editing view saves as it closes is part of the session's undo step. Services hear it

@@ -10,8 +10,8 @@ public enum DetailStyle {
     public static let minWidth: CGFloat = 248
     public static let idealWidth: CGFloat = 260
     public static let maxWidth: CGFloat = 340
-    static let inset: CGFloat = 16
-    static let headerHeight: CGFloat = 44
+    public static let inset: CGFloat = 16
+    public static let headerHeight: CGFloat = 44
     static let headerSymbolWidth: CGFloat = 20
     static let backWidth: CGFloat = 20
     static let stripInset: CGFloat = 10

@@ -1,8 +1,8 @@
 import Foundation
 
-/// How well a query matches a label: its score (the tier's, up to `CaretListRanking.exact`), and the
-/// label's matched characters, as ranges of `Character` offsets, for a caret list to set in semibold.
-public struct CaretListMatch: Hashable, Sendable {
+/// How well a query matches a label: its score (the tier's, up to `FuzzyRanking.exact`), and the
+/// label's matched characters, as ranges of `Character` offsets, for a list to set in semibold.
+public struct FuzzyMatch: Hashable, Sendable {
     public let score: Int
     public let matched: [Range<Int>]
 
@@ -12,10 +12,11 @@ public struct CaretListMatch: Hashable, Sendable {
     }
 }
 
-/// The tiers a match falls in, and when the typo's is tried: what every caret list ranks typed
-/// text by, so the `@` picker and a code editor's completions agree. What a list adds for what it
-/// lists (Mentions' recent picks and nearness) is its own. Pure, so nonisolated.
-public enum CaretListRanking {
+/// The tiers a match falls in, and when the typo's is tried: what every list that ranks typed text
+/// does it by (the `@` picker, slash commands, a code editor's completions, Jump To), so they
+/// agree. What a list adds for what it lists (Mentions' recent picks and nearness) is its own.
+/// Pure, so nonisolated.
+public enum FuzzyRanking {
     /// The label is the query.
     public static let exact = 1000
     /// The label starts with the query.
@@ -35,7 +36,7 @@ public enum CaretListRanking {
     public static let typoPassBelow = 8
 }
 
-/// Fuzzy matching of what's typed (a caret list's query) against labels, case and diacritics
+/// Fuzzy matching of what's typed (a list's query) against labels, case and diacritics
 /// ignored. Each label takes its best tier: exact, prefix, word prefixes, substring, subsequence,
 /// and, for a query of four characters or more that matched nothing above, one typo.
 ///
@@ -44,9 +45,9 @@ public enum CaretListRanking {
 /// so a list of many labels (Mentions' catalog) can keep every label's keys back to back
 /// (`appendKeys`), and a keystroke's two passes over them (`rank`: `tier`, then `typo`) allocate
 /// nothing but what they find.
-public enum CaretListMatcher {
+public enum FuzzyMatcher {
     /// How `query` matches `label`; nil for not at all.
-    public static func match(_ query: String, in label: String) -> CaretListMatch? {
+    public static func match(_ query: String, in label: String) -> FuzzyMatch? {
         let query = Query(query)
         guard !query.isEmpty else { return nil }
         return match(query, in: Label(label))
@@ -55,9 +56,9 @@ public enum CaretListMatcher {
     /// How `query` matches each of `labels`, index for index, as every list matches what's typed
     /// (`rank`). Nil for a label it doesn't match, and for every label when the query is empty (a
     /// list then shows what it lists as it comes).
-    public static func matches(_ query: String, in labels: [String]) -> [CaretListMatch?] {
+    public static func matches(_ query: String, in labels: [String]) -> [FuzzyMatch?] {
         let query = Query(query)
-        var found = [CaretListMatch?](repeating: nil, count: labels.count)
+        var found = [FuzzyMatch?](repeating: nil, count: labels.count)
         guard !query.isEmpty else { return found }
         let folded = labels.map(Label.init)
         // Every label's keys back to back, as a catalog keeps them.
@@ -71,7 +72,7 @@ public enum CaretListMatcher {
         query.withView { q in
             keys.withUnsafeBufferPointer { keys in
                 rank(q, count: folded.count, wantSpans: true, label: { UnsafeBufferPointer(rebasing: keys[starts[$0]..<starts[$0 + 1]]) }) { index, score, spans in
-                    found[index] = CaretListMatch(score: score, matched: folded[index].characters(spans))
+                    found[index] = FuzzyMatch(score: score, matched: folded[index].characters(spans))
                 }
             }
         }
@@ -79,7 +80,7 @@ public enum CaretListMatcher {
     }
 
     /// Matches a query against `count` labels, as every caret list does: every tier but the typo's
-    /// over each (`tier`), then, if that found fewer than `CaretListRanking.typoPassBelow` and the
+    /// over each (`tier`), then, if that found fewer than `FuzzyRanking.typoPassBelow` and the
     /// query is long enough to have a typo, the typo's over the rest (`typo`). `label` gives the keys
     /// of the label at an index (as `appendKeys` wrote them, in a buffer indexed from 0, as
     /// `UnsafeBufferPointer(rebasing:)` makes one), or nil to pass it over (what a list leaves out:
@@ -98,11 +99,11 @@ public enum CaretListMatcher {
             guard let keys = label(index) else { continue }
             if wantSpans { spans.removeAll(keepingCapacity: true) }
             guard let score = tier(q, keys, &spans, wantSpans: wantSpans) else { continue }
-            if matches < CaretListRanking.typoPassBelow { matched.append(index) }
+            if matches < FuzzyRanking.typoPassBelow { matched.append(index) }
             matches += 1
             found(index, score, spans)
         }
-        guard matches < CaretListRanking.typoPassBelow, q.characterCount >= CaretListRanking.typoMinimumQuery else { return }
+        guard matches < FuzzyRanking.typoPassBelow, q.characterCount >= FuzzyRanking.typoMinimumQuery else { return }
         // The labels matched are passed over as the second pass walks by them.
         var next = 0
         for index in 0..<count {
@@ -118,12 +119,38 @@ public enum CaretListMatcher {
     }
 
     /// How a prepared query matches a prepared label, the typo tier included; nil for not at all.
-    public static func match(_ query: Query, in label: Label) -> CaretListMatch? {
+    public static func match(_ query: Query, in label: Label) -> FuzzyMatch? {
         query.withView { q in
             label.keys.withUnsafeBufferPointer { keys in
                 var spans: [Range<Int>] = []
                 guard let score = tier(q, keys, &spans, wantSpans: true) ?? typo(q, keys, &spans, wantSpans: true) else { return nil }
-                return CaretListMatch(score: score, matched: label.characters(spans))
+                return FuzzyMatch(score: score, matched: label.characters(spans))
+            }
+        }
+    }
+
+    /// How a prepared query matches a prepared label as `match` does, but never as a bare
+    /// subsequence: only the exact, prefix, word-prefix, substring and typo tiers. What a caller
+    /// that wants a match to mean the label's words (a path's container names) asks.
+    public static func match(_ query: Query, in label: Label, allowSubsequence: Bool) -> FuzzyMatch? {
+        query.withView { q in
+            label.keys.withUnsafeBufferPointer { keys in
+                var spans: [Range<Int>] = []
+                guard let score = tier(q, keys, &spans, wantSpans: true, allowSubsequence: allowSubsequence)
+                        ?? typo(q, keys, &spans, wantSpans: true) else { return nil }
+                return FuzzyMatch(score: score, matched: label.characters(spans))
+            }
+        }
+    }
+
+    /// The score `match(_:in:allowSubsequence:)` gives, without the matched ranges: nothing allocated
+    /// but what the matcher itself needs.
+    static func score(_ query: Query, in label: Label, allowSubsequence: Bool) -> Int? {
+        query.withView { q in
+            label.keys.withUnsafeBufferPointer { keys in
+                var spans: [Range<Int>] = []
+                return tier(q, keys, &spans, wantSpans: false, allowSubsequence: allowSubsequence)
+                    ?? typo(q, keys, &spans, wantSpans: false)
             }
         }
     }
@@ -137,7 +164,7 @@ public enum CaretListMatcher {
 
     /// A query folded once per keystroke: lowercased, without diacritics, each run of whitespace one
     /// space, trimmed.
-    public struct Query {
+    public struct Query: Sendable {
         let scalars: [UInt32]
         /// Without its spaces: what a subsequence must find.
         let compact: [UInt32]
@@ -194,7 +221,7 @@ public enum CaretListMatcher {
 
     /// A label folded once: each folded scalar, marked where it starts a word (`keys`), and the
     /// `Character` offset in the label it came from (`owners`).
-    public struct Label {
+    public struct Label: Sendable {
         let keys: [UInt32]
         let owners: [Int32]
 
@@ -261,19 +288,20 @@ public enum CaretListMatcher {
 
     /// The best tier above the typo's for a label's keys (`L`, as `appendKeys` wrote them): its
     /// score, and, if `wantSpans`, the spans of `L` matched.
-    static func tier(_ q: QueryView, _ L: UnsafeBufferPointer<UInt32>, _ spans: inout [Range<Int>], wantSpans: Bool) -> Int? {
+    static func tier(_ q: QueryView, _ L: UnsafeBufferPointer<UInt32>, _ spans: inout [Range<Int>], wantSpans: Bool,
+                     allowSubsequence: Bool = true) -> Int? {
         let n = L.count, m = q.scalars.count
         guard n > 0, m > 0, isSubsequence(q.compact, of: L) else { return nil }
         if m <= n, hasPrefix(L, q.scalars, at: 0) {
             if wantSpans { spans = [0..<m] }
-            return m == n ? CaretListRanking.exact : CaretListRanking.prefix
+            return m == n ? FuzzyRanking.exact : FuzzyRanking.prefix
         }
-        if wordPrefixes(q, in: L, &spans, wantSpans: wantSpans) { return CaretListRanking.wordPrefixes }
+        if wordPrefixes(q, in: L, &spans, wantSpans: wantSpans) { return FuzzyRanking.wordPrefixes }
         if let start = firstIndex(of: q.scalars, in: L) {
             if wantSpans { spans = [start..<start + m] }
-            return CaretListRanking.substring
+            return FuzzyRanking.substring
         }
-        return subsequence(q.compact, in: L, &spans, wantSpans: wantSpans)
+        return allowSubsequence ? subsequence(q.compact, in: L, &spans, wantSpans: wantSpans) : nil
     }
 
     /// Each query word the start of a label word (the text from there on starting with it), each
@@ -349,8 +377,8 @@ public enum CaretListMatcher {
             i += 1
         }
         let best = m * (Score.match + Score.boundary + Score.consecutive) + Score.first
-        let span = CaretListRanking.subsequence - CaretListRanking.typo
-        return CaretListRanking.typo + max(1, min(span, Int((Double(max(raw, 0)) / Double(best) * Double(span)).rounded())))
+        let span = FuzzyRanking.subsequence - FuzzyRanking.typo
+        return FuzzyRanking.typo + max(1, min(span, Int((Double(max(raw, 0)) / Double(best) * Double(span)).rounded())))
     }
 
     /// fzf's constants.
@@ -367,11 +395,11 @@ public enum CaretListMatcher {
     /// character changed, added, left out, or two neighbors swapped. Only for a query of
     /// `typoMinimumQuery` characters or more.
     static func typo(_ q: QueryView, _ L: UnsafeBufferPointer<UInt32>, _ spans: inout [Range<Int>], wantSpans: Bool) -> Int? {
-        guard q.characterCount >= CaretListRanking.typoMinimumQuery else { return nil }
+        guard q.characterCount >= FuzzyRanking.typoMinimumQuery else { return nil }
         for start in 0..<L.count where L[start] & wordStart != 0 {
             if let length = prefixLengthWithinOneEdit(q.scalars, L, from: start) {
                 if wantSpans { spans = [start..<start + length] }
-                return CaretListRanking.typo
+                return FuzzyRanking.typo
             }
         }
         return nil

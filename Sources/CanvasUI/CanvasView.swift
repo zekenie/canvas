@@ -495,6 +495,15 @@ extension CanvasView: NSMenuItemValidation {
         window?.makeFirstResponder(new.firstResponder)
     }
 
+    public func editorEditingSelectedText(_ editor: CanvasEditor) -> String? {
+        guard let text = editingView?.firstResponder as? NSTextView else { return nil }
+        let range = text.selectedRange()
+        guard range.length > 0, NSMaxRange(range) <= (text.string as NSString).length else { return nil }
+        // A pill, or any attachment that reads as text, as what it reads as; other attachments dropped.
+        let selected = text.attributedString().readingAttachments(in: range)
+        return selected.isEmpty ? nil : selected
+    }
+
     /// Whether the keyboard is in a view outside the canvas and the views it hosts.
     private var keyboardIsElsewhere: Bool {
         guard let responder = window?.firstResponder as? NSView else { return false }

@@ -22,10 +22,11 @@ final class PanelWindow {
     private(set) var exits = 0
 
     /// `withOverview`: the panel's overview is a text field whose placeholder is "Overview".
+    /// `takeover`: the panel's takeover slot.
     /// `inBoardWindow`: the window is a board's, as the app's is, which splits Edit › Undo between
     /// text and the board.
     init(_ editor: CanvasEditor, panelWidth: CGFloat = DetailStyle.idealWidth, locale: Locale = Locale(identifier: "en_US"),
-         withOverview: Bool = false, inBoardWindow: Bool = false) {
+         withOverview: Bool = false, inBoardWindow: Bool = false, takeover: DetailTakeover? = nil) {
         self.editor = editor
         let frame = CGRect(x: 0, y: 0, width: 1000, height: 700)
         if inBoardWindow {
@@ -42,8 +43,8 @@ final class PanelWindow {
             window.makeFirstResponder(canvas)
         }
         let panel = withOverview
-            ? AnyView(DetailPanelView(editor: editor, onExit: exit) { TextField("Overview", text: .constant("")) })
-            : AnyView(DetailPanelView(editor: editor, onExit: exit))
+            ? AnyView(DetailPanelView(editor: editor, onExit: exit, overview: { TextField("Overview", text: .constant("")) }, takeover: takeover))
+            : AnyView(DetailPanelView(editor: editor, onExit: exit, takeover: takeover))
         hosting = NSHostingView(rootView: panel.environment(\.locale, locale))
         hosting.frame = CGRect(x: 1000 - panelWidth, y: 0, width: panelWidth, height: 700)
         let root = NSView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
