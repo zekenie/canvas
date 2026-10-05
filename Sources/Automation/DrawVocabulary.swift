@@ -48,10 +48,27 @@ struct KindVocabulary {
     /// Each property of the schema, own and added, by name.
     var properties: JSONObject { schema.properties }
 
-    /// Whether a script can write it: `priority: high`.
+    /// Whether a script can write it: not the one titles are written to, a place, one named like a
+    /// language key, or one the schema marks `readOnly` (what the app fills in, an id or a mirror
+    /// of other text: `Property.readOnly()`).
     func isAttribute(_ name: String) -> Bool {
-        properties[name] != nil && name != namingProperty && !coordinates.contains(name) && !collisions.contains(name)
+        properties[name] != nil && name != namingProperty && !coordinates.contains(name) && !collisions.contains(name) && !isReadOnly(name)
     }
+
+    /// Whether the schema marks it `readOnly`: filled in by the app, never by a script.
+    func isReadOnly(_ name: String) -> Bool {
+        properties[name].map { schema.resolved($0)["readOnly"]?.boolValue == true } ?? false
+    }
+
+    /// Whether a property's text is a query in the query language: a string whose JSON Schema
+    /// `format` is `x-canvas-query`.
+    func isQuery(_ name: String) -> Bool {
+        if case .string(let format, _, _)? = schema.shape(of: name) { return format == Self.queryFormat }
+        return false
+    }
+
+    /// The JSON Schema `format` of a string that holds a query.
+    static let queryFormat = "x-canvas-query"
 
     /// What a script can write on the kind's shapes, by name, sorted.
     var attributes: [String] { properties.keys.filter(isAttribute).sorted() }

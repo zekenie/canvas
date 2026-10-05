@@ -86,6 +86,7 @@ public struct SelectionPlugin: CanvasPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { SelectionState(editor: $0) }
+        registrar.service { RefusalShake(editor: $0) }
         registrar.tool(ToolDescriptor(id: .select, label: "Select", systemImage: "cursorarrow"), shortcut: "v") { _ in SelectTool() }
         registrar.defaultTool(.select)
         registrar.outlines { $0.selectionOutlines }

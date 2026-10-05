@@ -22,6 +22,15 @@ extension OtherBlockers: DeclaredMentionScope {
     static let title = "Blockers"
 }
 
+/// A scope that admits what's in a shape's props, so which shapes it admits changes as they're edited.
+enum Starred {}
+
+extension Starred: MentionScope {
+    @MainActor static func admits(_ shape: AnyShapeRecord, in registry: Registry) -> Bool {
+        shape.typed(as: Token.self)?.props.isStarred == true
+    }
+}
+
 @MainActor let scopeTests = Suite("Scopes", [
     test("AnyMentionable admits every mentionable shape; Only admits its kind; a declared scope, the kinds that joined it") {
         let h = try mentionHarness()
@@ -59,6 +68,58 @@ extension OtherBlockers: DeclaredMentionScope {
         expectEqual(listed(AnyMentionable.self), [plate, token, jot])
         expectEqual(listed(Only<Plate>.self), [plate])
         expectEqual(listed(Blockers.self), [plate, token])
+    },
+
+    test("a scope's shapes are kept as shapes come, change and go: what the picker lists for it, typed or not, follows each commit and an undo") {
+        let h = try mentionHarness()
+        let state = h.editor.mentionState
+        let first = h.add(Token(frame, caption: "Alpha one", isStarred: true))
+        let second = h.add(Token(CGRect(x: 300, y: 0, width: 100, height: 80), caption: "Alpha two"))
+        let owner = h.add(Token(CGRect(x: 600, y: 0, width: 100, height: 80), caption: "Owner"))
+        @MainActor func typed() -> Set<ShapeID> { Set(state.candidates(matching: "alpha", in: Starred.self, for: owner).matches.map(\.id)) }
+        @MainActor func near() -> Set<ShapeID> { Set(state.candidates(matching: "", in: Starred.self, for: owner).nearby.map(\.id)) }
+        expectEqual(typed(), [first])
+        expectEqual(near(), [first])
+        h.editor.transact { $0.update(second, as: Token.self) { $0.props.isStarred = true } }
+        expectEqual(typed(), [first, second], "one that changed into the scope")
+        expectEqual(near(), [first, second])
+        h.editor.transact { $0.update(first, as: Token.self) { $0.props.isStarred = false } }
+        expectEqual(typed(), [second], "one that changed out of it")
+        expectEqual(near(), [second])
+        let third = h.add(Token(CGRect(x: 0, y: 300, width: 100, height: 80), caption: "Alpha three", isStarred: true))
+        expectEqual(typed(), [second, third], "one that came")
+        h.editor.transact { $0.delete([second]) }
+        expectEqual(typed(), [third], "one that went")
+        expectEqual(near(), [third])
+        h.editor.undo()
+        expectEqual(typed(), [second, third], "and came back")
+        h.editor.transact { $0.update(third, as: Token.self) { $0.props.caption = "Beta" } }
+        expectEqual(typed(), [second], "renamed away from the query")
+        expectEqual(near(), [second, third])
+        expectEqual(Set(state.candidates(matching: "beta", in: AnyMentionable.self, for: owner).matches.map(\.id)), [third], "other scopes are as they were")
+    },
+
+    test("what a scope lists doesn't depend on the order its members were kept in: shapes on another board, scored alike, come in the catalog's order after members came and went") {
+        let pocket = ShapeID(), owner = ShapeID()
+        let tokens = (0..<4).map { _ in ShapeID() }
+        let inside = tokens.enumerated().map { index, id in
+            AnyShapeRecord(ShapeRecord(id: id, Token(CGRect(x: 100 * index, y: 0, width: 80, height: 80), caption: "Alpha", isStarred: true)))
+        }
+        let h = try EditorHarness(plugins: mentionPlugins([PocketsPlugin()]),
+                                  file: CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: pocket, Pocket(CGRect(x: 1200, y: 1200, width: 100, height: 100)))),
+                                                                                AnyShapeRecord(ShapeRecord(id: owner, Token(CGRect(x: 0, y: 0, width: 80, height: 80), caption: "Owner")))]),
+                                                   children: [pocket: CanvasDocument(shapes: inside)]))
+        let state = h.editor.mentionState
+        @MainActor func listed() -> [ShapeID] { state.candidates(matching: "alpha", in: Starred.self, for: nil).matches.map(\.id) }
+        let first = listed()
+        expectEqual(first, tokens, "the catalog's order")
+        for index in [0, 1, 3, 0] {
+            h.editor.transact(on: BoardID(owner: pocket)) { $0.update(tokens[index], as: Token.self) { $0.props.isStarred = false } }
+            expectEqual(listed().count, 3, "one went out of the scope")
+            h.editor.transact(on: BoardID(owner: pocket)) { $0.update(tokens[index], as: Token.self) { $0.props.isStarred = true } }
+            expectEqual(listed().count, 4, "and came back")
+        }
+        expectEqual(listed(), first, "the same order")
     },
 
     test("the registry refuses a join to a scope nobody declares, a join by a kind that can't be mentioned, and two scopes titled alike") {

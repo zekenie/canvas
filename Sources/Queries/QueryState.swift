@@ -103,17 +103,91 @@ public final class QueryState {
             throw await settledByTitles(error)
         }
         let checked = threadCPU() - start
+        // The deadline runs from here, so a wait for answers is time the query has spent: the
+        // evaluation gets what's left, and a slow one is refused `too_slow` inside `canvas`'s 10 s.
+        let clock = try startClock()
+        defer { clock.deadline.cancel() }
+        // Outside the line queries wait their turn in, so a wait for answers never holds up another.
+        let settling = request.settle != nil && plan.readsEdges
+        if let settle = request.settle, settling { await waitForSettled(min(settle, QueryBudget.deadline)) }
         let limit = min(max(request.limit, 1), QueryBudget.maxRows)
         let countOnly = request.countOnly, properties = request.properties
         // Rows that list attributes read text through every format; else only those the query tests.
         let lists = !countOnly && properties != .none
         let formats = lists ? Set(vocabulary.textFormats.keys) : plan.uses.textFormats
-        var (result, timings) = try await perform(words: plan.uses.pseudoClasses, formats: formats) { (evaluation: Evaluation) async throws(QueryError) -> QueryResult in
+        var (result, timings, pending) = try await perform(words: plan.uses.pseudoClasses, formats: formats, edges: [request.edges],
+                                                           settling: settling, clock: clock) { (evaluation: Evaluation) async throws(QueryError) -> QueryResult in
             try await evaluation.answer(plan, limit: limit, countOnly: countOnly, properties: properties)
         }
         timings.main += .cpu(checked)
         result.timings = timings
+        if let pending { result.warnings.append(.pending(pending)) }
         return result
+    }
+
+    /// Answers many queries about one file, ids only: what a plugin that keeps answers asks. The
+    /// file is taken up once (one main-actor turn, one place in the line, one snapshot of Topology
+    /// in each view the requests ask for), and every request is answered over it in one
+    /// evaluation, which shares what it reads between them: the names of the shapes, derived ones
+    /// asked of the main actor in slices, are read once for the whole batch however many requests
+    /// name titles. No rows are built. Each answer is a request's matches, `admitting` asked off the
+    /// main actor of each before `limit`, or its refusal (as `check` and `run`'s names refuse it);
+    /// when the batch itself fails (`cancelled`, `too_slow`, `board_closed`, `no_topology`), every
+    /// request that wasn't refused already fails so. A refusal's hint that waits on titles is left
+    /// as it is.
+    public func matches(_ requests: [QueryMatchRequest]) async -> [Result<QueryMatches, QueryError>] {
+        var results = [Result<QueryMatches, QueryError>?](repeating: nil, count: requests.count)
+        var asked: [BatchedQuery] = []
+        for (index, request) in requests.enumerated() {
+            do throws(QueryError) {
+                asked.append(BatchedQuery(index: index, plan: try check(request.text), request: request))
+            } catch {
+                results[index] = .failure(error)
+            }
+        }
+        if !asked.isEmpty {
+            var words: Set<String> = [], formats: Set<String> = [], views: [EdgeView] = []
+            for query in asked {
+                words.formUnion(query.plan.uses.pseudoClasses)
+                formats.formUnion(query.plan.uses.textFormats)
+                if !views.contains(query.request.edges) { views.append(query.request.edges) }
+            }
+            let batch = asked
+            do throws(QueryError) {
+                let performed = try await perform(words: words, formats: formats, edges: views) { (evaluation: Evaluation) async throws(QueryError) -> [Result<QueryMatches, QueryError>] in
+                    try await evaluation.admitted(batch)
+                }
+                for (query, answer) in zip(asked, performed.answer) { results[query.index] = answer }
+            } catch {
+                for query in asked { results[query.index] = .failure(error) }
+            }
+        }
+        return results.map { $0 ?? .failure(.boardClosed) }
+    }
+
+    /// The refusal `run` would make for the titles and ids in a plan that `check` let through
+    /// (`unknown_title`, `unknown_id`, `cannot_contain`), and nothing else: nothing is evaluated and
+    /// no rows are built. Nil when the names are all right, and for a plan with none (which never
+    /// takes up the file); a refusal of the query itself (`cancelled`, `too_slow`, `board_closed`)
+    /// is returned as well. What translating English to a query checks, beside `check`.
+    public func checkNames(_ plan: QueryPlan) async -> QueryError? {
+        guard plan.namesShapes else { return nil }
+        do throws(QueryError) {
+            _ = try await perform(words: [], formats: [], edges: [.resolved]) { (evaluation: Evaluation) async throws(QueryError) -> Bool in
+                try await evaluation.checkNames(of: plan)
+                return true
+            }
+            return nil
+        } catch {
+            return error
+        }
+    }
+
+    /// Waits, at most `timeout`, while answers the edges depend on are still arriving
+    /// (`TopologyIndex.isSettling`): not in the line, so it never holds up a query.
+    private func waitForSettled(_ timeout: Duration) async {
+        guard let topology = editor?.topology, topology.isSettling else { return }
+        _ = await topology.settled(timeout: timeout)
     }
 
     /// For `--ask`'s titles: named shapes the query would range over, up to `limit`, each name, kind
@@ -155,12 +229,16 @@ public final class QueryState {
 
     // MARK: Running one
 
-    /// Waits for the turn, takes up the file, and runs `work` over it off the main actor, bounded by
-    /// the deadline and the caller's cancellation; returns what it answered, and what it cost.
-    private func perform<Answer: Sendable>(words: Set<String>, formats: Set<String>,
-                                           _ work: @escaping @Sendable (Evaluation) async throws(QueryError) -> Answer)
-        async throws(QueryError) -> (answer: Answer, timings: QueryTimings) {
-        // Nothing here holds the editor across a wait: a closed file's editor goes as it closes.
+    /// A query's deadline: `QueryBudget.deadline` armed on the editor's scheduler, and the run it
+    /// cancels (`too_slow`).
+    private struct QueryClock {
+        let run: QueryRun
+        let deadline: ScheduledTask
+    }
+
+    /// Starts a query's clock. Nothing here holds the editor across a wait: a closed file's editor
+    /// goes as it closes.
+    private func startClock() throws(QueryError) -> QueryClock {
         guard let scheduler = editor?.scheduler else { throw .boardClosed }
         guard editor?.topology != nil else { throw .noTopology }
         let run = QueryRun()
@@ -169,7 +247,23 @@ public final class QueryState {
             run.cancel?()
             if let place = run.place { self?.leaveLine(place) }
         }
-        defer { deadline.cancel() }
+        return QueryClock(run: run, deadline: deadline)
+    }
+
+    /// Waits for the turn, takes up the file, and runs `work` over it off the main actor, bounded by
+    /// the deadline and the caller's cancellation; returns what it answered, and what it cost. The
+    /// deadline runs from `clock`, started by a caller that spent time before this (a wait for
+    /// answers), else from here. `edges` are the views of Topology the evaluation reads, the first
+    /// for what the words prepare; `settling` asks, as the file is taken up, whether answers are
+    /// still arriving (`pending`: how many stand-ins are asked and unanswered, nil if none are).
+    private func perform<Answer: Sendable>(words: Set<String>, formats: Set<String>, edges: [EdgeView] = [.resolved], settling: Bool = false,
+                                           clock started: QueryClock? = nil,
+                                           _ work: @escaping @Sendable (Evaluation) async throws(QueryError) -> Answer)
+        async throws(QueryError) -> (answer: Answer, timings: QueryTimings, pending: Int?) {
+        let clock: QueryClock
+        if let started { clock = started } else { clock = try startClock() }
+        let run = clock.run
+        defer { clock.deadline.cancel() }
         do throws(QueryError) {
             try await takeTurn(run)
         } catch {
@@ -178,7 +272,7 @@ public final class QueryState {
         defer { endTurn() }
         guard !run.timedOut else { throw .tooSlow }
         guard !Task.isCancelled else { throw .cancelledQuery }
-        let (handover, facts, captured) = try takeUp(words: words, formats: formats)
+        let (handover, facts, captured, pending) = try takeUp(words: words, formats: formats, edges: edges, settling: settling)
         let vocabulary = vocabulary
         let task = Task.detached(priority: Task.currentPriority) {
             await Evaluation.perform(handover, vocabulary: vocabulary, facts: facts, work)
@@ -202,29 +296,34 @@ public final class QueryState {
         let timings = QueryTimings(main: .cpu(captured + facts.total), offMain: .cpu(performed.stats.offMain), slices: facts.slices,
                                    longestSlice: .cpu(facts.longest), costliestRecord: .cpu(facts.costliest))
         switch performed.outcome {
-        case .success(let answer): return (answer, timings)
+        case .success(let answer): return (answer, timings, pending)
         case .failure(let error): throw error.reason == .cancelled && run.timedOut ? .tooSlow : error
         }
     }
 
     /// Takes up the file (`capture`), and what that cost the main actor.
-    private func takeUp(words: Set<String>, formats: Set<String>) throws(QueryError) -> (Handover<QuerySnapshot>, MainFacts, UInt64) {
+    private func takeUp(words: Set<String>, formats: Set<String>, edges: [EdgeView],
+                        settling: Bool) throws(QueryError) -> (Handover<QuerySnapshot>, MainFacts, UInt64, Int?) {
         guard let editor, let topology = editor.topology else { throw .boardClosed }
         let start = threadCPU()
-        let (handover, facts) = capture(editor, topology: topology, words: words, formats: formats)
-        return (handover, facts, threadCPU() - start)
+        let pending = settling && topology.isSettling ? topology.pendingStandIns.count : nil
+        let (handover, facts) = capture(editor, topology: topology, words: words, formats: formats, edges: edges)
+        return (handover, facts, threadCPU() - start, pending)
     }
 
     /// The file as the query takes it up, in this one turn: the file and Topology's snapshot, read
     /// without observing them, the board shown and the path to it, the revision, the shape being
     /// typed into, and then what each word and text format the query uses takes (`prepare`, in
     /// word order); and what asks the main actor, holding the editor weakly.
-    private func capture(_ editor: CanvasEditor, topology: TopologyIndex, words: Set<String>,
-                         formats: Set<String>) -> (Handover<QuerySnapshot>, MainFacts) {
+    private func capture(_ editor: CanvasEditor, topology: TopologyIndex, words: Set<String>, formats: Set<String>,
+                         edges: [EdgeView]) -> (Handover<QuerySnapshot>, MainFacts) {
         let file = editor.withoutObservingDocument { editor.file }
-        let graph = topology.snapshot()
+        // One snapshot in each view asked for (each O(1), sharing the tables); the first is what the words prepare over.
+        var views: [EdgeView: TopologySnapshot] = [:]
+        for view in edges where views[view] == nil { views[view] = topology.snapshot(view) }
+        let graph = views[edges.first ?? .resolved] ?? topology.snapshot()
         let shown = editor.board, path = editor.boardPath, revision = editor.revision, editing = editor.editingShapeID
-        let preparation = QueryPreparation(editor: editor)
+        let preparation = QueryPreparation(editor: editor, file: QueryFilePreparation(snapshot: graph, registry: registry, editor: editor))
         var prepared: [String: any Sendable] = [:], verdicts: [String: MainFacts.Verdict] = [:]
         for word in words.sorted() {
             guard case .pseudoClass(let behavior)? = vocabulary.contributedWords[word]?.meaning else { continue }
@@ -239,7 +338,7 @@ public final class QueryState {
         #if DEBUG
         captures += 1
         #endif
-        let snapshot = QuerySnapshot(file: file, topology: graph, shown: shown, shownPath: path, revision: revision, editing: editing,
+        let snapshot = QuerySnapshot(file: file, topology: graph, topologies: views, shown: shown, shownPath: path, revision: revision, editing: editing,
                                      words: prepared, formats: read, token: live.token())
         let facts = MainFacts(editor: editor, revision: revision, derived: vocabulary.naming?.derived, verdicts: verdicts)
         return (Handover(snapshot), facts)
@@ -280,6 +379,13 @@ public final class QueryState {
             line.removeFirst().resume.resume(returning: true)
         }
     }
+}
+
+/// A query of a batch, checked: its place in the batch, its plan and its request.
+struct BatchedQuery: Sendable {
+    let index: Int
+    let plan: QueryPlan
+    let request: QueryMatchRequest
 }
 
 /// One query in flight: whether its deadline has passed, where it waits in line, and how to cancel

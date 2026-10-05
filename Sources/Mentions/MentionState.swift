@@ -55,6 +55,9 @@ public final class MentionState {
     /// Every mentionable shape on every board the editor can show that its kind names (not the
     /// "Untitled …" placeholder), ready to match.
     @ObservationIgnored private var catalog = MentionCatalog()
+    /// The catalog's shapes each scope but `AnyMentionable` admits, made when a scope is first asked
+    /// about and kept up to date by every entry read after, so a scope that admits few ranks its few.
+    @ObservationIgnored private var scopes: [ObjectIdentifier: ScopeMembers] = [:]
     /// Those a commit changed since, on any board, to read again at the next query.
     @ObservationIgnored private var stale: Set<ShapeID> = []
     @ObservationIgnored private var kindDefaults: [ShapeKind: MentionKindDefaults] = [:]
@@ -73,6 +76,12 @@ public final class MentionState {
     /// Who mentions whom: Topology's index, made before this service (so it hears each commit
     /// first), and brought up to date when this one is asked about a commit first (`catchUp`).
     @ObservationIgnored private let topology: TopologyIndex?
+    /// Following Topology's changes to the edges (`follow`): how the mentions that came and went
+    /// are heard, whatever changed them.
+    @ObservationIgnored private var following: TopologyFollowing?
+    /// The targets whose backlinks the changes to mention edges heard since the last commit may
+    /// change: the commit being heard takes them (`hear`).
+    @ObservationIgnored private var followedBacklinks: Set<ShapeID> = []
 
     #if DEBUG
     /// How many catalog entries have been read (debug builds), so tests can hold a commit to what it
@@ -90,6 +99,7 @@ public final class MentionState {
         heardRevision = editor.revision
         trackMentioned()
         readCatalog()
+        following = topology?.follow { [weak self] change in self?.follow(change) }
     }
 
     /// The editor's slash commands, if it has them: what a mention text view hosts for its shape.
@@ -412,13 +422,16 @@ public final class MentionState {
             return Double(hypot(bounds.midX - origin.x, bounds.midY - origin.y))
         }
 
+        // A scope that admits some of the catalog ranks only those (`members`): kept up to date as
+        // entries are read, so what a keystroke costs is its members', not the catalog's.
+        let members = admitsAll ? nil : self.members(of: S.self).ids
         let q = FuzzyMatcher.Query(query)
         guard !q.isEmpty else {
             let recentShown = Array(recent.lazy.filter { self.catalog.contains($0) && admits($0) }
                 .prefix(MentionRanking.recentShown)).map { candidate($0, matched: []) }
             var taken = Set(recentShown.map(\.id))
             if let owner { taken.insert(owner) }
-            var nearby = origin.map { nearest(to: $0, excluding: taken, admits: admits, distance: distance) } ?? []
+            var nearby = origin.map { nearest(to: $0, excluding: taken, members: members, admits: admits, distance: distance) } ?? []
             taken.formUnion(nearby)
             for inside in editor.boardPath.reversed().lazy.compactMap(\.owner) where nearby.count < MentionRanking.nearbyShown {
                 if !taken.contains(inside), catalog.contains(inside), admits(inside) { nearby.append(inside) }
@@ -434,14 +447,21 @@ public final class MentionState {
         // Two linear passes over the catalog's keys, as every caret list matches (`rank`): every
         // tier but the typo's, then, if that found few, the typo's over the rest.
         var found: [Found] = []
+        /// A member's slot in the catalog, member for member (its entry may have gone since: nil).
+        let memberSlots = members?.map { catalog.slot(of: $0) }
         q.withView { view in
             catalog.keys.withUnsafeBufferPointer { keys in
                 catalog.entries.withUnsafeBufferPointer { entries in
-                    FuzzyMatcher.rank(view, count: entries.count, wantSpans: false, label: { slot in
+                    /// A place in the ranking's order: a catalog slot, or a member's, which has a slot of its own.
+                    func slot(_ index: Int) -> Int? { memberSlots.map { $0[index] } ?? index }
+                    FuzzyMatcher.rank(view, count: members?.count ?? entries.count, wantSpans: false, label: { index in
+                        guard let slot = slot(index) else { return nil }
                         let entry = entries[slot]
-                        guard !(leavesOutOwner && entry.id == owner), admits(entry.id) else { return nil }
+                        guard !(leavesOutOwner && entry.id == owner), members != nil || admits(entry.id) else { return nil }
                         return UnsafeBufferPointer(rebasing: keys[entry.start..<entry.start + entry.count])
-                    }) { slot, score, _ in found.append(Found(slot: slot, score: score)) }
+                    }) { index, score, _ in
+                        if let slot = slot(index) { found.append(Found(slot: slot, score: score)) }
+                    }
                 }
             }
         }
@@ -452,12 +472,14 @@ public final class MentionState {
                 found[i].score += MentionRanking.recentBonus * (MentionRanking.recentKept - entry.recentRank) / MentionRanking.recentKept
             }
         }
-        /// Lower score, then longer label, then further back.
+        /// Lower score, then longer label, then further back, then later in the catalog.
         func isWorse(_ a: Found, _ b: Found) -> Bool {
             if a.score != b.score { return a.score < b.score }
             let al = entries[a.slot].labelLength, bl = entries[b.slot].labelLength
             if al != bl { return al > bl }
-            return (document.index(of: entries[a.slot].id) ?? 0) < (document.index(of: entries[b.slot].id) ?? 0)
+            let ai = document.index(of: entries[a.slot].id) ?? 0, bi = document.index(of: entries[b.slot].id) ?? 0
+            // Shapes of other boards have no place on this one: the catalog's order, whatever order a scope's members are kept in.
+            return ai != bi ? ai < bi : a.slot > b.slot
         }
         // Nearness, for the best only: whatever it adds, the rest can't pass them.
         var best = BoundedHeap<Found>(capacity: MentionRanking.nearnessCandidates, isWorse: isWorse)
@@ -485,7 +507,7 @@ public final class MentionState {
     /// holds as many shapes as the board has in the catalog, reading those costs less than growing
     /// it again: a board with few mentionable shapes, or few the scope admits, reads its entries
     /// after at most one square that holds them all.
-    private func nearest(to origin: CGPoint, excluding taken: Set<ShapeID>, admits: (ShapeID) -> Bool,
+    private func nearest(to origin: CGPoint, excluding taken: Set<ShapeID>, members: [ShapeID]?, admits: (ShapeID) -> Bool,
                          distance: (ShapeID) -> Double?) -> [ShapeID] {
         let wanted = MentionRanking.nearbyShown
         func best(of ids: some Sequence<ShapeID>) -> [(id: ShapeID, distance: Double)] {
@@ -494,6 +516,11 @@ public final class MentionState {
                 if let d = distance(id) { heap.insert((id, d)) }
             }
             return heap.sorted()
+        }
+        // A scope that admits few shapes is read whole: its members, the nearest of them on the board
+        // shown, however far they are (a square would grow over the board to find them).
+        if let members, members.count <= MentionRanking.narrowScope || members.count * 8 <= catalog.entries.count {
+            return best(of: members).map(\.id)
         }
         // A board of no more than the shapes it could list, and those it leaves out, is read whole.
         let board = editor.board, onBoard = catalog.count(on: board)
@@ -537,30 +564,15 @@ public final class MentionState {
         // board (an edit that keeps a mention changes its quote, and no edge).
         var backlinksChanged: Set<ShapeID> = []
         if let topology {
+            // Topology tells its change (`follow`) as it hears the commit, here if not before.
             topology.catchUp(changes)
-            // The shapes whose mentions it changed, at either end (another type's edges, an arrow
-            // bound to a mentioned shape, change none of what mentions it): those mentioned now are
-            // tracked, and those no longer mentioned (nor observed) aren't. Those mentioned before
-            // (so tracked) or by another shape now may read other backlinks; `touched` doesn't say
-            // which mentions changed, so one mentioned before only by itself counts too, though a
-            // shape's own text is none of its backlinks.
-            for id in topology.touched(types: mentionEdges) {
-                let isTracked = resolutions[id] != nil
-                let isMentioned = isMentionedAnywhere(id)
-                if isTracked || (isMentioned && self.isMentioned(id)) { backlinksChanged.insert(id) }
-                guard observersByTarget[id] == nil else { continue }
-                if isMentioned, !isTracked {
-                    resolutions[id] = resolve(id)
-                } else if !isMentioned, isTracked {
-                    resolutions[id] = nil
-                }
-            }
+            swap(&backlinksChanged, &followedBacklinks)
             for id in changes.added where !changes.moved.contains(id) { noteTargets(of: id, into: &backlinksChanged) }
             for id in changes.changed where !changes.moved.contains(id) { noteTargets(of: id, into: &backlinksChanged) }
             for id in changes.elsewhere { noteTargets(of: id, into: &backlinksChanged) }
         }
         for id in changes.removed {
-            catalog.remove(id)
+            removeEntry(id)
             stale.remove(id)
         }
         for id in changes.added where !changes.moved.contains(id) { stale.insert(id) }
@@ -577,6 +589,31 @@ public final class MentionState {
         if changes.replacedDocument { readCatalog() }                   // a board or file put in place: read now, not at the first `@`
         tell(changedTargets)
         bumpBacklinks(backlinksChanged)
+    }
+
+    /// A change to the edges, heard from Topology: the shapes whose mentions it changed, at either
+    /// end (another type's edges, an arrow bound to a mentioned shape, change none of what mentions
+    /// it). Those mentioned now are tracked, and those no longer mentioned (nor observed) aren't.
+    /// Those mentioned before (so tracked) or by another shape now may read other backlinks; the
+    /// change doesn't say which mentions changed, so one mentioned before only by itself counts
+    /// too, though a shape's own text is none of its backlinks. A commit's are bumped with the rest
+    /// of what it changes, as it's heard; any other's now.
+    private func follow(_ change: TopologyChange) {
+        guard let topology else { return }
+        for id in change.touched(types: mentionEdges, in: topology.types) {
+            let isTracked = resolutions[id] != nil
+            let isMentioned = isMentionedAnywhere(id)
+            if isTracked || (isMentioned && self.isMentioned(id)) { followedBacklinks.insert(id) }
+            guard observersByTarget[id] == nil else { continue }
+            if isMentioned, !isTracked {
+                resolutions[id] = resolve(id)
+            } else if !isMentioned, isTracked {
+                resolutions[id] = nil
+            }
+        }
+        guard change.cause == .provide else { return }
+        bumpBacklinks(followedBacklinks)
+        followedBacklinks = []
     }
 
     /// Notes what a shape's mention text mentions now, but itself.
@@ -640,6 +677,7 @@ public final class MentionState {
     /// (`registry.ownsShowableBoard`, what `canShow` asks of each owner on a path), each once.
     private func readCatalog() {
         catalog = MentionCatalog()
+        scopes = [:]
         stale = []
         let children = editor.file.children
         var boards: [BoardID] = [.root], met: Set<BoardID> = [.root], next = 0
@@ -665,7 +703,7 @@ public final class MentionState {
             } else if let record = editor.shape(inFile: id), let elsewhere = file.board(containing: id) {
                 readEntry(record, on: elsewhere)
             } else {
-                catalog.remove(id)
+                removeEntry(id)
             }
         }
         stale = []
@@ -675,13 +713,33 @@ public final class MentionState {
     /// gives it no name.
     private func readEntry(_ record: AnyShapeRecord, on board: BoardID) {
         guard let appearance = appearance(of: record), !appearance.isPlaceholder else {
-            catalog.remove(record.id)
+            removeEntry(record.id)
             return
         }
         #if DEBUG
         entriesRead += 1
         #endif
         catalog.set(record.id, appearance, on: board, recentRank: recent.firstIndex(of: record.id) ?? -1)
+        for scope in scopes.values { scope.set(record.id, admitted: scope.admits(record, registry)) }
+    }
+
+    /// Takes a shape out of the catalog, and out of every scope's members.
+    private func removeEntry(_ id: ShapeID) {
+        catalog.remove(id)
+        for scope in scopes.values { scope.remove(id) }
+    }
+
+    /// The catalog's shapes `scope` admits, made at the first ask: one pass over the catalog, never again.
+    private func members<S: MentionScope>(of scope: S.Type) -> ScopeMembers {
+        let key = ObjectIdentifier(S.self)
+        if let found = scopes[key] { return found }
+        let made = ScopeMembers { record, registry in S.admits(record, in: registry) }
+        let document = editor.document, file = editor.file, registry = registry
+        for entry in catalog.entries {
+            if let record = document[entry.id] ?? file.record(entry.id), made.admits(record, registry) { made.set(entry.id, admitted: true) }
+        }
+        scopes[key] = made
+        return made
     }
 
     /// How a shape shows where it's mentioned, with its kind's defaults found once.
@@ -713,6 +771,7 @@ extension MentionState: EditorService {
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
         heardRevision = editor.revision
         lastAffected = []
+        followedBacklinks = []
         // Every shape's backlinks list the new board's mentioners first.
         withMutation(keyPath: \.boardsShownKey) { boardsShown += 1 }
         backlinksRead = []
@@ -804,6 +863,36 @@ public struct MentionCandidates: Hashable, Sendable {
 
     /// Every row, in order.
     public var all: [MentionCandidate] { recent + nearby + matches }
+}
+
+/// The catalog's shapes a scope admits, in no order of their own: what a scope that admits few ranks
+/// in place of the whole catalog.
+@MainActor
+private final class ScopeMembers {
+    let admits: @MainActor (AnyShapeRecord, Registry) -> Bool
+    private(set) var ids: [ShapeID] = []
+    private var positions: [ShapeID: Int] = [:]
+
+    init(admits: @escaping @MainActor (AnyShapeRecord, Registry) -> Bool) { self.admits = admits }
+
+    /// A member, or no longer one.
+    func set(_ id: ShapeID, admitted: Bool) {
+        guard admitted else { return remove(id) }
+        guard positions[id] == nil else { return }
+        positions[id] = ids.count
+        ids.append(id)
+    }
+
+    /// Takes a shape out: the last takes its place.
+    func remove(_ id: ShapeID) {
+        guard let position = positions.removeValue(forKey: id) else { return }
+        let last = ids.count - 1
+        if position != last {
+            ids[position] = ids[last]
+            positions[ids[position]] = position
+        }
+        ids.removeLast()
+    }
 }
 
 /// A catalog entry a query matched, by its slot, and its score.

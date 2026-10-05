@@ -47,6 +47,9 @@ public enum MentionRanking {
     /// The most an empty query lists in each of its sections.
     public static let recentShown = 4
     public static let nearbyShown = 4
+    /// A scope that admits this many shapes or fewer (or an eighth of the catalog) is read whole for the
+    /// shapes nearest the text, rather than by growing squares around it.
+    public static let narrowScope = 512
     /// The picks kept for "Recent" and the recent bonus.
     public static let recentKept = 20
 }

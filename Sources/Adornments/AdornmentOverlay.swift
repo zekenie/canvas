@@ -47,6 +47,13 @@ enum AdornmentStyle {
         }
     }
 
+    /// A chip that shows a moment (`ChipFade`) shows in full this long, longer while the pointer's on
+    /// it, which is looked at again this often, then fades over `fadeDuration`, a frame this long.
+    static let lingerDuration: Duration = .milliseconds(1500)
+    static let hoverRecheck: Duration = .milliseconds(500)
+    static let fadeDuration: Duration = .milliseconds(300)
+    static let fadeFrame: Duration = .milliseconds(16)
+
     /// A symbol before text: its place, as wide as the place's text is tall, and the gap after it.
     static let rowSymbolPlace: CGFloat = 11
     static let cornerSymbolPlace: CGFloat = 10
@@ -65,9 +72,10 @@ enum AdornmentStyle {
     }
 
     /// A symbol before text in its place: two points smaller than the text, semibold, in white a
-    /// little softer than the text's, so it marks the text rather than reading as part of it.
-    static func leadingSymbol(_ name: String, in placement: AdornmentPlacement) -> NSImage? {
-        symbol(SymbolKey(name: name, pointSize: placement == .onTopRightCorner ? 8 : 9, weight: .semibold, white: 0.75))
+    /// little softer than the text's, so it marks the text rather than reading as part of it (a
+    /// label's `brightSymbol()`: as white as the text).
+    static func leadingSymbol(_ name: String, in placement: AdornmentPlacement, bright: Bool = false) -> NSImage? {
+        symbol(SymbolKey(name: name, pointSize: placement == .onTopRightCorner ? 8 : 9, weight: .semibold, white: bright ? 1 : 0.75))
     }
 
     /// What a symbol's image is made from: its name, size and weight, and how opaque its white is.
@@ -111,7 +119,7 @@ enum AdornmentStyle {
         let isCorner = placement == .onTopRightCorner
         let string = NSAttributedString(string: text, attributes: textAttributes(of: label, isCorner: isCorner))
         let size = string.size()
-        let mark = label.systemImage.map { (image: leadingSymbol($0, in: placement), place: isCorner ? cornerSymbolPlace : rowSymbolPlace) }
+        let mark = label.systemImage.map { (image: leadingSymbol($0, in: placement, bright: label.hasBrightSymbol), place: isCorner ? cornerSymbolPlace : rowSymbolPlace) }
         return .text(string, size: size, symbol: mark,
                      width: (size.width + lead(of: label, in: placement) + 2 * (isCorner ? cornerPadding : rowPadding)).rounded(.up))
     }
@@ -136,16 +144,16 @@ enum AdornmentStyle {
     /// shape its place runs from, in world units, at `scale` world units per point): a capsule with
     /// its text, or a disc with its symbol in the middle, all of it under one transparency layer
     /// when it's drawn less than opaque.
-    static func draw(_ adornment: ShownAdornment, face: Face, in frame: CGRect, from corner: CGPoint, scale: CGFloat, look: Look,
+    static func draw(_ label: AdornmentLabel, in placement: AdornmentPlacement, face: Face, in frame: CGRect, from corner: CGPoint, scale: CGFloat, look: Look,
                      in cg: CGContext) {
-        let opacity = adornment.label.opacity
+        let opacity = label.opacity
         cg.saveGState()
         defer { cg.restoreGState() }
         if opacity < 1 {
             cg.setAlpha(opacity)
             cg.beginTransparencyLayer(auxiliaryInfo: nil)
         }
-        cg.setFillColor(fill(for: adornment.label.tone, look: look).cgColor)
+        cg.setFillColor(fill(for: label.tone, look: look).cgColor)
         switch face {
         case .symbol(let image, _):
             // In world units, the symbol's image sized to match: an image drawn into a scaled
@@ -165,10 +173,10 @@ enum AdornmentStyle {
             let radius = min(frame.width, frame.height) / 2
             cg.addPath(CGPath(roundedRect: frame, cornerWidth: radius, cornerHeight: radius, transform: nil))
             cg.fillPath()
-            let isCorner = adornment.id.placement == .onTopRightCorner
+            let isCorner = placement == .onTopRightCorner
             let start = frame.minX + (isCorner ? cornerPadding : rowPadding)
             // Where the text starts, as its width was measured.
-            let lead = lead(of: adornment.label, in: adornment.id.placement)
+            let lead = lead(of: label, in: placement)
             if let symbol, let image = symbol.image {
                 // In world units from the corner, as a disc's symbol is drawn: centered in its place.
                 let size = image.size
@@ -239,7 +247,8 @@ struct AdornmentOverlay: CanvasOverlay {
                 } else if adornment.isClickable, adornment.isButton(hovered, on: record.id) {
                     look = .hovered
                 }
-                AdornmentStyle.draw(adornment, face: laidOut.faces[index], in: slot.frame, from: slot.corner(in: drawn), scale: scale,
+                let (label, face) = laidOut.look(of: index, in: slot)
+                AdornmentStyle.draw(label, in: adornment.id.placement, face: face, in: slot.frame, from: slot.corner(in: drawn), scale: scale,
                                     look: look, in: cg)
             }
         }

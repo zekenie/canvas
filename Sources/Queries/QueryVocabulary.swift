@@ -79,6 +79,9 @@ public struct QueryVocabulary: Sendable {
         public let example: String
         /// The plugin whose word it is (the language's own are `queries`').
         public let from: PluginID
+        /// Whether its verdict reads the editor (the person's selection, the board shown, a live
+        /// verdict): a query that stands alone, stored and run later, can't use it.
+        public let readsEditor: Bool
     }
 
     /// In registry order.
@@ -151,7 +154,7 @@ public struct QueryVocabulary: Sendable {
             let value = declared.value
             contributed[value.word] = value
             words.append(WordEntry(word: value.word, form: value.form, takes: value.takes, summary: value.summary, example: value.example,
-                                   from: declared.pluginID))
+                                   from: declared.pluginID, readsEditor: value.reads.contains(.editor)))
         }
 
         self.kinds = kinds
@@ -175,6 +178,13 @@ public struct QueryVocabulary: Sendable {
     public var nameAttribute: String? { naming?.attribute }
 
     // MARK: The text
+
+    /// The `<vocabulary>` block for a query that is stored and run later by something that has no
+    /// person looking, with every word that reads the editor left out (`WordEntry.readsEditor`):
+    /// what translating the words of a reference is told.
+    public var textForStoredQueries: String {
+        Self.text(kinds: kinds, edgeTypes: edgeTypes, words: words.filter { $0.from != .queries && !$0.readsEditor })
+    }
 
     /// The `<vocabulary>` block's text: what `--ask` tells the model this app's queries can name.
     private static func text(kinds: [KindEntry], edgeTypes: [EdgeTypeEntry], words: [WordEntry]) -> String {
@@ -250,7 +260,8 @@ extension QueryWordDeclaration {
 extension Word {
     /// The word as the vocabulary lists it.
     var entry: QueryVocabulary.WordEntry {
-        QueryVocabulary.WordEntry(word: rawValue, form: form, takes: takes, summary: summary, example: example, from: .queries)
+        QueryVocabulary.WordEntry(word: rawValue, form: form, takes: takes, summary: summary, example: example, from: .queries,
+                                  readsEditor: self == .currentBoard)
     }
 
     /// How it's written: `:edge-to(S[, types])`.

@@ -2,6 +2,7 @@ import AppKit
 import Canvas
 import Geometry
 import Selection
+import Topology
 
 /// A port's dot: its shape and the side it's on. What `editor.hoveredButton` and
 /// `editor.pressedButton` are while the pointer's on one.
@@ -15,8 +16,9 @@ public struct PortDot: Hashable, Sendable {
 }
 
 /// Per editor: every kind's ports (the port table, `KindPorts.table(in:)`) and the channels' colors,
-/// found once (the registry is frozen); the shape whose dots show; and the connection being drawn
-/// from one, while it is.
+/// found once (the registry is frozen); the ports of each shape that stands for others, kept until
+/// what it stands for changes (`ports(of:)`); the shape whose dots show; and the connection being
+/// drawn from one, while it is.
 @MainActor
 final class PortState {
     private unowned let editor: CanvasEditor
@@ -30,6 +32,15 @@ final class PortState {
     }
     private var connection: Connection?
     private weak var connecting: (any Session)?
+    /// What each stand-in's ports were, at the revision of its edges they were worked out at. Let go
+    /// of with the shape, wherever it was (`forgetStandingPorts`), and with the file.
+    private var standingPorts: [ShapeID: (revision: Int, ports: KindPorts?)] = [:]
+    /// The graph, and the kinds that stand in for others: nil with none (found once, on first use,
+    /// when every service exists).
+    private lazy var standIns: (graph: TopologyIndex, kinds: Set<ShapeKind>)? = {
+        guard let graph = editor.topology, !graph.standInKinds.isEmpty else { return nil }
+        return (graph, graph.standInKinds)
+    }()
 
     init(editor: CanvasEditor) {
         self.editor = editor
@@ -37,6 +48,38 @@ final class PortState {
         connector = registry.connector
         kinds = KindPorts.table(in: registry)
         colors = Dictionary(registry.contributions(to: Channels.self).map { ($0.value.id, $0.value.color) }) { first, _ in first }
+    }
+
+    // MARK: A shape's ports
+
+    /// The ports a shape has: its kind's, from the port table; for a shape that stands for others
+    /// (Topology's stand-ins: a reference), what it stands for now decides, instance by instance, a
+    /// deliberate departure from ports being per kind. With one kind of shape stood for, that
+    /// kind's channels and roles, on the stand-in's own sides; with several, the channels every
+    /// kind takes, with the roles all allow; with none (it stands for nothing: empty, pending,
+    /// missing, private, unavailable), none, so no dots show and no connection ends there. Kept
+    /// for each stand-in until its revision in Topology changes (re-pointed, what it stands for
+    /// made private or deleted, an answer provided for it), so asking costs a dictionary hit.
+    func ports(of record: AnyShapeRecord) -> KindPorts? {
+        guard let own = kinds[record.kind] else { return nil }
+        guard let (topology, standingKinds) = standIns, standingKinds.contains(record.kind) else { return own }
+        let revision = topology.revision(of: record.id)
+        if let kept = standingPorts[record.id], kept.revision == revision { return kept.ports }
+        let targets = topology.forwards(of: record.id).compactMap { editor.shape(inFile: $0) }
+        let ports = targets.isEmpty ? nil : own.standing(for: targets.map { kinds[$0.kind] })
+        standingPorts[record.id] = (revision, ports)
+        return ports
+    }
+
+    /// Whether `end` of `arrow` may bind to `shape`, as far as what a stand-in stands for goes (the
+    /// static rule, `ArrowPortsPlugin`'s, lets every channel end at one, since its kind has ports on
+    /// all): for a stand-in, the arrow's channel must be one it takes now in that end's role. True
+    /// for any other shape, and for an arrow on no channel, or one no plugin declares, which binds
+    /// wherever an arrow can.
+    func allows(_ end: ArrowEnd, of arrow: AnyShapeRecord, at shape: AnyShapeRecord) -> Bool {
+        guard standIns?.kinds.contains(shape.kind) == true,
+              let channel = arrow[ChannelProperty.self], editor.registry.declares(channel) else { return true }
+        return ports(of: shape)?.roles[channel]?.allows(end == .start ? .source : .target) == true
     }
 
     /// Whether ports show at all: there's a connector, the select tool is current, and the view isn't
@@ -49,14 +92,14 @@ final class PortState {
     /// the editor's document).
     func hasDots(_ id: ShapeID) -> Bool {
         guard let connector, let record = editor.document[id], !record.isOpaque,
-              kinds[record.kind]?.dots.isEmpty == false else { return false }
+              ports(of: record)?.dots.isEmpty == false else { return false }
         return connector.canConnect(id, editor.shapeContext)
     }
 
     /// A shape's dots, in the order of `PortSide.allCases`, with their centers in world units: just
     /// outside the middle of each side of its bounds, `PortStyle.offset` view points out.
     func dots(of id: ShapeID) -> [(dot: PortDot, center: CGPoint)] {
-        guard let record = editor.document[id], let ports = kinds[record.kind], let bounds = bounds(of: id) else { return [] }
+        guard let record = editor.document[id], let ports = ports(of: record), let bounds = bounds(of: id) else { return [] }
         let out = PortStyle.offset / editor.camera.zoom
         return PortSide.allCases.compactMap { side in
             guard ports.dots[side] != nil else { return nil }
@@ -159,7 +202,7 @@ final class PortState {
     /// A drag from a dot, past the drag threshold: the connector's session drawing the connection,
     /// from where the dot was pressed (world units).
     func connect(from dot: PortDot, at origin: CGPoint) -> (any Session)? {
-        guard let connector, let record = editor.document[dot.shape], let channels = kinds[record.kind]?.dots[dot.side] else { return nil }
+        guard let connector, let record = editor.document[dot.shape], let channels = ports(of: record)?.dots[dot.side] else { return nil }
         let connection = Connection(shape: dot.shape, side: dot.side, channels: channels, origin: origin)
         guard let session = connector.begin(connection, editor) else { return nil }
         self.connection = connection
@@ -177,7 +220,7 @@ final class PortState {
 
     /// The color of a dot: its first channel's.
     func color(of dot: PortDot) -> NSColor {
-        guard let record = editor.document[dot.shape], let channel = kinds[record.kind]?.dots[dot.side]?.first else { return PortStyle.fallback }
+        guard let record = editor.document[dot.shape], let channel = ports(of: record)?.dots[dot.side]?.first else { return PortStyle.fallback }
         return colors[channel] ?? PortStyle.fallback
     }
 }
@@ -189,12 +232,37 @@ extension PortState: EditorService {
 
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         if let host, changes.removed.contains(host) { self.host = nil }
+        forgetStandingPorts(changes)
     }
 
     /// Another board is shown: the shape whose dots showed, and any connection, were the board
-    /// left's. Keeps nothing per board, so the switch's change set is never worked out.
+    /// left's. Keeps nothing per board, so the switch's change set is never worked out; but a file
+    /// put in place has none of the stand-ins kept (a shape of the same id may be one for others now).
     func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
         host = nil
         connection = nil
+        if change.isFileReplaced { standingPorts.removeAll() }
     }
+
+    /// A stand-in's kept ports go with it: those a commit removed on the board shown, and those on a
+    /// board it took or changed (`elsewhere`: one that only changed is worked out again when it's
+    /// next asked, which is one miss), all of them for a board put in place. Nothing when none is
+    /// kept, and a drag names no shape removed or on another board; otherwise a hit for each of the
+    /// fewer of what's kept and what the commit names.
+    private func forgetStandingPorts(_ changes: ChangeSet) {
+        guard !standingPorts.isEmpty else { return }
+        guard !changes.replacedDocument else { return standingPorts.removeAll() }
+        for id in changes.removed { standingPorts[id] = nil }
+        guard !changes.elsewhere.isEmpty else { return }
+        if standingPorts.count < changes.elsewhere.count {
+            for id in Array(standingPorts.keys) where changes.elsewhere.contains(id) { standingPorts[id] = nil }
+        } else {
+            for id in changes.elsewhere { standingPorts[id] = nil }
+        }
+    }
+
+    #if DEBUG
+    /// How many stand-ins' ports are kept (debug builds): what tests hold the upkeep to.
+    var standingPortsKept: Int { standingPorts.count }
+    #endif
 }

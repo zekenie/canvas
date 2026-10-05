@@ -1,9 +1,9 @@
 import QueryLanguage
 
 // `canvas query --ask`'s system prompt: what the app tells its model when it asks it to write a
-// query for a question in English (QueryCommands' `QueryAsking` sends it, with the question, this
+// query for a question in English (QueryTranslation's `QueryTranslator` sends it, with the question, this
 // app's vocabulary, where the person is and the file's titles, each a tagged block of the user
-// message). It's here, not in QueryCommands, since its examples name the shipped kinds, edge types
+// message). It's here, not in QueryTranslation, since its examples name the shipped kinds, edge types
 // and words, which only this module knows all of.
 //
 // The prompt is a raw string literal, the prompt's text byte for byte: no interpolation, no
@@ -17,6 +17,13 @@ import QueryLanguage
 /// What `--ask` tells the model, and the query-like examples it writes, each held to the language
 /// on the story file (CompositionTests' `QueryStory`) by its tests.
 public enum QueryPrompt {
+    /// The one line added to the system prompt when the query is stored and run later, by a reference
+    /// that stands for what it finds (`TranslationContext.reference`): the prompt itself, whose
+    /// examples still teach `:selected` and `:current-board`, is `--ask`'s byte for byte, so this line
+    /// (and the vocabulary leaving those words out, and the check that refuses them) keeps the model
+    /// off every word that reads the person. Not an example, so not in the skill's copy.
+    public static let referenceRule = "This query will be stored and run later, with nobody looking: never use :selected, :current-board or any pseudo-class that reads what the person has selected or is looking at, and <board> names no selection. Write a query that finds the shapes the words mean wherever they are."
+
     /// The system prompt: what to answer, what each block of the request holds, and the language,
     /// taught by examples on the story file ("Roadmap": Payments, Refunds, API gateway, Auth,
     /// Checkout, ...).

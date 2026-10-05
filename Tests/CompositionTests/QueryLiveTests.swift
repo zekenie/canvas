@@ -4,14 +4,14 @@ import Composition
 import Foundation
 import LanguageModels
 import Queries
-import QueryCommands
+import QueryTranslation
 import Selection
 import TestKit
 
 // `--ask` against the real model (QUERY_LIVE=1 only: test.sh never sets it, and nothing else here
 // reaches the network): each case of scripts/query-prompts/cases.tsv opened on its file with the
 // shipped plugins, its board shown and its shapes selected, its question asked as the command asks
-// it (`QueryAsking` with `QueryPrompt.system`, the editor's model `AnthropicModel` with the key
+// it (`QueryTranslator` with `QueryPrompt.system`, the editor's model `AnthropicModel` with the key
 // Settings saves, the repair turn, the command's deadlines on real time), and its answer scored by
 // the set of shapes it matches, so any query that finds them passes. scripts/query-prompts/README.md
 // says how to run it and read what it prints. Without QUERY_LIVE, only the cases' own check runs:
@@ -85,9 +85,13 @@ func queryEvalCases() throws -> [QueryEvalCase] {
 /// `model` as its model and its clipboard on `pasteboard`: the case's board shown (the story's
 /// viewport) and its shapes selected. Throws, and the test fails, for a name its file doesn't have.
 @MainActor
-func openQueryCase(_ evalCase: QueryEvalCase, model: any LanguageModel, pasteboard: NSPasteboard) async throws
+func openQueryCase(_ evalCase: QueryEvalCase, model: any LanguageModel, pasteboard: NSPasteboard, style: AskStyle = .shipped) async throws
     -> (editor: CanvasEditor, names: QueryCaseNames) {
-    let registry = try ShippedPlugins.registry(pasteboard: pasteboard, model: model)
+    // The shipped list, asking in `style`.
+    let plugins = ShippedPlugins.plugins(pasteboard: pasteboard, model: model).map { plugin in
+        plugin.id == .queryTranslation ? QueryTranslationPlugin(prompt: QueryPrompt.system, referenceRule: QueryPrompt.referenceRule, style: style) : plugin
+    }
+    let registry = try Registry(plugins: plugins)
     let file = evalCase.file == .story ? QueryStory.file(in: registry) : QueryEvalBoard.file(in: registry)
     let editor = CanvasEditor(registry: registry, file: file, scheduler: TaskScheduler())
     editor.viewportDidResize(to: QueryStory.viewport)
@@ -186,7 +190,7 @@ private let apiRetryWait: Duration = .seconds(2)
 
 /// Asks a case's question `runs` times on its file, as `--ask` does, and scores each answer.
 @MainActor
-func runQueryCase(_ evalCase: QueryEvalCase, runs: Int, asking: QueryAsking) async -> [QueryEvalRun] {
+func runQueryCase(_ evalCase: QueryEvalCase, runs: Int, style: AskStyle) async -> [QueryEvalRun] {
     let pasteboard = NSPasteboard.withUniqueName()
     defer { pasteboard.releaseGlobally() }
     let recorder = RecordingModel(AnthropicModel())
@@ -197,7 +201,7 @@ func runQueryCase(_ evalCase: QueryEvalCase, runs: Int, asking: QueryAsking) asy
     }
     let opened: (editor: CanvasEditor, names: QueryCaseNames)
     do {
-        opened = try await openQueryCase(evalCase, model: recorder, pasteboard: pasteboard)
+        opened = try await openQueryCase(evalCase, model: recorder, pasteboard: pasteboard, style: style)
     } catch {
         return broken("the case doesn't open: \(error)")
     }
@@ -219,7 +223,8 @@ func runQueryCase(_ evalCase: QueryEvalCase, runs: Int, asking: QueryAsking) asy
             before = recorder.calls.count
             let start = ContinuousClock.now
             do {
-                outcome = .success(try await asking.ask(evalCase.question, in: opened.editor, limit: QueryBudget.maxRows, properties: .none))
+                let translator = try require(opened.editor.queryTranslator)
+                outcome = .success(try await translator.ask(evalCase.question, limit: QueryBudget.maxRows, properties: .none))
             } catch {
                 outcome = .failure(error)
             }
@@ -237,7 +242,7 @@ func runQueryCase(_ evalCase: QueryEvalCase, runs: Int, asking: QueryAsking) asy
         }
         // How `--ask` read each answer: its last UNANSWERABLE, or a query that's only the word the
         // question tried to make it write.
-        let read = calls.map { (try? $0.get()).map(QueryAsking.parse) }
+        let read = calls.map { (try? $0.get()).map(AskAnswer.parse) }
         var unanswerable = false, steered = false
         if case .unanswerable(_)?? = read.last { unanswerable = true }
         for answer in read {
@@ -349,12 +354,11 @@ private func tally(_ runs: [QueryEvalRun]) -> String {
         print("── \(cases.count) cases × \(runs) runs on \(model) (\(settings.compactMap { $0 }.joined(separator: ", "))), \(jobs) at a time")
 
         // Each case on a file of its own, a few at a time; its runs one after another.
-        let asking = QueryAsking(system: QueryPrompt.system, style: style)
         let line = QueryEvalLine(cases)
         let workers = (0..<min(jobs, cases.count)).map { _ in
             Task { @MainActor in
                 while let next = line.take() {
-                    let done = await runQueryCase(next, runs: runs, asking: asking)
+                    let done = await runQueryCase(next, runs: runs, style: style)
                     line.finished += done
                     print("   \(next.id): \(done.filter(\.passed).count) of \(done.count) passed")
                 }

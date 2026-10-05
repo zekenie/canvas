@@ -353,6 +353,21 @@ private final class ListingTextView: EditingTextView {
         expect(moved(120, 70) > 0.9, "↑ wrapped to the last")
     },
 
+    test("a separated item has a line one point thick across the top of its row, where it isn't highlighted; the rows above and below have none") {
+        let text = ListedText()
+        text.open(fruitRows(2) + [.item(CaretListItem("kiwi", separated: true))])
+        let rows = try require(text.rowsView)
+        let alpha = try alphas(of: rows)
+        expect(alpha(120, 40) > 0.05, "a line at the top of the third row")
+        expectEqual(alpha(120, 41), 0, "one point thick")
+        expectEqual(alpha(120, 20), 0, "none above the second row")
+        expectEqual(alpha(120, 59), 0, "none below")
+        expectEqual(alpha(3, 40), 0, "in from the row's edge")
+        text.list?.moveHighlight(by: -1)
+        let moved = try alphas(of: rows)
+        expect(moved(120, 41) > 0.9, "the highlight is over it once the row is highlighted")
+    },
+
     test("an item's detail takes what its title leaves, and keeps its share of the row where both are long") {
         let text = ListedText()
         let long = "Grows on trees in warm places, dried or fresh"

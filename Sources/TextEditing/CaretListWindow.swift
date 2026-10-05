@@ -375,6 +375,11 @@ final class CaretListRowsView: NSView {
 
     private func draw(_ item: CaretListItem, in rect: CGRect, highlighted: Bool) {
         let row = rect.insetBy(dx: TextEditingStyle.caretListRowInset, dy: 0)
+        if item.separated {
+            NSColor.separatorColor.setFill()
+            CGRect(x: row.minX + TextEditingStyle.caretListTextInset, y: rect.minY, width: row.width - 2 * TextEditingStyle.caretListTextInset,
+                   height: TextEditingStyle.caretListSeparatorHeight).fill()
+        }
         if highlighted {
             NSColor.selectedContentBackgroundColor.setFill()
             NSBezierPath(roundedRect: row, xRadius: TextEditingStyle.caretListHighlightRadius, yRadius: TextEditingStyle.caretListHighlightRadius).fill()

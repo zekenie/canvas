@@ -5,6 +5,7 @@ import Foundation
 import os
 import Queries
 import QueryLanguage
+import QueryTranslation
 
 // What `canvas query` answers, and how it says it can't: the result as the wire's JSON, built from
 // the rows member for member (never written as text and read back), off the main actor, where the
@@ -16,7 +17,9 @@ import QueryLanguage
 /// `rows` for `--count`. `board` is where the query ran, `{shows, showsPath}`, the board shown as it
 /// took up the file, which the command server completes with the file's id and name. Each row is
 /// an object of its members, as `QueryRow` writes itself (what's absent left out), its `properties`
-/// the shape's own JSON mapped member for member.
+/// the shape's own JSON mapped member for member; a connection that went through a stand-in also
+/// says `via` (the stand-in at each end that was one) and, for one that stands for several shapes,
+/// `more` (its other pairs).
 public enum QueryOutput {
     /// The most of a query's line a refusal quotes, in characters (`QueryError.located`): a line
     /// longer is quoted around what's wrong.
@@ -60,7 +63,16 @@ public enum QueryOutput {
         if let cut = row.cut { object["cut"] = .array(cut.map(JSON.string)) }
         if let connection = row.connection {
             // An edge type is written as its id, as it encodes itself.
-            object["connection"] = .object(["type": .string("\(connection.type)"), "from": end(connection.from), "to": end(connection.to)])
+            var drawn: [String: JSON] = ["type": .string("\(connection.type)"), "from": end(connection.from), "to": end(connection.to)]
+            // Present only when an end went through a stand-in (and, for `more`, a stand-in for several shapes).
+            if let via = connection.via {
+                var through: [String: JSON] = [:]
+                if let from = via.from { through["from"] = end(from) }
+                if let to = via.to { through["to"] = end(to) }
+                drawn["via"] = .object(through)
+            }
+            if let more = connection.more { drawn["more"] = .array(more.map { .object(["from": end($0.from), "to": end($0.to)]) }) }
+            object["connection"] = .object(drawn)
         }
         if let editing = row.editing { object["editing"] = .bool(editing) }
         return .object(object)
@@ -78,11 +90,6 @@ public enum QueryOutput {
     public nonisolated static var lastBuiltOnMainThread: Bool? { builtOnMain.withLock { $0 } }
     private nonisolated static let builtOnMain = OSAllocatedUnfairLock<Bool?>(initialState: nil)
     #endif
-}
-
-extension QueryWarning.Reason {
-    /// `--ask`'s: the model's first query was refused, or wasn't one, and the answer is its second's.
-    public static let repaired = QueryWarning.Reason(rawValue: "repaired")
 }
 
 // MARK: Refusals

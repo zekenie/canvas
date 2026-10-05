@@ -10,6 +10,23 @@ public protocol Editable: ShapeDefinition {
     /// shape or the camera changes, so it may grow with what's typed (an arrow's label). A box kind's
     /// is its box. Nil leaves the view where it was.
     func editingFrame(of shape: ShapeRecord<Props>, in context: ShapeContext) -> CGRect?
+    /// Whether a shape whose editing ends with `props` is thrown away (a pill left empty, as a text
+    /// shape is in tldraw). Asked by `endEditing` as the session ends by the person's own doing
+    /// (Escape, a click elsewhere, another shape edited), after the view has saved what it holds and
+    /// before the editing step closes: a true answer deletes the shape inside that step, so a shape
+    /// placed and discarded nets to nothing and no step is left. Not asked when an undo, redo, board
+    /// switch, command or draw ends the session: that action owns the open step, and an undo may be
+    /// taking the shape away itself. Default false.
+    func discardsWhenEditingEnds(_ props: Props) -> Bool
+    /// What the step an editing session opens is called ("Edit Reference"), as a menu says Undo Edit
+    /// Reference. Nil is "Typing". A step an action holds open (a placement's "Add ...") keeps the
+    /// action's name.
+    var editingStepName: String? { get }
+}
+
+extension Editable {
+    public func discardsWhenEditingEnds(_ props: Props) -> Bool { false }
+    public var editingStepName: String? { nil }
 }
 
 extension Editable where Props: BoxShapeProps {

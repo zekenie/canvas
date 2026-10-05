@@ -140,17 +140,19 @@ public struct RenderContext {
     private let boardShapeCount: (ShapeID) -> Int
     private let boardPreview: (ShapeID, CGRect, CGFloat, CGContext) -> Bool
     private let fileShape: (ShapeID) -> AnyShapeRecord?
+    private let lend: (ObjectIdentifier) -> (any EditorService)?
     let skeleton: SkeletonInk
 
     init(cg: CGContext, shapes: ShapeContext, isEditing: Bool, shapeCount: @escaping (ShapeID) -> Int,
          preview: @escaping (ShapeID, CGRect, CGFloat, CGContext) -> Bool, fileShape: @escaping (ShapeID) -> AnyShapeRecord?,
-         skeleton: SkeletonInk) {
+         lend: @escaping (ObjectIdentifier) -> (any EditorService)?, skeleton: SkeletonInk) {
         self.cg = cg
         self.shapes = shapes
         self.isEditing = isEditing
         boardShapeCount = shapeCount
         boardPreview = preview
         self.fileShape = fileShape
+        self.lend = lend
         self.skeleton = skeleton
     }
 
@@ -162,6 +164,13 @@ public struct RenderContext {
     /// drawn, and a write to a board that isn't shown redraws the canvas, so a name drawn is never
     /// stale; nothing but a render can read another board.
     public func shape(inFile id: ShapeID) -> AnyShapeRecord? { shapes.shape(id) ?? fileShape(id) }
+
+    /// One of the editor's services, as `EditContext.service(_:)` lends an editing view's: what a
+    /// render needs besides its own shape and the file (an answer a service worked out off the main
+    /// thread). Nil if no installed plugin registers it. Nothing observes a render, so a lending
+    /// service must call `editor.setNeedsDisplay()` when what it lends changes, or what's drawn goes
+    /// stale: it's read as the shape is drawn, and a shape not in view, or drawn as a skeleton, isn't.
+    public func service<S: EditorService>(_: S.Type) -> S? { lend(ObjectIdentifier(S.self)) as? S }
 
     /// How many shapes are on the board a shape owns (a `BoardOwning` kind's shape), not counting
     /// those on boards under it: 0 for a board with none, or a shape that owns none. A render may

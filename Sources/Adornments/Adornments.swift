@@ -126,9 +126,16 @@ public struct AdornmentLabel: Hashable, Sendable {
     public var tone: Tone
     /// How opaque it's drawn: 1, but for one fading away (an open lock).
     public var opacity: CGFloat
+    /// Whether the symbol before its text is drawn in full white, as the text is, where it is by
+    /// default a little softer (a kind's mark, which marks the title rather than reading as part of
+    /// it); for a symbol that is itself the news, as the Public chip's globe.
+    public var hasBrightSymbol: Bool
     /// Its text stands in for what isn't there (an untitled shape's pill, `init(placeholder:)`):
     /// drawn dimmed, as secondary text is.
     public let isPlaceholder: Bool
+    /// The smaller face this label may be drawn in (`compact(_:)`): at most one, held in an array
+    /// since a label can't hold itself.
+    private var compactFaces: [AdornmentLabel]
 
     /// Text, after a small symbol if `systemImage` names one (a kind's mark: a schema card's `{}`).
     public init(_ text: String, systemImage: String? = nil, tone: Tone = .neutral) {
@@ -146,7 +153,9 @@ public struct AdornmentLabel: Hashable, Sendable {
         self.systemImage = systemImage
         self.tone = tone
         opacity = 1
+        hasBrightSymbol = false
         self.isPlaceholder = isPlaceholder
+        compactFaces = []
     }
 
     public init(systemImage: String, tone: Tone = .neutral) {
@@ -154,15 +163,48 @@ public struct AdornmentLabel: Hashable, Sendable {
         self.systemImage = systemImage
         self.tone = tone
         opacity = 1
+        hasBrightSymbol = false
         isPlaceholder = false
+        compactFaces = []
     }
 
-    /// The same label, drawn this opaque (0 to 1).
+    /// The same label, drawn this opaque (0 to 1), its compact face too.
     public func opacity(_ opacity: CGFloat) -> AdornmentLabel {
         var label = self
         label.opacity = min(1, max(0, opacity))
+        if let face = compactFace { label = label.compact(face.opacity(opacity)) }
         return label
     }
+
+    /// The same label with its symbol before the text drawn in full white, its compact face's too.
+    public func brightSymbol() -> AdornmentLabel {
+        var label = self
+        label.hasBrightSymbol = true
+        if let face = compactFace { label = label.compact(face.brightSymbol()) }
+        return label
+    }
+
+    /// The same label with a smaller face to fall back on: Adornments draws `face` in its place
+    /// whenever the full label would make the row's left end's text (a title's pill) truncate or
+    /// vanish and `face` gives it more room (showing it whole, or some of it where it would show
+    /// none; while none shows at all, as on a shape too small for a title, it stays compact), and goes
+    /// back to the full label once the shape has room for both. Laid out in the
+    /// same place as the label, in its own look (a symbol alone, say, where the label is text with
+    /// a figure), and never a compact face's own: a face that shows nothing is no face. Only a
+    /// label at the row's right end (`aboveTopRight`) gives way this way.
+    public func compact(_ face: AdornmentLabel) -> AdornmentLabel {
+        var label = self
+        var face = face
+        face.compactFaces = []
+        label.compactFaces = face.showsSomething ? [face] : []
+        return label
+    }
+
+    /// The face this label falls back on when the row's left end needs the room, if it has one.
+    public var compactFace: AdornmentLabel? { compactFaces.first }
+
+    /// Whether it says anything: text that isn't blank, or a symbol.
+    var showsSomething: Bool { text.map { !$0.isEmpty } ?? (systemImage != nil) }
 }
 
 /// What an every-shape adornment's label may read besides its shape. The registry never changes.
@@ -335,6 +377,7 @@ public struct AdornmentsPlugin: CanvasPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { AdornmentState(editor: $0) }
+        registrar.service { ChipFade(editor: $0) }
         registrar.overlay(AdornmentOverlay())
         // A clickable adornment is a canvas button: the select tool clicks it before anything else.
         registrar.canvasButtons(at: { editor, point in editor.adornmentState?.button(atViewPoint: point) },

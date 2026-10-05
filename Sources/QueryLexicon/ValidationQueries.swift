@@ -8,7 +8,9 @@ import Validation
 /// from Validation's cache while that's current (the board shown, no commit since the query
 /// started, and the shape not waiting to be checked again: `cachedResult(for:)`, which never checks
 /// anything), else by running its kind's rules against the board it's on as the app has it
-/// (`registry.validationIssues(of:in:)`), as Validation would once that board is shown.
+/// (`registry.validationIssues(of:in:)`), as Validation would once that board is shown. Both read the
+/// editor (`QueryReads.editor`): the rules run over the app's live board, and Validation's cache is
+/// the editor's.
 public struct ValidationQueriesPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { "validation-queries" }

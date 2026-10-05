@@ -25,6 +25,35 @@ public struct QueryPlan: Sendable {
     /// `>`, in `:inside()`, what `:has()` is on): the answer refuses one whose shapes are all of kinds
     /// that hold no shapes (`cannot_contain`), as resolution refuses such a kind or id.
     let containerTitles: Set<PlanNodeID>
+
+    /// The words in the plan whose verdict reads the editor (`QueryReads.editor`), in the order the
+    /// query uses them, each once, as the query writes them: a plugin's word that says so
+    /// (`:selected`, `:invalid`), `:current-board`, and a text read through a format that reads the
+    /// editor, as `:contains` or the attribute (`[text]`) that reads it. The words an answer may
+    /// depend on beyond the file.
+    public var editorWords: [String] { uses.editorWords }
+
+    /// Whether every word in it reads only the file (`editorWords` is empty): what it matches is a
+    /// function of the file as the query takes it up, whoever asks and whatever they have selected
+    /// or shown, so an answer to it stays an answer until the file changes.
+    public var readsOnlyTheFile: Bool { uses.editorWords.isEmpty }
+
+    /// Whether the plan names a shape, by title or by id: what `QueryState.checkNames(_:)` checks.
+    var namesShapes: Bool {
+        var names = false
+        root.forEachNode { node in
+            switch node.op {
+            case .title, .id: names = true
+            default: break
+            }
+        }
+        return names
+    }
+
+    /// Whether the plan has an edge word (`:edge-to`, a relation, `:dangling`, and the others): the
+    /// edge view a request asks for, and a wait for answers still arriving (`QueryRequest.settle`),
+    /// matter to it. A plan without one never reads edges.
+    public var readsEdges: Bool { uses.edges }
 }
 
 /// A node's number in its plan.
@@ -189,6 +218,13 @@ struct PlanUses: Sendable, Equatable {
     /// Text, which a shape being typed into holds as the board has it, and may still change
     /// (attributes, `:contains`): the answer warns about it (`editing`).
     var readsText = false
+    /// The words that read the editor (`QueryPlan.editorWords`), in the order they're met, each once.
+    var editorWords: [String] = []
+
+    /// Notes that the plan has `word`, which reads the editor.
+    mutating func noteEditorWord(_ word: String) {
+        if !editorWords.contains(word) { editorWords.append(word) }
+    }
 }
 
 // MARK: Cost

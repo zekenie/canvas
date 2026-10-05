@@ -33,7 +33,7 @@ extension ContentsRows: KeyedExtensionPoint {
 @MainActor
 public struct ContentsContribution {
     let isListed: @MainActor (AnyShapeRecord) -> Bool
-    let parent: (@MainActor (AnyShapeRecord) -> ShapeID?)?
+    let parent: (@MainActor (AnyShapeRecord, ContentsContext) -> ShapeID?)?
     let row: (@MainActor (AnyShapeRecord, ContentsContext) -> ResolvedRow)?
     let affected: (@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>)?
 }
@@ -153,9 +153,20 @@ extension ContentsContribution {
     init<P: ShapeProps>(_: P.Type, isListed: @escaping @MainActor (ShapeRecord<P>) -> Bool, parent: (@MainActor (ShapeRecord<P>) -> ShapeID?)?,
                         row: (@MainActor (AnyShapeRecord, ContentsContext) -> ResolvedRow)? = nil,
                         affected: (@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>)? = nil) {
+        var contextual: (@MainActor (ShapeRecord<P>, ContentsContext) -> ShapeID?)?
+        if let parent { contextual = { shape, _ in parent(shape) } }
+        self.init(P.self, isListed: isListed, contextParent: contextual, row: row, affected: affected)
+    }
+
+    /// The same, the shape it nests under read from the editor's services too (`nestedUnder` with a
+    /// `ContentsContext`).
+    init<P: ShapeProps>(_: P.Type, isListed: @escaping @MainActor (ShapeRecord<P>) -> Bool,
+                        contextParent parent: (@MainActor (ShapeRecord<P>, ContentsContext) -> ShapeID?)?,
+                        row: (@MainActor (AnyShapeRecord, ContentsContext) -> ResolvedRow)? = nil,
+                        affected: (@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>)? = nil) {
         self.isListed = { $0.typed(as: P.self).map(isListed) ?? false }
         if let parent {
-            self.parent = { $0.typed(as: P.self).flatMap(parent) }
+            self.parent = { record, context in record.typed(as: P.self).flatMap { parent($0, context) } }
         } else {
             self.parent = nil
         }
@@ -215,6 +226,35 @@ extension ShapeRegistrar {
         _ row: @escaping @MainActor (ShapeRecord<Definition.Props>, ContentsContext) -> ContentsLabel
     ) {
         contribute(ContentsContribution(Definition.Props.self, isListed: isListed, parent: parent, affected: affected, row: row),
+                   to: ContentsRows.self)
+    }
+
+    /// This kind's row, nested under a shape read from the editor's services too: the closure of
+    /// `nestedUnder` gets what `ContentsContext` lends besides the shape (a reference's row under the
+    /// shape a service says it stands for). The service's state changes outside commits, so the
+    /// service tells the list when (`editor.contentsDidChange(for:)`): the rows named are made
+    /// again, nesting and all. The shape the row names must be one the list reads (`nestedUnder`
+    /// holds only while that shape is listed). Otherwise as `contentsRow(when:nestedUnder:_:)`.
+    public mutating func contentsRow<Row: View>(
+        when isListed: @escaping @MainActor (ShapeRecord<Definition.Props>) -> Bool = { _ in true },
+        nestedUnder parent: @escaping @MainActor (ShapeRecord<Definition.Props>, ContentsContext) -> ShapeID?,
+        @ViewBuilder _ row: @escaping (ShapeRecord<Definition.Props>) -> Row
+    ) {
+        contribute(ContentsContribution(Definition.Props.self, isListed: isListed, contextParent: parent,
+                                        row: { record, _ in record.typed(as: Definition.Props.self).map { ResolvedRow(row($0)) } ?? ResolvedRow(EmptyView()) }),
+                   to: ContentsRows.self)
+    }
+
+    /// A row read from more than its shape (`affected`), nested through services (above).
+    public mutating func contentsRow(
+        when isListed: @escaping @MainActor (ShapeRecord<Definition.Props>) -> Bool = { _ in true },
+        nestedUnder parent: @escaping @MainActor (ShapeRecord<Definition.Props>, ContentsContext) -> ShapeID?,
+        affected: @escaping @MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>,
+        _ row: @escaping @MainActor (ShapeRecord<Definition.Props>, ContentsContext) -> ContentsLabel
+    ) {
+        contribute(ContentsContribution(Definition.Props.self, isListed: isListed, contextParent: parent,
+                                        row: { record, context in record.typed(as: Definition.Props.self).map { ResolvedRow(row($0, context)) } ?? ResolvedRow(EmptyView()) },
+                                        affected: affected),
                    to: ContentsRows.self)
     }
 

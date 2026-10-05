@@ -12,7 +12,8 @@ import TestKit
 // example, so its examples must run: each file's blocks, in order, through `canvas` as built,
 // against the app's command server, on a board of the file's own: a fresh one in a 1440 × 900
 // window, or, for a file whose first line is `<!-- board: query-story -->`, the story file every
-// query example is about (`QueryStory`), as the app opens it, in the same view. A block tagged
+// query example is about (`QueryStory`), as the app opens it, in the same view (and `<!-- board:
+// reference-story -->`, the story of reference/references.md, `QueryReferenceStory`). A block tagged
 // `draw` runs for real and must succeed, pushing nothing aside (an example says where things go);
 // one tagged `draw-error` runs as a dry run and must fail, with the reason its first line names
 // (`// reason: <reason>`), changing nothing. A block tagged `query` is a query, run as the skill
@@ -129,8 +130,19 @@ func skillExamples(in path: String) throws -> [SkillExample] {
     return examples
 }
 
-/// The first line of a skill file whose examples run on the story file (`QueryStory`).
-let queryStoryMarker = "<!-- board: query-story -->"
+/// The boards a skill file's examples may run on, by the name its first line gives (`<!-- board:
+/// query-story -->`): a story, as the app opens it. A file with no such line runs on a new board.
+/// Each is the board of exactly one file.
+@MainActor let skillStories: [String: @MainActor () throws -> BoardDocument] = [
+    "query-story": { try QueryStory.document(windowed: false) },
+    "reference-story": { try QueryReferenceStory.document(windowed: false) },
+]
+
+/// The story a skill file names in its first line: nil for none.
+func skillStoryName(in text: String) -> String? {
+    guard let first = text.components(separatedBy: "\n").first, first.hasPrefix("<!-- board: "), first.hasSuffix(" -->") else { return nil }
+    return String(first.dropFirst("<!-- board: ".count).dropLast(" -->".count))
+}
 
 /// A board as the app makes a new one, in a window of 1440 × 900 points: its view is (0, 0) to
 /// (1440, 900).
@@ -187,13 +199,16 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
         try configureBoards(pasteboard: pasteboard)
         let files = try skillFiles()
         expect(files.count >= 3, "SKILL.md and the references: \(files)")
-        var ran = 0, onTheStory = 0
+        var ran = 0, filesOnStory: [String: [String]] = [:]
         for file in files {
-            let onStory = try String(contentsOfFile: file, encoding: .utf8).hasPrefix(queryStoryMarker + "\n")
-            let board = onStory ? try QueryStory.document(windowed: false) : windowedBoard()
+            let story = skillStoryName(in: try String(contentsOfFile: file, encoding: .utf8))
+            let make = story.flatMap { skillStories[$0] }
+            expect(story == nil || make != nil, "\(file) names a story that isn't one: \(story ?? "")")
+            let onStory = make != nil
+            let board = try make?() ?? windowedBoard()
             defer { board.close() }
-            if onStory {
-                onTheStory += 1
+            if let story, onStory {
+                filesOnStory[story, default: []].append(file)
                 expect(!board.isDocumentEdited && !board.editor.undoHistory.canUndo, "\(file): the story as the app opens it")
             }
             let server = try startCommandServer(boards: [board], frontmost: board)
@@ -227,7 +242,11 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
             }
         }
         expect(ran > 30, "the skill has its examples: \(ran)")
-        expectEqual(onTheStory, 1, "reference/query.md runs on the story")
+        for story in skillStories.keys.sorted() {
+            expectEqual(filesOnStory[story]?.map { ($0 as NSString).lastPathComponent }.count, 1, "\(story) is the board of exactly one file: \(filesOnStory[story] ?? [])")
+        }
+        expectEqual((filesOnStory["query-story"] ?? []).map { ($0 as NSString).lastPathComponent }, ["query.md"], "reference/query.md runs on the story")
+        expectEqual((filesOnStory["reference-story"] ?? []).map { ($0 as NSString).lastPathComponent }, ["references.md"], "reference/references.md runs on its story")
     },
     test("SKILL.md's description fits the frontmatter's 1,024 characters, and says both what draws and what reads") {
         let skill = try String(contentsOfFile: "\(skillFolder)/SKILL.md", encoding: .utf8)

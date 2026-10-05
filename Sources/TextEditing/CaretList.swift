@@ -39,12 +39,15 @@ public struct CaretListItem: Equatable {
     public var detailDimmed: [Range<Int>]
     /// An SF Symbol right after the title, in the detail's color.
     public var trailingSymbol: String?
+    /// Whether a line one point thick sets the row off from the one above it (a row of another kind,
+    /// last in its list).
+    public var separated: Bool
     /// What VoiceOver says for the row.
     public var spoken: String
 
     /// `spoken` nil: the title, then the detail ("type, keyword").
     public init(_ title: String, matched: [Range<Int>] = [], font: NSFont? = nil, symbol: String? = nil, tint: NSColor? = nil,
-                detail: String? = nil, detailMatched: [Range<Int>] = [], detailDimmed: [Range<Int>] = [], trailingSymbol: String? = nil, spoken: String? = nil) {
+                detail: String? = nil, detailMatched: [Range<Int>] = [], detailDimmed: [Range<Int>] = [], trailingSymbol: String? = nil, separated: Bool = false, spoken: String? = nil) {
         self.title = title
         self.matched = matched
         self.font = font
@@ -54,6 +57,7 @@ public struct CaretListItem: Equatable {
         self.detailMatched = detailMatched
         self.detailDimmed = detailDimmed
         self.trailingSymbol = trailingSymbol
+        self.separated = separated
         self.spoken = spoken ?? detail.map { "\(title), \($0)" } ?? title
     }
 }

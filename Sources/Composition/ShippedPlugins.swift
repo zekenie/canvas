@@ -17,9 +17,12 @@ import Keyboard
 import LanguageModels
 import Locking
 import Mentions
+import Publishing
 import Queries
 import QueryCommands
 import QueryLexicon
+import QueryTranslation
+import References
 import Reordering
 import Schemas
 import Selection
@@ -55,8 +58,8 @@ public enum ShippedPlugins {
             // commit before the services that read it (the table of contents', Mentions').
             TopologyPlugin(),
             // The kinds. Frames beside subboards, the two ways of grouping shapes (a region of this
-            // board, a board of its own), after notes: the toolbar's Note, Subboard, Frame, Schema.
-            ArrowsPlugin(), StickyNotesPlugin(), SubboardsPlugin(), FramesPlugin(), SchemasPlugin(),
+            // board, a board of its own), after notes: the toolbar's Note, Subboard, Frame, Schema, Reference.
+            ArrowsPlugin(), StickyNotesPlugin(), SubboardsPlugin(), FramesPlugin(), SchemasPlugin(), ReferencesPlugin(),
             // After Validation: what's shown on shapes draws over its outline.
             ValidationPlugin(), AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
             // Slash commands: the list at a `/` in the text views Mentions hosts it in. Titles offers `/title`, Locking `/lock`.
@@ -82,6 +85,8 @@ public enum ShippedPlugins {
             ValidationDetailsPlugin(), ValidationContentsPlugin(), MentionValidationPlugin(), TitleValidationPlugin(),
             ClipboardPlugin(pasteboard: pasteboard),
             LockingPlugin(),
+            // Public shapes, the ones another shape may stand for; its chip sits beside the lock's.
+            PublishingPlugin(),
             // What a drag moves snaps to the shapes in view: their edges, their middles and the spaces
             // between them.
             SnappingPlugin(),
@@ -95,9 +100,9 @@ public enum ShippedPlugins {
             // Reading the file: `canvas query`, and what queries take from the plugins that own a concern:
             // titles for names, boards' names, mentions for text and relations, validity and the selection
             // for their words.
-            QueriesPlugin(), TitleQueriesPlugin(), BoardQueriesPlugin(), MentionQueriesPlugin(), ValidationQueriesPlugin(),
+            QueriesPlugin(), QueryTranslationPlugin(prompt: QueryPrompt.system, referenceRule: QueryPrompt.referenceRule), TitleQueriesPlugin(), BoardQueriesPlugin(), MentionQueriesPlugin(), ValidationQueriesPlugin(),
             SelectionQueriesPlugin(),
-            QueryCommandsPlugin(askPrompt: QueryPrompt.system),
+            QueryCommandsPlugin(),
             // The example (Examples/): one line here; delete it to leave it out.
             ReorderingPlugin(),
         ]

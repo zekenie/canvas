@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([registryTests, edgeTests, upkeepTests, endTests, containmentTests, containerTests, snapshotTests])
+runTests([registryTests, edgeTests, upkeepTests, endTests, containmentTests, containerTests, snapshotTests, forwardingTests, providingTests])

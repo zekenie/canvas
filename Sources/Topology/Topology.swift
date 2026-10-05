@@ -57,7 +57,10 @@ extension EdgeType {
 /// shape whose record holds it: the arrow; the note whose text mentions), in `slot` (where in the
 /// carrier: "" for the carrier itself, as an arrow is; else the name of the property that holds it,
 /// a kind's own or an added property's key), `count` times there (a note mentioning a shape twice in
-/// its text: 2). Its identity is its carrier, slot, type, source and target; `count` is a value.
+/// its text: 2), and how it came to be (`origin`): as its carrier emitted it, forwarded through a
+/// stand-in at either end (`EdgeForwarding`), or a stand-in's own edge to a shape it stands for. Its
+/// identity is its carrier, slot, type, source, target and origin; `count` is a value. So the copies
+/// of one arrow into a stand-in for several shapes are each an edge.
 public struct Edge: Hashable, Sendable, Codable {
     public let type: EdgeTypeID
     public let source: ShapeID
@@ -65,14 +68,44 @@ public struct Edge: Hashable, Sendable, Codable {
     public let carrier: ShapeID
     public let slot: String
     public let count: Int
+    /// How it came to be: `.emitted` for every edge a source emits, as the index has it where no
+    /// end is a stand-in.
+    public let origin: EdgeOrigin
 
-    public init(type: EdgeTypeID, source: ShapeID, target: ShapeID, carrier: ShapeID, slot: String = "", count: Int = 1) {
+    public init(type: EdgeTypeID, source: ShapeID, target: ShapeID, carrier: ShapeID, slot: String = "", count: Int = 1,
+                origin: EdgeOrigin = .emitted) {
         self.type = type
         self.source = source
         self.target = target
         self.carrier = carrier
         self.slot = slot
         self.count = count
+        self.origin = origin
+    }
+
+    /// The source its carrier emitted: the stand-in it was forwarded through, if it was at that end.
+    public var literalSource: ShapeID {
+        if case .forwarded(let source?, _) = origin { source } else { source }
+    }
+
+    /// The target its carrier emitted: the stand-in it was forwarded through, if it was at that end.
+    public var literalTarget: ShapeID {
+        if case .forwarded(_, let target?) = origin { target } else { target }
+    }
+
+    /// Hashes its ends alone (each id two words): equal edges have equal ends, and edges that share
+    /// both ends are few (a carrier's are told apart by their ends; copies of one forwarded edge by
+    /// where they end), so the sets the tables diff and collapse in hash a fraction of what every
+    /// field would cost.
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(source)
+        hasher.combine(target)
+    }
+
+    /// The edge as its carrier emitted it: its literal ends, `.emitted`. Itself for one emitted.
+    public var literal: Edge {
+        guard case .forwarded = origin else { return self }
+        return Edge(type: type, source: literalSource, target: literalTarget, carrier: carrier, slot: slot, count: count)
     }
 
     /// The end that isn't `id`, as `direction` reads it: the target of an edge going out of `id`,
@@ -93,6 +126,33 @@ public struct Edge: Hashable, Sendable, Codable {
         case .either: source == id || target == id
         }
     }
+}
+
+/// How an edge came to be.
+public enum EdgeOrigin: Hashable, Sendable, Codable {
+    /// As its carrier emitted it.
+    case emitted
+    /// Emitted with a stand-in at one end or both, and forwarded: each end that was one names it
+    /// here (the edge's own end is a shape it stands for); an end that wasn't is nil. Boxed
+    /// (`indirect`), so an origin is one word: an edge where nothing stands in, every edge of most
+    /// files, is hardly bigger for having one.
+    indirect case forwarded(source: ShapeID?, target: ShapeID?)
+    /// A stand-in's own edge to a shape it stands for (`StandingEdge`), carried by the stand-in.
+    case standing
+}
+
+/// Which edges a reader sees, where stand-ins forward (`EdgeForwarding`).
+public enum EdgeView: Hashable, Sendable {
+    /// Every end that's a stand-in forwarded to each shape it stands for, and stand-ins' edges to
+    /// those shapes (`stands-for`): an arrow into a stand-in is an arrow into what it stands for.
+    /// What every read gives unless it asks otherwise.
+    case resolved
+    /// Forwarded only through stand-ins whose own record names what they stand for
+    /// (`Forwarding.shapes`): one that stands for whatever was provided (`Forwarding.provided`) is
+    /// left at its own end, and has no standing edges. A function of the records alone.
+    case recorded
+    /// Each end as its carrier emitted it, and no standing edges.
+    case literal
 }
 
 /// Which of a shape's edges: those that start at it, those that end at it, or both.
@@ -153,8 +213,10 @@ public enum EdgeEnd: Hashable, Sendable, Codable {
 
 // MARK: The plugin
 
-/// A horizontal on the core alone: edge types and what records carry edges are its points
-/// (`EdgeTypes`, `EdgeSources`), and its service keeps the file's edges (`editor.topology`). Every
+/// A horizontal on the core alone: edge types, what records carry edges and which kinds' shapes
+/// stand in for others are its points (`EdgeTypes`, `EdgeSources`, `EdgeForwarding`), its service
+/// keeps the file's edges (`editor.topology`), and it declares the one edge type that's its own,
+/// `stands-for` (`StandingEdge`). Every
 /// plugin list with a plugin that contributes to them (Ports, Mentions) needs it. Put it early (in
 /// the shipped list, right after Selection), so its service hears each commit before those that
 /// read it; one that hears a commit first brings it up to date (`catchUp`).
@@ -164,5 +226,7 @@ public struct TopologyPlugin: CanvasPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { TopologyIndex(editor: $0) }
+        // Its own: the edge from a stand-in to each shape it stands for.
+        registrar.edgeType(StandingEdge.self)
     }
 }

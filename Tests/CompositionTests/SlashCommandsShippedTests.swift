@@ -7,6 +7,7 @@ import CoreGraphics
 import LanguageModels
 import Locking
 import Mentions
+import Publishing
 import Selection
 import SlashCommands
 import StickyNotes
@@ -14,8 +15,8 @@ import TestKit
 import TextEditing
 import Titles
 
-// Slash commands as shipped: the two that ship, Titles' `/title` and Locking's `/lock`, typed in a
-// note's editor in the app's canvas view.
+// Slash commands as shipped: the four that ship, Titles' `/title`, Locking's `/lock` and Publishing's
+// `/public` and `/private`, typed in a note's editor in the app's canvas view.
 
 private let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
 
@@ -40,11 +41,11 @@ private let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
         window.type("/")
         expect(editing.slashCommands?.picker == nil, "mid-line")
         window.pressDelete()
-        // On a new line it lists what the note offers: /title, then /lock.
+        // On a new line it lists what the note offers: /title, then /lock, then /public.
         window.pressReturn()
         window.type("/")
         let picker = try require(editing.slashCommands?.picker, "the list is open")
-        expectEqual(picker.listed.map(\.name), ["title", "lock"])
+        expectEqual(picker.listed.map(\.name), ["title", "lock", "public"])
         expect(editing.caretListWindow === editing.slashCommands?.window)
         expect(editing.holdsKeys)
         window.type("lo")
@@ -58,7 +59,7 @@ private let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
         expectEqual(text(), "keep\n", "the line is gone from its text, its line break is not")
         expect(editing.slashCommands?.picker == nil)
         expectEqual(editor.undoHistory.undoName, "Lock")
-        expectEqual(editor.slashCommands?.commands(for: note).map(\.name), ["title"], "a locked note offers /title alone, which its text, read-only, can't type")
+        expectEqual(editor.slashCommands?.commands(for: note).map(\.name), [], "a locked note offers nothing: its text, read-only, can't be typed in")
 
         editor.undo()
         expect(!editor.isLocked(note), "Undo Lock unlocks it")
@@ -129,6 +130,40 @@ private let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
         window.pressReturn()
         expectEqual(title(), "Groceries", "it names nothing")
         expect(editing.string.hasSuffix("/title \n"))
+        window.pressEscape()
+    },
+
+    test("/public typed on a new line of a note and entered makes it public, /private takes that back: one step each, named as the menu's items are, with editing going on") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
+        let (window, _) = windowed(editor)
+        let note = editor.add(StickyNote(frame: noteFrame, text: "keep"))
+        @MainActor func text() -> String? { editor.document[note]?.typed(as: StickyNote.self)?.props.text.plainText() }
+        @MainActor func isPublic() -> Bool { editor.document[note]?[PublicProperty.self] == true }
+        editor.selection = note
+        expect(editor.beginEditing(note))
+        let editing = try require(window.firstResponder as? MentionTextView<AnyMentionable>, "the note's editor has the keyboard")
+        editing.setSelectedRange(NSRange(location: 4, length: 0))
+        window.pressReturn()
+        window.type("/")
+        expectEqual(try require(editing.slashCommands?.picker).listed.map(\.name), ["title", "lock", "public"], "private: /public, not /private")
+        window.type("public")
+        window.pressReturn()
+        window.settle()
+        expect(isPublic(), "public")
+        expectEqual(editor.editingShapeID, note, "editing goes on")
+        expectEqual(text(), "keep\n", "the line is gone from its text")
+        expectEqual(editor.undoHistory.undoName, "Make Public")
+        window.type("/")
+        expectEqual(try require(editing.slashCommands?.picker).listed.map(\.name), ["title", "lock", "private"], "public: /private, not /public")
+        window.type("private")
+        window.pressReturn()
+        window.settle()
+        expect(!isPublic(), "private again")
+        expectEqual(editor.undoHistory.undoName, "Make Private")
+        editor.undo()
+        expect(isPublic(), "undone")
         window.pressEscape()
     },
 ])

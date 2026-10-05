@@ -199,7 +199,7 @@ func draw(_ params: DrawParams, in context: AutomationContext) throws(Automation
     if !params.dryRun, shown, let editing = editor.editingShapeID, drawing.changes(editing) {
         _ = try apply(drawing, to: editor, reveals: params.reveal, dryRun: true)
         let revision = editor.revision
-        editor.endEditing()
+        editor.endEditing(discarding: false)
         if editor.revision != revision {
             // What was typed may have renamed a shape: the titles are read again, and the board with them.
             (board, names) = try Drawing.board(for: script, in: editor)

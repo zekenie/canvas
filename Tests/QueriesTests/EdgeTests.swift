@@ -15,13 +15,13 @@ import Topology
 /// Chores 1 to 6 on the top board, and links between them: a wire 11 from 1 to 2, a hot wire 12 from
 /// 2 to 3, a loose link 13 (a tether) from 3 to 1, a wire 14 from 4 to 4 (itself), and a wire 15 from
 /// 5 to 6. Chore 1 cites 4, chore 6 cites itself.
-@MainActor func wiresHarness() throws -> EditorHarness {
+@MainActor func wiresHarness(more: [any CanvasPlugin] = []) throws -> EditorHarness {
     let chores = (1...6).map { n in
         chore(id(n), caption: "C\(n)", Chore(unit, tags: n == 1 ? [uuid(4)] : n == 6 ? [uuid(6)] : []))
     }
     let links = [link(id(11), id(1), id(2)), link(id(12), id(2), id(3), grade: .hot), link(id(13), id(3), id(1), grade: .loose),
                  link(id(14), id(4), id(4)), link(id(15), id(5), id(6))]
-    return try EditorHarness(plugins: queryPlugins(more: [citesPlugin()]), file: CanvasFile(root: CanvasDocument(shapes: chores + links)))
+    return try EditorHarness(plugins: queryPlugins(more: [citesPlugin()] + more), file: CanvasFile(root: CanvasDocument(shapes: chores + links)))
 }
 
 /// A file read from a board file, with chores that cite what the app can't show: chore 1 cites chore

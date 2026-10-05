@@ -100,14 +100,15 @@ The result goes to standard output: JSON when standard output isn't a terminal (
   - `kind`, and `title`, unless it has none (a schema card's is its schema's `"title"`).
   - `board`: the board it's on, `"root"` for the top board, else the id of the shape that owns it.
   - `inside`: the names of the subboards and frames it's inside, outermost first, as the path over the canvas names a board (an untitled subboard's is "Untitled Subboard"), and a frame by its title (an untitled one's is "Frame"). Left out for a shape inside nothing.
-  - `properties`: its attributes as they read (`locked` and `channel` only when they're set): text as a person reads it (a mention as `@` and the name of what it mentions), numbers, `true` and `false`. Its title and where it is aren't among them.
+  - `properties`: its attributes as they read (`locked`, `public` and `channel` only when they're set): text as a person reads it (a mention as `@` and the name of what it mentions), numbers, `true` and `false`. Its title and where it is aren't among them.
   - `cut`: the attributes cut at 500 characters (their text ends with `…`). `--fields` lists them whole.
-  - `connection`, for a connection (an arrow bound at both ends): its edge `type`, and the shapes it runs `from` and `to`, each by `id` and `title`.
+  - `connection`, for a connection (an arrow bound at both ends): its edge `type`, and the shapes it runs `from` and `to`, each by `id` and `title`. An end on a shape that stands for other shapes is read at what it stands for: `from` and `to` are then the first such pair in file order, `via` says which stand-in each end went through (`{"to": {"id": …}}`, by `id`: a stand-in has no title, and only an end that was one is there), and `more` lists the other pairs (`{"from": …, "to": …}`, in file order) when it stands for several. A connection as it was drawn has neither.
   - `editing: true` while the person is typing into it.
 - **`warnings`**, when there are any, each a `reason` and a `message`:
   - `limited`: more shapes match than are listed (`2 of 7 listed. …`);
   - `editing`: a shape listed, or one whose text the query read, is being typed into: it's read as typed so far, and may still change;
   - `no_title_match`: `[title="…"]` matched nothing, with the titles like it;
+  - `pending`: answers that edges depend on were still arriving when the wait for them ran out, so what the query says of edges may change (`canvas query` waits up to 2 seconds for them, and only for a query that has an edge word);
   - `repaired`: with `--ask`, the answer is Claude's second, since its first query was refused or its first answer wasn't a query on one line.
 
 A connection's row (`arrow[channel=note-link]`):
@@ -127,6 +128,7 @@ A connection's row (`arrow[channel=note-link]`):
 - **File order.** Every answer lists its shapes as the top board holds them, back to front, each subboard followed at once by what its board holds, and each frame by what's in it, all the way down. The same query on the same file answers in the same order.
 - **When.** An answer is the file as it was when the app took up the query, but for titles a shape works out from what it holds (a schema card's) and whether shapes are valid (`:invalid`, `:warned`), which are as the app has them when the query asks. So a shape changed while the query ran can answer with its newer title or verdict. The board the window shows (`:current-board`) and what's selected (`:selected`) are as they were when the query started.
 - **Names as the app shows them.** A title is a shape's name, derived ones included. Text that mentions shapes reads as a person reads it, each mention `@` and the name of what it mentions now, never the form it's stored in.
+- **Edges are read settled.** An arrow into a shape that stands for other shapes counts as an arrow into each of them, so `:edge-to`, `:connected-to`, `:downstream-of`, `:between` and the rest read through it. A query with an edge word that runs right after a `draw` waits, up to 2 seconds, for answers that are still arriving, and says `pending` if they hadn't.
 - **A query changes nothing.** No shape, no selection, no step of undo, and it never ends the person's typing: a note being typed into reads as typed so far (its last keystroke), and the answer warns that it may still change.
 
 ## Naming shapes
@@ -613,10 +615,13 @@ The edge types this app has. A type takes in those under it.
 
 | edge type | under | means |
 |---|---|---|
+| `stands-for` | — | from a shape to each shape it stands for |
 | `mention` | — | a mention in a shape's text, from that shape to the shape it names |
 | `arrow` | — | an arrow bound at both ends, from the shape it starts on to the shape it ends on, whatever its arrowheads |
 | `note-link` | `arrow` | an arrow drawn on the note-link channel |
 | `schema-link` | `arrow` | an arrow drawn on the schema-link channel |
+
+`stands-for` is the app's own, from a shape that stands for others to each of them. A `reference` that names a shape stands for it while it's public, so an arrow into the reference is an arrow into that shape ([references.md](references.md) runs on a file that has one).
 
 A type the app doesn't declare but the file has (a newer app's channel) is accepted as it's written; one the app doesn't declare and the file doesn't have is `unknown_edge_type`, with the type like it.
 

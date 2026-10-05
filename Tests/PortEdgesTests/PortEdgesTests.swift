@@ -173,6 +173,16 @@ import TestKit
         expectEqual(link?["drawable"], false)
         expect(link?["why"]?.stringValue?.contains("edge") == true, "links are edges")
     },
+    test("a kind draw can't name at all has no edges to list, though it has ports; one whose title is worked out keeps them") {
+        @MainActor func edges(_ editor: CanvasEditor, _ kind: ShapeKind) throws -> JSON? {
+            try run(["kinds"], on: editor).get().arrayValue?.first { $0["kind"]?.stringValue == kind.rawValue }?["edges"]
+        }
+        let unnamed = try edgesEditor(names: namesOnlyTiles())
+        expectEqual(try edges(unnamed, Card.kind), nil, "no naming property, no derived title")
+        expectEqual(try edges(unnamed, Tile.kind), ["top": ["wire"], "right": ["wire"], "bottom": ["wire"], "left": ["wire"]])
+        let derived = try edgesEditor(names: namesOnlyTiles(derived: true))
+        expectEqual(try edges(derived, Card.kind), ["right": ["pipe"], "bottom": ["pipe"]], "a derived title names it")
+    },
     test("with a connector that only draws from a port, or without PortEdgesPlugin, there are no edges") {
         let dragOnly = try edgesEditor(makes: false)
         _ = try drawn(board, on: dragOnly)

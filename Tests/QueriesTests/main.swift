@@ -1,3 +1,4 @@
 import TestKit
 
-runTests([vocabularyTests, resolutionTests, hintsTests, semanticsTests, containmentTests, edgeTests, rowsTests, concurrencyTests, upkeepTests])
+runTests([vocabularyTests, resolutionTests, hintsTests, semanticsTests, containmentTests, edgeTests, rowsTests, concurrencyTests, upkeepTests,
+          edgeViewTests, connectionViaTests, matchesBatchTests, readsTests, checkNamesTests, settleTests])

@@ -70,12 +70,16 @@ public struct AskStyle: Sendable, Equatable {
 /// selected shape's id when it has no title.
 public enum AskRequest {
     /// The first request.
+    ///
+    /// `selection` says whether the selected shapes are named in `<board>`: not for a query that is
+    /// stored and run later (`TranslationContext.reference`), where whatever is selected is the pill
+    /// being typed into.
     public static func request(question: String, vocabulary: String, where place: QueryWhere, titles: [QueryTitle], system: String,
-                               style: AskStyle) -> ModelRequest {
+                               style: AskStyle, selection: Bool = true) -> ModelRequest {
         let message = [
             block(.question, question),
             block(.vocabulary, vocabulary),
-            block(.board, board(place)),
+            block(.board, board(place, selection: selection)),
             block(.titles, listed(titles)),
         ].compactMap { $0 }.joined(separator: "\n\n")
         return ModelRequest(system: system, messages: [.user(message)], maxTokens: style.maxTokens, temperature: style.temperature,
@@ -116,8 +120,9 @@ public enum AskRequest {
 
     /// Where the person is: the board shown, by the path of names to it ("the top board" at the top),
     /// and what's selected: a titled shape by its title and kind, an untitled one by its kind and id.
-    static func board(_ place: QueryWhere) -> String {
+    static func board(_ place: QueryWhere, selection: Bool = true) -> String {
         let board = place.path.isEmpty ? "the top board" : "the board inside \(place.path.joined(separator: " › "))"
+        guard selection else { return "The person is looking at \(board)." }
         guard !place.selected.isEmpty else { return "The person is looking at \(board). Nothing is selected." }
         var named = place.selected.map { shape in
             shape.title.map { "\(quoted($0)) (\(shape.kind.rawValue))" } ?? "an untitled \(shape.kind.rawValue), #\(shape.id)"

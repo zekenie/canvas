@@ -7,6 +7,7 @@ import LanguageModels
 import Queries
 import QueryCommands
 import QueryLanguage
+import QueryTranslation
 import TestKit
 
 // What `--ask` sends the model, exactly: the system prompt, and one message of tagged blocks (the

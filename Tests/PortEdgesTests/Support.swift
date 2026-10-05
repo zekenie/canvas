@@ -128,10 +128,11 @@ let fixtureNames = Contributor(id: "fixture-names") { registrar in
 
 /// An editor 800 × 600 points with the fixtures, Ports, the channels, the link connector, names
 /// and `PortEdgesPlugin` (unless not).
-@MainActor func edgesEditor(_ requests: Requests = Requests(), cards: Bool = true, makes: Bool = true, withPlugin: Bool = true) throws -> CanvasEditor {
+@MainActor func edgesEditor(_ requests: Requests = Requests(), cards: Bool = true, makes: Bool = true, withPlugin: Bool = true,
+                                        names: Contributor = fixtureNames) throws -> CanvasEditor {
     let plugins: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), AutomationPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(),
                                        LinksPlugin(), PortsPlugin(), channelsPlugin(cards: cards), linkConnector(requests, makes: makes),
-                                       fixtureNames] + (withPlugin ? [PortEdgesPlugin()] : [])
+                                       names] + (withPlugin ? [PortEdgesPlugin()] : [])
     let editor = CanvasEditor(registry: try Registry(plugins: plugins))
     editor.viewportDidResize(to: CGSize(width: 800, height: 600))
     return editor
@@ -198,3 +199,19 @@ tile "B" right of "A"
 card "C" below "A"
 card "D" below "B"
 """#
+
+/// Names tiles by their label, and cards not at all: nothing a script can write on one, and no title
+/// worked out (`derived`: one is, from its text).
+func namesOnlyTiles(derived: Bool = false) -> Contributor {
+    Contributor(id: "tile-names") { registrar in
+        registrar.drawNames(name: { record, _ in
+            record.typed(as: Tile.self).map(\.props.label).flatMap { $0.isEmpty ? nil : $0 }
+                ?? (derived ? record.typed(as: Card.self)?.props.text : nil)
+        }, namingProperty: { kind, _ in kind == Tile.kind ? "label" : nil },
+        isDerived: { kind, _ in derived && kind == Card.kind },
+        fold: { title in
+            let folded = title.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            return folded.isEmpty ? nil : folded
+        })
+    }
+}

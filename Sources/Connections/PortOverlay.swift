@@ -88,7 +88,7 @@ struct PortOverlay: CanvasOverlay {
         // One path, stroked once, as the core strokes outlines: where two cross, no darker overlap.
         let outlines = CGMutablePath()
         for record in editor.paintOrder(in: context.visibleRect)
-        where record.id != editor.hintedShapeID && state.kinds[record.kind] != nil
+        where record.id != editor.hintedShapeID && state.ports(of: record) != nil
             && editor.channel(of: connection, endingAt: record) != nil && connector.canConnect(record.id, context.shapes) {
             guard let path = editor.outlinePath(of: record) else { continue }
             let offset = context.worldDrawingOffset(of: record.id)

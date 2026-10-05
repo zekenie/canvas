@@ -17,7 +17,7 @@ extension CanvasEditor {
     /// where it is, or, on the board shown for it, where that board was left.
     public func undo() {
         guard canUndo else { return }
-        endEditing()
+        endEditing(discarding: false)
         undoHistory.close()
         guard showBoard(ofStep: { $0.undoBoard }), let step = undoHistory.popUndo() else { return }
         apply(step.delta.inverted, restoring: step.before)
@@ -28,7 +28,7 @@ extension CanvasEditor {
     /// on the board it was made on, shown first if it isn't.
     public func redo() {
         guard canRedo else { return }
-        endEditing()
+        endEditing(discarding: false)
         undoHistory.close()
         guard showBoard(ofStep: { $0.redoBoard }), let step = undoHistory.popRedo() else { return }
         apply(step.delta, restoring: step.after)

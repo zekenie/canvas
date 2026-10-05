@@ -7,6 +7,7 @@ import LanguageModels
 import Queries
 import QueryCommands
 import QueryLanguage
+import QueryTranslation
 import TestKit
 
 // `--ask` end to end, with a scripted model: the answer and what it says it asked; a query refused
@@ -47,30 +48,6 @@ import TestKit
                               "count": 3])
         let error = try refused(["query", "--ask", "chores", "--brief", "--fields", "note"], on: h)
         expectEqual(error.reason, "invalid_params")
-    },
-    test("QueryAsking answers with what the model wrote each time, and the tokens") {
-        let model = ScriptedLanguageModel()
-        model.queue(ModelResponse(text: "chore:nope", inputTokens: 1_000, outputTokens: 5))
-        model.queue(ModelResponse(text: "chore:top-level", inputTokens: 1_100, outputTokens: 6))
-        let h = try askHarness(model)
-        let asking = QueryAsking(system: systemPrompt)
-        let editor = h.editor
-        let outcome = try awaitResult { () async throws -> AskOutcome in try await asking.ask("top chores", in: editor) }
-        expectEqual(outcome.answers, ["chore:nope", "chore:top-level"])
-        expectEqual(outcome.inputTokens, 2_100)
-        expectEqual(outcome.outputTokens, 11)
-        expect(outcome.isRepaired)
-        expectEqual(outcome.question, "top chores")
-        expectEqual(outcome.result.rows.map(\.id), [id(1)])
-
-        // Reasoning, then the query: what it wrote is all of it, and the query what it read.
-        let reasoned = ScriptedLanguageModel(answers: ["```\nThe question is about what's on top.\n\nchore:top-level\n```"])
-        let second = try askHarness(reasoned)
-        let secondEditor = second.editor
-        let read = try awaitResult { () async throws -> AskOutcome in try await asking.ask("top chores", in: secondEditor) }
-        expectEqual(read.answers, ["The question is about what's on top.\n\nchore:top-level"])
-        expectEqual(read.result.query, "chore:top-level")
-        expect(!read.isRepaired)
     },
     test("refused twice: an unusable answer, where in the last query, which it holds") {
         let model = ScriptedLanguageModel(answers: ["chore:nope", "  chore[capton=1]"])
@@ -135,6 +112,14 @@ import TestKit
         expectEqual(error.reason, "no_model")
         expectEqual(error.message, "This app has no language model.")
         expectEqual(error.hint, "Write the query yourself: the canvas skill's query-prompt.md is the guidance the app gives Claude.")
+        expectEqual(try answered(["query", "--count", "chore"], on: h)["count"], 4)
+    },
+    test("no translator: a list without QueryTranslationPlugin says no_model, as without a model") {
+        let plugins = commandPlugins(model: ScriptedLanguageModel()).filter { $0.id != .queryTranslation }
+        let h = try shelfHarness(plugins)
+        let error = try refused(["query", "--ask", "which chores?"], on: h)
+        expectEqual(error.reason, "no_model")
+        expectEqual(error.message, "This app has no language model.")
         expectEqual(try answered(["query", "--count", "chore"], on: h)["count"], 4)
     },
     test("the command's 55 s deadline, in a model call: the model timed out, which may work again") {

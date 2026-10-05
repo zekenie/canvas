@@ -286,7 +286,10 @@ private struct Resolver {
                     readers.append(AttributeReader(kinds: [entry.kind], source: source, test: typed))
                 }
                 if attribute.isName { uses.names = true }
-                if let mediaType = attribute.mediaType { uses.textFormats.insert(mediaType) }
+                if let mediaType = attribute.mediaType {
+                    uses.textFormats.insert(mediaType)
+                    if vocabulary.textFormats[mediaType]?.reads.contains(.editor) == true { uses.noteEditorWord("[\(test.name)]") }
+                }
             } catch {
                 refusal = refusal ?? error
             }
@@ -604,6 +607,7 @@ private struct Resolver {
             return node(.topLevel, span: span)
         case (.currentBoard, _):
             uses.currentBoard = true
+            uses.noteEditorWord(":\(Word.currentBoard.rawValue)")
             return node(.currentBoard, span: span)
         case (.dangling, .none):
             uses.edges = true
@@ -615,6 +619,7 @@ private struct Resolver {
             uses.readsText = true
             if vocabulary.naming != nil { uses.names = true }
             uses.textFormats.formUnion(vocabulary.textFormats.keys)
+            if vocabulary.textFormats.values.contains(where: { $0.reads.contains(.editor) }) { uses.noteEditorWord(":\(Word.contains.rawValue)") }
             return node(.contains(text), span: span)
         case (_, .anchored(let anchors, let terms)):
             uses.edges = true
@@ -648,6 +653,7 @@ private struct Resolver {
                 return nil
             }
             uses.pseudoClasses.insert(declared.word)
+            if declared.reads.contains(.editor) { uses.noteEditorWord(":\(declared.word)") }
             return node(.pseudo(word: declared.word), span: pseudo.span)
         case .relation(let types, let direction):
             let list: SelectorList

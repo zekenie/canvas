@@ -62,7 +62,7 @@ struct NotePill: Hashable, Sendable {
 /// Pills in notes: the pointer over one hovers what it names, a click edits the note from the pill
 /// (`beginEditing(_:at:)`), and a double-click goes to what it names (`goTo`), as Mentions' will. A
 /// click on a read-only note's pill (a locked one) doesn't try to edit it: a refused edit is a try
-/// to change it, which Locking shakes, and a click isn't one.
+/// to change it, which Selection shakes, and a click isn't one.
 @MainActor func pillsPlugin(_ board: PillBoard) -> Contributor {
     Contributor(id: "pills") { r in
         let find: @MainActor (CanvasEditor, AnyShapeRecord, CGPoint) -> NotePill? = { _, shape, point in

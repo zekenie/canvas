@@ -17,6 +17,9 @@ import Canvas
 /// given, it replaces that rule entirely. Arguments it doesn't accept leave the line as text: the
 /// command never runs, and Return is a new line.
 ///
+/// A command's undo step is named for it in words (`/set-title`: "Set Title"); `step:` names it
+/// otherwise, as a person would call what it did (`/public`: "Make Public", as the menu's item).
+///
 /// A name is the command's identity: two plugins offering one name to the same shapes are a
 /// `conflict`, and a kind's own command takes the place of an every-shape one of the same name.
 public struct SlashCommand<Value> {
@@ -24,6 +27,7 @@ public struct SlashCommand<Value> {
     let argument: String?
     let isOffered: @MainActor (Value) -> Bool
     let accepts: @MainActor (SlashArguments) -> Bool
+    let step: String?
     let action: Action
 
     enum Action {
@@ -36,11 +40,13 @@ public struct SlashCommand<Value> {
     public init(_ name: String, argument: String? = nil,
                 when isOffered: @escaping @MainActor (Value) -> Bool = { _ in true },
                 accepts: (@MainActor (SlashArguments) -> Bool)? = nil,
+                step: String? = nil,
                 edit: @escaping @MainActor (inout Value, SlashArguments) -> Void) {
         self.name = name
         self.argument = argument
         self.isOffered = isOffered
         self.accepts = accepts ?? Self.defaultAccepts(takesArgument: argument != nil)
+        self.step = step
         action = .edit(edit)
     }
 
@@ -50,11 +56,13 @@ public struct SlashCommand<Value> {
     public init(_ name: String, argument: String? = nil,
                 when isOffered: @escaping @MainActor (Value) -> Bool = { _ in true },
                 accepts: (@MainActor (SlashArguments) -> Bool)? = nil,
+                step: String? = nil,
                 perform: @escaping @MainActor (ShapeID, SlashArguments, CanvasEditor) -> Void) {
         self.name = name
         self.argument = argument
         self.isOffered = isOffered
         self.accepts = accepts ?? Self.defaultAccepts(takesArgument: argument != nil)
+        self.step = step
         action = .perform(perform)
     }
 
@@ -82,6 +90,8 @@ final class ErasedSlashCommand {
     let argument: String?
     let isOffered: @MainActor (AnyShapeRecord) -> Bool
     let accepts: @MainActor (SlashArguments) -> Bool
+    /// What its undo step is called, if not its name in words.
+    let step: String?
     /// Runs it on a shape: the edit in one transaction, or the command's own `perform`.
     let run: @MainActor (ShapeID, SlashArguments, CanvasEditor) -> Void
 
@@ -94,6 +104,7 @@ final class ErasedSlashCommand {
         let offered = command.isOffered
         isOffered = { read($0).map(offered) ?? false }
         accepts = command.accepts
+        step = command.step
         switch command.action {
         case .edit(let edit):
             run = { id, arguments, editor in

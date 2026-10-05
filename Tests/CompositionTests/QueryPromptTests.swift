@@ -3,8 +3,10 @@ import Canvas
 import CanvasTesting
 import Composition
 import Foundation
+import LanguageModels
 import Queries
 import QueryLanguage
+import QueryTranslation
 import TestKit
 import Topology
 
@@ -250,5 +252,35 @@ private func groups(of pattern: String, in text: String) -> [String]? {
         for input in ["query-vocabulary", "--brief --limit 200 '[title]'", "--brief ':selected'", "<vocabulary>", "<titles>", "<board>"] {
             expect(before.contains(input), "query-prompt.md says how to get \(input)")
         }
+    },
+    test("a stored query's request carries the rule line and a vocabulary without the words that read the editor, and a person's carries neither") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let model = ScriptedLanguageModel(answers: ["sticky-note", "sticky-note"])
+        let h = try QueryStory.harness(pasteboard: pasteboard, model: model)
+        let translator = try require(h.editor.queryTranslator)
+        _ = try awaitResult { try await translator.translate("notes", about: .reference) }
+        _ = try awaitResult { try await translator.translate("notes", about: .person) }
+        let stored = try require(model.requests.first), person = try require(model.requests.last)
+        let words = try require(h.editor.queries).vocabulary.words
+        let editorWords = words.filter { $0.readsEditor && $0.from != .queries }.map(\.word)
+        expect(words.contains { $0.word == "current-board" && $0.readsEditor }, "the language's :current-board reads it too (taught by the prompt, not listed in the vocabulary)")
+        expect(editorWords.contains("selected") && editorWords.contains("invalid"), "the shipped words that read the editor: \(editorWords)")
+        func vocabulary(_ request: ModelRequest) -> String {
+            let text = request.messages.first?.text ?? ""
+            guard let start = text.range(of: "<vocabulary>"), let end = text.range(of: "</vocabulary>") else { return "" }
+            return String(text[start.upperBound..<end.lowerBound])
+        }
+        expect(stored.system?.hasSuffix(QueryPrompt.referenceRule) == true, "the rule line closes the system prompt")
+        expect(stored.system?.hasPrefix(QueryPrompt.system) == true, "and the prompt itself is unchanged")
+        expectEqual(person.system, QueryPrompt.system, "a person's has no rule line")
+        for word in editorWords {
+            expect(!vocabulary(stored).contains(":\(word)"), "a stored query's vocabulary leaves out :\(word)")
+            expect(vocabulary(person).contains(":\(word)"), "a person's has :\(word)")
+        }
+        expect(vocabulary(stored).contains(":mentions(S)"), "and keeps the words that read only the file")
+        expect(!(stored.messages.first?.text ?? "").contains("Selected:"), "no selection in <board>")
+        expect((person.messages.first?.text ?? "").contains("Selected:"), "a person's has it")
+        expect(QueryPrompt.referenceRule.contains(":selected"), "the line names the word the examples teach")
     },
 ])

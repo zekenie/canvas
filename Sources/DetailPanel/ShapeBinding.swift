@@ -192,6 +192,18 @@ extension ShapeBinding {
     }
 }
 
+extension ShapeBinding where Value == AnyShapeRecord {
+    /// The whole record, for a section over every shape a `where` picks (`detailsForEveryShape`).
+    static func record(of record: AnyShapeRecord, in editor: CanvasEditor) -> ShapeBinding? {
+        let id = record.id
+        return ShapeBinding(value: record, record: record, in: editor) { [weak editor] name, key, change in
+            guard let editor else { return nil }
+            editor.transact(name ?? editor.changeName(of: id), coalescing: key) { $0.update(id) { change(&$0) } }
+            return editor.document[id]
+        }
+    }
+}
+
 extension ShapeBinding where Value == CGRect {
     static func box(of record: AnyShapeRecord, in editor: CanvasEditor) -> ShapeBinding? {
         guard let frame = record.box else { return nil }
