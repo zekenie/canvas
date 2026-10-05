@@ -59,6 +59,11 @@ import Validation
         titles               property title · adornment TitlePill → every shape · /title → every shape · overlay TitleCoverOverlay
         mentions             service MentionState · edge type mention · edges → every shape · overlay MentionFrames · ShapeFaces · CanvasContextMenu
         board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
+        find-in-boards       service FindState · overlay FindOverlay · command find · shortcut ⌘F → command find · command findNext · shortcut ⌘G → command findNext · command findPrevious · shortcut ⇧⌘G → command findPrevious
+        title-find           findable title → every shape
+        mention-find         findable mention text → every shape
+        arrow-find           findable label → arrow
+        jump-to              service JumpToState · command jumpTo · shortcut ⌘K → command jumpTo
         transform            service TransformState
         validation-details   DetailStatuses in Issues
         validation-contents  ContentsMarks

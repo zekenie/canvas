@@ -113,22 +113,12 @@ struct ContentView: View {
 
     var body: some View {
         CanvasRepresentable(editor: editor, focus: focus, showsMinimap: view.showsMinimap)
-            // Only the pill takes clicks: the rest of the canvas is the canvas's.
-            .overlay(alignment: .top) { ShippedPlugins.boardPath(editor: editor, rootName: view.fileName) }
             .frame(minWidth: 480, minHeight: 320)
             .toolbar {
                 ToolbarItem(placement: .principal) { ToolPicker(editor: editor, help: { ShippedPlugins.help(for: $0, in: editor.registry) }) }
                 ToolbarItem(placement: .primaryAction) { ZoomMenu(editor: editor) }
             }
-            .inspector(isPresented: $view.showsDetails) {
-                ShippedPlugins.detailPanel(editor: editor, onExit: focus.take, rootName: view.fileName)
-                    .toolbar {
-                        ToolbarItem {
-                            // Named as View › Show Inspector names it, and saying what a click does now.
-                            Button { view.showsDetails.toggle() } label: { Label("Inspector", systemImage: "sidebar.trailing") }
-                                .help(view.showsDetails ? "Hide Inspector" : "Show Inspector")
-                        }
-                    }
-            }
+            // Last: the path, the palette and the inspector go around the framed, toolbarred canvas.
+            .modifier(ShippedPlugins.boardChrome(editor: editor, showsDetails: $view.showsDetails, rootName: view.fileName, onExit: focus.take))
     }
 }

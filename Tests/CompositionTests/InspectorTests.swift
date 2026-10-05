@@ -115,11 +115,15 @@ struct InspectorHost: View {
 
     var body: some View {
         CanvasRepresentable(editor: editor, focus: focus, showsMinimap: showsMinimap)
-            .overlay(alignment: .top) { ShippedPlugins.boardPath(editor: editor, rootName: view?.fileName ?? "") }
-            .inspector(isPresented: .constant(showsDetails)) {
-                ShippedPlugins.detailPanel(editor: editor, onExit: focus.take, rootName: view?.fileName ?? "")
-            }
+            .modifier(ShippedPlugins.boardChrome(editor: editor, showsDetails: shown, rootName: view?.fileName ?? "", onExit: focus.take))
             .transaction { $0.disablesAnimations = true }
+    }
+
+    /// The board's view's, as the app binds it, where there is one (a board document's window), so
+    /// what shows the inspector (Find's ⌘F) shows it; else as given.
+    private var shown: Binding<Bool> {
+        guard let view else { return .constant(showsDetails) }
+        return Binding(get: { view.showsDetails }, set: { view.showsDetails = $0 })
     }
 }
 

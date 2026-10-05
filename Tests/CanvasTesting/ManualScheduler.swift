@@ -27,5 +27,16 @@ public final class ManualScheduler: Scheduler {
         now = end
     }
 
+    /// Fires the earliest pending action, whenever it's due, and says whether there was one: for a test
+    /// that does something between the slices of work that reschedules itself.
+    @discardableResult
+    public func runNext() -> Bool {
+        guard let next = pending.min(by: { ($0.due, $0.id) < ($1.due, $1.id) }) else { return false }
+        pending.removeAll { $0.id == next.id }
+        now = max(now, next.due)
+        next.action()
+        return true
+    }
+
     public var pendingCount: Int { pending.count }
 }

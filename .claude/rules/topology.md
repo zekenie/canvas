@@ -9,7 +9,7 @@ paths:
 
 Topology: the typed graph of edges derived from records, edge types and sources, containment as one tree, and snapshots for other threads.
 
-Related: [connections](connections.md), [mentions](mentions.md), [queries](queries.md), [containers](containers.md), [boards in a file](boards-in-a-file.md) ([every topic](../../CLAUDE.md#map)).
+Related: [connections](connections.md), [mentions](mentions.md), [jump to](jump-to.md), [queries](queries.md), [containers](containers.md), [boards in a file](boards-in-a-file.md) ([every topic](../../CLAUDE.md#map)).
 
 In the guide, `docs/plugin-system.md`: [Topology](../../docs/plugin-system.md#topology).
 

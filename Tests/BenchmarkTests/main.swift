@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([benchmarks, inspectorBenchmarks, queryBenchmarks, frameBenchmarks])
+runTests([benchmarks, inspectorBenchmarks, queryBenchmarks, frameBenchmarks, findBenchmarks, jumpToBenchmarks])

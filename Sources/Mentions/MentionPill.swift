@@ -106,6 +106,11 @@ public final class MentionAttachment: NSTextAttachment {
     }
 }
 
+extension MentionAttachment: ReadsAsText {
+    /// The name it shows, without the "@": what a selection across it is searched for by.
+    public var readsAs: String { writtenLabel }
+}
+
 /// Where a pill's parts go, and in what colors. Made on the main actor (it measures text, with
 /// Mentions' style); drawn wherever AppKit draws the pill's image.
 public struct MentionPillLayout {

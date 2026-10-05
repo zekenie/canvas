@@ -6,7 +6,7 @@ import Geometry
 /// stack, with its board and the camera as it was at that moment, and going back
 /// (`editor.goBack()`) takes the last one off and restores it.
 struct SelectionHistory {
-    struct Entry {
+    struct Entry: Equatable {
         let board: BoardID
         let selection: [ShapeID]
         let camera: Camera

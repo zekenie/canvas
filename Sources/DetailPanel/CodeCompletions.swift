@@ -1,10 +1,11 @@
 import AppKit
+import FuzzyMatching
 import TextEditing
 
 // A code editor's completions (`DetailCodeEditor`'s `completions:`): a plugin says what can be
 // typed at the caret, in its language, and the editor lists it there, in the app's one caret list
 // (`CaretList`, as Mentions' `@` picker is), ranked by what's typed with the one matcher
-// (`CaretListMatcher`), and puts a pick in. The language is the plugin's; the keys, the list and
+// (`FuzzyMatcher`), and puts a pick in. The language is the plugin's; the keys, the list and
 // the ranking are the panel's.
 
 /// What can be typed at a code editor's caret: asked with the text and the caret (UTF-16, as
@@ -68,11 +69,11 @@ extension DetailCodeCompletions {
     }
 
     /// What the list shows, in order: every item as offered while nothing's typed; else the items
-    /// what's typed matches, the best tier first (`CaretListRanking`), then those that matter, then
+    /// what's typed matches, the best tier first (`FuzzyRanking`), then those that matter, then
     /// as offered. Nothing, where nothing matches.
     func listed() -> [Listed] {
-        guard !CaretListMatcher.Query(query).isEmpty else { return items.map { Listed(item: $0, matched: []) } }
-        let matches = CaretListMatcher.matches(query, in: items.map(\.label))
+        guard !FuzzyMatcher.Query(query).isEmpty else { return items.map { Listed(item: $0, matched: []) } }
+        let matches = FuzzyMatcher.matches(query, in: items.map(\.label))
         let found = items.indices.compactMap { i in matches[i].map { (index: i, match: $0) } }
         return found.sorted { a, b in
             if a.match.score != b.match.score { return a.match.score > b.match.score }

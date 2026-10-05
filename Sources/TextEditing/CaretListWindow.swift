@@ -8,10 +8,13 @@ public typealias CaretListPost = @MainActor (_ element: Any, _ notification: NSA
 /// A caret list's window, over the text view it lists for: borderless, a child of the text's window
 /// that never becomes key, so the text keeps the keyboard (Apple's CustomMenus pattern). Menu
 /// material, rounded, as wide as its list's metrics say, showing `rowsShown` rows and scrolling
-/// within them. It sits just below its anchor (a range of the text its owner names: the `@` a
-/// mention is typed after), its rows' text under the anchor's start, or above the anchor's line
-/// where there's no room below, and on the screen; it has the same size at any zoom, since the
-/// anchor's rect is in screen points.
+/// within them. It sits just below its anchor, or above the anchor's line where there's no room
+/// below, and on the screen; it has the same size at any zoom, since the anchor's rect is in screen
+/// points. The anchor is a range of the text its owner names (the `@` a mention is typed after),
+/// its rows' text under the anchor's start; or a rect of its own in screen coordinates (a closure,
+/// asked as the window is placed), which the window sits centered under, at its metrics' width: a
+/// field that isn't the text's caret (Jump To's capsule), the text view then only the window's
+/// parent and what it follows, and no reason to close as the anchor leaves it.
 ///
 /// Its owner makes it as the list opens, calls `listDidChange()` after each change to the list, and
 /// `dismiss()` as it closes. Meanwhile the window follows its anchor as every view the text is in
@@ -30,19 +33,39 @@ public final class CaretListWindow: NSPanel {
     let rowsView: CaretListRowsView
     private let scrollView = NSScrollView()
     private weak var textView: NSTextView?
-    private let anchor: @MainActor () -> NSRange?
+    private let anchor: Anchor
     private let pickByOwner: @MainActor (Int) -> Void
     private let closeByOwner: @MainActor () -> Void
     private let post: CaretListPost
     private let follower = CaretListFollower()
     private var isDismissed = false
 
+    /// Where the window goes: under a range of the text, or a rect in screen coordinates.
+    private enum Anchor {
+        case range(@MainActor () -> NSRange?)
+        case rect(@MainActor () -> CGRect?)
+    }
+
     /// A window for `list` over `textView`, following it from now on. `anchor` is where it goes, a
     /// range of the text (nil: it stays where it is); `pick` gets the index of an item's row
     /// clicked; `close` is the owner closing the list, which dismisses the window. `post` routes
     /// what VoiceOver hears (nil: `NSAccessibility.post`).
-    public init(_ list: CaretList, accessibilityLabel: String, over textView: NSTextView, anchor: @escaping @MainActor () -> NSRange?,
-                pick: @escaping @MainActor (Int) -> Void, close: @escaping @MainActor () -> Void, post: CaretListPost? = nil) {
+    public convenience init(_ list: CaretList, accessibilityLabel: String, over textView: NSTextView, anchor: @escaping @MainActor () -> NSRange?,
+                            pick: @escaping @MainActor (Int) -> Void, close: @escaping @MainActor () -> Void, post: CaretListPost? = nil) {
+        self.init(list, accessibilityLabel: accessibilityLabel, over: textView, anchor: .range(anchor), pick: pick, close: close, post: post)
+    }
+
+    /// A window for `list` over `textView`, as above, but under a rect (`anchorRect`, in screen
+    /// coordinates; nil: it stays where it is), centered on it at the list's width, below it, or above
+    /// it where there's no room.
+    public convenience init(_ list: CaretList, accessibilityLabel: String, over textView: NSTextView,
+                            anchorRect: @escaping @MainActor () -> CGRect?, pick: @escaping @MainActor (Int) -> Void,
+                            close: @escaping @MainActor () -> Void, post: CaretListPost? = nil) {
+        self.init(list, accessibilityLabel: accessibilityLabel, over: textView, anchor: .rect(anchorRect), pick: pick, close: close, post: post)
+    }
+
+    private init(_ list: CaretList, accessibilityLabel: String, over textView: NSTextView, anchor: Anchor,
+                 pick: @escaping @MainActor (Int) -> Void, close: @escaping @MainActor () -> Void, post: CaretListPost?) {
         self.list = list
         rowsView = CaretListRowsView(list: list, pick: pick)
         self.textView = textView
@@ -145,25 +168,33 @@ public final class CaretListWindow: NSPanel {
         return CGFloat(min(max(list.rows.count, 1), metrics.rowsShown)) * metrics.rowHeight + 2 * TextEditingStyle.caretListInset
     }
 
-    /// Puts the window under its anchor, shown if the text's window is; asks the owner to close the
-    /// list if the anchor has left what's visible of the text.
+    /// Puts the window under its anchor, shown if the text's window is; for a range of the text,
+    /// asks the owner to close the list if the anchor has left what's visible of the text.
     private func place() {
-        guard let textView, let window = textView.window, let range = anchor() else { return }
-        let rect = textView.firstRect(forCharacterRange: range, actualRange: nil)
-        let inView = textView.convert(window.convertFromScreen(rect), from: nil)
-        guard textView.visibleRect.intersects(inView.insetBy(dx: -1, dy: -1)) else { return closeList() }
-        place(below: rect, on: (window.screen ?? NSScreen.main)?.visibleFrame)
+        guard let textView, let window = textView.window else { return }
+        let screen = (window.screen ?? NSScreen.main)?.visibleFrame
+        switch anchor {
+        case .range(let range):
+            guard let range = range() else { return }
+            let rect = textView.firstRect(forCharacterRange: range, actualRange: nil)
+            let inView = textView.convert(window.convertFromScreen(rect), from: nil)
+            guard textView.visibleRect.intersects(inView.insetBy(dx: -1, dy: -1)) else { return closeList() }
+            place(below: rect, centered: false, on: screen)
+        case .rect(let rect):
+            guard let rect = rect() else { return }
+            place(below: rect, centered: true, on: screen)
+        }
         if window.isVisible, !isVisible { window.addChildWindow(self, ordered: .above) }
     }
 
     /// Places it for an anchor whose rect on screen is `anchor`: its rows' text under the anchor's
-    /// start, `offset` below the line, or above it where there's no room below, and within
-    /// `screen`'s visible frame.
-    private func place(below anchor: CGRect, on screen: CGRect?) {
+    /// start (or, `centered`, the window centered on the anchor), `offset` below the line, or above
+    /// it where there's no room below, and within `screen`'s visible frame.
+    private func place(below anchor: CGRect, centered: Bool, on screen: CGRect?) {
         let metrics = list.metrics
         let size = CGSize(width: metrics.width, height: fittedHeight)
-        var origin = CGPoint(x: anchor.minX - TextEditingStyle.caretListRowInset - TextEditingStyle.caretListTextInset,
-                             y: anchor.minY - metrics.offset - size.height)
+        let left = centered ? anchor.midX - size.width / 2 : anchor.minX - TextEditingStyle.caretListRowInset - TextEditingStyle.caretListTextInset
+        var origin = CGPoint(x: left, y: anchor.minY - metrics.offset - size.height)
         if let screen {
             if origin.y < screen.minY { origin.y = anchor.maxY + metrics.offset }
             origin.x = min(max(origin.x, screen.minX), screen.maxX - size.width)
@@ -374,8 +405,7 @@ final class CaretListRowsView: NSView {
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: TextEditingStyle.caretListDetailSize, weight: .regular)
                 .applying(NSImage.SymbolConfiguration(paletteColors: [secondary])))
         let trailingWidth = trailing.map { $0.size.width + TextEditingStyle.caretListGap } ?? 0
-        let detail = NSAttributedString(string: item.detail ?? "", attributes: [
-            .font: NSFont.systemFont(ofSize: TextEditingStyle.caretListDetailSize), .foregroundColor: secondary])
+        let detail = Self.detail(item, color: secondary)
         let leftByTitle = row.maxX - TextEditingStyle.caretListTextInset - x - ceil(label.size().width) - trailingWidth - TextEditingStyle.caretListGap
         let detailWidth = max(0, min(ceil(detail.size().width), max(leftByTitle, row.width * TextEditingStyle.caretListDetailShare)))
         let detailX = row.maxX - TextEditingStyle.caretListTextInset - detailWidth
@@ -406,6 +436,23 @@ final class CaretListRowsView: NSView {
         for range in item.matched {
             guard let r = characterRange(range, in: text) else { continue }
             string.addAttribute(.font, value: bold, range: r)
+        }
+        return string
+    }
+
+    /// An item's detail, its matched characters in semibold and its dimmed ones fainter.
+    static func detail(_ item: CaretListItem, color: NSColor) -> NSAttributedString {
+        let text = item.detail ?? ""
+        let string = NSMutableAttributedString(string: text, attributes: [
+            .font: NSFont.systemFont(ofSize: TextEditingStyle.caretListDetailSize), .foregroundColor: color])
+        let bold = NSFont.systemFont(ofSize: TextEditingStyle.caretListDetailSize, weight: .semibold)
+        for range in item.detailMatched {
+            guard let r = characterRange(range, in: text) else { continue }
+            string.addAttribute(.font, value: bold, range: r)
+        }
+        for range in item.detailDimmed {
+            guard let r = characterRange(range, in: text) else { continue }
+            string.addAttribute(.foregroundColor, value: color.withAlphaComponent(color.alphaComponent * TextEditingStyle.caretListDimmedAlpha), range: r)
         }
         return string
     }

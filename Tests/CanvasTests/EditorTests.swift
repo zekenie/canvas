@@ -1,5 +1,6 @@
 @_spi(Host) import Canvas
 import CanvasTesting
+import AppKit
 import CoreGraphics
 import Geometry
 import Observation
@@ -344,6 +345,22 @@ import TestKit
         field.context.keepInView(CGRect(x: 90, y: 10, width: 1, height: 16))
         expectEqual(h.editor.camera.origin.x, 0, "190 at 200%: 380 points in, in view")
         expect(!h.editor.canUndo, "the camera's moves are no step")
+    },
+    test("an editing text's selection reads each attachment that reads as text as that text, and drops the rest") {
+        /// A pill-like attachment that reads as a name, and one that doesn't.
+        final class Named: NSTextAttachment, ReadsAsText {
+            var readsAs: String { "Walrus" }
+        }
+        let text = NSMutableAttributedString(string: "Feed ")
+        text.append(NSAttributedString(attachment: Named()))
+        text.append(NSAttributedString(string: " and "))
+        text.append(NSAttributedString(attachment: NSTextAttachment()))
+        text.append(NSAttributedString(string: "now"))
+        expectEqual(text.length, 15)
+        expectEqual(text.readingAttachments(in: NSRange(location: 0, length: text.length)), "Feed Walrus and now")
+        expectEqual(text.readingAttachments(in: NSRange(location: 5, length: 1)), "Walrus")
+        expectEqual(text.readingAttachments(in: NSRange(location: 11, length: 1)), "", "an attachment that doesn't read as text is dropped")
+        expectEqual(text.readingAttachments(in: NSRange(location: 2, length: 4)), "ed Walrus")
     },
 ])
 

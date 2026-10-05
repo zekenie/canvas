@@ -20,7 +20,7 @@ Keep it that way: a change to a subsystem updates its topic file in the same com
 Read `docs/plugin-system.md` first; it's the guide to the plugin system, with the examples.
 
 - `Canvas` (the core) knows no particular shape or concern (its one tool is Hand), and must stay that way. A concern like validity is declared by a plugin (an `ExtensionPoint` in its own module) and other plugins opt in; if the core seems to need to know about one, add a generic extension point instead.
-- `Package.swift` is the module graph, a target a line, each tagged `// layer:`, and the audit refuses a cycle, an edge the layers don't allow, imports that aren't exactly a module's declared dependencies, and a module writing another module's kind, tool, plugin, property, channel or edge type id as a literal without depending on it. Every plugin may use the foundation (Geometry, Canvas, DrawScript, QueryLanguage and TextEditing); beyond it, surfaces use only surfaces, concerns use surfaces and concerns, languages use surfaces, languages and the wire (never a concern), lexicons use surfaces, concerns and languages, and verticals use surfaces and concerns (never another vertical). No module joins two others but a lexicon, and plugins can't import CanvasUI. Read [build](.claude/rules/build.md) before adding a module or an import.
+- `Package.swift` is the module graph, a target a line, each tagged `// layer:`, and the audit refuses a cycle, an edge the layers don't allow, imports that aren't exactly a module's declared dependencies, and a module writing another module's kind, tool, plugin, property, channel or edge type id as a literal without depending on it. Every plugin may use the foundation (Geometry, Canvas, DrawScript, QueryLanguage, TextEditing and FuzzyMatching); beyond it, surfaces use only surfaces, concerns use surfaces and concerns, languages use surfaces, languages and the wire (never a concern), lexicons use surfaces, concerns and languages, and verticals use surfaces and concerns (never another vertical). No module joins two others but a lexicon, and plugins can't import CanvasUI. Read [build](.claude/rules/build.md) before adding a module or an import.
 - Change documents only with `editor.transact`, and name the step a user would call it (`transact("Name")`, `undoHistory.group("Name")` around several). A body that throws commits nothing and opens no step, and the error comes out untyped. Tools see `Pointer` values, never `NSEvent`; timers go through `editor.scheduler`. Model positions are world units; overlay sizes (handles, outlines, hit margins) are view points, divided by `zoom` in world space.
 - Conform to `ShapeDefinition` (and capabilities), `Tool`, `Session`, `EditorService`, `MentionScope`, `TransformChannel` and any extension point that implements `check` or `summary` in an extension: only there does the compiler flag a near miss on a defaulted requirement ([plugins and kinds](.claude/rules/plugins-and-kinds.md)).
 - A frame costs what's in view and what changed, never the whole board: per-frame code goes through `editor.paintOrder(in:)`, and a service keeps per-shape state and redoes only the shapes a commit's `ChangeSet` names ([drawing](.claude/rules/drawing.md)); `./build.sh bench` holds the budgets.
@@ -65,6 +65,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 
 **Foundation**
 - [text editing](.claude/rules/text-editing.md): `EditingTextView` and the one caret list, under every editable text.
+- [fuzzy matching](.claude/rules/fuzzy-matching.md): `FuzzyMatcher`, the matcher every list ranks typed text with; `TextSearch`, Find's, over folded texts; `PathMatcher`, Jump To's, over containment paths.
 
 **Surfaces**
 - [keyboard](.claude/rules/keyboard.md): shortcuts and chords, how a key reaches the canvas, the menu bar.
@@ -76,6 +77,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [slash commands](.claude/rules/slash-commands.md): commands typed on a line of a shape's text.
 - [topology](.claude/rules/topology.md): edges and edge types, their sources, containment as one tree, snapshots for other threads.
 - [language models](.claude/rules/language-models.md): the model plugins ask, the Anthropic key and Settings, `--ask`'s model.
+- [find](.claude/rules/find.md): ⌘F: the `FindableTexts` point and its contributors, the index, the search off the main actor, scope and order, the highlights, the panel in the detail panel's place.
 
 **Concerns**
 - [validation](.claude/rules/validation.md): rules and issues, the schema rule, what each commit re-checks, rings, where issues show.
@@ -97,4 +99,5 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [schema cards](.claude/rules/schema-cards.md): a JSON Schema and its description, kept in step by the model; references, the panel's JSON and completions, highlights.
 - [subboards](.claude/rules/subboards.md): a card that owns a board.
 - [frames](.claude/rules/frames.md): a region that holds shapes, and the Frame tool.
+- [jump to](.claude/rules/jump-to.md): ⌘K, a palette that goes to a shape by its title and where it is; the catalog, the ranking over the containment tree, the palette and its list, picks.
 - Sticky notes have no file of their own: [editing](.claude/rules/editing.md) holds a note's editor against its render, and the files of what notes opt into hold the rest. Reordering (`Examples/`) is in [context menus](.claude/rules/context-menus.md).

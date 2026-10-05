@@ -244,6 +244,20 @@ final class SelectionState {
         if editor.board != entry.board || Set(selectedIDs) != Set(entry.selection) { history.push(entry) }
     }
 
+    /// Runs `body` as part of one step back to `entry` (`editor.navigate(from:_:)`), recording
+    /// nothing of its own; `entry` goes on the stack the first time `body` moves the board, the
+    /// selection or the camera, and not again while it's on the stack (a click or a pan between two
+    /// calls adds no second copy; a call that moves nothing, after a pan, adds none).
+    func asOneStep(from entry: SelectionHistory.Entry, _ body: () -> Void) {
+        guard !isOneStep else { return body() }
+        let board = editor.board, selection = Set(selectedIDs), camera = editor.cameraTarget
+        isOneStep = true
+        body()
+        isOneStep = false
+        guard editor.board != board || Set(selectedIDs) != selection || editor.cameraTarget != camera else { return }
+        if !history.entries.contains(entry) { history.push(entry) }
+    }
+
     /// Whether `goBack` would change the selection, or the board: some step on the stack would be
     /// restored.
     var canGoBack: Bool { history.entries.reversed().contains { restoration(of: $0) != nil } }

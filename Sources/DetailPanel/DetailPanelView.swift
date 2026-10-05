@@ -4,6 +4,27 @@ import Selection
 import SwiftUI
 import TextEditing
 
+/// What takes over the whole panel while it's active (Find's panel, from Composition): in place of
+/// "No Details", the selection's panel and the overview, with the panel's environment, frame and
+/// width as ever. The panel doesn't know what it is.
+///
+/// `isActive` is read in the panel's body, so it reads observable state (an `@Observable` service)
+/// and the panel redraws only when it flips. `onEscape` runs on Escape and ⌘. in the panel while
+/// the takeover is active, before `onExit` gives the keyboard back to the canvas (a text view
+/// holding keys, a list shown over its text, hears Escape before either).
+public struct DetailTakeover {
+    let isActive: @MainActor (CanvasEditor) -> Bool
+    let content: AnyView
+    let onEscape: @MainActor () -> Void
+
+    public init<Content: View>(isActive: @escaping @MainActor (CanvasEditor) -> Bool, onEscape: @escaping @MainActor () -> Void,
+                               @ViewBuilder content: () -> Content) {
+        self.isActive = isActive
+        self.onEscape = onEscape
+        self.content = AnyView(content())
+    }
+}
+
 /// The panel. The app places it (in `.inspector`, through Composition); it follows the editor's
 /// selection by itself. `onExit` gives the keyboard back to the canvas: the panel calls it on
 /// Escape and ⌘., when it has just removed the control that had the keyboard, and when it's hidden
@@ -13,27 +34,35 @@ public struct DetailPanelView: View {
     let editor: CanvasEditor
     let onExit: @MainActor () -> Void
     let overview: AnyView?
+    let takeover: DetailTakeover?
     @State private var window = WindowBox()
     @State private var drafts = DraftTracker()
 
-    public init(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void = {}) {
+    public init(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void = {}, takeover: DetailTakeover? = nil) {
         self.editor = editor
         self.onExit = onExit
         overview = nil
+        self.takeover = takeover
     }
 
     /// With `overview` where the panel has no shape to show: in place of "No Selection", and under
     /// the header when several shapes are selected (as data-canvas's details panel shows its table
     /// of contents). The panel doesn't know what it is; Composition decides.
-    public init<Overview: View>(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void, @ViewBuilder overview: () -> Overview) {
+    /// With `takeover`, which shows in place of all of it while active (name `overview:` when passing
+    /// both: a trailing closure can't come before it).
+    public init<Overview: View>(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void, @ViewBuilder overview: () -> Overview,
+                                takeover: DetailTakeover? = nil) {
         self.editor = editor
         self.onExit = onExit
         self.overview = AnyView(overview())
+        self.takeover = takeover
     }
 
     public var body: some View {
         Group {
-            if let state = editor.detailPanel {
+            if let takeover, takeover.isActive(editor) {
+                takeover.content
+            } else if let state = editor.detailPanel {
                 let ids = editor.selectedShapeIDs
                 if ids.count > 1 {
                     SelectionSummary(header: state.selectionSummary(of: ids.compactMap { editor.document[$0] }), editor: editor, overview: overview)
@@ -84,6 +113,7 @@ public struct DetailPanelView: View {
     private func exitByKey(withOption: Bool) -> Bool {
         let text = window.window?.firstResponder as? EditingTextView
         if text?.holdsKeys == true || (withOption && text?.offersCompletions == true) { return false }
+        if let takeover, takeover.isActive(editor) { takeover.onEscape() }
         drafts.revert()
         onExit()
         return true

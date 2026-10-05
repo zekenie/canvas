@@ -4,7 +4,7 @@ import TestKit
 import TextEditing
 
 // Every caret list's pieces, without an owner of the app's: the model (rows, the highlight, the
-// keys), the matcher both lists rank typed text with, and the window over a text view in an
+// keys), and the window over a text view in an
 // unshown window (where it's placed, what follows and closes it, its rows drawn, clicked and said).
 // Mentions' `@` picker is built on them (MentionsTests hold it whole).
 
@@ -60,6 +60,18 @@ private final class ListedText {
         list.setRows(rows)
     }
 
+    /// Opens a list of `rows` under a rect of its own (screen coordinates; `rect` is read as the window
+    /// is placed), as a field that isn't the text's caret has one.
+    func open(_ rows: [CaretListRow], under rect: @escaping @MainActor () -> CGRect?) {
+        let list = CaretList(metrics: fruitMetrics)
+        self.list = list
+        listWindow = CaretListWindow(list, accessibilityLabel: "Fruit", over: textView, anchorRect: rect,
+                                     pick: { [weak self] row in self?.picks.append(row) },
+                                     close: { [weak self] in self?.close() })
+        list.onChange = { [weak self] in self?.listWindow?.listDidChange() }
+        list.setRows(rows)
+    }
+
     func close() {
         closes += 1
         listWindow?.dismiss()
@@ -77,6 +89,12 @@ private final class ListedText {
                            modifierFlags: [], timestamp: 1, windowNumber: listWindow?.windowNumber ?? 0, context: nil, eventNumber: 0,
                            clickCount: 1, pressure: 1)!
     }
+}
+
+/// A rect an owner moves, for a closure to read.
+@MainActor private final class MovingRect {
+    var rect: CGRect?
+    init(_ rect: CGRect?) { self.rect = rect }
 }
 
 /// The alpha of a view's pixel at a point in its bounds, drawn in the light appearance.
@@ -195,64 +213,6 @@ private final class ListingTextView: EditingTextView {
         expectEqual(CaretListItem("apple", detail: "fruit", spoken: "apple, 1 of 3").spoken, "apple, 1 of 3")
     },
 
-    // MARK: The matcher
-
-    test("the matcher's tiers, with the characters matched, case and diacritics ignored") {
-        expectEqual(CaretListMatcher.match("grocery list", in: "Grocery List"), CaretListMatch(score: CaretListRanking.exact, matched: [0..<12]))
-        expectEqual(CaretListMatcher.match("groc", in: "Grocery List"), CaretListMatch(score: CaretListRanking.prefix, matched: [0..<4]))
-        expectEqual(CaretListMatcher.match("gro li", in: "Grocery List"), CaretListMatch(score: CaretListRanking.wordPrefixes, matched: [0..<3, 8..<10]))
-        expectEqual(CaretListMatcher.match("cery", in: "Grocery List"), CaretListMatch(score: CaretListRanking.substring, matched: [3..<7]))
-        let subsequence = try require(CaretListMatcher.match("grcy", in: "Grocery List"))
-        expect(subsequence.score > CaretListRanking.typo && subsequence.score <= CaretListRanking.subsequence)
-        expectEqual(CaretListMatcher.match("gorcery", in: "Grocery List"), CaretListMatch(score: CaretListRanking.typo, matched: [0..<7]))
-        expectEqual(CaretListMatcher.match("CAFÉ", in: "cafe")?.score, CaretListRanking.exact)
-        expectEqual(CaretListMatcher.match("zebra", in: "Grocery List"), nil)
-        expectEqual(CaretListMatcher.match(" ", in: "Grocery List"), nil)
-    },
-
-    test("a list's matches: each label's best tier, the typo's only when the others found fewer than 8") {
-        let found = CaretListMatcher.matches("app", in: ["apple", "pineapple", "banana", "Apricot pie"])
-        expectEqual(found.prefix(3).map { $0?.score }, [CaretListRanking.prefix, CaretListRanking.substring, nil])
-        expectEqual(found[0]?.matched, [0..<3])
-        let subsequence = try require(found[3])
-        expect(subsequence.score > CaretListRanking.typo && subsequence.score <= CaretListRanking.subsequence, "\(subsequence.score)")
-        expectEqual(CaretListMatcher.matches("", in: ["apple", "fig"]).map { $0 == nil }, [true, true], "an empty query matches nothing")
-        // "mnago" is "mango" with two letters swapped: a typo, found while few others match.
-        expectEqual(CaretListMatcher.matches("mnago", in: ["mango", "melon"]).map { $0?.score }, [CaretListRanking.typo, nil])
-        let many = Array(repeating: "mn a g o", count: 8) + ["mango"]
-        let crowded = CaretListMatcher.matches("mnago", in: many)
-        expectEqual(crowded.prefix(8).compactMap { $0 }.count, 8, "subsequences")
-        expectEqual(crowded[8]?.score, nil, "eight found above it: the typo's tier isn't tried")
-    },
-
-    test("rank: the tiers over every label a list gives, then the typo's over those left, for a query of four or more") {
-        let labels = ["mango", "melon", "mnago pie", "mango", "kiwi"]
-        var keys: [UInt32] = [], starts = [0]
-        for label in labels {
-            _ = CaretListMatcher.appendKeys(of: label, to: &keys)
-            starts.append(keys.count)
-        }
-        @MainActor func ranked(_ query: String, passingOver skipped: Set<Int> = []) -> [(index: Int, score: Int)] {
-            var found: [(index: Int, score: Int)] = []
-            CaretListMatcher.Query(query).withView { q in
-                keys.withUnsafeBufferPointer { keys in
-                    CaretListMatcher.rank(q, count: labels.count, wantSpans: false, label: { i in
-                        skipped.contains(i) ? nil : UnsafeBufferPointer(rebasing: keys[starts[i]..<starts[i + 1]])
-                    }) { index, score, spans in
-                        expect(spans.isEmpty, "no spans unless asked")
-                        found.append((index, score))
-                    }
-                }
-            }
-            return found
-        }
-        let mnago = ranked("mnago")
-        expectEqual(mnago.map(\.index), [2, 0, 3], "the prefix in the first pass, then the typos in the second")
-        expectEqual(mnago.map(\.score), [CaretListRanking.prefix, CaretListRanking.typo, CaretListRanking.typo])
-        expectEqual(ranked("mnago", passingOver: [0, 2]).map(\.index), [3], "a label the list leaves out is never matched")
-        expectEqual(ranked("mna").map(\.index), [2], "under four characters, no typo's pass (mango would be one)")
-    },
-
     // MARK: The window
 
     test("it's placed under its anchor, its rows' text under the anchor's start, but never shown while the text's window isn't") {
@@ -269,6 +229,52 @@ private final class ListingTextView: EditingTextView {
         text.list?.setRows(fruitRows(12))
         expectClose(window.frame.height, 5 * 20 + 10, within: 0.001)
         expectClose(window.frame.maxY, anchor.minY - 3)
+    },
+
+    test("under a rect of its own it's centered on it at its list's width, offset below it, and follows it; it never asks to close as the text scrolls away") {
+        let text = ListedText()
+        let moving = MovingRect(CGRect(x: text.window.frame.minX + 100, y: text.window.frame.minY + 300, width: 400, height: 36))
+        var rect: CGRect { moving.rect! }
+        text.open(fruitRows(3), under: { moving.rect })
+        let window = try require(text.listWindow)
+        expect(!window.isVisible)
+        expectEqual(window.frame.width, 240, "its metrics' width, not the rect's")
+        expectClose(window.frame.midX, rect.midX, within: 0.5)
+        expectClose(window.frame.maxY, rect.minY - 3)
+        expectClose(window.frame.height, 3 * 20 + 10, within: 0.001)
+        text.list?.setRows(fruitRows(12))
+        expectClose(window.frame.height, 5 * 20 + 10, within: 0.001)
+        expectClose(window.frame.maxY, rect.minY - 3)
+        // The owner moves the rect; the next change, or a view the text is in moving, puts the list under it.
+        moving.rect?.origin.x += 40
+        text.holder.frame.origin.x += 1
+        expectClose(window.frame.midX, rect.midX, within: 0.5)
+        // The text going out of view closes a list at a range of it; one at a rect has no range to lose.
+        text.holder.frame.origin = CGPoint(x: 2000, y: 100)
+        expectEqual(text.closes, 0)
+        expect(text.listWindow != nil)
+        text.close()
+    },
+
+    test("under a rect with no room below, it goes above it, on the screen; a rect it can't read leaves it put") {
+        guard let screen = NSScreen.main?.visibleFrame else { return }
+        let text = ListedText()
+        let low = CGRect(x: screen.midX - 200, y: screen.minY + 40, width: 400, height: 36)
+        let moving = MovingRect(low)
+        text.open(fruitRows(5), under: { moving.rect })
+        var frame = try require(text.listWindow?.frame)
+        expect(low.minY - 3 - frame.height < screen.minY, "no room below")
+        expectClose(frame.minY, low.maxY + 3, within: 1)
+        expect(frame.maxY <= screen.maxY && frame.minX >= screen.minX)
+        moving.rect = nil
+        text.list?.moveHighlight(by: 1)
+        expectEqual(try require(text.listWindow?.frame), frame, "nil: it stays")
+        // Past the screen's left edge, the window is kept on it.
+        moving.rect = CGRect(x: screen.minX - 100, y: screen.midY, width: 100, height: 36)
+        text.list?.moveHighlight(by: 1)
+        frame = try require(text.listWindow?.frame)
+        expectClose(frame.minX, screen.minX, within: 0.5)
+        text.close()
     },
 
     test("with no room below its anchor, it goes above the line, on the screen") {
@@ -361,6 +367,52 @@ private final class ListingTextView: EditingTextView {
         // A 230-point row, whose detail keeps at least 40% of it, its last 92 points but its inset.
         expect(ink(row: 1, from: 40, to: 125), "a short title: the detail runs on from just past it")
         expect(ink(row: 2, from: 140, to: 220), "a long title: cut short, so the detail keeps its share")
+    },
+
+    test("a detail's matched characters are set in semibold, and the row is said as before") {
+        let text = ListedText()
+        let detail = "Mmmmmmmm › Mmmmmmmm"
+        text.open([.item(CaretListItem("kiwi")), .item(CaretListItem("fig", detail: detail)),
+                   .item(CaretListItem("fig", detail: detail, detailMatched: [0..<8, 11..<19]))])
+        let rows = try require(text.rowsView)
+        let rep = try require(rows.bitmapImageRepForCachingDisplay(in: rows.bounds))
+        NSAppearance(named: .aqua)!.performAsCurrentDrawingAppearance { rows.cacheDisplay(in: rows.bounds, to: rep) }
+        /// How much ink a row's detail leaves, at the trailing end.
+        @MainActor func ink(row: Int) -> CGFloat {
+            let scale = CGFloat(rep.pixelsWide) / rows.bounds.width
+            var total: CGFloat = 0
+            for y in Int(CGFloat(row * 20) * scale)..<Int(CGFloat(row * 20 + 20) * scale) {
+                for x in Int(70 * scale)..<Int(230 * scale) { total += rep.colorAt(x: x, y: y)?.alphaComponent ?? 0 }
+            }
+            return total
+        }
+        expect(ink(row: 1) > 0)
+        expect(ink(row: 2) > ink(row: 1) * 1.05, "semibold: \(ink(row: 2)) against \(ink(row: 1))")
+        let spoken = (rows.accessibilityChildren() ?? []).compactMap { ($0 as? NSAccessibilityElement)?.accessibilityLabel() }
+        expectEqual(spoken, ["kiwi", "fig, \(detail)", "fig, \(detail)"])
+        expectEqual(CaretListItem("fig", detail: "dried", detailMatched: [0..<2], detailDimmed: [3..<5]).spoken, "fig, dried")
+        expectEqual(CaretListItem("fig").detailMatched, [])
+        expectEqual(CaretListItem("fig").detailDimmed, [])
+    },
+
+    test("a detail's dimmed characters are drawn fainter") {
+        let text = ListedText()
+        let detail = "Mmmmmmmm › Mmmmmmmm"
+        text.open([.item(CaretListItem("kiwi")), .item(CaretListItem("fig", detail: detail)),
+                   .item(CaretListItem("fig", detail: detail, detailDimmed: [0..<8, 11..<19]))])
+        let rows = try require(text.rowsView)
+        let rep = try require(rows.bitmapImageRepForCachingDisplay(in: rows.bounds))
+        NSAppearance(named: .aqua)!.performAsCurrentDrawingAppearance { rows.cacheDisplay(in: rows.bounds, to: rep) }
+        @MainActor func ink(row: Int) -> CGFloat {
+            let scale = CGFloat(rep.pixelsWide) / rows.bounds.width
+            var total: CGFloat = 0
+            for y in Int(CGFloat(row * 20) * scale)..<Int(CGFloat(row * 20 + 20) * scale) {
+                for x in Int(70 * scale)..<Int(230 * scale) { total += rep.colorAt(x: x, y: y)?.alphaComponent ?? 0 }
+            }
+            return total
+        }
+        expect(ink(row: 1) > 0)
+        expect(ink(row: 2) < ink(row: 1) * 0.8, "fainter: \(ink(row: 2)) against \(ink(row: 1))")
     },
 
     test("the pointer over an item's row highlights it, and a click picks its index; headers and empty states do neither") {

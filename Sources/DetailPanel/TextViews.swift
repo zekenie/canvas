@@ -26,7 +26,7 @@ import TextEditing
 /// page, Return, Enter and Tab pick, and Escape, ⌃Space, ⌥⎋ and F5 close it (the panel stays);
 /// ⌘↩ closes it and commits, as ever; every other key is the text's, and after each keystroke
 /// and move of the caret the list asks again. It lists what's offered ranked by what's typed
-/// (`CaretListMatcher`), and closes once nothing is, the caret leaves the place it opened for, the
+/// (`FuzzyMatcher`), and closes once nothing is, the caret leaves the place it opened for, the
 /// text is shown from elsewhere or can't be written, or the keyboard or the window goes. A pick is
 /// one step of the text's undo, typed as far as the box is concerned. `onCompleting` hears the
 /// list open (true) and close (false): while it's open the person is still choosing, though the

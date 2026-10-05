@@ -24,6 +24,7 @@ In the guide, `docs/plugin-system.md`: [The connector: arrows](../../docs/plugin
 ## Architecture
 
 - Arrows see other shapes only as `ConnectableShape` (a closed shape's core geometry). Keep specific shape kinds out of arrow code.
+- `ArrowFindPlugin` (Connections', after Find in the shipped list: [find](find.md)) gives Find an arrow's label (field `label`, washed: it's over the canvas), its rects from the label's own layout, string drawing's centered in its frame less its padding (`ArrowLabels.layout(of:width:)`, TextEditing's `StringDrawingLayout`, kept by text and width, the last 256), from the arrow's bounds; ArrowsTests' `arrowFindTests` hold a hit to its word's ink.
 
 ## Arrows follow tldraw
 

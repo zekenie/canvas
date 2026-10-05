@@ -95,6 +95,19 @@ extension CanvasEditor {
         return showBoard(board, selecting: [below])
     }
 
+    /// Follows a shape wherever it is in the file, as the crumbs' menus and Jump To pick one: into it
+    /// if its kind opens its board (`opensBoard`: `goInto`, which shows the board), else to it
+    /// (`goTo`: its board shown, the shape selected and in view); either is one step back. Nothing
+    /// for a shape that isn't in the file, or mid-gesture.
+    public func follow(_ id: ShapeID) {
+        guard let record = file.record(id) else { return }
+        if registry.boardKind(of: record.kind) == nil {
+            goTo([id])
+        } else {
+            goInto(id)
+        }
+    }
+
     /// What a board is called: its owner's title (Titles), else its kind's placeholder
     /// (`opensBoard`), else the kind's label (`registry.label(of:)`); `root` for the root (the
     /// file's name, say).

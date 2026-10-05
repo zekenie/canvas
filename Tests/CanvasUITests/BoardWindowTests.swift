@@ -89,6 +89,17 @@ final class ChildPanel: NSPanel {
         expect(f.h.editor.document[box] != nil)
         expect(f.menuItem("redo:") == ("Redo", false), "\(f.menuItem("redo:"))")
     },
+    test("the menu bar's ⇧⌘Z runs Redo, and ⌘Z Undo, whatever else shares their letter") {
+        let f = try BoardWindowFixture()
+        let menus = BoardMenus.make(appName: "Infinite Canvas")
+        let edit = try require(menus.main.item(withTitle: "Edit")?.submenu)
+        for item in edit.items where item.action == NSSelectorFromString("undo:") || item.action == NSSelectorFromString("redo:") { item.target = f.window }
+        let box = f.addBox()
+        expect(menus.main.performKeyEquivalent(with: f.window.keyEvent("z", code: 6, modifiers: .command)), "⌘Z")
+        expect(f.h.editor.document[box] == nil)
+        expect(menus.main.performKeyEquivalent(with: f.window.keyEvent("Z", ignoringModifiers: "z", code: 6, modifiers: [.command, .shift])), "⇧⌘Z")
+        expect(f.h.editor.document[box] != nil, "redone")
+    },
     test("with text first responder, Undo and Redo are the text's own, and never reach the board") {
         let f = try BoardWindowFixture()
         let box = f.addBox()
