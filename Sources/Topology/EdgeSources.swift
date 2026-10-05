@@ -6,13 +6,21 @@ public struct EdgeSink {
     let carrier: ShapeID
     private var keys: [EdgeKey] = []
     private var counts: [EdgeKey: Int] = [:]
+    /// How many edges it dropped for being Topology's own (`StandingEdge`).
+    private(set) var reserved = 0
 
     init(carrier: ShapeID) { self.carrier = carrier }
 
     /// An edge of `type` from one shape to another, carried in `slot` ("" for the carrier itself, as
     /// an arrow is; else the name of the property it's in). Emitting one again, with the same type,
-    /// ends and slot, counts it again (a text that mentions a shape twice).
+    /// ends and slot, counts it again (a text that mentions a shape twice). The slot `stands-for` and
+    /// the type of that name are Topology's own (a stand-in's edges to what it stands for,
+    /// `StandingEdge`): an edge in either is dropped.
     public mutating func emit(_ type: EdgeTypeID, from source: ShapeID, to target: ShapeID, slot: String = "") {
+        guard slot != StandingEdge.slot, type != StandingEdge.id else {
+            reserved += 1
+            return
+        }
         let key = EdgeKey(type: type, source: source, target: target, slot: slot)
         if let count = counts[key] {
             counts[key] = count + 1
@@ -76,12 +84,16 @@ extension Registry {
         guard !record.isOpaque else { return [] }
         let emitters = edgeEmitters(for: record.kind)
         guard !emitters.isEmpty else { return [] }
-        return Self.edges(of: record, emitters: emitters, in: self)
+        var reserved = 0
+        return Self.edges(of: record, emitters: emitters, in: self, reserved: &reserved)
     }
 
-    static func edges(of record: AnyShapeRecord, emitters: [EdgeEmitter], in registry: Registry) -> [Edge] {
+    /// What the emitters say `record` carries; `reserved` counts the edges dropped for being
+    /// Topology's own.
+    static func edges(of record: AnyShapeRecord, emitters: [EdgeEmitter], in registry: Registry, reserved: inout Int) -> [Edge] {
         var sink = EdgeSink(carrier: record.id)
         for emit in emitters { emit(record, registry, &sink) }
+        reserved += sink.reserved
         return sink.edges
     }
 }

@@ -392,6 +392,24 @@ extension PluginRegistrar {
         contribute(DetailContribution(header: nil, sections: erased), to: ShapeDetails.self, for: .any)
     }
 
+    /// Sections for every shape `isIncluded` picks, over the whole record: for what a feature shows
+    /// about any shape, whatever its kind, that no property or box says (a tab of the shape's state
+    /// that comes and goes). `isIncluded` is asked as the panel is laid out, so it reads cached
+    /// state. Writes through the binding change the record, one step named for the section.
+    ///
+    ///     registrar.detailsForEveryShape(where: { shape in ... }) { DetailSection("Title") { $shape in ... } }
+    public mutating func detailsForEveryShape(
+        where isIncluded: @escaping @MainActor (AnyShapeRecord) -> Bool,
+        @DetailSectionsBuilder<AnyShapeRecord> _ sections: () -> [DetailSection<AnyShapeRecord>]
+    ) {
+        let erased = sections().map {
+            ErasedSection($0, value: { isIncluded($0) ? $0 : nil }, binding: { record, editor in
+                isIncluded(record) ? ShapeBinding<AnyShapeRecord>.record(of: record, in: editor) : nil
+            })
+        }
+        contribute(DetailContribution(header: nil, sections: erased), to: ShapeDetails.self, for: .any)
+    }
+
     /// Footer lines for every shape: return [] when there's nothing to say.
     public mutating func detailStatusForEveryShape(_ make: @escaping @MainActor (AnyShapeRecord, DetailContext) -> [DetailStatus]) {
         contribute(DetailStatusContribution(make), to: DetailStatuses.self, for: .any)

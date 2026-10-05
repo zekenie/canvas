@@ -19,16 +19,35 @@ public struct PropertyKey: RawRepresentable, Hashable, Codable, Sendable, Expres
 }
 
 /// A shape's identity. Pass one in to build a shape with a known id (decoding, tests).
+///
+/// Kept as its UUID's two words: a layout every module knows, so an id, and every value that holds
+/// one (an edge, a record, a set or dictionary key), is copied, compared and hashed as two words
+/// are. Foundation's `UUID` is resilient: a value holding one goes through witnesses for each.
 public struct ShapeID: Hashable, Sendable, CustomStringConvertible {
-    public let rawValue: UUID
-    public init(_ rawValue: UUID = UUID()) { self.rawValue = rawValue }
+    private let high: UInt64
+    private let low: UInt64
+
+    public init(_ rawValue: UUID = UUID()) {
+        (high, low) = withUnsafeBytes(of: rawValue.uuid) { ($0.loadUnaligned(as: UInt64.self), $0.loadUnaligned(fromByteOffset: 8, as: UInt64.self)) }
+    }
+
+    /// The UUID it is.
+    public var rawValue: UUID {
+        var uuid: uuid_t = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+        withUnsafeMutableBytes(of: &uuid) { bytes in
+            bytes.storeBytes(of: high, as: UInt64.self)
+            bytes.storeBytes(of: low, toByteOffset: 8, as: UInt64.self)
+        }
+        return UUID(uuid: uuid)
+    }
+
     public var description: String { rawValue.uuidString }
 }
 
 /// As the UUID's string, wherever an id is written: in a board, and in props that name a shape.
 extension ShapeID: Codable {
     public init(from decoder: any Decoder) throws {
-        rawValue = try decoder.singleValueContainer().decode(UUID.self)
+        self.init(try decoder.singleValueContainer().decode(UUID.self))
     }
 
     public func encode(to encoder: any Encoder) throws {

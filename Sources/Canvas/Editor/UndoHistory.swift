@@ -68,8 +68,10 @@ public final class UndoHistory {
         var builder: DocumentDelta.Builder
         var groupName: String?
         var firstName: String?
+        /// What an editing session's step is called when nothing else names it (`Editable.editingStepName`).
+        var editingName: String?
         let before: [ObjectIdentifier: any Sendable]
-        var name: String? { groupName ?? firstName ?? (holder == .editing ? "Typing" : nil) }
+        var name: String? { groupName ?? firstName ?? (holder == .editing ? editingName ?? "Typing" : nil) }
     }
 
     /// Where a commit comes from: an editing view's (`EditContext`), or anything else.
@@ -91,6 +93,8 @@ public final class UndoHistory {
     private var isEditing = false
     /// Editing began inside the action under way: when it ends, its step goes on as the editing one.
     private var editingBeganInAction = false
+    /// What the editing session's step is called (`Editable.editingStepName`); nil: "Typing".
+    private var editingName: String?
     /// The key the canvas last had a stroke of, until it's let go (`keyReleased`).
     private var keyDown: KeyStroke?
 
@@ -161,6 +165,9 @@ public final class UndoHistory {
     /// its step, whoever commits it. What changes the board for someone else (the command line's
     /// `draw`) waits for the release, so that its change is a step of its own.
     public var isPressHeld: Bool { isInPress }
+
+    /// An action is under way (a press, a key, a command, a group): it owns the open step.
+    var isInAction: Bool { depth > 0 }
 
     // MARK: Grouping
 
@@ -241,6 +248,7 @@ public final class UndoHistory {
         guard depth == 0 else { return }
         if editingBeganInAction, isEditing {
             open?.holder = .editing
+            open?.editingName = editingName
         } else if let key, open?.holder == .action {
             open?.holder = .held(key)
         } else if !isEditingStepOpen {
@@ -262,8 +270,9 @@ public final class UndoHistory {
         actionEnded()
     }
 
-    func editingBegan() {
+    func editingBegan(stepName: String? = nil) {
         isEditing = true
+        editingName = stepName
         if depth == 0 { close() } else { editingBeganInAction = true }
     }
 
@@ -288,6 +297,7 @@ public final class UndoHistory {
             if open?.holder != .editing {
                 close()
                 openStep(.editing)
+                open?.editingName = editingName
             }
         } else if let key {
             if open?.holder != .run(key) {

@@ -124,7 +124,7 @@ final class Evaluation {
         let ignoringCase: Bool
     }
 
-    let snapshot: QuerySnapshot
+    private(set) var snapshot: QuerySnapshot
     let vocabulary: QueryVocabulary
     let facts: MainFacts
     private(set) var stats = Stats()
@@ -234,6 +234,48 @@ final class Evaluation {
         warnings += try await titleWarnings()
         return QueryResult(query: plan.canonical, count: found.count, rows: rows, warnings: warnings, shown: snapshot.shown,
                            shownPath: snapshot.shownPath)
+    }
+
+    /// What each request of a batch matches (`QueryState.matches(_:)`), in order, all over this one
+    /// snapshot: its names checked, what it matches among every shape, those `admitting` takes (asked
+    /// here, off the main actor, of each, before `limit`), the first `limit` in file order and how
+    /// many in all. What the requests read is shared: the shapes walked, the names read (named and
+    /// derived, once for all) and the title index; what each node matched is not, as a plan's nodes
+    /// are its own. A request refused (`unknown_title`) is one answer, not the batch's; a cancellation
+    /// is the batch's.
+    func admitted(_ batch: [BatchedQuery]) async throws(QueryError) -> [Result<QueryMatches, QueryError>] {
+        var answers: [Result<QueryMatches, QueryError>] = []
+        answers.reserveCapacity(batch.count)
+        for query in batch {
+            try checkCancelled()
+            snapshot = snapshot.reading(query.request.edges)
+            sets.removeAll(keepingCapacity: true)
+            emptyNameTests.removeAll()
+            read.removeAll()
+            do throws(QueryError) {
+                try await checkNames(in: query.plan)
+                let found = try await matches(query.plan.root, among: .all)
+                var kept: Set<ShapeID> = []
+                kept.reserveCapacity(found.count)
+                for id in found {
+                    try tick()
+                    if let entry = entry(id), query.request.admitting(entry.record) { kept.insert(id) }
+                }
+                let ids = Array(try inFileOrder(kept).prefix(min(max(query.request.limit, 1), QueryBudget.maxRows)))
+                answers.append(.success(QueryMatches(canonical: query.plan.canonical, ids: ids, count: kept.count, revision: snapshot.revision)))
+            } catch {
+                switch error.reason {
+                case .cancelled, .tooSlow, .boardClosed: throw error
+                default: answers.append(.failure(error))
+                }
+            }
+        }
+        return answers
+    }
+
+    /// Refuses the titles and ids in the plan as `answer` does, and answers nothing else.
+    func checkNames(of plan: QueryPlan) async throws(QueryError) {
+        try await checkNames(in: plan)
     }
 
     /// Named shapes for `--ask`'s titles, up to `limit`, each name, kind and place once: first those
@@ -1253,14 +1295,17 @@ final class Evaluation {
     /// Rows for the shapes, in the order given: names read first, the shapes', those of the shapes
     /// they're inside and their connections' ends', derived ones together on the main actor.
     private func rows(_ ids: ArraySlice<ShapeID>, properties wanted: QueryRequest.Properties) async throws(QueryError) -> [QueryRow] {
-        var runs: [ShapeID: Edge] = [:], named: [ShapeID] = []
+        var runs: [ShapeID: [Edge]] = [:], named: [ShapeID] = []
         for id in ids {
             try tick()
             named.append(id)
             named += ancestors(id)
-            if let edge = snapshot.topology.edges(carriedBy: id).first(where: { $0.slot.isEmpty }) {
-                runs[id] = edge
-                named += [edge.source, edge.target]
+            if let edges = try connection(of: id) {
+                runs[id] = edges
+                for edge in edges {
+                    named += [edge.source, edge.target]
+                    if case .forwarded(let source, let target) = edge.origin { named += [source, target].compactMap { $0 } }
+                }
             }
         }
         try await readNames(named)
@@ -1273,14 +1318,42 @@ final class Evaluation {
             var row = QueryRow(id: id, kind: entry.record.kind, title: name(id), board: entry.board,
                                inside: ancestors(id).reversed().map(containerName))
             (row.properties, row.cut) = listed(entry, kind: kind, wanted)
-            if let edge = runs[id] {
-                row.connection = QueryConnection(type: edge.type, from: QueryEnd(id: edge.source, title: name(edge.source)),
-                                                 to: QueryEnd(id: edge.target, title: name(edge.target)))
+            if let edges = runs[id], let first = edges.first {
+                row.connection = QueryConnection(type: first.type, from: end(first.source), to: end(first.target))
+                if case .forwarded(let source, let target) = first.origin {
+                    row.connection?.via = QueryVia(from: source.map(end), to: target.map(end))
+                    if edges.count > 1 { row.connection?.more = edges.dropFirst().map { QueryPair(from: end($0.source), to: end($0.target)) } }
+                }
             }
             if id == snapshot.editing { row.editing = true }
             rows.append(row)
         }
         return rows
+    }
+
+    /// An end of a connection, with its name if it has one (read already).
+    private func end(_ id: ShapeID) -> QueryEnd { QueryEnd(id: id, title: name(id)) }
+
+    /// What a shape carries in slot `""` as a connection, in the view the query reads: its first
+    /// edge as emitted, or, when that was forwarded through a stand-in at an end, every copy of it
+    /// (a stand-in for several shapes makes several) in file order, by where they start, then where
+    /// they end. Nil for a shape that carries none.
+    private func connection(of id: ShapeID) throws(QueryError) -> [Edge]? {
+        let carried = snapshot.topology.edges(carriedBy: id)
+        guard let first = carried.first(where: { $0.slot.isEmpty }) else { return nil }
+        guard case .forwarded = first.origin else { return [first] }
+        let drawn = first.literal
+        var copies = carried.filter { $0.slot.isEmpty && $0.literal == drawn }
+        guard copies.count > 1 else { return copies }
+        var keyed: [(edge: Edge, key: [Int])] = []
+        keyed.reserveCapacity(copies.count)
+        for edge in copies {
+            try tick()
+            keyed.append((edge, (snapshot.topology.fileOrderKey(of: edge.source) ?? [.max]) + [-1] + (snapshot.topology.fileOrderKey(of: edge.target) ?? [.max])))
+        }
+        keyed.sort { $0.key.lexicographicallyPrecedes($1.key) }
+        copies = keyed.map(\.edge)
+        return copies
     }
 
     /// What a shape another is inside is called, in a row's `inside`: its name, else, for one that

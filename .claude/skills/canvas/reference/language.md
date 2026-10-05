@@ -23,6 +23,7 @@ The examples on this page are one story. They run in order on one empty board: e
 - [Edges](#edges)
 - [Styles](#styles)
 - [Restating, renaming, deleting](#restating-renaming-deleting)
+- [References](#references)
 - [How a run is applied](#how-a-run-is-applied)
 - [The result](#the-result)
 - [Errors](#errors)
@@ -105,6 +106,7 @@ A kind is drawable when a tool places it. These are the shipped ones:
 | `schema-card` | 240x52 | its schema's "title", a pill above its top-left corner: never a title of its own | `prompt:`, in words, on the card; `schema:` in its panel | `schema-link`, all four sides |
 | `subboard` | 240x160 | its title, drawn on its card | nothing else: its board is its own | none |
 | `frame` | 640x400 | its title, a pill above its top-left corner | nothing else: it holds what's drawn `in` it | none |
+| `reference` | 120x32 | nothing: it has no title, so a script can't name one, nor draw an edge to it | `query:`, a query in the query language; `all:` | none |
 
 `arrow` is what edges are: write `edge "A" -> "B"`, never `arrow`. A kind that isn't installed is `unknown_kind`, with the drawable kinds listed and the one like it named (`did you mean sticky-note?`). Words from other languages get a hint with what to write instead: `node`, `note` and `box` that a statement starts with its kind, `link` to write `edge "A" -> "B"`, `-->` in an edge the arrow to write, and a line that joins two titles without `edge` (`API --> DB`, `"A" -> "B"`) the edge it means (`edge "API" -> "DB"`).
 
@@ -179,12 +181,14 @@ Every other key is one of the kind's properties, named as its schema names it; `
 
 The shipped kinds' attributes:
 
-- **sticky-note**: `text` (what it says: past eight lines or so the note grows taller to fit it, from its top. A `size:` holds as drawn only until its text changes, typed by the user or set again by a script without `size:`: then it's as tall as its text again, never under 200, and opening it to edit grows it to its text. So don't use a note as a zone of a set height), `locked`.
-- **schema-card**: `prompt` (what the schema should hold, in words: the card shows it, as a note shows its text, and grows to fit it; with none it's blank; it may mention other schema cards, and only them), `schema` (a JSON Schema, as text: its properties in the order written, shown in the card's panel), `locked`. What a script writes is taken as written: the Claude sync that rewrites one side when the user edits the other isn't asked, so write a prompt and a schema that agree.
-- **subboard**: `locked`.
-- **frame**: `locked` (locking a frame locks what's in it, at any depth).
+- **sticky-note**: `text` (what it says: past eight lines or so the note grows taller to fit it, from its top. A `size:` holds as drawn only until its text changes, typed by the user or set again by a script without `size:`: then it's as tall as its text again, never under 200, and opening it to edit grows it to its text. So don't use a note as a zone of a set height), `locked`, `public`.
+- **schema-card**: `prompt` (what the schema should hold, in words: the card shows it, as a note shows its text, and grows to fit it; with none it's blank; it may mention other schema cards, and only them), `schema` (a JSON Schema, as text: its properties in the order written, shown in the card's panel), `locked`, `public`. What a script writes is taken as written: the Claude sync that rewrites one side when the user edits the other isn't asked, so write a prompt and a schema that agree.
+- **subboard**: `locked`, `public`.
+- **frame**: `locked` (locking a frame locks what's in it, at any depth), `public`.
+- **reference**: `query` (a query in the query language: the pill stands for what it finds, and one the app can't read is `invalid_value` with its message), `all` (`true` stands for every match, `false`, the default, for the first in file order), `locked`. What it names and the words typed into it are the user's, from picking a shape and typing: a script can't write them (`unknown_attribute`). A reference is never public, and has no title.
 - **A note's `text`** is kept as written. In it, `@[label](shape:<id>)` is a mention of a shape, which the note shows as a live pill with that shape's name now. Only the app writes one (an id from a query's rows is for naming the shape in a later query, never in a script), so write plain words: an `@`, or `@[…]` without `(shape:…)`, is only text. (The app writes a mention's form as plain text with `\@[`, which a script's string spells `\\@[`.) A mention of a shape that isn't in the file is kept, and warned about.
 - **`locked: true`** locks a shape, as the context menu's Lock does. A locked shape refuses every later change (`read_only`). Leave locking to the user.
+- **`public: true`** makes a shape public: one another shape may stand for, so what points at it needn't be an arrow from everywhere. `public: false` takes it back. It's the user's call, like locking: leave it be unless asked.
 
 A value past a bound (a title over 80 characters, say) isn't refused. The shape is drawn and the bound comes back as a warning. A value of the wrong type is `invalid_value`, naming the attribute and what it takes. So is a word outside a set, which also gets a Did you mean. A key the kind doesn't have is `unknown_attribute`, which lists what the kind takes and names the kinds that do have the key, if any. A property that holds an object or a list (none of the shipped kinds has one) takes JSON on one line, which replaces the whole property, so write every member; a value of the wrong type anywhere inside it, or a member it doesn't have, is `invalid_value` too, never dropped.
 
@@ -491,6 +495,7 @@ A channel is what kind of connection an edge is. Each kind has ports on some cha
 | `schema-card` | `schema-link` | all four |
 | `subboard` | none | none |
 | `frame` | none | none |
+| `reference` | none | none |
 
 `build/canvas kinds` lists each kind's channels by side, under `edges`. How an edge's channel is chosen:
 
@@ -612,6 +617,21 @@ delete "Owner"
 subboard "Owner" above-left of "Ingest"
 ```
 
+## References
+
+A reference is drawn by its query: it stands for what the query finds among the file's public shapes (the first in file order, or with `all: true` every one, up to fifty), and the app finds it a moment after the script, and again whenever the file changes. `canvas query` waits for that answer (up to two seconds) before it reads edges, so a query just after the script reads arrows into the pill as arrows into what it found. [references.md](references.md) is what a reference does to what you read.
+
+```draw
+reference above "Owner" query: "sticky-note[public]" all: true
+```
+
+A query the app can't read is refused with the query language's own message, and nothing is drawn:
+
+```draw-error
+// reason: invalid_value
+reference above "Owner" query: "sticky-note[public"
+```
+
 ## How a run is applied
 
 1. **Read.** Every line is read. Lines that can't be read are reported together, up to 20.
@@ -688,7 +708,7 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | `syntax` | The line can't be read. `sticky-note: Web isn't quoted, and titles are in double quotes` · `edge: --> isn't an arrow` · `--> joins shapes only in an edge statement` · `edge "A" -> "B": "calls" is a title where none goes` (an edge's text is `text: "calls"`) · `titles and text are in straight double quotes: "Web"` · `sticky-note "A": rigth isn't a placement` · `# doesn't start a comment here` · `attributes are written key: value, without braces` · `an attribute is written key: value, not key = value` | Follow the hint, which names what to write. |
 | `unknown_kind` | The first word isn't a kind the app has. `node "Web"`, with the drawable kinds listed, and the one like it named (`note`: `did you mean sticky-note?`) | Use a kind from `build/canvas kinds`. |
 | `not_placeable` | The kind exists but no tool places it, like an arrow. | Draw an arrow as `edge "A" -> "B"`. |
-| `unknown_attribute` | The key isn't one the kind takes. `"Backfill" is a sticky-note and has owner:, which isn't one of a sticky-note's attributes`, with the hint `a sticky-note takes size:, gap:, overlap:, style:, title:, locked:, text:` · a style that gives a shape nothing, or has a key nothing takes | Use one it takes (Did you mean), or drop it. |
+| `unknown_attribute` | The key isn't one the kind takes. `"Backfill" is a sticky-note and has owner:, which isn't one of a sticky-note's attributes`, with the hint `a sticky-note takes size:, gap:, overlap:, style:, title:, locked:, public:, text:` · a style that gives a shape nothing, or has a key nothing takes | Use one it takes (Did you mean), or drop it. |
 | `invalid_value` | The value doesn't fit the key. `locked: maybe isn't true or false` · `size: huge isn't a size` · `gap: wdie isn't a gap` · a size or gap over 100000 · `from: middle isn't a side` · `channel: note-lnk isn't a channel` · a JSON member the object doesn't have, or a value of the wrong type in it · with `channel:` written, a side the kind has no port on · another channel for an edge already drawn (`the edge from "A" to "B" is on note-link, not on schema-link`) · a head its arrow doesn't say (`edge "A" -> "B": startArrowhead: true isn't what the edge as written says`) | Write a value of the kind the hint names. |
 | `duplicate` | Something is written twice. `"locked" is written twice (true, false)` · a title stated on two lines (`written twice, here and on line 4`) · a rename to a title another shape has · two edges for one pair · a style defined twice | Keep one. |
 | `unknown_title` | No shape has that title. `right of "Injest"`, with up to 3 near titles · `board` on an empty board | Write the title exactly (`did you mean "Ingest"?`). On an empty board, leave one shape unplaced instead. |

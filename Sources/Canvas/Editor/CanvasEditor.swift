@@ -320,7 +320,7 @@ public final class CanvasEditor {
 
     public func service<S: EditorService>(_ type: S.Type) -> S? { resolveService(ObjectIdentifier(S.self)) as? S }
 
-    private func resolveService(_ id: ObjectIdentifier) -> (any EditorService)? {
+    func resolveService(_ id: ObjectIdentifier) -> (any EditorService)? {
         if let service = services[id] { return service }
         guard let registration = serviceRegistrations[id] else { return nil }
         precondition(!resolvingServices.contains(id), "service \(registration.name) needs itself to be made")
@@ -438,7 +438,7 @@ public final class CanvasEditor {
     }
 
     /// Something tried to change these read-only shapes, and didn't: services hear which
-    /// (`EditorService.didRefuseChanges`: Locking shakes them), as they hear a transaction's
+    /// (`EditorService.didRefuseChanges`: Selection shakes them), as they hear a transaction's
     /// refusals. A plugin calls it for a change it gave up whole, which no transaction committed to
     /// refuse (a paste a locked frame would take, thrown out of its transaction so no step is left).
     public func refuseChanges(to ids: Set<ShapeID>) {
@@ -498,7 +498,7 @@ public final class CanvasEditor {
         let showable = { [registry] (board: BoardID) in Self.canShow(board, in: newFile, registry: registry) }
         let target = requested.flatMap { showable($0) ? $0 : nil } ?? boardPath.reversed().first(where: showable) ?? .root
         for service in serviceOrder { service.boardWillChange(from: board, to: target, in: self) }
-        endEditing()
+        endEditing(discarding: false)
         let left = cameraTarget
         stopCameraMotion()
         // After what services saved as they heard it: a board the file had then has a revision past it.
@@ -652,7 +652,7 @@ public final class CanvasEditor {
         // A shape that's gone, can no longer change (it, or a container it's in), or is of another kind
         // now (turned, `Transaction.turn`), isn't edited.
         if let editing = editingShapeID,
-           document[editing].map({ registry.isReadOnly($0, in: newDocument) || $0.kind != editedKind }) ?? true { endEditing() }
+           document[editing].map({ registry.isReadOnly($0, in: newDocument) || $0.kind != editedKind }) ?? true { endEditing(discarding: false) }
         setNeedsDisplay()
     }
 
@@ -705,7 +705,7 @@ public final class CanvasEditor {
         guard target != board else { return true }
         guard canShow(target) else { return false }
         for service in serviceOrder { service.boardWillChange(from: board, to: target, in: self) }
-        endEditing()
+        endEditing(discarding: false)
         setTool(registry.defaultTool)
         let left = cameraTarget
         stopCameraMotion()
@@ -936,7 +936,7 @@ public final class CanvasEditor {
         editingStartPoint = point
         editingStartClickCount = point == nil ? 1 : clickCount
         editingShapeID = id
-        undoHistory.editingBegan()
+        undoHistory.editingBegan(stepName: (registry.definition(for: record.kind) as? any Editable)?.editingStepName)
         dismissPopover()
         delegate?.editorEditingDidChange(self)
         setNeedsDisplay()
@@ -952,15 +952,24 @@ public final class CanvasEditor {
     }
 
     /// What the editing view saves as it closes is part of the session's undo step. Services hear it
-    /// once the step is closed (`editingDidEnd`).
-    public func endEditing() {
+    /// once the step is closed (`editingDidEnd`). A shape whose kind answers
+    /// `Editable.discardsWhenEditingEnds` is deleted inside that step, unless an action is under way
+    /// (a command, a draw, a group) or something else is ending the session (undo, redo, a board
+    /// shown, the file replaced): that owns the step.
+    /// `discarding: false` (a draw) never asks.
+    public func endEditing(discarding: Bool = true) {
         guard let id = editingShapeID else { return }
+        let mayDiscard = discarding && !undoHistory.isInAction
         editingShapeID = nil
         editingStartPoint = nil
         editingStartClickCount = 1
         dismissPopover()
         delegate?.editorEditingDidChange(self)
         setNeedsDisplay()
+        if mayDiscard, let record = document[id], !record.isOpaque,
+           (registry.definition(for: record.kind) as? any Editable)?.erasedDiscardsWhenEditingEnds(record) == true {
+            transact(nil, coalescing: nil, origin: .editing) { $0.delete([id]) }
+        }
         undoHistory.editingEnded()
         for service in serviceOrder { service.editingDidEnd(id, in: self) }
     }

@@ -25,12 +25,64 @@ public struct QueryRequest: Sendable, Equatable {
     /// Only how many match: no rows.
     public var countOnly: Bool
     public var properties: Properties
+    /// Which edges the query's edge words see: with every stand-in forwarded (`.resolved`, the
+    /// default, what every caller has always had), or as `.recorded` or `.literal` say
+    /// (`EdgeView`).
+    public var edges: EdgeView
+    /// How long to wait, at most, for answers still arriving (`TopologyIndex.isSettling`) before the
+    /// query takes up the file: only a query that reads edges (`QueryPlan.readsEdges`) waits, outside
+    /// the line queries take their turns in, and one that goes on with answers still pending says so
+    /// (`pending`). The wait counts against `QueryBudget.deadline`. Nil: don't wait.
+    public var settle: Duration?
 
-    public init(_ text: String, limit: Int = QueryBudget.rows, countOnly: Bool = false, properties: Properties = .all) {
+    public init(_ text: String, limit: Int = QueryBudget.rows, countOnly: Bool = false, properties: Properties = .all,
+                edges: EdgeView = .resolved, settle: Duration? = nil) {
         self.text = text
         self.limit = limit
         self.countOnly = countOnly
         self.properties = properties
+        self.edges = edges
+        self.settle = settle
+    }
+}
+
+/// One query of a batch (`QueryState.matches(_:)`): ids only, for a plugin that keeps answers.
+public struct QueryMatchRequest: Sendable {
+    public var text: String
+    /// The edges its edge words see: `.recorded` for a stand-in's own query, which asks what to
+    /// stand for and so can't see through itself.
+    public var edges: EdgeView
+    /// At most this many ids, 1 to `QueryBudget.maxRows`; `count` is of all admitted.
+    public var limit: Int
+    /// Whether a match may be listed, asked off the main actor of each before `limit` is applied:
+    /// the first match is the first admitted one, and `count` counts the admitted.
+    public var admitting: @Sendable (AnyShapeRecord) -> Bool
+
+    public init(_ text: String, edges: EdgeView = .resolved, limit: Int = QueryBudget.maxRows,
+                admitting: @escaping @Sendable (AnyShapeRecord) -> Bool = { _ in true }) {
+        self.text = text
+        self.edges = edges
+        self.limit = limit
+        self.admitting = admitting
+    }
+}
+
+/// A batched query's answer: what ran, and the shapes, by id.
+public struct QueryMatches: Sendable, Equatable {
+    /// What ran, as the language writes it (`QueryPlan.canonical`).
+    public var canonical: String
+    /// The admitted matches in file order, at most the request's `limit`.
+    public var ids: [ShapeID]
+    /// How many shapes match and are admitted, listed or not.
+    public var count: Int
+    /// `editor.revision` as the file was taken up: every request of a batch has the same.
+    public var revision: Int
+
+    public init(canonical: String, ids: [ShapeID], count: Int, revision: Int) {
+        self.canonical = canonical
+        self.ids = ids
+        self.count = count
+        self.revision = revision
     }
 }
 
@@ -123,13 +175,47 @@ extension QueryRow: Encodable {
 
 /// Where a connection (a shape that carries an edge itself, in slot `""`: an arrow) runs: its edge's
 /// type, from the shape it starts on to the shape it ends on.
+///
+/// A connection into or out of a stand-in (`EdgeForwarding`) reads, in the resolved view, at what
+/// the stand-in stands for: `from` and `to` are the first such pair in file order, `via` says which
+/// stand-in each end that was one went through, and `more` the other pairs (a stand-in for several
+/// shapes), in file order. A connection as it was drawn has neither.
 public struct QueryConnection: Sendable, Equatable, Encodable {
     public var type: EdgeTypeID
     public var from: QueryEnd
     public var to: QueryEnd
+    /// The stand-in at each end that went through one; nil when no end did.
+    public var via: QueryVia?
+    /// The other resolved pairs, in file order; nil when there are none.
+    public var more: [QueryPair]?
 
-    public init(type: EdgeTypeID, from: QueryEnd, to: QueryEnd) {
+    public init(type: EdgeTypeID, from: QueryEnd, to: QueryEnd, via: QueryVia? = nil, more: [QueryPair]? = nil) {
         self.type = type
+        self.from = from
+        self.to = to
+        self.via = via
+        self.more = more
+    }
+}
+
+/// The stand-ins a connection went through: the one at its start, the one at its end, each only if
+/// that end was one.
+public struct QueryVia: Sendable, Equatable, Encodable {
+    public var from: QueryEnd?
+    public var to: QueryEnd?
+
+    public init(from: QueryEnd? = nil, to: QueryEnd? = nil) {
+        self.from = from
+        self.to = to
+    }
+}
+
+/// One resolved pair of a connection: where it starts and where it ends.
+public struct QueryPair: Sendable, Equatable, Encodable {
+    public var from: QueryEnd
+    public var to: QueryEnd
+
+    public init(from: QueryEnd, to: QueryEnd) {
         self.from = from
         self.to = to
     }
@@ -149,7 +235,7 @@ public struct QueryEnd: Sendable, Equatable, Encodable {
 /// Something worth saying about an answer that doesn't stop it: a reason to branch on, and a
 /// message.
 public struct QueryWarning: Sendable, Equatable, Encodable {
-    /// Why: `limited`, `editing`, `no_title_match`; the command line adds its own (`--ask`'s).
+    /// Why: `limited`, `editing`, `no_title_match`, `pending`; the command line adds its own (`--ask`'s).
     public struct Reason: RawRepresentable, Hashable, Sendable, Encodable, CustomStringConvertible {
         public let rawValue: String
         public init(rawValue: String) { self.rawValue = rawValue }
@@ -167,6 +253,9 @@ public struct QueryWarning: Sendable, Equatable, Encodable {
         public static let editing = Reason(rawValue: "editing")
         /// A name tested for with `=` (`[title="…"]`) is no shape's.
         public static let noTitleMatch = Reason(rawValue: "no_title_match")
+        /// Answers the edges wait on were still arriving when the wait for them (`settle`) ran out:
+        /// the query went on without them, and what it says of edges may change.
+        public static let pending = Reason(rawValue: "pending")
     }
 
     public var reason: Reason
@@ -175,6 +264,13 @@ public struct QueryWarning: Sendable, Equatable, Encodable {
     public init(_ reason: Reason, _ message: String) {
         self.reason = reason
         self.message = message
+    }
+
+    /// Answers still arriving when the wait ran out: `count` stand-ins are asked and unanswered
+    /// (`TopologyIndex.pendingStandIns`; none if what's busy is only a wait before asking).
+    public static func pending(_ count: Int) -> QueryWarning {
+        let waiting = count == 0 ? "Answers are" : count == 1 ? "1 answer is" : "\(count) answers are"
+        return QueryWarning(.pending, "\(waiting) still arriving; what the query says of edges may change.")
     }
 }
 

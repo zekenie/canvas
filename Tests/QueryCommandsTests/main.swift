@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([commandTests, vocabularyTests, askRequestTests, parseTests, askTests])
+runTests([commandTests, vocabularyTests, askRequestTests, askTests, standInTests])

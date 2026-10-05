@@ -120,12 +120,14 @@ Sources/
   CanvasUI/             the AppKit view, the SwiftUI toolbar, CanvasFocus, and the command line's server
   CanvasCLI/            canvas, the command line
   Keyboard/             the keyboard horizontal: every shortcut, registered by the plugin whose key it is
-  Selection/            the selection horizontal: the select tool, marquee, handles, Delete and ⌘A
+  Selection/            the selection horizontal: the select tool, marquee, handles, Delete and ⌘A, the shake of a refused change
   StickyNotes/          sticky notes, with in-place editing
   Schemas/              schema cards: a JSON Schema on the canvas, as a card that lists its fields, written in its
                         panel in words or as JSON, the two kept in step by Claude
   Subboards/            subboards: a card that holds a board of its own, entered with a double-click
   Frames/               frames: a region of a board that holds shapes, which move and lock with it
+  References/           references: a pill that stands for a public shape, so an arrow into it counts as an arrow
+                        into the shape (the Reference tool, R)
   Validation/           the validation horizontal: rules, engine, outline, the Issues tab and the rows' dots
   DetailPanel/          the detail panel horizontal: tabs, sections, bindings, the inspector view
   ContextMenus/         the context menu horizontal: right-click items, groups, the selection's menu
@@ -137,7 +139,9 @@ Sources/
   Clipboard/            the clipboard horizontal: cut, copy and paste, which kinds may opt out of
   Titles/               a horizontal any kind opts into: a title, a property it adds (or derived), in a pill
                         and the table of contents, and a header, or /title, that renames it
-  Locking/              a horizontal every kind is in: a lock from the context menu or /lock, its chip and its shake
+  Locking/              a horizontal every kind is in: a lock from the context menu or /lock, and its chip
+  Publishing/           a horizontal: which shapes are public (another shape may stand for one), its chip and
+                        count, /public and /private, and the Referenced In tab
   Connections/          a horizontal: ports (dots beside a shape's sides that a drag connects from), channels that
                         say what may connect to what, and the arrow (a port of tldraw's arrow geometry and
                         binding) a drag from a dot draws, bound only where its channel goes
@@ -148,7 +152,8 @@ Sources/
                         and boards), read from the shapes that carry it
   Automation/           the command line's horizontal: every command canvas runs, draw and kinds its own
   Queries/              a horizontal: the engine that answers canvas query about the whole file
-  QueryCommands/        canvas query, query-vocabulary, and --ask (Claude writes the query)
+  QueryTranslation/     a horizontal: English into a query (Claude writes it), for the command line and the app
+  QueryCommands/        canvas query, query-vocabulary, and --ask (a call to the translator)
   LanguageModels/       a horizontal that lends every editor a language model (Claude Haiku), its key in Settings
   Snapping/             a horizontal: what a drag moves snaps to the shapes in view (edges, middles, even
                         spaces), with guides

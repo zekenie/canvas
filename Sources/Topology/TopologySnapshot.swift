@@ -7,6 +7,10 @@ import Canvas
 /// that walks a whole component, or every mention, runs on it off the main actor, uninterrupted,
 /// whatever commits land meanwhile.
 ///
+/// It reads the edges in one view (`view`, taken with it: `snapshot(.recorded)`), as the index would
+/// have read them asked for that view; its shapes and containment are the same in every view
+/// (containment is never forwarded).
+///
 /// It shares the index's tables and the editor's file until the next commit changes them, which then
 /// copies each table it changes, once (a move changes none of the index's). So hold one for a task,
 /// never past it: kept, it makes every later commit's first change to a table copy it.
@@ -16,12 +20,20 @@ public struct TopologySnapshot: Sendable {
     /// The kinds whose shapes can contain others (`registry.containerKinds`): those that own boards
     /// (a subboard) and those that hold shapes on the board they're on (a frame).
     public let containerKinds: Set<ShapeKind>
+    /// The kinds whose shapes stand in for others (`EdgeForwarding`).
+    public let standInKinds: Set<ShapeKind>
+    /// How it reads the edges: resolved through every stand-in (the default), through those whose
+    /// record names what they stand for, or as carriers emitted them.
+    public let view: EdgeView
     private let tables: EdgeTables
     private let containment: Containment
 
-    init(types: EdgeTypeTree, containerKinds: Set<ShapeKind>, tables: EdgeTables, containment: Containment) {
+    init(types: EdgeTypeTree, containerKinds: Set<ShapeKind>, standInKinds: Set<ShapeKind>, view: EdgeView, tables: EdgeTables,
+         containment: Containment) {
         self.types = types
         self.containerKinds = containerKinds
+        self.standInKinds = standInKinds
+        self.view = view
         self.tables = tables
         self.containment = containment
     }
@@ -31,30 +43,36 @@ public struct TopologySnapshot: Sendable {
     /// Every edge touching `id`, as `direction` asks, of the types `types` admits: as
     /// `TopologyIndex.edges(of:_:types:)`.
     public func edges(of id: ShapeID, _ direction: EdgeDirection = .either, types filter: EdgeTypeFilter = .all) -> [Edge] {
-        tables.edges(of: id, direction, types: filter, in: types)
+        tables.edges(of: id, direction, types: filter, in: types, view: view)
     }
 
     /// Whether `id` has an edge `edges(of:_:types:)` would find that `predicate` takes: it stops at
     /// the first, and makes nothing.
     public func hasEdges(of id: ShapeID, _ direction: EdgeDirection = .either, types filter: EdgeTypeFilter = .all,
                          where predicate: (Edge) -> Bool = { _ in true }) -> Bool {
-        tables.hasEdges(of: id, direction, types: filter, in: types, where: predicate)
+        tables.hasEdges(of: id, direction, types: filter, in: types, view: view, where: predicate)
     }
 
     /// The shapes at the other end of `id`'s edges, by type: as `TopologyIndex.neighbors(of:_:types:)`.
     public func neighbors(of id: ShapeID, _ direction: EdgeDirection = .either, types filter: EdgeTypeFilter = .all) -> [EdgeTypeID: [ShapeID]] {
-        tables.neighbors(of: id, direction, types: filter, in: types)
+        tables.neighbors(of: id, direction, types: filter, in: types, view: view)
     }
 
     /// Every edge in the file of the types `filter` admits: as `TopologyIndex.edges(ofType:)`.
-    public func edges(ofType filter: EdgeTypeFilter) -> [Edge] { tables.edges(ofType: filter, in: types) }
+    public func edges(ofType filter: EdgeTypeFilter) -> [Edge] { tables.edges(ofType: filter, in: types, view: view) }
 
-    /// What `carrier` carries, in the order it emits them.
-    public func edges(carriedBy carrier: ShapeID) -> [Edge] { tables.edges(carriedBy: carrier) }
+    /// What `carrier` carries, in the order it emits them (in the literal view, what it emitted).
+    public func edges(carriedBy carrier: ShapeID) -> [Edge] { tables.edges(carriedBy: carrier, view: view) }
 
     /// The types of the edges in the file: declared ones, and any nobody declares that a shape
     /// carries (a newer app's channel, kept as written). O(types).
-    public var presentTypes: Set<EdgeTypeID> { tables.presentTypes }
+    public var presentTypes: Set<EdgeTypeID> { tables.presentTypes(view: view) }
+
+    /// The shapes `standIn` stood for, in order: as `TopologyIndex.forwards(of:)`, whatever the view.
+    public func forwards(of standIn: ShapeID) -> [ShapeID] { tables.forwards(of: standIn) }
+
+    /// The stand-ins that stood for `target`: as `TopologyIndex.standIns(for:)`, whatever the view.
+    public func standIns(for target: ShapeID) -> [ShapeID] { tables.standIns(for: target) }
 
     /// How a shape at an end of an edge was: live on a board the app can show, unavailable on one it
     /// can't, missing from the file. A shape kept aside on a board it can show is live: `shape(_:)`
@@ -119,11 +137,13 @@ public struct TopologySnapshot: Sendable {
 }
 
 extension TopologyIndex {
-    /// Topology as it is now, for another thread: the index's tables, the editor's file and the edge
-    /// types, shared, not copied (O(1)). It reads no record, and observes nothing. Taken by a service
-    /// hearing a commit the index may not have heard yet, its edges are the commit before's while its
-    /// file is the commit's, as the index's own answers are then: `catchUp` first.
-    public func snapshot() -> TopologySnapshot {
-        TopologySnapshot(types: types, containerKinds: containerKinds, tables: tables, containment: containment(observing: false))
+    /// Topology as it is now, for another thread, its edges read in `view` (resolved through every
+    /// stand-in by default): the index's tables, the editor's file and the edge types, shared, not
+    /// copied (O(1)). It reads no record, and observes nothing. Taken by a service hearing a commit
+    /// the index may not have heard yet, its edges are the commit before's while its file is the
+    /// commit's, as the index's own answers are then: `catchUp` first.
+    public func snapshot(_ view: EdgeView = .resolved) -> TopologySnapshot {
+        TopologySnapshot(types: types, containerKinds: containerKinds, standInKinds: standInKinds, view: view, tables: tables,
+                         containment: containment(observing: false))
     }
 }

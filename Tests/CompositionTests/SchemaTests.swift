@@ -117,6 +117,10 @@ private let stickyNoteSchema = #"""
       "type" : "boolean",
       "x-canvas-owner" : "locking"
     },
+    "public" : {
+      "type" : "boolean",
+      "x-canvas-owner" : "publishing"
+    },
     "text" : {
       "$ref" : "#/$defs/mentions.text",
       "default" : "",

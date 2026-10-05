@@ -9,6 +9,7 @@ import DetailPanel
 import Geometry
 import LanguageModels
 import Mentions
+import References
 import Schemas
 import Selection
 import StickyNotes
@@ -23,10 +24,10 @@ import Validation
     test("the shipped plugin list registers without conflicts") {
         _ = try ShippedPlugins.registry(model: ScriptedLanguageModel())
     },
-    test("the toolbar is Select V, Hand H, Note N, Subboard B, Frame F, Schema S: arrows are drawn from ports") {
+    test("the toolbar is Select V, Hand H, Note N, Subboard B, Frame F, Schema S, Reference R: arrows are drawn from ports") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         expectEqual(registry.tools.map { ShippedPlugins.help(for: $0, in: registry) },
-                    ["Select (V)", "Hand (H)", "Note (N)", "Subboard (B)", "Frame (F)", "Schema (S)"])
+                    ["Select (V)", "Hand (H)", "Note (N)", "Subboard (B)", "Frame (F)", "Schema (S)", "Reference (R)"])
     },
     test("a plugin that needs the key asks for Settings with the action the app's menu item sends") {
         expectEqual(AnthropicSettingsView.showSettingsAction, BoardMenus.showSettings)
@@ -43,15 +44,16 @@ import Validation
         expectEqual(try ShippedPlugins.registry(model: ScriptedLanguageModel()).report, """
         core                 tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
         keyboard             service KeyboardState · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit
-        selection            service SelectionState · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
-        topology             service TopologyIndex
-        arrows               shape arrow v1 · label Arrow → arrow · ContentsRows → arrow · service ArrowTargeting · overlay BindingHintsOverlay
+        selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
+        topology             service TopologyIndex · edge type stands-for
+        arrows               shape arrow v1 · label Arrow → arrow · ContentsRows → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
         sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
         subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
         framing              shape frame · tool frame · shortcut F → tool frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeDetails → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame
         schemas              service SchemaSync · overlay SchemaHighlightFrames · ShapePopovers · shape schema-card v1 · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · mention text → schema-card · mentionable → schema-card · ShapeDetails → schema-card · channel schema-link · edge type schema-link
+        references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · referenced-in row → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
         validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
-        adornments           service AdornmentState · overlay AdornmentOverlay · CanvasButtons · DecorationHits
+        adornments           service AdornmentState · service ChipFade · overlay AdornmentOverlay · CanvasButtons · DecorationHits
         detail-panel         service DetailPanelState
         context-menus        service ContextMenuState · secondary-click menu · CanvasContextMenu
         slash-commands       service SlashCommandState
@@ -71,6 +73,7 @@ import Validation
         title-validation     service TitleIndex · ValidationRules
         clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
         locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu · /lock → every shape
+        publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ShapeDetails · ContentsMarks
         snapping             service SnapState · translation adjuster
         ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
         arrow-ports          property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowBindingRules
@@ -80,6 +83,7 @@ import Validation
         port-edges           draw edges
         validation-checks    draw checks
         queries              service QueryState · query engine
+        query-translation    service QueryTranslator
         title-queries        query names
         board-queries        query board names
         mention-queries      query word :mentions · query word :mentioned-by · query text text/x-canvas-mentions
@@ -96,7 +100,7 @@ import Validation
         let end = try require(guide.range(of: "\n```", range: start..<guide.endIndex)).lowerBound
         expectEqual(String(guide[start..<end]), try ShippedPlugins.registry(model: ScriptedLanguageModel()).report)
     },
-    test("every placed kind has a panel: a note its header, a schema and a subboard their own tabs, a frame and an arrow only their headers; every nameable kind's header renames it") {
+    test("every placed kind has a panel: a note its header, a schema and a subboard their own tabs, a frame, an arrow and a reference only their headers; every nameable kind's header renames it") {
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
         let state = try require(h.editor.detailPanel)
         var panels: [String] = []
@@ -112,9 +116,16 @@ import Validation
         let arrow = h.add(Arrow(start: .free(CGPoint(x: 700, y: 100)), end: .free(CGPoint(x: 850, y: 300))))
         let layout = state.layout(for: try require(h.editor.document[arrow]))
         panels.append("\(layout.headerText): \(layout.tabs.map(\.title).joined(separator: ", "))")
+        // A reference's header says what it stands for: an empty pill, nothing yet; the Reference tool places one.
+        h.key("r")
+        h.press(at: CGPoint(x: 3000, y: 100))
+        h.release()
+        let reference = try require(h.editor.editingShapeID)
+        let referenceLayout = state.layout(for: try require(h.editor.document[reference]))
+        panels.append("\(referenceLayout.headerText): \(referenceLayout.tabs.map(\.title).joined(separator: ", "))")
         // Every header of a kind that can be named renames it: an untitled shape's shows the
         // placeholder. A note placed empty has no issue: its row says Empty Note.
-        expectEqual(panels, ["(Note): ", "(Untitled): Schema", "(Untitled Subboard): Board", "(Untitled Frame): ", "Arrow: "])
+        expectEqual(panels, ["(Note): ", "(Untitled): Schema", "(Untitled Subboard): Board", "(Untitled Frame): ", "Arrow: ", "Reference: "])
     },
     test("the table of contents lists the welcome board: each note by its text, each arrow under the note it starts from") {
         let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler(), model: ScriptedLanguageModel())
@@ -238,6 +249,7 @@ extension DetailLayout {
     /// is empty, its placeholder in parentheses.
     var headerText: String {
         if let header { return header.title }
+        if let reference = header(as: ReferenceHeader.self) { return reference.content.title }
         guard let titled = header(as: TitleHeader.self) else { return "?" }
         return titled.title.isEmpty ? "(\(titled.placeholder ?? kindName))" : titled.title
     }

@@ -40,6 +40,9 @@ extension Editable {
                                                           startClickCount: editor.editingStartClickCount, editor: editor))
         }
     }
+    func erasedDiscardsWhenEditingEnds(_ record: AnyShapeRecord) -> Bool {
+        record.typed(as: Props.self).map { discardsWhenEditingEnds($0.props) } ?? false
+    }
     func erasedEditingFrame(of record: AnyShapeRecord, in context: ShapeContext) -> CGRect? {
         record.typed(as: Props.self).flatMap { editingFrame(of: $0, in: context) }
     }

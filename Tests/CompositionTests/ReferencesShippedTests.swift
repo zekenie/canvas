@@ -1,0 +1,344 @@
+import AppKit
+@_spi(Host) import Canvas
+import CanvasRPC
+import CanvasTesting
+import Clipboard
+import Composition
+import Connections
+import CoreGraphics
+import Foundation
+import Geometry
+import LanguageModels
+import Mentions
+import Publishing
+import Queries
+import References
+import Schemas
+import Selection
+import StickyNotes
+import Subboards
+import TableOfContents
+import TestKit
+import Titles
+import Topology
+import Validation
+
+// References as shipped: its tool, a note's arrow into a pill read as an arrow into what it stands
+// for (the graph, a query, the table of contents), what copy, cut and paste do to it, another file's,
+// and what `canvas draw` makes of one.
+
+@MainActor private func emptyBoard(_ pasteboard: NSPasteboard) -> EditorHarness {
+    EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, pasteboard: pasteboard, model: ScriptedLanguageModel()) }
+}
+
+@MainActor private func note(_ h: EditorHarness, _ title: String, at origin: CGPoint, isPublic: Bool = false) -> ShapeID {
+    let id = h.editor.add(StickyNote(frame: CGRect(origin: origin, size: CGSize(width: 200, height: 200)), text: MentionText(plain: title)), title: title)
+    if isPublic { h.editor.makePublic([id]) }
+    return id
+}
+
+/// A channel-less arrow from `from` to `to`, bound at the middle of each: what a script of edges
+/// can't make (no arrow tool exists), and a port drag always puts on a channel.
+@MainActor private func arrow(_ h: EditorHarness, from: ShapeID, to: ShapeID) -> ShapeID {
+    func bound(_ id: ShapeID) -> ArrowTerminal {
+        .bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))
+    }
+    return h.editor.add(Arrow(start: bound(from), end: bound(to)))
+}
+
+@MainActor private func reference(_ h: EditorHarness, to target: ShapeID, label: String, at origin: CGPoint) -> ShapeID {
+    var props = Reference(frame: CGRect(origin: origin, size: Reference.defaultSize))
+    ReferenceEdits.pick(&props, ReferenceTarget(id: target, label: label))
+    return h.editor.add(props)
+}
+
+
+/// A dot of a shape, 12 points out from the middle of a side: the right one's by default.
+private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12, y: frame.midY) }
+
+/// Hovers the shape at `frame`, then drags from its right dot to `point` and releases, as a person does.
+@MainActor private func drag(_ h: EditorHarness, fromRightOf frame: CGRect, to point: CGPoint) {
+    h.move(to: CGPoint(x: frame.midX, y: frame.midY))
+    h.move(to: rightDot(of: frame))
+    h.press()
+    h.drag(to: point, speed: 3)
+    h.release()
+}
+
+@MainActor private func frame(of id: ShapeID, in h: EditorHarness) throws -> CGRect {
+    try require(h.editor.shapeContext.geometry(of: id)?.bounds)
+}
+
+@MainActor private func arrows(_ h: EditorHarness) -> [ShapeRecord<Arrow>] {
+    h.editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }
+}
+
+@MainActor private func schemaCard(_ h: EditorHarness, _ title: String, at origin: CGPoint, isPublic: Bool = true) -> ShapeID {
+    var card = SchemaCard(frame: CGRect(origin: origin, size: CGSize(width: 240, height: 160)))
+    card.setTitle(title)
+    card.frame = CGRect(origin: origin, size: CGSize(width: 240, height: 160))
+    let id = h.editor.add(card, title: title)
+    if isPublic { h.editor.makePublic([id]) }
+    return id
+}
+
+@MainActor let referencesShippedTests = Suite("References, as shipped", [
+    test("R is the Reference tool's key, after the Schema tool") {
+        let h = emptyBoard(.withUniqueName())
+        expect(h.key("r"))
+        expectEqual(h.editor.currentToolID, ToolID(placing: Reference.kind))
+    },
+    test("an arrow into a pill is an arrow into what it stands for: in the graph, in a query, with the stand-in named") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let h = emptyBoard(pasteboard)
+        let shapes = note(h, "shapes", at: CGPoint(x: 100, y: 100), isPublic: true)
+        let stickies = note(h, "stickies", at: CGPoint(x: 100, y: 400))
+        let pill = reference(h, to: shapes, label: "shapes", at: CGPoint(x: 500, y: 300))
+        let into = arrow(h, from: stickies, to: pill)
+        let topology = try require(h.editor.topology)
+        let resolved = try require(topology.edges(of: shapes, .incoming, types: .within(ArrowEdge.id)).first)
+        expectEqual(resolved.source, stickies)
+        expectEqual(resolved.literalTarget, pill, "drawn into the pill")
+        expectEqual(resolved.carrier, into)
+        let queries = try require(h.editor.queries)
+        let rows = try storyAnswer(#"arrow:ends-at("shapes")"#, on: queries).get().rows
+        expectEqual(rows.map(\.id), [into], "the arrow ends at what the pill stands for")
+        expectEqual(rows.first?.connection?.to.id, shapes)
+        expectEqual(rows.first?.connection?.via?.to?.id, pill, "through the pill")
+        expectEqual(try storyAnswer(#"sticky-note:edge-to("shapes")"#, on: queries).get().rows.map(\.id), [stickies])
+        expectEqual(try storyAnswer(#"sticky-note:connected-to("shapes")"#, on: queries).get().rows.map(\.id), [stickies])
+        // The shape holds public what stands for it: refused, and nothing written.
+        expectEqual(h.editor.makePrivate([shapes]), [shapes])
+        expect(h.editor.publishing?.isHeld(shapes) == true)
+        // Not public any more (an unguarded path), the arrow is into the pill again.
+        h.editor.transact { $0.update(shapes) { $0[PublicProperty.self] = nil } }
+        expectEqual(try storyAnswer(#"arrow:ends-at("shapes")"#, on: queries).get().rows.map(\.id), [], "a private shape isn't stood for")
+    },
+    test("a port drag from a note ends on a pill standing for a note, and not on one standing for a schema card: the pill takes what it stands for takes") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let h = emptyBoard(pasteboard)
+        let orders = note(h, "orders", at: CGPoint(x: 100, y: 100), isPublic: true)
+        let stickies = note(h, "stickies", at: CGPoint(x: 100, y: 400))
+        let order = schemaCard(h, "Order", at: CGPoint(x: 100, y: 700))
+        let forNote = reference(h, to: orders, label: "orders", at: CGPoint(x: 500, y: 100))
+        let forCard = reference(h, to: order, label: "Order", at: CGPoint(x: 500, y: 300))
+        let from = try frame(of: stickies, in: h)
+        drag(h, fromRightOf: from, to: try frame(of: forCard, in: h).center)
+        expect(arrows(h).isEmpty, "a schema card doesn't take note links: nothing is drawn")
+        drag(h, fromRightOf: from, to: try frame(of: forNote, in: h).center)
+        let drawn = try require(arrows(h).first)
+        expectEqual(arrows(h).count, 1)
+        expectEqual(drawn.props.start.binding?.shapeID, stickies)
+        expectEqual(drawn.props.end.binding?.shapeID, forNote)
+        expectEqual(drawn[ChannelProperty.self], NoteLink.id, "the pill's note-link, as a drag to the note itself would draw")
+        // The same pill taking a schema card's links once it stands for one.
+        h.editor.transact { $0.update(forNote, as: Reference.self) { ReferenceEdits.pick(&$0.props, ReferenceTarget(id: order, label: "Order")) } }
+        expectEqual(h.editor.references?.channelMismatch(of: forNote), ChannelMismatch(channel: NoteLink.id, target: order))
+        expectEqual(h.editor.references?.mismatchLine(of: forNote), "“Order” doesn’t take note links.")
+        expectEqual(drawn.id, arrows(h).first?.id, "the arrow is let be")
+    },
+    test("an arrow drawn by hand into a pill reads as into the original: the graph, a query, with the pill named, and the table of contents under it") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let h = emptyBoard(pasteboard)
+        let orders = note(h, "orders", at: CGPoint(x: 100, y: 100), isPublic: true)
+        let stickies = note(h, "stickies", at: CGPoint(x: 100, y: 400))
+        let target = note(h, "target", at: CGPoint(x: 700, y: 500))
+        let pill = reference(h, to: orders, label: "orders", at: CGPoint(x: 500, y: 100))
+        drag(h, fromRightOf: try frame(of: stickies, in: h), to: try frame(of: pill, in: h).center)
+        let into = try require(arrows(h).first?.id)
+        let topology = try require(h.editor.topology)
+        let resolved = try require(topology.edges(of: orders, .incoming, types: .within(ArrowEdge.id)).first)
+        expectEqual(resolved.source, stickies)
+        expectEqual(resolved.type, EdgeTypeID(rawValue: String(describing: NoteLink.id)), "typed as its channel, as a drag to the note would be")
+        expectEqual(resolved.literalTarget, pill)
+        expectEqual(resolved.carrier, into)
+        let queries = try require(h.editor.queries)
+        let rows = try storyAnswer(#"arrow:ends-at("orders")"#, on: queries).get().rows
+        expectEqual(rows.map(\.id), [into])
+        expectEqual(rows.first?.connection?.to.id, orders)
+        expectEqual(rows.first?.connection?.via?.to?.id, pill)
+        expectEqual(try storyAnswer(#"sticky-note:edge-to("orders")"#, on: queries).get().rows.map(\.id), [stickies])
+        // And out of it: from the pill's dot, to a note; its row is listed under the original.
+        drag(h, fromRightOf: try frame(of: pill, in: h), to: try frame(of: target, in: h).center)
+        let out = try require(arrows(h).first { $0.id != into })
+        expectEqual(out.props.start.binding?.shapeID, pill)
+        expectEqual(out.props.end.binding?.shapeID, target)
+        expectEqual(out[ChannelProperty.self], NoteLink.id)
+        let outgoing = try require(topology.edges(of: target, .incoming, types: .within(ArrowEdge.id)).first)
+        expectEqual(outgoing.source, orders, "an arrow from the pill runs from what it stands for")
+        expectEqual(outgoing.literalSource, pill)
+        let contents = try require(h.editor.tableOfContents)
+        let under = contents.entries.first { $0.id == orders }?.children?.map(\.id)
+        expectEqual(under, [out.id], "its row is under the original")
+    },
+    test("an arrow that starts at a pill is listed under what the pill stands for, where that is on the board shown; else under the pill") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let h = emptyBoard(pasteboard)
+        let shapes = note(h, "shapes", at: CGPoint(x: 100, y: 100), isPublic: true)
+        let other = note(h, "other", at: CGPoint(x: 100, y: 400), isPublic: true)
+        let target = note(h, "target", at: CGPoint(x: 700, y: 100))
+        let pill = reference(h, to: shapes, label: "shapes", at: CGPoint(x: 500, y: 300))
+        let out = arrow(h, from: pill, to: target)
+        let contents = try require(h.editor.tableOfContents)
+        @MainActor func parent(of id: ShapeID) -> ShapeID? {
+            func find(_ entries: [ContentsEntry], under: ShapeID?) -> ShapeID?? {
+                for entry in entries {
+                    if entry.id == id { return .some(under) }
+                    if let found = find(entry.children ?? [], under: entry.id) { return found }
+                }
+                return nil
+            }
+            return find(contents.entries, under: nil) ?? nil
+        }
+        expectEqual(parent(of: out), shapes, "the arrow reads as starting from the shape the pill stands for")
+        expectEqual(parent(of: pill), nil, "the pill's own row stays where it is")
+        h.editor.transact { $0.update(pill, as: Reference.self) { ReferenceEdits.pick(&$0.props, ReferenceTarget(id: other, label: "other")) } }
+        expectEqual(parent(of: out), other, "re-pointed, its row moves in the same commit")
+        h.editor.transact { $0.update(other) { $0[PublicProperty.self] = nil } }
+        expectEqual(parent(of: out), pill, "a private shape isn't stood for: under the pill, as for any shape")
+        h.editor.undo()
+        expectEqual(parent(of: out), other)
+    },
+    test("an arrow's row under a shape that isn't on the board shown stays under the pill") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let h = emptyBoard(pasteboard)
+        let target = note(h, "target", at: CGPoint(x: 700, y: 100))
+        let subboard = h.editor.add(Subboard(frame: CGRect(x: 100, y: 500, width: 240, height: 160)))
+        expect(h.editor.showBoard(BoardID(owner: subboard)))
+        let inside = note(h, "inside", at: CGPoint(x: 100, y: 100), isPublic: true)
+        expect(h.editor.showBoard(.root))
+        let pill = reference(h, to: inside, label: "inside", at: CGPoint(x: 500, y: 300))
+        let out = arrow(h, from: pill, to: target)
+        let entries = try require(h.editor.tableOfContents).entries
+        expectEqual(entries.first { $0.id == pill }?.children?.map(\.id), [out], "the shape is on another board, so the pill keeps it")
+    },
+    test("copy, cut and paste, as the behavior table says: alone it names the same original; with it, the copy; a cut original is missing until it's pasted, with its id") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let h = emptyBoard(pasteboard)
+        let shapes = note(h, "shapes", at: CGPoint(x: 100, y: 100), isPublic: true)
+        let pill = reference(h, to: shapes, label: "shapes", at: CGPoint(x: 500, y: 300))
+        let state = try require(h.editor.references)
+        // R alone: a second reference to the same shape.
+        h.editor.selectedShapeIDs = [pill]
+        h.editor.copySelection()
+        var before = h.editor.document
+        h.editor.paste()
+        let alone = try require(h.editor.shapes(since: before).first)
+        expectEqual(alone.typed(as: Reference.self)?.props.target, ReferenceTarget(id: shapes, label: "shapes"))
+        expectEqual(state.directReferences(naming: [shapes]), [pill, alone.id])
+        // R with A: the copy names the copy of A, which is public too.
+        h.editor.selectedShapeIDs = [shapes, pill]
+        h.editor.copySelection()
+        before = h.editor.document
+        h.editor.paste()
+        let copies = h.editor.shapes(since: before)
+        let copyOfShapes = try require(copies.first { $0.copiedFrom == shapes }?.id)
+        let copyOfPill = try require(copies.first { $0.copiedFrom == pill }?.typed(as: Reference.self))
+        expectEqual(copyOfPill.props.target?.id, copyOfShapes, "renamed with what was copied along")
+        expect(h.editor.document[copyOfShapes]?[PublicProperty.self] == true, "pasted public, as every added property is")
+        // A cut and pasted keeps its id, so a reference to it heals.
+        h.editor.selectedShapeIDs = [shapes]
+        h.editor.cutSelection()
+        expect(h.editor.document[shapes] == nil)
+        expectEqual(h.editor.references?.state(of: pill), .missing(label: "shapes"), "between cut and paste, missing")
+        h.editor.paste()
+        expect(h.editor.document[shapes] != nil, "pasted with its id")
+        expect(h.editor.references?.state(of: pill)?.appearance != nil, "healed")
+        // R cut and pasted keeps its target.
+        h.editor.selectedShapeIDs = [pill]
+        h.editor.cutSelection()
+        h.editor.paste()
+        let pasted = try require(h.editor.selectedShapeIDs.first.flatMap { h.editor.document[$0]?.typed(as: Reference.self) })
+        expectEqual(pasted.props.target?.id, shapes)
+    },
+    test("pasted into another file, a direct reference names what isn't there: missing, dashed, with the name it held") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let h = emptyBoard(pasteboard)
+        let shapes = note(h, "shapes", at: CGPoint(x: 100, y: 100), isPublic: true)
+        let pill = reference(h, to: shapes, label: "shapes", at: CGPoint(x: 500, y: 300))
+        h.editor.selectedShapeIDs = [pill]
+        h.editor.copySelection()
+        let other = emptyBoard(pasteboard)
+        other.editor.paste()
+        let pasted = try require(other.editor.selectedShapeIDs.first)
+        expectEqual(other.editor.references?.state(of: pasted), .missing(label: "shapes"))
+        expectEqual(other.editor.topology?.forwarding(of: pasted), .record([]))
+    },
+    test("canvas draw makes a reference from a query: 120 by 32 or as wide as it says; a query the app can't read is refused, and what a script can't write is unknown") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let h = emptyBoard(pasteboard)
+        let drawn = try drawnInProcess(#"reference query: "sticky-note" all: true"#, on: h.editor)
+        _ = drawn
+        let made = try require(h.editor.document.shapes.first { $0.kind == Reference.kind }?.typed(as: Reference.self))
+        expectEqual(made.props.query, "sticky-note")
+        expectEqual(made.props.all, true)
+        expectEqual(made.props.target, nil)
+        expectEqual(made.frame.height, 32)
+        expectEqual(made.frame.width, ReferenceEdits.width(of: made.props), "fitted as the writers fit it")
+        let bad = try refusedInProcess(#"reference query: "sticky-note[""#, on: h.editor)
+        expectEqual(bad.reason, "invalid_value", "\(bad)")
+        expectEqual(try refusedInProcess(#"reference words: "x""#, on: h.editor).reason, "unknown_attribute")
+        expectEqual(try refusedInProcess(#"reference target: "x""#, on: h.editor).reason, "unknown_attribute")
+        expectEqual(h.editor.document.shapes.filter { $0.kind == Reference.kind }.count, 1, "nothing else was drawn")
+    },
+    test("a drawn query stands for what it finds, public notes alone; a query that reads edges, run just after, waits for the answer and reads through it") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        // Real time: the answer comes after the wait for quiet, as in the app.
+        let h = EditorHarness { _ in ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: TaskScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel()) }
+        let auth = note(h, "Auth", at: CGPoint(x: 0, y: 0), isPublic: true)
+        let login = note(h, "Login", at: CGPoint(x: 300, y: 0), isPublic: true)
+        _ = note(h, "Draft", at: CGPoint(x: 600, y: 0))
+        let checkout = note(h, "Checkout", at: CGPoint(x: 0, y: 400))
+        _ = try drawnInProcess(#"reference right of "Checkout" query: "sticky-note[public]" all: true"#, on: h.editor)
+        let pill = try require(h.editor.document.shapes.first { $0.kind == Reference.kind }?.id)
+        _ = arrow(h, from: checkout, to: pill)
+        let topology = try require(h.editor.topology), queries = try require(h.editor.queries)
+        expect(topology.isSettling, "drawn and wired, its answer is on its way")
+        let result = try awaitResult { try await queries.run(QueryRequest(#"sticky-note:edge-to("Login")"#, settle: QueryBudget.settleWait)) }
+        expectEqual(result.rows.map(\.id), [checkout], "the arrow into the pill reads as into each note it stands for")
+        expectEqual(result.warnings, [], "nothing pending: it waited")
+        expectEqual(topology.forwards(of: pill), [auth, login])
+        guard case .found(_, let found)? = h.editor.references?.state(of: pill) else { return expect(false, "found") }
+        expectEqual(found.count, 2)
+    },
+    test("a reference may search notes' text (mention text reads only the file), and not what the person has selected") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let h = emptyBoard(pasteboard)
+        let auth = h.editor.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: MentionText(plain: "JWT, 15 min expiry")), title: "Auth")
+        h.editor.makePublic([auth])
+        _ = note(h, "Checkout", at: CGPoint(x: 300, y: 0), isPublic: true)
+        @MainActor func pill(_ query: String, at x: CGFloat) -> ShapeID {
+            var props = Reference(frame: CGRect(origin: CGPoint(x: x, y: 400), size: Reference.defaultSize))
+            ReferenceEdits.find(&props, words: "", query: query)
+            return h.editor.add(props)
+        }
+        let text = pill(#"sticky-note:contains("jwt")"#, at: 0)
+        let selected = pill("sticky-note:selected", at: 300)
+        h.wait(0)
+        let state = try require(h.editor.references)
+        _ = spinRunLoop(until: { !state.isFinding })
+        expectEqual(h.editor.topology?.forwards(of: text), [auth])
+        expectEqual(state.status(of: selected), .refused("“:selected” can’t be used here."))
+    },
+    test("a query a reference can't use is warned of in its panel's issues: pasted, or written by hand into a board") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let h = emptyBoard(pasteboard)
+        var props = Reference(frame: CGRect(origin: .zero, size: Reference.defaultSize))
+        ReferenceEdits.find(&props, words: "", query: "sticky-note[")
+        let pill = h.editor.add(props)
+        let issues = try require(h.editor.validation?.result(for: pill)).issues
+        expectEqual(issues.map(\.severity), [.warning])
+        expectEqual(issues.first?.field, "query")
+    },
+])

@@ -6,7 +6,8 @@ import Selection
 /// (`editor.selectedShapeIDs`, in the selection's order), which are also what `--ask` tells the
 /// model is selected (`QueryState.whereThePersonIs`). It's the person's selection
 /// (`registrar.querySelection`), not just a word: a change of the selection while the query runs
-/// changes nothing it answers.
+/// changes nothing it answers. It reads the editor (`QueryReads.editor`), the selection being the
+/// person's.
 public struct SelectionQueriesPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { "selection-queries" }

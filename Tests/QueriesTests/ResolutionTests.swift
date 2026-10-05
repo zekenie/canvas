@@ -171,7 +171,7 @@ import Topology
         expectEqual(try plan(":dangling", on: h).description, "dangling (every type)")
         expectRefused([
             Refused(":edge-to(*, wir)", .unknownEdgeType, "wir isn't an edge type.", hint: "Did you mean wire or hot-wire?", at: 12, 3),
-            Refused(":edge-to(*, cable)", .unknownEdgeType, "cable isn't an edge type.", hint: "The edge types: wire, hot-wire, tether.", at: 12, 5),
+            Refused(":edge-to(*, cable)", .unknownEdgeType, "cable isn't an edge type.", hint: "The edge types: stands-for, wire, hot-wire, tether.", at: 12, 5),
             Refused(":dangling(Wire)", .unknownEdgeType, "Wire isn't an edge type.", hint: "Did you mean wire or hot-wire?", at: 10, 4),
             Refused(#":edge-to("Alpha", chore)"#, .unknownEdgeType, "chore is a kind, not an edge type.",
                     hint: #":edge-to(:is("Alpha", chore))"#, at: 18, 5),

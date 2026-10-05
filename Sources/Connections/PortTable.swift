@@ -7,6 +7,12 @@ import Canvas
 // That order is plugin order: the order of the `ShapePorts` contributions in the plugin list (as
 // `registry.contributions(to:)` gives them), whether a contribution is for the kind or for every
 // kind; and a kind's first contribution on a channel is its only one there, its role and its sides.
+// A contribution for every channel (`portsOnEveryChannel`) is expanded here, to each channel the
+// registry declares, in plugin order, at the place it has in the list.
+//
+// That is a kind's ports; a shape that stands for others (Topology's stand-ins: a reference) has
+// ports of its own, instance by instance: its kind's, as far as every shape it stands for takes
+// them (`standing(for:)`, and `PortState.ports(of:)`).
 
 /// A kind's ports, as the port table has them. Only `KindPorts(of:in:)` makes one.
 @MainActor
@@ -31,10 +37,44 @@ struct KindPorts {
     /// (`table(in:)`).
     init?(of kind: ShapeKind, in registry: Registry) {
         guard registry.definition(for: kind) != nil else { return nil }
+        var declared: [ChannelID]?
         for contribution in registry.contributions(to: ShapePorts.self) where contribution.target == .any || contribution.target == .kind(kind) {
-            add(contribution.value)
+            if let channel = contribution.value.channel {
+                add(channel, contribution.value)
+            } else {
+                let every = declared ?? registry.contributions(to: Channels.self).map(\.value.id)
+                declared = every
+                for channel in every { add(channel, contribution.value) }
+            }
         }
         guard !entries.isEmpty else { return nil }
+    }
+
+    private init(entries: [Entry]) {
+        for entry in entries { add(entry.channel, entry.role, entry.sides) }
+    }
+
+    /// What a shape of this kind has ports on while it stands for shapes of `targets`' kinds (nil:
+    /// a kind with no ports): each channel it has ports on that every one of them has too, on its
+    /// own sides, with the role both allow (a kind whose connections only start and one whose
+    /// connections only end share none); nil if there is none, or no target. With one target, that
+    /// kind's channels and roles; with several, the channels they all take.
+    func standing(for targets: [KindPorts?]) -> KindPorts? {
+        guard !targets.isEmpty else { return nil }
+        var shared: [Entry] = []
+        for entry in entries {
+            var role: PortRole? = entry.role
+            for target in targets {
+                guard let own = target?.entry(on: entry.channel) else {
+                    role = nil
+                    break
+                }
+                role = role?.shared(with: own.role)
+                if role == nil { break }
+            }
+            if let role { shared.append(Entry(channel: entry.channel, role: role, sides: entry.sides)) }
+        }
+        return shared.isEmpty ? nil : KindPorts(entries: shared)
     }
 
     /// Every installed kind's ports, by kind: what an editor keeps (the registry never changes).
@@ -43,13 +83,17 @@ struct KindPorts {
     }
 
     /// Ports on a channel, unless an earlier contribution gave the kind ports on it.
-    private mutating func add(_ ports: PortContribution) {
-        guard roles[ports.channel] == nil else { return }
-        let sides = ports.sides.reduce(into: [PortSide]()) { sides, side in if !sides.contains(side) { sides.append(side) } }
-        entries.append(Entry(channel: ports.channel, role: ports.role, sides: sides))
-        roles[ports.channel] = ports.role
-        guard ports.role != .target else { return }
-        for side in sides { dots[side, default: []].append(ports.channel) }
+    private mutating func add(_ channel: ChannelID, _ ports: PortContribution) {
+        add(channel, ports.role, ports.sides)
+    }
+
+    private mutating func add(_ channel: ChannelID, _ role: PortRole, _ sides: [PortSide]) {
+        guard roles[channel] == nil else { return }
+        let sides = sides.reduce(into: [PortSide]()) { sides, side in if !sides.contains(side) { sides.append(side) } }
+        entries.append(Entry(channel: channel, role: role, sides: sides))
+        roles[channel] = role
+        guard role != .target else { return }
+        for side in sides { dots[side, default: []].append(channel) }
     }
 
     /// Its ports on `channel`, if it has some.

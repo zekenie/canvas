@@ -8,6 +8,7 @@ import LanguageModels
 import Queries
 import QueryCommands
 import QueryLanguage
+import QueryTranslation
 import TestKit
 import Topology
 
@@ -103,7 +104,7 @@ let systemPrompt = "You write one query."
     var plugins: [any CanvasPlugin] = [ChoresPlugin(), PocketsPlugin(), LinksPlugin(), TopologyPlugin(), AutomationPlugin()]
     if queries { plugins.append(QueriesPlugin()) }
     if let model { plugins.append(LanguageModelsPlugin(model: model)) }
-    plugins += [QueryCommandsPlugin(askPrompt: systemPrompt, askStyle: askStyle), graphPlugin()]
+    plugins += [QueryTranslationPlugin(prompt: systemPrompt, referenceRule: "", style: askStyle), QueryCommandsPlugin(), graphPlugin()]
     if queries { plugins += [namesPlugin(), wordsPlugin(desk)] }
     return plugins
 }

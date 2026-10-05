@@ -1,6 +1,6 @@
 ---
 name: canvas
-description: Put, draw or lay out things on a live board in Infinite Canvas (sticky notes, frames, subboards, schema cards and the arrows between them, for plans, flows, architectures, roadmaps, retros) with `canvas draw`, a text language where each line says what a shape is, what it's called, and where it sits against shapes already named; and find out what's on a board with `canvas query`, a CSS-like query, or `--ask` in English. Use when asked to "draw this on the board", "put these on the canvas", "make a diagram in the app", "connect these on the board", "what's on the board", "which notes mention X", "is X inside Y", "what links to X", "how many…", or to turn a plan, list or architecture into shapes in the running app. NOT for changing the app's Swift code, plugins, tests or docs; NOT for reading or writing .canvasboard files (only `canvas` touches a board); NOT for diagrams meant for a file (SVG, Mermaid, images).
+description: Put, draw or lay out things on a live board in Infinite Canvas (sticky notes, frames, subboards, schema cards, references and the arrows between them, for plans, flows, architectures, roadmaps, retros) with `canvas draw`, a text language where each line says what a shape is, what it's called, and where it sits against shapes already named; and find out what's on a board with `canvas query`, a CSS-like query, or `--ask` in English. Use when asked to "draw this on the board", "put these on the canvas", "make a diagram in the app", "connect these on the board", "what's on the board", "which notes mention X", "is X inside Y", "what links to X", "how many…", or to turn a plan, list or architecture into shapes in the running app. NOT for changing the app's Swift code, plugins, tests or docs; NOT for reading or writing .canvasboard files (only `canvas` touches a board); NOT for diagrams meant for a file (SVG, Mermaid, images).
 ---
 
 # Drawing on and reading a board with canvas
@@ -101,10 +101,11 @@ style <name> attribute { attribute }             a named set of attributes, for 
 
 | kind | size | attributes besides `size`, `gap`, `overlap`, `style`, `title` | edges |
 |---|---|---|---|
-| `sticky-note` | 200x200 | `text` (the note is as tall as its text, at least 200; a `size:` height lasts only until the text changes), `locked` | `note-link`, on all four sides |
-| `schema-card` | 240x52 | `prompt` (what it holds, in words: the card shows them, and grows to fit), `schema` (a JSON Schema, as text: its panel shows it), `locked` | `schema-link`, on all four sides |
-| `subboard` | 240x160 | `locked` | none: plain arrows |
-| `frame` | 640x400 | `locked` (locking a frame locks what's in it) | none: plain arrows |
+| `sticky-note` | 200x200 | `text` (the note is as tall as its text, at least 200; a `size:` height lasts only until the text changes), `locked`, `public` | `note-link`, on all four sides |
+| `schema-card` | 240x52 | `prompt` (what it holds, in words: the card shows them, and grows to fit), `schema` (a JSON Schema, as text: its panel shows it), `locked`, `public` | `schema-link`, on all four sides |
+| `subboard` | 240x160 | `locked`, `public` | none: plain arrows |
+| `frame` | 640x400 | `locked` (locking a frame locks what's in it), `public` | none: plain arrows |
+| `reference` | 120x32 | `query` (a query: the pill stands for what it finds), `all` (every match, not only the first), `locked` | none: plain arrows |
 
 Arrows are what edges are; you don't draw one on its own. An edge takes the arrow's attributes beside `from:`, `to:` and `channel:`: `text:` (what it says, set on its line), `labelPosition:` (where along it, `0` to `1`, halfway by default), `bend:` and `locked:`; its heads are its arrow's (`->`, `<->`). Values: text is quoted (`text: "Two words"`). `true` and `false` are bare words (`locked: true`). `null` puts a property back to its default (but not a title: `title:` only renames). `size: 300x200` is in world units, up to 100000. A value past a bound, like a title over 80 characters, is kept and warned about.
 
@@ -359,5 +360,7 @@ sticky-note "Ship 1.0" owner: "Ann"
 [reference/language.md](reference/language.md) is the full `draw` language: every construct, the gap and part tables, how lists, pushes and the unplaced drawing are worked out, edges and channels, every error reason with its fix (the command line's own and the boards' too), what the language refuses and why, and what isn't built yet. Read it when you need a construct this page doesn't cover, or when an error points at behavior you didn't expect. `build/canvas help draw` is the command's own help.
 
 [reference/query.md](reference/query.md) is the whole query language, on a story file: naming shapes, attributes, inside, edges and their direction, the plugins' words, yes-or-no questions, `--ask`, and every refusal with its fix. [query-prompt.md](query-prompt.md) is what the app tells Claude for `--ask`, word for word, with how to give yourself what it's given. `build/canvas help query` is the command's own help, and `build/canvas query-vocabulary` what this app's queries can name: its kinds and their attributes, its edge types and its words.
+
+[reference/references.md](reference/references.md) is what a reference does to what you read: a pill that stands for a public shape, so an arrow into it is an arrow into the shape, and how a row says it (`via`, `more`).
 
 The language and its solver are modified from [reladraw](https://github.com/reladraw/reladraw) (Apache-2.0; see THIRD_PARTY_NOTICES.md). This language isn't called that.

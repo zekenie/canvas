@@ -38,7 +38,7 @@ extension Remark: EdgeType {
 @MainActor let edgeTests = Suite("ConnectionLog as edges", [
     test("each channel is an edge type of its declarer's, under the connector's family; without a connector, a root") {
         let types = try linksHarness().editor.registry.edgeTypes
-        expectEqual(types.declared, [type(Wire.id), type(Pipe.id), Hookup.id])
+        expectEqual(types.declared, [StandingEdge.id, type(Wire.id), type(Pipe.id), Hookup.id], "Topology's own first")
         expectEqual(types.parent(of: type(Wire.id)), Hookup.id)
         expectEqual(types.parent(of: type(Pipe.id)), Hookup.id)
         expectEqual(types.plugin(declaring: type(Wire.id)), "channels")

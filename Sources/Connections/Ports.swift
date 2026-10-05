@@ -29,6 +29,12 @@ public struct ChannelID: RawRepresentable, Hashable, Codable, Sendable, Expressi
     public var description: String { rawValue }
 }
 
+extension ChannelID {
+    /// What a person calls the connections on it, in the plural, from its id: "note links" for
+    /// `note-link`. A line of the panel says it ("“Order” doesn’t take note links.").
+    public var pluralName: String { rawValue.replacingOccurrences(of: "-", with: " ") + "s" }
+}
+
 extension EdgeTypeID {
     /// A channel's edge type: the same name, so a connection's type is the channel it keeps.
     init(_ channel: ChannelID) { self.init(rawValue: channel.rawValue) }
@@ -117,12 +123,22 @@ public enum PortRole: Hashable, Sendable {
     /// Whether a kind with this role may be `role`: where a connection starts (`.source`), where it
     /// ends (`.target`), or either (`.both`, which only a kind whose ports do both may be).
     public func allows(_ role: PortRole) -> Bool { self == .both || self == role }
+
+    /// What a shape that stands for others is, taking the ports of what it stands for: what both
+    /// allow. `.both` with a role is that role; nil for connections that only start and ones that
+    /// only end, which nothing both are can be.
+    func shared(with other: PortRole) -> PortRole? {
+        if self == .both { return other }
+        return other == .both || other == self ? self : nil
+    }
 }
 
-/// A kind's ports on one channel, from `x.ports(C.self, sides:role:)`. Only the sugar makes one.
+/// A kind's ports on one channel, from `x.ports(C.self, sides:role:)`, or on every channel there is,
+/// from `x.portsOnEveryChannel(sides:role:)` (`channel` nil: the port table expands it, when it's
+/// built, to every channel the registry declares). Only the sugar makes one.
 @MainActor
 public struct PortContribution {
-    let channel: ChannelID
+    let channel: ChannelID?
     let sides: [PortSide]
     let role: PortRole
 }
@@ -138,7 +154,7 @@ extension ShapePorts: KeyedExtensionPoint {
         [PortKey(target: target, channel: ports.channel)]
     }
     public static func summary(of ports: PortContribution, for target: ShapeTarget) -> String {
-        "ports \(ports.channel)" + (target == .any ? "" : " → \(target)")
+        "ports " + (ports.channel.map(\.rawValue) ?? "on every channel") + (target == .any ? "" : " → \(target)")
     }
 
     /// Every channel a kind has ports on is declared, and the connector's own kind has none: a
@@ -147,8 +163,8 @@ extension ShapePorts: KeyedExtensionPoint {
         let declared = Set(registry.contributions(to: Channels.self).map(\.value.id))
         let connector = registry.connectorKind
         for ports in registry.contributions(to: ShapePorts.self) {
-            guard declared.contains(ports.value.channel) else {
-                throw .invalid(point: "ShapePorts", reason: "\(ports.pluginID) gives \(ports.target) ports on channel \(ports.value.channel), which no installed plugin declares")
+            if let channel = ports.value.channel, !declared.contains(channel) {
+                throw .invalid(point: "ShapePorts", reason: "\(ports.pluginID) gives \(ports.target) ports on channel \(channel), which no installed plugin declares")
             }
             if let connector, ports.target == .kind(connector) {
                 throw .invalid(point: "ShapePorts", reason: "\(ports.pluginID) gives \(connector) ports, but it's what connections are")
@@ -159,8 +175,9 @@ extension ShapePorts: KeyedExtensionPoint {
 
 struct PortKey: Hashable, CustomStringConvertible {
     let target: ShapeTarget
-    let channel: ChannelID
-    var description: String { "\(target)'s ports on \(channel)" }
+    /// Nil: on every channel.
+    let channel: ChannelID?
+    var description: String { "\(target)'s ports on " + (channel.map(\.rawValue) ?? "every channel") }
 }
 
 // MARK: The connector
@@ -237,6 +254,16 @@ extension ShapeRegistrar {
     public mutating func ports<C: Channel>(_ channel: C.Type, sides: [PortSide] = PortSide.allCases, role: PortRole = .both) {
         contribute(PortContribution(channel: C.id, sides: sides, role: role), to: ShapePorts.self)
     }
+
+    /// Gives this kind ports on every channel an installed plugin declares (the port table expands
+    /// it, in plugin order, when it's built), as `ports` does one, so the kind names none: a kind
+    /// can't import the plugins that own the channels. For a kind that stands for other shapes,
+    /// whose instance-level ports follow what it stands for (`CanvasEditor.channel(of:endingAt:)`):
+    /// `x.portsOnEveryChannel(sides: [.left, .right])`. An earlier contribution of the kind's on a
+    /// channel is its only one there.
+    public mutating func portsOnEveryChannel(sides: [PortSide] = PortSide.allCases, role: PortRole = .both) {
+        contribute(PortContribution(channel: nil, sides: sides, role: role), to: ShapePorts.self)
+    }
 }
 
 extension PluginRegistrar {
@@ -253,6 +280,12 @@ extension PluginRegistrar {
     public mutating func ports<K: ShapeProps, C: Channel>(_ kind: K.Type, on channel: C.Type, sides: [PortSide] = PortSide.allCases,
                                                           role: PortRole = .both) {
         contribute(PortContribution(channel: C.id, sides: sides, role: role), to: ShapePorts.self, for: .kind(K.kind))
+    }
+
+    /// Ports on every channel for a kind another plugin registers, as `portsOnEveryChannel` on a
+    /// kind's own registrar.
+    public mutating func portsOnEveryChannel<K: ShapeProps>(_ kind: K.Type, sides: [PortSide] = PortSide.allCases, role: PortRole = .both) {
+        contribute(PortContribution(channel: nil, sides: sides, role: role), to: ShapePorts.self, for: .kind(K.kind))
     }
 
     /// `K` is what connections are, and this plugin draws them: a drag from a port calls `begin` with
@@ -297,14 +330,21 @@ extension PluginRegistrar {
 
 extension CanvasEditor {
     /// The channel `connection` would be drawn on if it ended at `shape`: the first of its channels
-    /// that `shape`'s kind takes as a target (as `registry.takes(_:_:as:)` has it); nil if it takes
-    /// none (or it's where the connection starts, as a connection never ends where it starts, or
-    /// it's kept aside). Cheap enough to ask of each shape under the pointer: it reads the port
-    /// table the editor keeps.
+    /// that `shape` takes as a target (as `registry.takes(_:_:as:)` has it for its kind; for a
+    /// shape that stands for others, a reference, what it stands for now: `ports(of:)`); nil if it
+    /// takes none (or it's where the connection starts, as a connection never ends where it starts,
+    /// or it's kept aside). Cheap enough to ask of each shape under the pointer: it reads the port
+    /// table the editor keeps, and a stand-in's, kept until what it stands for changes.
     public func channel(of connection: Connection, endingAt shape: AnyShapeRecord) -> ChannelID? {
-        guard shape.id != connection.shape, let ports = service(PortState.self)?.kinds[shape.kind], !shape.isOpaque else { return nil }
+        guard shape.id != connection.shape, !shape.isOpaque, let ports = service(PortState.self)?.ports(of: shape) else { return nil }
         return connection.channels.first { ports.roles[$0]?.allows(.target) == true }
     }
+
+    #if DEBUG
+    /// How many stand-ins' ports are kept (debug builds): one for each it was asked about, until it
+    /// or its file goes (and, as what it stands for changes, they're worked out again).
+    public var standingPortsKept: Int { service(PortState.self)?.standingPortsKept ?? 0 }
+    #endif
 }
 
 // MARK: The plugin

@@ -31,9 +31,9 @@ import Topology
     },
     test("edge types in the tree's order, and words, the language's then plugins'") {
         let vocabulary = try QueryVocabulary(registry: Registry(plugins: queryPlugins()))
-        expectEqual(vocabulary.edgeTypes.map(\.type), [WireEdge.id, HotWireEdge.id])
-        expectEqual(vocabulary.edgeTypes.map(\.parent), [nil, WireEdge.id])
-        expectEqual(vocabulary.edgeTypes.map(\.depth), [0, 1])
+        expectEqual(vocabulary.edgeTypes.map(\.type), [StandingEdge.id, WireEdge.id, HotWireEdge.id], "Topology's own first")
+        expectEqual(vocabulary.edgeTypes.map(\.parent), [nil, nil, WireEdge.id])
+        expectEqual(vocabulary.edgeTypes.map(\.depth), [0, 0, 1])
         expectEqual(vocabulary.words.map(\.word), Word.allCases.map(\.rawValue) + ["starred", "heavy", "audited", "wired-to"])
         expectEqual(Set(vocabulary.words.prefix(Word.allCases.count).map(\.from)), [.queries])
         let wired = try require(vocabulary.words.last)
@@ -53,6 +53,7 @@ import Topology
             - tile (Tile; titled from what it holds): caption text, finish matte|glossy, label text
             - link (link; untitled): from text, grade plain|hot|loose, to text
             Edge types (each takes in those indented under it):
+            - stands-for — from a shape to each shape it stands for
             - wire — a link, from the shape it starts on to the shape it ends on
               - hot-wire — a link graded hot
             Pseudo-classes plugins add:
@@ -81,7 +82,9 @@ import Topology
             - chore (Task; untitled): due date (YYYY-MM-DD or date-time), estimate integer ≥ 0, flag true|false, meta JSON {owner, size}, \
             note text, ratio number, status todo|doing|blocked|done, tags JSON [text]
             - pocket (pocket; untitled; holds a board of shapes)
-            """)
+            Edge types (each takes in those indented under it):
+            - stands-for — from a shape to each shape it stands for
+            """, "Topology's own edge type is always there")
         expectEqual(vocabulary.kind("pocket")?.boardName, "pocket", "without the board names point, the label")
         expectEqual(vocabulary.nameAttribute, nil)
         expectEqual(vocabulary.words.map(\.word), Word.allCases.map(\.rawValue))

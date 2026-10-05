@@ -89,15 +89,75 @@ public struct QueryShape: Sendable {
     }
 }
 
+/// What a word's or a text format's verdict reads, said once by whoever adds it: the file as the
+/// query takes it up (its records, edges and containment: the snapshot), or the editor too (the
+/// selection, the board shown, a service's state, the live validation). A plan that holds only
+/// words that read the file answers the same whenever, whoever is looking, so what keeps an answer
+/// past the moment it was asked (`QueryPlan.readsOnlyTheFile`) may keep it.
+public struct QueryReads: OptionSet, Sendable, Hashable {
+    public let rawValue: Int
+    public init(rawValue: Int) { self.rawValue = rawValue }
+
+    /// The file alone.
+    public static let file = QueryReads(rawValue: 1)
+    /// The editor: the default for a word added with a `prepare` that takes `QueryPreparation`.
+    public static let editor = QueryReads(rawValue: 2)
+}
+
+/// The claim that a word or a text format reads only the file, made as a parameter (`reads: .file`)
+/// that only the forms whose `prepare` takes a `QueryFilePreparation` accept: the compiler holds
+/// it, since what they're given has no editor.
+public struct QueryFileReads: Sendable {
+    public static let file = QueryFileReads()
+}
+
 /// What a word's or a text format's `prepare` gets, on the main actor, in the turn the query takes
 /// up the file: the editor, to take what it needs of it (a set of ids, a service's O(1) value).
 @MainActor
 public struct QueryPreparation {
     public let editor: CanvasEditor
+    let file: QueryFilePreparation
 
-    init(editor: CanvasEditor) {
+    init(editor: CanvasEditor, file: QueryFilePreparation) {
+        self.editor = editor
+        self.file = file
+    }
+}
+
+/// What a `reads: .file` word's or text format's `prepare` gets, on the main actor, in the turn the
+/// query takes up the file: Topology as it was taken up (its edges in the request's view, its
+/// containment, the records of every shape the app can show: `shape(_:)`, `forEachShape`) and the
+/// registry. Never the editor: code that reads the live editor, the selection, the camera or a
+/// service doesn't compile here. A request for several views at once prepares a word once, in the
+/// first request's view. What a plugin keeps of the file and is a function of its records alone
+/// reaches it only as a declared `QueryFileFact` (`fact(_:)`).
+@MainActor
+public struct QueryFilePreparation {
+    public let snapshot: TopologySnapshot
+    public let registry: Registry
+    /// Lent to facts alone: never to the word.
+    private let editor: CanvasEditor
+
+    init(snapshot: TopologySnapshot, registry: Registry, editor: CanvasEditor) {
+        self.snapshot = snapshot
+        self.registry = registry
         self.editor = editor
     }
+
+    /// A fact of the file as the query takes it up (`QueryFileFact.current(in:)`): what a plugin
+    /// keeps that is a function of the records alone, taken in this turn.
+    public func fact<Fact: QueryFileFact>(_: Fact.Type) -> Fact { Fact.current(in: editor) }
+}
+
+/// A value an editor keeps of the file that is a function of its records alone (never the person,
+/// the board shown, the camera, a verdict, or Topology's resolved edges): the names mentions show
+/// now, which are their shapes' names. The one way a `reads: .file` word or text format reads what
+/// a plugin keeps (`QueryFilePreparation.fact(_:)`), so a query that uses it still reads only the
+/// file: the claim is the fact type's, made once where it's declared, and a word's own `prepare`
+/// still can't reach the editor. `current(in:)` runs on the main actor in the turn the query takes
+/// up the file: O(1), a value the plugin keeps, shared, never one it makes then.
+public protocol QueryFileFact: Sendable {
+    @MainActor static func current(in editor: CanvasEditor) -> Self
 }
 
 /// What a word's `onMain` gets beside the shape: the registry, the editor, the editor's revision as
@@ -155,6 +215,7 @@ final class KeptContexts {
 /// A pseudo-class a plugin adds (`:selected`), type-erased: what `prepare` took on the main actor is
 /// handed back as it was to `seeds`, `matches` and `onMain`.
 struct ContributedPseudoClass: Sendable {
+    let reads: QueryReads
     let prepare: @MainActor (QueryPreparation) -> any Sendable
     let seeds: (@Sendable (any Sendable) -> Set<ShapeID>)?
     let matches: @Sendable (QueryShape, any Sendable) -> QueryVerdict
@@ -175,6 +236,13 @@ public struct QueryWordDeclaration: Sendable {
     let summary: String
     let example: String
     let meaning: Meaning
+    /// What its verdict reads.
+    var reads: QueryReads {
+        switch meaning {
+        case .pseudoClass(let behavior): behavior.reads
+        case .relation: .file
+        }
+    }
     /// Whether it's the person's selection (`registrar.querySelection`): what `--ask` says is
     /// selected. At most one word is.
     var isSelection = false
@@ -247,6 +315,8 @@ struct QueryWordKey: Hashable, CustomStringConvertible {
 public struct QueryTextFormatting: Sendable {
     let mediaType: String
     let describes: String
+    /// What it reads: the file, or the editor too.
+    let reads: QueryReads
     let prepare: @MainActor (QueryPreparation) -> any Sendable
     let read: @Sendable (String, any Sendable) -> String
 }
@@ -305,13 +375,39 @@ extension PluginRegistrar {
     /// (take what's needed there, O(1) or O(what it holds)); `seeds`, the only shapes that can
     /// match, if it knows them; `matches` anywhere, for each shape a query tests; and `onMain` for a
     /// shape `matches` leaves to the main actor (`.onMain`), asked in slices about the shape as the
-    /// app has it then.
+    /// app has it then. It reads the editor (`QueryReads.editor`): a plan that holds it isn't
+    /// `readsOnlyTheFile`.
     public mutating func queryPseudoClass<Prepared: Sendable>(
         _ word: String, _ summary: String, example: String,
         prepare: @escaping @MainActor (QueryPreparation) -> Prepared,
         seeds: (@Sendable (Prepared) -> Set<ShapeID>)? = nil,
         matches: @escaping @Sendable (QueryShape, Prepared) -> QueryVerdict,
         onMain: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> Bool)? = nil
+    ) {
+        contributePseudoClass(word, summary, example: example, reads: .editor, prepare: { prepare($0) }, seeds: seeds, matches: matches,
+                              onMain: onMain)
+    }
+
+    /// As above, for a word whose verdict reads only the file (`reads: .file`): `prepare` is given
+    /// the file as the query takes it up and the registry, and no editor, so it can't read anything
+    /// else; and it has no `onMain`, whose context lends the editor. What a plan with such words
+    /// alone says of itself (`QueryPlan.readsOnlyTheFile`) is true because of it.
+    public mutating func queryPseudoClass<Prepared: Sendable>(
+        _ word: String, _ summary: String, example: String, reads _: QueryFileReads,
+        prepare: @escaping @MainActor (QueryFilePreparation) -> Prepared,
+        seeds: (@Sendable (Prepared) -> Set<ShapeID>)? = nil,
+        matches: @escaping @Sendable (QueryShape, Prepared) -> QueryVerdict
+    ) {
+        contributePseudoClass(word, summary, example: example, reads: .file, prepare: { prepare($0.file) }, seeds: seeds, matches: matches,
+                              onMain: nil)
+    }
+
+    private mutating func contributePseudoClass<Prepared: Sendable>(
+        _ word: String, _ summary: String, example: String, reads: QueryReads,
+        prepare: @escaping @MainActor (QueryPreparation) -> Prepared,
+        seeds: (@Sendable (Prepared) -> Set<ShapeID>)?,
+        matches: @escaping @Sendable (QueryShape, Prepared) -> QueryVerdict,
+        onMain: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> Bool)?
     ) {
         let erasedPrepare: @MainActor (QueryPreparation) -> any Sendable = { prepare($0) }
         let erasedMatches: @Sendable (QueryShape, any Sendable) -> QueryVerdict = { shape, prepared in matches(shape, prepared as! Prepared) }
@@ -321,7 +417,8 @@ extension PluginRegistrar {
         if let onMain {
             erasedOnMain = { record, board, prepared, context in onMain(record, board, prepared as! Prepared, context) }
         }
-        let pseudoClass = ContributedPseudoClass(prepare: erasedPrepare, seeds: erasedSeeds, matches: erasedMatches, onMain: erasedOnMain)
+        let pseudoClass = ContributedPseudoClass(reads: reads, prepare: erasedPrepare, seeds: erasedSeeds, matches: erasedMatches,
+                                                 onMain: erasedOnMain)
         contribute(QueryWordDeclaration(word: word, summary: summary, example: example, meaning: .pseudoClass(pseudoClass)),
                    to: QueryWords.self)
     }
@@ -333,6 +430,7 @@ extension PluginRegistrar {
     public mutating func querySelection(_ word: String, _ summary: String, example: String,
                                         selected: @escaping @MainActor (CanvasEditor) -> [ShapeID]) {
         let pseudoClass = ContributedPseudoClass(
+            reads: .editor,
             prepare: { preparation in
                 let ids = selected(preparation.editor)
                 return SelectedShapes(ids: ids, set: Set(ids))
@@ -363,9 +461,27 @@ extension PluginRegistrar {
         prepare: @escaping @MainActor (QueryPreparation) -> Prepared,
         read: @escaping @Sendable (String, Prepared) -> String
     ) {
+        contributeTextFormat(mediaType: mediaType, describes: describes, reads: .editor, prepare: { prepare($0) }, read: read)
+    }
+
+    /// As above, for a format that reads only the file (`reads: .file`): `prepare` is given the file
+    /// as the query takes it up and the registry, and no editor.
+    public mutating func queryTextFormat<Prepared: Sendable>(
+        mediaType: String, describes: String, reads _: QueryFileReads,
+        prepare: @escaping @MainActor (QueryFilePreparation) -> Prepared,
+        read: @escaping @Sendable (String, Prepared) -> String
+    ) {
+        contributeTextFormat(mediaType: mediaType, describes: describes, reads: .file, prepare: { prepare($0.file) }, read: read)
+    }
+
+    private mutating func contributeTextFormat<Prepared: Sendable>(
+        mediaType: String, describes: String, reads: QueryReads,
+        prepare: @escaping @MainActor (QueryPreparation) -> Prepared,
+        read: @escaping @Sendable (String, Prepared) -> String
+    ) {
         let erasedPrepare: @MainActor (QueryPreparation) -> any Sendable = { prepare($0) }
         let erasedRead: @Sendable (String, any Sendable) -> String = { text, prepared in read(text, prepared as! Prepared) }
-        contribute(QueryTextFormatting(mediaType: mediaType, describes: describes, prepare: erasedPrepare, read: erasedRead),
+        contribute(QueryTextFormatting(mediaType: mediaType, describes: describes, reads: reads, prepare: erasedPrepare, read: erasedRead),
                    to: QueryTextFormats.self)
     }
 }

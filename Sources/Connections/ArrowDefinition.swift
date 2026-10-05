@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import Geometry
+import Publishing
 import Selection
 import TableOfContents
 
@@ -13,6 +14,9 @@ struct ArrowDefinition {
         return ArrowGeometry(arrow: arrow, strokeWidth: ArrowStyle.strokeWidth) { connectables[$0] }
     }
 }
+
+/// Nothing binds to an arrow, so a stand-in for one would mean nothing: an arrow holds no `public`.
+extension ArrowDefinition: NeverPublic {}
 
 extension ArrowDefinition: ShapeDefinition {
     /// Draws in world coordinates; the caller has already applied the camera transform. With a
@@ -334,6 +338,7 @@ public struct ArrowsPlugin: CanvasPlugin {
             arrow.arrowRow()
         }
         registrar.service { ArrowTargeting(editor: $0) }
+        registrar.service { ArrowRowNesting(editor: $0) }
         registrar.overlay(BindingHintsOverlay())
         // Arrows let go of shapes as they're deleted through `ShapeReferencing`, which the core asks.
     }

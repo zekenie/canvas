@@ -8,7 +8,9 @@ import Geometry
 /// - the row above the top edge (`rowGap` above it, `rowHeight` tall): its right end leftward from
 ///   the right edge, whole, then its left end rightward from the left edge, in the room left (text
 ///   gives way, ending in "…", and needs `minTextRoom`, and its `lead` more, a symbol before it, or
-///   it and the rest are left out);
+///   it and the rest are left out), unless it isn't shown whole and a right-end item's compact face
+///   gives it more room (`Item.compact`: the right end's items take theirs, nearest the edge first,
+///   as many as give the text the most room it can get, and no more, all of them when it gets none);
 /// - the top-right corner (`cornerHeight` tall, centered on the top edge), leftward from
 ///   `cornerOverhang` past the right edge.
 ///
@@ -48,11 +50,22 @@ public enum AdornmentLayout {
         public var width: CGFloat
         public var isText: Bool
         public var lead: CGFloat
-        public init(_ placement: AdornmentPlacement, width: CGFloat, isText: Bool, lead: CGFloat = 0) {
+        /// A narrower face an item at the row's right end may take (`AdornmentLabel.compact(_:)`),
+        /// when its full one would leave the row's left end's text cut short or out, and it gives the
+        /// text more room (or, while none shows anyway, the most it can).
+        public var compact: Compact?
+        public init(_ placement: AdornmentPlacement, width: CGFloat, isText: Bool, lead: CGFloat = 0, compact: Compact? = nil) {
             self.placement = placement
             self.width = width
             self.isText = isText
             self.lead = lead
+            self.compact = compact
+        }
+
+        /// What an item's compact face needs: only its width, since the right end places whole.
+        public struct Compact: Equatable, Sendable {
+            public var width: CGFloat
+            public init(width: CGFloat) { self.width = width }
         }
     }
 
@@ -78,6 +91,8 @@ public enum AdornmentLayout {
         /// View points, from the corner.
         let frame: CGRect
         let isFromRight: Bool
+        /// The item's compact face is the one placed here.
+        var isCompact = false
 
         /// From the top-left corner.
         func frame(width: CGFloat) -> CGRect { isFromRight ? frame.offsetBy(dx: width, dy: 0) : frame }
@@ -100,18 +115,71 @@ public enum AdornmentLayout {
     }
 
     /// Each item's slot, into `slots`, whatever it held: one array for every shape a frame lays
-    /// out, so none is made a shape.
+    /// out, so none is made a shape. Compact faces are the row's right end's to take, whenever the
+    /// row's left end's text isn't shown whole with every face in full (cut short, or left out):
+    /// the items at the right end that have a compact face take it, nearest the edge first, as few
+    /// as give the texts as much width in all as every one of them does (so a title already whole
+    /// goes no farther), and every one when even that shows none of them, since it's the most room.
+    /// So as the shape widens the faces change once: compact, until the full faces and the whole
+    /// text fit together, then full. A row with no text at its left end, or whose text is whole
+    /// beside the full faces, keeps them. Items with no compact face cost no more than they did.
     static func slots(of items: [Item], width: CGFloat, into slots: inout [Slot?]) {
+        var compactable = 0
+        for item in items where item.placement == .aboveTopRight && item.compact != nil { compactable += 1 }
+        place(items, width: width, compacting: 0, into: &slots)
+        guard compactable > 0, !leftText(items, slots).isWhole else { return }
+        // The most the text gets: every face compact. If it shows none even then, that's the layout.
+        place(items, width: width, compacting: compactable, into: &slots)
+        let most = leftText(items, slots)
+        guard most.shown > 0 else { return }
+        for count in 0..<compactable {
+            place(items, width: width, compacting: count, into: &slots)
+            if leftText(items, slots).shown == most.shown { return }
+        }
+        place(items, width: width, compacting: compactable, into: &slots)
+    }
+
+    /// How the row's left end's texts are shown: whether every one is at its full width, and how
+    /// wide they are in all (one left out is none).
+    private struct LeftText {
+        var isWhole = true
+        var shown: CGFloat = 0
+    }
+
+    private static func leftText(_ items: [Item], _ slots: [Slot?]) -> LeftText {
+        var text = LeftText()
+        for i in items.indices where items[i].placement == .aboveTopLeft && items[i].isText {
+            guard let slot = slots[i] else {
+                text.isWhole = false
+                continue
+            }
+            text.shown += slot.frame.width
+            if slot.frame.width < items[i].width { text.isWhole = false }
+        }
+        return text
+    }
+
+    /// The layout itself, with the first `compacting` of the right end's compactable items (in the
+    /// order they're claimed) in their compact faces.
+    private static func place(_ items: [Item], width: CGFloat, compacting: Int, into slots: inout [Slot?]) {
         slots.removeAll(keepingCapacity: true)
         slots.append(contentsOf: repeatElement(Slot?.none, count: items.count))
         let rowY = -(rowGap + rowHeight)
         // The row's right end, leftward from the right edge: whole; one that would end past
         // `maxRun` is left out, with the rest.
         var right: CGFloat = 0
+        var compacted = 0
         for i in items.indices where items[i].placement == .aboveTopRight {
-            let x = right - items[i].width
+            var itemWidth = items[i].width
+            var isCompact = false
+            if compacted < compacting, let compact = items[i].compact {
+                itemWidth = compact.width
+                isCompact = true
+                compacted += 1
+            }
+            let x = right - itemWidth
             guard -x <= maxRun else { break }
-            slots[i] = Slot(frame: CGRect(x: x, y: rowY, width: items[i].width, height: rowHeight), isFromRight: true)
+            slots[i] = Slot(frame: CGRect(x: x, y: rowY, width: itemWidth, height: rowHeight), isFromRight: true, isCompact: isCompact)
             right = x - spacing
         }
         // The corner, centered on the top edge, leftward from its overhang.

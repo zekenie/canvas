@@ -60,9 +60,12 @@ enum EdgeChannels {
 
     // MARK: For canvas kinds
 
-    /// The channels an edge may leave a shape of `kind` on, by side: its dots'.
+    /// The channels an edge may leave a shape of `kind` on, by side: its dots'; none for a kind draw
+    /// can't name.
     static func sides(of kind: ShapeKind, in registry: Registry) -> [EdgeRequest.Side: [String]] {
         var sides: [EdgeRequest.Side: [String]] = [:]
+        // An edge names its ends: a kind draw can't name has none to offer.
+        guard registry.drawCanName(kind) else { return sides }
         for side in EdgeRequest.Side.allCases {
             let channels = registry.dotChannels(of: kind, side: side.port)
             if !channels.isEmpty { sides[side] = channels.map(\.rawValue) }

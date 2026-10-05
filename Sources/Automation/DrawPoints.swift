@@ -203,6 +203,13 @@ extension PluginRegistrar {
 // MARK: Reading them
 
 extension Registry {
+    /// Whether a script can name a shape of `kind` at all: it has a property a title is written to,
+    /// or a title worked out from what it is. A kind that can't be named can't be an end of an edge.
+    @MainActor public func drawCanName(_ kind: ShapeKind) -> Bool {
+        guard let naming = drawNaming else { return false }
+        return naming.namingProperty(kind, self) != nil || naming.isDerived(kind, self)
+    }
+
     var drawNaming: DrawNaming? { contributions(to: DrawNames.self).first?.value }
     var drawEdging: DrawEdging? { contributions(to: DrawEdges.self).first?.value }
     var drawCheck: DrawCheck? { contributions(to: DrawChecks.self).first?.value }

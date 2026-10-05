@@ -26,6 +26,8 @@ enum TextEditingStyle {
     static let caretListSymbolWidth: CGFloat = 16
     static let caretListGap: CGFloat = 6
     static let caretListHighlightRadius: CGFloat = 4
+    /// The line that sets a `separated` row off from the one above: one point thick, in from the row's text.
+    static let caretListSeparatorHeight: CGFloat = 1
     static let caretListCornerRadius: CGFloat = 8
     static let caretListLabelSize: CGFloat = 13
     static let caretListDetailSize: CGFloat = 11

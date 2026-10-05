@@ -18,7 +18,8 @@ extension ArrowEdge: EdgeType {
 
 /// Arrows are what ports draw: a drag from a port draws an arrow, its end binding (by tldraw's
 /// rules, as a re-aimed end does) only to shapes that take one of the port's channels, and an arrow
-/// so drawn keeps its channel (`ChannelProperty`). Released on nothing, nothing is drawn. An arrow
+/// so drawn keeps its channel (`ChannelProperty`); onto a shape that stands for others (a reference),
+/// only if what it stands for takes one (`PortState.ports(of:)`). Released on nothing, nothing is drawn. An arrow
 /// with a channel, re-aimed or moved, binds only to shapes that take its channel, at that end; one
 /// without (`canvas draw`'s `channel: none`, a board's from before ports), or with a channel no
 /// installed plugin declares, binds wherever an arrow can. Without a drag (`registry.connection`),

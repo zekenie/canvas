@@ -228,6 +228,32 @@ struct StoryQuery {
         expectEqual(byID[QueryStory.warehouseToPayments]?.properties?["channel"], nil, "an arrow drawn on no channel has none")
         expect(rows.allSatisfy { $0.editing == nil }, "nothing is being typed into")
     },
+    test("what each shipped word reads: the structure, attributes, kinds, names, edges and mention text the file; the selection, the board shown and validity the editor") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let h = try QueryStory.harness(pasteboard: pasteboard)
+        let queries = try require(h.editor.queries)
+        let file = ["sticky-note", #""Checkout""#, #"sticky-note[title^="API"]"#, "[locked]", "arrow[channel=note-link]", "sticky-note:top-level",
+                    #""Payments" *"#, #"sticky-note:inside("Payments")"#, #"subboard:has("Refund policy")"#, #"sticky-note:mentions("API gateway")"#,
+                    #"sticky-note:mentioned-by("Checkout")"#, #":edge-to("Checkout")"#, #":downstream-of("Checkout")"#, "arrow:dangling",
+                    // Mention text reads through the names Mentions keeps, a fact of the file.
+                    #"sticky-note[text*="TODO"]"#, #":contains("auth")"#]
+        for query in file {
+            let planned = try queries.check(query)
+            expect(planned.readsOnlyTheFile, "\(query) reads only the file: \(planned.editorWords)")
+        }
+        let editor: [(query: String, words: [String])] = [
+            (":selected", [":selected"]), (":current-board", [":current-board"]), (":invalid", [":invalid"]), (":warned", [":warned"]),
+            ("sticky-note:invalid:selected", [":invalid", ":selected"]), (#"sticky-note[text*="TODO"]:selected"#, [":selected"]),
+        ]
+        for (query, words) in editor {
+            let planned = try queries.check(query)
+            expectEqual(planned.editorWords, words, query)
+            expect(!planned.readsOnlyTheFile, query)
+        }
+        expect(try queries.check(#":edge-to("Checkout")"#).readsEdges)
+        expect(!(try queries.check("sticky-note[locked]").readsEdges))
+    },
     test("a note being typed into is read as of its last keystroke, and the answer says it may still change; typing goes on") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

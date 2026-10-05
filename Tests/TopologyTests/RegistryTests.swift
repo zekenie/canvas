@@ -46,7 +46,7 @@ import Topology
 
         let alone = try Registry(plugins: [TopologyPlugin(), spark]).edgeTypes
         expectEqual(alone.parent(of: "spark"), nil, "without links, a root")
-        expectEqual(alone.declared, ["spark"])
+        expectEqual(alone.declared, [StandingEdge.id, "spark"], "Topology declares its own")
     },
 
     test("contributing without Topology installed is refused") {
@@ -58,7 +58,7 @@ import Topology
     test("the tree: parents, children, descendants and ancestors, who declares each, and a type nobody declares") {
         let spark = declaring("more") { $0.edgeType("spark", parent: { _ in HotWireEdge.id }) }
         let types = try Registry(plugins: graphPlugins(more: [spark])).edgeTypes
-        expectEqual(types.declared, [WireEdge.id, HotWireEdge.id, QuoteEdge.id, CiteEdge.id, "spark"])
+        expectEqual(types.declared, [StandingEdge.id, WireEdge.id, HotWireEdge.id, QuoteEdge.id, CiteEdge.id, "spark"])
         expectEqual(types.children(of: WireEdge.id), [HotWireEdge.id])
         expectEqual(types.descendants(of: WireEdge.id), [HotWireEdge.id, "spark"])
         expectEqual(types.ancestors(of: "spark"), [HotWireEdge.id, WireEdge.id])

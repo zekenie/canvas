@@ -101,6 +101,8 @@ extension PropertyModifiers {
     public func maxItems(_ count: Int) -> Self { keywords(["maxItems": .number(Double(count))]) }
     public func deprecated() -> Self { keywords(["deprecated": true]) }
     public func readOnly() -> Self { keywords(["readOnly": true]) }
+    /// What the text is, as JSON Schema's `format` names it (`"date"`, or a plugin's own: `x-canvas-query`).
+    public func format(_ name: String) -> Self { keywords(["format": .string(name)]) }
 }
 
 /// One property: a stored member, named, with anything its schema says beyond its type.

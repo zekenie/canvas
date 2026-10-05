@@ -1,5 +1,5 @@
 import LanguageModels
-import QueryCommands
+import QueryTranslation
 import TestKit
 
 // How `--ask` reads the model's answer: a stop other than the end of its turn, fences, backticks and
@@ -27,7 +27,7 @@ private let oneLine = AskRequest.oneLine
             "UNANSWERABLES are fine": "UNANSWERABLES are fine",
         ]
         for (text, query) in cases {
-            expectEqual(QueryAsking.parse(ModelResponse(text: text)), .query(query), text)
+            expectEqual(AskAnswer.parse(ModelResponse(text: text)), .query(query), text)
         }
     },
     test("UNANSWERABLE, first, in any case, with or without a colon, bold or fenced: what follows, on one line") {
@@ -45,11 +45,11 @@ private let oneLine = AskRequest.oneLine
             "<query>UNANSWERABLE: a change to the board</query>": "a change to the board",
         ]
         for (text, why) in cases {
-            expectEqual(QueryAsking.parse(ModelResponse(text: text)), .unanswerable(why), text)
+            expectEqual(AskAnswer.parse(ModelResponse(text: text)), .unanswerable(why), text)
         }
     },
     test("more than one line: UNANSWERABLE last, one query over several lines, else the last line when it reads as a query") {
-        let cases: KeyValuePairs<String, QueryAsking.Answer> = [
+        let cases: KeyValuePairs<String, AskAnswer> = [
             // Reasoning, then the query.
             "Here is the query:\nchore": .query("chore"),
             "\"Linked to\" reads either way, so I use an edge either way.\n\nchore:connected-to(\"Pantry\", wire)":
@@ -79,12 +79,12 @@ private let oneLine = AskRequest.oneLine
             "chore\n`UNANSWERABLE: sums`": .unanswerable("sums"),
         ]
         for (text, answer) in cases {
-            expectEqual(QueryAsking.parse(ModelResponse(text: text)), answer, text)
+            expectEqual(AskAnswer.parse(ModelResponse(text: text)), answer, text)
         }
     },
     test("more than one line and the last no query: sent back to be put on one, whatever came before; nothing is unusable") {
-        let several = QueryAsking.Answer.unusable("it wrote several lines, and the last isn't a query", repair: oneLine)
-        let cases: KeyValuePairs<String, QueryAsking.Answer> = [
+        let several = AskAnswer.unusable("it wrote several lines, and the last isn't a query", repair: oneLine)
+        let cases: KeyValuePairs<String, AskAnswer> = [
             "Here is the query:\nIt's every chore.": several,
             "I can't tell.\nWhich pantry?": several,
             "Sorry,\nI can't.": several,
@@ -98,20 +98,20 @@ private let oneLine = AskRequest.oneLine
             "<query></query>": .unusable("it answered nothing", repair: nil),
         ]
         for (text, answer) in cases {
-            expectEqual(QueryAsking.parse(ModelResponse(text: text)), answer, text)
+            expectEqual(AskAnswer.parse(ModelResponse(text: text)), answer, text)
         }
     },
     test("a stop other than its turn's end: cut off, stopped early, or declined, whatever it wrote") {
-        let cases: [(StopReason, QueryAsking.Answer)] = [
+        let cases: [(StopReason, AskAnswer)] = [
             (.maxTokens, .unusable("its answer was cut off", repair: nil)),
             (.stopSequence, .unusable("it stopped before its answer was done", repair: nil)),
             (StopReason(rawValue: "pause_turn"), .unusable("it stopped before its answer was done", repair: nil)),
             (.refusal, .declined),
         ]
         for (stop, answer) in cases {
-            expectEqual(QueryAsking.parse(ModelResponse(text: "chore", stopReason: stop)), answer, stop.rawValue)
-            expectEqual(QueryAsking.parse(ModelResponse(text: "", stopReason: stop)), answer, stop.rawValue)
+            expectEqual(AskAnswer.parse(ModelResponse(text: "chore", stopReason: stop)), answer, stop.rawValue)
+            expectEqual(AskAnswer.parse(ModelResponse(text: "", stopReason: stop)), answer, stop.rawValue)
         }
-        expectEqual(QueryAsking.parse(ModelResponse(text: "chore", stopReason: .endTurn)), .query("chore"))
+        expectEqual(AskAnswer.parse(ModelResponse(text: "chore", stopReason: .endTurn)), .query("chore"))
     },
 ])

@@ -1,42 +1,35 @@
 import Automation
 import Canvas
 import CanvasRPC
+import LanguageModels
 import Queries
 import QueryLanguage
+import QueryTranslation
 
 // QueryCommands: the command line's side of queries. `canvas query` answers a query (the query
 // language, Queries' engine) about the whole file of the board it names, or, with --ask, a question
-// in English that the app's language model writes the query for (QueryAsking); `canvas
+// in English that the app's language model writes the query for (QueryTranslation's translator); `canvas
 // query-vocabulary` says what this app's queries can name.
 //
-// A horizontal on Automation (its commands), Queries (the engine), LanguageModels (--ask) and the
+// A language on Automation (its commands), Queries (the engine), QueryTranslation (--ask) and the
 // wire, since the answer is built as the wire's JSON, off the main actor (QueryOutput). It declares
-// no point, and knows no shipped kind: --ask's system prompt comes from its init (Composition's,
-// whose examples name the shipped kinds), and its help writes <kind> and <title>.
+// no point, and knows no shipped kind: --ask's system prompt is QueryTranslationPlugin's (Composition
+// supplies it, whose examples name the shipped kinds), and its help writes <kind> and <title>.
 
 extension PluginID {
     public static let queryCommands: PluginID = "query-commands"
 }
 
 /// `canvas query` and `canvas query-vocabulary`. Every plugin list with it needs `AutomationPlugin`,
-/// and `QueriesPlugin` (without it both answer `no_queries`); `--ask` needs `LanguageModelsPlugin`
-/// too (without it, `no_model`).
+/// and `QueriesPlugin` (without it both answer `no_queries`); `--ask` needs `QueryTranslationPlugin`
+/// and `LanguageModelsPlugin` too (without them, `no_model`).
 public struct QueryCommandsPlugin: CanvasPlugin {
-    let askPrompt: String
-    let askStyle: AskStyle
-
-    /// `askPrompt` is the system prompt `--ask` asks the model with; `askStyle` which model it asks,
-    /// and how (`AskStyle.shipped` unless an evaluation tries another).
-    public init(askPrompt: String, askStyle: AskStyle = .shipped) {
-        self.askPrompt = askPrompt
-        self.askStyle = askStyle
-    }
+    public init() {}
 
     public var id: PluginID { .queryCommands }
 
     public func register(into registrar: inout PluginRegistrar) {
         let canvas = RPC.commandName
-        let asking = QueryAsking(system: askPrompt, style: askStyle)
         registrar.automationCommand(
             "query", "Find the shapes of a file that a query matches, or that a question in English asks for.",
             discussion: """
@@ -59,7 +52,7 @@ public struct QueryCommandsPlugin: CanvasPlugin {
                 CommandExample(#"\#(canvas) query --ask "which <kind>s mention <title>?""#, "Have Claude write the query, and run it."),
             ],
             runAsync: { (params: QueryParams, context: AutomationContext) async throws(AutomationError) -> JSON in
-                try await query(params, in: context, asking: asking)
+                try await query(params, in: context)
             })
         registrar.automationCommand(
             "query-vocabulary", "List what this app's queries can name: kinds and their attributes, edge types and words.",
@@ -84,7 +77,7 @@ public struct QueryCommandsPlugin: CanvasPlugin {
 /// Runs `canvas query`: the query given, or the one the model writes for the question asked, on the
 /// file of the board the request names, its answer built as JSON off the main actor.
 @MainActor
-func query(_ params: QueryParams, in context: AutomationContext, asking: QueryAsking) async throws(AutomationError) -> JSON {
+func query(_ params: QueryParams, in context: AutomationContext) async throws(AutomationError) -> JSON {
     let asked = try params.asked()
     let editor = try context.board()
     guard let queries = editor.queries else { throw .noQueries }
@@ -94,7 +87,13 @@ func query(_ params: QueryParams, in context: AutomationContext, asking: QueryAs
         let result = try await answer(text, with: queries, params)
         return await QueryOutput.json(consume result, countOnly: params.count)
     case .question(let question):
-        let outcome = try await asking.ask(question, in: editor, limit: params.limit, countOnly: params.count, properties: params.listing)
+        guard let translator = editor.queryTranslator else { throw AutomationError(QueryTranslationError.noModel) }
+        let outcome: AskOutcome
+        do throws(QueryTranslationError) {
+            outcome = try await translator.ask(question, limit: params.limit, countOnly: params.count, properties: params.listing)
+        } catch {
+            throw AutomationError(error)
+        }
         return await QueryOutput.json(consume outcome, countOnly: params.count)
     }
 }
@@ -103,7 +102,9 @@ func query(_ params: QueryParams, in context: AutomationContext, asking: QueryAs
 @MainActor
 private func answer(_ text: String, with queries: QueryState, _ params: QueryParams) async throws(AutomationError) -> QueryResult {
     do throws(QueryError) {
-        return try await queries.run(QueryRequest(text, limit: params.limit, countOnly: params.count, properties: params.listing))
+        // Edges are read as they settle: once answers still arriving have come, or `settleWait` has passed.
+        return try await queries.run(QueryRequest(text, limit: params.limit, countOnly: params.count, properties: params.listing,
+                                                  settle: QueryBudget.settleWait))
     } catch {
         throw AutomationError(error, in: text)
     }
@@ -112,4 +113,43 @@ private func answer(_ text: String, with queries: QueryState, _ params: QueryPar
 extension AutomationError {
     /// No `QueriesPlugin`: nothing answers queries.
     static var noQueries: AutomationError { AutomationError("This app can't answer queries.", reason: "no_queries") }
+}
+
+extension AutomationError {
+    /// A question's refusal as the command line reports it: the model's failures with a hint to save
+    /// a key or try again, an unusable answer with where in the query it went wrong, and every other
+    /// in its own reason and message.
+    init(_ error: QueryTranslationError) {
+        let yourself = "the canvas skill's query-prompt.md"
+        switch error {
+        case .noQueries:
+            self.init(error.message, reason: error.reason)
+        case .noModel:
+            self.init(error.message, reason: error.reason,
+                      hint: "Write the query yourself: \(yourself) is the guidance the app gives Claude.")
+        case .model(let failure, _):
+            if failure == .noKey || failure == .unauthorized {
+                self.init(error.message, reason: error.reason,
+                          hint: "Save an Anthropic API key in Infinite Canvas › Settings… (⌘,), or write the query yourself: \(yourself).")
+            } else {
+                self.init(error.message, reason: error.reason,
+                          hint: failure.isTransient ? "Try again in a moment, or write the query yourself." : "Write the query yourself.",
+                          details: ["transient": .bool(failure.isTransient)])
+            }
+        case .declined, .cancelled:
+            self.init(error.message, reason: error.reason)
+        case .unanswerable:
+            self.init(error.message, reason: error.reason,
+                      hint: "Queries find shapes by what they are, what's inside what and what connects to what; not where they are, how they look, or sums.")
+        case .unusable(_, let query, let refusal):
+            let place = refusal.flatMap { $0.located(in: query, quoting: QueryOutput.quoted) }
+            self.init(error.message, reason: error.reason, hint: "Ask more specifically, or write the query yourself.",
+                      line: place?.line, column: place?.column, length: place?.length, statement: place?.statement,
+                      details: ["query": .string(query)])
+        case .tooSlow:
+            self.init(error.message, reason: error.reason, hint: "Ask again, or write the query yourself.")
+        case .refused(let refusal):
+            self.init(refusal, in: nil)
+        }
+    }
 }

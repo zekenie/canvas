@@ -7,6 +7,7 @@ import CoreGraphics
 import Frames
 import LanguageModels
 import Mentions
+import References
 import Schemas
 import Selection
 import StickyNotes
@@ -30,13 +31,14 @@ import TestKit
         defer { pasteboard.releaseGlobally() }
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
         expectEqual(editor.outlineGap, 4, "what ships")
-        // Each kind, with the radius its corners are rounded by (NoteStyle's, FrameStyle's, SchemaStyle's
-        // and SubboardStyle's).
+        // Each kind, with the radius its corners are rounded by (NoteStyle's, FrameStyle's, SchemaStyle's,
+        // SubboardStyle's and a pill's, half its height).
         let kinds: [(name: String, id: ShapeID, radius: CGFloat)] = [
             ("note", editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Milk")), 4),
             ("frame", editor.add(Frame(frame: CGRect(x: 400, y: 100, width: 300, height: 200))), 12),
             ("schema card", editor.add(SchemaCard(frame: CGRect(origin: CGPoint(x: 100, y: 400), size: SchemaCard.defaultSize))), 4),
             ("subboard", editor.add(Subboard(frame: CGRect(x: 400, y: 400, width: 240, height: 160))), 10),
+            ("reference", editor.add(Reference(frame: CGRect(x: 700, y: 400, width: 160, height: 32))), 16),
         ]
         let arrow = editor.add(Arrow(start: .free(CGPoint(x: 800, y: 100)), end: .free(CGPoint(x: 1000, y: 300)), bend: 0))
         // The canvas draws every one of them outlined, as ⌘A has them.

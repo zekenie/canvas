@@ -220,6 +220,9 @@ public final class ContentsState {
     /// whatever it carries (a frame and all it holds), and the rest only once something reads them.
     @ObservationIgnored private var movedSinceRead: Set<ShapeID> = []
     private var pin: Pin?
+    /// How many times a service has said rows changed outside a commit (`contentsDidChange(for:)`):
+    /// read by `entries`, so whoever reads the list reads again.
+    private var outsideChanges = 0
     #if DEBUG
     /// How many times the list has asked a row for its view (debug builds only), so tests can hold
     /// a change to redrawing the rows it changes.
@@ -259,6 +262,7 @@ public final class ContentsState {
     /// would make a loop: then the later shape stays at the top. Kept from one read to the next,
     /// so a read after a commit costs what the commit changed.
     public var entries: [ContentsEntry] {
+        _ = outsideChanges
         catchUp()
         followMoves()
         catchUpAway()
@@ -558,7 +562,7 @@ public final class ContentsState {
         rowsMade += 1
         #endif
         return ShapeRow(record: record, isListed: isListed,
-                        parent: contribution?.parent?(record) ?? registry.container(of: record, in: document),
+                        parent: contribution?.parent?(record, ContentsContext(editor: editor)) ?? registry.container(of: record, in: document),
                         ownsBoard: ownsBoard, startsExpanded: !ownsBoard && registry.isContainer(record),
                         row: resolvedRow(of: record, kind: kind), symbol: kind.symbol,
                         marks: marked ? marks(of: record, isListed: isListed, kind: kind) : [])
@@ -596,6 +600,20 @@ public final class ContentsState {
                              name: label.name, symbol: label.systemImage ?? ContentsSymbolKey.defaultValue)
         kinds[kind] = found
         return found
+    }
+}
+
+extension ContentsState {
+    /// What these shapes' rows show, or where they nest, changed other than through the document (a
+    /// service's answer arrived): their rows are made again on the next read, and the list reads again.
+    func forget(_ ids: Set<ShapeID>) {
+        for id in ids {
+            rows[id] = nil
+            remakes.remove(id)
+            remarks.remove(id)
+        }
+        note(ids)
+        outsideChanges += 1
     }
 }
 
@@ -741,6 +759,14 @@ extension ContentsState: EditorService {
 extension CanvasEditor {
     /// The table of contents' state; nil without TableOfContentsPlugin.
     public var tableOfContents: ContentsState? { service(ContentsState.self) }
+
+    /// What these shapes' rows show, or where they nest, changed other than through a commit (what a
+    /// service lends a row, `ContentsContext.service`, or `nestedUnder` reads: its answer arrived):
+    /// their rows are made again, and the list redrawn, as `adornmentsDidChange(for:)` does for
+    /// adornments. Nothing for a shape not on the board shown.
+    public func contentsDidChange(for ids: Set<ShapeID>) {
+        tableOfContents?.forget(ids)
+    }
 }
 
 extension ChangeSet {

@@ -486,7 +486,7 @@ struct Drawing {
         // Its attributes, its own and its styles'.
         for attribute in shape.attributes {
             let key = attribute.key
-            guard vocabulary.properties[key] != nil else {
+            guard vocabulary.properties[key] != nil, !vocabulary.isReadOnly(key) else {
                 if attribute.fromStyle != nil { continue }
                 if Self.coordinateKeys.contains(key) {
                     throw AutomationError(statement, .unsupported, "\(key): would say where \(subject) is, and there are no coordinates here",
@@ -510,6 +510,7 @@ struct Drawing {
             do throws(ValueRefusal) {
                 let value = try vocabulary.value(of: attribute)
                 try fits(value, key, item.kind, vocabulary)
+                try checkQuery(value, key, vocabulary)
                 settings[key] = value
             } catch {
                 let from = attribute.fromStyle.map { " (from style \($0))" } ?? ""

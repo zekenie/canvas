@@ -128,30 +128,16 @@ public struct AnyShapeRecord: Identifiable, Equatable, Sendable {
     }
 }
 
-/// A shape's container's id as two words and whether there's one: a layout the compiler knows, so
-/// copying, comparing and checking it costs what plain words do.
+/// A shape's container's id, if it has one: a `ShapeID` is two words, so copying, comparing and
+/// checking it costs what plain words do.
 struct ContainerBits: Equatable, Sendable {
-    var high: UInt64 = 0
-    var low: UInt64 = 0
-    var isSet = false
+    var id: ShapeID?
 
     init() {}
 
-    init(_ id: ShapeID?) {
-        guard let id else { return }
-        (high, low) = withUnsafeBytes(of: id.rawValue.uuid) { ($0.loadUnaligned(as: UInt64.self), $0.loadUnaligned(fromByteOffset: 8, as: UInt64.self)) }
-        isSet = true
-    }
+    init(_ id: ShapeID?) { self.id = id }
 
-    var id: ShapeID? {
-        guard isSet else { return nil }
-        var uuid: uuid_t = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-        withUnsafeMutableBytes(of: &uuid) { bytes in
-            bytes.storeBytes(of: high, as: UInt64.self)
-            bytes.storeBytes(of: low, toByteOffset: 8, as: UInt64.self)
-        }
-        return ShapeID(UUID(uuid: uuid))
-    }
+    var isSet: Bool { id != nil }
 }
 
 extension ShapeProps {

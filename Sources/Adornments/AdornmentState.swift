@@ -64,14 +64,18 @@ final class AdornmentState {
             candidate.label(record, context).flatMap { ShownAdornment(candidate, label: $0) }
         }
         guard !shown.isEmpty else {
-            if isHeard { kept[record.id] = LaidOutAdornments(shown: [], items: [], faces: []) }
+            if isHeard { kept[record.id] = LaidOutAdornments(shown: [], items: [], faces: [], compactFaces: []) }
             return nil
         }
         let faces = shown.map { AdornmentStyle.face(of: $0.label, in: $0.id.placement) }
+        let compactFaces: [AdornmentStyle.Face?] = shown.map { adornment in
+            adornment.label.compactFace.map { AdornmentStyle.face(of: $0, in: adornment.id.placement) }
+        }
         #if DEBUG
-        facesMade += faces.count
+        facesMade += faces.count + compactFaces.filter { $0 != nil }.count
         #endif
-        let laidOut = LaidOutAdornments(shown: shown, items: zip(shown, faces).map { $0.item(width: $1.width) }, faces: faces)
+        let items = (0..<shown.count).map { shown[$0].item(width: faces[$0].width, compactWidth: compactFaces[$0]?.width) }
+        let laidOut = LaidOutAdornments(shown: shown, items: items, faces: faces, compactFaces: compactFaces)
         if isHeard { kept[record.id] = laidOut }
         return laidOut
     }
@@ -111,8 +115,11 @@ final class AdornmentState {
               let bounds = Self.bounds(of: record.id, in: editor.shapeContext) else { return [] }
         let scale = AdornmentLayout.scale(atZoom: editor.camera.zoom)
         let slots = AdornmentLayout.slots(of: laidOut.items, width: bounds.width / scale)
-        return zip(laidOut.shown, slots).compactMap { adornment, slot in
-            slot.map { AdornmentFrame(adornment: adornment.id, label: adornment.label, rect: $0.worldRect(in: bounds, scale: scale)) }
+        return laidOut.shown.indices.compactMap { index in
+            slots[index].map {
+                AdornmentFrame(adornment: laidOut.shown[index].id, label: laidOut.look(of: index, in: $0).label,
+                               rect: $0.worldRect(in: bounds, scale: scale))
+            }
         }
     }
 
@@ -197,6 +204,16 @@ struct LaidOutAdornments {
     let shown: [ShownAdornment]
     let items: [AdornmentLayout.Item]
     let faces: [AdornmentStyle.Face]
+    /// Each shown adornment's compact face, if its label has one (`AdornmentLabel.compact(_:)`): the
+    /// layout says which of the two is drawn.
+    let compactFaces: [AdornmentStyle.Face?]
+
+    /// The label and face drawn for adornment `index` in `slot`: its compact ones where the layout
+    /// placed those.
+    func look(of index: Int, in slot: AdornmentLayout.Slot) -> (label: AdornmentLabel, face: AdornmentStyle.Face) {
+        if slot.isCompact, let face = compactFaces[index], let label = shown[index].label.compactFace { return (label, face) }
+        return (shown[index].label, faces[index])
+    }
 }
 
 /// One adornment as a shape shows it: its label, which says something (text that isn't blank, or a
@@ -224,7 +241,9 @@ struct ShownAdornment {
         lead = AdornmentStyle.lead(of: label, in: id.placement)
     }
 
-    func item(width: CGFloat) -> AdornmentLayout.Item { AdornmentLayout.Item(id.placement, width: width, isText: isText, lead: lead) }
+    func item(width: CGFloat, compactWidth: CGFloat?) -> AdornmentLayout.Item {
+        AdornmentLayout.Item(id.placement, width: width, isText: isText, lead: lead, compact: compactWidth.map { .init(width: $0) })
+    }
 
     /// Whether this, on `shape`, is `button` (the one hovered or pressed).
     func isButton(_ button: AdornmentButton?, on shape: ShapeID) -> Bool {

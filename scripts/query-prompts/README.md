@@ -6,7 +6,7 @@ framework: a Swift test that asks the real model, a TSV of cases, a TSV of resul
 Nothing here is a copy of the app. The cases run through what ships: CompositionTests' "Query
 prompt, live" suite (`Tests/CompositionTests/QueryLiveTests.swift`) opens each case's file with the
 shipped plugins, shows its board, selects its shapes, and asks its question the way `--ask` asks it:
-`QueryAsking` with `QueryPrompt.system`, the model `AskStyle` names through the editor's
+`QueryTranslator` with `QueryPrompt.system`, the model `AskStyle` names through the editor's
 `AnthropicModel` (with the key Settings saves), the repair turn, and the command's deadlines. It then runs the query the model wrote and
 compares the set of shapes it matched with the case's. Any query that finds those shapes passes,
 whatever its form.

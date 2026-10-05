@@ -30,6 +30,7 @@ extension CanvasEditor {
         let shapeCount = { (owner: ShapeID) in file.children[owner]?.shapes.count ?? 0 }
         let registry = registry
         let fileShape = { (id: ShapeID) in Self.shape(id, inFile: file, registry: registry) }
+        let lend = { [unowned self] (id: ObjectIdentifier) in resolveService(id) }
         // Previews asked for in earlier frames first, so one finished now is drawn now.
         let previews = boardPreviews, previewColor = Style.boardPreview.cgColor, zoom = camera.zoom
         if previews.isPending { previews.build(in: file, until: .now + previews.frameBudget) }
@@ -50,7 +51,7 @@ extension CanvasEditor {
                     context.translateBy(x: offset.x / zoom, y: offset.y / zoom)
                 }
                 let render = RenderContext(cg: context, shapes: shapes, isEditing: record.id == editing, shapeCount: shapeCount,
-                                           preview: preview, fileShape: fileShape, skeleton: ink)
+                                           preview: preview, fileShape: fileShape, lend: lend, skeleton: ink)
                 if skeletons, record.id != editing {
                     if let custom = customSkeletons[record.kind] {
                         custom.erasedRenderSkeleton(record, in: render)
@@ -104,7 +105,7 @@ extension CanvasEditor {
     // MARK: Drawing a shape away from where it is
 
     /// Draws a shape `offset` view points away from where it is, until it's set back to zero: for
-    /// an animation that moves how a shape looks without changing it (Locking's shake). Its outline
+    /// an animation that moves how a shape looks without changing it (Selection's refusal shake). Its outline
     /// goes with it, and so do the overlays that decorate it (a title's pill, a lock),
     /// through `OverlayContext.worldDrawingOffset(of:)`. Everything else goes by where it is: hit
     /// testing, handles, arrows bound to it, pictures of the board. A shape that's deleted loses its

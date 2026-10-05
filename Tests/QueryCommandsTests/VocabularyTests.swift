@@ -48,7 +48,8 @@ struct KindLine: Decodable {
         let link = try require(kinds.first { $0.kind == Link.kind.rawValue })
         expectEqual(link.naming, "none")
 
-        expectEqual(json["edgeTypes"], [["type": "wire", "summary": "a link, from the shape it starts on to the shape it ends on"]])
+        expectEqual(json["edgeTypes"], [["type": "stands-for", "summary": "from a shape to each shape it stands for"],
+                                        ["type": "wire", "summary": "a link, from the shape it starts on to the shape it ends on"]])
 
         let words = try require(json["words"]?.arrayValue)
         expectEqual(words.map { $0["word"] }, vocabulary.words.map { .string($0.word) })

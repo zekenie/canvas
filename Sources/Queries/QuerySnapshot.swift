@@ -13,6 +13,9 @@ import Topology
 struct QuerySnapshot: Sendable {
     let file: CanvasFile
     let topology: TopologySnapshot
+    /// Topology in each view the request asked for (`topology` is the first's): a batch reads each
+    /// request in its own.
+    let topologies: [EdgeView: TopologySnapshot]
     let shown: BoardID
     /// The boards from the top down to the one shown.
     let shownPath: [BoardID]
@@ -24,6 +27,15 @@ struct QuerySnapshot: Sendable {
     let formats: [String: any Sendable]
     /// Counts it among the snapshots alive (`QueryState.liveSnapshots`, debug builds).
     let token: LiveToken
+}
+
+extension QuerySnapshot {
+    /// The same snapshot reading edges in `view`, if it was taken up in it.
+    func reading(_ view: EdgeView) -> QuerySnapshot {
+        guard let graph = topologies[view] else { return self }
+        return QuerySnapshot(file: file, topology: graph, topologies: topologies, shown: shown, shownPath: shownPath, revision: revision,
+                             editing: editing, words: words, formats: formats, token: token)
+    }
 }
 
 /// A value handed from one task to another whole: taken out once, so the taker is its last holder

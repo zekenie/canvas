@@ -52,7 +52,7 @@ extension ShapeOpener {
 extension CanvasEditor {
     /// Whether `open` would do something with a shape: it's on the board shown, not kept aside, and
     /// its kind has an opener (`ShapeOpening`) or is `Editable`. A read-only shape of an `Editable`
-    /// kind (a locked note) counts: opening it is refused, and the refusal shows (Locking shakes it),
+    /// kind (a locked note) counts: opening it is refused, and the refusal shows (Selection shakes it),
     /// as deleting it is.
     public func canOpen(_ id: ShapeID) -> Bool {
         guard let record = document[id], !record.isOpaque else { return false }

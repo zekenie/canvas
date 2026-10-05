@@ -5,6 +5,7 @@ import Queries
 import QueryLanguage
 import QueryLexicon
 import TestKit
+import Topology
 
 // Mentions in queries: mention text read as a person reads it (each mention "@" and the name its
 // target has now), and `:mentions(S)` and `:mentioned-by(S)` over Topology's mention edges, across
@@ -29,6 +30,21 @@ import TestKit
         let text = try require(h.editor.queries?.vocabulary.kind(Scribble.kind)?.attribute("text"))
         expectEqual(text.mediaType, MentionTextFormat.mediaType)
         expectEqual(text.reads, "mentions read as @Name")
+    },
+    test("mention text reads only the file: a text search is readsOnlyTheFile, and a batch of ids answers it in the recorded view as a query does") {
+        let h = try mentionHarness()
+        let queries = try require(h.editor.queries)
+        for text in [#"[text*="@Checkout"]"#, #":contains("@payments")"#, #"scribble[text="Calls @Gateway for tokens"]:mentions("Checkout")"#] {
+            let plan = try queries.check(text)
+            expectEqual(plan.editorWords, [], text)
+            expect(plan.readsOnlyTheFile, text)
+        }
+        let requests = [#"[text*="@Checkout"]"#, #":contains("@payments")"#, #"[text*="Checkout page"]"#].map { QueryMatchRequest($0, edges: .recorded) }
+        let answers = try awaitResult { await queries.matches(requests) }
+        expectEqual(answers.map { (try? $0.get())?.ids }, [[id(1)], [id(12)], []], "the names mentions show now, as a query reads them")
+        h.editor.rename(id(11), "Cart")
+        let renamed = try awaitResult { await queries.matches([QueryMatchRequest(#"[text*="@Cart"]"#, edges: .recorded)]) }
+        expectEqual((try? renamed[0].get())?.ids, [id(1)], "taken as the batch takes up the file")
     },
     test("a rename reads in the next query, on the board shown or another, and its undo puts the name back") {
         let h = try mentionHarness()

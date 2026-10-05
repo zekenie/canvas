@@ -23,6 +23,14 @@ enum SelectionStyle {
     static let brushFill = NSColor(srgbRed: 0.56, green: 0.56, blue: 0.56, alpha: 0.102)
     static let brushStroke = NSColor(srgbRed: 0.56, green: 0.56, blue: 0.56, alpha: 0.251)
     static let brushStrokeWidth: CGFloat = 1
+    // The shake a shape gives when something tries to change it and it can't be (`RefusalShake`).
+    /// The farthest it goes to either side, in view points.
+    static let shakeAmplitude: CGFloat = 5
+    /// How many times it goes right and left.
+    static let shakeCycles: Double = 3
+    static let shakeDuration: Duration = .milliseconds(360)
+    /// A frame of a shake.
+    static let shakeFrame: Duration = .milliseconds(16)
     /// Going back moves the camera this long (data-canvas's).
     static let goBackDuration: Duration = .milliseconds(200)
     /// Bringing shapes into view (`reveal`), as selecting a row of data-canvas's table of contents

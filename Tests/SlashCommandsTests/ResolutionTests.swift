@@ -80,6 +80,19 @@ private let twice = Contributor(id: "twice") { registrar in
         expectEqual(state?.run("turn-on", on: aside.id, with: SlashArguments([])), false)
     },
 
+    test("a read-only shape offers nothing, and it's offered again once it can change") {
+        let log = RefusalLog()
+        let h = try slashHarness([LampsPlugin(), FreezingPlugin(log: log)])
+        let state = h.editor.slashCommands
+        let lamp = h.add(Lamp(area))
+        expectEqual(names(state, lamp), ["turn-on", "level"])
+        h.editor.freeze([lamp])
+        expectEqual(names(state, lamp), [], "frozen: its text can't be edited, so no command could be typed")
+        expectEqual(state?.run("turn-on", on: lamp, with: SlashArguments([])), false, "nor run")
+        h.editor.freeze([lamp], false)
+        expectEqual(names(state, lamp), ["turn-on", "level"])
+    },
+
     test("a command is found by its name folded to lowercase, if the shape offers it now") {
         let h = try slashHarness([LampsPlugin()])
         let state = try require(h.editor.slashCommands)
@@ -110,6 +123,28 @@ private let twice = Contributor(id: "twice") { registrar in
         expectEqual(state.commands(for: box).map(\.argument), ["caption", nil, nil, nil, "@shape", nil, nil])
         expect(state.run("move-to-back", on: box, with: SlashArguments([])))
         expectEqual(h.editor.undoHistory.undoName, "Move to Back")
+    },
+
+    test("`step:` names the undo step otherwise, for an edit command and a perform one; without it the title does") {
+        let h = try slashHarness([Contributor(id: "steps") { registrar in
+            registrar.slashCommands(Box.self) {
+                SlashCommand("widen", step: "Make Wider") { id, _, editor in
+                    editor.transact { $0.update(id, as: Box.self) { $0.props.frame.size.width += 1 } }
+                }
+                SlashCommand("heighten", step: "Make Taller") { box, _ in box.frame.size.height += 1 }
+                SlashCommand("shrink") { box, _ in box.frame.size.height -= 1 }
+            }
+        }])
+        let state = try require(h.editor.slashCommands)
+        let box = h.add(Box(area))
+        expectEqual(state.commands(for: box).map(\.title), ["Widen", "Heighten", "Shrink"], "the title stays the name in words")
+        expectEqual(state.commands(for: box).map(\.stepName), ["Make Wider", "Make Taller", "Shrink"])
+        expect(state.run("widen", on: box, with: SlashArguments([])))
+        expectEqual(h.editor.undoHistory.undoName, "Make Wider")
+        expect(state.run("heighten", on: box, with: SlashArguments([])))
+        expectEqual(h.editor.undoHistory.undoName, "Make Taller")
+        expect(state.run("shrink", on: box, with: SlashArguments([])))
+        expectEqual(h.editor.undoHistory.undoName, "Shrink")
     },
 
     test("accepts: no arguments for a command without an argument, something for one with, and a rule of its own replaces that") {

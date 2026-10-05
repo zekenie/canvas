@@ -18,7 +18,8 @@ public struct OfferedSlashCommand {
     /// The name in words, in title case as a macOS menu has it: every word capitalized but the
     /// articles, coordinating conjunctions and short prepositions (`minorWords`), which stay lowercase
     /// unless first or last: "Set Title", "Move to Back", "Turn into Subboard". The undo step the
-    /// command makes is named for it, so it reads as the menu item that does the same does.
+    /// command makes is named for it, so it reads as the menu item that does the same does, unless the
+    /// command names its step otherwise (`stepName`).
     public var title: String {
         let words = name.split(separator: "-")
         return words.enumerated().map { index, word in
@@ -32,6 +33,9 @@ public struct OfferedSlashCommand {
     private static let minorWords: Set<String> = [
         "a", "an", "and", "as", "at", "but", "by", "for", "from", "in", "into", "nor", "of", "on", "onto", "or", "the", "to", "with"
     ]
+
+    /// What the undo step it makes is called: the title, unless the command says otherwise (`SlashCommand`'s `step:`).
+    public var stepName: String { command.step ?? title }
 
     /// Whether it can run with what was typed after its name (`SlashCommand`'s `accepts`).
     public func accepts(_ arguments: SlashArguments) -> Bool { command.accepts(arguments) }
@@ -53,9 +57,10 @@ public final class SlashCommandState {
     /// What a shape offers now: its kind's own commands, then every shape's that its kind lets in (a
     /// kind's own taking the place of one of the same name, offered or not), each in plugin and
     /// builder order, those whose `when` holds for the shape as it is. None for a shape that isn't on
-    /// the board shown, or is kept aside.
+    /// the board shown, or is kept aside, or is read-only (its text can't be edited, and a command
+    /// would change it).
     public func commands(for id: ShapeID) -> [OfferedSlashCommand] {
-        guard let record = editor.document[id], !record.isOpaque else { return [] }
+        guard let record = editor.document[id], !record.isOpaque, !editor.isReadOnly(id) else { return [] }
         return candidates(for: record.kind).filter { $0.isOffered(record) }.map(OfferedSlashCommand.init)
     }
 
@@ -74,7 +79,7 @@ public final class SlashCommandState {
     @discardableResult
     public func run(_ command: OfferedSlashCommand, on id: ShapeID, with arguments: SlashArguments) -> Bool {
         guard let record = editor.document[id], !record.isOpaque, command.accepts(arguments) else { return false }
-        editor.undoHistory.group(command.title) { command.command.run(id, arguments, editor) }
+        editor.undoHistory.group(command.stepName) { command.command.run(id, arguments, editor) }
         return true
     }
 

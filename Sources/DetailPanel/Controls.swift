@@ -54,6 +54,10 @@ public enum DetailStyle {
     /// Where a text view's text starts, from its edge (its line fragment padding).
     static let textInset: CGFloat = 5
     static let listRowHeight: CGFloat = 22
+    /// Lines of caption text a `DetailShapeRow` shows under its name, at most.
+    static let shapeRowLines = 2
+    /// A dimmed `DetailShapeRow`'s opacity, all of it.
+    static let dimmedRow: Double = 0.5
     /// A bordered list's height beyond its rows: its border and inset.
     static let listChrome: CGFloat = 6
     static let listRows = 3...8
