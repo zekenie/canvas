@@ -61,6 +61,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [containers](.claude/rules/containers.md): shapes holding shapes on a board, and settling what's put down.
 - [boards on disk](.claude/rules/boards-on-disk.md): `BoardDocument` and `BoardCodec`: formats, migrations and fixtures, what's kept aside, the view memory, autosave.
 - [drawing](.claude/rules/drawing.md): what a frame may cost, the dot grid, skeletons, board previews, the minimap, the pointer over the views the canvas hosts.
+- [Quick Look](.claude/rules/quick-look.md): a board file's preview and thumbnail in the Finder: `BoardPicture`, the app's extension, how it's built, signed and registered.
 
 **Foundation**
 - [text editing](.claude/rules/text-editing.md): `EditingTextView` and the one caret list, under every editable text.

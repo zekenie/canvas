@@ -22,18 +22,22 @@ public struct Camera: Equatable, Sendable {
     /// Shows `bounds` (world units) centered in a view of `viewSize` points, zoomed to fit with
     /// `inset` view points of margin in all (half on each side), within `zoomRange` and never past
     /// `maxZoom` (tldraw's zoomToBounds, whose `targetZoom` is `maxZoom`). A side of zero size
-    /// doesn't limit the zoom.
-    public init(fitting bounds: CGRect, in viewSize: CGSize, inset: CGFloat, maxZoom: CGFloat = Camera.zoomRange.upperBound) {
-        self.init(fitting: bounds, in: CGRect(origin: .zero, size: viewSize), inset: inset, maxZoom: maxZoom)
+    /// doesn't limit the zoom. `minZoom` is how far out it may go, `zoomRange`'s lower bound unless
+    /// a picture of the board asks for less (`BoardPicture`, which shows all of a board the canvas
+    /// would show only in part).
+    public init(fitting bounds: CGRect, in viewSize: CGSize, inset: CGFloat, minZoom: CGFloat = Camera.zoomRange.lowerBound,
+                maxZoom: CGFloat = Camera.zoomRange.upperBound) {
+        self.init(fitting: bounds, in: CGRect(origin: .zero, size: viewSize), inset: inset, minZoom: minZoom, maxZoom: maxZoom)
     }
 
     /// Shows `bounds` (world units) centered in `viewRect`, a part of the view (view points), zoomed
-    /// to fit it as `init(fitting:in:inset:maxZoom:)` fits a whole view: for a view whose top the
-    /// host covers (a path over a subboard's canvas).
-    public init(fitting bounds: CGRect, in viewRect: CGRect, inset: CGFloat, maxZoom: CGFloat = Camera.zoomRange.upperBound) {
+    /// to fit it as `init(fitting:in:inset:minZoom:maxZoom:)` fits a whole view: for a view whose top
+    /// the host covers (a path over a subboard's canvas).
+    public init(fitting bounds: CGRect, in viewRect: CGRect, inset: CGFloat, minZoom: CGFloat = Camera.zoomRange.lowerBound,
+                maxZoom: CGFloat = Camera.zoomRange.upperBound) {
         let width = max(viewRect.width - inset, 1), height = max(viewRect.height - inset, 1)
         let fit = min(bounds.width > 0 ? width / bounds.width : .infinity, bounds.height > 0 ? height / bounds.height : .infinity)
-        zoom = min(maxZoom, min(max(fit, Self.zoomRange.lowerBound), Self.zoomRange.upperBound))
+        zoom = min(maxZoom, min(max(fit, minZoom), Self.zoomRange.upperBound))
         origin = CGPoint(x: bounds.midX - viewRect.midX / zoom, y: bounds.midY - viewRect.midY / zoom)
     }
 

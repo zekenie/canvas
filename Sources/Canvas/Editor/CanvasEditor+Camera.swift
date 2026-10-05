@@ -137,6 +137,11 @@ extension CanvasEditor {
         animateCamera(to: target, duration: Style.zoomDuration)
     }
 
+    /// The margin a board's first visit fits its shapes with, view points in all (half on each side),
+    /// as Zoom to Fit does: for a picture of a board that shows it as a first visit would
+    /// (CanvasUI's `BoardPicture`).
+    @_spi(Host) public static var firstVisitInset: CGFloat { Style.firstVisitInset }
+
     /// Every shape of the board shown in view: fitted into what the host leaves clear of the view
     /// (`unobscuredViewport`) with a board's first visit's margin, as close as the zoom goes
     /// (tldraw's zoomToFit). Does nothing on an empty board, or before the view has a size.
