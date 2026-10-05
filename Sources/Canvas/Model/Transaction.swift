@@ -17,9 +17,11 @@ import Geometry
 /// shapes letting go of what's deleted (`ShapeReferencing`).
 ///
 /// A transaction is on one board of the file, the one the editor shows (`board`), and changes that
-/// board's shapes. Two things reach the boards under them: deleting a shape takes the board it owns
-/// with it, and every board under that (`ChangeSet.boardsRemoved`); and a shape can go in with its
-/// board and the boards under it (`insert(_:contents:)`, a paste; `ChangeSet.boardsAdded`). A shape
+/// board's shapes. Three things reach the boards under them: deleting a shape takes the board it owns
+/// with it, and every board under that (`ChangeSet.boardsRemoved`); a shape can go in with its
+/// board and the boards under it (`insert(_:contents:)`, a paste; `ChangeSet.boardsAdded`); and
+/// shapes can move onto the board a shape on this board owns (`move(_:toBoardOwnedBy:)`;
+/// `boardsAdded`, or `boardsChanged` if the board held shapes already). A shape
 /// whose board, or a board under it, holds a read-only shape isn't deleted, as the Finder won't trash
 /// a folder holding a locked file. Shape ids are unique across the file: a shape inserted can't have
 /// the id of one on any board.
@@ -30,6 +32,9 @@ import Geometry
 /// all, and nothing joins or leaves one); deleting a container lets go of what it holds into its own
 /// container. `setContainer` puts a shape in one, and `settle` keeps what's put down from sitting
 /// across a container's edge (Settling.swift).
+///
+/// A shape can become another kind under its id (`turn`), so whatever binds or names it goes on
+/// doing so.
 @MainActor
 public struct Transaction {
     public private(set) var document: CanvasDocument
@@ -41,16 +46,26 @@ public struct Transaction {
     /// The rest of the file, read from the editor as it is.
     let file: FileAccess
     /// Boards going in with the shapes inserted here that own them, and the boards under those, by
-    /// owner: what the commit adds to the file.
+    /// owner: what the commit adds to the file. Also the boards shapes were moved onto here
+    /// (`move(_:toBoardOwnedBy:)`), whole, with what the file holds there already: what the commit
+    /// adds, or, if the file held shapes there (`changes.boardsChanged`), writes over it.
     private(set) var stagedBoards: [ShapeID: CanvasDocument] = [:]
-    /// The shapes on `stagedBoards`.
+    /// The shapes inserted or moved onto `stagedBoards` here.
     private var stagedIDs: Set<ShapeID> = []
+    /// The owners of the boards shapes were moved onto here. None of them is deleted in the same
+    /// transaction (`delete` holds to it): what moved there would be dropped with the board, and the
+    /// boards it owns left with no owner. No flow deletes a shape it has just moved shapes onto.
+    private var movedOnto: Set<ShapeID> = []
     private(set) var didChange = false
     /// What it did so far, record by record: what the commit hands services.
     private(set) var changes = ChangeSet()
-    /// Read-only shapes it was asked to change, restack or delete, and didn't (and read-only
+    /// Read-only shapes it was asked to change, restack, move or delete, and didn't (and read-only
     /// containers that wouldn't take a shape: `setContainer`, `settle`).
     var refused: Set<ShapeID> = []
+    /// The read-only shapes it was asked to change, restack, move or delete so far, and didn't, and
+    /// read-only containers that wouldn't take a shape: what a plugin that must change everything or
+    /// nothing reads, to throw so nothing commits, then shake them (`editor.refuseChanges(to:)`).
+    public var refusedShapes: Set<ShapeID> { refused }
     /// Shapes whose willDelete handlers have run in this transaction; removed together at the end
     /// of the outermost `delete`.
     private var deleting: Set<ShapeID> = []
@@ -130,7 +145,8 @@ public struct Transaction {
     }
 
     /// What the board `owner` owns holds, as this transaction leaves it: the boards going in with an
-    /// insert, none for a board going with its owner, else the file's.
+    /// insert, or that shapes were moved onto (`move(_:toBoardOwnedBy:)`), none for a board going
+    /// with its owner, else the file's.
     public func contents(ofBoardOwnedBy owner: ShapeID) -> CanvasDocument {
         let board = BoardID(owner: owner)
         if let staged = stagedBoards[owner] { return staged }
@@ -541,10 +557,12 @@ public struct Transaction {
     /// read-only shape stays, refused, like a read-only shape. A container deleted lets go of what
     /// it holds, which stays where it is, now in the container's own container (the nearest one up
     /// that isn't deleted too), read-only or not; a shape in a read-only container is read-only, so
-    /// it stays, as the container does.
+    /// it stays, as the container does. A shape can't be deleted in the transaction that moved shapes
+    /// onto its board (`move(_:toBoardOwnedBy:)`).
     public mutating func delete(_ ids: Set<ShapeID>) {
         let ids = ids.filter { id in document[id].map { !refuses($0) && !refusesForContents($0) } ?? false }.subtracting(deleting)
         guard !ids.isEmpty else { return }
+        precondition(movedOnto.isDisjoint(with: ids), "a shape can't be deleted in the transaction that moved shapes onto its board")
         let isOutermost = deleting.isEmpty
         deleting.formUnion(ids)
         let wasCascading = isCascading
@@ -644,6 +662,145 @@ public struct Transaction {
             guard let released = record.remappingReferences({ ids.contains($0) ? nil : $0 }, in: context), released != record else { continue }
             update(record.id) { $0 = released }
         }
+    }
+
+    // MARK: Turning, and moving to the board below
+
+    /// Turns a shape into another kind: `record`'s kind and props in place of its own, the same shape
+    /// otherwise. It keeps its id, so whatever binds or names it still does (an arrow's end, a
+    /// mention), its place in the stack, its container and its metadata, and the values of its added
+    /// properties that its new kind holds too (a title); `record`'s added values fill in the rest
+    /// (defaults, or what a placement set), and its id, stacking key and container are ignored. Only
+    /// a box shape is in a container, so one turned into a kind with no box is on the board directly.
+    /// The new kind must be installed, and accept `record`'s props. A container (`ShapeContaining`)
+    /// turned into a kind that isn't one lets go of what it holds, as deleting it does: those shapes
+    /// stay where they are, in its own container. A shape of a kind that owns boards (`BoardOwning`)
+    /// whose board holds shapes can only be turned into a kind that owns boards, so no board is left
+    /// without an owner: move its shapes out first.
+    ///
+    /// Returns whether the shape is now as `record` says. It isn't for a shape that isn't on this
+    /// board or is kept aside, one whose new frame isn't finite (as `update` drops it), and a read-only
+    /// shape (or one in a read-only container), refused as `update` refuses it, which services hear.
+    @discardableResult
+    public mutating func turn(_ id: ShapeID, into record: AnyShapeRecord) -> Bool {
+        precondition(registry.definition(for: record.kind)?.erasedAccepts(record) == true,
+                     "no installed plugin defines \(record.kind) shapes with these props")
+        guard let index = document.index(of: id), !document.shapes[index].isOpaque else { return false }
+        let old = document.shapes[index]
+        var new = AnyShapeRecord(id: id, kind: record.kind, props: record.props, stackingKey: old.stackingKey, meta: old.meta)
+        new.added = record.added
+        new.added.overlay(old.added)
+        if new.box != nil { new.containerBits = old.containerBits }
+        new = registry.propertyTable.normalized(new)
+        guard new.box?.isFinite ?? true else { return false }
+        precondition(!registry.ownsShowableBoard(old) || registry.boardOwningKinds.contains(new.kind) || contents(ofBoardOwnedBy: id).shapes.isEmpty,
+                     "a shape that owns a board with shapes can only be turned into a kind that owns boards: move its shapes out first")
+        guard new != old else { return true }
+        guard !refuses(old, becoming: new) else { return false }
+        if registry.isContainer(old), !registry.isContainer(new) { release(from: [id]) }
+        tops = [:]
+        document.replace(at: index, with: new)
+        noteChanged(id)
+        return true
+    }
+
+    /// `turn(_:into:)` a shape of `props`' kind, with those props and the defaults of its added
+    /// properties.
+    @discardableResult
+    public mutating func turn<P: ShapeProps>(_ id: ShapeID, into props: P) -> Bool {
+        turn(id, into: AnyShapeRecord(ShapeRecord(props)))
+    }
+
+    /// Moves shapes on this board onto the board `owner` owns (a shape on this board of a kind that
+    /// owns boards, not among them), under their ids: on top of what that board holds, in their order,
+    /// each with its props, added values and metadata, and with what it owns (a board goes with its
+    /// owner wherever that is). What a container among them holds goes with it, at any depth. A shape
+    /// stays in a container that moves with it, and is in none there otherwise. Ids not on this board
+    /// are passed over. The commit says the board is new to the file (`boardsAdded`), or changed if it
+    /// held shapes already (`boardsChanged`), and what moved removed from this one; undoing it puts
+    /// every shape back, in its place in the stack.
+    ///
+    /// Bindings (`ShapeReferencing`: an arrow's ends) are to shapes on the same board, so those across
+    /// the edge are let go of, as deleting the shape would: a shape that stays lets go of what moves
+    /// (an arrow's end stays where it's drawn), and one that moves of what stays, read-only or not.
+    /// Names (`ShapeNaming`: a mention) may be of a shape on any board, and stay as they are.
+    ///
+    /// All or nothing for read-only shapes: if `owner`, or a shape that would move, is read-only (or in
+    /// a read-only container), nothing moves, services hear which were refused (`refusedShapes`), and
+    /// this returns false. It's false too, nothing moving and nothing refused, for an `owner` that isn't
+    /// on this board or owns no board (a shape whose turn into a kind that owns one was refused).
+    /// Nothing else is asked of a shape that moves (no handlers run), and `owner` can't be deleted in
+    /// this transaction.
+    @discardableResult
+    public mutating func move(_ ids: Set<ShapeID>, toBoardOwnedBy owner: ShapeID) -> Bool {
+        // An owner that isn't here, or owns no board (a turn into a kind that owns one was refused):
+        // nothing to move onto, so nothing moves.
+        guard let holder = document[owner], registry.ownsShowableBoard(holder) else { return false }
+        let kinds = registry.containingKinds
+        var moving: Set<ShapeID> = []
+        for id in ids where document[id] != nil {
+            moving.insert(id)
+            moving.formUnion(document.descendants(of: id, containingKinds: kinds))
+        }
+        precondition(!moving.contains(owner), "a shape can't move onto its own board, nor onto that of a shape a container that moves holds")
+        guard !moving.isEmpty else { return true }
+        // Every shape refused is noted, so each is heard refused.
+        var isRefused = holds(holder)
+        if isRefused { refused.insert(owner) }
+        for index in moving.compactMap({ document.index(of: $0) }).sorted() where refuses(document.shapes[index]) { isRefused = true }
+        guard !isRefused else { return false }
+        // Bindings, both ways, while every shape is still here: an arrow lets go of an end where it's
+        // drawn.
+        let referencing = registry.referencingKinds
+        if !referencing.isEmpty {
+            let context = shapes
+            let wasCascading = isCascading
+            isCascading = true
+            for record in document.shapes where referencing.contains(record.kind) {
+                let isMoving = moving.contains(record.id)
+                guard let released = record.remappingReferences({ moving.contains($0) == isMoving ? $0 : nil }, in: context),
+                      released != record else { continue }
+                update(record.id) { $0 = released }
+            }
+            isCascading = wasCascading
+        }
+        // Off this board, as they are by now, back to front, each in the container it's in if that
+        // moves too.
+        var leaving: [AnyShapeRecord] = []
+        for index in moving.compactMap({ document.index(of: $0) }).sorted() {
+            var record = document.shapes[index]
+            if let container = record.container, !moving.contains(container) { record.container = nil }
+            leaving.append(record)
+        }
+        tops = [:]
+        document.remove(moving)
+        for id in moving {
+            if changes.added.remove(id) == nil {                          // added and moved here: never on this board
+                changes.changed.remove(id)
+                changes.moved.remove(id)
+                changes.removed.insert(id)
+            }
+        }
+        // On the other, above what it holds.
+        var target = contents(ofBoardOwnedBy: owner)
+        for var record in leaving {
+            record.stackingKey = keys.key(between: target.shapes.last?.stackingKey, and: nil)
+            target.append(record)
+        }
+        let owned = BoardID(owner: owner)
+        if stagedBoards[owner] == nil {
+            if !changes.boardsRemoved.contains(owned), !file.contents(owned).shapes.isEmpty {
+                changes.boardsChanged.insert(owned)
+            } else {
+                changes.boardsAdded.insert(owned)
+            }
+        }
+        stagedBoards[owner] = target
+        stagedIDs.formUnion(moving)
+        movedOnto.insert(owner)
+        changes.reordered = true
+        didChange = true
+        return true
     }
 }
 

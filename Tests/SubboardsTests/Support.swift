@@ -16,13 +16,15 @@ import TableOfContents
 import TestKit
 import Titles
 import Topology
+import Transform
 
 /// Every plugin a subboard contributes to (Boards, and through it Selection, ContextMenus and the
-/// panel; Titles, and slash commands for its `/title`; Mentions, the table of contents and the keys),
-/// and CanvasTesting's fixtures, for boxes.
+/// panel; Titles, and slash commands for its `/title` and `/turn-into-subboard`; Transform, whose
+/// container channel it takes; Mentions, the table of contents and the keys), and CanvasTesting's
+/// fixtures, for boxes.
 @MainActor func subboardPlugins() -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), SubboardsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
-     SlashCommandsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(), TitlesPlugin(), MentionsPlugin(), BoardsPlugin()]
+     SlashCommandsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(), TitlesPlugin(), MentionsPlugin(), BoardsPlugin(), TransformPlugin()]
 }
 
 func record<P: ShapeProps>(_ id: ShapeID, _ props: P) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(id: id, props)) }

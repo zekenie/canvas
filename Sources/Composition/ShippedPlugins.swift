@@ -29,6 +29,7 @@ import SwiftUI
 import TableOfContents
 import Titles
 import Topology
+import Transform
 import Validation
 
 /// The static composition point: which plugins ship, in which order (the toolbar's order, and the
@@ -62,6 +63,8 @@ public enum ShippedPlugins {
             MentionsPlugin(),
             // Getting around a file's boards (a subboard's): opening one, ⌘↑, the path.
             BoardsPlugin(),
+            // Turning shapes into other kinds: a frame into a subboard, from its menu.
+            TransformPlugin(),
             ValidationDetailsPlugin(), ValidationContentsPlugin(), MentionValidationPlugin(), TitleValidationPlugin(),
             ClipboardPlugin(pasteboard: pasteboard),
             LockingPlugin(),

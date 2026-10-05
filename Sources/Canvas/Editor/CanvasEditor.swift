@@ -394,8 +394,9 @@ public final class CanvasEditor {
     /// changed that board (`ChangeSet.boardsChanged`, the shapes it touched in `elsewhere`) and those
     /// it took or brought, the board shown as it was. Read-only shapes stay as they are, as in any
     /// transaction, but nothing shows the refusal, since they aren't shown. A transaction that would
-    /// take the board shown, or a board above it, with a shape it deletes commits nothing. Returns
-    /// nil, doing nothing, for a board the editor can't show (`canShow`).
+    /// take the board shown, or a board above it, with a shape it deletes, or that reaches the board
+    /// shown (moving shapes onto it), commits nothing: `document` would go stale. Returns nil, doing
+    /// nothing, for a board the editor can't show (`canShow`).
     @discardableResult
     public func transact<T>(on target: BoardID, _ name: String? = nil, _ body: (inout Transaction) throws -> T) rethrows -> T? {
         guard target != board else { return try transact(name, coalescing: nil, origin: .ordinary, body) }
@@ -412,7 +413,8 @@ public final class CanvasEditor {
         }
         // The owners too: an empty board isn't among the boards a deletion takes.
         guard transaction.didChange, transaction.changes.boardsRemoved.isDisjoint(with: boardPath),
-              transaction.changes.removed.isDisjoint(with: boardPath.lazy.compactMap(\.owner)) else { return result }
+              transaction.changes.removed.isDisjoint(with: boardPath.lazy.compactMap(\.owner)),
+              !transaction.changes.boardsReached.contains(board) else { return result }
         if isReplacingFile {
             commit(transaction, onHidden: target)
         } else {
@@ -581,12 +583,12 @@ public final class CanvasEditor {
     }
 
     /// Writes a transaction on a board that isn't shown (`transact(on:)`) through to the file, and
-    /// tells services as a commit that changed that board and those it took or brought: the board
-    /// shown is as it was.
+    /// tells services as a commit that changed that board and those it took, brought or changed (shapes
+    /// moved onto them): the board shown is as it was.
     private func commit(_ transaction: Transaction, onHidden target: BoardID) {
         let local = transaction.changes
         var changes = ChangeSet()
-        changes.boardsChanged = [target]
+        changes.boardsChanged = local.boardsChanged.union([target])
         changes.boardsAdded = local.boardsAdded
         changes.boardsRemoved = local.boardsRemoved
         changes.byAgent = local.byAgent
@@ -595,16 +597,27 @@ public final class CanvasEditor {
         documentDidChange(to: storedDocument, changes: changes)
     }
 
-    /// Takes out of the file the boards a transaction took, and puts in those it brought; returns
-    /// the shapes on them.
+    /// Takes out of the file the boards a transaction took, puts in those it brought, and writes over
+    /// those it moved shapes onto that held shapes already; returns the shapes on them, of the boards
+    /// it changed only those that came.
     private func writeBoards(of transaction: Transaction) -> Set<ShapeID> {
         let changes = transaction.changes
         var touched = storedFile.shapeIDs(on: changes.boardsRemoved)
         for board in changes.boardsRemoved { leftCameras[board] = nil }
         storedFile.removeBoards(changes.boardsRemoved)
         warmIndexes.forget(changes.boardsRemoved)
-        for board in transaction.stagedBoards.values { touched.formUnion(board.shapes.lazy.map(\.id)) }
-        storedFile.insertBoards(transaction.stagedBoards)
+        // A board the file has is set, not inserted, which wants a new one: after the board the
+        // transaction was on, which let go of the shapes that moved.
+        var brought = transaction.stagedBoards
+        for board in changes.boardsChanged {
+            guard let owner = board.owner, let document = brought.removeValue(forKey: owner) else { continue }
+            let change = ChangeSet(from: storedFile[board], to: document)
+            touched.formUnion(change.added)
+            storedFile.set(document, for: board, changes: change)
+        }
+        warmIndexes.forget(changes.boardsChanged)
+        for board in brought.values { touched.formUnion(board.shapes.lazy.map(\.id)) }
+        storedFile.insertBoards(brought)
         return touched
     }
 
@@ -621,6 +634,8 @@ public final class CanvasEditor {
 
     /// The shown board is now `newDocument`, `changes` from what it was: everything that follows it.
     private func documentDidChange(to newDocument: CanvasDocument, changes: ChangeSet) {
+        // What the shape being edited was, for its editing view is that kind's.
+        let editedKind = editingShapeID.flatMap { storedDocument[$0]?.kind }
         withMutation(keyPath: \.document) { storedDocument = newDocument }
         revision += 1
         shapeIndex.documentDidChange(changes, in: newDocument, registry: registry)
@@ -630,8 +645,10 @@ public final class CanvasEditor {
         // Services drop what no longer names a shape, as the hint's setter does.
         for service in serviceOrder { service.documentDidChange(changes, in: self) }
         hintedShapeID = hintedID
-        // A shape that's gone, or can no longer change (it, or a container it's in), isn't edited.
-        if let editing = editingShapeID, document[editing].map({ registry.isReadOnly($0, in: newDocument) }) ?? true { endEditing() }
+        // A shape that's gone, can no longer change (it, or a container it's in), or is of another kind
+        // now (turned, `Transaction.turn`), isn't edited.
+        if let editing = editingShapeID,
+           document[editing].map({ registry.isReadOnly($0, in: newDocument) || $0.kind != editedKind }) ?? true { endEditing() }
         setNeedsDisplay()
     }
 

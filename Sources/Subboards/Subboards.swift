@@ -4,6 +4,7 @@ import CoreGraphics
 import Keyboard
 import Mentions
 import Titles
+import Transform
 
 extension PluginID {
     public static let subboards: PluginID = "subboards"
@@ -38,7 +39,9 @@ extension Subboard {
 /// (its name, in a pill above the card after the kind's symbol, as a schema card's), Mentions (by
 /// its name; following a mention enters it; a Mentioned In tab in its panel), the table of contents
 /// (a row Titles names) and the detail panel (a header that renames it). Going back up, and the
-/// path, are Boards'.
+/// path, are Boards'. It takes Transform's container channel: a shape that holds shapes (a frame) can
+/// be turned into a subboard, a subboard's size at its top-left corner, holding on its board what the
+/// shape held.
 public struct SubboardsPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .subboards }
@@ -52,6 +55,13 @@ public struct SubboardsPlugin: CanvasPlugin {
             sub.mentionable(tint: { _ in SubboardStyle.border }, following: .opens)   // by its name, else "Untitled Subboard"; followed, it's entered
             sub.subboardRow()                              // the table of contents, named by Titles
             sub.subboardHeader()                           // renamed in the panel's header
+        }
+        // Shapes that hold shapes (a frame) turn into a subboard: one a subboard's size at their top-left
+        // corner, holding on its board what they held. Turn into Subboard in their menu, and /turn-into-subboard.
+        registrar.turnable(into: Subboard.self, through: ContainerChannel.self) { container, transaction in
+            // A refused turn leaves the shape as it was, which owns no board to move onto.
+            guard transaction.turn(container.id, into: Subboard(frame: CGRect(origin: container.frame.origin, size: Subboard.defaultSize))) else { return }
+            transaction.move(container.held, toBoardOwnedBy: container.id)
         }
     }
 }

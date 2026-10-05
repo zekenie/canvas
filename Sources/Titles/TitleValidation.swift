@@ -117,8 +117,11 @@ final class TitleIndex {
         for id in changes.added where !changes.moved.contains(id) { follow(id) }
         for id in changes.changed where !changes.moved.contains(id) { follow(id) }
         // A commit that only took boards (a subboard's deletion) hands over every shape they held,
-        // all gone: only those that had a title need filing, whichever is fewer to go through.
+        // all gone: only those that had a title need filing, whichever is fewer to go through. Not one
+        // that brought some of them to the board shown as it took their board (undoing a turn, whose
+        // move put them there): those aren't gone.
         let onlyTook = !changes.replacedDocument && changes.boardsAdded.isEmpty && changes.boardsChanged.isEmpty
+            && changes.added.isDisjoint(with: changes.elsewhere)
         if onlyTook, titles.count < changes.elsewhere.count {
             let gone = titles.filter { changes.elsewhere.contains($0.key) }
             for (id, title) in gone {

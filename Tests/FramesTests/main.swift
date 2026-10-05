@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([frameTests, hitTests, toolTests, renderTests])
+runTests([frameTests, hitTests, toolTests, renderTests, turnTests])

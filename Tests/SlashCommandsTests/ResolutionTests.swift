@@ -91,18 +91,25 @@ private let twice = Contributor(id: "twice") { registrar in
         expect(state.command(named: "turn-on", for: ShapeID()) == nil, "no such shape")
     },
 
-    test("a command's title is its name in words, each capitalized: the undo step it makes") {
+    test("a command's title is its name in title case, as a menu has it: every word capitalized but the articles, conjunctions and short prepositions, unless first or last; the undo step it makes") {
         let h = try slashHarness([LampsPlugin(), Contributor(id: "words") { registrar in
             registrar.slashCommands(Box.self) {
                 SlashCommand("set-caption", argument: "caption") { _, _ in }
+                SlashCommand("move-to-back") { box, _ in box.frame.origin.x += 1 }
+                SlashCommand("turn-into-subboard") { _, _ in }
+                SlashCommand("bring-the-box-to-the-front") { _, _ in }
                 SlashCommand("move-into", argument: "@shape") { _, _, _ in }
+                SlashCommand("on-top") { _, _ in }
                 SlashCommand("h2") { _, _ in }
             }
         }])
         let state = try require(h.editor.slashCommands)
         let box = h.add(Box(area))
-        expectEqual(state.commands(for: box).map(\.title), ["Set Caption", "Move Into", "H2"])
-        expectEqual(state.commands(for: box).map(\.argument), ["caption", "@shape", nil])
+        expectEqual(state.commands(for: box).map(\.title), ["Set Caption", "Move to Back", "Turn into Subboard", "Bring the Box to the Front",
+                                                            "Move Into", "On Top", "H2"])
+        expectEqual(state.commands(for: box).map(\.argument), ["caption", nil, nil, nil, "@shape", nil, nil])
+        expect(state.run("move-to-back", on: box, with: SlashArguments([])))
+        expectEqual(h.editor.undoHistory.undoName, "Move to Back")
     },
 
     test("accepts: no arguments for a command without an argument, something for one with, and a rule of its own replaces that") {

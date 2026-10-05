@@ -16,8 +16,9 @@ public struct Registry {
     private let all: [RawContribution]
     private let definitions: [ShapeKind: any ShapeDefinition]
     /// Kinds whose props are bound to other shapes (`ShapeReferencing`): what a deletion asks to
-    /// let go. Not the kinds that only name shapes (`namingKinds`).
-    let referencingKinds: Set<ShapeKind>
+    /// let go, and what a plugin that follows bindings asks (`record.boundShapes(in:)`), so only
+    /// these are walked. Not the kinds that only name shapes (`namingKinds`).
+    public let referencingKinds: Set<ShapeKind>
     /// Kinds whose shapes can hold names of shapes (`ShapeNaming`): in their own props, or in an
     /// added property they opt into. A copy renames the names of these kinds' shapes, and a plugin
     /// that follows names walks only these (`record.forEachNamingValue`); no other shape holds one.
