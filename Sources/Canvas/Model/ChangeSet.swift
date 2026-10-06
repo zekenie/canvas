@@ -34,14 +34,16 @@ public struct ChangeSet: Equatable, Sendable {
     /// language model) takes the shapes it changed as it takes shapes it sees for the first time.
     public internal(set) var byAgent = false
     /// Boards it brought into the file with the shapes that own them (`insert(_:contents:)`: a
-    /// paste), or made for shapes it moved onto the board a shape owns (`move(_:toBoardOwnedBy:)`),
-    /// and boards it took out of the file with theirs (every board under a deleted shape). Neither is
-    /// the board the commit was on, whose shapes are the ones named above.
+    /// paste), or made for shapes it moved onto a board the file held none on
+    /// (`Transaction.move(_:to:)`), and boards it took out of the file with theirs (every board under
+    /// a deleted shape). Neither is the board the commit was on, whose shapes are the ones named above.
     public internal(set) var boardsAdded: Set<BoardID> = []
     public internal(set) var boardsRemoved: Set<BoardID> = []
     /// Boards it changed the shapes of while another was shown, keeping them in the file: Delete
-    /// Hidden Shapes deleting what's kept aside on them, undo putting that back, and the shapes a
-    /// transaction moved onto a board that held shapes already (`move(_:toBoardOwnedBy:)`).
+    /// Hidden Shapes deleting what's kept aside on them, undo putting that back, a transaction on a
+    /// board that isn't shown (`transact(on:)`), and the boards a transaction moved shapes onto that
+    /// held shapes already (the root always), or settled shapes on (`Transaction.move(_:to:)`,
+    /// `settle(_:on:)`).
     public internal(set) var boardsChanged: Set<BoardID> = []
 
     /// Every board it reached but its own: added, removed or changed.

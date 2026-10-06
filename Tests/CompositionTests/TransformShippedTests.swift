@@ -185,8 +185,8 @@ import Validation
         let g = Groceries(pasteboard)
         let h = g.h
         let state = try require(h.editor.slashCommands)
-        expectEqual(state.commands(for: g.frame).map(\.name), ["turn-into-subboard", "title", "lock"], "a command is placed where its plugin is: Subboards' is before Titles' and Locking's")
-        expectEqual(state.commands(for: g.milk).map(\.name), ["title", "lock"], "a note has nothing to turn into")
+        expectEqual(state.commands(for: g.frame).map(\.name), ["turn-into-subboard", "title", "lock", "public", "move-to", "move-near"], "a command is placed where its plugin is: Subboards' is before Titles', Locking's, Publishing's and Moving's")
+        expectEqual(state.commands(for: g.milk).map(\.name), ["title", "lock", "public", "move-to", "move-near"], "a note has nothing to turn into")
         expectEqual(state.commands(for: g.frame).first?.title, "Turn into Subboard")
         let before = h.file
         h.editor.selectedShapeIDs = [g.frame, g.milk]
@@ -195,7 +195,7 @@ import Validation
         expectEqual(h.editor.selectedShapeIDs, [g.frame], "a selected note it moved off the board leaves the selection")
         expectEqual(h.editor.undoHistory.undoName, "Turn into Subboard")
         expectEqual(h.file[BoardID(owner: g.frame)].shapes.map(\.id), [g.milk, g.eggs, g.dairy, g.cheese, g.between])
-        expectEqual(state.commands(for: g.frame).map(\.name), ["title", "lock"], "a subboard has nothing to turn into either")
+        expectEqual(state.commands(for: g.frame).map(\.name), ["title", "lock", "public", "move-to", "move-near"], "a subboard has nothing to turn into either")
         expect(!state.run("turn-into-subboard", on: g.frame, with: SlashArguments([])))
         expect(!state.run("turn-into-subboard", on: g.frame, with: "now"), "it takes no arguments")
         h.editor.undo()

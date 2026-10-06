@@ -31,8 +31,11 @@ extension NSPasteboard.PasteboardType {
 /// - It hosts slash commands (`SlashCommandTyping`, with `SlashCommandsPlugin` installed and a shape
 ///   to own the text): a `/` typed on an empty line lists what the shape offers in the same kind of
 ///   list, and Return on a line that is a command runs it and takes the line out of the text. A
-///   pill in a command line is a shape it's given (`SlashArguments`). The `@` picker's keys come
-///   first while it's open, so Return in the picker picks.
+///   pill in a command line is a shape it's given (`SlashArguments`), and on the line of a command
+///   that takes one shape the `@` picker lists only the shapes the command admits, ranking only
+///   those of the kinds it names (`SlashCommandTyping.admittedShapes(at:)`), so what's picked there
+///   is one it can take. The `@` picker's keys come first while it's open, so Return in the picker
+///   picks.
 /// - Copy writes the stored form (`.mentionText`) and the plain one ("@Label"); paste reads the
 ///   stored form first, then plain text, where a whole `@[label](shape:UUID)` becomes a pill.
 /// - Each pill shows its target as it's called now: the view observes its targets
@@ -554,7 +557,9 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
     private func openPicker(at location: Int) {
         guard let mentions, style != nil, isEditable else { return }
         slashCommands?.close()
-        let picker = MentionPicker(at: location, mentions: mentions, scope: Scope.self, owner: owner)
+        let shapes = slashCommands?.admittedShapes(at: location)
+        let picker = MentionPicker(at: location, mentions: mentions, scope: Scope.self, owner: owner,
+                                   kinds: shapes?.kinds, admitting: shapes?.rule)
         self.picker = picker
         substitutions = CaretListSubstitutions(of: self)
         CaretListSubstitutions.off.apply(to: self)

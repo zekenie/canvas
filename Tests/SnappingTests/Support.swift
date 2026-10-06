@@ -27,7 +27,7 @@ extension MoveTool: Tool {
 
 /// The move tool, as the default tool.
 @MainActor func movePlugin(_ moves: Moves) -> Contributor {
-    Contributor(id: "moving") { r in
+    Contributor(id: "move-tool") { r in
         r.tool(ToolDescriptor(id: "move", label: "Move", systemImage: "arrow.up.and.down.and.arrow.left.and.right")) { _ in MoveTool(moves: moves) }
         r.defaultTool("move")
     }

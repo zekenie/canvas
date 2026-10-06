@@ -1,18 +1,50 @@
 import Canvas
 
-/// A command a shape offers just now, as the list shows it and `SlashCommandState` runs it.
+/// A command a shape offers just now, as the list shows it and `SlashCommandState` runs it. It's
+/// found for one shape (`SlashCommandState.commands(for:)`), the one the line is on, and a command
+/// that takes a shape asks its rule about the shapes it's given with that shape and the editor.
 @MainActor
 public struct OfferedSlashCommand {
     /// As typed after the `/`: `set-title`.
     public let name: String
     /// The hint for what it takes ("title", "@shape"); nil for a command that takes none.
     public let argument: String?
+    /// The most kinds of shape it takes, for a command that takes one and names them (`SlashCommand`'s
+    /// `kinds:`), as the registry says: no shape of another kind is admitted, whatever the rule says.
+    /// Nil for a command that takes no shape, or names no kinds (any kind).
+    public let admittedKinds: Set<ShapeKind>?
     let command: ErasedSlashCommand
+    /// The command's rule for which shape it takes, alone: bound to the shape it was found for and to
+    /// the editor, held weakly, since the state holds its editor unowned and a command outlives the
+    /// call that found it (a list and a text view keep it). Nil for a command that takes no shape.
+    fileprivate let rule: (@MainActor (ShapeID) -> Bool)?
+    /// The same with the kinds: a shape of a kind it names, and the rule says yes.
+    fileprivate let admitsShape: (@MainActor (ShapeID) -> Bool)?
 
-    init(_ command: ErasedSlashCommand) {
+    init(_ command: ErasedSlashCommand, owner: ShapeID, editor: CanvasEditor) {
         self.command = command
         name = command.name
         argument = command.argument
+        let kinds = command.kinds(in: editor.registry)
+        admittedKinds = kinds
+        guard let shapes = command.shapes else {
+            rule = nil
+            admitsShape = nil
+            return
+        }
+        let admits: @MainActor (ShapeID) -> Bool = { [weak editor] target in
+            guard let editor else { return false }
+            return shapes(target, owner, editor)
+        }
+        rule = admits
+        if let kinds {
+            admitsShape = { [weak editor] target in
+                guard let editor, let kind = editor.shape(inFile: target)?.kind, kinds.contains(kind) else { return false }
+                return shapes(target, owner, editor)
+            }
+        } else {
+            admitsShape = admits
+        }
     }
 
     /// The name in words, in title case as a macOS menu has it: every word capitalized but the
@@ -37,8 +69,58 @@ public struct OfferedSlashCommand {
     /// What the undo step it makes is called: the title, unless the command says otherwise (`SlashCommand`'s `step:`).
     public var stepName: String { command.step ?? title }
 
-    /// Whether it can run with what was typed after its name (`SlashCommand`'s `accepts`).
-    public func accepts(_ arguments: SlashArguments) -> Bool { command.accepts(arguments) }
+    /// Whether it takes one shape (`SlashCommand`'s `shapes:` form): what's typed after its name must
+    /// be exactly one, which `admits(_:)` says yes to.
+    public var takesShape: Bool { admitsShape != nil }
+
+    /// Whether the shape it takes may be `shape`, for the shape it was found for: of a kind it names,
+    /// if it names any (`admittedKinds`: its kind is read from its record anywhere in the file, so a
+    /// shape that isn't there is of none), and its rule says yes. False for a command that takes no
+    /// shape.
+    public func admits(_ shape: ShapeID) -> Bool { admitsShape?(shape) ?? false }
+
+    /// What a text view that lists shapes asks, for the line it's on: the kinds and the rule of the
+    /// command it's a line of, if it takes a shape.
+    var shapeRule: SlashShapeRule? {
+        guard let rule, let admitsShape else { return nil }
+        return SlashShapeRule(kinds: admittedKinds, rule: rule, admits: admitsShape)
+    }
+
+    /// Whether it can run with what was typed after its name (`SlashCommand`'s `accepts`): for a
+    /// command that takes a shape, that's exactly one shape, which it admits, and nothing else.
+    public func accepts(_ arguments: SlashArguments) -> Bool {
+        guard command.accepts(arguments) else { return false }
+        guard let admitsShape else { return true }
+        guard case .shape(let target, _)? = arguments.runs.first else { return false }
+        return admitsShape(target)
+    }
+}
+
+/// Which shapes the command on a line takes, as a host that lists shapes asks it
+/// (`SlashCommandTyping.admittedShapes(at:)`; Mentions' `@` picker): the kinds it takes at most, and
+/// its rule, for the shape the line is on. A list that ranks only the shapes of `kinds` asks `rule`
+/// of each; anything else asks `admits(_:)`.
+@MainActor
+public struct SlashShapeRule {
+    /// The most kinds of shape the command takes, if it names any: a shape of another kind is never
+    /// admitted, whatever the rule says. A list that ranks only shapes of these kinds costs what they
+    /// are, not what the board holds. Nil: any kind.
+    public let kinds: Set<ShapeKind>?
+    /// The command's rule alone, for a shape already known to be of `kinds`: what a list that ranks
+    /// only those asks of each shape. It doesn't ask the shape's kind.
+    public let rule: @MainActor (ShapeID) -> Bool
+    private let admitsShape: @MainActor (ShapeID) -> Bool
+
+    fileprivate init(kinds: Set<ShapeKind>?, rule: @escaping @MainActor (ShapeID) -> Bool, admits: @escaping @MainActor (ShapeID) -> Bool) {
+        self.kinds = kinds
+        self.rule = rule
+        admitsShape = admits
+    }
+
+    /// Whether the command takes a shape: it's of one of `kinds`, if there are any (its kind is read
+    /// from its record anywhere in the file, so a shape that isn't there is of none), and the rule
+    /// says yes.
+    public func admits(_ shape: ShapeID) -> Bool { admitsShape(shape) }
 }
 
 /// What slash commands know of an editor: which commands a shape offers, and running one. Per
@@ -61,7 +143,7 @@ public final class SlashCommandState {
     /// would change it).
     public func commands(for id: ShapeID) -> [OfferedSlashCommand] {
         guard let record = editor.document[id], !record.isOpaque, !editor.isReadOnly(id) else { return [] }
-        return candidates(for: record.kind).filter { $0.isOffered(record) }.map(OfferedSlashCommand.init)
+        return candidates(for: record.kind).filter { $0.isOffered(record) }.map { OfferedSlashCommand($0, owner: id, editor: editor) }
     }
 
     /// The command of a name (folded to lowercase) that a shape offers now.

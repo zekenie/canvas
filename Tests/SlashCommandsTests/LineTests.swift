@@ -175,8 +175,8 @@ private func rowText(_ row: CaretListRow) -> String {
     test("an empty query lists every command as it was offered, name and hint; the first is highlighted") {
         let picker = try cardPicker()
         expectEqual(picker.query, "")
-        expectEqual(picker.listed.map(\.name), ["grow", "width", "log", "ping", "any"])
-        expectEqual(picker.rows.map(rowText), ["grow", "width (points)", "log (text)", "ping", "any (anything)"])
+        expectEqual(picker.listed.map(\.name), ["grow", "width", "log", "ping", "stack", "any"])
+        expectEqual(picker.rows.map(rowText), ["grow", "width (points)", "log (text)", "ping", "stack (@shape)", "any (anything)"])
         expectEqual(picker.highlighted, 0)
         expectEqual(picker.highlightedCommand?.name, "grow")
         expectEqual(picker.nameRange, NSRange(location: 0, length: 1))
@@ -200,7 +200,7 @@ private func rowText(_ row: CaretListRow) -> String {
         _ = picker.read("/p" as NSString, selection: NSRange(location: 2, length: 0), isEdit: true)
         expectEqual(picker.listed.map(\.name), ["ping"])
         _ = picker.read("/" as NSString, selection: NSRange(location: 1, length: 0), isEdit: true)
-        expectEqual(picker.listed.count, 5, "an empty query again lists them all")
+        expectEqual(picker.listed.count, 6, "an empty query again lists them all")
     },
 
     test("when nothing matches the list is the one row that says so, with nothing to highlight") {
@@ -234,7 +234,7 @@ private func rowText(_ row: CaretListRow) -> String {
         picker.moveHighlight(by: 1)
         expectEqual(picker.highlighted, 0)
         picker.moveHighlight(by: 8)
-        expectEqual(picker.highlighted, 4)
+        expectEqual(picker.highlighted, 5)
         picker.highlight(row: 1)
         expectEqual(picker.highlightedCommand?.name, "width")
         picker.highlight(row: 9)

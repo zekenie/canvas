@@ -56,10 +56,16 @@ public struct LayoutProblem {
         public var ref: Ref
         /// How a message names what keeps the box there: `in "Sprint 3"`.
         public var written: String
+        /// Whether the box goes in the holder itself, not in what it holds: no obstacle wholly within
+        /// the holder is a zone of it, so it's kept clear of a frame in the holder, as of any shape
+        /// there, rather than landing on one that holds others (a zone's rule c). False, as `in "F"`
+        /// has it, a box that lands among a shape in the holder and what that holds sits on it.
+        public var direct: Bool
 
-        public init(_ ref: Ref, written: String) {
+        public init(_ ref: Ref, written: String, direct: Bool = false) {
             self.ref = ref
             self.written = written
+            self.direct = direct
         }
     }
 
@@ -168,7 +174,8 @@ public struct LayoutProblem {
     /// Asked for each free box as it's placed, again after every solve, once for the region a
     /// drawing with nothing to hang on may land in, once more for each box where it lands (the
     /// zones it sits in), and once for each obstacle a box lands wholly on (whether it holds
-    /// others), so a caller keeps its answers.
+    /// others), so a caller keeps its answers: `ObstacleGrid.obstacles(in:)` files the obstacles so
+    /// a question costs what's near it, and keeps each answer.
     public var obstacles: (CGRect) -> [Obstacle]
     /// The bounds of every obstacle (the `board` target), nil when there are none: a drawing with
     /// nothing to hang on goes right of it when the view is full.

@@ -19,14 +19,14 @@ private let idA = ShapeID(UUID(uuidString: "7C1E0B8A-2F4D-4A6B-9C3E-5D2F1A0B9C8D
         let s = try SlashSession()
         s.type("/")
         expectEqual(s.string, "/")
-        expectEqual(s.listed, ["grow", "width", "log", "ping", "any"])
-        expectEqual(s.rows, ["grow", "width (points)", "log (text)", "ping", "any (anything)"])
+        expectEqual(s.listed, ["grow", "width", "log", "ping", "stack", "any"])
+        expectEqual(s.rows, ["grow", "width (points)", "log (text)", "ping", "stack (@shape)", "any (anything)"])
         expectEqual(s.highlighted, "grow")
         let window = try require(s.view.slashCommands?.window)
         expect(s.view.caretListWindow === window)
         expect(s.view.holdsKeys)
         expectEqual(window.frame.width, 240)
-        expectEqual(window.frame.height, 5 * 24 + 10, "five rows of 24, and the list's insets")
+        expectEqual(window.frame.height, 6 * 24 + 10, "six rows of 24, and the list's insets")
         s.pressEscapeKey()
         expect(s.view.caretListWindow == nil && !s.view.holdsKeys)
     },
@@ -513,6 +513,154 @@ private let idA = ShapeID(UUID(uuidString: "7C1E0B8A-2F4D-4A6B-9C3E-5D2F1A0B9C8D
         let blank = try SlashSession("", plugins: [FilledCommandPlugin()])
         expect(blank.h.editor.slashCommands?.command(named: "filled", for: blank.card) == nil, "offered only while there's text")
         expect(blank.h.editor.slashCommands?.run("filled", on: blank.card, with: SlashArguments([])) == false, "and by name it is asked")
+    },
+
+    // MARK: A command that takes one shape
+
+    test("a command that takes one shape runs on Return with exactly the one shape its rule admits, read from the line as a pill; the line goes and the rule is asked about the card") {
+        let picked = PickedShapes()
+        let s = try SlashSession("keep\n", arguments: picked.read)
+        let moon = s.h.add(Disc(CGRect(x: 200, y: 0, width: 40, height: 40)))
+        picked.runs = [.shape(moon, label: "Moon")]
+        s.type("/stack x")
+        s.returnKey()
+        expectEqual(s.log.runs, ["stack @Moon"])
+        expectEqual(s.string, "keep\n", "the line is gone, the line before it isn't")
+        expect(!s.log.asked.isEmpty && s.log.asked.allSatisfy { $0 == CommandLog.Asked(target: moon, owner: s.card, editor: ObjectIdentifier(s.h.editor)) },
+               "asked with the shape, the card the line is on and the editor")
+    },
+
+    test("what isn't exactly one shape it admits is Return as ever, the line left as text: text, text and a shape, a shape and text, two shapes, a shape it doesn't admit") {
+        let cases: [(String, @MainActor (ShapeID, ShapeID, ShapeID) -> [SlashArguments.Run])] = [
+            ("text", { _, _, _ in [.text("moon")] }),
+            ("text and a shape", { moon, _, _ in [.text("near "), .shape(moon, label: "Moon")] }),
+            ("a shape and text", { moon, _, _ in [.shape(moon, label: "Moon"), .text(" please")] }),
+            ("two shapes", { moon, sun, _ in [.shape(moon, label: "Moon"), .text(" "), .shape(sun, label: "Sun")] }),
+            ("a shape it doesn't admit", { _, _, crate in [.shape(crate, label: "Crate")] }),
+            ("a shape and a shape it doesn't admit", { moon, _, crate in [.shape(moon, label: "Moon"), .shape(crate, label: "Crate")] }),
+        ]
+        for (what, runs) in cases {
+            let picked = PickedShapes()
+            let s = try SlashSession("", arguments: picked.read)
+            let frame = CGRect(x: 200, y: 0, width: 40, height: 40)
+            picked.runs = runs(s.h.add(Disc(frame)), s.h.add(Disc(frame)), s.h.add(Box(frame)))
+            s.type("/stack x")
+            s.returnKey()
+            expectEqual(s.string, "/stack x\n", what)
+            expectEqual(s.log.runs, [], what)
+            expectEqual(s.h.editor.undoHistory.undoName, "Typing", what)
+        }
+        let none = try SlashSession("")
+        none.type("/stack ")
+        none.returnKey()
+        expectEqual(none.string, "/stack \n", "nothing after the name")
+        expectEqual(none.log.runs, [])
+    },
+
+    test("the list's Return on a command that takes one shape completes it, as Tab does, with the space the shape is typed after") {
+        let s = try SlashSession("")
+        s.type("/sta")
+        expectEqual(s.highlighted, "stack")
+        expectEqual(s.rows.first, "stack (@shape)")
+        s.returnKey()
+        expectEqual(s.string, "/stack ")
+        expectEqual(s.log.runs, [], "nothing ran: it takes a shape, and none was typed")
+        expect(s.list == nil)
+
+        let tab = try SlashSession("")
+        tab.type("/sta")
+        tab.tab()
+        expectEqual(tab.string, "/stack ")
+    },
+
+    test("what the command is given is marked only when it accepts it: a shape it admits is, one it doesn't isn't") {
+        let picked = PickedShapes()
+        let s = try SlashSession("", arguments: picked.read)
+        let frame = CGRect(x: 200, y: 0, width: 40, height: 40)
+        let moon = s.h.add(Disc(frame)), crate = s.h.add(Box(frame))
+        picked.runs = [.shape(moon, label: "Moon")]
+        s.set("/stack x")
+        expectEqual(s.marked, [NSRange(location: 0, length: 6), NSRange(location: 7, length: 1)], "the name, and the disc it takes")
+        picked.runs = [.shape(crate, label: "Crate")]
+        s.set("/stack x")
+        expectEqual(s.marked, [NSRange(location: 0, length: 6)], "a box isn't a shape it takes: the name alone, the rest is text")
+        picked.runs = [.text("moon")]
+        s.set("/stack x")
+        expectEqual(s.marked, [NSRange(location: 0, length: 6)])
+        picked.runs = [.shape(moon, label: "Moon"), .text(" and"), .shape(moon, label: "Moon")]
+        s.set("/stack x")
+        expectEqual(s.marked, [NSRange(location: 0, length: 6)], "one shape is all it takes")
+    },
+
+    test("the shapes an @ typed on a line may pick are its command's, if it takes a shape and the shape offers it now: a rule on its line, nil anywhere else") {
+        let s = try SlashSession()
+        let frame = CGRect(x: 200, y: 0, width: 40, height: 40)
+        let moon = s.h.add(Disc(frame)), crate = s.h.add(Box(frame))
+        let typing = try require(s.view.slashCommands)
+        s.set("/stack @", caret: 8)
+        let rule = try require(typing.admittedShapes(at: 7))
+        expectEqual(rule.kinds, nil, "`stack` names no kinds: any")
+        expect(rule.admits(moon) && !rule.admits(crate) && !rule.admits(s.card) && !rule.admits(ShapeID()), "what `/stack` admits: a disc")
+        expect(rule.rule(moon) && !rule.rule(crate), "the rule alone, which says the same for a command with no kinds")
+
+        s.set("one\n/STACK (@", caret: 13)
+        expect(try require(typing.admittedShapes(at: 12)).admits(moon), "on a later line, the name folded, after a bracket")
+        s.set("/stack  x @ y", caret: 13)
+        expect(try require(typing.admittedShapes(at: 10)).admits(moon), "anywhere on the line after the name")
+
+        let nowhere: [(String, Int)] = [
+            ("hello @", 6),             // a plain line
+            ("/grow @", 6),             // a command that takes no shape
+            ("/log @", 5),              // a command that takes text
+            ("/any @", 5),              // one that accepts anything
+            ("/width @", 7),            // one that takes an argument that isn't a shape
+            ("/wide @", 6),             // not offered while the card is narrow
+            ("/nope @", 6),             // not a command
+            ("/ @", 2),                 // no name
+            ("@ /stack", 0),            // the line doesn't start with the slash
+            ("/sta@ck", 4),             // an @ in the name makes it no command line
+            ("/stack @", 0),            // before the slash
+            ("/stack @", 99),           // past the end
+            ("above @\n/stack", 6),     // the @ is on another line
+        ]
+        for (text, location) in nowhere {
+            s.set(text, caret: min(location, (text as NSString).length))
+            expect(typing.admittedShapes(at: location) == nil, "\(text.debugDescription) at \(location)")
+        }
+    },
+
+    test("a command that names kinds runs with a shape of one of them and refuses another by its kind; its @ is given the kinds and the rule alone") {
+        let log = CommandLog()
+        let picked = PickedShapes()
+        let s = try SlashSession("", plugins: [ParkCommandPlugin(log: log), CorralsPlugin(), PocketsPlugin()], arguments: picked.read)
+        let frame = CGRect(x: 200, y: 0, width: 40, height: 40)
+        let pen = s.h.add(Corral(frame)), crate = s.h.add(Box(frame))
+        let typing = try require(s.view.slashCommands)
+
+        s.set("/park @", caret: 7)
+        let rule = try require(typing.admittedShapes(at: 6))
+        expectEqual(rule.kinds, [Corral.kind, Pocket.kind])
+        expect(rule.admits(pen) && !rule.admits(crate), "a corral, and not a box")
+        expect(rule.rule(crate), "the rule alone, asked of shapes already known to be of the kinds, would take the box")
+        expect(!rule.rule(s.card), "and refuses the card the line is on")
+
+        picked.runs = [.shape(pen, label: "Pen")]
+        s.set("/park x")
+        expectEqual(s.marked, [NSRange(location: 0, length: 5), NSRange(location: 6, length: 1)], "the name and the corral it takes")
+        s.returnKey()
+        expectEqual(log.runs, ["park @Pen"])
+        expectEqual(s.string, "", "the line is gone")
+
+        picked.runs = [.shape(crate, label: "Crate")]
+        s.set("/park x")
+        expectEqual(s.marked, [NSRange(location: 0, length: 5)], "a box is text to it, though its rule would take it")
+        s.returnKey()
+        expectEqual(log.runs, ["park @Pen"], "nothing more ran")
+        expectEqual(s.string, "/park x\n", "Return was a new line")
+
+        let none = try SlashSession("")
+        none.set("/stack @", caret: 8)
+        expectEqual(try require(none.view.slashCommands?.admittedShapes(at: 7)).kinds, nil, "a command that names none takes any kind")
     },
 
     // MARK: Marking the command

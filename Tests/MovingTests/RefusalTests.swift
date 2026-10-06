@@ -1,0 +1,52 @@
+@_spi(Host) import Canvas
+import CanvasTesting
+import CoreGraphics
+import Moving
+import SlashCommands
+import TestKit
+
+// All or nothing: a move a read-only shape stands in the way of (a frozen corral it would land in, the frozen
+// owner of the board it would go onto, a frozen shape it would take onto another board) changes nothing and
+// makes no step, and the frozen shapes are heard refused, as Transform's turns are.
+
+@MainActor let movingRefusalTests = Suite("Moves refused", [
+    test("landing in a frozen corral: nothing moves, no step, and the corral is heard refused") {
+        let f = ShapeID(), x = ShapeID(), s = ShapeID(), log = RefusalLog()
+        let h = try movingHarness(CanvasFile(root: board(corral(f, at(0, 0, 800, 600)), box(x, 100, 100, in: f), box(s, 2000, 0))), log: log)
+        h.freeze([f])
+        expect(h.admits("move-near", on: s, x), "a shape in it is still one to be beside")
+        let before = h.file, revision = h.editor.revision
+        h.run("move-near", on: s, with: x)
+        expectEqual(h.file, before, "it's where it was")
+        expectEqual(h.editor.revision, revision, "nothing committed")
+        expectEqual(h.editor.undoHistory.undoName, "Freeze", "no step of its own")
+        expectEqual(log.refusals, [[f]])
+        expect(!h.editor.isGliding(s))
+    },
+
+    test("onto a frozen pocket's board: nothing moves, no step, and the pocket, which would take it, is heard refused") {
+        let p = ShapeID(), x = ShapeID(), s = ShapeID(), log = RefusalLog()
+        let h = try movingHarness(CanvasFile(root: board(pocket(p, 0, 0), box(s, 400, 0)), children: [p: board(box(x, 0, 0))]), log: log)
+        h.freeze([p])
+        let before = h.file, revision = h.editor.revision
+        h.run("move-near", on: s, with: x)
+        expectEqual(h.file, before)
+        expectEqual(h.editor.revision, revision)
+        expectEqual(h.editor.undoHistory.undoName, "Freeze")
+        expectEqual(log.refusals, [[p]])
+    },
+
+    test("a corral holding a frozen box moves on its board, taking the box along as a drag does, but not onto another board, where the box is heard refused") {
+        let k = ShapeID(), a = ShapeID(), f = ShapeID(), p = ShapeID(), log = RefusalLog()
+        let h = try movingHarness(CanvasFile(root: board(corral(k, at(0, 0, 300, 200)), box(a, 40, 40, in: k), corral(f, at(500, 0, 600, 400)), pocket(p, 0, 600))),
+                                  log: log)
+        h.freeze([a])
+        let before = h.file
+        h.run("move-to", on: k, with: p)
+        expectEqual(h.file, before, "nothing went onto the pocket's board")
+        expectEqual(log.refusals, [[a]])
+        expect(h.run("move-to", on: k, with: f))
+        expectEqual(h.editor.holder(of: k), f)
+        expectEqual(h.frame(of: a), at(580, 80), "the box went along")
+    },
+])

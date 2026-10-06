@@ -15,8 +15,8 @@ import TestKit
 import TextEditing
 import Titles
 
-// Slash commands as shipped: the four that ship, Titles' `/title`, Locking's `/lock` and Publishing's
-// `/public` and `/private`, typed in a note's editor in the app's canvas view.
+// Slash commands as shipped: Titles' `/title`, Locking's `/lock` and Publishing's `/public` and `/private`, typed
+// in a note's editor in the app's canvas view (Moving's `/move-to` and `/move-near` are MovingShippedTests').
 
 private let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
 
@@ -41,11 +41,11 @@ private let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
         window.type("/")
         expect(editing.slashCommands?.picker == nil, "mid-line")
         window.pressDelete()
-        // On a new line it lists what the note offers: /title, then /lock, then /public.
+        // On a new line it lists what the note offers: /title, then /lock, then /public, then Moving's two.
         window.pressReturn()
         window.type("/")
         let picker = try require(editing.slashCommands?.picker, "the list is open")
-        expectEqual(picker.listed.map(\.name), ["title", "lock", "public"])
+        expectEqual(picker.listed.map(\.name), ["title", "lock", "public", "move-to", "move-near"])
         expect(editing.caretListWindow === editing.slashCommands?.window)
         expect(editing.holdsKeys)
         window.type("lo")
@@ -147,7 +147,7 @@ private let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
         editing.setSelectedRange(NSRange(location: 4, length: 0))
         window.pressReturn()
         window.type("/")
-        expectEqual(try require(editing.slashCommands?.picker).listed.map(\.name), ["title", "lock", "public"], "private: /public, not /private")
+        expectEqual(try require(editing.slashCommands?.picker).listed.map(\.name), ["title", "lock", "public", "move-to", "move-near"], "private: /public, not /private")
         window.type("public")
         window.pressReturn()
         window.settle()
@@ -156,7 +156,7 @@ private let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
         expectEqual(text(), "keep\n", "the line is gone from its text")
         expectEqual(editor.undoHistory.undoName, "Make Public")
         window.type("/")
-        expectEqual(try require(editing.slashCommands?.picker).listed.map(\.name), ["title", "lock", "private"], "public: /private, not /public")
+        expectEqual(try require(editing.slashCommands?.picker).listed.map(\.name), ["title", "lock", "private", "move-to", "move-near"], "public: /private, not /public")
         window.type("private")
         window.pressReturn()
         window.settle()

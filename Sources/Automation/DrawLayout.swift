@@ -6,12 +6,13 @@ import Geometry
 // Placing a script's shapes: the layout problem DrawScript solves, built from the board as the run
 // starts. The shapes that move are its free boxes (new shapes, and shapes restated with
 // placements); the boxes their placements name that stay put are fixed (board shapes, shapes
-// restated without placements, `board`, `view`); every closed board shape the script doesn't move
-// or delete is an obstacle. The obstacles are filed once a run (`ObstacleIndex`, a pass over the
-// board), and the solver asks for them by region, each answer kept: however many times it asks, a
-// question costs what's near the box it's about. A shape `in` a container on the board (a frame) is
-// kept within it, as `inside` keeps one; a container that moves takes what it holds along, which is
-// never in its way.
+// restated without placements, `board`, `view`); every board shape with a solid
+// (`ShapeContext.solidBounds(of:)`) that the script doesn't move or delete is an obstacle. The
+// obstacles are filed once a run (`ObstacleIndex`, a pass over the board, into DrawScript's
+// `ObstacleGrid`), and the solver asks for them by region, each answer kept: however many times it
+// asks, a question costs what's near the box it's about. A shape `in` a container on the board (a
+// frame) is kept within it, as `inside` keeps one; a container that moves takes what it holds
+// along, which is never in its way.
 
 extension Drawing {
     /// Places every shape the script moves, or says why it can't (the solver's first problem), and
@@ -28,7 +29,7 @@ extension Drawing {
         for item in items where item.moves { if let id = item.existing?.id { excluded.insert(id) } }
         var resized: [ShapeID: CGRect] = [:]
         for item in items where !item.moves {
-            if let existing = item.existing, let placed = item.placed, placed != existing.box, Drawing.obstacle(existing, in: context) != nil {
+            if let existing = item.existing, let placed = item.placed, placed != existing.box, context.solidBounds(of: existing.id) != nil {
                 resized[existing.id] = placed
             }
         }
@@ -59,7 +60,7 @@ extension Drawing {
         let boardBounds = needsBoard ? filed.bounds : nil
         func fixedShape(_ record: AnyShapeRecord, rect: CGRect, gap: Gap?) -> LayoutProblem.Ref {
             if let at = fixedShapes[record.id] { return .fixed(at) }
-            let obstacle = Drawing.obstacle(record, in: context) != nil ? document.index(of: record.id) : nil
+            let obstacle = context.solidBounds(of: record.id) != nil ? document.index(of: record.id) : nil
             fixedShapes[record.id] = fixed.count
             fixed.append(LayoutProblem.Fixed(rect: rect, gap: gap, obstacle: obstacle))
             fixedNames.append(named(record))
@@ -360,14 +361,6 @@ extension Drawing {
     }
 
     // MARK: Geometry
-
-    /// A board shape's bounds, if it's an obstacle: one with an inside, that the app can read.
-    static func obstacle(_ record: AnyShapeRecord, in context: ShapeContext) -> CGRect? {
-        guard !record.isOpaque, let geometry = context.geometry(of: record.id), geometry.isClosed else { return nil }
-        let bounds = geometry.bounds
-        guard !bounds.isNull, bounds.isFinite, bounds.width > 0, bounds.height > 0 else { return nil }
-        return bounds
-    }
 
     /// A shape's outline, as it would be with its box at `rect` (in world units); nil for one
     /// without an inside.

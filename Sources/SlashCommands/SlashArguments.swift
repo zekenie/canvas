@@ -40,6 +40,11 @@ public struct SlashArguments: Equatable, Sendable, ExpressibleByStringLiteral {
         }.joined()
     }
 
+    /// Exactly one shape and nothing else, not even text: what a command that takes one shape is given.
+    var isOneShape: Bool {
+        if runs.count == 1, case .shape = runs[0] { true } else { false }
+    }
+
     /// The shapes named, in order, each once.
     public var shapes: [ShapeID] {
         var seen = Set<ShapeID>()

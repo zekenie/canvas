@@ -84,6 +84,19 @@ public struct ShapeContext {
         return definition.erasedGeometry(of: record, in: self)
     }
 
+    /// A shape's bounds where it has an inside (its geometry is closed), in world units, if they're
+    /// finite and have a width and a height. Nil for a shape that has none: one kept aside
+    /// (`isOpaque`), one without an inside (an arrow, a line), one that isn't there, and one whose
+    /// bounds are null, not finite or flat. What shapes placed among others keep clear of:
+    /// `canvas draw` keeps what it draws clear of every such shape it doesn't move, and moving a
+    /// shape near another does the same.
+    public func solidBounds(of id: ShapeID) -> CGRect? {
+        guard let record = shape(id), !record.isOpaque, let geometry = geometry(of: id), geometry.isClosed else { return nil }
+        let bounds = geometry.bounds
+        guard !bounds.isNull, bounds.isFinite, bounds.width > 0, bounds.height > 0 else { return nil }
+        return bounds
+    }
+
     /// The union of the shapes' geometry bounds, in world units: what boxes a selection, or brings
     /// shapes into view. Shapes with no outline (nothing drawn) don't count; nil if none is left.
     public func bounds(of ids: some Sequence<ShapeID>) -> CGRect? {

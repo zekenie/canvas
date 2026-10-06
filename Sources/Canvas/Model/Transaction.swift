@@ -17,13 +17,15 @@ import Geometry
 /// shapes letting go of what's deleted (`ShapeReferencing`).
 ///
 /// A transaction is on one board of the file, the one the editor shows (`board`), and changes that
-/// board's shapes. Three things reach the boards under them: deleting a shape takes the board it owns
-/// with it, and every board under that (`ChangeSet.boardsRemoved`); a shape can go in with its
-/// board and the boards under it (`insert(_:contents:)`, a paste; `ChangeSet.boardsAdded`); and
-/// shapes can move onto the board a shape on this board owns (`move(_:toBoardOwnedBy:)`;
-/// `boardsAdded`, or `boardsChanged` if the board held shapes already). A shape
-/// whose board, or a board under it, holds a read-only shape isn't deleted, as the Finder won't trash
-/// a folder holding a locked file. Shape ids are unique across the file: a shape inserted can't have
+/// board's shapes. Three things reach other boards: deleting a shape takes the board it owns with it,
+/// and every board under that (`ChangeSet.boardsRemoved`); a shape can go in with its board and the
+/// boards under it (`insert(_:contents:)`, a paste; `ChangeSet.boardsAdded`); and shapes can move onto
+/// any other board of the file (`move(_:to:)`, or `move(_:toBoardOwnedBy:)` onto the board a shape on
+/// this one owns; `boardsAdded`, or `boardsChanged` if the board held shapes already, as the root
+/// does), to be moved there (`translate(_:by:on:)`) and put down there by the in-or-out rule
+/// (`settle(_:on:)`). `contents(of:)` is any board as the transaction leaves it. A shape whose
+/// board, or a board under it, holds a read-only shape isn't deleted, as the Finder won't trash a
+/// folder holding a locked file. Shape ids are unique across the file: a shape inserted can't have
 /// the id of one on any board.
 ///
 /// Containers (`ShapeContaining`: a frame) hold shapes on their board (`AnyShapeRecord.container`):
@@ -45,17 +47,19 @@ public struct Transaction {
     let keys: StackingKeyGenerator
     /// The rest of the file, read from the editor as it is.
     let file: FileAccess
-    /// Boards going in with the shapes inserted here that own them, and the boards under those, by
-    /// owner: what the commit adds to the file. Also the boards shapes were moved onto here
-    /// (`move(_:toBoardOwnedBy:)`), whole, with what the file holds there already: what the commit
-    /// adds, or, if the file held shapes there (`changes.boardsChanged`), writes over it.
-    private(set) var stagedBoards: [ShapeID: CanvasDocument] = [:]
-    /// The shapes inserted or moved onto `stagedBoards` here.
-    private var stagedIDs: Set<ShapeID> = []
-    /// The owners of the boards shapes were moved onto here. None of them is deleted in the same
-    /// transaction (`delete` holds to it): what moved there would be dropped with the board, and the
-    /// boards it owns left with no owner. No flow deletes a shape it has just moved shapes onto.
-    private var movedOnto: Set<ShapeID> = []
+    /// Boards going in with the shapes inserted here that own them, and the boards under those: what
+    /// the commit adds to the file. Also the boards shapes were moved onto here (`move(_:to:)`), moved
+    /// on (`translate(_:by:on:)`) or settled on (`settle(_:on:)`), whole, with what the file holds
+    /// there already: what the commit adds, or, if the file held shapes there
+    /// (`changes.boardsChanged`; the root always), writes over.
+    private(set) var stagedBoards: [BoardID: CanvasDocument] = [:]
+    /// The shapes inserted or moved onto `stagedBoards` here, each with the board it's on.
+    private var stagedIDs: [ShapeID: BoardID] = [:]
+    /// The boards shapes were moved onto here, moved on or settled on. None of them goes with a shape
+    /// deleted in the same transaction, its owner or one above it (`delete` holds to it): what moved
+    /// there would be dropped with the board, and the boards it owns left with no owner. No flow
+    /// deletes a shape it has just moved shapes under.
+    private var movedOnto: Set<BoardID> = []
     private(set) var didChange = false
     /// What it did so far, record by record: what the commit hands services.
     private(set) var changes = ChangeSet()
@@ -115,7 +119,7 @@ public struct Transaction {
     public mutating func insert(_ record: AnyShapeRecord, contents: [ShapeID: CanvasDocument]) {
         guard add(record) else { return }
         var owners = [record.id], next = 0, ids: Set<ShapeID> = [record.id]
-        var fragment: [ShapeID: CanvasDocument] = [:]
+        var fragment: [BoardID: CanvasDocument] = [:]
         while next < owners.count {
             let owner = owners[next]
             next += 1
@@ -137,21 +141,25 @@ public struct Transaction {
                 owners.append(shape.id)
             }
             guard !records.isEmpty else { continue }
-            fragment[owner] = CanvasDocument(shapes: records)
-            stagedIDs.formUnion(records.map(\.id))
-            changes.boardsAdded.insert(BoardID(owner: owner))
+            let owned = BoardID(owner: owner)
+            fragment[owned] = CanvasDocument(shapes: records)
+            for record in records { stagedIDs[record.id] = owned }
+            changes.boardsAdded.insert(owned)
         }
         stagedBoards.merge(fragment) { _, new in new }
     }
 
-    /// What the board `owner` owns holds, as this transaction leaves it: the boards going in with an
-    /// insert, or that shapes were moved onto (`move(_:toBoardOwnedBy:)`), none for a board going
-    /// with its owner, else the file's.
-    public func contents(ofBoardOwnedBy owner: ShapeID) -> CanvasDocument {
-        let board = BoardID(owner: owner)
-        if let staged = stagedBoards[owner] { return staged }
+    /// A board of the file as this transaction leaves it: `document` for its own; a board going in with
+    /// an insert, or that shapes were moved onto or settled on here (`move(_:to:)`, `settle(_:on:)`);
+    /// none for a board going with its owner; else the file's.
+    public func contents(of board: BoardID) -> CanvasDocument {
+        if board == self.board { return document }
+        if let staged = stagedBoards[board] { return staged }
         return changes.boardsRemoved.contains(board) ? CanvasDocument() : file.contents(board)
     }
+
+    /// What the board `owner` owns holds, as this transaction leaves it (`contents(of:)`).
+    public func contents(ofBoardOwnedBy owner: ShapeID) -> CanvasDocument { contents(of: BoardID(owner: owner)) }
 
     /// Returns whether it went in.
     @discardableResult
@@ -187,7 +195,7 @@ public struct Transaction {
     /// On no board of the file, nor going in with one, unless this transaction deleted it from this
     /// board (it may go back in).
     private func isNewToFile(_ id: ShapeID) -> Bool {
-        guard !stagedIDs.contains(id) else { return false }
+        guard stagedIDs[id] == nil else { return false }
         guard let board = file.locate(id) else { return true }
         return board == self.board && changes.removed.contains(id)
     }
@@ -558,11 +566,12 @@ public struct Transaction {
     /// it holds, which stays where it is, now in the container's own container (the nearest one up
     /// that isn't deleted too), read-only or not; a shape in a read-only container is read-only, so
     /// it stays, as the container does. A shape can't be deleted in the transaction that moved shapes
-    /// onto its board (`move(_:toBoardOwnedBy:)`).
+    /// onto its board, or a board under it (`move(_:to:)`), or settled shapes there (`settle(_:on:)`).
     public mutating func delete(_ ids: Set<ShapeID>) {
         let ids = ids.filter { id in document[id].map { !refuses($0) && !refusesForContents($0) } ?? false }.subtracting(deleting)
         guard !ids.isEmpty else { return }
-        precondition(movedOnto.isDisjoint(with: ids), "a shape can't be deleted in the transaction that moved shapes onto its board")
+        precondition(movedOnto.allSatisfy { climb($0).ownerHere.map { !ids.contains($0) } ?? true },
+                     "a shape can't be deleted in the transaction that moved shapes onto its board, or onto a board under it")
         let isOutermost = deleting.isEmpty
         deleting.formUnion(ids)
         let wasCascading = isCascading
@@ -631,10 +640,10 @@ public struct Transaction {
         while next < owners.count {
             let owner = owners[next]
             next += 1
-            guard let board = stagedBoards.removeValue(forKey: owner) else { continue }
+            guard let board = stagedBoards.removeValue(forKey: BoardID(owner: owner)) else { continue }
             changes.boardsAdded.remove(BoardID(owner: owner))
             for record in board.shapes {
-                stagedIDs.remove(record.id)
+                stagedIDs[record.id] = nil
                 owners.append(record.id)
             }
         }
@@ -664,7 +673,7 @@ public struct Transaction {
         }
     }
 
-    // MARK: Turning, and moving to the board below
+    // MARK: Turning, and moving to another board
 
     /// Turns a shape into another kind: `record`'s kind and props in place of its own, the same shape
     /// otherwise. It keeps its id, so whatever binds or names it still does (an arrow's end, a
@@ -693,7 +702,7 @@ public struct Transaction {
         if new.box != nil { new.containerBits = old.containerBits }
         new = registry.propertyTable.normalized(new)
         guard new.box?.isFinite ?? true else { return false }
-        precondition(!registry.ownsShowableBoard(old) || registry.boardOwningKinds.contains(new.kind) || contents(ofBoardOwnedBy: id).shapes.isEmpty,
+        precondition(!registry.ownsShowableBoard(old) || registry.boardOwningKinds.contains(new.kind) || contents(of: BoardID(owner: id)).shapes.isEmpty,
                      "a shape that owns a board with shapes can only be turned into a kind that owns boards: move its shapes out first")
         guard new != old else { return true }
         guard !refuses(old, becoming: new) else { return false }
@@ -712,41 +721,64 @@ public struct Transaction {
     }
 
     /// Moves shapes on this board onto the board `owner` owns (a shape on this board of a kind that
-    /// owns boards, not among them), under their ids: on top of what that board holds, in their order,
-    /// each with its props, added values and metadata, and with what it owns (a board goes with its
-    /// owner wherever that is). What a container among them holds goes with it, at any depth. A shape
-    /// stays in a container that moves with it, and is in none there otherwise. Ids not on this board
-    /// are passed over. The commit says the board is new to the file (`boardsAdded`), or changed if it
-    /// held shapes already (`boardsChanged`), and what moved removed from this one; undoing it puts
-    /// every shape back, in its place in the stack.
+    /// owns boards, not among them), as `move(_:to:)` moves them. It's false, nothing moving and
+    /// nothing refused, for an `owner` that isn't on this board or owns no board (a shape whose turn
+    /// into a kind that owns one was refused).
+    @discardableResult
+    public mutating func move(_ ids: Set<ShapeID>, toBoardOwnedBy owner: ShapeID) -> Bool {
+        // An owner that isn't here, or owns no board (a turn into a kind that owns one was refused):
+        // nothing to move onto, so nothing moves.
+        guard let holder = document[owner], registry.ownsShowableBoard(holder) else { return false }
+        return move(ids, to: BoardID(owner: owner))
+    }
+
+    /// Moves shapes on this board onto another board of the file, under their ids: on top of what that
+    /// board holds as this transaction leaves it (`contents(of:)`), in their order, each with its props,
+    /// added values and metadata, and with what it owns (a board goes with its owner wherever that is).
+    /// What a container among them holds goes with it, at any depth. A shape stays in a container that
+    /// moves with it, and is in none there otherwise, until it's put down there (`settle(_:on:)`). Ids
+    /// not on this board are passed over. The commit says the board is new to the file (`boardsAdded`),
+    /// or changed if it held shapes already (`boardsChanged`; the root always), and what moved removed
+    /// from this one; undoing it puts every shape back, in its place in the stack.
     ///
     /// Bindings (`ShapeReferencing`: an arrow's ends) are to shapes on the same board, so those across
     /// the edge are let go of, as deleting the shape would: a shape that stays lets go of what moves
     /// (an arrow's end stays where it's drawn), and one that moves of what stays, read-only or not.
     /// Names (`ShapeNaming`: a mention) may be of a shape on any board, and stay as they are.
     ///
-    /// All or nothing for read-only shapes: if `owner`, or a shape that would move, is read-only (or in
-    /// a read-only container), nothing moves, services hear which were refused (`refusedShapes`), and
-    /// this returns false. It's false too, nothing moving and nothing refused, for an `owner` that isn't
-    /// on this board or owns no board (a shape whose turn into a kind that owns one was refused).
-    /// Nothing else is asked of a shape that moves (no handlers run), and `owner` can't be deleted in
-    /// this transaction.
+    /// All or nothing for read-only shapes: if a shape that would move is read-only (or in a read-only
+    /// container), or the board's owner is (as `setContainer` holds a container, on its own board as
+    /// this transaction leaves it), nothing moves, services hear which were refused (`refusedShapes`),
+    /// and this returns false. It's false too, nothing moving and nothing refused, for a board the
+    /// editor couldn't show once this transaction commits (`canShow`'s rule, each owner on the way up
+    /// where this transaction leaves it: one not in the file, kept aside, or of a kind that owns no
+    /// board). Nothing else is asked of a shape that moves (no handlers run). `board` can't be this
+    /// one, one going with a shape this transaction deleted, or the board of a shape that moves or one
+    /// under it (a loop); and a shape that owns a board shapes were moved onto, or is above one, can't
+    /// be deleted in the same transaction.
     @discardableResult
-    public mutating func move(_ ids: Set<ShapeID>, toBoardOwnedBy owner: ShapeID) -> Bool {
-        // An owner that isn't here, or owns no board (a turn into a kind that owns one was refused):
-        // nothing to move onto, so nothing moves.
-        guard let holder = document[owner], registry.ownsShowableBoard(holder) else { return false }
+    public mutating func move(_ ids: Set<ShapeID>, to board: BoardID) -> Bool {
+        precondition(board != self.board, "shapes can't move onto the board they're on")
         let kinds = registry.containingKinds
         var moving: Set<ShapeID> = []
         for id in ids where document[id] != nil {
             moving.insert(id)
             moving.formUnion(document.descendants(of: id, containingKinds: kinds))
         }
-        precondition(!moving.contains(owner), "a shape can't move onto its own board, nor onto that of a shape a container that moves holds")
+        let way = climb(board)
+        precondition(!way.isTaken, "shapes can't move onto a board that goes with a shape deleted in the same transaction")
+        precondition(way.ownerHere.map { !moving.contains($0) } ?? true,
+                     "a shape can't move onto its own board or one under it, nor onto those of a shape a container that moves holds")
+        // A board it couldn't show (an owner kept aside, or of a kind that owns none: a turn into one
+        // refused): nothing to move onto, so nothing moves.
+        guard way.canShow else { return false }
         guard !moving.isEmpty else { return true }
         // Every shape refused is noted, so each is heard refused.
-        var isRefused = holds(holder)
-        if isRefused { refused.insert(owner) }
+        var isRefused = false
+        if let owner = board.owner, holdsOwner(owner) {
+            refused.insert(owner)
+            isRefused = true
+        }
         for index in moving.compactMap({ document.index(of: $0) }).sorted() where refuses(document.shapes[index]) { isRefused = true }
         guard !isRefused else { return false }
         // Bindings, both ways, while every shape is still here: an arrow lets go of an end where it's
@@ -781,26 +813,109 @@ public struct Transaction {
                 changes.removed.insert(id)
             }
         }
-        // On the other, above what it holds.
-        var target = contents(ofBoardOwnedBy: owner)
+        // On the other, above what it holds as this transaction leaves it.
+        var target = contents(of: board)
         for var record in leaving {
             record.stackingKey = keys.key(between: target.shapes.last?.stackingKey, and: nil)
             target.append(record)
         }
-        let owned = BoardID(owner: owner)
-        if stagedBoards[owner] == nil {
-            if !changes.boardsRemoved.contains(owned), !file.contents(owned).shapes.isEmpty {
-                changes.boardsChanged.insert(owned)
+        stage(target, on: board)
+        for id in moving { stagedIDs[id] = board }
+        changes.reordered = true
+        return true
+    }
+
+    /// Moves shapes on another board of the file by `delta` (world units), as `translate` moves them on
+    /// this one (what a container holds goes along): over that board as this transaction leaves it
+    /// (`contents(of:)`), as `settle(_:on:)` settles there, so what `move(_:to:)` took there goes where
+    /// it should there after its bindings across the edge were let go where it was drawn. What this
+    /// transaction brought there (moved, or in with its owner) isn't held, as what it adds here isn't;
+    /// a read-only shape that was there before stays, refused (`refusedShapes`). On this transaction's
+    /// own board it's `translate`; a board the editor couldn't show moves nothing. `board` can't be one
+    /// going with a shape this transaction deleted.
+    public mutating func translate(_ ids: Set<ShapeID>, by delta: CGPoint, on board: BoardID) {
+        guard board != self.board else { return translate(ids, by: delta) }
+        guard var there = transaction(on: board) else { return }
+        there.translate(ids, by: delta)
+        take(there)
+    }
+
+    /// Puts `document` in for another board, as this transaction leaves it: what the commit adds to the
+    /// file, or, if the file held shapes there (the root always does), writes over. No shape this
+    /// transaction deletes may take it with it (`movedOnto`).
+    private mutating func stage(_ document: CanvasDocument, on board: BoardID) {
+        if stagedBoards[board] == nil {
+            if board.isRoot || (!changes.boardsRemoved.contains(board) && !file.contents(board).shapes.isEmpty) {
+                changes.boardsChanged.insert(board)
             } else {
-                changes.boardsAdded.insert(owned)
+                changes.boardsAdded.insert(board)
             }
         }
-        stagedBoards[owner] = target
-        stagedIDs.formUnion(moving)
-        movedOnto.insert(owner)
-        changes.reordered = true
+        stagedBoards[board] = document
+        movedOnto.insert(board)
         didChange = true
-        return true
+    }
+
+    /// A board as this transaction leaves the file, climbing its owners, each where this transaction
+    /// leaves it (`location(of:)`): whether the editor could show it once this transaction commits
+    /// (`canShow`'s rule; above this board the file's path holds, as nothing here moves an owner up
+    /// there); whether it goes with a shape this transaction deleted (an owner on the way up was in the
+    /// file, and is on no board now); and the owner on the way up that's on this board, if the way
+    /// comes through here: no shape moves onto a board under itself, nor is deleted from over one it
+    /// moved shapes onto.
+    private func climb(_ board: BoardID) -> (canShow: Bool, isTaken: Bool, ownerHere: ShapeID?) {
+        var current = board, met: Set<BoardID> = [board], showable = true
+        while let owner = current.owner {
+            guard let at = location(of: owner) else { return (false, file.locate(owner) != nil, nil) }
+            if !(contents(of: at)[owner].map(registry.ownsShowableBoard) ?? false) { showable = false }
+            if at == self.board { return (showable && file.canShow(at), false, owner) }
+            guard met.insert(at).inserted else { return (false, false, nil) }
+            current = at
+        }
+        return (showable, false, nil)
+    }
+
+    /// The board a shape is on as this transaction leaves the file: this one; the one it moved the shape
+    /// onto, or brought it in on; else the file's, unless it deleted the shape or took its board (nil,
+    /// as for a shape on no board).
+    private func location(of id: ShapeID) -> BoardID? {
+        if document[id] != nil { return board }
+        if let staged = stagedIDs[id] { return staged }
+        guard let found = file.locate(id), found != board, !changes.boardsRemoved.contains(found) else { return nil }
+        return found
+    }
+
+    /// Whether this transaction holds the owner of a board shapes would move onto, as `setContainer`
+    /// holds a container: on this board, as `holds` says; on another, as that board is as this
+    /// transaction leaves it, if the owner was there before it (one it brought there isn't held, as one
+    /// it added here isn't), and it, or a container it's in there, is read-only.
+    private func holdsOwner(_ owner: ShapeID) -> Bool {
+        guard let at = location(of: owner) else { return false }
+        let there = contents(of: at)
+        guard let record = there[owner] else { return false }
+        if at == board { return holds(record) }
+        return !isCascading && stagedIDs[owner] == nil && registry.isReadOnly(record, in: there)
+    }
+
+    /// A transaction over another board as this one leaves it, to move or settle shapes there
+    /// (`translate(_:by:on:)`, `settle(_:on:)`): the same registry, camera, keys and file, and what this
+    /// one brought there (moved there, or in with its owner) taken as added there, so it isn't held, as
+    /// what this one adds here isn't. Nil for a board the editor couldn't show once this transaction
+    /// commits. What it does comes back with `take(_:)`.
+    func transaction(on board: BoardID) -> Transaction? {
+        let way = climb(board)
+        precondition(!way.isTaken, "shapes can't move or settle on a board that goes with a shape deleted in the same transaction")
+        guard way.canShow else { return nil }
+        var there = Transaction(document: contents(of: board), board: board, registry: registry, camera: camera, keys: keys, file: file)
+        for (id, on) in stagedIDs where on == board { there.changes.added.insert(id) }
+        return there
+    }
+
+    /// Takes in what a transaction over another board did (`transaction(on:)`): that board as it
+    /// leaves it, if it changed anything there, and what it refused.
+    mutating func take(_ there: Transaction) {
+        refused.formUnion(there.refused)
+        if there.didChange { stage(there.document, on: there.board) }
     }
 }
 
@@ -814,18 +929,23 @@ struct FileAccess {
     let subtree: (Set<ShapeID>) -> [BoardID]
     /// A board's shapes (`CanvasFile[board]`).
     let contents: (BoardID) -> CanvasDocument
+    /// Whether the editor can show a board (`CanvasEditor.canShow`: the file's rule,
+    /// `CanvasFile.canShow(_:boardOwningKinds:)`, with the registry's kinds that own boards).
+    let canShow: (BoardID) -> Bool
 
-    /// Over a file of one's own.
-    init(_ file: CanvasFile) {
+    /// Over a file of one's own, whose boards `boardOwningKinds` (the registry's) show.
+    init(_ file: CanvasFile, boardOwningKinds: Set<ShapeKind>) {
         locate = { file.board(containing: $0) }
         subtree = { file.subtree(ownedBy: $0) }
         contents = { file[$0] }
+        canShow = { file.canShow($0, boardOwningKinds: boardOwningKinds) }
     }
 
     init(locate: @escaping (ShapeID) -> BoardID?, subtree: @escaping (Set<ShapeID>) -> [BoardID],
-         contents: @escaping (BoardID) -> CanvasDocument) {
+         contents: @escaping (BoardID) -> CanvasDocument, canShow: @escaping (BoardID) -> Bool) {
         self.locate = locate
         self.subtree = subtree
         self.contents = contents
+        self.canShow = canShow
     }
 }

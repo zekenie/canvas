@@ -3,11 +3,11 @@ import CoreGraphics
 /// What a step did to a file: on the board it was made on (`board`), shape by shape, each touched
 /// shape's whole record before and after (nil: it wasn't there), its stacking key, metadata, added
 /// and kept values included, opaque (kept aside) or not; and every other board it reached, whole
-/// (`boards`: those a deletion took with the shapes that owned them, those a paste brought, those
-/// Delete Hidden Shapes deleted from), with the entries of the file it couldn't read as boards
-/// that it took or replaced (`unreadableBoards`). Undo puts the `before` side back (`inverted`), and
-/// redo the `after` one: `CanvasDocument.apply` for the board's shapes, `CanvasFile.apply` for all
-/// of it.
+/// (`boards`: those a deletion took with the shapes that owned them, those a paste brought, those a
+/// move took shapes onto, the root among them, those Delete Hidden Shapes deleted from), with the
+/// entries of the file it couldn't read as boards that it took or replaced (`unreadableBoards`).
+/// Undo puts the `before` side back (`inverted`), and redo the `after` one: `CanvasDocument.apply`
+/// for the board's shapes, `CanvasFile.apply` for all of it.
 ///
 /// It's the one type that holds a change's before and after, so what builds on them (an agent's
 /// change, a change from another copy of the board) grows here.

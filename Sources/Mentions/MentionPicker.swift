@@ -20,7 +20,9 @@ public enum MentionPickerRow: Hashable, Sendable {
 /// the rows that lists, and which row is highlighted. It's the picker's model, headless, built on
 /// every caret list's (`CaretList`, DetailPanel's, which keeps the highlight and says what the keys
 /// do): the text view feeds it the text and the caret after each change (`read`), hands it the
-/// commands the keys send (`perform`), and shows its list in a `CaretListWindow`.
+/// commands the keys send (`perform`), and shows its list in a `CaretListWindow`. It lists what the
+/// text's scope admits, and on the line of a slash command that takes one shape (`kinds`,
+/// `admitting`) only what the command admits too.
 ///
 /// When it opens and closes is its rules too, so a test can hold them without a view: an `@` typed
 /// at the start of the text, after whitespace or a line break, or after an opening bracket or
@@ -86,10 +88,15 @@ public final class MentionPicker {
         list.onChange = { [weak self] in self?.onChange?() }
     }
 
-    /// A picker listing what `mentions` offers text of `scope` on `owner` (which may mention itself).
-    public convenience init<S: MentionScope>(at location: Int, mentions: MentionState, scope: S.Type, owner: ShapeID?) {
+    /// A picker listing what `mentions` offers text of `scope` on `owner` (which may mention itself),
+    /// and of that only the shapes of `kinds` and what `admitting` admits, if there are any: the shapes
+    /// a slash command on the line takes (`SlashCommandTyping.admittedShapes(at:)`), asked wherever a
+    /// shape is listed. With kinds only their shapes are ranked (`MentionState.candidates`).
+    public convenience init<S: MentionScope>(at location: Int, mentions: MentionState, scope: S.Type, owner: ShapeID?,
+                                             kinds: Set<ShapeKind>? = nil,
+                                             admitting admits: (@MainActor (ShapeID) -> Bool)? = nil) {
         self.init(at: location) { [weak mentions] query in
-            mentions?.candidates(matching: query, in: scope, for: owner) ?? MentionCandidates()
+            mentions?.candidates(matching: query, in: scope, for: owner, kinds: kinds, admitting: admits) ?? MentionCandidates()
         }
     }
 

@@ -17,6 +17,14 @@ import Canvas
 /// given, it replaces that rule entirely. Arguments it doesn't accept leave the line as text: the
 /// command never runs, and Return is a new line.
 ///
+/// A command that takes one shape (`init(_:argument:when:kinds:shapes:step:perform:)`) has a rule for
+/// which, as `accepts` can't: it sees only what was typed, and a mention's pill is a shape whatever
+/// kind it names. What's typed must be exactly one shape the rule admits (asked with the shape, the
+/// shape the line is on and the editor), of the kinds it names, if it names any; a text view that
+/// lets shapes be picked (Mentions') lists only those when an `@` is typed on the command's line,
+/// and ranks only the shapes of those kinds, so a command that takes few of a big board's shapes
+/// costs what they are.
+///
 /// A command's undo step is named for it in words (`/set-title`: "Set Title"); `step:` names it
 /// otherwise, as a person would call what it did (`/public`: "Make Public", as the menu's item).
 ///
@@ -27,6 +35,12 @@ public struct SlashCommand<Value> {
     let argument: String?
     let isOffered: @MainActor (Value) -> Bool
     let accepts: @MainActor (SlashArguments) -> Bool
+    /// For a command that takes one shape: which shapes it admits, given the shape and the one the
+    /// line is on; nil for one that takes none.
+    let shapes: (@MainActor (_ target: ShapeID, _ owner: ShapeID, CanvasEditor) -> Bool)?
+    /// For a command that takes one shape: the most kinds of shape it takes, given the registry; nil
+    /// for one that names none (any kind) or takes no shape.
+    let kinds: (@MainActor (Registry) -> Set<ShapeKind>)?
     let step: String?
     let action: Action
 
@@ -46,6 +60,8 @@ public struct SlashCommand<Value> {
         self.argument = argument
         self.isOffered = isOffered
         self.accepts = accepts ?? Self.defaultAccepts(takesArgument: argument != nil)
+        shapes = nil
+        kinds = nil
         self.step = step
         action = .edit(edit)
     }
@@ -62,6 +78,46 @@ public struct SlashCommand<Value> {
         self.argument = argument
         self.isOffered = isOffered
         self.accepts = accepts ?? Self.defaultAccepts(takesArgument: argument != nil)
+        shapes = nil
+        kinds = nil
+        self.step = step
+        action = .perform(perform)
+    }
+
+    /// A command that takes one shape (`@shape`, a mention's pill) which a rule admits: what's typed
+    /// after its name must be exactly that one shape, no text, and `shapes` must say yes to it, asked
+    /// with the shape, the shape the line is on (`owner`) and the editor. Anything else isn't
+    /// accepted, so the line stays text and Return is a new line, as for any arguments a command
+    /// doesn't accept. `accepts` couldn't say it: it sees only what was typed, and a pill is a shape
+    /// of whatever kind. Mentions' `@` picker lists only the shapes the rule admits when it's opened
+    /// on this command's line (`SlashCommandTyping.admittedShapes(at:)`).
+    ///
+    /// `kinds` names the most kinds of shape the command takes, given the registry (which says which
+    /// kinds hold shapes, own boards, and so on; asked once, the registry being frozen): a shape of
+    /// another kind is never admitted, even where `shapes` would say yes, and `shapes` is still asked
+    /// of each shape of those kinds. A command that takes few of a big board's shapes names them, so a
+    /// list that ranks the shapes it takes (the `@` picker) ranks only those, and costs what they are,
+    /// not what the board holds; with none, the rule alone is asked of every shape the list looks at.
+    ///
+    ///     SlashCommand("pin", kinds: { $0.containingKinds }, shapes: { target, owner, editor in target != owner }) { id, arguments, editor in
+    ///         pin(id, to: arguments.shapes[0], in: editor)
+    ///     }
+    ///
+    /// `perform` is the form's only action: it gets the shape the line is on, what was typed (its
+    /// `shapes` is the one shape) and the editor, and changes the document only through
+    /// `editor.transact`. `argument` is the hint in the list, `@shape` unless a command says more.
+    public init(_ name: String, argument: String = "@shape",
+                when isOffered: @escaping @MainActor (Value) -> Bool = { _ in true },
+                kinds: (@MainActor (Registry) -> Set<ShapeKind>)? = nil,
+                shapes admits: @escaping @MainActor (_ target: ShapeID, _ owner: ShapeID, CanvasEditor) -> Bool,
+                step: String? = nil,
+                perform: @escaping @MainActor (ShapeID, SlashArguments, CanvasEditor) -> Void) {
+        self.name = name
+        self.argument = argument
+        self.isOffered = isOffered
+        accepts = { $0.isOneShape }
+        shapes = admits
+        self.kinds = kinds
         self.step = step
         action = .perform(perform)
     }
@@ -90,8 +146,15 @@ final class ErasedSlashCommand {
     let argument: String?
     let isOffered: @MainActor (AnyShapeRecord) -> Bool
     let accepts: @MainActor (SlashArguments) -> Bool
+    /// Which shapes it takes, for a command that takes one (`SlashCommand`'s `shapes`).
+    let shapes: (@MainActor (_ target: ShapeID, _ owner: ShapeID, CanvasEditor) -> Bool)?
     /// What its undo step is called, if not its name in words.
     let step: String?
+    /// The most kinds it takes, for a command that names them (`SlashCommand`'s `kinds`), and what the
+    /// registry said they were, kept by the first ask: the registry is frozen, and one command
+    /// belongs to one registry.
+    private let kindsOf: (@MainActor (Registry) -> Set<ShapeKind>)?
+    private var kindsFound: Set<ShapeKind>?
     /// Runs it on a shape: the edit in one transaction, or the command's own `perform`.
     let run: @MainActor (ShapeID, SlashArguments, CanvasEditor) -> Void
 
@@ -104,6 +167,8 @@ final class ErasedSlashCommand {
         let offered = command.isOffered
         isOffered = { read($0).map(offered) ?? false }
         accepts = command.accepts
+        shapes = command.shapes
+        kindsOf = command.kinds
         step = command.step
         switch command.action {
         case .edit(let edit):
@@ -113,5 +178,15 @@ final class ErasedSlashCommand {
         case .perform(let perform):
             run = perform
         }
+    }
+
+    /// The most kinds of shape it takes, as the registry (which every editor of this command shares)
+    /// says; nil for a command that names none. Asked of the registry once.
+    func kinds(in registry: Registry) -> Set<ShapeKind>? {
+        guard let kindsOf else { return nil }
+        if let kindsFound { return kindsFound }
+        let found = kindsOf(registry)
+        kindsFound = found
+        return found
     }
 }
