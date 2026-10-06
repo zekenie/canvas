@@ -86,7 +86,7 @@ check before running it again). To run it as just `canvas`, put the link on your
 | Turn a frame into a subboard | Right-click it and choose Turn into Subboard: the same shape, a subboard at its corner, with everything the frame held on its board; Undo brings the frame back |
 | Delete shapes or arrows | Select them and press Delete, or right-click and choose Delete |
 | Cut, copy and paste shapes | ⌘X, ⌘C and ⌘V (Edit menu, or right-click a shape; right-click empty space to paste). ⌘V lands a paste where the originals were if they're in view, else in the middle of the view; Paste from a right-click lands it centered where you clicked. Arrows copied with their shapes stay attached to the copies |
-| Link a note to a note, or a schema card to a schema card | With the select tool, point at one: dots show just outside its four sides (zoomed out below 25%, none show). Drag from a dot to another of its kind: those it could link to are outlined faintly as you drag, and released anywhere else, nothing is drawn. The link is an arrow; there's no arrow tool. Arriving quickly aims at the shape's center; arriving slowly, or pausing inside the shape, aims at that exact spot |
+| Link a note to a note, a schema card to a schema card, or either to a subboard | With the select tool, point at one: dots show just outside its four sides (zoomed out below 25%, none show). Drag from a dot to another of its kind, or to a subboard (a subboard's dots link to any of them): those it could link to are outlined faintly as you drag, and released anywhere else, nothing is drawn. The link is an arrow; there's no arrow tool. Arriving quickly aims at the shape's center; arriving slowly, or pausing inside the shape, aims at that exact spot |
 | Aim into a shape | Hold ⌥ while linking or dragging an end: the arrow runs all the way to the spot |
 | Don't attach | Hold ⌘ while dragging an end |
 | Snap angle | Hold ⇧ while dragging an end (15° steps) |
@@ -102,8 +102,9 @@ A titled shape shows its title in a pill above its top-left corner (zoomed out b
 Name a note or a subboard in the detail panel's header. A title is
 part of its shape's schema, at most 80 characters: a longer one gets a warning, as does any value outside the
 bounds its schema sets (the validation plugin checks every shape against its kind's schema).
-A note's dots link it only to another note, and a schema card's only to another schema card: each kind has a channel of its own
-(Connections' ports), and the link is an arrow (`ArrowPortsPlugin`) that keeps to its channel when an end is re-aimed.
+A note's dots link it to another note or a subboard, and a schema card's to another schema card or a subboard: each kind has a
+channel of its own (Connections' ports), a subboard has ports on every channel too, its own first, so its dots link to a note, a
+schema card or another subboard, and the link is an arrow (`ArrowPortsPlugin`) that keeps to its channel when an end is re-aimed.
 
 ## Layout
 

@@ -103,7 +103,7 @@ style <name> attribute { attribute }             a named set of attributes, for 
 |---|---|---|---|
 | `sticky-note` | 200x200 | `text` (the note is as tall as its text, at least 200; a `size:` height lasts only until the text changes), `locked`, `public` | `note-link`, on all four sides |
 | `schema-card` | 240x52 | `prompt` (what it holds, in words: the card shows them, and grows to fit), `schema` (a JSON Schema, as text: its panel shows it), `locked`, `public` | `schema-link`, on all four sides |
-| `subboard` | 240x160 | `locked`, `public` | none: plain arrows |
+| `subboard` | 240x160 | `locked`, `public` | every channel (`subboard-link`, `note-link`, `schema-link`), on all four sides |
 | `frame` | 640x400 | `locked` (locking a frame locks what's in it), `public` | none: plain arrows |
 | `reference` | 120x32 | `query` (a query: the pill stands for what it finds), `all` (every match, not only the first), `locked` | none: plain arrows |
 
@@ -186,15 +186,15 @@ edge "Build" -> "Launch"
 
 `<-` is the same edge written the other way round, and `<->` has heads at both ends. `from:` and `to:` name the side each end leaves or arrives on; without them the line runs center to center. An edge statement means "A is connected to B", so written again it updates that edge (`reconnected`) or leaves it alone (`unchanged`), and never draws a second one.
 
-An edge travels on a channel that both ends take: notes connect to notes (`note-link`), schema cards to schema cards (`schema-link`). The edge picks the channel both ends share, and if they share none it's refused. `channel: none` draws a plain arrow between any two shapes. Subboards have no channels at all, so an edge between two of them is plain without asking (Design, Build and Launch above); between one of them and a note or a schema card, say `channel: none`.
+An edge travels on a channel that both ends take: notes connect to notes (`note-link`), schema cards to schema cards (`schema-link`), and subboards to anything that has channels, a note or a schema card on its channel and another subboard on `subboard-link` (Design, Build and Launch above). The edge picks the channel both ends share, and if they share none it's refused (a note and a schema card share none). `channel: none` draws a plain arrow between any two shapes. Frames have no channels at all, so an edge between two of them is plain without asking; between one of them and a note, a schema card or a subboard, say `channel: none`.
 
 ```draw-error
 // reason: no_channel
-edge "Ship v1" -> "Design"
+edge "Ship v1" -> "Sprint 3"
 ```
 
 ```draw
-edge "Ship v1" -> "Design" channel: none
+edge "Ship v1" -> "Sprint 3" channel: none
 ```
 
 ### Styles
@@ -340,7 +340,7 @@ sticky-note "Ship 1.0" owner: "Ann"
 - **Between, with nothing on the other axis.** `right of "Web" left of "Cache"` alone is `unplaced`: add `level with "Web"`.
 - **Two unplaced shapes.** Only one per script may say nothing about where it goes; place the rest against it. And there are no coordinates in any form: if a shape is in the wrong place, give it another placement.
 - **Re-running a whole layout script to add one line.** Its placements run again and snap back anything the user has moved since, and its untitled shapes are drawn a second time. Write only the new statements. To change attributes without moving a shape, restate it without placements.
-- **Edges across channels**, and **shapes the user locked**, which refuse changes (`read_only`), as does everything in a locked frame. Connect like to like or say `channel: none`; tell the user about a locked shape rather than unlocking it.
+- **Edges across channels**, and **shapes the user locked**, which refuse changes (`read_only`), as does everything in a locked frame. Connect like to like (or to a subboard) or say `channel: none`; tell the user about a locked shape rather than unlocking it.
 - **A frame and what goes in it in one script.** `in` a frame the same script draws is refused (`unsupported`): draw the frame, then what goes in it in a run of its own.
 
 ## Honest limits

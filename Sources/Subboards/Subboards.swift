@@ -1,5 +1,6 @@
 import Boards
 import Canvas
+import Connections
 import CoreGraphics
 import Keyboard
 import Mentions
@@ -38,10 +39,11 @@ extension Subboard {
 /// opts into Boards (opening it: a double-click, Return, ⌘↓, Open in its menu and panel), Titles
 /// (its name, in a pill above the card after the kind's symbol, as a schema card's), Mentions (by
 /// its name; following a mention enters it; a Mentioned In tab in its panel), the table of contents
-/// (a row Titles names) and the detail panel (a header that renames it). Going back up, and the
-/// path, are Boards'. It takes Transform's container channel: a shape that holds shapes (a frame) can
-/// be turned into a subboard, a subboard's size at its top-left corner, holding on its board what the
-/// shape held.
+/// (a row Titles names), the detail panel (a header that renames it) and ports (a link on a channel
+/// of its own, `SubboardLink`, and on every other: anything with ports connects to a subboard, and
+/// a subboard to anything). Going back up, and the path, are Boards'. It takes Transform's container
+/// channel: a shape that holds shapes (a frame) can be turned into a subboard, a subboard's size at
+/// its top-left corner, holding on its board what the shape held.
 public struct SubboardsPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .subboards }
@@ -55,7 +57,9 @@ public struct SubboardsPlugin: CanvasPlugin {
             sub.mentionable(tint: { _ in SubboardStyle.border }, following: .opens)   // by its name, else "Untitled Subboard"; followed, it's entered
             sub.subboardRow()                              // the table of contents, named by Titles
             sub.subboardHeader()                           // renamed in the panel's header
+            sub.subboardLinks()                            // and ports: arrows to and from a subboard, on its channel and every other
         }
+        registrar.channel(SubboardLink.self)               // which this plugin declares
         // Shapes that hold shapes (a frame) turn into a subboard: one a subboard's size at their top-left
         // corner, holding on its board what they held. Turn into Subboard in their menu, and /turn-into-subboard.
         registrar.turnable(into: Subboard.self, through: ContainerChannel.self) { container, transaction in

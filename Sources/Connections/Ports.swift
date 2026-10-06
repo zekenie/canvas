@@ -259,8 +259,11 @@ extension ShapeRegistrar {
     /// it, in plugin order, when it's built), as `ports` does one, so the kind names none: a kind
     /// can't import the plugins that own the channels. For a kind that stands for other shapes,
     /// whose instance-level ports follow what it stands for (`CanvasEditor.channel(of:endingAt:)`):
-    /// `x.portsOnEveryChannel(sides: [.left, .right])`. An earlier contribution of the kind's on a
-    /// channel is its only one there.
+    /// `x.portsOnEveryChannel(sides: [.left, .right])`. And for a kind that connects to anything
+    /// that has ports, after the channel of its own (a subboard's: `x.ports(SubboardLink.self)`,
+    /// then `x.portsOnEveryChannel()`), so its dots are its own channel's and a drag to another of
+    /// its kind is drawn on it. An earlier contribution of the kind's on a channel is its only one
+    /// there.
     public mutating func portsOnEveryChannel(sides: [PortSide] = PortSide.allCases, role: PortRole = .both) {
         contribute(PortContribution(channel: nil, sides: sides, role: role), to: ShapePorts.self)
     }

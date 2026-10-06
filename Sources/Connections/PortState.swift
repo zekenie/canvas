@@ -55,11 +55,12 @@ final class PortState {
     /// The ports a shape has: its kind's, from the port table; for a shape that stands for others
     /// (Topology's stand-ins: a reference), what it stands for now decides, instance by instance, a
     /// deliberate departure from ports being per kind. With one kind of shape stood for, that
-    /// kind's channels and roles, on the stand-in's own sides; with several, the channels every
-    /// kind takes, with the roles all allow; with none (it stands for nothing: empty, pending,
-    /// missing, private, unavailable), none, so no dots show and no connection ends there. Kept
-    /// for each stand-in until its revision in Topology changes (re-pointed, what it stands for
-    /// made private or deleted, an answer provided for it), so asking costs a dictionary hit.
+    /// kind's channels and roles, in its order, on the stand-in's own sides; with several, the
+    /// channels every kind takes, in the first's order, with the roles all allow; with none (it
+    /// stands for nothing: empty, pending, missing, private, unavailable), none, so no dots show
+    /// and no connection ends there. Kept for each stand-in until its revision in Topology changes
+    /// (re-pointed, what it stands for made private or deleted, an answer provided for it), so
+    /// asking costs a dictionary hit.
     func ports(of record: AnyShapeRecord) -> KindPorts? {
         guard let own = kinds[record.kind] else { return nil }
         guard let (topology, standingKinds) = standIns, standingKinds.contains(record.kind) else { return own }

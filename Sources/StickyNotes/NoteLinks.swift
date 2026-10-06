@@ -2,8 +2,9 @@ import AppKit
 import Canvas
 import Connections
 
-/// What a note's ports draw: a link from a note to a note, the only connection a note takes. It says
-/// nothing more yet; a channel is where a connection's meaning would go (data-canvas's `references`).
+/// What a note's ports draw: a link between notes, or between a note and a subboard (which takes
+/// every channel), the only connection a note takes. It says nothing more yet; a channel is where a
+/// connection's meaning would go (data-canvas's `references`).
 public enum NoteLink {}
 
 extension NoteLink: Channel {

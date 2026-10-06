@@ -2,9 +2,10 @@ import AppKit
 import Canvas
 import Connections
 
-/// What a schema card's ports draw: a link from a schema to a schema, the only connection a card
-/// takes, as a note's is a note's. It says nothing more yet; a channel is where a connection's
-/// meaning would go (one schema referring to another, say).
+/// What a schema card's ports draw: a link between schemas, or between a schema and a subboard
+/// (which takes every channel), the only connection a card takes, as a note's is a note's. It says
+/// nothing more yet; a channel is where a connection's meaning would go (one schema referring to
+/// another, say).
 public enum SchemaLink {}
 
 extension SchemaLink: Channel {

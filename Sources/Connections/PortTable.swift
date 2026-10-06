@@ -12,7 +12,7 @@ import Canvas
 //
 // That is a kind's ports; a shape that stands for others (Topology's stand-ins: a reference) has
 // ports of its own, instance by instance: its kind's, as far as every shape it stands for takes
-// them (`standing(for:)`, and `PortState.ports(of:)`).
+// them, in the order of the first (`standing(for:)`, and `PortState.ports(of:)`).
 
 /// A kind's ports, as the port table has them. Only `KindPorts(of:in:)` makes one.
 @MainActor
@@ -55,24 +55,29 @@ struct KindPorts {
     }
 
     /// What a shape of this kind has ports on while it stands for shapes of `targets`' kinds (nil:
-    /// a kind with no ports): each channel it has ports on that every one of them has too, on its
-    /// own sides, with the role both allow (a kind whose connections only start and one whose
-    /// connections only end share none); nil if there is none, or no target. With one target, that
-    /// kind's channels and roles; with several, the channels they all take.
+    /// a kind with no ports): each channel the first of them has ports on that this kind has ports
+    /// on too and every other of them has, in the first's order and not this kind's (which, for ports
+    /// on every channel, is the order they're declared in), so a stand-in's dots and its drags go as
+    /// the first shape's would: a stand-in for a subboard has indigo dots, and links to a subboard on
+    /// its own channel. On this kind's own sides, with the role all of them allow (a kind whose
+    /// connections only start and one whose connections only end share none); nil if there is none,
+    /// or no target, or the first has no ports. With one target, that kind's channels and roles; with
+    /// several, the channels they all take.
     func standing(for targets: [KindPorts?]) -> KindPorts? {
-        guard !targets.isEmpty else { return nil }
+        guard let head = targets.first, let first = head else { return nil }
         var shared: [Entry] = []
-        for entry in entries {
-            var role: PortRole? = entry.role
+        for lead in first.entries {
+            guard let own = entry(on: lead.channel) else { continue }
+            var role: PortRole? = own.role
             for target in targets {
-                guard let own = target?.entry(on: entry.channel) else {
+                guard let theirs = target?.entry(on: lead.channel) else {
                     role = nil
                     break
                 }
-                role = role?.shared(with: own.role)
+                role = role?.shared(with: theirs.role)
                 if role == nil { break }
             }
-            if let role { shared.append(Entry(channel: entry.channel, role: role, sides: entry.sides)) }
+            if let role { shared.append(Entry(channel: lead.channel, role: role, sides: own.sides)) }
         }
         return shared.isEmpty ? nil : KindPorts(entries: shared)
     }

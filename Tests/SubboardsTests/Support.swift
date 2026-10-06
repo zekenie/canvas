@@ -4,6 +4,7 @@ import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
+import Connections
 import ContextMenus
 import DetailPanel
 import Keyboard
@@ -20,11 +21,18 @@ import Transform
 
 /// Every plugin a subboard contributes to (Boards, and through it Selection, ContextMenus and the
 /// panel; Titles, and slash commands for its `/title` and `/turn-into-subboard`; Transform, whose
-/// container channel it takes; Mentions, the table of contents and the keys), and CanvasTesting's
-/// fixtures, for boxes.
+/// container channel it takes; Ports, which owns its channel and its ports; Mentions, the table of
+/// contents and the keys), and CanvasTesting's fixtures, for boxes. No connector, so no dots show.
 @MainActor func subboardPlugins() -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), SubboardsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
-     SlashCommandsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(), TitlesPlugin(), MentionsPlugin(), BoardsPlugin(), TransformPlugin()]
+     SlashCommandsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(), PortsPlugin(), TitlesPlugin(), MentionsPlugin(), BoardsPlugin(),
+     TransformPlugin()]
+}
+
+/// A channel of another plugin's, which a subboard has ports on too: it takes every channel there is.
+enum Wire {}
+extension Wire: Channel {
+    static let id: ChannelID = "wire"
 }
 
 func record<P: ShapeProps>(_ id: ShapeID, _ props: P) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(id: id, props)) }

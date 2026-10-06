@@ -1,6 +1,7 @@
 import Boards
 import Canvas
 import CanvasTesting
+import Connections
 import CoreGraphics
 import DetailPanel
 import Keyboard
@@ -51,6 +52,20 @@ import Titles
         let codec = BoardCodec(registry: try Registry(plugins: subboardPlugins()))
         let json = String(decoding: try codec.encodeProps(Subboard(frame: CGRect(origin: .zero, size: Subboard.defaultSize))), as: UTF8.self)
         expectEqual(json.filter { !$0.isWhitespace }, #"{"frame":[[0,0],[240,160]]}"#)
+    },
+    test("its ports are on all four sides, on its own channel first and then on every channel another plugin declares, whichever is declared first") {
+        let wires = Contributor(id: "wires") { $0.channel(Wire.self) }
+        let before: [any CanvasPlugin] = [wires] + subboardPlugins(), after: [any CanvasPlugin] = subboardPlugins() + [wires]
+        for plugins in [before, after] {
+            let registry = try Registry(plugins: plugins)
+            expectEqual(registry.portChannels(of: Subboard.kind), [SubboardLink.id, Wire.id])
+            for side in PortSide.allCases {
+                expectEqual(registry.dotChannels(of: Subboard.kind, side: side), [SubboardLink.id, Wire.id], "\(side)")
+            }
+            for channel in [SubboardLink.id, Wire.id] {
+                expectEqual(registry.portSides(of: Subboard.kind, on: channel, as: .both), PortSide.allCases, "\(channel)")
+            }
+        }
     },
     test("its row is its symbol and \"Untitled Subboard\", named by its title once it has one") {
         let nest = Nest()

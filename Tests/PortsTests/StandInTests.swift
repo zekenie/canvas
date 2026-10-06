@@ -11,8 +11,9 @@ import Topology
 // A kind may have ports on every channel (`portsOnEveryChannel`), and a shape that stands for others
 // (Topology's stand-ins) has the ports of what it stands for, instance by instance: one kind, that
 // kind's channels and roles on its own sides; several, the channels every kind takes with the roles
-// all allow; none, none, so no dots show and no connection ends there. A box (wire, all sides)
-// and a disc (pipe) are what a relay stands for here; a hub's wire only starts connections.
+// all allow, in the order of the first; none, none, so no dots show and no connection ends there. A
+// box (wire, all sides) and a disc (pipe) are what a relay stands for here; a hub's wire only starts
+// connections, and a junction has the pipe first and then every channel.
 
 private let boxEnd = CGPoint(x: farBox.maxX + 12, y: farBox.midY)       // the far box's right dot
 private let farMiddle = CGPoint(x: farBox.midX, y: farBox.midY)
@@ -197,6 +198,40 @@ private let farMiddle = CGPoint(x: farBox.midX, y: farBox.midY)
         expectEqual(h.editor.hoveredButton, nil, "no dot")
         h.repoint(relay, to: [box])
         expectEqual(try ends(fromBox), Wire.id)
+    },
+    test("a stand-in has the channels of what it stands for in that kind's order, not its own: for a junction, the pipe first, so its dots are the pipe's and a drag from it ends on another junction on the pipe") {
+        let connections = ConnectionLog()
+        let h = try relayHarness(connections, more: [junctionsPlugin()])
+        let registry = h.editor.registry
+        expectEqual(registry.portChannels(of: Junction.kind), [Pipe.id, Wire.id], "its own channel first, then every other")
+        expectEqual(registry.portChannels(of: Relay.kind), [Wire.id, Pipe.id], "the relay's, the order the channels are declared in")
+        let junction = h.add(Junction(farBox)), other = h.add(Junction(CGRect(x: 400, y: 400, width: 100, height: 100)))
+        let relay = h.add(Relay(boxFrame, stands: [junction]))
+        h.hoverDot(rightDot)
+        let lit = pixel(render(h), at: rightDot)
+        expect(abs(lit[0] - lit[1]) < 16 && abs(lit[1] - lit[2]) < 16, "gray, the pipe's, not the wire's red: \(lit)")
+        h.connect(from: rightDot, to: rightDot + CGPoint(x: 30, y: 0))
+        let from = try require(connections.begun.last)
+        expectEqual(from.shape, relay)
+        expectEqual(from.channels, [Pipe.id, Wire.id], "the junction's order, not the relay's")
+        let box = h.add(Box(CGRect(x: 550, y: 250, width: 100, height: 100))), disc = h.add(Disc(CGRect(x: 550, y: 400, width: 100, height: 100)))
+        expectEqual(h.editor.channel(of: from, endingAt: try require(h.editor.document[box])), Wire.id, "a box takes the wire")
+        expectEqual(h.editor.channel(of: from, endingAt: try require(h.editor.document[disc])), Pipe.id, "a disc, the pipe")
+        expectEqual(h.editor.channel(of: from, endingAt: try require(h.editor.document[other])), Pipe.id, "a junction both, and the pipe is first")
+    },
+    test("a stand-in for shapes of several kinds has the channels they all take in the order of the first one") {
+        let connections = ConnectionLog()
+        let h = try relayHarness(connections, more: [junctionsPlugin()])
+        let junction = h.add(Junction(farBox)), hub = h.add(Hub(CGRect(x: 600, y: 100, width: 100, height: 100)))
+        let relay = h.add(Relay(boxFrame))
+        // A hub's ports are the wire, which only starts connections, and then the pipe; a junction's the pipe, then the wire.
+        h.repoint(relay, to: [hub, junction])
+        h.connect(from: rightDot, to: rightDot + CGPoint(x: 30, y: 0))
+        expectEqual(connections.begun.last?.channels, [Wire.id, Pipe.id], "the hub's order")
+        h.repoint(relay, to: [junction, hub])
+        h.connect(from: leftDot, to: leftDot - CGPoint(x: 30, y: 0))
+        expectEqual(connections.begun.last?.channels, [Pipe.id, Wire.id], "the junction's")
+        expectEqual(connections.begun.count, 2)
     },
     test("while a connection is drawn from a port, only the stand-ins that would take it are outlined") {
         let connections = ConnectionLog()
