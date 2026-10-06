@@ -1,8 +1,8 @@
 import Canvas
 import SwiftUI
 
-/// A board's rows as the table of contents lists them, for a small panel that names the board (the
-/// path's crumb menus, which Boards shows over the canvas): each row as its kind draws it, on one
+/// A board's rows as the table of contents lists them, front to back, for a small panel that names
+/// the board (the path's crumb menus, which Boards shows over the canvas): each row as its kind draws it, on one
 /// line, and the rows nested under it behind a disclosure triangle, as in the list: a container's
 /// expanded, every other row collapsed until it's opened (a subboard's: its board's rows, read once
 /// it's opened); the panel's own, so each time it shows they start so again. `highlighted`'s row is
@@ -80,12 +80,13 @@ struct OutlineRows: View {
 
     /// The rows shown: every top-level row, and under each row expanded (a container's, unless it's
     /// in `turned`; any other row, if it is) the rows nested under it, the rows of the board its
-    /// shape owns first (`nestedBoard`), as in the list.
+    /// shape owns first (`nestedBoard`), each level front to back (entries, in document order, the
+    /// other way round), as in the list.
     static func lines(of entries: [ContentsEntry], turned: Set<ShapeID>, state: ContentsState) -> [OutlineLine] {
         var lines: [OutlineLine] = []
         lines.reserveCapacity(entries.count)
         func add(_ entries: [ContentsEntry], depth: Int) {
-            for entry in entries {
+            for entry in entries.reversed() {
                 let board = state.boardToOpen(under: entry)
                 let isExpandable = board != nil || entry.children != nil
                 let isExpanded = isExpandable && entry.startsExpanded != turned.contains(entry.id)

@@ -84,6 +84,12 @@ struct ContentsListing {
         }
     }
 
+    /// Whether the shape has a row here.
+    func lists(_ id: ShapeID) -> Bool { nodes[id] != nil }
+
+    /// The shape whose row the shape's row is nested under here; nil at the top, or not listed.
+    func parent(of id: ShapeID) -> ShapeID? { nodes[id]?.parent }
+
     // MARK: Keeping up
 
     /// Brings it up to date with the shapes changed since (`pending`): their rows are made again,

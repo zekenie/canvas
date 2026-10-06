@@ -2,6 +2,7 @@ import Canvas
 import CoreGraphics
 import DrawScript
 import SlashCommands
+import TableOfContents
 
 /// Moving, as a plugin: two slash commands that move the shape whose text they're typed in to another
 /// shape, anywhere in the file the app can show. `/move-to @Groceries` puts it in a frame, or onto a
@@ -9,9 +10,11 @@ import SlashCommands
 /// that's free, or, with none free, on the side that frees up nearest. Where it lands is worked out as
 /// `canvas draw` places a shape (DrawScript's solver, against the shapes of the board it lands on, filed
 /// in an `ObstacleGrid`), and it's moved and put down with the core's own tools, as draw's commit is:
-/// `translate`, `move(_:to:)` onto another board, then the in-or-out rule (`settle`). A feature no kind
-/// opts into and nothing imports, as Jump To and Reordering are: the commands go on every kind a drag
-/// moves, the kinds whose shapes have a box.
+/// `translate`, `move(_:to:)` onto another board, then the in-or-out rule (`settle`). And the table of
+/// contents' drops that take shapes into a frame, onto a subboard's board, or out of frames
+/// (`ContentsMoves`), placed the same way, several at once as one block. A feature no kind opts into and
+/// nothing imports, as Jump To and Reordering are: the commands go on every kind a drag moves, the kinds
+/// whose shapes have a box.
 public struct MovingPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { "moving" }
@@ -33,6 +36,8 @@ public struct MovingPlugin: CanvasPlugin {
                 Move(id, in: editor)?.near(target)
             }
         }
+        registrar.contentsMoves(admits: { shapes, place, editor in Drop(shapes, to: place, in: editor) != nil },
+                                move: { shapes, place, editor in Drop(shapes, to: place, in: editor)?.commit() })
     }
 }
 
@@ -127,15 +132,24 @@ func takesAlong(_ shape: AnyShapeRecord, in registry: Registry) -> Bool {
 
 /// Whether moving `shape` to `target`, onto `board`, would take either with it, so it's nowhere `shape`
 /// can go: `target` is the shape, or in it at any depth, or `board` is on the way down through a board
-/// the shape, or a shape in it, owns (one of them owns a board on the file's path to `board`,
-/// `CanvasFile.path(to:)`). What `move(_:to:)`'s preconditions trap on, asked the way they ask it: the
-/// owners above the board it lands on, against what moves. O(the board's depth and what the shape holds).
+/// the shape, or a shape in it, owns (`goesWith(_:onto:moving:in:)`). O(the board's depth and what the
+/// shape holds).
 @MainActor
 func goesWith(_ target: ShapeID, onto board: BoardID, _ shape: ShapeID, in editor: CanvasEditor) -> Bool {
     let kinds = editor.registry.containingKinds
     var moving: Set<ShapeID> = [shape]
     if !kinds.isEmpty { moving.formUnion(editor.document.descendants(of: shape, containingKinds: kinds)) }
-    guard !moving.contains(target) else { return true }
+    return goesWith([target], onto: board, moving: moving, in: editor)
+}
+
+/// Whether moving `moving` (shapes, and what they hold at any depth) to `targets` (a frame to go in, a
+/// shape to go beside), onto `board`, would take any of them with it: one of `targets` is among what
+/// moves, or one of what moves owns a board on the file's path to `board` (`CanvasFile.path(to:)`). What
+/// `move(_:to:)`'s preconditions trap on, asked the way they ask it: the owners above the board it lands
+/// on, against what moves. O(the board's depth).
+@MainActor
+func goesWith(_ targets: [ShapeID], onto board: BoardID, moving: Set<ShapeID>, in editor: CanvasEditor) -> Bool {
+    guard !targets.contains(where: moving.contains) else { return true }
     // No way down from the root (an owner not in the file): no board the editor can show, which the
     // move refuses on its own.
     guard let path = editor.file.path(to: board) else { return false }

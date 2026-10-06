@@ -173,15 +173,19 @@ struct ListedRow: Identifiable {
     }
 }
 
-/// Rows as the list shows them, a level at a time: entries as they are, or a board's rows
-/// (`BoardRows`), read only once something asks for one of them or how many there are.
+/// Rows as the list shows them, a level at a time, front to back: entries, which are in document
+/// order, the other way round, so the top row is the shape painted over the rest, as in a layers
+/// list; or a board's rows (`BoardRows`), read only once something asks for one of them or how many
+/// there are.
 @MainActor
 struct ListedRows {
     private let rows: Rows
     private let state: ContentsState
 
     private enum Rows {
+        /// In document order.
         case entries([ContentsEntry])
+        /// Front to back already.
         case board(BoardRows)
     }
 
@@ -194,24 +198,30 @@ struct ListedRows {
         rows = .board(board)
         self.state = state
     }
-
-    private var entries: [ContentsEntry] {
-        switch rows {
-        case .entries(let entries): entries
-        case .board(let board): board.entries
-        }
-    }
 }
 
 extension ListedRows: @MainActor RandomAccessCollection {
     var startIndex: Int { 0 }
-    var endIndex: Int { entries.count }
-    subscript(position: Int) -> ListedRow { ListedRow(entries[position], state: state) }
+
+    var endIndex: Int {
+        switch rows {
+        case .entries(let entries): entries.count
+        case .board(let board): board.entries.count
+        }
+    }
+
+    subscript(position: Int) -> ListedRow {
+        switch rows {
+        case .entries(let entries): ListedRow(entries[entries.count - 1 - position], state: state)
+        case .board(let board): ListedRow(board.entries[position], state: state)
+        }
+    }
 }
 
 /// The rows of a board a row opens onto (`ContentsState.outline(of:)`), then those nested under the
-/// row on its own board, read the first time they're asked for: the list asks only once the row is
-/// expanded, so a collapsed subboard costs its row and no more, however much its board holds.
+/// row on its own board, each front to back, read the first time they're asked for: the list asks
+/// only once the row is expanded, so a collapsed subboard costs its row and no more, however much
+/// its board holds.
 @MainActor
 final class BoardRows {
     private let board: BoardID
@@ -227,8 +237,7 @@ final class BoardRows {
 
     var entries: [ContentsEntry] {
         if let made { return made }
-        let inside = state.outline(of: board)
-        let entries = nested.isEmpty ? inside : inside + nested
+        let entries = state.outline(of: board).reversed() + nested.reversed()
         made = entries
         return entries
     }
@@ -277,15 +286,20 @@ struct ContentsHeader: View {
 /// canvas outlines faintly, and the row is tinted while its shape is hovered, from here or from the
 /// canvas (unless it's selected, as the canvas outlines only an unselected shape's hover). The tint
 /// observes only this row's shape (`isHovered`), so the hover moving down the list redraws the row it
-/// leaves and the row it reaches, not every row.
+/// leaves and the row it reaches, not every row. The row is a drag of its shape (`dragItem`; the
+/// table drags every selected row when it's selected) and a drop target (`ContentsRowDrop`), with
+/// its line above or below it, or its ring, while a drag points there (`dropZone`, observed for this
+/// row alone).
 struct ContentsRow: View {
     let entry: ContentsEntry
     let state: ContentsState
+    @State private var height: CGFloat = 0
 
     var body: some View {
         #if DEBUG
         let _ = (state.rowsRedrawn += 1)
         #endif
+        let zone = state.dropZone(for: entry.id)
         ContentsRowView(entry: entry)
             .equatable()
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -294,7 +308,29 @@ struct ContentsRow: View {
                 if case .active = phase { state.hover(entry.id) } else { state.endHover(entry.id) }
             }
             .onDisappear { state.endHover(entry.id) }
-            .listRowBackground(state.isHovered(entry.id) ? ContentsHoverHighlight() : nil)
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height = $0 }
+            .itemProvider { [entry, state] in state.dragItem(from: entry.id) }
+            .onDrop(of: [.contentsRows], delegate: ContentsRowDrop(entry: entry, state: state, height: height))
+            .overlay(alignment: zone == .below ? .bottomLeading : .topLeading) {
+                if zone == .above || zone == .below {
+                    ContentsDropLine()
+                        .offset(y: (zone == .above ? -1 : 1) * ContentsStyle.dropLineDot / 2)
+                }
+            }
+            .listRowBackground(zone == .on || state.isHovered(entry.id) ? ContentsRowBackground(isDropTarget: zone == .on) : nil)
+    }
+}
+
+/// A row's background while it's hovered, or a drop on it is pointed at.
+struct ContentsRowBackground: View {
+    let isDropTarget: Bool
+
+    var body: some View {
+        if isDropTarget {
+            ContentsDropHighlight()
+        } else {
+            ContentsHoverHighlight()
+        }
     }
 }
 

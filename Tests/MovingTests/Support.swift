@@ -1,8 +1,11 @@
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
+import Keyboard
 import Moving
+import Selection
 import SlashCommands
+import TableOfContents
 import TestKit
 
 // Fixtures only: CanvasTesting's boxes, discs and tags, corrals (they hold shapes, as a frame does), pockets
@@ -10,14 +13,20 @@ import TestKit
 // shows Moving knows no real kind. Commands run headlessly, through the slash commands' service, with the
 // one shape a line's pill would give them.
 
-/// The fixtures, freezing (every refusal in `log`), slash commands and Moving, then `more`.
+/// The fixtures, freezing (every refusal in `log`), slash commands, the table of contents and Moving, then `more`.
 @MainActor func movingPlugins(log: RefusalLog = RefusalLog(), _ more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
-    [FixturesPlugin(), CorralsPlugin(), PocketsPlugin(), LinksPlugin(), CardsPlugin(), FreezingPlugin(log: log), SlashCommandsPlugin(), MovingPlugin()] + more
+    [FixturesPlugin(), CorralsPlugin(), PocketsPlugin(), LinksPlugin(), CardsPlugin(), FreezingPlugin(log: log), SlashCommandsPlugin(),
+     TableOfContentsPlugin(), MovingPlugin()] + more
 }
 
 /// An editor of `file` with those plugins.
 @MainActor func movingHarness(_ file: CanvasFile = CanvasFile(), log: RefusalLog = RefusalLog(), _ more: [any CanvasPlugin] = []) throws -> EditorHarness {
     try EditorHarness(plugins: movingPlugins(log: log, more), file: file)
+}
+
+/// The same, with the keyboard and the selection first, so several rows can be selected and dragged together.
+@MainActor func droppingHarness(_ file: CanvasFile = CanvasFile(), log: RefusalLog = RefusalLog()) throws -> EditorHarness {
+    try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin()] + movingPlugins(log: log), file: file)
 }
 
 // MARK: A pin
@@ -100,6 +109,24 @@ extension EditorHarness {
     /// Whether the command a shape offers by that name takes `target` (false if it offers none).
     func admits(_ name: String, on id: ShapeID, _ target: ShapeID) -> Bool {
         editor.slashCommands?.command(named: name, for: id)?.admits(target) ?? false
+    }
+
+    /// Drags the rows of `ids` (selected first, when there are several, as the list drags every selected row)
+    /// and drops them on `row`, at `zone`: whether the list took the drop.
+    @discardableResult
+    func drop(_ ids: [ShapeID], on row: ShapeID, _ zone: ContentsDropZone) -> Bool {
+        guard let state = editor.tableOfContents, let first = ids.first else { return false }
+        if ids.count > 1 { editor.selectedShapeIDs = ids }
+        guard state.beginDrag(from: first) else { return false }
+        return state.drop(on: ContentsDropTarget(row: row, zone: zone))
+    }
+
+    /// Whether the list would take a drag of `ids`' rows dropped on `row`, at `zone`.
+    func admitsDrop(_ ids: [ShapeID], on row: ShapeID, _ zone: ContentsDropZone) -> Bool {
+        guard let state = editor.tableOfContents, let first = ids.first else { return false }
+        if ids.count > 1 { editor.selectedShapeIDs = ids }
+        guard state.beginDrag(from: first) else { return false }
+        return state.admits(ContentsDropTarget(row: row, zone: zone))
     }
 
     /// A shape's box, wherever it is in the file.

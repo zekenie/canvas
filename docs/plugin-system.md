@@ -290,7 +290,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Draw a kind's shape with a drag, from the press to the pointer, and still say what a click places (and `canvas draw`) | `x.tool(label:systemImage:shortcut:placing:_:)`, a tool of your own with the kind's placement; `editor.place(_:in:)` at the release | [Frames](#frames) |
 | Let a kind's shapes be turned into another kind's (a frame into a subboard), from their menu and as a command, without either kind naming the other | `x.turnable(through: ContainerChannel.self)` on the kind that offers it; `registrar.turnable(into: P.self, through: C.self) { source, transaction in … }` on the kind that takes it, turning with `transaction.turn` and `transaction.move` | [Transform](#transform) |
 | Say what a shape hands over when it turns into another kind (what its target is given) | A `TransformChannel`: `name`, `admits(_:)` and `source(of:in:)`; `ContainerChannel` is the one that ships | [Offering and taking a channel](#offering-and-taking-a-channel), [The container channel](#the-container-channel) |
-| Make a shape another kind under its id, so what binds or names it goes on doing so, and move shapes onto another board of the file, put down there | `transaction.turn(_:into:)`, and `transaction.move(_:to:)` (`move(_:toBoardOwnedBy:)` onto the board below) with `transaction.translate(_:by:on:)` and `settle(_:on:)`, the core's | [Containers](#containers), [Boards in a file](#the-editor-and-the-file) |
+| Make a shape another kind under its id, so what binds or names it goes on doing so, and move shapes onto another board of the file, put down there | `transaction.turn(_:into:)`, and `transaction.move(_:to:)` (`move(_:toBoardOwnedBy:)` onto the board below, `move(_:from:to:)` off a board that isn't shown) with `transaction.translate(_:by:on:)`, `move(_:above:on:)` and `settle(_:on:)`, the core's | [Containers](#containers), [Boards in a file](#the-editor-and-the-file) |
 | Place a shape among others as `canvas draw` places one (beside a shape, in a frame, where the view is clear), from a plugin that isn't a language | DrawScript's `LayoutProblem` and `ObstacleGrid`, over a board read in place (`editor.reading(of:)`) and its solids (`ShapeContext.solidBounds(of:)`) | [Moving](#moving) |
 | Show on a shape what the board it owns holds | `context.drawBoardPreview(ofBoardOwnedBy:in:)` in its render: a rough picture, false until it's built | [Board previews](#the-cores-part-board-previews) |
 | Keep a kind from being selected | `x.unselectable()`, or `x.selectable { ... }` | [Selection](#selection) |
@@ -3341,10 +3341,12 @@ several, just them, under their header; with one, that shape's details instead. 
 ([`Sources/TableOfContents`](../Sources/TableOfContents)) with data-canvas's contract (its TOC
 card providers): each kind says how its shapes appear, and which shapes are listed and under what.
 It doesn't look like data-canvas's, though: it's a Mac source list, a SwiftUI `List` with the
-system's rows, selection, disclosure triangles and keyboard.
+system's rows, selection, disclosure triangles and keyboard. Its rows run front to back, as a layers
+list's do, and dragging them restacks shapes, or moves them into a frame or onto a subboard's board
+([Dragging rows](#dragging-rows)).
 
 ```
-┌─ the panel, with nothing selected ──┐
+┌─ the panel, with nothing selected ──┐  front to back: the top row is the shape in front
 │ Board                               │ header: "Selection", with Show All, when filtered
 │ ▾ ▤ Double-click empty space to a…  │ a note: its text, on one line
 │     ↗ Arrow                         │   an arrow, under the shape it starts from
@@ -3575,8 +3577,14 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
 
 ### What's listed, and selecting
 
-- **Rows are in document order**, back to front, like data-canvas's z-ordered outline. Selecting a
-  shape doesn't restack it, so rows move only when shapes are restacked (Bring to Front).
+- **Rows run front to back**, at every level: the shape painted over the rest first, as a layers list
+  has them (Keynote's, Figma's), so a row dragged up comes forward ([Dragging rows](#dragging-rows)).
+  data-canvas's z-ordered outline went back to front, and so did this one until its rows could be
+  dragged; the owner chose front to back then. `entries` keeps document order, as the core keeps
+  shapes (back to front), and the list shows each level the other way round (`ListedRows`, a
+  board's rows open under its owner's in `BoardRows`, a crumb's menu in `OutlineRows.lines`), so
+  what's listed is still made and kept by what changed. Selecting a shape doesn't restack it, so
+  rows move only when shapes are restacked (Bring to Front, or a row dragged).
 - **A shape the board keeps aside has no row**, whatever its kind (one that isn't installed isn't
   listed by its kind's name), since nothing on the canvas sees it
   ([Boards on disk](#boards-on-disk)). A row that names it to nest under stays at the top.
@@ -3610,7 +3618,8 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
 - **A row of a board under its owner's** is of a shape that isn't on the board shown, so selecting
   it goes to it, as following a link does (Selection's `editor.goTo`): its board shown, the shape
   selected there and brought into view, one step back, leaving whatever else was selected behind.
-  Several such rows go to the board of the one listed first. That's only when such rows are all a
+  Several such rows go to the board of the one listed first (front to back), selecting those on it in
+  document order. That's only when such rows are all a
   selection adds: a ⇧-click whose range passes over an open board's rows selects the rows of the
   board shown in it. Its primary action (a double-click,
   Return) goes into it (`editor.goInto`: there, then opened, as one step back).
@@ -3659,7 +3668,84 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
   `entry.nestedBoard` (its rows, `outline(of:)`, are under it in the list), and whether it starts
   expanded through `entry.startsExpanded`; `open(_:)` is a row's primary action. In debug builds,
   `rowsRedrawn` counts how often the list has asked a row for its view, and `rowsMade` how many rows
-  it has made.
+  it has made. Dragging rows has its own (below).
+
+### Dragging rows
+
+Rows drag, as a layers list's do: dropped above or below a row, what's dragged is restacked beside
+its shape, in front of it or behind it; dropped on a frame's row it goes into the frame, and on a
+subboard's onto its board; dropped among the rows a frame holds, or a subboard's board's, it goes
+there and takes that place in the stack; dropped among the rows of a frame it's in, or of the board,
+it comes out of the frames it was in. Rows of a board open under its owner's drag and take drops
+like any other, so a shape moves off a subboard's board, onto it, and across.
+
+```
+┌─ dragging Eggs ─────────────────────┐
+│ Board                               │
+│   ▤ Bread                           │
+│ ○──────────────────────────────     │ the line: behind Bread, in front of Groceries and all it holds
+│ ▾ ▭ Groceries                       │
+│     ▤ Milk                          │
+│ ╭─────────────────────────────────╮ │ the ring: on Plans' row, onto its board
+│ │ ▸ ▤ Plans                       │ │
+│ ╰─────────────────────────────────╯ │
+│   ▤ Eggs                            │ dragged (and, when it's selected, every selected row)
+└─────────────────────────────────────┘
+```
+
+- **What drags.** A row's drag is its shape's (`dragged(from:)`), or, when its row is selected,
+  every selected shape that can move and whose row shows, in document order, as the table drags every
+  selected row that shows then.
+  A shape that can't move doesn't: one with no box (an arrow, whose place in the stack doesn't say
+  where it's drawn), one read-only (locked, or in a locked frame), one kept aside. Pressing a row and
+  dragging doesn't select it (the table selects on the release of a click), so the panel doesn't turn
+  to the shape's details under a drag. Each row is a drag source of its own (`.itemProvider`, which
+  the list's table asks for what each dragged row carries: `dragItem`, which begins the drag,
+  `beginDrag(from:)`) carrying a private type (`com.example.InfiniteCanvas.contents-rows`, conforming
+  to `public.data`, which the app declares, `.ownProcess`), so a drop in another app does nothing, and
+  a list takes a drop only of a drag it began (`dragShapes`): the drag under way is kept by the editor
+  whose list it began in, as AppKit doesn't tell the list how a drag ended.
+- **Where it points.** Each row is a drop target of its own (`.onDrop(of:delegate:)`, SwiftUI's
+  per-row target, to which AppKit hands a drag over the row), told where on the row's height the drag
+  is (`target(onRow:at:)`): on a frame's or a subboard's row its top and bottom quarters are above and
+  below it, its middle on it; on any other row, halves. Below an open frame's or subboard's row is
+  above the first row it opens onto, so on it (in front of what it holds); below the open row of a
+  shape that takes nothing (a note open onto its arrows), nowhere. A drag that can drop there shows a
+  line above or below the row, from a ring at its start, or a ring around the row, in the accent
+  color, and nothing where it can't (`dragMoved(over:at:)`, `dragLeft(_:)`, observed per row:
+  `dropZone(for:)`). Resting on a closed row that opens onto rows (a subboard's) opens it after 700 ms,
+  as Finder's folders spring open. Not SwiftUI's own reordering, `onMove` and `onInsert`: an outline
+  of them turns every drop on a row into an insertion after it, so a frame's row could never take
+  one.
+- **A drop's place** (`ContentsPlace`): on a frame's row, in the frame, in front of what it holds; on
+  a subboard's, on its board, in front of what it holds; above or below a row, beside its shape where
+  it is, in its container or on its board directly, in front of it (and of what it holds) or behind
+  it. Not beside a row nested under something other than its container (a pin under what it's pinned
+  to), a shape with no box, or one of what's dragged; and the mover refuses what goes with what's
+  dragged (a frame into itself or what it holds, a subboard onto its own board).
+- **A drop that leaves shapes in their container restacks them** there (`ContentsPlace.restack`),
+  keeping their order among themselves: one step, Reorder. Their container takes what it holds along,
+  a frame in front of a shape goes in front of it with all it holds, and on another board the core
+  restacks there (`move(_:above:on:)`).
+- **A drop that takes them elsewhere is `ContentsMoves`'**, a point the list declares and one plugin
+  fills (Moving): where they land on the canvas is the contributor's, as placing a shape is
+  [`canvas draw`](#draw)'s, and it restacks them where the drop says in the same step
+  (`place.restack(_:in:containingKinds:)`). It's asked whether it takes them as a drag moves over the
+  rows, so it lays nothing out then (and the list keeps its answer for the drag, the target and the
+  editor's revision), and refuses a place that goes with them, where the core's move traps. Without
+  one, a drop only restacks:
+
+  ```swift
+  registrar.contentsMoves(admits: { shapes, place, editor in Drop(shapes, to: place, in: editor) != nil },
+                          move: { shapes, place, editor in Drop(shapes, to: place, in: editor)?.commit() })
+  ```
+- **Headless**, `dragged(from:)`, `beginDrag(from:)` and `dragShapes` are the drag;
+  `target(onRow:at:)`, `admits(_:)`, `drop(on:)` (and `dragMoved(over:at:)`, `dragLeft(_:)`,
+  `drop(onRow:at:)`, as the rows' targets call them) the drop; `dropZone(for:)` what a row shows. In
+  a window the list's table hands out each dragged row's writer
+  (`outlineView(_:pasteboardWriterForItem:)`), and a row's own drop target, the view in its cell
+  registered for every type, takes a drag as AppKit hands it one (TableOfContentsTests'
+  `DragWindowTests`).
 
 ### Another board's outline
 
@@ -7822,7 +7908,8 @@ not only the one shown, and the shape each takes is a pill picked with `@` on it
 picker lists only what it takes (for `/move-to`, with nothing typed, every frame and subboard it
 takes, on every board, nearest first). It's a vertical that no kind opts into and nothing imports, as
 [Jump To](#jump-to) and [Reordering](#every-shape-reordering) are: on [slash
-commands](#slash-commands) for the commands, and on DrawScript and Geometry for where a shape
+commands](#slash-commands) for the commands, on the [table of contents](#dragging-rows) for its
+drops that move shapes (`ContentsMoves`), and on DrawScript and Geometry for where a shape
 lands, since it places a shape as [`canvas draw`](#draw) places one (the same solver, the same
 obstacles, the same zones) and moves it with the core's own tools, as draw's commit does.
 
@@ -7855,10 +7942,12 @@ registrar.slashCommandsForEveryShape(where: { hasBox($0.definition) }) {
 
 - **`MovingPlugin`** (id `moving`, the module's one public type) puts both commands on every kind
   whose props are `BoxShapeProps`, read from the kind's definition, so a link, a tag or an arrow
-  offers neither; the report's line is `moving /move-to /move-near → every shape`. It's right before
+  offers neither, and fills the table of contents' `ContentsMoves`; the report's line is
+  `moving /move-to /move-near → every shape · ContentsMoves`. It's right before
   Reordering in the shipped list, after every plugin with a command for every shape, so a note's `/`
   list ends `title, lock, public, move-to, move-near`. Both steps are "Move", a drag's name ("Undo
-  Move To" would read badly). A list with it needs `SlashCommandsPlugin()`.
+  Move To" would read badly). A list with it needs `SlashCommandsPlugin()` and
+  `TableOfContentsPlugin()`.
 - **`/move-to` takes a frame or a subboard** (its `kinds`, the kinds that hold shapes or own boards,
   so the picker ranks only those, and only the titled ones, which have names) on any board the app
   can show, but not the shape itself, or what goes with it (what it holds at any depth, and what's on
@@ -7903,10 +7992,26 @@ registrar.slashCommandsForEveryShape(where: { hasBox($0.definition) }) {
   it's gone from the one shown, the window stays where it is, and Undo Move puts both boards back
   exactly. A move that lands where the shape is commits nothing.
 
+- **Rows dropped in the table of contents** ([Dragging rows](#dragging-rows)) where their shapes
+  aren't are Moving's too (`Drop`): the shapes move as one block (`Block`: on one board, any the app
+  can show, less those another of them holds, placed by the box around them all, keeping where they
+  are to each other), into a frame (its row, or among the rows it holds) as `/move-to` puts a shape
+  there, if the block fits; onto a subboard's board (its row, or among its board's rows) as `/move-to`
+  puts one there; out of the frames they're in (among the rows of a frame they're in at any depth, or
+  of the board) beside the outermost one they leave, as `/move-near` puts a shape beside it, kept
+  within the frame they go to (with no room beside it there, in that frame as `/move-to` puts one).
+  From another board they move off it with the core's `move(_:from:to:)`. The same commit, then, in
+  the same step, every shape dropped restacked where the drop says (`ContentsPlace.restack`); Undo
+  Move takes it all back. Where the in-or-out rule leaves them out of the place (no room in a frame
+  clear of the frame they leave, which takes them back), nothing changes: a drop puts them where it
+  says, or nowhere. Refused as `/move-to` refuses: a locked frame, one too small, the locked owner
+  of a board, what goes with them.
+
 MovingTests hold it over CanvasTesting's boxes, corrals, pockets, links, cards and freezing, run
-through `editor.slashCommands`: what each takes, every landing, the step and refusals; CompositionTests'
-`movingShippedTests` type both into a note's editor in the app (the picker's list, a pick and the
-run, a subboard's board, Undo Move).
+through `editor.slashCommands` and the table of contents' drops: what each takes, every landing, the
+step and refusals; CompositionTests' `movingShippedTests` type both into a note's editor in the app
+(the picker's list, a pick and the run, a subboard's board, Undo Move), and
+`contentsDragShippedTests` drop notes' rows on a frame's, a subboard's and each other's.
 
 ## References
 
@@ -9374,8 +9479,9 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   `delete`, `translate(_:by:)`, which moves shapes as dragging them would, `moveBox(_:to:)`, which
   puts a box where a drag does, `turn(_:into:)`, which makes a shape another kind under its id
   ([Containers](#containers)), `move(_:to:)`, which takes shapes onto another board of the file,
-  `move(_:toBoardOwnedBy:)` onto the board a shape on this one owns, and `translate(_:by:on:)`,
-  which moves them there ([Boards in a file](#the-editor-and-the-file)), and for [containers](#containers), `setContainer(_:to:)` and
+  `move(_:toBoardOwnedBy:)` onto the board a shape on this one owns, `move(_:from:to:)` off any
+  board onto any other, `translate(_:by:on:)`, which moves them there, and `move(_:above:on:)` and
+  `move(_:below:on:)`, which restack them there ([Boards in a file](#the-editor-and-the-file)), and for [containers](#containers), `setContainer(_:to:)` and
   `settle(_:)` (`settle(_:on:)` on another board). A record carries its props, the
   values of its [added properties](#added-properties) and its [metadata](#metadata), and
   `record.copy(as:)` is the same shape under another id.
@@ -9816,6 +9922,17 @@ things reach past it, all in the one commit:
   shape on this board owns, false for an owner that isn't here or owns no board, so a plugin that
   turns it first moves only once `turn` took: with `turn` it's a frame turned into a subboard that
   holds what the frame held, in one step.
+- **And off any board**, `transaction.move(ids, from: source, to: board)`: as `move(_:to:)`, from a
+  board that isn't the transaction's, as the transaction leaves it (a transaction over that board,
+  reading every other board as this one leaves it), onto any other, the board shown too, where they
+  come on top of what it holds, `added` there (`changed`, if this transaction had taken them off it);
+  the board they leave is `boardsChanged`, what left it `elsewhere`, and one they empty goes from the
+  file. A shape dropped in the table of contents from a subboard's board open under its row comes
+  off it this way ([Moving](#moving)). `move(_:above:on:)` and `move(_:below:on:)` restack shapes on
+  another board, as `move(_:above:)` and `move(_:below:)` do on this one (what a container holds goes
+  along; a read-only shape that was there is refused). A commit writes every board it changed, its
+  own among them, together (`CanvasFile.set` of several), each letting go of what leaves it before
+  any takes in what comes, so a shape moved either way between two is on one at a time.
 
 Shape ids are unique across the file: an insert's must be on no board (unless the transaction
 deleted it from its own). An undo step holds the boards a commit takes out, brings in or changes,
@@ -10493,7 +10610,7 @@ mention-queries      query word :mentions · query word :mentioned-by · query t
 validation-queries   query word :invalid · query word :warned
 selection-queries    query word :selected
 query-commands       command line query · command line query-vocabulary
-moving               /move-to /move-near → every shape
+moving               /move-to /move-near → every shape · ContentsMoves
 reordering           ShapeContextMenus
 ```
 

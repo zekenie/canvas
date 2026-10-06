@@ -90,7 +90,7 @@ import Validation
         validation-queries   query word :invalid · query word :warned
         selection-queries    query word :selected
         query-commands       command line query · command line query-vocabulary
-        moving               /move-to /move-near → every shape
+        moving               /move-to /move-near → every shape · ContentsMoves
         reordering           ShapeContextMenus
         """)
     },

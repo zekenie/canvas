@@ -71,7 +71,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [keyboard](.claude/rules/keyboard.md): shortcuts and chords, how a key reaches the canvas, the menu bar.
 - [selection](.claude/rules/selection.md): the select tool, handles and resizing, opening, Back, canvas buttons, going to shapes, faces, the shake a refused change gives.
 - [detail panel](.claude/rules/detail-panel.md): sections, tabs, status lines, headers, bindings, text boxes, the code editor and its completions.
-- [table of contents](.claude/rules/table-of-contents.md): rows, marks, nesting, what's listed, hover, another board's outline.
+- [table of contents](.claude/rules/table-of-contents.md): rows, marks, nesting, what's listed (front to back), hover, another board's outline, dragging rows.
 - [adornments](.claude/rules/adornments.md): pills and chips on shapes: placing them, their places, drawing and pointing.
 - [context menus](.claude/rules/context-menus.md): a shape's items, the canvas's items, right-clicks and Control-clicks.
 - [slash commands](.claude/rules/slash-commands.md): commands typed on a line of a shape's text.
@@ -101,6 +101,6 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [subboards](.claude/rules/subboards.md): a card that owns a board.
 - [frames](.claude/rules/frames.md): a region that holds shapes, and the Frame tool.
 - [jump to](.claude/rules/jump-to.md): ⌘K, a palette that goes to a shape by its title and where it is; the catalog, the ranking over the containment tree, the palette and its list, picks.
-- [moving](.claude/rules/moving.md): `/move-to` and `/move-near`, the shape typed in moved into a frame, onto a subboard's board or beside a shape, on any board; what each takes, where it lands (draw's solver), the commit.
+- [moving](.claude/rules/moving.md): `/move-to` and `/move-near`, the shape typed in moved into a frame, onto a subboard's board or beside a shape, on any board; the table of contents' drops that move shapes; what each takes, where it lands (draw's solver), the commit.
 - [references](.claude/rules/references.md): a pill that stands for a public shape: its props and writers, its look in every state, what it stands for, going to the original, its row and panel.
 - Sticky notes have no file of their own: [editing](.claude/rules/editing.md) holds a note's editor against its render, and the files of what notes opt into hold the rest. Reordering (`Examples/`) is in [context menus](.claude/rules/context-menus.md).

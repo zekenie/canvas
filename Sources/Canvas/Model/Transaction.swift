@@ -825,6 +825,63 @@ public struct Transaction {
         return true
     }
 
+    /// Moves shapes on any board of the file onto another, as `move(_:to:)` moves this board's: from
+    /// `source` as this transaction leaves it, onto `destination` (this board too: on top of what it
+    /// holds, the shapes `added` here, or `changed` if they were here before this transaction), with
+    /// what a container among them holds and the boards they own, their bindings across the edge let
+    /// go both ways, names kept, all or nothing for read-only shapes there and for `destination`'s
+    /// owner. The commit says `source` changed (`boardsChanged`, what left it `elsewhere`); undoing it
+    /// puts every shape back. False, nothing moving and nothing refused, for a `source` or a
+    /// `destination` the editor couldn't show once this transaction commits. On this board it's
+    /// `move(_:to:)`; `destination` can't be `source`, nor under a shape that moves (a loop).
+    @discardableResult
+    public mutating func move(_ ids: Set<ShapeID>, from source: BoardID, to destination: BoardID) -> Bool {
+        guard source != board else { return move(ids, to: destination) }
+        precondition(destination != source, "shapes can't move onto the board they're on")
+        guard var there = transaction(on: source, readingThrough: true) else { return false }
+        let moved = there.move(ids, to: destination)
+        refused.formUnion(there.refused)
+        guard moved else { return false }
+        if there.didChange { stage(there.document, on: source) }
+        for (staged, document) in there.stagedBoards {
+            guard staged == board else {
+                stage(document, on: staged)
+                continue
+            }
+            // Onto this board: on top of `document` as it was read, so it's `document` with them on top.
+            let arrived = Set(there.stagedIDs.lazy.filter { $0.value == staged }.map(\.key))
+            self.document = document
+            tops = [:]
+            for id in arrived {
+                if changes.removed.remove(id) != nil { changes.changed.insert(id) } else { changes.added.insert(id) }
+                stagedIDs[id] = nil
+            }
+            changes.reordered = true
+            didChange = true
+        }
+        for (id, staged) in there.stagedIDs where staged != board { stagedIDs[id] = staged }
+        return true
+    }
+
+    /// `move(_:above:)` on another board of the file, over that board as this transaction leaves it,
+    /// as `translate(_:by:on:)` moves shapes there: what this transaction brought there isn't held, and
+    /// a read-only shape that was there stays, refused. On this transaction's own board it's
+    /// `move(_:above:)`; a board the editor couldn't show changes nothing.
+    public mutating func move(_ id: ShapeID, above other: ShapeID, on board: BoardID) {
+        guard board != self.board else { return move(id, above: other) }
+        guard var there = transaction(on: board) else { return }
+        there.move(id, above: other)
+        take(there)
+    }
+
+    /// `move(_:below:)` on another board of the file, as `move(_:above:on:)` restacks there.
+    public mutating func move(_ id: ShapeID, below other: ShapeID, on board: BoardID) {
+        guard board != self.board else { return move(id, below: other) }
+        guard var there = transaction(on: board) else { return }
+        there.move(id, below: other)
+        take(there)
+    }
+
     /// Moves shapes on another board of the file by `delta` (world units), as `translate` moves them on
     /// this one (what a container holds goes along): over that board as this transaction leaves it
     /// (`contents(of:)`), as `settle(_:on:)` settles there, so what `move(_:to:)` took there goes where
@@ -901,12 +958,19 @@ public struct Transaction {
     /// (`translate(_:by:on:)`, `settle(_:on:)`): the same registry, camera, keys and file, and what this
     /// one brought there (moved there, or in with its owner) taken as added there, so it isn't held, as
     /// what this one adds here isn't. Nil for a board the editor couldn't show once this transaction
-    /// commits. What it does comes back with `take(_:)`.
-    func transaction(on board: BoardID) -> Transaction? {
+    /// commits. What it does comes back with `take(_:)`. `readingThrough`: it reads every other board,
+    /// and where each shape is, as this one leaves the file too (its own board among them), for a move
+    /// off that board (`move(_:from:to:)`), which reads and stages the board it goes onto.
+    func transaction(on board: BoardID, readingThrough: Bool = false) -> Transaction? {
         let way = climb(board)
         precondition(!way.isTaken, "shapes can't move or settle on a board that goes with a shape deleted in the same transaction")
         guard way.canShow else { return nil }
-        var there = Transaction(document: contents(of: board), board: board, registry: registry, camera: camera, keys: keys, file: file)
+        var access = file
+        if readingThrough {
+            let here = self, file = file
+            access = FileAccess(locate: { here.location(of: $0) }, subtree: file.subtree, contents: { here.contents(of: $0) }, canShow: file.canShow)
+        }
+        var there = Transaction(document: contents(of: board), board: board, registry: registry, camera: camera, keys: keys, file: access)
         for (id, on) in stagedIDs where on == board { there.changes.added.insert(id) }
         return there
     }

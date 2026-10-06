@@ -113,6 +113,37 @@ public struct ContentsMark: Hashable, Sendable {
     }
 }
 
+/// What takes shapes dropped in the table of contents to a place they aren't in: into a container,
+/// onto another board, out of a container (`ContentsPlace`). The list restacks shapes a drop leaves
+/// in their container itself; a drop that takes them elsewhere is this point's, so where they land
+/// on the canvas is the contributor's to say (Moving's, as `/move-to` and `/move-near` place a
+/// shape). At most one: two are `RegistryError.conflict` at startup. Without one, a drop only
+/// restacks.
+public enum ContentsMoves {}
+
+extension ContentsMoves: KeyedExtensionPoint {
+    public typealias Contribution = ContentsMoveContribution
+    public static var owner: PluginID { .tableOfContents }
+    public static func uniqueKeys(of _: ContentsMoveContribution, for _: ShapeTarget) -> [AnyHashable] { ["moves"] }
+}
+
+/// What `ContentsMoves` stores: whether shapes dropped somewhere can go there, which the list asks
+/// as a drag moves over its rows (so it costs next to nothing: no layout), and the move itself,
+/// asked only of shapes `admits` took, all on one board, at least one not already where `place`
+/// is. A place that goes with the shapes (a frame among them or in one, beside one, a board one of
+/// them owns, or one under it) is `admits`' to refuse: the core traps on a move there.
+@MainActor
+public struct ContentsMoveContribution {
+    let admits: @MainActor ([ShapeID], ContentsPlace, CanvasEditor) -> Bool
+    let move: @MainActor ([ShapeID], ContentsPlace, CanvasEditor) -> Void
+
+    public init(admits: @escaping @MainActor ([ShapeID], ContentsPlace, CanvasEditor) -> Bool,
+                move: @escaping @MainActor ([ShapeID], ContentsPlace, CanvasEditor) -> Void) {
+        self.admits = admits
+        self.move = move
+    }
+}
+
 /// What a mark contributor, or a row read from more than its shape, may read besides the shape:
 /// services, read-only.
 @MainActor
@@ -307,6 +338,17 @@ extension PluginRegistrar {
         contribute({ $0.typed(as: P.self).flatMap(make) }, to: ContentsTitles.self, for: .kind(P.kind))
     }
 
+    /// What moves shapes dropped in the list somewhere they aren't (`ContentsMoves`): `admits`, asked
+    /// as a drag moves over the rows, says whether they can go to a place; `move` takes them there,
+    /// in one undo step, and restacks them where the drop says:
+    ///
+    ///     registrar.contentsMoves(admits: { shapes, place, editor in Relocation(shapes, to: place, in: editor) != nil },
+    ///                             move: { shapes, place, editor in Relocation(shapes, to: place, in: editor)?.commit() })
+    public mutating func contentsMoves(admits: @escaping @MainActor ([ShapeID], ContentsPlace, CanvasEditor) -> Bool,
+                                       move: @escaping @MainActor ([ShapeID], ContentsPlace, CanvasEditor) -> Void) {
+        contribute(ContentsMoveContribution(admits: admits, move: move), to: ContentsMoves.self)
+    }
+
     /// A mark on every shape's row, where `make` gives one (nil for none), from the shape and the
     /// editor's services; `where` (a `ContentsKind`, asked once per kind) keeps it to the kinds
     /// that opted into what it marks, as Locking's lock goes only on kinds that can be locked:
@@ -466,4 +508,16 @@ enum ContentsStyle {
     static let outlineRadius: CGFloat = 6
     static let outlineIconWidth: CGFloat = 18
     static let outlineIconSpacing: CGFloat = 5
+    /// Dragging rows: how much of a row, at its top and at its bottom, is above or below it where
+    /// its shape takes shapes (a frame's, a subboard's), the rest being on it (a row that takes
+    /// nothing is above or below by halves); the line a drop above or below shows, and the ring at
+    /// its start; the ring and tint a drop on a row shows; how long a drop held on a closed row that
+    /// opens takes to open it (Finder's spring-loading); and the step a restack makes.
+    static let dropEdge: CGFloat = 0.25
+    static let dropLineWidth: CGFloat = 2
+    static let dropLineDot: CGFloat = 7
+    static let dropRingWidth: CGFloat = 2
+    static let dropTintOpacity: CGFloat = 0.12
+    static let springDelay: Duration = .milliseconds(700)
+    static let reorderStep = "Reorder"
 }

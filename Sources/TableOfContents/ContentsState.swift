@@ -15,8 +15,8 @@ public struct ContentsEntry: Identifiable {
     public var symbol: String { row.symbol }
     /// The dots at the row's trailing end (`ContentsMarks`), in contribution order.
     public var marks: [ContentsMark] { row.marks }
-    /// The rows nested under this one, in document order; nil when there are none, so the list
-    /// shows no disclosure triangle.
+    /// The rows nested under this one, in document order (the list shows them front to back); nil
+    /// when there are none, so the list shows no disclosure triangle.
     public internal(set) var children: [ContentsEntry]?
     /// The board this row's shape owns (a `BoardOwning` kind's, not kept aside), whose rows the list
     /// nests under this one's, before `children`: that board's `ContentsState.outline(of:)`, read only
@@ -163,7 +163,7 @@ public final class ContentsState {
         var readsOtherShapes: Bool { contribution?.affected != nil }
     }
 
-    @ObservationIgnored private unowned let editor: CanvasEditor
+    @ObservationIgnored unowned let editor: CanvasEditor
     /// Each kind's, found once: the registry is frozen.
     @ObservationIgnored private var kinds: [ShapeKind: KindRows] = [:]
     /// Each shape's row, made when a scope first takes the shape in, and again after it changes.
@@ -219,6 +219,18 @@ public final class ContentsState {
     /// again (`followMoves`). So a drag's every event costs the table of contents one set's upkeep,
     /// whatever it carries (a frame and all it holds), and the rest only once something reads them.
     @ObservationIgnored private var movedSinceRead: Set<ShapeID> = []
+    /// Where a drag over the rows points (`point(_:opening:)`), observed per row (`dropZone(for:)`).
+    @ObservationIgnored var pointedDrop: ContentsDropTarget?
+    /// The closed row a drag rests on, which opens unless it moves off first.
+    @ObservationIgnored var springing: (entry: ContentsEntry, task: ScheduledTask)?
+    /// What a drag of a selected row takes, as of the editor's revision, the selection's and how often
+    /// a row was turned (`dragged(from:)`): the table asks every dragged row, so it's worked out once.
+    @ObservationIgnored var selectionDrag: (revision: Int, selectionRevision: Int, turns: Int, shapes: [ShapeID])?
+    /// Whether a drop at a target was taken, for the drag and the editor's revision it was asked at: a
+    /// drag asks again on every move of the pointer over a row.
+    @ObservationIgnored var admitted: (drag: Int, revision: Int, target: ContentsDropTarget, answer: Bool)?
+    /// How many times a row's disclosure triangle has been turned.
+    @ObservationIgnored private(set) var turns = 0
     private var pin: Pin?
     /// How many times a service has said rows changed outside a commit (`contentsDidChange(for:)`):
     /// read by `entries`, so whoever reads the list reads again.
@@ -256,8 +268,10 @@ public final class ContentsState {
 
     public var isFiltered: Bool { scope != nil }
 
-    /// The top-level rows in document order (back to front, as data-canvas's z-ordered outline),
-    /// each with the rows nested under it. Only listed shapes in `scope` have rows. A row nests
+    /// The top-level rows in document order (back to front, as the core keeps shapes), each with the
+    /// rows nested under it; the list shows every level the other way round, front to back, as a
+    /// layers list does, so its top row is the shape painted over the rest (`ListedRows`). Only
+    /// listed shapes in `scope` have rows. A row nests
     /// under the shape its kind names (`nestedUnder`) when that shape has a row too, unless that
     /// would make a loop: then the later shape stays at the top. Kept from one read to the next,
     /// so a read after a commit costs what the commit changed.
@@ -305,7 +319,7 @@ public final class ContentsState {
     }
 
     /// Every shape, or the shapes of `ids` still in the document, back to front.
-    private func inDocumentOrder(_ ids: Set<ShapeID>?) -> [ShapeID] {
+    func inDocumentOrder(_ ids: Set<ShapeID>?) -> [ShapeID] {
         let document = editor.document
         guard let ids else { return document.shapes.map(\.id) }
         return ids.compactMap { id in document.index(of: id).map { (id, $0) } }.sorted { $0.1 < $1.1 }.map(\.0)
@@ -350,7 +364,7 @@ public final class ContentsState {
     /// board's rows selects the board shown's rows in it, and no others.
     public func select(_ ids: Set<ShapeID>) {
         let away = elsewhere(ids)
-        if !away.isEmpty, ids.subtracting(editor.selectedShapeIDs).isSubset(of: away) { return editor.goTo(away) }
+        if !away.isEmpty, ids.subtracting(editor.selectedShapeIDs).isSubset(of: away) { return editor.goTo(Self.boardFirst(away, in: editor.file)) }
         let listed = scope
         let ordered = inDocumentOrder(ids)
         let isNew = Set(ordered) != Set(editor.selectedShapeIDs)
@@ -382,12 +396,22 @@ public final class ContentsState {
             .sorted { $0.1.lexicographicallyPrecedes($1.1) }.map(\.0)
     }
 
+    /// `ids` (as the list orders them) with those on the board of the first in document order first,
+    /// then the rest: `goTo` goes to the first's board and selects them there in that order.
+    private static func boardFirst(_ ids: [ShapeID], in file: CanvasFile) -> [ShapeID] {
+        guard let first = ids.first, let board = file.board(containing: first) else { return ids }
+        let document = file[board]
+        let there = ids.filter { document[$0] != nil }.sorted { (document.index(of: $0) ?? 0) < (document.index(of: $1) ?? 0) }
+        return there + ids.filter { document[$0] == nil }
+    }
+
     /// Where a shape is listed when every board's rows are under their owner's: its owners' places in
-    /// the stack, the outermost first, then its own. Compared, places order shapes as the list does.
+    /// the stack, the outermost first, then its own, each counted from the top (the list goes front to
+    /// back). Compared, places order shapes as the list does.
     private static func place(of id: ShapeID, in file: CanvasFile) -> [Int] {
         var place: [Int] = [], current = id, met: Set<ShapeID> = []
         while met.insert(current).inserted, let board = file.board(containing: current), let index = file[board].index(of: current) {
-            place.append(index)
+            place.append(file[board].shapes.count - 1 - index)
             guard let owner = board.owner else { break }
             current = owner
         }
@@ -444,6 +468,22 @@ public final class ContentsState {
         withMutation(keyPath: \.[turned: entry.id]) {
             if isExpanded == entry.startsExpanded { turned.remove(entry.id) } else { turned.insert(entry.id) }
         }
+        turns += 1
+    }
+
+    /// Whether the board shown's row of a shape shows in the list as it's listed now: listed, and every
+    /// row it's nested under open. A dragged selected row takes only the selected rows that show, as the
+    /// list's table drags only those.
+    func showsRow(of id: ShapeID) -> Bool {
+        guard let listing = scope == nil ? board : filtered else { return true }
+        guard listing.lists(id) else { return false }
+        var next = listing.parent(of: id), steps = 0
+        while let parent = next, steps <= rows.count {
+            guard let row = rows[parent], row.startsExpanded != turned.contains(parent) else { return false }
+            next = listing.parent(of: parent)
+            steps += 1
+        }
+        return true
     }
 
     /// Only a key: one key path per shape, under which Observation keeps the observers of each row's
@@ -589,6 +629,12 @@ public final class ContentsState {
         return kind.marks.compactMap { $0.mark(record, context) }
     }
 
+    /// The shape a kind nests its shape's row under (`nestedUnder`), if it names one: where a row is
+    /// that isn't where its shape is stacked (a pin, under what it's pinned to).
+    func kindNestingParent(of record: AnyShapeRecord) -> ShapeID? {
+        kindRows(record.kind).contribution?.parent?(record, ContentsContext(editor: editor))
+    }
+
     private func kindRows(_ kind: ShapeKind) -> KindRows {
         if let found = kinds[kind] { return found }
         let registry = editor.registry
@@ -725,6 +771,7 @@ extension ContentsState: EditorService {
         board = taken?.board
         filtered = nil
         rowHover = nil                  // the board left's, whose hover Selection let go of
+        if pointedDrop != nil || springing != nil { point(nil) }
         if pin != nil { pin = nil }
         heardRevision = editor.revision
         missed = []

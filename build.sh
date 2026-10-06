@@ -805,6 +805,16 @@ app)
                 </array>
             </dict>
         </dict>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.example.InfiniteCanvas.contents-rows</string>
+            <key>UTTypeDescription</key>
+            <string>Infinite Canvas Shapes</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+        </dict>
     </array>
 </dict>
 </plist>

@@ -3,15 +3,16 @@ import CanvasTesting
 import CoreGraphics
 import Moving
 import SlashCommands
+import TableOfContents
 import TestKit
 
 // What Moving registers: two commands for every shape a drag moves, and nothing else.
 
 @MainActor let movingRegistrationTests = Suite("Moving's commands", [
-    test("the report: two commands for every shape, and nothing else") {
+    test("the report: two commands for every shape, and the table of contents' drops that move shapes, and nothing else") {
         let lines = try Registry(plugins: movingPlugins()).report.split(separator: "\n").map(String.init)
         let line = try require(lines.first { $0.hasPrefix("moving ") })
-        expectEqual(line.dropFirst("moving".count).drop { $0 == " " }, "/move-to /move-near → every shape")
+        expectEqual(line.dropFirst("moving".count).drop { $0 == " " }, "/move-to /move-near → every shape · ContentsMoves")
     },
 
     test("every kind with a box offers both, in that order; a link and a tag, which have none, offer neither") {
@@ -48,9 +49,12 @@ import TestKit
         expectEqual(state.commands(for: a).map(\.name), [])
     },
 
-    test("Moving needs slash commands: without them the list is refused") {
+    test("Moving needs slash commands and the table of contents: without either the list is refused") {
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeSlashCommands", owner: .slashCommands, contributor: "moving")) {
-            _ = try Registry(plugins: [FixturesPlugin(), MovingPlugin()])
+            _ = try Registry(plugins: [FixturesPlugin(), TableOfContentsPlugin(), MovingPlugin()])
+        }
+        expectThrows(RegistryError.ownerNotInstalled(point: "ContentsMoves", owner: .tableOfContents, contributor: "moving")) {
+            _ = try Registry(plugins: [FixturesPlugin(), SlashCommandsPlugin(), MovingPlugin()])
         }
     },
 ])

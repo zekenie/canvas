@@ -61,7 +61,11 @@ struct PocketsInPockets {
         let nest = PocketsInPockets()
         let editor = try contentsEditor([PocketsPlugin()], file: nest.file())
         editor.contents.select([nest.f, nest.c, nest.d])
-        expectEqual(editor.board, nest.pBoard, "C's, listed before Q's F, which is under Q, after C and D")
+        expectEqual(editor.board, nest.qBoard, "F's: Q is in front on P's board, so its F is listed before D and C")
+        expectEqual(editor.selectedShapeIDs, [nest.f])
+        editor.goBack()
+        editor.contents.select([nest.c, nest.d])
+        expectEqual(editor.board, nest.pBoard)
         expectEqual(editor.selectedShapeIDs, [nest.c, nest.d])
         editor.goBack()
         editor.contents.select([nest.f, nest.q])
@@ -129,10 +133,10 @@ extension ContentsWindow {
         w.window.spin { w.rows == 3 }
         w.window.settle()
         expectEqual(editor.contents.rowsMade, 4, "the board shown's rows alone: P's board, collapsed, costs none")
-        expectEqual(try [1, 2, 3].map(w.isExpandable), [false, true, false], "A; P, which holds shapes; and E, which holds none")
+        expectEqual(try [1, 2, 3].map(w.isExpandable), [false, true, false], "front to back: E, which holds none; P, which holds shapes; and A")
         try w.expand(2)
         w.window.spin { w.rows == 7 }
-        // A; P, then C, D and Q from P's board and the pin on P from the root; E.
+        // E; P, then Q, D and C from P's board and the pin on P from the root; A.
         expectEqual(editor.contents.rowsMade, 4 + 4, "P's board's rows, made as it opened")
         expectEqual(try [3, 4, 5, 6, 7].map(w.isExpandable), [true, false, true, false, false], "C has its pin; Q its board")
         try w.expand(5)
@@ -151,10 +155,10 @@ extension ContentsWindow {
         editor.transact(on: nest.pBoard, "Add") { $0.insert(ShapeRecord(Widget(widgetFrame, name: "G"))) }
         w.window.spin { w.rows == 8 }
         editor.transact(on: nest.pBoard, "Delete") { $0.delete([nest.c, nest.d]) }
-        w.window.spin { w.rows == 7 }                           // A; P, then the pin on C, at the top now, Q and G, and the pin on P; E
-        expect(!(try w.isExpandable(7)))
+        w.window.spin { w.rows == 7 }                           // E; P, then G, Q and the pin on C, at the top now, and the pin on P; A
+        expect(!(try w.isExpandable(1)))
         editor.transact(on: BoardID(owner: nest.e), "Add") { $0.insert(ShapeRecord(Widget(widgetFrame, name: "H"))) }
-        w.window.spin { (try? w.isExpandable(7)) == true }      // E holds a shape now
+        w.window.spin { (try? w.isExpandable(1)) == true }      // E holds a shape now
     },
     test("a click on a nested board's row goes to its shape there, its rows replacing the list's with no reentrant update; Back returns to the board") {
         let nest = PocketsInPockets()

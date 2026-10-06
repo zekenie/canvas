@@ -583,8 +583,7 @@ public final class CanvasEditor {
     /// change, the boards it takes included, so undoing it puts them back with every id.
     private func commit(_ transaction: Transaction) {
         var changes = transaction.changes
-        storedFile.set(transaction.document, for: board, changes: changes)
-        changes.elsewhere = writeBoards(of: transaction)
+        changes.elsewhere = writeBoards(of: transaction, own: (board, transaction.document, changes))
         documentDidChange(to: transaction.document, changes: changes)
     }
 
@@ -598,34 +597,36 @@ public final class CanvasEditor {
         changes.boardsAdded = local.boardsAdded
         changes.boardsRemoved = local.boardsRemoved
         changes.byAgent = local.byAgent
-        storedFile.set(transaction.document, for: target, changes: local)
-        changes.elsewhere = writeBoards(of: transaction).union(local.shapeIDs)
+        changes.elsewhere = writeBoards(of: transaction, own: (target, transaction.document, local)).union(local.shapeIDs)
         documentDidChange(to: storedDocument, changes: changes)
     }
 
-    /// Takes out of the file the boards a transaction took, writes over those it changed (shapes moved
-    /// onto a board that held some, the root included, or settled there), and puts in those it brought;
-    /// returns the shapes it touched on them: every shape of a board it took or brought, and each that
-    /// differs on a board it changed (what came, and what settling there nudged or took in).
-    private func writeBoards(of transaction: Transaction) -> Set<ShapeID> {
+    /// Writes the board a transaction was on (`own`, with what it changed there), takes out of the file
+    /// the boards it took, writes over those it changed (shapes moved onto a board that held some, the
+    /// root included, moved off one, or settled there), and puts in those it brought; returns the
+    /// shapes it touched on the others: every shape of a board it took or brought, and each that
+    /// differs on a board it changed (what came or went, and what settling there nudged or took in).
+    private func writeBoards(of transaction: Transaction, own: (board: BoardID, document: CanvasDocument, changes: ChangeSet)) -> Set<ShapeID> {
         let changes = transaction.changes
         var touched = storedFile.shapeIDs(on: changes.boardsRemoved)
         for board in changes.boardsRemoved { leftCameras[board] = nil }
         storedFile.removeBoards(changes.boardsRemoved)
         warmIndexes.forget(changes.boardsRemoved)
-        // A board the file has is set, not inserted, which wants a new one: after the board the
-        // transaction was on, which let go of the shapes that moved.
-        var brought: [ShapeID: CanvasDocument] = [:]
+        // The boards the file has are set together, the transaction's own among them, so a shape moved
+        // from one onto another, either way, is on one at a time; a board it brought is inserted, which
+        // wants a new one, after them all.
+        var written = [own], brought: [ShapeID: CanvasDocument] = [:]
         for (board, document) in transaction.stagedBoards {
             if changes.boardsChanged.contains(board) {
                 let change = ChangeSet(from: storedFile[board], to: document)
                 touched.formUnion(change.shapeIDs)
-                storedFile.set(document, for: board, changes: change)
+                written.append((board, document, change))
             } else if let owner = board.owner {
                 touched.formUnion(document.shapes.lazy.map(\.id))
                 brought[owner] = document
             }
         }
+        storedFile.set(written)
         warmIndexes.forget(changes.boardsChanged)
         storedFile.insertBoards(brought)
         return touched
