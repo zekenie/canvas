@@ -1049,7 +1049,12 @@ struct Solver {
         case .free(let other):
             var orders = PerAxis<(before: Int, after: Int)?>(nil, nil)
             for axis in Axis.allCases { orders[axis] = order(box, other, axis, solution, Reach(bounds[axis], nodes: nodes)) }
-            guard let axis = pick(Axis.allCases.filter { orders[$0] != nil }, clash.overlap), let order = orders[axis] else {
+            let axis: Axis, order: (before: Int, after: Int)
+            if let ordered = pick(Axis.allCases.filter { orders[$0] != nil }, clash.overlap), let found = orders[ordered] {
+                (axis, order) = (ordered, found)
+            } else if let yielded = yielding(box, other, clash.overlap, solution, bounds) {
+                (axis, order) = yielded
+            } else {
                 throw unordered(box, other, solution, bounds)
             }
             separations.append(Separation(box: box, other: .free(other), axis: axis))
@@ -1073,6 +1078,20 @@ struct Solver {
 
     func clearance(_ axis: Axis) -> CGFloat {
         axis == .x ? LayoutProblem.horizontalClearance : LayoutProblem.verticalClearance
+    }
+
+    /// How a box the caller made up (`Free.implied`) gets out of the way of a free box that nothing
+    /// orders it against: the later of two such boxes, or the one that is, goes past the other, on the
+    /// axis it's free to go on that they overlap less on (`freedom`), the way its own placements
+    /// leave it free to go. Nil if neither is implied, or the one that is can't move.
+    func yielding(_ a: Int, _ b: Int, _ overlap: Overlap, _ solution: PerAxis<AxisSolution>, _ bounds: PerAxis<[Bound]>)
+        -> (axis: Axis, order: (before: Int, after: Int))? {
+        // `a` is the earlier of the two in script order.
+        guard let mover = problem.free[b].implied ? b : problem.free[a].implied ? a : nil else { return nil }
+        let anchor = mover == b ? a : b
+        let freedoms = PerAxis(freedom(mover, .x, solution, bounds), freedom(mover, .y, solution, bounds))
+        guard let axis = pick(Axis.allCases.filter { freedoms[$0] != .held }, overlap) else { return nil }
+        return (axis, freedoms[axis] == .after ? (before: anchor, after: mover) : (before: mover, after: anchor))
     }
 
     /// Which of two free boxes the placements let the other move past on an axis: one reaches the

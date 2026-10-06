@@ -36,9 +36,16 @@ public struct LayoutProblem {
         /// The obstacles (by id) that go wherever it goes: what it holds, as a container does. It's
         /// never kept clear of them, and none of them is a zone of it.
         public var carries: Set<Int>
+        /// A box the caller made up beside what a statement says (a stand-in for an edge's end), which
+        /// no script wrote a placement for: where it clashes with another free box that nothing
+        /// orders against it, it's the one that moves, past that box, the way its own placements leave
+        /// it free to go, where for a box the script wrote that is `unordered`. The later of two such
+        /// boxes yields to the earlier.
+        public var implied: Bool
 
         public init(line: Int, name: String, size: CGSize, clauses: [ResolvedClause] = [], gap: Gap? = nil,
-                    overlapAllowed: Bool = false, current: CGRect? = nil, holder: Holder? = nil, carries: Set<Int> = []) {
+                    overlapAllowed: Bool = false, current: CGRect? = nil, holder: Holder? = nil, carries: Set<Int> = [],
+                    implied: Bool = false) {
             self.line = line
             self.name = name
             self.size = size
@@ -48,6 +55,7 @@ public struct LayoutProblem {
             self.current = current
             self.holder = holder
             self.carries = carries
+            self.implied = implied
         }
     }
 

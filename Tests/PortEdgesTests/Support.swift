@@ -126,16 +126,92 @@ let fixtureNames = Contributor(id: "fixture-names") { registrar in
     })
 }
 
+/// Whether a relay may stand for a shape: metadata a test writes on a shape, as a person makes one public.
+enum Open: ShapeMetaKey {
+    static let owner: PluginID = "relays"
+    static let name = "open"
+    typealias Value = Bool
+}
+
+/// A box that stands for the shape it cites, and says what it stands for, with ports on every channel
+/// on its left and right (`portsOnEveryChannel`), so what it takes follows what it stands for.
+struct Relay: BoxShapeProps {
+    static let kind: ShapeKind = "relay"
+    static let properties = Properties<Relay> {
+        Property("frame", \.frame).required()
+        Property("stands", \.stands)
+        Property("says", \.says)
+    }
+    var frame: CGRect
+    var stands: [Citation]
+    var says: String
+    init(_ frame: CGRect, stands: [ShapeID] = [], says: String = "") {
+        self.frame = frame
+        self.stands = stands.map(Citation.init)
+        self.says = says
+    }
+}
+
+extension Relay {
+    init() { self.init(CGRect(x: 0, y: 0, width: 80, height: 40)) }
+}
+
+struct RelayDefinition {}
+
+extension RelayDefinition: ShapeDefinition {
+    func render(_ shape: ShapeRecord<Relay>, in context: RenderContext) {}
+}
+
+/// Relays, which stand for the open shapes they cite, are made to stand for one, and are placed by a tool.
+func relaysPlugin() -> Contributor {
+    Contributor(id: "relays") { registrar in
+        registrar.shape(RelayDefinition()) { relay in
+            relay.portsOnEveryChannel(sides: [.left, .right])
+            relay.standsIn(admitting: { target, _ in target.meta[Open.self] == true }, needs: "open", makes: { props, target, label in
+                props.stands = [Citation(target)]
+                props.says = label
+            }) { shape, _ in shape.props.stands.isEmpty ? nil : .shapes(shape.props.stands.map(\.shape)) }
+            relay.tool(label: "Relay", systemImage: "arrow.right", placing: relay.placement(size: CGSize(width: 80, height: 40)) { Relay() })
+        }
+    }
+}
+
 /// An editor 800 × 600 points with the fixtures, Ports, the channels, the link connector, names
-/// and `PortEdgesPlugin` (unless not).
+/// and `PortEdgesPlugin` (unless not), and `more` before them (with the file's boards, the pockets they
+/// are in).
 @MainActor func edgesEditor(_ requests: Requests = Requests(), cards: Bool = true, makes: Bool = true, withPlugin: Bool = true,
-                                        names: Contributor = fixtureNames) throws -> CanvasEditor {
+                                        names: Contributor = fixtureNames, more: [any CanvasPlugin] = []) throws -> CanvasEditor {
     let plugins: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), AutomationPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(),
                                        LinksPlugin(), PortsPlugin(), channelsPlugin(cards: cards), linkConnector(requests, makes: makes),
-                                       names] + (withPlugin ? [PortEdgesPlugin()] : [])
+                                       names] + more + (withPlugin ? [PortEdgesPlugin()] : [])
     let editor = CanvasEditor(registry: try Registry(plugins: plugins))
     editor.viewportDidResize(to: CGSize(width: 800, height: 600))
     return editor
+}
+
+/// The board of `board`, and a pocket P with a board of its own, holding tile Z and card Y (both open): the
+/// shapes a script reaches through a relay on this board, which only an open shape can have.
+struct Harbor {
+    let p = ShapeID(), z = ShapeID(), y = ShapeID()
+
+    /// An editor on it: tiles A and B and cards C and D, as `board` draws them, are on the root.
+    @MainActor func editor(_ requests: Requests = Requests(), cards: Bool = true, makes: Bool = true) throws -> CanvasEditor {
+        let editor = try edgesEditor(requests, cards: cards, makes: makes, more: [PocketsPlugin(), relaysPlugin()])
+        _ = try drawn(board, on: editor)
+        let root = CanvasDocument(shapes: editor.file.root.shapes + [AnyShapeRecord(ShapeRecord(id: p, Pocket(CGRect(x: 600, y: 450, width: 100, height: 100))))])
+        var tile = AnyShapeRecord(ShapeRecord(id: z, Tile(CGRect(x: 50, y: 50, width: 120, height: 80), label: "Z")))
+        var card = AnyShapeRecord(ShapeRecord(id: y, Card(CGRect(x: 400, y: 50, width: 100, height: 60), text: "Y")))
+        tile.meta[Open.self] = true
+        card.meta[Open.self] = true
+        let file = CanvasFile(root: root, children: [p: CanvasDocument(shapes: [tile, card])])
+        editor.replaceFile(with: file)
+        return editor
+    }
+}
+
+extension CanvasEditor {
+    /// The relays on a board.
+    func relays(on board: BoardID = .root) -> [ShapeRecord<Relay>] { contents(of: board).shapes.compactMap { $0.typed(as: Relay.self) } }
 }
 
 /// A command, as the command line spells it, run as the app's server runs it; `input` is its
@@ -177,10 +253,12 @@ struct DrewAnyway: Error, CustomStringConvertible {
 /// A result's rows about edges.
 func edgeRows(_ result: JSON) -> [JSON] { (result["changes"]?.arrayValue ?? []).filter { $0["from"] != nil } }
 
-/// The links on the board: `A -> B`, by name, with their channel (`on wire`) and aim.
+/// The links on the board: `A -> B`, by name, with their channel (`on wire`) and aim; a relay by what it
+/// says (`relay Z`).
 @MainActor func links(in editor: CanvasEditor) -> [String] {
     func name(_ id: ShapeID?) -> String {
         guard let record = id.flatMap({ editor.document[$0] }) else { return "?" }
+        if let relay = record.typed(as: Relay.self) { return "relay \(relay.props.says)" }
         return record.typed(as: Tile.self)?.props.label ?? record.typed(as: Card.self)?.props.text ?? "?"
     }
     return editor.document.shapes.compactMap { record -> String? in

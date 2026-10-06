@@ -82,6 +82,7 @@ import Validation
         title-names          draw names
         port-edges           draw edges
         validation-checks    draw checks
+        mention-texts        draw text text/x-canvas-mentions
         queries              service QueryState · query engine
         query-translation    service QueryTranslator
         title-queries        query names

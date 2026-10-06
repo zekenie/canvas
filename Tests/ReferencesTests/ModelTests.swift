@@ -88,6 +88,30 @@ private let placed = CGRect(origin: origin, size: Reference.defaultSize)
         expect(!registry.canBePublic(Reference.kind))
         expect(!registry.properties(for: Reference.kind).contains(PublicProperty.key))
     },
+    test("it's made to stand for a shape as picking it does, for a plugin that puts shapes down by name: a direct pill fitted to the name, for a public shape only") {
+        let h = try referenceHarness()
+        let box = h.addBox("Auth service"), hidden = h.addBox("Notes", public: false, at: CGRect(x: 400, y: 100, width: 150, height: 100))
+        let standIns = h.editor.registry.standIns
+        expectEqual(standIns.makers, [Reference.kind])
+        expectEqual(standIns.needs(Reference.kind), "public", "what a message says it asks of a shape")
+        expect(standIns.admits(Reference.kind, try require(h.editor.document[box])))
+        expect(!standIns.admits(Reference.kind, try require(h.editor.document[hidden])), "a shape that isn't public can't be stood for")
+        let made = try require(standIns.make(Reference.kind, standingFor: box, label: "Auth service"))
+        let props = try require(made.typed(as: Reference.self)?.props)
+        expectEqual(props.mode, .direct)
+        expectEqual(props.target, ReferenceTarget(id: box, label: "Auth service"), "what picking it would have written")
+        expectEqual(props.frame.height, 32)
+        expectEqual(props.frame.width, ReferenceEdits.width(of: props), "fitted to its label")
+        expectEqual(props.words, "")
+        expectEqual(props.query, nil)
+        expect(h.editor.document[made.id] == nil, "in no document yet")
+        expect(!standIns.admits(Reference.kind, made), "a reference isn't stood for: one hop")
+        // On the board it stands for the box: an arrow into it is an arrow into the box.
+        h.editor.transact { $0.insert(made) }
+        expectEqual(h.standsFor(made.id), [box])
+        let long = try require(standIns.make(Reference.kind, standingFor: box, label: String(repeating: "wide ", count: 40)))
+        expectEqual(long.typed(as: Reference.self)?.props.frame.width, 280, "as wide as a pill goes")
+    },
     test("its target is a name: a copy renames it with what's copied along and keeps it otherwise, and a deletion never looks for it") {
         let h = try referenceHarness()
         let box = h.addBox("shapes")

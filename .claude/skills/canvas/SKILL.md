@@ -83,7 +83,7 @@ A title is how you, the user and later scripts refer to a shape: `draw` never ta
 - **Keep titles short and specific** ("Auth service", not "Service"). Longer than 80 characters is kept but warned about. A generic title like "Notes" may already be on the board, and your statement would then change the user's shape, so dry-run first on any board you didn't just draw.
 - **Shapes the user made are usually untitled.** A note's words are its text, not a title. A query finds them by what they say (`sticky-note:not([title])[text*="launch"]`), but a script can't name them: place against `board` or `view` instead, or ask the user to title the shapes you need.
 - **A schema card is called by its schema's `"title"`**, and has no title of its own: `schema-card "Order"` is refused (`untitlable`). Draw it untitled, with its title inside `schema:`, and call it by that title from the next script on. Restated with a schema whose title is another, it's renamed (`did: "renamed"`).
-- **A note's `text:` is kept as written.** In it, `@[label](shape:…)` is a mention of a shape by its id, which only the app writes, so write plain words; an `@` or `@[…]` on its own is just text. That stored form never reaches you: a query shows a note's mentions as they read, `@` and the name of what each mentions.
+- **A note's `text:` can mention shapes by title.** `@[Owner]` in it is a mention of the shape called Owner: the note shows a pill with that shape's name, live, and the app keeps the id, which you never write or see. The title is found as any title is, but on any board of the file: a shape the script draws (even further down it), else the one on the board the script draws on, else the one on the board the window shows, else the one anywhere else in the file. A title nobody has is refused (`unknown_title`, with the one like it), and so is one two shapes have in the first place that has any (`ambiguous_title`). A title in a text never moves the run to its board. Anything else in `text:` is kept as written: an `@` alone, or an `@[` with no `]` on its line, is just text. To write `@[` as text, write `\\@[` (a script's string spells a backslash twice). A query shows a note's mentions as they read, `@` and the name of what each mentions.
 
 ## Writing
 
@@ -109,10 +109,10 @@ style <name> attribute { attribute }             a named set of attributes, for 
 
 Arrows are what edges are; you don't draw one on its own. An edge takes the arrow's attributes beside `from:`, `to:` and `channel:`: `text:` (what it says, set on its line), `labelPosition:` (where along it, `0` to `1`, halfway by default), `bend:` and `locked:`; its heads are its arrow's (`->`, `<->`). Values: text is quoted (`text: "Two words"`). `true` and `false` are bare words (`locked: true`). `null` puts a property back to its default (but not a title: `title:` only renames). `size: 300x200` is in world units, up to 100000. A value past a bound, like a title over 80 characters, is kept and warned about.
 
-A subboard is a card that holds a board of its own. `in "Payments"` draws a shape on its board, without opening it; `inside "Payments" top-left` puts a shape over its card instead. Draw the subboard first, then what goes in it in a run of its own. Deleting it deletes everything on its board too (the result warns how much). A locked one takes nothing new, and what's on its board, and on every board under it, refuses changes (`read_only`). A schema card shows its `prompt:`, what the schema holds in words, as a note shows its text, and grows to fit it; with none it's blank. Its `schema:` is JSON inside a quoted string, so escape each quote: `schema: "{\"title\": \"Order\", \"type\": \"object\"}"`; the user sees it in the card's panel. Give a card both. What you write on one is taken as written: the Claude sync that rewrites one side when the user edits the other isn't asked, so write a prompt and a schema that agree. A card refers to another schema card by its id (from `canvas query`'s rows): its `prompt:` mentions it, `@[Address](shape:<id>)`, and its `schema:` points to it with `{\"$ref\": \"urn:uuid:<id, lowercase>\"}` where that field goes; write both.
+A subboard is a card that holds a board of its own. `in "Payments"` draws a shape on its board, without opening it; `inside "Payments" top-left` puts a shape over its card instead. Draw the subboard first, then what goes in it in a run of its own. Deleting it deletes everything on its board too (the result warns how much). A locked one takes nothing new, and what's on its board, and on every board under it, refuses changes (`read_only`). A schema card shows its `prompt:`, what the schema holds in words, as a note shows its text, and grows to fit it; with none it's blank. Its `schema:` is JSON inside a quoted string, so escape each quote: `schema: "{\"title\": \"Order\", \"type\": \"object\"}"`; the user sees it in the card's panel. Give a card both. What you write on one is taken as written: the Claude sync that rewrites one side when the user edits the other isn't asked, so write a prompt and a schema that agree. A card refers to another schema card twice, in words and in its schema, and you write both: its `prompt:` mentions it by its title, `@[Address]` (a prompt can mention schema cards only, so a note called Address isn't the one), and its `schema:` points to it with `{\"$ref\": \"urn:uuid:<id, lowercase>\"}` where that field goes, the id being the card's, from `canvas query`'s rows. Only the `$ref` takes an id.
 
 ```draw
-sticky-note "Ship v1" below "API" text: "Cut the release"
+sticky-note "Ship v1" below "API" text: "Cut the release once @[API] and @[DB] agree"
 ```
 
 A frame is a region of the board that holds shapes: what's in it moves with it and is locked with it, and deleting the frame leaves what's in it where it is. `in "Sprint 3"` puts a shape in it, 40 in from its edges: with no other placement, against its top-left, and several written alike in a list down from there; with placements, where they say, kept within it, or the script fails with `no_room`. A frame doesn't grow, so give it a `size:` with room for what goes in it, and draw it first: `in` a frame the same script draws is `unsupported`. Nothing sits across a frame's edge: whatever a script puts down over one goes wholly in or out by most of its area, nudged, and a warning says which (`"Draft" was over the edge of "Sprint 3", so it was nudged in`). So a shape placed `inside` a frame, `on` it, or against a shape in it, that lands within it, is in it too.
@@ -196,6 +196,8 @@ edge "Ship v1" -> "Sprint 3"
 ```draw
 edge "Ship v1" -> "Sprint 3" channel: none
 ```
+
+An arrow can't leave its board, so an edge to a shape on another board goes into a **reference**: a pill that stands for the shape, which the run puts beside the shape on this board. `edge "Checkout" -> "Auth"`, with Auth on a subboard's board, draws a reference to Auth right of Checkout and the arrow into it, and the row says `via: "reference"`. Only a public shape can be stood for, and making one public is the user's call: for one that isn't, the script is refused (`several_boards`) and you ask. `via: reference` asks for a reference on one board too, for a shape that other edges point at. [reference/language.md](reference/language.md#through-a-reference) has the rest.
 
 ### Styles
 
@@ -337,9 +339,17 @@ edge "Web" --> "API"
 sticky-note "Ship 1.0" owner: "Ann"
 ```
 
+**A mention that names no shape.** An `@[…]` that closes on its line is a mention, found by its title exactly, so a slip is refused (`unknown_title`, with the title it's like) rather than left as text. If you meant the characters, write `\\@[`.
+
+```draw-error
+// reason: unknown_title
+sticky-note "Ship 1.0" text: "Blocked on @[Auth servce]"
+```
+
 - **Between, with nothing on the other axis.** `right of "Web" left of "Cache"` alone is `unplaced`: add `level with "Web"`.
 - **Two unplaced shapes.** Only one per script may say nothing about where it goes; place the rest against it. And there are no coordinates in any form: if a shape is in the wrong place, give it another placement.
 - **Re-running a whole layout script to add one line.** Its placements run again and snap back anything the user has moved since, and its untitled shapes are drawn a second time. Write only the new statements. To change attributes without moving a shape, restate it without placements.
+- **An edge to a shape on another board** goes through a reference only if that shape is public. If it isn't, the script is refused (`several_boards`, and its hint says why): don't make the shape public to get past it, ask the user, or split the script into a run for each board.
 - **Edges across channels**, and **shapes the user locked**, which refuse changes (`read_only`), as does everything in a locked frame or on a locked subboard's board. Connect like to like (or to a subboard) or say `channel: none`; tell the user about a locked shape rather than unlocking it.
 - **A frame and what goes in it in one script.** `in` a frame the same script draws is refused (`unsupported`): draw the frame, then what goes in it in a run of its own.
 
@@ -353,7 +363,7 @@ sticky-note "Ship 1.0" owner: "Ann"
 - **The result confirms intent, not the picture.** It tells you where each shape landed and what was pushed. It doesn't tell you whether a note's text overflowed (a note grows to fit its text unless you gave it a `size:`, which cuts long text off, so leave `size:` off notes with long text) or whether a line crosses other shapes.
 - **Edges are arcs.** They don't route around shapes. Only closed shapes are kept clear, so a shape can land across an arrow or a drawn line.
 - **Pills overlap when zoomed out.** A title's pill (and a lock's chip, in the same row just above a shape) clears the shape above it in a list down to about 42% zoom (below 35% shapes are skeletons: no pill or chip is drawn, and a title is said on the shape instead).
-- **One board at a time.** A draw works on the board its file's window shows, and can't reach a subboard's board from outside it.
+- **One board per run.** A run draws on one board (`in` says which, and the window never moves), and an arrow can't leave it: an edge to a shape on another board is drawn into a reference to that shape, which only a public one can have.
 
 ## Reference
 
@@ -361,6 +371,6 @@ sticky-note "Ship 1.0" owner: "Ann"
 
 [reference/query.md](reference/query.md) is the whole query language, on a story file: naming shapes, attributes, inside, edges and their direction, the plugins' words, yes-or-no questions, `--ask`, and every refusal with its fix. [query-prompt.md](query-prompt.md) is what the app tells Claude for `--ask`, word for word, with how to give yourself what it's given. `build/canvas help query` is the command's own help, and `build/canvas query-vocabulary` what this app's queries can name: its kinds and their attributes, its edge types and its words.
 
-[reference/references.md](reference/references.md) is what a reference does to what you read: a pill that stands for a public shape, so an arrow into it is an arrow into the shape, and how a row says it (`via`, `more`).
+[reference/references.md](reference/references.md) is what a reference does to what you read: a pill that stands for a public shape, so an arrow into it is an arrow into the shape, and how a row says it (`via`, `more`), and what a script can make of one (an edge to a shape on another board).
 
 The language and its solver are modified from [reladraw](https://github.com/reladraw/reladraw) (Apache-2.0; see THIRD_PARTY_NOTICES.md). This language isn't called that.

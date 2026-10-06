@@ -96,8 +96,9 @@ public enum ShippedPlugins {
             PortsPlugin(), ArrowPortsPlugin(),
             LanguageModelsPlugin(model: model),
             // The command line's commands, and what `canvas draw` takes from the plugins that own a
-            // concern: titles for names, ports' connections for edges, and validity for its warnings.
-            AutomationPlugin(), TitleNamesPlugin(), PortEdgesPlugin(), ValidationChecksPlugin(),
+            // concern: titles for names, ports' connections for edges, validity for its warnings, and
+            // mentions for text (`@[Title]` in a note's text names the shape called that).
+            AutomationPlugin(), TitleNamesPlugin(), PortEdgesPlugin(), ValidationChecksPlugin(), MentionTextsPlugin(),
             // Reading the file: `canvas query`, and what queries take from the plugins that own a concern:
             // titles for names, boards' names, mentions for text and relations, validity and the selection
             // for their words.

@@ -184,7 +184,11 @@ public struct ReferencesPlugin: CanvasPlugin {
             let place = reference.editingPlacement(size: Reference.defaultSize) { Reference() }
             reference.tool(label: "Reference", systemImage: ReferenceStyle.systemImage, shortcut: "r", placing: place)
             reference.portsOnEveryChannel(sides: [.left, .right])
-            reference.standsIn(maxTargets: ReferenceStyle.maxTargets, admitting: { target, registry in registry.isPublic(target) }) { shape, _ in
+            // Made to stand for a shape as picking it does, which refits its width to the name: how
+            // `canvas draw` puts one beside what points at a shape on another board.
+            reference.standsIn(maxTargets: ReferenceStyle.maxTargets, admitting: { target, registry in registry.isPublic(target) },
+                               needs: "public",
+                               makes: { props, target, label in ReferenceEdits.pick(&props, ReferenceTarget(id: target, label: label)) }) { shape, _ in
                 if let target = shape.props.target { return .shapes([target.id]) }
                 if let query = shape.props.query { return .provided(ReferenceState.key(query: query, all: shape.props.all)) }
                 return nil

@@ -5,7 +5,7 @@ A **reference** is a pill that stands for another shape, anywhere in the file. A
 
 Only a **public** shape can be stood for. `public` is an attribute, `public: true` in a script, that a person sets from a shape's menu or its chip; a shape that isn't public can't be referenced, and a reference of one that stops being public stands for nothing.
 
-A reference is **direct** (the person picked one shape) or **dynamic** (a query finds what it stands for). A script can make only a dynamic one, with `query:`: what a reference names, and the words typed into it, are the person's to pick and type. A dynamic one stands for what its query finds among the public shapes, the first in file order or, with `all: true`, every one up to fifty; the app finds it a moment after it's drawn and again as the file changes, and `canvas query` waits for that (up to two seconds, for a query that reads edges) before it answers. Its query reads what's drawn and what direct references stand for, never what another dynamic one found, nor what the person has selected or the board they're on (`:selected`, `:current-board`): a query with those finds nothing, and the pill says why. The examples below are about a direct one, which is what a person makes first, and which reads the same way for you.
+A reference is **direct** (the person picked one shape) or **dynamic** (a query finds what it stands for). A script makes a dynamic one with `query:`, and a direct one only as the stand-in of an edge, to a public shape on another board or with `via: reference` ([language.md](language.md#through-a-reference)): what a reference names, and the words typed into it, are otherwise the person's to pick and type. A dynamic one stands for what its query finds among the public shapes, the first in file order or, with `all: true`, every one up to fifty; the app finds it a moment after it's drawn and again as the file changes, and `canvas query` waits for that (up to two seconds, for a query that reads edges) before it answers. Its query reads what's drawn and what direct references stand for, never what another dynamic one found, nor what the person has selected or the board they're on (`:selected`, `:current-board`): a query with those finds nothing, and the pill says why. The examples below are about a direct one, which is what a person makes first, and which reads the same way for you.
 
 The examples on this page are all about one file, the story below. Each block tagged `query` is a query as you'd send it, and its first line, a comment, says what it answers, as in [query.md](query.md). Each block tagged `draw-error` is a script run as a dry run, refused with the reason its first line names, changing nothing. The kinds and words are the ones that shipped when this was written. `build/canvas kinds` and `build/canvas query-vocabulary` say what your app has.
 
@@ -14,7 +14,7 @@ The examples on this page are all about one file, the story below. Each block ta
 - [The story file](#the-story-file)
 - [Reading through a reference](#reading-through-a-reference)
 - [Which shapes can be stood for](#which-shapes-can-be-stood-for)
-- [What a script can't do](#what-a-script-cant-do)
+- [What a script can and can't do](#what-a-script-can-and-cant-do)
 
 ## The story file
 
@@ -99,9 +99,11 @@ sticky-note:not([public])
 
 A person can't make a shape private while something stands for it (the chip counts what does, and refuses), but a script can write `public:` on any shape that has it, and so can an undo or a paste. A shape that stops being public is no longer stood for: the reference shows it dashed, and its arrows are read at the pill again until the shape is public again. So read `[public]` rather than assuming, and expect a reference to a private shape to stand for nothing. `canvas query` waits up to two seconds for the answers that edges depend on, only for a query with an edge word, and says `pending` in its warnings if they were still arriving.
 
-## What a script can't do
+## What a script can and can't do
 
-A reference has no title, and a script names a shape by its title, so a script can't name one: not as an edge's end, in the script that draws it or in another, and a script can't draw an arrow into one. Reading is the whole of what you do with a reference you didn't make. What it names and the words typed into it are the person's, so a script can't write them either:
+A script draws a direct reference when an edge needs one: an edge between shapes on two boards goes into a reference for the end on the other board, put beside the end on this one, and `via: reference` asks for one on a single board. The reference stands for a public shape, so a shape that isn't public can't be reached, and a script never makes one public to get there (that's the user's call): the edge is refused, and the user is asked. The arrow's row says `via: "reference"`, and the pill has a row of its own. Reading it back is what this page is about. [language.md](language.md#through-a-reference) is how to draw it.
+
+A reference has no title, and a script names a shape by its title, so a script can't name one: not as an edge's end, in the script that draws it or in another. A later run finds the one an edge went through by what it stands for (writing the edge again is `unchanged`), and `delete edge` takes the arrow and the pill. Nothing else a script writes names a shape for a reference: what it names and the words typed into it are the person's, so a script can't write them:
 
 ```draw-error
 // reason: unknown_attribute
@@ -113,4 +115,11 @@ reference target: "Auth"
 reference words: "everything about auth"
 ```
 
-What a script writes is `query:`, a query in the language of [query.md](query.md), and `all:`, and the app refuses a query it can't read. See [language.md](language.md).
+A shape that isn't public can't be stood for, so `via:` for one is refused:
+
+```draw-error
+// reason: invalid_value
+edge "Checkout" -> "Drafts" via: reference
+```
+
+What a script writes on a statement of a reference's own is `query:`, a query in the language of [query.md](query.md), and `all:`, and the app refuses a query it can't read. See [language.md](language.md).

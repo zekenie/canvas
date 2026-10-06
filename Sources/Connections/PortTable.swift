@@ -12,7 +12,10 @@ import Canvas
 //
 // That is a kind's ports; a shape that stands for others (Topology's stand-ins: a reference) has
 // ports of its own, instance by instance: its kind's, as far as every shape it stands for takes
-// them, in the order of the first (`standing(for:)`, and `PortState.ports(of:)`).
+// them, in the order of the first (`standing(for:)`, and `PortState.ports(of:)`). A lookup below that
+// asks about a kind may ask about a stand-in of that kind instead, by the kinds of what it stands for
+// (`standingFor`): what a connection made by name asks of one that isn't in the editor, on a board that
+// isn't shown.
 
 /// A kind's ports, as the port table has them. Only `KindPorts(of:in:)` makes one.
 @MainActor
@@ -117,35 +120,58 @@ extension Registry {
 
     var connector: ConnectorContribution? { contributions(to: Connectors.self).first?.value }
 
-    /// Whether `kind` has ports on any channel, with any role.
-    public func hasPorts(_ kind: ShapeKind) -> Bool { KindPorts(of: kind, in: self) != nil }
+    /// What a shape of `kind` has ports on: its kind's; or, for a stand-in of that kind standing for
+    /// shapes of `targets`' kinds, what it takes while it does (`KindPorts.standing(for:)`: none if
+    /// they have no ports). With no `targets`, the kind's.
+    func kindPorts(_ kind: ShapeKind, standingFor targets: [ShapeKind]) -> KindPorts? {
+        guard let own = KindPorts(of: kind, in: self) else { return nil }
+        guard !targets.isEmpty else { return own }
+        return own.standing(for: targets.map { KindPorts(of: $0, in: self) })
+    }
+
+    /// Whether `kind` has ports on any channel, with any role (a stand-in of it standing for shapes
+    /// of the kinds `standingFor`: while it does).
+    public func hasPorts(_ kind: ShapeKind, standingFor targets: [ShapeKind] = []) -> Bool {
+        kindPorts(kind, standingFor: targets) != nil
+    }
 
     /// The channels `kind` has ports on, with any role, in the port table's order (plugin order).
-    public func portChannels(of kind: ShapeKind) -> [ChannelID] {
-        KindPorts(of: kind, in: self)?.entries.map(\.channel) ?? []
+    public func portChannels(of kind: ShapeKind, standingFor targets: [ShapeKind] = []) -> [ChannelID] {
+        kindPorts(kind, standingFor: targets)?.entries.map(\.channel) ?? []
     }
 
     /// The channels a drag from `kind`'s dot on `side` starts connections on, in the port table's
     /// order, as `Connection.channels` has them; with no side, those of all its dots, each once, in
     /// that order. Ports that only take connections (`.target`) have no dot.
-    public func dotChannels(of kind: ShapeKind, side: PortSide? = nil) -> [ChannelID] {
-        guard let ports = KindPorts(of: kind, in: self) else { return [] }
+    public func dotChannels(of kind: ShapeKind, standingFor targets: [ShapeKind] = [], side: PortSide? = nil) -> [ChannelID] {
+        guard let ports = kindPorts(kind, standingFor: targets) else { return [] }
         if let side { return ports.dots[side] ?? [] }
         return ports.entries.filter { $0.role != .target && !$0.sides.isEmpty }.map(\.channel)
     }
 
     /// Whether `kind` has ports on `channel` that let it be `role` (`PortRole.allows`), on `side` if
     /// one is named: where a connection starts (`.source`, a dot there) or ends (`.target`).
-    public func takes(_ kind: ShapeKind, _ channel: ChannelID, as role: PortRole, side: PortSide? = nil) -> Bool {
-        guard let entry = KindPorts(of: kind, in: self)?.entry(on: channel), entry.role.allows(role) else { return false }
+    public func takes(_ kind: ShapeKind, standingFor targets: [ShapeKind] = [], _ channel: ChannelID, as role: PortRole,
+                      side: PortSide? = nil) -> Bool {
+        guard let entry = kindPorts(kind, standingFor: targets)?.entry(on: channel), entry.role.allows(role) else { return false }
         return side.map(entry.sides.contains) ?? true
     }
 
     /// The sides on which `kind` has ports on `channel` that let it be `role`, in the order its
     /// ports were given (`x.ports(C.self, sides:)`); none if it has no such ports.
-    public func portSides(of kind: ShapeKind, on channel: ChannelID, as role: PortRole) -> [PortSide] {
-        guard let entry = KindPorts(of: kind, in: self)?.entry(on: channel), entry.role.allows(role) else { return [] }
+    public func portSides(of kind: ShapeKind, standingFor targets: [ShapeKind] = [], on channel: ChannelID, as role: PortRole) -> [PortSide] {
+        guard let entry = kindPorts(kind, standingFor: targets)?.entry(on: channel), entry.role.allows(role) else { return [] }
         return entry.sides
+    }
+
+    /// The sides on which `kind` has ports on any channel, each once, in the order they were first
+    /// given: where a stand-in of it standing for shapes of the kinds `standingFor` takes
+    /// connections at all (a reference's, its left and right).
+    public func portSides(of kind: ShapeKind, standingFor targets: [ShapeKind] = []) -> [PortSide] {
+        guard let ports = kindPorts(kind, standingFor: targets) else { return [] }
+        return ports.entries.reduce(into: [PortSide]()) { sides, entry in
+            for side in entry.sides where !sides.contains(side) { sides.append(side) }
+        }
     }
 
     /// The channel a connection from a shape of `kind` (leaving by `fromSide`, if one is named) to a
@@ -153,8 +179,13 @@ extension Registry {
     /// one (`CanvasEditor.channel(of:endingAt:)`): the first of `kind`'s dot channels, in the port
     /// table's order, that `target` takes as a target; nil if they share none. What connects shapes
     /// by name goes by it (DrawLexicon's `PortEdgesPlugin`), so a script's edge picks as a drag does.
-    public func connectionChannel(from kind: ShapeKind, fromSide: PortSide? = nil, to target: ShapeKind, toSide: PortSide? = nil) -> ChannelID? {
-        dotChannels(of: kind, side: fromSide).first { takes(target, $0, as: .target, side: toSide) }
+    /// An end may be a stand-in (`fromStandingFor`, `toStandingFor`: the kinds of what it stands
+    /// for), which has the ports of what it stands for on its own sides.
+    public func connectionChannel(from kind: ShapeKind, fromSide: PortSide? = nil, fromStandingFor fromTargets: [ShapeKind] = [],
+                                  to target: ShapeKind, toSide: PortSide? = nil, toStandingFor toTargets: [ShapeKind] = []) -> ChannelID? {
+        dotChannels(of: kind, standingFor: fromTargets, side: fromSide).first {
+            takes(target, standingFor: toTargets, $0, as: .target, side: toSide)
+        }
     }
 
     /// Whether `shape`'s kind has ports on `channel` that let it be `role`: where a connection starts

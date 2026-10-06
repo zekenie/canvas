@@ -275,6 +275,40 @@ enum MentionGrammar {
         return out
     }
 
+    /// A label read from `start` (just past an `@[`): what it says, with `\]` and `\\` undone, and
+    /// where its scan stopped: at its `]`, or at a line break, a backslash that escapes nothing, or
+    /// the end, where it isn't a label. A scan from any `@[` inside what it read would read the same
+    /// scalars from where this one did and stop there the same way.
+    private static func label(in s: [Unicode.Scalar], from start: Int) -> (text: String, end: Int) {
+        var j = start
+        var label = String.UnicodeScalarView()
+        while j < s.count {
+            let c = s[j]
+            if c == backslash {
+                guard j + 1 < s.count, s[j + 1] == close || s[j + 1] == backslash else { return (String(label), j) }
+                label.append(s[j + 1])
+                j += 2
+                continue
+            }
+            if c == close { break }
+            if isLineBreak(c) { return (String(label), j) }
+            label.append(c)
+            j += 1
+        }
+        return (String(label), j)
+    }
+
+    /// What a label's `]` at `close` starts when it's a mention's: `](shape:UUID)`, the id and
+    /// where the mention ends; nil for anything else.
+    private static func shapeSuffix(in s: [Unicode.Scalar], at close: Int) -> (ShapeID, Int)? {
+        guard close + head.count + 37 <= s.count, Array(s[close..<close + head.count]) == head else { return nil }
+        let idStart = close + head.count
+        let idScalars = s[idStart..<idStart + 36]
+        guard s[idStart + 36] == ")", idScalars.allSatisfy(\.isASCII),
+              let uuid = UUID(uuidString: String(String.UnicodeScalarView(idScalars))) else { return nil }
+        return (ShapeID(uuid), idStart + 37)
+    }
+
     /// A whole mention starting at `i` (an `@`): its id, its label, and where it ends. When there's
     /// none, `labelEnd` is where the label's scan stopped (its `]`, a line break, a backslash that
     /// escapes nothing, or the end), if it began: no `@[` before that point starts a mention either,
@@ -282,34 +316,10 @@ enum MentionGrammar {
     /// there the same way.
     private static func mention(in s: [Unicode.Scalar], at i: Int, labelEnd: inout Int) -> (ShapeID, String, Int)? {
         guard i + 1 < s.count, s[i] == at, s[i + 1] == open else { return nil }
-        var j = i + 2
-        var label = String.UnicodeScalarView()
-        while j < s.count {
-            let c = s[j]
-            if c == backslash {
-                guard j + 1 < s.count, s[j + 1] == close || s[j + 1] == backslash else {
-                    labelEnd = j
-                    return nil
-                }
-                label.append(s[j + 1])
-                j += 2
-                continue
-            }
-            if c == close { break }
-            if isLineBreak(c) {
-                labelEnd = j
-                return nil
-            }
-            label.append(c)
-            j += 1
-        }
-        labelEnd = j
-        guard j + head.count + 37 <= s.count, Array(s[j..<j + head.count]) == head else { return nil }
-        let idStart = j + head.count
-        let idScalars = s[idStart..<idStart + 36]
-        guard s[idStart + 36] == ")", idScalars.allSatisfy(\.isASCII),
-              let uuid = UUID(uuidString: String(String.UnicodeScalarView(idScalars))) else { return nil }
-        return (ShapeID(uuid), String(label), idStart + 37)
+        let (label, end) = label(in: s, from: i + 2)
+        labelEnd = end
+        guard end < s.count, s[end] == close, let (id, mentionEnd) = shapeSuffix(in: s, at: end) else { return nil }
+        return (id, label, mentionEnd)
     }
 
     /// The runs `string` reads as.
@@ -563,18 +573,88 @@ enum MentionGrammar {
         return true
     }
 
+    // MARK: Names
+
+    /// `MentionTextFormat.resolvingNames(in:_:)`: the string with each `@[name]` that names a shape
+    /// by its name written as a whole mention. Read as `parse` reads it, scalar by scalar, so a
+    /// backslash and an `@[` mean what they mean in the stored form, and linear in the same way: a
+    /// scan that stops short (at a line break, a backslash that escapes nothing, or the end) rules
+    /// out the `@[`s it read past. A name is a label's: it ends at the first `]` no backslash
+    /// escapes, on the line the `@[` is on. What's left as it is, byte for byte: every other
+    /// character; a whole mention (`@[label](shape:ID)`, the id in any case); and a look-alike, a name's
+    /// `]` followed by `(shape` in any case, which is a mention gone wrong, not one by name.
+    static func resolvingNames<E: Error>(in string: String, _ resolve: (String) throws(E) -> (id: ShapeID, label: String)) throws(E) -> String {
+        guard mayHoldMentions(string) else { return string }
+        let s = Array(string.unicodeScalars)
+        var out: [Unicode.Scalar] = []       // not a string, which copies itself whole for each append
+        var copied = 0                       // s[..<copied] is in `out`; 0 until a name is written
+        var ruledOut = 0                     // no `@[` starts a mention before this: a failed scan got this far
+        var i = 0
+        while i < s.count {
+            var a = i                        // an `@[` that no backslash escapes starts here, once found
+            if s[i] == backslash {
+                var n = 0
+                while i + n < s.count, s[i + n] == backslash { n += 1 }
+                a = i + n
+                guard a + 1 < s.count, s[a] == at, s[a + 1] == open else {
+                    i = a
+                    continue
+                }
+                if n % 2 == 1 {              // `\@[`: a literal `@[`
+                    i = a + 1
+                    continue
+                }
+            } else if s[i] != at || i + 1 >= s.count || s[i + 1] != open {
+                i += 1
+                continue
+            }
+            guard a >= ruledOut else {
+                i = a + 1
+                continue
+            }
+            let (name, end) = label(in: s, from: a + 2)
+            ruledOut = end
+            guard end < s.count, s[end] == close else {
+                i = a + 1
+                continue
+            }
+            if let (_, mentionEnd) = shapeSuffix(in: s, at: end) {
+                i = mentionEnd
+                continue
+            }
+            guard !isShapeWord(in: s, at: end + 1) else {
+                i = a + 1
+                continue
+            }
+            let (id, shown) = try resolve(name)
+            out.append(contentsOf: s[copied..<a])
+            append(id, label: shown, to: &out)
+            copied = end + 1
+            i = end + 1
+        }
+        guard copied > 0 else { return string }
+        out.append(contentsOf: s[copied...])
+        return String(String.UnicodeScalarView(out))
+    }
+
+    /// A mention, written canonically: its label with `]` and `\` escaped (a line break a space),
+    /// and its id in uppercase.
+    private static func append<Out: RangeReplaceableCollection>(_ id: ShapeID, label: String, to out: inout Out) where Out.Element == Unicode.Scalar {
+        out.append(contentsOf: "@[".unicodeScalars)
+        for c in label.unicodeScalars {
+            if c == backslash || c == close { out.append(backslash) }
+            out.append(isLineBreak(c) ? " " : c)
+        }
+        out.append(contentsOf: "](shape:\(id.rawValue.uuidString))".unicodeScalars)
+    }
+
     /// Normalized runs, written canonically.
     static func write(_ runs: [MentionRun]) -> String {
         var out = String.UnicodeScalarView()
         for (n, run) in runs.enumerated() {
             switch run {
             case .mention(let id, let label):
-                out.append(contentsOf: "@[".unicodeScalars)
-                for c in label.unicodeScalars {
-                    if c == backslash || c == close { out.append(backslash) }
-                    out.append(isLineBreak(c) ? " " : c)
-                }
-                out.append(contentsOf: "](shape:\(id.rawValue.uuidString))".unicodeScalars)
+                append(id, label: label, to: &out)
             case .text(let text):
                 let nextIsMention: Bool = if n + 1 < runs.count, case .mention = runs[n + 1] { true } else { false }
                 guard nextIsMention || mayHoldMentions(text) else {

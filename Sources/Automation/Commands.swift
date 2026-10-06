@@ -13,6 +13,16 @@ public struct AutomationPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .automation }
 
+    #if DEBUG
+    /// How many times a run has read the names of every board of a file in this process, debug
+    /// builds only: a script that names no shape, in its statements or its texts, reads none, and
+    /// one that does reads them once.
+    @MainActor public internal(set) static var fileNamesRead = 0
+    /// How many boards' arrows a run has read to choose the board it draws on, debug builds only: only
+    /// an edge between two boards looks (for itself, drawn through a stand-in), each board once a run.
+    @MainActor public internal(set) static var boardConnectionsRead = 0
+    #endif
+
     public func register(into registrar: inout PluginRegistrar) {
         let canvas = RPC.commandName
         registrar.automationCommand(
@@ -26,7 +36,9 @@ public struct AutomationPlugin: CanvasPlugin {
                 of the file (the one the window shows first), and in "X" puts a shape on the board X holds (a \
                 subboard's), or in X, where X holds shapes on its own board (a frame's): a run draws on the board \
                 what it names is on, else the one the window shows, without \
-                moving the window (the result's on says which). The language is taught \
+                moving the window (the result's on says which). An edge to a shape on another board goes into a \
+                reference to it, put beside the shape on this board, when the shape is public (via: reference asks \
+                for one on a single board too). The language is taught \
                 by the repository's canvas skill (.claude/skills/canvas); `\(canvas) kinds` lists what can be drawn, \
                 and with what.
                 """,

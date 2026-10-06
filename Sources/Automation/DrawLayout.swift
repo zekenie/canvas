@@ -47,7 +47,8 @@ extension Drawing {
                 kinds.isEmpty ? [] : Set(document.descendants(of: existing.id, containingKinds: kinds).compactMap { document.index(of: $0) })
             } ?? []
             free.append(LayoutProblem.Free(line: item.statement.line, name: subject(of: item), size: item.size, gap: item.shape.gap,
-                                           overlapAllowed: item.shape.overlapAllowed, current: item.existing?.box, carries: carries))
+                                           overlapAllowed: item.shape.overlapAllowed, current: item.existing?.box, carries: carries,
+                                           implied: item.standsFor != nil))
         }
 
         // What their placements name.
@@ -335,7 +336,11 @@ extension Drawing {
             so = ", so \(leader == nil ? "it" : subject(of: item)) no longer sits against \(listed(loosened))"
         }
         guard let leader else {
-            return "\(subject(of: item)) was pushed \(how) past \(listed(past)) to keep clear of it\(so) — place it on another side, or say overlap: allow"
+            // A stand-in the run made for an edge has no placement of its own to change: the edge says
+            // which side of the end it's beside.
+            let advice = item.standsFor == nil ? "place it on another side, or say overlap: allow"
+                : "name another side for it with \(EdgeKey.from.rawValue): or \(EdgeKey.to.rawValue):"
+            return "\(subject(of: item)) was pushed \(how) past \(listed(past)) to keep clear of it\(so) — \(advice)"
         }
         let them = past.count == 1 ? "it" : "them"
         return "\(subject(of: item)) moved \(how) along with \(subject(of: leader)), which was pushed past \(listed(past)) to keep clear of \(them)\(so)"

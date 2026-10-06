@@ -275,11 +275,27 @@ struct LineParser {
             let value = try value(for: token)
             try note(token.text, value.written, in: &seen)
             if let key = EdgeKey(rawValue: token.text) {
-                guard case .word(let word) = value, let side = EdgeSide(rawValue: word) else {
-                    throw error(.invalidValue, "\(token.raw) \(value.written) isn't a side",
-                                hint: "\(token.raw) takes top, right, bottom or left")
+                switch key {
+                case .from, .to:
+                    guard case .word(let word) = value, let side = EdgeSide(rawValue: word) else {
+                        throw error(.invalidValue, "\(token.raw) \(value.written) isn't a side",
+                                    hint: "\(token.raw) takes top, right, bottom or left")
+                    }
+                    if key == .from { statement.fromSide = side } else { statement.toSide = side }
+                case .via:
+                    // A kind, bare or quoted, as a title is: which kinds the caller knows.
+                    var kind = ""
+                    switch value {
+                    case .word(let word): kind = word
+                    case .quoted(let text): kind = text
+                    case .json: break
+                    }
+                    guard kind.contains(where: { !$0.isWhitespace }) else {
+                        throw error(.invalidValue, "\(token.raw) \(value.written) isn't a kind",
+                                    hint: "\(token.raw) takes the kind of shape the edge goes through, as \(token.raw) <kind>")
+                    }
+                    statement.via = kind.split(whereSeparator: \.isWhitespace).joined(separator: " ")
                 }
-                if key == .from { statement.fromSide = side } else { statement.toSide = side }
             } else {
                 statement.attributes.append(Attribute(key: token.text, value: value))
             }
@@ -304,7 +320,7 @@ struct LineParser {
         if token.isWord(Keyword.edge.rawValue) {
             at += 1
             let edge = try edge()
-            guard edge.attributes.isEmpty, edge.fromSide == nil, edge.toSide == nil else {
+            guard edge.attributes.isEmpty, edge.fromSide == nil, edge.toSide == nil, edge.via == nil else {
                 throw error("deleting takes no attributes", hint: "write delete edge \(edge.written)")
             }
             subject = "\(Keyword.delete.rawValue) \(Keyword.edge.rawValue) \(edge.written)"

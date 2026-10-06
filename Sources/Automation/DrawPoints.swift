@@ -3,9 +3,11 @@ import Canvas
 // What `canvas draw` needs from concerns it doesn't own, each an extension point with at most one
 // contribution, from DrawLexicon, which binds them to the plugins that own the concerns
 // (AutomationTests bind them to fixtures of their own): what a
-// shape is called (DrawNames, Titles'), what an edge is (DrawEdges, Connections'), and what's
-// wrong with a shape drawn (DrawChecks, Validation's). Without one, `draw` does without: no titles
-// (a titled statement is `no_names`), no edges (`no_edges`), and only the schemas' bounds checked.
+// shape is called (DrawNames, Titles'), what an edge is (DrawEdges, Connections'), what's
+// wrong with a shape drawn (DrawChecks, Validation's), and how text of a media type is written
+// (DrawTextFormats, one for each media type). Without one, `draw` does without: no
+// titles (a titled statement is `no_names`), no edges (`no_edges`), only the schemas' bounds
+// checked, and text kept as written.
 
 // MARK: Names
 
@@ -39,6 +41,12 @@ extension DrawNames: KeyedExtensionPoint {
 /// where the connection aims by itself), with a head at its start too (`<->`), and the attributes
 /// the statement gives it, by key, as written (only keys the plugin declares). Its ends' names and
 /// the edge as written are for messages.
+///
+/// An end may be a stand-in (Topology's: a shape that stands for another, which the script put beside
+/// the shape it connects, because what the edge names is on another board): `fromStandsFor` and
+/// `toStandsFor` are the kinds of what it stands for, none for an end that's the shape itself. A
+/// connection to a stand-in is made as one to what it stands for would be, on the stand-in's own
+/// sides.
 public struct EdgeRequest: Hashable, Sendable {
     /// A side of a shape an end aims at.
     public enum Side: String, Hashable, Sendable, CaseIterable {
@@ -59,9 +67,14 @@ public struct EdgeRequest: Hashable, Sendable {
     public var toName: String
     /// The edge as written, ends and arrow: `"Web" -> "API"`.
     public var written: String
+    /// The kinds of what its start stands for, when it's a stand-in; none otherwise.
+    public var fromStandsFor: [ShapeKind]
+    /// The kinds of what its end stands for, when it's a stand-in; none otherwise.
+    public var toStandsFor: [ShapeKind]
 
     public init(from: ShapeID, to: ShapeID, fromSide: Side? = nil, toSide: Side? = nil, bothHeads: Bool = false,
-                attributes: [String: String] = [:], fromName: String = "", toName: String = "", written: String = "") {
+                attributes: [String: String] = [:], fromName: String = "", toName: String = "", written: String = "",
+                fromStandsFor: [ShapeKind] = [], toStandsFor: [ShapeKind] = []) {
         self.from = from
         self.to = to
         self.fromSide = fromSide
@@ -71,6 +84,8 @@ public struct EdgeRequest: Hashable, Sendable {
         self.fromName = fromName
         self.toName = toName
         self.written = written
+        self.fromStandsFor = fromStandsFor
+        self.toStandsFor = toStandsFor
     }
 }
 
@@ -154,6 +169,75 @@ extension DrawChecks: KeyedExtensionPoint {
     static let label = "draw checks"
 }
 
+// MARK: Text formats
+
+/// A shape a text names: what to write for it.
+public struct DrawTextShape: Hashable, Sendable {
+    public let id: ShapeID
+    /// What it's called (folded): its title, or, for a shape the script renames, the title it will have.
+    public let title: String
+}
+
+/// What a text format may ask while it writes one string: the registry, the string's schema where it
+/// is, and which shape a name stands for, found as the rest of the script finds one.
+@MainActor
+public struct DrawTextContext {
+    public let registry: Registry
+    /// The string's schema at its place, as its kind's schema declares it: its own members, and a
+    /// `$ref` left unfollowed, so what's written beside the reference (an annotation a kind adds to
+    /// a shared definition) is there to read.
+    public let schema: JSONObject
+    let lookup: DrawTextLookup
+
+    /// The shape called `name`, as a title names one in the script, among those `admits` takes (nil:
+    /// it does; a string says why it doesn't, as a clause that follows the kind: `which can't be
+    /// named here`): a shape the script draws, restates or renames to it (also one drawn further
+    /// down); else the one on the board the run draws on; else the one on the board the window
+    /// shows; else the one anywhere else in the file the app can show. Two or more in the same
+    /// place are `ambiguous_title`; shapes the script deletes don't count; and one that's called
+    /// that but none `admits` is `invalid_value`, saying why. What's thrown is a refusal as the
+    /// script's own are, which the run says on the statement's line.
+    public func shape(called name: String, admitting admits: @MainActor (AnyShapeRecord) -> String? = { _ in nil }) throws(AutomationError) -> DrawTextShape {
+        try lookup.shape(called: name, admitting: admits)
+    }
+}
+
+/// How strings whose schema says `contentMediaType: mediaType` are written by a script: `write`
+/// turns the text as the script wrote it into what the property keeps, or refuses it; `describes`
+/// says in `canvas kinds` what the text takes (`<Title> names`, in brackets after the attribute's type). Only
+/// the sugar makes one (`registrar.drawTextFormat`).
+@MainActor
+public struct DrawTextFormatting {
+    let mediaType: String
+    let describes: String
+    let write: @MainActor (String, DrawTextContext) throws(AutomationError) -> String
+}
+
+/// How text of each media type is written in `canvas draw`: at most one plugin for each. A string
+/// a script writes is written by the format of its schema's media type, wherever it is in the
+/// value: a shape's attributes (and its styles'), an edge's own, and strings inside an object or a
+/// list. A schema whose media type no format handles is kept as written.
+public enum DrawTextFormats {}
+
+extension DrawTextFormats: KeyedExtensionPoint {
+    public typealias Contribution = DrawTextFormatting
+    public static var owner: PluginID { .automation }
+    public static func uniqueKeys(of format: DrawTextFormatting, for _: ShapeTarget) -> [AnyHashable] {
+        [DrawPointKey(name: "draw text \(format.mediaType)")]
+    }
+    public static func summary(of format: DrawTextFormatting, for _: ShapeTarget) -> String { "draw text \(format.mediaType)" }
+
+    /// A media type a schema can say, and words `canvas kinds` can show after it.
+    public static func check(_ registry: Registry) throws(RegistryError) {
+        for format in registry.contributions(to: DrawTextFormats.self).map(\.value) {
+            guard !format.mediaType.isEmpty else { throw .invalid(point: "DrawTextFormats", reason: "a media type can't be blank") }
+            guard !format.describes.isEmpty else {
+                throw .invalid(point: "DrawTextFormats", reason: "\(format.mediaType) says nothing of what it describes, which canvas kinds shows after the type")
+            }
+        }
+    }
+}
+
 /// The one key each draw point's contribution claims: "draw names" in a conflict.
 struct DrawPointKey: Hashable, CustomStringConvertible {
     let name: String
@@ -198,6 +282,17 @@ extension PluginRegistrar {
     public mutating func drawChecks(_ check: @escaping @MainActor (AnyShapeRecord, ShapeContext) -> [DrawIssue]) {
         contribute(DrawCheck(check: check), to: DrawChecks.self)
     }
+
+    /// Writes the strings of a script whose schema says `contentMediaType: mediaType`: `write` gets
+    /// the text as the script wrote it (its string's escapes undone) and what it may ask
+    /// (`DrawTextContext`), and returns the text to keep, or throws a refusal, which `draw` says on
+    /// the statement's line (its closure says so, `{ text, context throws(AutomationError) in … }`).
+    /// `describes` is said after the attribute's type in `canvas kinds`, as `text (<Title> names)`.
+    /// At most one plugin writes each media type.
+    public mutating func drawTextFormat(mediaType: String, describes: String,
+                                        write: @escaping @MainActor (String, DrawTextContext) throws(AutomationError) -> String) {
+        contribute(DrawTextFormatting(mediaType: mediaType, describes: describes, write: write), to: DrawTextFormats.self)
+    }
 }
 
 // MARK: Reading them
@@ -213,4 +308,9 @@ extension Registry {
     var drawNaming: DrawNaming? { contributions(to: DrawNames.self).first?.value }
     var drawEdging: DrawEdging? { contributions(to: DrawEdges.self).first?.value }
     var drawCheck: DrawCheck? { contributions(to: DrawChecks.self).first?.value }
+
+    /// The formats that write text, by media type.
+    var drawTextFormats: [String: DrawTextFormatting] {
+        Dictionary(contributions(to: DrawTextFormats.self).map { ($0.value.mediaType, $0.value) }, uniquingKeysWith: { first, _ in first })
+    }
 }
