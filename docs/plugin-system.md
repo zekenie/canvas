@@ -3117,8 +3117,8 @@ public var body: some View {
   that has it keeps
   shortcuts from the canvas until Escape.
 - **Zoom** (⌘=, ⌘-, ⌘0, and ⇧1 and ⇧2 except in text, where they type) works whatever has the
-  keyboard: the board's window controller answers the View menu's zoom items, and the toolbar's
-  zoom menu, with the core's zoom commands and Selection's Zoom to Selection. So does Go › Back
+  keyboard: the board's window controller answers the View menu's zoom items with the core's
+  zoom commands and Selection's Zoom to Selection. So does Go › Back
   (⌘[).
 
 The panel can't give the keyboard to the canvas itself (it can't import CanvasUI), so the host
@@ -9937,7 +9937,7 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   inside a subboard, `BoardPath.coveredHeight(on:)`, which the app hands `BoardConfiguration`), what
   a fit fits shapes into: a board's first visit, Zoom to Fit, Selection's `reveal`, and `canvas
   draw`'s `--reveal`, whose `view` is that part of it too.
-- **Zooming** is the core's commands, which View's items and the toolbar's zoom menu run (through
+- **Zooming** is the core's commands, which View's items run (through
   the board's window controller, dimmed while they can't run) and Keyboard gives keys: `.zoomIn`
   and `.zoomOut` (⌘= and ⌘-) go to the next of the stops (`Camera.zoomStops`: 10, 25, 50, 100,
   200, 400 and 800%) past the zoom where the camera's headed, around the view's center, dimmed at
@@ -9946,8 +9946,9 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   dimmed on an empty board. Each eases the camera over 320 ms (tldraw's animationMediumMs), from
   where it's headed, so pressing again before it lands goes on from there. `editor.zoomPercentage`
   is that zoom in whole percent, observed apart from `camera` and set only when it changes: the
-  toolbar's zoom menu is titled with it ("100%"), so it redraws as the zoom changes, never as the
-  camera pans. `.zoomToSelection` (⇧2) is Selection's.
+  canvas shows it ("44%") above the minimap while it changes, and fades it out a second after
+  (`ZoomIndicator`, CanvasUI); a pan never shows it. There's no zoom menu: pinching and
+  ⌘-scrolling are how the app zooms. `.zoomToSelection` (⇧2) is Selection's.
 - **The view.** `CanvasView` (CanvasUI) is the only AppKit in the loop. It converts events, reports
   its size, hosts the editing view over its shape, hands AppKit the menu for a secondary click, and draws the editor, all through the editor's `@_spi(Host)`
   API. It also hosts the minimap, in its bottom-left corner (`showsMinimap`; View › Show Minimap):
@@ -9960,7 +9961,7 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   first shape placed under it by a press, or edited as it's placed, isn't covered as it arrives:
   the minimap waits for the press and the editing to end), and on another board shows or hides at
   once. It moves the camera as tldraw's minimap does, and knows
-  no shape or plugin. Only the app, its Quick Look extension and tests can import CanvasUI, and no
+  no shape or plugin. Above it, the canvas shows the zoom while it changes (`ZoomIndicator`). Only the app, its Quick Look extension and tests can import CanvasUI, and no
   plugin can see the host API, so no plugin can reach around the editor.
 - **The views the canvas hosts have the pointer where they are.** Over the minimap or the editing
   view the pointer isn't over the canvas, though AppKit tells the canvas it moved (its tracking

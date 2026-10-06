@@ -14,7 +14,6 @@ import Mentions
 import Schemas
 import Selection
 import StickyNotes
-import SwiftUI
 import TableOfContents
 import TestKit
 import TextEditing
@@ -460,26 +459,19 @@ final class NestedWindow {
         let bang = w.window.keyEvent("!", code: 18, modifiers: .shift)
         expect(!menus.main.performKeyEquivalent(with: bang), "⇧1 still types")
     },
-    test("the toolbar's zoom menu shows the zoom, rounded, and holds View's zoom items, which the window's controller runs and dims") {
+    test("the window's controller runs View's zoom items, and dims them as their commands say") {
         let w = try NestedWindow()
         defer { w.board.close() }
-        let host = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 200, height: 60), styleMask: [.titled], backing: .buffered, defer: false)
-        host.contentView = NSHostingView(rootView: ZoomMenu(editor: w.editor))
-        host.settle()
-        let popUp = try require(host.contentView?.descendants(NSPopUpButton.self).first)
-        expect(popUp.pullsDown)
         w.editor.camera = Camera()
-        host.spin { popUp.itemTitle(at: 0) == "100%" }
-        expectEqual(popUp.itemTitles, ["100%", "Zoom In", "Zoom Out", "Actual Size", "Zoom to Fit", "Zoom to Selection"])
-        let items = Array(popUp.itemArray.dropFirst())
-        expectEqual(items.map { $0.action.map(NSStringFromSelector) }, ["zoomIn:", "zoomOut:", "zoomToActualSize:", "zoomToFit:", "zoomToSelection:"])
-        expect(items.allSatisfy { $0.keyEquivalent.isEmpty }, "the View menu's are the keys")
+        let actions = [#selector(BoardWindowController.zoomIn(_:)), #selector(BoardWindowController.zoomOut(_:)),
+                       #selector(BoardWindowController.zoomToActualSize(_:)), #selector(BoardWindowController.zoomToFit(_:)),
+                       #selector(BoardWindowController.zoomToSelection(_:))]
+        let items = actions.map { NSMenuItem(title: "", action: $0, keyEquivalent: "") }
         expectEqual(items.map { w.controller.validateMenuItem($0) }, [true, true, false, true, false])
         w.editor.camera.zoom = 0.873
-        host.spin { popUp.itemTitle(at: 0) == "87%" }
         w.editor.camera.pan(by: CGSize(width: 30, height: 0))
         w.controller.zoomIn(nil)
-        host.spin { popUp.itemTitle(at: 0) == "100%" }
+        expectEqual(w.editor.cameraTarget.zoomPercentage, 100, "the next stop past where it is")
     },
 ])
 

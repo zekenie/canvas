@@ -180,7 +180,7 @@ func isAccent(_ p: [Int]) -> Bool { p[2] > p[0] + 60 }
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
         let canvas = CanvasView(editor: h.editor)
         window.contentView = canvas
-        expect(canvas.minimap == nil && canvas.subviews.isEmpty)
+        expect(canvas.minimap == nil && canvas.subviews == [canvas.zoomIndicator])
         canvas.showsMinimap = true
         let minimap = try require(canvas.minimap)
         expectEqual(minimap.frame, CGRect(x: 12, y: 438, width: 200, height: 150))

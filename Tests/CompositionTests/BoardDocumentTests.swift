@@ -281,6 +281,8 @@ let boardType = "com.example.InfiniteCanvas.board"
         board.makeWindowControllers()
         expectEqual(board.editor.camera.origin, CGPoint(x: 100, y: 50))
         expectEqual(board.editor.camera.zoom, 0.5)
+        let canvas = try require(board.focus.canvas)
+        expect(!canvas.zoomIndicator.isShowing, "opening at 50% isn't a change of zoom")
         expect(!board.viewState.showsDetails)
         expect(!board.viewState.showsMinimap)
         board.editor.camera = Camera(origin: CGPoint(x: 7, y: 8), zoom: 2)

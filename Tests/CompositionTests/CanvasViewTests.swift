@@ -97,7 +97,7 @@ struct NotePill: Hashable, Sendable {
         expectEqual(editor.document[id]?.typed(as: StickyNote.self)?.props.text, "Hi")
         window.firstResponder?.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
         expect(window.firstResponder === canvas)
-        expect(canvas.subviews.isEmpty)
+        expect(canvas.subviews == [canvas.zoomIndicator], "its editor gone")
     },
     test("typed past its eighth line, a note grows, and its editor with it, so the caret and the text stay in view") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
@@ -539,7 +539,7 @@ struct NotePill: Hashable, Sendable {
         expectEqual(second.saves, 1)
         expect(editor.document.shapes.isEmpty)
         expectEqual(editor.editingShapeID, nil)
-        expect(canvas.subviews.isEmpty)
+        expect(canvas.subviews == [canvas.zoomIndicator], "its field gone")
         expect(window.firstResponder === canvas)
     },
     test("V, then a mouse drag on the background, brushes: it selects the note it crosses and never pans") {

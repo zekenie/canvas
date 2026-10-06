@@ -116,7 +116,6 @@ struct ContentView: View {
             .frame(minWidth: 480, minHeight: 320)
             .toolbar {
                 ToolbarItem(placement: .principal) { ToolPicker(editor: editor, help: { ShippedPlugins.help(for: $0, in: editor.registry) }) }
-                ToolbarItem(placement: .primaryAction) { ZoomMenu(editor: editor) }
             }
             // Last: the path, the palette and the inspector go around the framed, toolbarred canvas.
             .modifier(ShippedPlugins.boardChrome(editor: editor, showsDetails: $view.showsDetails, rootName: view.fileName, onExit: focus.take))

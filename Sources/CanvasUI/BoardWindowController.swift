@@ -50,8 +50,8 @@ public final class BoardWindowController: NSWindowController {
 
     private var board: BoardDocument? { document as? BoardDocument }
 
-    // View › Zoom In, Zoom Out, Actual Size, Zoom to Fit and Zoom to Selection, and the toolbar's zoom
-    // menu: the core's commands, and Selection's (Zoom to Selection).
+    // View › Zoom In, Zoom Out, Actual Size, Zoom to Fit and Zoom to Selection: the core's commands,
+    // and Selection's (Zoom to Selection).
     @objc public func zoomIn(_ sender: Any?) { board?.editor.perform(.zoomIn) }
     @objc public func zoomOut(_ sender: Any?) { board?.editor.perform(.zoomOut) }
     @objc public func zoomToActualSize(_ sender: Any?) { board?.editor.perform(.zoomToActualSize) }
