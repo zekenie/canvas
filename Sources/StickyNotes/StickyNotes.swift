@@ -157,6 +157,7 @@ final class NoteEditor: NSView, NSTextViewDelegate {
         textView.textContainerInset = NoteStyle.editorInset
         textView.typingAttributes = NoteStyle.textAttributes
         textView.insertionPointColor = NoteStyle.text.color
+        textView.spelling = .app
         textView.delegate = self
         // ⌘↩ says the text is done, as in the panel's boxes: editing ends. The keyboard leaving
         // isn't that here: the canvas ends editing itself.

@@ -2334,11 +2334,12 @@ in the app, and the one list shown at a caret. It's a foundation module that dep
 module of the project, so it knows no canvas, registry, plugin or panel, and a plugin that types
 into text imports it without importing the inspector: Connections for an arrow's label, StickyNotes and
 Schemas for their editors on the canvas, DetailPanel for its text boxes, Mentions for its text view
-and its picker, SlashCommands for its list at a slash. It holds `EditingTextView`, the caret list
-(`CaretList` and `CaretListWindow`), `CaretListSubstitutions`, `StringDrawingLayout` ([where string
-drawing puts text](#where-string-drawing-puts-text)) and the metrics they draw by
-(`TextEditingStyle`, internal). TextEditingTests hold the list and its window, on TestKit and
-CanvasTesting alone. What a list ranks typed text with isn't here but in [FuzzyMatching](#fuzzymatching).
+and its picker, SlashCommands for its list at a slash. It holds `EditingTextView`, how the app
+checks the spelling of what's typed (`Spelling`), the caret list (`CaretList` and
+`CaretListWindow`), `CaretListSubstitutions`, `StringDrawingLayout` ([where string drawing puts
+text](#where-string-drawing-puts-text)) and the metrics they draw by (`TextEditingStyle`,
+internal). TextEditingTests hold the list and its window, and the spelling settings, on TestKit
+and CanvasTesting alone. What a list ranks typed text with isn't here but in [FuzzyMatching](#fuzzymatching).
 
 ### The text view
 
@@ -2385,6 +2386,20 @@ is.
   hears clicks.
 - **The placeholder** is drawn dimmed where the text starts while there's none, in the view's
   font, else `TextEditingStyle.placeholderFont` (the system's, 11 pt).
+- **Spelling.** `spelling = .app` checks the words typed as the app does (`Spelling.app`, Edit ›
+  Spelling and Grammar), the same in every text that's words: a note's editor, a schema card's
+  description's, an arrow's label's, a title's field, the panel's boxes of words (`DetailTextArea`,
+  `MentionTextArea`). Check Spelling While Typing is on until it's turned off, Check Grammar With
+  Spelling off until it's turned on, and Correct Spelling Automatically as System Settings has it
+  until it's turned either way, the three kept in the user defaults. A text's own toggles for them
+  (the menu bar's items, which go to the text with the keyboard, and the same ones in its context
+  menu) change the settings, and every text that follows them changes at once. The words it's told
+  to ignore come back to the settings as the keyboard leaves it, and every text that follows them
+  ignores them from then on, until the app quits: an editor on the canvas is made for one editing,
+  and AppKit keeps a view's ignored words in a spell document of its own, which goes with it. Without settings (`nil`), the view checks
+  as AppKit has a text view check, marking no words as they're typed, for text that isn't words:
+  code, a query, a name typed to pick a shape. A test gives a view settings of its own, over a
+  defaults suite of its own (`Spelling(defaults:)`), never the app's.
 - **Highlights.** `highlights` is a list of `TextHighlight`s (a range of the text and a fill), drawn
   with the background, so the text is over them, as rounded rects the height of a mention's pill in
   the text's font, reaching 2 points past the text at both ends, one for each line a range wraps
@@ -2782,10 +2797,12 @@ gadget.details(header: { $gadget in DetailHeader(gadget.name, subtitle: gadget.m
   that layout with any view as its title, so it looks like every other header.
   `DetailHeaderField(text, placeholder:)` is the title as a field, for a header that renames its
   shape in place: borderless, in the header's font, writing as you type (as the panel's text
-  fields do), with the kind's name as its placeholder by default. Return, like Escape anywhere in
-  the panel, gives the keyboard back to the canvas. `isEditable: false` shows the title as text
-  in its place, at full strength, for a title that can't be written just now; `disabled` dims the
-  field, for a while something else writes it.
+  fields do), with the kind's name as its placeholder by default, its spelling checked as the
+  app's is (an AppKit field drawn as SwiftUI's plain one is, whose field editor is an
+  `EditingTextView` of its own: SwiftUI's fields can't be told to check spelling). Return, like
+  Escape anywhere in the panel, gives the keyboard back to the canvas. `isEditable: false` shows
+  the title as text in its place, at full strength, for a title that can't be written just now;
+  `disabled` dims the field, for a while something else writes it.
 - **A header without a symbol** shows its kind's: the panel hands a header view its kind's name
   and symbol through the environment, as the table of contents hands a row its symbol.
 - **Headless**, `layout.header` is the header when it's a `DetailHeader` (with its kind's symbol
@@ -3055,8 +3072,10 @@ scrolling as a text area is, over a text view the plugin makes. Mentions' `Menti
 public var body: some View {
     let text = shape.wrappedValue[keyPath: field]
     DetailTextBox(shape[dynamicMember: field], height: height, placeholder: placeholder, onCommit: onCommit) {
-        MentionTextView<Scope>(frame: .zero, text: text, style: MentionStyle.panelText,
-                               owner: shape.shapeID, mentions: shape.service(MentionState.self))
+        let view = MentionTextView<Scope>(frame: .zero, text: text, style: MentionStyle.panelText,
+                                          owner: shape.shapeID, mentions: shape.service(MentionState.self))
+        view.spelling = .app
+        return view
     }
 }
 ```
@@ -3064,9 +3083,10 @@ public var body: some View {
 - **The view** is a subclass of [`EditingTextView`](#the-text-view) (an open `NSTextView`, TextEditing's)
   that adopts `DetailTextContent`: its `value`, of a type of its own (`ScopedMentionText`), and `show(_:)`.
   Adopt it on the subclass: `EditingTextView` adopting it would fix every subclass's `Value`. The
-  panel's own boxes (`DetailCodeEditor`, and a `DetailTextArea` with `onCommit:`) are the same,
-  over an internal `PlainTextView` whose value is a string, on TextKit 1 as they always were; a
-  `DetailTextArea` without `onCommit:` is SwiftUI's `TextEditor`.
+  panel's own boxes (`DetailCodeEditor` and `DetailTextArea`) are the same, over an internal
+  `PlainTextView` whose value is a string, on TextKit 1 as they always were: a text area's words
+  are checked as the app checks spelling (`spelling = .app`), a code editor's code never. A view
+  of words sets it too, as `MentionTextArea`'s does.
 - **What it adds** is [`EditingTextView`'s](#the-text-view), which does nothing until it's set, so
   the same class outside the panel is a plain text view (a note's editor on the canvas is a
   `MentionTextView` with only `onCommit` set, which ends editing, and `commitsOnLeaving` off). The

@@ -94,6 +94,7 @@ final class ArrowLabelEditor: NSView, NSTextViewDelegate {
         textView.typingAttributes = ArrowStyle.labelAttributes
         textView.textStorage?.setAttributedString(NSAttributedString(string: arrow.props.text, attributes: ArrowStyle.labelAttributes))
         textView.insertionPointColor = ArrowStyle.color
+        textView.spelling = .app
         textView.delegate = self
         textView.commitsOnLeaving = false
         textView.onCommit = { [weak self] in self?.context.end() }

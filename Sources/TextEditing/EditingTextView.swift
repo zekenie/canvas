@@ -26,6 +26,11 @@ import AppKit
 /// - `highlights` are ranges of the text drawn on a rounded background under it, as a mention's pill
 ///   is (`TextHighlight`): how an owner marks text that means something to it, with nothing for a
 ///   host to forward. Made read-only, the view lets go of them.
+/// - `spelling` checks its words as the app does (`Spelling.app`), for text that's words (a note's,
+///   a title): its toggles for spelling, grammar and correction (Edit › Spelling and Grammar's, its
+///   context menu's) change the app's, for every such text at once, and the words it's told to
+///   ignore are ignored in every such text made after. Nil, it checks as AppKit has a text view
+///   check, for text that isn't words (code, a query, a name typed to pick a shape).
 ///
 /// A subclass may show a list at its caret (`caretListWindow`: Mentions' `@` picker, a code
 /// editor's completions), the app's one caret list; when it opens, what it lists and what a pick
@@ -64,6 +69,14 @@ open class EditingTextView: NSTextView {
     /// and taken away when the view is made read-only.
     public var highlights: [TextHighlight] = [] {
         didSet { if highlights != oldValue { needsDisplay = true } }
+    }
+    /// How its words are checked, as they change (`Spelling.app`, for words). Nil, as AppKit has it.
+    public var spelling: Spelling? {
+        didSet {
+            guard spelling !== oldValue else { return }
+            oldValue?.unfollow(self)
+            spelling?.follow(self)
+        }
     }
 
     /// Whether Return, ⌘↩ and Escape are the view's own just now: while a list is open at its caret
@@ -184,10 +197,12 @@ open class EditingTextView: NSTextView {
 
     // MARK: Committing when the keyboard leaves
 
-    /// The keyboard leaving commits, closes the list at the caret, and tells `onLeave`.
+    /// The keyboard leaving commits, closes the list at the caret, and tells `onLeave`. The words it
+    /// was told to ignore go to `spelling`, for every text that follows it.
     open override func resignFirstResponder() -> Bool {
         let resigned = super.resignFirstResponder()
         if resigned {
+            spelling?.keepIgnoredWords(of: self)
             if commitsOnLeaving { commit?() }
             caretListWindow?.closeList()
             onLeave?()
@@ -197,13 +212,36 @@ open class EditingTextView: NSTextView {
 
     /// Taken out of the window while it had the keyboard (the panel showing another shape):
     /// that's leaving it too. After the update that took it out. Leaving its window, for none or
-    /// another, closes the list at the caret, which follows the window it was opened in.
+    /// another, closes the list at the caret, which follows the window it was opened in; for none,
+    /// the words it was told to ignore go to `spelling`.
     open override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow !== window { caretListWindow?.closeList() }
+        if newWindow == nil { spelling?.keepIgnoredWords(of: self) }
         if newWindow == nil, commitsOnLeaving, window?.firstResponder === self, let onCommit = commit {
             Task { @MainActor in onCommit() }
         }
         super.viewWillMove(toWindow: newWindow)
+    }
+
+    // MARK: Spelling
+
+    /// Check Spelling While Typing, from the menu bar or the view's menu: with `spelling`, the app's,
+    /// for every text that follows it. Each toggle turns over what the view shows (its item's mark).
+    open override func toggleContinuousSpellChecking(_ sender: Any?) {
+        guard let spelling else { return super.toggleContinuousSpellChecking(sender) }
+        spelling.checksWhileTyping = !isContinuousSpellCheckingEnabled
+    }
+
+    /// Check Grammar With Spelling: with `spelling`, the app's.
+    open override func toggleGrammarChecking(_ sender: Any?) {
+        guard let spelling else { return super.toggleGrammarChecking(sender) }
+        spelling.checksGrammar = !isGrammarCheckingEnabled
+    }
+
+    /// Correct Spelling Automatically: with `spelling`, the app's.
+    open override func toggleAutomaticSpellingCorrection(_ sender: Any?) {
+        guard let spelling else { return super.toggleAutomaticSpellingCorrection(sender) }
+        spelling.correctsAutomatically = !isAutomaticSpellingCorrectionEnabled
     }
 
     // MARK: The caret, laid out by TextKit 2

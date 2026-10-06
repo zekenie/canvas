@@ -6,6 +6,7 @@ import DetailPanel
 import Selection
 import SwiftUI
 import TestKit
+import TextEditing
 
 /// The panel in an NSHostingView next to a canvas view, in an unshown window (CanvasTesting drives
 /// it: `spin`, `focus`, `type`). The editor keeps real time, so SwiftUI's updates and the panel's
@@ -602,6 +603,69 @@ extension ListTab: DetailTab { static var title: String { "List" } }
         panel.window.spin { panel.canvasHasKeyboard }
         expectEqual(panel.exits, 1)
         expectEqual(editor.props(card, as: Card.self)?.text, "cog", "Return keeps what was typed")
+    },
+    test("a header field is set as SwiftUI's plain one is, and its editor is its own, which checks the title's spelling as the app does") {
+        let editor = try gadgetEditor([CardsPlugin(), RenamingCards()], scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
+        editor.selection = editor.add(Card(gadgetFrame, text: "Hi"))
+        panel.window.spin { panel.headerField != nil }
+        let field = try require(panel.headerField)
+        expectEqual(field.font, NSFont.systemFont(ofSize: 12, weight: .semibold), "the header's title")
+        expect(!field.isBordered && !field.isBezeled && !field.drawsBackground && field.focusRingType == .none, "borderless")
+        expect(field.usesSingleLineMode && field.cell?.isScrollable == true && field.cell?.wraps == false && field.lineBreakMode == .byClipping,
+               "one line, clipped, scrolling sideways while it's typed in")
+        panel.window.focus(field)
+        let text = try require(panel.window.firstResponder as? EditingTextView)
+        expect(text.isFieldEditor && field.currentEditor() === text, "the field's own editor")
+        expect(text.spelling === Spelling.app)
+        expectEqual(text.isContinuousSpellCheckingEnabled, Spelling.app.checksWhileTyping)
+        expect(!text.isRichText && text.allowsUndo, "plain text, undone as it's typed")
+        expect(!text.isAutomaticQuoteSubstitutionEnabled && !text.isAutomaticDashSubstitutionEnabled, "as SwiftUI's fields' editors")
+    },
+    test("a header field shown a title written elsewhere while it's typed in drops typing's undo, whose ranges were the old text's") {
+        let editor = try gadgetEditor([CardsPlugin(), RenamingCards()], scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
+        let card = editor.add(Card(gadgetFrame))
+        editor.selection = card
+        panel.window.spin { panel.headerField != nil }
+        panel.window.focus(try require(panel.headerField))
+        panel.window.type("Lobby hall")
+        panel.window.settle()
+        let text = try require(panel.window.firstResponder as? NSTextView)
+        expect(text.undoManager?.canUndo == true, "the typing")
+        editor.transact { $0.update(card, as: Card.self) { $0.props.text = "X" } }
+        panel.window.spin { text.string == "X" }
+        expect(text.undoManager?.canUndo == false, "an undo would run past the text shown")
+        expect(panel.window.firstResponder === text, "and it's still typed in")
+    },
+    test("a header field draws as SwiftUI's plain field did, pixel for pixel: a title, one too long for it, and its placeholder") {
+        @MainActor func drawn(_ title: some View) -> NSBitmapImageRep {
+            let header = HStack(spacing: 0) {
+                DetailHeaderLabel(systemImage: "note.text") { title }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, DetailStyle.inset)
+            .frame(width: DetailStyle.idealWidth, height: DetailStyle.headerHeight)
+            .controlSize(.small)
+            .background(Color.white)
+            .environment(\.colorScheme, .light)
+            let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: DetailStyle.idealWidth, height: DetailStyle.headerHeight),
+                                  styleMask: [.borderless], backing: .buffered, defer: false)
+            window.appearance = NSAppearance(named: .aqua)
+            let host = NSHostingView(rootView: header)
+            window.contentView = host
+            window.settle()
+            return snapshot(host)
+        }
+        for text in ["Groceries", "A title far too long for the header, which runs on past its edge", ""] {
+            let field = drawn(DetailHeaderField(.constant(text), placeholder: "Note"))
+            let swiftUIs = drawn(TextField("Note", text: .constant(text)).textFieldStyle(.plain))
+            expectEqual(field.pixelsWide, swiftUIs.pixelsWide)
+            let differing = (0..<field.pixelsHigh).reduce(0) { count, y in
+                count + (0..<field.pixelsWide).count { x in field.colorAt(x: x, y: y) != swiftUIs.colorAt(x: x, y: y) }
+            }
+            expectEqual(differing, 0, "\"\(text)\"")
+        }
     },
     test("Escape in a section's text field right after typing keeps what was typed") {
         let editor = try gadgetEditor(scheduler: TaskScheduler())
