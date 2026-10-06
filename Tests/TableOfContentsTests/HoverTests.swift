@@ -63,7 +63,7 @@ extension ContentsWindow {
         let (a, b, _) = threeWidgets(editor)
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == 3 }
-        let rowA = try w.rect(ofRow: 1), rowB = try w.rect(ofRow: 2)
+        let rowA = try w.rect(ofRow: 3), rowB = try w.rect(ofRow: 2)       // front to back: C, B, A
         let probe = CGPoint(x: rowA.maxX - 30, y: rowA.midY)       // past the text
         let plain = snapshot(w.hosting)
         editor.hovered = a

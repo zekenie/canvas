@@ -92,7 +92,7 @@ extension NSTableView {
         w.window.spin { w.rows == 6 }
         let list = try require(w.contents)
         let note = w.notes[1]
-        let row = list.rect(ofRow: 2)                          // under the header, the notes in document order
+        let row = list.rect(ofRow: 5)                          // under the header, the six notes front to back: the second is fifth
         let probe = CGPoint(x: row.maxX - 30, y: row.midY)     // past the text
         let plain = snapshot(list)
         let box = try require(w.editor.document[note]?.box)

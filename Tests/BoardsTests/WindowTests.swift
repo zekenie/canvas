@@ -158,12 +158,12 @@ import TestKit
         crumbs.pointerEntered(crumb: .root)
         path.window.spin { path.menuButtons.count == 3 }
         let rows = path.menuButtons.map(path.frame(of:))
-        expectEqual(rows.count, 3, "the root's: A, and D, with a disclosure triangle before it: its board's rows are under it")
+        expectEqual(rows.count, 3, "the root's, front to back: D, with a disclosure triangle before it (its board's rows are under it), and A")
         let first = try require(rows.first)
         expect(first.minY > crumb.maxY + 6 && first.minY < crumb.maxY + 20, "6 points below the crumb, and the menu's padding: \(crumb), \(first)")
         expect(first.minX >= crumb.minX && first.minX < crumb.minX + 30, "lined up with it: \(crumb), \(first)")
-        expect(rows[1].minY >= first.maxY - 0.5, "one row under the other: \(rows)")
-        try require(path.menuButtons.first).performClick(nil)
+        expect(rows[2].minY >= rows[1].maxY - 0.5, "one row under the other: \(rows)")
+        try require(path.menuButtons.last).performClick(nil)
         path.window.spin { path.editor.board == .root }
         expectEqual(path.editor.selectedShapeIDs, [nest.a], "A, gone to on the root")
         expectEqual(crumbs.openMenu, nil)
@@ -176,10 +176,10 @@ import TestKit
         path.window.spin { path.menuButtons.count == 2 }
         let rows = path.menuButtons.map(path.frame(of:))
         expect(rows.allSatisfy { $0.maxX <= 420 - 8 && $0.minX >= 8 }, "inside the canvas: \(rows)")
-        try require(path.menuButtons.first).performClick(nil)
+        try require(path.menuButtons.first).performClick(nil)       // front to back: C, B
         path.window.settle()
-        expectEqual(path.editor.board, nest.pBoard, "B is on the board shown")
-        expectEqual(path.editor.selectedShapeIDs, [nest.b])
+        expectEqual(path.editor.board, nest.pBoard, "C is on the board shown")
+        expectEqual(path.editor.selectedShapeIDs, [nest.c])
         expectEqual(crumbs.openMenu, nil)
     },
     test("a row whose shape owns a board opens onto that board's rows, as in the table of contents; one picked there goes to its shape, on its board") {
@@ -189,12 +189,12 @@ import TestKit
         path.window.spin { path.buttons.count == 1 }
         let crumbs = try require(path.editor.boardCrumbs)
         crumbs.pointerEntered(crumb: .root)
-        path.window.spin { path.menuButtons.count == 3 }            // A; D's triangle, and D
-        path.menuButtons[1].performClick(nil)
+        path.window.spin { path.menuButtons.count == 3 }            // D's triangle, and D; A
+        path.menuButtons[0].performClick(nil)
         path.window.spin { path.menuButtons.count == 5 }            // and under D, P's triangle and P
-        expect(path.frame(of: path.menuButtons[4]).minX > path.frame(of: path.menuButtons[2]).minX, "P's row in from D's")
-        path.menuButtons[3].performClick(nil)
-        path.window.spin { path.menuButtons.count == 7 }            // and under P, B and C
+        expect(path.frame(of: path.menuButtons[3]).minX > path.frame(of: path.menuButtons[1]).minX, "P's row in from D's")
+        path.menuButtons[2].performClick(nil)
+        path.window.spin { path.menuButtons.count == 7 }            // and under P, C and B
         path.menuButtons[5].performClick(nil)
         path.window.spin { path.editor.board == nest.pBoard }
         expectEqual(path.editor.selectedShapeIDs, [nest.b], "B, gone to on P's board")

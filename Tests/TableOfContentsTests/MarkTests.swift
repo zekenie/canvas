@@ -136,7 +136,7 @@ extension Array where Element == ContentsEntry {
         flag([ids.0])
         let marked = try window()
         let after = snapshot(marked.hosting)
-        let rowA = try marked.rect(ofRow: 1)
+        let rowA = try marked.rect(ofRow: 2)                   // front to back: B, A
         expectEqual(changedPixels(before, after, in: marked.hosting.bounds) - changedPixels(before, after, in: rowA), 0, "only A's row changes")
         let dot = try require(differingBounds(before, after, in: rowA))
         expect((4...9).contains(dot.width) && (4...9).contains(dot.height), "about 6 points across: \(dot)")

@@ -158,6 +158,16 @@ public struct CanvasFile: Equatable, Sendable {
         set(document, for: board, changes: ChangeSet(from: self[board], to: document))
     }
 
+    /// Several boards at once, each as `set(_:for:changes:)` sets it: a commit that moved shapes from
+    /// one to another, either way round. Every board lets go of what leaves it before any takes in
+    /// what comes, so a shape is on one board at a time whichever is first.
+    mutating func set(_ boards: [(board: BoardID, document: CanvasDocument, changes: ChangeSet)]) {
+        for (board, _, changes) in boards {
+            for id in changes.removed where locations[id] == board { locations[id] = nil }
+        }
+        for (board, document, changes) in boards { set(document, for: board, changes: changes) }
+    }
+
     /// `changes` must be what changed from `self[board]` to `document` (a commit's), so the shapes'
     /// locations follow in the time the changes take, not the board's.
     mutating func set(_ document: CanvasDocument, for board: BoardID, changes: ChangeSet) {
