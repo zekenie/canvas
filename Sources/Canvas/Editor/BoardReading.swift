@@ -17,14 +17,25 @@ public struct BoardReading {
     /// it would be on showing it (as it was left, else remembered, else a first visit's fit). Nil
     /// while the editor has no view (headless).
     public let view: CGRect?
+    /// Whether the board can't change (`editor.isReadOnly(board:)`: a locked subboard's, at any
+    /// depth): nothing on it changes, and nothing goes on it.
+    public let isBoardReadOnly: Bool
     private let index: ShapeIndex
 
-    init(board: BoardID, document: CanvasDocument, shapes: ShapeContext, index: ShapeIndex, view: CGRect?) {
+    init(board: BoardID, document: CanvasDocument, shapes: ShapeContext, index: ShapeIndex, view: CGRect?, isBoardReadOnly: Bool) {
         self.board = board
         self.document = document
         self.shapes = shapes
         self.index = index
         self.view = view
+        self.isBoardReadOnly = isBoardReadOnly
+    }
+
+    /// Whether a shape on the board can't change, as a transaction on it holds it: a plugin's rule says
+    /// so of it, or of a container it's in, at any depth, or the board can't (`isBoardReadOnly`).
+    /// O(its depth).
+    public func isReadOnly(_ record: AnyShapeRecord) -> Bool {
+        isBoardReadOnly || shapes.registry.isReadOnly(record, in: document)
     }
 
     /// Back to front, as `editor.paintOrder()` is for the board shown.

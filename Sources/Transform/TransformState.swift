@@ -62,7 +62,7 @@ public final class TransformState {
                 var done: [ShapeID] = [], refused: Set<ShapeID> = []
                 for id in turning {
                     guard let record = transaction.document[id] else { continue }
-                    if editor.registry.isReadOnly(record, in: transaction.document) {
+                    if transaction.isReadOnly(record) {
                         refused.insert(id)
                     } else if refused.isEmpty, transaction.refusedShapes.isEmpty, try target.turn(id, &transaction) {
                         done.append(id)

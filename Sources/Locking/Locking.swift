@@ -119,18 +119,21 @@ public struct LockingPlugin: CanvasPlugin {
 }
 
 extension CanvasEditor {
-    /// Whether the shape is in a container that can't change (a locked frame, at any depth), which
-    /// holds it read-only with all it holds, its own lock included: neither Lock nor Unlock is for it.
-    /// O(its depth).
+    /// Whether something around the shape holds it read-only, its own lock included, so neither Lock
+    /// nor Unlock is for it: the container it's in, if that can't change (a locked frame, at any
+    /// depth), or, in none, its board, if that can't (a locked subboard's, at any depth:
+    /// `isBoardReadOnly`). O(its depth).
     func isLockedByContainer(_ id: ShapeID) -> Bool {
         let document = document
-        guard let record = document[id], let container = registry.container(of: record, in: document) else { return false }
+        guard let record = document[id] else { return false }
+        guard let container = registry.container(of: record, in: document) else { return isBoardReadOnly }
         return isReadOnly(container)
     }
 }
 
 extension MenuSubject {
-    /// The menu's shapes whose own lock can change: all but those in a locked frame.
+    /// The menu's shapes whose own lock can change: all but those in a locked frame or on a locked
+    /// subboard's board.
     fileprivate var lockable: [ShapeID] { shapes.filter { !editor.isLockedByContainer($0) } }
 
     /// Whether every one of them is locked.

@@ -88,10 +88,12 @@ public struct Shortcut {
 
 extension Shortcut {
     /// Whether it takes the key now: a command's while it can run (`editor.canPerform`, as its menu
-    /// item is enabled), a custom shortcut's while its `when` holds, a tool's always.
+    /// item is enabled), a custom shortcut's while its `when` holds, a tool's while the editor takes
+    /// the tool (`editor.isToolEnabled`, as its toolbar segment isn't dimmed), a held key's always.
     @MainActor func applies(in editor: CanvasEditor) -> Bool {
         switch effect {
-        case .tool, .held: true
+        case .tool(let id): editor.isToolEnabled(id)
+        case .held: true
         case .command(let command, _): editor.canPerform(command)
         case .custom(_, let when, _, _): when(editor)
         }
@@ -118,7 +120,9 @@ extension Shortcut {
 // MARK: Sugar (what plugins write)
 
 extension PluginRegistrar {
-    /// A key that switches to a tool: any plugin's, the core's Hand included.
+    /// A key that switches to a tool: any plugin's, the core's Hand included. While the editor doesn't
+    /// take the tool (`editor.isToolEnabled`: one that places shapes, on a board that can't take them), the
+    /// key goes on as if there were no shortcut.
     public mutating func shortcut(_ chord: KeyChord, forTool tool: ToolID) {
         contribute(Shortcut(chord: chord, effect: .tool(tool)), to: KeyboardShortcuts.self)
     }

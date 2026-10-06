@@ -89,7 +89,7 @@ extension Array where Element == ContentsEntry {
         h.editor.put([free, own], in: inner)
         h.editor.lock([own])
         h.editor.lock([outer])
-        expect([inner, free, own].allSatisfy(h.editor.isReadOnly))
+        expect([inner, free, own].allSatisfy(h.editor.isReadOnly(_:)))
         @MainActor func chips(_ id: ShapeID) -> [String?] { h.editor.adornmentFrames(of: id).map(\.label.systemImage) }
         expectEqual(chips(outer), ["lock.fill"])
         expectEqual(chips(inner), [])

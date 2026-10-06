@@ -16,7 +16,9 @@ public protocol EditorService: AnyObject {
     /// Something tried to change these shapes and didn't, since they're read-only
     /// (`registrar.readOnlyShapes`): a transaction, once it's done (with every shape it refused, and
     /// after its commit of the rest, if any); a drag, once it gets going (past the drag threshold);
-    /// or editing one. Selection shakes them (`RefusalShake`); the plugin whose rule made them read-only may say why too.
+    /// or editing one. A read-only container that wouldn't take a shape is among them, and so is the
+    /// owner of a read-only board something tried to put a shape on (`editor.isBoardReadOnly`), which
+    /// is on another board. Selection shakes those on the board shown (`RefusalShake`); the plugin whose rule made them read-only may say why too.
     func didRefuseChanges(to ids: Set<ShapeID>, in editor: CanvasEditor)
     /// Another board is about to be shown (`editor.showBoard`), and the one shown is still `old`:
     /// save what belongs to it (a draft, state kept per board in a `BoardStash`). Also before the

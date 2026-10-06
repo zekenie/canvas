@@ -33,26 +33,24 @@ struct Drop {
     /// Nil for a drop that doesn't move them: shapes the table of contents doesn't drag together (on
     /// several boards, kept aside, with no box) or that can't change (read-only); all already in the
     /// place; a place that goes with them (in one of them, beside one, or on a board one of them, or
-    /// a shape in one, owns: `goesWith`); a board the editor can't show, or whose owner is read-only; a container
-    /// that's read-only or too small for the box around them (moving in from elsewhere). Cheap: the
+    /// a shape in one, owns: `goesWith`); a board the editor can't show, or that's read-only (a locked
+    /// subboard's, at any depth); a container that's read-only or too small for the box around them
+    /// (moving in from elsewhere). Cheap: the
     /// table of contents asks it as a drag moves over its rows, and it lays nothing out.
     init?(_ ids: [ShapeID], to place: ContentsPlace, in editor: CanvasEditor) {
         guard let all = Block(ids, in: editor), editor.canShow(place.board) else { return nil }
-        let registry = editor.registry, kinds = registry.containingKinds, file = editor.file
+        let registry = editor.registry, kinds = registry.containingKinds
         let source = all.board, here = editor.contents(of: source)
-        guard all.shapes.allSatisfy({ !registry.isReadOnly($0, in: here) }) else { return nil }
+        guard all.shapes.allSatisfy({ !editor.isReadOnly(inFile: $0.id) }) else { return nil }
         let movers = all.shapes.filter { source != place.board || here.container(of: $0.id, containingKinds: kinds) != place.container }
         guard let first = movers.first, let block = Block(movers.map(\.id), in: editor),
               !goesWith([place.container, place.neighbor].compactMap { $0 }, onto: place.board, moving: all.ids.union(all.carried), in: editor)
         else { return nil }
-        if place.board != source, let owner = place.board.owner {
-            guard let holder = file.record(owner), let ownerBoard = file.board(containing: owner),
-                  !registry.isReadOnly(holder, in: editor.contents(of: ownerBoard)) else { return nil }
-        }
+        if place.board != source, editor.isReadOnly(board: place.board) { return nil }
         if let container = place.container {
             let there = editor.contents(of: place.board)
             guard let holder = there[container], !holder.isOpaque, registry.isContainer(holder), let frame = holder.box,
-                  !registry.isReadOnly(holder, in: there) else { return nil }
+                  !editor.isReadOnly(inFile: container) else { return nil }
             if source == place.board, let left = Self.outermostLeft(first.id, for: container, in: here, kinds: kinds) {
                 way = .beside(left, within: container)
             } else {

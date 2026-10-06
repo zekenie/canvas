@@ -83,6 +83,26 @@ import TestKit
         expectEqual(h.editor.drawingOffset(of: loose), .zero)
         expectEqual(h.editor.drawingOffset(of: deep), h.editor.drawingOffset(of: corral), "together")
     },
+    test("a refusal naming the owner of a read-only board shakes it only where it's on the board shown: a move onto its board from the board its card is on shakes the card; a placement on the board shown, whose owner is on the board above, shakes nothing") {
+        let outside = ShapeID(), pocket = ShapeID(), inside = ShapeID()
+        var frozen = AnyShapeRecord(ShapeRecord(id: pocket, Pocket(CGRect(x: 500, y: 100, width: 100, height: 100))))
+        frozen[Frozen.self] = true
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: outside, Box(CGRect(x: 100, y: 100, width: 100, height: 100)))), frozen]),
+                              children: [pocket: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: inside, Box(CGRect(x: 100, y: 100, width: 100, height: 100))))])])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), FreezingPlugin(), PocketsPlugin(), TilesPlugin()], file: file)
+        let shake = try require(h.editor.service(RefusalShake.self))
+        h.editor.transact("Move") { $0.move([outside], to: BoardID(owner: pocket)) }
+        h.wait(16)
+        expect(h.editor.drawingOffset(of: pocket) != .zero, "the card, on the board shown, shakes")
+        expectEqual(h.editor.drawingOffset(of: outside), .zero, "the shape it tried to move doesn't: it isn't read-only")
+        h.wait(500)
+        expect(!shake.isShaking)
+        expect(h.enter(pocket))
+        h.editor.place(try require(h.editor.registry.placement(for: Tile.kind)), at: CGPoint(x: 400, y: 300))
+        h.wait(16)
+        expect(!shake.isShaking, "its owner is on the board above: nothing here to shake")
+        expectEqual(h.editor.drawingOffset(of: inside), .zero)
+    },
     test("showing another board stops a shake under way, and a deleted shape stops shaking") {
         let h = try frozenHarness([PocketsPlugin()])
         let box = h.add(Box(CGRect(x: 100, y: 100, width: 100, height: 100)))

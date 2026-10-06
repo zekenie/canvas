@@ -69,9 +69,9 @@ public struct DetailPanelView: View {
                 } else if let id = editor.selection, let record = editor.document[id] {
                     // Status lines and `shownWhile` read services, and whether the shape can change
                     // reads the containers it's in (a locked frame's shapes are locked too: O(its
-                    // depth)), so they're read here, on every commit: the panel below draws again
-                    // only when they, or its shape, change.
-                    ShapePanel(state: state, editor: editor, record: record, isReadOnly: editor.registry.isReadOnly(record, in: editor.document),
+                    // depth)) and its board (a locked subboard's), so they're read here, on every
+                    // commit: the panel below draws again only when they, or its shape, change.
+                    ShapePanel(state: state, editor: editor, record: record, isReadOnly: editor.isReadOnly(id),
                                statuses: state.statuses(of: record), hidden: state.hiddenSections(of: record), contentChanged: reclaimSoon)
                         .equatable()
                         .id(id)
@@ -194,8 +194,8 @@ struct ShapePanel: View, Equatable {
     let state: DetailPanelState
     let editor: CanvasEditor
     let record: AnyShapeRecord
-    /// Whether the shape can't change (`registry.isReadOnly(_:in:)`: locked, or in a locked frame):
-    /// it shows its details, but none of them edits it. Read by the panel's root, which reads the
+    /// Whether the shape can't change (`editor.isReadOnly(_:)`: locked, in a locked frame, or on a
+    /// locked subboard's board): it shows its details, but none of them edits it. Read by the panel's root, which reads the
     /// document, so this view, which doesn't, draws again only when it changes.
     let isReadOnly: Bool
     let statuses: ShapeStatuses

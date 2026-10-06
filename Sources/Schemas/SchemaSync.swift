@@ -455,11 +455,10 @@ public final class SchemaSync {
 
     // MARK: Reading cards
 
-    /// Whether a card can't change, as the board it's on goes by it, whichever board of the file
-    /// that is: locked, or in a locked frame, at any depth (`registry.isReadOnly(_:in:)`).
+    /// Whether a card can't change, whichever board of the file it's on: locked, in a locked frame, or
+    /// on a locked subboard's board, at any depth (`editor.isReadOnly(inFile:)`).
     private static func isReadOnly(_ record: AnyShapeRecord, in editor: CanvasEditor) -> Bool {
-        guard let board = editor.file.board(containing: record.id) else { return false }
-        return editor.registry.isReadOnly(record, in: editor.contents(of: board))
+        editor.isReadOnly(inFile: record.id)
     }
 
     private static func sides(of record: AnyShapeRecord) -> Sides? {

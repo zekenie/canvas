@@ -100,13 +100,13 @@ extension ContentsState {
         return provider
     }
 
-    /// Whether a shape's row drags: a box, not kept aside, that can change, on a board the editor can
-    /// show.
+    /// Whether a shape's row drags: a box, not kept aside, that can change (not locked, nor in a locked
+    /// frame or on a locked subboard's board), on a board the editor can show.
     private func movable(_ id: ShapeID) -> Bool {
         let file = editor.file
         guard let board = file.board(containing: id), let record = file[board][id], !record.isOpaque, record.box != nil,
               editor.canShow(board) else { return false }
-        return !editor.registry.isReadOnly(record, in: editor.contents(of: board))
+        return !editor.isReadOnly(inFile: id)
     }
 
     // MARK: Dropping

@@ -256,7 +256,7 @@ extension Drawing {
             record.box = item.placed
             guard record.box?.isFinite == true else { throw broken(item, "its frame isn't finite") }
             if let title = item.title, item.existing != nil, item.rename == nil { try keepsName(record, title, item) }
-            if let existing = item.existing, record != existing, registry.isReadOnly(existing, in: document), registry.isReadOnly(record, in: document) {
+            if let existing = item.existing, record != existing, target.isReadOnly(existing), target.isReadOnly(record) {
                 throw AutomationError(item.statement, .readOnly, "\(subject(of: item)) is read-only (locked, say), so it stays as it is",
                                       hint: "leave it out of the script, or ask the user to unlock it")
             }

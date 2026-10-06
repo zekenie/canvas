@@ -612,16 +612,10 @@ public final class MentionState {
         MentionCandidate(id: id, appearance: catalog.appearance(of: id)!, isReadOnly: isReadOnly(id), matched: matched)
     }
 
-    /// Whether a shape, on whichever board of the file it's on, can't change, as that board goes by
-    /// it: locked, or in a locked frame, at any depth (`registry.isReadOnly(_:in:)`). O(its depth).
-    private func isReadOnly(_ id: ShapeID) -> Bool {
-        let document = editor.document
-        if let record = document[id] { return registry.isReadOnly(record, in: document) }
-        let file = editor.file
-        guard let board = file.board(containing: id) else { return false }
-        let holding = file[board]
-        return holding[id].map { registry.isReadOnly($0, in: holding) } ?? false
-    }
+    /// Whether a shape, on whichever board of the file it's on, can't change: locked, in a locked
+    /// frame, or on a locked subboard's board, at any depth (`editor.isReadOnly(inFile:)`). O(its
+    /// depth).
+    private func isReadOnly(_ id: ShapeID) -> Bool { editor.isReadOnly(inFile: id) }
 
     // MARK: Following the document
 

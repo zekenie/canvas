@@ -175,6 +175,33 @@ import TestKit
         h.editor.keyUp(KeyStroke("c"))
         expect(h.editor.isHandHeld, "another key's release isn't Space's")
     },
+    test("a tool's key is taken while the editor takes the tool: on a read-only board, a tool that places shapes passes its key and stays unchosen, the Hand's key goes on being taken") {
+        let frozen = ShapeID(), plain = ShapeID()
+        var locked = AnyShapeRecord(ShapeRecord(id: frozen, Pocket(CGRect(x: 0, y: 0, width: 100, height: 100))))
+        locked[Frozen.self] = true
+        let file = CanvasFile(root: CanvasDocument(shapes: [locked, AnyShapeRecord(ShapeRecord(id: plain, Pocket(CGRect(x: 200, y: 0, width: 100, height: 100))))]),
+                              children: [frozen: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(Card(CGRect(x: 0, y: 0, width: 100, height: 60))))]),
+                                         plain: CanvasDocument(shapes: [])])
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), CardsPlugin(), cardKey, PocketsPlugin(), FreezingPlugin()], file: file)
+        let card = ToolID(placing: Card.kind)
+        expect(h.enter(frozen))
+        expect(!h.key("c"), "the key goes on, as one of a command that can't run does")
+        expectEqual(h.editor.currentToolID, .hand)
+        expect(h.key("h"))
+        expect(h.editor.showBoard(.root))
+        expect(h.key("c"))
+        expectEqual(h.editor.currentToolID, card)
+        h.key("h")
+        expect(h.enter(plain))
+        expect(h.key("C"))
+        expectEqual(h.editor.currentToolID, card, "a board with a pocket on it that isn't frozen takes it")
+        h.editor.transact(on: .root, "Freeze") { $0.update(plain) { $0[Frozen.self] = true } }
+        expectEqual(h.editor.currentToolID, .hand, "a lock above the board leaves it")
+        expect(!h.key("c"))
+        h.editor.transact(on: .root, "Thaw") { $0.update(plain) { $0[Frozen.self] = nil } }
+        expect(h.key("c"))
+        expectEqual(h.editor.currentToolID, card)
+    },
     test("a shortcut whose when doesn't hold passes the key on: to the key alone, if it answers that, else to AppKit") {
         let log = KeyLog()
         let h = try EditorHarness(plugins: [KeyboardPlugin(), Contributor(id: "keys") { r in

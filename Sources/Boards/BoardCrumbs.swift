@@ -3,17 +3,22 @@ import Observation
 import Selection
 import TableOfContents
 
-/// A board on the path to the one shown, as the path shows it: what it's called and its symbol.
+/// A board on the path to the one shown, as the path shows it: what it's called and its symbol, and
+/// whether it can't change.
 public struct BoardCrumb: Equatable, Identifiable, Sendable {
     public let board: BoardID
     public let title: String
     public let systemImage: String?
+    /// Whether the board is read-only (`editor.isReadOnly(board:)`): the shape that owns it can't
+    /// change (a locked subboard), or a board above it is read-only. The root never is.
+    public let isReadOnly: Bool
     public var id: BoardID { board }
 
-    public init(board: BoardID, title: String, systemImage: String? = nil) {
+    public init(board: BoardID, title: String, systemImage: String? = nil, isReadOnly: Bool = false) {
         self.board = board
         self.title = title
         self.systemImage = systemImage
+        self.isReadOnly = isReadOnly
     }
 }
 
@@ -34,15 +39,19 @@ public struct CrumbMenu: Equatable, Sendable {
 
 /// The path from the root to the board shown, as crumbs, kept for `BoardPath`: made again when
 /// another board is shown, or when a board above this one changes (only there are the owners on
-/// the path, whose titles name the crumbs), so a commit on the board shown, a drag's every event,
-/// costs a look at each board above's revision and redraws nothing. And which crumb's menu shows,
-/// as the pointer goes over the crumbs and their menus.
+/// the path, whose titles name the crumbs, and whose locks make boards read-only), so a commit on
+/// the board shown, a drag's every event, costs a look at each board above's revision and redraws
+/// nothing. And which crumb's menu shows, as the pointer goes over the crumbs and their menus.
 @MainActor
 @Observable
 public final class BoardCrumbs {
     /// The boards below the root, root first, the board shown last: empty on the root. The root's
     /// crumb is the host's to name (`BoardPath`'s `rootName`).
     public private(set) var crumbs: [BoardCrumb] = []
+    /// Where the path's read-only part starts: the first crumb whose board is read-only (every board
+    /// under it is too), which the path marks with a lock, once. Nil while none is. The editor's
+    /// (`editor.readOnlyStart`), kept with the crumbs, so each crumb asks in O(1).
+    public private(set) var readOnlyStart: BoardID?
     /// The crumb whose menu shows, by its board (`menu(of:)` says what the menu lists); nil while
     /// none does. One at a time, as the pointer goes (`pointerEntered(crumb:)` and the rest).
     public private(set) var openMenu: BoardID?
@@ -90,8 +99,14 @@ public final class BoardCrumbs {
         let path = editor.boardPath
         let file = editor.file
         above = path.dropLast().map { file.revision(of: $0) }
-        let made = path.dropFirst().map { BoardCrumb(board: $0, title: editor.name(of: $0, root: ""), systemImage: editor.symbol(of: $0)) }
+        // Read-only from where the path turns so, as the editor worked it out in one climb (each board
+        // asked on its own would cost the path's depth squared).
+        let start = editor.readOnlyStart, from = start.flatMap { path.firstIndex(of: $0) } ?? path.count
+        let made = path.indices.dropFirst().map {
+            BoardCrumb(board: path[$0], title: editor.name(of: path[$0], root: ""), systemImage: editor.symbol(of: path[$0]), isReadOnly: $0 >= from)
+        }
         if made != crumbs { crumbs = made }
+        if start != readOnlyStart { readOnlyStart = start }
         noteEmptiness()
         if let openMenu, menu(of: openMenu) == nil { closeMenu() }
     }

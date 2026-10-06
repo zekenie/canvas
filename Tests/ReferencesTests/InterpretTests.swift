@@ -338,6 +338,34 @@ import Topology
         expectEqual(h.editor.undoHistory.undoName, "Interpret")
     },
 
+    test("a reference on a locked subboard's board can't be interpreted: the command is dimmed, Interpret asks nothing and writes nothing, and the row stays for words nobody asked about; unlocked, it asks") {
+        let model = ScriptedLanguageModel(answers: ["box"])
+        let pocket = ShapeRecord(Pocket(CGRect(x: 2_000, y: 0, width: 100, height: 100)))
+        let h = try referenceHarness([FreezingPlugin(), PocketsPlugin(), LanguageModelsPlugin(model: model),
+                                      QueryTranslationPlugin(prompt: "You write one query.", referenceRule: "Stored.")],
+                                     file: CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(pocket)]), children: [pocket.id: CanvasDocument()]))
+        expect(h.enter(pocket.id))
+        let id = h.addReference(words: "blocked work")
+        h.editor.selectedShapeIDs = [id]
+        expect(h.editor.canPerform(.interpretReference), "its board takes shapes")
+        h.editor.transact(on: .root, "Freeze") { $0.update(pocket.id) { $0[Frozen.self] = true } }
+        expect(h.editor.isBoardReadOnly)
+        expect(!h.editor.canPerform(.interpretReference), "the command is dimmed")
+        expect(try content(h, id).offersInterpret, "the row stays, dimmed with the command")
+        let before = h.file
+        h.editor.perform(.interpretReference)
+        breathe()
+        expect(model.requests.isEmpty, "nothing asked")
+        expectEqual(h.file, before)
+        expectEqual(h.state(of: id), .notInterpreted(text: "blocked work"))
+        h.editor.transact(on: .root, "Thaw") { $0.update(pocket.id) { $0[Frozen.self] = nil } }
+        expect(!h.editor.isBoardReadOnly)
+        expect(h.editor.canPerform(.interpretReference))
+        h.editor.perform(.interpretReference)
+        spin(h.reference(id)?.query != nil)
+        expectEqual(h.editor.undoHistory.undoName, "Interpret")
+    },
+
     test("the 55 s deadline is a timeout, with Retry; retrying asks again, and lands as Interpret") {
         let model = ScriptedLanguageModel(answers: ["box"])
         model.holdsAnswers = true

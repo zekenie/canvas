@@ -283,7 +283,7 @@ extension ReferenceState {
         let file = editor.file
         guard let record = file.record(id), let props = record.typed(as: Reference.self)?.props, props.target == nil, props.query == nil,
               props.words.trimmingCharacters(in: .whitespacesAndNewlines) == words, let board = file.board(containing: id),
-              !editor.registry.isReadOnly(record, in: editor.contents(of: board)) else { return }
+              !editor.isReadOnly(inFile: id) else { return }
         editor.transact(on: board, ReferenceStyle.interpretStep) { transaction in
             transaction.update(id, as: Reference.self) { ReferenceEdits.find(&$0.props, words: props.words, query: query) }
         }
@@ -333,8 +333,8 @@ extension ReferenceState {
     }
 
     func canInterpret(_ id: ShapeID) -> Bool {
-        guard offersInterpret(id), let record = editor.file.record(id), let board = editor.file.board(containing: id) else { return false }
-        return !editor.registry.isReadOnly(record, in: editor.contents(of: board))
+        guard offersInterpret(id), editor.file.record(id) != nil else { return false }
+        return !editor.isReadOnly(inFile: id)
     }
 
     /// Whether the panel shows its Interpret row (dimmed while the reference is locked): words and no

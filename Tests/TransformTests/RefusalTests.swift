@@ -64,6 +64,31 @@ private struct Declined: Error {}
         expectEqual(log.refusals, [[k]])
     },
 
+    test("a corral on a locked subboard's board isn't turned: the board takes no change, so nothing changes and no step is made, and the corral is heard refused; thawed above, it turns") {
+        let p = ShapeID(), k = ShapeID(), a = ShapeID(), log = RefusalLog()
+        var frozen = AnyShapeRecord(ShapeRecord(id: p, Pocket(CGRect(x: 0, y: 0, width: 100, height: 100))))
+        frozen[Frozen.self] = true
+        let h = try transformHarness(file: CanvasFile(root: board(frozen), children: [p: board(corral(k, CGRect(x: 0, y: 0, width: 300, height: 200)),
+                                                                                              box(a, x: 20, y: 20, in: k))]), log: log)
+        expect(h.enter(p))
+        let transforms = try require(h.editor.transforms)
+        expect(transforms.canTurn(k, into: Pocket.kind), "it can: turning it is refused")
+        let before = h.file, revision = h.editor.revision
+        expect(!transforms.turn([k], into: Pocket.kind))
+        expectEqual(h.file, before, "the corral is a corral, and holds its box")
+        expectEqual(h.editor.revision, revision, "nothing committed")
+        expect(!h.editor.canUndo, "no step")
+        expectEqual(log.refusals, [[k]], "the corral tried")
+        let menu = try require(h.secondaryClick(at: CGPoint(x: 250, y: 150)))
+        expectEqual(menu.outline, ["Turn into Pocket", "—", "Delete"])
+        try menu.choose("Turn into Pocket")
+        expectEqual(h.file, before)
+        expectEqual(log.refusals, [[k], [k]])
+        h.editor.transact(on: .root, "Thaw") { $0.update(p) { $0[Frozen.self] = nil } }
+        expect(transforms.turn([k], into: Pocket.kind))
+        expectEqual(ids(h.contents(of: k)), [a])
+    },
+
     test("one frozen shape among several keeps all of them as they are: the others aren't turned, and only the frozen one is refused") {
         let k = ShapeID(), l = ShapeID(), a = ShapeID(), log = RefusalLog()
         let h = try transformHarness(file: CanvasFile(root: board(corral(k, CGRect(x: 0, y: 0, width: 300, height: 200)), box(a, x: 20, y: 20, in: k),

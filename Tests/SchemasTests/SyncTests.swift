@@ -292,6 +292,45 @@ let petSchema = """
         expectEqual(b.model.lastRequest?.system, SchemaPrompts.toSchemaSystem)
         expectEqual(schema(), petSchema)
     },
+    test("a card on a locked subboard's board is read-only too, shown or not: its model isn't asked, an answer that lands once the lock does writes nothing, and its edit syncs once it's thawed") {
+        let log = RefusalLog()
+        let pocket = ShapeRecord(Pocket(CGRect(x: 2000, y: 0, width: 100, height: 100)))
+        let b = try SyncBench(file: CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(pocket)]), children: [pocket.id: CanvasDocument()]),
+                              more: [FreezingPlugin(log: log), PocketsPlugin()])
+        expect(b.editor.showBoard(BoardID(owner: pocket.id)))
+        let id = b.place()
+        b.typePrompt(id, "a pet in my household")
+        @MainActor func freeze(_ frozen: Bool) {
+            b.editor.transact(on: .root, frozen ? "Freeze" : "Thaw") { $0.update(pocket.id) { $0[Frozen.self] = frozen ? true : nil } }
+        }
+        @MainActor func schema() -> String? { b.editor.file.record(id)?.typed(as: SchemaCard.self)?.props.schema.text }
+        freeze(true)
+        expect(b.editor.isBoardReadOnly)
+        b.sync.commit(id)
+        b.scheduler.advance(by: .seconds(5))
+        b.settle()
+        expectEqual(b.model.requests.count, 0, "the board it's on can't change")
+        expectEqual(b.status(id), .idle)
+        expect(b.editor.showBoard(.root))
+        b.sync.commit(id)
+        b.scheduler.advance(by: .seconds(5))
+        b.settle()
+        expectEqual(b.model.requests.count, 0, "nor with the board not shown")
+        freeze(false)
+        b.model.holdsAnswers = true
+        b.model.queue(petSchema)
+        b.sync.commit(id)
+        spinRunLoop(until: { b.model.waiting == 1 })
+        freeze(true)
+        b.model.release()
+        spinRunLoop(until: { b.status(id) == .idle })
+        expectEqual(schema(), SchemaCard.starter, "the answer wrote nothing")
+        expectEqual(log.refusals, [], "no write is tried, so nothing is refused (no shake)")
+        freeze(false)
+        b.model.holdsAnswers = false
+        b.sync(id, answer: petSchema)
+        expectEqual(schema(), petSchema, "thawed, its edit syncs")
+    },
     test("a card seen for the first time is in step: on a board opened, and pasted") {
         var props = card(petSchema, at: .zero)
         props.setPrompt("a pet in my household")

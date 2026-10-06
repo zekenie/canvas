@@ -144,11 +144,13 @@ extension Registry {
         document.container(of: shape, containingKinds: containingKinds)
     }
 
-    /// Whether a shape can't change, in `document`: a plugin's rule says so of it (`isReadOnly(_:)`),
-    /// or of a container it's in, at any depth (everything in a locked frame is locked too). What the
-    /// core goes by, and what a view that shows the shape asks (its handles, its panel): the rules
-    /// alone are for what reads one record by itself. O(the shape's depth).
-    public func isReadOnly(_ shape: AnyShapeRecord, in document: CanvasDocument) -> Bool {
+    /// Whether a shape can't change on its board, `document`: a plugin's rule says so of it
+    /// (`isReadOnly(_:)`), or of a container it's in, at any depth (everything in a locked frame is
+    /// locked too). Blind to the board itself, which may be read-only too (`isReadOnly(board:in:)`):
+    /// what goes by a shape asks the editor (`isReadOnly(_:)`, `isReadOnly(inFile:)`), a transaction
+    /// (`isReadOnly(_:)`) or a board read (`BoardReading.isReadOnly(_:)`), which see both. O(the
+    /// shape's depth).
+    func isReadOnly(_ shape: AnyShapeRecord, in document: CanvasDocument) -> Bool {
         guard hasReadOnlyRules else { return false }
         return isReadOnly(shape) || isInsideReadOnlyContainer(shape, in: document)
     }
@@ -159,5 +161,42 @@ extension Registry {
         return document.containers(of: shape.id, containingKinds: containingKinds).contains { id in
             document[id].map(isReadOnly) ?? false
         }
+    }
+
+    /// Whether a board of `file` can't change: the shape that owns it can't, on its own board
+    /// (`isReadOnly(_:in:)`: a rule says so of it, or of a container it's in), or that board can't, and
+    /// so on up to the root, which always can. So a locked subboard's board is read-only, and every
+    /// board under it, at any depth, as everything in a locked frame is: every shape on it is
+    /// read-only, and nothing goes on it. False for a board whose owners don't reach the root (an owner
+    /// not in the file), which the app doesn't show. O(the board's depth).
+    func isReadOnly(board: BoardID, in file: CanvasFile) -> Bool {
+        guard hasReadOnlyRules else { return false }
+        var current = board, met: Set<BoardID> = []
+        // Every walk up the tree stops at a board it has met: a hand-edited file may hold a loop.
+        while let owner = current.owner, met.insert(current).inserted {
+            guard let at = file.board(containing: owner) else { return false }
+            let there = file[at]
+            guard let record = there[owner] else { return false }
+            if isReadOnly(record, in: there) { return true }
+            current = at
+        }
+        return false
+    }
+
+    /// Where the path to `board` turns read-only (`isReadOnly(board:in:)`): the first board on it,
+    /// root side first, whose owner can't change on its own board; it, and every board after it on the
+    /// path, `board` too, is read-only. Nil while `board` isn't. One climb to the root, so a path's
+    /// every board is told in O(its depth), where asking each would cost its square.
+    func readOnlyStart(ofPathTo board: BoardID, in file: CanvasFile) -> BoardID? {
+        guard hasReadOnlyRules else { return nil }
+        var current = board, met: Set<BoardID> = [], start: BoardID?
+        while let owner = current.owner, met.insert(current).inserted {
+            guard let at = file.board(containing: owner) else { return nil }
+            let there = file[at]
+            guard let record = there[owner] else { return nil }
+            if isReadOnly(record, in: there) { start = current }
+            current = at
+        }
+        return start
     }
 }

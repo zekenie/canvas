@@ -77,10 +77,11 @@ extension CanvasEditor {
     /// shapes `canBind` accepts, looking through the rest. Released bound, `complete` finishes it (in the transaction that does, with the shape
     /// its end is bound to); released free, or on Escape, it's deleted, so nothing is drawn. The
     /// selection and the tool are left alone. Returns the session that drags it, for the caller to
-    /// hand the drag to; nil if an arrow can't bind to `shape`.
+    /// hand the drag to; nil if an arrow can't bind to `shape`, or the board takes no shapes
+    /// (`isBoardReadOnly`: its transaction would drop the arrow).
     func beginArrow(from shape: ShapeID, at origin: CGPoint, canBind: @escaping @MainActor (AnyShapeRecord) -> Bool,
                     complete: @escaping @MainActor (inout AnyShapeRecord, ShapeID) -> Void) -> (any Session)? {
-        guard canBindArrow(to: shape), let targeting = service(ArrowTargeting.self) else { return nil }
+        guard !isBoardReadOnly, canBindArrow(to: shape), let targeting = service(ArrowTargeting.self) else { return nil }
         targeting.cancelPreciseTimer()
         let start = ArrowBinding(shapeID: shape, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)
         let arrow = ShapeRecord(Arrow(start: .bound(start), end: .free(origin)))

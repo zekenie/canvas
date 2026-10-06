@@ -142,6 +142,31 @@ private func picker(_ h: EditorHarness, owner: ShapeID?, query: String = "") -> 
         expectEqual(none.perform(#selector(NSResponder.insertTab(_:))).taken, false)
     },
 
+    test("a shape on a read-only board is marked too: a frozen pocket's, and a pocket's on it that isn't frozen itself, whether or not the board is shown; thawed, none is") {
+        // The root: the jot and a frozen pocket P. P's board: plate "Kiln" and a pocket Q, whose board holds plate "Kiln key".
+        var frozen = AnyShapeRecord(ShapeRecord(Pocket(CGRect(x: 400, y: 0, width: 100, height: 100))))
+        frozen[Frozen.self] = true
+        let inner = AnyShapeRecord(ShapeRecord(Pocket(CGRect(x: 300, y: 0, width: 100, height: 100))))
+        func plate(_ title: String) -> AnyShapeRecord {
+            var record = ShapeRecord(Plate(CGRect(x: 0, y: 0, width: 100, height: 60)))
+            record[TitleProperty.self] = title
+            return AnyShapeRecord(record)
+        }
+        let jot = ShapeRecord(Jot(CGRect(x: 0, y: 0, width: 200, height: 200)))
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(jot), frozen]),
+                              children: [frozen.id: CanvasDocument(shapes: [plate("Kiln"), inner]), inner.id: CanvasDocument(shapes: [plate("Kiln key")])])
+        let h = try EditorHarness(plugins: mentionPlugins([FreezingPlugin(), PocketsPlugin()]), file: file)
+        @MainActor func marks() -> [String: Bool] {
+            Dictionary(picker(h, owner: jot.id, query: "kiln").rows.compactMap(\.candidate).map { ($0.appearance.label, $0.isReadOnly) }) { first, _ in first }
+        }
+        expectEqual(marks(), ["Kiln": true, "Kiln key": true], "on boards the window doesn't show")
+        expect(h.enter(frozen.id))
+        expectEqual(marks(), ["Kiln": true, "Kiln key": true], "on the board shown, and one under it")
+        expect(h.editor.showBoard(.root))
+        h.editor.freeze([frozen.id], false)
+        expectEqual(marks(), ["Kiln": false, "Kiln key": false])
+    },
+
     test("at most 50 shapes are listed, with no footer: the list scrolls") {
         let (h, jot) = try pickerBoard { editor in
             for i in 0..<60 { editor.add(Plate(CGRect(x: 300, y: CGFloat(i) * 80, width: 100, height: 60)), titled: "Shelf \(i)") }

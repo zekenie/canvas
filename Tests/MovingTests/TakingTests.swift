@@ -50,6 +50,20 @@ import TestKit
         expectEqual(log.refusals, [], "asking shakes nothing")
     },
 
+    test("/move-to takes nothing on a board that takes no shapes, at any depth: a pocket on a frozen pocket's board, and a corral two boards down, though that pocket isn't frozen itself; thawed, both") {
+        let s = ShapeID(), p = ShapeID(), q = ShapeID(), k = ShapeID(), log = RefusalLog()
+        let h = try movingHarness(CanvasFile(root: board(box(s, 0, 0), pocket(p, 0, 400)),
+                                             children: [p: board(pocket(q, 0, 0)), q: board(corral(k, at(0, 0, 400, 300)))]), log: log)
+        for target in [p, q, k] { expect(h.admits("move-to", on: s, target), "\(target), before") }
+        h.freeze([p])
+        expect(!h.admits("move-to", on: s, p), "the frozen pocket")
+        expect(!h.admits("move-to", on: s, q), "a pocket on its board")
+        expect(!h.admits("move-to", on: s, k), "a corral on that one's board")
+        expectEqual(log.refusals, [], "asking shakes nothing")
+        h.freeze([p], false)
+        for target in [p, q, k] { expect(h.admits("move-to", on: s, target), "\(target), thawed") }
+    },
+
     test("/move-to takes no corral too small to hold the shape, narrower or shorter; one just its size it takes") {
         let s = ShapeID(), narrow = ShapeID(), short = ShapeID(), snug = ShapeID()
         let h = try movingHarness(CanvasFile(root: board(box(s, 0, 0), corral(narrow, at(300, 0, 99, 400)), corral(short, at(500, 0, 400, 99)),
