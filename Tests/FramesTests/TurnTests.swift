@@ -58,10 +58,10 @@ import Transform
 }
 
 @MainActor let turnTests = Suite("Frames turning into other kinds", [
-    test("a frame offers the container channel and knows nothing of what takes it: it turns into nothing until a kind does, and brings no item or command of its own") {
+    test("a frame offers the container channel and knows nothing of what takes it: it turns into nothing until a kind does, and brings no Turn into item or command of its own") {
         let registry = try Registry(plugins: framePlugins())
         let framing = try require(registry.report.split(separator: "\n").first { $0.hasPrefix("framing") })
-        expect(framing.hasSuffix("ShapeDetails → frame · offers channel container → frame"), "\(framing)")
+        expect(framing.hasSuffix("ShapeDetails → frame · offers channel container → frame · CanvasContextMenu"), "\(framing)")
         expectEqual(registry.turnTargets(of: Frame.kind), [])
 
         let h = try frameHarness()
@@ -70,7 +70,7 @@ import Transform
         expectEqual(h.editor.transforms?.targets(of: frame), [])
         expect(h.editor.transforms?.turn([frame], into: Pocket.kind) == false, "nothing to turn into")
         expectEqual(h.editor.slashCommands?.commands(for: frame).map(\.name), ["title"], "a target brings /turn-into-…, not the kind that offers")
-        expectEqual(try require(h.secondaryClick(at: CGPoint(x: 300, y: 101))).outline, ["Delete"])
+        expectEqual(try require(h.secondaryClick(at: CGPoint(x: 300, y: 101))).outline, ["Create Frame", "—", "Delete"], "Create Frame is Frames' own, for any shapes")
 
         let turning = try Registry(plugins: framePlugins() + framesTurnIntoPockets())
         expectEqual(turning.turnTargets(of: Frame.kind), [Pocket.kind])
@@ -110,7 +110,7 @@ import Transform
         expectEqual(h.editor.slashCommands?.commands(for: s.sprint).map(\.name), ["title", "turn-into-pocket"])
         expectEqual(h.editor.slashCommands?.commands(for: s.z).map(\.name), [], "a box offers no channel")
         let menu = try require(h.secondaryClick(at: s.edge))
-        expectEqual(menu.outline, ["Turn into Pocket", "—", "Delete"])
+        expectEqual(menu.outline, ["Turn into Pocket", "—", "Create Frame", "—", "Delete"])
         try menu.choose("Turn into Pocket")
         expectEqual(h.editor.document[s.sprint]?.kind, Pocket.kind)
         expectEqual(h.editor.selectedShapeIDs, [s.sprint], "still selected")

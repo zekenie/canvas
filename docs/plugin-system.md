@@ -3208,6 +3208,8 @@ right-click on a subboard:
 ┌─────────────────────────┐
 │ Open                    │  a feature's (Boards, through opensBoard): first, as Finder's is
 ├─────────────────────────┤
+│ Create Frame            │  the canvas's (Frames): a frame around what the menu is for
+├─────────────────────────┤
 │ Cut                     │  the canvas's (Clipboard): Paste once there's something to paste
 │ Copy                    │
 │ Paste                   │
@@ -3229,7 +3231,9 @@ shape something mentions has Show What Mentions too, after its own items (Mentio
 canvas, in `MentionsMenuGroup`, order 50), which goes to what mentions it
 ([What mentions a shape](#what-mentions-a-shape)). A shape that can be turned into another kind has Turn
 into … after it (Transform's, in `TransformMenuGroup`, order 60: a frame's is Turn into Subboard,
-[Transform](#transform)). On empty canvas the menu is the canvas's items
+[Transform](#transform)), and any shapes a frame can hold have Create Frame after that (Frames', for
+the canvas, in `FramesMenuGroup`, order 70: a frame put down around them, [Frames](#frames); an
+arrow alone has none). On empty canvas the menu is the canvas's items
 that apply there alone: Paste, once there's something to paste, which lands centered where the
 menu was asked for (⌘V keeps its own rule), and Select All (ContextMenus' own, Selection's
 `.selectAll`) while the board has shapes. An empty board with nothing to paste has no menu: the
@@ -3243,7 +3247,7 @@ right-click does nothing.
 | `registrar.contextMenu(P.self) { items }` | Another plugin's kind, typed as its own. |
 | `x.contextMenu(of: P.self) { items }`, `registrar.contextMenu(of: P.self) { items }` | An [added property](#added-properties), over its value: on this kind's shapes that have one, or on every shape that has one. |
 | `registrar.contextMenuForEveryShape(where:) { items }` | Every shape, over `AnyShapeRecord`. `where:` picks kinds by their definition, and so by capability (`{ !($0 is any PaintOrderAnchored) }`); `when:` picks shapes (`{ $0.box != nil }` for those with a frame). |
-| `registrar.contextMenuForCanvas { items }` | Items that aren't one shape's (Cut, Copy, Paste; Show What Mentions, since whether a shape is mentioned is what a service knows; Turn into …, since what a shape can turn into is what the registry knows; Delete and Select All), over the menu's `MenuSubject`: its shapes (none on empty canvas), where it was asked for (`point`, world units) and the editor. In every menu, after the shapes' own in their groups' order, and alone on empty canvas. Each is asked once per menu, not per shape. |
+| `registrar.contextMenuForCanvas { items }` | Items that aren't one shape's (Cut, Copy, Paste; Show What Mentions, since whether a shape is mentioned is what a service knows; Turn into …, since what a shape can turn into is what the registry knows; Create Frame, since it's for the menu's shapes together, whatever their kinds; Delete and Select All), over the menu's `MenuSubject`: its shapes (none on empty canvas), where it was asked for (`point`, world units) and the editor. In every menu, after the shapes' own in their groups' order, and alone on empty canvas. Each is asked once per menu, not per shape. |
 
 Boards' Open, which a board-owning kind's opt-in brings it ([OpensBoard.swift](../Sources/Boards/OpensBoard.swift)):
 
@@ -3280,6 +3284,7 @@ contextMenu {
   | 0 (the default) | A kind's own items (`ShapeMenuGroup`) |
   | 50 | A horizontal's feature, on the kinds that opt in (a flag's `FlagMenuGroup`, [below](#something-the-user-turns-on)), or on the shapes it knows something of (`MentionsMenuGroup`) |
   | 60 | What a feature brings to the shapes it can act on, after the first band (Transform's Turn into …, `TransformMenuGroup`) |
+  | 70 | What a vertical makes of the shapes it's for (Frames' Create Frame, `FramesMenuGroup`) |
   | 100 and up | Shared by every kind (`ClipboardMenuGroup`, 100; `ReorderMenuGroup`, 200; `LockMenuGroup`, 300; `SelectionMenuGroup`, 400, ContextMenus' own Delete and Select All) |
 
 - **Keyed.** Each item claims its target, group and `id` (the title by default), and an item in a
@@ -4566,7 +4571,8 @@ record. The core holds them where every change goes through it:
   included; and nothing goes on it: a transaction there (`transaction.isBoardReadOnly`) drops an
   insert, a move onto it (`move(_:to:)`) is refused, and services hear the board's owner refused,
   as a read-only container is when a shape would join it; `place` puts nothing down and says the
-  same; a tool that places shapes isn't enabled there (`editor.isToolEnabled(_:)`: `setTool` doesn't
+  same (`place(_:around:)`, all or nothing, says the shapes it would hold were refused, and they
+  shake there); a tool that places shapes isn't enabled there (`editor.isToolEnabled(_:)`: `setTool` doesn't
   take it, and one in use goes back to the default tool as the board becomes read-only); and a
   shape edited there as it becomes read-only stops being edited.
 - **Changing everything or nothing.** `transaction.refusedShapes` is the read-only shapes the
@@ -7772,6 +7778,7 @@ registrar.shape(FrameDefinition()) { frame in                     // FrameDefini
     frame.frameHeader()                                            // renamed in the panel's header
     frame.turnable(through: ContainerChannel.self)                 // Transform: turned into whatever takes the container channel
 }
+registrar.createFrameItem()                                        // Create Frame, in the context menu, around what it's for
 ```
 
 - **Its props are its frame**: `Properties<Frame>(title: "Frame") { Property("frame", \.frame).required() }`.
@@ -7822,6 +7829,23 @@ registrar.shape(FrameDefinition()) { frame in                     // FrameDefini
   the kind's own says it too: `frame.tool(label:systemImage:shortcut:placing:_:)` registers
   `FrameTool`, made per editor by the closure, with `place` as its placement, which the tool puts
   down itself for a click. So `canvas draw` draws a frame 640 × 400 unless `size:` says otherwise.
+- **Create Frame** ([CreateFrame.swift](../Sources/Frames/CreateFrame.swift)), in the context menu of
+  any shapes a frame can hold (any with a box; an arrow alone has none), puts a frame down around
+  them, holding them, through the core's `editor.place(_:around:padding:minimumSize:)`
+  ([Containers](#containers)): 32 world units past them (`FrameStyle.padding`), and past an arrow
+  between two of them, never under 96 × 64 where the frame they're all in has room, in that frame, just
+  below the lowest of them in the stack. They stay where they are; what the new frame lands on beside them is settled as what a drawn frame lands on is
+  (mostly inside comes in, nudged fully in; mostly outside is nudged out; gliding there). It's
+  untitled and selected, one step named as the item ("Create Frame"). A locked shape among them (or
+  one in a locked frame) leaves it all as it was, and shakes. An item for the canvas, as Turn into
+  Subboard is, in a band of its own (`FramesMenuGroup`, 70: after Turn into's 60, before Cut, Copy
+  and Paste), so Frames is on ContextMenus. tldraw's Frame Selection is the model, with three
+  intended deviations: the padding is world units, as the model is, where tldraw's is 25 view points
+  (zoomed out, that would reach over the neighbors); the frame goes just below the lowest of them,
+  not on top of everything, so it covers nothing beside them that was above them, and shows on a big
+  shape under them (a zone `canvas draw` drew); and a locked shape among them refuses the whole, as Turn
+  into does, where tldraw frames the rest around it. Not built: tldraw's ⌥⌘G, Remove Frame and Fit
+  to Content.
 - **Opt-ins.** Titles keeps its name, shown in its pill (untitled, a dimmed "Frame"; no symbol, since
   its look says what it is), and `TitleHeader` renames it in its panel's header ("Untitled Frame").
   Mentions offers it by its title, its symbol in its gray (`NSColor.systemGray`, its row's too), and
@@ -7833,20 +7857,22 @@ registrar.shape(FrameDefinition()) { frame in                     // FrameDefini
   with it what it holds. No ports: nothing is drawn from a frame's sides. Transform's container channel
   (`frame.turnable(through: ContainerChannel.self)`, the last of its opt-ins) makes it something that can be
   turned into whatever takes the channel, a subboard in the app, from its menu ([Transform](#transform));
-  Frames only offers the channel, names no kind that takes it, and brings no item or command of its own.
+  Frames only offers the channel, names no kind that takes it, and brings no Turn into item or command of
+  its own.
 
 It ships after Subboards (the toolbar's Frame, F, between Subboard and Schema: the two ways of
 grouping shapes, a region of the board and a board of its own, side by side), with its fixture,
 `Fixtures/kinds/frame.v0.json`; `Fixtures/files/frames.v5.json` is a whole file, read and written
 back byte for byte: a frame holding a frame, which holds a note and a subboard, and a schema card,
 beside a locked frame holding a note, and a note on the subboard's board (CompositionTests'
-`FrameFile`). FramesTests hold the kind, its hollow test, its marquee, its look, its tool and what it offers
-Transform (TurnTests, with CanvasTesting's pocket taking the channel) over
+`FrameFile`). FramesTests hold the kind, its hollow test, its marquee, its look, its tool, Create Frame
+(CreateFrameTests) and what it offers Transform (TurnTests, with CanvasTesting's pocket taking the channel) over
 CanvasTesting's boxes, frozen for read-only (`FreezingPlugin`); CompositionTests' FramesShippedTests
 the shipped pieces together: notes dropped in and out, a group across an edge, a locked frame
 refusing a drop, a frame moved with a locked note in it, frames in frames, resizing over notes,
-deleting one, pressing its inside, its pill, the tool, a locked frame's contents, the skeleton, the
-file, and a note mentioning one in the app's canvas view; TransformShippedTests turn one into a
+deleting one, pressing its inside, its pill, the tool, Create Frame around two notes and the bent
+arrow between them, a locked frame's contents, the skeleton, the file, and a note mentioning one in
+the app's canvas view; TransformShippedTests turn one into a
 subboard ([Transform](#transform)).
 
 ## Transform
@@ -8021,14 +8047,14 @@ a frame, which owns no board for `move` to move onto (`move` would move nothing 
   and bindings.
 - **FramesTests' and SubboardsTests' `TurnTests.swift`** hold each end of the edge over a partner of its
   own, since neither can use the other: Frames offers the channel with a pocket as the target (the title
-  carried over, a frame inside still a frame holding its box, no item or command until a kind takes the
-  channel, a locked box or frame refusing); Subboards takes it from corrals that offer it (the size and
+  carried over, a frame inside still a frame holding its box, no Turn into item or command until a kind
+  takes the channel, a locked box or frame refusing); Subboards takes it from corrals that offer it (the size and
   the corner, what the corral held on its board, a link inside riding and one across let go, the table
   of contents, Return entering it, `/turn-into-subboard`, an empty corral).
 - **CompositionTests' `transformShippedTests`** hold the shipped pieces together, on a pasteboard of
   their own: a frame titled Groceries, holding two notes and a frame that holds a note, a note beside it
   that mentions it, and arrows bound to the notes, turned from its context menu (the item between Show
-  What Mentions and Cut; the subboard, its title, its board; the mention live and the pill, the row and
+  What Mentions and Create Frame, before Cut; the subboard, its title, its board; the mention live and the pill, the row and
   the panel of a subboard; one arrow riding along and one letting go; the canvas drawn without what
   moved, and as it was after Undo), as a command, with a locked note or a locked frame leaving everything
   as it was, a frame turned with the frame inside it, a frame on a subboard's board turned there (and Undo
@@ -10553,7 +10579,8 @@ kind) holds the shapes there that name it, moves them with it, paints them above
 and keeps what's put down from sitting across its edge. Containers nest, to any depth. Being one is
 a capability, `ShapeContaining`, of a box kind, with nothing to implement, so the core does all of
 it, whatever kind contains ([Model/Containment.swift](../Sources/Canvas/Model/Containment.swift),
-[Settling.swift](../Sources/Canvas/Model/Settling.swift)). Core and horizontal tests contain with
+[Settling.swift](../Sources/Canvas/Model/Settling.swift), [Enclosing.swift](../Sources/Canvas/Model/Enclosing.swift)).
+Core and horizontal tests contain with
 CanvasTesting's corral ([Corrals.swift](../Tests/CanvasTesting/Corrals.swift)), apart from
 `FixturesPlugin`:
 
@@ -10670,6 +10697,24 @@ extension CorralDefinition: ShapeContaining {}       // its shapes hold shapes o
   leaves no step; Escape puts it back at once, settling nothing. A shape placed (`editor.place`)
   settles on its release, or at once with no press under way, in the placement's step; refused, it's
   taken away; one placed to be edited isn't glided, since its editing view is laid out where it is.
+- **Putting one down around shapes** (`editor.place(_:around:padding:minimumSize:)`, Frames' Create
+  Frame) puts a new container (a record of a `ShapeContaining` kind, its id new) down around shapes
+  on the board shown, holding them: those with a box, but what's in another of them (it goes with
+  that one). Its frame is theirs, and an arrow's among them that's bound to some of them and to
+  nothing else (`isBound(onlyTo:in:)`, as the container channel's `held` goes by), grown by `padding`,
+  kept the gap inside the innermost container they're all in, which it goes in, unless what it holds
+  is nearer that one's edge, then grown to `minimumSize` about its middle as far as that room allows;
+  a far edge flush with one of them is never an ulp short of it (an origin plus a size rounds, and
+  settling would read the shape as hanging over). In the stack it goes just below the lowest of them,
+  so they keep their places, and what was under them all, a big note behind them, stays under it. What
+  it lands on beside them is settled as what a container drawn over shapes is (`settle(container:)`;
+  what comes in rises above what it holds); those it took out of a container that it then took in are
+  put down again with the others from it (`settle(_:)`), so they go back in rather than lying under
+  it, and those from a container it didn't take in (one with no room to move clear) stay in it. One step, named as a placement's ("Add" and the kind's label, unless a group
+  it's in names it); the default tool comes back, services hear `didPlace` (selected), and what was
+  nudged glides. All or nothing: a read-only one among them (locked, in a read-only container, or on
+  a read-only board) leaves it all as it was, with no step, and is heard refused. It returns the new
+  shape's id, nil when it put nothing down (nothing with a box, a refusal, a kind that holds nothing).
 - **The glide** (`editor.glide(_:)`, Glide.swift) eases shapes that just moved from where they were
   drawn to where they are, over 250 ms, going a little past and back (`Style.glideDuration`,
   `glideOvershoot`), through their [drawing offsets](#the-cores-part-drawing-offsets) on
@@ -10713,7 +10758,7 @@ aren't changes, and make no step.
 (`editor.transact("Move") { ... }`), else "Typing" for an editing step (or what its kind's `Editable.editingStepName` says); Edit › Undo shows it
 ("Undo Move"), or plain "Undo"; while the open step has come back to where it began, Undo names,
 and undoes, the step before it. The core names placing ("Add" and the placing tool's label, "Add
-Note"), moving ("Move") and typing; Selection "Delete" and "Resize"; ContextMenus every item by its title; SlashCommands every command
+Note"; a container put down around shapes, its kind's, "Add Frame"), moving ("Move") and typing; Selection "Delete" and "Resize"; ContextMenus every item by its title; SlashCommands every command
 by its name in words ("Set Title"), or its `step:`; Clipboard "Cut" and "Paste"; Locking "Lock" and "Unlock"; Publishing "Make Public" and "Make Private"; Arrows "Add Arrow", "Move Arrow End",
 "Bend Arrow" and "Toggle Arrowhead"; the detail panel
 "Change" and the section's title ([`ShapeBinding`](#reading-and-writing-shapebinding)); the schema
@@ -11051,7 +11096,7 @@ topology             service TopologyIndex · edge type stands-for
 arrows               shape arrow v1 · label Arrow → arrow · ContentsRows → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
 sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
 subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
-framing              shape frame · tool frame · shortcut F → tool frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeDetails → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame
+framing              shape frame · tool frame · shortcut F → tool frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeDetails → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · CanvasContextMenu
 schemas              service SchemaSync · ShapePopovers · shape schema-card v1 · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · mention text → schema-card · mentionable → schema-card · ShapeDetails → schema-card · channel schema-link · edge type schema-link
 references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · referenced-in row → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
@@ -11147,7 +11192,7 @@ the ones that ship are Titles', Locking's, Publishing's and Transform's, which S
 they're for or "every shape":
 [Registering commands](#registering-commands)), and Moving's, its line's one entry (`moving /move-to /move-near → every shape`, [Moving](#moving)). `transform` is the service that says what a shape can
 turn into (`TransformState`, which hears no commit) and contributes nothing else: what offers and takes a
-channel is on their lines, last on Frames' (`offers channel container → frame`) and on Subboards'
+channel is on their lines, last but its Create Frame item on Frames' (`offers channel container → frame`) and on Subboards'
 (`takes channel container → subboard`, then what taking it brings: the canvas's menu item,
 `CanvasContextMenu`, and the command, `/turn-into-subboard → every shape`; [Transform](#transform)).
 

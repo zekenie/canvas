@@ -33,8 +33,7 @@ extension ContainerChannel: TransformChannel {
         var held = inside
         if !inside.isEmpty {
             for shape in document.shapes where registry.referencingKinds.contains(shape.kind) && shape.id != id {
-                let bound = shape.boundShapes(in: context)
-                if !bound.isEmpty, bound.allSatisfy(inside.contains) { held.insert(shape.id) }
+                if shape.isBound(onlyTo: inside, in: context) { held.insert(shape.id) }
             }
         }
         return TurningContainer(id: id, frame: frame, held: held)

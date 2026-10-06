@@ -111,7 +111,8 @@ import Validation
         let before = h.file, framed = renderBitmap(h.editor, size: size)
         let menu = try require(h.secondaryClick(at: g.edge))
         let item = try require(menu.outline.firstIndex(of: "Turn into Subboard"), "\(menu.outline)")
-        expectEqual(menu.outline[item - 2 ... item + 2], ["Show What Mentions", "—", "Turn into Subboard", "—", "Cut"], "its own band, between the mention's and the clipboard's")
+        expectEqual(menu.outline[item - 2 ... item + 4], ["Show What Mentions", "—", "Turn into Subboard", "—", "Create Frame", "—", "Cut"],
+                    "its own band, between the mention's and Create Frame's, before the clipboard's")
         expectEqual(h.editor.selectedShapeIDs, [g.frame])
         try menu.choose("Turn into Subboard")
 

@@ -58,7 +58,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [editing](.claude/rules/editing.md): editing in place (`Editable`, the editing view, `EditContext`), and an editor's text held to its shape's render.
 - [undo](.claude/rules/undo.md): steps, groups and coalescing, `DocumentDelta`, one history across boards.
 - [boards in a file](.claude/rules/boards-in-a-file.md): `CanvasFile`, board revisions, the delete cascade, `transact(on:)`, and showing a board.
-- [containers](.claude/rules/containers.md): shapes holding shapes on a board, and settling what's put down.
+- [containers](.claude/rules/containers.md): shapes holding shapes on a board, settling what's put down, and putting a container down around shapes.
 - [boards on disk](.claude/rules/boards-on-disk.md): `BoardDocument` and `BoardCodec`: formats, migrations and fixtures, what's kept aside, the view memory, autosave.
 - [drawing](.claude/rules/drawing.md): what a frame may cost, the dot grid, skeletons, board previews, the minimap, the pointer over the views the canvas hosts.
 - [Quick Look](.claude/rules/quick-look.md): a board file's preview and thumbnail in the Finder: `BoardPicture`, the app's extension, how it's built, signed and registered.
@@ -100,7 +100,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 **Verticals** (the kinds)
 - [schema cards](.claude/rules/schema-cards.md): a JSON Schema and its description, kept in step by the model; references, the panel's JSON and completions, highlights.
 - [subboards](.claude/rules/subboards.md): a card that owns a board.
-- [frames](.claude/rules/frames.md): a region that holds shapes, and the Frame tool.
+- [frames](.claude/rules/frames.md): a region that holds shapes, the Frame tool, and Create Frame.
 - [jump to](.claude/rules/jump-to.md): ⌘K, a palette that goes to a shape by its title and where it is; the catalog, the ranking over the containment tree, the palette and its list, picks.
 - [moving](.claude/rules/moving.md): `/move-to` and `/move-near`, the shape typed in moved into a frame, onto a subboard's board or beside a shape, on any board; the table of contents' drops that move shapes; what each takes, where it lands (draw's solver), the commit.
 - [references](.claude/rules/references.md): a pill that stands for a public shape: its props and writers, its look in every state, what it stands for, going to the original, its row and panel.
