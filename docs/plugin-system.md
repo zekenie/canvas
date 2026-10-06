@@ -2179,9 +2179,13 @@ a password field's shake: `SelectionStyle.shakeAmplitude` (5 view points) side t
 `shakeCycles` (3) times over `shakeDuration` (360 ms), dying away, a frame every 16 ms on
 `editor.scheduler`, through `editor.setDrawingOffset(_:for:)`: how the shape is drawn, never the
 shape. A try while a shape shakes doesn't start it over. A container shakes with what it holds, at
-any depth, as it moves with it. Another board shown stops what's under way, and a deleted shape
-stops shaking. `RefusalShake.offset(at:)` is the curve and `isShaking` says whether any shape is;
-Locking and Publishing's hold need nothing of their own for it.
+any depth, as it moves with it. Only shapes on the board shown shake. A refusal also names the
+owner of a read-only board that something tried to put a shape on: a placement on the board shown
+names its own owner, which is on the board above, so nothing shakes, while a move onto a locked
+subboard's board from the board its card is on names the card, which does. Another board shown
+stops what's under way, and a deleted shape stops shaking. `RefusalShake.offset(at:)`
+is the curve and `isShaking` says whether any shape is; Locking and Publishing's hold need nothing
+of their own for it.
 
 ## Keyboard shortcuts
 
@@ -2213,7 +2217,7 @@ What the shipped app's keys do:
 
 | Key | Does | Registered by |
 |---|---|---|
-| V, H, N, B, S, R, L, E | Switches to that tool | The tool's plugin; H by Keyboard, for the core's Hand |
+| V, H, N, B, S, R, L, E | Switches to that tool (a tool that places shapes passes its key on a board that takes none) | The tool's plugin; H by Keyboard, for the core's Hand |
 | Space, held | A press pans as the Hand's does, whatever the tool, which stays the tool (`editor.isHandHeld`); let go (with ⌘ held too), or with the canvas losing the keyboard or a menu opening, it stops | Keyboard, for the core's held hand |
 | ⎋ (and ⌘.) | Cancels: the drag under way, else the tool's own Escape, else back to Select (`editor.cancel()`) | Keyboard |
 | ⌫ and ⌦ | Deletes the selection, as Edit › Delete does | Selection |
@@ -2248,7 +2252,10 @@ What the shipped app's keys do:
   answers such an item's key the same way (View › Zoom to Fit, ⇧1), and never takes a key without
   ⌘, ⌃ or ⌥ from text, where it types; one held with fn (🌐) is AppKit's as ever, text or not (Edit
   › Emoji & Symbols, 🌐E, which answers only as a key equivalent).
-- **`when`** lets a key pass: it goes on to the next chord it answers, or out of the canvas. **A
+- **`when`** lets a key pass: it goes on to the next chord it answers, or out of the canvas. So
+  does a tool's key while the editor doesn't take the tool (`editor.isToolEnabled`: a tool that
+  places shapes, on a [read-only board](#the-cores-part-read-only-shapes)), as its toolbar segment
+  is dimmed, and the tool stays as it was. **A
   held key** does its thing once; its repeats are the shortcut's all the same (so AppKit doesn't
   beep), and run it again only with `repeats: true`, for a key meant to be held, and only while
   the canvas has seen it go down: a key held down elsewhere (↓ in the table of contents, whose
@@ -2287,7 +2294,11 @@ What the shipped app's keys do:
 - **Tooltips.** `registry.help(for: tool)` is a tool's label and its key, "Note (N)", and
   `registry.help("Enclosing Board", forCommand: .enclosingBoard)` a button's that runs a command,
   "Enclosing Board (⌘↑)" (the list's way up, through Composition). The toolbar (CanvasUI) can't see
-  Keyboard, so the app hands it `ShippedPlugins.help(for:in:)`.
+  Keyboard, so the app hands it `ShippedPlugins.help(for:in:)`. Its picker (`ToolPicker`) is an
+  AppKit segmented control, since SwiftUI's segmented `Picker` dims none of its segments: one a
+  tool, selected as the tool is current, and dimmed while the editor doesn't take the tool
+  (`editor.isToolEnabled`, observed, so it follows a board shown, or a lock that lands above it).
+  A click on a segment the editor refuses leaves the selection on the current tool.
 - **The core's part** is one hook, like the secondary click's: at most one plugin claims key strokes
   (`registrar.keyStrokes { editor, stroke in ... }`, returning whether it took the key). `CanvasView`
   hands every key it gets to the editor (`editor.keyDown`, host API), as a `KeyStroke`: its
@@ -2553,16 +2564,17 @@ table of contents](#the-table-of-contents)), else "No Selection". With several, 
 over the kinds selected, then the overview (details are per shape: editing several at once isn't
 built). A shape with no sections to show (an arrow, a note without issues) gets its
 header, then "No Options". Without `DetailPanelPlugin` installed, the panel says "No Details". A
-read-only shape (a [locked](#locking) one, or one in a locked frame, at any depth) shows its whole
-panel, but nothing in it edits the shape: the panel disables its sections' content, and its header
+read-only shape (a [locked](#locking) one, one in a locked frame, at any depth, or one on a locked
+subboard's board) shows its whole panel, but nothing in it edits the shape: the panel disables its sections' content, and its header
 (a title field), and leaves going back, the tabs and collapsing as they were. A section whose
 controls change nothing of the shape says so, `DetailSection(…) { … }.enabledWhileReadOnly()`, and
 keeps them working (Boards' Open: a locked shape's board is entered like any other's); whatever they
 write is refused there all the same. Whether the shape can change is asked where the panel's root
-reads the shape's record, on every commit (`registry.isReadOnly(_:in:)`: the rules of the shape and
-of the containers it's in, O(its depth)), and handed to the shape's panel as a value, so the shape's
-panel never reads the document, and draws again when that changes though the shape's record
-doesn't: its frame locked or unlocked.
+reads the shape's record, on every commit (`editor.isReadOnly(id)`: the rules of the shape and
+of the containers it's in, and whether its board can change, O(its depth)), and handed to the shape's
+panel as a value, so the shape's panel never reads the document, and draws again when that changes
+though the shape's record doesn't: its frame locked or unlocked, or the subboard its board belongs
+to, in a commit on another board.
 
 Sections are stock SwiftUI plus a few primitives, and get the look by following these conventions:
 
@@ -4199,8 +4211,8 @@ giving a shape back the id it had.
 | | Does |
 |---|---|
 | ⌘C, Edit › Copy, Copy | Puts copies of the selection's copyable shapes on the pasteboard, back to front, with what the boards they own hold, and what the containers among them hold. The board doesn't change. |
-| ⌘X, Edit › Cut, Cut | Copies, marked as a cut's, then deletes what it copied whole, in one transaction. What can't be copied stays, and so does a shape whose board holds one, and a [locked](#locking) shape, copied all the same (it shakes, as with Delete). |
-| ⌘V, Edit › Paste, Paste | Puts what's on the pasteboard on top of the board, settled where it lands by the in-or-out rule, and selects it: what a copy put there as copies, with new ids all the way down; what a cut put there moved, under the ids it had. |
+| ⌘X, Edit › Cut, Cut | Copies, marked as a cut's, then deletes what it copied whole, in one transaction. What can't be copied stays, and so does a shape whose board holds one, and a [locked](#locking) shape, or one on a locked subboard's board, copied all the same (it shakes, as with Delete). |
+| ⌘V, Edit › Paste, Paste | Puts what's on the pasteboard on top of the board, settled where it lands by the in-or-out rule, and selects it: what a copy put there as copies, with new ids all the way down; what a cut put there moved, under the ids it had. Off on a board that takes no shapes (a locked subboard's, `editor.isBoardReadOnly`). |
 
 - **Copies get new ids, and remember their originals.** Each copy's metadata names the shape it
   was copied from: `record.copiedFrom`, which is `meta[CopiedFrom.self]?.shape`, and its board
@@ -4288,7 +4300,10 @@ giving a shape back the id it had.
   as it always was, so an app that doesn't know boards pastes it, and one that doesn't know format
   4 pastes nothing. A pasted shape whose kind owns no board in this app gets none. Anything else
   on the pasteboard (text, an image from another app) is left alone for now. ⌘V, Edit › Paste and
-  Paste are there only when something would paste, so otherwise ⌘V's key goes on. The pasteboard is
+  Paste are there only when something would paste, and the board shown takes shapes (`canPaste`),
+  so otherwise ⌘V's key goes on, Edit › Paste is dimmed and the context menu has none; on a locked
+  subboard's board nothing is pasted, and nothing refused, since there's nothing to try. Copy and
+  Cut work there as they do for a locked shape: copies, and a cut deletes nothing and shakes. The pasteboard is
   read again only when it's changed. `ClipboardPlugin(pasteboard:)` takes the pasteboard, the
   system's by default.
 - **Where the keys work.** ⌘X, ⌘C and ⌘V are Keyboard's while the canvas has the keyboard.
@@ -4349,8 +4364,9 @@ nil.
 ## Locking
 
 A locked shape can't be changed: not moved, restacked, resized, edited or deleted, whatever tries,
-until it's unlocked. Each try shakes it a little, and a lock chip sits just above its top-right
-corner, and a lock at the end of its row in the table of contents. Shapes are locked from the
+until it's unlocked. A locked frame locks what it holds, and a locked subboard what's on its board,
+and on every board under it. Each try shakes it a little, and a lock chip sits just above its
+top-right corner, and a lock at the end of its row in the table of contents. Shapes are locked from the
 context menu, or by `/lock` typed on a line of their text, and unlocked from the menu or with a
 click on the chip, which shows the lock open for a moment, where a click locks the shape again.
 It's a horizontal
@@ -4398,10 +4414,10 @@ extension LockChip: ClickableAdornment {                // a click on the chip
   tldraw's toggle: Unlock when every shape the menu is for is locked, and otherwise Lock, which locks
   the rest. They're items for the canvas, so a mix of locked and unlocked shapes gets one; on empty
   canvas, neither. There's no key: the menu and `/lock` are the ways to lock a shape. Both go by the shapes'
-  own locks, of those whose lock can change: a shape in a locked frame (below) can't change, its
-  own lock included, so neither item is for it (`isLockedByContainer`, O(its depth)): a menu for
-  only such shapes has neither, and one for some of them and others locks or unlocks the others,
-  trying none of them (so none shakes).
+  own locks, of those whose lock can change: a shape in a locked frame, or on a locked subboard's
+  board (below), can't change, its own lock included, so neither item is for it
+  (`isLockedByContainer`, O(its depth)): a menu for only such shapes has neither, and one for some
+  of them and others locks or unlocks the others, trying none of them (so none shakes).
 - **`/lock` is a [slash command](#slash-commands)**: typed on a line of its own in a shape's text (a
   note's, a schema card's description), it locks the shape, as the menu's Lock does. It's offered
   on every kind that holds `LockedProperty` (`slashCommandsForEveryShape(where:)`, so by what a
@@ -4420,6 +4436,19 @@ extension LockChip: ClickableAdornment {                // a click on the chip
   chip and the lock on a row are a shape's own lock (`isLocked`), so what it holds shows neither,
   and a shape locked on its own inside shows its own. Unlocking the frame frees what it holds, at
   once.
+- **A locked subboard locks its board**, and every board under it, at any depth: it's entered like
+  any board (entering isn't a change to it), but the core makes the board read-only
+  (`editor.isBoardReadOnly`, [below](#the-cores-part-read-only-shapes)), so every shape on it
+  refuses every change as one in a locked frame does, its own lock included, each try shaking the
+  shape tried, and nothing goes on it. The toolbar dims the tools that place shapes there and their
+  keys pass ([the keyboard](#keyboard-shortcuts)), Paste is off ([the
+  clipboard](#the-clipboard)), no port dots show ([Ports](#ports)), `canvas draw` refuses a shape or
+  an edge for it (`read_only`, [draw](#draw)), and neither Lock nor Unlock is offered for what's on
+  it. A shape locked on its own there keeps its chip, and a click on it is refused: it shakes, and
+  stays locked. A subboard on that board opens, and its board is read-only too, though that
+  subboard isn't locked: the lock above reaches it. [The path](#the-path) marks where the
+  read-only part starts, one lock after that crumb's name. Unlocking the subboard frees its board
+  and every board under it, at once.
 - **The chip is a button** (`LockChip`, a [clickable adornment](#pointing), so a canvas button): in
   the select tool, a click on a locked shape's chip unlocks it. Then the chip shows the lock open
   for 1.5 s, however the shape was unlocked (the menu too), so a click by mistake can be taken back:
@@ -4455,7 +4484,7 @@ extension LockChip: ClickableAdornment {                // a click on the chip
   them again (one pass, about a millisecond at 10,000, which going back to a board shown lately
   never pays; `boardsScannedForLocks`, debug builds, counts the passes), and what was under way on
   the board left, its shakes (`RefusalShake`) and the locks showing open (`ChipFade`), stops there. A locked shape that owns a board is entered like any other:
-  entering isn't a change to it.
+  entering isn't a change to it, and what's on its board is read-only (above).
 - **The chip** is an 18-point disc with a lock, the dark of a title's pill, at the right end of the
   row just above the shape, ending at its right edge. Its order is 300, a state that comes and
   goes, so it's farthest out of what's at that end, and a title's pill at the other end stops 4
@@ -4473,9 +4502,12 @@ extension LockChip: ClickableAdornment {                // a click on the chip
 ### The core's part: read-only shapes
 
 `registrar.readOnlyShapes { record in ... }` says which shapes can't change; a shape is read-only
-when any plugin's rule says so, or one says so of a container it's in, and `editor.isReadOnly(id)`
-(or `registry.isReadOnly(record, in: document)`; `registry.isReadOnly(record)` is the rules alone,
-reading nothing but the record) asks. The core holds them where every change goes through it:
+when any plugin's rule says so, or one says so of a container it's in, or of the shape that owns its
+board (or of one above that), and the core asks it every way a shape is read: `editor.isReadOnly(id)`
+on the board shown, `editor.isReadOnly(inFile: id)` on any board, `transaction.isReadOnly(record)`
+inside a transaction, and `reading.isReadOnly(record)` of a board read in place
+(`editor.reading(of:)`); `registry.isReadOnly(record)` is the rules alone, reading nothing but the
+record. The core holds them where every change goes through it:
 
 - **Transactions.** A read-only shape that was in the document before the transaction isn't
   changed (`update`), restacked (`bringToFront`, `move(_:above:)`, ...), moved (`translate`) or
@@ -4495,20 +4527,37 @@ reading nothing but the record) asks. The core holds them where every change goe
 - **Editing.** `beginEditing` refuses a read-only shape, and services hear it; a shape that becomes
   read-only while it's edited stops being edited.
 - **Containers.** A shape in a read-only container, at any depth, is read-only too
-  ([Containers](#containers)): `editor.isReadOnly(_:)` and `registry.isReadOnly(_:in:)` say so; a
-  transaction changes it not at all, its own lock included, and nothing joins or leaves the
-  container; editing it ends. A container that moves carries what it holds, locked or not.
+  ([Containers](#containers)): `editor.isReadOnly(_:)` says so; a transaction changes it not at
+  all, its own lock included, and nothing joins or leaves the container; editing it ends. A
+  container that moves carries what it holds, locked or not.
+- **Boards.** A board whose owner is read-only (a locked subboard, one in a locked frame) is
+  read-only, and so is every board under it, at any depth: `editor.isReadOnly(board:)`, and
+  `editor.isBoardReadOnly` for the board shown, with `editor.readOnlyStart`, where its path turns
+  read-only (one climb tells every board on the path), kept from the editor's start (one opened on
+  such a board is read-only at once) as each switch and commit leaves the file (a lock above it may
+  come in a commit on another board, `transact(on:)`, or a file put in place) and observed apart
+  from `document`, each set only when it changes, so a view that dims what can't be done there
+  redraws then and never on every commit. It's entered like any board, and its shapes are
+  selected, copied and opened, but each is read-only, as in a read-only container, its own lock
+  included; and nothing goes on it: a transaction there (`transaction.isBoardReadOnly`) drops an
+  insert, a move onto it (`move(_:to:)`) is refused, and services hear the board's owner refused,
+  as a read-only container is when a shape would join it; `place` puts nothing down and says the
+  same; a tool that places shapes isn't enabled there (`editor.isToolEnabled(_:)`: `setTool` doesn't
+  take it, and one in use goes back to the default tool as the board becomes read-only); and a
+  shape edited there as it becomes read-only stops being edited.
 - **Changing everything or nothing.** `transaction.refusedShapes` is the read-only shapes the
   transaction was asked to change, restack, move or delete so far and didn't (and the read-only
-  containers that wouldn't take a shape). A plugin whose change makes no sense in part (a shape
+  containers that wouldn't take a shape, and the owners of read-only boards that wouldn't). A plugin whose change makes no sense in part (a shape
   turned into another kind that must take what it held with it) reads it, throws so nothing commits
   and no step is left, and says so itself (`editor.refuseChanges(to:)`), as Clipboard's paste does.
 
 Selection shows no handles on a read-only shape, and the detail panel disables its controls; both
-ask the core (`editor.isReadOnly`, and the panel `registry.isReadOnly(_:in:)` of the shape it shows,
-on every commit), not Locking. A rule reads only the record it's given, since a transaction asks it
-of a shape before and after a change, and of each container a shape is in. It's asked about every
-shape a transaction changes, so keep it cheap: Locking's reads one added value.
+ask the core (`editor.isReadOnly`, the panel of the shape it shows on every commit), not Locking.
+`registry.isReadOnly(_:in:)`, a shape's rules and containers on its board alone, is the core's own:
+it doesn't see a read-only board, so nothing outside the core asks it. A rule reads only the record
+it's given, since a transaction asks it of a shape before and after a change, of each container a
+shape is in, and of each owner up a board's path. It's asked about every shape a transaction
+changes, so keep it cheap: Locking's reads one added value.
 
 ### The core's part: drawing offsets
 
@@ -4763,7 +4812,11 @@ one shape at a time, the host, as data-canvas's show on the hovered shape:
   and, where it is now (`editor.pointerWorldLocation`, so not after Escape with the press held
   elsewhere), within reach of them, and nothing is under way but a dot's press, at 25% zoom and up, where the chips start to shrink:
   further out, a shape is too small on screen for its dots to be told from its neighbors'. And only
-  with a connector installed: without one, no shape shows ports.
+  with a connector installed: without one, no shape shows ports. And only on a board that takes
+  shapes (`PortState.isShowing` reads `editor.isBoardReadOnly`): a connection draws as one, so a
+  locked subboard's board, and every board under it, has no dots, none is hovered or pressed, and a
+  press by where one would be is the canvas's or the shape's; one the pointer was on as the lock
+  landed above goes with the pointer's next move.
 - **Where.** 12 view points out from the middle of each of its sides of the shape's bounds (its
   geometry's), constant on screen, and where the shape is drawn, so they shake with a locked shape.
   A dot shows, and is pressed, only while no selectable shape painted above its own covers its
@@ -4885,8 +4938,10 @@ and lends any plugin what follows, but for `beginArrow`, which is internal:
 - **`editor.beginArrow(from:at:canBind:complete:)`**, internal (only `ArrowPortsPlugin` calls it),
   draws an arrow for a port's drag: it inserts one, its start bound to the shape (imprecise) and
   its end at `origin`, and returns the session that drags its end, for the caller to hand the drag
-  to (nil if an arrow can't bind to the shape). Released bound, `complete` gets the arrow's record
-  and the shape its end is bound to, in the transaction that finishes it.
+  to (nil if an arrow can't bind to the shape, or the board takes no shapes: a drag from a dot that
+  began as a lock landed above the board, whose arrow the transaction would drop). Released bound,
+  `complete` gets the arrow's record and the shape its end is bound to, in the transaction that
+  finishes it.
 - **`BindingHintsOverlay`** draws the hints of the arrow being dragged, else the selected arrow's,
   so an arrow drawn from a port, which leaves the selection alone, hints as a re-aimed one does.
 - **For [Find](#find)**, `ArrowFindPlugin` (Connections', after Find) gives an arrow's label,
@@ -7354,9 +7409,9 @@ a board (to the pill's bottom, about 35 points; none on the root), which the app
 Fit and `reveal` fit shapes below it, where their titles' pills aren't under it.
 
 ```
-        ╭──────────────────────────────────────────╮
-        │  Plans  ›  …  ›  Kitchen  ›  **Pantry**  │
-        ╰──────────────────────────────────────────╯
+        ╭────────────────────────────────────────────╮
+        │  Plans  ›  …  ›  Kitchen 🔒 ›  **Pantry**  │
+        ╰────────────────────────────────────────────╯
                            ┌──────────────────────────┐
                            │ › ▤ Groceries            │  the pointer on Kitchen: its rows
                            │   ▤ Spices               │
@@ -7367,8 +7422,20 @@ Fit and `reveal` fit shapes below it, where their titles' pills aren't under it.
 
 - The root's crumb is `rootName` ("Board" when that's empty); the others are `name(of:)`. The
   board shown is bold and isn't a button. Each crumb is at most 180 points wide, truncated past it,
-  with its name as its tooltip. The crumbs are separated by ›s, and nothing else marks them (no caret
-  for a crumb's menu, below: the owner found ⌄s beside the ›s busy).
+  with its name as its tooltip. The crumbs are separated by ›s, and nothing else marks them but the
+  lock below (no caret for a crumb's menu, below: the owner found ⌄s beside the ›s busy).
+- **A lock marks where the path turns read-only.** Each crumb says whether its board is read-only
+  (`BoardCrumb.isReadOnly`: a [locked](#locking) subboard's board, and every board under it; the
+  root's never is; from where the path turns read-only, `editor.readOnlyStart`, which the editor
+  works out in one climb, as asking each board would cost the path's depth squared), and the path draws a small lock
+  (`BoardsStyle.readOnlySymbol`, `lock.fill`, in the secondary color, 3 points after the name,
+  "Read-only" as its tooltip and to assistive apps) after the name of the first crumb whose board is
+  (`BoardCrumbs.readOnlyStart`), once: the boards below it are read-only too, and the lock above
+  says it of them all, so none shows another. It's part of the crumb (a long name is cut short
+  before it, and a click on it goes up, as the name's does). Folded into "…", it's the lock on that
+  crumb's item in the menu, ahead of its name (an item's attributed title with the symbol after the
+  name would put the symbol into its `title`), and a crumb below the fold has none: the menu never
+  marks a crumb the first read-only one isn't.
 - More than four crumbs fold the middle into "…", a menu of the boards it hides, root side first:
   root › … › parent › current (`BoardCrumbs.layout(rootName:)`). "…" is a button built as a board
   above's crumb is (borderless, in its gray and the pill's type), which shows an `NSMenu` of them
@@ -7385,9 +7452,10 @@ Fit and `reveal` fit shapes below it, where their titles' pills aren't under it.
   path came through, as data-canvas's crumbs do, one step back.
 - **It redraws only when the path does.** The view reads only `BoardCrumbs.crumbs`, which the
   service makes again when another board is shown, and when a commit changes a board above the one
-  shown (they hold the owners whose titles name the crumbs: a file put in place, say), checking
-  each one's revision, so a commit on the board shown (a drag's every event) costs a look at the
-  path's revisions and redraws nothing. A crumb's title changing is the path changing.
+  shown (they hold the owners whose titles name the crumbs, and whose locks make boards read-only: a
+  file put in place, a lock landing in a commit on one of them), checking each one's revision, so a
+  commit on the board shown (a drag's every event) costs a look at the path's revisions and redraws
+  nothing. A crumb's title, or whether its board is read-only, changing is the path changing.
 
 #### A crumb's menu
 
@@ -7525,6 +7593,12 @@ as SwiftUI sugar is, and the channel and the ports in `SubboardLinks.swift`.)
   between a subboard and a frame, in `canvas draw`, says `channel: none`.
 - **Deleting it** deletes its board and every board under it, as one step, like any shape's;
   undoing it brings them all back with every id.
+- **Locking it** ([Locking](#locking)) locks what's on its board, at any depth: the core makes a board
+  whose owner is read-only read-only itself, and so every board under it, a subboard on it included,
+  locked or not. Its card is entered as ever, the card's own lock chip is the card's, and on the
+  board no shape changes (each try shakes it) and nothing goes on it; the toolbar dims the tools that
+  place shapes, Paste is off, no port dots show, and [the path](#the-path) puts a lock after the
+  crumb where it starts. Unlocking it frees every board under it.
 - **Turning a frame into one** is Transform's ([Transform](#transform)): Subboards takes the container
   channel after its shape block, `registrar.turnable(into: Subboard.self, through: ContainerChannel.self) { … }`,
   which brings Turn into Subboard to the menu of a shape that holds shapes, and `/turn-into-subboard`. The
@@ -7797,7 +7871,8 @@ transforms.turn([frame], into: Subboard.kind)    // true: one undo step, "Turn i
   container it reaches, and the editor glides it there.
 - **Once one is refused, no other target runs**: the turn will be thrown away. The rest are still checked
   for read-only, so every one that is shakes.
-- **All or nothing for read-only shapes.** A shape that's locked, or in a locked container, isn't turned,
+- **All or nothing for read-only shapes.** A shape that's locked, in a locked container, or on a locked
+  subboard's board, isn't turned,
   and neither is one that holds a locked shape: the target moves everything, so if anything it would move
   is read-only (`transaction.refusedShapes`), or a read-only container would take the turned shape, the
   whole turn throws out of its transaction. Nothing changes, no step is made, and the refused shapes are
@@ -7997,15 +8072,18 @@ registrar.slashCommandsForEveryShape(where: { hasBox($0.definition) }) {
   so the picker ranks only those, and only the titled ones, which have names) on any board the app
   can show, but not the shape itself, or what goes with it (what it holds at any depth, and what's on
   a board it, or a shape it holds, owns: the core's `move(_:to:)` traps on those); not one that's
-  read-only on its board (locked, or in a locked frame); not where the shape is already (the frame
-  it's directly in, the subboard whose board is shown); not a frame narrower or shorter than the
-  shape; and not a frame on a board whose owner is read-only, a board that takes no shapes. A frame
-  is a place in it, on its board; a subboard, its own board, as draw's `in` takes one.
+  read-only (locked, in a locked frame, or on a board that takes no shapes: a locked subboard's, at
+  any depth, `editor.isReadOnly(inFile:)`, the rule `move(_:to:)` refuses by, so a frame two boards
+  under a locked subboard isn't taken though the subboard on the way isn't locked itself); not
+  where the shape is already (the frame it's directly in, the subboard whose board is shown); and not
+  a frame narrower or shorter than the shape. A frame is a place in it, on its board; a subboard,
+  its own board, as draw's `in` takes one.
 - **`/move-near` takes any shape** but the shape itself and, for a shape that holds shapes or owns a
   board, what goes with it. The picker asks this of every shape as the person types, so it costs
-  next to nothing: a locked target is fine (it doesn't change), and whether the target's board takes
-  shapes is the move's to say. Each command asks its rule again as it runs: a target it no longer
-  takes (gone, or locked since) moves nothing.
+  next to nothing: a locked target is fine (it doesn't change), a shape on a read-only board too, and
+  whether the target's board takes shapes is the move's to say (the move onto one is refused, and
+  the owner of that board is heard). Each command asks its rule again as it runs: a target it no
+  longer takes (gone, or locked since) moves nothing.
 - **Where it lands is draw's** ([draw](#draw), step 3): the destination board read in place
   (`editor.reading(of:)`), every shape there with a solid an obstacle, filed once in DrawScript's
   `ObstacleGrid`, the shape itself left out on its own board and what it holds carried (never in its
@@ -8029,10 +8107,11 @@ registrar.slashCommandsForEveryShape(where: { hasBox($0.definition) }) {
   the frame it's mostly over, out of the one it left, [Containers](#containers)). Onto another
   board: `move(_:to:)` first, so an arrow bound to it lets go where it was drawn, as after a cut,
   then `translate(_:by:on:)` and `settle(_:on:)` there ([Boards in a file](#the-editor-and-the-file)).
-  A read-only shape in the way (a locked frame it would land in, the locked subboard whose board it
-  would go onto, a locked note in a frame going onto another board) throws out of the transaction:
-  nothing changes, no step is made, and the locked shapes shake (`editor.refuseChanges(to:)`), as a
-  refused [turn](#turning) does. On the board shown, what moved glides there and a note being
+  A read-only shape in the way (a locked frame it would land in, the owner of a board that takes no
+  shapes it would go onto, locked or under one that is, a locked note in a frame going onto another
+  board) throws out of the transaction: nothing changes, no step is made, and the locked shapes shake
+  (`editor.refuseChanges(to:)`), as a refused [turn](#turning) does. (A shape on a read-only board
+  is offered no command at all, as no read-only shape is, so none moves off one.) On the board shown, what moved glides there and a note being
   edited is put down (editing ends, as a `canvas draw` that moves it ends it); onto another board,
   it's gone from the one shown, the window stays where it is, and Undo Move puts both boards back
   exactly. A move that lands where the shape is commits nothing.
@@ -8379,8 +8458,9 @@ board (a frame), the board X is on; with neither, the board shown), reads that
 board through the core's `editor.reading(of:)` (a `BoardReading`: its shapes, a `ShapeContext`
 and paint order over them, and the view it would be shown with, a first visit's fit included), and
 commits there with `transact(on:)`, the window staying where it is; a script that lands on two
-boards is `several_boards`, since a run is one transaction and one undo step, made on one board.
-Its result's `on` says which (`board`, that shape's `title`, `shown`). `canvas show "<title>"` (or
+boards is `several_boards`, since a run is one transaction and one undo step, made on one board,
+and one that would put a shape or an edge on a board that can't change (a locked subboard's, and
+every board under it) is `read_only`. Its result's `on` says which (`board`, that shape's `title`, `shown`). `canvas show "<title>"` (or
 `--root`) moves the window, through `editor.showBoard`, and says where it is in a `board` of its
 own, which the server completes.
 
@@ -8561,8 +8641,18 @@ language:
 - **A restated container placed elsewhere takes what it holds along** (`translate`), which is
   never in its way (`Free.carries`); a placement against what it takes along is `unsupported`,
   since the layout has that where it was. Containers are applied before what they hold.
-- **Read-only is inherited** (`registry.isReadOnly(_:in:)`): a shape in a locked frame refuses a
-  real change and a delete (`read_only`), as a locked shape does.
+- **Read-only is inherited** (`transaction.isReadOnly(_:)` and `BoardReading.isReadOnly(_:)`, which
+  read a shape through the board it's on): a shape in a locked frame, or on a locked subboard's
+  board, refuses a real change and a delete (`read_only`), as a locked shape does.
+- **A board that can't change takes nothing new**: a locked subboard's board, and every board under
+  it (`reading.isBoardReadOnly`). `in` the subboard is `read_only` as `in` a locked frame is
+  (`"Plans" is read-only (locked, say), so nothing goes in it`, the same hint), and so is a new
+  shape that would land there by its placements or by the board shown (`"N" would go on "Plans"'s
+  board, which is read-only (locked, say)`, named as `several_boards` names a board, by the shape
+  that holds it), and a new edge (`edge "A" -> "B" would go on …`), the first thing wrong with each
+  statement in a script, found as the run starts, or, for an edge, as it's applied; nothing is
+  drawn, a dry run says the same, and no step is made. A restatement that changes nothing still
+  goes through (`unchanged`).
 - **`delete` of a container** leaves what it holds where it is, now in what held the container
   (the core's), a locked shape too, and says nothing more.
 
@@ -10186,8 +10276,10 @@ extension CorralDefinition: ShapeContaining {}       // its shapes hold shapes o
   pocket, with what it held moved onto the pocket's board in the same transaction, is a frame
   turned into a subboard ([Transform](#transform) does it for the app, with the menu item and the command).
 - **Read-only.** A shape in a read-only container, at any depth, is read-only:
-  `registry.isReadOnly(_:in:)` says so, and `editor.isReadOnly(_:)` asks it (`registry.isReadOnly(_:)`
-  stays the rules', for what reads one record alone). It changes not at all, not even its own lock;
+  `editor.isReadOnly(_:)` says so, on the board shown (`editor.isReadOnly(inFile:)` on any board:
+  [the core's part](#the-cores-part-read-only-shapes), which also makes the shapes on a locked
+  subboard's board read-only), and `registry.isReadOnly(_:)` stays the rules', for what reads one
+  record alone. It changes not at all, not even its own lock;
   nothing joins or leaves its container (`setContainer` refuses the container, which shakes); and
   editing it ends.
 - **The stack.** A container's contents paint above it: a shape that joins one rises, with what it

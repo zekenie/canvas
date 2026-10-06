@@ -92,13 +92,13 @@ struct Nest {
 
 /// A chain of `depth` pockets, each on the board of the one before, the first on the root: the
 /// ids root side first.
-@MainActor func chainHarness(depth: Int) throws -> (EditorHarness, [ShapeID]) {
+@MainActor func chainHarness(depth: Int, more: [any CanvasPlugin] = []) throws -> (EditorHarness, [ShapeID]) {
     let ids = (0..<depth).map { _ in ShapeID() }
     let frame = CGRect(x: 0, y: 0, width: 100, height: 100)
     var children: [ShapeID: CanvasDocument] = [:]
     for (owner, inner) in zip(ids, ids.dropFirst()) { children[owner] = CanvasDocument(shapes: [record(inner, Pocket(frame))]) }
     let file = CanvasFile(root: CanvasDocument(shapes: [record(ids[0], Pocket(frame))]), children: children)
-    return (try EditorHarness(plugins: boardsPlugins(), file: file), ids)
+    return (try EditorHarness(plugins: boardsPlugins(more), file: file), ids)
 }
 
 extension EditorHarness {

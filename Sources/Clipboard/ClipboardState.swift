@@ -337,8 +337,9 @@ extension CanvasEditor {
     public var canCut: Bool { session == nil && canCopy }
 
     /// Whether ⌘V would paste anything: the pasteboard holds this app's shapes, some of which it
-    /// can read, and nothing is under way.
-    public var canPaste: Bool { session == nil && clipboard?.hasShapes == true }
+    /// can read, nothing is under way, and the board shown takes shapes (not a locked subboard's,
+    /// `isBoardReadOnly`).
+    public var canPaste: Bool { session == nil && !isBoardReadOnly && clipboard?.hasShapes == true }
 
     /// ⌘C: puts copies of the selected shapes that can be copied on the pasteboard.
     public func copySelection() { copy(selectedShapeIDs) }
@@ -368,7 +369,8 @@ extension CanvasEditor {
     /// ⌘V: puts down what's on the pasteboard, selected: what was copied as copies, with new ids
     /// (see `CopiedFrom`); what was cut moved, each shape under the id it had, unless something in
     /// the file goes by it now (a shape an earlier paste put there), where it's a copy. Ends
-    /// editing; does nothing mid-gesture, or with nothing on the pasteboard it can paste.
+    /// editing; does nothing mid-gesture, on a board that takes no shapes (`isBoardReadOnly`), or
+    /// with nothing on the pasteboard it can paste.
     public func paste() {
         guard canPaste else { return }
         clipboard?.paste()

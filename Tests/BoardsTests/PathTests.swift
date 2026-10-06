@@ -101,6 +101,86 @@ import Titles
         expectEqual(crumbs.crumbs.map(\.title), ["Pantry", "Untitled Pocket"])
         expect(!changesCrumbs(crumbs) { h.editor.replaceFile(with: file) }, "the same names: no change heard")
     },
+    test("a crumb says whether its board is read-only: under a frozen owner every board is, the root never; the path's read-only part starts at the first") {
+        let nest = Nest()
+        let h = try nestHarness(nest, [FreezingPlugin()])
+        let crumbs = try require(h.editor.boardCrumbs)
+        expectEqual(crumbs.readOnlyStart, nil)
+        h.editor.freeze([nest.d])
+        expect(h.enter(nest.d))
+        expect(h.enter(nest.p))
+        expectEqual(crumbs.crumbs.map(\.isReadOnly), [true, true], "D's board, and P's under it, though P isn't frozen")
+        expectEqual(crumbs.readOnlyStart, nest.dBoard)
+        expectEqual(crumbs.layout(rootName: "Plans").leading.map(\.isReadOnly), [false, true, true], "the root's crumb never is")
+        expectEqual(BoardCrumb(board: nest.dBoard, title: "D").isReadOnly, false, "unless it's said")
+        h.editor.goToEnclosingBoard()
+        expectEqual(crumbs.crumbs.map(\.isReadOnly), [true], "the board shown, as the editor says")
+        expectEqual(crumbs.readOnlyStart, nest.dBoard)
+        h.editor.showBoard(.root)
+        expectEqual(crumbs.crumbs, [])
+        expectEqual(crumbs.readOnlyStart, nil)
+    },
+    test("only the first read-only crumb starts the read-only part: freezing a shape on a board that isn't, in the middle of the path, moves it down") {
+        let nest = Nest()
+        let h = try nestHarness(nest, [FreezingPlugin()])
+        let crumbs = try require(h.editor.boardCrumbs)
+        expect(h.enter(nest.d))
+        expect(h.enter(nest.p))
+        expectEqual(crumbs.crumbs.map(\.isReadOnly), [false, false])
+        expectEqual(crumbs.readOnlyStart, nil)
+        expect(changesCrumbs(crumbs) { h.editor.transact(on: nest.dBoard, "Freeze") { $0.update(nest.p) { $0[Frozen.self] = true } } })
+        expectEqual(crumbs.crumbs.map(\.isReadOnly), [false, true], "P's board, the board shown, now: its owner is frozen on D's board")
+        expectEqual(crumbs.readOnlyStart, nest.pBoard)
+        expect(h.editor.isBoardReadOnly)
+    },
+    test("a lock above lands while this board is shown, or goes (a commit on a board above, a file put in place): the crumbs are made again, flags and all") {
+        let nest = Nest()
+        let h = try nestHarness(nest, [FreezingPlugin()])
+        let crumbs = try require(h.editor.boardCrumbs)
+        expect(h.enter(nest.d))
+        expect(h.enter(nest.p))
+        var made = crumbs.remade
+        expect(changesCrumbs(crumbs) { h.editor.transact(on: .root, "Freeze") { $0.update(nest.d) { $0[Frozen.self] = true } } })
+        expectEqual(h.editor.board, nest.pBoard, "still shown")
+        expectEqual(crumbs.crumbs.map(\.isReadOnly), [true, true])
+        expectEqual(crumbs.remade, made + 1, "made once")
+        made = crumbs.remade
+        expect(changesCrumbs(crumbs) { h.editor.transact(on: .root, "Thaw") { $0.update(nest.d) { $0[Frozen.self] = nil } } })
+        expectEqual(crumbs.crumbs.map(\.isReadOnly), [false, false])
+        expectEqual(crumbs.readOnlyStart, nil)
+        expectEqual(crumbs.remade, made + 1)
+        var file = h.editor.file
+        var frozen = try require(file.root[nest.d])
+        frozen[Frozen.self] = true
+        file = CanvasFile(root: CanvasDocument(shapes: [try require(file.root[nest.a]), frozen]), children: file.children)
+        expect(changesCrumbs(crumbs) { h.editor.replaceFile(with: file) })
+        expectEqual(crumbs.crumbs.map(\.isReadOnly), [true, true], "a file put in place")
+        expect(!changesCrumbs(crumbs) { h.editor.replaceFile(with: file) }, "the same: no change heard")
+    },
+    test("\"…\" shows the lock on the item of the crumb where the read-only part starts when that's folded, and on no other; below the fold, its menu has none") {
+        let (h, ids) = try chainHarness(depth: 5, more: [FreezingPlugin()])
+        for (id, name) in zip(ids, ["A", "B", "C", "D", "E"]) {
+            expect(h.editor.showBoard(try require(h.editor.file.board(containing: id))))
+            h.name(id, name)
+        }
+        expect(h.enter(ids[4]))
+        let crumbs = try require(h.editor.boardCrumbs)
+        h.editor.transact(on: BoardID(owner: ids[0]), "Freeze") { $0.update(ids[1]) { $0[Frozen.self] = true } }
+        expectEqual(crumbs.crumbs.map(\.isReadOnly), [false, true, true, true, true], "B's board, and every one under it")
+        let folded = crumbs.layout(rootName: "R").folded
+        let menu = BoardPath.foldedMenu(folded, editor: h.editor)
+        expectEqual(menu.items.map(\.title), ["A", "B", "C"], "named as ever")
+        expectEqual(menu.items.map { $0.image != nil }, [false, true, false], "B's, not C's, though C's board is read-only too")
+        expectEqual(menu.items[1].image?.accessibilityDescription, "Read-only")
+        try menu.choose("B")
+        expectEqual(h.editor.board, BoardID(owner: ids[1]), "chosen as the rest are")
+        h.editor.goBack()
+        h.editor.transact(on: BoardID(owner: ids[0]), "Thaw") { $0.update(ids[1]) { $0[Frozen.self] = nil } }
+        h.editor.transact(on: BoardID(owner: ids[2]), "Freeze") { $0.update(ids[3]) { $0[Frozen.self] = true } }
+        expectEqual(crumbs.crumbs.map(\.isReadOnly), [false, false, false, true, true])
+        expectEqual(BoardPath.foldedMenu(crumbs.layout(rootName: "R").folded, editor: h.editor).items.map { $0.image != nil }, [false, false, false],
+                    "the part starts at D's, which isn't folded")
+    },
     test("an owner above renamed by a write to its board while this one is shown (transact(on:), an answer landing) names its crumb again") {
         let nest = Nest()
         let h = try nestHarness(nest)

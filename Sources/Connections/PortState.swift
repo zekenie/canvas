@@ -83,10 +83,12 @@ final class PortState {
         return ports(of: shape)?.roles[channel]?.allows(end == .start ? .source : .target) == true
     }
 
-    /// Whether ports show at all: there's a connector, the select tool is current, and the view isn't
-    /// zoomed out past where a shape's dots can be told from its neighbors'.
+    /// Whether ports show at all: there's a connector, the select tool is current, the board takes
+    /// shapes (a connection draws as one, and a locked subboard's board takes none:
+    /// `isBoardReadOnly`), and the view isn't zoomed out past where a shape's dots can be told from
+    /// its neighbors'.
     var isShowing: Bool {
-        connector != nil && editor.currentToolID == .select && editor.camera.zoom >= PortStyle.minZoom
+        connector != nil && editor.currentToolID == .select && !editor.isBoardReadOnly && editor.camera.zoom >= PortStyle.minZoom
     }
 
     /// Whether a shape shows dots: its kind has some, and the connector can start from it (asked of

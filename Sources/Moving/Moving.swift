@@ -79,11 +79,11 @@ extension Destination {
     /// the app can show (`editor.shape(inFile:)`), but:
     /// - the shape itself, and what goes with it: what it holds, at any depth, and what's on a board it,
     ///   or a shape it holds, owns, or on one under that (`goesWith`);
-    /// - one that's read-only on its board (locked, or in a locked frame): it takes nothing;
+    /// - one that's read-only (locked, in a locked frame, or on a board that takes no shapes: a locked
+    ///   subboard's, at any depth, `editor.isReadOnly(inFile:)`, the rule `move(_:to:)` refuses by): it
+    ///   takes nothing;
     /// - where the shape is already: the frame it's directly in, the subboard whose board it's on;
-    /// - a frame too small to hold it (narrower or shorter than it);
-    /// - a frame on another board that takes no shapes: one whose owner is read-only on its own board
-    ///   (the rule `move(_:to:)` refuses by).
+    /// - a frame too small to hold it (narrower or shorter than it).
     /// What it's asked of is the kinds the command names (frames and subboards), so it may cost what a
     /// target's depth in the file does.
     @MainActor
@@ -91,7 +91,7 @@ extension Destination {
         let registry = editor.registry, file = editor.file
         guard target != shape, let moving = editor.document[shape], let box = moving.box,
               let found = editor.shape(inFile: target), !found.isOpaque, let board = file.board(containing: target),
-              !registry.isReadOnly(found, in: editor.contents(of: board)) else { return nil }
+              !editor.isReadOnly(inFile: target) else { return nil }
         // A subboard, as `canvas draw`'s `in` takes one: onto its board.
         if registry.ownsShowableBoard(found) {
             let owned = BoardID(owner: target)
@@ -102,10 +102,6 @@ extension Destination {
         guard registry.isContainer(found), let frame = found.box, box.width <= frame.width, box.height <= frame.height,
               editor.document.container(of: moving, containingKinds: registry.containingKinds) != target,
               !(takesAlong(moving, in: registry) && goesWith(target, onto: board, shape, in: editor)) else { return nil }
-        if board != editor.board, let owner = board.owner {
-            guard let holder = file.record(owner), let ownerBoard = file.board(containing: owner),
-                  !registry.isReadOnly(holder, in: editor.contents(of: ownerBoard)) else { return nil }
-        }
         self = .container(target, on: board)
     }
 }

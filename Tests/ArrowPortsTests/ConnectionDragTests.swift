@@ -67,6 +67,25 @@ import TestKit
             expectEqual(board.h.editor.hintedShapeID, nil, "escaped: \(escapes)")
         }
     },
+    test("a lock above the board landing between the press on a dot and the drag starts no connection: no arrow is made, and the release leaves the board as it is") {
+        let pocket = ShapeID()
+        let frame = CGRect(x: 400, y: 600, width: 50, height: 50)
+        let inside = CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(Box(boxA))), AnyShapeRecord(ShapeRecord(Box(boxB)))])
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: pocket, Pocket(frame)))]), children: [pocket: inside])
+        let h = try EditorHarness(plugins: PortBoard.plugins(more: [PocketsPlugin(), FreezingPlugin()]), file: file)
+        expect(h.enter(pocket))
+        h.move(to: CGPoint(x: 180, y: 180))
+        h.move(to: aRightDot)
+        h.press()
+        h.editor.transact(on: .root, "Freeze") { $0.update(pocket) { $0[Frozen.self] = true } }
+        expect(h.editor.isBoardReadOnly)
+        let before = h.file
+        h.drag(to: boxB.center, speed: fast)
+        expect(h.editor.session == nil, "nothing begun")
+        h.release()
+        expectEqual(h.file, before)
+        expectEqual(h.editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }.count, 0)
+    },
     test("the arrow comes in once the drag passes 4 points; releasing finishes it, or deletes it, in one commit") {
         for (target, drawn) in [(boxB.center, true), (CGPoint(x: 380, y: 500), false)] {
             let board = try PortBoard()

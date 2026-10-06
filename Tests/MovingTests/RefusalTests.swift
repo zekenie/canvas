@@ -36,6 +36,25 @@ import TestKit
         expectEqual(log.refusals, [[p]])
     },
 
+    test("beside a shape two boards under a frozen pocket: nothing moves, no step, and the owner of the board it would go onto is heard refused, though it isn't frozen; a shape on a read-only board offers no command to leave it with") {
+        let p = ShapeID(), q = ShapeID(), x = ShapeID(), s = ShapeID(), t = ShapeID(), log = RefusalLog()
+        let h = try movingHarness(CanvasFile(root: board(pocket(p, 0, 0), box(s, 800, 0)),
+                                             children: [p: board(pocket(q, 0, 0), box(t, 400, 0)), q: board(box(x, 0, 0))]), log: log)
+        h.freeze([p])
+        expect(h.admits("move-near", on: s, x), "a shape on a read-only board is still one to be beside")
+        let before = h.file, revision = h.editor.revision
+        h.run("move-near", on: s, with: x)
+        expectEqual(h.file, before)
+        expectEqual(h.editor.revision, revision)
+        expectEqual(h.editor.undoHistory.undoName, "Freeze")
+        expectEqual(log.refusals, [[q]], "its board is read-only with the frozen pocket's")
+        expect(h.enter(p))
+        expect(h.editor.slashCommands?.command(named: "move-near", for: t) == nil, "none offered: it's read-only")
+        expect(!h.run("move-near", on: t, with: s))
+        expectEqual(h.file, before)
+        expectEqual(log.refusals, [[q]])
+    },
+
     test("a corral holding a frozen box moves on its board, taking the box along as a drag does, but not onto another board, where the box is heard refused") {
         let k = ShapeID(), a = ShapeID(), f = ShapeID(), p = ShapeID(), log = RefusalLog()
         let h = try movingHarness(CanvasFile(root: board(corral(k, at(0, 0, 300, 200)), box(a, 40, 40, in: k), corral(f, at(500, 0, 600, 400)), pocket(p, 0, 600))),

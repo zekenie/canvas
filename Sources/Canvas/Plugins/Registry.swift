@@ -37,6 +37,9 @@ public struct Registry {
     /// Every plugin's rule for which shapes can't change (`registrar.readOnlyShapes`), found once:
     /// a transaction asks them about every shape it changes.
     private let readOnlyRules: [@MainActor (AnyShapeRecord) -> Bool]
+    /// The tools that place a kind's shapes (`ShapeRegistrar.tool`): none is enabled on a board that
+    /// can't change (`editor.isToolEnabled`).
+    let placingTools: Set<ToolID>
     /// Added properties: who declares each, and which kinds opt in.
     let propertyTable: PropertyTable
     /// Each kind's schema (`schema(for:)`), described once, as the registry is built.
@@ -78,6 +81,10 @@ public struct Registry {
         customSkeletons = definitions.compactMapValues { $0 as? any CustomSkeleton }
         skeletonOutlines = definitions.compactMapValues { $0 as? any CustomSkeletonOutline }
         readOnlyRules = (byPoint[ObjectIdentifier(CorePoints.ReadOnlyRules.self)] ?? []).map { $0.value as! CorePoints.ReadOnlyRules.Contribution }
+        placingTools = Set((byPoint[ObjectIdentifier(CorePoints.Tools.self)] ?? []).compactMap {
+            let tool = $0.value as! ToolRegistration
+            return tool.placement == nil ? nil : tool.descriptor.id
+        })
         let declarations = byPoint[ObjectIdentifier(CorePoints.PropertyDeclarations.self)] ?? []
         let table = try PropertyTable(declarations: declarations,
                                       optIns: byPoint[ObjectIdentifier(CorePoints.PropertyOptIns.self)] ?? [],

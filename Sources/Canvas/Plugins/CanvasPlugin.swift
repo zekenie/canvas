@@ -118,9 +118,11 @@ public struct PluginRegistrar {
     /// one that unlocks it) goes through, and so does what a deletion does to keep the board whole:
     /// its `willDelete` handlers' changes (a read-only dependent goes with its shape), and a
     /// read-only shape letting go of one that's deleted (`ShapeReferencing`), which keeps it as it's
-    /// drawn. The rule reads only the record it's given: a transaction asks it of a shape before and
-    /// after a change, and the detail panel of the record it shows. A transaction asks about every
-    /// shape it changes, so keep it cheap.
+    /// drawn. What a read-only shape holds is read-only too, and takes nothing new: what's in it, if
+    /// it's a container (a locked frame), and the board it owns, if it owns one, and every board under
+    /// that (a locked subboard: entered, but nothing on it changes). The rule reads only the record
+    /// it's given: a transaction asks it of a shape before and after a change, and the detail panel of
+    /// the record it shows. A transaction asks about every shape it changes, so keep it cheap.
     public mutating func readOnlyShapes(where isReadOnly: @escaping @MainActor (AnyShapeRecord) -> Bool) {
         contribute(isReadOnly, to: CorePoints.ReadOnlyRules.self)
     }

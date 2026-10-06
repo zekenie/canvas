@@ -41,10 +41,10 @@ struct FileNames {
         }
     }
 
-    /// A board, as a message names it: by the shape that holds it.
-    static func named(_ board: BoardID, in editor: CanvasEditor, naming: DrawNaming) -> String {
+    /// A board, as a message names it: by the shape that holds it (without names, by its kind).
+    static func named(_ board: BoardID, in editor: CanvasEditor, naming: DrawNaming?) -> String {
         guard let owner = board.owner, let record = editor.file.record(owner) else { return "the root board" }
-        return naming.name(record, editor.registry).map { "\(quoted($0))'s board" } ?? "\(indefinite(record.kind))'s board"
+        return naming?.name(record, editor.registry).map { "\(quoted($0))'s board" } ?? "\(indefinite(record.kind))'s board"
     }
 
     /// The boards a name is on, each once, the board shown's first.

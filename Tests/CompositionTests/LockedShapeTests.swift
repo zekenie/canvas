@@ -6,17 +6,45 @@ import Composition
 import Connections
 import CoreGraphics
 import Foundation
+import Frames
+import Keyboard
 import LanguageModels
 import Locking
 import Mentions
+import References
+import Schemas
 import Selection
 import StickyNotes
+import Subboards
 import TestKit
 import Titles
 
 /// A board of the shipped plugins with nothing on it, its clipboard on a pasteboard of the test's own.
 @MainActor private func emptyBoard(_ pasteboard: NSPasteboard = .withUniqueName()) -> EditorHarness {
     EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, pasteboard: pasteboard, model: ScriptedLanguageModel()) }
+}
+
+/// A note on the root, and a locked subboard "Plans" holding a note and a subboard "Inner", which holds a
+/// note: the camera at the origin at 100% on every board, so view points are world units.
+@MainActor private struct LockedPlans {
+    let outside = ShapeID(), plans = ShapeID(), keep = ShapeID(), inner = ShapeID(), deep = ShapeID()
+    static let keepFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
+    var plansBoard: BoardID { BoardID(owner: plans) }
+    var innerBoard: BoardID { BoardID(owner: inner) }
+
+    var file: CanvasFile {
+        func note(_ id: ShapeID, _ text: String, _ frame: CGRect) -> AnyShapeRecord {
+            AnyShapeRecord(ShapeRecord(id: id, StickyNote(frame: frame, text: MentionText(plain: text))))
+        }
+        var locked = AnyShapeRecord(ShapeRecord(id: plans, Subboard(frame: CGRect(x: 600, y: 100, width: 240, height: 160))))
+        locked[TitleProperty.self] = "Plans"
+        locked[LockedProperty.self] = true
+        var nested = AnyShapeRecord(ShapeRecord(id: inner, Subboard(frame: CGRect(x: 500, y: 100, width: 240, height: 160))))
+        nested[TitleProperty.self] = "Inner"
+        return CanvasFile(root: CanvasDocument(shapes: [note(outside, "Outside", CGRect(x: 100, y: 100, width: 200, height: 200)), locked]),
+                          children: [plans: CanvasDocument(shapes: [note(keep, "Keep", Self.keepFrame), nested]),
+                                     inner: CanvasDocument(shapes: [note(deep, "Deep", Self.keepFrame)])])
+    }
 }
 
 @MainActor let lockedShapeTests = Suite("Locked shapes, as shipped", [
@@ -120,6 +148,75 @@ import Titles
         expectEqual(h.editor.document.shapes.map(\.id), [back, front])
         h.wait(16)
         expect(h.editor.drawingOffset(of: back) != .zero)
+    },
+    test("a locked subboard is entered, and what's on its board holds still, at any depth: no tool that places shapes, nor its key, no paste, no drag, deletion or editing, each try shaking; unlocked, both boards take it all again") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let n = LockedPlans()
+        let h = try EditorHarness { try CanvasEditor(registry: ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel()), file: n.file, scheduler: $0) }
+        let editor = h.editor
+        let placing = [StickyNote.kind, Subboard.kind, Frame.kind, SchemaCard.kind, Reference.kind].map { ToolID(placing: $0) }
+        let keys = try placing.map { try require(editor.registry.shortcut(forTool: $0)?.chord.key, "\($0) has a key") }
+        editor.selection = n.outside
+        editor.copySelection()
+        expect(placing.allSatisfy(editor.isToolEnabled) && editor.canPaste, "on the root")
+        // The locked subboard is entered, as any is.
+        editor.selection = n.plans
+        editor.perform(.openSelection)
+        expectEqual(editor.board, n.plansBoard)
+        expect(editor.isBoardReadOnly && editor.isReadOnly(n.keep) && !editor.isLocked(n.keep), "read-only, though the note isn't locked itself")
+        expect(placing.allSatisfy { !editor.isToolEnabled($0) } && editor.isToolEnabled(.select) && editor.isToolEnabled(.hand), "only the tools that place are off")
+        for (tool, key) in zip(placing, keys) {
+            expect(!h.key(String(key)), "\(tool)'s key goes on")
+            expect(editor.currentToolID != tool)
+        }
+        expect(!editor.canPaste && !editor.canPerform(.paste))
+        h.hold(.command)
+        expect(!h.key("v"), "⌘V isn't taken")
+        h.hold([])
+        h.wait(1000)                              // a modifier let go still counts for a moment
+        let before = h.file
+        // A drag, Delete and a double-click each try the note, and shake it.
+        h.press(at: CGPoint(x: 200, y: 200))
+        h.drag(to: CGPoint(x: 260, y: 200))
+        h.wait(16)
+        expectEqual(editor.document[n.keep]?.box, LockedPlans.keepFrame)
+        expect(editor.drawingOffset(of: n.keep) != .zero, "the drag shakes it")
+        h.release()
+        h.wait(1000)
+        editor.selection = n.keep
+        expect(h.key("\u{7f}"))
+        h.wait(16)
+        expect(editor.drawingOffset(of: n.keep) != .zero, "Delete does")
+        h.wait(1000)
+        h.click(at: CGPoint(x: 200, y: 200))
+        h.click(at: CGPoint(x: 200, y: 200), clickCount: 2)
+        expectEqual(editor.editingShapeID, nil, "and a double-click, which edits nothing")
+        expectEqual(h.file, before, "nothing changed")
+        expect(!editor.canUndo, "and no step")
+        // A subboard on it opens, and its board is read-only too.
+        editor.selection = n.inner
+        editor.perform(.openSelection)
+        expectEqual(editor.board, n.innerBoard)
+        expect(editor.isBoardReadOnly && editor.isReadOnly(n.deep))
+        expect(placing.allSatisfy { !editor.isToolEnabled($0) } && !editor.canPaste)
+        editor.selection = n.deep
+        editor.perform(.delete)
+        expect(editor.document[n.deep] != nil, "nothing there goes either")
+        // Unlocked, both boards take shapes again.
+        expect(editor.showBoard(.root))
+        editor.unlock([n.plans])
+        expect(editor.showBoard(n.plansBoard))
+        expect(!editor.isBoardReadOnly && placing.allSatisfy(editor.isToolEnabled) && editor.canPaste)
+        expect(h.key(String(keys[0])), "the Note tool's key is taken")
+        expectEqual(editor.currentToolID, placing[0])
+        editor.setTool(.select)
+        h.press(at: CGPoint(x: 200, y: 200))
+        h.drag(to: CGPoint(x: 260, y: 200))
+        h.release()
+        expectEqual(editor.document[n.keep]?.box, LockedPlans.keepFrame.offsetBy(dx: 60, dy: 0), "the note moves")
+        expect(editor.showBoard(n.innerBoard))
+        expect(!editor.isBoardReadOnly && !editor.isReadOnly(n.deep) && placing.allSatisfy(editor.isToolEnabled))
     },
     test("a locked note saves as locked, and opens locked") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())

@@ -19,6 +19,10 @@ import TableOfContents
 /// its board (`BoardCrumbs.pick`). The path reads only the crumbs (`BoardCrumbs`), so it redraws
 /// when another board is shown or a board above changes, never for a commit on the board shown;
 /// the menu that shows reads its board's rows.
+///
+/// The crumb where the path turns read-only, the first whose board is (a locked subboard's, and so
+/// every board under it), has a small lock after its name; the crumbs below it have none
+/// (`BoardCrumbs.readOnlyStart`). Folded into "…", it's the lock on its item in the menu.
 public struct BoardPath: View {
     let editor: CanvasEditor
     let rootName: String
@@ -112,13 +116,15 @@ struct BoardPathPill: View {
             .accessibilityHidden(true)
     }
 
-    /// A crumb shows its menu, if it has one, as the pointer stays on it; nothing marks it.
+    /// A crumb shows its menu, if it has one, as the pointer stays on it; nothing marks it but the
+    /// lock, on the crumb where the read-only part of the path starts.
     @ViewBuilder
     private func item(_ crumb: BoardCrumb, isCurrent: Bool) -> some View {
+        let isReadOnlyStart = crumb.board == crumbs.readOnlyStart
         Group {
             if isCurrent {
                 CrumbWidth(maxWidth: BoardsStyle.crumbMaxWidth) {
-                    CrumbTitle(title: crumb.title).fontWeight(.semibold)
+                    CrumbTitle(title: crumb.title, isReadOnlyStart: isReadOnlyStart).fontWeight(.semibold)
                 }
                 .help(crumb.title)
                 .accessibilityAddTraits(.isHeader)
@@ -131,7 +137,7 @@ struct BoardPathPill: View {
                         crumbs.closeMenu()
                         editor.goUp(to: crumb.board)
                     } label: {
-                        CrumbTitle(title: crumb.title)
+                        CrumbTitle(title: crumb.title, isReadOnlyStart: isReadOnlyStart)
                     }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
@@ -148,12 +154,26 @@ struct BoardPathPill: View {
     }
 }
 
-/// A crumb's title, on one line cut in the middle (a button's own title would wrap).
+/// A crumb's title, on one line cut in the middle (a button's own title would wrap), with a small
+/// lock after it on the crumb where the path's read-only part starts.
 struct CrumbTitle: View {
     let title: String
+    var isReadOnlyStart = false
 
     var body: some View {
-        Text(title).lineLimit(1).truncationMode(.middle)
+        let text = Text(title).lineLimit(1).truncationMode(.middle)
+        if isReadOnlyStart {
+            HStack(spacing: BoardsStyle.readOnlySpacing) {
+                text
+                Image(systemName: BoardsStyle.readOnlySymbol)
+                    .imageScale(.small)
+                    .foregroundStyle(.secondary)
+                    .help(BoardsStyle.readOnlyLabel)
+                    .accessibilityLabel(BoardsStyle.readOnlyLabel)
+            }
+        } else {
+            text
+        }
     }
 }
 
@@ -185,9 +205,11 @@ struct FoldedCrumbs: View {
         .accessibilityRepresentation {
             Menu {
                 ForEach(folded) { crumb in
-                    Button(crumb.title) {
+                    Button {
                         crumbs.closeMenu()
                         editor.goUp(to: crumb.board)
+                    } label: {
+                        CrumbTitle(title: crumb.title, isReadOnlyStart: crumb.board == crumbs.readOnlyStart)
                     }
                 }
             } label: {
@@ -217,17 +239,22 @@ extension BoardPath {
     public static let foldedAnchor = NSUserInterfaceItemIdentifier("BoardPath.folded")
 
     /// The menu "…" shows: the boards it folds, root side first, each going up to its board
-    /// (`editor.goUp(to:)`), as a crumb does. Made afresh each time it shows; a test reads and
-    /// chooses its items (`performActionForItem(at:)`) without showing it.
+    /// (`editor.goUp(to:)`), as a crumb does, and the one where the path's read-only part starts, if
+    /// it's folded, with a lock on its item (`BoardCrumbs.readOnlyStart`). Made afresh each time it
+    /// shows; a test reads and chooses its items (`performActionForItem(at:)`) without showing it.
     @MainActor
     public static func foldedMenu(_ folded: [BoardCrumb], editor: CanvasEditor) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
+        let readOnlyStart = editor.boardCrumbs?.readOnlyStart
         for crumb in folded {
             let action = FoldedMenuAction { [weak editor] in editor?.goUp(to: crumb.board) }
             let item = NSMenuItem(title: crumb.title, action: #selector(FoldedMenuAction.fire), keyEquivalent: "")
             item.target = action
             item.representedObject = action          // the item holds its target weakly
+            if crumb.board == readOnlyStart {
+                item.image = NSImage(systemSymbolName: BoardsStyle.readOnlySymbol, accessibilityDescription: BoardsStyle.readOnlyLabel)
+            }
             menu.addItem(item)
         }
         return menu

@@ -79,6 +79,31 @@ struct GoButtonPlugin: CanvasPlugin {
         go.performClick(nil)
         expectEqual(count.runs, 1)
     },
+    test("a shape on a locked subboard's board shows read-only too: its panel follows the lock above the board, as it lands in a commit on another board, and as it goes") {
+        let pocket = ShapeRecord(Pocket(CGRect(x: 2000, y: 0, width: 100, height: 100)))
+        let id = ShapeID()
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(pocket)]),
+                              children: [pocket.id: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: id, Gadget(gadgetFrame, name: "Widget")))])])
+        let editor = try gadgetEditor([FreezingPlugin(), PocketsPlugin()], file: file, scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
+        expect(editor.showBoard(BoardID(owner: pocket.id)))
+        editor.selection = id
+        panel.window.spin { !panel.fields.isEmpty }
+        @MainActor func controls() -> [NSControl] {
+            panel.fields + panel.hosting.descendants(NSSegmentedControl.self) + panel.steppers
+        }
+        expect(controls().count >= 3, "\(controls())")
+        expect(controls().allSatisfy(\.isEnabled))
+        let record = editor.document[id]
+        editor.transact(on: .root, "Freeze") { $0.update(pocket.id) { $0[Frozen.self] = true } }
+        panel.window.spin { controls().allSatisfy { !$0.isEnabled } }
+        expect(editor.isReadOnly(id))
+        expectEqual(editor.document[id], record, "its record as it was: the board's lock is what changed")
+        expectEqual(try panel.field("Widget").stringValue, "Widget", "shown as it is")
+        editor.transact(on: .root, "Thaw") { $0.update(pocket.id) { $0[Frozen.self] = nil } }
+        panel.window.spin { controls().allSatisfy(\.isEnabled) }
+        expect(!editor.isReadOnly(id))
+    },
     test("a shape in a read-only container shows read-only too, at any depth: its panel follows the container's lock, and nothing else draws it again") {
         let editor = try gadgetEditor([FreezingPlugin(), CorralsPlugin()], scheduler: TaskScheduler())
         let state = try require(editor.detailPanel)

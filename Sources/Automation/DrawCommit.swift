@@ -62,12 +62,12 @@ extension Drawing {
                 // Raised while it can be: before a change that locks it, or after one that unlocks
                 // it. One read-only before and after is as it was (placing refused any real change
                 // to it), and stays where it paints.
-                if !registry.isReadOnly(existing, in: transaction.document) {
+                if !transaction.isReadOnly(existing) {
                     raise(item, in: &transaction)
                     update(item, existing, in: &transaction)
                 } else {
                     update(item, existing, in: &transaction)
-                    if let now = transaction.document[existing.id], !registry.isReadOnly(now, in: transaction.document) { raise(item, in: &transaction) }
+                    if let now = transaction.document[existing.id], !transaction.isReadOnly(now) { raise(item, in: &transaction) }
                 }
                 // Put down again: moved by a placement, or resized where it is.
                 if settles, item.moves || item.record.box?.size != existing.box?.size {
@@ -171,7 +171,7 @@ extension Drawing {
             if record != now { transaction.update(existing.id) { $0 = record } }
             return
         }
-        if registry.isReadOnly(now, in: transaction.document) {
+        if transaction.isReadOnly(now) {
             var staying = record
             staying.box?.origin = from
             transaction.update(existing.id) { $0 = staying }
@@ -275,7 +275,7 @@ extension Drawing {
         if let existing = match?.record {
             guard made.id == existing.id else { throw AutomationError(statement, .internal, "\(written) came out another shape") }
             if made == existing { return (existing, .unchanged) }
-            if registry.isReadOnly(existing, in: document), registry.isReadOnly(made, in: document) {
+            if transaction.isReadOnly(existing), transaction.isReadOnly(made) {
                 throw AutomationError(statement, .readOnly, "\(written) is read-only (locked, say), so it stays as it is",
                                       hint: "leave it out of the script, or ask the user to unlock it")
             }
@@ -283,6 +283,11 @@ extension Drawing {
             return (transaction.document[existing.id] ?? made, .reconnected)
         }
         guard isNew(made.id, in: transaction) else { throw AutomationError(statement, .internal, "\(written) came out a shape already drawn") }
+        // A board that can't change (a locked subboard's, at any depth) takes no new edge.
+        guard !transaction.isBoardReadOnly else {
+            throw AutomationError(statement, .readOnly, "\(written) would go on \(boardName), which is read-only (locked, say)",
+                                  hint: "leave it out of the script, or ask the user to unlock what holds the board")
+        }
         transaction.insert(made)
         guard let inserted = transaction.document[made.id] else { throw AutomationError(statement, .internal, "\(written) couldn't go on the board") }
         return (inserted, .connected)

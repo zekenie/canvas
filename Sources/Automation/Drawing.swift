@@ -368,7 +368,7 @@ struct Drawing {
     /// Refuses to delete a read-only shape (a locked one, or one in a locked frame): `"East" is
     /// read-only (locked, say), so it can't be deleted`.
     private func writable(_ record: AnyShapeRecord, _ statement: Statement, _ subject: String, so consequence: String) throws(AutomationError) {
-        guard registry.isReadOnly(record, in: target.document) else { return }
+        guard target.isReadOnly(record) else { return }
         throw AutomationError(statement, .readOnly, "\(subject) is read-only (locked, say), so \(consequence)",
                               hint: "leave it out of the script, or ask the user to unlock it")
     }
@@ -462,6 +462,12 @@ struct Drawing {
         let vocabulary = vocabulary(of: item.kind)
         let subject = subject(of: item)
         var settings: JSONObject = [:]
+
+        // A board that can't change (a locked subboard's, at any depth) takes no new shape.
+        if item.existing == nil, target.isBoardReadOnly {
+            throw AutomationError(statement, .readOnly, "\(subject) would go on \(boardName), which is read-only (locked, say)",
+                                  hint: "leave it out of the script, or ask the user to unlock what holds the board")
+        }
 
         // Its title, on a new shape; a new one, on a shape restated.
         if let written = shape.newTitle {
@@ -589,11 +595,14 @@ struct Drawing {
     /// board (a frame): the shape goes within F, and in it, as its placements say; with none, and not
     /// in F already (where it stays), against F's top-left, 40 in, as `inside "F" top-left` places
     /// it. F must be one the script neither deletes nor is (or holds), and writable: a read-only
-    /// container (a locked frame) takes nothing.
+    /// container (a locked frame) takes nothing, nor does a subboard `in` names whose board is
+    /// read-only (it, or a subboard above it, locked).
     private mutating func contain(_ index: Int) throws(AutomationError) {
         let item = items[index]
-        guard let written = item.shape.container, let fileNames, let title = fold(written),
-              case .shape(let id, _) = fileNames.container(called: title) else { return }
+        guard let written = item.shape.container, let fileNames, let title = fold(written) else { return }
+        let found = fileNames.container(called: title)
+        if case .board = found, target.isBoardReadOnly { throw readOnlyHolder(title, item.statement) }
+        guard case .shape(let id, _) = found else { return }
         let statement = item.statement, subject = subject(of: item)
         guard let holder = target.document[id] else {
             throw AutomationError(statement, .internal, "\(quoted(title)) isn't on the board \(subject) is drawn on")
@@ -608,16 +617,20 @@ struct Drawing {
                                   existing.id == id ? "\(subject) is in itself" : "\(subject) holds \(quoted(title)), so it can't be in it",
                                   hint: "name another shape to hold it")
         }
-        if registry.isReadOnly(holder, in: target.document) {
-            throw AutomationError(statement, .readOnly, "\(quoted(title)) is read-only (locked, say), so nothing goes in it",
-                                  hint: "leave in \(quoted(title)) out, or ask the user to unlock it")
-        }
+        if target.isReadOnly(holder) { throw readOnlyHolder(title, statement) }
         items[index].holder = holder
         let isIn = item.existing.map { target.document.containers(of: $0.id, containingKinds: kinds).contains(id) } ?? false
         if item.shape.clauses.isEmpty, !isIn {
             items[index].shape.clauses.append(Clause(relation: .inside, targets: [Target(.title(written), part: .topLeft)],
                                                      written: "in \(quoted(title))"))
         }
+    }
+
+    /// `in "F"` names a shape that takes nothing: read-only (locked, say), a frame, or a subboard
+    /// whose board is.
+    private func readOnlyHolder(_ title: String, _ statement: Statement) -> AutomationError {
+        AutomationError(statement, .readOnly, "\(quoted(title)) is read-only (locked, say), so nothing goes in it",
+                        hint: "leave in \(quoted(title)) out, or ask the user to unlock it")
     }
 
     /// The shape with its attributes set, or which one it can't take.
@@ -858,6 +871,9 @@ struct Drawing {
     }
 
     // MARK: Messages
+
+    /// The board the run draws on, as a message names it: `"Plans"'s board`.
+    var boardName: String { FileNames.named(target.board, in: editor, naming: naming) }
 
     /// How a message names a statement's shape: `"API"`, or `the card on line 3`.
     func subject(of item: ShapeItem) -> String {

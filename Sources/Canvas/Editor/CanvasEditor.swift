@@ -55,6 +55,23 @@ public final class CanvasEditor {
     /// The boards from the root down to the one shown: the root first, `board` last (the root alone
     /// at the root).
     public private(set) var boardPath: [BoardID] = [.root]
+    /// Whether the board shown can't change: the shape that owns it can't (a plugin's rule says so of
+    /// it, or of a container it's in: a locked subboard, one in a locked frame), or the board that one
+    /// is on can't, and so on up to the root (`isReadOnly(board:)`), so every board under a locked
+    /// subboard is read-only too, at any depth. It's shown, and its shapes are selected, copied and
+    /// opened, but each is read-only (`isReadOnly(_:)`), nothing goes on it (a transaction drops an
+    /// insert, and services hear the board's owner refused; `place` refuses), and no tool that places
+    /// shapes is enabled there (`isToolEnabled(_:)`). Worked out again as each switch and commit
+    /// leaves the file (a lock above it can come in a commit on another board, `transact(on:)`), and
+    /// set only when it changes: observed apart from `document`, so a view that dims what can't be
+    /// done here redraws as it changes, never on every commit.
+    public private(set) var isBoardReadOnly = false
+    /// Where `boardPath` turns read-only: the first board on it, root side first, that can't change
+    /// (its owner can't); it, and every board after it on the path, the board shown too, is read-only.
+    /// Nil while the board shown can change (`isBoardReadOnly` is whether this is one). Worked out with
+    /// it, in one climb, and set only when it changes: what marks the path where the lock is, without
+    /// asking each board above (`isReadOnly(board:)` of each would cost the path's depth squared).
+    public private(set) var readOnlyStart: BoardID?
     /// Every board of the file: what a board file saves. `document` is its board `board`; the others
     /// change only with a commit on the shown one (a deletion taking the boards under a shape, a paste
     /// bringing some, a move taking shapes onto one), one on a board that isn't shown (`transact(on:)`)
@@ -296,6 +313,11 @@ public final class CanvasEditor {
         serviceRegistrations = Dictionary(registry.services.map { ($0.type, $0) }, uniquingKeysWith: { first, _ in first })
         board = shown
         boardPath = storedFile.path(to: shown) ?? [.root]
+        // Opened on a read-only board, it's read-only from the start, before services are made; a
+        // default tool that places shapes gives way to the Hand there.
+        readOnlyStart = registry.readOnlyStart(ofPathTo: shown, in: storedFile)
+        isBoardReadOnly = readOnlyStart != nil
+        if !isToolEnabled(currentToolID) { currentToolID = .hand }
         // Services first, so tools can look them up; each resolves the services it asks for.
         for registration in registry.services { _ = resolveService(registration.type) }
         for (id, make) in registry.toolFactories { tools[id] = make(self) }
@@ -370,8 +392,8 @@ public final class CanvasEditor {
         precondition(!isApplying, "nothing may transact while undo or redo puts a step back (a service's documentDidChange, say)")
         precondition(!isTransacting, "transactions don't nest; use the one you were given")
         isTransacting = true
-        var transaction = Transaction(document: document, board: board, registry: registry, camera: camera, keys: stackingKeys,
-                                      file: fileAccess)
+        var transaction = Transaction(document: document, board: board, isBoardReadOnly: isBoardReadOnly, registry: registry, camera: camera,
+                                      keys: stackingKeys, file: fileAccess)
         let result: T
         do {
             defer { isTransacting = false }
@@ -398,7 +420,8 @@ public final class CanvasEditor {
     /// open on the board shown stays open, and comes after it. Services hear it as a commit that
     /// changed that board (`ChangeSet.boardsChanged`, the shapes it touched in `elsewhere`) and those
     /// it took or brought, the board shown as it was. Read-only shapes stay as they are, as in any
-    /// transaction, but nothing shows the refusal, since they aren't shown. A transaction that would
+    /// transaction, and so does a read-only board (`isReadOnly(board:)`: nothing on it changes, and
+    /// nothing goes on it), but nothing shows the refusal, since they aren't shown. A transaction that would
     /// take the board shown, or a board above it, with a shape it deletes, or that reaches the board
     /// shown (moving shapes onto it, or settling there), commits nothing: `document` would go stale.
     /// Returns nil, doing nothing, for a board the editor can't show (`canShow`).
@@ -409,8 +432,8 @@ public final class CanvasEditor {
         precondition(!isApplying, "nothing may transact while undo or redo puts a step back (a service's documentDidChange, say)")
         precondition(!isTransacting, "transactions don't nest; use the one you were given")
         isTransacting = true
-        var transaction = Transaction(document: storedFile[target], board: target, registry: registry, camera: leftCameras[target] ?? camera,
-                                      keys: stackingKeys, file: fileAccess)
+        var transaction = Transaction(document: storedFile[target], board: target, isBoardReadOnly: registry.isReadOnly(board: target, in: storedFile),
+                                      registry: registry, camera: leftCameras[target] ?? camera, keys: stackingKeys, file: fileAccess)
         let result: T
         do {
             defer { isTransacting = false }
@@ -430,12 +453,62 @@ public final class CanvasEditor {
         return result
     }
 
-    /// Whether the shape can't change: a plugin's rule says so of it (`registrar.readOnlyShapes`), or
-    /// of a container it's in, at any depth (`registry.isReadOnly(_:in:)`). No transaction changes,
-    /// restacks or deletes it, a drag leaves it where it is, and it isn't edited. False for a shape
-    /// that isn't there.
+    /// Whether the shape, on the board shown, can't change: a plugin's rule says so of it
+    /// (`registrar.readOnlyShapes`), or of a container it's in, at any depth, or the board can't
+    /// (`isBoardReadOnly`: a locked subboard's). No transaction changes, restacks or deletes it, a
+    /// drag leaves it where it is, and it isn't edited. False for a shape that isn't there. O(its
+    /// depth).
     public func isReadOnly(_ id: ShapeID) -> Bool {
-        document[id].map { registry.isReadOnly($0, in: document) } ?? false
+        guard let record = document[id] else { return false }
+        return isBoardReadOnly || registry.isReadOnly(record, in: document)
+    }
+
+    /// Whether a shape on any board of the file can't change, as `isReadOnly(_:)` says of one on the
+    /// board shown: a rule says so of it, or of a container it's in, or its board can't
+    /// (`isReadOnly(board:)`). False for a shape that isn't in the file. The board shown's in O(its
+    /// depth), another's in O(its depth and its board's). Observed through `document`.
+    public func isReadOnly(inFile id: ShapeID) -> Bool {
+        if document[id] != nil { return isReadOnly(id) }
+        let file = file
+        guard let board = file.board(containing: id) else { return false }
+        let holding = file[board]
+        guard let record = holding[id] else { return false }
+        return registry.isReadOnly(record, in: holding) || registry.isReadOnly(board: board, in: file)
+    }
+
+    /// Whether a board of the file can't change: the shape that owns it can't (a rule says so of it,
+    /// or of a container it's in), or the board that one is on can't, and so on up to the root, which
+    /// always can (`isBoardReadOnly`, for the board shown, which this answers with). Nothing on it
+    /// changes, and nothing goes on it. O(the board's depth). Observed through `document`, or, for the
+    /// board shown, through `isBoardReadOnly`.
+    public func isReadOnly(board target: BoardID) -> Bool {
+        target == board ? isBoardReadOnly : registry.isReadOnly(board: target, in: file)
+    }
+
+    /// Whether `setTool` takes a tool: any, but one that places shapes (a kind's tool,
+    /// `ShapeRegistrar.tool`) on a board that can't change (`isBoardReadOnly`), so the toolbar dims
+    /// those there, and their keys do nothing. Observed through `isBoardReadOnly`.
+    public func isToolEnabled(_ id: ToolID) -> Bool { !isBoardReadOnly || !registry.placingTools.contains(id) }
+
+    /// Works out again whether the board shown can't change, and where its path turns read-only, as a
+    /// switch or a commit leaves the file (`isBoardReadOnly`, `readOnlyStart`), setting each only if it
+    /// changed; returns whether the board changed to read-only, for what then leaves a tool that
+    /// places shapes (`leaveDisabledTool`). One climb, O(the board's depth).
+    private func noteBoardReadOnly() -> Bool {
+        let start = registry.readOnlyStart(ofPathTo: board, in: storedFile)
+        if start != readOnlyStart { readOnlyStart = start }
+        let now = start != nil
+        guard now != isBoardReadOnly else { return false }
+        isBoardReadOnly = now
+        return now
+    }
+
+    /// Leaves a tool that isn't enabled on the board shown (one that places shapes, on a board that
+    /// has just become read-only) for the default tool, or for the Hand if that one isn't enabled
+    /// either.
+    private func leaveDisabledTool() {
+        guard !isToolEnabled(currentToolID) else { return }
+        setTool(isToolEnabled(registry.defaultTool) ? registry.defaultTool : .hand)
     }
 
     /// Something tried to change these read-only shapes, and didn't: services hear which
@@ -513,7 +586,7 @@ public final class CanvasEditor {
             boardPath = newFile.path(to: board) ?? [.root]
             documentDidChange(to: newFile[board], changes: changes)
         } else {
-            setTool(registry.defaultTool)
+            switchTool(to: registry.defaultTool)
             storedFile = newFile
             show(target, leaving: left, replacingFile: true)
         }
@@ -543,8 +616,9 @@ public final class CanvasEditor {
         var newFile = old, removed: Set<BoardID> = []
         let byBoard = Dictionary(grouping: ids.filter { old.record($0)?.isOpaque == true }) { old.board(containing: $0)! }
         for (board, ids) in byBoard {
-            var transaction = Transaction(document: old[board], board: board, registry: registry, camera: camera, keys: stackingKeys,
-                                          file: access)
+            // Refused by nothing: a read-only board's hidden shapes go too.
+            var transaction = Transaction(document: old[board], board: board, isBoardReadOnly: false, registry: registry, camera: camera,
+                                          keys: stackingKeys, file: access)
             transaction.discard(Set(ids))
             newFile.set(transaction.document, for: board, changes: transaction.changes)
             removed.formUnion(transaction.changes.boardsRemoved)
@@ -649,6 +723,9 @@ public final class CanvasEditor {
         let editedKind = editingShapeID.flatMap { storedDocument[$0]?.kind }
         withMutation(keyPath: \.document) { storedDocument = newDocument }
         revision += 1
+        // Before services hear the commit, which may have locked the board's owner (a commit on the
+        // board above, `transact(on:)`) or put another file in place.
+        let becameReadOnly = noteBoardReadOnly()
         shapeIndex.documentDidChange(changes, in: newDocument, registry: registry)
         for id in changes.removed where drawingOffsets[id] != nil { drawingOffsets[id] = nil }
         // A shape gliding that something changes is where it is now.
@@ -656,10 +733,13 @@ public final class CanvasEditor {
         // Services drop what no longer names a shape, as the hint's setter does.
         for service in serviceOrder { service.documentDidChange(changes, in: self) }
         hintedShapeID = hintedID
-        // A shape that's gone, can no longer change (it, or a container it's in), or is of another kind
-        // now (turned, `Transaction.turn`), isn't edited.
+        // A shape that's gone, can no longer change (it, a container it's in, or its board), or is of
+        // another kind now (turned, `Transaction.turn`), isn't edited.
         if let editing = editingShapeID,
-           document[editing].map({ registry.isReadOnly($0, in: newDocument) || $0.kind != editedKind }) ?? true { endEditing(discarding: false) }
+           document[editing].map({ isBoardReadOnly || registry.isReadOnly($0, in: newDocument) || $0.kind != editedKind }) ?? true {
+            endEditing(discarding: false)
+        }
+        if becameReadOnly { leaveDisabledTool() }
         setNeedsDisplay()
     }
 
@@ -713,7 +793,7 @@ public final class CanvasEditor {
         guard canShow(target) else { return false }
         for service in serviceOrder { service.boardWillChange(from: board, to: target, in: self) }
         endEditing(discarding: false)
-        setTool(registry.defaultTool)
+        switchTool(to: registry.defaultTool)
         let left = cameraTarget
         stopCameraMotion()
         warmIndexes.keep(shapeIndex, for: board, in: self)
@@ -747,6 +827,8 @@ public final class CanvasEditor {
         withMutation(keyPath: \.document) { storedDocument = storedFile[target] }
         board = target
         boardPath = storedFile.path(to: target) ?? [.root]
+        // Whether this board takes shapes, before services hear of it.
+        _ = noteBoardReadOnly()
         shapeIndex = warmIndexes.take(for: target, in: self) ?? ShapeIndex()
         hintedID = nil
         drawingOffsets = [:]
@@ -764,6 +846,9 @@ public final class CanvasEditor {
         delegate?.editorBoardDidChange(self)
         setNeedsDisplay()
         refreshCursor()
+        // Once the board is in place and heard: a default tool that places shapes doesn't stay on one
+        // that takes none.
+        leaveDisabledTool()
     }
 
     /// The camera a board is shown with: as it was left, else as the host remembers it, else its
@@ -792,7 +877,7 @@ public final class CanvasEditor {
         if target == board {
             let clear = unobscuredViewport
             return BoardReading(board: board, document: document, shapes: shapeContext, index: shapeIndex,
-                                view: clear.isEmpty ? nil : cameraTarget.toWorld(clear))
+                                view: clear.isEmpty ? nil : cameraTarget.toWorld(clear), isBoardReadOnly: isBoardReadOnly)
         }
         guard canShow(target) else { return nil }
         let contents = file[target]
@@ -803,12 +888,21 @@ public final class CanvasEditor {
         let index = ShapeIndex(), clear = unobscuredViewport(on: target)
         return BoardReading(board: target, document: contents,
                             shapes: ShapeContext(document: contents, registry: registry, camera: arrival, index: index), index: index,
-                            view: clear.isEmpty ? nil : arrival.toWorld(clear))
+                            view: clear.isEmpty ? nil : arrival.toWorld(clear), isBoardReadOnly: isReadOnly(board: target))
     }
 
     // MARK: Tools
 
+    /// Makes a tool current, if it's enabled here (`isToolEnabled`): one that places shapes isn't on a
+    /// board that can't change.
     public func setTool(_ id: ToolID) {
+        guard isToolEnabled(id) else { return }
+        switchTool(to: id)
+    }
+
+    /// `setTool`, enabled or not: the default tool coming back as another board is shown, before
+    /// whether that board takes shapes is worked out (`show` leaves it then if it isn't enabled there).
+    private func switchTool(to id: ToolID) {
         guard id != currentToolID, tools[id] != nil else { return }
         let old = currentToolID
         currentToolID = id
@@ -827,8 +921,10 @@ public final class CanvasEditor {
     /// press, as undoing its step would), so the press comes to nothing. Placed with no press under
     /// way, it settles at once, in the same step, and an editing placement's shape is edited at once.
     /// A read-only container (a locked frame) takes nothing: placed into one, the shape doesn't stay,
-    /// and services hear the container refused. (Other tools create shapes with
-    /// `transact { $0.insert(...) }`, as a port's drag does.)
+    /// and services hear the container refused. Nor does a read-only board (`isBoardReadOnly`): nothing
+    /// is placed, nothing else happens (the tool stays, nothing's selected), and services hear the
+    /// board's owner refused. (Other tools create shapes with `transact { $0.insert(...) }`, as a
+    /// port's drag does.)
     /// The insert names its undo step "Add" and the placing tool's label ("Add Note").
     public func place(_ placement: Placement, at point: CGPoint) {
         put(placement.shape(at: point), placing: placement, from: undoHistory.isPressHeld && session == nil ? point : nil)
@@ -837,9 +933,10 @@ public final class CanvasEditor {
     /// Puts one down with this frame (world units), where `place(_:at:)` centers one of its size on a
     /// point: what a tool that draws its shape's rect with a drag puts down at the release (the Frame
     /// tool). As `place(_:at:)` with no press under way: it settles at once (into a container, or out,
-    /// gliding there), in the step under way, a read-only container refusing it (nothing is placed,
-    /// and the container hears it); the default tool comes back, services hear `didPlace`, and an
-    /// editing placement's shape is edited. It never follows the pointer.
+    /// gliding there), in the step under way, a read-only container or board refusing it (nothing is
+    /// placed, and the container, or the board's owner, is heard refused); the default tool comes back,
+    /// services hear `didPlace`, and an editing placement's shape is edited. It never follows the
+    /// pointer.
     public func place(_ placement: Placement, in frame: CGRect) {
         put(placement.make(frame), placing: placement, from: nil)
     }
@@ -847,6 +944,12 @@ public final class CanvasEditor {
     /// `record`, `placement`'s, put down; following the pointer from `point` (world units, the press)
     /// while the press lasts, or with no point, settled at once.
     private func put(_ record: AnyShapeRecord, placing placement: Placement, from point: CGPoint?) {
+        // A read-only board takes nothing, as its transaction would refuse the insert: said so, and
+        // nothing more done.
+        guard !isBoardReadOnly else {
+            if let owner = board.owner { refuseChanges(to: [owner]) }
+            return
+        }
         let tool = ToolID(placing: placement.kind)
         let label = registry.tools.first { $0.id == tool }?.label
         let follows = point != nil
@@ -936,7 +1039,7 @@ public final class CanvasEditor {
     public func beginEditing(_ id: ShapeID, at point: CGPoint? = nil, clickCount: Int = 1) -> Bool {
         endEditing()
         guard let record = document[id], !record.isOpaque, registry.definition(for: record.kind) is any Editable else { return false }
-        guard !registry.isReadOnly(record, in: document) else {
+        guard !isReadOnly(id) else {
             refuseChanges(to: [id])
             return false
         }

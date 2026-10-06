@@ -358,7 +358,7 @@ extension EditorHarness {
         expect(h.editor.isReadOnly(a))
         expect(h.editor.isReadOnly(inner))
         expect(!h.editor.registry.isReadOnly(record), "the rules read the record alone")
-        expect(h.editor.registry.isReadOnly(record, in: h.editor.document))
+        expect(h.editor.isReadOnly(inFile: a), "asked of the file too")
         h.editor.freeze([outer], false)
         expect(!h.editor.isReadOnly(a))
     },

@@ -35,6 +35,11 @@ import Geometry
 /// container. `setContainer` puts a shape in one, and `settle` keeps what's put down from sitting
 /// across a container's edge (Settling.swift).
 ///
+/// A board is read-only while the shape that owns it is (a locked subboard, one in a locked frame,
+/// one on a read-only board: `isBoardReadOnly`, the editor's rule), as a container is: every shape
+/// that was on it before the transaction is held as a read-only one is, its own lock included, and
+/// nothing goes on it (an insert, a move onto it), which services hear as its owner refused.
+///
 /// A shape can become another kind under its id (`turn`), so whatever binds or names it goes on
 /// doing so.
 @MainActor
@@ -42,6 +47,12 @@ public struct Transaction {
     public private(set) var document: CanvasDocument
     /// The board `document` is: the one the editor shows.
     public let board: BoardID
+    /// Whether the board can't change: the shape that owns it can't (a rule says so of it, or of a
+    /// container it's in), or the board that one's on can't, up to the root (`editor.isBoardReadOnly`
+    /// on the board shown). Every shape that was on it before the transaction is held as a read-only
+    /// one is (`isReadOnly(_:)`), and nothing goes on it: an insert is dropped, and services hear the
+    /// board's owner refused, as a read-only container is when a shape would join it.
+    public let isBoardReadOnly: Bool
     let registry: Registry
     let camera: Camera
     let keys: StackingKeyGenerator
@@ -64,11 +75,13 @@ public struct Transaction {
     /// What it did so far, record by record: what the commit hands services.
     private(set) var changes = ChangeSet()
     /// Read-only shapes it was asked to change, restack, move or delete, and didn't (and read-only
-    /// containers that wouldn't take a shape: `setContainer`, `settle`).
+    /// containers that wouldn't take a shape: `setContainer`, `settle`; and the owners of read-only
+    /// boards that wouldn't: `insert`, `move(_:to:)`).
     var refused: Set<ShapeID> = []
     /// The read-only shapes it was asked to change, restack, move or delete so far, and didn't, and
-    /// read-only containers that wouldn't take a shape: what a plugin that must change everything or
-    /// nothing reads, to throw so nothing commits, then shake them (`editor.refuseChanges(to:)`).
+    /// read-only containers that wouldn't take a shape, and the owners of read-only boards that
+    /// wouldn't: what a plugin that must change everything or nothing reads, to throw so nothing
+    /// commits, then shake them (`editor.refuseChanges(to:)`).
     public var refusedShapes: Set<ShapeID> { refused }
     /// Shapes whose willDelete handlers have run in this transaction; removed together at the end
     /// of the outermost `delete`.
@@ -84,13 +97,23 @@ public struct Transaction {
     /// once.
     private var tops: [ShapeID: Int] = [:]
 
-    init(document: CanvasDocument, board: BoardID, registry: Registry, camera: Camera, keys: StackingKeyGenerator, file: FileAccess) {
+    init(document: CanvasDocument, board: BoardID, isBoardReadOnly: Bool, registry: Registry, camera: Camera, keys: StackingKeyGenerator,
+         file: FileAccess) {
         self.document = document
         self.board = board
+        self.isBoardReadOnly = isBoardReadOnly
         self.registry = registry
         self.camera = camera
         self.keys = keys
         self.file = file
+    }
+
+    /// Whether a shape on this board can't change: a plugin's rule says so of it, or of a container it's
+    /// in, at any depth (everything in a locked frame is locked too), or the board can't
+    /// (`isBoardReadOnly`). What the transaction holds it to, if it was there before the transaction (a
+    /// shape it put in isn't held: a paste moves its locked copies into place). O(the shape's depth).
+    public func isReadOnly(_ record: AnyShapeRecord) -> Bool {
+        isBoardReadOnly || registry.isReadOnly(record, in: document)
     }
 
     /// Whether an agent makes the change (the command line's `draw`), not a person at the app: its
@@ -107,15 +130,16 @@ public struct Transaction {
     public mutating func insert<P: ShapeProps>(_ shape: ShapeRecord<P>) { insert(AnyShapeRecord(shape)) }
 
     /// Adds on top. The shape's kind must be installed, and its id new to the file: on no board,
-    /// unless this transaction deleted it from this one.
+    /// unless this transaction deleted it from this one. A read-only board (`isBoardReadOnly`) takes
+    /// nothing: the shape doesn't go in, and services hear the board's owner refused.
     public mutating func insert(_ record: AnyShapeRecord) { add(record) }
 
     /// Adds `record` on top, with the board it owns and the boards under that: `contents` holds its
     /// board under its id, and the boards below by their owners' ids (as a copied owner's are).
     /// Every shape in it must be new to the file, of an installed kind. A board in `contents` that
     /// `record` doesn't reach is left out, as is a shape whose frame isn't finite, with its board. If
-    /// the insert itself is dropped (its frame isn't finite), or `record` is deleted later in the
-    /// transaction, its boards go too.
+    /// the insert itself is dropped (its frame isn't finite, or this board is read-only), or `record`
+    /// is deleted later in the transaction, its boards go too.
     public mutating func insert(_ record: AnyShapeRecord, contents: [ShapeID: CanvasDocument]) {
         guard add(record) else { return }
         var owners = [record.id], next = 0, ids: Set<ShapeID> = [record.id]
@@ -168,6 +192,11 @@ public struct Transaction {
         precondition(registry.definition(for: record.kind)?.erasedAccepts(record) == true,
                      "no installed plugin defines \(record.kind) shapes with these props")
         guard record.box?.isFinite ?? true else { return false }
+        // A read-only board takes nothing, as a read-only container doesn't: its owner is heard refused.
+        guard !isBoardReadOnly else {
+            if let owner = board.owner { refused.insert(owner) }
+            return false
+        }
         var record = registry.propertyTable.normalized(record)
         record.stackingKey = keys.key(between: document.shapes.last?.stackingKey, and: nil)
         // A container it comes with (a paste's copy, `copy(as:container:)`) it's in if that's a
@@ -202,7 +231,8 @@ public struct Transaction {
 
     /// Changes one shape. Its id, stacking key and container stay as they were, whatever `body`
     /// does (`setContainer` changes a container). A read-only shape keeps the change only if it
-    /// leaves the shape no longer read-only, and a shape in a read-only container keeps none.
+    /// leaves the shape no longer read-only, and a shape in a read-only container, or on a read-only
+    /// board, keeps none.
     public mutating func update(_ id: ShapeID, _ body: (inout AnyShapeRecord) -> Void) {
         guard let index = document.index(of: id) else { return }
         let old = document.shapes[index]
@@ -226,20 +256,21 @@ public struct Transaction {
     /// document before the transaction, no deletion is keeping the board whole, a container that
     /// moves isn't carrying it, and it's read-only: by a rule, and would still be as `new` (nil:
     /// deleted, or moved in the stack, which leaves it as read-only as it was), or in a read-only
-    /// container, which holds it whatever the change.
+    /// container, or on a read-only board, either of which holds it whatever the change.
     private mutating func refuses(_ old: AnyShapeRecord, becoming new: AnyShapeRecord? = nil) -> Bool {
         guard !isCascading, registry.hasReadOnlyRules, !changes.added.contains(old.id), carrying.isEmpty || !carrying.contains(old.id),
-              registry.isReadOnly(old) && (new.map(registry.isReadOnly) ?? true) || registry.isInsideReadOnlyContainer(old, in: document)
+              isBoardReadOnly || registry.isReadOnly(old) && (new.map(registry.isReadOnly) ?? true)
+                || registry.isInsideReadOnlyContainer(old, in: document)
         else { return false }
         refused.insert(old.id)
         return true
     }
 
     /// Whether this transaction holds a shape as it is, as `refuses` would, noting nothing: it was in
-    /// the document before the transaction, and it, or a container it's in, is read-only.
+    /// the document before the transaction, and it, a container it's in, or the board, is read-only.
     func holds(_ record: AnyShapeRecord) -> Bool {
         !isCascading && registry.hasReadOnlyRules && !changes.added.contains(record.id) && (carrying.isEmpty || !carrying.contains(record.id))
-            && (registry.isReadOnly(record) || registry.isInsideReadOnlyContainer(record, in: document))
+            && (isBoardReadOnly || registry.isReadOnly(record) || registry.isInsideReadOnlyContainer(record, in: document))
     }
 
     /// Moves shapes by `delta`, in world units, as dragging them that far would: a box by its
@@ -689,7 +720,8 @@ public struct Transaction {
     ///
     /// Returns whether the shape is now as `record` says. It isn't for a shape that isn't on this
     /// board or is kept aside, one whose new frame isn't finite (as `update` drops it), and a read-only
-    /// shape (or one in a read-only container), refused as `update` refuses it, which services hear.
+    /// shape (or one in a read-only container, or on a read-only board), refused as `update` refuses
+    /// it, which services hear.
     @discardableResult
     public mutating func turn(_ id: ShapeID, into record: AnyShapeRecord) -> Bool {
         precondition(registry.definition(for: record.kind)?.erasedAccepts(record) == true,
@@ -747,9 +779,10 @@ public struct Transaction {
     /// Names (`ShapeNaming`: a mention) may be of a shape on any board, and stay as they are.
     ///
     /// All or nothing for read-only shapes: if a shape that would move is read-only (or in a read-only
-    /// container), or the board's owner is (as `setContainer` holds a container, on its own board as
-    /// this transaction leaves it), nothing moves, services hear which were refused (`refusedShapes`),
-    /// and this returns false. It's false too, nothing moving and nothing refused, for a board the
+    /// container, or this board is read-only), or the board's owner is (as `setContainer` holds a
+    /// container, on its own board as this transaction leaves it, a board up the tree from it being
+    /// read-only too: the board itself is), nothing moves, services hear which were refused
+    /// (`refusedShapes`), and this returns false. It's false too, nothing moving and nothing refused, for a board the
     /// editor couldn't show once this transaction commits (`canShow`'s rule, each owner on the way up
     /// where this transaction leaves it: one not in the file, kept aside, or of a kind that owns no
     /// board). Nothing else is asked of a shape that moves (no handlers run). `board` can't be this
@@ -943,24 +976,41 @@ public struct Transaction {
     }
 
     /// Whether this transaction holds the owner of a board shapes would move onto, as `setContainer`
-    /// holds a container: on this board, as `holds` says; on another, as that board is as this
-    /// transaction leaves it, if the owner was there before it (one it brought there isn't held, as one
-    /// it added here isn't), and it, or a container it's in there, is read-only.
-    private func holdsOwner(_ owner: ShapeID) -> Bool {
-        guard let at = location(of: owner) else { return false }
-        let there = contents(of: at)
-        guard let record = there[owner] else { return false }
-        if at == board { return holds(record) }
-        return !isCascading && stagedIDs[owner] == nil && registry.isReadOnly(record, in: there)
+    /// holds a container: whether that board is read-only as this transaction leaves the file
+    /// (`isReadOnly(board:)`).
+    private func holdsOwner(_ owner: ShapeID) -> Bool { !isCascading && isReadOnly(board: BoardID(owner: owner)) }
+
+    /// Whether a board can't change, as this transaction leaves the file: this one as the transaction
+    /// was told (`isBoardReadOnly`); another while the shape that owns it, where this transaction leaves
+    /// it (`location(of:)`), is held: on this board, as `holds` says; on another, if it was there before
+    /// this transaction (one it brought there isn't held, as one it added here isn't) and it, or a
+    /// container it's in there, is read-only; or while the board that shape is on is read-only, up to
+    /// the root. The editor's rule (`registry.isReadOnly(board:in:)`), over the file as this transaction
+    /// leaves it. O(the board's depth).
+    private func isReadOnly(board target: BoardID) -> Bool {
+        guard registry.hasReadOnlyRules else { return false }
+        var current = target, met: Set<BoardID> = []
+        // Every walk up the tree stops at a board it has met: a hand-edited file may hold a loop.
+        while let owner = current.owner, met.insert(current).inserted {
+            if current == board { return isBoardReadOnly }
+            guard let at = location(of: owner) else { return false }
+            let there = contents(of: at)
+            guard let record = there[owner] else { return false }
+            if at == board { return holds(record) }
+            if stagedIDs[owner] == nil, registry.isReadOnly(record, in: there) { return true }
+            current = at
+        }
+        return false
     }
 
     /// A transaction over another board as this one leaves it, to move or settle shapes there
-    /// (`translate(_:by:on:)`, `settle(_:on:)`): the same registry, camera, keys and file, and what this
-    /// one brought there (moved there, or in with its owner) taken as added there, so it isn't held, as
-    /// what this one adds here isn't. Nil for a board the editor couldn't show once this transaction
-    /// commits. What it does comes back with `take(_:)`. `readingThrough`: it reads every other board,
-    /// and where each shape is, as this one leaves the file too (its own board among them), for a move
-    /// off that board (`move(_:from:to:)`), which reads and stages the board it goes onto.
+    /// (`translate(_:by:on:)`, `settle(_:on:)`): the same registry, camera, keys and file, read-only
+    /// as that board is as this one leaves the file (`isReadOnly(board:)`), and what this one brought
+    /// there (moved there, or in with its owner) taken as added there, so it isn't held, as what this
+    /// one adds here isn't. Nil for a board the editor couldn't show once this transaction commits.
+    /// What it does comes back with `take(_:)`. `readingThrough`: it reads every other board, and
+    /// where each shape is, as this one leaves the file too (its own board among them), for a move off
+    /// that board (`move(_:from:to:)`), which reads and stages the board it goes onto.
     func transaction(on board: BoardID, readingThrough: Bool = false) -> Transaction? {
         let way = climb(board)
         precondition(!way.isTaken, "shapes can't move or settle on a board that goes with a shape deleted in the same transaction")
@@ -970,7 +1020,8 @@ public struct Transaction {
             let here = self, file = file
             access = FileAccess(locate: { here.location(of: $0) }, subtree: file.subtree, contents: { here.contents(of: $0) }, canShow: file.canShow)
         }
-        var there = Transaction(document: contents(of: board), board: board, registry: registry, camera: camera, keys: keys, file: access)
+        var there = Transaction(document: contents(of: board), board: board, isBoardReadOnly: isReadOnly(board: board), registry: registry,
+                                camera: camera, keys: keys, file: access)
         for (id, on) in stagedIDs where on == board { there.changes.added.insert(id) }
         return there
     }

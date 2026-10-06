@@ -73,11 +73,15 @@ extension RecordingSession: Session {
     }
 }
 
-/// What the app has around Ports: the keys, the selection, the fixtures, the channels and a connector.
+/// What the app has around Ports: the keys, the selection, the fixtures, the channels and a connector;
+/// on one board, or on `file`'s.
 @MainActor func portsHarness(_ connections: ConnectionLog = ConnectionLog(), boxSides: [PortSide] = PortSide.allCases,
-                             boxRole: PortRole = .both, discRole: PortRole = .both, more: [any CanvasPlugin] = []) throws -> EditorHarness {
-    try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin(),
-                                channelsPlugin(boxSides: boxSides, boxRole: boxRole, discRole: discRole), connectorPlugin(connections)] + more)
+                             boxRole: PortRole = .both, discRole: PortRole = .both, more: [any CanvasPlugin] = [],
+                             file: CanvasFile? = nil) throws -> EditorHarness {
+    let plugins: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin(),
+                                       channelsPlugin(boxSides: boxSides, boxRole: boxRole, discRole: discRole), connectorPlugin(connections)] + more
+    guard let file else { return try EditorHarness(plugins: plugins) }
+    return try EditorHarness(plugins: plugins, file: file)
 }
 
 /// A box at (100, 100), 200 × 100: its dots are 12 points out from the middle of each side, at zoom 1.

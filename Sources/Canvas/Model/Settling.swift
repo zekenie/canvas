@@ -163,7 +163,7 @@ extension Transaction {
             // A read-only container takes nothing new, one this transaction put down too (a locked
             // frame's copy, pasted: copies are locked).
             if let target = verdict.target, target != document.container(of: record, containingKinds: kinds),
-               let into = document[target], registry.isReadOnly(into, in: document) { continue }
+               let into = document[target], isReadOnly(into) { continue }
             if name(verdict.target, for: shape), let target = verdict.target { joined[target, default: []].append(shape) }
             if verdict.delta != .zero {
                 for moved in translated([shape], by: verdict.delta) { nudges[moved] = (nudges[moved] ?? .zero) + verdict.delta }

@@ -13,6 +13,11 @@ enum BoardsStyle {
     static let maxWidth: CGFloat = 640
     /// The root's crumb when the host names it nothing.
     static let rootFallback = "Board"
+    /// The lock after the name of the crumb where the read-only part of the path starts: its symbol,
+    /// how far it is from the name, and what it's called (its tooltip, and to assistive apps).
+    static let readOnlySymbol = "lock.fill"
+    static let readOnlySpacing: CGFloat = 3
+    static let readOnlyLabel = "Read-only"
     /// How long the pointer stays on a crumb before its menu shows, and off it and its menu before
     /// the menu closes (data-canvas's hover intent).
     static let menuDelay: Duration = .milliseconds(150)

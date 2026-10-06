@@ -118,6 +118,30 @@ import TestKit
             expect(a.height > 0 && cut.height == a.height, "\(which): on one line: \(a.height), then \(cut.height)")
         }
     },
+    test("the lock is drawn after the name of the crumb where the read-only part starts, once: not after the crumbs below it, nor on a path with none") {
+        let nest = Nest()
+        let h = try nestHarness(nest, [FreezingPlugin()])
+        /// The path's pill over P's board (root › D › P) when `frozen` is frozen on its board, as drawn, and D's crumb button.
+        @MainActor func measure(freezing frozen: [(ShapeID, BoardID)]) throws -> (pill: CGSize, crumb: CGFloat) {
+            let file = h.editor.file
+            let editor = try windowEditor(file, [FreezingPlugin()])
+            for (shape, board) in frozen { editor.transact(on: board, "Freeze") { $0.update(shape) { $0[Frozen.self] = true } } }
+            let path = PathWindow(editor)
+            expect(editor.showBoard(nest.dBoard))
+            expect(editor.showBoard(nest.pBoard))
+            path.window.spin { path.buttons.count == 2 }
+            path.window.settle()
+            return (drawnSize(of: path.hosting), path.frame(of: path.buttons[1]).width)
+        }
+        let plain = try measure(freezing: [])
+        let top = try measure(freezing: [(nest.d, .root)])              // D's board is read-only, and P's under it
+        let below = try measure(freezing: [(nest.p, nest.dBoard)])       // only P's
+        expect(top.crumb > plain.crumb + 5 && top.crumb < plain.crumb + 20, "the lock follows D's name, in D's crumb: \(plain.crumb), then \(top.crumb)")
+        expectEqual(below.crumb, plain.crumb, "D's isn't read-only: no lock there")
+        expect(top.pill.width > plain.pill.width + 5 && top.pill.width < plain.pill.width + 20, "one lock: \(plain.pill.width), then \(top.pill.width)")
+        expect(abs(top.pill.width - below.pill.width) < 2, "one lock either way, though P's board is read-only too: \(top.pill.width), \(below.pill.width)")
+        expectEqual(top.pill.height, plain.pill.height, "on the same line")
+    },
     test("the path redraws when another board is shown or its names change, never for a commit on the board shown") {
         let nest = Nest()
         let editor = try windowEditor(nest.file)
@@ -289,6 +313,12 @@ import TestKit
     expect(editor.showBoard(nest.dBoard))
     if !shown { expect(editor.showBoard(nest.pBoard)) }
     window.settle()
+    return drawnSize(of: hosting)
+}
+
+/// How big what a view draws is, in points: the box around every pixel that isn't the view's corner's.
+@MainActor private func drawnSize(of hosting: NSView) -> CGSize {
+    let bounds = hosting.bounds
     let bitmap = snapshot(hosting)
     let background = pixel(bitmap, at: CGPoint(x: 2, y: 2))
     var xs: [Int] = [], ys: [Int] = []
