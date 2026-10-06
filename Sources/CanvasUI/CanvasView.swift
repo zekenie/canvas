@@ -3,8 +3,8 @@ import AppKit
 import Geometry
 
 /// The AppKit view around a `CanvasEditor`: turns NSEvents into editor calls, draws it, and hosts
-/// its subviews: a shape's editing view, the minimap when it shows, and the editor's popover over
-/// everything. Plugins can't import this module.
+/// its subviews: a shape's editing view, the minimap when it shows, the zoom above it while it
+/// changes, and the editor's popover over everything. Plugins can't import this module.
 public final class CanvasView: NSView {
     public let editor: CanvasEditor
     private var editingView: EditingView?
@@ -15,6 +15,8 @@ public final class CanvasView: NSView {
     /// The minimap, in the bottom-left corner, over everything else; nil while the host doesn't show
     /// it (and hidden, though there, while the board is empty).
     public private(set) var minimap: MinimapView?
+    /// The zoom, above the minimap (in its corner without one), while it changes.
+    public let zoomIndicator: ZoomIndicator
     /// Where the pointer is, as the canvas last heard it: on the canvas, or over a view that has the
     /// pointer there, where the tool has been told it left: one it hosts (the minimap, the editing
     /// view), or one the host puts over it (`covered`: the path over a subboard's canvas, and its
@@ -37,12 +39,15 @@ public final class CanvasView: NSView {
                 minimap = nil
                 if pointerPlace == .minimap { pointerPlace = .canvas }
             }
+            layoutZoomIndicator()
         }
     }
 
     public init(editor: CanvasEditor) {
         self.editor = editor
+        zoomIndicator = ZoomIndicator(editor: editor)
         super.init(frame: .zero)
+        addSubview(zoomIndicator)
         editor.delegate = self
         editor.liveModifiers = { Modifiers(NSEvent.modifierFlags) }
         addTrackingArea(NSTrackingArea(
@@ -73,6 +78,7 @@ public final class CanvasView: NSView {
         super.setFrameSize(newSize)
         editor.viewportDidResize(to: newSize)
         layoutMinimap()
+        layoutZoomIndicator()
         layoutPopover()
     }
 
@@ -80,6 +86,11 @@ public final class CanvasView: NSView {
         guard let minimap else { return }
         let size = MinimapStyle.size(in: bounds.size)
         minimap.frame = CGRect(x: MinimapStyle.margin, y: bounds.height - MinimapStyle.margin - size.height, width: size.width, height: size.height)
+    }
+
+    private func layoutZoomIndicator() {
+        let below = minimap.flatMap { $0.isHidden ? nil : $0.frame }
+        zoomIndicator.frame = ZoomIndicatorStyle.frame(zoomIndicator.labelSize, in: bounds.size, above: below)
     }
 
     /// Whether a point (view points) is on the minimap, which takes its own clicks while it shows
@@ -137,10 +148,10 @@ public final class CanvasView: NSView {
     /// let go (Space's pan).
     @objc private func windowDidResignKey(_ notification: Notification) { editor.keysReleased() }
 
-    /// A menu began tracking (the canvas's context menu, the toolbar's zoom menu, the path's "…", the
-    /// menu bar): its loop takes the keys, a key's release too, while the window stays key and the
-    /// canvas keeps the keyboard, so every key held is let go. One still down when the menu closes
-    /// is held again by its next repeat.
+    /// A menu began tracking (the canvas's context menu, the path's "…", the menu bar): its loop
+    /// takes the keys, a key's release too, while the window stays key and the canvas keeps the
+    /// keyboard, so every key held is let go. One still down when the menu closes is held again by
+    /// its next repeat.
     @objc private func menuDidBeginTracking(_ notification: Notification) { editor.keysReleased() }
 
     /// A key let go while ⌘ is held never reaches the key window (NSApplication keeps it), so the
@@ -445,6 +456,8 @@ extension CanvasView: NSMenuItemValidation {
         needsDisplay = true
         minimap?.updateVisibility()
         minimap?.needsDisplay = true
+        // Placed again while it shows, as the minimap under it may have shown or hidden meanwhile.
+        if zoomIndicator.zoomMayHaveChanged() || !zoomIndicator.isHidden { layoutZoomIndicator() }
         layoutEditingView()
         layoutPopover()
     }
@@ -489,7 +502,8 @@ extension CanvasView: NSMenuItemValidation {
             if pointerPlace == .editingView { pointerPlace = .canvas }
         }
         guard let new = editor.makeEditingView() else { return }
-        addSubview(new.view, positioned: .below, relativeTo: minimap)
+        // Under everything else the canvas hosts.
+        addSubview(new.view, positioned: .below, relativeTo: nil)
         editingView = new
         layoutEditingView()
         window?.makeFirstResponder(new.firstResponder)

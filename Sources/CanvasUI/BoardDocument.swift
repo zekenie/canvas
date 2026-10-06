@@ -243,11 +243,13 @@ public final class BoardDocument: NSDocument {
     /// Its window, with the view this Mac remembers of the file: the details and the minimap, each
     /// board's camera, and the board left open, which it opens on, if the file can still show it
     /// (else the root). Opening there puts the file in place on that board (`replaceFile(with:showing:)`),
-    /// so it isn't a step back, nor an edit.
+    /// so it isn't a step back, nor an edit. The camera comes back before the window makes its canvas,
+    /// so the zoom it opens at isn't a change of zoom to show.
     public override func makeWindowControllers() {
+        let saved = fileURL.flatMap { viewMemory.recall(for: $0) }
+        if let saved { editor.camera = saved.camera }
         addWindowController(BoardWindowController(board: self))
-        if let url = fileURL, let saved = viewMemory.recall(for: url) {
-            editor.camera = saved.camera
+        if let saved {
             editor.rememberedCameras = saved.cameras
             rememberedOrder = saved.recentBoards
             if let board = saved.openBoard, board != editor.board, editor.canShow(board) {

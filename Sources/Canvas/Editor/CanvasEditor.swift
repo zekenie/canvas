@@ -114,9 +114,10 @@ public final class CanvasEditor {
         }
     }
 
-    /// The zoom where the camera is headed (`cameraTarget`), in whole percent: what the toolbar shows,
-    /// and what the zoom commands step from. Observed apart from `camera`, and set only when it
-    /// changes, so a view that shows it redraws as the zoom does, never as the camera pans.
+    /// The zoom where the camera is headed (`cameraTarget`), in whole percent: what the canvas shows
+    /// above the minimap as it changes, and what the zoom commands step from. Observed apart from
+    /// `camera`, and set only when it changes, so a view that shows it redraws as the zoom does,
+    /// never as the camera pans.
     public internal(set) var zoomPercentage = 100
 
     /// The hosting view's size, in view points: the part of the world the camera shows is

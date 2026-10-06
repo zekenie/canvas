@@ -27,12 +27,15 @@ import TestKit
 // a shape on its own edge (B outlined as the arrow's target hugs it in "re-aiming-into-b"), where
 // the app stands every closed shape's outline off its edge by 4 view points (`Style.outlineStandoff`),
 // so every board here is drawn with no standoff (`outlineStandoff = 0`, host SPI), as the POC drew
-// it; what the app draws is held by CanvasTests' outline tests. The goldens stay as the POC
+// it; what the app draws is held by CanvasTests' outline tests. A third: the app shows the zoom
+// above the minimap while it changes, which the POC had no such thing as, so the snapshots leave
+// it out (`zoomIndicator`, hidden), and CanvasUITests hold it. The goldens stay as the POC
 // recorded them.
 
 /// Compares a snapshot of `view` with Fixtures/poc-<name>.png; on a difference, writes the
 /// snapshot to build/parity-<name>.png.
 @MainActor func expectMatchesPOC(_ view: NSView, _ name: String, file: StaticString = #fileID, line: UInt = #line) throws {
+    (view as? CanvasView)?.zoomIndicator.isHidden = true
     let rep = snapshot(view)
     let golden = try require(NSBitmapImageRep(data: try Data(contentsOf: URL(fileURLWithPath: "Tests/CompositionTests/Fixtures/poc-\(name).png"))),
                              file: file, line: line)
