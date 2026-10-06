@@ -330,10 +330,10 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
             }
             return sides
         }
-        /// What a cell says of a kind's channels: `none…`, or a channel in backticks and its sides.
-        @MainActor func said(_ cell: String, channel: String? = nil) -> [String: Set<String>] {
-            guard let channel = channel ?? backticked(cell).first, !cell.hasPrefix("none") else { return [:] }
-            return [channel: sideWords(cell)]
+        /// What a cell says of a kind's channels: `none…`, or each channel in backticks, on the sides it names.
+        @MainActor func said(_ cell: String) -> [String: Set<String>] {
+            guard !cell.hasPrefix("none") else { return [:] }
+            return Dictionary(backticked(cell).map { ($0, sideWords(cell)) }) { first, _ in first }
         }
         @MainActor func attributes(_ kind: String) -> Set<String> { Set(kinds[kind]?["attributes"]?.objectValue?.keys.map { $0 } ?? []) }
 
@@ -361,12 +361,13 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
             expectEqual(row[1], kinds[kind]?["size"]?.stringValue, "the reference: \(kind)'s size")
             expectEqual(said(row[4]), channels(kind), "the reference: \(kind)'s edges")
         }
-        let ports = try require(tables.first { $0.first == ["kind", "channel", "sides"] }, "the reference's table of channels")
+        let ports = try require(tables.first { $0.first == ["kind", "channels", "sides"] }, "the reference's table of channels")
         var inPorts: Set<String> = []
         for row in ports.dropFirst() where row.count == 3 {
             for kind in backticked(row[0]) {
                 inPorts.insert(kind)
-                expectEqual(row[1] == "none" ? [:] : [backticked(row[1]).first ?? "?": sideWords(row[2])], channels(kind), "the reference: \(kind)'s channels")
+                expectEqual(row[1] == "none" ? [:] : Dictionary(backticked(row[1]).map { ($0, sideWords(row[2])) }) { first, _ in first }, channels(kind),
+                            "the reference: \(kind)'s channels")
             }
         }
         expectEqual(inPorts, Set(kinds.keys), "the reference's channels, for every drawable kind")

@@ -104,7 +104,7 @@ A kind is drawable when a tool places it. These are the shipped ones:
 |---|---|---|---|---|
 | `sticky-note` | 200x200 | its title, a pill above its top-left corner | `text:` | `note-link`, all four sides |
 | `schema-card` | 240x52 | its schema's "title", a pill above its top-left corner: never a title of its own | `prompt:`, in words, on the card; `schema:` in its panel | `schema-link`, all four sides |
-| `subboard` | 240x160 | its title, drawn on its card | nothing else: its board is its own | none |
+| `subboard` | 240x160 | its title, drawn on its card | nothing else: its board is its own | every channel (`subboard-link`, `note-link`, `schema-link`), all four sides |
 | `frame` | 640x400 | its title, a pill above its top-left corner | nothing else: it holds what's drawn `in` it | none |
 | `reference` | 120x32 | nothing: it has no title, so a script can't name one, nor draw an edge to it | `query:`, a query in the query language; `all:` | none |
 
@@ -489,20 +489,22 @@ Without `from:` or `to:`, an end aims at the middle of its shape, and the line i
 
 A channel is what kind of connection an edge is. Each kind has ports on some channels, on some sides, and an edge on a channel runs only between shapes whose kinds take it: from a shape with ports on it, to a shape that accepts it.
 
-| kind | channel | sides |
+| kind | channels | sides |
 |---|---|---|
 | `sticky-note` | `note-link` | all four |
 | `schema-card` | `schema-link` | all four |
-| `subboard` | none | none |
+| `subboard` | `subboard-link`, `note-link`, `schema-link` | all four |
 | `frame` | none | none |
 | `reference` | none | none |
+
+A subboard has ports on every channel, its own first: a note or a schema card connects to one on its own channel, a subboard to either on theirs, and two subboards on `subboard-link`. A note and a schema card share no channel.
 
 `build/canvas kinds` lists each kind's channels by side, under `edges`. How an edge's channel is chosen:
 
 - **`channel: <id>`**: that channel. The start's kind must have ports on it, and the end's kind must accept it. Otherwise it's `no_channel`, and the message says what each end takes, side by side. A word that isn't a channel is `invalid_value`, and the hint lists the channels.
 - **`channel: none`**: a plain arrow, on no channel, between any two shapes, from and to any sides.
-- **Unwritten**: the first of the start's channels (on the `from:` side, if named) that the end accepts (on the `to:` side, if named). If there's none, and neither kind has ports on any channel, it's a plain arrow, from and to any sides named. If there's none and either kind does have ports, it's `no_channel`: `"Ingest" and "Monday" share no channel: a sticky-note connects on note-link, a subboard has no ports`, with the hint `channel: none draws a plain arrow between them anyway`.
-- **A side a kind has no port on** is refused. With `channel:` written, it's `invalid_value`, and the message says which sides the kind does have ports on. With the channel unwritten, no channel fits that side, so it's `no_channel`. Notes and schema cards have ports on all four sides, so every side is fine for them; this is for a kind with ports on fewer.
+- **Unwritten**: the first of the start's channels (on the `from:` side, if named) that the end accepts (on the `to:` side, if named). If there's none, and neither kind has ports on any channel (two frames), it's a plain arrow, from and to any sides named. If there's none and either kind does have ports, it's `no_channel`: `"Ingest" and "Row" share no channel: a sticky-note connects on note-link, a schema-card on schema-link`, or `"Ingest" and "Sprint" share no channel: a sticky-note connects on note-link, a frame has no ports`, with the hint `channel: none draws a plain arrow between them anyway`.
+- **A side a kind has no port on** is refused. With `channel:` written, it's `invalid_value`, and the message says which sides the kind does have ports on. With the channel unwritten, no channel fits that side, so it's `no_channel`. Notes, schema cards and subboards have ports on all four sides, so every side is fine for them; this is for a kind with ports on fewer.
 - **An edge from a shape to itself** on a channel is refused. With `channel: none` it's a short straight arrow inside the shape (from its middle, or between the sides named), not a loop around it. To show a loop, draw it through a second shape.
 
 ```draw
@@ -525,7 +527,7 @@ edge "Clean" -> "Load" text: "deduplicated" labelPosition: 0.3
 
 ```draw-error
 // reason: no_channel
-edge "Ingest" -> "Monday"
+edge "Ingest" -> "Row"
 ```
 
 ### Drawing one again
@@ -726,7 +728,7 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | `no_room` | The placements can't all hold. `"Squeeze" is right of "Ingest" and left of "Clean", and there's no room between them` · `… clear of "Q"` · `"N" is inside "Z" top-left, and there's no room left in "Z"` · `"Wide" is in "Sprint", and there's no room left in "Sprint"` | Drop or change a placement, or ask for a smaller gap. Shapes on the board don't move, so to make room, restate them with placements. |
 | `circular` | `"Loop" is placed against itself`, or in itself (`in`), or two shapes wait on each other: `"N" is level with "A" and "B", but "B" is placed vertically against "N" in turn` | Place one of them against something else. |
 | `unordered` | Two shapes would overlap and nothing says which side of the other either sits on. `"North" and "Far north" overlap, and nothing says which side of the other either one sits on` · `"N" is on "P" and can't move, but it overlaps "Q"` | Place one against the other, place it elsewhere, or say `overlap: allow`. Held on an empty zone, the hint says so: place it elsewhere, or, if the zone is meant to hold shapes, put a first one `inside` it. |
-| `no_channel` | The edge's ends share no channel, on the sides named if any, or the channel written isn't one both ends take. `"Ingest" and "Monday" share no channel: a sticky-note connects on note-link, a subboard has no ports` · `a connection on note-link can't end where it starts` | Connect like to like, name a side that has the port, or say `channel: none`. |
+| `no_channel` | The edge's ends share no channel, on the sides named if any, or the channel written isn't one both ends take. `"Ingest" and "Row" share no channel: a sticky-note connects on note-link, a schema-card on schema-link` · `a connection on note-link can't end where it starts` | Connect like to like (or to a subboard), name a side that has the port, or say `channel: none`. |
 | `cannot_connect` | The app won't connect that end at all, and the message names the end. | Connect a different shape. |
 | `no_edges` | No plugin in this app draws connections. | Draw shapes only. |
 | `no_names` | No plugin in this app names shapes, so titles can't be matched. | Titled statements can't work in this app. |

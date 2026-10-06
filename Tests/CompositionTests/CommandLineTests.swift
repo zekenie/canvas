@@ -33,9 +33,9 @@ import Titles
     try run(builtExecutable("CanvasCLI"), ["--socket", server.path] + arguments, input: input)
 }
 
-/// Notes and two subboards, joined: notes on their channel (once from and to named
-/// sides), and two plain edges, one between kinds without ports and one from a note to one, which
-/// has to say so.
+/// Notes and two subboards, joined: the notes on their channel (once from and to named sides), the
+/// subboards on theirs, and, plain, a note to a subboard, which has to say so (unwritten, it's on
+/// the note's channel).
 let diagram = #"""
 sticky-note "Web" text: "Browser app"
 sticky-note "API" right of "Web" text: "Public API"
@@ -216,7 +216,7 @@ edge "API" -> "Cache" channel: none
         let rows = said["changes"]?.arrayValue ?? []
         expectEqual(rows.map { $0["did"] }, Array(repeating: "created", count: 6) + Array(repeating: "connected", count: 4))
         expectEqual(rows.compactMap { $0["title"]?.stringValue }, ["Web", "API", "Jobs", "Mail", "Backend", "Cache"])
-        expectEqual(rows.filter { $0["from"] != nil }.map { $0["channel"] }, ["note-link", "note-link", nil, nil])
+        expectEqual(rows.filter { $0["from"] != nil }.map { $0["channel"] }, ["note-link", "note-link", "subboard-link", nil])
         expectEqual(said["warnings"], [], "clear of each other, and valid")
         expectEqual(said["dryRun"], nil)
 
@@ -230,7 +230,7 @@ edge "API" -> "Cache" channel: none
         let arrows = editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }
         @MainActor func title(_ terminal: ArrowTerminal) -> String? { terminal.binding.flatMap { editor.document[$0.shapeID] }.flatMap { registry.title(of: $0) } }
         expectEqual(arrows.map { "\(title($0.props.start) ?? "?") -> \(title($0.props.end) ?? "?") \($0[ChannelProperty.self]?.rawValue ?? "plain")" },
-                    ["Web -> API note-link", "Jobs -> Mail note-link", "Backend -> Cache plain", "API -> Cache plain"])
+                    ["Web -> API note-link", "Jobs -> Mail note-link", "Backend -> Cache subboard-link", "API -> Cache plain"])
         let aimed = try require(arrows.first { title($0.props.start) == "Jobs" })
         expectEqual(aimed.props.start.binding?.normalizedAnchor, CGPoint(x: 1, y: 0.5), "from: right")
         expectEqual(aimed.props.end.binding?.normalizedAnchor, CGPoint(x: 0, y: 0.5), "to: left")

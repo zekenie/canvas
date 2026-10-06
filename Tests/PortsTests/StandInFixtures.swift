@@ -11,6 +11,8 @@ import Topology
 // record names them) and has ports on every channel (`portsOnEveryChannel`, left and right), so what
 // it takes follows what it stands for. A hub is a kind with ports on both channels whose wire only
 // starts connections, so a relay for a hub and another kind has fewer channels or roles than either.
+// A junction has ports on the pipe and then on every channel, as a subboard has them (its own channel
+// first), so a relay for one has the channels in the junction's order, not its own.
 
 /// A box that stands for the shapes it cites.
 struct Relay: BoxShapeProps {
@@ -57,6 +59,26 @@ extension HubDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<Hub>, in context: RenderContext) {}
 }
 
+/// A box with ports on the pipe first, and then on every channel, as a subboard's are.
+struct Junction: BoxShapeProps {
+    static let kind: ShapeKind = "junction"
+    static let properties = Properties<Junction> {
+        Property("frame", \.frame).required()
+    }
+    var frame: CGRect
+    init(_ frame: CGRect) { self.frame = frame }
+}
+
+extension Junction {
+    init() { self.init(.zero) }
+}
+
+struct JunctionDefinition {}
+
+extension JunctionDefinition: ShapeDefinition {
+    func render(_ shape: ShapeRecord<Junction>, in context: RenderContext) {}
+}
+
 /// Relays, with ports on every channel on the sides given; and hubs.
 @MainActor func relaysPlugin(sides: [PortSide] = [.left, .right], role: PortRole = .both) -> Contributor {
     Contributor(id: "relays") { registrar in
@@ -71,9 +93,20 @@ extension HubDefinition: ShapeDefinition {
     }
 }
 
-/// An editor like `portsHarness`'s, with relays and hubs.
-@MainActor func relayHarness(_ connections: ConnectionLog = ConnectionLog(), sides: [PortSide] = [.left, .right], role: PortRole = .both) throws -> EditorHarness {
-    try portsHarness(connections, more: [relaysPlugin(sides: sides, role: role)])
+/// Junctions: ports on the pipe, then on every channel (the wire).
+@MainActor func junctionsPlugin() -> Contributor {
+    Contributor(id: "junctions") { registrar in
+        registrar.shape(JunctionDefinition()) { junction in
+            junction.ports(Pipe.self)
+            junction.portsOnEveryChannel()
+        }
+    }
+}
+
+/// An editor like `portsHarness`'s, with relays and hubs (and what `more` adds, junctions among them).
+@MainActor func relayHarness(_ connections: ConnectionLog = ConnectionLog(), sides: [PortSide] = [.left, .right], role: PortRole = .both,
+                             more: [any CanvasPlugin] = []) throws -> EditorHarness {
+    try portsHarness(connections, more: [relaysPlugin(sides: sides, role: role)] + more)
 }
 
 /// Where most tests put what a relay stands for: clear of the relay at `boxFrame`.

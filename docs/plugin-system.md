@@ -460,7 +460,7 @@ never back.
 
 A concern may also own the one kind it's drawn as, so that nothing has to join them:
 [Connections](#ports) holds ports, channels and the arrow, the shape a connection is drawn as, and
-notes and schema cards import it to declare their channels without importing a vertical. Each part
+notes, subboards and schema cards import it to declare their channels without importing a vertical. Each part
 is a plugin value of its own (`PortsPlugin`, `ArrowsPlugin` and `ArrowPortsPlugin`, which makes
 arrows what a drag from a port draws and is the only code in the module that knows both arrows and
 channels), so a list can have arrows without ports, or ports with a connector of its own.
@@ -4529,7 +4529,8 @@ of a [container](#containers) easing there) is drawing offsets too.
 Ports are data-canvas's: dots just outside the sides of the shape the pointer is over, from which a
 drag draws an arrow to another shape. Not to any shape: each port is on a channel, a kind of
 connection, and the arrow may end only on a shape that takes its channel, so a note links to a note
-and a schema card to a schema card, never one to the other. They belong to Connections
+and a schema card to a schema card, never one to the other, while a subboard takes every channel,
+so anything with ports links to one, and one to anything with ports. They belong to Connections
 ([`Sources/Connections`](../Sources/Connections)), a horizontal any kind opts into, built on
 Selection, whose [canvas buttons](#canvas-buttons) the dots are (and on TableOfContents and
 TextEditing, for the arrow's row and its label's editor). It holds ports, channels and the arrow, in
@@ -4582,7 +4583,29 @@ registrar.channel(NoteLink.self)                       // which this plugin decl
 ```
 
 [Schema cards](#schema-cards) do the same with `SchemaLink` (`schema-link`, the card's accent), on
-all four sides too ([SchemaLinks.swift](../Sources/Schemas/SchemaLinks.swift)). The channels say nothing more yet: a
+all four sides too ([SchemaLinks.swift](../Sources/Schemas/SchemaLinks.swift)). [Subboards](#subboards)
+have a channel of their own, `SubboardLink` (`subboard-link`, the card's indigo), and ports on it
+and then on every other, so a note or a schema card links to a subboard on its own channel, a
+subboard to either on theirs, and two subboards on `subboard-link`
+([SubboardLinks.swift](../Sources/Subboards/SubboardLinks.swift)):
+
+```swift
+extension ShapeRegistrar where Definition == SubboardDefinition {
+    /// Ports on all four sides, the top too, as a schema card's: a long title's pill runs under the
+    /// top dot. Its own channel is first, so its dots are indigo (a dot is its first channel's
+    /// color) and a drag to another subboard is on it (a drag is drawn on the first of the dot's
+    /// channels the shape it ends on takes); every channel there is comes after, so what has ports
+    /// on any of them links to a subboard, and a subboard to it.
+    mutating func subboardLinks() {
+        ports(SubboardLink.self)
+        portsOnEveryChannel()
+    }
+}
+```
+
+What links to what is then all the ports say: a note to a note or a subboard, a schema card to a
+schema card or a subboard, a subboard to anything with ports, and a note and a schema card never to
+each other. The channels say nothing more yet: a
 channel is where a connection's meaning would go (one schema referring to another, say), and it's
 already what a connection is in Topology's graph: its edge type.
 
@@ -4594,8 +4617,8 @@ already what a connection is in Topology's graph: its edge type.
   its edge type's [summary](#types)). The plugin that owns what a connection on it means declares it,
   `registrar.channel(C.self)` (the `Channels` point: a channel declared twice is a `conflict`), and
   kinds have ports on it by its type, so a plugin that gives a kind ports on another's channel
-  imports that plugin's module. StickyNotes declares `NoteLink` for its notes, and Schemas
-  `SchemaLink` for its cards; a channel that joins kinds of several plugins would be declared by the
+  imports that plugin's module. StickyNotes declares `NoteLink` for its notes, Subboards
+  `SubboardLink` for its subboards and Schemas `SchemaLink` for its cards; a channel that joins kinds of several plugins would be declared by the
   horizontal whose meaning it is (data-canvas's `registerHostChannel` calls come from such a
   feature), and given to their kinds by a plugin that imports both.
 - **A channel is an edge type too.** `registrar.channel(C.self)` also declares Topology's edge type
@@ -4623,7 +4646,8 @@ contribution per kind and channel, and a kind may have ports on several:
 - **`sides`** (`PortSide`: `.top`, `.right`, `.bottom`, `.left`; all four by default) are where
   its dots are, one just outside the middle of each. A side with ports on several channels has one
   dot, in its first channel's color, and a connection from it is drawn on the first of its channels
-  the shape it ends on takes.
+  the shape it ends on takes (a subboard's: indigo, and `subboard-link` to another subboard, but
+  `note-link` to a note).
 - **`role`** (`PortRole`, a data-canvas port's end) is what the ports let the kind be: `.both`
   (the default), `.source` (its dots start connections, and none ends on it) or `.target`
   (connections end on it, and it has no dots).
@@ -4676,7 +4700,10 @@ built, to each channel the registry declares, in plugin order, where the entry s
 channel the kind was given ports on earlier keeps those). The kind names none, so it needs none of
 the plugins that own the channels; and because `registry.accepts` is then true of it on every
 channel, an arrow [translated](#the-connector-arrows) onto one keeps its binding, and a script's
-edge picks a channel by its kind alone, as `connectionChannel` has it.
+edge picks a channel by its kind alone, as `connectionChannel` has it. A kind that isn't a stand-in
+uses it too, after a channel of its own, to take every channel there is: a subboard's ports are
+`ports(SubboardLink.self)` and then `portsOnEveryChannel()`, so its own channel is first in its
+table, its dots are that channel's color, and anything with ports links to it.
 
 What a person sees and drags is **per shape**, though, a deliberate departure from ports being per
 kind: `PortState.ports(of: record)` replaces the kind's table in every question about one shape (its
@@ -4684,10 +4711,14 @@ dots, a drag from one, `editor.channel(of:endingAt:)`, the faint outlines while 
 drawn). For a shape whose kind stands in (Topology's `standInKinds`) it answers from
 `topology.forwards(of:)`:
 
-- **One kind stood for:** that kind's channels and roles, on the stand-in's own sides.
-- **Several kinds** (a reference for every match of a query): the channels all of them take, each
-  with the roles all of them allow (a kind whose connections only start and one whose connections
-  only end share none).
+- **One kind stood for:** that kind's channels and roles, in its order, on the stand-in's own
+  sides. The order is the shape's, not the stand-in's (which, for ports on every channel, is the
+  order the channels are declared in), so a pill for a subboard draws what a subboard draws: its
+  indigo dots, and a `subboard-link` to a subboard, where the pill's own order would give it
+  `note-link`'s color and channel first.
+- **Several kinds** (a reference for every match of a query): the channels all of them take, in the
+  order of the first shape stood for, each with the roles all of them allow (a kind whose
+  connections only start and one whose connections only end share none).
 - **Nothing** (empty, pending, missing, private, unavailable): none. No dots show, and no drag ends
   on it. An arrow on no channel (`channel: none`'s) still binds there, as it binds anywhere.
 
@@ -4824,7 +4855,7 @@ registrar.arrowBindingRule { query in
   scrolling](#tools-and-sessions)), where tldraw's handle drags don't, so a shape off screen can be
   linked to without zooming out (where dots don't show, under 25%). The app had
   tldraw's arrow tool (A) too, until ports became the way to connect; it's gone, and a person
-  draws arrows from ports alone, so kinds without ports (subboards) are connected only
+  draws arrows from ports alone, so kinds without ports (frames) are connected only
   by `canvas draw`, on no channel.
 - **An arrow bound at both ends is an edge** ([Topology](#sources)): `connects` gives the
   connector's kind an edge source when it has `ends`, one edge from the shape it starts on to the
@@ -6301,7 +6332,7 @@ kept aside (`record.isOpaque`) carries none, nor does a shape on a board the edi
 - **Shipped:** `stands-for` (`StandingEdge`, Topology's own, declared by `TopologyPlugin`: a
   [stand-in](#stand-ins-forwarding)'s edge to each shape it stands for), a root, so every
   vocabulary lists it first; `arrow` (`ArrowEdge`, Connections'), a plain arrow's type, and under it
-  each channel's, `note-link` and `schema-link`; and `mention` (`MentionEdge`, Mentions'), a root. A channel is an
+  each channel's, `note-link`, `subboard-link` and `schema-link`; and `mention` (`MentionEdge`, Mentions'), a root. A channel is an
   edge type of the same name, which `registrar.channel(C.self)` declares with it
   ([Channels](#channels)), under the family the connector names (`connects(_:edgeType:…)`), so its
   parent follows from the registry as built: `registrar.edgeType(_:parent:)` is that form, the
@@ -6312,7 +6343,7 @@ kept aside (`record.isOpaque`) carries none, nor does a shape on a board the edi
   (`EdgeTypeTree.summary(of:)`; `edgeType(_:parent:summary:)` carries one, and Connections' `Channel.summary`,
   nil by default, is passed on by `registrar.channel(C.self)` to the type it declares). Shipped:
   `arrow`, "an arrow bound at both ends, from the shape it starts on to the shape it ends on, whatever
-  its arrowheads"; `note-link`, "an arrow drawn on the note-link channel", and `schema-link` likewise;
+  its arrowheads"; `note-link`, "an arrow drawn on the note-link channel", and `subboard-link` and `schema-link` likewise;
   `mention`, "a mention in a shape's text, from that shape to the shape it names"; `stands-for`,
   "from a shape to each shape it stands for".
 - **An edge reports its most specific type**, and a query names types with an `EdgeTypeFilter`:
@@ -7418,11 +7449,13 @@ registrar.shape(SubboardDefinition()) { sub in                     // SubboardDe
         ContentsLabel("", placeholder: "Untitled Subboard", systemImage: "rectangle.stack", color: Color(nsColor: SubboardStyle.border))
     }
     sub.details(header: { $sub in TitleHeader($sub, placeholder: "Untitled Subboard", systemImage: "rectangle.stack") }) {}
+    sub.subboardLinks()                                             // Connections: ports on its own channel, then on every other
 }
+registrar.channel(SubboardLink.self)                                // which this plugin declares
 ```
 
 (The row and the header are in files of their own, `SubboardRow.swift` and `SubboardHeader.swift`,
-as SwiftUI sugar is.)
+as SwiftUI sugar is, and the channel and the ports in `SubboardLinks.swift`.)
 
 - **Its props are its frame**, 240 × 160 placed: `Properties<Subboard>(title: "Subboard") {
   Property("frame", \.frame).required() }`. What it's called is the title Titles adds (`title`,
@@ -7478,6 +7511,18 @@ as SwiftUI sugar is.)
 - **Mentioning it** is Mentions': a note's `@` picker offers it by its title, or "Untitled
   Subboard", with its symbol, and a double-click on its pill (or Go to) enters it
   (`following: .opens`, Selection's `goInto`), from its board or another, one step back.
+- **Connecting it** is Connections' ([Ports](#ports)): ports on all four sides, on a channel of its
+  own, `subboard-link` (`SubboardLink`, its border's indigo), and then on every channel there is
+  (`ports(SubboardLink.self)`, then `portsOnEveryChannel()`), so anything that has ports connects
+  to a subboard and a subboard to anything that has them: a note or a schema card on its own
+  channel, either way round, and two subboards on `subboard-link`. A dot is its first channel's
+  color, and a drag is drawn on the first of its channels the shape it ends on takes, so a
+  subboard's dots are indigo, a drag to another subboard is a `subboard-link` and one to a note or
+  a card is theirs. An arrow keeps its channel, so a note's link to a subboard can be re-aimed onto
+  notes and subboards only, and a subboard's to another onto subboards only. The top dot is in the
+  row its title's pill is in, as a note's and a card's are. A pill that stands for one has the same
+  dots and links ([Ports at a stand-in](#ports-at-a-stand-in)). Frames have no ports, so an edge
+  between a subboard and a frame, in `canvas draw`, says `channel: none`.
 - **Deleting it** deletes its board and every board under it, as one step, like any shape's;
   undoing it brings them all back with every id.
 - **Turning a frame into one** is Transform's ([Transform](#transform)): Subboards takes the container
@@ -8156,8 +8201,9 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
 - **Ports.** A reference has ports on every channel on its left and right, but what a person drags
   from and what ends on it is what it stands for ([Ports at a stand-in](#ports-at-a-stand-in)): a drag
   from a note ends on a pill that stands for a note and not on one that stands for a schema card, and
-  an arrow re-aimed onto one obeys the same rule. A pill that stands for nothing has no dots and takes
-  nothing. Arrows keep their bindings when it is re-pointed; if an arrow attached to it is on a
+  an arrow re-aimed onto one obeys the same rule. A pill that stands for a subboard has a subboard's
+  dots and links: indigo, and a `subboard-link` to a subboard. A pill that stands for nothing has no
+  dots and takes nothing. Arrows keep their bindings when it is re-pointed; if an arrow attached to it is on a
   channel the new targets don't take, a warning triangle trails the pill (where a dynamic one's count
   will be) and the panel says `“Order” doesn’t take note links.` (`ReferenceState.channelMismatch(of:)`,
   kept for each reference until its edges change, never worked out per frame).
@@ -8656,7 +8702,7 @@ connection runs only from a shape with a dot on its channel to one that takes it
 - **`channel: none`** is a plain connection, on no channel, from and to any side.
 - **Unwritten**, it's the first of the start's dot channels (on `from:`'s side, if named; else all
   its dots', in the table's order) that the end takes as a target (on `to:`'s side, if named):
-  `registry.connectionChannel(from:fromSide:to:toSide:)`, Connections'. With none, it's plain if neither kind has ports on anything (subboards), and
+  `registry.connectionChannel(from:fromSide:to:toSide:)`, Connections'. With none, it's plain if neither kind has ports on anything (two frames), and
   otherwise `no_channel`, whose hint says `channel: none` draws one anyway; a named side narrows
   the channels, so one without a port leaves none.
 - **A connection on a channel never ends where it starts**: a shape joined to itself on one is
@@ -9031,8 +9077,8 @@ registrar.channel(SchemaLink.self)
   and `prompt` are strings without bounds, so no text breaks it.
 - **Ports.** As notes do, a card has ports on a channel of its own: `SchemaLink`
   (`schema-link`, the card's accent), on all four sides, as a note's
-  ([SchemaLinks.swift](../Sources/Schemas/SchemaLinks.swift)). A schema links only to a schema,
-  and the link says nothing more yet.
+  ([SchemaLinks.swift](../Sources/Schemas/SchemaLinks.swift)). A schema links to a schema, or to a
+  subboard, which takes every channel, and the link says nothing more yet.
 - **The panel** is where the schema is written. Its header is a `TitleHeader` over the root
   `"title"`, with the count of its top-level fields under it ("6 fields"; nothing where it has
   none). Renaming rewrites that member alone, so it can't while the text isn't a JSON object (the
@@ -10568,7 +10614,7 @@ selection            service SelectionState · service RefusalShake · tool sele
 topology             service TopologyIndex · edge type stands-for
 arrows               shape arrow v1 · label Arrow → arrow · ContentsRows → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
 sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
-subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
+subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
 framing              shape frame · tool frame · shortcut F → tool frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeDetails → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame
 schemas              service SchemaSync · overlay SchemaHighlightFrames · ShapePopovers · shape schema-card v1 · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · mention text → schema-card · mentionable → schema-card · ShapeDetails → schema-card · channel schema-link · edge type schema-link
 references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · referenced-in row → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
@@ -11427,15 +11473,14 @@ Each of these adds to the design without changing what plugins are written again
   a line in the detail panel saying why it's disabled; and a tooltip on the chip (an adornment's,
   above).
 - **More of ports**, most of which data-canvas has: a channel's cardinality (at most one
-  connection at an end, and a dot that stops taking more); wildcard channels (a port on every
-  channel); directional reversal (a drag from a port that only takes connections, drawn the other
+  connection at an end, and a dot that stops taking more); directional reversal (a drag from a port that only takes connections, drawn the other
   way round); ports on part of a shape (a row, a schema card's field); an arrow's start pinned to its
   dot's side, and its end to the side of its shape facing it (data-canvas's `anchorToPort`; a
   precise start at a side's midpoint means nothing without it, since tldraw's clipping starts an
   arrow where it crosses its shape's edge toward the other end, whichever side that is); a
   channel's title, and a legend of the channels; a line in an arrow's detail panel naming its
   channel; and rules that read connections (which Topology's index can answer: a schema's links,
-  say). Subboards have no ports, so a person can't connect them (`canvas draw` still
+  say). Frames have no ports, so a person can't connect them (`canvas draw` still
   can, on no channel).
 - **More of boards**: moving several selected shapes into a subboard, or up out of one, from a
   menu (Move to Subboard: [Moving](#moving)'s commands move the one shape whose text they're typed

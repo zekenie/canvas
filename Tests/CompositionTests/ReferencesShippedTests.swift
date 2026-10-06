@@ -73,6 +73,12 @@ private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12,
     h.editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }
 }
 
+@MainActor private func subboard(_ h: EditorHarness, _ title: String, at origin: CGPoint, isPublic: Bool = true) -> ShapeID {
+    let id = h.editor.add(Subboard(frame: CGRect(origin: origin, size: Subboard.defaultSize)), title: title)
+    if isPublic { h.editor.makePublic([id]) }
+    return id
+}
+
 @MainActor private func schemaCard(_ h: EditorHarness, _ title: String, at origin: CGPoint, isPublic: Bool = true) -> ShapeID {
     var card = SchemaCard(frame: CGRect(origin: origin, size: CGSize(width: 240, height: 160)))
     card.setTitle(title)
@@ -138,6 +144,43 @@ private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12,
         expectEqual(h.editor.references?.channelMismatch(of: forNote), ChannelMismatch(channel: NoteLink.id, target: order))
         expectEqual(h.editor.references?.mismatchLine(of: forNote), "“Order” doesn’t take note links.")
         expectEqual(drawn.id, arrows(h).first?.id, "the arrow is let be")
+    },
+    test("a pill that stands for a subboard draws as the subboard does: its dots in the subboard's color, a subboard-link to a subboard and a note-link to a note, and what's drawn into it on the same channels") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let h = emptyBoard(pasteboard)
+        let backend = subboard(h, "Backend", at: CGPoint(x: 100, y: 100))
+        let frontend = subboard(h, "Frontend", at: CGPoint(x: 900, y: 100), isPublic: false)
+        let orders = note(h, "orders", at: CGPoint(x: 900, y: 350), isPublic: true)
+        let customer = schemaCard(h, "Customer", at: CGPoint(x: 520, y: 600))
+        let forSubboard = reference(h, to: backend, label: "Backend", at: CGPoint(x: 400, y: 100))
+        let forNote = reference(h, to: orders, label: "orders", at: CGPoint(x: 400, y: 300))
+        // A dot lit is its channel's color at full strength, whatever's under it.
+        let size = CGSize(width: 1200, height: 800)
+        @MainActor func litDot(of id: ShapeID) throws -> [Int] {
+            let frame = try frame(of: id, in: h)
+            h.move(to: frame.center)
+            h.move(to: rightDot(of: frame))
+            return pixel(renderBitmap(h.editor, size: size), at: rightDot(of: frame))
+        }
+        let subboardDot = try litDot(of: backend), noteDot = try litDot(of: orders)
+        expectEqual(try litDot(of: forSubboard), subboardDot, "the pill's dot is the subboard's")
+        expectEqual(try litDot(of: forNote), noteDot, "and a pill for a note's, the note's")
+        expect(subboardDot != noteDot, "which are two colors")
+
+        // From the pill, on the channel the shape it ends on takes, first of the subboard's: its own.
+        let pill = try frame(of: forSubboard, in: h)
+        drag(h, fromRightOf: pill, to: try frame(of: frontend, in: h).center)
+        drag(h, fromRightOf: pill, to: try frame(of: orders, in: h).center)
+        drag(h, fromRightOf: pill, to: try frame(of: customer, in: h).center)
+        expectEqual(arrows(h).map { [$0.props.start.binding?.shapeID, $0.props.end.binding?.shapeID] },
+                    [[forSubboard, frontend], [forSubboard, orders], [forSubboard, customer]])
+        expectEqual(arrows(h).map { $0[ChannelProperty.self] }, [SubboardLink.id, NoteLink.id, SchemaLink.id])
+        // Into the pill, as into the subboard: from a subboard, a note and a schema card, each on its own.
+        let from = [frontend, orders, customer]
+        for id in from { drag(h, fromRightOf: try frame(of: id, in: h), to: pill.center) }
+        expectEqual(arrows(h).dropFirst(3).map { [$0.props.start.binding?.shapeID, $0.props.end.binding?.shapeID] }, from.map { [$0, forSubboard] })
+        expectEqual(arrows(h).dropFirst(3).map { $0[ChannelProperty.self] }, [SubboardLink.id, NoteLink.id, SchemaLink.id])
     },
     test("an arrow drawn by hand into a pill reads as into the original: the graph, a query, with the pill named, and the table of contents under it") {
         let pasteboard = NSPasteboard.withUniqueName()
