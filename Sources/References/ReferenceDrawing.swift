@@ -181,7 +181,8 @@ struct ReferenceLook {
             badgeRect = CGRect(x: end - width, y: frame.midY - ReferenceStyle.badgeHeight / 2, width: width, height: ReferenceStyle.badgeHeight)
         }
         let line = ReferenceStyle.lineHeight
-        return Layout(symbol: symbol, label: CGRect(x: x, y: frame.minY + ((frame.height - line) / 2).rounded(), width: max(0, right - x), height: line),
+        let top = ReferenceStyle.lineTop(of: ReferenceStyle.labelFont, in: frame.height)
+        return Layout(symbol: symbol, label: CGRect(x: x, y: frame.minY + top, width: max(0, right - x), height: line),
                       trailing: trailingRect, badge: badgeRect)
     }
 }
@@ -378,7 +379,7 @@ extension ReferenceDefinition {
         label.string.draw(with: layout.label, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }
 
-    /// A count in its capsule, its digits centered on the capsule's line.
+    /// A count in its capsule, its digits centered in it.
     private func drawBadge(_ text: String, in rect: CGRect, strength: CGFloat, cg: CGContext) {
         let radius = rect.height / 2
         cg.addPath(CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil))
@@ -386,7 +387,8 @@ extension ReferenceDefinition {
         cg.fillPath()
         let label = ReferenceMemo.shared.badge(text, strength: strength)
         let line = ceil(ReferenceStyle.badgeFont.ascender - ReferenceStyle.badgeFont.descender)
-        let box = CGRect(x: rect.midX - label.width / 2, y: rect.minY + ((rect.height - line) / 2).rounded(), width: label.width + 1, height: line)
+        let top = ReferenceStyle.lineTop(of: ReferenceStyle.badgeFont, in: rect.height)
+        let box = CGRect(x: rect.midX - label.width / 2, y: rect.minY + top, width: label.width + 1, height: line)
         label.string.draw(with: box, options: [.usesLineFragmentOrigin])
     }
 
