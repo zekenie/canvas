@@ -90,6 +90,14 @@ enum ReferenceStyle {
     /// A line the label sits on as the render and the editing view lay it out: its font's, rounded up.
     static let lineHeight = ceil(labelFont.ascender - labelFont.descender)
 
+    /// Where a line of `font` starts in a box `height` tall: its capitals centered, as the symbols
+    /// beside them are, on a whole point. String drawing and the editor both set the baseline the
+    /// ascender, rounded up, below the line's top. Centering the whole line, descender and all, sets
+    /// the letters a point low.
+    static func lineTop(of font: NSFont, in height: CGFloat) -> CGFloat {
+        ((height + font.capHeight) / 2 - ceil(font.ascender)).rounded()
+    }
+
     /// The kind's symbol: its tool, its row (while it names nothing), its panel (an empty pill).
     static let systemImage = "arrow.turn.up.right"
     /// What a pill that stands for what a query finds leads with, however many it finds.

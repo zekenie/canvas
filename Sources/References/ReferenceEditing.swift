@@ -166,7 +166,7 @@ final class ReferenceEditor: NSView, NSTextViewDelegate {
 
     // MARK: Where the text is
 
-    /// Where the text starts: the pill's label's place (the render's: the line centered in the pill),
+    /// Where the text starts: the pill's label's place (the render's: its capitals centered in the pill),
     /// which follows whether the pill leads with a symbol (what it stands for; the magnifier once the
     /// list has only the words row left). TextKit 2 sets this font's line where string drawing does.
     private func placeText() {
@@ -174,7 +174,7 @@ final class ReferenceEditor: NSView, NSTextViewDelegate {
         let condition = context.service(ReferenceState.self)?.state(of: props) ?? .empty
         let look = ReferenceLook(editing: condition, handsOff: handsOff)
         let x = ReferenceStyle.leadingPad + (look.leading == nil ? 0 : ReferenceStyle.symbolBox + ReferenceStyle.gap)
-        let top = ((ReferenceStyle.height - ReferenceStyle.lineHeight) / 2).rounded()
+        let top = ReferenceStyle.lineTop(of: ReferenceStyle.labelFont, in: ReferenceStyle.height)
         textView.textContainerInset = NSSize(width: x, height: top)
     }
 
