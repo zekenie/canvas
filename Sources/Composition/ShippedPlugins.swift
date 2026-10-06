@@ -17,6 +17,7 @@ import Keyboard
 import LanguageModels
 import Locking
 import Mentions
+import Moving
 import Publishing
 import Queries
 import QueryCommands
@@ -103,6 +104,9 @@ public enum ShippedPlugins {
             QueriesPlugin(), QueryTranslationPlugin(prompt: QueryPrompt.system, referenceRule: QueryPrompt.referenceRule), TitleQueriesPlugin(), BoardQueriesPlugin(), MentionQueriesPlugin(), ValidationQueriesPlugin(),
             SelectionQueriesPlugin(),
             QueryCommandsPlugin(),
+            // `/move-to` and `/move-near`: a shape moved into a frame, onto a subboard's board or beside a shape, on any board,
+            // placed as `canvas draw` places one. After every plugin whose every-shape commands a note lists before them.
+            MovingPlugin(),
             // The example (Examples/): one line here; delete it to leave it out.
             ReorderingPlugin(),
         ]

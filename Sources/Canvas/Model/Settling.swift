@@ -103,6 +103,25 @@ extension Transaction {
         return .settled(nudges: nudges)
     }
 
+    /// Settles shapes on another board of the file, in this transaction: `settle(_:)`'s rule there,
+    /// against that board as this transaction leaves it (`contents(of:)`), so what a move took there
+    /// (`move(_:to:)`) is put down as a drop or a placement puts it down on the board shown, a
+    /// container among it taking in what it lands on. What this transaction brought there (moved, or
+    /// in with its owner) isn't held, as what it adds here isn't. A refusal (`.refused(by:)`) changes
+    /// nothing there and is noted in `refusedShapes`, as `settle(_:)`'s is: the caller throws,
+    /// dropping the whole move, and says so (`editor.refuseChanges(to:)`), as Transform drops a turn.
+    /// The nudges are on that board, where nothing glides. On this transaction's own board it's
+    /// `settle(_:)`; a board the editor couldn't show once this transaction commits settles nothing.
+    /// `board` can't be one going with a shape this transaction deleted. O(that board).
+    @discardableResult
+    public mutating func settle(_ ids: some Sequence<ShapeID>, on board: BoardID) -> Settlement {
+        guard board != self.board else { return settle(ids) }
+        guard var there = transaction(on: board) else { return .settled(nudges: [:]) }
+        let settlement = there.settle(ids)
+        take(there)
+        return settlement
+    }
+
     /// Settles what a container was resized, moved or drawn onto, by the in-or-out rule: each shape
     /// in it that hangs over its edge, and each shape at its level (in the container it's in, or on
     /// the board) that it reaches, judged one by one (`settle(_:)`'s rule), so the container takes in

@@ -42,9 +42,9 @@ public enum MentionRanking {
     public static let nearnessScale: Double = 1000
     public static let nearnessCandidates = 200
 
-    /// The most shapes a query lists.
+    /// The most shapes a query lists, and an empty one of a command's kinds (`candidates`' `kinds`).
     public static let maxMatches = 50
-    /// The most an empty query lists in each of its sections.
+    /// The most an empty query lists in each of its sections, but Nearby of a command's kinds.
     public static let recentShown = 4
     public static let nearbyShown = 4
     /// A scope that admits this many shapes or fewer (or an eighth of the catalog) is read whole for the

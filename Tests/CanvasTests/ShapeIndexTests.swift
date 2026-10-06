@@ -214,4 +214,64 @@ struct IndexKinds: CanvasPlugin {
         h.editor.transact { $0.delete([b]) }
         expectEqual(h.editor.paintOrder().map(\.id), [a, tag], "on top, its anchor gone")
     },
+    test("a shape's solid is its bounds where it has an inside, asked of the editor's context and of a plain one alike") {
+        let h = try EditorHarness(plugins: [FixturesPlugin()])
+        let box = h.add(Box(CGRect(x: 10, y: 20, width: 100, height: 50)))
+        let disc = h.add(Disc(CGRect(x: -40, y: 0, width: 60, height: 30)))
+        let plain = ShapeContext(document: h.editor.document, registry: h.editor.registry)
+        for context in [h.editor.shapeContext, plain] {
+            expectEqual(context.solidBounds(of: box), CGRect(x: 10, y: 20, width: 100, height: 50))
+            expectEqual(context.solidBounds(of: disc), CGRect(x: -40, y: 0, width: 60, height: 30), "a round shape's too: its bounds")
+        }
+        h.editor.transact { $0.update(box, as: Box.self) { $0.frame.origin = CGPoint(x: 300, y: 300) } }
+        expectEqual(h.editor.shapeContext.solidBounds(of: box), CGRect(x: 300, y: 300, width: 100, height: 50), "where it is now")
+        expectEqual(plain.solidBounds(of: box), CGRect(x: 10, y: 20, width: 100, height: 50), "a context made before keeps to its document")
+    },
+    test("a shape with no inside has no solid: a link between boxes, a tag, a shape that isn't there") {
+        let h = try EditorHarness(plugins: [FixturesPlugin(), LinksPlugin()])
+        let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
+        let b = h.add(Box(CGRect(x: 300, y: 200, width: 100, height: 100)))
+        let link = h.add(Link(from: a, to: b)), dangling = h.add(Link(from: a, to: nil)), tag = h.add(Tag(target: a))
+        let plain = ShapeContext(document: h.editor.document, registry: h.editor.registry)
+        expect(h.editor.shapeContext.geometry(of: link)?.isClosed == false, "the link is a line between the boxes")
+        expectEqual(h.editor.shapeContext.geometry(of: link)?.bounds, CGRect(x: 50, y: 50, width: 300, height: 200), "with a width and a height, so only being open rules it out")
+        for context in [h.editor.shapeContext, plain] {
+            expect(context.solidBounds(of: a) != nil && context.solidBounds(of: b) != nil, "the boxes it joins have one")
+            expectEqual(context.solidBounds(of: link), nil)
+            expectEqual(context.solidBounds(of: dangling), nil, "with an end free, it draws nothing")
+            expectEqual(context.solidBounds(of: tag), nil)
+            expectEqual(context.solidBounds(of: ShapeID()), nil)
+        }
+    },
+    test("a box with no width or no height has no solid, nor has one whose bounds are null or not finite") {
+        let registry = try Registry(plugins: [FixturesPlugin()])
+        let frames: [(String, CGRect)] = [("no width", CGRect(x: 0, y: 0, width: 0, height: 10)), ("no height", CGRect(x: 0, y: 0, width: 10, height: 0)),
+                                         ("nothing", CGRect(x: 5, y: 5, width: 0, height: 0)), ("null", .null),
+                                         ("endless", CGRect(x: 0, y: 0, width: CGFloat.infinity, height: 10)),
+                                         ("nowhere", CGRect(x: CGFloat.nan, y: 0, width: 10, height: 10))]
+        let boxes = frames.map { AnyShapeRecord(ShapeRecord(Box($0.1))) }
+        let solid = AnyShapeRecord(ShapeRecord(Box(CGRect(x: 1, y: 2, width: 3, height: 4))))
+        let context = ShapeContext(document: CanvasDocument(shapes: boxes + [solid]), registry: registry)
+        for (box, (name, _)) in zip(boxes, frames) { expectEqual(context.solidBounds(of: box.id), nil, name) }
+        expectEqual(context.solidBounds(of: solid.id), CGRect(x: 1, y: 2, width: 3, height: 4), "the one beside them")
+    },
+    test("a shape kept aside has no solid, whether its kind isn't installed or it didn't load") {
+        func uuid(_ n: Int) -> String { String(format: "00000000-0000-0000-0000-%012d", n) }
+        let json = """
+        { "format" : 1, "schema" : { "box" : 0 }, "shapes" : [
+            { "id" : "\(uuid(1))", "index" : "a0", "kind" : "gadget", "props" : { "frame" : [[0, 0], [10, 10]] } },
+            { "id" : "\(uuid(2))", "index" : "a1", "kind" : "box", "props" : { "frame" : "wide" } },
+            { "id" : "\(uuid(3))", "index" : "a2", "kind" : "box", "props" : { "frame" : [[0, 0], [10, 10]] } } ] }
+        """
+        let registry = try Registry(plugins: [FixturesPlugin()])
+        let document = try BoardCodec(registry: registry).decode(Data(json.utf8)).document
+        let ids = document.shapes.map(\.id)
+        expectEqual(document.shapes.map(\.isOpaque), [true, true, false], "the gadget and the box that didn't load are kept aside")
+        let editor = CanvasEditor(registry: registry, document: document, scheduler: ManualScheduler())
+        for context in [editor.shapeContext, ShapeContext(document: document, registry: registry)] {
+            expectEqual(context.solidBounds(of: ids[0]), nil, "no such kind here")
+            expectEqual(context.solidBounds(of: ids[1]), nil, "a box, but not one this app can read")
+            expectEqual(context.solidBounds(of: ids[2]), CGRect(x: 0, y: 0, width: 10, height: 10), "the box that loaded")
+        }
+    },
 ])

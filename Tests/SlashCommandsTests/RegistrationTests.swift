@@ -36,6 +36,37 @@ private func offering(_ name: String, id: PluginID) -> Contributor {
         expectEqual(r.contributions(to: ShapeSlashCommands.self).count, 5)
     },
 
+    test("a command that takes one shape is a command like any other: its line in the report, its name typed as one, its name claimed by its target; the hint is @shape unless it says more") {
+        let parking = Contributor(id: "parking") { registrar in
+            registrar.slashCommands(Box.self) { SlashCommand("park", argument: "@spot", shapes: { _, _, _ in true }) { _, _, _ in } }
+        }
+        let r = try registry([CardCommandsPlugin(log: CommandLog()), parking])
+        let lines = r.report.split(separator: "\n").map(String.init)
+        let cards = try require(lines.first { $0.hasPrefix("card-commands") })
+        expect(cards.hasSuffix("/grow /width /log /ping /stack /wide /any → card"), cards)
+        let parked = try require(lines.first { $0.hasPrefix("parking") })
+        expect(parked.hasSuffix("/park → box"), parked)
+
+        let h = try EditorHarness(plugins: slashPlugins([CardCommandsPlugin(log: CommandLog()), parking]))
+        let state = try require(h.editor.slashCommands)
+        let card = h.add(Card(CGRect(x: 0, y: 0, width: 10, height: 10)))
+        let box = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
+        expectEqual(state.command(named: "stack", for: card)?.argument, "@shape")
+        expectEqual(state.command(named: "park", for: box)?.argument, "@spot")
+
+        expectThrows(RegistryError.conflict(point: "ShapeSlashCommands", key: "card /stack", plugins: ["card-commands", "again"])) {
+            _ = try registry([CardCommandsPlugin(log: CommandLog()), Contributor(id: "again") { registrar in
+                registrar.slashCommands(Card.self) { SlashCommand("stack", shapes: { _, _, _ in true }) { _, _, _ in } }
+            }])
+        }
+        expectThrows(RegistryError.invalid(point: "ShapeSlashCommands", reason: "bad offers /Move To, which can't be typed as a command's name: "
+                                           + "lowercase letters and digits, words joined by hyphens")) {
+            _ = try registry([Contributor(id: "bad") { registrar in
+                registrar.slashCommands(Box.self) { SlashCommand("Move To", shapes: { _, _, _ in true }) { _, _, _ in } }
+            }])
+        }
+    },
+
     test("an every-shape command goes where `where` lets it: on the kinds that hold an added property") {
         let h = try EditorHarness(plugins: slashPlugins([LampsPlugin(), Contributor(id: "flags") { registrar in
             registrar.slashCommandsForEveryShape(where: { $0.holds(Flagged.self) }) { SlashCommand("flag-all") { _, _, _ in } }

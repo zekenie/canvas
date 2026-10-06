@@ -43,6 +43,7 @@ maps one onto the other.
 - [Boards](#boards)
 - [Frames](#frames)
 - [Jump To](#jump-to)
+- [Moving](#moving)
 - [Transform](#transform)
 - [References](#references)
 - [The command line](#the-command-line)
@@ -289,7 +290,8 @@ Once one plugin works, the question is which piece the next feature needs.
 | Draw a kind's shape with a drag, from the press to the pointer, and still say what a click places (and `canvas draw`) | `x.tool(label:systemImage:shortcut:placing:_:)`, a tool of your own with the kind's placement; `editor.place(_:in:)` at the release | [Frames](#frames) |
 | Let a kind's shapes be turned into another kind's (a frame into a subboard), from their menu and as a command, without either kind naming the other | `x.turnable(through: ContainerChannel.self)` on the kind that offers it; `registrar.turnable(into: P.self, through: C.self) { source, transaction in … }` on the kind that takes it, turning with `transaction.turn` and `transaction.move` | [Transform](#transform) |
 | Say what a shape hands over when it turns into another kind (what its target is given) | A `TransformChannel`: `name`, `admits(_:)` and `source(of:in:)`; `ContainerChannel` is the one that ships | [Offering and taking a channel](#offering-and-taking-a-channel), [The container channel](#the-container-channel) |
-| Make a shape another kind under its id, so what binds or names it goes on doing so, and move shapes onto the board below | `transaction.turn(_:into:)` and `transaction.move(_:toBoardOwnedBy:)`, the core's | [Containers](#containers), [Boards in a file](#the-editor-and-the-file) |
+| Make a shape another kind under its id, so what binds or names it goes on doing so, and move shapes onto another board of the file, put down there | `transaction.turn(_:into:)`, and `transaction.move(_:to:)` (`move(_:toBoardOwnedBy:)` onto the board below) with `transaction.translate(_:by:on:)` and `settle(_:on:)`, the core's | [Containers](#containers), [Boards in a file](#the-editor-and-the-file) |
+| Place a shape among others as `canvas draw` places one (beside a shape, in a frame, where the view is clear), from a plugin that isn't a language | DrawScript's `LayoutProblem` and `ObstacleGrid`, over a board read in place (`editor.reading(of:)`) and its solids (`ShapeContext.solidBounds(of:)`) | [Moving](#moving) |
 | Show on a shape what the board it owns holds | `context.drawBoardPreview(ofBoardOwnedBy:in:)` in its render: a rough picture, false until it's built | [Board previews](#the-cores-part-board-previews) |
 | Keep a kind from being selected | `x.unselectable()`, or `x.selectable { ... }` | [Selection](#selection) |
 | Go to shapes, as following a link does (select them, bring them into view, ⌘[ returns), or only bring them into view | Selection's `editor.goTo(_:)`, `editor.reveal(_:)` | [Selection](#selection) |
@@ -487,13 +489,13 @@ Each target is one line, with its layer:
 | Layer | May depend on | Modules |
 |---|---|---|
 | wire | wire | CanvasRPC (what the app and its [command line](#the-command-line) say to each other) |
-| foundation | foundation | Geometry, Canvas (the core), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, and its solver) and QueryLanguage (the language [`canvas query`](#query) reads), pure, TextEditing ([the text view and the caret list](#textediting) every editable text is built on) and FuzzyMatching ([the matcher](#fuzzymatching) every list ranks typed text with, and Find and Jump To's) |
+| foundation | foundation | Geometry, Canvas (the core), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, its solver, and the grid its obstacles are filed in) and QueryLanguage (the language [`canvas query`](#query) reads), pure, TextEditing ([the text view and the caret list](#textediting) every editable text is built on) and FuzzyMatching ([the matcher](#fuzzymatching) every list ranks typed text with, and Find and Jump To's) |
 | ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
 | surface | foundation, surface | Keyboard, Selection, DetailPanel, ContextMenus, SlashCommands, TableOfContents, Adornments, LanguageModels, Topology, Find, Queries, QueryTranslation |
 | concern | foundation, surface, concern | Validation, Clipboard, Titles, Locking, Publishing, Connections, Mentions, Boards, Snapping, Transform |
 | language | foundation, surface, language, wire | Automation, QueryCommands |
 | lexicon | foundation, surface, concern, language | DrawLexicon, QueryLexicon |
-| vertical | foundation, surface, concern | StickyNotes, Schemas, Subboards, Frames, JumpTo, References, Reordering |
+| vertical | foundation, surface, concern | StickyNotes, Schemas, Subboards, Frames, JumpTo, References, Moving, Reordering |
 | composition | foundation, surface, concern, language, lexicon, vertical, wire | Composition (the shipped plugin list) |
 | app | foundation, ui, composition, wire | InfiniteCanvas |
 | appex | foundation, ui, composition | CanvasQuickLook (an extension the app carries: Quick Look's preview and thumbnail of a board file, [Boards on disk](#boards-on-disk)) |
@@ -5179,6 +5181,28 @@ follows undo and redo, during which nothing may):
   makes at the scope's first ask (one pass) and keeps as each entry is read, so a scope that admits few
   (the public shapes) costs what it admits, not the board, and an empty query reads a narrow scope's
   members whole for the nearest rather than growing squares over the board.
+  `candidates(matching:in:for:kinds:admitting:)` takes what a slash command asks of the one shape
+  it takes, besides the scope ([Hosting in a text
+  view](#hosting-in-a-text-view-slashcommandtyping)): `kinds`, the most kinds of shape to list, and
+  `admitting`, a rule asked wherever a shape would be listed (a recent pick, a nearby shape, a
+  board the text is inside, a match, a member) of the shapes the scope and the kinds admit, and
+  never of the rest. A shape either refuses counts toward nothing, not the eight that keep the typo
+  pass from running nor the 50, and a typed query's order is what it would be, less those. With
+  `kinds` the shapes ranked are the catalog's of those kinds, members kept as a scope's are (keyed by
+  the set of kinds: made at its first ask, one pass over the catalog, some 0.5 ms at 10,000, and
+  kept as each entry is read and taken out; the scope is asked of each, so a narrow scope's own
+  members aren't the ones ranked then), so a command that takes few of a big board's shapes
+  (`/move-to`'s frames and subboards) costs what they are: an empty query reads them whole for the
+  nearest, never squares grown over the board, which a rule alone, asked of every shape the squares
+  gather and then of the whole board, took some 4.6 ms at 10,000 to find five subboards; and a
+  typed one ranks them alone (some 0.01 ms). And with nothing typed it lists as many of them as a
+  typed query may (`maxMatches`, 50, not `nearbyShown`'s 4), on every board, since a command's few
+  shapes are the places it can go: the nearest on the board shown (those on other boards aren't
+  asked there), the boards the text is inside, then the rest (`farther`), the nearest board first
+  (the fewest boards apart, up the file's tree to where the two paths meet and down again), on a
+  tie in the catalog's order. So `/move-to @` typed on a subboard's board lists a subboard beside
+  it on the root. With no kinds the shapes ranked are as they were, and with neither, which is
+  every text but a command line's, nothing more is asked of a shape.
 - **Going and hovering**: `follow(_:)` goes to a shape on the next turn of the scheduler
   (`editor.goTo`, or `goInto` for a kind followed by opening it: editing ends, the shape is selected and brought into view, and ⌘[ comes back;
   going is no undo step, so Undo after it takes back the edit before it, selecting what was
@@ -5285,13 +5309,18 @@ func textDidChange(_ notification: Notification) {
   and the text's spelling correction, text replacement, smart quotes and smart dashes are off
   (TextEditing's `CaretListSubstitutions`). VoiceOver hears its list change as the highlight moves (the row, or
   the empty state, said) and go as it closes (`MentionAccessibility`, which the list's window
-  posts through).
+  posts through). On the line of a slash command that takes one shape it lists only the shapes the
+  command admits, besides what the text's scope admits, ranking only those of the kinds it names
+  (`MentionPicker(at:mentions:scope:owner:kinds:admitting:)`, given the kinds and the rule of
+  `slashCommands?.admittedShapes(at:)` as the view opens it; "Nothing to mention" and "No matches"
+  say so when none is); on any other line it lists as ever.
 - **Slash commands.** The view hosts them ([Hosting in a text view](#hosting-in-a-text-view-slashcommandtyping))
   when it has an owner and its editor has the service (`textView.slashCommands`, a
   `SlashCommandTyping`; else nil, and a slash is a slash): a `/` typed on an empty line lists what
   the owner offers in the same kind of list, and Return on a line that is a command runs it and
   takes the line out of the text, which the host commits as it commits typing. A pill in a command
-  line is a shape the command is given. `caretListWindow` is the picker's or the slash list's,
+  line is a shape the command is given, and the `@` picker opened there lists only the shapes a
+  command that takes one shape admits. `caretListWindow` is the picker's or the slash list's,
   whichever is open; the picker's keys come first while it's open, so Return picks the shape (and a
   second Return runs the line), opening the picker closes the slash list, and `show(_:)` closes
   both. Mentions contributes no command and needs no `SlashCommandsPlugin()`; without it none of
@@ -5492,14 +5521,16 @@ shape on any board of it, and shows it as it's called now, wherever it is:
 - **A copy of a tree of boards** mentions the copies of the shapes copied with it, on any board of
   the tree (Clipboard's paste passes names through the whole tree's map), and goes on naming the
   rest, wherever they are.
-- **Moving by cut and paste keeps mentions.** Cut and paste is the way to move shapes to another
-  board, and it's a move ([the clipboard](#the-clipboard)): a paste of what a cut took keeps each
+- **Moving by cut and paste keeps mentions.** Cut and paste moves shapes to another board, and it's
+  a move ([the clipboard](#the-clipboard)): a paste of what a cut took keeps each
   id the file doesn't use, so a mention from anywhere else in the file of a shape that moved shows
   it missing between the cut and the paste (by the name it holds), and live again once it's
   pasted, on whatever board, and following it goes there; what moved with it mentions it as before.
   Undoing the paste makes it missing again, and undoing the cut too, live where it was. A second
   paste of the same cut is copies, as a copy's paste always is. Only an arrow bound to what moved,
   from outside it, isn't kept: a binding lets go at the cut, as at a delete.
+  [Moving](#moving)'s `/move-to` and `/move-near` move the shape typed in onto another board in one
+  step, under its id (`move(_:to:)`), so a mention of it never shows it missing.
 - **The picker lists the whole file.** Its catalog is every mentionable shape on every board the
   editor can show (the root, and from it down the boards of owners that aren't kept aside, of kinds
   that own boards: `canShow`'s), read whole as the editor opens, or a file or a board is put in
@@ -5541,7 +5572,7 @@ Mentions' `MentionTextView` does, so every text where mentions are typed (a note
 schema card's description's, the panel's [`MentionTextArea`](#in-the-panel-mentiontextarea)) takes
 slash commands. The core has never heard of a command, and SlashCommands has never heard of a
 mention: a command's arguments are runs of text and shapes, and a pill is a shape only because the
-text view that reads the line says so. Titles' `/title`, Locking's `/lock`, Publishing's `/public` and `/private`, and Transform's `/turn-into-…` are the commands that ship.
+text view that reads the line says so. Titles' `/title`, Locking's `/lock`, Publishing's `/public` and `/private`, Transform's `/turn-into-…`, and [Moving](#moving)'s `/move-to` and `/move-near` are the commands that ship.
 
 ```swift
 // In LockingPlugin.register:
@@ -5609,6 +5640,39 @@ registrar.shape(LampDefinition()) { lamp in
   for one with; given, it replaces that rule entirely (`accepts: { _ in true }` runs with nothing
   too; `accepts: { !$0.shapes.isEmpty }` needs a pill). Arguments a command doesn't accept leave the
   line as text and the command never runs: `/lock now` and a bare `/set-title` stay text.
+- **A command that takes one shape has a rule for which.** `SlashCommand(name, argument:, when:,
+  kinds:, shapes:, step:) { id, arguments, editor in ... }` is the `perform` form (there is no edit
+  form) with `argument` `"@shape"` unless it says more, and `shapes: { target, owner, editor in ... }`
+  says whether it takes a shape, asked with that shape, the shape the line is on (`owner`) and the
+  editor. `accepts` can't say it: it sees only what was typed, and a mention's pill is a shape
+  whatever kind it names. What's typed must be exactly one shape, a single `.shape` run and no text,
+  that the rule admits; nothing, text, text and a shape, two shapes (or one twice) and a shape the
+  rule refuses are arguments the command doesn't accept, so the line stays text and Return is
+  Return. The rule also says which shapes the `@` picker lists on the command's line ([Hosting in a
+  text view](#hosting-in-a-text-view-slashcommandtyping)). SlashCommandsTests' cards have one:
+
+  ```swift
+  SlashCommand("stack", shapes: { target, owner, editor in editor.document[target]?.kind == Disc.kind }) { _, arguments, _ in
+      log.runs.append("stack \(arguments.text)")      // arguments.shapes is the one disc
+  }
+  ```
+
+  **`kinds`** names the most kinds of shape it takes, given the registry (which says which kinds
+  hold shapes, own boards, and so on; asked once, the registry being frozen): a shape of another
+  kind is never admitted, even where `shapes` would say yes, and `shapes` is asked of shapes of
+  those kinds alone. A command that takes few of a big board's shapes names them, so that a list
+  that ranks the shapes it takes (the `@` picker) ranks only those and costs what they are, not what
+  the board holds, and with nothing typed lists every one it takes, on every board; with none, the
+  rule alone is asked of every shape the list looks at. A command
+  that takes a shape that holds shapes or owns a board says so; SlashCommandsTests' cards have one
+  of those too:
+
+  ```swift
+  SlashCommand("park", kinds: { $0.containingKinds.union($0.boardOwningKinds) }, shapes: { target, owner, editor in target != owner }) { _, arguments, _ in
+      log.runs.append("park \(arguments.text)")      // a corral or a pocket, never a box, though the rule would take it
+  }
+  ```
+
 - **`SlashArguments`** is what's typed after the name, trimmed at both ends, adjacent text merged:
   `runs` (`.text(String)`, `.shape(ShapeID, label:)`, in order), `text` (each shape as "@" and the
   name it shows: "near @Groceries"), `shapes` (in order, each once) and `isEmpty`. It's an
@@ -5642,8 +5706,16 @@ state.run("level", on: lamp, with: "3")            // true: one undo step, "Leve
 
 - **`commands(for:)`** is the shape's kind's contributions, then every shape's, each in plugin and
   builder order, those whose `when` holds, as `OfferedSlashCommand`s (`name`, `argument`, `title`,
-  `stepName`, `accepts(_:)`). None for a shape that isn't on the board shown, is kept aside or is
-  read-only (its text can't be edited, so nothing could be typed there, and a command would change it).
+  `stepName`, `accepts(_:)`, `takesShape`, `admittedKinds`, `admits(_:)`). None for a shape that isn't
+  on the board shown, is kept aside or is read-only (its text can't be edited, so nothing could be
+  typed there, and a command would change it). A command is found for one shape, the one the line
+  is on, and one that takes a shape is bound to it and to the editor (held weakly: a list and a text
+  view keep the command, and the service holds its editor `unowned`), so its `accepts(_:)` has the
+  rule in it: exactly one shape, of the kinds it names, which the rule admits. `run`, a text view's
+  Return and its marks need nothing more. `takesShape`, `admittedKinds` (nil: any kind, or no shape
+  taken) and `admits(_:)` (false for a command that takes no shape) say which shapes a pick may use;
+  for a command that names kinds `admits(_:)` asks a shape's kind first, from its record anywhere
+  in the file (a pill may name a shape on another board; one that isn't there is of no kind).
 - **`run(_:on:with:)`**, by an `OfferedSlashCommand` or a name, runs a command on a shape with
   what was typed after its name: in `undoHistory.group(command.stepName)`, one step named for the
   command in words, in title case as a macOS menu has it (`set-title` is "Set Title",
@@ -5785,7 +5857,8 @@ override func keyDown(with event: NSEvent) {                                    
 }
 // slashCommands?.didChange(isEdit: true) after the text changes, (isEdit: false) after the caret moves
 // alone (not while the view is changing text) and after the view's own undo; slashCommands?.close()
-// when text is shown from outside, and before the @ picker opens.
+// when text is shown from outside, and before the @ picker opens;
+// slashCommands?.admittedShapes(at: location) for the @ just typed, as the picker opens: its rule.
 ```
 
 - **What the host tells it**: `didType(_:)` after the view inserts what a person typed (a `/`
@@ -5803,25 +5876,47 @@ override func keyDown(with event: NSEvent) {                                    
 - **It writes the text only through the view**, as an edit of the person's (`write`: break undo
   coalescing, `shouldChangeText`, replace, the caret, `didChangeText`, break again), so the host
   hears what it hears for typing and nothing else is special.
+- **Which shapes an `@` may pick**: `admittedShapes(at:)`, given the index of an `@` just typed, is
+  a `SlashShapeRule` when the line is a command line (`SlashCommandLine`, read with the caret at the
+  `@`) whose command the shape offers now and which takes a shape, else nil: a plain line, a command
+  that takes none, one the shape doesn't offer. It has the command's `kinds` (nil: any), its `rule`
+  alone, for a shape already known to be of those kinds (what a list that ranks only them asks of
+  each), and `admits(_:)`, the kind and then the rule. The host hands the kinds and the rule to the
+  `@` picker, so `/stack @` lists only discs and any other line lists as ever.
 - **Mentions** passes `arguments` that reads the attributed text: each pill's character a
   `.shape(pill.target, label: pill.shownLabel)`, the rest text. So a pill in a command line is a
-  shape the command is given (`/near @Groceries` gives `arguments.shapes == [groceries]`). The
-  `@` picker's keys come first while it's open (Return picks the shape, and a second Return runs
-  the line), opening the picker closes the slash list, and `show(_:)` closes both.
+  shape the command is given (`/near @Groceries` gives `arguments.shapes == [groceries]`). It asks
+  `admittedShapes(at:)` as it opens the picker and passes the kinds and the rule on ([Editing:
+  `MentionTextView`](#editing-mentiontextview)). The `@` picker's keys come first while it's open
+  (Return picks the shape, and a second Return runs the line), opening the picker closes the slash
+  list, and `show(_:)` closes both.
 
 ### Testing slash commands
 
 - **SlashCommandsTests** hold the plugin over fixtures only: CanvasTesting's boxes, discs and cards,
   chores' added `Flagged`, `Lamp`, a kind of the target's own that offers commands in every way a
   kind can (`LampsPlugin`: its own, and over the flag it holds), and `CardCommandsPlugin(log:)`,
-  whose cards have commands to type (`grow` and `width` edit, `log` and `ping` perform, `wide` is
-  offered only while the card is wide, `any` accepts even nothing); `slashHarness` is an
-  `EditorHarness` over them and `SlashCommandsPlugin()`. They hold registration (every form of the
-  sugar and the report's line for each, `where` with `holds`, a kind's own command over an
+  whose cards have commands to type (`grow` and `width` edit, `log` and `ping` perform, `stack`
+  takes one shape, a disc and no other, and the log keeps what it ran with and what its rule was
+  asked, `wide` is offered only while the card is wide, `any` accepts even nothing);
+  `ParkCommandPlugin(log:)` gives them `park`, which takes one shape of the kinds that hold shapes
+  or own boards (with `CorralsPlugin()` and `PocketsPlugin()`) and whose rule admits all but the
+  card, so it's the kinds that refuse a box; `slashHarness` is an `EditorHarness` over them and
+  `SlashCommandsPlugin()`, and `PickedShapes` stands for a mention text view's reader, giving the
+  line's pills once something is typed after a name. They hold registration (every form of the sugar and the report's line for each, `where` with `holds`, a kind's own command over an
   every-shape one, conflicts, names refused, `ownerNotInstalled`, `unknownKind`), resolution
   (`commands(for:)`'s order, `when`, a shape that's gone, off the board shown, kept aside or
   read-only offering none, `step:` naming the step, `accepts` by default and given, an edit command in one transaction and one step
-  named for it, a command's title in title case (`move-to-back` is "Move to Back"), a `perform` command, `run`'s false), and `SlashCommandLine`, `SlashArguments` and
+  named for it, a command's title in title case (`move-to-back` is "Move to Back"), a `perform` command, `run`'s false,
+  and a command that takes one shape: accepted with one shape it admits and run with it, not with nothing,
+  text, text and a shape, a shape and text, two shapes, one shape twice, a shape the rule refuses or one
+  that's gone; `takesShape` and `admits`, false for a command that takes none; the rule asked with the
+  shape the command was found for, two cards finding one command each as their own; an
+  `OfferedSlashCommand` kept after its editor is gone admitting nothing and keeping nothing alive; `when`
+  and `step:` as in the other forms; and one that names kinds: `admittedKinds` as the registry says,
+  a box, a disc and another card refused though the rule would take them and the rule asked of
+  corrals and pockets alone, the kinds asked of the registry once however many shapes find the
+  command, a corral on another board admitted and one whose board went not), and `SlashCommandLine`, `SlashArguments` and
   `SlashCommandPicker` headlessly (every kind of line break, the rows and their ranking, each way it
   closes). The typing object is held in an unshown window over a card being edited: `SlashTextView`
   is an `EditingTextView` of the target's own that forwards to `SlashCommandTyping` as
@@ -5830,20 +5925,38 @@ override func keyDown(with event: NSEvent) {                                    
   `set(_:caret:)`, `list`, `rows`). They hold where the list opens and where a slash is a slash
   (mid-line, before text, nothing offered, read-only, pasted, undone, composed), narrowing and each
   way it closes, the substitutions off while it's open and back after, completing (with and without
-  the space, in the middle of a name, a click on a row), Return from the list and on a whole line,
+  the space, in the middle of a name, a click on a row, and the list's Return on a command that takes
+  a shape), Return from the list and on a whole line,
   what isn't a command being Return as ever (⇧↩, a selection, the caret before the slash, text
   being composed), the text's own undo bringing the line back while the board's undo undoes the
   command by its name with the typing next, the command's step closing the editing session's, a
-  box that commits on Return not committing a command line, and a command no longer offered when
-  its line is entered left as text.
-- **MentionsTests' `slashTests`** (`SlashFixturesPlugin(log:)`: `ping` and `near` for jots, which
-  are titled, so their list ends with Titles' `title`, and `ping` for briefs, which aren't) hold a
+  box that commits on Return not committing a command line, a command no longer offered when
+  its line is entered left as text, and for a command that takes one shape: Return running it with
+  one shape it admits, read from the line by the host's reader, and being Return as ever for text,
+  text and a shape, two shapes or a shape it refuses; the shape marked only when admitted; and
+  `admittedShapes(at:)`: a `SlashShapeRule` on its line, after a bracket and on a later line, nil on a
+  plain line, for a command that takes no shape, one not offered, no command, an `@` in the name,
+  before the slash, past the end, or on another line; and for `park` the rule's kinds, its `rule`
+  alone taking a box and `admits` not, Return running it with a corral's pill and not a box's, and
+  the marks.
+- **MentionsTests' `slashTests`** (`SlashFixturesPlugin(log:)`: `ping`, `near` (any shape, by
+  `accepts`), `stack` (one plate, by `shapes:`) and `shelve` (a plate or a token, by `kinds:`, but
+  not the one called "Grocery List", by its rule) for jots, which are titled, so their list ends
+  with Titles' `title`, and `ping` for briefs, which aren't) hold a
   mention text view hosting it, in `EditedJot` and in the panel's `MentionPanel`: the list as the
   view's own, a pill in a command line as a shape, the `@` picker's Return picking and a second
   running the line, `show(_:)` and the keyboard leaving closing the list, no hosting without an
   owner, a slash that is a slash where the shape offers nothing (the brief's box: every list there
   has Titles, so `SlashCommandsPlugin()`, and a text with an owner always hosts slash commands),
-  and a box with `onCommit` running a command line without committing.
+  and a box with `onCommit` running a command line without committing. And the `@` picker on the
+  line of `/stack`: it lists only plates, for the empty query (Recent: the plate picked before and
+  not the token; Nearby: the plates, the token nearer than either left out) and for a typed query
+  (what only a token matches is "No matches"), everything on a plain line, a later line and
+  `/near`'s; a plate picked there is the line's one shape (Return picks, a second runs the line,
+  the pill marked); and a token's pill put there some other way leaves the line text. On the line of
+  `/shelve` the plates and tokens the rule admits are listed, and no endpoint though it's the
+  nearest and the rule would take it; an endpoint's pill, or the refused plate's, put there leaves
+  the line text.
 - **LockingTests' `lockSlashTests`** hold `/lock`: offered only on the kinds that can be locked and
   only while the shape isn't, run as one step named "Lock", undone and redone, and refused
   arguments. A plugin list with Titles or Locking needs `SlashCommandsPlugin()`; `lockingHarness`
@@ -5860,12 +5973,12 @@ override func keyDown(with event: NSEvent) {                                    
   `SlashCommandsPlugin()`.
 - **CompositionTests' `slashCommandsShippedTests`** type `/lock`, `/title`, `/public` and
   `/private` into a note's editor in the app's canvas view: a slash mid-line is a slash, on a new
-  line it lists `title`, `lock` and `public`, Return locks the note, ends editing and takes the line out of its text, "Undo Lock" is
+  line it lists `title`, `lock`, `public`, `move-to` and `move-near`, Return locks the note, ends editing and takes the line out of its text, "Undo Lock" is
   followed by the typing, and `/lock now` stays text; `/title Groceries` names the note and
   editing goes on, "Undo Title" is followed by the typing, and `/title ` alone is a new line. The
   registry's report (ShippedTests, and the guide's copy of it) holds `slash-commands`, Titles'
-  `/title → every shape`, Locking's `/lock → every shape`, Publishing's `/public /private → every shape` and Subboards'
-  `/turn-into-subboard → every shape`.
+  `/title → every shape`, Locking's `/lock → every shape`, Publishing's `/public /private → every shape`, Subboards'
+  `/turn-into-subboard → every shape` and Moving's `/move-to /move-near → every shape`.
 
 ## Find
 
@@ -7699,6 +7812,102 @@ the empty query, picks and the palette in a window; CompositionTests' JumpToShip
 wires it. `./build.sh bench` holds a keystroke (one piece ≤ 2 ms over 10,000 shapes, several ≤ 4 ms),
 the build's slices (≤ 3 ms) and what a commit costs with the plugin in the list.
 
+## Moving
+
+Moving ([`Sources/Moving`](../Sources/Moving)) is two slash commands that move the shape whose text
+they're typed in: `/move-to @Groceries` puts a note in a frame, or onto a subboard's board, and
+`/move-near @Checkout` puts it beside a shape, on the first of its four sides that's free, or, with
+none free, on the side that frees up nearest. Both reach every board of the file the app can show,
+not only the one shown, and the shape each takes is a pill picked with `@` on its line, where the
+picker lists only what it takes (for `/move-to`, with nothing typed, every frame and subboard it
+takes, on every board, nearest first). It's a vertical that no kind opts into and nothing imports, as
+[Jump To](#jump-to) and [Reordering](#every-shape-reordering) are: on [slash
+commands](#slash-commands) for the commands, and on DrawScript and Geometry for where a shape
+lands, since it places a shape as [`canvas draw`](#draw) places one (the same solver, the same
+obstacles, the same zones) and moves it with the core's own tools, as draw's commit does.
+
+```
+┌──────────────────────────────┐
+│ Ask about the beta           │   a note being edited
+│ /move-near @che              │   the command, then @ and what narrows the picker
+│ ┌──────────────────────┐     │
+│ │ ▭ Checkout           │     │   the @ picker: only what the command takes
+│ └──────────────────────┘     │   Return picks it; Return again moves the note
+└──────────────────────────────┘
+```
+
+```swift
+// In MovingPlugin.register: on every kind whose shapes have a box, the kinds a drag moves.
+registrar.slashCommandsForEveryShape(where: { hasBox($0.definition) }) {
+    SlashCommand("move-to", argument: "@frame or subboard", kinds: { $0.containingKinds.union($0.boardOwningKinds) },
+                 shapes: { target, owner, editor in Destination(of: owner, into: target, in: editor) != nil },
+                 step: "Move") { id, arguments, editor in
+        guard let target = arguments.shapes.first else { return }
+        Move(id, in: editor)?.into(target)      // asks its rule again, places, commits
+    }
+    SlashCommand("move-near", shapes: { target, owner, editor in admitsNear(target, for: owner, in: editor) },
+                 step: "Move") { id, arguments, editor in
+        guard let target = arguments.shapes.first else { return }
+        Move(id, in: editor)?.near(target)
+    }
+}
+```
+
+- **`MovingPlugin`** (id `moving`, the module's one public type) puts both commands on every kind
+  whose props are `BoxShapeProps`, read from the kind's definition, so a link, a tag or an arrow
+  offers neither; the report's line is `moving /move-to /move-near → every shape`. It's right before
+  Reordering in the shipped list, after every plugin with a command for every shape, so a note's `/`
+  list ends `title, lock, public, move-to, move-near`. Both steps are "Move", a drag's name ("Undo
+  Move To" would read badly). A list with it needs `SlashCommandsPlugin()`.
+- **`/move-to` takes a frame or a subboard** (its `kinds`, the kinds that hold shapes or own boards,
+  so the picker ranks only those, and only the titled ones, which have names) on any board the app
+  can show, but not the shape itself, or what goes with it (what it holds at any depth, and what's on
+  a board it, or a shape it holds, owns: the core's `move(_:to:)` traps on those); not one that's
+  read-only on its board (locked, or in a locked frame); not where the shape is already (the frame
+  it's directly in, the subboard whose board is shown); not a frame narrower or shorter than the
+  shape; and not a frame on a board whose owner is read-only, a board that takes no shapes. A frame
+  is a place in it, on its board; a subboard, its own board, as draw's `in` takes one.
+- **`/move-near` takes any shape** but the shape itself and, for a shape that holds shapes or owns a
+  board, what goes with it. The picker asks this of every shape as the person types, so it costs
+  next to nothing: a locked target is fine (it doesn't change), and whether the target's board takes
+  shapes is the move's to say. Each command asks its rule again as it runs: a target it no longer
+  takes (gone, or locked since) moves nothing.
+- **Where it lands is draw's** ([draw](#draw), step 3): the destination board read in place
+  (`editor.reading(of:)`), every shape there with a solid an obstacle, filed once in DrawScript's
+  `ObstacleGrid`, the shape itself left out on its own board and what it holds carried (never in its
+  way), and the shape the problem's one free box, at its size, put down anew. **Near X**: four
+  problems, one per side (right, below, left, above), each `<side> of X` at draw's default gap
+  (`normal`, 80), centered on X the other way, the solver pushing the box out along that side's axis
+  past what's in the way, with draw's clearances (40 across, 64 up and down); the side that lands
+  nearest X wins, the earlier on a tie. **Into frame F**: draw's `in "F"` (`inside "F" top-left`, F
+  holding it), 40 in, pushed clear of what's in F and kept within it, but held directly
+  (`Holder.direct`): a frame in F is in its way like any shape there, never a zone it lands in, so it
+  goes in F itself, not in a frame nested at F's top-left; with no room from that corner, from F's
+  top-right, bottom-left and bottom-right in turn; with none, at F's top-left, 40 in (half its room,
+  where F is barely bigger), over what's there. **Onto a subboard's board**:
+  draw's one unplaced shape, at the middle of the view that board would be shown with, or the
+  nearest clear spot around it, ring by ring. Zones are draw's too: a frame that holds X is a region
+  the shape sits on, not a shape in its way, so a note moved beside a note in a frame lands in the
+  frame, and one landing over a zone that paints above it is raised above it.
+- **One step, all or nothing.** It's one `editor.transact("Move")`, with the core's tools as draw's
+  commit uses them. On the board shown: `translate` (what a frame holds goes along),
+  `move(_:above:)` over what it sits on that paints above it, and `settle` (the in-or-out rule: in
+  the frame it's mostly over, out of the one it left, [Containers](#containers)). Onto another
+  board: `move(_:to:)` first, so an arrow bound to it lets go where it was drawn, as after a cut,
+  then `translate(_:by:on:)` and `settle(_:on:)` there ([Boards in a file](#the-editor-and-the-file)).
+  A read-only shape in the way (a locked frame it would land in, the locked subboard whose board it
+  would go onto, a locked note in a frame going onto another board) throws out of the transaction:
+  nothing changes, no step is made, and the locked shapes shake (`editor.refuseChanges(to:)`), as a
+  refused [turn](#turning) does. On the board shown, what moved glides there and a note being
+  edited is put down (editing ends, as a `canvas draw` that moves it ends it); onto another board,
+  it's gone from the one shown, the window stays where it is, and Undo Move puts both boards back
+  exactly. A move that lands where the shape is commits nothing.
+
+MovingTests hold it over CanvasTesting's boxes, corrals, pockets, links, cards and freezing, run
+through `editor.slashCommands`: what each takes, every landing, the step and refusals; CompositionTests'
+`movingShippedTests` type both into a note's editor in the app (the picker's list, a pick and the
+run, a subboard's board, Undo Move).
+
 ## References
 
 References ([`Sources/References`](../Sources/References)) is the vertical that makes [stand-ins](#stand-ins-forwarding)
@@ -7900,9 +8109,10 @@ The modules, one job each:
 | CanvasCLI | cli | `canvas`: reads its own options, asks the app what it runs (`describe`), reads the rest as one of those commands, runs it, and prints what comes back. Knows only the wire. |
 | CanvasUI's `CommandServer` | ui | The app's end: it listens, describes the app, and answers each request on the main actor. `status` and `boards` are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows, each in a task kept against its board, and a board command's result, when it's an object, gains `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the command's own job just before it runs, so an agent sees which board it worked on (a command that knows better says `shows` and `showsPath` in a `board` object of its own, which the server completes: a query's is the board shown as it took up the file). A client gone is answered `cancelled`, and a board closed (`BoardDocument.close()`) answers its running commands `board_closed`, at once, their tasks cancelled and what they return later dropped. |
 | Automation | language | The commands plugins give the command line (`AutomationCommands`), its own two, `draw` and `kinds`, and the three points `draw` takes what it doesn't own from (on the query engine, Queries, a surface, to check a query a property holds). The app hands the commands to its server through Composition (`ShippedPlugins.commands(in:)`, async). |
-| DrawScript | foundation | The language `draw` reads (`Script(parsing:)`), and the solver that places what it says (`LayoutProblem.solve()`): pure, it knows no canvas, registry, kind or plugin. |
+| DrawScript | foundation | The language `draw` reads (`Script(parsing:)`), the solver that places what it says (`LayoutProblem.solve()`), and the grid its obstacles are filed in (`ObstacleGrid`: boxes only, which any plugin may use to place a shape among others): pure, it knows no canvas, registry, kind or plugin. |
 | FuzzyMatching | foundation | What's typed matched against text ([FuzzyMatching](#fuzzymatching)): `FuzzyMatcher` (every list's tiers), `TextSearch` (Find's, over folded texts) and `PathMatcher` (Jump To's, over containment paths): pure, it knows no canvas, registry or plugin. |
 | JumpTo | vertical | Jump To (⌘K, [Jump To](#jump-to)): a palette that goes to a shape by its title and where it is, over Titles' titles and the containment tree; no kind opts into it, and nothing imports it. |
+| Moving | vertical | `/move-to` and `/move-near` ([Moving](#moving)): the shape typed in moved into a frame, onto a subboard's board or beside a shape, on any board, placed with DrawScript's solver and `ObstacleGrid` as `draw` places a shape; no kind opts into it, and nothing imports it. |
 | DrawLexicon | lexicon | What `draw` takes from Titles (names), Connections (edges) and Validation (warnings): a plugin value for each concern (`TitleNamesPlugin`, `PortEdgesPlugin`, `ValidationChecksPlugin`), joining Automation to the plugin that owns it. |
 | QueryCommands | language | `query` and `query-vocabulary`, and `--ask` as a call to QueryTranslation's translator, its errors said as the wire's (on Automation, Queries, QueryTranslation and the wire; it declares no point). |
 | QueryLanguage | foundation | The language `query` reads (`SelectorList(parsing:)`) and its canonical form: pure, it knows no canvas, registry or plugin. |
@@ -8131,16 +8341,20 @@ steps, the first three against the board as the run starts:
    each statement's first.
 3. **Place** (DrawScript's `LayoutProblem.solve()`, from a problem built in DrawLayout.swift): the
    shapes that move are free boxes (new ones, and those restated with placements); what their
-   placements name that stays put is fixed (board shapes, `board`, `view`); and every closed board
-   shape the script doesn't move or delete is an obstacle. The obstacles are filed once a run, in
-   paint order, in a grid of cells about a shape's size (`ObstacleIndex`, a pass over the board),
-   and the solver asks for them by region, each answer kept for the run: it asks again after every
-   push, mostly about boxes that haven't moved, so however often it asks, a question costs what's
-   near the box it's about (`./build.sh bench` holds a draw of 20 notes, each pushed along a row
-   of the 10,000-shape board to its end, to 150 ms). DrawScript
-   knows only boxes: a part on an outline (a round shape's corner) is worked out by Automation from
-   the shape's `ShapeGeometry`, and handed over as a rect. The solver's first problem is the one
-   reported. A zone isn't in a box's way (`Solver.isZone`): an obstacle that wholly holds a
+   placements name that stays put is fixed (board shapes, `board`, `view`); and every board shape
+   with a solid that the script doesn't move or delete is an obstacle. What has a solid is the
+   core's to say (`ShapeContext.solidBounds(of:)`: a shape's bounds where its geometry is closed,
+   finite and not flat; none for an arrow or a line, or a shape kept aside), so a placement of any
+   plugin keeps clear of the same shapes. The obstacles are filed once a run, in paint order, in a
+   grid of cells about a shape's size (DrawScript's `ObstacleGrid`, boxes only, which Automation's
+   `ObstacleIndex` fills in a pass over the board, keeping each obstacle's shape beside it), and the
+   solver asks for them by region, each answer kept for the run: it asks again after every push,
+   mostly about boxes that haven't moved, so however often it asks, a question costs what's near
+   the box it's about (`./build.sh bench` holds a draw of 20 notes, each pushed along a row of the
+   10,000-shape board to its end, to 150 ms). DrawScript knows only boxes: a part on an outline (a
+   round shape's corner) is worked out by Automation from the shape's `ShapeGeometry`, and handed
+   over as a rect. The solver's first problem is the one reported. A zone isn't in a box's way
+   (`Solver.isZone`): an obstacle that wholly holds a
    restated box where it already sat, however snug; a shape the box is placed against, at twice
    that one's area; the box where it lands and another shape too, at twice the box's area, so a
    region that frames what's in it takes a legend in any corner of the view or the board on it;
@@ -9159,9 +9373,10 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   shape's id, key or container), `bringToFront`, `sendToBack`, `move(_:above:)`, `move(_:below:)`,
   `delete`, `translate(_:by:)`, which moves shapes as dragging them would, `moveBox(_:to:)`, which
   puts a box where a drag does, `turn(_:into:)`, which makes a shape another kind under its id
-  ([Containers](#containers)), `move(_:toBoardOwnedBy:)`, which takes shapes onto the board a shape on
-  this one owns ([Boards in a file](#the-editor-and-the-file)), and for [containers](#containers),
-  `setContainer(_:to:)` and `settle(_:)`. A record carries its props, the
+  ([Containers](#containers)), `move(_:to:)`, which takes shapes onto another board of the file,
+  `move(_:toBoardOwnedBy:)` onto the board a shape on this one owns, and `translate(_:by:on:)`,
+  which moves them there ([Boards in a file](#the-editor-and-the-file)), and for [containers](#containers), `setContainer(_:to:)` and
+  `settle(_:)` (`settle(_:on:)` on another board). A record carries its props, the
   values of its [added properties](#added-properties) and its [metadata](#metadata), and
   `record.copy(as:)` is the same shape under another id.
   A transaction commits once, if anything changed, and bumps `editor.revision`. What it did goes
@@ -9169,8 +9384,8 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   of those changed, the ones it only moved (`moveBox`, as a drag and `translate` do, and nothing
   else), says whether the stack changed, and the boards it took out of the file or brought in
   (`boardsRemoved`, `boardsAdded`: [Boards in a file](#the-editor-and-the-file)), or changed
-  (`boardsChanged`: shapes moved onto a board that held some, Delete Hidden Shapes, undoing it, and
-  `transact(on:)`; `boardsReached` is all three), with the
+  (`boardsChanged`: shapes moved onto a board that held some, the root always, or settled there,
+  Delete Hidden Shapes, undoing it, and `transact(on:)`; `boardsReached` is all three), with the
   shapes it touched on them (`elsewhere`), and whether an agent made it (`byAgent`, which the
   transaction says: `transaction.byAgent`). Transactions don't nest. A body that throws commits
   nothing, whatever it changed first: services hear of no change and no refusal, the board isn't
@@ -9195,7 +9410,9 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   frame to frame), `transaction.shapes` a transaction's as it is so far, and
   `ShapeContext(document:registry:)` a document of your own (what's on the pasteboard).
   `bounds(of:)` is the union of shapes' geometry: what boxes a selection, or brings shapes into
-  view.
+  view. `solidBounds(of:)` is one shape's bounds where it has an inside (closed, finite and not
+  flat; none for one kept aside): what shapes placed among others keep clear of, as
+  [`canvas draw`](#draw)'s obstacles.
 - **The hint** (`hintedShapeID`, a target outlined whatever the tool) always names a shape that
   exists, and so does `editingShapeID`, the shape being edited (and `editingSelectedText` what's
   selected in its editing view, if that's text: the host says, `CanvasEditorDelegate`, so headless
@@ -9567,27 +9784,42 @@ things reach past it, all in the one commit:
 - **A shape can go in with its boards**, `transaction.insert(record, contents:)`, its board under
   its id and those below under theirs (a paste; `boardsAdded`): a board it doesn't reach, or whose
   owner can't go in (a frame that isn't finite, deleted in the same transaction), is left out.
-  `transaction.contents(ofBoardOwnedBy:)` is a board as the transaction leaves it.
-- **Shapes can move onto the board below**, `transaction.move(ids, toBoardOwnedBy: owner)`: shapes
-  of this board go onto the board a shape on this board owns, under their ids (so whatever names
-  them still does), in their order, on top of what that board holds, with what a container among
-  them holds at any depth and the boards they own (a board goes with its owner, wherever that is).
-  A shape stays in a container that moves with it, and is in none there otherwise. The board is new
-  to the file (`boardsAdded`) or, if the file held shapes there, changed (`boardsChanged`); the
-  shapes are removed from this one. Bindings ([`ShapeReferencing`](#values-that-name-shapes)) are to
-  shapes on the same board, so what's bound across the edge is let go of, both ways, as a deletion
-  lets go: a shape that stays lets go of what moves (an arrow's end stays where it's drawn), and one
-  that moves of what stays, locked or not; names (a mention) are kept. It's all or nothing for
-  [read-only shapes](#the-cores-part-read-only-shapes): if the owner, or a shape that would move, is
-  read-only or in a read-only container, nothing moves, `move` returns false, and
-  `transaction.refusedShapes` says which. The owner must already be of a kind that owns boards (a
-  precondition, so a plugin that turns it first moves only once `turn` took), and can't be deleted
-  in the same transaction (another; no flow does). With `turn` it's a frame turned into a
-  subboard that holds what the frame held, in one step.
+  `transaction.contents(of: board)` is any board as the transaction leaves it (its own `document`,
+  one it staged, none for one it took, else the file's), and `contents(ofBoardOwnedBy:)` the board
+  a shape owns.
+- **Shapes can move onto any other board of the file**, `transaction.move(ids, to: board)`, up, down
+  or across the tree: shapes of this board go onto that board, under their ids (so whatever names
+  them still does), in their order, on top of what it holds as the transaction leaves it, with what
+  a container among them holds at any depth and the boards they own (a board goes with its owner,
+  wherever that is), where they were (world coordinates kept); `transaction.translate(ids, by:
+  delta, on: board)` moves them there, as `translate` does on the board shown (what a container
+  holds goes along; what the transaction brought there isn't held), so a shape can go somewhere
+  else there after its bindings were let go where it was drawn ([Moving](#moving)). A shape stays in
+  a container that moves with it, and is in none there otherwise, until
+  `transaction.settle(ids, on: board)` puts it down there by the in-or-out rule, as a drop puts
+  shapes down on the board shown ([Containers](#containers)). The board is new to the
+  file (`boardsAdded`) or, if the file held shapes there, changed (`boardsChanged`, as the root
+  always is); the shapes are removed from this one. Bindings
+  ([`ShapeReferencing`](#values-that-name-shapes)) are to shapes on the same board, so what's bound
+  across the edge is let go of, both ways, as a deletion lets go: a shape that stays lets go of what
+  moves (an arrow's end stays where it's drawn), and one that moves of what stays, locked or not;
+  names (a mention) are kept. It's all or nothing for [read-only
+  shapes](#the-cores-part-read-only-shapes): if the board's owner (held as `setContainer` holds a
+  container, on its own board), or a shape that would move, is read-only or in a read-only
+  container, nothing moves, `move` returns false, and `transaction.refusedShapes` says which. It's
+  false too for a board the editor couldn't show once the transaction commits (`canShow`'s rule,
+  each owner where the transaction leaves it, so a pocket it moved is where it moved it, and a
+  corral it turned into a pocket owns a board). The board can't be the transaction's own, one going
+  with a shape it deleted, or the board of a shape that moves or one under it (preconditions), and a
+  shape that owns a board it moved shapes onto, or is above one, can't be deleted in the same
+  transaction (another; no flow does). `transaction.move(ids, toBoardOwnedBy: owner)` is the board a
+  shape on this board owns, false for an owner that isn't here or owns no board, so a plugin that
+  turns it first moves only once `turn` took: with `turn` it's a frame turned into a subboard that
+  holds what the frame held, in one step.
 
 Shape ids are unique across the file: an insert's must be on no board (unless the transaction
-deleted it from its own). An undo step holds the boards a commit takes out or brings in, whole, as
-they were before the step and are after it ([Undo](#undo)).
+deleted it from its own). An undo step holds the boards a commit takes out, brings in or changes,
+whole, as they were before the step and are after it ([Undo](#undo)).
 
 The host's whole-file operations are `replaceFile(with:showing:)`, `replaceDocument(with:)` (a file
 of that board alone) and `discardKeptAside(shapes:boards:)`. `replaceFile` is opening and
@@ -9825,7 +10057,12 @@ extension CorralDefinition: ShapeContaining {}       // its shapes hold shapes o
   each alone, read-only ones skipped, and a shape a read-only container would take staying as it is,
   even one the transaction put down (a locked frame's copy, pasted, takes nothing it lands on).
   Both hand back what they nudged, by how far, what that carries included (`Settlement.nudges`), for
-  the glide. O(the board), at a gesture's end.
+  the glide. O(the board), at a gesture's end. `transaction.settle(ids, on: board)` is the rule on
+  another board of the file, against that board as the transaction leaves it: what `move(_:to:)`
+  took there is put down as a drop puts it down on the board shown, a container among it taking in
+  what it lands on there, and what the transaction brought there isn't held, as what it adds isn't.
+  A refusal changes nothing there, and the caller throws, dropping the move; the nudges are that
+  board's, where nothing glides. On the transaction's own board it's `settle(_:)`.
 - **A drag**, once past the drag threshold, outlines the container what it moves would go into as
   the hint (`hintedShapeID`), never a read-only one, finding the containers once and costing what
   they are on each event; its release settles what was dropped, in the press's step (a click, short
@@ -10256,6 +10493,7 @@ mention-queries      query word :mentions · query word :mentioned-by · query t
 validation-queries   query word :invalid · query word :warned
 selection-queries    query word :selected
 query-commands       command line query · command line query-vocabulary
+moving               /move-to /move-near → every shape
 reordering           ShapeContextMenus
 ```
 
@@ -10306,7 +10544,7 @@ says what a shape offers (`SlashCommandState`, which hears no commit) and contri
 the ones that ship are Titles', Locking's, Publishing's and Transform's, which Subboards brings, the last entry on their lines (`/title → every shape`,
 `/lock → every shape`, `/public /private → every shape`, `/turn-into-subboard → every shape`: each call of the sugar is one entry, its commands as `/name`, then the kind
 they're for or "every shape":
-[Registering commands](#registering-commands)). `transform` is the service that says what a shape can
+[Registering commands](#registering-commands)), and Moving's, its line's one entry (`moving /move-to /move-near → every shape`, [Moving](#moving)). `transform` is the service that says what a shape can
 turn into (`TransformState`, which hears no commit) and contributes nothing else: what offers and takes a
 channel is on their lines, last on Frames' (`offers channel container → frame`) and on Subboards'
 (`takes channel container → subboard`, then what taking it brings: the canvas's menu item,
@@ -10713,7 +10951,8 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   panning and pinching (`Budget.emptyFrame`, 2 ms of the thread's CPU time), a hover on a note's port dot and a drag from it, a hover onto a title's
   pill and onto a mention's, reading the table of contents' rows after a drag event, an insert, a
   delete and a restack, a keystroke in the `@` picker (the `@` that opens it too, on a file of two
-  boards, and among thousands of empty notes where only 3 can be mentioned), a rename of a
+  boards, among thousands of empty notes where only 3 can be mentioned, and on the line of a command
+  that takes few shapes, by the kinds it names: five subboards among 10,000 notes), a rename of a
   subboard mentioned 100 times against one mentioned by none (its commit, and validation's read
   after it), the panel's layout of that subboard, its Mentioned In tab showing, after a drag event
   of another note and after a mentioner's rename (`Budget.panelAfterCommit`, 1 ms; the tab's lines,
@@ -10790,7 +11029,16 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   keys, clicks, the menu, tooltips, copy and paste on `NSPasteboard.withUniqueName()`, undo in a
   plain window, which the view writes back itself, once, and leaving the window with only its own
   steps); the state, the pills and the rows as steps are undone and redone (`editor.undo()`,
-  `redo()`: never a record inserted again in undo's place); and the picker's model, headless. AppKit closes an undo group at the end of a turn of the run loop,
+  `redo()`: never a record inserted again in undo's place); and the picker's model, headless, with kinds and a rule
+  (`admittingTests`: an empty query's Recent and Nearby and a typed query's matches only what the rule
+  admits, in the order no rule gives less the rest; what it refuses counting toward neither the eight that
+  keep the typo pass from running nor the 50; a narrow scope's members filtered, the rule asked of them
+  alone; the boards the text is inside listed only if admitted; a rule that admits everything listing
+  what none does; kinds narrowing what's listed to their shapes whatever the rule says, the rule asked
+  of those alone and an empty query reading them whole for the nearest where a rule alone grew squares
+  over 400 plates, and listing every one, not four, on every board (the board shown's nearest first,
+  the boards it's inside, then the others, the nearest board first; no more than 50), their members kept as shapes come, are renamed, lose their names and go, on another
+  board too, and kinds and a scope both asked of each). AppKit closes an undo group at the end of a turn of the run loop,
   so a test that undoes steps one at a time settles the window (`window.settle()`) between them.
   They hold backlinks too (`backlinkTests`: order and names, quotes cut at either end, the canvas's
   menu item and its one Back step, file-wide (a mentioner on another board listed and quoted after
@@ -11072,9 +11320,9 @@ Each of these adds to the design without changing what plugins are written again
   channel; and rules that read connections (which Topology's index can answer: a schema's links,
   say). Subboards have no ports, so a person can't connect them (`canvas draw` still
   can, on no channel).
-- **More of boards**: moving shapes into a subboard, or up out of one (Move to Subboard), keeping
-  their ids as a cut and its paste do, in one step, with a check that no shape goes into its own
-  board; arrows across boards (an end bound
+- **More of boards**: moving several selected shapes into a subboard, or up out of one, from a
+  menu (Move to Subboard: [Moving](#moving)'s commands move the one shape whose text they're typed
+  in, under its id, in one step, and never into its own board); arrows across boards (an end bound
   to a shape on another board: bindings stay on their board, and a copy lets go of the rest); the
   selection remembered per board, so going back into a board selects what was selected there
   (nothing is selected on arrival, and only Back returns to it); a crumb's menu from the keyboard
@@ -11119,17 +11367,15 @@ Each of these adds to the design without changing what plugins are written again
 - **More of mentions**: a shipped text in the panel that holds mentions (`MentionTextArea` is
   there for one); saying in the `@` picker which board a shape on
   another board is on; validation across boards (`MentionValidationPlugin` checks a mention of a shape on
-  another board no more than a missing one); a move that isn't a cut and paste (Move to Subboard, below), keeping ids as a cut's
-  paste does, so mentions stay live; the command line reading and listing what can be mentioned,
+  another board no more than a missing one); a move of a selection that isn't a cut and paste (Move to Subboard, below:
+  [Moving](#moving)'s commands move one shape so, under its id, its mentions live); the command line reading and listing what can be mentioned,
   and helpers for writing mentions; more kinds mentionable; and making a shape
   from the picker.
-- **More of slash commands**: more commands (`/title` and `/lock` ship; the rest are only imagined so far: `/turn-into`
-  for a shape's kind, `/move-near @shape` and `/move-into @subboard`, each a
-  `SlashCommand` over a kind or every shape with arguments that may be shapes, both needing
-  a way to move a shape that isn't a drag, and Move to Subboard in More of boards); completing arguments (the
-  list stops at the name: `/move-near` and `/move-into` could list the shapes, and the subboards and frames
-  of the file, as the `@` picker lists shapes, where `argument`'s hint says "@shape" and nothing
-  checks that a pill is one); saying why a command line doesn't run (a Return that isn't a
+- **More of slash commands**: more commands (Titles', Locking's, Publishing's, Transform's and
+  [Moving](#moving)'s ship), among them one that takes several shapes, or a shape and text (the one-shape
+  form, `shapes:`, takes exactly one pill); completing arguments that aren't a shape (the list stops at
+  the name, and only a command that takes one shape has a list for what it's given, the `@` picker's);
+  saying why a command line doesn't run (a Return that isn't a
   command's is a new line and the text stays, so a misspelled name, a command not offered or
   arguments it doesn't accept leave `/lcok` in the note without a word; a row in the list or a
   line under the text would say which); plain-text surfaces (an arrow's label, a field in the panel

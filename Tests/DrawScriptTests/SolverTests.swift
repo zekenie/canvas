@@ -171,6 +171,26 @@ let hub = ("Hub", rect(0, 0, 200, 100))
             expectEqual(error.message, #""N" is in "Z", and there's no room left in "Z""#)
         }
     },
+    test("held directly (Holder.direct), a box goes in its holder itself: a shape in the holder that holds another is in its way, not a zone it lands on") {
+        // G, in Z at its top-left, holds H: by itself a zone (rule c) for a box landing wholly on it.
+        let z = rect(0, 0, 1000, 600), g = rect(20, 20, 400, 300), h = rect(300, 200, 50, 50)
+        let obstacles = [LayoutProblem.Obstacle(id: 0, rect: z), LayoutProblem.Obstacle(id: 1, rect: g), LayoutProblem.Obstacle(id: 2, rect: h)]
+        let clause = try shape(#"card inside "Z" top-left"#).clauses[0]
+        let held = { (direct: Bool) in
+            LayoutProblem(free: [LayoutProblem.Free(line: 1, name: "\"N\"", size: CGSize(width: 200, height: 100),
+                                                    clauses: [LayoutProblem.ResolvedClause(clause, refs: [.fixed(0)])],
+                                                    holder: LayoutProblem.Holder(.fixed(0), written: #"in "Z""#, direct: direct))],
+                          fixed: [LayoutProblem.Fixed(rect: z, obstacle: 0)],
+                          obstacles: { area in obstacles.filter { $0.rect.intersects(area) } }, name: { _ in "\"Z\"" })
+        }
+        let onIt = try held(false).solve()
+        expectRect(onIt.rects[0], rect(40, 40, 200, 100))
+        expectEqual(onIt.zones[0].map(\.id), [1], "in Z as `in` has it, it lands on G, which holds H")
+        let direct = try held(true).solve()
+        expectRect(direct.rects[0], rect(40, 384, 200, 100))
+        expectEqual(direct.pushes, [LayoutSolution.Push(box: 0, past: .obstacle(1), way: .below)], "pushed past G, the way it overlaps least")
+        expectEqual(direct.zones[0], [], "and on nothing")
+    },
     test("what a box carries is never in its way: a container moved over where its contents were") {
         let m = rect(100, 100, 100, 100), l = rect(-300, 0, 200, 100)
         let clause = try shape(#"card right of "L""#).clauses[0]

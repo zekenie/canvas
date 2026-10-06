@@ -8,14 +8,27 @@ import TextEditing
 // Fixtures only: CanvasTesting's boxes, discs and cards (a card holds text, and is edited), and
 // chores with their added `Flagged`, so every test here shows SlashCommands knows no real kind.
 
-/// What the fixture commands that `perform` did, in order.
+/// What the fixture commands that `perform` did, in order, and what the rule of the one that takes a
+/// shape was asked.
 @MainActor final class CommandLog {
     var runs: [String] = []
+    /// What `stack`'s rule was asked, in order (and `park`'s).
+    var asked: [Asked] = []
+    /// How many times `park`'s kinds were asked of the registry.
+    var kindsAsked = 0
+
+    /// A question to a rule: the shape, the shape the line is on, and the editor it was given.
+    struct Asked: Equatable {
+        let target: ShapeID
+        let owner: ShapeID
+        let editor: ObjectIdentifier
+    }
 }
 
 /// Commands for cards, to type: `grow` and `width` edit the card's frame (one takes nothing, the
-/// other a number), `log` and `ping` perform (the first takes anything and logs it), `wide` is
-/// offered only while the card is wide, and `any` accepts whatever follows, even nothing.
+/// other a number), `log` and `ping` perform (the first takes anything and logs it), `stack` takes one
+/// shape, a disc and no other, and logs it (and what its rule was asked), `wide` is offered only while
+/// the card is wide, and `any` accepts whatever follows, even nothing.
 struct CardCommandsPlugin: CanvasPlugin {
     let log: CommandLog
     var id: PluginID { "card-commands" }
@@ -29,10 +42,37 @@ struct CardCommandsPlugin: CanvasPlugin {
             }
             SlashCommand("log", argument: "text") { _, arguments, _ in log.runs.append("log \(arguments.text)") }
             SlashCommand("ping") { _, _, _ in log.runs.append("ping") }
+            SlashCommand("stack", shapes: { target, owner, editor in
+                log.asked.append(CommandLog.Asked(target: target, owner: owner, editor: ObjectIdentifier(editor)))
+                return editor.document[target]?.kind == Disc.kind
+            }) { _, arguments, _ in log.runs.append("stack \(arguments.text)") }
             SlashCommand("wide", when: { $0.frame.width >= 110 }) { card, _ in card.frame.size.width = 100 }
             SlashCommand("any", argument: "anything", accepts: { _ in true }) { _, arguments, _ in
                 log.runs.append("any \(arguments.text.debugDescription)")
             }
+        }
+    }
+}
+
+/// A command for cards that takes one shape of the kinds that hold shapes or own boards (a corral, a
+/// pocket), whatever its rule would say: `park`'s rule admits every shape but the card itself, so
+/// it's the kinds that refuse a box, a disc or another card. The log keeps what its rule was asked
+/// and how many times its kinds were. A list with it has the corrals and pockets (`CorralsPlugin()`
+/// and `PocketsPlugin()`).
+struct ParkCommandPlugin: CanvasPlugin {
+    let log: CommandLog
+    var id: PluginID { "park-command" }
+
+    func register(into registrar: inout PluginRegistrar) {
+        let log = log
+        registrar.slashCommands(Card.self) {
+            SlashCommand("park", kinds: { registry in
+                log.kindsAsked += 1
+                return registry.containingKinds.union(registry.boardOwningKinds)
+            }, shapes: { target, owner, editor in
+                log.asked.append(CommandLog.Asked(target: target, owner: owner, editor: ObjectIdentifier(editor)))
+                return target != owner
+            }) { _, arguments, _ in log.runs.append("park \(arguments.text)") }
         }
     }
 }
@@ -46,6 +86,16 @@ struct FilledCommandPlugin: CanvasPlugin {
         registrar.slashCommands(Card.self) {
             SlashCommand("filled", when: { !$0.text.allSatisfy(\.isWhitespace) }) { card, _ in card.frame.size.width += 5 }
         }
+    }
+}
+
+/// What a mention text view reads after a command's name, as a test says a person picked it: `runs`
+/// once anything is typed there (the pills of the line), nothing before. `SlashSession`'s `arguments`.
+@MainActor final class PickedShapes {
+    var runs: [SlashArguments.Run] = []
+
+    func read(_ range: NSRange) -> SlashArguments {
+        range.length == 0 ? SlashArguments([]) : SlashArguments(runs)
     }
 }
 

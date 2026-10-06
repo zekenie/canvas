@@ -101,5 +101,6 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [subboards](.claude/rules/subboards.md): a card that owns a board.
 - [frames](.claude/rules/frames.md): a region that holds shapes, and the Frame tool.
 - [jump to](.claude/rules/jump-to.md): ⌘K, a palette that goes to a shape by its title and where it is; the catalog, the ranking over the containment tree, the palette and its list, picks.
+- [moving](.claude/rules/moving.md): `/move-to` and `/move-near`, the shape typed in moved into a frame, onto a subboard's board or beside a shape, on any board; what each takes, where it lands (draw's solver), the commit.
 - [references](.claude/rules/references.md): a pill that stands for a public shape: its props and writers, its look in every state, what it stands for, going to the original, its row and panel.
 - Sticky notes have no file of their own: [editing](.claude/rules/editing.md) holds a note's editor against its render, and the files of what notes opt into hold the rest. Reordering (`Examples/`) is in [context menus](.claude/rules/context-menus.md).

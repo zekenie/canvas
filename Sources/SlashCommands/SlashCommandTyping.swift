@@ -23,6 +23,11 @@ import TextEditing
 ///   of the person's, leaving the caret on the now empty line, and runs the command. Anything else
 ///   is Return as ever: a new line, or what the host does with it (a box's commit).
 ///
+/// - A command that takes one shape (`SlashCommand`'s `shapes:` form) has a rule for which, and the
+///   kinds it takes at most; a host that lets shapes be picked asks for them where an `@` was just
+///   typed (`admittedShapes(at:)`, a `SlashShapeRule`) to list only those the command admits, so
+///   what a person picks on its line is a shape it can take.
+///
 /// - The command is marked as it's typed, as a mention's pill is marked (`EditingTextView.highlights`,
 ///   drawn by the view under the text, in the text's own color): the `/name` on the line the caret is
 ///   on, while the list lists something for it and, with the list closed, while the shape offers the
@@ -221,6 +226,21 @@ public final class SlashCommandTyping {
         view.breakUndoCoalescing()
         showCommand()
         return true
+    }
+
+    // MARK: The shapes a command takes
+
+    /// The rule for the shapes an `@` typed at `location` may pick, if the line it's on is a command
+    /// line (`SlashCommandLine`, read with the caret at `location`) whose command the shape offers
+    /// now and which takes one shape: the kinds it takes at most and its rule (`SlashShapeRule`).
+    /// Nil anywhere else (a plain line, a command that takes no shape, one the shape doesn't offer),
+    /// where every shape may be picked as ever. The host asks as it opens the picker, for the line
+    /// as it is then.
+    public func admittedShapes(at location: Int) -> SlashShapeRule? {
+        guard let storage = view?.textStorage, let commands,
+              let line = SlashCommandLine(in: storage.string as NSString, caret: location),
+              let command = commands.command(named: line.name, for: owner) else { return nil }
+        return command.shapeRule
     }
 
     // MARK: Marking the command

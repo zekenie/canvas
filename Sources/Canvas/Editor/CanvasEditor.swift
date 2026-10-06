@@ -57,8 +57,9 @@ public final class CanvasEditor {
     public private(set) var boardPath: [BoardID] = [.root]
     /// Every board of the file: what a board file saves. `document` is its board `board`; the others
     /// change only with a commit on the shown one (a deletion taking the boards under a shape, a paste
-    /// bringing some) or the whole file's replacement. Read what's shown from `document`, never from
-    /// here. Observed through `document`.
+    /// bringing some, a move taking shapes onto one), one on a board that isn't shown (`transact(on:)`)
+    /// or the whole file's replacement. Read what's shown from `document`, never from here. Observed
+    /// through `document`.
     public var file: CanvasFile {
         if unobservedReads == 0 { access(keyPath: \.document) }
         return storedFile
@@ -399,8 +400,8 @@ public final class CanvasEditor {
     /// it took or brought, the board shown as it was. Read-only shapes stay as they are, as in any
     /// transaction, but nothing shows the refusal, since they aren't shown. A transaction that would
     /// take the board shown, or a board above it, with a shape it deletes, or that reaches the board
-    /// shown (moving shapes onto it), commits nothing: `document` would go stale. Returns nil, doing
-    /// nothing, for a board the editor can't show (`canShow`).
+    /// shown (moving shapes onto it, or settling there), commits nothing: `document` would go stale.
+    /// Returns nil, doing nothing, for a board the editor can't show (`canShow`).
     @discardableResult
     public func transact<T>(on target: BoardID, _ name: String? = nil, _ body: (inout Transaction) throws -> T) rethrows -> T? {
         guard target != board else { return try transact(name, coalescing: nil, origin: .ordinary, body) }
@@ -457,7 +458,8 @@ public final class CanvasEditor {
     private var fileAccess: FileAccess {
         FileAccess(locate: { [unowned self] in storedFile.board(containing: $0) },
                    subtree: { [unowned self] in storedFile.subtree(ownedBy: $0) },
-                   contents: { [unowned self] in storedFile[$0] })
+                   contents: { [unowned self] in storedFile[$0] },
+                   canShow: { [unowned self] in Self.canShow($0, in: storedFile, registry: registry) })
     }
 
     /// A board of the file: `document` for the one shown, else its shapes as the file has them
@@ -537,7 +539,7 @@ public final class CanvasEditor {
     @discardableResult
     @_spi(Host) public func discardKeptAside(shapes ids: Set<ShapeID>, boards keys: Set<String>) -> Bool {
         precondition(!isTransacting, "a file can't be replaced inside a transaction")
-        let old = storedFile, access = FileAccess(old)
+        let old = storedFile, access = FileAccess(old, boardOwningKinds: registry.boardOwningKinds)
         var newFile = old, removed: Set<BoardID> = []
         let byBoard = Dictionary(grouping: ids.filter { old.record($0)?.isOpaque == true }) { old.board(containing: $0)! }
         for (board, ids) in byBoard {
@@ -588,7 +590,7 @@ public final class CanvasEditor {
 
     /// Writes a transaction on a board that isn't shown (`transact(on:)`) through to the file, and
     /// tells services as a commit that changed that board and those it took, brought or changed (shapes
-    /// moved onto them): the board shown is as it was.
+    /// moved onto them, or settled there): the board shown is as it was.
     private func commit(_ transaction: Transaction, onHidden target: BoardID) {
         let local = transaction.changes
         var changes = ChangeSet()
@@ -601,9 +603,10 @@ public final class CanvasEditor {
         documentDidChange(to: storedDocument, changes: changes)
     }
 
-    /// Takes out of the file the boards a transaction took, puts in those it brought, and writes over
-    /// those it moved shapes onto that held shapes already; returns the shapes on them, of the boards
-    /// it changed only those that came.
+    /// Takes out of the file the boards a transaction took, writes over those it changed (shapes moved
+    /// onto a board that held some, the root included, or settled there), and puts in those it brought;
+    /// returns the shapes it touched on them: every shape of a board it took or brought, and each that
+    /// differs on a board it changed (what came, and what settling there nudged or took in).
     private func writeBoards(of transaction: Transaction) -> Set<ShapeID> {
         let changes = transaction.changes
         var touched = storedFile.shapeIDs(on: changes.boardsRemoved)
@@ -612,15 +615,18 @@ public final class CanvasEditor {
         warmIndexes.forget(changes.boardsRemoved)
         // A board the file has is set, not inserted, which wants a new one: after the board the
         // transaction was on, which let go of the shapes that moved.
-        var brought = transaction.stagedBoards
-        for board in changes.boardsChanged {
-            guard let owner = board.owner, let document = brought.removeValue(forKey: owner) else { continue }
-            let change = ChangeSet(from: storedFile[board], to: document)
-            touched.formUnion(change.added)
-            storedFile.set(document, for: board, changes: change)
+        var brought: [ShapeID: CanvasDocument] = [:]
+        for (board, document) in transaction.stagedBoards {
+            if changes.boardsChanged.contains(board) {
+                let change = ChangeSet(from: storedFile[board], to: document)
+                touched.formUnion(change.shapeIDs)
+                storedFile.set(document, for: board, changes: change)
+            } else if let owner = board.owner {
+                touched.formUnion(document.shapes.lazy.map(\.id))
+                brought[owner] = document
+            }
         }
         warmIndexes.forget(changes.boardsChanged)
-        for board in brought.values { touched.formUnion(board.shapes.lazy.map(\.id)) }
         storedFile.insertBoards(brought)
         return touched
     }

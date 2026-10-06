@@ -69,17 +69,18 @@ private let area = CGRect(x: 0, y: 0, width: 100, height: 60)
         expect(!state.run("turn-into-disc", on: box, with: SlashArguments([])), "gone")
     },
 
-    test("a frozen shape offers it, and running it changes nothing and shakes the shape") {
+    test("a frozen shape offers none, so none is typed or run: nothing changes, and nothing shakes") {
         let log = RefusalLog()
         let h = try transformHarness(log: log)
         let state = try require(h.editor.slashCommands)
         let corral = h.add(Corral(area))
+        expectEqual(state.commands(for: corral).map(\.name), ["turn-into-pocket"])
         h.editor.freeze([corral])
         let before = h.file, revision = h.editor.revision
-        expectEqual(state.commands(for: corral).map(\.name), ["turn-into-pocket"])
-        expect(state.run("turn-into-pocket", on: corral, with: SlashArguments([])), "it ran, and gave up")
+        expectEqual(state.commands(for: corral).map(\.name), [], "its text can't be edited, so no command could be typed")
+        expect(!state.run("turn-into-pocket", on: corral, with: SlashArguments([])), "and by name it isn't found")
         expectEqual(h.file, before)
         expectEqual(h.editor.revision, revision)
-        expectEqual(log.refusals, [[corral]])
+        expectEqual(log.refusals, [])
     },
 ])

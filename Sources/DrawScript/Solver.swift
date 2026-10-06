@@ -918,7 +918,8 @@ struct Solver {
     /// where a smaller shape lands, and a lone shape that's the whole board, for one placed inside
     /// `board`, would be covered without a word. Held by (a), (b) or (d), the box may hang over the
     /// zone's edge where it lands (the caller says so). A shape held is a board shape where it is,
-    /// or a free box the zone counts (`counted(by:in:)`), where `placement` says.
+    /// or a free box the zone counts (`counted(by:in:)`), where `placement` says. For a box whose
+    /// holder it goes in directly (`Holder.direct`), nothing wholly within the holder is a zone.
     func isZone(_ zone: LayoutProblem.Obstacle, for box: Int, _ placement: Placement) -> Bool {
         isZone(zone, for: box, placement, among: true) { counted(by: zone, in: placement)[$0] }
     }
@@ -927,6 +928,8 @@ struct Solver {
     /// board shapes only, for (c).
     func isZone(_ zone: LayoutProblem.Obstacle, for box: Int, _ placement: Placement, among: Bool, counts: (Int) -> Bool) -> Bool {
         let free = problem.free[box]
+        // A box that goes in its holder itself: what the holder holds is in its way, never under it.
+        if let holder = free.holder, holder.direct, let held = rect(of: holder.ref, placement), holds(held, zone.rect) { return false }
         if let current = free.current, holds(zone.rect, current) { return true }
         if inDrawing[box], let view = problem.view, holds(zone.rect, view) { return true }
         for clause in free.clauses {
@@ -974,6 +977,16 @@ struct Solver {
     }
 
     /// Whether `outer` wholly holds `inner`, and is at least `times` its area.
+    /// Where a box a placement or a holder names is: a fixed box's rect, or a free box's where `placement`
+    /// has it (nil while it's nowhere yet).
+    func rect(of ref: LayoutProblem.Ref, _ placement: Placement) -> CGRect? {
+        switch ref {
+        case .fixed(let box): problem.fixed[box].rect
+        case .free(let box): placement.rects[box]
+        case .obstacle: nil
+        }
+    }
+
     func holds(_ outer: CGRect, _ inner: CGRect, times: CGFloat = 0) -> Bool {
         outer.minX <= inner.minX + Self.slack && outer.minY <= inner.minY + Self.slack
             && outer.maxX >= inner.maxX - Self.slack && outer.maxY >= inner.maxY - Self.slack

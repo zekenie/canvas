@@ -55,9 +55,10 @@ public final class MentionState {
     /// Every mentionable shape on every board the editor can show that its kind names (not the
     /// "Untitled …" placeholder), ready to match.
     @ObservationIgnored private var catalog = MentionCatalog()
-    /// The catalog's shapes each scope but `AnyMentionable` admits, made when a scope is first asked
-    /// about and kept up to date by every entry read after, so a scope that admits few ranks its few.
-    @ObservationIgnored private var scopes: [ObjectIdentifier: ScopeMembers] = [:]
+    /// The catalog's shapes each scope but `AnyMentionable` admits, and those of each set of kinds a
+    /// text's command takes (`candidates(…kinds:)`), made when first asked about and kept up to date
+    /// by every entry read after, so a scope or a command that admits few ranks its few.
+    @ObservationIgnored private var memberSets: [MemberSet: ScopeMembers] = [:]
     /// Those a commit changed since, on any board, to read again at the next query.
     @ObservationIgnored private var stale: Set<ShapeID> = []
     @ObservationIgnored private var kindDefaults: [ShapeKind: MentionKindDefaults] = [:]
@@ -407,14 +408,43 @@ public final class MentionState {
     /// board shown's own first; any other, one ranked list of the best matches (`FuzzyMatcher`'s
     /// tiers, then `MentionRanking`'s adjustments, nearness on the board shown among them; ties to
     /// the shorter label, then the front-most shape, the board shown's before any other's).
-    public func candidates<S: MentionScope>(matching query: String, in scope: S.Type, for owner: ShapeID?) -> MentionCandidates {
+    ///
+    /// `kinds` and `admitting`, if given, are what a shape must satisfy too (a slash command's, for
+    /// the one shape it takes: `SlashCommandTyping.admittedShapes(at:)`), wherever a shape would be
+    /// listed (a recent pick, a nearby shape, a board the text is inside, a match), besides the
+    /// scope: `kinds` are the most kinds of shape to list, and `admitting` a rule asked of each
+    /// shape of them the scope admits, so the list is what all three admit. With `kinds`, the shapes
+    /// ranked are the catalog's of those kinds, its **members** (`ScopeMembers`, as a scope's: made
+    /// at the first ask, one pass, and kept up to date as entries are read and taken out), so when
+    /// there are few of them an empty query reads them whole for the nearest, never growing squares
+    /// over a board, and a typed one ranks them alone, whatever the board holds; the rule is asked
+    /// of them alone. And an empty query lists as many of them as a typed one may (`maxMatches`, not
+    /// `nearbyShown`), on every board: a command's few shapes are the places it can go, wherever they
+    /// are (`/move-to`'s frames and subboards), so after the nearest on the board shown and the
+    /// boards it's inside come those on the other boards, the nearest board first (`farther`). With
+    /// none of either, which is every text but a command line's, nothing more is asked of a shape.
+    public func candidates<S: MentionScope>(matching query: String, in scope: S.Type, for owner: ShapeID?,
+                                            kinds: Set<ShapeKind>? = nil,
+                                            admitting rule: (@MainActor (ShapeID) -> Bool)? = nil) -> MentionCandidates {
         refreshStale()
         let document = editor.document, file = editor.file, registry = registry
         let admitsAll = S.self == AnyMentionable.self
+        // A scope that admits some of the catalog ranks only those (`scopeMembers`), and a command
+        // that names the kinds it takes only the shapes of those (`kindMembers`, which take the
+        // scope's place): kept up to date as entries are read, so what a keystroke costs is what
+        // they are, not the catalog.
+        let scopeMembers = admitsAll ? nil : self.members(of: S.self)
+        let kindMembers = kinds.map { self.members(ofKinds: $0) }
+        let members = (kindMembers ?? scopeMembers)?.ids
+        /// Whether what's ranked is the scope's members, which it admitted as they were kept.
+        let scopeAdmitted = kindMembers == nil && scopeMembers != nil
         /// Whether the scope admits a shape in the catalog: every one, for `AnyMentionable`.
         func admits(_ id: ShapeID) -> Bool {
             admitsAll || (document[id] ?? file.record(id)).map { S.admits($0, in: registry) } ?? false
         }
+        /// Whether a shape in the catalog can be listed: of the kinds, if there are any, the scope
+        /// admits it, and the rule, if there is one.
+        func listable(_ id: ShapeID) -> Bool { (kindMembers?.contains(id) ?? true) && admits(id) && (rule?(id) ?? true) }
         let shapes = editor.shapeContext
         let origin = owner.flatMap { shapes.geometry(of: $0)?.bounds }.map { CGPoint(x: $0.midX, y: $0.midY) }
         func distance(_ id: ShapeID) -> Double? {
@@ -422,19 +452,24 @@ public final class MentionState {
             return Double(hypot(bounds.midX - origin.x, bounds.midY - origin.y))
         }
 
-        // A scope that admits some of the catalog ranks only those (`members`): kept up to date as
-        // entries are read, so what a keystroke costs is its members', not the catalog's.
-        let members = admitsAll ? nil : self.members(of: S.self).ids
         let q = FuzzyMatcher.Query(query)
         guard !q.isEmpty else {
-            let recentShown = Array(recent.lazy.filter { self.catalog.contains($0) && admits($0) }
+            let recentShown = Array(recent.lazy.filter { self.catalog.contains($0) && listable($0) }
                 .prefix(MentionRanking.recentShown)).map { candidate($0, matched: []) }
             var taken = Set(recentShown.map(\.id))
             if let owner { taken.insert(owner) }
-            var nearby = origin.map { nearest(to: $0, excluding: taken, members: members, admits: admits, distance: distance) } ?? []
+            // A command's kinds are few shapes, each somewhere it can go: every one, as many as a query lists.
+            let room = kindMembers == nil ? MentionRanking.nearbyShown : MentionRanking.maxMatches
+            var nearby = origin.map { nearest(to: $0, count: room, excluding: taken, members: members, admits: listable, distance: distance) } ?? []
             taken.formUnion(nearby)
-            for inside in editor.boardPath.reversed().lazy.compactMap(\.owner) where nearby.count < MentionRanking.nearbyShown {
-                if !taken.contains(inside), catalog.contains(inside), admits(inside) { nearby.append(inside) }
+            for inside in editor.boardPath.reversed().lazy.compactMap(\.owner) where nearby.count < room {
+                if !taken.contains(inside), catalog.contains(inside), listable(inside) {
+                    nearby.append(inside)
+                    taken.insert(inside)
+                }
+            }
+            if let kindMembers, nearby.count < room {
+                nearby += farther(kindMembers.ids, count: room - nearby.count, excluding: taken, admits: listable)
             }
             return MentionCandidates(recent: recentShown, nearby: nearby.map { candidate($0, matched: []) }, matches: [])
         }
@@ -457,7 +492,9 @@ public final class MentionState {
                     FuzzyMatcher.rank(view, count: members?.count ?? entries.count, wantSpans: false, label: { index in
                         guard let slot = slot(index) else { return nil }
                         let entry = entries[slot]
-                        guard !(leavesOutOwner && entry.id == owner), members != nil || admits(entry.id) else { return nil }
+                        guard !(leavesOutOwner && entry.id == owner), scopeAdmitted || admits(entry.id) else { return nil }
+                        // The rule is every shape's to pass.
+                        if let rule, !rule(entry.id) { return nil }
                         return UnsafeBufferPointer(rebasing: keys[entry.start..<entry.start + entry.count])
                     }) { index, score, _ in
                         if let slot = slot(index) { found.append(Found(slot: slot, score: score)) }
@@ -500,16 +537,15 @@ public final class MentionState {
         return MentionCandidates(recent: [], nearby: [], matches: matches)
     }
 
-    /// The shapes in the catalog on the board shown nearest `origin` the scope admits, up to
-    /// `nearbyShown`, nearest first: looked for in a square around it, grown until it holds enough,
+    /// The shapes in the catalog on the board shown nearest `origin` that can be listed, up to
+    /// `count`, nearest first: looked for in a square around it, grown until it holds enough,
     /// so a board of many mentionable shapes costs what's around the text; else in the board's
     /// entries of the catalog. A square's shapes are gathered from the whole board, so once one
     /// holds as many shapes as the board has in the catalog, reading those costs less than growing
     /// it again: a board with few mentionable shapes, or few the scope admits, reads its entries
     /// after at most one square that holds them all.
-    private func nearest(to origin: CGPoint, excluding taken: Set<ShapeID>, members: [ShapeID]?, admits: (ShapeID) -> Bool,
-                         distance: (ShapeID) -> Double?) -> [ShapeID] {
-        let wanted = MentionRanking.nearbyShown
+    private func nearest(to origin: CGPoint, count wanted: Int, excluding taken: Set<ShapeID>, members: [ShapeID]?,
+                         admits: (ShapeID) -> Bool, distance: (ShapeID) -> Double?) -> [ShapeID] {
         func best(of ids: some Sequence<ShapeID>) -> [(id: ShapeID, distance: Double)] {
             var heap = BoundedHeap<(id: ShapeID, distance: Double)>(capacity: wanted) { $0.distance > $1.distance }
             for id in ids where !taken.contains(id) && catalog.contains(id) && admits(id) {
@@ -517,13 +553,15 @@ public final class MentionState {
             }
             return heap.sorted()
         }
-        // A scope that admits few shapes is read whole: its members, the nearest of them on the board
-        // shown, however far they are (a square would grow over the board to find them).
+        let board = editor.board
+        // A scope or a command that admits few shapes is read whole: its members, the nearest of them
+        // on the board shown, however far they are (a square would grow over the board to find them).
+        // Those on other boards have no distance, so they aren't asked.
         if let members, members.count <= MentionRanking.narrowScope || members.count * 8 <= catalog.entries.count {
-            return best(of: members).map(\.id)
+            return best(of: members.lazy.filter { self.catalog.slot(of: $0).map { self.catalog.entries[$0].board == board } ?? false }).map(\.id)
         }
         // A board of no more than the shapes it could list, and those it leaves out, is read whole.
-        let board = editor.board, onBoard = catalog.count(on: board)
+        let onBoard = catalog.count(on: board)
         let searchesSquares = onBoard > wanted + taken.count
         var half: CGFloat = MentionStyle.nearbySearch
         for _ in 0..<MentionStyle.nearbySearchSteps where searchesSquares {
@@ -535,6 +573,39 @@ public final class MentionState {
             half *= 4
         }
         return best(of: catalog.entries.lazy.filter { $0.board == board }.map(\.id)).map(\.id)
+    }
+
+    /// Up to `count` of `members` that can be listed, but those taken, on any board, the nearest board
+    /// first: the fewest boards from the board shown, up the file's tree to where the two paths meet
+    /// and down again (the board shown's own 0, the board above it and those its shapes own 1, and so
+    /// on); on a tie, in the catalog's order (read board by board from the root, each board's shapes
+    /// in order; one that came since, after them). What a command's kinds list after what's near, so
+    /// a frame or subboard on another board is listed with nothing typed. O(the members, and each of
+    /// their boards' depth once).
+    private func farther(_ members: [ShapeID], count: Int, excluding taken: Set<ShapeID>, admits: (ShapeID) -> Bool) -> [ShapeID] {
+        let shown = editor.boardPath, file = editor.file
+        var boardsApart: [BoardID: Int] = [:]
+        var ranked: [(apart: Int, slot: Int, id: ShapeID)] = []
+        for id in members where !taken.contains(id) {
+            guard let slot = catalog.slot(of: id) else { continue }
+            let board = catalog.entries[slot].board, apart: Int
+            if let known = boardsApart[board] {
+                apart = known
+            } else {
+                guard let path = file.path(to: board) else { continue }
+                let shared = zip(shown, path).prefix { $0.0 == $0.1 }.count
+                apart = shown.count + path.count - 2 * shared
+                boardsApart[board] = apart
+            }
+            ranked.append((apart, slot, id))
+        }
+        ranked.sort { ($0.apart, $0.slot) < ($1.apart, $1.slot) }
+        var found: [ShapeID] = []
+        for entry in ranked where admits(entry.id) {
+            found.append(entry.id)
+            if found.count == count { break }
+        }
+        return found
     }
 
     private func candidate(_ id: ShapeID, matched: [Range<Int>]) -> MentionCandidate {
@@ -677,7 +748,7 @@ public final class MentionState {
     /// (`registry.ownsShowableBoard`, what `canShow` asks of each owner on a path), each once.
     private func readCatalog() {
         catalog = MentionCatalog()
-        scopes = [:]
+        memberSets = [:]
         stale = []
         let children = editor.file.children
         var boards: [BoardID] = [.root], met: Set<BoardID> = [.root], next = 0
@@ -720,25 +791,33 @@ public final class MentionState {
         entriesRead += 1
         #endif
         catalog.set(record.id, appearance, on: board, recentRank: recent.firstIndex(of: record.id) ?? -1)
-        for scope in scopes.values { scope.set(record.id, admitted: scope.admits(record, registry)) }
+        for members in memberSets.values { members.set(record.id, admitted: members.admits(record, registry)) }
     }
 
-    /// Takes a shape out of the catalog, and out of every scope's members.
+    /// Takes a shape out of the catalog, and out of every set of members.
     private func removeEntry(_ id: ShapeID) {
         catalog.remove(id)
-        for scope in scopes.values { scope.remove(id) }
+        for members in memberSets.values { members.remove(id) }
     }
 
     /// The catalog's shapes `scope` admits, made at the first ask: one pass over the catalog, never again.
     private func members<S: MentionScope>(of scope: S.Type) -> ScopeMembers {
-        let key = ObjectIdentifier(S.self)
-        if let found = scopes[key] { return found }
-        let made = ScopeMembers { record, registry in S.admits(record, in: registry) }
+        members(.scope(ObjectIdentifier(S.self))) { record, registry in S.admits(record, in: registry) }
+    }
+
+    /// The catalog's shapes of these kinds, made at the first ask as a scope's are, and kept as they are.
+    private func members(ofKinds kinds: Set<ShapeKind>) -> ScopeMembers {
+        members(.kinds(kinds)) { record, _ in kinds.contains(record.kind) }
+    }
+
+    private func members(_ key: MemberSet, admitting admits: @escaping @MainActor (AnyShapeRecord, Registry) -> Bool) -> ScopeMembers {
+        if let found = memberSets[key] { return found }
+        let made = ScopeMembers(admits: admits)
         let document = editor.document, file = editor.file, registry = registry
         for entry in catalog.entries {
             if let record = document[entry.id] ?? file.record(entry.id), made.admits(record, registry) { made.set(entry.id, admitted: true) }
         }
-        scopes[key] = made
+        memberSets[key] = made
         return made
     }
 
@@ -865,8 +944,15 @@ public struct MentionCandidates: Hashable, Sendable {
     public var all: [MentionCandidate] { recent + nearby + matches }
 }
 
-/// The catalog's shapes a scope admits, in no order of their own: what a scope that admits few ranks
-/// in place of the whole catalog.
+/// Which shapes of the catalog a set of members is: those a scope admits, or those of the kinds a
+/// text's command takes. A set of kinds is its own key.
+private enum MemberSet: Hashable {
+    case scope(ObjectIdentifier)
+    case kinds(Set<ShapeKind>)
+}
+
+/// The catalog's shapes a scope admits, or those of some kinds, in no order of their own: what a
+/// scope or a command that admits few ranks in place of the whole catalog.
 @MainActor
 private final class ScopeMembers {
     let admits: @MainActor (AnyShapeRecord, Registry) -> Bool
@@ -874,6 +960,9 @@ private final class ScopeMembers {
     private var positions: [ShapeID: Int] = [:]
 
     init(admits: @escaping @MainActor (AnyShapeRecord, Registry) -> Bool) { self.admits = admits }
+
+    /// Whether a shape is a member.
+    func contains(_ id: ShapeID) -> Bool { positions[id] != nil }
 
     /// A member, or no longer one.
     func set(_ id: ShapeID, admitted: Bool) {

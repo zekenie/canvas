@@ -38,9 +38,10 @@ import Validation
 // worth, and inside one while the root holds as many, with a drag event's input alone, which the
 // file's other boards mustn't cost; entering a subboard, cold (the switch, a frame, the rows and
 // validation's read), going back up to its board and down again, warm, and the minimap's picture of
-// the board entered; a keystroke in the `@` picker and a rename of a shape mentioned 100 times (the
-// rows and validation after it too); the panel of a subboard mentioned 100 times, read after a drag
-// of another note and after renaming one of its mentioners; completing a schema card's JSON as long
+// the board entered; a keystroke in the `@` picker (on the line of a command that takes few shapes
+// too) and a rename of a shape mentioned 100 times (the rows and validation after it too); the
+// panel of a subboard mentioned 100 times, read after a drag of another note and after renaming
+// one of its mentioners; completing a schema card's JSON as long
 // as the model writes it; undo and redo, a drag's in a frame and a tenth of the board's moved or
 // deleted too, and deleting a subboard whose boards hold as many shapes, and its undo and redo; ten
 // subboards in view, each holding as many, their previews filling in; and a `canvas draw` whose
@@ -220,6 +221,28 @@ enum Budget {
         AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(origin: origin, size: StickyNote.defaultSize), text: "Note")))
     }
     return (CanvasDocument(shapes: shapes + notes), notes[0].id, [notes[1].id, notes[2].id])
+}
+
+/// Named notes in a grid (the catalog holds each by its first line, "Note 17: something to do"), and
+/// five subboards among them, "Plan 1" to "Plan 5", in the middle and the corners: the first note is
+/// at the top left (`owner`), and the subboards are far from it. What a command that takes few of a
+/// board's shapes (`/move-to`: shapes that hold shapes or own boards) finds on a board of 10,000.
+@MainActor func fewSubboardsBoard(shapes count: Int) -> (document: CanvasDocument, owner: ShapeID, subboards: [ShapeID]) {
+    let columns = Int(Double(count).squareRoot().rounded(.up))
+    var shapes: [AnyShapeRecord] = []
+    for i in 0..<count - 5 {
+        let origin = CGPoint(x: (i % columns) * 260, y: (i / columns) * 260)
+        shapes.append(AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(origin: origin, size: CGSize(width: 160, height: 120)),
+                                                            text: MentionText(plain: "Note \(i): something to do")))))
+    }
+    let far = CGFloat(columns) * 260
+    let corners = [CGPoint(x: far / 2, y: far / 2), CGPoint(x: far, y: far), CGPoint(x: far, y: -400), CGPoint(x: -400, y: far), CGPoint(x: far / 2, y: -400)]
+    let subboards = corners.enumerated().map { index, origin in
+        var subboard = AnyShapeRecord(ShapeRecord(Subboard(frame: CGRect(origin: origin, size: Subboard.defaultSize))))
+        subboard[TitleProperty.self] = "Plan \(index + 1)"
+        return subboard
+    }
+    return (CanvasDocument(shapes: shapes + subboards), shapes[0].id, subboards.map(\.id))
 }
 
 /// The subboard the first 100 mentioning notes of a generated board mention.
@@ -948,6 +971,53 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
                 expect(nested.worst.ms < Budget.pickerKeystroke,
                        "a keystroke in the picker (\(nested.worst.query)) over \(size) shapes on two boards took \(nested.worst.ms) ms")
                 expect(sparseOpening < Budget.pickerKeystroke, "the @ among 3 mentionable shapes of \(size) took \(sparseOpening) ms")
+            }
+        }
+    },
+    test("a keystroke in the @ picker on the line of a command that takes few shapes, the @ included, costs what they are, not the board: five subboards among 10,000 notes, by the kinds it names") {
+        for size in sizes {
+            let board = fewSubboardsBoard(shapes: size)
+            let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+            let editor = CanvasEditor(registry: registry, document: board.document, scheduler: ManualScheduler())
+            let mentions = try require(editor.mentions)
+            // What `/move-to` takes: shapes that hold shapes or own boards, but the note it's typed on
+            // and a shape that can't change.
+            let kinds = registry.containingKinds.union(registry.boardOwningKinds)
+            let rule: @MainActor (ShapeID) -> Bool = { $0 != board.owner && !editor.isReadOnly($0) }
+            // The same command with no kinds says it in its rule, asked of every shape the list looks at.
+            let ruleAlone: @MainActor (ShapeID) -> Bool = { id in editor.document[id].map { kinds.contains($0.kind) } == true && rule(id) }
+            /// The first `@` (which makes the shapes of the kinds, one pass over the catalog), the `@` after it, and
+            /// each character of queries that match by each tier and of one that matches nothing: the slowest.
+            @MainActor func keystrokes(kinds: Set<ShapeKind>?, rule: @escaping @MainActor (ShapeID) -> Bool)
+                -> (first: Double, opening: Double, worst: (query: String, ms: Double)) {
+                let open = { _ = MentionPicker(at: 0, mentions: mentions, scope: AnyMentionable.self, owner: board.owner, kinds: kinds, admitting: rule) }
+                let first = median(runs: 1, onThread: true, open)
+                let opening = median(runs: 21, onThread: true, open)
+                let picker = MentionPicker(at: 0, mentions: mentions, scope: AnyMentionable.self, owner: board.owner, kinds: kinds, admitting: rule)
+                let listed = picker.rows.compactMap(\.candidate?.id)
+                expect(listed.count == (kinds == nil ? MentionRanking.nearbyShown : board.subboards.count) && Set(listed).isSubset(of: Set(board.subboards)),
+                       "the subboards, however far they are: all five, by the kinds")
+                var worst = (query: "@", ms: opening)
+                for query in ["p", "pl", "pla", "plan", "plan 3", "pn3", "paln 3", "note 1", "zzzzq"] {
+                    let typed = "@" + query as NSString, before = "@" + query.dropLast() as NSString
+                    let ms = median(runs: 21, prepare: {
+                        _ = picker.read(before, selection: NSRange(location: before.length, length: 0), isEdit: true)
+                    }, onThread: true) {
+                        _ = picker.read(typed, selection: NSRange(location: typed.length, length: 0), isEdit: true)
+                    }
+                    if ms > worst.ms { worst = ("@" + query, ms) }
+                }
+                _ = picker.read("@plan 3", selection: NSRange(location: 7, length: 0), isEdit: true)
+                expectEqual(picker.highlightedCandidate?.appearance.label, "Plan 3")
+                return (first, opening, worst)
+            }
+            let named = keystrokes(kinds: kinds, rule: rule)
+            let unnamed = keystrokes(kinds: nil, rule: ruleAlone)
+            report(String(format: "%6d shapes, 5 subboards, on a command's line, by its kinds: the first @ %6.3f ms, then %6.3f ms, the slowest keystroke %6.3f ms (\"%@\") (budget %.0f); by its rule alone, reported: the @ %6.3f ms, the slowest keystroke %6.3f ms (\"%@\")",
+                          size, named.first, named.opening, named.worst.ms, named.worst.query, Budget.pickerKeystroke, unnamed.opening, unnamed.worst.ms, unnamed.worst.query))
+            if holdsToBudgets {
+                expect(named.opening < Budget.pickerKeystroke, "the @ on a command's line, by its kinds, over \(size) shapes took \(named.opening) ms")
+                expect(named.worst.ms < Budget.pickerKeystroke, "a keystroke there (\(named.worst.query)) over \(size) shapes took \(named.worst.ms) ms")
             }
         }
     },

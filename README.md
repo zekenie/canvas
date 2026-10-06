@@ -128,6 +128,8 @@ Sources/
   Frames/               frames: a region of a board that holds shapes, which move and lock with it
   References/           references: a pill that stands for a public shape, so an arrow into it counts as an arrow
                         into the shape (the Reference tool, R)
+  Moving/               /move-to and /move-near: the shape typed in moved into a frame, onto a subboard's board or
+                        beside a shape, on any board, placed as canvas draw places a shape
   Validation/           the validation horizontal: rules, engine, outline, the Issues tab and the rows' dots
   DetailPanel/          the detail panel horizontal: tabs, sections, bindings, the inspector view
   ContextMenus/         the context menu horizontal: right-click items, groups, the selection's menu

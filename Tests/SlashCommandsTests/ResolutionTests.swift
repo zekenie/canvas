@@ -14,6 +14,9 @@ private let area = CGRect(x: 0, y: 0, width: 100, height: 60)
     state?.commands(for: id).map(\.name) ?? []
 }
 
+/// What's typed after a command's name when it's one shape, named as its pill shows it.
+private func shape(_ id: ShapeID, _ label: String = "Shape") -> SlashArguments { SlashArguments([.shape(id, label: label)]) }
+
 /// A shape of `kind` a board keeps aside, as one from a newer version of its kind: read from a
 /// board, as nothing else makes one.
 @MainActor private func keptAside(_ kind: ShapeKind, id: ShapeID, in registry: Registry) throws -> AnyShapeRecord {
@@ -164,6 +167,160 @@ private let twice = Contributor(id: "twice") { registrar in
         let lamp = h.add(Lamp(area))
         let level = try require(state.command(named: "level", for: lamp))
         expect(level.accepts("2") && level.accepts("3") && !level.accepts("4") && !level.accepts(empty) && !level.accepts("two"))
+    },
+
+    test("a command that takes one shape accepts exactly one shape its rule admits and nothing else; the rule is asked with that shape, the shape the line is on and the editor") {
+        let log = CommandLog()
+        let h = try slashHarness([CardCommandsPlugin(log: log)])
+        let state = try require(h.editor.slashCommands)
+        let card = h.add(Card(area))
+        let moon = h.add(Disc(area)), sun = h.add(Disc(area)), crate = h.add(Box(area))
+        let stack = try require(state.command(named: "stack", for: card))
+        expect(stack.accepts(shape(moon, "Moon")), "one disc")
+        expectEqual(log.asked, [CommandLog.Asked(target: moon, owner: card, editor: ObjectIdentifier(h.editor))],
+                    "asked with the shape, the shape the line is on and the editor")
+        let refused: [(String, SlashArguments)] = [
+            ("nothing", SlashArguments([])),
+            ("text", "moon"),
+            ("text and a shape", SlashArguments([.text("near "), .shape(moon, label: "Moon")])),
+            ("a shape and text", SlashArguments([.shape(moon, label: "Moon"), .text(" please")])),
+            ("two shapes", SlashArguments([.shape(moon, label: "Moon"), .text(" "), .shape(sun, label: "Sun")])),
+            ("two shapes with nothing between", SlashArguments([.shape(moon, label: "Moon"), .shape(sun, label: "Sun")])),
+            ("one shape twice", SlashArguments([.shape(moon, label: "Moon"), .text(" "), .shape(moon, label: "Moon")])),
+            ("a shape its rule doesn't admit", shape(crate, "Crate")),
+            ("a shape that isn't there", shape(ShapeID(), "Nothing")),
+        ]
+        for (what, arguments) in refused {
+            expect(!stack.accepts(arguments), "\(what): not accepted")
+            expect(!state.run(stack, on: card, with: arguments), "\(what): not run")
+            expect(!state.run("stack", on: card, with: arguments), "\(what): not run by name")
+        }
+        expectEqual(log.runs, [], "none of them ran")
+        let revision = h.editor.revision
+        expect(state.run(stack, on: card, with: shape(moon, "Moon")))
+        expect(state.run("STACK", on: card, with: shape(sun, "Sun")), "by name, folded")
+        expectEqual(log.runs, ["stack @Moon", "stack @Sun"], "it's given what was typed: its one shape")
+        expectEqual(h.editor.revision, revision, "a command that commits nothing")
+        h.editor.transact { $0.delete([sun]) }
+        expect(!state.run(stack, on: card, with: shape(sun, "Sun")), "a shape that's gone is no disc")
+        expectEqual(log.runs.count, 2)
+    },
+
+    test("a command that names kinds takes only shapes of those, whatever its rule says: the rule is asked of those alone, and the kinds of the registry once") {
+        let log = CommandLog()
+        let h = try slashHarness([ParkCommandPlugin(log: log), CorralsPlugin(), PocketsPlugin()])
+        let state = try require(h.editor.slashCommands)
+        let card = h.add(Card(area)), other = h.add(Card(area))
+        let pen = h.add(Corral(area)), pouch = h.add(Pocket(area)), crate = h.add(Box(area)), moon = h.add(Disc(area))
+        let park = try require(state.command(named: "park", for: card))
+        expectEqual(park.admittedKinds, [Corral.kind, Pocket.kind], "the kinds that hold shapes or own boards, as the registry says")
+        expect(park.takesShape)
+        expect(park.admits(pen) && park.admits(pouch))
+        expect(!park.admits(crate) && !park.admits(moon) && !park.admits(other) && !park.admits(card) && !park.admits(ShapeID()),
+               "a box, a disc and another card are shapes the rule alone would admit")
+        expectEqual(Set(log.asked.map(\.target)), [pen, pouch], "the rule is asked of shapes of those kinds alone")
+        expect(log.asked.allSatisfy { $0.owner == card && $0.editor == ObjectIdentifier(h.editor) })
+
+        expect(park.accepts(shape(pen, "Pen")) && park.accepts(shape(pouch, "Pouch")))
+        for (what, refused) in [("a box", crate), ("a disc", moon), ("another card", other), ("the card itself", card), ("a shape that isn't there", ShapeID())] {
+            expect(!park.accepts(shape(refused)), "\(what): not accepted")
+            expect(!state.run(park, on: card, with: shape(refused)), "\(what): not run")
+        }
+        expect(!park.accepts(SlashArguments([.shape(pen, label: "Pen"), .text(" and"), .shape(pouch, label: "Pouch")])), "still exactly one shape")
+        expectEqual(log.runs, [])
+        expect(state.run("park", on: card, with: shape(pouch, "Pouch")))
+        expectEqual(log.runs, ["park @Pouch"])
+        for _ in 0..<5 { _ = state.commands(for: card) }
+        expectEqual(log.kindsAsked, 1, "the registry is frozen: its kinds are asked once, for every shape that finds the command")
+        expectEqual(try require(state.command(named: "park", for: other)).admittedKinds, park.admittedKinds)
+    },
+
+    test("kinds are read through the file: a shape on another board is of the kinds if its record says so, one that isn't there never is") {
+        let log = CommandLog()
+        let h = try slashHarness([ParkCommandPlugin(log: log), CorralsPlugin(), PocketsPlugin()])
+        let state = try require(h.editor.slashCommands)
+        let card = h.add(Card(area)), pouch = h.add(Pocket(area))
+        expect(h.enter(pouch))
+        let inner = h.add(Corral(area)), crate = h.add(Box(area))
+        expect(h.editor.showBoard(.root))
+        let park = try require(state.command(named: "park", for: card))
+        expect(park.admits(inner), "a corral on the pocket's board, which the card isn't on")
+        expect(!park.admits(crate), "a box there")
+        expect(park.accepts(shape(inner, "Inner")))
+        h.editor.transact { $0.delete([pouch]) }
+        let after = try require(state.command(named: "park", for: card))
+        expect(!after.admits(inner), "its board went with its owner: the shape is in no board the file can show")
+    },
+
+    test("an offered command says whether it takes a shape, and which: a command that takes none admits none") {
+        let h = try slashHarness([CardCommandsPlugin(log: CommandLog())])
+        let state = try require(h.editor.slashCommands)
+        let card = h.add(Card(area))
+        let moon = h.add(Disc(area)), crate = h.add(Box(area))
+        let stack = try require(state.command(named: "stack", for: card))
+        expect(stack.takesShape)
+        expect(stack.admits(moon) && !stack.admits(crate) && !stack.admits(card) && !stack.admits(ShapeID()))
+        for name in ["grow", "width", "log", "ping", "any"] {
+            let command = try require(state.command(named: name, for: card), name)
+            expect(!command.takesShape, name)
+            expect(!command.admits(moon) && !command.admits(crate), "\(name) takes no shape, so it admits none, a disc included")
+        }
+        let anything = try require(state.command(named: "log", for: card))
+        expect(anything.accepts(shape(crate)), "a command that takes anything is given a pill too: it has no rule for shapes")
+    },
+
+    test("the rule is asked with the shape its command was found for, so two shapes find it as each their own") {
+        let h = try slashHarness([Contributor(id: "beside") { registrar in
+            registrar.slashCommands(Card.self) {
+                SlashCommand("beside", shapes: { target, owner, _ in target != owner }) { _, _, _ in }
+            }
+        }])
+        let state = try require(h.editor.slashCommands)
+        let a = h.add(Card(area)), b = h.add(Card(area))
+        let forA = try require(state.command(named: "beside", for: a)), forB = try require(state.command(named: "beside", for: b))
+        expect(!forA.admits(a) && forA.admits(b), "for the first, anything but itself")
+        expect(forB.admits(a) && !forB.admits(b), "and for the second")
+        expect(forA.accepts(shape(b)) && !forA.accepts(shape(a)))
+        expect(forB.accepts(shape(a)) && !forB.accepts(shape(b)))
+    },
+
+    test("an offered command holds its editor weakly: kept after the editor is gone, it admits nothing and accepts no shape") {
+        var kept: OfferedSlashCommand?
+        weak var editor: CanvasEditor?
+        var moon = ShapeID()
+        do {
+            let h = try slashHarness([CardCommandsPlugin(log: CommandLog())])
+            editor = h.editor
+            let card = h.add(Card(area))
+            moon = h.add(Disc(area))
+            kept = h.editor.slashCommands?.command(named: "stack", for: card)
+            expectEqual(kept?.admits(moon), true, "while the editor is there")
+        }
+        expect(editor == nil, "the command keeps no editor alive")
+        expectEqual(kept?.takesShape, true)
+        expectEqual(kept?.admits(moon), false)
+        expectEqual(kept?.accepts(shape(moon)), false)
+    },
+
+    test("a command that takes one shape is offered `when` its shape says so, and names its step as the other forms do") {
+        let h = try slashHarness([Contributor(id: "tidy") { registrar in
+            registrar.slashCommands(Card.self) {
+                SlashCommand("tidy-up", when: { $0.frame.width >= 110 }, shapes: { _, _, _ in true }, step: "Tidy") { id, _, editor in
+                    editor.transact { $0.update(id, as: Card.self) { $0.props.frame.size.width = 100 } }
+                }
+            }
+        }])
+        let state = try require(h.editor.slashCommands)
+        let card = h.add(Card(area)), moon = h.add(Disc(area))
+        expectEqual(state.commands(for: card).map(\.name), [], "not while the card is narrow")
+        expect(!state.run("tidy-up", on: card, with: shape(moon)))
+        h.editor.transact { $0.update(card, as: Card.self) { $0.props.frame.size.width = 120 } }
+        let tidy = try require(state.command(named: "tidy-up", for: card))
+        expectEqual(tidy.title, "Tidy Up")
+        expectEqual(tidy.stepName, "Tidy")
+        expect(state.run(tidy, on: card, with: shape(moon)))
+        expectEqual(h.editor.document[card]?.typed(as: Card.self)?.props.frame.width, 100)
+        expectEqual(h.editor.undoHistory.undoName, "Tidy")
     },
 
     test("an edit command runs on the shape's live value in one transaction, one undo step named for the command; setting what's there commits nothing") {
