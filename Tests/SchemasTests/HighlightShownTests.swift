@@ -6,6 +6,7 @@ import Foundation
 import Geometry
 import LanguageModels
 import Mentions
+import ProseMaps
 import Schemas
 import TestKit
 
@@ -25,9 +26,9 @@ extension HighlightBench {
     func line(of words: String, on id: ShapeID) throws -> CGRect {
         let card = try require(card(id))
         let text = card.props.prompt.stored as NSString
-        let placed = SchemaHighlightAnswers.placed(for: card)
+        let placed = placed(card)
         let index = try require(placed.firstIndex { text.substring(with: $0.range) == words }, "no highlight of \(words)")
-        return try require(SchemaHighlightAnswers.lines(of: card, resolve: { _ in .missing })[index].first)
+        return try require(SchemaHighlightsShown.lines(of: card, maps: editor.proseMaps, sync: editor.schemaSync, resolve: { _ in .missing })[index].first)
     }
 
     /// The pointer moved to a point on the canvas, in view points.
@@ -117,17 +118,19 @@ private func isFieldTinted(_ pixel: [Int]) -> Bool { pixel[2] - pixel[0] >= 20 &
     },
     test("in the editor, resting the pointer on a highlight's words shows their popover over the editor; typing takes it down") {
         let panel = try SchemaPanelWindow()
-        SchemaHighlightAnswers.forgetEverything()
+        ProseMapService.forgetEveryAnswer()
+        SchemaHighlightsShown.forgetEverything()
         panel.model.fallback = { request in
-            request.model == SchemaPrompts.highlightsModel ? .success(ModelResponse(text: jiraAnswer)) : .failure(.server(status: 0, message: "no"))
+            request.model == ProseMapPrompt.model ? .success(ModelResponse(text: jiraAnswer)) : .failure(.server(status: 0, message: "no"))
         }
         let id = panel.show(card(jiraSchema, prompt: jiraPrompt, at: CGPoint(x: 100, y: 100), width: 320))
         _ = renderBitmap(panel.editor, size: panel.canvas.frame.size)          // a frame draws it in full, which asks
-        panel.window.spin { !SchemaHighlightAnswers.placed(for: panel.editor.document[id]!.typed(as: SchemaCard.self)!).isEmpty }
+        let maps = panel.editor.proseMaps, sync = panel.editor.schemaSync
+        panel.window.spin { !SchemaHighlightsShown.placed(for: panel.editor.document[id]!.typed(as: SchemaCard.self)!, maps: maps, sync: sync).isEmpty }
         let card = try require(panel.editor.document[id]?.typed(as: SchemaCard.self))
-        let placed = SchemaHighlightAnswers.placed(for: card), text = card.props.prompt.stored as NSString
+        let placed = SchemaHighlightsShown.placed(for: card, maps: maps, sync: sync), text = card.props.prompt.stored as NSString
         let index = try require(placed.firstIndex { text.substring(with: $0.range) == "summary" })
-        let summary = try require(SchemaHighlightAnswers.lines(of: card, resolve: { _ in .missing })[index].first)
+        let summary = try require(SchemaHighlightsShown.lines(of: card, maps: maps, sync: sync, resolve: { _ in .missing })[index].first)
         let view = try panel.describe(id)
         panel.window.settle()
         let point = panel.canvas.convert(panel.editor.camera.toView(CGPoint(x: summary.midX, y: summary.midY)), to: nil)

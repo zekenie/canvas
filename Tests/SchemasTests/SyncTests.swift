@@ -5,6 +5,7 @@ import Foundation
 import LanguageModels
 import Mentions
 import Observation
+import ProseMaps
 import Schemas
 import TestKit
 
@@ -705,9 +706,9 @@ let petSchema = """
         let toPrompt = SchemaPrompts.toPrompt(prompt: "", previousSchema: nil, schema: #"{"a": {"$ref": "@Address"}}"#, schemas: "@Address")
         expectEqual(toPrompt.system, SchemaPrompts.toPromptSystem + "\n" + SchemaPrompts.toPromptReferences)
         expect(toPrompt.messages.first?.text.hasPrefix("<schemas>\n@Address\n</schemas>\n\n<schema>") == true)
-        expectEqual(SchemaPrompts.toHighlights(prompt: "a pet", schema: "{}").system, SchemaPrompts.highlightsSystem)
-        expectEqual(SchemaPrompts.toHighlights(prompt: "a pet at an @Address", schema: "{}", namesSchemas: true).system,
-                    SchemaPrompts.highlightsSystem + "\n" + SchemaPrompts.highlightsReferences)
+        expectEqual(ProseMapPrompt.request(SchemaTarget.self, prose: "a pet", target: "{}").system, ProseMapPrompt.system(for: SchemaTarget.self))
+        expectEqual(ProseMapPrompt.request(SchemaTarget.self, prose: "a pet at an @Address", target: "{}", context: SchemaPrompts.highlightsReferences).system,
+                    ProseMapPrompt.system(for: SchemaTarget.self) + "\n" + SchemaPrompts.highlightsReferences)
         expect(SchemaPrompts.toSchemaSystem.hasSuffix("\n\n") == false && SchemaPrompts.toSchemaReferences.hasPrefix("Other schemas\n"),
                "a blank line apart, as the prompts' own sections are")
     },

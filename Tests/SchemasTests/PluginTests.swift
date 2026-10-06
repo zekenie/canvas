@@ -26,7 +26,7 @@ import Validation
         expectEqual([tool.label, tool.systemImage], ["Schema", "curlybraces"])
         expectEqual(registry.shortcut(forTool: tool.id)?.chord, "s")
         expectEqual(registry.report.split(separator: "\n").first { $0.hasPrefix("schemas") }.map(String.init), """
-        schemas            service SchemaSync · overlay SchemaHighlightFrames · ShapePopovers · shape schema-card v1 · tool schema-card · \
+        schemas            service SchemaSync · ShapePopovers · shape schema-card v1 · tool schema-card · \
         shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · \
         ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · mention text → schema-card · \
         mentionable → schema-card · ShapeDetails → schema-card · channel schema-link · edge type schema-link

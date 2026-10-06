@@ -5,6 +5,7 @@ import Foundation
 import Geometry
 import LanguageModels
 import Mentions
+import ProseMaps
 import Schemas
 import TestKit
 
@@ -31,7 +32,7 @@ let jiraSchema = """
   "required": ["key", "summary", "url"]
 }
 """
-let jiraAnswer = #"[{"text": "jira ticket", "pointer": ""}, {"text": "key", "pointer": "/properties/key"}, {"text": "one-line", "pointer": "/properties/summary/maxLength"}, {"text": "summary", "pointer": "/properties/summary"}, {"text": "link to it", "pointer": "/properties/url"}]"#
+let jiraAnswer = #"[{"text": "jira ticket", "address": ""}, {"text": "key", "address": "/properties/key"}, {"text": "one-line", "address": "/properties/summary/maxLength"}, {"text": "summary", "address": "/properties/summary"}, {"text": "link to it", "address": "/properties/url"}]"#
 
 /// An editor of schema cards whose model answers highlights with `answer` (and fails anything
 /// else), nothing kept from a test before, and frames drawn as the canvas draws them.
@@ -43,10 +44,11 @@ final class HighlightBench {
     var answer: Result<ModelResponse, LanguageModelError> = .success(ModelResponse(text: jiraAnswer))
 
     init() throws {
-        SchemaHighlightAnswers.forgetEverything()
+        ProseMapService.forgetEveryAnswer()
+        SchemaHighlightsShown.forgetEverything()
         editor = try schemaEditor(scheduler: scheduler, model: model)
         model.fallback = { [unowned self] request in
-            request.model == SchemaPrompts.highlightsModel ? self.answer : .failure(.server(status: 0, message: "no answer for the sync"))
+            request.model == ProseMapPrompt.model ? self.answer : .failure(.server(status: 0, message: "no answer for the sync"))
         }
     }
 
@@ -56,23 +58,44 @@ final class HighlightBench {
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
     }
 
-    var highlighter: SchemaHighlighter { editor.schemaSync!.highlighter }
-    var asked: [ModelRequest] { model.requests.filter { $0.model == SchemaPrompts.highlightsModel } }
+    var maps: ProseMapService { editor.proseMaps! }
+    var asked: [ModelRequest] { model.requests.filter { $0.model == ProseMapPrompt.model } }
 
     /// A frame of the canvas, 800 × 600 at the camera's zoom: what's drawn in full is read.
     func frame() { _ = renderBitmap(editor, size: CGSize(width: 800, height: 600)) }
 
     /// Waits for every highlights call to land.
-    func settle() { spinRunLoop(until: { self.highlighter.callsOut == 0 && self.highlighter.callsWaiting == 0 }) }
+    func settle() { spinRunLoop(until: { self.maps.callsOut == 0 && self.maps.callsWaiting == 0 }) }
 
     func card(_ id: ShapeID) -> ShapeRecord<SchemaCard>? { editor.document[id]?.typed(as: SchemaCard.self) }
 
-    /// The card's highlights as it's drawn: each one's words, and its kind.
+    /// The card's highlights as it shows them: their words and what each says.
+    func placed(_ card: ShapeRecord<SchemaCard>) -> [PlacedHighlight] {
+        SchemaHighlightsShown.placed(for: card, maps: editor.proseMaps, sync: editor.schemaSync)
+    }
+
+    /// Where the card's highlights are drawn, each mention's pill as it shows.
+    func lines(_ card: ShapeRecord<SchemaCard>) -> [[CGRect]] {
+        SchemaHighlightsShown.lines(of: card, maps: editor.proseMaps, sync: editor.schemaSync) {
+            self.editor.registry.mentionResolution(of: $0, lookup: { self.editor.shape(inFile: $0) })
+        }
+    }
+
+    /// The card's highlights as it's drawn: each one's words, and what they say of it.
     func shown(_ id: ShapeID) -> [String] {
         guard let card = card(id) else { return [] }
         let text = card.props.prompt.stored as NSString
-        return SchemaHighlightAnswers.placed(for: card).map { "\(text.substring(with: $0.range)) \($0.kind == .field ? "field" : "rule")" }
+        return placed(card).map { "\(text.substring(with: $0.range)) \($0.role == .element ? "field" : "rule")" }
     }
+}
+
+/// Counts the canvas's redraws. (Its delegate protocol is the host's, so it can't be public in
+/// CanvasTesting.)
+final class RedrawCounter: CanvasEditorDelegate {
+    var redraws = 0
+    func editorNeedsDisplay(_ editor: CanvasEditor) { redraws += 1 }
+    func editorCursorDidChange(_ editor: CanvasEditor) {}
+    func editorEditingDidChange(_ editor: CanvasEditor) {}
 }
 
 @MainActor let highlightTests = Suite("Schema highlights", [
@@ -84,10 +107,9 @@ final class HighlightBench {
         expectEqual(JSONPointer("properties/key"), nil)
         expectEqual(JSONPointer(tokens: ["a/b", "c~d"]).description, "/a~1b/c~0d")
         let text = #"{"a": {"b": [10, {"c": true}]}, "a": {"b": [20]}, "e/f": 1}"#
-        let root = try JSONReader.read(text)
         @MainActor func at(_ pointer: String) -> String? {
-            guard let target = JSONPointer(pointer)?.resolve(in: root) else { return nil }
-            return SchemaHighlights.fragment(target.range, of: text)
+            guard let pointer = JSONPointer(pointer), let part = SchemaTarget.locate([pointer], in: text).first ?? nil else { return nil }
+            return ProseMapText.excerpt(part, of: text)
         }
         expectEqual(at("/a/b/0"), "20", "of two members of one name, the last")
         expectEqual(at("/a/b/1"), nil)
@@ -97,45 +119,33 @@ final class HighlightBench {
         for nowhere in ["/a/b/01", "/a/b/-", "/a/b/+0", "/x", "/e~1f/g", "/a/b/99999999999999999999"] {
             expectEqual(at(nowhere), nil, nowhere)
         }
+        expectEqual(SchemaTarget.locate([JSONPointer(tokens: [])], in: "{"), [nil], "in text that isn't JSON, nowhere")
+        expectEqual(JSONPointer(JSONPointer(tokens: ["a/b", "c~d"]).description), JSONPointer(tokens: ["a/b", "c~d"]), "read as the model writes one")
     },
-    test("what words pointing somewhere say: a field through the data's places, a rule at any other keyword or through what combines or conditions") {
-        let cases: [(String, SchemaHighlight.Kind)] = [
-            ("", .field), ("/title", .field), ("/properties", .field), ("/properties/key", .field),
-            ("/properties/properties", .field), ("/properties/lines/items", .field), ("/properties/lines/items/properties/amount", .field),
-            ("/$defs/address", .field), ("/$defs/address/properties/zip", .field), ("/properties/row/prefixItems/0", .field),
-            ("/properties/summary/description", .field), ("/additionalProperties", .field),
-            ("/properties/summary/maxLength", .validation), ("/required", .validation), ("/required/0", .validation),
-            ("/properties/status/enum", .validation), ("/properties/status/enum/1", .validation), ("/properties/status/default", .validation),
-            ("/properties/due/format", .validation), ("/properties/lines/minItems", .validation), ("/properties/tags/uniqueItems", .validation),
-            ("/anyOf", .validation), ("/anyOf/0/required", .validation), ("/if", .validation), ("/if/properties/method/const", .validation),
-            ("/then/required", .validation), ("/not", .validation),
+    test("what words pointing somewhere say: a field (an element) through the data's places, a rule at any other keyword or through what combines or conditions") {
+        let cases: [(String, LinkRole)] = [
+            ("", .element), ("/title", .element), ("/properties", .element), ("/properties/key", .element),
+            ("/properties/properties", .element), ("/properties/lines/items", .element), ("/properties/lines/items/properties/amount", .element),
+            ("/$defs/address", .element), ("/$defs/address/properties/zip", .element), ("/properties/row/prefixItems/0", .element),
+            ("/properties/summary/description", .element), ("/additionalProperties", .element),
+            ("/properties/summary/maxLength", .rule), ("/required", .rule), ("/required/0", .rule),
+            ("/properties/status/enum", .rule), ("/properties/status/enum/1", .rule), ("/properties/status/default", .rule),
+            ("/properties/due/format", .rule), ("/properties/lines/minItems", .rule), ("/properties/tags/uniqueItems", .rule),
+            ("/anyOf", .rule), ("/anyOf/0/required", .rule), ("/if", .rule), ("/if/properties/method/const", .rule),
+            ("/then/required", .rule), ("/not", .rule),
         ]
-        for (pointer, kind) in cases { expectEqual(SchemaHighlights.kind(of: try require(JSONPointer(pointer))), kind, pointer) }
-    },
-    test("words are found in order, whole words first, as written first, never overlapping: words written twice go to their places in turn") {
-        let text = "the customer's name and email, and each product's name, keyboard and key"
-        @MainActor func found(_ words: [String], in text: String = text) -> [Int?] {
-            SchemaHighlights.anchor(words, in: text).map { $0.map { text.distance(from: text.startIndex, to: $0.lowerBound) } }
-        }
-        expectEqual(found(["customer", "name", "email", "product", "name", "key"]), [4, 15, 24, 40, 50, 69], "the second name after the first; key, not keyboard's")
-        expectEqual(found(["email", "customer"]), [24, 4], "listed out of order: from the start once nothing's after")
-        expectEqual(found(["Customer", "EMAIL"]), [4, 24], "as written first, then ignoring case")
-        expectEqual(found(["customer's name", "name"]), [4, 50], "never inside one found")
-        expectEqual(found(["phone", "", "name"]), [nil, nil, 15])
-        expectEqual(found(["keyboard"]), [56])
-        expectEqual(found(["key"], in: "keyboard"), [0], "inside a word only when it's nowhere else")
-        expectEqual(found(["タイトル", "必須"], in: "書籍：タイトル（必須）"), [3, 8])
+        for (pointer, role) in cases { expectEqual(SchemaTarget.role(of: try require(JSONPointer(pointer))), role, pointer) }
     },
     test("placing keeps what's in the description and leads somewhere in the schema, in the description's order, each with the part it shows") {
-        let root = try JSONReader.read(jiraSchema)
-        var highlights = try require(SchemaPrompts.parseHighlights(ModelResponse(text: jiraAnswer)))
-        highlights.append(SchemaHighlight(words: "key", pointer: "/properties/id"))            // leads nowhere
-        highlights.append(SchemaHighlight(words: "priority", pointer: "/properties/key"))       // not in the words
-        let placed = SchemaHighlights.place(highlights, in: jiraPrompt, schema: root)
-        let text = jiraPrompt as NSString
-        expectEqual(placed.map { text.substring(with: $0.range) }, ["jira ticket", "key", "one-line", "summary", "link to it"])
-        expectEqual(placed.map(\.kind), [.field, .field, .validation, .field, .field])
-        let parts = placed.map { SchemaHighlights.fragment($0.part, of: jiraSchema) }
+        var links = try require(ProseMapPrompt.links(from: ModelResponse(text: jiraAnswer))).compactMap { link in
+            JSONPointer(link.address).map { ProseLink(quote: link.quote, address: $0) }
+        }
+        links.append(ProseLink(quote: "key", address: try require(JSONPointer("/properties/id"))))            // leads nowhere
+        links.append(ProseLink(quote: "priority", address: try require(JSONPointer("/properties/key"))))       // not in the words
+        let map = ProseMap<SchemaTarget>(placing: links, prose: jiraPrompt, target: jiraSchema)
+        expectEqual(map.links.map { String(jiraPrompt[$0.inProse]) }, ["jira ticket", "key", "one-line", "summary", "link to it"])
+        expectEqual(map.links.map(\.role), [.element, .element, .rule, .element, .element])
+        let parts = map.links.map { map.excerpt(of: $0) }
         expectEqual(parts[0], jiraSchema, "the thing itself: the whole schema")
         expectEqual(parts[2], #""maxLength": 255"#)
         expectEqual(parts[3], """
@@ -145,31 +155,20 @@ final class HighlightBench {
         }
         """, "as written, at the left margin")
     },
-    test("an answer is read as the model writes it: an array, fenced, taken back and written again, explained after; else not at all") {
-        @MainActor func read(_ text: String, _ stop: StopReason = .endTurn) -> [String]? {
-            SchemaPrompts.parseHighlights(ModelResponse(text: text, stopReason: stop))?.map { "\($0.words) \($0.pointer)" }
-        }
-        let one = #"[{"text": "key", "pointer": "/properties/key"}]"#
-        expectEqual(read(one), ["key /properties/key"])
-        expectEqual(read("```json\n\(one)\n```"), ["key /properties/key"])
-        expectEqual(read(#"[{"text": "Key", "pointer": ""}]"# + "\n\nWait, the prompt writes it lowercase.\n\n" + one), ["key /properties/key"], "the last one")
-        expectEqual(read(one + "\n\nThe second key repeats the first, so I linked it once."), ["key /properties/key"])
-        expectEqual(read(#"[{"text": "a"}, {"pointer": "/x"}, {"text": " ", "pointer": ""}, {"text": "b", "pointer": 1}, {"text": "c", "pointer": ""}]"#), ["c "],
-                    "items without words, or a pointer, left out")
-        expectEqual(read("[]"), [])
-        expectEqual(read("I can't link these words."), nil)
-        expectEqual(read(one, .maxTokens), nil, "cut off")
-        expectEqual(read(one, .refusal), nil)
-    },
-    test("the request asks Sonnet 5.5 at low effort, its temperature its own, the description and the schema in their blocks") {
-        let request = SchemaPrompts.toHighlights(prompt: " a pet \n", schema: "{}")
+    test("the request asks Sonnet 5.5 at low effort, its temperature its own, told of a schema by its guide, the description and the schema in their blocks") {
+        let request = ProseMapPrompt.request(SchemaTarget.self, prose: " a pet \n", target: "{}")
         expectEqual(request.model, "claude-sonnet-5-5")
         expectEqual(request.effort, "low")
         expectEqual(request.temperature, nil)
         expectEqual(request.fallbacks, .default)
         expectEqual(request.maxTokens, 2048)
-        expectEqual(request.system, SchemaPrompts.highlightsSystem)
-        expectEqual(request.messages, [.user("<prompt>\na pet\n</prompt>\n\n<schema>\n{}\n</schema>")])
+        let system = try require(request.system)
+        expect(system.hasPrefix("A user writes in a few plain words what their schema says."), system)
+        expect(system.contains("- <schema>: the schema, which says what the words say (and may say more).\n"), system)
+        expect(system.contains("\n\nThe schema is a JSON Schema (draft 2020-12)"), "the guide, a paragraph of its own")
+        expect(system.contains("\"address\": \"/properties/loans/items/properties/dueDate\"}]\n\nReply [] when no words link."), "its example, then the frame's")
+        expect(!system.contains("{name}") && !system.contains("{guide}"))
+        expectEqual(request.messages, [.user("<prose>\na pet\n</prose>\n\n<schema>\n{}\n</schema>")])
     },
     test("a card drawn in full, in step, is asked about once: its answer is drawn, and a pair asked about isn't asked about again, on any card") {
         let b = try HighlightBench()
@@ -178,9 +177,9 @@ final class HighlightBench {
         b.frame()
         b.settle()
         expectEqual(b.asked.count, 1)
-        expectEqual(b.asked.first?.messages, [.user("<prompt>\n\(jiraPrompt)\n</prompt>\n\n<schema>\n\(jiraSchema)\n</schema>")])
+        expectEqual(b.asked.first?.messages, [.user("<prose>\n\(jiraPrompt)\n</prose>\n\n<schema>\n\(jiraSchema)\n</schema>")])
         expectEqual(b.shown(id), ["jira ticket field", "key field", "one-line rule", "summary field", "link to it field"])
-        expectEqual(b.highlighter.revision(of: id), 1)
+        expectEqual(b.maps.revision(of: id), 1)
         b.frame()
         b.settle()
         expectEqual(b.asked.count, 1, "asked once")
@@ -199,7 +198,7 @@ final class HighlightBench {
         b.settle()
         expectEqual(b.asked.count, 0, "an edit waiting")
         b.model.fallback = { request in
-            request.model == SchemaPrompts.highlightsModel ? .success(ModelResponse(text: jiraAnswer)) : .success(ModelResponse(text: jiraSchema))
+            request.model == ProseMapPrompt.model ? .success(ModelResponse(text: jiraAnswer)) : .success(ModelResponse(text: jiraSchema))
         }
         try require(b.editor.schemaSync).commit(id)
         spinRunLoop(until: { b.model.waiting == 1 })
@@ -212,6 +211,25 @@ final class HighlightBench {
         b.settle()
         expectEqual(b.asked.count, 1, "in step once the answer's written")
         expectEqual(b.shown(id).count, 5)
+    },
+    test("an answer that leaves the schema as it was brings the card into step though it commits nothing, and the canvas draws again to ask about its texts") {
+        let b = try HighlightBench()
+        b.model.fallback = { request in
+            request.model == ProseMapPrompt.model ? .success(ModelResponse(text: jiraAnswer)) : .success(ModelResponse(text: jiraSchema))
+        }
+        let id = b.editor.add(card(jiraSchema, prompt: jiraPrompt))
+        b.frame()
+        b.settle()
+        b.editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.setPrompt(SchemaPromptText(plain: jiraPrompt + ", as before")) } }
+        let canvas = RedrawCounter()
+        b.editor.delegate = canvas
+        try require(b.editor.schemaSync).commit(id)
+        spinRunLoop(until: { b.editor.schemaSync?.isInStep(id) == true })
+        expectEqual(b.card(id)?.props.schema.text, jiraSchema, "nothing written")
+        expect(canvas.redraws > 0, "drawn again")
+        b.frame()
+        b.settle()
+        expectEqual(b.asked.count, 2, "the new pair asked about")
     },
     test("a card zoomed out to its skeleton, or out of view, is asked about nothing") {
         let b = try HighlightBench()
@@ -258,8 +276,8 @@ final class HighlightBench {
         }
         b.frame()
         spinRunLoop(until: { b.model.waiting == 4 })
-        expectEqual(b.highlighter.callsOut, 4)
-        expectEqual(b.highlighter.callsWaiting, 2)
+        expectEqual(b.maps.callsOut, 4)
+        expectEqual(b.maps.callsWaiting, 2)
         b.model.holdsAnswers = false
         b.model.release()
         b.settle()

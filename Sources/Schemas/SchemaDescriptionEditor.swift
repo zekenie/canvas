@@ -2,6 +2,7 @@ import AppKit
 import Canvas
 import Mentions
 import Observation
+import ProseMaps
 import TextEditing
 
 /// A text view laid over the card being edited, for its description, as a note's editor is laid
@@ -161,10 +162,11 @@ final class SchemaDescriptionEditor: NSView, NSTextViewDelegate {
     /// draws them (the text lays out as the canvas draws it), their popover, beside the line it's on.
     private func hover(at point: CGPoint?) {
         guard let point, let card = context.shape else { return context.hoverPopover(nil) }
-        let placed = SchemaHighlightAnswers.placed(for: card)
+        let maps = context.service(ProseMapService.self)
+        let placed = SchemaHighlightsShown.placed(for: card, maps: maps, sync: sync)
         guard !placed.isEmpty else { return context.hoverPopover(nil) }
         let origin = card.frame.origin, inWorld = CGPoint(x: point.x + origin.x, y: point.y + origin.y)
-        let lines = SchemaHighlightAnswers.lines(of: card) { [mentions] in mentions?.resolve($0) ?? .missing }
+        let lines = SchemaHighlightsShown.lines(of: card, maps: maps, sync: sync) { [mentions] in mentions?.resolve($0) ?? .missing }
         for (highlight, lines) in zip(placed, lines) {
             guard let line = lines.first(where: { $0.contains(inWorld) }) else { continue }
             let anchor = line.offsetBy(dx: -origin.x, dy: -origin.y)

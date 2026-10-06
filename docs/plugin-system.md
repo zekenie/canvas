@@ -49,6 +49,7 @@ maps one onto the other.
 - [The command line](#the-command-line)
 - [Schema cards](#schema-cards)
 - [Language models](#language-models)
+- [Prose maps](#prose-maps)
 - [Snapping](#snapping)
 - [Capabilities](#capabilities)
 - [The editor, the document, and drawing](#the-editor-the-document-and-drawing)
@@ -314,6 +315,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Draw a shape away from where it is, for an animation (a shake) | `editor.setDrawingOffset(_:for:)`; adornments follow by themselves, and an overlay with `context.worldDrawingOffset(of:)` | [Refusing a change: the shake](#refusing-a-change-the-shake) |
 | Change where a drag puts the shapes it moves (snap them, keep them on a grid), and draw while it does | `registrar.translationAdjuster { editor, start in … }`, a `TranslationAdjuster`: Snapping claims it | [The translation adjuster](#the-cores-part-the-translation-adjuster) |
 | Ask Claude something (and test it without the network) | `editor.languageModel?.respond(to: ModelRequest(...))`; `ScriptedLanguageModel` in tests | [Language models](#language-models) |
+| Say which words of a text say which part of a lower-level text (a schema, code, a query), to highlight them | A `ProseTarget` (a name and a guide); `editor.proseMaps?.map(T.self, of:prose:target:askingIf:)` where the words are drawn | [Prose maps](#prose-maps) |
 | Keep what a kind's props are bound to right as shapes are deleted and copied (a connector) | `ShapeReferencing` | [Arrows](../Sources/Connections/ArrowDefinition.swift) |
 | Let a kind's shapes be mentioned in text, as pills, with a tab listing what mentions each | `x.mentionable(untitled:symbol:…)` (Mentions), or `registrar.mentionable(K.self)` for another plugin's kind | [Mentions](#mentionable-kinds) |
 | Let a kind's text mention shapes, drawn with pills and edited with a picker | A `MentionText` property; `x.mentionText { … }` and `context.drawMentionText`; a `MentionTextView` editor, or `MentionTextArea` in the panel | [Mentions](#mention-text-and-its-stored-form), [In the panel](#in-the-panel-mentiontextarea) |
@@ -392,14 +394,16 @@ concern, what shapes are called and what more a query may ask. So is turning a s
 while one kind offers a channel and another takes it, so Frames and Subboards meet in one and neither
 names the other. And a horizontal may declare no point at
 all and only lend something:
-[LanguageModels](#language-models) lends every editor the model plugins ask.
+[LanguageModels](#language-models) lends every editor the model plugins ask, and
+[ProseMaps](#prose-maps) what a text's words say of a lower-level text, which it asks that model.
 
 Horizontals are four layers, which say which way an edge between two of them goes:
 
 - **Surfaces** are what the others show themselves on or build on: the keys, the selection, the
   detail panel, context menus, slash commands, the table of contents, adornments, the graph
-  ([Topology](#topology)), the language model, the query engine ([Queries](#queries)) and the
-  translation of English into a query (QueryTranslation). They know no concern; any plugin may run
+  ([Topology](#topology)), the language model, prose maps (what words say of a lower-level text,
+  [ProseMaps](#prose-maps)), the query engine ([Queries](#queries)) and the translation of English
+  into a query (QueryTranslation). They know no concern; any plugin may run
   a query or ask for one to be written, and the words a concern gives queries still come
   through QueryLexicon.
 - **Concerns** are meanings a kind opts into (validity, titles, locks, connections, mentions,
@@ -491,7 +495,7 @@ Each target is one line, with its layer:
 | wire | wire | CanvasRPC (what the app and its [command line](#the-command-line) say to each other) |
 | foundation | foundation | Geometry, Canvas (the core), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, its solver, and the grid its obstacles are filed in) and QueryLanguage (the language [`canvas query`](#query) reads), pure, TextEditing ([the text view and the caret list](#textediting) every editable text is built on) and FuzzyMatching ([the matcher](#fuzzymatching) every list ranks typed text with, and Find and Jump To's) |
 | ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
-| surface | foundation, surface | Keyboard, Selection, DetailPanel, ContextMenus, SlashCommands, TableOfContents, Adornments, LanguageModels, Topology, Find, Queries, QueryTranslation |
+| surface | foundation, surface | Keyboard, Selection, DetailPanel, ContextMenus, SlashCommands, TableOfContents, Adornments, LanguageModels, ProseMaps, Topology, Find, Queries, QueryTranslation |
 | concern | foundation, surface, concern | Validation, Clipboard, Titles, Locking, Publishing, Connections, Mentions, Boards, Snapping, Transform |
 | language | foundation, surface, language, wire | Automation, QueryCommands |
 | lexicon | foundation, surface, concern, language | DrawLexicon, QueryLexicon |
@@ -9318,7 +9322,8 @@ registrar.channel(SchemaLink.self)
   and Escape say the description is done and end editing, ⌘↩ while the model writes the
   description too (`EditingTextView.commitsWhileReadOnly`), and so does the keyboard going to a view
   outside the canvas (heard through `onLeave`). Its highlights (words linked to the parts of the schema
-  they say, `SchemaHighlighter`, asking Sonnet 5.5) are filled by the render under its text, while
+  they say: a [prose map](#prose-maps) into the schema, `SchemaTarget`, which ProseMaps asks Sonnet 5.5
+  for once the card is drawn in full and in step) are filled by the render under its text, while
   it's edited too, where the canvas draws the words, pills and all (Mentions'
   `MentionTextStyle.lineRects`), and resting the pointer on them shows that part of the schema in
   the core's popover (`CanvasPopover`: Selection's `ShapePopovers` on the canvas,
@@ -9495,10 +9500,11 @@ and the sync writes one from the other, as it writes every other part
   `toPromptReferences`, `highlightsReferences`) goes after each only in a request that names some,
   so a card that refers to no other is sent exactly what it always was: the evals held that, as
   the same words added to every request cost three of the cases that name no other schema.
-- **Highlights on pills.** The highlighter sends the description as the model reads it (each
-  mention `@` and the word of the name it holds) and the schema with each `$ref` to a mentioned
-  card its word, and an answer is found in that text, then moved onto the description as it's
-  drawn, where a mention is one character, its pill (`SchemaModelText.shownRange`): words in a
+- **Highlights on pills.** The card hands its prose map the description as the model reads it
+  (each mention `@` and the word of the name it holds) and the schema with each `$ref` to a
+  mentioned card its word (`SchemaHighlightsShown`), with `highlightsReferences` as the request's
+  context when it names some, and an answer is found in those texts, then moved onto the description
+  as it's drawn, where a mention is one character, its pill (`SchemaModelText.shownRange`): words in a
   mention's word highlight its pill. Resting the pointer on the words that say a `$ref` to a card in
   the file shows that card's schema (the part its fragment points to), not the `$ref`.
 - **Completing one.** At a `$ref`'s value in the panel's JSON, ⌃Space lists, after the card's own
@@ -9678,6 +9684,107 @@ do throws(LanguageModelError) {
 - **Tests** pass a `ScriptedLanguageModel` ([Testing plugins](#testing-plugins)), never the network,
   but for the two live evaluations, SchemasTests' (`SCHEMA_LIVE=1`) and `--ask`'s (`QUERY_LIVE=1`),
   which `./test.sh` never sets.
+
+## Prose maps
+
+ProseMaps ([`Sources/ProseMaps`](../Sources/ProseMaps)) is a surface that declares no extension
+point: for any plugin that keeps a text in plain words beside a text in a lower language (a JSON
+Schema, code, a query, data), it says which words say which part, as a source map says which part
+of what a compiler wrote came from which part of the source. A schema card's highlights are one:
+its description mapped into its schema. A map is a list of links, each the words as the prose
+writes them and an address in the target, and both ends are found by what they are in the texts as
+they are now, never by a position: words typed around a link keep it, a target laid out anew keeps
+it, and a link whose words or part are gone drops. The model says the links, in a call of its own
+once the target exists, whoever wrote it (the person, an agent, the model in another call), so a
+map checks what made the target rather than restating it. Nothing is saved: a map is what the model
+said of two texts, kept by their text.
+
+```swift
+enum Snippet {}                                     // a target: what words are mapped into
+extension Snippet: ProseTarget {
+    static let name = "code"                        // the model's word for it, its block's tag
+    static let guide = "An address is the shortest stretch of the code, copied exactly, …"
+}
+
+// Where the words are drawn, on every frame (a render reads `context.proseMaps`):
+if let map = context.proseMaps?.map(Snippet.self, of: shape.id, prose: words, target: code,
+                                    askingIf: { sync.isInStep(shape.id) }) {
+    for link in map.links { fill(link.inProse, link.role) }       // and link.inTarget, link.address
+}
+```
+
+- **A target** (`ProseTarget`) is a type with no value, declared by the plugin that owns its
+  language: its `name` (the model's word for it, "schema", "code", and its block's tag in the
+  request) and its `guide` (what the model is told of it beside every target's rules: what it is,
+  what an address looks like, what's worth linking, an example). That's all a target needs: its
+  `Address` is then a quote of the target's text, found where it's written exactly once, a run of
+  whitespace in it matching any run there (`ProseMapText.find`), so a quote of code survives its
+  lines being broken anew, and one written twice leads nowhere rather than to a place it may not
+  mean. A language with an address of its own, which survives the text being laid out anew, names
+  it (`Address`, anything `LosslessStringConvertible`, as the model writes it), finds it
+  (`locate`, given every link's address at once, so a parser reads the text once) and says what
+  each leads to (`role(of:)`): Schemas' `SchemaTarget` addresses a JSON Pointer
+  ([Schema cards](#schema-cards)). Conform in an extension.
+- **One legend** (`LinkRole`): a link's words say something the target has (`.element`: a field, a
+  function, a column) or a rule it keeps (`.rule`: a bound, a condition, a filter), so a color
+  means one thing wherever words are mapped (a schema card's pale blue and pale amber). A quote
+  says nothing of what it is: `.element`, unless its target says otherwise.
+- **A map** (`ProseMap<Target>`) is links placed on one pair of texts: each one's words found in
+  the prose (in order, never overlapping, whole words before parts of words, as written before
+  ignoring case: `ProseMapText.anchor`) and its address in the target, in the prose's order, each
+  with where its words are (`inProse`), where its part is (`inTarget`) and its `role`; a link found
+  on one side only is left out. `link(at:)` is the one whose words are at a place in the prose,
+  `links(atTarget:)` those whose parts hold a place in the target, innermost first, and
+  `excerpt(of:)` its part as a person reads it, each line after the first less its first line's
+  indent (`ProseMapText.excerpt`). It's immutable, and the same object while nothing it's placed
+  from changes, so what a reader works out from one (where its words are drawn) is kept by its
+  identity. `ProseMap(placing:prose:target:)` places links you have.
+- **Reading one** (`ProseMapService`, `editor.proseMaps`, each editor's; nil without
+  `ProseMapsPlugin`) is `map(_:of:prose:target:context:askingIf:)`: the shape's pair's answer
+  placed on the two texts, else the shape's last answer for that target placed on them (so words
+  being typed keep the links still there), else nil. Give the texts as the model reads them (a
+  mention as a word it can copy, an id as a name): the links are found in them, and a reader that
+  draws other text moves them onto it (a schema card's pills). `context` is what one pair needs
+  said beyond its target's guide (the cards a description names), and is part of what an answer is
+  kept by. Read it where the words are drawn, on every frame: with the same strings as last time it
+  costs a lookup, and a target is searched again only when it, or what the links lead to, changed
+  (the same text is equal and as long in UTF-8: an accent written as two scalars is another map,
+  whose ranges are of its own text).
+- **Asking.** A pair read with no answer is asked about as the frame that read it ends (an overlay
+  that draws nothing, `ProseMapFrames`), so only what's drawn in full is asked about, never a shape
+  out of view or drawn as a skeleton, which reads nothing: if `askingIf` says it may be (called
+  only then: a schema card says "while its description and schema are in step", so what's linked
+  is what both say, and a shape whose readiness changes without a commit asks for a frame,
+  `editor.setNeedsDisplay()`), its prose isn't blank, its shape isn't being edited (its words aren't
+  done) and is on the board shown, and the editor has a model. A pair is asked about once per
+  session, whatever shape reads it (undo, a copy and a file opened twice ask nothing again: answers
+  are kept process-wide by their texts, 1,024 of them), at most 4 at a time (`concurrentCalls`), the
+  rest waiting their turn, which another board shown drops for shapes not on it. An answer is kept
+  for its pair whatever the shape says by the time it lands, and is the shape's last unless one
+  asked after it has landed, as is an answer a shape reads for its pair (a copy's, one undo
+  brought back); the canvas draws again, and `revision(of:)` (observed per shape) changes. A
+  failure keeps nothing, and its pair isn't asked about again until a key is saved in Settings; a
+  cancelled call is asked again when it's next read. A shape taken out of the file keeps nothing but
+  its answers, by their texts; one moved to another board keeps its last.
+- **The request** (`ProseMapPrompt`) is one for every target: the `frame`, every target's task and
+  rules (copy the words exactly, typos and all; the fewest words; never overlapping, in the prose's
+  order; only what the target says), with the target's name and its guide in it, and the context
+  after it, a blank line apart, only for a request that has one, so every other request is sent
+  exactly what it always was; one user message of `<prose>` and the target's block
+  (`<schema>`), each trimmed. It asks Sonnet 5.5 at low effort, its temperature its own, with the
+  service's fallback on a decline (`ProseMapPrompt.model`, `effort`, `maxTokens`): every target
+  does, until its own evals say otherwise. The answer is a JSON array of `{"text", "address"}`
+  (`ProseMapPrompt.links(from:)`: fenced, tagged, taken back and written again, or explained after,
+  its last array; an item without words or an address left out).
+- **Evals.** A target ships when its evals find what a person would link, with none pointing at
+  the wrong part: the schema card's are `scripts/schema-prompts/highlight_evals.py`, which reads the
+  frame and the settings out of `ProseMapPrompt.swift` and the guide out of `SchemaPrompts.swift`,
+  and scores each link as the app reads it (right, misattributed, an extra, invalid, and recall).
+- **Tests** pass a `ScriptedLanguageModel` and draw frames with `renderBitmap`, whose end hands over
+  what was read: ProseMapsTests' fixtures are a quoted target (`Snippet`, code) and one with an
+  address of its own (`Steps`, a recipe's line numbers, a check a rule), read on CanvasTesting's
+  boxes, pockets and cards (`MapBench`); `ProseMapService.forgetEveryAnswer()` (debug builds)
+  forgets the process-wide answers between tests, and `placed` counts the maps placed.
 
 ## Snapping
 
@@ -10925,7 +11032,7 @@ arrows               shape arrow v1 · label Arrow → arrow · ContentsRows →
 sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
 subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
 framing              shape frame · tool frame · shortcut F → tool frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeDetails → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame
-schemas              service SchemaSync · overlay SchemaHighlightFrames · ShapePopovers · shape schema-card v1 · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · mention text → schema-card · mentionable → schema-card · ShapeDetails → schema-card · channel schema-link · edge type schema-link
+schemas              service SchemaSync · ShapePopovers · shape schema-card v1 · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · mention text → schema-card · mentionable → schema-card · ShapeDetails → schema-card · channel schema-link · edge type schema-link
 references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · referenced-in row → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
 adornments           service AdornmentState · service ChipFade · overlay AdornmentOverlay · CanvasButtons · DecorationHits
@@ -10953,6 +11060,7 @@ snapping             service SnapState · translation adjuster
 ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
 arrow-ports          property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowBindingRules
 language-models      service LanguageModelState
+prose-maps           service ProseMapService · overlay ProseMapFrames
 automation           command line draw · command line show · command line kinds
 title-names          draw names
 port-edges           draw edges
@@ -11676,10 +11784,19 @@ Each of these adds to the design without changing what plugins are written again
   (`ChangeSet`, which services get with `documentDidChange`), and undo keeps the records before and
   after (`DocumentDelta`); what's left of who made it is more than whether an agent did
   (`ChangeSet.byAgent`): which agent, or which person. Sync builds on them.
+- **More of prose maps** ([Prose maps](#prose-maps)): coverage, a target's parts no words say and
+  words that say none of it (one more thing a target says: its parts), which is where a
+  description and what it describes have drifted apart; the map written by the call that writes
+  the target, a call fewer, which would explain that call but no longer check it; links a person
+  makes or keeps (saved, where a map is derived), and links inside links (a field's words inside an
+  either-or's); targets that aren't text (words to shapes on a board); drawing and pointing at a
+  map for any kind (the fills behind its words and the popover on them, the schema card's alone
+  now), and from the target's side (the words a part of the target is said by); and an awaited
+  `ask`, for a command or an agent, which asks at once rather than at a frame's end.
 - **More of arrow labels**: mentions in them, as a note's text has (the label is plain text, stored
   as a string, which mention text is too, so a label becomes mention text with no migration:
   `MentionTextView` for the editor, `x.mentionText` for its pills); highlights of what its words
-  say, as a schema card's description has.
+  say, a [prose map](#prose-maps) as a schema card's description has.
 - **More of the command line**: reading positions back (a query's rows say what a shape is, what
   it's called and which board it's on, never where it sits there, so an agent that places shapes
   against ones it didn't draw can't see where they are); who each change is from (an agent's name

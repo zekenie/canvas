@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Evals for the schema card's highlights: does the model link a description's words to the right
-parts of its schema? The prompt, the model, its effort and max_tokens are read out of
-Sources/Schemas/SchemaPrompts.swift (`highlightsSystem`, `highlightsModel`, `highlightsEffort`,
-`highlightsMaxTokens`), so there's one copy.
+parts of its schema? The highlights are a prose map (Sources/ProseMaps), so the request is put
+together as the app puts it: every target's frame, the model, its effort and max_tokens out of
+Sources/ProseMaps/ProseMapPrompt.swift (`frame`, `model`, `effort`, `maxTokens`), with the schema's
+guide in it and what's said of other schemas after it out of Sources/Schemas/SchemaPrompts.swift
+(`highlightsGuide`, `highlightsReferences`), so there's one copy.
 
     python3 highlight_evals.py --check                  # read the prompt and settings; no call
     python3 highlight_evals.py                          # every case in highlight_cases.py, once
@@ -10,7 +12,7 @@ Sources/Schemas/SchemaPrompts.swift (`highlightsSystem`, `highlightsModel`, `hig
     python3 highlight_evals.py --model claude-haiku-4-5 --only jira,typo -v
 
 Scores each answer as the app reads it: its links' words found in the description in order
-(`anchor`, SchemaHighlights.anchor's rule) and their pointers followed in the schema (`resolve`). A
+(`anchor`, ProseMapText.anchor's rule) and their addresses followed in the schema (`resolve`). A
 link is right when it overlaps words the case lists and points where they may (loosely, when its
 words are wider or narrower), misattributed when it overlaps listed words but points elsewhere (the
 popover would show the wrong part), an extra when it overlaps none (printed to be read), and
@@ -34,33 +36,39 @@ from highlight_cases import CASES, NEVER  # noqa: E402
 
 API_URL = "https://api.anthropic.com/v1/messages"
 SWIFT = os.path.normpath(os.path.join(HERE, "..", "..", "Sources", "Schemas", "SchemaPrompts.swift"))
+FRAME_SWIFT = os.path.normpath(os.path.join(HERE, "..", "..", "Sources", "ProseMaps", "ProseMapPrompt.swift"))
 
 
 class Fatal(Exception):
     pass
 
 
+def literal(src, name, path):
+    """A raw string literal's text, between its delimiters, as Swift reads it."""
+    m = re.search(r'static let ' + name + r' = #"""\n(.*?)\n"""#', src, re.S)
+    if not m:
+        raise Fatal(f"no {name} in {path}")
+    return m.group(1)
+
+
 def swift_settings():
-    """The prompt (the raw literal between its delimiters, as Swift reads it), the model, the effort
-    and max_tokens, read out of the Swift."""
+    """The system prompt as ProseMapPrompt.system(for: SchemaTarget.self) makes it (the frame, the
+    target's name "schema" and its guide in it, less the guide's final line breaks), what's said of
+    other schemas, the model, the effort and max_tokens, read out of the Swift."""
+    with open(FRAME_SWIFT, encoding="utf-8") as f:
+        frame_src = f.read()
     with open(SWIFT, encoding="utf-8") as f:
         src = f.read()
-    m = re.search(r'static let highlightsSystem = #"""\n(.*?)\n"""#', src, re.S)
-    if not m:
-        raise Fatal(f"no highlightsSystem in {SWIFT}")
-    system = m.group(1)
-    m = re.search(r'static let highlightsReferences = #"""\n(.*?)\n"""#', src, re.S)
-    if not m:
-        raise Fatal(f"no highlightsReferences in {SWIFT}")
-    references = m.group(1)
+    guide = literal(src, "highlightsGuide", SWIFT).rstrip("\n")
+    system = literal(frame_src, "frame", FRAME_SWIFT).replace("{name}", "schema").replace("{guide}", guide)
 
     def value(name, pattern):
-        found = re.search(r'static let ' + name + r' = ' + pattern, src)
+        found = re.search(r'static let ' + name + r' = ' + pattern, frame_src)
         if not found:
-            raise Fatal(f"no {name} in {SWIFT}")
+            raise Fatal(f"no {name} in {FRAME_SWIFT}")
         return found.group(1)
-    return {"system": system, "references": references, "model": value("highlightsModel", r'"([^"]+)"'),
-            "effort": value("highlightsEffort", r'"([^"]+)"'), "max_tokens": int(value("highlightsMaxTokens", r'([0-9_]+)').replace("_", ""))}
+    return {"system": system, "references": literal(src, "highlightsReferences", SWIFT), "model": value("model", r'"([^"]+)"'),
+            "effort": value("effort", r'"([^"]+)"'), "max_tokens": int(value("maxTokens", r'([0-9_]+)').replace("_", ""))}
 
 
 def block(tag, text):
@@ -69,8 +77,9 @@ def block(tag, text):
 
 
 def user_message(prompt, schema):
-    """SchemaPrompts.toHighlights: tagged blocks, each trimmed, a blank line between."""
-    return "\n\n".join(p for p in (block("prompt", prompt), block("schema", schema)) if p)
+    """ProseMapPrompt.request: the prose and the target in tagged blocks, each trimmed, a blank line
+    between."""
+    return "\n\n".join(p for p in (block("prose", prompt), block("schema", schema)) if p)
 
 
 def load_key():
@@ -86,8 +95,8 @@ def load_key():
 
 
 def call(key, settings, model, user, names_schemas=False):
-    # What it says of other schemas after it, a blank line apart, for a prompt that names some
-    # (SchemaPrompts.toHighlights).
+    # What it says of other schemas after it, a blank line apart, for a prompt that names some (the
+    # context SchemaHighlightsShown passes, which ProseMapPrompt.system puts after the frame).
     system = settings["system"] + "\n" + settings["references"] if names_schemas else settings["system"]
     body = {"model": model, "max_tokens": settings["max_tokens"], "system": system,
             "messages": [{"role": "user", "content": user}]}
@@ -153,7 +162,7 @@ def unwrap(t):
 
 def last_array(text):
     """The whole answer if it reads as a JSON array, else the last run of lines from one starting
-    with [ to one ending with ] that does (SchemaPrompts.parseHighlights)."""
+    with [ to one ending with ] that does (ProseMapPrompt.links)."""
     try:
         items = json.loads(text)
         if isinstance(items, list):
@@ -177,15 +186,16 @@ def last_array(text):
 
 
 def parse(answer):
-    """The links (words, pointer) an answer lists, or None for one that can't be read."""
+    """The links (words, pointer) an answer lists, each pointer its "address", or None for one that
+    can't be read."""
     if answer["stop_reason"] != "end_turn":
         return None
     items = last_array(unwrap(answer["text"]))
     if items is None:
         return None
-    return [(item["text"], item["pointer"]) for item in items
+    return [(item["text"], item["address"]) for item in items
             if isinstance(item, dict) and isinstance(item.get("text"), str) and item["text"].strip()
-            and isinstance(item.get("pointer"), str)]
+            and isinstance(item.get("address"), str)]
 
 
 def is_word(c):
@@ -193,7 +203,7 @@ def is_word(c):
 
 
 def anchor(prompt, texts):
-    """SchemaHighlights.anchor: where each text is, in order, (start, end) or None: as written, then
+    """ProseMapText.anchor: where each text is, in order, (start, end) or None: as written, then
     ignoring case; from the end of the last one placed, then from the start; at word boundaries,
     then anywhere; never overlapping one placed."""
     placed, spans, cursor = [], [], 0

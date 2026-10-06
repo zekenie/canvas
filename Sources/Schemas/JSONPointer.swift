@@ -2,12 +2,12 @@ import Foundation
 
 // A JSON Pointer (RFC 6901): where a value is in a JSON document, by the keys and indexes that lead
 // to it from the root. A schema card's highlights name the part of its schema their words say by
-// one (`SchemaHighlight.pointer`).
+// one (`SchemaTarget`'s address), as the model writes it (`LosslessStringConvertible`).
 
 /// An RFC 6901 JSON Pointer: the reference tokens from the root, unescaped (`~1` is "/", `~0` is
 /// "~"). Its URI fragment form ("#/properties/key", as a `$ref` writes one) reads the same, though
 /// what a fragment would percent-encode isn't decoded.
-public struct JSONPointer: Hashable, Sendable, CustomStringConvertible {
+public struct JSONPointer: Hashable, Sendable, LosslessStringConvertible {
     public var tokens: [String]
 
     public init(tokens: [String]) { self.tokens = tokens }

@@ -18,6 +18,7 @@ import LanguageModels
 import Locking
 import Mentions
 import Moving
+import ProseMaps
 import Publishing
 import Queries
 import QueryCommands
@@ -95,6 +96,8 @@ public enum ShippedPlugins {
             // above its adornments (the lock chip among them), and are found before them.
             PortsPlugin(), ArrowPortsPlugin(),
             LanguageModelsPlugin(model: model),
+            // What words say of what's lower level, asked of the model: a schema card's highlights.
+            ProseMapsPlugin(),
             // The command line's commands, and what `canvas draw` takes from the plugins that own a
             // concern: titles for names, ports' connections for edges, validity for its warnings, and
             // mentions for text (`@[Title]` in a note's text names the shape called that).
