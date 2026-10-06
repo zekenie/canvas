@@ -51,7 +51,7 @@ extension InspectorWindow {
         let item = try require(outline.firstIndex(of: "Show What Mentions"), "\(outline)")
         expectEqual(outline.first, "Open", "the subboard's own items first")
         expectEqual(outline[item - 1], "—")
-        expectEqual(Array(outline[(item + 1)...].prefix(3)), ["—", "Cut", "Copy"])
+        expectEqual(Array(outline[(item + 1)...].prefix(5)), ["—", "Create Frame", "—", "Cut", "Copy"])
         try menu.choose("Show What Mentions")
         h.wait(0)
         expectEqual(h.editor.selectedShapeIDs, [first.id, second.id])

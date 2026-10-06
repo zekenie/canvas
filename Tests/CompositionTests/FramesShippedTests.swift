@@ -4,6 +4,7 @@ import AppKit
 import CanvasTesting
 import CanvasUI
 import Composition
+import Connections
 import CoreGraphics
 import DetailPanel
 import Frames
@@ -314,6 +315,42 @@ private func middle(_ rect: CGRect) -> CGPoint { CGPoint(x: rect.midX, y: rect.m
                 expectEqual(changedPixels(drawn, full, in: CGRect(origin: .zero, size: size)), 0, "in full at 35%")
             }
         }
+    },
+    test("two notes and the bent arrow between them, selected: Create Frame, first in their menu, puts a frame around all three that holds the notes, the arrow bound to them as it was, and takes in a note it mostly covers; one step, and Undo takes it all back") {
+        let h = frameBoard()
+        let milk = h.note(at: CGPoint(x: 100, y: 100), "Milk"), eggs = h.note(at: CGPoint(x: 500, y: 100), "Eggs")
+        func bound(_ id: ShapeID) -> ArrowTerminal {
+            .bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))
+        }
+        let arrow = h.add(Arrow(start: bound(milk), end: bound(eggs), bend: 200))
+        let below = h.note(at: CGPoint(x: 300, y: 300), "Below")      // between them, hanging below the frame they'll get
+        let arc = try require(h.editor.shapeContext.bounds(of: [arrow]))
+        expect(arc.maxY > 332, "the arrow bends further below the notes than the frame would reach without it: \(arc)")
+        h.editor.selectedShapeIDs = [milk, eggs, arrow]
+        let menu = try require(h.secondaryClick(at: CGPoint(x: 200, y: 200)))
+        expectEqual(Array(menu.outline.prefix(3)), ["Create Frame", "—", "Cut"], "\(menu.outline)")
+        try menu.choose("Create Frame")
+        let frame = try require(h.editor.selection)
+        let box = try require(h.editor.box(frame))
+        expectEqual(h.editor.document[frame]?.kind, Frame.kind)
+        expect(box.contains(CGRect(x: 100, y: 100, width: 600, height: 200).insetBy(dx: -32, dy: -32)), "32 past the notes: \(box)")
+        expect(box.maxY >= arc.maxY + 31.99, "and 32 past the arrow's bend: \(box), \(arc)")
+        expectEqual(h.editor.holder(of: milk), frame)
+        expectEqual(h.editor.holder(of: eggs), frame)
+        expectEqual(h.editor.holder(of: arrow), nil, "an arrow is in no frame: it follows its notes")
+        let ends = try require(h.editor.document[arrow]?.typed(as: Arrow.self)?.props)
+        expectEqual(ends.start.binding?.shapeID, milk)
+        expectEqual(ends.end.binding?.shapeID, eggs)
+        expectEqual(h.editor.holder(of: below), frame, "mostly inside it: taken in")
+        let moved = try require(h.editor.box(below))
+        expect(moved.minY < 300, "nudged up: \(moved)")
+        // 16 inside its edge, a hair less for the arrow's bounds, which aren't whole numbers.
+        expect(box.insetBy(dx: 15.99, dy: 15.99).contains(moved), "nudged fully in, 16 inside its edge")
+        expectEqual(h.editor.undoHistory.undoName, "Create Frame")
+        h.editor.undo()
+        expectEqual(h.editor.document[frame], nil)
+        expectEqual(h.editor.holder(of: milk), nil)
+        expectEqual(h.editor.box(below)?.origin, CGPoint(x: 300, y: 300))
     },
     test("a mentioned frame's menu has Show What Mentions, which goes to what mentions it") {
         let h = frameBoard()

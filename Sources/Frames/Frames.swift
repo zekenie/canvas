@@ -47,7 +47,8 @@ extension Frame {
 /// opts into Titles (its name, in a pill above it, dimmed "Frame" while untitled), Mentions (by its
 /// name; following a mention goes to it; a Mentioned In tab), Selection's resizing, the table of
 /// contents (a row Titles names), the detail panel (a header that renames it) and Transform (it offers
-/// the container channel, so it can be turned into whatever takes that: a subboard, in the app).
+/// the container channel, so it can be turned into whatever takes that: a subboard, in the app). Create
+/// Frame, in the context menu, puts one down around the shapes it's for, holding them.
 public struct FramesPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .framing }
@@ -64,5 +65,6 @@ public struct FramesPlugin: CanvasPlugin {
             frame.frameHeader()                                             // renamed in the panel's header
             frame.turnable(through: ContainerChannel.self)                  // turned through the container channel: into a subboard, where Subboards takes it
         }
+        registrar.createFrameItem()                                         // Create Frame, around what the menu's for
     }
 }

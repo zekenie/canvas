@@ -138,4 +138,12 @@ extension AnyShapeRecord {
         }, in: context)
         return bound
     }
+
+    /// Whether it's bound to some of `shapes` and to nothing else (`boundShapes(in:)`): what goes with
+    /// them, as an arrow between two of a container's shapes does. False for a shape bound to nothing.
+    @MainActor
+    public func isBound(onlyTo shapes: Set<ShapeID>, in context: ShapeContext) -> Bool {
+        let bound = boundShapes(in: context)
+        return !bound.isEmpty && bound.allSatisfy(shapes.contains)
+    }
 }

@@ -942,6 +942,45 @@ public final class CanvasEditor {
         put(placement.make(frame), placing: placement, from: nil)
     }
 
+    /// Puts a new container down around shapes on the board shown, holding them (Frames' Create
+    /// Frame): `shape`, of a `ShapeContaining` kind, its id new to the file, framed around those of
+    /// `ids` with a box (and what's bound to them alone among `ids`, an arrow between two of them), grown
+    /// by `padding` and to `minimumSize` (world units), in the innermost container they're all in, just
+    /// below the lowest of them in the stack (`Transaction.enclose`). They stay where they are; what it
+    /// lands on beside them is settled as what a container's drawn over is, gliding there. One step,
+    /// named as a placement's ("Add Frame", unless a group it's in names it); the default tool comes
+    /// back, and services hear `didPlace` (the selection selects it). All or nothing: if one it would
+    /// hold is read-only (locked, in a locked container, or on a read-only board), nothing changes, no
+    /// step is left, and services hear which were refused (they shake). Returns the new shape's id; nil
+    /// when it put nothing down (none of `ids` has a box, one was refused, or `shape` holds nothing).
+    @discardableResult
+    public func place<P: ShapeProps>(_ shape: ShapeRecord<P>, around ids: [ShapeID], padding: CGFloat = 0,
+                                     minimumSize: CGSize = .zero) -> ShapeID? {
+        place(AnyShapeRecord(shape), around: ids, padding: padding, minimumSize: minimumSize)
+    }
+
+    /// `place(_:around:padding:minimumSize:)`, over any record (a copy, say), whatever container it names.
+    @discardableResult
+    public func place(_ shape: AnyShapeRecord, around ids: [ShapeID], padding: CGFloat = 0, minimumSize: CGSize = .zero) -> ShapeID? {
+        var refused: Set<ShapeID> = []
+        // A refusal throws it all away with it: nothing is put down, and no step is left.
+        let nudges = try? transact("Add \(registry.label(of: shape.kind).name)") { transaction -> [ShapeID: CGPoint]? in
+            let nudges = transaction.enclose(ids, in: shape, padding: padding, minimumSize: minimumSize)
+            refused = transaction.refusedShapes
+            if !refused.isEmpty { throw PlacementRefused() }
+            return nudges
+        }
+        if !refused.isEmpty {
+            refuseChanges(to: refused)
+            return nil
+        }
+        guard let nudges else { return nil }
+        setTool(registry.defaultTool)
+        for service in serviceOrder { service.didPlace(shape.id, in: self) }
+        glide(nudges)
+        return shape.id
+    }
+
     /// `record`, `placement`'s, put down; following the pointer from `point` (world units, the press)
     /// while the press lasts, or with no point, settled at once.
     private func put(_ record: AnyShapeRecord, placing placement: Placement, from point: CGPoint?) {
@@ -984,7 +1023,8 @@ public final class CanvasEditor {
         if edits { beginEditing(record.id) }
     }
 
-    /// What leaves a placement with no press that a read-only container refused (`place`).
+    /// What leaves a placement with no press that a read-only container refused (`place`), or a
+    /// container put down around shapes one of which is read-only (`place(_:around:)`).
     private struct PlacementRefused: Error {}
 
     // MARK: Commands
