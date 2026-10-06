@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([channelTests, upsertTests, edgesPointTests])
+runTests([channelTests, upsertTests, edgesPointTests, standInChannelTests])

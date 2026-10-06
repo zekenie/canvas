@@ -31,6 +31,12 @@ struct KindVocabulary {
     let coordinates: Set<String>
     /// Properties named like a language key (`size`, `title`), which a script can't reach.
     let collisions: Set<String>
+    /// What each format that writes text says of what it takes (`DrawTextFormats`), by the media type
+    /// it writes: the words after the type of a property whose strings it writes.
+    let textWords: [String: String]
+    /// The properties that may hold a string a format writes, anywhere inside: those a script's
+    /// value is read for.
+    let textKeys: Set<String>
 
     init(_ kind: ShapeKind, in registry: Registry) {
         self.kind = kind
@@ -41,6 +47,13 @@ struct KindVocabulary {
         let keys = Set(LanguageKey.allCases.map(\.rawValue))
         coordinates = Set(schema.properties.keys.filter(schema.holdsPlace))
         collisions = Set(schema.properties.keys.filter { keys.contains($0) && $0 != naming })
+        let formats = registry.drawTextFormats
+        textWords = formats.mapValues(\.describes)
+        let mediaTypes = Set(formats.keys)
+        textKeys = mediaTypes.isEmpty ? [] : Set(schema.properties.filter { _, declared in
+            var seen: Set<String> = []
+            return Self.holds(declared, mediaTypes, in: schema, seen: &seen)
+        }.keys)
     }
 
     /// The kind's whole schema, whose `$defs` its properties refer to.
@@ -83,8 +96,22 @@ struct KindVocabulary {
 
     /// What a property takes, said briefly: `todo|doing|blocked|done`, `number ≥ 0`, `text (≤ 80)`,
     /// `true|false`, `date (YYYY-MM-DD or date-time)`, `JSON {blue, green, red: 0…1}`,
-    /// `JSON [{isDone, text}]`.
-    func compactType(of name: String) -> String { schema.compactType(of: name) }
+    /// `JSON [{isDone, text}]`; and, for text a format writes (or a list of it), what the format
+    /// takes after it, as `text (<Title> names)`.
+    func compactType(of name: String) -> String {
+        let compact = schema.compactType(of: name)
+        guard let words = textFormatWords(of: name) else { return compact }
+        return "\(compact) (\(words))"
+    }
+
+    /// What the format that writes a property's strings says of them, if a format does: for text, or
+    /// a list of text.
+    private func textFormatWords(of name: String) -> String? {
+        var shape = schema.shape(of: name)
+        while case .array(let items)? = shape { shape = items }
+        guard case .string(_, let mediaType?, nil)? = shape else { return nil }
+        return textWords[mediaType]
+    }
 
     /// The members a script writes of the object at `path` inside a property's value (an element
     /// of a list: its items'); nil where there's no object.

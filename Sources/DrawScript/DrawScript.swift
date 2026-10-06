@@ -42,10 +42,12 @@ public enum LanguageKey: String, Sendable, CaseIterable {
     case title
 }
 
-/// An edge's own keys: the side each end aims at. Every other key on an edge is one the caller
-/// declares.
+/// An edge's own keys: the side each end aims at, and what it goes through. Every other key on an
+/// edge is one the caller declares.
 public enum EdgeKey: String, Sendable, CaseIterable {
     case from, to
+    /// `via: reference`: the kind of shape the edge goes through, which stands for its end.
+    case via
 }
 
 /// The side of a shape an edge's end aims at.

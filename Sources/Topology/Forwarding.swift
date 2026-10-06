@@ -1,10 +1,13 @@
 import Canvas
+import CoreGraphics
 
 // Stand-ins: shapes that stand for other shapes, so that an edge into one is an edge into what it
 // stands for. A kind says its shapes stand in (`x.standsIn { … }`) and what each stands for, as its
 // record names it or as is provided later; Topology forwards every edge another shape carries
 // through them (`EdgeView.resolved`, what every read gives by default) and knows nothing more of
-// why: no kind, no publicness, no query.
+// why: no kind, no publicness, no query. A kind may also say how one of its shapes is made to stand
+// for a given shape (`makes:`), so a plugin that makes shapes by name rather than by a gesture (the
+// command line's `draw`) can put one beside what points at it (`registry.standIns`).
 
 /// What a stand-in stands for, as its record says.
 public enum Forwarding: Hashable, Sendable {
@@ -42,6 +45,11 @@ public enum ForwardingState: Hashable, Sendable {
     case pending
 }
 
+/// How a stand-in kind makes one of its shapes stand for a given shape: from the shape its tool
+/// places (`blank`, in no document), the shape it's made to stand for and what to call it there (what
+/// a person picking it would have been shown, the shape's name). Nil: it can't.
+public typealias ForwardingMaker = @MainActor (_ blank: AnyShapeRecord, _ target: ShapeID, _ label: String) -> AnyShapeRecord?
+
 /// A kind's stand-in rule, as `standsIn` says it. Only the sugar makes one.
 @MainActor
 public struct StandIn {
@@ -49,6 +57,11 @@ public struct StandIn {
     public let maxTargets: Int
     let admitting: ForwardAdmission
     let forward: ForwardingRule
+    /// What a shape must be for this kind to stand for it, in a word (`public`): said for a person
+    /// (`only a public shape`, `make it public`), never read.
+    let needs: String?
+    /// How one is made to stand for a shape, if the kind says.
+    let make: ForwardingMaker?
 }
 
 /// The kinds whose shapes stand in for others: at most one rule per kind.
@@ -87,13 +100,97 @@ extension ShapeRegistrar {
     /// that are on a board the editor can show, aren't kept aside, aren't stand-ins themselves (one
     /// hop), and `admitting` takes, up to `maxTargets`. While it stands for nothing, an edge into it
     /// stays an edge into it.
+    ///
+    /// `makes` says how a shape of the kind is made to stand for a given shape, which a plugin that
+    /// puts shapes down by name (the command line's `draw`) asks of it: it's given the props the
+    /// kind's tool places, the shape to stand for and the name to show for it, and leaves them as the
+    /// kind's own writers would (fitted too, as a pick is), so that `forward` then says what it
+    /// stands for. A kind with it is made by `registry.standIns` (it needs a tool that places it),
+    /// and only for a shape `admitting` takes; `needs` says in a word what a shape must be for that
+    /// (`public`), for a message to a person that a shape can't be stood for.
     public mutating func standsIn(maxTargets: Int = 50,
                                   admitting: @escaping ForwardAdmission = { _, _ in true },
+                                  needs: String? = nil,
+                                  makes: (@MainActor (_ props: inout Definition.Props, _ target: ShapeID, _ label: String) -> Void)? = nil,
                                   _ forward: @escaping @MainActor (_ shape: ShapeRecord<Definition.Props>, _ registry: Registry) -> Forwarding?) {
+        var make: ForwardingMaker?
+        if let makes {
+            make = { blank, target, label in
+                guard var shape = blank.typed(as: Definition.Props.self) else { return nil }
+                makes(&shape.props, target, label)
+                return AnyShapeRecord(shape)
+            }
+        }
         contribute(StandIn(maxTargets: maxTargets, admitting: admitting, forward: { record, registry in
             record.typed(as: Definition.Props.self).flatMap { forward($0, registry) }
-        }), to: EdgeForwarding.self)
+        }, needs: needs, make: make), to: EdgeForwarding.self)
     }
+}
+
+// MARK: Reading the rules
+
+/// The registry's stand-ins, read by whatever puts shapes down by name rather than by a gesture:
+/// which kinds stand in, what a record says one stands for, and which of them can be made to stand
+/// for a given shape, and how. Made once (`registry.standIns`, worked out on each call): the
+/// registry never changes.
+@MainActor
+public struct StandIns {
+    private let rules: [ShapeKind: StandIn]
+    private let registry: Registry
+
+    init(_ registry: Registry) {
+        self.registry = registry
+        rules = registry.standInRules()
+    }
+
+    /// The kinds whose shapes stand in for others.
+    public var kinds: Set<ShapeKind> { Set(rules.keys) }
+
+    /// Whether any kind stands in.
+    public var isEmpty: Bool { rules.isEmpty }
+
+    /// What a record says it stands for (the kind's rule, which is pure: no other shape is read); nil
+    /// for a shape of a kind that doesn't stand in, or one standing for nothing.
+    public func forwarding(of record: AnyShapeRecord) -> Forwarding? {
+        guard !record.isOpaque, let rule = rules[record.kind] else { return nil }
+        return rule.forward(record, registry)
+    }
+
+    /// The kinds that can be made to stand for a given shape (`standsIn(makes:)`), in plugin order:
+    /// those a tool places, since it's from what the tool places that one is made.
+    public var makers: [ShapeKind] {
+        registry.contributions(to: EdgeForwarding.self).compactMap { rule in
+            guard rule.value.make != nil, case .kind(let kind) = rule.target, registry.placement(for: kind) != nil else { return nil }
+            return kind
+        }
+    }
+
+    /// Whether a stand-in of `kind` may stand for `target`: the kind's admission, and what stands for
+    /// no shape whatever (one kept aside, or a stand-in: one hop).
+    public func admits(_ kind: ShapeKind, _ target: AnyShapeRecord) -> Bool {
+        guard let rule = rules[kind], !target.isOpaque, rules[target.kind] == nil else { return false }
+        return rule.admitting(target, registry)
+    }
+
+    /// What a shape must be for a stand-in of `kind` to stand for it, in a word (`public`), for a
+    /// message; nil if the kind doesn't say.
+    public func needs(_ kind: ShapeKind) -> String? { rules[kind]?.needs }
+
+    /// A new shape of `kind` that stands for `target`, called `label` there, in no document: what the
+    /// kind's tool places (at the origin), made to stand for it by the kind (`makes`), then put in step
+    /// as writing its properties would (`DerivedProps`, so a pill's width fits its label). Nil for a
+    /// kind that can't be made to (`makers`). It doesn't ask `admits`: whoever puts it down does.
+    public func make(_ kind: ShapeKind, standingFor target: ShapeID, label: String) -> AnyShapeRecord? {
+        guard let make = rules[kind]?.make, let placement = registry.placement(for: kind),
+              var made = make(placement.shape(at: .zero), target, label) else { return nil }
+        if let properties = made.propertiesJSON, let derived = try? registry.shape(made, setting: properties) { made = derived }
+        return made
+    }
+}
+
+extension Registry {
+    /// The stand-ins, read: worked out on each call, so keep it.
+    @MainActor public var standIns: StandIns { StandIns(self) }
 }
 
 /// The edge from a stand-in to each shape it stands for: Topology's own, so no plugin writes

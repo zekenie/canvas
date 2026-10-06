@@ -14,7 +14,11 @@ let fixtureSizes: [String: CGSize] = [
     "card": CGSize(width: 200, height: 100),
     "box": CGSize(width: 100, height: 100),
     "disc": CGSize(width: 120, height: 120),
+    "pill": CGSize(width: 60, height: 30),
 ]
+
+/// The word of a kind the caller makes up beside what a script says: its boxes are `implied`.
+let impliedWord = "pill"
 
 struct Board {
     var shapes: [(title: String, rect: CGRect)] = []
@@ -108,7 +112,7 @@ func draw(_ source: String, on board: Board = Board(), obstacleOrder: @escaping 
             if let title = shape.title { freeIndex[title] = free.count }
             let name = shape.title.map { "\"\($0)\"" } ?? "the \(shape.word) on line \(statement.line)"
             free.append(LayoutProblem.Free(line: statement.line, name: name, size: shape.size ?? fixtureSizes[shape.word] ?? CGSize(width: 50, height: 50),
-                                           gap: shape.gap, overlapAllowed: shape.overlapAllowed))
+                                           gap: shape.gap, overlapAllowed: shape.overlapAllowed, implied: shape.word == impliedWord))
         }
         titles.append(shape.title)
         lines.append(statement.line)

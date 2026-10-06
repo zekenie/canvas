@@ -13,6 +13,11 @@ public enum MentionTextFormat {
     /// reference: `{"kinds": ["schema-card"]}`, or `{"scope": "Blockers"}`.
     public static let annotationKey = "x-canvas-mentions"
 
+    /// The annotation's members: the kinds a text of one kind admits (`Only`), and the title of the
+    /// declared scope a text takes (`DeclaredMentionScope`).
+    static let kindsMember = "kinds"
+    static let scopeMember = "scope"
+
     /// The definition: a plain string, and how to read and write the mentions in it.
     static var definition: JSONObject {
         ["type": "string", "contentMediaType": .string(mediaType), "description": .string(grammarDescription)]
@@ -62,6 +67,25 @@ public enum MentionTextFormat {
             i += 1
         }
         return String(out)
+    }
+
+    // MARK: Names
+
+    /// Text in which `@[name]` mentions the shape called name, as a script writes mention text:
+    /// each is written as the whole mention `@[label](shape:ID)`, from the shape `resolve` gives
+    /// for the name (its id, in uppercase, and the label to hold: what it's called), and every
+    /// other character stays as it was, byte for byte. A name is read as a stored label is: `\]`
+    /// in it stands for `]` and `\\` for `\`, and it ends at the first `]` that isn't escaped, on
+    /// the line the `@[` is on; with no such `]`, or a backslash that escapes nothing, it's text.
+    /// `@[` is escaped as it is in the stored form (`\@[` is a literal `@[`, and backslashes just
+    /// before an `@[` are doubled). Left as they are, `resolve` never asked: a whole mention
+    /// (`@[label](shape:ID)`, any case of id), and a look-alike, a name closed by `]` and
+    /// followed by `(shape` in any case, which is a mention that went wrong (Validation warns
+    /// about it), not one by name. `resolve` is asked for each name in text order, repeats
+    /// included, and what it throws is thrown, with nothing written; text with no `@[` costs one
+    /// pass over its bytes and is returned as it is.
+    public static func resolvingNames<E: Error>(in text: String, _ resolve: (String) throws(E) -> (id: ShapeID, label: String)) throws(E) -> String {
+        try MentionGrammar.resolvingNames(in: text, resolve)
     }
 
     // MARK: Bounds

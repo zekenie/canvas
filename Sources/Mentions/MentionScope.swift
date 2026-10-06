@@ -37,7 +37,7 @@ extension Only: MentionScope {
         shape.kind == Kind.kind && registry.isMentionable(shape.kind)
     }
 
-    public static func schemaAnnotation() -> JSONObject? { ["kinds": [.string(Kind.kind.rawValue)]] }
+    public static func schemaAnnotation() -> JSONObject? { [MentionTextFormat.kindsMember: [.string(Kind.kind.rawValue)]] }
 }
 
 /// A scope any plugin declares (`registrar.mentionScope(S.self)`) and kinds join, from their own
@@ -55,7 +55,7 @@ extension DeclaredMentionScope {
         registry.isMentionable(shape.kind) && registry.joins(shape.kind, Self.self)
     }
 
-    public static func schemaAnnotation() -> JSONObject? { ["scope": .string(title)] }
+    public static func schemaAnnotation() -> JSONObject? { [MentionTextFormat.scopeMember: .string(title)] }
 }
 
 // MARK: Declaring and joining
@@ -156,5 +156,45 @@ extension Registry {
     public func joins<S: DeclaredMentionScope>(_ kind: ShapeKind, _: S.Type) -> Bool {
         let id = ObjectIdentifier(S.self)
         return contributions(to: MentionScopeJoins.self, for: kind).contains { $0.id == id }
+    }
+
+    /// Whether a kind joined the declared scope with this title: how a scope is found from what a
+    /// schema says of it (`mentionAdmission`), which has a title and no type.
+    func joinsScope(_ kind: ShapeKind, titled title: String) -> Bool {
+        contributions(to: MentionScopeJoins.self, for: kind).contains { $0.title == title }
+    }
+}
+
+// MARK: From a schema
+
+/// Whether a text may mention a shape, and if not, why: the answer `mentionAdmission` gives.
+public enum MentionAdmission: Hashable, Sendable {
+    /// It can be mentioned by the text.
+    case admitted
+    /// Its kind can't be mentioned by any text.
+    case notMentionable
+    /// Its kind can be mentioned, but not by this text: only these kinds (the mentionable ones its
+    /// scope admits: as its schema lists them, or, for a declared scope, in registry order).
+    case outsideScope(admits: [ShapeKind])
+}
+
+extension Registry {
+    /// Whether text whose schema says `scope` beside its reference to mention text
+    /// (`MentionTextFormat.annotationKey`'s value: `{"kinds": ["schema-card"]}` for `Only`,
+    /// `{"scope": "Blockers"}` for a declared scope, nil for neither) may mention a shape, as
+    /// `MentionScope.admits` says for the text's type: for what reads a text's schema and has no
+    /// type to ask, an agent's script among them. A scope it can't read admits every mentionable
+    /// shape, as no scope does.
+    public func mentionAdmission(of shape: AnyShapeRecord, scope: JSONObject?) -> MentionAdmission {
+        guard isMentionable(shape.kind) else { return .notMentionable }
+        let admitted: [ShapeKind]
+        if let kinds = scope?[MentionTextFormat.kindsMember]?.arrayValue {
+            admitted = kinds.compactMap(\.stringValue).map { ShapeKind(rawValue: $0) }.filter(isMentionable)
+        } else if let title = scope?[MentionTextFormat.scopeMember]?.stringValue {
+            admitted = self.kinds.filter { isMentionable($0) && joinsScope($0, titled: title) }
+        } else {
+            return .admitted
+        }
+        return admitted.contains(shape.kind) ? .admitted : .outsideScope(admits: admitted)
     }
 }

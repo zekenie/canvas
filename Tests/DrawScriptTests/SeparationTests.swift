@@ -494,6 +494,42 @@ import TestKit
         expectError(drawn, .unordered, #""B" and "C" overlap, and nothing says which side of the other either one sits on"#, line: 2)
         expectEqual(drawn.error?.hint, "place one against the other, or say overlap: allow")
     },
+    test("a box the caller made up yields to a box nothing orders it against, past it the way its placements leave it free") {
+        // Two pills right of two boxes side by side: the first lands on the second box and is pushed past it,
+        // the second is right of that box, and nothing orders the pair, which for boxes a script wrote is unordered.
+        let board = Board([("A", rect(0, 0, 100, 100)), ("B", rect(180, 0, 100, 100))])
+        let said = draw("""
+            box "P" right of "A"
+            box "Q" right of "B"
+            """, on: board)
+        expectEqual(said.error?.reason, .unordered)
+        let drawn = draw("""
+            pill "P" right of "A"
+            pill "Q" right of "B"
+            """, on: board)
+        expectEqual(drawn.error, nil)
+        expectRect(drawn["P"], rect(320, 35, 60, 30))
+        expectRect(drawn["Q"], rect(420, 35, 60, 30))
+        expectEqual(drawn.pushedPast("P"), ["B"])
+        expectEqual(drawn.pushedPast("Q"), ["P"], "the later yields to the earlier")
+        // The same two the other way round in the script: the later still goes past the earlier.
+        let reversed = draw("""
+            pill "Q" right of "B"
+            pill "P" right of "A"
+            """, on: board)
+        expectEqual(reversed.error, nil)
+        expectRect(reversed["Q"], rect(360, 35, 60, 30))
+        expectRect(reversed["P"], rect(460, 35, 60, 30))
+        // A pill clashing with a box the script wrote that nothing orders it against yields to it, whichever is first.
+        let beside = draw("""
+            card "N" right of "A" (gap: 100)
+            pill "P" right of "A"
+            """, on: Board([("A", rect(0, 0, 100, 100))]))
+        expectEqual(beside.error, nil)
+        expectRect(beside["N"], rect(200, 0, 200, 100))
+        expect(!(beside["P"]?.intersects(beside["N"] ?? .null) ?? true), "\(String(describing: beside["P"]))")
+        expectEqual(beside.pushedPast("P"), ["N"])
+    },
     test("an order only through the board never flips two boxes past each other") {
         let drawn = draw("""
             card "A" inside "Z" top-left

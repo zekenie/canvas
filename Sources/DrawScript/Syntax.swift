@@ -87,17 +87,21 @@ public struct EdgeStatement: Sendable, Equatable {
     public var fromSide: EdgeSide?
     /// `to:`, the side its end aims at.
     public var toSide: EdgeSide?
+    /// `via:`, the kind of shape it goes through, a word for the caller to find (the kind of
+    /// stand-in that stands for its end, put beside the other: `via: reference`).
+    public var via: String?
     /// Every other attribute, for the caller to check (the channel it's on, from DrawLexicon's
     /// `PortEdgesPlugin`).
     public var attributes: [Attribute]
 
     public init(from: String, to: String, arrow: EdgeArrow = .forward, fromSide: EdgeSide? = nil, toSide: EdgeSide? = nil,
-                attributes: [Attribute] = []) {
+                via: String? = nil, attributes: [Attribute] = []) {
         self.from = from
         self.to = to
         self.arrow = arrow
         self.fromSide = fromSide
         self.toSide = toSide
+        self.via = via
         self.attributes = attributes
     }
 

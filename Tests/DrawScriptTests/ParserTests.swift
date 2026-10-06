@@ -402,15 +402,40 @@ import TestKit
         expectEqual(both.written, #""A" <-> "B""#)
     },
     test("from: and to: are sides; every other key is the caller's, as written") {
-        guard case .edge(let edge) = try parse(#"edge "A" -> "B" from: right to: top via: wire weight: 2"#) else { throw RequireFailed() }
+        guard case .edge(let edge) = try parse(#"edge "A" -> "B" from: right to: top tone: wire weight: 2"#) else { throw RequireFailed() }
         expectEqual(edge.fromSide, .right)
         expectEqual(edge.toSide, .top)
-        expectEqual(edge.attributes, [Attribute(key: "via", value: .word("wire")), Attribute(key: "weight", value: .word("2"))])
+        expectEqual(edge.via, nil)
+        expectEqual(edge.attributes, [Attribute(key: "tone", value: .word("wire")), Attribute(key: "weight", value: .word("2"))])
         let side = parseError(#"edge "A" -> "B" from: middle"#)
         expectEqual(side?.reason, .invalidValue)
         expectEqual(side?.message, #"edge "A" -> "B": from: middle isn't a side"#)
         expectEqual(side?.hint, "from: takes top, right, bottom or left")
-        expectEqual(parseError(#"edge "A" -> "B" via: a via: b"#)?.reason, .duplicate)
+        expectEqual(parseError(#"edge "A" -> "B" tone: a tone: b"#)?.reason, .duplicate)
+    },
+    test("via: is the kind of shape the edge goes through: a word for the caller, bare or quoted, once, and no side or attribute") {
+        guard case .edge(let edge) = try parse(#"edge "A" -> "B" via: relay from: right tone: wire"#) else { throw RequireFailed() }
+        expectEqual(edge.via, "relay")
+        expectEqual(edge.fromSide, .right)
+        expectEqual(edge.attributes, [Attribute(key: "tone", value: .word("wire"))], "via is the language's: it isn't one of the caller's attributes")
+        guard case .edge(let hyphenated) = try parse(#"edge "A" <- "B" via: wire-relay"#) else { throw RequireFailed() }
+        expectEqual(hyphenated.via, "wire-relay")
+        expectEqual(hyphenated.from, "B")
+        expectEqual(hyphenated.to, "A")
+        guard case .edge(let quoted) = try parse(#"edge "A" <-> "B" via: " card ""#) else { throw RequireFailed() }
+        expectEqual(quoted.via, "card", "a quoted word is read as the bare one, its ends trimmed")
+        expectEqual(parseError(#"edge "A" -> "B" {"via": "relay", "from": "right"}"#)?.hint, "write via: relay from: right",
+                    "braces are refused, and the language's keys written without quotes, as from: and to: are")
+        expectEqual(parseError(#"delete edge "A" -> "B" via: relay"#)?.message, #"edge "A" -> "B": deleting takes no attributes"#)
+    },
+    test("via: refuses what isn't a kind, and says it twice") {
+        expectEqual(parseError(#"edge "A" -> "B" via: relay via: card"#)?.reason, .duplicate)
+        let json = parseError(#"edge "A" -> "B" via: [1]"#)
+        expectEqual(json?.reason, .invalidValue)
+        expectEqual(json?.message, #"edge "A" -> "B": via: [1] isn't a kind"#)
+        expectEqual(json?.hint, "via: takes the kind of shape the edge goes through, as via: <kind>")
+        expectEqual(parseError(#"edge "A" -> "B" via: "  ""#)?.reason, .invalidValue)
+        expectEqual(parseError(#"edge "A" -> "B" via:"#)?.message, #"edge "A" -> "B": via: has no value"#)
     },
     test("an edge takes no style, placement or third shape, and what it says is an attribute") {
         expectEqual(parseError(#"edge "A" -> "B" style: s"#)?.message, #"edge "A" -> "B": an edge can't take a style"#)

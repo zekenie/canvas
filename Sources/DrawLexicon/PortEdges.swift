@@ -39,6 +39,11 @@ public struct PortEdgesPlugin: CanvasPlugin {
 ///   put it on another, delete it and draw it again), and a side the statement names must have a
 ///   port on it.
 ///
+/// - An end that's a stand-in (`EdgeRequest.fromStandsFor`, `toStandsFor`: a reference put beside the
+///   shape it stands for, which is on another board) takes the channels of what it stands for, as a
+///   drag would find them (`registry.connectionChannel`), on its own sides: a named side it has no
+///   ports on (a reference has them on its left and right) is `invalid_value`, saying where it does.
+///
 /// Before any of that, the connector must be able to connect both ends in the board as the script
 /// leaves it (`canConnect`), or it's `cannot_connect`, naming the end.
 @MainActor
@@ -89,14 +94,41 @@ enum EdgeChannels {
         }
     }
 
+    /// An end of a connection as ports see it: the shape, and, when it's a stand-in, the kinds of
+    /// what it stands for, whose ports it has on its own sides.
+    @MainActor
+    struct End {
+        let record: AnyShapeRecord
+        let standsFor: [ShapeKind]
+
+        var kind: ShapeKind { record.kind }
+
+        /// The kind the script wrote, as a message names it: what a stand-in stands for.
+        var named: ShapeKind { standsFor.first ?? kind }
+
+        /// What a message about its own ports (its sides) calls it: a stand-in, and what for.
+        var described: String { standsFor.first.map { "\(indefinite(kind)) for \(indefinite($0))" } ?? indefinite(kind) }
+
+        func takes(_ channel: ChannelID, as role: PortRole, side: PortSide? = nil, in registry: Registry) -> Bool {
+            registry.takes(kind, standingFor: standsFor, channel, as: role, side: side)
+        }
+
+        func sides(on channel: ChannelID, as role: PortRole, in registry: Registry) -> [PortSide] {
+            registry.portSides(of: kind, standingFor: standsFor, on: channel, as: role)
+        }
+
+        func hasPorts(in registry: Registry) -> Bool { registry.hasPorts(kind, standingFor: standsFor) }
+    }
+
     /// The connection `request` asks for: new (`existing` nil), or `existing` changed as it says.
     static func connection(for request: EdgeRequest, existing: AnyShapeRecord?, in shapes: ShapeContext) throws(AutomationError) -> AnyShapeRecord {
         let registry = shapes.registry
-        guard let from = shapes.shape(request.from), let to = shapes.shape(request.to) else {
+        guard let fromRecord = shapes.shape(request.from), let toRecord = shapes.shape(request.to) else {
             throw refuse(.internal, "\(request.written) names a shape that isn't on the board")
         }
-        for (isStart, name, record) in [(true, request.fromName, from), (false, request.toName, to)] where !registry.canConnect(record.id, in: shapes) {
-            throw refuse(.cannotConnect, "\(name) can't be connected: nothing here connects \(indefinite(record.kind))",
+        let from = End(record: fromRecord, standsFor: request.fromStandsFor), to = End(record: toRecord, standsFor: request.toStandsFor)
+        for (isStart, name, end) in [(true, request.fromName, from), (false, request.toName, to)] where !registry.canConnect(end.record.id, in: shapes) {
+            throw refuse(.cannotConnect, "\(name) can't be connected: nothing here connects \(indefinite(end.named))",
                          hint: "connect \(isStart ? "from" : "to") another shape")
         }
         let written = try self.written(request, in: registry)
@@ -109,10 +141,12 @@ enum EdgeChannels {
                              hint: "delete edge \(pair) above this line to draw it \(on(written.channel))")
             }
             channel = current
+            if current != nil { try checkStandInSides(request, from: from, to: to, in: registry) }
             if let current, registry.declares(current) {
                 try checkSides(request, from: from, to: to, on: current, written: written != .unwritten, in: registry)
             }
         } else {
+            if written != .plain { try checkStandInSides(request, from: from, to: to, in: registry) }
             channel = try pick(request, from: from, to: to, written: written, in: registry)
         }
         let made = registry.connection(ConnectionRequest(from: request.from, to: request.to, fromSide: request.fromSide?.port,
@@ -138,28 +172,28 @@ enum EdgeChannels {
     }
 
     /// The channel of a new connection, or why there's none.
-    private static func pick(_ request: EdgeRequest, from: AnyShapeRecord, to: AnyShapeRecord, written: Written,
-                             in registry: Registry) throws(AutomationError) -> ChannelID? {
+    private static func pick(_ request: EdgeRequest, from: End, to: End, written: Written, in registry: Registry) throws(AutomationError) -> ChannelID? {
         let channel: ChannelID
         switch written {
         case .plain:
             return nil
         case .channel(let wanted):
-            guard registry.takes(from.kind, wanted, as: .source), registry.takes(to.kind, wanted, as: .target) else {
-                throw refuse(.noChannel, "\(request.written) can't be on \(wanted): \(described([from.kind, to.kind], sides: true, in: registry))",
+            guard from.takes(wanted, as: .source, in: registry), to.takes(wanted, as: .target, in: registry) else {
+                throw refuse(.noChannel, "\(request.written) can't be on \(wanted): \(described([from, to], sides: true, in: registry))",
                              hint: "\(ChannelProperty.key): \(plain) draws a plain arrow between them")
             }
             try checkSides(request, from: from, to: to, on: wanted, written: true, in: registry)
             channel = wanted
         case .unwritten:
-            if let first = registry.connectionChannel(from: from.kind, fromSide: request.fromSide?.port, to: to.kind, toSide: request.toSide?.port) {
+            if let first = registry.connectionChannel(from: from.kind, fromSide: request.fromSide?.port, fromStandingFor: from.standsFor,
+                                                      to: to.kind, toSide: request.toSide?.port, toStandingFor: to.standsFor) {
                 channel = first
-            } else if !registry.hasPorts(from.kind), !registry.hasPorts(to.kind) {
+            } else if !from.hasPorts(in: registry), !to.hasPorts(in: registry) {
                 return nil
             } else {
                 let sides = [request.fromSide.map { "from: \($0)" }, request.toSide.map { "to: \($0)" }].compactMap { $0 }
                 let ends = "\(request.fromName) and \(request.toName)" + (sides.isEmpty ? "" : " (\(sides.joined(separator: ", ")))")
-                throw refuse(.noChannel, "\(ends) share no channel: \(described([from.kind, to.kind], sides: !sides.isEmpty, in: registry))",
+                throw refuse(.noChannel, "\(ends) share no channel: \(described([from, to], sides: !sides.isEmpty, in: registry))",
                              hint: (sides.isEmpty ? "" : "name sides with ports on one channel, or ")
                                  + "\(ChannelProperty.key): \(plain) draws a plain arrow between them anyway")
             }
@@ -174,43 +208,61 @@ enum EdgeChannels {
     /// Refuses a named side where its end's kind has no port on `channel` (a start's, with a dot; an
     /// end's, taking it). With the channel written, that's a value that doesn't fit; with it worked
     /// out, no channel fits.
-    private static func checkSides(_ request: EdgeRequest, from: AnyShapeRecord, to: AnyShapeRecord, on channel: ChannelID, written: Bool,
+    private static func checkSides(_ request: EdgeRequest, from: End, to: End, on channel: ChannelID, written: Bool,
                                    in registry: Registry) throws(AutomationError) {
-        for (key, side, record, role) in [("from", request.fromSide, from, PortRole.source), ("to", request.toSide, to, .target)] {
-            guard let side, !registry.takes(record.kind, channel, as: role, side: side.port) else { continue }
-            let sides = registry.portSides(of: record.kind, on: channel, as: role).map(\.word)
+        for (key, side, end, role) in [("from", request.fromSide, from, PortRole.source), ("to", request.toSide, to, .target)] {
+            guard let side, !end.takes(channel, as: role, side: side.port, in: registry) else { continue }
+            let sides = end.sides(on: channel, as: role, in: registry).map(\.word)
             let has = sides.isEmpty ? "no \(channel) ports" : "\(channel) ports on its \(list(sides))"
-            throw refuse(written ? .invalidValue : .noChannel, "\(key): \(side): \(indefinite(record.kind)) has \(has)",
+            throw refuse(written ? .invalidValue : .noChannel, "\(key): \(side): \(end.described) has \(has)",
                          hint: sides.isEmpty ? "\(ChannelProperty.key): \(plain) draws a plain arrow" : "\(key): takes \(sides.joined(separator: "|"))")
+        }
+    }
+
+    /// Refuses a side named for an end that's a stand-in where it takes no connections at all, on any
+    /// channel: the sides of a reference's ports are its left and right, whatever it stands for, so
+    /// `to: top` there is a value that doesn't fit. (A plain connection, on no channel, leaves and
+    /// arrives by any side, and a stand-in that takes none, standing for a shape with no ports, says
+    /// nothing of sides.)
+    private static func checkStandInSides(_ request: EdgeRequest, from: End, to: End, in registry: Registry) throws(AutomationError) {
+        for (key, side, end) in [("from", request.fromSide, from), ("to", request.toSide, to)] where !end.standsFor.isEmpty {
+            guard let side else { continue }
+            let has = registry.portSides(of: end.kind, standingFor: end.standsFor).map(\.word)
+            guard !has.isEmpty, !has.contains(side.rawValue) else { continue }
+            throw refuse(.invalidValue, "\(key): \(side): \(indefinite(end.kind)) has no ports on its \(side)",
+                         hint: "\(indefinite(end.kind)) takes arrows on its \(list(has)): \(key): takes \(has.joined(separator: "|"))")
         }
     }
 
     // MARK: Messages
 
-    /// What some kinds connect on, as a message says it: `a sticky-note connects on note-link, a
+    /// What some ends connect on, as a message says it: `a sticky-note connects on note-link, a
     /// schema-card on schema-link`; by side, `a sticky-note has note-link ports on its top, right,
-    /// bottom and left`; `a frame has no ports`.
-    static func described(_ kinds: [ShapeKind], sides: Bool, in registry: Registry) -> String {
-        var said: [String] = []
-        var seen: Set<ShapeKind> = []
-        for kind in kinds where seen.insert(kind).inserted {
-            let channels = registry.portChannels(of: kind)
+    /// bottom and left`; `a frame has no ports`. An end that's a stand-in is named for what it
+    /// stands for, the shape the script wrote; by side, as what it is, with its own sides (`a
+    /// reference for a sticky-note has note-link ports on its left and right`).
+    static func described(_ ends: [End], sides: Bool, in registry: Registry) -> String {
+        var said: [String] = [], seen: Set<String> = []
+        for end in ends {
+            let channels = registry.portChannels(of: end.kind, standingFor: end.standsFor), name = sides ? end.described : indefinite(end.named)
+            let each = channels.map { channel in "\(channel) ports on its \(list(portSides(of: end, on: channel, in: registry).map(\.word)))" }
+            // Each once, as it's said: two ends alike (two tiles) are one.
+            guard seen.insert("\(name): \(sides ? each.joined(separator: ", ") : channels.map(\.rawValue).joined(separator: ", "))").inserted else { continue }
             if channels.isEmpty {
-                said.append("\(indefinite(kind)) has no ports")
+                said.append("\(name) has no ports")
             } else if sides {
-                let each = channels.map { channel in "\(channel) ports on its \(list(portSides(of: kind, on: channel, in: registry).map(\.word)))" }
-                said.append("\(indefinite(kind)) has \(list(each))")
+                said.append("\(name) has \(list(each))")
             } else {
-                said.append("\(indefinite(kind)) \(said.isEmpty ? "connects on" : "on") \(list(channels.map(\.rawValue)))")
+                said.append("\(name) \(said.isEmpty ? "connects on" : "on") \(list(channels.map(\.rawValue)))")
             }
         }
         return said.joined(separator: ", ")
     }
 
-    /// The sides a kind has ports on a channel on, whatever they let it be.
-    static func portSides(of kind: ShapeKind, on channel: ChannelID, in registry: Registry) -> [PortSide] {
-        let sources = registry.portSides(of: kind, on: channel, as: .source)
-        return sources.isEmpty ? registry.portSides(of: kind, on: channel, as: .target) : sources
+    /// The sides an end has ports on a channel on, whatever they let it be.
+    static func portSides(of end: End, on channel: ChannelID, in registry: Registry) -> [PortSide] {
+        let sources = end.sides(on: channel, as: .source, in: registry)
+        return sources.isEmpty ? end.sides(on: channel, as: .target, in: registry) : sources
     }
 
     /// Every channel some plugin declares, in plugin order.

@@ -35,6 +35,40 @@ private let farMiddle = CGPoint(x: farBox.midX, y: farBox.midY)
         expectEqual(registry.connectionChannel(from: Disc.kind, to: Relay.kind), Pipe.id)
         expectEqual(reportLine(registry, "relays"), "shape relay · ports on every channel → relay · stands in → relay · shape hub · ports wire → hub · ports pipe → hub")
     },
+    test("the registry's lookups answer for a stand-in by the kinds of what it stands for, as a shape's ports do: the channels they all take, with the roles all allow, on the stand-in's own sides") {
+        let registry = try relayHarness().editor.registry
+        // One kind: its channels, on the relay's own sides.
+        expectEqual(registry.portChannels(of: Relay.kind, standingFor: [Box.kind]), [Wire.id])
+        expectEqual(registry.portChannels(of: Relay.kind, standingFor: [Disc.kind]), [Pipe.id])
+        expectEqual(registry.portSides(of: Relay.kind, standingFor: [Box.kind], on: Wire.id, as: .target), [.left, .right])
+        expectEqual(registry.portSides(of: Relay.kind, standingFor: [Box.kind], on: Pipe.id, as: .target), [], "a box has no pipe")
+        expectEqual(registry.portSides(of: Relay.kind, standingFor: [Box.kind]), [.left, .right], "on any channel: where it takes connections at all")
+        expectEqual(registry.portSides(of: Relay.kind), [.left, .right], "its own, standing for nothing")
+        expect(registry.takes(Relay.kind, standingFor: [Box.kind], Wire.id, as: .target, side: .left))
+        expect(!registry.takes(Relay.kind, standingFor: [Box.kind], Wire.id, as: .target, side: .top), "none on its top, whatever a box has")
+        expect(!registry.takes(Relay.kind, standingFor: [Box.kind], Pipe.id, as: .target))
+        expectEqual(registry.dotChannels(of: Relay.kind, standingFor: [Disc.kind], side: .right), [Pipe.id])
+        expectEqual(registry.dotChannels(of: Relay.kind, standingFor: [Disc.kind], side: .top), [])
+        // A hub's wire only starts connections: so does a stand-in for one.
+        expect(registry.takes(Relay.kind, standingFor: [Hub.kind], Wire.id, as: .source))
+        expect(!registry.takes(Relay.kind, standingFor: [Hub.kind], Wire.id, as: .target))
+        expectEqual(registry.dotChannels(of: Relay.kind, standingFor: [Hub.kind]), [Wire.id, Pipe.id])
+        // Several kinds: the channels all take. A box and a disc share none.
+        expectEqual(registry.portChannels(of: Relay.kind, standingFor: [Box.kind, Hub.kind]), [Wire.id])
+        expectEqual(registry.portChannels(of: Relay.kind, standingFor: [Box.kind, Disc.kind]), [])
+        expect(!registry.hasPorts(Relay.kind, standingFor: [Box.kind, Disc.kind]))
+        expectEqual(registry.portSides(of: Relay.kind, standingFor: [Box.kind, Disc.kind]), [])
+        expect(registry.hasPorts(Relay.kind, standingFor: [Box.kind]))
+        // A connection by name is on the channel a drag from the port would find, with a stand-in at either end.
+        expectEqual(registry.connectionChannel(from: Box.kind, to: Relay.kind, toStandingFor: [Box.kind]), Wire.id)
+        expectEqual(registry.connectionChannel(from: Box.kind, to: Relay.kind, toStandingFor: [Disc.kind]), nil)
+        expectEqual(registry.connectionChannel(from: Disc.kind, to: Relay.kind, toStandingFor: [Disc.kind]), Pipe.id)
+        expectEqual(registry.connectionChannel(from: Relay.kind, fromStandingFor: [Box.kind], to: Box.kind), Wire.id)
+        expectEqual(registry.connectionChannel(from: Relay.kind, fromStandingFor: [Disc.kind], to: Box.kind), nil)
+        expectEqual(registry.connectionChannel(from: Relay.kind, fromSide: .left, fromStandingFor: [Box.kind], to: Box.kind, toSide: .top), Wire.id, "a box has a port on its top")
+        expectEqual(registry.connectionChannel(from: Box.kind, to: Relay.kind, toSide: .top, toStandingFor: [Box.kind]), nil, "a relay has none")
+        expectEqual(registry.connectionChannel(from: Box.kind, fromSide: .top, to: Relay.kind, toSide: .left, toStandingFor: [Box.kind]), Wire.id)
+    },
     test("a channel the kind was given ports on first keeps them; the expansion fills in the others, and a role comes with it") {
         let own = Contributor(id: "own") { $0.ports(Relay.self, on: Wire.self, sides: [.top], role: .source) }
         let h = try portsHarness(more: [own, relaysPlugin(role: .target)])

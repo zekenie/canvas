@@ -203,3 +203,107 @@ import TestKit
         expectEqual(result["changes"]?.arrayValue?.map { $0["did"] }, ["deleted", "deleted"])
     },
 ])
+
+@MainActor let standInChannelTests = Suite("An edge's channel through a stand-in", [
+    test("the channel is what a stand-in for the far shape takes, as a drag onto one would find it: a tile's wire to a far tile, to a far card") {
+        let requests = Requests()
+        let h = Harbor(), editor = try h.editor(requests)
+        let result = try drawn("""
+            edge "A" -> "Z"
+            edge "B" -> "Y"
+            """, on: editor)
+        expectEqual(links(in: editor), ["A -> relay Z on wire", "B -> relay Y on wire"])
+        expectEqual(edgeRows(result).map { $0["channel"] }, ["wire", "wire"])
+        expectEqual(edgeRows(result).map { $0["via"] }, ["relay", "relay"])
+        expectEqual(editor.relays().count, 2)
+        expectEqual(requests.made.map(\.channel), [Wire.id, Wire.id])
+    },
+    test("not what a relay takes by itself, on every channel: from a card, whose pipe a far tile doesn't take, there's none, saying what each connects on") {
+        let editor = try Harbor().editor()
+        let error = try refused(#"edge "C" -> "Z""#, on: editor)
+        expectEqual(error["reason"], "no_channel")
+        expectEqual(error["message"], #""C" and "Z" share no channel: a card connects on pipe and wire, a tile on wire"#)
+        expectEqual(error["hint"], "channel: none draws a plain arrow between them anyway")
+        expectEqual(error["line"], 1)
+        expectEqual(editor.relays().count, 0, "nothing drawn, the relay with it")
+        // A card to a far card: the pipe, which a relay for a card takes.
+        let cards = try drawn(#"edge "C" -> "Y""#, on: editor)
+        expectEqual(links(in: editor), ["C -> relay Y on pipe"])
+        expectEqual(edgeRows(cards).map { $0["channel"] }, ["pipe"])
+        // Plain, a relay for a tile is joined from a card all the same.
+        let plain = try drawn(#"edge "D" -> "Z" channel: none"#, on: editor)
+        expectEqual(links(in: editor).last, "D -> relay Z")
+        expectEqual(edgeRows(plain).first?["channel"], nil)
+        expectEqual(edgeRows(plain).first?["via"], "relay")
+    },
+    test("the far shape may start the connection: the relay for it has its dots, or none where it has none") {
+        let editor = try Harbor().editor()
+        _ = try drawn(#"edge "Z" -> "B""#, on: editor)
+        expectEqual(links(in: editor), ["relay Z -> B on wire"])
+        // A card's wire is one it only takes, with no dot to start one from, so a relay for it has none.
+        let card = try refused(#"edge "Y" -> "A""#, on: editor)
+        expectEqual(card["reason"], "no_channel")
+        expectEqual(card["message"], #""Y" and "A" share no channel: a card connects on wire and pipe, a tile on wire"#,
+                    "the channels a relay for a card takes, in the order it has them")
+    },
+    test("a channel written is held to what the relay takes: the start's dot, the relay's port on the channel, and its sides") {
+        let editor = try Harbor().editor()
+        let pipe = try refused(#"edge "A" -> "Z" channel: pipe"#, on: editor)
+        expectEqual(pipe["reason"], "no_channel")
+        expectEqual(pipe["message"], #""A" -> "Z" can't be on pipe: a tile has wire ports on its top, right, bottom and left, a relay for a tile has wire ports on its left and right"#)
+        _ = try drawn(#"edge "A" -> "Z" channel: wire"#, on: editor)
+        expectEqual(links(in: editor), ["A -> relay Z on wire"])
+        // A card's side for a relay for a card: its pipe is on the relay's left and right.
+        let side = try refused(#"edge "C" -> "Y" channel: pipe to: top"#, on: editor)
+        expectEqual(side["reason"], "invalid_value")
+        expectEqual(side["message"], "to: top: a relay has no ports on its top")
+    },
+    test("a side named for the far end is the relay's: its left and right, never its top or bottom, whatever it stands for") {
+        let requests = Requests()
+        let editor = try Harbor().editor(requests)
+        let top = try refused(#"edge "A" -> "Z" to: top"#, on: editor)
+        expectEqual(top["reason"], "invalid_value")
+        expectEqual(top["message"], "to: top: a relay has no ports on its top")
+        expectEqual(top["hint"], "a relay takes arrows on its left and right: to: takes left|right")
+        expectEqual(top["line"], 1)
+        expectEqual(try refused(#"edge "Z" -> "B" from: bottom"#, on: editor)["hint"], "a relay takes arrows on its left and right: from: takes left|right")
+        expectEqual(editor.relays().count, 0)
+        // Left and right are its ports; the near end's side is the shape's own and says where the relay goes.
+        _ = try drawn(#"edge "A" -> "Z" from: bottom to: left"#, on: editor)
+        expectEqual(links(in: editor), ["A -> relay Z on wire aimed bottom left"])
+        let relay = try require(editor.relays().first), a = try require(editor.document.shapes.first { $0.typed(as: Tile.self)?.props.label == "A" }?.box)
+        expect(relay.props.frame.minY >= a.maxY, "below A, as from: bottom says: \(relay.props.frame)")
+        // A plain arrow leaves and arrives by any side.
+        _ = try drawn(#"edge "B" -> "Z" channel: none to: top"#, on: editor)
+        expectEqual(links(in: editor).last, "B -> relay Z aimed - top")
+    },
+    test("a relay for a shape with no ports is joined plain without asking, or by channel: none, never on a channel") {
+        let editor = try Harbor().editor(cards: false)
+        // Tiles have the wire, cards nothing: a card to a far tile has no channel, a card to a far card has none to ask.
+        expectEqual(try refused(#"edge "C" -> "Z""#, on: editor)["reason"], "no_channel", "a tile has ports, so the join isn't plain by itself")
+        _ = try drawn(#"edge "C" -> "Y""#, on: editor)
+        expectEqual(links(in: editor), ["C -> relay Y"])
+        expectEqual(edgeRows(try drawn(#"edge "C" -> "Y" to: top"#, on: editor)).map { $0["did"] }, ["reconnected"], "drawn already, and a plain arrow arrives by any side")
+        expectEqual(editor.relays().count, 1)
+    },
+    test("drawn again, an edge through a relay keeps its channel: unchanged, or changed in what it names; another channel is refused as for any edge") {
+        let requests = Requests()
+        let editor = try Harbor().editor(requests)
+        _ = try drawn(#"edge "A" -> "Z""#, on: editor)
+        let again = try drawn(#"edge "A" -> "Z""#, on: editor)
+        expectEqual(edgeRows(again).map { $0["did"] }, ["unchanged"])
+        expectEqual(edgeRows(again).map { $0["via"] }, ["relay"])
+        let aimed = try drawn(#"edge "A" -> "Z" from: right to: left"#, on: editor)
+        expectEqual(edgeRows(aimed).map { $0["did"] }, ["reconnected"])
+        expectEqual(links(in: editor), ["A -> relay Z on wire aimed right left"])
+        expectEqual(editor.relays().count, 1)
+        expectEqual(requests.made.last?.channel, Wire.id, "asked on the channel it's on")
+        expectEqual(requests.made.last?.fromSide, .right)
+        let other = try refused(#"edge "A" -> "Z" channel: none"#, on: editor)
+        expectEqual(other["reason"], "invalid_value")
+        expectEqual(other["message"], #"the edge from "A" to "Z" is on wire, not plain, on no channel"#)
+        expectEqual(other["hint"], #"delete edge "A" -> "Z" above this line to draw it plain, on no channel"#)
+        // The side it names for the relay must be its own: top isn't.
+        expectEqual(try refused(#"edge "A" -> "Z" to: top"#, on: editor)["reason"], "invalid_value")
+    },
+])

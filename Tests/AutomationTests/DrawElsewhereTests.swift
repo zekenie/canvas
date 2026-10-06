@@ -16,7 +16,7 @@ let namedPockets = Contributor(id: "named-pockets") { $0.optIn(Pocket.self, to: 
 
 /// The root: tile Hub, pocket P and pocket Q. P's board: tile Deep and tile Hub. Q's: tile Twin. And
 /// tile Twin on P's board too.
-@MainActor private struct Nest {
+@MainActor struct Nest {
     let p = ShapeID(), q = ShapeID(), hub = ShapeID(), deep = ShapeID(), pHub = ShapeID(), twin = ShapeID(), pTwin = ShapeID()
 
     var file: CanvasFile {
@@ -33,15 +33,15 @@ let namedPockets = Contributor(id: "named-pockets") { $0.optIn(Pocket.self, to: 
                                      q: CanvasDocument(shapes: [tile(twin, "Twin", x: 0)])])
     }
 
-    func editor() throws -> CanvasEditor {
-        let editor = try drawEditor([PocketsPlugin(), namedPockets])
+    func editor(_ more: [any CanvasPlugin] = []) throws -> CanvasEditor {
+        let editor = try drawEditor([PocketsPlugin(), namedPockets] + more)
         editor.replaceFile(with: file)
         return editor
     }
 }
 
 /// The tiles on a board, by label.
-@MainActor private func labels(on board: BoardID, in editor: CanvasEditor) -> [String] {
+@MainActor func labels(on board: BoardID, in editor: CanvasEditor) -> [String] {
     editor.contents(of: board).shapes.compactMap { $0.typed(as: Tile.self)?.props.label }
 }
 

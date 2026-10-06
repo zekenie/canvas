@@ -309,7 +309,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Let agents (or scripts) do something to a board from outside the app | `registrar.automationCommand("name", "…", params: P.self) { params, context in … }`: a `canvas` command | [The command line](#the-command-line) |
 | Have a command answer later (it waits on a model, or runs off the main actor), its output written off the main actor | `registrar.automationCommand(…, runAsync: { params, context async throws(AutomationError) in … })` | [A command may be async](#a-command-may-be-async) |
 | Read text as a kind's property reads it (a value typed by its schema), or say briefly what a property takes | The core's `KindSchema(schema)`, over `registry.schema(for:)` | [A kind's schema](#a-kinds-schema) |
-| Let `canvas draw` name shapes, draw edges, or warn about what it draws, from the plugin that owns the concern | A plugin in DrawLexicon, which imports Automation and the concern: `registrar.drawNames`, `drawEdges` or `drawChecks` | [DrawLexicon](#what-draw-takes-from-other-plugins) |
+| Let `canvas draw` name shapes, draw edges, warn about what it draws, or write a kind of text, from the plugin that owns the concern | A plugin in DrawLexicon, which imports Automation and the concern: `registrar.drawNames`, `drawEdges`, `drawChecks` or `drawTextFormat` | [DrawLexicon](#what-draw-takes-from-other-plugins) |
 | Make or change a shape without the pointer: what a kind's tool places, a shape from its JSON, or some of a shape's properties set from JSON | `registry.placement(for:)`, `placement.shape(at:)`; `registry.shape(_:properties:)`, `registry.shape(_:setting:)` | [The command line](#making-and-changing-shapes-without-the-pointer) |
 | Draw a shape away from where it is, for an animation (a shake) | `editor.setDrawingOffset(_:for:)`; adornments follow by themselves, and an overlay with `context.worldDrawingOffset(of:)` | [Refusing a change: the shake](#refusing-a-change-the-shake) |
 | Change where a drag puts the shapes it moves (snap them, keep them on a grid), and draw while it does | `registrar.translationAdjuster { editor, start in … }`, a `TranslationAdjuster`: Snapping claims it | [The translation adjuster](#the-cores-part-the-translation-adjuster) |
@@ -433,16 +433,16 @@ Opting in goes in one of three directions:
   [`canvas draw`](#the-command-line) (Automation's) and [queries](#queries) take what shapes are
   called, what an edge is, what's wrong with a shape drawn, what a board is called and what more a
   query may ask from points of their own, and one module fills each language's points with this
-  app's words. DrawLexicon gives `draw` its names, edges and warnings, though Automation has never
-  heard of titles, ports or validity, and QueryLexicon gives queries shapes' names, boards' names
+  app's words. DrawLexicon gives `draw` its names, edges, warnings and mention text, though Automation has never
+  heard of titles, ports, validity or mentions, and QueryLexicon gives queries shapes' names, boards' names
   and words (`:mentions`, `:invalid`, `:selected`), though Queries has never heard of titles,
   boards, mentions, validity or the selection, nor any of them of queries. A lexicon isn't a
   dependency left without a direction: its direction is settled, and checked (a language can't
   import a concern), since a language that knew a concern couldn't be tested with fixtures in its place (AutomationTests and QueriesTests fill the
   points with their own, which is why they stay points though one module fills each), and what a
   lexicon holds means something of its own, the app's words in a language. Each holds a plugin
-  value for each concern (DrawLexicon's `TitleNamesPlugin`, `PortEdgesPlugin` and
-  `ValidationChecksPlugin`; QueryLexicon's `TitleQueriesPlugin`, `BoardQueriesPlugin`,
+  value for each concern (DrawLexicon's `TitleNamesPlugin`, `PortEdgesPlugin`,
+  `ValidationChecksPlugin` and `MentionTextsPlugin`; QueryLexicon's `TitleQueriesPlugin`, `BoardQueriesPlugin`,
   `MentionQueriesPlugin`, `ValidationQueriesPlugin` and `SelectionQueriesPlugin`), so a list
   without a concern leaves its words out. What names the shipped kinds stays in Composition, the
   one module that depends on them all: `--ask`'s prompt (`QueryPrompt`), whose examples write
@@ -483,7 +483,7 @@ Each target is one line, with its layer:
 
 ```swift
 .target(name: "StickyNotes", dependencies: ["Canvas", "Connections", "DetailPanel", "Keyboard", "Mentions", "Selection", "TableOfContents", "TextEditing", "Titles"]), // layer: vertical
-.target(name: "DrawLexicon", dependencies: ["Automation", "Canvas", "Connections", "Titles", "Validation"]), // layer: lexicon
+.target(name: "DrawLexicon", dependencies: ["Automation", "Canvas", "Connections", "Mentions", "Titles", "Validation"]), // layer: lexicon
 ```
 
 | Layer | May depend on | Modules |
@@ -4727,11 +4727,17 @@ only one there, its role and its sides. A drag and a connection asked for by nam
 | `connectorKind`, `makesConnections` | The kind connections are (nil without a connector), and whether the connector makes them without a drag (it has `make` and `ends`). |
 | `hasPorts(kind)`, `portChannels(of: kind)` | Whether a kind has ports on any channel, and on which, in the table's order. |
 | `dotChannels(of: kind, side:)` | The channels a drag from its dot on that side starts connections on, as `Connection.channels` has them; with no side, all its dots' channels, each once. A `.target` port has no dot. |
-| `takes(kind, channel, as: role, side:)`, `portSides(of: kind, on: channel, as: role)` | Whether its ports on a channel let it be a `.source` or a `.target` (on a side, if named), and on which sides. |
+| `takes(kind, channel, as: role, side:)`, `portSides(of: kind, on: channel, as: role)`, `portSides(of: kind)` | Whether its ports on a channel let it be a `.source` or a `.target` (on a side, if named), and on which sides; and, with no channel, on which sides it takes connections at all, each once. |
 | `connectionChannel(from: kind, fromSide:, to: target, toSide:)` | The channel a connection from a shape of `kind` to one of `target` is on when none is named, as a drag picks one (`editor.channel(of:endingAt:)`): the first of `kind`'s dot channels (on `fromSide`, if named) that `target` takes as a target (on `toSide`, if named); nil if they share none. An edge `canvas draw` draws with no channel written is on it ([`PortEdgesPlugin`](#edges-and-their-channels-portedgesplugin)). |
 | `accepts(shape, on: channel, as: role)`, `declares(channel)` | `takes` for a shape (none for one kept aside), and whether some installed plugin declares the channel: what rules about connections already drawn go by. |
 | `canConnect(id, in: shapes)` | The connector's `canConnect`, for a shape in any `ShapeContext`: the editor's, or a transaction's, which has the shapes it inserted. |
 | `connection(_:existing:in:)`, `connectionEnds(of:)` | A connection made, or changed, without a drag, and the shapes one joins ([below](#connecting-without-a-drag)). |
+
+Each of those that asks about a kind takes `standingFor:` too (`hasPorts(kind, standingFor:)`,
+`dotChannels(of:standingFor:side:)`, `takes(kind, standingFor:, channel, as:, side:)`,
+`portSides(of:standingFor:on:as:)`, `connectionChannel(from:fromSide:fromStandingFor:to:toSide:toStandingFor:)`):
+the kinds of the shapes a stand-in of that kind stands for, none by default, which answers for the
+stand-in as [Ports at a stand-in](#ports-at-a-stand-in) has it, for a connection made by name.
 
 `editor.channel(of: connection, endingAt: record)` is the channel a drag's connection would be
 drawn on if it ended at a shape: the first of its channels the shape takes as a target (for a
@@ -4782,6 +4788,15 @@ a stand-in; Connections' `ArrowTargeting` also asks `PortState` whether the arro
 now, in that end's role (the start as a source, the end as a target), and an end looks through a
 stand-in that doesn't take it, as it does through any shape that doesn't. Only the translation of
 an arrow keeps the static rule: it keeps a binding that already exists.
+
+**By name.** A connection made by name (`canvas draw`'s edge, [without a drag](#connecting-without-a-drag))
+asks the same questions without a `PortState`, from kinds alone, since the stand-in it joins may not
+be in any editor yet (a reference it is about to put beside a shape, standing for one on a board that
+isn't shown): the `standingFor:` lookups give a stand-in of a kind, standing for shapes of the kinds
+given, the ports `PortState.ports(of:)` gives the shape (its kind's, as far as every kind stood for
+takes them, on its own sides; none if they have none). So an edge to a reference for a note is on
+`note-link`, as a drag from a note's port to the reference would be, and the sides it may name for the
+reference are the reference's own, left and right.
 
 An arrow keeps its bindings and its channel when what it is bound to changes (tldraw's never let
 go), so re-pointing a stand-in can leave an arrow attached whose channel the new targets don't
@@ -5207,7 +5222,27 @@ Ask @[Ship the beta](shape:0A1B2C3D-4E5F-4061-8293-A4B5C6D7E8F9) first
   redoing it, they're missing again. A copy renames the mentions of shapes copied along and keeps the rest
   (a note pasted into another file mentions a shape that isn't there, which shows as missing;
   pasted on another board of its own file, it names a shape that is, which shows live), and
-  `canvas draw` makes a note that mentions a shape that isn't there, with a warning.
+  `canvas draw` makes a note that mentions a shape that isn't there, with a warning (a mention
+  written whole, as above; how a script names one is "Names in text", below).
+- **Names in text.** `MentionTextFormat.resolvingNames(in:_:)` is how text written by a hand that
+  has no ids says a mention: in it, `@[name]` mentions the shape called name, and the helper
+  writes it as the whole mention of the shape its `resolve` closure gives (an id and the label to
+  hold), asked for each name in text order, repeats too, and thrown through as it throws
+  (typed, `throws(E)`). It reads as `parse` does, one grammar: a name is a label (`\]` for `]`
+  and `\\` for `\` in it, ending at the first `]` that no backslash escapes, on its line), `\@[`
+  and the backslashes before an `@[` are the stored form's, a scan that stops short (a line
+  break, a backslash that escapes nothing, the end) rules out the `@[`s it read past, so a
+  line of `@[`s that never close costs its length, and the output is built in an array of
+  scalars (a string appended to copies itself whole each time) in one pass. What it leaves
+  exactly as written: every other character; a whole mention (`@[label](shape:ID)`, the id in any
+  case, which is how an older writer's text reads back); and a look-alike, a name's `]` followed by
+  `(shape` in any case, which is a mention gone wrong (Validation warns about it, below), not one
+  by name. Text with no `@[` (`mayHoldMentions`) is returned as it is after one pass over
+  its bytes. `@[]` is a name with nothing in it, and for the caller to refuse. `canvas draw`
+  is its one user ([draw](#what-draw-takes-from-other-plugins)); the text a script writes comes
+  out as the text its runs would write, which MentionsTests hold by building a text's names
+  from its mentions (20,000 fuzzed texts) and against a scan from every `@[` that takes no
+  short cuts.
 - **The migration.** A note's text became `MentionText` in its third step,
   `PropsMigration("text may mention shapes")`, which escapes what would now read as a mention
   (`MentionTextFormat.escapeLookalikesV1`), so old text stays the text it was. The escaper is
@@ -5229,7 +5264,12 @@ admits a shape, and what its schema says of it (`x-canvas-mentions`, beside the 
 
 A scope limits what the picker offers, and the schema says it. It never refuses a mention that's
 there (pasted, or written by an agent), as a bound is a guideline, though
-[`MentionValidationPlugin`](#warnings-mentions-that-cant-work) warns about it. A note's text mentions any
+[`MentionValidationPlugin`](#warnings-mentions-that-cant-work) warns about it. What reads a
+text's schema and has no type to ask (`canvas draw`, whose script writes `@[Title]`) asks
+`registry.mentionAdmission(of: shape, scope: annotation)`, with the annotation read from beside
+the text's reference (`x-canvas-mentions`, nil for none): `.admitted`, `.notMentionable` (its kind
+isn't), or `.outsideScope(admits:)` (the kinds the scope admits, as the schema lists them, or, for
+a declared scope found by its title, in registry order). A scope it can't read is none. A note's text mentions any
 mentionable shape; a schema card's description (`SchemaPromptText`) only schema cards, whose
 schemas it refers to. MentionsTests hold scopes with
 fixtures (a `Brief` holds text of `Only<Plate>` and of `Blockers`, which plates and tokens join).
@@ -6506,6 +6546,29 @@ x.standsIn(maxTargets: 50, admitting: { target, registry in … }) { shape, regi
   `.provided([…])`, `.pending`, waiting for an answer); `edges(through:)`, the resolved edges
   forwarded through a stand-in, one per shape it stands for; and `standInKinds`, on the index and
   a snapshot.
+- **Making one for a shape.** A kind a plugin may put down beside a shape by name rather than by a
+  gesture (`canvas draw`'s edge to a shape on another board, [below](#draw)) says how, in the same
+  rule:
+
+  ```swift
+  x.standsIn(admitting: { target, registry in … },
+             needs: "public",                        // one word, for a message: what a shape must be to be stood for
+             makes: { props, target, label in … }) { shape, registry in … }   // fill what the tool places, so it stands for `target`
+  ```
+
+  `makes` is given the props the kind's tool places (`registry.placement(for:)`), the shape to stand
+  for and what to call it there (what a person picking it would have been shown: the shape's name), and
+  leaves them as the kind's own writers would (References': `ReferenceEdits.pick`); `needs` is read by
+  no rule, only said ("only a public shape can be stood for", "ask the user to make it public").
+  `registry.standIns` (`StandIns`, main actor, nothing kept: the registry never changes) reads the
+  rules without an index: `kinds`, `isEmpty`, `forwarding(of: record)` (a record's rule, applied: what
+  it says it stands for, as the index reads it), `makers` (the kinds whose rule says how and that a
+  tool places, in plugin order), `admits(kind, target)` (the kind's `admitting`, and never for a shape
+  kept aside or one that itself stands in: one hop), `needs(kind)`, and `make(kind, standingFor:,
+  label:)`, a new record in no document: the tool's shape at the origin, `makes` applied, put in step
+  as writing its properties would (`DerivedProps`: a pill's width fits its label). `make` doesn't ask
+  `admits`: whoever puts the shape down does, since a stand-in for a shape it may not stand for stands
+  for nothing.
 - **Kept sparse.** The index keeps what each carrier emitted (`byCarrier`), the resolved edges by
   each end and type (an edge filed under its ends and its literal ends, so it's found from the
   stand-in it went through too), and a carrier's resolved edges apart only where forwarding
@@ -8162,7 +8225,9 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
     let place = reference.editingPlacement(size: Reference.defaultSize) { Reference() }
     reference.tool(label: "Reference", systemImage: "arrow.turn.up.right", shortcut: "r", placing: place)
     reference.portsOnEveryChannel(sides: [.left, .right])  // what it takes is what it stands for ([Ports at a stand-in](#ports-at-a-stand-in))
-    reference.standsIn(maxTargets: 50, admitting: { target, registry in registry.isPublic(target) }) { shape, _ in
+    reference.standsIn(maxTargets: 50, admitting: { target, registry in registry.isPublic(target) },
+                       needs: "public",                // a message says "only a public shape can be stood for"
+                       makes: { props, target, label in ReferenceEdits.pick(&props, ReferenceTarget(id: target, label: label)) }) { shape, _ in
         if let target = shape.props.target { return .shapes([target.id]) }
         if let query = shape.props.query { return .provided(ReferenceState.key(query: query, all: shape.props.all)) }
         return nil
@@ -8184,6 +8249,10 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   direct, words or a query make it dynamic, else it's empty. `ReferenceEdits` writes it: each of `pick`,
   `find(words:query:)` and `clear` keeps one mode and refits the width to what the pill now says. The
   v0 fixture, `Fixtures/kinds/reference.v0.json`, pins every member.
+- **Made by name.** `makes` is how `canvas draw` makes a direct reference (`registry.standIns.make`): the
+  pill's own writer, `ReferenceEdits.pick`, with the shape's id and the name its title folds to, so it's
+  fitted to its label as a picked one is. An edge to a public shape on another board puts one beside the
+  shape on this board ([draw](#draw)); a script still can't write `target` or `words`, nor name the pill.
 - **What it stands for** (`ReferenceState.state(of:)`, a `ReferenceCondition`, derived from the props and
   the file, never stored; the render works it out through its own context, and the service keeps a
   direct pill's from frame to frame until a commit changes it or what it names): live (the shape is there,
@@ -8305,7 +8374,7 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   nothing), remade when the shape it names changes; an arrow that starts at a reference nests under the
   shape the reference stands for when that's on the same board ([Connections' arrow row](#the-table-of-contents),
   generic over stand-ins), else under the reference.
-- **Tests.** ReferencesTests hold it over CanvasTesting's boxes and tiles as what it stands for; CompositionTests'
+- **Tests.** ReferencesTests hold it over CanvasTesting's boxes and tiles as what it stands for (its `makes` too, through `registry.standIns`: a reference made for a public shape, fitted, standing for it once inserted, and for nothing where the shape isn't public); CompositionTests'
   `referencesShippedTests` the shipped pieces (an arrow drawn by hand into a pill, in the graph and a query, nesting, a drag
   ending on a pill for a note and not on one for a schema card, copy, cut and paste, `canvas draw`, a drawn query read through by a
   query that waits for it); `ReferenceBenchmarks` a frame of a thousand pills, a keystroke in the list
@@ -8338,12 +8407,12 @@ The modules, one job each:
 | CanvasRPC | wire | What the app and `canvas` say to each other: JSON-RPC 2.0, a message a line, over a Unix-domain socket (`~/Library/Application Support/InfiniteCanvas/canvas.sock`, or `CANVAS_SOCKET`) only this user can reach; what a command is (`CommandSpec`, its params a JSON Schema) and how its params are spelled as arguments; the client, and the listener, which answers each request as a main-actor task of its own (one that waits holds up neither the main actor nor another connection), each connection's answers in the order its requests came, and cancels the requests still running (not notifications) once its client hangs up. Knows no canvas, plugin or AppKit. |
 | CanvasCLI | cli | `canvas`: reads its own options, asks the app what it runs (`describe`), reads the rest as one of those commands, runs it, and prints what comes back. Knows only the wire. |
 | CanvasUI's `CommandServer` | ui | The app's end: it listens, describes the app, and answers each request on the main actor. `status` and `boards` are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows, each in a task kept against its board, and a board command's result, when it's an object, gains `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the command's own job just before it runs, so an agent sees which board it worked on (a command that knows better says `shows` and `showsPath` in a `board` object of its own, which the server completes: a query's is the board shown as it took up the file). A client gone is answered `cancelled`, and a board closed (`BoardDocument.close()`) answers its running commands `board_closed`, at once, their tasks cancelled and what they return later dropped. |
-| Automation | language | The commands plugins give the command line (`AutomationCommands`), its own two, `draw` and `kinds`, and the three points `draw` takes what it doesn't own from (on the query engine, Queries, a surface, to check a query a property holds). The app hands the commands to its server through Composition (`ShippedPlugins.commands(in:)`, async). |
+| Automation | language | The commands plugins give the command line (`AutomationCommands`), its own two, `draw` and `kinds`, and the four points `draw` takes what it doesn't own from (on the query engine, Queries, a surface, to check a query a property holds). The app hands the commands to its server through Composition (`ShippedPlugins.commands(in:)`, async). |
 | DrawScript | foundation | The language `draw` reads (`Script(parsing:)`), the solver that places what it says (`LayoutProblem.solve()`), and the grid its obstacles are filed in (`ObstacleGrid`: boxes only, which any plugin may use to place a shape among others): pure, it knows no canvas, registry, kind or plugin. |
 | FuzzyMatching | foundation | What's typed matched against text ([FuzzyMatching](#fuzzymatching)): `FuzzyMatcher` (every list's tiers), `TextSearch` (Find's, over folded texts) and `PathMatcher` (Jump To's, over containment paths): pure, it knows no canvas, registry or plugin. |
 | JumpTo | vertical | Jump To (⌘K, [Jump To](#jump-to)): a palette that goes to a shape by its title and where it is, over Titles' titles and the containment tree; no kind opts into it, and nothing imports it. |
 | Moving | vertical | `/move-to` and `/move-near` ([Moving](#moving)): the shape typed in moved into a frame, onto a subboard's board or beside a shape, on any board, placed with DrawScript's solver and `ObstacleGrid` as `draw` places a shape; no kind opts into it, and nothing imports it. |
-| DrawLexicon | lexicon | What `draw` takes from Titles (names), Connections (edges) and Validation (warnings): a plugin value for each concern (`TitleNamesPlugin`, `PortEdgesPlugin`, `ValidationChecksPlugin`), joining Automation to the plugin that owns it. |
+| DrawLexicon | lexicon | What `draw` takes from Titles (names), Connections (edges), Validation (warnings) and Mentions (mention text): a plugin value for each concern (`TitleNamesPlugin`, `PortEdgesPlugin`, `ValidationChecksPlugin`, `MentionTextsPlugin`), joining Automation to the plugin that owns it. |
 | QueryCommands | language | `query` and `query-vocabulary`, and `--ask` as a call to QueryTranslation's translator, its errors said as the wire's (on Automation, Queries, QueryTranslation and the wire; it declares no point). |
 | QueryLanguage | foundation | The language `query` reads (`SelectorList(parsing:)`) and its canonical form: pure, it knows no canvas, registry or plugin. |
 | Queries | surface | The engine that answers a query about a file ([Queries](#queries)), and its points: a surface, so any plugin may run a query. |
@@ -8459,8 +8528,14 @@ board through the core's `editor.reading(of:)` (a `BoardReading`: its shapes, a 
 and paint order over them, and the view it would be shown with, a first visit's fit included), and
 commits there with `transact(on:)`, the window staying where it is; a script that lands on two
 boards is `several_boards`, since a run is one transaction and one undo step, made on one board,
-and one that would put a shape or an edge on a board that can't change (a locked subboard's, and
-every board under it) is `read_only`. Its result's `on` says which (`board`, that shape's `title`, `shown`). `canvas show "<title>"` (or
+but for an edge between shapes on two, which goes through a [stand-in](#stand-ins-forwarding) for
+the end that a kind can be made to stand for ([Edges through a stand-in](#draw)): such an end
+claims its board only softly, so the run draws on the first hard claim, else on the board of the
+first such edge's start; one already drawn through a stand-in claims the board the stand-in is on,
+hard, and a shape the script draws, which is on the board the run draws on, claims none. One that
+would put a shape or an edge on a board that can't change (a locked subboard's, and every board
+under it) is `read_only`. Its result's `on` says which (`board`, that shape's `title`, `shown`).
+`canvas show "<title>"` (or
 `--root`) moves the window, through `editor.showBoard`, and says where it is in a `board` of its
 own, which the server completes.
 
@@ -8540,9 +8615,10 @@ steps, the first three against the board as the run starts:
 
 1. **Read.** DrawScript's `Script(parsing:)` cuts the script into statements, one a line: shapes
    (any first word but `edge`, `delete` and `style` is a kind word, left for Automation to
-   resolve), edges, deletes, and styles, which it merges into the statements that name them. An
-   attribute that isn't the language's own is a key and a value, left for Automation to check
-   against the kind. The language's own words are enums with implicit raw values (`Keyword`,
+   resolve), edges (`from:`, `to:` and `via:` are the language's own keys, `EdgeKey`; `via:`'s value
+   is a kind word, found by Automation), deletes, and styles, which it merges into the statements that
+   name them. An attribute that isn't the language's own is a key and a value, left for Automation to
+   check against the kind. The language's own words are enums with implicit raw values (`Keyword`,
    `LanguageKey`, `EdgeKey`, `Direction`, …), never string literals, so the id audit never sees
    another module's id there (Connections' `channel`, Titles' `title`). Every line that can't be read is
    reported, up to 20.
@@ -8553,7 +8629,8 @@ steps, the first three against the board as the run starts:
    read as its property's type, in draw's own words when it can't be, and JSON held to the
    schema before it's read, `registry.schemaViolations(of:kind:)`, since reading drops a member its
    type doesn't have without a word: an unknown member, or a value of the wrong type anywhere in
-   it, is `invalid_value`, with a "did you mean" over the object's members; a property the schema marks `readOnly` is no attribute (`unknown_attribute`; `kinds` leaves it out), and a string whose `format` is `x-canvas-query` is checked by `editor.queries?.check` (syntax and vocabulary, so a bad one is `invalid_value` with the engine's message and hint; unchecked without QueriesPlugin; Automation, a language, uses Queries, a surface); the naming property and
+   it, is `invalid_value`, with a "did you mean" over the object's members; a property the schema marks `readOnly` is no attribute (`unknown_attribute`; `kinds` leaves it out), and a string whose `format` is `x-canvas-query` is checked by `editor.queries?.check` (syntax and vocabulary, so a bad one is `invalid_value` with the engine's message and hint; unchecked without QueriesPlugin; Automation, a language, uses Queries, a surface), and a string whose `contentMediaType` is one a plugin
+   writes (`DrawTextFormats`: mention text's) is written by that plugin, wherever it is in the value, `DrawTexts.swift`; the naming property and
    coordinates refused); each placement's targets; each edge's ends and attribute keys; and each
    delete's shape, with the connections on it (those DrawEdges' `ends` joins to it, and any other
    of the edge kind bound to it, `record.boundShapes(in:)`: one with an end left free) and the
@@ -8656,6 +8733,83 @@ language:
 - **`delete` of a container** leaves what it holds where it is, now in what held the container
   (the core's), a locked shape too, and says nothing more.
 
+**Edges through a stand-in** ([DrawStandIns.swift](../Sources/Automation/DrawStandIns.swift),
+[DrawBoard.swift](../Sources/Automation/DrawBoard.swift)). An arrow can't leave its board, and a
+shape that many arrows point at needn't be pointed at from everywhere, so an edge may go into a
+[stand-in](#stand-ins-forwarding) for one end, put beside the other. Automation knows no kind of
+stand-in and nothing of publicness: it asks `registry.standIns` which kinds stand in, which of them
+can be made to stand for a shape (`makers`) and which shapes each admits (Topology's
+[`makes` and `needs`](#stand-ins-forwarding)), and References' `reference` is what answers.
+
+- **Whether.** A statement says so with `via: <kind>`: a kind word that must be one of `makers`
+  (else `invalid_value`, with the one it's like and the kinds there are) and admit the end it stands
+  for (else `invalid_value`, saying what the kind `needs`: "only a public shape can be stood for", and
+  to ask the user, since `public:` is theirs to set and a script never makes a shape public to get an
+  edge across). Otherwise **`Drawing.goesThroughStandIn(from:to:)` decides, the one function that
+  does**, and the place to grow: today an edge goes through a stand-in when its ends are on different
+  boards, and nothing else decides (a rule about distance or kinds would go there, and nowhere else).
+  It goes through the first of `makers` that admits the end stood for (`standInKind(for:)`), and a
+  warning says why (`"Auth" is on "Payments"'s board, so the arrow goes into a reference to it beside
+  "Checkout"`; `comes from` where the far end is the start), none where `via:` asked. Where no kind
+  admits it, the edge is `several_boards`, with a hint that only such a shape can be stood for and to
+  ask the user (`Drawing.standInHint`); where nothing stands in at all, the hint is the old one.
+- **Which end.** The one off the board the run draws on; with `via:`, the arrow's end (however the
+  edge is written, `<-` too), put beside the start. Either end may be the far one: a stand-in for the
+  start, the arrow running out of it.
+- **The board** (`Drawing.board(for:in:)`, `DrawBoard.swift`; `BoardClaims` reads the statements).
+  An edge between shapes on two boards claims a board only softly with an end some stand-in can be
+  made for (`makers`, `admits`) and hard with one that can't; the run draws on the first hard claim,
+  else on the board of the first such edge's start (`via:`'s start claims hard, since the stand-in is
+  put beside it), and each such edge needs one end on it (`several_boards` otherwise, naming the end
+  it can't reach). `delete edge` claims the same way. Two edges claim otherwise:
+  - One that's **drawn through a stand-in already** (an arrow on one of its two boards between the
+    end there and a direct stand-in for exactly the other, by `edgeMatches`, the one rule for which
+    arrows are an edge, whichever board it's asked of) claims that board, the start's first, hard,
+    and its other end claims nothing, whether or not that end can be stood for still. The run draws
+    where the stand-in is, so a run again, a `via:` over it and a `delete edge` find the edge there,
+    rather than make a second stand-in for it on the other board. Each board's arrows are read once
+    a run, and only for an edge between boards (`AutomationPlugin.boardConnectionsRead`, debug
+    builds, counts them).
+  - One that joins **a shape the script draws** (a title no board has: it's on the board the run
+    draws on, whichever that is) to a shape the file has: the script's end claims nothing, and the
+    file's claims as an end of an edge between boards does, softly if a stand-in can be made for it
+    (with nothing else to say, the run goes to its board, and the edge is straight there), else hard
+    (and the hint asks for it to be made so, as it does for any end).
+
+  A script with no edge between boards reads none of this (`standIns` is read only when one shows up).
+- **The stand-in is a shape of the run.** `registry.standIns.make` makes the record (the kind's
+  tool's shape, standing for the end, called as the end's title folds), and `routeEdge` adds it to
+  the run as a `ShapeItem` (`standsFor` set), placed as any new shape is: right of the start where
+  that's the end that stays, left of the end where that is, or on the side `from:` or `to:` names for
+  the end that stays, at the normal gap, kept clear of what's there, and settled into the containers
+  it lands on. It has no placement of the script's, so where it clashes with another free box that
+  nothing orders it against (two stand-ins beside notes side by side) it's the one that moves,
+  past the other, on the axis its own placements leave free (`LayoutProblem.Free.implied`,
+  `Solver.yielding`), where a box the script wrote would be `unordered`; its push warns, naming `from:`
+  and `to:` as the fix. It's inserted before the arrow, in the run's one transaction.
+- **Its channel and sides** are the edge maker's: `EdgeRequest.fromStandsFor` and `toStandsFor` say
+  the kinds of what an end stands for (none for a shape itself), and `PortEdgesPlugin` judges the end
+  as those kinds would be, on the stand-in's own sides
+  ([below](#edges-and-their-channels-portedgesplugin)).
+- **Matching**, for a run again and for `delete edge` (`edgeMatches`): an arrow between one end and a
+  stand-in whose record stands for exactly the other, by `.shapes` (a `.provided` answer can change,
+  so it never matches), is the edge, straight or through, on one board too without `via:`; the
+  stand-in the edge would make is then skipped, so a run again makes none. An arrow through a
+  stand-in is looked for before anything else is decided about the edge (`routeEdge`), so it's the
+  edge whatever the shape it stands for can be stood for now (it may have stopped being public), with
+  `via:` or without; one drawn straight is looked for after `via:` is checked against the end. `via:`
+  written over an edge drawn straight, or through a stand-in for its start, is `invalid_value` (`the
+  edge "A" -> "B" is drawn straight to "B"`), the hint saying to `delete edge` it above the line; two
+  matches are `ambiguous_edge`, as two straight ones are.
+- **`delete edge`** takes what matches, either way round for `<->`, then each stand-in the run
+  leaves with no arrow at all, loose ones included (`standInsEmptied`; one that's read-only is
+  `read_only`, and the edge stays). `delete "X"` takes X's arrows and leaves the stand-ins they ran
+  into, which have no title for a script to name.
+- **The result.** An edge's row has `via` (the stand-in's kind) whenever its arrow goes through one,
+  `unchanged` rows too; the stand-in has a row of its own on the edge's line, before the edge's
+  (`created`, with its `kind` and `at` and no title; `deleted` with its kind alone). A dry run says
+  the same, and one undo takes the stand-in and the arrow back together.
+
 Before any of it, a run is refused while a drag is under way on the board (`editor.session`,
 `busy`: its Escape would put back what the script moved), or a press is held
 (`undoHistory.isPressHeld`: whatever commits during a press is part of its undo step, so the run
@@ -8683,8 +8837,8 @@ order, and never by id, since titles are the names:
 A row's `did` is `created`, `moved` (its bounds changed), `updated`, `renamed` (with `was`),
 `unchanged`, `deleted`, `connected` or `reconnected`. A shape's row has its `kind`, `title` and
 `at` (`[[x, y], [width, height]]`, world units), `inView` while the board is in a window, and
-`pushedPast`; an edge's has `from`, `to` and the attributes DrawEdges declares (`channel`; not
-its kind's, which are as written), but a
+`pushedPast`; an edge's has `from`, `to`, `via` where it goes through a stand-in, and the attributes
+DrawEdges declares (`channel`; not its kind's, which are as written), but a
 deleted connection with an end left free has neither end to name. A
 warning (`line`, but none for one about the whole run; `message`; `severity`; and the property
 it's about, `attribute`) is an issue DrawChecks finds on a shape made or changed (an `error`
@@ -8704,20 +8858,22 @@ read as it began.
 
 ### What draw takes from other plugins
 
-Automation knows no title, port or validity. `draw` takes each from a point Automation declares
+Automation knows no title, port, validity or mention. `draw` takes each from a point Automation declares
 ([DrawPoints.swift](../Sources/Automation/DrawPoints.swift)), keyed so it takes at most one
-contribution, which DrawLexicon makes, a plugin value for each concern it imports (AutomationTests
-make their own, over fixtures). Without one, `draw` does without:
+contribution (one for each media type, for text), which DrawLexicon makes, a plugin value for each
+concern it imports (AutomationTests make their own, over fixtures). Without one, `draw` does without:
 
 | Point | Sugar | What `draw` gets | Without it | Shipped |
 |---|---|---|---|---|
 | `DrawNames` | `registrar.drawNames(name:namingProperty:isDerived:fold:)` | What a shape is called; the property of its kind's schema a title is written to (nil: its shapes can't be named); whether the kind works names out itself; how a title a script writes is folded | No titles: a titled statement is `no_names` | TitleNamesPlugin |
 | `DrawEdges` | `registrar.drawEdges(kind:attributes:sides:ends:make:)` | The kind edges are (nil while nothing makes them); the attribute keys an edge takes beside `from:` and `to:`; what an edge may leave a kind on, by side (for `kinds`); which shapes a connection joins; a connection made or changed | No edges: an edge statement is `no_edges` | PortEdgesPlugin |
 | `DrawChecks` | `registrar.drawChecks { record, shapes in … }` | What's wrong with a shape made or changed, as the script leaves the board: `DrawIssue`s (a message, whether it's an error, the property it's about) | Each shape checked against its kind's schema (`registry.schemaViolations(of:)`) | ValidationChecksPlugin |
+| `DrawTextFormats` | `registrar.drawTextFormat(mediaType:describes:write:)` | Each string a script writes whose schema says `contentMediaType` of that media type, as `write` gets it (its string's escapes undone) with a `DrawTextContext` (the registry, the string's schema as its kind declares it, and `shape(called:admitting:)`, which finds the shape a title names as the script finds one): what to keep, or a refusal. `describes` is said after the attribute's type in `canvas kinds` | Text kept as written; `kinds` says nothing after its type | MentionTextsPlugin |
 
-DrawLexicon's three registrations, whole but for `PortEdgesPlugin`'s policy
+DrawLexicon's four registrations, whole but for `PortEdgesPlugin`'s policy and the clauses `MentionTextsPlugin` says
 ([TitleNames.swift](../Sources/DrawLexicon/TitleNames.swift),
-[PortEdges.swift](../Sources/DrawLexicon/PortEdges.swift), [ValidationChecks.swift](../Sources/DrawLexicon/ValidationChecks.swift)):
+[PortEdges.swift](../Sources/DrawLexicon/PortEdges.swift), [ValidationChecks.swift](../Sources/DrawLexicon/ValidationChecks.swift),
+[MentionTexts.swift](../Sources/DrawLexicon/MentionTexts.swift)):
 
 ```swift
 // TitleNamesPlugin: a shape is called what Titles calls it, and a title is written to the one Titles keeps.
@@ -8743,6 +8899,15 @@ registrar.drawChecks { record, shapes in
         DrawIssue(issue.message, isError: issue.severity == .error, field: issue.field)
     }
 }
+
+// MentionTextsPlugin: in mention text, `@[Title]` is the whole mention of the shape called Title.
+registrar.drawTextFormat(mediaType: MentionTextFormat.mediaType, describes: "@[Title] mentions") { text, context throws(AutomationError) in
+    let scope = context.schema[MentionTextFormat.annotationKey]?.objectValue
+    return try MentionTextFormat.resolvingNames(in: text) { name throws(AutomationError) in
+        let shape = try context.shape(called: name) { record in clause(context.registry.mentionAdmission(of: record, scope: scope)) }
+        return (shape.id, shape.title)
+    }
+}
 ```
 
 - **Names are titles.** A kind is named when it opts into the title Titles keeps (`title()`, or
@@ -8759,12 +8924,14 @@ registrar.drawChecks { record, shapes in
   which is how `draw` tells `unchanged` from `reconnected` (`==`). More is `ambiguous_edge`. `make`
   gets an `EdgeRequest`: its ends by id, the sides named (`EdgeRequest.Side`, Automation's own,
   since DrawLexicon imports Automation, not DrawScript), whether `<->` puts a head
-  at its start too, the attributes it declares as written, and its ends' names and the edge as
-  written, for messages. It returns the connection, not inserted, and throws
+  at its start too, the attributes it declares as written, its ends' names and the edge as
+  written, for messages, and, for an end that's a [stand-in](#draw) the run
+  put beside the shape it connects, the kinds of what it stands for (`fromStandsFor`, `toStandsFor`:
+  the end is judged as those shapes would be, on its own sides). It returns the connection, not inserted, and throws
   `AutomationError(message, reason:, hint:)`, which `draw` gives the statement's line; its closure
   says `throws(AutomationError)`, as a command's does. `draw` checks what comes back (the edge
   kind, a new id or the existing one, naming only shapes on the board) before it inserts or
-  updates it. `DrawEdges.check` refuses an attribute key the language keeps (`from`, `to`,
+  updates it. `DrawEdges.check` refuses an attribute key the language keeps (`from`, `to`, `via`,
   `style`), one a result's row has of its own (`line`, `did`, `kind`, …: a row carries an edge's
   attributes beside its own members), one a script couldn't write before a colon, and one declared
   twice.
@@ -8777,6 +8944,42 @@ registrar.drawChecks { record, shapes in
   an edge restated without one keeps it, as a shape does, and DrawLexicon never learns what a kind says.
 - **Checks see the board as the script leaves it** (`transaction.shapes`), so a rule that looks up
   another shape sees the ones drawn with it. Each issue is a warning on the statement's line.
+- **A text is written by the format of its schema's media type** (`DrawTexts.swift`). `KindVocabulary`
+  reads which of a kind's properties may hold such a string anywhere inside (`textKeys`: a `$ref`
+  followed once, so a schema that holds itself ends), so a property that can't is passed over at
+  once. A value that can (a string, a list, an object) is walked beside its property's schema,
+  `properties`, `additionalProperties`, `prefixItems` and `items`, `$ref`s followed, members in
+  name order so the first refusal is the same each time, and each string whose resolved schema
+  says a media type some plugin writes goes through its `write`, as the script wrote it, with
+  the string's schema as declared. It's after the value is read and held to its schema (`fits`), for
+  a shape's attributes, a style's among them, and for an edge's own. A refusal is the statement's, said
+  on its line as `"Plan": remark: …` (a shape's subject, the attribute, what the format said, and
+  `(from style x)`), or `edge "A" -> "B": remark: …`, with the reason and hint it was thrown with;
+  a title whose own statement couldn't be resolved adds no error of its own (`Drawing.skipped`, as a
+  placement against it adds none). `canvas kinds` says what a format takes after the type of a property whose
+  strings it writes (`KindVocabulary.compactType`: `text (@[Title] mentions)`, `JSON [text] (…)` for a list
+  of them), so a refusal's hint says it too.
+- **A format asks for a shape by title** (`DrawTextContext.shape(called:admitting:)`, `DrawTextLookup`),
+  made once a run after every title the script draws is known, among the shapes `admitting` takes
+  (a closure over the shape: nil takes it, a string says why it doesn't, as the clause that follows
+  its kind). The places, in order, the first with a shape called that (folded as DrawNames folds)
+  that is taken deciding: a shape the script draws, restates, or renames to it (`title: "New"`,
+  known before the attributes are read, so a text earlier in the script finds it; the old title
+  finds the same shape, as a placement does), also one drawn further down; the board the run draws
+  on; the board the window shows (if another); then every other board of the file the app can
+  show (the last two are `FileNames.beyond`, which finds an edge's end on another board too: the
+  window's board if it has one, else the one other board that has one). Two or more in one place
+  are `ambiguous_title` (those on the board by their kinds and where they are, as a placement's
+  are; on other boards, by the boards); shapes the script deletes, and those on boards its
+  deletes take, don't count, and a title only they have is `unknown_title` ("names "Old", which
+  this script deletes"); a title some shape has and none is taken, `invalid_value`, saying
+  what the first is and the format's clause; none at all, `unknown_title` with
+  `Suggestions.closest` over the file's titles and the script's own that are taken. It
+  never decides the board: `Drawing.board(for:in:)` reads statements' titles alone. The file's
+  names (`FileNames`, a walk of every board) are read when a lookup first asks, and shared with
+  `board(for:)` where the script names titles, so a script whose texts name nothing reads none
+  (`AutomationPlugin.fileNamesRead`, debug builds, counts them). Without DrawNames a lookup is
+  `no_names`.
 
 ### Edges and their channels: `PortEdgesPlugin`
 
@@ -8800,6 +9003,16 @@ connection runs only from a shape with a dot on its channel to one that takes it
 - **One already drawn keeps its channel**: another written is `invalid_value`, with the hint to
   write `delete edge "A" -> "B"` above the line and draw it again, and a side named must have a
   port on its channel.
+- **A stand-in at an end** (`EdgeRequest.fromStandsFor`, `toStandsFor`: a reference `draw` put beside
+  the shape the edge connects, [above](#draw)) takes the channels of what it stands for, on its own
+  sides, as a drag from that shape's port to it would find them: the lookups' `standingFor:`
+  ([A kind's ports](#a-kinds-ports)), through `EdgeChannels.End`. An edge to a reference for a note is
+  on `note-link`; a `channel:` written still wins where both ends take it. A side named for it that it
+  has no port on at all (a reference has them on its left and right) is `invalid_value`, whatever the
+  channel (`to: top: a reference has no ports on its top`, with the hint `a reference takes arrows on
+  its left and right: to: takes left|right`); `channel: none` leaves and arrives by any side, as ever.
+  A message that names an end says what it stands for (`a reference for a sticky-note has note-link
+  ports on its left and right`).
 - **Before any of it**, the connector must be able to connect both ends in the board as the script
   leaves it (`registry.canConnect(_:in:)` with `transaction.shapes`), and afterwards to make the
   connection (the binding rules allow it): otherwise it's `cannot_connect`, naming the end.
@@ -9001,7 +9214,10 @@ by name):
   schema (`KindSchema.compactType`, which follows a `$ref` as `canvas` does, keywords beside it
   over its target's): `todo|doing|blocked|done`, `number ≥ 0`, `text (≤ 80)`, `true|false`,
   `date (YYYY-MM-DD or date-time)`, `JSON {blue, green, red: 0…1}`, `JSON [{isDone, text}]` (an
-  object's members sorted, and an id nobody writes left out). The naming property isn't listed (a
+  object's members sorted, and an id nobody writes left out), and, for a string a draw text
+  format writes (or a list of them), the format's words after it in brackets, `text (@[Title]
+  mentions)` for mention text (`KindVocabulary.compactType`: so a value's refusal hint says it too).
+  The naming property isn't listed (a
   title goes after the kind, in quotes), nor are coordinates, found as any property whose schema
   is, or holds, the core's rect or point (`core.rect`, `core.point`), never by name. A property
   named like one of the language's keys (`size`, `gap`, `overlap`, `style`, `title`) is listed as
@@ -10740,6 +10956,7 @@ automation           command line draw · command line show · command line kind
 title-names          draw names
 port-edges           draw edges
 validation-checks    draw checks
+mention-texts        draw text text/x-canvas-mentions
 queries              service QueryState · query engine
 query-translation    service QueryTranslator
 title-queries        query names
@@ -10790,8 +11007,8 @@ about mentions that can't work, and `title-validation`'s, over the file's titles
 Titles places its pill on every shape whose kind's title shows one (`adornment TitlePill → every shape`),
 and Locking its lock; `adornments` lends them their layout and drawing, a canvas button
 (`CanvasButtons`) and their hits (`DecorationHits`), and places none of its own. The automation
-line is its commands (`command line draw`, `command line show`, `command line kinds`), and the three after it are
-DrawLexicon's plugins, which fill Automation's draw points, one each. `queries` is the query engine's service (`QueryState`,
+line is its commands (`command line draw`, `command line show`, `command line kinds`), and the four after it are
+DrawLexicon's plugins, which fill Automation's draw points, one each (`draw text` is one a media type). `queries` is the query engine's service (`QueryState`,
 which hears no commit) and its mark (`query engine`, which `registry.answersQueries` reads); the
 five after it fill its points (names, boards' names, and words and a text format, each by what it
 adds), and `query-commands` is `canvas query` and `query-vocabulary`. `slash-commands` is the service that
@@ -10852,7 +11069,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   ValidationTests (its `IssuesTabTests.swift` and `IssueMarksTests.swift` hold the Issues tab and
   the dots), DetailPanelTests, AdornmentsTests, ClipboardTests, TitlesTests,
   MentionsTests, LockingTests, PublishingTests, PortsTests, AutomationTests,
-  TitleNamesTests, PortEdgesTests, ValidationChecksTests, QueriesTests,
+  TitleNamesTests, PortEdgesTests, ValidationChecksTests, MentionTextsTests, QueriesTests,
   QueryCommandsTests and QueryLexicon's tests import no real vertical (only these fixtures, and local test kinds), which proves those plugins are
   shape-agnostic. ArrowPortsTests join fixtures with the arrows that come with Connections, so they
   import no real vertical either.
@@ -11052,7 +11269,11 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   like another plugin's edge type the family's, and none from a connector without `ends`). A 200 × 100
   box at (100, 100), `boxFrame`, has its dots at `topDot`, `rightDot`, `bottomDot` and `leftDot`, at
   zoom 1. A test moves onto a dot before pressing, as a user does (`h.hoverDot` comes from the
-  shape's middle): dots draw only while `editor.pointerOverCanvas` is set. ArrowPortsTests draw real
+  shape's middle): dots draw only while `editor.pointerOverCanvas` is set. PortsTests' stand-in suite
+  (`relayHarness`: a `Relay` that stands for the shapes it cites and has ports on every channel on its
+  left and right, and a `Hub` whose wire only starts connections) also holds the registry's lookups by
+  `standingFor:`: one kind's channels on the relay's sides, a hub's wire, several kinds' shared channels
+  and `connectionChannel` with a stand-in at either end. ArrowPortsTests draw real
   arrows on a `PortBoard`: boxes A and B where the POC's first two welcome notes are, taking
   `Wire`, and a disc C below B taking `Pipe`; `board.connect(to:speed:release:)` hovers A and drags
   from its right dot (`aRightDot`), `fast` or `slow`, and `board.arrows` are the arrows drawn, with
@@ -11083,7 +11304,12 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   of its board), a snapshot taken a step before keeping its old answers, with file order and its
   keys, orphans and loops, a chain of 2,000 boards, reads off the main thread (`offMain`), and no
   record read or observation made taking one. Their Forwarding suite holds stand-ins (`Proxy`,
-  `Gate`) in every view against the rule worked out from the records, and their Providing suite
+  `Gate`) in every view against the rule worked out from the records, their Making suite
+  (`MakingTests.swift`: an `Echo` that says how it's made and what a shape must be for it, a `Mute`
+  that says nothing, a `Phantom` whose rule says how but that no tool places) `registry.standIns` (the
+  kinds that can be made to stand for a shape, what each admits, never a stand-in or a shape kept
+  aside, what it needs, and a made one: the tool's shape at the origin, made to stand for the shape,
+  put in step, in no document, whose admission it never asks), and their Providing suite
   answers (`Lens`, standing for what's provided for its `asks`): dropped ones touching nothing, a
   key changed and undone, followers told once per change of each cause with `touched` the last
   change's, settling on the scheduler's timeout, and seeded commits, undo and answers held to a
@@ -11120,18 +11346,33 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   place (DrawSupport.swift): `namesPlugin` names a tile by its label and a card by its nickname (an
   unnamed one "Card, 100 × 60", worked out from its size), `edgesPlugin` makes
   links, with a tone and heads as added properties, and logs each request (`EdgeLog`), and
-  `checksPlugin` warns about a card that says nothing and calls a glossy tile an error. `drawEditor`
+  `checksPlugin` warns about a card that says nothing and calls a glossy tile an error, and `refFormat` writes
+  a text of a media type of its own (`<Title>` names a shape, kept as `<Title|ID>`; DrawTextTests: each place a title
+  is looked for in its order, ambiguity, the script's deletes, admission, a format's own refusal, nested JSON,
+  an edge's and a style's attributes, a run twice, `kinds`' words, the board it never decides, and the
+  file's names read only when asked). `drawEditor`
   installs them with Automation and the fixtures in an 800 × 600 view; `drawn(script, on:)` is what
   a run that succeeds says, `refused` why one failed, and `rows` and `messages` read a result. The
   tests of DrawLexicon's plugins do the same over their own plugin and fixtures: TitleNamesTests over Titles
   (cards named, tiles named or worked out, discs worked out), PortEdgesTests over channels of their
   own (`Wire`, `Pipe`) and a link connector that logs its requests, ValidationChecksTests over
-  fixture rules. CompositionTests run `draw` through `canvas` as built, on the shipped kinds:
+  fixture rules, MentionTextsTests over kinds of their own that hold mention text (a folder and a
+  dispatch, mentionable; a crate, not; a scope a plugin declares). CompositionTests run `draw` through `canvas` as built, on the shipped kinds:
   CommandLineTests' diagram, a second run all `unchanged`, a dry run and error JSON, notes with
-  mentions and schema cards as tall as their descriptions; DrawContentsTests' check that a draw bringing
+  mentions and schema cards as tall as their descriptions; DrawMentionsTests' `@[Title]` on the shipped
+  kinds (a note two boards down, one drawn further on, a schema card's prompt that names cards only,
+  one undo step); DrawContentsTests' check that a draw bringing
   rows in at several places logs no AppKit warning; DrawBoardsTests' subboards (drawn over, and
   deleted with their boards), a run as one undo step, and schema cards (renamed by their schemas,
-  and never asking the `ScriptedLanguageModel` anything); AutomationTests' undo steps, an agent's
+  and never asking the `ScriptedLanguageModel` anything); DrawStandInsTests' edge to a shape on another
+  board, as shipped (a reference beside the note, either way round, `via:`, a run again, `delete edge`
+  taking the pill, a private shape refused, one undo); AutomationTests' DrawStandInTests (a fixture
+  `Relay` that stands for what it cites and is made for an open shape only, over a `Harbor` of shapes
+  on the root and on subboards two deep: the decision and the board's hard and soft claims, the
+  stand-in's place, a side named for it, its push, `via:` and its refusals, matching on a run again
+  and on one board, `delete edge` and what it leaves with no arrow, the result's rows and warnings, one
+  undo, a dry run), DrawScriptTests' `via:` and an implied box yielding, and PortEdgesTests' channel and
+  sides of a stand-in at an end; AutomationTests' undo steps, an agent's
   commit, and bindings and names across a file's boards (`DrawFileTests.swift`, with `Pin`, a
   kind a tool places that binds and names); and SkillTests, which runs every example in the canvas skill (`.claude/skills/canvas`), each
   file's fenced blocks in order on a fresh 1440 × 900 board: a block tagged `draw` must succeed
@@ -11185,7 +11426,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   `Suite` must be listed there (`test.sh` checks). `<M>Tests` may depend only on M, what M
   depends on, and the test-support and ui modules, and so may a target named for a plugin of M
   that says so in its line, `// layer: test of M`: ArrowsTests, PortsTests and ArrowPortsTests, of
-  Connections; TitleNamesTests, PortEdgesTests and ValidationChecksTests, of DrawLexicon; and
+  Connections; TitleNamesTests, PortEdgesTests, ValidationChecksTests and MentionTextsTests, of DrawLexicon; and
   TitleQueriesTests, BoardQueriesTests, MentionQueriesTests, ValidationQueriesTests and
   SelectionQueriesTests, of QueryLexicon. Each depends on its module, and is a target of its own
   so the plugins' tests run side by side.

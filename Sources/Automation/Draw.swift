@@ -82,6 +82,9 @@ struct DrawChange: Sendable {
     /// An edge's ends, by title.
     var from: String?
     var to: String?
+    /// The kind of stand-in an edge's arrow goes through, when it does: it runs into (or out of) one
+    /// that stands for the end it's written to, whichever way it came to.
+    var via: String?
     /// An edge's attributes as it has them now (those DrawEdges declares), by key.
     var attributes: [String: JSON] = [:]
 }
@@ -90,7 +93,7 @@ extension DrawChange: Encodable {
     /// A row's own members, which an edge's attributes (written beside them) can't be named
     /// (`DrawEdges.check`).
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case line, did, kind, title, was, at, inView, pushedPast, from, to
+        case line, did, kind, title, was, at, inView, pushedPast, from, to, via
     }
 
     private struct AttributeKey: CodingKey {
@@ -112,6 +115,7 @@ extension DrawChange: Encodable {
         try container.encodeIfPresent(pushedPast, forKey: .pushedPast)
         try container.encodeIfPresent(from, forKey: .from)
         try container.encodeIfPresent(to, forKey: .to)
+        try container.encodeIfPresent(via, forKey: .via)
         guard !attributes.isEmpty else { return }
         var more = encoder.container(keyedBy: AttributeKey.self)
         for (key, value) in attributes.sorted(by: { $0.key < $1.key }) { try more.encode(value, forKey: AttributeKey(stringValue: key)) }
