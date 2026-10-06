@@ -2,58 +2,46 @@ import Canvas
 import CoreGraphics
 import Foundation
 import Mentions
+import ProseMaps
 
-// What a schema card's description says of its schema, a few words at a time. The model links words
-// of the description to the parts of the schema they say (`SchemaPrompts.toHighlights`, asked by
-// `SchemaHighlighter` once the two are in step), so the card can color them, a field's one way and a
-// rule's another, and show each part of the schema on its words. A highlight holds its words as the
-// description wrote them, found again in the text as it is now (`SchemaHighlights.place`: in order,
-// never overlapping), so words typed around them keep theirs, and a JSON Pointer, followed in the
-// schema as it is now, so a part renamed or taken out loses its words' color. None of it is in the
-// document: it's what the model said of a description and a schema, kept by their text
-// (`SchemaHighlightAnswers`), never saved and never an undo step, since the two texts are what it
-// follows from.
+// What a schema card's description says of its schema, a few words at a time: a prose map of the
+// description into the schema (`ProseMapService`, the target `SchemaTarget`), asked for once the card
+// is drawn in full and the two are in step, so the card can color the words, a field's one way and a
+// rule's another, and show each part of the schema on its words. A link holds its words as the
+// description wrote them, found again in the text as it is now, so words typed around them keep
+// theirs, and a JSON Pointer, followed in the schema as it is now, so a part renamed or taken out
+// loses its words' color. None of it is in the document: it's what the model said of a description
+// and a schema, kept by their text, never saved and never an undo step, since the two texts are what
+// it follows from.
 
-/// Words of a schema card's description, and the part of its schema they say.
-public struct SchemaHighlight: Hashable, Sendable {
-    /// The words as the description writes them.
-    public var words: String
-    /// Where the part is in the schema: a JSON Pointer (RFC 6901), "" for the whole schema,
-    /// "/properties/key" for a field, "/properties/summary/maxLength" for a rule.
-    public var pointer: String
+/// A schema card's schema, as its description's words are mapped into it: a part is where a JSON
+/// Pointer (RFC 6901) leads, the root for the thing itself, a property or a list's items for a field
+/// (an element), any other keyword for a rule (`role(of:)`). What the model is told of it is
+/// `SchemaPrompts.highlightsGuide`.
+public enum SchemaTarget {}
 
-    public init(words: String, pointer: String) {
-        self.words = words
-        self.pointer = pointer
+extension SchemaTarget: ProseTarget {
+    public typealias Address = JSONPointer
+    public static let name = "schema"
+    public static var guide: String { SchemaPrompts.highlightsGuide }
+
+    /// Where each pointer leads in `schema` (`JSONPointer.resolve`): from the member's key to the end
+    /// of its value, the whole text for the root; nil in a text that isn't JSON.
+    public static func locate(_ pointers: [JSONPointer], in schema: String) -> [Range<String.Index>?] {
+        guard let root = try? JSONReader.read(schema) else { return pointers.map { _ in nil } }
+        let utf8 = schema.utf8
+        return pointers.map { pointer in
+            guard let part = pointer.resolve(in: root)?.range else { return nil }
+            return utf8.index(utf8.startIndex, offsetBy: part.lowerBound)..<utf8.index(utf8.startIndex, offsetBy: part.upperBound)
+        }
     }
 
-    /// What words say of the data: a field it has (the thing itself, a property, a list's items, a
-    /// shape defined once), or a rule it keeps (a bound, a pattern, choices, what's required, an
-    /// either-or, a condition).
-    public enum Kind: Hashable, Sendable {
-        case field, validation
-    }
-}
-
-/// A highlight found in a description as it is, and its part in the schema as it is.
-public struct PlacedHighlight: Equatable, Sendable {
-    /// Where its words are in the description as it's drawn (each mention one character, its pill),
-    /// in UTF-16, as AppKit's text ranges are.
-    public var range: NSRange
-    public var kind: SchemaHighlight.Kind
-    public var pointer: JSONPointer
-    /// Where its part is in the schema's text, in UTF-8 offsets (`JSONPointer.Target.range`).
-    public var part: Range<Int>
-}
-
-/// Placing highlights in a description and a schema: pure, and nonisolated.
-public enum SchemaHighlights {
-    /// What words pointing there say: a field when the pointer leads, through places that hold the
-    /// data (a property, a list's items, a definition), to a schema, or to what names one (its
-    /// title, its description); a rule when it leads to any other keyword (a bound, a pattern,
-    /// choices, `required`, `default`), or goes through one that combines schemas or conditions on
-    /// them (`anyOf`, `if`, `not`).
-    public static func kind(of pointer: JSONPointer) -> SchemaHighlight.Kind {
+    /// What words pointing there say: an element (a field) when the pointer leads, through places
+    /// that hold the data (a property, a list's items, a definition), to a schema, or to what names
+    /// one (its title, its description); a rule when it leads to any other keyword (a bound, a
+    /// pattern, choices, `required`, `default`), or goes through one that combines schemas or
+    /// conditions on them (`anyOf`, `if`, `not`).
+    public static func role(of pointer: JSONPointer) -> LinkRole {
         enum Place { case schema, names, list, value }
         var place = Place.schema
         var rule = false
@@ -81,7 +69,7 @@ public enum SchemaHighlights {
                 }
             }
         }
-        return rule ? .validation : .field
+        return rule ? .rule : .element
     }
 
     /// Keywords whose members are schemas by name.
@@ -94,184 +82,101 @@ public enum SchemaHighlights {
     private static let conditions: Set<String> = ["not", "if", "then", "else", "contains", "propertyNames"]
     /// Keywords that name or describe the schema they're in.
     private static let namesIt: Set<String> = ["title", "description", "$comment"]
-
-    /// Where each of `words` is in `text`, in order: the first place no earlier one holds, looked for
-    /// from where the last one found ends, then from the start; at word boundaries (neither end
-    /// inside a word) before anywhere; as written before ignoring case. Nil for words that aren't
-    /// there (or are empty). The model lists them in the text's order, so words written twice go to
-    /// their places in turn.
-    public static func anchor(_ words: [String], in text: String) -> [Range<String.Index>?] {
-        var placed: [Range<String.Index>] = []
-        var cursor = text.startIndex
-        return words.map { words in
-            guard !words.isEmpty else { return nil }
-            for options in [String.CompareOptions.literal, [.literal, .caseInsensitive]] {
-                for start in [cursor, text.startIndex] {
-                    for bounded in [true, false] {
-                        var from = start
-                        while from < text.endIndex, let found = text.range(of: words, options: options, range: from..<text.endIndex) {
-                            if !placed.contains(where: { $0.overlaps(found) }), !bounded || isWhole(found, in: text) {
-                                placed.append(found)
-                                cursor = found.upperBound
-                                return found
-                            }
-                            from = text.index(after: found.lowerBound)
-                        }
-                    }
-                }
-            }
-            return nil
-        }
-    }
-
-    /// Whether neither end of `range` is inside a word: at each end, the characters either side
-    /// aren't both letters, digits or underscores.
-    private static func isWhole(_ range: Range<String.Index>, in text: String) -> Bool {
-        func wordy(_ c: Character) -> Bool { c.isLetter || c.isNumber || c == "_" }
-        if range.lowerBound > text.startIndex, wordy(text[text.index(before: range.lowerBound)]), wordy(text[range.lowerBound]) { return false }
-        if range.upperBound < text.endIndex, wordy(text[range.upperBound]), wordy(text[text.index(before: range.upperBound)]) { return false }
-        return true
-    }
-
-    /// The highlights whose words are in `description` (`anchor`) and whose pointers lead somewhere
-    /// in the schema `root`, in the description's order.
-    public static func place(_ highlights: [SchemaHighlight], in description: String, schema root: JSONNode) -> [PlacedHighlight] {
-        let ranges = anchor(highlights.map(\.words), in: description)
-        var placed: [PlacedHighlight] = []
-        for (highlight, range) in zip(highlights, ranges) {
-            guard let range, let pointer = JSONPointer(highlight.pointer), let target = pointer.resolve(in: root) else { continue }
-            placed.append(PlacedHighlight(range: NSRange(range, in: description), kind: kind(of: pointer), pointer: pointer, part: target.range))
-        }
-        return placed.sorted { $0.range.location < $1.range.location }
-    }
-
-    /// A part of `schema` as a person reads it (a highlight's, `PlacedHighlight.part`): its text as
-    /// written, each line after the first less the indent of the line it starts on, so it reads as
-    /// though written at the left margin. Empty for a range outside the text.
-    public static func fragment(_ part: Range<Int>, of schema: String) -> String {
-        let bytes = Array(schema.utf8)
-        guard part.lowerBound >= 0, part.upperBound <= bytes.count else { return "" }
-        var lineStart = part.lowerBound
-        while lineStart > 0, bytes[lineStart - 1] != UInt8(ascii: "\n") { lineStart -= 1 }
-        let indent = bytes[lineStart..<part.lowerBound].prefix { $0 == UInt8(ascii: " ") || $0 == UInt8(ascii: "\t") }.count
-        let text = String(decoding: bytes[part], as: UTF8.self)
-        guard indent > 0 else { return text }
-        return text.split(separator: "\n", omittingEmptySubsequences: false).enumerated().map { index, line in
-            guard index > 0 else { return String(line) }
-            return String(line.dropFirst(min(line.prefix { $0 == " " || $0 == "\t" }.count, indent)))
-        }.joined(separator: "\n")
-    }
 }
 
-/// What the model said each description and schema's words link to, process-wide, as a card's
-/// readings are kept (`SchemaReadings`): by the pair's text (the description as stored, trimmed, as
-/// the sync compares it), so undo, a copy or a file opened twice finds what it said; and each card's
-/// last answer, whatever pair it was for, so a description being typed keeps the words still there.
+/// A highlight as the card draws it: its words in the description as it's drawn, and its part in the
+/// schema's text.
+public struct PlacedHighlight: Equatable, Sendable {
+    /// Where its words are in the description as it's drawn (each mention one character, its pill),
+    /// in UTF-16, as AppKit's text ranges are.
+    public var range: NSRange
+    public var role: LinkRole
+    public var pointer: JSONPointer
+    /// Where its part is in the schema's text the card shows (`SchemaReadings.shownText`), in UTF-8
+    /// offsets (`JSONPointer.Target.range`).
+    public var part: Range<Int>
+}
+
+/// What each card shows of its highlights, as its render, its editor and its popovers read them:
+/// its map (`ProseMapService.map`) moved onto the description as it's drawn. The model reads the
+/// description with each mention `@` and a word of the name it holds, and the schema with each `$ref`
+/// to a card it mentions that word (`SchemaReferenceNames`), as the sync shows them; its words are
+/// found in that, and moved to the text as it's drawn, words in a mention's word its pill
+/// (`SchemaModelText.shownRange`). The schema is the card's last that was a JSON object while its text
+/// isn't one (`SchemaReadings.shownText`), so a keystroke that breaks it doesn't take the highlights
+/// away. A pair with no answer is asked about once the card's two texts are in step
+/// (`SchemaSync.isInStep`), its schema's text a JSON object, so what's linked is what both say.
 ///
-/// What a card shows (`placed(for:)`, which its render and its editor read) is its pair's answer,
-/// else its last, placed in its text as it is: found in the description as the model read it, each
-/// mention `@` and a word of the name it holds (`SchemaReferenceNames`, what the highlighter sends),
-/// and moved to the description as it's drawn, words in a mention's word its pill. Kept per card
-/// while nothing it goes by changes (its two texts, what's been said), since the canvas reads it
-/// every frame. A card read that has no answer for its pair is wanted: the frame's end hands the
-/// cards wanted to the editor's highlighter (`SchemaHighlightFrames`), which asks once a card is in
-/// step, so a card is asked about only once it's drawn in full, not while it's out of view or drawn
-/// as a skeleton.
+/// Kept per card while nothing it goes by changes (its texts, its map), since the canvas reads it
+/// every frame: the texts the model reads are the same strings for as long as the card's are, so
+/// the map's read costs a lookup.
 @MainActor
-public enum SchemaHighlightAnswers {
-    /// A description and its schema, as an answer is kept by: the description as stored.
-    public struct Pair: Hashable, Sendable {
-        public var prompt: String
-        public var schema: String
-
-        public init(prompt: String, schema: String) {
-            self.prompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-            self.schema = schema
-        }
-
-        /// A card's.
-        public init(_ card: SchemaCard) { self.init(prompt: card.prompt.stored, schema: card.schema.text) }
+public enum SchemaHighlightsShown {
+    /// What the model reads of a card's texts, and what's said of the cards they name.
+    private struct Read {
+        let prompt: SchemaPromptText
+        let schema: String
+        let text: SchemaModelText
+        let modelSchema: String
+        let context: String
     }
 
-    /// At most this many answers are kept: past it, the quarter kept longest goes.
-    public static let capacity = 1024
-
-    private static var answers: [Pair: (highlights: [SchemaHighlight], number: Int)] = [:]
-    private static var latest: [ShapeID: (highlights: [SchemaHighlight], number: Int)] = [:]
-    private static var answered = 0
-    /// What each card read last shows, while its texts are the same and nothing's been said since.
+    /// What a card shows of a map, and where it's drawn, once asked.
     private struct Shown {
-        let prompt: SchemaPromptText
-        let schema: SchemaText
-        let answered: Int
+        let map: ProseMap<SchemaTarget>
         let placed: [PlacedHighlight]
-        /// Its pair has no answer.
-        let wants: Bool
-        /// Where `placed` is drawn in a text box of this size, each mention's pill as it showed then,
-        /// once asked (`lines(of:resolve:)`).
         var lines: (size: CGSize, pills: [MentionResolution], rects: [[CGRect]])?
     }
+
+    private static var read: [ShapeID: Read] = [:]
     private static var shown: [ShapeID: Shown] = [:]
-    private static var wanted: Set<ShapeID> = []
 
-    /// What the model said of the pair, if it was asked this session.
-    public static func answer(for pair: Pair) -> [SchemaHighlight]? { answers[pair]?.highlights }
-
-    /// Keeps what the model said of `pair`, which card `id` was in when it was asked (the ask's
-    /// `number`, in the order asked); it's the card's last answer unless one asked after it
-    /// has landed.
-    static func remember(_ highlights: [SchemaHighlight], for pair: Pair, card id: ShapeID, asked number: Int) {
-        answered += 1
-        answers[pair] = (highlights, answered)
-        if answers.count > capacity {
-            let old = answers.sorted { $0.value.number < $1.value.number }.prefix(capacity / 4).map(\.key)
-            for key in old { answers[key] = nil }
-        }
-        if (latest[id]?.number ?? -1) < number { latest[id] = (highlights, number) }
-    }
-
-    /// The card's highlights, placed in its description and schema as they are (the schema's last
-    /// reading that was a JSON object while it isn't one: `SchemaReadings.shown`). A card whose pair
-    /// has no answer is wanted, whatever it shows meanwhile.
-    public static func placed(for card: ShapeRecord<SchemaCard>) -> [PlacedHighlight] {
-        let prompt = card.props.prompt, schema = card.props.schema
-        let kept: Shown
-        if let last = shown[card.id], last.answered == answered, last.prompt == prompt, last.schema == schema {
-            kept = last
-        } else {
-            kept = show(card)
-            shown[card.id] = kept
-        }
-        if kept.wants { wanted.insert(card.id) }
-        return kept.placed
-    }
-
-    private static func show(_ card: ShapeRecord<SchemaCard>) -> Shown {
-        let prompt = card.props.prompt, schema = card.props.schema
-        let pair = Pair(card.props)
-        let answer = answers[pair]?.highlights
-        let highlights = answer ?? latest[card.id]?.highlights ?? []
+    /// The card's highlights, in the description's order, its map read from `maps` (nil: none) and
+    /// asked for once `sync` says the card is in step.
+    public static func placed(for card: ShapeRecord<SchemaCard>, maps: ProseMapService?, sync: SchemaSync?) -> [PlacedHighlight] {
+        guard let maps, !card.props.prompt.stored.isEmpty else { return [] }
+        let reading = SchemaReadings.reading(of: card)
+        guard let root = reading.shownRoot else { return [] }
+        let texts = texts(of: card, schema: reading.shownText)
+        guard let map = maps.map(SchemaTarget.self, of: card.id, prose: texts.text.text, target: texts.modelSchema, context: texts.context,
+                                 askingIf: { sync?.isInStep(card.id) == true && reading.document.isObject })
+        else { return [] }
+        if let kept = shown[card.id], kept.map === map { return kept.placed }
         var placed: [PlacedHighlight] = []
-        if !highlights.isEmpty, let root = SchemaReadings.reading(of: schema.text, for: card.id).shownRoot {
-            let read = SchemaReferenceNames(prompts: [prompt], schemas: [], name: { _ in nil }).modelText(of: prompt)
-            var end = 0
-            for var highlight in SchemaHighlights.place(highlights, in: read.text, schema: root) {
-                // Words in one mention's word are its pill, which only the first of them takes.
-                highlight.range = read.shownRange(of: highlight.range)
-                guard highlight.range.length > 0, highlight.range.location >= end else { continue }
-                end = NSMaxRange(highlight.range)
-                placed.append(highlight)
-            }
+        var end = 0
+        for link in map.links {
+            // Words in one mention's word are its pill, which only the first of them takes. The
+            // map's own text is what its ranges are of; it reads as the card's (`ProseMapService.map`).
+            let range = texts.text.shownRange(of: NSRange(link.inProse, in: map.prose))
+            guard range.length > 0, range.location >= end, let part = link.address.resolve(in: root)?.range else { continue }
+            end = NSMaxRange(range)
+            placed.append(PlacedHighlight(range: range, role: link.role, pointer: link.address, part: part))
         }
-        return Shown(prompt: prompt, schema: schema, answered: answered, placed: placed, wants: answer == nil && !pair.prompt.isEmpty)
+        shown[card.id] = Shown(map: map, placed: placed)
+        return placed
     }
 
-    /// Where each of the card's highlights (`placed(for:)`'s, in its order) is drawn, in world units:
-    /// a rect a line, where the canvas fills behind its words (`MentionTextStyle.lineRects`), which
-    /// its editor fills too, and the pointer is found on, each mention's pill as `resolve` says it
-    /// shows. Kept with what the card shows, for its text box's size and how its pills show.
-    public static func lines(of card: ShapeRecord<SchemaCard>, resolve: (ShapeID) -> MentionResolution) -> [[CGRect]] {
-        let placed = placed(for: card)
+    /// The card's texts as the model reads them: its description's mentions as the names they hold
+    /// (what the sync sends, and what a rename elsewhere doesn't change), and the cards they name in
+    /// its schema by the same words.
+    private static func texts(of card: ShapeRecord<SchemaCard>, schema: String) -> Read {
+        let prompt = card.props.prompt
+        if let kept = read[card.id], sameText(kept.prompt.stored, prompt.stored), sameText(kept.schema, schema) { return kept }
+        let names = SchemaReferenceNames(prompts: [prompt], schemas: [], name: { _ in nil })
+        let made = Read(prompt: prompt, schema: schema, text: names.modelText(of: prompt), modelSchema: names.modelSchema(schema),
+                        context: names.named.isEmpty ? "" : SchemaPrompts.highlightsReferences)
+        read[card.id] = made
+        return made
+    }
+
+    /// Where each of the card's highlights (`placed(for:maps:sync:)`'s, in its order) is drawn, in
+    /// world units: a rect a line, where the canvas fills behind its words
+    /// (`MentionTextStyle.lineRects`), which its editor fills too, and the pointer is found on, each
+    /// mention's pill as `resolve` says it shows. Kept with what the card shows, for its text box's
+    /// size and how its pills show.
+    public static func lines(of card: ShapeRecord<SchemaCard>, maps: ProseMapService?, sync: SchemaSync?,
+                             resolve: (ShapeID) -> MentionResolution) -> [[CGRect]] {
+        let placed = placed(for: card, maps: maps, sync: sync)
         guard !placed.isEmpty else { return [] }
         let box = SchemaStyle.textBox(of: card.frame)
         let prompt = card.props.prompt
@@ -291,44 +196,29 @@ public enum SchemaHighlightAnswers {
         return rects.map { lines in lines.map { $0.offsetBy(dx: box.minX, dy: box.minY) } }
     }
 
-    /// The cards read since the last call whose pairs have no answer, and none after it.
-    static func takeWanted() -> Set<ShapeID> {
-        defer { wanted = [] }
-        return wanted
+    /// The part of a schema's `text` at `part` (UTF-8 offsets) as a person reads it
+    /// (`ProseMapText.excerpt`). Empty for a range outside the text.
+    static func excerpt(_ part: Range<Int>, of text: String) -> String {
+        let utf8 = text.utf8
+        guard part.lowerBound >= 0, part.upperBound <= utf8.count else { return "" }
+        return ProseMapText.excerpt(utf8.index(utf8.startIndex, offsetBy: part.lowerBound)..<utf8.index(utf8.startIndex, offsetBy: part.upperBound), of: text)
     }
 
-    /// The part of the card's schema a placed highlight of it shows, as a person reads it
-    /// (`SchemaHighlights.fragment`), cut from the text it was placed in.
-    public static func fragment(of highlight: PlacedHighlight, in card: ShapeRecord<SchemaCard>) -> String {
-        SchemaHighlights.fragment(highlight.part, of: SchemaReadings.reading(of: card).shownText)
-    }
+    /// The same text, as a range in one is a range in the other: equal, and as long in UTF-8
+    /// (strings `==` calls equal may be written differently, an accent as one scalar or two).
+    private static func sameText(_ a: String, _ b: String) -> Bool { a == b && a.utf8.count == b.utf8.count }
 
     /// Drops what's kept of a card that went (its answers stay, by their text).
     static func forget(_ id: ShapeID) {
-        latest[id] = nil
+        read[id] = nil
         shown[id] = nil
-        wanted.remove(id)
     }
 
     #if DEBUG
-    /// Every answer and card forgotten, for tests that need none kept from one before.
+    /// Every card forgotten, for tests that need none kept from one before.
     public static func forgetEverything() {
-        answers = [:]
-        latest = [:]
+        read = [:]
         shown = [:]
-        wanted = []
     }
     #endif
-}
-
-/// Where a frame ends, an overlay that draws nothing: it hands the cards the frame drew with no
-/// answer for their pair to the editor's highlighter, which asks for those in step.
-struct SchemaHighlightFrames {}
-
-extension SchemaHighlightFrames: CanvasOverlay {
-    var space: OverlaySpace { .view }
-    func draw(in context: OverlayContext) {
-        let wanted = SchemaHighlightAnswers.takeWanted()
-        if !wanted.isEmpty { context.editor.schemaSync?.highlighter.want(wanted) }
-    }
 }

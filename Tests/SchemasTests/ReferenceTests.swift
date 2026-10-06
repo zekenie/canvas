@@ -279,8 +279,8 @@ extension SyncBench {
     test("a highlight on a mention is its pill: the model's words are found in the description as it read it, and the words after it are where they're drawn") {
         let b = try HighlightBench()
         let address = b.editor.add(SchemasTests.card(addressSchema, at: CGPoint(x: 500, y: 100)))
-        b.answer = .success(ModelResponse(text: #"[{"text": "house", "pointer": ""}, {"text": "@Address", "pointer": "/properties/address"}, "#
-                                            + #"{"text": "bedrooms", "pointer": "/properties/bedrooms"}, {"text": "required", "pointer": "/required"}]"#))
+        b.answer = .success(ModelResponse(text: #"[{"text": "house", "address": ""}, {"text": "@Address", "address": "/properties/address"}, "#
+                                            + #"{"text": "bedrooms", "address": "/properties/bedrooms"}, {"text": "required", "address": "/required"}]"#))
         var props = SchemaCard(frame: CGRect(x: 100, y: 100, width: 320, height: 52), schema: SchemaText(houseSchema(uri(address))))
         props.setPrompt(described("A house: its @, and how many bedrooms (required)", mentioning: address, as: "Address"))
         let house = b.editor.add(props)
@@ -289,11 +289,12 @@ extension SyncBench {
         let asked = try require(b.asked.last?.messages.first?.text)
         expect(asked.contains("A house: its @Address, and how many bedrooms (required)"), asked)
         expect(asked.contains(#""$ref": "@Address""#), asked)
+        expect(b.asked.last?.system?.hasSuffix("\n" + SchemaPrompts.highlightsReferences) == true, "told how an @ word links, after the guide")
         let card = try require(b.card(house))
-        let placed = SchemaHighlightAnswers.placed(for: card)
+        let placed = b.placed(card)
         expectEqual(placed.map(\.range), [NSRange(location: 2, length: 5), NSRange(location: 13, length: 1), NSRange(location: 29, length: 8),
                                           NSRange(location: 39, length: 8)])
-        let lines = SchemaHighlightAnswers.lines(of: card) { b.editor.registry.mentionResolution(of: $0, lookup: { b.editor.shape(inFile: $0) }) }
+        let lines = b.lines(card)
         let pill = try require(b.editor.mentionPills(of: house).first).frame
         let line = try require(lines[1].first)
         expect(line.minX <= pill.minX + 0.5 && line.maxX >= pill.maxX - 0.5 && line.minY <= pill.minY && line.maxY >= pill.maxY,
@@ -302,14 +303,14 @@ extension SyncBench {
     test("resting the pointer on a mention's highlight shows the schema it refers to, the whole of it") {
         let b = try HighlightBench()
         let address = b.editor.add(SchemasTests.card(addressSchema, at: CGPoint(x: 500, y: 100)))
-        b.answer = .success(ModelResponse(text: #"[{"text": "@Address", "pointer": "/properties/address"}]"#))
+        b.answer = .success(ModelResponse(text: #"[{"text": "@Address", "address": "/properties/address"}]"#))
         var props = SchemaCard(frame: CGRect(x: 100, y: 100, width: 320, height: 52), schema: SchemaText(houseSchema(uri(address))))
         props.setPrompt(described("A house: its @, and bedrooms", mentioning: address, as: "Address"))
         let house = b.editor.add(props)
         b.frame()
         b.settle()
         let card = try require(b.card(house))
-        let lines = SchemaHighlightAnswers.lines(of: card) { b.editor.registry.mentionResolution(of: $0, lookup: { b.editor.shape(inFile: $0) }) }
+        let lines = b.lines(card)
         let line = try require(lines.first?.first)
         b.move(to: CGPoint(x: line.midX, y: line.midY))
         expectEqual(b.popoverAfterDelay(), addressSchema)

@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import Mentions
+import ProseMaps
 
 /// On the main actor as a whole, so its drawing helpers share the protocol's isolation.
 @MainActor
@@ -22,13 +23,16 @@ extension SchemaCardDefinition: ShapeDefinition {
         guard !shape.props.prompt.stored.isEmpty, !box.isEmpty else { return }
         // Its highlights behind their words, a field's one way and a rule's another, under its editor
         // too, whose text lays out as this does (read, too, so a card drawn in full is asked about
-        // once it's in step: `SchemaHighlightAnswers`), each mention's pill as it's drawn.
-        let placed = SchemaHighlightAnswers.placed(for: shape)
+        // once it's in step: `SchemaHighlightsShown`), each mention's pill as it's drawn.
+        let maps = context.proseMaps, sync = context.service(SchemaSync.self)
+        let placed = SchemaHighlightsShown.placed(for: shape, maps: maps, sync: sync)
         if !placed.isEmpty {
             let registry = context.shapes.registry
-            let lines = SchemaHighlightAnswers.lines(of: shape) { registry.mentionResolution(of: $0, lookup: { context.shape(inFile: $0) }) }
+            let lines = SchemaHighlightsShown.lines(of: shape, maps: maps, sync: sync) {
+                registry.mentionResolution(of: $0, lookup: { context.shape(inFile: $0) })
+            }
             for (highlight, lines) in zip(placed, lines) {
-                context.cg.setFillColor(SchemaStyle.highlightColor(highlight.kind))
+                context.cg.setFillColor(SchemaStyle.highlightColor(highlight.role))
                 for line in lines { context.cg.fill(SchemaStyle.highlightFill(line)) }
             }
         }
@@ -86,13 +90,13 @@ enum SchemaStyle {
     /// light enough on the white card that the text stays the text's gray.
     static let fieldHighlight = NSColor(srgbRed: 0.20, green: 0.47, blue: 0.96, alpha: 0.16).cgColor
     static let validationHighlight = NSColor(srgbRed: 0.96, green: 0.62, blue: 0.04, alpha: 0.24).cgColor
-    static func highlightColor(_ kind: SchemaHighlight.Kind) -> CGColor {
-        switch kind {
-        case .field: fieldHighlight
-        case .validation: validationHighlight
+    static func highlightColor(_ role: LinkRole) -> CGColor {
+        switch role {
+        case .element: fieldHighlight
+        case .rule: validationHighlight
         }
     }
-    /// What a highlight fills of a line its words are on (`SchemaHighlightAnswers.lines`): its words'
+    /// What a highlight fills of a line its words are on (`SchemaHighlightsShown.lines`): its words'
     /// width, and the line's height less half a point above and below, so highlights on lines one
     /// under the other stay apart.
     static func highlightFill(_ line: CGRect) -> CGRect { line.insetBy(dx: 0, dy: 0.5) }

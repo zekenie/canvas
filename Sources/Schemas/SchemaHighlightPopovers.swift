@@ -2,10 +2,11 @@ import AppKit
 import Canvas
 import DetailPanel
 import Mentions
+import ProseMaps
 
 /// What resting the pointer on a highlight's words shows, on the card (Selection's `ShapePopovers`)
 /// or in its editor (`EditContext.hoverPopover`): the part of the schema they say, as a person reads
-/// it (`SchemaHighlightAnswers.fragment`), colored as the panel colors JSON (`DetailStyle.code`). A
+/// it (`SchemaHighlightsShown.excerpt`), colored as the panel colors JSON (`DetailStyle.code`). A
 /// part that refers to another card's schema (`{"$ref": "urn:uuid:…"}`, what a mention of the card
 /// is written as) shows that schema, or the part of it the `$ref` points to, while the card is in the
 /// file.
@@ -29,13 +30,14 @@ enum SchemaHighlightPopovers {
     }
 
     /// The popover a world point on the card shows: that of the highlight whose words are there, as
-    /// the canvas draws them (`SchemaHighlightAnswers.lines`), beside the line the point is on.
+    /// the canvas draws them (`SchemaHighlightsShown.lines`), beside the line the point is on.
     static func popover(at point: CGPoint, on card: ShapeRecord<SchemaCard>, in editor: CanvasEditor) -> CanvasPopover? {
         guard SchemaStyle.textBox(of: card.frame).contains(point) else { return nil }
-        let placed = SchemaHighlightAnswers.placed(for: card)
+        let maps = editor.proseMaps, sync = editor.schemaSync
+        let placed = SchemaHighlightsShown.placed(for: card, maps: maps, sync: sync)
         guard !placed.isEmpty else { return nil }
         let lookup = { (id: ShapeID) in editor.shape(inFile: id) }
-        let lines = SchemaHighlightAnswers.lines(of: card) { editor.registry.mentionResolution(of: $0, lookup: lookup) }
+        let lines = SchemaHighlightsShown.lines(of: card, maps: maps, sync: sync) { editor.registry.mentionResolution(of: $0, lookup: lookup) }
         for (highlight, lines) in zip(placed, lines) {
             guard let line = lines.first(where: { $0.contains(point) }) else { continue }
             return popover(of: highlight, in: card, anchor: line, lookup: lookup)
@@ -51,7 +53,7 @@ enum SchemaHighlightPopovers {
     static func text(of highlight: PlacedHighlight, in card: ShapeRecord<SchemaCard>, lookup: (ShapeID) -> AnyShapeRecord?) -> NSAttributedString {
         let (source, part) = shown(highlight, in: card, lookup: lookup)
         if let last, last.part == part, last.source == source { return last.text }
-        var fragment = SchemaHighlights.fragment(part, of: source)
+        var fragment = SchemaHighlightsShown.excerpt(part, of: source)
         let lines = fragment.split(separator: "\n", maxSplits: maxLines, omittingEmptySubsequences: false)
         if lines.count > maxLines { fragment = lines.prefix(maxLines).joined(separator: "\n") + "\n…" }
         let text = DetailStyle.code(fragment, spans: SchemaCodeColors.spans(in: fragment))

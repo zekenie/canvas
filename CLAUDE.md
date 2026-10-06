@@ -77,6 +77,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [slash commands](.claude/rules/slash-commands.md): commands typed on a line of a shape's text.
 - [topology](.claude/rules/topology.md): edges and edge types, their sources, stand-ins and the views through them, provided answers, the one delivery of every change (`follow`) and settling, containment as one tree, snapshots for other threads.
 - [language models](.claude/rules/language-models.md): the model plugins ask, the Anthropic key and Settings, `--ask`'s model.
+- [prose maps](.claude/rules/prose-maps.md): which words of a text say which part of a lower-level text (a schema card's highlights): targets, maps, asking the model, the request.
 - [find](.claude/rules/find.md): ⌘F: the `FindableTexts` point and its contributors, the index, the search off the main actor, scope and order, the highlights, the panel in the detail panel's place.
 
 **Concerns**

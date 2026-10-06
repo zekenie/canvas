@@ -13,7 +13,7 @@ paths:
 
 Language models: the one model every editor lends plugins, the Anthropic model and its key, Settings, `--ask`'s model, and the tests that may reach the network.
 
-Related: [schema cards](schema-cards.md), [queries](queries.md), [command line](command-line.md) ([every topic](../../CLAUDE.md#map)).
+Related: [schema cards](schema-cards.md), [prose maps](prose-maps.md), [queries](queries.md), [command line](command-line.md) ([every topic](../../CLAUDE.md#map)).
 
 In the guide, `docs/plugin-system.md`: [Language models](../../docs/plugin-system.md#language-models).
 

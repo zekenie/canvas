@@ -9,7 +9,7 @@ says them well enough (the first is the best). A link the model draws that overl
 is an extra: neither right nor wrong, printed to be read. One that overlaps listed words but points
 elsewhere is a misattribution: the popover would show the wrong part. Words listed with NEVER say
 something the schema doesn't: any link on them is a misattribution, and they're not counted as
-missed. The examples in the prompt (SchemaPrompts.highlightsSystem) are none of these.
+missed. The examples in the prompt (SchemaPrompts.highlightsGuide) are none of these.
 """
 from gen_cases import fmt
 

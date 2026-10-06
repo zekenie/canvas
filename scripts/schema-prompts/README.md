@@ -52,17 +52,21 @@ python3 -m pip install --target _pylib jsonschema==4.23.0
 
 ## Highlights
 
-The third prompt links a description's words to the parts of its schema they say
-(`SchemaPrompts.highlightsSystem`, asked by `SchemaHighlighter`). `highlight_evals.py` reads it, its
-model (Sonnet 5.5), effort and `max_tokens` out of `SchemaPrompts.swift`, sends each of
-`highlight_cases.py`'s cases (28: the owner's Jira ticket, terse lists, sentences, nested objects, a
-shared definition, either-ors and conditions, other languages, typos, words the schema doesn't say,
-injection, twenty fields, and two that name other schema cards, each `@` word linked to what points
-to it, with `highlightsReferences` after the prompt), and scores the answer as the app reads it: each link's words found in the
-description in order, its pointer followed in the schema. A link is right (or right, wider or
-narrower), misattributed (its words are a listed link's, its pointer another's: the popover would
-show the wrong part), an extra (words no case lists, printed to be read), or invalid (words not in
-the description, a pointer to nothing). The prompt's own examples are none of the cases'.
+The third request links a description's words to the parts of its schema they say. The highlights
+are a prose map (Sources/ProseMaps, asked for by `ProseMapService`), so the request is every
+target's frame (`ProseMapPrompt.frame`) with the schema's guide in it (`SchemaPrompts.highlightsGuide`,
+`SchemaTarget`), and `highlightsReferences` after it for a description that names other schema
+cards. `highlight_evals.py` puts it together as the app does, the frame, the model (Sonnet 5.5),
+effort and `max_tokens` read out of `ProseMapPrompt.swift` and the guide out of
+`SchemaPrompts.swift`, sends each of `highlight_cases.py`'s cases (28: the owner's Jira ticket,
+terse lists, sentences, nested objects, a shared definition, either-ors and conditions, other
+languages, typos, words the schema doesn't say, injection, twenty fields, and two that name other
+schema cards, each `@` word linked to what points to it), and scores the answer as the app reads it:
+each link's words found in the description in order, its address (a JSON Pointer) followed in the
+schema. A link is right (or right, wider or narrower), misattributed (its words are a listed link's,
+its pointer another's: the popover would show the wrong part), an extra (words no case lists,
+printed to be read), or invalid (words not in the description, a pointer to nothing). The guide's
+own examples are none of the cases'.
 
 ```sh
 python3 highlight_evals.py --check                    # reads the prompt and settings; no call
@@ -70,10 +74,16 @@ python3 highlight_evals.py --runs 2 --out r.json
 python3 highlight_evals.py --model claude-haiku-4-5   # to compare
 ```
 
-What it found (26 cases, twice each): Sonnet 5.5 at 356 of 358 links, none misattributed or
-invalid, some 2 s an answer and 1,500 tokens in, 190 out (the two that name other schemas, three
-times each: every `@` word linked to its own use, none misattributed); Haiku 4.5 at 91%, some linked to the wrong
-field, which is why the highlights ask Sonnet 5.5 while the sync asks Haiku 4.5.
+What it found, 28 cases four times each (2026-10-06), as the highlights became a prose map:
+Sonnet 5.5 at 753 of 760 links with the frame and the guide, none misattributed or invalid, some
+1.8 s an answer and 1,500 tokens in, 155 out; the prompt it replaced at 749 of 760, none
+misattributed. Both miss the same few ("who has it" for an employee's id every time; "each cell" of a
+list of lists and "must have" for `required` now and then), and both sometimes link "shipped to" and
+"billed to" to the properties that point at another card as well as its `@` word (an extra). A rule
+telling the model to leave out words it can't place was tried in the frame and taken out: it found
+none misattributed either way and missed "each cell" more often. Before (26 cases, twice each),
+Sonnet 5.5 was at 356 of 358 and Haiku 4.5 at 91%, some linked to the wrong field, which is why the
+highlights ask Sonnet 5.5 while the sync asks Haiku 4.5.
 
 ## The live smoke test
 
