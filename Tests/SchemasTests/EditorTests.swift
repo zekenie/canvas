@@ -8,6 +8,7 @@ import Mentions
 import Schemas
 import Selection
 import TestKit
+import TextEditing
 
 /// Sends Return to a text view as a key, with `modifiers`.
 @MainActor func pressReturn(_ textView: NSTextView, _ modifiers: NSEvent.ModifierFlags = []) {
@@ -64,6 +65,14 @@ let antiAliasing = 16
         again.selectAll(nil)
         again.insertText("a pet", replacementRange: again.selectedRange())
         expectEqual(height(), cardHeight(lines: 1), "back to a line's")
+    },
+    test("the description's editor checks the spelling of what's typed as the app does (Edit › Spelling and Grammar)") {
+        let h = try EditorHarness(plugins: schemaPlugins())
+        h.editor.selection = h.add(SchemaCard(frame: CGRect(x: 0, y: 0, width: 240, height: 52)))
+        expect(h.key("\r"))
+        let textView = try require(h.editor.makeEditingView()?.firstResponder as? EditingTextView)
+        expect(textView.spelling === Spelling.app)
+        expectEqual(textView.isContinuousSpellCheckingEnabled, Spelling.app.checksWhileTyping)
     },
     test("Return is a new line, as in a note, and so is ⇧↩; ⌘↩ says the description is done and ends editing, keeping what's typed") {
         let h = try EditorHarness(plugins: schemaPlugins())

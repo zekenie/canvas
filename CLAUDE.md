@@ -64,7 +64,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [Quick Look](.claude/rules/quick-look.md): a board file's preview and thumbnail in the Finder: `BoardPicture`, the app's extension, how it's built, signed and registered.
 
 **Foundation**
-- [text editing](.claude/rules/text-editing.md): `EditingTextView` and the one caret list, under every editable text.
+- [text editing](.claude/rules/text-editing.md): `EditingTextView`, the app's spelling settings and the one caret list, under every editable text.
 - [fuzzy matching](.claude/rules/fuzzy-matching.md): `FuzzyMatcher`, the matcher every list ranks typed text with; `TextSearch`, Find's, over folded texts; `PathMatcher`, Jump To's, over containment paths.
 
 **Surfaces**

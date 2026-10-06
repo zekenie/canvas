@@ -473,6 +473,40 @@ final class NestedWindow {
         w.controller.zoomIn(nil)
         expectEqual(w.editor.cameraTarget.zoomPercentage, 100, "the next stop past where it is")
     },
+    test("Edit › Spelling and Grammar's items are the text's with the keyboard, a note's or a title's, which checks its words as the app does; on the canvas, nothing's") {
+        let w = try NestedWindow()
+        defer { w.board.close() }
+        let edit = try require(BoardMenus.make(appName: "Infinite Canvas").main.item(withTitle: "Edit")?.submenu)
+        let spelling = try require(edit.item(withTitle: "Spelling and Grammar")?.submenu)
+        let items = spelling.items.filter { !$0.isSeparatorItem }
+        expectEqual(items.map(\.title), ["Show Spelling and Grammar", "Check Document Now", "Check Spelling While Typing",
+                                         "Check Grammar With Spelling", "Correct Spelling Automatically"])
+        expectEqual(items.map(\.keyEquivalent), [":", ";", "", "", ""], "⌘: and ⌘;")
+        let actions = items.compactMap(\.action).map(NSStringFromSelector)
+        expectEqual(actions, ["showGuessPanel:", "checkSpelling:", "toggleContinuousSpellChecking:", "toggleGrammarChecking:",
+                              "toggleAutomaticSpellingCorrection:"])
+        w.window.makeFirstResponder(w.canvas)
+        for action in actions { expect(target(of: action, from: w.window.firstResponder) == nil, "the canvas has the keyboard: \(action) is dimmed") }
+
+        let (note, _) = w.nest.notes(on: 1)
+        expect(w.editor.beginEditing(note))
+        w.window.spin { w.window.firstResponder is EditingTextView }
+        let text = try require(w.window.firstResponder as? EditingTextView)
+        expect(text.spelling === Spelling.app, "a note's words")
+        for action in actions { expect(target(of: action, from: text) === text, "a note being edited: \(action)") }
+        let whileTyping = try require(spelling.item(withTitle: "Check Spelling While Typing"))
+        expect(text.validateMenuItem(whileTyping))
+        expectEqual(whileTyping.state, Spelling.app.checksWhileTyping ? .on : .off)
+
+        w.editor.endEditing()
+        w.editor.selection = note
+        w.window.spin { w.titleField != nil }
+        w.window.focus(try require(w.titleField))
+        let title = try require(w.window.firstResponder as? EditingTextView, "the title's field editor")
+        expect(title.isFieldEditor)
+        expect(title.spelling === Spelling.app, "a title's words")
+        for action in actions { expect(target(of: action, from: title) === title, "the title's field: \(action)") }
+    },
 ])
 
 extension NestedWindow {

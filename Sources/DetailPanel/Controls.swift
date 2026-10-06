@@ -73,6 +73,8 @@ public enum DetailStyle {
     static let tabSelected = Font.system(size: 11, weight: .semibold)
     static let sectionTitle = Font.system(size: 11, weight: .bold)
     static let headerTitle = Font.system(size: 12, weight: .semibold)
+    /// `headerTitle`, for the header's field, which AppKit draws (`HeaderTitleField`).
+    static let headerTitleFont = NSFont.systemFont(ofSize: 12, weight: .semibold)
     static let headerSymbol = Font.system(size: 15)
     static let backSymbol = Font.system(size: 13, weight: .semibold)
     static let disclosure = Font.system(size: 8, weight: .bold)
@@ -346,19 +348,15 @@ public enum DetailNumberText {
     }
 }
 
-/// Multiline text in a bordered box, `height` tall, writing on every keystroke. `placeholder` shows,
-/// dimmed, while it's empty. With `onCommit`, Return calls it (the text is done: a plugin may act
-/// on it), ⇧↩ is a new line, and the keyboard leaving the box calls it too; without, Return is a
-/// new line and nothing else happens.
+/// Multiline text in a bordered box, `height` tall, writing on every keystroke, its words' spelling
+/// checked as the app's is (`Spelling.app`). `placeholder` shows, dimmed, while it's empty. With
+/// `onCommit`, Return calls it (the text is done: a plugin may act on it), ⇧↩ is a new line, and the
+/// keyboard leaving the box calls it too; without, Return is a new line and nothing else happens.
 public struct DetailTextArea: View {
     @Binding var text: String
     let height: CGFloat
     let placeholder: String?
     let onCommit: (@MainActor () -> Void)?
-    /// What was typed, until the bound value changes. A panel binding reads the snapshot the panel
-    /// drew with, and a TextEditor (unlike a TextField) pushes its binding back into the text view
-    /// mid-edit, so without this a keystroke typed before the panel redraws would lose the last one.
-    @State private var typed: String?
 
     public init(_ text: Binding<String>, height: CGFloat = DetailStyle.textAreaHeight, placeholder: String? = nil,
                 onCommit: (@MainActor () -> Void)? = nil) {
@@ -368,27 +366,11 @@ public struct DetailTextArea: View {
         self.onCommit = onCommit
     }
 
+    /// An AppKit text view of the panel's own, which tells Return from ⇧↩ before the text has it,
+    /// draws the placeholder itself and checks spelling as the app does (SwiftUI's `TextEditor`
+    /// can't be told to).
     public var body: some View {
-        if let onCommit {
-            // Return has to be told from ⇧↩ before the text view takes it: an AppKit text view of
-            // the panel's own, which draws the placeholder itself.
-            DetailTextBox($text, height: height, placeholder: placeholder, onCommit: onCommit, make: PlainTextView.prose)
-        } else {
-            TextEditor(text: Binding(get: { typed ?? text }, set: { typed = $0; text = $0 }))
-                .onChange(of: text) { typed = nil }
-                .font(DetailStyle.body)
-                .scrollContentBackground(.hidden)
-                .overlay(alignment: .topLeading) {
-                    if let placeholder, (typed ?? text).isEmpty {
-                        Text(placeholder)
-                            .font(DetailStyle.body)
-                            .foregroundStyle(.tertiary)
-                            .padding(.leading, DetailStyle.textInset)
-                            .allowsHitTesting(false)
-                    }
-                }
-                .detailTextBox(height: height)
-        }
+        DetailTextBox($text, height: height, placeholder: placeholder, onCommit: onCommit, make: PlainTextView.prose)
     }
 }
 

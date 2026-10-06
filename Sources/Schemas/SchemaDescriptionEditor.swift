@@ -52,6 +52,7 @@ final class SchemaDescriptionEditor: NSView, NSTextViewDelegate {
         textView.textContainerInset = SchemaStyle.editorInset
         textView.typingAttributes = SchemaStyle.textAttributes
         textView.insertionPointColor = SchemaStyle.textColor
+        textView.spelling = .app
         textView.delegate = self
         // ⌘↩ and Escape end editing at once, ⌘↩ while the model writes the description too; Return
         // is the text's. The keyboard leaving ends it a turn later, once it's where it went, and only

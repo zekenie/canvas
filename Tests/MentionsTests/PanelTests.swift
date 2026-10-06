@@ -178,6 +178,7 @@ extension MentionTextView {
         expectEqual(view.owner, jot)
         expectEqual(view.placeholder, "Say something")
         expect(view.textLayoutManager != nil, "TextKit 2, as on the canvas")
+        expect(view.spelling === Spelling.app, "its words' spelling checked as the app's is")
         expect(view.undoManager !== panel.window.undoManager, "typing's undo is the box's own")
         panel.focus(view)
         panel.window.type("Buy @gro")

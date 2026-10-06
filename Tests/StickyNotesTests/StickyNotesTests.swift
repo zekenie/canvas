@@ -12,6 +12,7 @@ import SlashCommands
 import TableOfContents
 import StickyNotes
 import TestKit
+import TextEditing
 import Titles
 import Topology
 
@@ -94,6 +95,13 @@ import Topology
         expectEqual(h.editor.document[id]?.typed(as: StickyNote.self)?.props.text, "Hello")
         textView.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
         expectEqual(h.editor.editingShapeID, nil)
+    },
+    test("a note's editor checks the spelling of what's typed as the app does (Edit › Spelling and Grammar)") {
+        let h = try EditorHarness(plugins: notePlugins)
+        h.press(at: CGPoint(x: 300, y: 300), clickCount: 2); h.release()
+        let textView = try require(h.editor.makeEditingView()?.firstResponder as? EditingTextView)
+        expect(textView.spelling === Spelling.app)
+        expectEqual(textView.isContinuousSpellCheckingEnabled, Spelling.app.checksWhileTyping)
     },
     test("a note grows with its text as it's typed, in the same step, and shrinks back, no shorter than a new one") {
         let h = try EditorHarness(plugins: notePlugins)

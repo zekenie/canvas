@@ -386,10 +386,12 @@ final class PlainTextView: EditingTextView, DetailTextContent {
     /// The completion list, while it's open: its keys, and when it closes, are every caret list's.
     override var caretListWindow: CaretListWindow? { completions?.window }
 
-    /// Words: the system's substitutions as the person has them.
+    /// Words: the system's substitutions as the person has them, and their spelling checked as the
+    /// app's is (`Spelling.app`).
     static func prose() -> PlainTextView {
         let view = PlainTextView(usingTextLayoutManager: false)
         view.plain(font: DetailStyle.textFont)
+        view.spelling = .app
         return view
     }
 
@@ -665,4 +667,118 @@ private struct OpenCompletions {
     let window: CaretListWindow
     var offered: DetailCodeCompletions
     var listed: [DetailCodeCompletion]
+}
+
+// MARK: The header's field
+
+/// `DetailHeaderField`'s field: a borderless `NSTextField` set up as SwiftUI's plain one is (one
+/// line, clipped, scrolling sideways while it's typed in), whose field editor is its own
+/// `EditingTextView` (`HeaderField.editor`), which checks spelling as the app does: SwiftUI's fields
+/// can't be told to. It writes the binding on every change, and shows what the binding says only
+/// when it changed from outside (the model writing it, an undo), so a keystroke typed before the
+/// panel draws again is never lost, dropping typing's undo then. Return calls `onSubmit`; disabled
+/// around it, it's dimmed.
+struct HeaderTitleField: NSViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+    let onSubmit: @MainActor () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text, onSubmit: onSubmit) }
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = HeaderField(string: text)
+        field.font = DetailStyle.headerTitleFont
+        field.isBordered = false
+        field.isBezeled = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.usesSingleLineMode = true
+        field.lineBreakMode = .byClipping
+        field.cell?.isScrollable = true
+        field.cell?.wraps = false
+        field.placeholderString = placeholder
+        field.delegate = context.coordinator
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.text = $text
+        coordinator.onSubmit = onSubmit
+        if field.placeholderString != placeholder { field.placeholderString = placeholder }
+        if field.isEnabled != context.environment.isEnabled { field.isEnabled = context.environment.isEnabled }
+        // Changed from outside: show it. (Typing changes the field first, then the binding.)
+        guard text != coordinator.shown else { return }
+        coordinator.shown = text
+        guard let editor = field.currentEditor() as? NSTextView else { return field.stringValue = text }
+        // Being typed in: the caret stays where it was, as far as the new text reaches, and typing's
+        // undo goes, as a box's does: its ranges are the old text's, which an undo would run past.
+        let caret = editor.selectedRange().location
+        editor.string = text
+        editor.setSelectedRange(NSRange(location: min(caret, (text as NSString).length), length: 0))
+        editor.undoManager?.removeAllActions()
+    }
+
+    /// As wide as it's offered, a line of its font tall.
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView field: NSTextField, context: Context) -> CGSize? {
+        let fitting = field.cell?.cellSize ?? field.intrinsicContentSize
+        return CGSize(width: proposal.width ?? fitting.width, height: fitting.height)
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var text: Binding<String>
+        var onSubmit: @MainActor () -> Void
+        /// What the binding said last, as far as the field knows: set by typing, and by the binding
+        /// changing from outside.
+        var shown: String
+
+        init(text: Binding<String>, onSubmit: @escaping @MainActor () -> Void) {
+            self.text = text
+            self.onSubmit = onSubmit
+            shown = text.wrappedValue
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            shown = field.stringValue
+            text.wrappedValue = shown
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            guard selector == #selector(NSResponder.insertNewline(_:)) else { return false }
+            onSubmit()
+            return true
+        }
+    }
+}
+
+/// The header's text field, with a field editor of its own, which its cell (`HeaderFieldCell`) hands
+/// AppKit: an `EditingTextView` that checks spelling as the app does, set up otherwise as SwiftUI's
+/// fields' editors are (plain text, undo, no smart quotes or dashes).
+final class HeaderField: NSTextField {
+    override class var cellClass: AnyClass? {
+        get { HeaderFieldCell.self }
+        set {}
+    }
+
+    lazy var editor: EditingTextView = {
+        let editor = EditingTextView(frame: .zero)
+        editor.isFieldEditor = true
+        editor.isRichText = false
+        editor.importsGraphics = false
+        editor.allowsUndo = true
+        editor.isAutomaticQuoteSubstitutionEnabled = false
+        editor.isAutomaticDashSubstitutionEnabled = false
+        editor.spelling = .app
+        return editor
+    }()
+}
+
+/// The header field's cell, which edits in the field's own editor. It keeps nothing itself: AppKit
+/// may copy a cell bit for bit, which a reference it held wouldn't survive.
+final class HeaderFieldCell: NSTextFieldCell {
+    override func fieldEditor(for controlView: NSView) -> NSTextView? {
+        (controlView as? HeaderField)?.editor ?? super.fieldEditor(for: controlView)
+    }
 }

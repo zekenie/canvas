@@ -5,6 +5,7 @@ import DetailPanel
 import Selection
 import SwiftUI
 import TestKit
+import TextEditing
 
 enum CodeTab {}
 extension CodeTab: DetailTab { static var title: String { "Code" } }
@@ -191,6 +192,20 @@ extension PanelWindow {
         panel.window.makeFirstResponder(panel.canvas)
         expectEqual(wordCommits, 2)
         expectEqual(codeCommits, 0)
+    },
+    test("a box of words checks their spelling as the app does, with a commit or without; a code editor's is code, never checked") {
+        let editor = try gadgetEditor([CodeBoxesPlugin()], scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
+        _ = try panel.showCode()
+        let words = try require(panel.words as? EditingTextView)
+        expect(words.spelling === Spelling.app)
+        expectEqual(words.isContinuousSpellCheckingEnabled, Spelling.app.checksWhileTyping)
+        let code = try require(panel.code as? EditingTextView)
+        expect(code.spelling == nil && !code.isContinuousSpellCheckingEnabled)
+        try require(editor.detailPanel).choose(.of(RemarksTab.self), for: Gadget.kind)
+        panel.window.spin { panel.textViews.count == 1 }
+        let remarks = try require(panel.textViews.first as? EditingTextView, "a text area without a commit, the panel's own view too")
+        expect(remarks.spelling === Spelling.app)
     },
     test("a text area without a commit is as it was: Return is a new line") {
         let editor = try gadgetEditor(scheduler: TaskScheduler())

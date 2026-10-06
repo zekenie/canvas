@@ -324,11 +324,13 @@ public struct DetailHeaderLabel<Title: View>: View {
 
 /// The header's title as a field, for a header that renames its shape in place (Titles'
 /// `TitleHeader`): borderless, so it reads as the title until it's clicked. It writes as you type,
-/// as the panel's other text fields do; Return, like Escape anywhere in the panel, gives the
-/// keyboard back to the canvas. While it's empty it shows `placeholder`, dimmed: by default what
-/// the panel calls the shape's kind ("Note"). `isEditable: false`, for a title that can't be
-/// written just now, shows it as text in the field's place, as it reads in the field: at full
-/// strength, unlike a disabled field (dimmed, for a while something else writes it).
+/// as the panel's other text fields do, its words' spelling checked as the app's is (`Spelling.app`:
+/// an AppKit field, `HeaderTitleField`, since SwiftUI's can't be told to); Return, like Escape
+/// anywhere in the panel, gives the keyboard back to the canvas. While it's empty it shows
+/// `placeholder`, dimmed: by default what the panel calls the shape's kind ("Note").
+/// `isEditable: false`, for a title that can't be written just now, shows it as text in the field's
+/// place, as it reads in the field: at full strength, unlike a disabled field (dimmed, for a while
+/// something else writes it).
 public struct DetailHeaderField: View {
     @Binding var text: String
     let placeholder: String?
@@ -345,9 +347,7 @@ public struct DetailHeaderField: View {
 
     public var body: some View {
         if isEditable {
-            TextField(placeholder ?? kindName, text: $text)
-                .textFieldStyle(.plain)
-                .onSubmit { exit() }
+            HeaderTitleField(text: $text, placeholder: placeholder ?? kindName, onSubmit: exit)
         } else if text.isEmpty {
             Text(placeholder ?? kindName).foregroundStyle(Color(nsColor: .placeholderTextColor))
         } else {

@@ -130,6 +130,14 @@ private let size = CGSize(width: 40, height: 26)
         expect(h.key("\r"))
         expectEqual(h.editor.editingShapeID, id)
     },
+    test("the label's editor checks the spelling of what's typed as the app does (Edit › Spelling and Grammar)") {
+        let (h, id) = try labelHarness("calls")
+        h.editor.selection = id
+        expect(h.key("\r"))
+        let textView = try labelTextView(try require(h.editor.makeEditingView()))
+        expect(textView.spelling === Spelling.app)
+        expectEqual(textView.isContinuousSpellCheckingEnabled, Spelling.app.checksWhileTyping)
+    },
     test("a click on the label of the only selected arrow edits it; on its body, it's only selected") {
         let (h, id) = try labelHarness("calls", at: 0.3)
         h.editor.selection = id

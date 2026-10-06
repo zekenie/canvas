@@ -3,9 +3,11 @@ import Canvas
 
 /// The app's menus, built in code (there's no nib): a document app's standard items, sent to the
 /// first responder, so the canvas, a panel's field, the board's window controller, the document,
-/// the document controller or the app answers whichever it is. AppKit fills Open Recent (it finds
-/// the menu by its Clear Menu item) and, since boards autosave in place, turns Save As into
-/// Duplicate and Revert to Saved into Revert To.
+/// the document controller or the app answers whichever it is. Edit › Spelling and Grammar's are
+/// the text's with the keyboard (dimmed anywhere else): a text that checks its words as the app
+/// does (TextEditing's `Spelling`) turns its toggles over for every such text. AppKit fills Open
+/// Recent (it finds the menu by its Clear Menu item) and, since boards autosave in place, turns Save
+/// As into Duplicate and Revert to Saved into Revert To.
 @MainActor
 public enum BoardMenus {
     public struct Menus {
@@ -67,6 +69,14 @@ public enum BoardMenus {
                 item("Find…", #selector(BoardWindowController.showFind(_:)), "f"),
                 item("Find Next", #selector(BoardWindowController.findNextMatch(_:)), "g"),
                 item("Find Previous", #selector(BoardWindowController.findPreviousMatch(_:)), "g", [.command, .shift]),
+            ])),
+            submenu("Spelling and Grammar", menu("Spelling and Grammar", [
+                item("Show Spelling and Grammar", NSSelectorFromString("showGuessPanel:"), ":"),
+                item("Check Document Now", NSSelectorFromString("checkSpelling:"), ";"),
+                .separator(),
+                item("Check Spelling While Typing", NSSelectorFromString("toggleContinuousSpellChecking:")),
+                item("Check Grammar With Spelling", NSSelectorFromString("toggleGrammarChecking:")),
+                item("Correct Spelling Automatically", NSSelectorFromString("toggleAutomaticSpellingCorrection:")),
             ])),
         ])
         let view = menu("View", [

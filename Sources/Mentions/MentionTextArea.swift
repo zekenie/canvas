@@ -2,10 +2,12 @@ import AppKit
 import Canvas
 import DetailPanel
 import SwiftUI
+import TextEditing
 
 /// Mention text in the panel: a box of the panel's (`DetailTextBox`) over a `MentionTextView`, so a
 /// field of mention text edits there as it does on its shape, with pills, the `@` picker, copy and
-/// paste, and each pill's click and double-click. Its pills are tinted, as on any neutral surface.
+/// paste, each pill's click and double-click, and its spelling checked as the app's is. Its pills
+/// are tinted, as on any neutral surface.
 ///
 ///     DetailSection("Text", in: FieldsTab.self) { $jot in
 ///         MentionTextArea($jot, \.text)
@@ -45,6 +47,7 @@ public struct MentionTextArea<Props: ShapeProps, Scope: MentionScope>: View {
             let view = MentionTextView<Scope>(frame: .zero, text: text, style: MentionStyle.panelText, owner: owner, mentions: mentions)
             view.usesRuler = false
             view.usesFontPanel = false
+            view.spelling = .app
             return view
         }
     }
