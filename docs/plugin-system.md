@@ -884,7 +884,9 @@ extension PolylineDefinition: CustomTranslation {
 - **`render` draws in world units**, into `context.cg`, with the camera already applied and a fresh
   graphics state each time; AppKit drawing (`NSAttributedString.draw`) lands there too.
   `context.zoom` turns view points into world units, `context.isEditing` says the shape's editing
-  view is up, and `fillWithShadow` fills a path the way the canvas's other shapes are filled.
+  view is up, and `fillWithShadow` fills a path the way the canvas's other shapes are filled, over
+  their shadow (left out where an opaque fill hides it: zoomed in past the view's edges; so call
+  it with the context's alpha and blend mode as the fresh state has them).
 - **`geometry` is required**, and the rest of the canvas reads it. Hover and selection stroke the
   outline, left open. The marquee selects a line when it crosses one of its segments: for an open
   outline, Selection's default `isHit(byBrush:)` never considers an inside. And `isClosed: false`
@@ -10071,7 +10073,11 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   a pad grown by the farthest any shape is drawn from where it is, so one shaken into view shows,
   and a shape with no outline always does), each where it's drawn
   ([`setDrawingOffset`](#the-cores-part-drawing-offsets): a shaking shape, away from where it is,
-  with its outline), in full or, zoomed out, as its [skeleton](#skeletons); every plugin's outlines
+  with its outline), in full or, zoomed out, as its [skeleton](#skeletons) (a shape's shadow,
+  `fillWithShadow`'s, is left out where its fill hides it: an opaque color over all the context
+  draws into, a shape zoomed in past the view's edges, where its blur, 48 points at 800%, took some
+  24 ms of a frame on the CPU, a bitmap's or a headless window's; on screen the GPU blurs it, and
+  frames held 60 fps); every plugin's outlines
   (`registrar.outlines`: selection, the box around several; none while the session
   `hidesOutlines`) and the hint, in one pass at a constant screen width, over the faint ones
   (`Outlines.faintShapes`: the hover), drawn first, wider and lighter, each asked for its path and

@@ -2,9 +2,10 @@ import AppKit
 @_spi(Host) import Canvas
 import Geometry
 
-/// Draws an editor offscreen, as the canvas view would, and returns the bitmap.
+/// Draws an editor offscreen, as the canvas view would, and returns the bitmap. With `clip` (view
+/// points), only that is drawn, as AppKit clips a view to its dirty rect.
 @MainActor
-public func renderBitmap(_ editor: CanvasEditor, size: CGSize, scale: CGFloat = 1) -> NSBitmapImageRep {
+public func renderBitmap(_ editor: CanvasEditor, size: CGSize, scale: CGFloat = 1, clip: CGRect? = nil) -> NSBitmapImageRep {
     let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width * scale), pixelsHigh: Int(size.height * scale),
                                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
@@ -12,11 +13,12 @@ public func renderBitmap(_ editor: CanvasEditor, size: CGSize, scale: CGFloat = 
     // Flip to the canvas's top-left origin, as a flipped NSView's context is.
     cg.translateBy(x: 0, y: size.height * scale)
     cg.scaleBy(x: scale, y: -scale)
+    let bounds = CGRect(origin: .zero, size: size)
+    if let clip { cg.clip(to: clip) }
     NSAppearance(named: .aqua)!.performAsCurrentDrawingAppearance {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: cg, flipped: true)
-        let bounds = CGRect(origin: .zero, size: size)
-        editor.draw(in: cg, bounds: bounds, dirtyRect: bounds)
+        editor.draw(in: cg, bounds: bounds, dirtyRect: clip ?? bounds)
         NSGraphicsContext.restoreGraphicsState()
     }
     return rep

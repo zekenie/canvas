@@ -30,6 +30,9 @@ public enum Style {
     nonisolated static let gridCopyCost = 2.0
 
     static let shapeShadow = NSColor(white: 0, alpha: 0.25)
+    /// The shadow's blur, which is as far as it reaches past the shape's edge, times the zoom in the
+    /// context's base space: on screen view points, so 6 world units; in a 2× bitmap pixels, half that.
+    static let shapeShadowBlur: CGFloat = 6
     /// How far past the view, in world units, a shape is still drawn: a shadow (6 units of blur)
     /// of one just out of view shows at the edge.
     static let drawingPad: CGFloat = 40
