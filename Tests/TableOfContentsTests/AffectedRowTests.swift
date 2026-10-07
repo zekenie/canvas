@@ -56,6 +56,12 @@ final class RefIndex {
         id.flatMap { editor.file.record($0)?.typed(as: Widget.self)?.props.name } ?? "nothing"
     }
 
+    /// Whether the widget `id` names has a count: its ref's row then has no stand-in's arrow, so a
+    /// count changes the arrow alone.
+    func isCounted(_ id: ShapeID?) -> Bool {
+        (id.flatMap { editor.file.record($0)?.typed(as: Widget.self)?.props.count } ?? 0) > 0
+    }
+
     /// The refs that refer to any of `ids`.
     func refs(to ids: Set<ShapeID>) -> Set<ShapeID> {
         ids.reduce(into: []) { $0.formUnion(referrers[$1] ?? []) }
@@ -90,7 +96,8 @@ struct RefsPlugin: CanvasPlugin {
         }
         let row: @MainActor (ShapeRecord<Ref>, ContentsContext) -> ContentsLabel = { ref, context in
             refRowsMade += 1
-            return ContentsLabel("→ " + (context.service(RefIndex.self)?.name(of: ref.props.target) ?? "?"), systemImage: "arrow.right")
+            return ContentsLabel("→ " + (context.service(RefIndex.self)?.name(of: ref.props.target) ?? "?"), systemImage: "arrow.right",
+                                 standsIn: !(context.service(RefIndex.self)?.isCounted(ref.props.target) ?? false))
         }
         registrar.shape(RefDefinition()) { ref in
             if !fromOutside { ref.contentsRow(affected: affected, row) }
@@ -132,6 +139,7 @@ struct RefsPlugin: CanvasPlugin {
         editor.add(Ref(to: nil))
         expectEqual(editor.contents.entries.outline, ["A", "B", "C", "→ A", "Aimless"])
         expectEqual(editor.contents.entries.last?.label?.systemImage, "arrow.right", "the row's symbol stays")
+        expect(editor.contents.entries.last?.label?.standsIn == true, "and its stand-in's arrow")
         editor.transact { $0.update(a, as: Widget.self) { $0.props.name = "Renamed" } }
         expectEqual(editor.contents.entries.outline, ["Renamed", "B", "C", "→ Renamed", "Aimless"])
     },
@@ -163,6 +171,9 @@ struct RefsPlugin: CanvasPlugin {
         expectEqual(refRowsMade, made + 2)
         expectEqual(renamed, 3, "A's row and both refs' rows, not B's or its ref's")
         expectEqual(contents.entries.outline, ["Renamed", "B", "C", "→ Renamed", "→ Renamed", "→ B"])
+        let counted = redrawn { editor.transact { $0.update(a, as: Widget.self) { $0.props.count = 2 } } }
+        expectEqual(counted, 3, "A's row and both refs' rows, whose arrows went though their titles didn't")
+        expectEqual(contents.entries.filter { $0.label?.text == "→ Renamed" }.map { $0.label?.standsIn }, [false, false])
     },
     test("read by a service that hears of a commit first, rows read from more than their shape are made again, and stay right") {
         let reader = Contributor(id: "early-reader") { $0.service { _ in EarlyReader() } }

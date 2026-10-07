@@ -3418,7 +3418,10 @@ note.contentsRow(affected: MentionRows.affected) { note, context in
 - **The row is a view the kind builds**, usually a `ContentsLabel`: a title on one line (each run of
   whitespace folds into a space), a placeholder shown dimmed when the title is blank, an SF Symbol
   (the kind's, unless the row gives one) with an optional color, and a badge of a few
-  characters at the trailing end ("12"). Its text is its tooltip (`label.help`, none for a
+  characters at the trailing end ("12"). A row that stands in for another shape, wearing that
+  shape's name and symbol (a reference's), passes `standsIn: true`: an arrow cut into the symbol's
+  corner, as a Finder alias's icon has, so it reads as a pointer to the shape and not the shape.
+  Its text is its tooltip (`label.help`, none for a
   placeholder; past 200 characters, cut between words with "…"), for a row the list cuts short, in
   the list and in a crumb's menu. The list owns everything around it: row
   height, indentation, disclosure triangles, selection, the header. Any view works, but
@@ -3528,9 +3531,9 @@ ref.contentsRow(affected: { changes, context in
 ```
 
 - **The rows `affected` names are made again** on the next read, and replaced (so redrawn) only if
-  their labels changed: the same title, placeholder, symbol, color and badge keep the row, as a
-  mark's `affected` keeps it unless its marks changed. So dragging a shape the refs refer to makes
-  their rows again and redraws none of them; renaming it redraws theirs. The shapes a commit
+  their labels changed: the same title, placeholder, symbol, color, badge and `standsIn` keep the
+  row, as a mark's `affected` keeps it unless its marks changed. So dragging a shape the refs refer
+  to makes their rows again and redraws none of them; renaming it redraws theirs. The shapes a commit
   changes get new rows as always, and a row `affected` names that hasn't been made yet is made
   when it's first listed.
 - **`affected` runs on every commit**, whether the list shows or not, so it must cost what the

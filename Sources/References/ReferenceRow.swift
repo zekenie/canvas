@@ -5,7 +5,9 @@ import TableOfContents
 
 extension ShapeRegistrar where Definition == ReferenceDefinition {
     /// The reference's row in the table of contents: what it stands for, called as its pill calls it,
-    /// under the symbol of its kind, in its tint. A reference that stands for nothing (the shape is
+    /// under the symbol of its kind, in its tint, with the list's stand-in arrow cut into the symbol
+    /// (`standsIn`), so it reads as a pointer to the shape and not the shape; one whose shape went
+    /// private keeps the symbol and the arrow. A reference that stands for nothing (the shape is
     /// deleted, not available or not public, or its words aren't interpreted) shows what it holds as a
     /// dimmed placeholder; one that finds every match, its count. A change to the shape it names remakes
     /// its row (`affected`: the references that name what a commit changed), and an answer arriving
@@ -16,11 +18,12 @@ extension ShapeRegistrar where Definition == ReferenceDefinition {
             case .empty:
                 ContentsLabel("", placeholder: ReferenceStyle.placeholder, systemImage: ReferenceStyle.systemImage)
             case .live(let appearance):
-                ContentsLabel(appearance.label, systemImage: appearance.systemImage, color: appearance.tint.map { Color(nsColor: $0) })
+                ContentsLabel(appearance.label, systemImage: appearance.systemImage, color: appearance.tint.map { Color(nsColor: $0) },
+                              standsIn: true)
             case .missing(let label), .unavailable(let label):
                 ContentsLabel("", placeholder: label, systemImage: ReferenceStyle.missingSymbol)
             case .notPublic(let appearance):
-                ContentsLabel("", placeholder: appearance.label, systemImage: appearance.systemImage)
+                ContentsLabel("", placeholder: appearance.label, systemImage: appearance.systemImage, standsIn: true)
             case .notInterpreted(let text), .noMatches(let text), .refused(let text, _), .failed(let text, _), .cannotFind(let text):
                 ContentsLabel("", placeholder: text, systemImage: ReferenceStyle.dynamicSymbol)
             case .finding(let text), .interpreting(let text):
