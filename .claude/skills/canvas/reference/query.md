@@ -554,6 +554,42 @@ arrow:ends-at("Auth")
 arrow:between("Auth", "API gateway")
 ```
 
+The inverse words ask where connections run. Their anchor is a connection, and the result is each shape it starts on or ends on:
+
+| form | the result |
+|---|---|
+| `:start-of(S)` | the shape a connection S matches starts at |
+| `:end-of(S)` | the shape a connection S matches ends at |
+
+Types go after the anchor, as for the others. A shape that is no connection has no ends, and a note's mentions don't make it one: `:end-of(sticky-note)` finds nothing. An end is read as every edge word reads one, so an arrow into a shape that stands for others ends at each of them.
+
+```query
+/* matches: "Payments" */
+:end-of(arrow:starts-at("Warehouse"))
+```
+
+```query
+/* matches: "API gateway" */
+:start-of(arrow:ends-at("Auth"))
+```
+
+The shapes every arrow ends on, and those a note-link arrow ends on:
+
+```query
+/* matches: "Payments", "Auth" */
+:end-of(arrow)
+```
+
+```query
+/* matches: "Auth" */
+:end-of(arrow, note-link)
+```
+
+```query
+/* matches: */
+:end-of(sticky-note)
+```
+
 ## Plugins' words
 
 Words the app's plugins add, as this app has them. Without a plugin, its words are `unknown_pseudo_class`. A word's `S` is any query, commas meaning either: `:mentions("Auth", "Checkout")` mentions either.
@@ -812,7 +848,7 @@ These are left out on purpose. What they protect is that a query means one thing
 - **Where shapes sit**: `:near`, `:left-of`, `:right-of`, `:above`, `:below`, `:overlaps`, `:within`, and attributes that say where a shape is.
 - **Shapes typed by schema cards** (`.Task`).
 - **Attributes inside attributes** (`[a.b]`), and `=` on an object.
-- **Edges as answers.** A query lists shapes; an arrow is a shape, so ask for arrows (`arrow:starts-at("A"):ends-at("B")`).
+- **Edges as answers.** A query lists shapes; an arrow is a shape, so ask for arrows (`arrow:starts-at("A"):ends-at("B")`), and for the shapes at their ends with `:start-of` and `:end-of`.
 - **Search**: ranking, stemming, words that mean the same. `:contains` is a filter.
 - **Selecting or revealing what a query found**, and a query box in the app.
 - **Positions in rows**: a row says where a shape is by board, not by coordinates.

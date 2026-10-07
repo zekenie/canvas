@@ -198,6 +198,24 @@ public protocol CustomSkeletonOutline: CustomSkeleton {
     func skeletonIndicatorPath(of shape: ShapeRecord<Props>, in context: ShapeContext) -> CGPath?
 }
 
+/// A kind drawn as a line (an arrow), saying how wide: what the core covers a tinted outline
+/// (`Outlines.tinted`, a plugin's own colors) of such a shape to. An open shape's outline is a
+/// couple of view points along its middle, wider than the line where the line is thin on screen and
+/// a stripe down the middle of it where it's thick (an arrow's 3.5 units are 7 view points at 200%).
+/// With this the core strokes a tinted outline of an open shape of the kind, drawn in full, as
+/// wide as the line is on screen and a point more, round, so it covers the line and what the line
+/// is drawn with (an arrow's heads are part of its outline); zoomed out, where shapes are
+/// skeletons, it's the plain width. Only tinted outlines cover: the selection's and a hover's stay
+/// as thin as they are. Found once per kind (`registry.strokedShapes`), so no other kind's shape is
+/// asked.
+public protocol StrokedShape: ShapeDefinition {
+    /// How wide `render` strokes the shape's line, in world units: what its outline is stroked to
+    /// cover, so it follows the shape's own line (an arrow says its stroke width, whatever its
+    /// props). Asked each frame of each tinted shape of the kind in view, so read the shape and
+    /// nothing worked out again.
+    func lineWidth(of shape: ShapeRecord<Props>, in context: ShapeContext) -> CGFloat
+}
+
 /// Props bound to other shapes (a connector's ends, a label's host). Every kind whose props are
 /// bound to a shape adopts it, since the core and plugins keep those bindings right through it:
 /// deleting a shape lets go of it in every shape bound to it, and a copy is bound to the copies of

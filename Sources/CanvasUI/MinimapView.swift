@@ -182,17 +182,27 @@ public final class MinimapView: NSView {
             cg.draw(image, in: rect)
             cg.restoreGState()
         }
-        drawOutlinedShapes(in: cg, layout: layout)
+        // While anything is lit the rest dims, and what's outlined is over the veil: lit shapes off
+        // screen stand out, as the part in view does.
+        let outlines = editor.outlines
+        let lit = !outlines.tinted.isEmpty
+        if lit {
+            cg.setFillColor(MinimapStyle.background.withAlphaComponent(MinimapStyle.litDim).cgColor)
+            cg.fill(bounds)
+        } else {
+            drawOutlinedShapes(outlines, in: cg, layout: layout)
+        }
+        // The rest under a veil, and the part the canvas shows outlined.
         let viewport = viewport
-        if !viewport.isNull {
-            // The rest under a veil, and the part the canvas shows outlined.
-            let rect = layout.toMinimap(viewport)
-            let radius = min(rect.width / 4, rect.height / 4, MinimapStyle.viewportCornerRadius)
-            let frame = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        let frame = viewport.isNull ? nil : viewportFrame(layout.toMinimap(viewport))
+        if let frame {
             cg.addRect(bounds)
             cg.addPath(frame)
             cg.setFillColor(MinimapStyle.veil.cgColor)
             cg.fillPath(using: .evenOdd)
+        }
+        if lit { drawOutlinedShapes(outlines, in: cg, layout: layout) }
+        if let frame {
             cg.addPath(frame)
             cg.setStrokeColor(MinimapStyle.viewportBorder.cgColor)
             cg.setLineWidth(MinimapStyle.viewportBorderWidth)
@@ -207,26 +217,87 @@ public final class MinimapView: NSView {
         cg.strokePath()
     }
 
-    /// The silhouettes of the shapes the canvas outlines, over the picture: the selected ones (and the
-    /// hint) in the accent color, as tldraw's minimap fills them; faint ones (a hover) lighter.
-    private func drawOutlinedShapes(in cg: CGContext, layout: MinimapLayout) {
-        let outlines = editor.outlines
-        guard !outlines.shapes.isEmpty || !outlines.faintShapes.isEmpty else { return }
+    /// The part the canvas shows, as a rounded rect in the minimap's points.
+    private func viewportFrame(_ rect: CGRect) -> CGPath {
+        let radius = min(rect.width / 4, rect.height / 4, MinimapStyle.viewportCornerRadius)
+        return CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+    }
+
+    /// The silhouettes of the shapes the canvas outlines, over the picture: first those in colors of
+    /// their own (`Outlines.tinted`, each group in its color, as they came), then faint ones (a
+    /// hover) lighter, then the selected ones (and the hint) in the accent color, as tldraw's
+    /// minimap fills them. Shapes the canvas outlines off screen show here.
+    ///
+    /// A shape in several groups shows each, one inside the other: where the canvas draws a ring for
+    /// each, a fill for each, every one inset a step further than the one before
+    /// (`MinimapStyle.litInset`, but never past a bit under a third of the shape's smaller side), so
+    /// a shape both pointed to and pointing back is a frame of one color round a block of the other.
+    /// A tinted group's steps are its ring's; a faint or selected shape's, one more than the
+    /// outermost ring that tints it, as the canvas draws its tint one ring out from its line. An
+    /// open shape is a line, and the later group's is over the earlier's.
+    private func drawOutlinedShapes(_ outlines: Outlines, in cg: CGContext, layout: MinimapLayout) {
+        guard !outlines.tinted.isEmpty || !outlines.shapes.isEmpty || !outlines.faintShapes.isEmpty else { return }
         let context = editor.shapeContext
         cg.saveGState()
         cg.translateBy(x: layout.area.minX, y: layout.area.minY)
         cg.scaleBy(x: layout.zoom, y: layout.zoom)
         cg.translateBy(x: -layout.shown.minX, y: -layout.shown.minY)
-        for (ids, color) in [(outlines.faintShapes, MinimapStyle.faintSelection), (outlines.shapes, MinimapStyle.selection)] {
+        var fills = outlines.tinted.map { Fill(ids: $0.shapes, color: $0.color, steps: max($0.ring, 0)) }
+        fills.append(Fill(ids: outlines.faintShapes, color: MinimapStyle.faintSelection, steps: 0,
+                          stepsOf: Self.steps(of: outlines.faintShapes, in: outlines.tinted)))
+        fills.append(Fill(ids: outlines.shapes, color: MinimapStyle.selection, steps: 0,
+                          stepsOf: Self.steps(of: outlines.shapes, in: outlines.tinted)))
+        for fill in fills {
             let silhouettes = Silhouettes(pixelsPerWorldUnit: layout.zoom * pixelsPerPoint)
-            for id in ids {
-                if let geometry = context.geometry(of: id) {
+            for id in fill.ids {
+                if var geometry = context.geometry(of: id) {
+                    let steps = fill.stepsOf.isEmpty ? fill.steps : fill.stepsOf[id] ?? fill.steps
+                    if steps > 0 { geometry = Self.inset(geometry, by: CGFloat(steps) * MinimapStyle.litInset / layout.zoom) }
                     silhouettes.add(geometry, hollow: editor.document[id].map(editor.registry.isContainer) ?? false)
                 }
             }
-            silhouettes.draw(into: cg, color: color.cgColor, lineWidth: MinimapStyle.lineWidth / layout.zoom)
+            silhouettes.draw(into: cg, color: fill.color.cgColor, lineWidth: MinimapStyle.lineWidth / layout.zoom)
         }
         cg.restoreGState()
+    }
+
+    /// The shapes of one fill, its color, and how many steps in each one is inset: `steps` for all
+    /// of them (a tinted group's ring), or, where `stepsOf` has any, each shape's own (a faint or
+    /// selected shape's, by the rings that tint it), `steps` for a shape it doesn't name.
+    private struct Fill {
+        let ids: [ShapeID]
+        let color: NSColor
+        let steps: Int
+        var stepsOf: [ShapeID: Int] = [:]
+    }
+
+    /// For each of `ids` that a tinted group outlines, one more than the outermost ring it's in:
+    /// how many steps in its fill is inset, so that it shows inside the tints it's in. A few ids
+    /// (a selection, a hover) are compared one by one against what's tinted, which costs a
+    /// comparison or so each, more through one set; none, or no tinted group, costs nothing.
+    private static func steps(of ids: [ShapeID], in tinted: [TintedOutlines]) -> [ShapeID: Int] {
+        guard !ids.isEmpty, !tinted.isEmpty else { return [:] }
+        var steps: [ShapeID: Int] = [:]
+        let wanted = ids.count > 8 ? Set(ids) : nil
+        for group in tinted {
+            for id in group.shapes where wanted?.contains(id) ?? ids.contains(id) { steps[id] = max(steps[id] ?? 0, max(group.ring, 0) + 1) }
+        }
+        return steps
+    }
+
+    /// A closed shape's geometry with each side moved in by `distance` (world units), never by more
+    /// than `MinimapStyle.litInsetMost` of its smaller side: its outline drawn smaller about the
+    /// middle of its bounds, so a disc is a smaller disc, and a rect is the rect inset. An open
+    /// shape is as it is.
+    private static func inset(_ geometry: ShapeGeometry, by distance: CGFloat) -> ShapeGeometry {
+        let bounds = geometry.bounds
+        let smaller = min(bounds.width, bounds.height)
+        guard geometry.isClosed, smaller > 0, smaller.isFinite else { return geometry }
+        let by = min(distance, smaller * MinimapStyle.litInsetMost)
+        let (scaleX, scaleY) = ((bounds.width - 2 * by) / bounds.width, (bounds.height - 2 * by) / bounds.height)
+        let middle = CGPoint(x: bounds.midX, y: bounds.midY)
+        return ShapeGeometry(outline: geometry.outline.map { CGPoint(x: middle.x + ($0.x - middle.x) * scaleX, y: middle.y + ($0.y - middle.y) * scaleY) },
+                             bounds: bounds.insetBy(dx: by, dy: by), isClosed: true)
     }
 
     /// Brings the picture up to date with the board, and draws what it's missing for a frame's worth
@@ -444,6 +515,15 @@ enum MinimapStyle {
     /// The silhouettes of the shapes the canvas outlines: selected, and hovered.
     static let selection = NSColor.controlAccentColor
     static var faintSelection: NSColor { NSColor.controlAccentColor.withAlphaComponent(0.5) }
+    /// While anything is lit (`Outlines.tinted`) the minimap's background is laid over the board's
+    /// picture at this opacity, so the rest dims and what's lit stands out.
+    static let litDim: CGFloat = 0.4
+    /// A shape in several lit groups shows each: every fill after the first is inset this many
+    /// points more than the one before it (`MinimapView.drawOutlinedShapes`), so one is a frame of a
+    /// color round a block of another, and never by more than this fraction of the shape's smaller
+    /// side on each side, so what's inside never vanishes.
+    static let litInset: CGFloat = 1.6
+    static let litInsetMost: CGFloat = 0.3
     /// An open shape's line (an arrow's), in the minimap's points.
     static let lineWidth: CGFloat = 1
     /// Over the board but the part the canvas shows. (tldraw shades that part instead.)

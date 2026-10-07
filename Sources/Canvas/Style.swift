@@ -68,6 +68,23 @@ public enum Style {
     /// strokes a hover like the selection.
     static let faintIndicatorWidth: CGFloat = 2.5
     static let faintIndicatorOpacity: CGFloat = 0.6
+    /// A faint outline beside tinted ones (`Outlines.tinted`) is stronger than alone: it's the shape
+    /// they're about (the one hovered, when they're a hover's lights), and has to read above them.
+    static let tintedFaintIndicatorOpacity: CGFloat = 0.85
+    /// A tinted outline (`Outlines.tinted`: a plugin's own color) is opaque, and a little wider than
+    /// the selection's line, so where it lies with it (ring 0) it shows on either side of it.
+    static let tintedIndicatorWidth: CGFloat = 2
+    /// The gap between one ring of tinted outlines and the next, in view points: a shape in two
+    /// groups has its second ring a line and this further out than its first
+    /// (`TintedOutlines.ring`), so both show. With the line it makes a ring 4 view points past the
+    /// last, so the rings' centers are 4, 8 and 12 off a closed shape, whole pixels at 1× and 2×.
+    static let tintedRingGap: CGFloat = 2
+    /// How far apart the rings of tinted outlines stand, in view points: a line and a gap.
+    static var tintedRingPitch: CGFloat { tintedIndicatorWidth + tintedRingGap }
+    /// A tinted outline of an open shape drawn as a line (`StrokedShape`: an arrow) covers the line,
+    /// as wide as it's drawn on screen and this much wider, in view points, so the shape's own line
+    /// isn't left to show along the middle of it.
+    static let tintedCoverPad: CGFloat = 1
     /// How far a closed shape's outline (the selection's, a hover's, the hint) stands off its edge,
     /// in view points, for every kind alike: the line is drawn this far outside the shape, corners
     /// concentric, a gap of the canvas between the two, so it never lies over a border or a shadow

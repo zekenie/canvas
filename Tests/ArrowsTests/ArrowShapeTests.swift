@@ -1,3 +1,4 @@
+import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import Connections
@@ -7,6 +8,11 @@ import Keyboard
 import Selection
 import TableOfContents
 import TestKit
+
+/// The tinted groups a test has the canvas outline.
+@MainActor final class TintedOutlinesBox {
+    var groups: [TintedOutlines] = []
+}
 
 @MainActor let arrowShapeTests = Suite("Arrows as shapes", [
     test("clipping golden: center to center between two boxes") {
@@ -158,6 +164,44 @@ import TestKit
         // About 2 ms of this thread's time a move in a debug build (what else runs doesn't count);
         // looking shapes up by scanning made a move about 225 ms.
         expect(elapsed / 10 < .milliseconds(25), "\(elapsed / 10) per move")
+    },
+    test("an arrow says how wide its line is, 3.5 world units whatever it holds, and a box that it has none") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
+        let free = Arrow(start: .free(CGPoint(x: 20, y: 60)), end: .free(CGPoint(x: 140, y: 60)), bend: 30, startArrowhead: true, text: "calls")
+        // The document is a value: read it after the shapes are added, not before.
+        let arrowID = h.add(free), boxID = h.add(Box(boxA))
+        let arrow = try require(h.editor.document[arrowID]), box = try require(h.editor.document[boxID])
+        expectEqual(h.editor.registry.lineWidth(of: arrow, in: h.editor.shapeContext), 3.5)
+        expectEqual(h.editor.registry.lineWidth(of: box, in: h.editor.shapeContext), nil, "a kind that isn't drawn as a line has none")
+    },
+    test("a tinted outline of an arrow covers it, line and heads, as wide as it's drawn and a point more: 2.75 view points at 50%, 8 at 200%") {
+        let tint = NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1)
+        let tinted = TintedOutlinesBox()
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin(),
+                                            Contributor(id: "lights") { r in r.outlines { _ in Outlines(tinted: tinted.groups) } }])
+        let id = h.add(Arrow(start: .free(CGPoint(x: 20, y: 60)), end: .free(CGPoint(x: 140, y: 60)), startArrowhead: true, endArrowhead: true))
+        tinted.groups = [TintedOutlines(color: tint, shapes: [id])]
+        let size = CGSize(width: 320, height: 240)
+        for (zoom, wide) in [(0.5, 2.75), (2, 8)] as [(CGFloat, CGFloat)] {
+            h.editor.camera = Camera(origin: .zero, zoom: zoom)
+            let drawn = renderBitmap(h.editor, size: size)
+            // The thickness of the tint across the middle of the body, from how much red is over green in each pixel.
+            let column = 80 * zoom
+            let thickness = (0..<Int(size.height)).reduce(CGFloat(0)) { total, y in
+                let p = pixel(drawn, at: CGPoint(x: column, y: CGFloat(y)))
+                return total + CGFloat(p[0] - p[1]) / 255
+            }
+            expect(abs(thickness - wide) < 0.1, "\(wide) points across the body at \(zoom * 100)%: \(thickness)")
+            // None of the arrow's own line or heads shows through the tint, along its length or at its ends.
+            var showing = 0
+            for y in 0..<Int(size.height) {
+                for x in 0..<Int(size.width) {
+                    let p = pixel(drawn, at: CGPoint(x: x, y: y))
+                    if p[0] < 100 && p[1] < 100 && p[2] < 100 { showing += 1 }
+                }
+            }
+            expectEqual(showing, 0, "no dark pixel of the arrow, at \(zoom * 100)%")
+        }
     },
     test("the hit margin is 3 view points beyond the stroke, at any zoom") {
         for zoom: CGFloat in [1, 4] {

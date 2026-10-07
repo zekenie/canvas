@@ -97,6 +97,8 @@ struct StoryQuery {
         StoryQuery(52, #":inside("Warehouse")"#, .refused(.cannotContain)),
         StoryQuery(53, #":mentions("Old ledger")"#, .refused(.unknownTitle)),
         StoryQuery(54, "note", .refused(.unknownKind)),
+        StoryQuery(55, #":end-of(arrow:starts-at("Warehouse"))"#, .shapes("P")),
+        StoryQuery(55, #":start-of(arrow:ends-at("Auth"))"#, .shapes("A")),
     ]
 }
 
@@ -124,7 +126,7 @@ struct StoryQuery {
         let h = try QueryStory.harness(pasteboard: pasteboard)
         let queries = try require(h.editor.queries)
         let before = h.file
-        expectEqual(Set(StoryQuery.table.map(\.number)), Set(1...54), "every row of the table")
+        expectEqual(Set(StoryQuery.table.map(\.number)), Set(1...55), "every row of the table")
         for row in StoryQuery.table {
             let said = "row \(row.number), \(row.query)"
             switch (row.answer, try storyAnswer(row.query, on: queries)) {
@@ -161,6 +163,13 @@ struct StoryQuery {
         expectEqual(try storyAnswer(#"arrow:starts-at("Warehouse")"#, on: queries).get().rows.first?.connection,
                     QueryConnection(type: EdgeTypeID(rawValue: Arrow.kind.rawValue), from: QueryEnd(id: QueryStory.warehouse, title: "Warehouse"),
                                     to: QueryEnd(id: QueryStory.payments, title: "Payments")))
+        // Row 55: the ends of that connection are what its row says it runs from and to.
+        expectEqual(try storyAnswer(#":start-of(arrow:starts-at("Warehouse"))"#, on: queries).get().rows.map(\.id), [QueryStory.warehouse])
+        expectEqual(try storyAnswer(#":end-of(arrow:starts-at("Warehouse"))"#, on: queries).get().rows.map(\.id), [QueryStory.payments])
+        // Mentions are edges in a note's text, not connections: only the two arrows have ends.
+        expectEqual(try storyAnswer(":end-of(sticky-note)", on: queries).get().count, 0)
+        expectEqual(try storyAnswer(":start-of(*)", on: queries).get().rows.map(\.id), QueryStory.ids("A, W"))
+        expectEqual(try storyAnswer(":end-of(*)", on: queries).get().rows.map(\.id), QueryStory.ids("P, U"))
 
         // Row 50: a name tested for that no shape has is a warning, with the titles like it.
         let near = try storyAnswer(#"[title="Chekout"]"#, on: queries).get()

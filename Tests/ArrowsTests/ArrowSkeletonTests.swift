@@ -17,9 +17,12 @@ private let canvas = CGSize(width: 180, height: 120)
 /// Pixels per point.
 private let scale: CGFloat = 4
 
-/// A free arrow from (100, 200) to (500, 200), bent `bend`, drawn at `zoom`.
-@MainActor private func arrowHarness(bend: CGFloat, endArrowhead: Bool = true, zoom: CGFloat = 0.3) throws -> (EditorHarness, ShapeID) {
-    let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
+/// A free arrow from (100, 200) to (500, 200), bent `bend`, drawn at `zoom`, with the canvas outlining
+/// in colors of its own what `lit` says, if given.
+@MainActor private func arrowHarness(bend: CGFloat, endArrowhead: Bool = true, zoom: CGFloat = 0.3,
+                                     lit: TintedOutlinesBox? = nil) throws -> (EditorHarness, ShapeID) {
+    let lights = lit.map { lit in [Contributor(id: "lights") { $0.outlines { _ in Outlines(tinted: lit.groups) } }] } ?? []
+    let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()] + lights)
     let id = h.add(Arrow(start: .free(CGPoint(x: 100, y: 200)), end: .free(CGPoint(x: 500, y: 200)), bend: bend, endArrowhead: endArrowhead))
     h.editor.camera = Camera(origin: .zero, zoom: zoom)
     return (h, id)
@@ -88,6 +91,38 @@ private let scale: CGFloat = 4
         for point in [(geometry.start + geometry.middle) / 2, (geometry.middle + geometry.end) / 2] {
             expectEqual(color(plain, atWorld: point), color(selected, atWorld: point), "not along a segment, at \(point)")
         }
+    },
+    test("an arrow's outline zoomed out holds the heads it draws, each a triangle, so any outline of it (here a tint, which draws no handles) shows which way it points; one with none holds none") {
+        // A straight arrow from (100, 200) to (500, 200): a head is 10.5 long, its wings 30° off the body, so
+        // 9.09 back from the tip, 5.25 either side: the far edge of the head at the end runs along x = 490.9 from
+        // y = 194.75 to 205.25, near its ends 4.5 clear of the body, whose outline reaches 3.3 either side of it.
+        let end = [CGPoint(x: 490.9, y: 204.5), CGPoint(x: 490.9, y: 195.5)], start = [CGPoint(x: 109.1, y: 204.5), CGPoint(x: 109.1, y: 195.5)]
+        let red = NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1)
+        /// Whether lighting the arrow changes the pixel at each point.
+        @MainActor func changed(_ h: EditorHarness, _ id: ShapeID, _ lit: TintedOutlinesBox, at points: [CGPoint]) -> [Bool] {
+            lit.groups = []
+            let plain = renderBitmap(h.editor, size: canvas, scale: scale)
+            lit.groups = [TintedOutlines(color: red, shapes: [id])]
+            let tinted = renderBitmap(h.editor, size: canvas, scale: scale)
+            return points.map { color(plain, atWorld: $0) != color(tinted, atWorld: $0) }
+        }
+        let lit = TintedOutlinesBox()
+        let (headed, headedID) = try arrowHarness(bend: 0, lit: lit)
+        expectEqual(changed(headed, headedID, lit, at: end), [true, true], "the head at its end: its far edge is outlined")
+        expectEqual(changed(headed, headedID, lit, at: start), [false, false], "none at its start")
+        headed.editor.transact { $0.update(headedID, as: Arrow.self) { $0.props.startArrowhead = true } }
+        expectEqual(changed(headed, headedID, lit, at: end + start), [true, true, true, true], "and with one at its start, both")
+        let (bare, bareID) = try arrowHarness(bend: 0, endArrowhead: false, lit: lit)
+        expectEqual(changed(bare, bareID, lit, at: end + start), [false, false, false, false], "an arrow with no head has none in its outline")
+        // Bent, the head follows the arc: 10 along its wing from the tip, which is 5 clear of the body.
+        let (bent, bentID) = try arrowHarness(bend: 100, lit: lit)
+        let geometry = try require(bent.editor.arrowGeometry(of: bentID))
+        let arc = try require(Arc(from: geometry.start, through: geometry.middle, to: geometry.end))
+        let tip = arc.point(at: 1)
+        let step = 2 * asin(10.5 / (2 * arc.radius)) / abs(arc.sweep)
+        let wing = arc.point(at: 1 - step).rotated(around: tip, by: .pi / 6)
+        let along = tip + (wing - tip) * (10 / 10.5)
+        expectEqual(changed(bent, bentID, lit, at: [along]), [true], "a bent arrow's head, along its arc, at \(along)")
     },
     test("at 35% and above an arrow draws in full, as it did") {
         for zoom: CGFloat in [0.35, 0.5] {

@@ -13,6 +13,7 @@ import TestKit
         expectCanonical(":has(>card,box)", ":has(> card, box)")
         expectCanonical(":edge-to( * , wire | hot-wire )", ":edge-to(*, wire|hot-wire)")
         expectCanonical(#":between( "A","B" ,pipe )"#, #":between("A", "B", pipe)"#)
+        expectCanonical(":End-Of( link ,ONLY wire )", ":end-of(link, only wire)")
     },
     test("words lowercased, data words as written") {
         expectCanonical(":NOT(Card):Top-Level", ":not(Card):top-level")
@@ -62,7 +63,8 @@ import TestKit
             ":not(card)", #":is("A", "B")"#, ":where(*)", #":inside("Payments")"#, #":has("B")"#, #":has(> "B", card)"#,
             ":top-level", ":current-board",
             #":edge-to("Auth")"#, #":edge-from("A", wire)"#, ":connected-to(card, only wire|pipe)", ":downstream-of(*)", ":upstream-of(*)",
-            ":component-of(*)", ":starts-at(*)", ":ends-at(*)", #":between("A", "B")"#, #":between("A", "B", wire)"#,
+            ":component-of(*)", ":starts-at(*)", ":ends-at(*)", ":start-of(*)", ":end-of(*)", #":end-of(:starts-at("A"), only wire)"#,
+            #":between("A", "B")"#, #":between("A", "B", wire)"#,
             ":dangling", ":dangling(wire)", #":contains("retry")"#, ":glows", #":stacked("A")"#,
             #""Payments" card[rank>3]:not(:has(*)):edge-to(:is("A", "B"), only wire)"#,
         ]

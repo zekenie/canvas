@@ -169,8 +169,18 @@ import Topology
               every shape
             """)
         expectEqual(try plan(":dangling", on: h).description, "dangling (every type)")
+        expectEqual(try plan(":end-of(link, only wire)", on: h).description, """
+            end-of (wire)
+              kind link
+            """)
+        expectEqual(try plan(#":start-of(:ends-at("Alpha"), tether)"#, on: h).description, """
+            start-of (tether)
+              ends-at (every type)
+                titled "Alpha"
+            """)
         expectRefused([
             Refused(":edge-to(*, wir)", .unknownEdgeType, "wir isn't an edge type.", hint: "Did you mean wire or hot-wire?", at: 12, 3),
+            Refused(":start-of(link, wir)", .unknownEdgeType, "wir isn't an edge type.", hint: "Did you mean wire or hot-wire?", at: 16, 3),
             Refused(":edge-to(*, cable)", .unknownEdgeType, "cable isn't an edge type.", hint: "The edge types: stands-for, wire, hot-wire, tether.", at: 12, 5),
             Refused(":dangling(Wire)", .unknownEdgeType, "Wire isn't an edge type.", hint: "Did you mean wire or hot-wire?", at: 10, 4),
             Refused(#":edge-to("Alpha", chore)"#, .unknownEdgeType, "chore is a kind, not an edge type.",

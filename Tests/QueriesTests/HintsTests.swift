@@ -241,6 +241,9 @@ private let together = "Write them together for one shape:"
             #":edge-to("Old ledger", wire)"#: nearLedger,
             #""Old ledger""#: nearLedger,
             #":cites("Old ledger" > *)"#: nearLedger,
+            // The anchor of :start-of and :end-of is a connection, never the end an edge points at: nothing dangles at it.
+            #":end-of("Old ledger")"#: nearLedger,
+            #":start-of("Old ledger")"#: nearLedger,
         ]
         for (text, hint) in hints {
             let error = try answerRefusal(text, on: h)

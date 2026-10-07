@@ -81,6 +81,23 @@ public struct CanvasFile: Equatable, Sendable {
         return path.reversed()
     }
 
+    /// The shape on `board` that holds `id`: `id` itself if it's on `board`, else the owner, on
+    /// `board`, of the board `id` is on or of one above it (a subboard's card, for what's on its
+    /// board at any depth). Nil for a shape on a board above or beside `board`, and for one that
+    /// isn't in the file. A container is on its contents' board, so the boards' owners are the
+    /// whole answer. O(the depth of `id`'s board): a loop of owners, which only a file edited by hand
+    /// has, ends the walk at a board it has met.
+    public func shape(on board: BoardID, holding id: ShapeID) -> ShapeID? {
+        guard var current = locations[id] else { return nil }
+        guard current != board else { return id }
+        var met: Set<BoardID> = [current]
+        while let owner = current.owner, let parent = locations[owner], met.insert(parent).inserted {
+            if parent == board { return owner }
+            current = parent
+        }
+        return nil
+    }
+
     /// Whether the app can show a board: the root, or a board whose owners, from the root down, are
     /// all in the file, none kept aside, each of one of `boardOwningKinds` (the registry's, the kinds
     /// that are `BoardOwning`). The board itself may have no shapes (yet). O(the board's depth).

@@ -34,6 +34,9 @@ public struct Registry {
     /// Those outlined their own way (`CustomSkeletonOutline`), found once: ⌘A zoomed out outlines
     /// every shape in view, and asks only these.
     let skeletonOutlines: [ShapeKind: any CustomSkeletonOutline]
+    /// Those drawn as a line (`StrokedShape`), found once: a tinted outline of an open shape is
+    /// stroked to cover its line, and asks only these.
+    let strokedShapes: [ShapeKind: any StrokedShape]
     /// Every plugin's rule for which shapes can't change (`registrar.readOnlyShapes`), found once:
     /// a transaction asks them about every shape it changes.
     private let readOnlyRules: [@MainActor (AnyShapeRecord) -> Bool]
@@ -80,6 +83,7 @@ public struct Registry {
         containingKinds = Set(definitions.filter { $0.value is any ShapeContaining }.keys)
         customSkeletons = definitions.compactMapValues { $0 as? any CustomSkeleton }
         skeletonOutlines = definitions.compactMapValues { $0 as? any CustomSkeletonOutline }
+        strokedShapes = definitions.compactMapValues { $0 as? any StrokedShape }
         readOnlyRules = (byPoint[ObjectIdentifier(CorePoints.ReadOnlyRules.self)] ?? []).map { $0.value as! CorePoints.ReadOnlyRules.Contribution }
         placingTools = Set((byPoint[ObjectIdentifier(CorePoints.Tools.self)] ?? []).compactMap {
             let tool = $0.value as! ToolRegistration
@@ -191,6 +195,14 @@ public struct Registry {
     /// a kind no plugin defines.
     public func indicatorPath(of shape: AnyShapeRecord, in context: ShapeContext) -> CGPath? {
         shape.isOpaque ? nil : definition(for: shape.kind)?.erasedIndicatorPath(of: shape, in: context)
+    }
+
+    /// How wide a shape's line is drawn, in world units, if its kind is drawn as a line
+    /// (`StrokedShape`): what the canvas covers it with when it's lit (`Outlines.tinted`), and what an
+    /// overlay that decorates the line goes by. Nil for any other kind, a shape kept aside, or one of
+    /// a kind no plugin defines.
+    public func lineWidth(of shape: AnyShapeRecord, in context: ShapeContext) -> CGFloat? {
+        shape.isOpaque ? nil : strokedShapes[shape.kind]?.erasedLineWidth(of: shape, in: context)
     }
 
     /// Whether a shape's board can be shown wherever the shape's own board can: it isn't kept

@@ -173,7 +173,8 @@ let glossaryPlugin = Contributor(id: "glossary") { registrar in
     test("a plan reads edges when it has an edge word, a relation or :dangling, and not otherwise") {
         let h = try wiresHarness()
         let reading = ["chore:edge-to(*)", "chore:edge-from(*)", "chore:connected-to(*)", "chore:downstream-of(*)", "chore:upstream-of(*)",
-                       "chore:component-of(*)", "link:starts-at(*)", "link:ends-at(*)", "link:between(*, *)", "chore:dangling", "chore:dangling(wire)",
+                       "chore:component-of(*)", "link:starts-at(*)", "link:ends-at(*)", "chore:start-of(*)", "chore:end-of(*)", "link:between(*, *)",
+                       "chore:dangling", "chore:dangling(wire)",
                        #"chore:wired-to("C1")"#, #"chore:not(:edge-to("C1"))"#, #"chore, :has(:edge-to(*))"#, #":is(chore:wired-to(*), link)"#]
         for query in reading { expect(try plan(query, on: h).readsEdges, "\(query) reads edges") }
         let not = ["chore", "*", #""C1""#, "chore:starred", "chore:inside(*)", "chore:top-level", ":current-board", "chore:heavy", #"chore[caption^="C"]"#]

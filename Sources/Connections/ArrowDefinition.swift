@@ -90,6 +90,12 @@ extension ArrowDefinition: ShapeDefinition {
     }
 }
 
+extension ArrowDefinition: StrokedShape {
+    /// The stroke `render` draws the body and its heads with, whatever the arrow's props: what a
+    /// tinted outline of an arrow covers (`Outlines.tinted`), so the line doesn't show along its middle.
+    func lineWidth(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> CGFloat { ArrowStyle.strokeWidth }
+}
+
 extension ArrowDefinition: BrushHitTesting {
     /// Exact, against the visible body: a brush in the hollow of a bent arrow's bounds doesn't
     /// select it (arrows are open, as in tldraw), nor does one over only the hidden stub inside a

@@ -84,7 +84,7 @@ import TestKit
                                                     HasItem(compound: compound(kind("card"), attribute("rank")))]))))
         expectEqual(stripped(try parse(":has(>:glows)")), single(nil, pseudo("has", .has([HasItem(child: true, compound: compound(nil, pseudo("glows")))]))))
         expectEqual(stripped(try parse(":top-level:current-board")), single(nil, pseudo("top-level"), pseudo("current-board")))
-        for word in [Word.edgeTo, .edgeFrom, .connectedTo, .downstreamOf, .upstreamOf, .componentOf, .startsAt, .endsAt] {
+        for word in [Word.edgeTo, .edgeFrom, .connectedTo, .downstreamOf, .upstreamOf, .componentOf, .startsAt, .endsAt, .startOf, .endOf] {
             expectEqual(stripped(try parse(#":\#(word.rawValue)("Auth")"#)),
                         single(nil, pseudo(word.rawValue, .anchored([complex(compound(titled("Auth")))], types: nil))), word.rawValue)
         }
@@ -98,6 +98,12 @@ import TestKit
                     single(nil, pseudo("edge-to", .anchored([complex(compound(nil, pseudo("is", .selectors(list(complex(compound(titled("Auth"))),
                                                                                                                 complex(compound(titled("Checkout"))))))))],
                                                             types: nil))))
+        // The ends of a connection: its anchor is a connection, any query that finds one, edge types after a comma.
+        expectEqual(stripped(try parse(#":end-of(:starts-at("Warehouse"))"#)),
+                    single(nil, pseudo("end-of", .anchored([complex(compound(nil, pseudo("starts-at", .anchored([complex(compound(titled("Warehouse")))],
+                                                                                                                types: nil))))], types: nil))))
+        expectEqual(stripped(try parse(":start-of(link, only wire|pipe)")),
+                    single(nil, pseudo("start-of", .anchored([complex(compound(kind("link")))], types: [type("wire", only: true), type("pipe")]))))
         expectEqual(stripped(try parse(#":between("A", "B")"#)),
                     single(nil, pseudo("between", .anchored([complex(compound(titled("A"))), complex(compound(titled("B")))], types: nil))))
         expectEqual(stripped(try parse(#":between("A", "B", pipe)"#)),

@@ -106,6 +106,66 @@ extension ContentsWindow {
         expect(reaches(c) { editor.selectedShapeIDs = [c] }, "the selection, which takes a hovered row's tint")
         expect(reaches(c) { editor.hovered = nil })
     },
+    test("the pointer on a row of another board hovers its shape elsewhere (`editor.hoveredElsewhere`) and sets no hover; leaving the row lets go of it, and only of it") {
+        let nest = PocketsInPockets()
+        let editor = try contentsEditor([PocketsPlugin()], file: nest.file())
+        let contents = editor.contents
+        expectEqual(editor.hoveredElsewhere, nil)
+        contents.hover(nest.c)                  // a row of P's board, which the canvas doesn't show
+        expectEqual(editor.hoveredElsewhere, nest.c)
+        expectEqual(editor.hovered, nil, "the canvas's hover is the canvas's")
+        expect(!contents.isHovered(nest.c))
+        contents.hover(nest.d)                  // onto the next row of it
+        expectEqual(editor.hoveredElsewhere, nest.d)
+        contents.endHover(nest.c)               // the last row's exit, arriving late
+        expectEqual(editor.hoveredElsewhere, nest.d, "leaving a row leaves another's")
+        contents.endHover(nest.d)
+        expectEqual(editor.hoveredElsewhere, nil)
+        contents.hover(nest.f)                  // two boards down
+        expectEqual(editor.hoveredElsewhere, nest.f)
+        contents.endHover(nest.f)               // its row going away, as it does when its owner's closes
+        expectEqual(editor.hoveredElsewhere, nil)
+    },
+    test("a row lets go only of what its pointer set: one another plugin set stays, as the canvas's hover does") {
+        let nest = PocketsInPockets()
+        let editor = try contentsEditor([PocketsPlugin()], file: nest.file())
+        editor.hoveredElsewhere = nest.c        // another plugin's, on a shape the list has a row of
+        editor.contents.endHover(nest.c)        // that row going away, under no pointer of its own
+        expectEqual(editor.hoveredElsewhere, nest.c)
+        editor.contents.hover(nest.c)
+        editor.contents.endHover(nest.c)
+        expectEqual(editor.hoveredElsewhere, nil, "once the pointer on the row set it")
+    },
+    test("the pointer on a row of the board shown hovers its shape and leaves what's hovered elsewhere as it was; a shape in no board isn't one") {
+        let nest = PocketsInPockets()
+        let editor = try contentsEditor([PocketsPlugin()], file: nest.file())
+        let contents = editor.contents
+        contents.hover(nest.c)
+        contents.hover(nest.a)                  // the pointer onto a row of the board shown, the other's exit still to come
+        expectEqual(editor.hovered, nest.a)
+        expectEqual(editor.hoveredElsewhere, nest.c)
+        contents.endHover(nest.c)
+        expectEqual(editor.hoveredElsewhere, nil)
+        expectEqual(editor.hovered, nest.a, "the exit of an elsewhere row leaves the hover it left")
+        contents.hover(nest.c)
+        contents.hover(ShapeID())               // a row of no shape of the file
+        expectEqual(editor.hoveredElsewhere, nest.c, "it names nothing, and lets go of nothing")
+    },
+    test("another board shown lets go of the shape hovered elsewhere, and its row's late exit finds nothing to let go of") {
+        let nest = PocketsInPockets()
+        let editor = try contentsEditor([PocketsPlugin()], file: nest.file())
+        let contents = editor.contents
+        contents.hover(nest.c)
+        expectEqual(editor.hoveredElsewhere, nest.c)
+        expect(editor.showBoard(nest.pBoard))
+        expectEqual(editor.hoveredElsewhere, nil)
+        expectEqual(editor.hovered, nil)
+        contents.hover(nest.d)                  // a row of P's board, now the board shown: its shape's hover
+        expectEqual(editor.hovered, nest.d)
+        contents.endHover(nest.c)               // the first row's exit, arriving late
+        expectEqual(editor.hovered, nest.d)
+        expectEqual(editor.hoveredElsewhere, nil)
+    },
     test("a hover redraws the rows it leaves and reaches, not every row") {
         let editor = try contentsEditor(scheduler: TaskScheduler())
         let ids = widgets(150, in: editor)          // under 200: AppKit logs a reentrant update first showing more
