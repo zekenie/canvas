@@ -204,6 +204,9 @@ public final class ContentsState {
     /// The shape the pointer on its row hovered, until it leaves the row: all a row's leaving
     /// lets go of.
     @ObservationIgnored private var rowHover: ShapeID?
+    /// The shape of a row of another board (nested under its owner's) the pointer is on, which it set
+    /// as `editor.hoveredElsewhere`: all that row's leaving lets go of, never one another plugin set.
+    @ObservationIgnored private var rowHoverElsewhere: ShapeID?
     /// The boards whose outlines have been read (`outline(of:)`), while they're on the path.
     @ObservationIgnored private var outlines: [BoardID: Outline] = [:]
     /// The editor's revision as of the last commit whose change set this service has heard, and as
@@ -427,17 +430,27 @@ public final class ContentsState {
 
     /// The pointer is on the shape's row (and, called again as it moves there, still is): the
     /// shape is hovered (`editor.hovered`), as though the pointer were on it on the canvas. A shape
-    /// on another board (a row of a board nested under its owner's) isn't: the canvas doesn't show it.
+    /// on another board (a row of a board nested under its owner's) isn't: the canvas doesn't show
+    /// it, so `editor.hovered` stays as it is, and the shape is `editor.hoveredElsewhere` instead.
     public func hover(_ id: ShapeID) {
-        guard editor.document[id] != nil else { return }
-        rowHover = id
-        editor.hovered = id
+        if editor.document[id] != nil {
+            rowHover = id
+            editor.hovered = id
+        } else if editor.file.board(containing: id) != nil {
+            rowHoverElsewhere = id
+            editor.hoveredElsewhere = id
+        }
     }
 
     /// The pointer left the shape's row, or the row went away: the shape isn't hovered any more,
-    /// if the pointer on the row hovered it. Leaves any other hover: another row's, or one the
-    /// canvas set (the pointer on a shape there, while the rows are replaced under it).
+    /// if the pointer on the row hovered it (or `editor.hoveredElsewhere`, if the canvas doesn't
+    /// show it). Leaves any other hover: another row's, or one the canvas or another plugin set
+    /// (the pointer on a shape there, while the rows are replaced under it).
     public func endHover(_ id: ShapeID) {
+        if rowHoverElsewhere == id {
+            rowHoverElsewhere = nil
+            if editor.hoveredElsewhere == id { editor.hoveredElsewhere = nil }
+        }
         guard rowHover == id else { return }
         rowHover = nil
         if editor.hovered == id { editor.hovered = nil }
@@ -770,7 +783,8 @@ extension ContentsState: EditorService {
         remarks = taken?.remarks ?? []
         board = taken?.board
         filtered = nil
-        rowHover = nil                  // the board left's, whose hover Selection let go of
+        rowHover = nil                  // the board left's, whose hovers Selection let go of
+        rowHoverElsewhere = nil
         if pointedDrop != nil || springing != nil { point(nil) }
         if pin != nil { pin = nil }
         heardRevision = editor.revision

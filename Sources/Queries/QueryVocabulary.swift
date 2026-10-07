@@ -295,6 +295,8 @@ extension Word {
         case .componentOf: "joined to a shape S matches by edges either way, however many"
         case .startsAt: "a connection that starts at a shape S matches"
         case .endsAt: "a connection that ends at a shape S matches"
+        case .startOf: "the shape a connection S matches starts at"
+        case .endOf: "the shape a connection S matches ends at"
         case .between: "a connection joining a shape A matches and one B matches"
         case .dangling: "carries an edge to a shape that isn't there"
         case .contains: "its name or the text of an attribute holds the text, ignoring case"

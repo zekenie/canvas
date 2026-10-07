@@ -18,7 +18,7 @@ private func holding(_ error: QueryError?) -> [String]? {
         expectEqual(Word.allCases.map(\.rawValue), [
             "not", "is", "where", "has", "inside", "top-level", "current-board",
             "edge-to", "edge-from", "connected-to", "downstream-of", "upstream-of", "component-of", "starts-at", "ends-at",
-            "between", "dangling", "contains",
+            "start-of", "end-of", "between", "dangling", "contains",
         ])
         expectEqual(Keyword.only.rawValue, "only")
         expectEqual(Operator.allCases.map(\.rawValue), ["=", "!=", "^=", "$=", "*=", "~=", "|=", "<", "<=", ">", ">="])
@@ -29,10 +29,19 @@ private func holding(_ error: QueryError?) -> [String]? {
             .not: .selectors, .is: .selectors, .where: .selectors, .inside: .selectors, .has: .has,
             .topLevel: .none, .currentBoard: .none,
             .edgeTo: .anchor, .edgeFrom: .anchor, .connectedTo: .anchor, .downstreamOf: .anchor, .upstreamOf: .anchor, .componentOf: .anchor,
-            .startsAt: .anchor, .endsAt: .anchor, .between: .twoAnchors, .dangling: .types(optional: true), .contains: .text,
+            .startsAt: .anchor, .endsAt: .anchor, .startOf: .anchor, .endOf: .anchor, .between: .twoAnchors, .dangling: .types(optional: true),
+            .contains: .text,
         ]
         expectEqual(signatures.count, Word.allCases.count)
         for word in Word.allCases { expectEqual(word.signature, signatures[word], word.rawValue) }
+    },
+    test("each word's example is a query the language reads, as it prints it, and starts with the word") {
+        for word in Word.allCases {
+            expectCanonical(word.example, word.example)
+            expect(word.example.hasPrefix(":\(word.rawValue)"), "\(word.rawValue)'s example is the word's own: \(word.example)")
+        }
+        expectEqual(Word.startOf.example, #":start-of(:ends-at("Auth"))"#)
+        expectEqual(Word.endOf.example, #":end-of(:starts-at("Warehouse"))"#)
     },
     test("every reason, pinned, as the command line reports them") {
         expectEqual(QueryError.Reason.allCases.map(\.rawValue), [
@@ -45,7 +54,7 @@ private func holding(_ error: QueryError?) -> [String]? {
     test("the known inventions, pinned; none is one of the language's words") {
         expectEqual(KnownInventions.words.keys.sorted(), [
             "above", "active", "ancestor-of", "below", "child-of", "connected-by", "current-page", "descendant-of", "edge-with",
-            "empty", "end-of", "first-child", "first-of-type", "focus", "hover", "in", "last-child", "last-of-type", "left-of", "matches",
+            "empty", "first-child", "first-of-type", "focus", "hover", "in", "last-child", "last-of-type", "left-of", "matches",
             "minimized", "near", "neighbor-of", "nth-child", "nth-col", "nth-last-child", "nth-last-col", "nth-last-of-type", "nth-of-type", "on-page",
             "only-child", "only-of-type", "overlaps", "parent-of", "reachable-from", "right-of", "root", "source-of", "target-of", "within",
         ])

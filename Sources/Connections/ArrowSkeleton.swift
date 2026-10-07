@@ -7,10 +7,14 @@ import Geometry
 /// its start, the middle of its body and its end (`ArrowSkeleton`), stroked in its color as wide
 /// as its own but never under a view point, as the core's open skeletons are, with butt ends; and
 /// each of its heads a filled triangle, as long as its own and swung the same way, along the arc.
-/// A stroke and a fill. Its outline, selected or hovered, is that arc, not its kept geometry's two
-/// straight segments. A label is left off: its text would be a few pixels, and the render's cut
-/// where it is would read as a gap in the arrow (a greeked bar there is as dark as the canvas), so
-/// the arc runs whole through where it is.
+/// A stroke and a fill. Its outline, selected, hovered or lit, is that arc and its heads, each a
+/// closed triangle as it's filled (so an outline of a skeleton shows which way the arrow points),
+/// not its kept geometry's two straight segments. A label is left off: its text would be a few
+/// pixels, and the render's cut where it is would read as a gap in the arrow (a greeked bar there
+/// is as dark as the canvas), so the arc runs whole through where it is.
+///
+/// A skeleton is this app's own: tldraw has none to match (its arrows only trade a drawn style for a
+/// solid one, below 25%), so what it draws and outlines is for the app to say.
 extension ArrowDefinition: CustomSkeleton {
     func renderSkeleton(_ shape: ShapeRecord<Arrow>, in context: RenderContext) {
         guard let geometry = context.shapes.geometry(of: shape.id), let body = ArrowSkeleton(geometry, zoom: context.zoom) else { return }
@@ -31,7 +35,7 @@ extension ArrowDefinition: CustomSkeleton {
 extension ArrowDefinition: CustomSkeletonOutline {
     func skeletonIndicatorPath(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> CGPath? {
         guard let geometry = context.geometry(of: shape.id), let body = ArrowSkeleton(geometry, zoom: context.zoom) else { return nil }
-        return body.path
+        return body.outline(startHead: shape.props.startArrowhead, endHead: shape.props.endArrowhead, strokeWidth: ArrowStyle.strokeWidth)
     }
 }
 
@@ -82,8 +86,9 @@ struct ArrowSkeleton {
         }
     }
 
-    /// The body as a path: the arrow's outline while skeletons are drawn.
-    var path: CGPath {
+    /// The arrow's outline while skeletons are drawn: the body, and each head it has as the
+    /// closed triangle it's filled as (`addHead`), so the outline shows which way it points.
+    func outline(startHead: Bool, endHead: Bool, strokeWidth: CGFloat) -> CGPath {
         let path = CGMutablePath()
         path.move(to: start)
         if let arc {
@@ -91,14 +96,16 @@ struct ArrowSkeleton {
         } else {
             path.addLine(to: end)
         }
+        if startHead { addHead(at: .start, strokeWidth: strokeWidth, to: path) }
+        if endHead { addHead(at: .end, strokeWidth: strokeWidth, to: path) }
         return path
     }
 
-    /// A head at `end`, added to the context's path, closed: a triangle from the tip, where the
-    /// body ends, to the render's wings (`ArrowGeometry.arrowheadsPath`), each swung 30° off the
-    /// body from the point a head's length back along it, measured as a chord on an arc. A head
+    /// The three points of a head at `end`, in the order it's drawn: a wing, the tip, where the body
+    /// ends, and the other wing, the render's (`ArrowGeometry.arrowheadsPath`), each swung 30° off
+    /// the body from the point a head's length back along it, measured as a chord on an arc. A head
     /// is a fifth of the body, between one and three stroke widths.
-    func addHead(at end: ArrowEnd, strokeWidth: CGFloat, to cg: CGContext) {
+    private func head(at end: ArrowEnd, strokeWidth: CGFloat) -> (wing: CGPoint, tip: CGPoint, otherWing: CGPoint) {
         let tip = end == .start ? start : self.end
         let length = min(max(self.length / 5, strokeWidth), strokeWidth * 3)
         let base: CGPoint
@@ -108,9 +115,24 @@ struct ArrowSkeleton {
         } else {
             base = tip.moved(toward: end == .start ? self.end : start, by: length)
         }
-        cg.move(to: base.rotated(around: tip, by: .pi / 6))
-        cg.addLine(to: tip)
-        cg.addLine(to: base.rotated(around: tip, by: -.pi / 6))
+        return (base.rotated(around: tip, by: .pi / 6), tip, base.rotated(around: tip, by: -.pi / 6))
+    }
+
+    /// A head at `end`, added to the context's path, closed: a triangle from the tip to the wings.
+    func addHead(at end: ArrowEnd, strokeWidth: CGFloat, to cg: CGContext) {
+        let head = head(at: end, strokeWidth: strokeWidth)
+        cg.move(to: head.wing)
+        cg.addLine(to: head.tip)
+        cg.addLine(to: head.otherWing)
         cg.closePath()
+    }
+
+    /// The same head as a closed subpath of `path`.
+    private func addHead(at end: ArrowEnd, strokeWidth: CGFloat, to path: CGMutablePath) {
+        let head = head(at: end, strokeWidth: strokeWidth)
+        path.move(to: head.wing)
+        path.addLine(to: head.tip)
+        path.addLine(to: head.otherWing)
+        path.closeSubpath()
     }
 }

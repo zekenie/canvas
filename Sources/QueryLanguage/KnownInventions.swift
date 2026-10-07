@@ -44,7 +44,6 @@ public enum KnownInventions {
         unknown("connected-by", "An edge of that type, either way: :connected-to(*, …)."),
         unknown("edge-with", "An edge either way: :connected-to(…)."),
         unknown("neighbor-of", "An edge to or from it: :connected-to(…)."),
-        unknown("end-of", "Where a connection starts or ends: :starts-at(…), :ends-at(…)."),
         unknown("reachable-from", "Reached from it by edges followed forward: :downstream-of(…)."),
         unknown("matches", "CSS's old name for :is: :is(…)."),
         ("minimized", Invention(reason: .unknownPseudoClass, message: ":minimized isn't a pseudo-class: shapes here aren't minimized.", write: nil)),

@@ -16,6 +16,8 @@ public enum Word: String, CaseIterable, Sendable {
     case componentOf = "component-of"
     case startsAt = "starts-at"
     case endsAt = "ends-at"
+    case startOf = "start-of"
+    case endOf = "end-of"
     case between
     case dangling
     case contains
@@ -57,7 +59,7 @@ public enum Word: String, CaseIterable, Sendable {
         case .not, .is, .where, .inside: .selectors
         case .has: .has
         case .topLevel, .currentBoard: .none
-        case .edgeTo, .edgeFrom, .connectedTo, .downstreamOf, .upstreamOf, .componentOf, .startsAt, .endsAt: .anchor
+        case .edgeTo, .edgeFrom, .connectedTo, .downstreamOf, .upstreamOf, .componentOf, .startsAt, .endsAt, .startOf, .endOf: .anchor
         case .between: .twoAnchors
         case .dangling: .types(optional: true)
         case .contains: .text
@@ -86,6 +88,8 @@ public enum Word: String, CaseIterable, Sendable {
         case .componentOf: #":component-of("Warehouse")"#
         case .startsAt: #":starts-at("Warehouse")"#
         case .endsAt: #":ends-at("Auth")"#
+        case .startOf: #":start-of(:ends-at("Auth"))"#
+        case .endOf: #":end-of(:starts-at("Warehouse"))"#
         case .between: #":between("Auth", "API gateway")"#
         case .dangling: ":dangling"
         case .contains: #":contains("retry")"#

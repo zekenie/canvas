@@ -51,6 +51,17 @@ import os
             // The standing edges, resolved, and recorded for what a stand-in's record names; never as drawn.
             (#"proxy:edge-to("Alpha", stands-for)"#, [5], [5], []),
             (#"lens:edge-to("Beta", stands-for)"#, [6], [], []),
+            // Where a connection ends or starts is read the same way: the wire 7 from Gamma ends at what the proxy stands for, or
+            // at the proxy as drawn; the wire 8 at what the lens was answered with, resolved only; the wire 10 runs from the
+            // proxy's Alpha, or the proxy, to the lens's Beta, or the lens.
+            (":end-of(#\(uuid(7)))", [1], [1], [5]),
+            (":start-of(#\(uuid(7)))", [3], [3], [3]),
+            (":end-of(#\(uuid(8)))", [2], [6], [6]),
+            (":start-of(#\(uuid(10)))", [1], [1], [5]),
+            (":end-of(#\(uuid(10)))", [2], [6], [6]),
+            (":end-of(link)", [1, 2], [1, 6], [1, 5, 6]),
+            (":start-of(link)", [1, 3], [1, 3], [3, 5]),
+            ("chore:end-of(link)", [1, 2], [1], [1]),
         ]
         for (query, resolved, recorded, literal) in cases {
             expectEqual(try ran(query, on: h).rows.map(\.id), resolved.map(id), "\(query), resolved")
@@ -65,6 +76,8 @@ import os
         for (view, found) in [(EdgeView.resolved, [1, 3]), (.recorded, [1, 3]), (.literal, [3])] {
             expectEqual(try ran("chore:connected-to(#\(uuid(6)), wire)", edges: view, on: h).rows.map(\.id), found.map(id), "pending lens, \(view)")
             expectEqual(try ran(#"chore:connected-to("Beta")"#, edges: view, on: h).rows.map(\.id), [], "\(view)")
+            // The connections that end there end at the lens, in every view.
+            expectEqual(try ran(":end-of(#\(uuid(8)))", edges: view, on: h).rows.map(\.id), [id(6)], "the wire 8 ends at the pending lens, \(view)")
         }
     },
 ])
@@ -91,6 +104,10 @@ import os
         expectEqual(connection.to, QueryEnd(id: id(1), title: "Alpha"), "the first in file order, not the first the proxy cites")
         expectEqual(connection.via, QueryVia(from: nil, to: QueryEnd(id: id(5))), "a stand-in has no title: its id alone")
         expectEqual(connection.more, [QueryPair(from: QueryEnd(id: id(3), title: "Gamma"), to: QueryEnd(id: id(2), title: "Beta"))])
+        // Each pair's end is where the connection ends, in file order: both shapes, resolved; the stand-in, as drawn.
+        expectEqual(try ran(":end-of(#\(uuid(7)))", on: h).rows.map(\.id), [id(1), id(2)])
+        expectEqual(try ran(":start-of(#\(uuid(7)))", on: h).rows.map(\.id), [id(3)])
+        expectEqual(try ran(":end-of(#\(uuid(7)))", edges: .literal, on: h).rows.map(\.id), [id(5)])
     },
     test("an end that was one and stood for one shape has a via and no more; both ends: a pair for each combination") {
         let h = try answeredRelay()

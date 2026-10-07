@@ -145,6 +145,8 @@ private func groups(of pattern: String, in text: String) -> [String]? {
             (#":upstream-of("Auth")"#, "C, A"),                          // everything that leads to Auth, however far
             (":edge-from(:selected, arrow)", ""),                        // what do the selected shapes (Auth) link to? nothing
             (#"arrow:between("Auth", "API gateway")"#, "R1"),            // the arrows between Auth and API gateway
+            (":start-of(arrow[channel=note-link])", "A"),                // where does the note-link arrow start? API gateway
+            (":end-of(arrow[channel=note-link])", "U"),                  // where does the note-link arrow end? Auth
             (#""Payments" sticky-note[locked]:mentions("Checkout")"#, ""), // locked notes in Payments that mention Checkout: none
             (":selected", "U"),                                          // these, the selected ones
         ]

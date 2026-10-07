@@ -379,7 +379,9 @@ final class Evaluation {
             case .title: titles.append(node)
             case .id: ids.append(node)
             case .edges(let word, let anchor, let second, let types):
-                for title in anchor.subjectTitles { anchoring[title, default: []].append((types, AnchorEnd(word))) }
+                if let end = AnchorEnd(word) {
+                    for title in anchor.subjectTitles { anchoring[title, default: []].append((types, end)) }
+                }
                 for title in second?.subjectTitles ?? [] { anchoring[title, default: []].append((types, .either)) }
             case .relation(_, let anchor, let types, let direction):
                 for title in anchor.subjectTitles { anchoring[title, default: []].append((types, AnchorEnd(direction))) }
@@ -429,14 +431,16 @@ final class Evaluation {
     }
 
     /// Which end of an edge an anchor is, as the word that has it reads edges: the target of
-    /// `:edge-to`'s, the source of `:edge-from`'s, either of `:connected-to`'s.
+    /// `:edge-to`'s, the source of `:edge-from`'s, either of `:connected-to`'s; none, for the
+    /// anchor of `:start-of` and `:end-of`, which is the connection that carries the edge.
     enum AnchorEnd {
         case source, target, either
 
-        init(_ word: Word) {
+        init?(_ word: Word) {
             switch word {
             case .edgeTo, .upstreamOf, .endsAt: self = .target
             case .edgeFrom, .downstreamOf, .startsAt: self = .source
+            case .startOf, .endOf: return nil
             default: self = .either
             }
         }
@@ -765,6 +769,8 @@ final class Evaluation {
                 return try connections(from: anchors, .outgoing, types: types, among: candidates) { anchors.contains($0.source) }
             case .endsAt:
                 return try connections(from: anchors, .incoming, types: types, among: candidates) { anchors.contains($0.target) }
+            case .startOf: return try ends(of: anchors, .outgoing, types: types, among: candidates)
+            case .endOf: return try ends(of: anchors, .incoming, types: types, among: candidates)
             case .between:
                 guard let second else { return [] }
                 let others = try await matches(second, among: .all)
@@ -836,7 +842,7 @@ final class Evaluation {
         return nil
     }
 
-    private static let oneStep: Set<Word> = [.edgeTo, .edgeFrom, .connectedTo, .startsAt, .endsAt, .between]
+    private static let oneStep: Set<Word> = [.edgeTo, .edgeFrom, .connectedTo, .startsAt, .endsAt, .startOf, .endOf, .between]
 
     // MARK: Kinds, attributes, text, words
 
@@ -1249,7 +1255,7 @@ final class Evaluation {
     private func connections(from anchors: Set<ShapeID>, _ direction: EdgeDirection, types: PlanEdgeTypes, among candidates: Candidates,
                              where runs: (Edge) -> Bool) throws(QueryError) -> Set<ShapeID> {
         let topology = snapshot.topology
-        func counts(_ edge: Edge) -> Bool { edge.slot.isEmpty && types.admits(edge.type) && runs(edge) }
+        func counts(_ edge: Edge) -> Bool { types.admitsConnection(edge) && runs(edge) }
         var found: Set<ShapeID> = []
         if case .only(let ids) = candidates, ids.count <= anchors.count {
             for id in ids {
@@ -1262,6 +1268,34 @@ final class Evaluation {
             try tick()
             for edge in topology.edges(of: anchor, direction, types: types.filter) where counts(edge) {
                 if admits(edge.carrier, candidates), entry(edge.carrier) != nil { found.insert(edge.carrier) }
+            }
+        }
+        return found
+    }
+
+    /// The shapes the anchors, connections (shapes that carry an edge in slot `""`: an arrow), run
+    /// from (`.outgoing`: the source of each such edge they carry) or to (`.incoming`: its target):
+    /// from the candidates' own edges when they're fewer than the anchors, else from the anchors'.
+    /// A shape with no edge in slot `""` is no connection and has no ends: an arrow with a free end
+    /// (it carries none), a note whose text mentions (its edges are in the text's slot).
+    private func ends(of anchors: Set<ShapeID>, _ direction: EdgeDirection, types: PlanEdgeTypes,
+                      among candidates: Candidates) throws(QueryError) -> Set<ShapeID> {
+        let topology = snapshot.topology
+        var found: Set<ShapeID> = []
+        if case .only(let ids) = candidates, ids.count <= anchors.count {
+            for id in ids {
+                try tick()
+                if topology.hasEdges(of: id, direction, types: types.filter, where: { types.admitsConnection($0) && anchors.contains($0.carrier) }) {
+                    found.insert(id)
+                }
+            }
+            return found
+        }
+        for anchor in anchors {
+            try tick()
+            for edge in topology.edges(carriedBy: anchor) where types.admitsConnection(edge) {
+                let end = direction == .incoming ? edge.target : edge.source
+                if admits(end, candidates), entry(end) != nil { found.insert(end) }
             }
         }
         return found
@@ -1396,6 +1430,10 @@ struct Performed<Answer: Sendable>: Sendable {
 extension PlanEdgeTypes {
     /// Whether an edge of `type` is one the word follows.
     func admits(_ type: EdgeTypeID) -> Bool { types?.contains(type) ?? true }
+
+    /// Whether the edge is a connection the word follows: one its carrier has in slot "" (an arrow's
+    /// own, not a mention in a text's slot) of a type it admits.
+    func admitsConnection(_ edge: Edge) -> Bool { edge.slot.isEmpty && admits(edge.type) }
 }
 
 // MARK: Walking a plan

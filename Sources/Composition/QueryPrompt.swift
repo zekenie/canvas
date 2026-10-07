@@ -93,6 +93,7 @@ Edges are directed arrows from source to target. An arrow runs from the shape it
 - :component-of(ANCHOR) — result is joined to the anchor by edges either way, any number of them
 - arrow:starts-at(ANCHOR), arrow:ends-at(ANCHOR) — the arrows themselves that start or end at the anchor
 - arrow:between(ANCHOR, ANCHOR) — the arrows between two shapes, either way
+- :start-of(ANCHOR), :end-of(ANCHOR) — the shapes where the arrows the anchor finds start or end: the anchor is an arrow here, not a shape it joins
 - :dangling — shapes with an edge to something that's gone: broken, dangling or missing mentions or links. Never :invalid for these: :invalid is a shape with an error
 The anchor is any query: :edge-to(sticky-note[locked]). * is any shape: :edge-to(*) has an edge to anything. Several anchors: :edge-to(:is("Auth", "Checkout")).
 An edge type goes in the second argument, and takes in the types under it: :edge-to("Auth", arrow) follows every arrow, note-link ones too. Several: :edge-from("API gateway", note-link|mention). Only the type itself: :edge-to("Payments", only arrow). With no type, every edge counts, mentions too.
@@ -115,6 +116,8 @@ Examples:
 - "everything that leads to Auth, however far" → :upstream-of("Auth")
 - "what do the selected shapes link to?" → the results have an arrow FROM the selection → :edge-from(:selected, arrow)
 - "the arrows between Auth and API gateway" → arrow:between("Auth", "API gateway")
+- "where does the note-link arrow start?" → :start-of(arrow[channel=note-link])
+- "where does the note-link arrow end?" → :end-of(arrow[channel=note-link])
 
 ## Combining (AND)
 Chain pseudo-classes. Apply the rule to each condition independently.
@@ -159,7 +162,8 @@ Your response must be exactly one line: the raw query, or UNANSWERABLE: and a re
         #":edge-to("Auth", arrow)"#, #":edge-from("API gateway", note-link|mention)"#, #":edge-to("Payments", only arrow)"#,
         #":edge-from("API gateway", arrow)"#, #":edge-from("Warehouse")"#, #"sticky-note:mentions("Checkout")"#, #":mentioned-by("Checkout")"#,
         #""Checkout":mentioned-by("API gateway")"#, #":connected-to("Checkout")"#, #":component-of("Warehouse")"#, #":upstream-of("Auth")"#,
-        ":edge-from(:selected, arrow)", #"arrow:between("Auth", "API gateway")"#,
+        ":edge-from(:selected, arrow)", #"arrow:between("Auth", "API gateway")"#, ":start-of(arrow[channel=note-link])",
+        ":end-of(arrow[channel=note-link])",
         // Combining.
         #"sticky-note[locked]:mentions("Checkout")"#, "sticky-note, subboard", "sticky-note:not(:mentions(*))",
         #""Payments" sticky-note[locked]:mentions("Checkout")"#,
@@ -186,6 +190,7 @@ Your response must be exactly one line: the raw query, or UNANSWERABLE: and a re
         (":edge-to(ANCHOR)", .unknownKind), (":edge-from(ANCHOR)", .unknownKind), (":connected-to(ANCHOR)", .unknownKind),
         (":downstream-of(ANCHOR)", .unknownKind), (":upstream-of(ANCHOR)", .unknownKind), (":component-of(ANCHOR)", .unknownKind),
         ("arrow:starts-at(ANCHOR)", .unknownKind), ("arrow:ends-at(ANCHOR)", .unknownKind), ("arrow:between(ANCHOR, ANCHOR)", .unknownKind),
+        (":start-of(ANCHOR)", .unknownKind), (":end-of(ANCHOR)", .unknownKind),
         (":edge-to", .badArgument), (":edge-from", .badArgument),
         // Combining.
         (":not(S)", .unknownKind), (":is(S1, S2)", .unknownKind),

@@ -16,8 +16,9 @@ import Canvas
 //
 // A query costs the main actor its reading and one turn that takes up the file (`QuerySnapshot`,
 // O(1)); it's answered off the main actor (`Evaluation`), a set at a time, but for what only the
-// main actor can say, asked in slices of 2 ms, one at a time (`MainFacts`). It keeps nothing between
-// queries and hears no commit (`QueryState`).
+// main actor can say, asked in slices of 2 ms, a query asking one at a time (`MainFacts`). Queries
+// run at once, none waiting for another. It keeps nothing between queries and hears no commit
+// (`QueryState`).
 
 extension PluginID {
     public static let queries: PluginID = "queries"

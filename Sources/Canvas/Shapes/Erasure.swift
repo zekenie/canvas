@@ -60,6 +60,12 @@ extension CustomSkeletonOutline {
     }
 }
 
+extension StrokedShape {
+    func erasedLineWidth(of record: AnyShapeRecord, in context: ShapeContext) -> CGFloat? {
+        record.typed(as: Props.self).map { lineWidth(of: $0, in: context) }
+    }
+}
+
 extension CustomTranslation {
     func erasedBeginTranslation(of record: AnyShapeRecord, movingWith moving: Set<ShapeID>,
                                 in transaction: inout Transaction) -> (@MainActor (CGPoint, inout Transaction) -> Void)? {

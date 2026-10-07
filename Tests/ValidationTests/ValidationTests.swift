@@ -62,6 +62,12 @@ struct OneAtATime: CanvasOverlay {
     }
 }
 
+/// What a test has the canvas outline: the selection, and groups of shapes in colors of their own.
+@MainActor final class Outlined {
+    var shapes: [ShapeID] = []
+    var tinted: [TintedOutlines] = []
+}
+
 @MainActor var calls = 0
 
 @MainActor let validationTests = Suite("Validation", [
@@ -330,6 +336,109 @@ struct OneAtATime: CanvasOverlay {
         let bare = renderBitmap(h.editor, size: size)
         expect(red(bare, CGPoint(x: 60, y: 37)), "3 out, no standoff: \(pixel(bare, at: CGPoint(x: 60, y: 37)))")
         expect(!red(bare, CGPoint(x: 60, y: 33)), "and not 7")
+    },
+    test("a ring stands outside the rings of tinted outlines round its shape, 4 view points further out for each past the first, selected or not, in full and zoomed out; an open shape's is where it was") {
+        let lit = Outlined()
+        let h = try EditorHarness(plugins: [FixturesPlugin(), LinksPlugin(), ValidationPlugin(), Rules { r in
+            r.validate(Box.self) { _, _ in [.error("always")] }
+            r.validate(Link.self) { _, _ in [.error("always")] }
+            r.outlines { _ in Outlines(shapes: lit.shapes, tinted: lit.tinted) }
+        }])
+        h.editor.outlineStandoff = 4                       // what ships: EditorHarness outlines on the edge
+        let green = NSColor(srgbRed: 0, green: 1, blue: 0, alpha: 1), magenta = NSColor(srgbRed: 1, green: 0, blue: 1, alpha: 1)
+        let size = CGSize(width: 400, height: 300)
+        /// What colors the rows `rows` of a column are: r for the ring (the error's red), g and m for the tints, . for none of them.
+        @MainActor func column(_ rep: NSBitmapImageRep, x: CGFloat, rows: Range<Int>) -> String {
+            String(rows.map { y -> Character in
+                let p = pixel(rep, at: CGPoint(x: x, y: CGFloat(y)))
+                if p[0] > 200 && p[1] < 100 && p[2] < 100 { return "r" }
+                if p[1] > 200 && p[0] < 80 && p[2] < 80 { return "g" }
+                if p[0] > 200 && p[2] > 200 && p[1] < 80 { return "m" }
+                return "."
+            })
+        }
+        let box = h.add(Box(CGRect(x: 40, y: 40, width: 40, height: 40)))
+        for zoom: CGFloat in [1, 2] {
+            h.editor.camera = Camera(origin: .zero, zoom: zoom)
+            // Above the box's top edge, at 40 × zoom: the ring is 7 out, the outline 4 (the tint of a first ring), then 8, 12.
+            let top = Int(40 * zoom), x = 60 * zoom
+            @MainActor func rows() -> String { column(renderBitmap(h.editor, size: size), x: x, rows: top - 14..<top) }
+            lit.tinted = []
+            expectEqual(rows(), "......rr......", "no tint: the ring 7 out, at \(zoom * 100)%")
+            lit.tinted = [TintedOutlines(color: green, shapes: [box])]
+            expectEqual(rows(), "......rr.gg...", "one ring of tint, 4 out: the ring where it was, at \(zoom * 100)%")
+            lit.tinted = [TintedOutlines(color: green, shapes: [box]), TintedOutlines(color: magenta, shapes: [box], ring: 1)]
+            expectEqual(rows(), "..rr.mm..gg...", "two lights: the second's ring 8 out, so the ring 11 out, at \(zoom * 100)%")
+            // Selected, the one light's tint stands a ring further out, and the ring with it.
+            lit.tinted = [TintedOutlines(color: green, shapes: [box])]
+            lit.shapes = [box]
+            // (The selection's own line is 4 out, over where the tint was, in the accent color.)
+            expectEqual(String(rows().prefix(9)), "..rr.gg..", "selected: its tint 8 out, the ring 11 out, at \(zoom * 100)%")
+            lit.shapes = []
+        }
+        // Zoomed out: the ring is 3 out of the frame, and 7 with a second ring of tint, which is 4 out.
+        let big = h.add(Box(CGRect(x: 200, y: 200, width: 500, height: 300)))
+        h.editor.camera = Camera(origin: .zero, zoom: 0.2)             // (40, 40) to (140, 100)
+        expect(h.editor.drawsSkeletons)
+        h.editor.transact { $0.delete([box]) }
+        lit.tinted = []
+        expectEqual(column(renderBitmap(h.editor, size: size), x: 80, rows: 28..<44), "........rr......", "zoomed out, the ring 3 out of the frame")
+        lit.tinted = [TintedOutlines(color: green, shapes: [big]), TintedOutlines(color: magenta, shapes: [big], ring: 1)]
+        expectEqual(column(renderBitmap(h.editor, size: size), x: 80, rows: 28..<44), "....rr.mm..gg...", "with two rings of tint, 7 out, outside them")
+        // An open shape has no ring of tint: its ring is 3 above its line, as it was, tinted or not.
+        let a = h.add(Box(CGRect(x: 100, y: 300, width: 40, height: 40)))
+        let b = h.add(Box(CGRect(x: 200, y: 300, width: 40, height: 40)))
+        let link = h.add(Link(from: a, to: b))
+        h.editor.camera = Camera(origin: .zero, zoom: 1)
+        lit.tinted = [TintedOutlines(color: green, shapes: [link]), TintedOutlines(color: magenta, shapes: [link], ring: 1)]
+        lit.shapes = [link]
+        let line = column(renderBitmap(h.editor, size: CGSize(width: 400, height: 400)), x: 180, rows: 310..<330)
+        expectEqual(String(line.prefix(8)), "......rr", "the open shape's ring 3 above its line, which is at 320")
+    },
+    test("a shape just out of view has its ring drawn when the tinted rings round it reach it into view: the shapes looked at grow by how far they reach") {
+        let lit = Outlined()
+        let h = try EditorHarness(plugins: [FixturesPlugin(), ValidationPlugin(), Rules { r in
+            r.validate(Box.self) { _, _ in [.error("always")] }
+            r.outlines { _ in Outlines(shapes: lit.shapes, tinted: lit.tinted) }
+        }])
+        h.editor.outlineStandoff = 4
+        // Its right edge is 11 left of the view. Its ring is centered 7 out of that, 4 left of the view, with one ring of tint; with two
+        // lights, 11 out, at x = 0, and in view (2 wide: pixel 0 is the ring's). It's only looked at if the shapes looked at are grown
+        // by how far the tint pushes the ring out.
+        let box = h.add(Box(CGRect(x: -51, y: 100, width: 40, height: 100)))
+        let size = CGSize(width: 400, height: 300)
+        @MainActor func edge() -> [Int] { pixel(renderBitmap(h.editor, size: size), at: CGPoint(x: 0, y: 150)) }
+        lit.tinted = [TintedOutlines(color: .systemGreen, shapes: [box])]
+        let one = edge()
+        expect(!(one[0] > 200 && one[1] < 100 && one[2] < 100), "one ring: the ring is out of view, \(one)")
+        lit.tinted = [TintedOutlines(color: .systemGreen, shapes: [box]), TintedOutlines(color: .systemPurple, shapes: [box], ring: 1)]
+        let two = edge()
+        expect(two[0] > 200 && two[1] < 100 && two[2] < 100, "two lights: the ring reaches into view, 11 out of the edge, at x = 0: \(two)")
+    },
+    test("a ring is grown again when the tinted rings round its shape change, and not while they stay") {
+        #if DEBUG
+        let lit = Outlined()
+        let h = try EditorHarness(plugins: [FixturesPlugin(), ValidationPlugin(), Rules { r in
+            r.validate(Box.self) { _, _ in [.error("always")] }
+            r.outlines { _ in Outlines(shapes: lit.shapes, tinted: lit.tinted) }
+        }])
+        let box = h.add(Box(CGRect(x: 40, y: 40, width: 40, height: 40)))
+        let engine = try require(h.editor.validation)
+        let size = CGSize(width: 200, height: 200)
+        @MainActor func draw() { _ = renderBitmap(h.editor, size: size) }
+        draw()
+        expectEqual(engine.ringsGrown, 1)
+        draw()
+        expectEqual(engine.ringsGrown, 1, "kept")
+        lit.tinted = [TintedOutlines(color: .systemGreen, shapes: [box]), TintedOutlines(color: .systemPurple, shapes: [box], ring: 1)]
+        draw()
+        expectEqual(engine.ringsGrown, 2, "grown again with a second ring of tint")
+        draw()
+        expectEqual(engine.ringsGrown, 2, "kept")
+        lit.tinted = []
+        draw()
+        expectEqual(engine.ringsGrown, 3, "and again when it's gone")
+        #endif
     },
     test("the shape being edited isn't outlined, since what it says is still being written; once editing ends, it is") {
         let h = try EditorHarness(plugins: [CardsPlugin(), ValidationPlugin(), Rules { r in

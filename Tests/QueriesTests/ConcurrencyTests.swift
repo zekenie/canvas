@@ -9,9 +9,9 @@ import os
 
 // Where a query runs, and when it stops: the file as it was taken up, with derived names as the app
 // has them when asked; what only the main actor says, asked of the shapes in hand, in slices of 2 ms
-// plus the one record that crosses it, one at a time, with the run loop's own sources between them;
-// the caller's cancellation, the 8 s deadline (on the editor's scheduler) and a closed file; and one
-// query at a time.
+// plus the one record that crosses it, a query's one at a time, with the run loop's own sources
+// between them; the caller's cancellation, the 8 s deadline (on the editor's scheduler) and a closed
+// file; and queries at once, none waiting for another or stopping another.
 
 /// A word only the main actor answers, as slowly as a test says: `:slow`, asked of every chore, true
 /// for each, each ask costing `cost` of the thread's CPU, then `onAsk`.
@@ -248,24 +248,28 @@ func threadsPlugin(_ threads: Threads) -> Contributor {
         expect(marked <= 7, "queued in the first slice, it ran after \(marked) of 100: before the second")
         expect(result.timings.slices > 5)
     },
-    test("the run loop's own sources run between slices: a timer fires while a query of 50 slices runs") {
-        let slow = SlowWord()
-        slow.cost = { _ in .microseconds(2_100) }
-        let h = try EditorHarness(plugins: queryPlugins(more: [slowPlugin(slow)]), file: manyChores(50))
-        let firedAt = Box<Int?>(nil)
-        let timer = Timer(timeInterval: 0.01, repeats: false) { _ in MainActor.assumeIsolated { firedAt.value = slow.calls } }
-        // Armed in the first slice, so it can fire only once the query's slices have begun (the
-        // vocabulary, the check and the take-up before them take their own time).
-        slow.onAsk = { _ in
-            guard slow.calls == 1 else { return }
-            RunLoop.main.add(timer, forMode: .default)
+    test("the run loop's own sources run between slices, of one query and of queries at once: a timer fires while one or two queries of 50 slices each run") {
+        for count in [1, 2] {
+            let slow = SlowWord()
+            slow.cost = { _ in .microseconds(2_100) }
+            let h = try EditorHarness(plugins: queryPlugins(more: [slowPlugin(slow)]), file: manyChores(50))
+            let firedAt = Box<Int?>(nil)
+            let timer = Timer(timeInterval: 0.01, repeats: false) { _ in MainActor.assumeIsolated { firedAt.value = slow.calls } }
+            // Armed in the first slice, so it can fire only once the queries' slices have begun (the
+            // vocabulary, the check and the take-up before them take their own time).
+            slow.onAsk = { _ in
+                guard slow.calls == 1 else { return }
+                RunLoop.main.add(timer, forMode: .default)
+            }
+            let queries = try require(h.editor.queries)
+            let running = (0..<count).map { _ in Task { @MainActor in try await queries.run(QueryRequest("chore:slow", countOnly: true)) } }
+            for query in running { expect(try awaitResult(timeout: 10) { try await query.value }.timings.slices >= 50, "\(count) running") }
+            timer.invalidate()
+            expectEqual(slow.calls, 50 * count)
+            let fired = try require(firedAt.value, "the timer never fired while \(count) queries ran")
+            expect(fired >= 1 && fired < 50, "it fired after \(fired) of \(50 * count) records, while \(count) ran")
+            expectEqual(queries.liveSnapshots, 0)
         }
-        let queries = try require(h.editor.queries)
-        let result = try awaitResult(timeout: 10) { try await queries.run(QueryRequest("chore:slow", countOnly: true)) }
-        timer.invalidate()
-        expect(result.timings.slices >= 50, "\(result.timings.slices) slices")
-        let fired = try require(firedAt.value, "the timer never fired while the query ran")
-        expect(fired >= 1 && fired < 50, "it fired after \(fired) of 50 records")
     },
     test("cancelled mid-slice: the slice ends, no other starts, and nothing is left") {
         let slow = SlowWord()
@@ -290,9 +294,9 @@ func threadsPlugin(_ threads: Threads) -> Contributor {
         expectEqual(queries.liveSnapshots, 0)
         expectEqual(try matched("#\(uuid(1))", on: h), [id(1)], "the next query runs")
     },
-    test("the deadline: 8 s on the editor's scheduler cancels the query, too_slow, and goes when it's done first") {
+    test("the deadline: 8 s on the editor's scheduler cancels the query, too_slow, and goes when it's done first; it's the one query's, and another running meanwhile answers") {
         let slow = SlowWord()
-        let h = try EditorHarness(plugins: queryPlugins(more: [slowPlugin(slow)]), file: manyChores(20))
+        let h = try EditorHarness(plugins: queryPlugins(more: [slowPlugin(slow)]), file: manyChores(200))
         let queries = try require(h.editor.queries)
         _ = try answer("chore", on: h)
         expectEqual(h.scheduler.pendingCount, 0, "a query done before its deadline cancels it")
@@ -300,28 +304,40 @@ func threadsPlugin(_ threads: Threads) -> Contributor {
         slow.cost = { _ in .microseconds(300) }
         slow.onAsk = { _ in if slow.calls == 1 { h.wait(7_999) } }
         let late = try answer("chore:slow", on: h)
-        expectEqual(late.count, 20, "a millisecond short of the deadline, it answers")
+        expectEqual(late.count, 200, "a millisecond short of the deadline, it answers")
 
+        // A quick query is asked beside a slow one, and has its answer by the time the clock runs out on the slow one.
         slow.calls = 0
-        slow.onAsk = { _ in if slow.calls == 1 { h.wait(8_000) } }
+        let answered = Box(false)
+        slow.onAsk = { _ in
+            guard answered.value else { return }
+            slow.onAsk = nil
+            h.wait(8_000)
+        }
         let first = Task { @MainActor in try await queries.run(QueryRequest("chore:slow")) }
-        let second = Task { @MainActor in try await queries.run(QueryRequest("chore")) }
+        let second = Task { @MainActor () -> QueryResult in
+            let result = try await queries.run(QueryRequest("chore", countOnly: true))
+            answered.value = true
+            return result
+        }
         let slowError = try require(thrown(by: first))
         expectEqual(slowError.reason, .tooSlow)
         expectEqual(slowError.message, "The query took more than 8 seconds.")
         expectEqual(slowError.hint, "Start from a kind, a title or an id, or give transitive words a type.")
-        expect(slow.calls < 20, "it stopped: \(slow.calls) asked")
-        expectEqual(try thrown(by: second)?.reason, .tooSlow, "the one waiting its turn ran out of time too")
+        expect(slow.calls < 200, "it stopped: \(slow.calls) asked")
+        expect(answered.value, "the quick one answered before the slow one ran out of time")
+        expectEqual(try awaitResult(timeout: 10) { try await second.value }.count, 200, "and its answer stands: the deadline was the slow query's alone")
         expectEqual(h.scheduler.pendingCount, 0)
         expectEqual(queries.liveSnapshots, 0)
         slow.onAsk = nil
-        expectEqual(try answer("chore:slow", on: h, countOnly: true).count, 20)
+        expectEqual(try answer("chore:slow", on: h, countOnly: true).count, 200)
     },
-    test("queries on one editor run one at a time, each taking up the file once the one before is done") {
+    test("queries on one editor run at once: a quick one asked while a slow one is mid-slices takes up the file and answers before it ends, each over a snapshot of its own") {
         let slow = SlowWord()
         slow.cost = { _ in .microseconds(300) }
         let running = Running()
         let takes = Box(0)
+        let alive = Box<[Int]>([])
         let logged = Contributor(id: "logged") { registrar in
             registrar.queryPseudoClass("logged", "logs as it's taken up", example: ":logged",
                                        prepare: { _ in
@@ -330,33 +346,64 @@ func threadsPlugin(_ threads: Threads) -> Contributor {
                                        },
                                        matches: { _, _ in .yes })
         }
-        let h = try EditorHarness(plugins: queryPlugins(more: [slowPlugin(slow), logged]), file: manyChores(30))
+        // Asked of every chore on the main actor, it notes how many snapshots are alive.
+        let counting = Contributor(id: "counting") { registrar in
+            registrar.queryPseudoClass("counting", "notes the snapshots alive as it's asked", example: ":counting", prepare: { _ in () },
+                                       matches: { _, _ in .onMain },
+                                       onMain: { _, _, _, context in
+                                           alive.value.append(context.editor.queries?.liveSnapshots ?? -1)
+                                           return true
+                                       })
+        }
+        let h = try EditorHarness(plugins: queryPlugins(more: [slowPlugin(slow), logged, counting]), file: manyChores(200))
         let queries = try require(h.editor.queries)
+        let second = Box<Task<QueryResult, any Error>?>(nil)
+        // The quick query is asked while the slow one is in its first slice.
+        slow.onAsk = { _ in
+            guard slow.calls == 1 else { return }
+            second.value = Task { @MainActor in
+                let result = try await queries.run(QueryRequest("chore:logged:counting", limit: 200))
+                running.log.append("end second")
+                return result
+            }
+        }
         let first = Task { @MainActor in
-            let result = try await queries.run(QueryRequest("chore:logged:slow"))
+            let result = try await queries.run(QueryRequest("chore:logged:slow", limit: 200))
             running.log.append("end first")
             return result
         }
-        let second = Task { @MainActor in
-            let result = try await queries.run(QueryRequest("chore:logged"))
-            running.log.append("end second")
-            return result
+        let slowAnswer = try awaitResult(timeout: 10) { try await first.value }
+        let quick = try require(second.value, "the quick query was asked")
+        let quickAnswer = try awaitResult(timeout: 10) { try await quick.value }
+        expectEqual(running.log, ["take 1", "take 2", "end second", "end first"], "the second took up the file while the first was in its slices, and answered first")
+        expectEqual(slowAnswer.rows.map(\.id), (1...200).map(id), "the slow one still answers right")
+        expectEqual(slowAnswer.count, 200)
+        expectEqual(slow.calls, 200)
+        expectEqual(quickAnswer.rows.map(\.id), (1...200).map(id))
+        expect(!alive.value.isEmpty && alive.value.allSatisfy { $0 == 2 }, "both snapshots were held while the quick one asked the main actor: \(alive.value)")
+        expectEqual(queries.liveSnapshots, 0, "and neither is held after")
+        expectEqual(h.scheduler.pendingCount, 0, "each cancelled its own deadline")
+        expectEqual(try matched("#\(uuid(1))", on: h), [id(1)], "the next query runs")
+    },
+    test("a query cancelled while another runs is the only one stopped, whichever of them it is") {
+        let slow = SlowWord()
+        slow.cost = { _ in .microseconds(300) }
+        let h = try EditorHarness(plugins: queryPlugins(more: [slowPlugin(slow)]), file: manyChores(100))
+        let queries = try require(h.editor.queries)
+        for cancelled in 0..<2 {
+            slow.calls = 0
+            let both = Box<[Task<QueryResult, any Error>]>([])
+            slow.onAsk = { _ in if slow.calls == 20 { both.value[cancelled].cancel() } }
+            both.value = (0..<2).map { _ in Task { @MainActor in try await queries.run(QueryRequest("chore:slow")) } }
+            expectEqual(try thrown(by: both.value[cancelled])?.reason, .cancelled, "query \(cancelled)")
+            let other = try awaitResult(timeout: 10) { try await both.value[1 - cancelled].value }
+            expectEqual(other.count, 100, "the other, asked beside it, answers")
+            expectEqual(other.rows.map(\.id), (1...100).map(id))
+            expect(slow.calls < 200, "the cancelled one stopped: \(slow.calls) asked of 200")
+            expectEqual(queries.liveSnapshots, 0)
         }
-        expectEqual(try thrown(by: first), nil)
-        expectEqual(try thrown(by: second), nil)
-        expectEqual(running.log, ["take 1", "end first", "take 2", "end second"])
-
-        // One cancelled while it waits leaves the line, and the next still gets its turn.
-        running.log = []
-        let third = Task { @MainActor in try await queries.run(QueryRequest("chore:logged:slow")) }
-        let waiting = Task { @MainActor in try await queries.run(QueryRequest("chore:logged")) }
-        slow.onAsk = { _ in if slow.calls == 31 { waiting.cancel() } }
-        expectEqual(try thrown(by: third), nil)
-        expectEqual(try thrown(by: waiting)?.reason, .cancelled)
-        expectEqual(running.log, ["take 3"], "the one that waited never took up the file")
         slow.onAsk = nil
-        expectEqual(try answer("chore:logged", on: h, countOnly: true).count, 30)
-        expectEqual(queries.liveSnapshots, 0)
+        expectEqual(try answer("chore:slow", on: h, countOnly: true).count, 100)
     },
     test("a file closed while its query runs: board_closed, and the editor isn't kept") {
         let slow = SlowWord()

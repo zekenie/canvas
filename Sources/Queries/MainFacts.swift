@@ -5,7 +5,8 @@ import QueryLanguage
 /// `derived`) and a word's verdict (its `onMain`), asked by the evaluation in slices, each a main-actor
 /// job of its own that lasts `QueryBudget.slice` plus at most the one record that crosses it. The
 /// evaluation asks for the next slice only once it has the last one's answers, so a query never has
-/// more than one waiting on the main queue, and input and drawing run between them.
+/// more than one waiting on the main queue, and input, drawing and the slices of other queries
+/// running at once (each has a `MainFacts` of its own) run between them.
 ///
 /// Each is asked about the shape as the app has it when the slice runs, not as the query took it up:
 /// the id is looked up in the live file (the board it's on now too), and a shape gone since, kept

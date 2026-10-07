@@ -44,6 +44,7 @@ maps one onto the other.
 - [Frames](#frames)
 - [Jump To](#jump-to)
 - [Moving](#moving)
+- [Neighbors](#neighbors)
 - [Transform](#transform)
 - [References](#references)
 - [The command line](#the-command-line)
@@ -245,6 +246,8 @@ Once one plugin works, the question is which piece the next feature needs.
 | Add a shape without a frame (a line, a path) | `ShapeProps`; `geometry`, `hitTest` (with its `hitMargin`) and `CustomTranslation`; a tool that inserts it | [A freehand line](#a-shape-without-a-frame) |
 | Work out a kind's geometry from other shapes (a connector) | Look them up through the `ShapeContext`: `shape(_:)`, `geometry(of:)`, `hitTest(_:shape:)` | [Arrows](../Sources/Connections/Connectables.swift) |
 | Hit or outline a shape more exactly than its frame | Override `geometry`, `hitTest` or `indicatorPath` | [A freehand line](#a-shape-without-a-frame), [StickyNotes](../Sources/StickyNotes/StickyNotes.swift)' rounded outline |
+| Have a line kind covered, not striped, by a tinted outline (a light) | `StrokedShape`: say how wide the line is, `lineWidth(of:in:)`, in world units; overlays that decorate along it read `registry.lineWidth(of:in:)` | [A freehand line](#a-shape-without-a-frame), [Outlines](#outlines) |
+| Decorate a closed shape outside its outline without drawing over the tinted rings round it | `OverlayContext.tintedOutset(of:)` (view points) added to the distance, `greatestTintedOutset` for culling | [Outlines](#outlines), [Validation](#a-horizontal-plugin)'s rings |
 | Draw a kind more simply zoomed out, where its text doesn't read, and cheaply, since thousands are in view | `CustomSkeleton`'s `renderSkeleton`: fills, `context.fillSkeletonText` for bars where its text is (as long as its columns, `SkeletonText.columns(of:)`), or `context.drawSkeleton(of:color:)`, the default, in a color of its own; `CustomSkeletonOutline` for an outline there that isn't its kept geometry's | [Skeletons](#skeletons), [Patches](#your-first-plugin) |
 | Make what an overlay draws, or what answers the pointer, follow what a shape shows zoomed out | `editor.drawsSkeleton(of:)` and `OverlayContext.drawsSkeleton(of:)` (each shape's level: the one being edited is in full), `OverlayContext.drawsSkeletons` (the frame's), and `EditorService.drawsSkeletonsDidChange` for a pointer held still | [Skeletons](#skeletons), [Adornments](#drawing-and-cost) |
 | Edit a shape in place, as text | `Editable`, and an `editingPlacement` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
@@ -280,6 +283,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Keep a service's state for going back to a board | `EditorService.boardWillChange` and `boardDidChange`, with a `BoardStash` (else a switch is heard as a commit of every shape) | [Showing a board](#showing-a-board) |
 | Write to a shape on a board that isn't shown (an answer that lands late), as an undo step made there | `editor.transact(on: board, "Name") { … }`; services hear it in `ChangeSet.boardsChanged` and `elsewhere` | [Boards that aren't shown](#boards-that-arent-shown) |
 | Draw above every shape something that isn't one shape's adornment (a status outline, hints) | `registrar.overlay`, a `CanvasOverlay`; `editor.paintOrder(in: context.visibleRect)` | [Validation](../Sources/Validation/Validation.swift), [Arrows](../Sources/Connections/ArrowDefinition.swift)' binding hints |
+| Outline shapes in a color of your own (a highlight), a ring for each group a shape is in, filled in the minimap too | `registrar.outlines { … Outlines(tinted: [TintedOutlines(color:shapes:ring:)]) }`: stroked under every other outline | [Outlines](#outlines), [Neighbors](#neighbors) |
 | Act on shapes about to be deleted (delete what depends on them) | `registrar.willDelete` | [The document](#the-editor-the-document-and-drawing) |
 | Create a kind with a double-click on empty canvas | `x.createOnDoubleClick(place)` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
 | Give each shape of a kind a board of its own, saved, deleted and copied with it | `BoardOwning` on its definition, nothing to implement; `editor.showBoard(BoardID(owner:))` shows one | [Boards in a file](#boards-in-a-file) |
@@ -329,6 +333,8 @@ Once one plugin works, the question is which piece the next feature needs.
 | Find the shapes of a file a query matches (by kind, title, attribute, what's inside what, what connects to what), from a plugin or an agent | `editor.queries?.run(QueryRequest(#"sticky-note:mentions("Auth")"#))`, answered off the main actor; `canvas query` | [Queries](#queries) |
 | Make text a kind draws findable with ⌘F, highlighted where it's drawn | `registrar.findableTexts(_:where:…)` (Find), or `x.findableTexts(_:…)` for a kind's own: its texts and where each range is drawn | [Find](#find) |
 | Keep the shapes some queries match (what a plugin that stores answers asks, many at once, ids only), or check a query's titles before keeping it | `await editor.queries?.matches([QueryMatchRequest(text, edges: .recorded, limit: 50) { admit($0) }])`, `checkNames(plan)` | [Many at once](#many-at-once-edge-views-and-waiting) |
+| Outline what's connected to the hovered shape, at a glance, in a color for each way (a light: a color and a query), on the canvas and in the minimap | `NeighborsPlugin(lights: [NeighborLight(color:query:)])`: it asks the engine, places what's on another board on its card, and hands the core tinted outlines | [Neighbors](#neighbors) |
+| Know which shape the pointer is on where the canvas doesn't show it (a row of another board's shapes), outline the card that holds it, or say it from a view of your own | `editor.hoveredElsewhere`, observed and settable (Selection's; the table of contents' rows set it) | [Selection](#selection) |
 | Give queries a plugin's word (a pseudo-class, or a relation over its edges), or say how its text reads in them | A plugin in QueryLexicon, which imports Queries and the concern: `registrar.queryPseudoClass`, `queryRelation` or `queryTextFormat` | [What plugins add](#what-plugins-add) |
 | Put an editing view's selection where the press that began editing was | `editor.beginEditing(id, at: point, clickCount:)`, read as `EditContext.startPoint` and `startClickCount` | [Capabilities](#capabilities) |
 | Name an undo step, or make several changes one | `editor.transact("Name") { ... }`; `editor.undoHistory.group("Name") { ... }`; `transact(coalescing:)` for a run of writes | [Undo](#undo) |
@@ -499,7 +505,7 @@ Each target is one line, with its layer:
 | concern | foundation, surface, concern | Validation, Clipboard, Titles, Locking, Publishing, Connections, Mentions, Boards, Snapping, Transform |
 | language | foundation, surface, language, wire | Automation, QueryCommands |
 | lexicon | foundation, surface, concern, language | DrawLexicon, QueryLexicon |
-| vertical | foundation, surface, concern | StickyNotes, Schemas, Subboards, Frames, JumpTo, References, Moving, Reordering |
+| vertical | foundation, surface, concern | StickyNotes, Schemas, Subboards, Frames, JumpTo, References, Moving, Neighbors, Reordering |
 | composition | foundation, surface, concern, language, lexicon, vertical, wire | Composition (the shipped plugin list) |
 | app | foundation, ui, composition, wire | InfiniteCanvas |
 | appex | foundation, ui, composition | CanvasQuickLook (an extension the app carries: Quick Look's preview and thumbnail of a board file, [Boards on disk](#boards-on-disk)) |
@@ -902,6 +908,15 @@ extension PolylineDefinition: CustomTranslation {
   with the pointer's offset from the press. Escape puts the shape back without your help: its
   whole record as it was before `beginTranslation` (a box kind moved by its frame gets its origin
   back, and keeps anything else written to it while it moved).
+- **`StrokedShape` says how wide its line is**, in world units, for a kind drawn as a line, so a
+  tinted outline of it (`Outlines.tinted`, a plugin's own colors: [Neighbors](#neighbors)' lights)
+  covers it, as wide on screen as the line and a point more, round, rather than a stripe of its own
+  down the middle of a line thicker than the outline. Without it the outline is a plain couple of
+  points along the middle (wider than a thin line at 50%, a pinstripe inside a thick one at 200%):
+  `extension PolylineDefinition: StrokedShape { func lineWidth(of shape: ShapeRecord<Polyline>, in
+  context: ShapeContext) -> CGFloat { PolylineStyle.strokeWidth } }`. Only tinted outlines cover:
+  the selection's and a hover's stay thin, and zoomed out, where the skeleton is a point-wide line,
+  so does a tint's.
 - **Zoomed out it's the core's default [skeleton](#skeletons)**, its points a view point wide, in
   its own indigo (`CustomSkeleton`, its code shown there), at the default's cost.
 
@@ -959,12 +974,18 @@ three points (its start, the middle of its body, its end) and works nothing out 
 arc through them, or the line from start to end where the middle is less than a quarter of a view
 point off it, in its color as wide as its own stroke but never under a view point, with butt ends,
 and each head a filled triangle, as long as the render's chevron and swung as far. A stroke and a
-fill. Its outline there is that arc (`CustomSkeletonOutline`), not its geometry's two straight
-segments. A label is left off, and the arc runs whole where it is: a few pixels of text aren't
-worth drawing, and the render's cut, with its greeked bars as dark as the canvas, reads as a gap
-in the arrow. That departs on purpose from tldraw, whose arrows only trade a drawn style for a solid
-one, below 25%, and from the render's round caps and open chevrons, below 35% alone: the POC's
-transcript and every render at 35% and above are as they were.
+fill. Its outline there is that arc and the heads it draws, each a closed triangle as it's filled
+(`CustomSkeletonOutline`), not its geometry's two straight segments, so any outline of it (the
+selection's, a hover's, a tint) shows which way it points. A label is left off, and the arc runs
+whole where it is: a few pixels of text aren't worth drawing, and the render's cut, with its greeked
+bars as dark as the canvas, reads as a gap in the arrow. That departs on purpose from tldraw, whose
+arrows only trade a drawn style for a solid one, below 25%, and from the render's round caps and open
+chevrons, below 35% alone: the POC's transcript and every render at 35% and above are as they were.
+A skeleton is this app's own, with nothing of tldraw's to match.
+
+An arrow says how wide its line is, 3.5 world units whatever it holds (`StrokedShape`, `ArrowStyle.strokeWidth`),
+so a tinted outline of it, a light of [Neighbors](#neighbors), covers its body and heads as wide on screen as
+its line and a point more, instead of a thin stripe down the middle of it.
 
 ## A horizontal plugin
 
@@ -1234,17 +1255,23 @@ all, nor one being edited, whose text is still being written. In full, each ring
 and follows the shape's own outline, 3 view points outside where the canvas strokes that, as a
 selection's follows it: a closed shape's [outline stands off its edge](#outlines) (`editor.outlineGap`,
 4 view points), so its ring is 7 out of the edge, the same for every kind and never under a selected
-shape's accent line, while an open shape's is on its line, so an arrow's ring is 3 out of it. The
-ring is the outline the core strokes for its kind (`registry.indicatorPath(of:in:)`, on the edge,
-which any overlay that decorates a shape along it reads) grown by both
+shape's accent line, while an open shape's is on its line, so an arrow's ring is 3 out of it. A closed
+shape [lit by tinted outlines](#outlines) (Neighbors' lights) has its ring outside theirs: the overlay
+asks `OverlayContext.tintedOutset(of:)` for how far the outermost tinted ring round a shape stands
+beyond ring 0 (4 view points for each ring past the first, a selected shape's tint counted a ring
+further out, none for an open shape), and the ring is that much further out, 7 + 4 = 11 out of the
+edge of a shape two lights outline, culled by `greatestTintedOutset` so a ring the tint pushes into
+view is drawn. The ring is the outline the core strokes for its kind
+(`registry.indicatorPath(of:in:)`, on the edge, which any overlay that decorates a shape along it
+reads) grown by the standoff, the padding and the tinted outset
 (`CGPath.grownOutward(by:isClosed:)`, which the core uses for any outline that isn't a rect), so a
 card's ring keeps its rounded corners and an arrow's hugs its line. Growing an outline is path
 arithmetic, so each shape's ring is kept until the shape or its outline changes, or the zoom by more
-than a tenth (a pinch grows it once a tenth, not every frame), or the standoff, and a shape under 32
+than a tenth (a pinch grows it once a tenth, not every frame), or the standoff, or the tinted outset, and a shape under 32
 points on screen gets a rounded rect around its bounds, grown the same, which looks the same there.
 Zoomed out, where shapes are [skeletons](#skeletons), the rings are a map of where the problems are,
 and nothing stands off. There, with thousands in view, each is a ring around its bounds with square
-corners, 3 out of the frame, grown from no outline, and a run of one color, in paint order, is filled as one path, so a
+corners, 3 out of the frame (and as far further as the tinted rings stand), grown from no outline, and a run of one color, in paint order, is filled as one path, so a
 front shape's ring still covers a back one's: Core Graphics fills rects in one path for a fraction
 of what stroking each costs (4,800 at 10%: 2.7 ms, against 21), while rounded outlines in one path,
 stroked or filled, cost ten times what each stroked alone does. Two plugin values of Validation's
@@ -1764,7 +1791,7 @@ of a selection: Selection works through the same generic hooks any plugin can us
 | Core hook | What Selection does with it |
 |---|---|
 | `registrar.defaultTool(.select)` | The editor starts in Select, Select leads the toolbar, and Escape and placing a shape come back to it. |
-| `registrar.outlines { ... }` | Each selected shape's outline, the box around several, and the hover's faint outline. The core strokes every plugin's outlines and the hint in one pass, over the faint ones. |
+| `registrar.outlines { ... }` | Each selected shape's outline, the box around several, and the hover's faint outline (the shape hovered, else the shape that holds the one hovered elsewhere). The core strokes every plugin's outlines and the hint in one pass, over the faint ones. |
 | `registrar.command(.delete)`, `.selectAll`, `.goBack`, `.openSelection`, `.zoomToSelection` and `.smartMagnify` (with their keys, through Keyboard) | Delete, and Edit › Delete (enabled while something's selected, a locked shape too, which refuses and shakes), deletes the selection; ⌘A, and Edit › Select All (enabled while the board has shapes), selects everything; ⌘[, and Go › Back (enabled while there's a step back), goes back to the previous selection; ⌘↓ (enabled while the only selected shape can be opened and nothing is being edited, as ⌘↓ is then the text's) opens it. Return and Enter (shortcuts of their own, which always take the key) run `.openSelection` too. ⇧2, and View › Zoom to Selection (enabled while something's selected), reveals the selection; a trackpad's smart zoom (a two-finger double-tap) reveals the shape under the pointer, and the next goes back. The arrow keys (shortcuts of their own, repeating) nudge the selection a world unit, ten with ⇧ (`nudgeSelection(by:)`: a `translate`, "Move", with no snapping), while `canNudge`. |
 | `Tool.cancel` | Escape in Select, with nothing under way, deselects. |
 | `Tool.ignoresPress` | The rest of a double-click whose first click, on a face, went somewhere (changed the selection or moved the camera) is ignored, so the camera goes on and nothing is placed or edited where it's brought. |
@@ -1791,12 +1818,25 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   as the pointer leaves; any other plugin may set it where it shows shapes (the table of contents'
   rows do), in any tool, and changing tools clears it. It's outlined faintly (not while a session
   runs, nor on a selected shape): wider and lighter than the selection's (2.5 points, the accent at
-  60%), easy to see over a yellow note, but a hovered shape doesn't read as selected
+  60%, and at 85% while tinted outlines are drawn, [Neighbors](#neighbors)' lights, so the shape
+  they're about reads above them), easy to see over a yellow note, but a hovered shape doesn't read as selected
   as it would in tldraw, which strokes a hover like the selection. `isHovered(_:)` says whether
   one shape is hovered, and is observed per shape: its observers hear only that shape's hover
   change, not the hover moving between two others, so a view per shape (a row of the table of
   contents) redraws only when its own shape's hover does. Observation keeps observers by key path,
   and each shape has its own, `\.[hovering: id]`.
+- `hoveredElsewhere` is the shape the pointer is on where a plugin shows a shape the canvas doesn't:
+  a row of another board's shapes in the table of contents sets it ([the table of
+  contents](#the-table-of-contents)), and any plugin may. A shape on the board shown isn't one (that's
+  `hovered`), and one that isn't in the file isn't there: setting either drops it. It's observed,
+  changing tools and showing another board let go of it, and a commit that takes the shape out of the
+  file or brings it onto the board shown drops it, as `hovered` drops shapes that go. The canvas
+  outlines it faintly, as it does a hover, but on a shape it shows: the shape on the board shown that
+  holds it (`file.shape(on:holding:)`, [Boards in a file](#boards-in-a-file): a subboard's card, for
+  a shape on its board at any depth; none for one on a board above). That's at once, and not while a
+  session runs or on a selected shape. Where `hovered` is a shape too (the pointer has just moved
+  from a row onto the canvas), that one alone is outlined. [Neighbors](#neighbors) lights what's
+  connected to whichever is hovered.
 - `goBack()` and `canGoBack` are data-canvas's selection history. Each change of the selection
   puts the selection it leaves on a stack, with its board and the camera as it is at that moment
   (or, while it glides, `editor.cameraTarget`, where it's headed): a click, a row of the table of
@@ -3678,7 +3718,13 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
   (`editor.isHovered`) and, while that shape is hovered, the selection, so the pointer moving down
   the list, or across the canvas, redraws the row the hover leaves and the row it reaches. A row
   that read `editor.hovered` instead would be asked for its view again on every hover change, as
-  every other row would.
+  every other row would. A row of a board under its owner's (above) is of a shape the canvas
+  doesn't show, so the pointer on it hovers nothing and leaves a hover as it is; Selection's
+  `editor.hoveredElsewhere`, observed, says which shape the pointer is on instead
+  ([Selection](#selection): the canvas outlines the card that holds it faintly, and
+  [Neighbors](#neighbors) lights what it's connected to). The pointer leaving the row, the row going
+  away (`endHover`) or another board shown lets go of it: of what the row's pointer set, never of a
+  hover another plugin set.
 - **The board shown.** It lists `editor.document`, so the board shown and nothing under it. Each
   board's rows, and its listing of every row, are kept for the boards shown last (a `BoardStash`),
   and taken back on the way back to one that hasn't changed since, so going back makes no row. A
@@ -3708,7 +3754,8 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
   the canvas does), and Escape gives the keyboard back to the canvas (`onExit`). So does hiding the panel while the list has the keyboard.
 - **Headless**, `ContentsState` (`editor.tableOfContents`) is all of it: `entries` (the rows, a tree),
   `scope`, `select(_:)`, `showAll()`, the rows' hover: `hover(_:)` and `endHover(_:)` as the
-  pointer moves onto a row and off it, and `isHovered(_:)` for whether a row shows as hovered; and
+  pointer moves onto a row and off it (for a row of another board, read back with
+  `editor.hoveredElsewhere`) and `isHovered(_:)` for whether a row shows as hovered; and
   their disclosure, `isExpanded(_:)` and `setExpanded(_:_:)`. Tests read a row's text, symbol and
   badge through `entry.label`, its marks through `entry.marks`, the board its shape owns through
   `entry.nestedBoard` (its rows, `outline(of:)`, are under it in the list), and whether it starts
@@ -6994,9 +7041,10 @@ A query costs the main actor what it reads and one turn, and does everything els
    board and the board shown; containment and edges; attributes and text; words asked of the main
    actor last, on what's left).
    A compound with a one-step edge word (`:edge-to`, `:edge-from`, `:connected-to`, `:starts-at`,
-   `:ends-at`, `:between`, a plugin's relation) and fewer than `QueryBudget.seedFromAnchors` (1,024)
-   anchors starts from their edges' far ends, never a walk of every shape: `sticky-note:edge-to(#…)`
-   costs the anchor's degree. Containment walks up from each candidate (its ancestors: those of the
+   `:ends-at`, `:start-of`, `:end-of`, `:between`, a plugin's relation) and fewer than
+   `QueryBudget.seedFromAnchors` (1,024) anchors starts from their edges' far ends, never a walk of
+   every shape: `sticky-note:edge-to(#…)` costs the anchor's degree, and `:end-of(#…)` the edges the
+   anchor carries. Containment walks up from each candidate (its ancestors: those of the
    container it's in, from its record, `container(of:on:)`, else its board's, each container's and
    each board's worked out once), or, when nothing narrowed the candidates, down from the
    containers, asking only the shapes of `containerKinds` what's inside them; transitive words go
@@ -7014,24 +7062,29 @@ A query costs the main actor what it reads and one turn, and does everything els
    one record that crosses it, one record at least: its clock is read after the first record, then
    every `clockStride` (16) while the pace leaves room before `everyRecordAfter` (1.5 ms), and after
    every record from then on. The evaluation asks for the next slice only once it has the last one's
-   answers, so a query never has more than one waiting on the main queue, and input, drawing and
-   commits run between them (the main run loop services its sources between one job and the next).
+   answers, so a query never has more than one waiting on the main queue, and input, drawing,
+   commits and other queries' slices run between them (the main run loop services its sources
+   between one job and the next).
    Each shape is asked about as the app has it when its slice runs: its id looked up in the live
    file, with the board it's on now (`QueryMainContext.shape(_:)`); one gone since, kept aside, or on
    a board the app can't show has no name and fails the word.
 5. **Written** as the wire's JSON member by member, off the main actor too, where the result is let
    go of ([query](#query)).
 
-**One at a time, and bounded.** Queries on one editor run one at a time, each taking up the file once
-the one before it is done (`--ask`'s titles and where the person is too), so no two snapshots are
-held at once. A query stops when its caller's task is cancelled (`cancelled`: the evaluation looks
-every `QueryBudget.cancellationStride` (256) shapes and before each slice, and `canvas` hanging up
-cancels the command's task); when `QueryBudget.deadline` (8 s, before `canvas`'s 10 s wait runs
-out) has passed since it was asked, running, waiting for answers to settle or waiting its turn
-(`too_slow`: a scheduled action on `editor.scheduler`, armed before the settle wait so the wait
-counts against it, cancels it, and is cancelled if the query ends first, so tests reach it by
-advancing a `ManualScheduler`); and when its editor goes (`board_closed`: `QueryState` and
-`MainFacts` hold the editor weakly, so a query never keeps a closed file's editor alive).
+**At once, and bounded.** Queries on one editor run at once: each takes up the file as soon as it's
+asked (`--ask`'s titles and where the person is too, and a batch) and is answered alongside the
+others, a snapshot of its own for each, with no line to wait in. Each asks the main actor for one
+slice at a time, so several queries' slices alternate on the main queue, with the run loop's sources
+between one job and the next. A query stops when its caller's task is cancelled (`cancelled`: the
+evaluation looks every `QueryBudget.cancellationStride` (256) shapes and before each slice, and
+`canvas` hanging up cancels the command's task) or when `QueryBudget.deadline` (8 s, before
+`canvas`'s 10 s wait runs out) has passed since it was asked, running or waiting for answers to
+settle (`too_slow`: a scheduled action on `editor.scheduler`, armed before the settle wait so the
+wait counts against it, cancels it, and is cancelled if the query ends first, so tests reach it by
+advancing a `ManualScheduler`), either stopping that query alone, since each has its own task, its
+own deadline and its own slices. Every query on an editor stops when the editor goes
+(`board_closed`: `QueryState` and `MainFacts` hold the editor weakly, so a query never keeps a closed
+file's editor alive).
 
 **Zero upkeep.** `QueryState` keeps nothing per shape or per board, implements no
 `documentDidChange`, and overrides `boardDidChange` with nothing: a commit, a drag event's included,
@@ -7042,9 +7095,11 @@ and a switch of board cost queries nothing, ever, and nothing outlives a query b
 Topology's, so a commit that lands meanwhile copies each table it changes, once: a drag event the
 file's `revisions` (and, off the root, its `children`), a shape added or removed its `locations`, a
 change of edges the index's tables it touches, a rename of a mentioned shape Mentions' resolutions
-(while a text format holds the labels). At most one copy per table per query, and none once the
-answer is made, since the snapshot is let go of then; `./build.sh bench` can't tell a commit with a
-snapshot held from one without (below).
+(while a text format holds the labels). At most one copy per table however many snapshots are held
+(copy on write: the commit's first change to a table copies it, and every snapshot taken before it
+keeps the old one), so queries at once cost a commit no more than one does, and none once the
+answers are made, since each snapshot is let go of then; `./build.sh bench` can't tell a commit with
+a snapshot held from one without (below).
 
 ### Many at once, edge views and waiting
 
@@ -7053,8 +7108,8 @@ the edges ([stand-ins](#stand-ins-forwarding), Topology's). All are generic: not
 
 - **The edge view.** `QueryRequest.edges` (an `EdgeView`, `.resolved` unless it says: every caller
   that never said keeps reading as it did) is the view of Topology's edges the query's edge words
-  see: `:edge-to`, `:connected-to`, `:downstream-of`, `:between`, `:ends-at`, a relation, and a row's
-  `connection`. Resolved, an arrow into a stand-in is an arrow into what it stands for;
+  see: `:edge-to`, `:connected-to`, `:downstream-of`, `:between`, `:ends-at`, `:end-of`, a relation,
+  and a row's `connection`. Resolved, an arrow into a stand-in is an arrow into what it stands for;
   `.recorded` forwards only through stand-ins whose own record names what they stand for and leaves
   one that stands for what was provided at its own end, which is what a stand-in's own query reads
   (it asks what to stand for, so it can't see through itself); `.literal` is as drawn. Taking up the
@@ -7072,18 +7127,20 @@ the edges ([stand-ins](#stand-ins-forwarding), Topology's). All are generic: not
   (`text`, `edges`, `limit`, `admitting`) in one go and returns, in order, each one's
   `Result<QueryMatches, QueryError>`: `canonical`, `ids` (the admitted matches in file order, at
   most `limit`), `count` (all admitted) and `revision` (`editor.revision` as the file was taken up,
-  the same for all). The file is taken up once, in one main-actor turn and one place in the line,
-  with one snapshot of Topology in each view the requests ask for, and every request is evaluated in
-  one evaluation that shares what it reads: the shapes walked, the title index, and the names, so a
-  derived name (asked of the main actor in slices) is read **once per batch**, however many
-  requests name titles. `admitting` is asked of each match off the main actor, before `limit`:
-  the first match is the first one admitted, and `count` counts those. No rows are built. A request
-  the engine refuses (`check`, then the names pass) is that request's `.failure`, with the reason
-  and message `run` would give (a hint that waits on titles is left as it is); a cancellation, the
-  deadline or a closed file fails every request that wasn't refused. `checkNames(plan)` is the names
-  pass alone (`unknown_title`, `unknown_id`, `cannot_contain`: what `run` does before it
-  evaluates), with nothing evaluated and no rows, and takes up nothing for a plan that names no
-  shape: what a plugin that translates English to a query checks, beside `check`, before it keeps one.
+  the same for all). The file is taken up once, in one main-actor turn, with one snapshot of
+  Topology in each view the requests ask for, and every request is evaluated in one evaluation that
+  shares what it reads: the shapes walked, the title index, and the names, so a derived name (asked
+  of the main actor in slices) is read **once per batch**, however many requests name titles. Each
+  text is checked once however many requests carry it, a query asked in two views among them (debug
+  builds count `checks`), over the edge types read once.
+  `admitting` is asked of each match off the main actor, before `limit`: the first match is the
+  first one admitted, and `count` counts those. No rows are built. A request the engine refuses
+  (`check`, then the names pass) is that request's `.failure`, with the reason and message `run`
+  would give (a hint that waits on titles is left as it is); a cancellation, the deadline or a
+  closed file fails every request that wasn't refused. `checkNames(plan)` is the names pass alone
+  (`unknown_title`, `unknown_id`, `cannot_contain`: what `run` does before it evaluates), with
+  nothing evaluated and no rows, and takes up nothing for a plan that names no shape: what a plugin
+  that translates English to a query checks, beside `check`, before it keeps one.
 - **What a word reads** (`QueryReads`, `.file` or `.editor`) is said when it's added, and a plan
   reports it (above). `registrar.queryPseudoClass(…, reads: .file, prepare:, seeds:, matches:)` and
   `queryTextFormat(…, reads: .file, prepare:, read:)` take a `prepare` that is given a
@@ -7105,14 +7162,14 @@ the edges ([stand-ins](#stand-ins-forwarding), Topology's). All are generic: not
   kinds, titles, text and the edge words, relations included, read the file.
 - **Settling.** `QueryRequest.settle` (a `Duration`, nil: don't wait) makes a query that reads edges
   wait, before it takes up the file, while `topology.isSettling` (answers a stand-in asked for are
-  still arriving), at most that long (`QueryBudget.settleWait`, 2 s, what `canvas query` passes, `--ask`'s
-  query too). The wait is outside the line queries take their turns in, so it never holds up
-  another; a plan with no edge word never waits. It counts against `QueryBudget.deadline` (armed
-  before the wait, so the evaluation has what's left), which keeps a slow query inside `canvas`'s 10 s:
-  it's refused `too_slow`, with its hint, not left to the client's timeout. If the time passes with answers still arriving the
-  query runs anyway and adds `QueryWarning.pending(n)` (reason `pending`; `n` the stand-ins asked and
-  unanswered), saying that what it reads of edges may change. An agent that draws and then queries
-  reads the settled graph, or is told it didn't.
+  still arriving), at most that long (`QueryBudget.settleWait`, 2 s, what `canvas query` passes,
+  `--ask`'s query too). The wait holds no snapshot, and no other query waits for it; a plan with no
+  edge word never waits. It counts against `QueryBudget.deadline` (armed before the wait, so the
+  evaluation has what's left), which keeps a slow query inside `canvas`'s 10 s: it's refused
+  `too_slow`, with its hint, not left to the client's timeout. If the time passes with answers
+  still arriving the query runs anyway and adds `QueryWarning.pending(n)` (reason `pending`; `n` the
+  stand-ins asked and unanswered), saying that what it reads of edges may change. An agent that
+  draws and then queries reads the settled graph, or is told it didn't.
 
 ### What plugins add
 
@@ -7191,14 +7248,14 @@ registrar.querySelection(Word.selected.rawValue, "the person has it selected", e
 - **A pseudo-class** (`:invalid`) takes no argument. `prepare` runs on the main actor in the turn the
   query takes up the file, taking what it needs there, O(1) or O(what it holds) (a set of ids, a
   service's value), and what it returns (any `Sendable`) is handed as it was to the rest: `seeds`, if
-  given, the only shapes that can match, which a compound then starts from; `matches`, anywhere,
-  `.yes`, `.no` or `.onMain` for each shape the query tests (a `QueryShape`: its record, its board and
-  the Topology snapshot); and `onMain`, in slices, for those `matches` leaves to the main actor, about
-  the shape as the app has it then, with a `QueryMainContext` (the registry, the editor, the revision
-  as the query started, `shape(_:)`, and `shapes(on:)`, a board as the app has it now, one
-  `ShapeContext` per board per query, made again once that board's revision changes). A word is
-  lowercase words joined by hyphens, and never one of the language's own or one it refuses as
-  invented (`QueryWords.check`).
+  given, the only shapes that can match, which a compound then starts from; `matches`, anywhere (on
+  any thread, for several queries at once), `.yes`, `.no` or `.onMain` for each shape the query
+  tests (a `QueryShape`: its record, its board and the Topology snapshot); and `onMain`, in slices,
+  for those `matches` leaves to the main actor, about the shape as the app has it then, with a
+  `QueryMainContext` (the registry, the editor, the revision as the query started, `shape(_:)`, and
+  `shapes(on:)`, a board as the app has it now, one `ShapeContext` per board per query, made again
+  once that board's revision changes). A word is lowercase words joined by hyphens, and never one of
+  the language's own or one it refuses as invented (`QueryWords.check`).
 - **The person's selection** is a pseudo-class of one sort: `querySelection` takes the shapes
   selected, in the selection's order, as the query takes up the file (so a change of the selection
   while a query runs changes nothing it answers), seeds and matches them, and is what `--ask` tells
@@ -7303,8 +7360,11 @@ next step is a warm cache ([Not built yet](#not-built-yet)).
 - **Shapes typed by schema cards** (`.Task`, `not_built`), attributes inside attributes (`[a.b]`),
   and `=` on an object.
 - **Edges as answers.** A query lists shapes: a connection is asked for as its arrow
-  (`arrow:starts-at("A"):ends-at("B")`, whose row's `connection` says where it runs), and a mention
-  as the shape whose text holds it.
+  (`arrow:starts-at("A"):ends-at("B")`, whose row's `connection` says where it runs), the shapes it
+  runs from and to as `:start-of(arrow…)` and `:end-of(arrow…)` (the source and the target of each
+  edge in slot `""` that a shape the anchor matches carries, of the types given, and only a shape the
+  query ranges over: a mention's carrier, whose edges are in its text's slot, has none), and a
+  mention as the shape whose text holds it.
 - **Ranking and meaning.** `:contains` is a substring filter; ranked or semantic search would be a
   horizontal of its own.
 - **CSS with no meaning here.** Shapes have no siblings, order or columns (`+`, `~`, `:nth-child`,
@@ -7341,22 +7401,25 @@ next step is a warm cache ([Not built yet](#not-built-yet)).
   stand-in with nothing to stand for), `connectionViaTests` (`via` and `more`, in file order, per
   view), `matchesBatchTests` (one capture for all, no rows built, admission before the limit and off the
   main actor, the revision stamp, a refusal that is one request's, names read once for the batch
-  by `derivedTitlesAsked`, a view per request, cancellation, the line), `checkNamesTests` (as `run`
+  by `derivedTitlesAsked`, each text checked once by `checks`, a view per request, cancellation, no
+  waiting for a query before it), `checkNamesTests` (as `run`
   refuses, nothing evaluated, nothing taken up for a plan that names nothing), `readsTests`
   (`fileReadsPlugin`: a `reads: .file` word and text format given the snapshot and registry; `editorWords`
   in order and without repeats; `readsEdges`) and `settleTests` (a wait that ends on settling, one that
   ends on the time and warns `pending`, no wait for a plan with no edge word or no `settle`, the wait
-  outside the line, cancelled waiting, the wait counting against the deadline), with `Working` as a source of busy work. QueryCommandsTests
+  holding up no other query, cancelled waiting, the wait counting against the deadline), with `Working` as a source of busy work. QueryCommandsTests
   write a connection through a stand-in, and wait for answers on a `ManualScheduler`; CompositionTests'
   QueryShippedTests pin each shipped word's reads; BenchmarkTests' `referenceBatch`.
-- **What runs where** is held by `QueryState`'s debug counters (`liveSnapshots`, `captures`,
+- **What runs where** is held by `QueryState`'s debug counters (`liveSnapshots`, `captures`, `checks`,
   `mainSlices`, `recordsEncoded`, `derivedTitlesAsked`, `verdictsAsked`, `universeWalks`,
   `seededFromAnchors`) and `threadsPlugin` (a name, a text format's `read` and a word's `matches`,
   each off the main thread). `SlowWord`, with `burn(_:)`, makes records cost what a test says: a
   slice's bound with a costly record, the costliest record's stretch after the last read, one slice
   queued at a time, a run-loop `Timer` firing between slices (the run loop's sources run between
   them, not only queue order), cancellation mid-slice, the deadline reached by `h.wait(8_000)` inside a
-  slice on the `ManualScheduler`, queries waiting their turn, and a closed file (an editor held only in
+  slice on the `ManualScheduler`, queries at once (a quick query, and a batch, taking up the file and
+  answering while a slow one is mid-slices, each over a snapshot of its own, `liveSnapshots` 2 while both
+  are held; a cancelled one, or one out of time, stopping alone), and a closed file (an editor held only in
   a box a word empties). A word whose `prepare` commits lands a commit in the turn the query takes
   up the file: attributes are the capture's, a derived name the live record's. UpkeepTests hold zero
   upkeep.
@@ -8261,6 +8324,158 @@ step and refusals; CompositionTests' `movingShippedTests` type both into a note'
 (the picker's list, a pick and the run, a subboard's board, Undo Move), and
 `contentsDragShippedTests` drop notes' rows on a frame's, a subboard's and each other's.
 
+## Neighbors
+
+Neighbors ([`Sources/Neighbors`](../Sources/Neighbors)) shows what's connected to a shape at a glance,
+which in a dense graph is the point: hover a shape, on the canvas or by its row in the [table of
+contents](#the-table-of-contents), and every shape connected to it is outlined in a color that says
+how, and the arrows between are colored too. The minimap fills the same shapes in the same colors,
+so what's connected off screen shows there (the rest of it dims while anything is lit, and a shape
+in two lights shows both, one inside the other), and a connected shape on another board (inside a
+subboard) lights the card that holds it. It's a vertical that no kind opts into and nothing imports,
+as [Jump To](#jump-to) and [Moving](#moving) are: it builds on Queries (which finds the shapes),
+Selection (the hover, and the one a list sets for a shape the canvas doesn't show), Topology (when a
+shape's edges change), the file (where a shape on another board is drawn) and the core's [tinted
+outlines](#outlines), and it knows no kind, edge type or concern: what counts as connected is a
+query, which Composition writes.
+
+| Light | Color | What's outlined, for the shape hovered |
+|---|---|---|
+| points to | green | the shapes an arrow out of it ends at, the shape a reference stands for, and those arrows; for an arrow, the shape it ends at |
+| points to it | purple | the shapes that have an arrow into it, the references that stand for it, and those arrows; for an arrow, the shape it starts at |
+| mentions | teal | the shapes its text mentions |
+| mentioned by | lavender | the shapes whose text mentions it |
+
+The colors are `NeighborLights`' constants (Composition's), chosen in a design audit from renders of
+the lights over both canvases: one fixed sRGB value for each appearance (`NSColor(name:)`, as the
+arrow's color is), never a system color (system pink read as Validation's error red, system purple as
+the selection's blue, and the light-mode green and teal fell under 3:1). In the light and the dark:
+green #07933B and #2FD359, purple #8C21A4 and #B851FD, teal #0E97B0 and #329AB4, lavender #A76FE2
+and #D0B0FE. Each is clear of Validation's red and orange and of Find's orange, at least 3:1 against
+the canvas it's drawn over in both appearances, and not the accent; the two purples are close for
+some color-vision deficiencies.
+
+```swift
+// NeighborLights.shipped (Composition): a light is a color and a query, given `#id`, the shape
+// hovered, and the edge types come from their plugins' ids, never written out.
+NeighborLight(color: pointsTo)    { ":edge-from(\($0), \(arrow)|\(standing)), :starts-at(\($0), \(arrow)), :end-of(\($0), \(arrow))" }
+NeighborLight(color: pointedToBy) { ":edge-to(\($0), \(arrow)|\(standing)), :ends-at(\($0), \(arrow)), :start-of(\($0), \(arrow))" }
+NeighborLight(color: mentions)    { ":edge-from(\($0), \(mention))" }
+NeighborLight(color: mentionedBy) { ":edge-to(\($0), \(mention))" }
+```
+
+- **`NeighborsPlugin(lights:)`** (id `neighbors`; with `NeighborLight`, the colored question, and
+  `NeighborState`, the service, the module's whole public surface) registers the service
+  (`editor.neighbors`) and `registrar.outlines { $0.neighbors?.outlines ?? Outlines() }`; the report's
+  line is `neighbors service NeighborState · outlines`. It's after the query plugins in the shipped
+  list. It lights nothing without `QueriesPlugin()` and `TopologyPlugin()` (a hover asks nothing then),
+  and has nothing to hover without `SelectionPlugin()`; none of them is refused, since it
+  contributes to none of their points.
+- **A light is a color and a question.** `NeighborLight(color:query:)`: `query` is given the selector
+  that names the shape hovered (`#`, then its id, as the query language writes one) and returns the
+  query whose matches are outlined in that color. They are the query language's
+  ([Queries](#queries)): `:edge-from(X, arrow|stands-for)` is the shapes X has an arrow to, or
+  stands for; `:starts-at(X, arrow)` the arrows (connections) that start at X; `:end-of(X, arrow)`
+  the shape X ends at, where X is an arrow (and nothing for any other shape), so hovering an arrow
+  lights its two ends; the `|` joins edge types, and a type takes in those under it (`arrow` is every
+  channel's too). Another
+  way to be connected, a new kind of edge, or a different set of colors is another light, with nothing
+  in this module changing.
+- **The subject** is the shape hovered: `editor.hovered` (the select tool's, or any plugin's where it
+  shows shapes), else the shape whose row the pointer is on when the canvas doesn't show it
+  (`editor.hoveredElsewhere`, [Selection](#selection): a row of a board nested under its owner's in
+  [the table of contents](#the-table-of-contents) sets it). Both are watched with Observation,
+  re-armed after each change, and the look at a change is a turn of `editor.scheduler` later, never
+  inside the `willSet` Observation tells it in.
+- **Asking.** When the subject changes to a shape, any ask still running is let go of (the engine
+  looks every 256 shapes, so it stops), and one batch asks the engine
+  (`editor.queries.matches`, [Many at once](#many-at-once-edge-views-and-waiting)) for every light in
+  the view `.resolved` and, where some shape stands in for others, `.literal` too, ids only, up to
+  `QueryBudget.maxRows`: one capture, run alongside whatever else is asking the engine, and each text
+  checked once. Each light keeps the union of its views. The answer lands a frame or so later, and
+  only for the shape asked about (every change of the subject lets go of the ask); a request the
+  engine refuses (a shape gone since) lights nothing, and the others still do. From one shape to the
+  next, the lights of the first stay until the second's land; when the subject goes, they go at
+  once. Without the engine, or Topology, or any light, nothing is asked and nothing is lit.
+- **Asking again.** `topology.follow` tells it when a change to the edges touches the subject or a
+  shape the last answer matched (a commit's, so an arrow drawn from the hovered shape lights as it's
+  drawn, an undo, a file read afresh; or a provide's, a dynamic reference's answer arriving), and it
+  asks again, which lets go of an ask under way. A change lists the ends of the edges it changed,
+  never the arrow that carries one, so an arrow hovered is asked about again by where it was matched:
+  the end it's re-aimed away from, or the pill a provide re-points at its end. A commit asks again
+  too when it names the subject other than by moving it (an arrow bound at an end it had none at,
+  the undo of a re-aim: the commit changed the arrow's record, and no end of its edge was matched
+  before) or adds a shape the answer didn't match: a mention outlives the shape it names, so one of a
+  shape deleted before the hover left its edge as it was, and the shape back changes no edge, but is
+  what the answer left out (the lights are queries; a new shape may be what one finds). A commit
+  whose change to the edges asked already asks no more. A commit that changes the edges of shapes
+  the answer didn't match, or only moves shapes, asks nothing. Another board shown clears it: the
+  hover is let go of with the switch.
+- **Both views.** A reference is a [stand-in](#stand-ins-forwarding): an arrow into its pill is, in
+  the resolved view, an arrow into the shape it stands for, and in the literal view one into the
+  pill. Asking each light in both means the pill's own arrows count and so does what it stands for.
+  Hovering a note with an arrow into a pill lights the shape (as the graph reads it), the pill (as
+  drawn), and the arrow; hovering the shape lights the pill (it stands for it), what has an arrow into
+  the pill, and the arrows; hovering the pill lights what it stands for, and, as drawn, what has an
+  arrow into it. In a file where nothing stands in the two views are the same edges, and only the
+  resolved view is asked.
+- **What shows**, worked out when an answer lands and again by a commit that names a shape matched
+  or one a match is drawn as (other than by moving it), reaches another board or replaces the
+  document, never per frame; any other commit, a drag's every event or a keystroke in an unrelated
+  note, costs a look at its change set and a few set intersections. A match on the board shown is
+  outlined itself. A match on another board is outlined as the shape on the board shown that holds
+  it (`file.shape(on:holding:)`: a subboard's card, the pocket it's in, however many boards down),
+  once however many of its shapes match, with one walk up the boards for each board the matches are
+  on; one on a board above, which no shape on the board shown holds, is left out. The subject is never
+  lit, nor, where the subject isn't on the board shown (a row of another board), the card it's on:
+  Selection outlines that card faintly, as a hover is, since that is where the subject is.
+- **Rings.** A shape in two lights has a ring for each, in light order: the first light it's in is
+  its first ring, the next light's the next, `TintedOutlines.ring`. A group is made for each light and
+  ring that has shapes (an arrow is in one light; a note that's both pointed to and pointing back is
+  in two, green first, then purple a ring further out), and the core, which knows no meaning, strokes
+  them as the outline says ([Outlines](#outlines)): under every other outline, so a selected shape's
+  line shows over the tint. A ring is 4 view points further out than the one before (a line 2 wide
+  and a gap 2), so their centers are 4, 8 and 12 off a note's edge, whole pixels at 1× and 2×.
+  The rest of how it looks is the core's too, for any group: a shape that's selected too has its
+  tint one ring further out, clear of the selection's line, which would cover most of ring 0; a lit
+  arrow is covered in its color, as wide as its line and a point more, not striped; the hovered
+  shape's faint outline is stronger (85%) while anything is lit, so it reads above the lights; and
+  Validation's ring stands outside the rings. Nothing is outlined while a session runs, a drag, and what was lit shows
+  again when it ends. What's kept is one `Outlines` the core is handed as it is, and the canvas is asked
+  for a frame only when a new one differs from the old: an answer that lights nothing, after one that
+  lit nothing, draws nothing.
+- **What it costs.** A hover is one batch: the main actor reads and resolves its four queries (eight
+  where a shape stands in; some 0.02 ms each) and takes up the file in one turn, O(1); the answer is
+  off the main actor (some 10 ms for a shape with 10,000 neighbors); the landing joins the views,
+  keeps the set of what matched and places each match, O(what's lit and the boards it's on), a hash
+  lookup or two each (some 0.8 ms for 10,000). It keeps nothing a commit must follow but what it
+  matched and where that is drawn. A frame costs handing the core what's kept; the core strokes only
+  what's in view, and looks at the rest's kept extents (10,000 lit in view at 10% add some 7 ms to
+  a frame, as ⌘A's rings do; all out of view, some 0.35 ms), and the minimap fills them (some 4 ms
+  for 10,000). `./build.sh bench` holds them.
+- **Testing.** NeighborsTests use fixtures only (CanvasTesting's boxes, links as wires, memos as
+  what quotes, pockets and corrals, a `Pill` that stands for what it cites and a `Lens` for what's
+  provided, and four lights of the tests' own in pure colors, over a `Star` and a `Nest`); they read
+  `editor.outlines.tinted` after `settle()` (a turn of the scheduler, then the run loop until
+  `isAsking` says the answer landed): each light's matches in its color, one view asked where nothing
+  stands in and two where a shape does, an arrow hovered lighting where it ends and starts, a shape in
+  two and three lights in rings, the subject never, a pocket's card for what's on its board and two
+  boards down, nothing from a board above, a shape hovered elsewhere (its card faint, never lit), the
+  canvas's hover over it, the answer before staying until the next lands, a changed hover letting go
+  of the ask (the engine takes up the file once), a switch clearing it, nothing during a session, and
+  nothing without the engine; and what keeps it right: asking again when the subject's edges change
+  or an edge of what's lit does (a commit, an undo, a provide), when an arrow hovered is re-aimed,
+  let go of and bound again or has its end deleted, when a pill is re-pointed at its end, and when a
+  shape no answer matched comes (a deleted mention's shape back); not for others' edges or a move;
+  working out what shows again, asking nothing, only for a commit that names what's lit or reaches
+  another board (a lit shape moved down a board and back, deleted and undone), never for an unrelated
+  edit, a restack or a drag; and the canvas drawing again only when what's outlined changed.
+  CompositionTests' NeighborsShippedTests hold the four shipped lights, the shipped table of
+  contents' rows, a reference and a subboard, an arrow re-aimed while hovered, the colors (each
+  appearance's value, 3:1 against its canvas), a lit arrow covered, and the rings drawn at 4 and 8
+  points in the app's own editor. BenchmarkTests' NeighborBenchmarks hold a hover on a shape
+  with 10,000 neighbors and with ten, and the frames and the minimap with them lit.
+
 ## References
 
 References ([`Sources/References`](../Sources/References)) is the vertical that makes [stand-ins](#stand-ins-forwarding)
@@ -8473,6 +8688,7 @@ The modules, one job each:
 | FuzzyMatching | foundation | What's typed matched against text ([FuzzyMatching](#fuzzymatching)): `FuzzyMatcher` (every list's tiers), `TextSearch` (Find's, over folded texts) and `PathMatcher` (Jump To's, over containment paths): pure, it knows no canvas, registry or plugin. |
 | JumpTo | vertical | Jump To (⌘K, [Jump To](#jump-to)): a palette that goes to a shape by its title and where it is, over Titles' titles and the containment tree; no kind opts into it, and nothing imports it. |
 | Moving | vertical | `/move-to` and `/move-near` ([Moving](#moving)): the shape typed in moved into a frame, onto a subboard's board or beside a shape, on any board, placed with DrawScript's solver and `ObstacleGrid` as `draw` places a shape; no kind opts into it, and nothing imports it. |
+| Neighbors | vertical | Hover a shape and what it's connected to is outlined by how ([Neighbors](#neighbors)): its lights are colors and the queries that find their shapes, asked of Queries, placed on the board shown by the file's boards (`shape(on:holding:)`), hovered on the canvas or in the table of contents (Selection's `hovered` and `hoveredElsewhere`); no kind opts into it, and nothing imports it. |
 | DrawLexicon | lexicon | What `draw` takes from Titles (names), Connections (edges), Validation (warnings) and Mentions (mention text): a plugin value for each concern (`TitleNamesPlugin`, `PortEdgesPlugin`, `ValidationChecksPlugin`, `MentionTextsPlugin`), joining Automation to the plugin that owns it. |
 | QueryCommands | language | `query` and `query-vocabulary`, and `--ask` as a call to QueryTranslation's translator, its errors said as the wire's (on Automation, Queries, QueryTranslation and the wire; it declares no point). |
 | QueryLanguage | foundation | The language `query` reads (`SelectorList(parsing:)`) and its canonical form: pure, it knows no canvas, registry or plugin. |
@@ -8577,7 +8793,7 @@ in its `board` (`id`, `name`, `shows`, `showsPath`, as `boards` has them), read 
 command's own job as it starts: a command that doesn't wait (`draw`) runs in that job, so no
 switch of board comes between the two. A [query](#query) says where it ran itself, the board shown
 as it took up the file (`QueryResult.shown` and `shownPath`, `:current-board`'s), which may be
-later than its request (it waits its turn, and `--ask` waits on the model), and the server
+later than its request (it waits for answers to settle, and `--ask` waits on the model), and the server
 completes that `board` with the file's `id` and `name`. A query reads every board of the file the
 app can show, whichever the window shows, and names each row's board (`board`, and `inside`, the path's names for the boards it's
 inside). A `draw` never names a board either: it works out the one it draws on from what its
@@ -9935,7 +10151,8 @@ it, the core or a horizontal.
 | `BrushHitTesting` (Selection's) | Whether the marquee touches it, when the brush overlaps its bounds without containing them. Default: `ShapeGeometry.isHit(byBrush:)`. | Arrows (against the visible arc) |
 | `DerivedProps` | Props that hold something following from the rest, which the kind's setters keep in step. A shape made from properties written somewhere else, `registry.shape(_:properties:)`, or given some of its own that way, `registry.shape(_:setting:)` (the command line's `draw`), goes through `derive(_:)` first, so it's as its setters would have left it; a board read (a shape is as saved), a paste, and what a person does don't. | Schemas (a card's height, from its description; `draw`'s `size:` still wins), StickyNotes (a note's height, from its text) |
 | `CustomSkeleton` | Drawn more simply zoomed out. `renderSkeleton` draws in `render`'s place while the canvas draws [skeletons](#skeletons) (the camera's zoom under `editor.skeletonZoom`, 35%), but for the shape being edited: its fills, and bars where its text would be (`context.fillSkeletonText`, each as long as its text's columns, `SkeletonText`), never text, shadows or pictures of its own, cheaply: the shape, its kept geometry and `context.zoom`, and what its plugin already keeps of the shape if it's there, never parsing or laying out text; a picture only through `RenderContext` (a subboard's board preview). Its outline there (selected, hovered, the hint) is its kept geometry's, right for a skeleton that fills its geometry or differs from a rect only by corners rounded a pixel or two, unless it adopts `CustomSkeletonOutline`; a shape a few pixels across is outlined by its bounds. Without it a kind is the default skeleton, its geometry in one gray (`context.drawSkeleton(of:color:)`). | StickyNotes (its yellow, its text greeked), Subboards (fills and its preview), Schemas (square, with an edge, so outlined by its frame, its description greeked as a note's text), Arrows (its arc and heads) |
-| `CustomSkeletonOutline` | A `CustomSkeleton` outlined its own way while skeletons are drawn (selected, hovered, the hint): `skeletonIndicatorPath(of:in:)`, what `renderSkeleton` draws, so the outline and the skeleton agree, made from the shape and its kept geometry, since ⌘A zoomed out asks it of every shape of the kind in view each frame; nil for its kept geometry's. Found once per kind (`registry.skeletonOutlines`), so no other kind's shape is asked; never asked for a shape a few pixels across, outlined by its bounds. | Arrows (the arc, where its kept geometry is three points) |
+| `CustomSkeletonOutline` | A `CustomSkeleton` outlined its own way while skeletons are drawn (selected, hovered, the hint): `skeletonIndicatorPath(of:in:)`, what `renderSkeleton` draws, so the outline and the skeleton agree, made from the shape and its kept geometry, since ⌘A zoomed out asks it of every shape of the kind in view each frame; nil for its kept geometry's. Found once per kind (`registry.skeletonOutlines`), so no other kind's shape is asked; never asked for a shape a few pixels across, outlined by its bounds. | Arrows (the arc and its heads, where its kept geometry is three points) |
+| `StrokedShape` | A kind drawn as a line, an open shape, saying how wide its line is, in world units: `lineWidth(of:in:)`. What a tinted outline of it (`Outlines.tinted`, a plugin's own colors: Neighbors' lights) covers, drawn in full: as wide on screen as the line and a point more, round, so the shape's own line and heads don't show along the middle of the outline, a stripe in a thick line at 200% and wider than a thin one at 50%. Zoomed out, where the skeleton is a point-wide line, a tint is its plain width, and the selection's and a hover's outlines stay thin whatever it says. Found once per kind (`registry.strokedShapes`), so no other kind's shape is asked; `registry.lineWidth(of:in:)` reads it, for what decorates along a line. | Arrows (3.5, `ArrowStyle.strokeWidth`); CanvasTesting's `Cable` |
 | `PaintOrderAnchored` | Painted just above another shape, whatever its place in the document. The anchor follows from the shape's own props and the document's order, since the paint order is kept until one of those changes. | Arrows (above the shapes they join) |
 | `ShapeContaining` | Each shape of the box kind holds shapes on its board, a frame: what names it as its container (`AnyShapeRecord.container`) moves, restacks, locks and is let go with it, and nothing put down sits across its edge (`Transaction.settle`). Nothing to implement. [Containers](#containers). | CanvasTesting's `Corral` |
 | `BoardOwning` | Each shape of the kind owns a board, a subboard, which the file keeps under the shape's id, never in its props (`CanvasFile`, `BoardID(owner:)`). Nothing to implement: deleting a shape takes its board and every board under it, a copy takes what it holds, a file saves every board ([format 4](#boards-on-disk)), and `editor.showBoard` shows one; Boards' `x.opensBoard(placeholder:systemImage:)` opens it. Its schema is marked `x-canvas-board`. [Boards in a file](#boards-in-a-file). | [Subboards](#subboards)' `Subboard`; CanvasTesting's `Pocket` |
@@ -10080,7 +10297,9 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   frames held 60 fps); every plugin's outlines
   (`registrar.outlines`: selection, the box around several; none while the session
   `hidesOutlines`) and the hint, in one pass at a constant screen width, over the faint ones
-  (`Outlines.faintShapes`: the hover), drawn first, wider and lighter, each asked for its path and
+  (`Outlines.faintShapes`: the hover), drawn before them, wider and lighter, and those over the
+  tinted groups (`Outlines.tinted`: a plugin's own colors, drawn first of all, [Outlines](#outlines)),
+  each asked for its path and
   stroked only if its shape's kept extent meets the area the shapes were drawn for, grown by what
   an outline [stands off its shape](#outlines) by (a plugin's rects too; zoomed out, a skeleton's
   outline, and a rect filled as a ring: [Skeletons](#skeletons));
@@ -10122,7 +10341,11 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   API. It also hosts the minimap, in its bottom-left corner (`showsMinimap`; View › Show Minimap):
   every shape as a silhouette of its geometry (a container's, a frame's, its outline, so what it
   holds shows on it), the part of the board the canvas shows outlined, and the selection in the
-  accent color. It shows the board shown: on another board it starts a
+  accent color, a hover's faintly, and what a plugin outlines in colors of its own
+  ([`Outlines.tinted`](#outlines): Neighbors' lights) in those, under both, so what's lit off
+  screen shows there: while anything is lit the rest of the picture dims (the minimap's background
+  laid over it at 40%) and what's outlined is drawn over the part out of view's veil, not under it,
+  and a shape in several groups shows each, one inset inside the other. It shows the board shown: on another board it starts a
   picture afresh (never over the old board's), and back on a board whose picture it kept, it shows
   that one at once. On a board with nothing to show (`shapeBounds` null) it's hidden, and the
   corner is the canvas's, with View › Show Minimap still on; it fades in with the first shape (a
@@ -10146,8 +10369,9 @@ nothing, and the view chooses, as it always has. A note too short for its text a
 
 The canvas outlines shapes in the accent color: the selection's, a hover's (wider and fainter), and
 the hint, a target outlined whatever the tool (the shape an arrow's end is aimed at, the container a
-drag would drop into). Every plugin's `registrar.outlines` and the hint go through one pass of the
-core, which draws a closed shape's outline off its edge rather than on it, whatever its kind.
+drag would drop into); and groups of shapes in colors of a plugin's own, under all of those. Every
+plugin's `registrar.outlines` and the hint go through one pass of the core, which draws a closed
+shape's outline off its edge rather than on it, whatever its kind.
 
 - **Stood off.** A closed shape's outline is its kind's `indicatorPath` grown outward by
   `editor.outlineStandoff` view points (`Style.outlineStandoff`, 4), all the way round, its corners
@@ -10180,11 +10404,53 @@ core, which draws a closed shape's outline off its edge rather than on it, whate
   out 4 points as the zoom crosses the level, as its text and shadow come in. The shape being
   edited, drawn in full at any zoom, is stood off.
 - **Around it.** What draws along an outline goes by the same gap, never the number. Validation's
-  ring is 3 view points outside the outline, so 7 out of a closed shape's edge ([Validation](#a-horizontal-plugin));
+  ring is 3 view points outside the outline, so 7 out of a closed shape's edge, and outside its
+  tinted rings ([Validation](#a-horizontal-plugin));
   Ports outlines the shapes a connection could end on along `editor.outlinePath(of:)`, as a hover
   is. Resize handles are on the box itself, not the outline, drawn over it: the line runs under
   them, as it did when it lay on the edge they sit on. A title's pill (9 points above the top edge)
   and Locking's lock stay clear of the line; port dots are 12 points out.
+- **Tinted groups.** `Outlines.tinted` is a list of `TintedOutlines` (a `color`, its `shapes` and a
+  `ring`): a plugin's own colors, such as the lights [Neighbors](#neighbors) outlines a hovered
+  shape's neighbors with. The core strokes each group before the faint outlines and the full ones
+  (the groups in the order the plugins gave them), so a selected or hovered shape's own line shows
+  over its tint; each is `Style.tintedIndicatorWidth` wide (2 view points, a little wider than the
+  selection's 1.5, and opaque) and, in ring 0, where the selection's line stands: centered 4 off a
+  closed shape's edge. A ring past the first stands a line and a gap further out
+  (`Style.tintedRingGap`, 2): ring 1 is 4 view points more off the edge (8 in all), ring 2 four
+  more, so the rings' centers are whole pixels at 1× and 2×, corners concentric, and a shape in two
+  groups shows both, one ring round the other. Zoomed out the ring is on the shape's frame, grown by
+  the same. A shape that's outlined in full too (selected, or the hint) has its tint one ring
+  further out, clear of the selection's line, which would otherwise lie over most of ring 0, at
+  every zoom: looked up only for the shapes in view, a few outlined in full compared one by one
+  and many through one set, and not at all while nothing is tinted or nothing outlined in full.
+  An open outline (an arrow's) is stroked on its own path, whatever its ring: of a kind drawn as a
+  line ([`StrokedShape`](#capabilities), the arrow's 3.5), in full, it's covered, `max(2, the line's
+  width × the zoom + 1)` view points wide, round, over its line and its heads, so it's the line in
+  the tint's color and not a stripe along it; zoomed out, 2 wide. A hover's faint outline beside
+  tinted ones is the shape they're about, and is stronger, 85% where it's 60% alone. A group costs
+  what any outline does: a look at each shape's kept extent, and only those in view stroked, in one
+  path of its own. `Outlines` and `TintedOutlines` are `Equatable`, so a plugin that keeps what it
+  hands the core tells whether it changed and asks for a frame (`editor.setNeedsDisplay()`) only then.
+  The core knows no meaning of a color or a group; the minimap fills the same shapes in the same
+  colors under the faint ones and the selection's, a shape in two groups showing both (the second's
+  fill inset 1.6 minimap points inside the first's, the accent of a selected one inside its
+  tints), the rest of the picture dimmed and what's lit over the viewport's veil while anything is
+  lit, so what's lit off screen shows there. CanvasTests' outline tests hold them: the line's color
+  and place at 100% and 200%, a second ring further out (a gap of whole pixels), a selected
+  shape's tint a ring out (the hint too, a hover not, a few selected and many, zoomed out),
+  under the selection's and a hover's line, the faint line's strength beside tints, a skeleton's
+  ring, an open shape's path whatever the ring, a line covered at 50%, 100% and 200% (and
+  2 wide zoomed out, the selection's and a hover's thin), none while a session hides outlines, and
+  groups merged from two plugins in order.
+- **Beyond the rings.** An overlay that decorates a closed shape outside its outline stands outside
+  the tint too: `OverlayContext.tintedOutset(of:)` is how far, in view points, the outermost tinted
+  ring round the shape stands beyond ring 0 this frame (4 for each ring past the first, counting
+  the one further out of a selected shape's tint; 0 with none or one, and for an open shape), worked
+  out for every shape the groups name when first asked, one pass over what's tinted, and not for a
+  frame that doesn't ask; `greatestTintedOutset` is the most it could be, a pass over the groups, for
+  an overlay that culls shapes by how far its decoration reaches. Validation's ring is the one that
+  asks.
 - **Hosts and tests.** `editor.outlineStandoff` is host API: 0 outlines every shape on its own path,
   as the proof of concept drew, which its goldens are drawn with (CompositionTests' ParityTests) and
   CanvasTesting's `EditorHarness` draws with, so pixel tests that read an outline on a shape's
@@ -10298,7 +10564,7 @@ so call it with no path of your own under way.
   what the skeleton does, made from the shape and its kept geometry; a kind whose skeleton fills its
   geometry or differs from a rect only by corners rounded a pixel or two (notes, cards, subboards)
   leaves `CustomSkeletonOutline` out, and its ring costs less. An arrow's kept geometry is only
-  three points, so it adopts it, and its outline is its arc. The rings took ⌘A's outlines at 10,000
+  three points, so it adopts it, and its outline is its arc and its heads, each a closed triangle. The rings took ⌘A's outlines at 10,000
   shapes zoomed out from about 8.1 ms to 4.2, as measured; a pan's frame with all 10,000 selected
   measured 14.4 ms at 10% and 9.4 at 100%, against 11.2 and 7.7 with none selected, each shape
   outlined out of view costing a look at its kept extent
@@ -10352,9 +10618,13 @@ shipped kind, a card that opens onto its board.
   its board, and a copy (a new id) has a board of its own; nothing done in the app can make a loop
   or give two shapes one board, and only a file edited by hand can have them, which reading keeps
   and reports ([Boards on disk](#boards-on-disk)). Shape ids are unique across the file
-  (`board(containing:)`, `record(_:)`). A board with no shapes isn't kept, so placing an owner
-  makes nothing but the shape. Walks over the tree (`path(to:)`, `subtree(ownedBy:)`) are loops that
-  stop at a board they've met.
+  (`board(containing:)`, `record(_:)`). `shape(on: board, holding: id)` is the shape on a board
+  that holds another shape: `id` itself if it's on `board`, else the owner, on `board`, of the board
+  it's on or of one above it, so a shape on a board that isn't shown is drawn as the card that holds
+  it, at any depth (nil for a shape on a board above or beside `board`, or not in the file; a
+  container is on its contents' board, so the owners are the whole answer). A board with no shapes
+  isn't kept, so placing an owner makes nothing but the shape. Walks over the tree (`path(to:)`,
+  `shape(on:holding:)`, `subtree(ownedBy:)`) are loops that stop at a board they've met.
 - **Each board has a revision** (`file.revision(of:)`) that changes with its shapes and never comes
   back (a file put in place keeps it only for a board whose shapes are as they were). What's kept
   about a board (its index, its rows, its issues, its locks, its preview) is taken back only while
@@ -11154,6 +11424,7 @@ mention-queries      query word :mentions · query word :mentioned-by · query t
 validation-queries   query word :invalid · query word :warned
 selection-queries    query word :selected
 query-commands       command line query · command line query-vocabulary
+neighbors            service NeighborState · outlines
 moving               /move-to /move-near → every shape · ContentsMoves
 reordering           ShapeContextMenus
 ```
@@ -11325,7 +11596,8 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   text; text typed in the app, bridged, drawing what a Swift string does; a paragraph of a million
   characters drawing, and costing, what one that fills the box does; notes 1e21 tall or wide; no
   shadow; no mention text built, `MentionDrawingCounts`), ArrowsTests' Arrow skeletons (the arc,
-  bent either way, not the chord or the two segments, and a selected arrow's outline on it; a
+  bent either way, not the chord or the two segments, and a selected arrow's outline on it, with
+  its heads, a triangle for each it has; a
   labelled arrow whole, drawn as one without the label, in LabelTests),
   SchemasTests' render tests (no text, the edge, a bar where each line of the description is, as
   long as its columns, a wide character two, an empty card none, the first frame after an edit and

@@ -30,9 +30,9 @@ public struct QueryRequest: Sendable, Equatable {
     /// (`EdgeView`).
     public var edges: EdgeView
     /// How long to wait, at most, for answers still arriving (`TopologyIndex.isSettling`) before the
-    /// query takes up the file: only a query that reads edges (`QueryPlan.readsEdges`) waits, outside
-    /// the line queries take their turns in, and one that goes on with answers still pending says so
-    /// (`pending`). The wait counts against `QueryBudget.deadline`. Nil: don't wait.
+    /// query takes up the file: only a query that reads edges (`QueryPlan.readsEdges`) waits, holding
+    /// nothing of the file, and one that goes on with answers still pending says so (`pending`). The
+    /// wait counts against `QueryBudget.deadline`. Nil: don't wait.
     public var settle: Duration?
 
     public init(_ text: String, limit: Int = QueryBudget.rows, countOnly: Bool = false, properties: Properties = .all,
@@ -98,7 +98,7 @@ public struct QueryResult: Sendable {
     public var warnings: [QueryWarning]
     /// The board the window showed as the query took up the file (`:current-board`'s), and the
     /// boards from the root down to it: where it ran, which may not be where its request found the
-    /// window, since a query may wait its turn, or for a model to write it.
+    /// window, since a query may wait for answers to settle, or for a model to write it.
     public var shown: BoardID
     public var shownPath: [BoardID]
     /// What it cost, on the main actor and off it.

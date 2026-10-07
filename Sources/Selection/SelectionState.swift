@@ -3,10 +3,11 @@ import CoreGraphics
 import Geometry
 import Observation
 
-/// The selection, the way back through it, the hovered shape, the hovered handle, and the canvas
-/// button hovered and pressed, one per editor. Plugins reach them through `CanvasEditor`'s members
-/// below. The selection and the hover only ever name selectable shapes in the document; the handle
-/// is one of the only selected shape's.
+/// The selection, the way back through it, the hovered shape, the shape hovered where the canvas
+/// doesn't show it, the hovered handle, and the canvas button hovered and pressed, one per editor.
+/// Plugins reach them through `CanvasEditor`'s members below. The selection and the hover only ever
+/// name selectable shapes in the document; the shape hovered elsewhere is one of the file's, on
+/// another board; the handle is one of the only selected shape's.
 @MainActor
 @Observable
 final class SelectionState {
@@ -40,6 +41,9 @@ final class SelectionState {
         access(keyPath: \.hoveredID)
         return storedHover
     }
+    /// The shape the pointer is on where a plugin shows one the canvas doesn't (`hoveredElsewhere`).
+    /// Observed whole.
+    private(set) var hoveredElsewhereID: ShapeID?
     var hoveredHandle: AnyHashable? {
         didSet {
             guard hoveredHandle != oldValue else { return }
@@ -295,6 +299,16 @@ final class SelectionState {
         editor.setNeedsDisplay()
     }
 
+    /// The pointer is on a shape the canvas doesn't show, or leaves it (nil). Only a shape of the file
+    /// that isn't on the board shown is kept: one that is is the hover's (`hover(_:)`), and one that
+    /// isn't in the file isn't there.
+    func hoverElsewhere(_ id: ShapeID?) {
+        let kept = id.flatMap { editor.document[$0] == nil && editor.file.board(containing: $0) != nil ? $0 : nil }
+        guard kept != hoveredElsewhereID else { return }
+        hoveredElsewhereID = kept
+        editor.setNeedsDisplay()
+    }
+
     /// Whether `id` is the hovered shape. Observing it hears only this shape's hover change.
     func isHovered(_ id: ShapeID) -> Bool {
         access(keyPath: \.[hovering: id])
@@ -322,7 +336,7 @@ extension SelectionState: EditorService {
     /// (`asOneStep`: going into a shape), or a file put in place (opening one on the board left
     /// open, or a revert that took the board shown) came with the switch, which no one took;
     /// nothing is selected on arrival, which isn't a step of its own; and the press, the hover, the
-    /// handle and the canvas buttons, all the board left's, are let go.
+    /// hover elsewhere, the handle and the canvas buttons, all the board left's, are let go.
     /// Keeps no state per board, so the switch's change set is never worked out.
     func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
         if !isGoingBack && !isOneStep && !change.isFileReplaced {
@@ -337,12 +351,13 @@ extension SelectionState: EditorService {
         revision += 1
     }
 
-    /// What the pointer was doing: the press, the hover, the hovered handle and canvas button, the
-    /// pressed button, and where it was last seen.
+    /// What the pointer was doing: the press, the hover (and the one elsewhere), the hovered handle
+    /// and canvas button, the pressed button, and where it was last seen.
     private func clearPointerState() {
         press = nil
         clickWentElsewhere = false
         hover(nil)
+        hoverElsewhere(nil)
         hoveredHandle = nil
         hoveredButton = nil
         pressedButton = nil
@@ -352,6 +367,7 @@ extension SelectionState: EditorService {
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         select(selectedIDs)
         hover(hoveredID)
+        hoverElsewhere(hoveredElsewhereID)
         // A shape that became read-only has no handles.
         if hoveredHandle != nil, let id = onlySelectedID, editor.isReadOnly(id) { hoveredHandle = nil }
         // Buttons go with their shapes: one may have come or gone under the pointer.
@@ -461,6 +477,19 @@ extension CanvasEditor {
     /// redraws when its own shape's hover changes. Without the Selection plugin, false.
     public func isHovered(_ id: ShapeID) -> Bool { selectionState?.isHovered(id) ?? false }
 
+    /// The shape the pointer is on where a plugin shows a shape the canvas doesn't: a row of another
+    /// board's shapes in the table of contents, say. Any plugin may set it, and it's observed. A shape
+    /// on the board shown isn't one (that is `hovered`), nor is one that isn't in the file: setting
+    /// either drops it. Changing tools, showing another board and the shape leaving the file clear
+    /// it. The canvas outlines faintly the shape on the board shown that holds it
+    /// (`file.shape(on:holding:)`: a subboard's card, for a shape on its board at any depth), as it
+    /// does the hover, while nothing is under way, and not on a selected shape; where `hovered` is a
+    /// shape, that one is outlined alone. Without the Selection plugin, always nil.
+    public var hoveredElsewhere: ShapeID? {
+        get { selectionState?.hoveredElsewhereID }
+        set { selectionState?.hoverElsewhere(newValue) }
+    }
+
     /// A handle of the only selected shape under the pointer (its definition's `Handle`).
     public internal(set) var hoveredHandle: AnyHashable? {
         get { selectionState?.hoveredHandle }
@@ -542,11 +571,20 @@ extension CanvasEditor {
 
     /// The selection's outlines, the box around several selected shapes (tldraw's selection
     /// bounds), and, with nothing under way, the hover's faint outline (the core leaves it out on
-    /// a selected shape). Unlike tldraw's, the selection's stay while it moves, and follow it, and
-    /// the hover's is fainter than theirs, so a hovered shape doesn't read as selected.
+    /// a selected shape): the shape hovered, else, for one hovered elsewhere (a row of a shape the
+    /// canvas doesn't show), the shape on the board shown that holds it. Unlike tldraw's, the
+    /// selection's stay while it moves, and follow it, and the hover's is fainter than theirs, so a
+    /// hovered shape doesn't read as selected.
     var selectionOutlines: Outlines {
         let box = selectedShapeIDs.count > 1 ? selectionBounds : nil
-        let hover = session == nil ? hovered.map { [$0] } ?? [] : []
-        return Outlines(shapes: selectedShapeIDs, rects: box.map { [$0] } ?? [], faintShapes: hover)
+        return Outlines(shapes: selectedShapeIDs, rects: box.map { [$0] } ?? [], faintShapes: session == nil ? hoverOutlines : [])
+    }
+
+    /// What the hover outlines faintly: the shape hovered, else the shape on the board shown that holds
+    /// the one hovered elsewhere, none if no shape on it does (one on a board above).
+    private var hoverOutlines: [ShapeID] {
+        if let hovered { return [hovered] }
+        guard let elsewhere = hoveredElsewhere, let holder = file.shape(on: board, holding: elsewhere) else { return [] }
+        return [holder]
     }
 }

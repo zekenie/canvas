@@ -30,6 +30,7 @@ extension StampDefinition: ShapeDefinition {
     var shapes: [ShapeID] = []
     var rects: [CGRect] = []
     var faint: [ShapeID] = []
+    var tinted: [TintedOutlines] = []
 }
 
 @MainActor private func pictureEditor(log: IndexLog = IndexLog(), outlined: Outlined = Outlined()) throws -> EditorHarness {

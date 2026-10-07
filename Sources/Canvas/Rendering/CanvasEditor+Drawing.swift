@@ -71,8 +71,11 @@ extension CanvasEditor {
                 self?.setNeedsDisplay()
             }
         }
-        drawOutlines(in: context, shapes: shapes, around: drawn, skeletonPixel: skeletons ? ink.pixel : nil)
-        let overlayContext = OverlayContext(cg: context, editor: self, shapes: shapes, visibleRect: world, drawsSkeletons: skeletons)
+        let outlines = self.outlines
+        let tinted = outlines.tinted.isEmpty ? nil : TintedRings(outlines)
+        drawOutlines(outlines, tinted: tinted, in: context, shapes: shapes, around: drawn, skeletonPixel: skeletons ? ink.pixel : nil)
+        let overlayContext = OverlayContext(cg: context, editor: self, shapes: shapes, visibleRect: world, drawsSkeletons: skeletons,
+                                            tintedRings: tinted)
         for overlay in registry.overlays where overlay.space == .world {
             drawIsolated(context) { overlay.draw(in: overlayContext) }
         }
@@ -162,8 +165,9 @@ extension CanvasEditor {
     // says where. It shows where shapes are, not which is on top: the paint order isn't damage.
 
     /// What the canvas outlines now: every plugin's outlines (none while the session hides them),
-    /// with the hint among the shapes; a shape outlined in full isn't among the faint ones too. A
-    /// picture of the board marks the same shapes.
+    /// with the hint among the shapes; a shape outlined in full isn't among the faint ones too, and
+    /// every plugin's tinted groups are kept as they come, in plugin order. A picture of the board
+    /// marks the same shapes.
     @_spi(Host) public var outlines: Outlines {
         var outlines = Outlines()
         if session?.hidesOutlines != true {
@@ -173,6 +177,7 @@ extension CanvasEditor {
                 if outlines.shapes.isEmpty { outlines.shapes = more.shapes } else if !more.shapes.isEmpty { outlines.shapes += more.shapes }
                 if !more.faintShapes.isEmpty { outlines.faintShapes += more.faintShapes }
                 if !more.rects.isEmpty { outlines.rects += more.rects }
+                if !more.tinted.isEmpty { outlines.tinted += more.tinted }
             }
         }
         if let hintedShapeID { outlines.shapes.append(hintedShapeID) }
@@ -231,20 +236,44 @@ extension CanvasEditor {
     }
 
     /// Every plugin's outlines (unless the session hides them), then the hint, in one pass at a
-    /// constant screen width; under them, in a wider, lighter pass of their own, the faint ones.
+    /// constant screen width; under them, in a wider, lighter pass of their own, the faint ones, and
+    /// under those the tinted groups, one pass each in its color, in the order they came: a group's
+    /// ring stands off a line and a gap (`Style.tintedIndicatorWidth`, `tintedRingGap`) further out
+    /// for each ring it's past the first, so a shape in two groups shows both, and a shape outlined
+    /// in full too has its tint one ring further out, clear of the selection's line. The faint ones
+    /// are the shape the groups are about, and are stronger beside them.
     /// Only what meets `area` (world units, what the shapes were drawn for, and in full grown by what
     /// an outline stands off by) is asked for its path and stroked: a shape outlined out of view costs
     /// a look at its kept extent, however it's outlined. `skeletonPixel` is how big a pixel is (world units)
     /// while shapes are drawn as skeletons, nil while they aren't.
-    private func drawOutlines(in context: CGContext, shapes: ShapeContext, around area: CGRect, skeletonPixel: CGFloat?) {
-        let outlines = self.outlines
-        strokeOutlines(of: outlines.faintShapes, rects: [], in: Style.accent.withAlphaComponent(Style.faintIndicatorOpacity),
+    private func drawOutlines(_ outlines: Outlines, tinted: TintedRings?, in context: CGContext, shapes: ShapeContext, around area: CGRect,
+                              skeletonPixel: CGFloat?) {
+        for group in outlines.tinted {
+            let outset = CGFloat(max(group.ring, 0)) * Style.tintedRingPitch
+            strokeOutlines(of: group.shapes, rects: [], in: group.color, width: Style.tintedIndicatorWidth, outset: outset, around: area,
+                           skeletonPixel: skeletonPixel, context: context, shapes: shapes, tinted: tinted)
+        }
+        let faint = outlines.tinted.isEmpty ? Style.faintIndicatorOpacity : Style.tintedFaintIndicatorOpacity
+        strokeOutlines(of: outlines.faintShapes, rects: [], in: Style.accent.withAlphaComponent(faint),
                        width: Style.faintIndicatorWidth, around: area, skeletonPixel: skeletonPixel, context: context, shapes: shapes)
         strokeOutlines(of: outlines.shapes, rects: outlines.rects, in: Style.accent, width: Style.indicatorWidth,
                        around: area, skeletonPixel: skeletonPixel, context: context, shapes: shapes)
     }
 
-    /// `width` is in view points. A shape drawn away from where it is has its outline there too.
+    /// `width` and `outset` are in view points; `outset` is how much further out than the others a
+    /// tinted ring stands (zero for every other outline): a closed shape's outline, drawn in full,
+    /// stands off its edge by the standoff and the outset, and zoomed out its ring on the frame is
+    /// grown by the outset; an open shape's is on its own path whatever the outset. A shape drawn
+    /// away from where it is has its outline there too.
+    ///
+    /// `tinted` is given for a tinted group's pass, and says two things that are the groups' alone.
+    /// A shape that's outlined in full too stands one ring further out, clear of the selection's
+    /// line, which lies over most of ring 0 (looked up only for the shapes that meet `area`, a few
+    /// outlined in full compared one by one, many through one set). And an open shape of a kind
+    /// drawn as a line (`StrokedShape`), in full, is covered: stroked as wide as its line is on
+    /// screen and `Style.tintedCoverPad` more, round, never narrower than `width`, so its own line
+    /// and its heads don't show along the middle of the outline; zoomed out, where its skeleton is
+    /// a line a view point wide, it's the outline's own width.
     ///
     /// Drawn in full, a closed shape's outline stands off its edge, `outlineStandoff` view points
     /// (`Style.outlineStandoff`) all the way round, the same for every kind: its kind's
@@ -264,27 +293,38 @@ extension CanvasEditor {
     /// rects) isn't stroked but filled as a ring, the rect grown by half the line less the rect
     /// shrunk by as much: what the stroke paints, but that its corners are square. Nothing here
     /// makes an array per shape.
-    private func strokeOutlines(of ids: [ShapeID], rects: [CGRect], in color: NSColor, width: CGFloat, around area: CGRect,
-                                skeletonPixel: CGFloat?, context: CGContext, shapes: ShapeContext) {
+    private func strokeOutlines(of ids: [ShapeID], rects: [CGRect], in color: NSColor, width: CGFloat, outset: CGFloat = 0, around area: CGRect,
+                                skeletonPixel: CGFloat?, context: CGContext, shapes: ShapeContext, tinted: TintedRings? = nil) {
         guard !ids.isEmpty || !rects.isEmpty else { return }
         let zoom = camera.zoom, line = width / zoom
-        // What a closed shape's outline drawn in full stands off its edge by, in world units; the area
-        // reaches that far too, but not zoomed out, where nothing stands off (but the shape being edited).
-        let gap = outlineStandoff / zoom
-        let reach = line + (skeletonPixel == nil ? gap : 0)
+        // How far a ring stands out past the others', in world units: its ring on a skeleton's frame
+        // is grown by it, and it's part of what a closed shape's outline drawn in full stands off its
+        // edge by, which the area reaches too, but not zoomed out, where only a ring's outset stands
+        // off (but the shape being edited, drawn in full, keeps its own). A shape outlined in full
+        // too is one ring further out than that.
+        let away = outset / zoom
+        let gap = outlineStandoff / zoom + away
+        let lifts = tinted?.hasOutlinedInFull == true
+        let liftedAway = away + Style.tintedRingPitch / zoom, liftedGap = gap + Style.tintedRingPitch / zoom
+        let reach = line + (skeletonPixel == nil ? (lifts ? liftedGap : gap) : (lifts ? liftedAway : away))
         let area = area.insetBy(dx: -reach, dy: -reach)
         let skeletonOutlines = registry.skeletonOutlines, editing = editingShapeID
+        let strokedShapes = tinted == nil ? [:] : registry.strokedShapes
         let strokes = CGMutablePath(), rings = CGMutablePath()
+        // What covers a line drawn as wide as its kind says, for each width.
+        var covers: [CGFloat: CGMutablePath] = [:]
         for id in ids {
             guard shapeIndex.extent(of: id, in: shapes)?.touches(area) == true, let entry = shapeIndex.entry(for: id, in: shapes) else { continue }
             let offset = drawingOffsets[id].map { CGPoint(x: $0.x / zoom, y: $0.y / zoom) } ?? .zero
             let shift = CGAffineTransform(translationX: offset.x, y: offset.y)
+            let lifted = lifts && tinted?.isOutlinedInFull(id) == true
+            let shapeAway = lifted ? liftedAway : away, shapeGap = lifted ? liftedGap : gap
             if let pixel = skeletonPixel, id != editing {
                 let geometry = entry.geometry.flatMap { $0.outline.isEmpty ? nil : $0 }
                 let bounds = geometry.map { $0.bounds.offsetBy(dx: offset.x, dy: offset.y) }
                 if let geometry, let bounds, Silhouettes.form(of: geometry.bounds, pixel: pixel) != .outline {
                     if geometry.isClosed {
-                        Self.addRing(around: bounds, line: line, to: rings)
+                        Self.addRing(around: bounds.insetBy(dx: -shapeAway, dy: -shapeAway), line: line, to: rings)
                     } else {
                         strokes.move(to: geometry.outline[0], transform: shift)
                         strokes.addLine(to: geometry.outline[geometry.outline.count - 1], transform: shift)
@@ -297,8 +337,10 @@ extension CanvasEditor {
                     continue
                 }
                 if let geometry, let bounds {
-                    if geometry.isClosed, Self.isRect(geometry.outline, bounds: geometry.bounds) {
-                        Self.addRing(around: bounds, line: line, to: rings)
+                    // A ring past the first is on the frame, grown, whatever the outline: there's no
+                    // growing an outline that isn't a rect, which costs far more than a ring.
+                    if geometry.isClosed, shapeAway > 0 || Self.isRect(geometry.outline, bounds: geometry.bounds) {
+                        Self.addRing(around: bounds.insetBy(dx: -shapeAway, dy: -shapeAway), line: line, to: rings)
                     } else {
                         strokes.addLines(between: geometry.outline, transform: shift)
                         if geometry.isClosed { strokes.closeSubpath() }
@@ -308,7 +350,15 @@ extension CanvasEditor {
             }
             if let record = shapes.storedDocument[id],
                let indicator = registry.definition(for: record.kind)?.erasedIndicatorPath(of: record, in: shapes) {
-                addOutline(of: indicator, geometry: entry.geometry, standingOff: gap, to: strokes, transform: shift)
+                if !strokedShapes.isEmpty, entry.geometry?.isClosed == false,
+                   let lineWidth = strokedShapes[record.kind]?.erasedLineWidth(of: record, in: shapes) {
+                    let coverWidth = max(line, lineWidth + Style.tintedCoverPad / zoom)
+                    let cover = covers[coverWidth] ?? CGMutablePath()
+                    cover.addPath(indicator, transform: shift)
+                    covers[coverWidth] = cover
+                } else {
+                    addOutline(of: indicator, geometry: entry.geometry, standingOff: shapeGap, to: strokes, transform: shift)
+                }
             }
         }
         for rect in rects where rect.touches(area) {
@@ -320,12 +370,12 @@ extension CanvasEditor {
                 strokes.addRect(rect)
             }
         }
-        guard !strokes.isEmpty || !rings.isEmpty else { return }
+        guard !strokes.isEmpty || !rings.isEmpty || !covers.isEmpty else { return }
         context.saveGState()
-        // A translucent color painted twice where a ring and a stroke meet would be darker there:
-        // painted opaque into a layer, which takes the color's alpha as a whole.
+        // A translucent color painted twice where a ring, a stroke and a cover meet would be darker
+        // there: painted opaque into a layer, which takes the color's alpha as a whole.
         var ink = color.cgColor
-        let layered = ink.alpha < 1 && !strokes.isEmpty && !rings.isEmpty
+        let layered = ink.alpha < 1 && (rings.isEmpty ? 0 : 1) + (strokes.isEmpty ? 0 : 1) + (covers.isEmpty ? 0 : 1) > 1
         if layered {
             context.setAlpha(ink.alpha)
             context.beginTransparencyLayer(auxiliaryInfo: nil)
@@ -336,13 +386,20 @@ extension CanvasEditor {
             context.setFillColor(ink)
             context.fillPath()
         }
-        if !strokes.isEmpty {
-            context.addPath(strokes)
+        if !strokes.isEmpty || !covers.isEmpty {
             context.setStrokeColor(ink)
-            context.setLineWidth(line)
             context.setLineCap(.round)
             context.setLineJoin(.round)
-            context.strokePath()
+            if !strokes.isEmpty {
+                context.addPath(strokes)
+                context.setLineWidth(line)
+                context.strokePath()
+            }
+            for (coverWidth, cover) in covers {
+                context.addPath(cover)
+                context.setLineWidth(coverWidth)
+                context.strokePath()
+            }
         }
         if layered { context.endTransparencyLayer() }
         context.restoreGState()

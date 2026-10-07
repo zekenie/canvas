@@ -147,6 +147,34 @@ func tiled(_ count: Int) -> CanvasFile {
         expectEqual(answers.compactMap { found($0)?.ids }, [[1, 3], [], [], [1, 3]].map { $0.map(id) })
         expectEqual(queries.captures - before, 1)
     },
+    test("each text is checked once, however many requests carry it: a query asked in two views, or twice, is read and resolved once, and a refusal is every request's") {
+        let h = try answeredRelay()
+        let queries = try require(h.editor.queries)
+        let text = #"chore:connected-to("Beta")"#
+        #if DEBUG
+        let before = queries.checks
+        #endif
+        let answers = try batched([QueryMatchRequest(text, edges: .resolved), QueryMatchRequest(text, edges: .literal), QueryMatchRequest("chore"),
+                                   QueryMatchRequest(text, edges: .recorded), QueryMatchRequest("chore", limit: 1)], on: h)
+        expectEqual(answers.compactMap { found($0)?.ids }, [[1, 3], [], [1, 2, 3], [], [1]].map { $0.map(id) }, "each in its own view, with its own limit")
+        #if DEBUG
+        expectEqual(queries.checks - before, 2, "two texts, five requests")
+        let refusals = queries.checks
+        #endif
+        let mixed = try batched([QueryMatchRequest("chor"), QueryMatchRequest("chor", edges: .literal), QueryMatchRequest("chore")], on: h)
+        expectEqual(mixed.compactMap { refused($0)?.reason }, [.unknownKind, .unknownKind])
+        expectEqual(found(mixed[2])?.ids, [1, 2, 3].map(id))
+        #if DEBUG
+        expectEqual(queries.checks - refusals, 2, "the refused text once, and the other")
+        #endif
+        // One at a time, each is checked as often as it's asked.
+        #if DEBUG
+        let single = queries.checks
+        _ = try batched([QueryMatchRequest(text)], on: h)
+        _ = try batched([QueryMatchRequest(text)], on: h)
+        expectEqual(queries.checks - single, 2)
+        #endif
+    },
     test("what one request matched is not another's: the same words in two queries answer for each") {
         let h = try relay()
         let answers = try batched([QueryMatchRequest(#"chore:not("Alpha")"#), QueryMatchRequest(#"chore:is("Alpha")"#), QueryMatchRequest(#"chore:not("Beta")"#)], on: h)
@@ -167,26 +195,33 @@ func tiled(_ count: Int) -> CanvasFile {
         slow.onAsk = nil
         expectEqual(try batched(requests, on: h).compactMap { found($0)?.ids }, [[1, 2, 3], [1, 2, 3], [6]].map { $0.map(id) }, "and it runs again")
     },
-    test("it waits its turn as a query does: one at a time on an editor") {
+    test("it waits for no query before it, and none waits for it: asked while one is mid-slices, a batch takes up the file and answers before it ends") {
         let slow = SlowWord()
-        let h = try relay(more: [slowPlugin(slow)])
+        slow.cost = { _ in .microseconds(300) }
+        let h = try EditorHarness(plugins: queryPlugins(more: [slowPlugin(slow)]), file: manyChores(60))
         let queries = try require(h.editor.queries)
-        var order: [String] = []
-        slow.onAsk = { _ in order.append("slow asked") }
-        let first = Task { @MainActor () -> Int in
+        let order = Box<[String]>([])
+        let batch = Box<Task<Int, Never>?>(nil)
+        // The batch is asked while the query is in its first slice.
+        slow.onAsk = { _ in
+            guard slow.calls == 1 else { return }
+            batch.value = Task { @MainActor () -> Int in
+                let answers = await queries.matches([QueryMatchRequest("chore")])
+                order.value.append("batch done")
+                return found(answers[0])?.count ?? -1
+            }
+        }
+        let run = Task { @MainActor () -> Int in
             let result = try await queries.run(QueryRequest("chore:slow"))
-            order.append("run done")
+            order.value.append("run done")
             return result.count
         }
-        let second = Task { @MainActor () -> Int in
-            let answers = await queries.matches([QueryMatchRequest("chore")])
-            order.append("batch done")
-            return found(answers[0])?.count ?? -1
-        }
-        expectEqual(try awaitResult { await second.value }, 3)
-        expectEqual(try awaitResult { try await first.value }, 3)
-        expectEqual(order.last, "batch done", "the batch took the file after the query before it was done: \(order)")
-        expect(order.firstIndex(of: "run done").map { $0 < (order.firstIndex(of: "batch done") ?? 0) } == true, "\(order)")
+        expectEqual(try awaitResult(timeout: 10) { try await run.value }, 60, "the query answers as it would alone")
+        let asked = try require(batch.value, "the batch was asked")
+        expectEqual(try awaitResult(timeout: 10) { await asked.value }, 60)
+        expectEqual(order.value, ["batch done", "run done"], "the batch took up the file and answered while the query was still in its slices")
+        expectEqual(slow.calls, 60)
+        expectEqual(queries.liveSnapshots, 0)
     },
 ])
 

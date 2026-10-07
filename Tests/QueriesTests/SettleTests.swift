@@ -7,8 +7,8 @@ import TestKit
 import Topology
 
 // A query that reads edges waits, when it's asked to, for answers that are still arriving
-// (`QueryRequest.settle`), outside the line queries take their turns in, at most as long as it's
-// told; then it goes on, and says so (`pending`). A query that reads no edges never waits.
+// (`QueryRequest.settle`), before it takes up the file and holding up no other query, at most as long
+// as it's told; then it goes on, and says so (`pending`). A query that reads no edges never waits.
 
 /// What a query running in a task came to.
 @MainActor final class Outcome {
@@ -89,7 +89,7 @@ import Topology
         expectEqual(unasked.result?.warnings, [], "and nothing said")
         source.cancel()
     },
-    test("the wait is outside the line: a query behind it isn't held up, and a cancelled wait is a cancelled query") {
+    test("a wait for answers holds up no other query, and a cancelled wait is a cancelled query that took up nothing") {
         let h = try relay()
         let topology = try require(h.editor.topology)
         let queries = try require(h.editor.queries)
@@ -99,7 +99,7 @@ import Topology
         let waiting = try start(QueryRequest("chore:edge-to(*)", settle: .seconds(2)), on: h)
         expect(!waiting.done)
         let other = try start(QueryRequest("chore"), on: h)
-        expect(other.done, "another query takes its turn while one waits for answers")
+        expect(other.done, "another query runs while one waits for answers")
         expectEqual(other.result?.count, 3)
         // Cancelled while it waits: it doesn't take up the file.
         let before = queries.captures
@@ -108,7 +108,7 @@ import Topology
         task.cancel()
         let thrown = try thrown(by: task)
         expectEqual(thrown?.reason, .cancelled)
-        expectEqual(queries.captures, before, "taking up the file is where it would have waited its turn")
+        expectEqual(queries.captures, before, "it waited before taking up the file, so it never did")
         working.busy = false
         topology.settleSourceChanged()
         spinRunLoop(until: { waiting.done })

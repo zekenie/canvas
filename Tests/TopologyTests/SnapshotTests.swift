@@ -70,7 +70,7 @@ private struct Answers {
                 found.edges["edges" + question] = reading.edges(of: id, direction, types: filter)
                 found.yes["hasEdges" + question] = reading.hasEdges(of: id, direction, types: filter) { _ in true }
                 found.yes["hasEdges, carried by another" + question] = reading.hasEdges(of: id, direction, types: filter) { $0.carrier != id }
-                found.neighbors["neighbors" + question] = reading.neighbors(of: id, direction, types: filter)
+                found.neighbors["neighbors(of:)" + question] = reading.neighbors(of: id, direction, types: filter)
             }
         }
         found.edges["edges(carriedBy: \(shape))"] = reading.edges(carriedBy: id)

@@ -68,6 +68,12 @@ extension ProbeTool: Tool {
     func pointerExited(in editor: CanvasEditor) { log.events.append("exited") }
 }
 
+/// The groups a test has the canvas outline in colors of their own, and the shapes it selects.
+@MainActor final class TintedByTest {
+    var groups: [TintedOutlines] = []
+    var shapes: [ShapeID] = []
+}
+
 @MainActor func minimapEditor(document: CanvasDocument = CanvasDocument(), _ more: [any CanvasPlugin] = []) throws -> EditorHarness {
     try minimapEditor(file: CanvasFile(root: document), more)
 }
@@ -209,6 +215,114 @@ func isAccent(_ p: [Int]) -> Bool { p[2] > p[0] + 60 }
         h.editor.hintedShapeID = near
         let hinted = pixel(finished(minimap, h), at: onMinimap(CGPoint(x: 250, y: 200), minimap))
         expect(isAccent(hinted), "a shape the canvas outlines is in the accent color: \(hinted)")
+    },
+    test("a shape the canvas outlines in a color of its own is filled in that color, wherever it is: under the faint ones and the selection's, and one in several groups shows each, inside the one before") {
+        let outlined = TintedByTest()
+        let h = try minimapEditor([Contributor(id: "tinted") { $0.outlines { _ in Outlines(shapes: outlined.shapes, tinted: outlined.groups) } }])
+        let near = h.add(Box(CGRect(x: 100, y: 100, width: 300, height: 200)))
+        let far = h.add(Disc(CGRect(x: 1500, y: 1100, width: 400, height: 300)))
+        let (_, _, minimap) = try minimapped(h)
+        let red = NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1), green = NSColor(srgbRed: 0, green: 1, blue: 0, alpha: 1)
+        let isRed = { (p: [Int]) in p[0] > 200 && p[1] < 100 && p[2] < 100 }, isGreen = { (p: [Int]) in p[1] > 200 && p[0] < 100 && p[2] < 100 }
+        @MainActor func at(_ world: CGPoint) -> [Int] { pixel(finished(minimap, h), at: onMinimap(world, minimap)) }
+        let inNear = CGPoint(x: 250, y: 200), inFar = CGPoint(x: 1700, y: 1250)
+        expect(isSilhouette(at(inFar)), "off screen, a plain silhouette: \(at(inFar))")
+        outlined.groups = [TintedOutlines(color: red, shapes: [far])]
+        expect(isRed(at(inFar)), "the shape off screen, in its color: \(at(inFar))")
+        let dimmed = at(inNear)
+        expect(!isSilhouette(dimmed) && !isBlank(dimmed) && abs(dimmed[0] - dimmed[2]) < 24, "the other, dimmed toward the background: \(dimmed)")
+        expect(isBlank(at(CGPoint(x: 1510, y: 1110))), "the disc's silhouette, not its corner: \(at(CGPoint(x: 1510, y: 1110)))")
+        outlined.groups = [TintedOutlines(color: red, shapes: [far, near]), TintedOutlines(color: green, shapes: [far], ring: 1)]
+        expect(isRed(at(inNear)), "a group's every shape: \(at(inNear))")
+        expect(isGreen(at(inFar)), "a shape in two groups is filled in both, the later inside: \(at(inFar))")
+        outlined.shapes = [far]
+        expect(isAccent(at(inFar)), "the selection's accent over a tint, inside it: \(at(inFar))")
+        expect(isRed(at(inNear)), "and the tint on what isn't selected: \(at(inNear))")
+        outlined.shapes = []
+        outlined.groups = []
+        expect(isSilhouette(at(inFar)) && isSilhouette(at(inNear)), "with none, as plain silhouettes again")
+    },
+    test("while anything is lit, the rest of the board dims toward the background, 40%, and nothing dims while nothing is") {
+        let outlined = TintedByTest()
+        let h = try minimapEditor([Contributor(id: "tinted") { $0.outlines { _ in Outlines(shapes: outlined.shapes, tinted: outlined.groups) } }])
+        let near = h.add(Box(CGRect(x: 100, y: 100, width: 300, height: 200)))
+        let far = h.add(Disc(CGRect(x: 1500, y: 1100, width: 400, height: 300)))
+        let (_, _, minimap) = try minimapped(h)
+        let inNear = onMinimap(CGPoint(x: 250, y: 200), minimap), blank = onMinimap(CGPoint(x: 600, y: 450), minimap)
+        let plain = finished(minimap, h)
+        let silhouette = pixel(plain, at: inNear), background = pixel(plain, at: blank)
+        expect(isSilhouette(silhouette) && isBlank(background), "a silhouette in view and the blank beside it: \(silhouette), \(background)")
+        outlined.groups = [TintedOutlines(color: NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1), shapes: [far])]
+        let lit = finished(minimap, h)
+        // The background over it at 40%: each channel 40% of the way from the silhouette's to the background's.
+        let dimmed = pixel(lit, at: inNear)
+        for channel in 0..<3 {
+            let expected = Double(silhouette[channel]) + 0.4 * Double(background[channel] - silhouette[channel])
+            expect(abs(Double(dimmed[channel]) - expected) < 3, "channel \(channel) of the silhouette dimmed to \(expected): \(dimmed)")
+        }
+        expect(zip(pixel(lit, at: blank), background).allSatisfy { abs($0 - $1) <= 1 }, "the blank is the background's, as it was: \(pixel(lit, at: blank))")
+        outlined.groups = []
+        expectEqual(pixel(finished(minimap, h), at: inNear), silhouette, "with nothing lit, as it was")
+        _ = near
+    },
+    test("while anything is lit, what's outlined is over the veil: a lit fill off screen is its own color, and the selection's isn't veiled; with nothing lit, they're under it as they were") {
+        let outlined = TintedByTest()
+        let h = try minimapEditor([Contributor(id: "tinted") { $0.outlines { _ in Outlines(shapes: outlined.shapes, tinted: outlined.groups) } }])
+        let near = h.add(Box(CGRect(x: 100, y: 100, width: 300, height: 200)))
+        let far = h.add(Disc(CGRect(x: 1500, y: 1100, width: 400, height: 300)))
+        let (_, _, minimap) = try minimapped(h)
+        let inFar = onMinimap(CGPoint(x: 1700, y: 1250), minimap)
+        outlined.groups = [TintedOutlines(color: NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1), shapes: [far])]
+        let red = pixel(finished(minimap, h), at: inFar)
+        expect(red[0] >= 246 && red[1] <= 10 && red[2] <= 15, "the lit shape off screen, in its color whole, not 6% darker under the veil: \(red)")
+        // A selected shape off screen: under the veil, 6% darker, with nothing lit; over it, with something.
+        outlined.groups = []
+        outlined.shapes = [far]
+        let veiled = pixel(finished(minimap, h), at: inFar)
+        outlined.groups = [TintedOutlines(color: NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1), shapes: [near])]
+        let over = pixel(finished(minimap, h), at: inFar)
+        expect(isAccent(veiled) && isAccent(over), "the accent either way: \(veiled), \(over)")
+        let (under, above) = (veiled[0...2].reduce(0, +), over[0...2].reduce(0, +))
+        expect(Double(under) < 0.97 * Double(above), "darker under the veil (a 6% black): \(veiled), and over it, \(over)")
+    },
+    test("a shape in several groups shows each, every one inset 1.6 points more than the one before, so it's a frame of one color round a block of another, and never by more than 30% of its side") {
+        let outlined = TintedByTest()
+        let h = try minimapEditor([Contributor(id: "tinted") { $0.outlines { _ in Outlines(shapes: outlined.shapes, tinted: outlined.groups) } }])
+        h.add(Box(CGRect(x: 100, y: 100, width: 300, height: 200)))
+        let wide = h.add(Box(CGRect(x: 1400, y: 1100, width: 700, height: 300)))      // some 60 points across in the minimap
+        let tiny = h.add(Box(CGRect(x: 1000, y: 1500, width: 80, height: 80)))        // 7.2 points
+        let (_, _, minimap) = try minimapped(h)
+        let red = NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1), green = NSColor(srgbRed: 0, green: 1, blue: 0, alpha: 1)
+        let blue = NSColor(srgbRed: 0, green: 0, blue: 1, alpha: 1)
+        let isRed = { (p: [Int]) in p[0] > 200 && p[1] < 100 && p[2] < 100 }, isGreen = { (p: [Int]) in p[1] > 200 && p[0] < 100 && p[2] < 100 }
+        let isBlue = { (p: [Int]) in p[2] > 200 && p[0] < 100 && p[1] < 100 }
+        // The wide box's left edge in the minimap, and the middle of its side; the points a step in from the edge.
+        let left = onMinimap(CGPoint(x: 1400, y: 1250), minimap)
+        @MainActor func across(_ points: CGFloat...) -> [[Int]] {
+            let rep = finished(minimap, h)
+            return points.map { pixel(rep, at: CGPoint(x: left.x + $0, y: left.y)) }
+        }
+        outlined.groups = [TintedOutlines(color: red, shapes: [wide]), TintedOutlines(color: green, shapes: [wide], ring: 1)]
+        let two = across(1.0, 2.4, 30)
+        expect(isRed(two[0]) && isGreen(two[1]) && isGreen(two[2]), "red round green, 1.6 points in: \(two)")
+        outlined.groups = [TintedOutlines(color: red, shapes: [wide]), TintedOutlines(color: green, shapes: [wide], ring: 1), TintedOutlines(color: blue, shapes: [wide], ring: 2)]
+        let three = across(1.0, 2.4, 4.0, 30)
+        expect(isRed(three[0]) && isGreen(three[1]) && isBlue(three[2]) && isBlue(three[3]), "three, each 1.6 further in: \(three)")
+        // Selected too, its accent is the innermost, a step past the tints that stand round it.
+        outlined.groups = [TintedOutlines(color: red, shapes: [wide])]
+        outlined.shapes = [wide]
+        let selected = across(1.0, 2.4, 30)
+        expect(isRed(selected[0]) && isAccent(selected[1]) && isAccent(selected[2]), "a selected shape's accent inside its tint: \(selected)")
+        outlined.shapes = []
+        // A shape a few points across has each step inset by no more than 30% of its side: of 7.2 points, 2.16 in from each, where the
+        // third's 3.2 would leave 0.8 across. Its green is 1.6 in (2 from the middle), its blue 2.16 in (1.44 from it).
+        outlined.groups = [TintedOutlines(color: red, shapes: [tiny]), TintedOutlines(color: green, shapes: [tiny], ring: 1), TintedOutlines(color: blue, shapes: [tiny], ring: 2)]
+        let centered = onMinimap(CGPoint(x: 1040, y: 1540), minimap), small = finished(minimap, h)
+        let row = [0, 1.0, 2.8].map { pixel(small, at: CGPoint(x: centered.x + $0, y: centered.y)) }
+        expect(isBlue(row[0]) && isBlue(row[1]) && isRed(row[2]), "blue in the middle and 1 point out (not uncapped, 0.4 across), red 2.8 out: \(row)")
+        // A shape in one group is as it was, filled whole.
+        outlined.groups = [TintedOutlines(color: red, shapes: [wide])]
+        expect(isRed(across(0.8)[0]) && isRed(across(2.4)[0]), "one group, whole")
     },
     test("a container is drawn as its outline, so what it holds shows on it; outlined by the canvas, its outline is in the accent color") {
         let h = try minimapEditor([CorralsPlugin()])

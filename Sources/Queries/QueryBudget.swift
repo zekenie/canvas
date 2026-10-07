@@ -9,9 +9,8 @@ public enum QueryBudget {
     /// How many records a slice asks between reads of its clock while it's early and they're cheap
     /// (a read costs some 0.1 µs; a record that costs more than the time left narrows it).
     public static let clockStride = 16
-    /// How long a query may take from when it's run (a wait for answers to settle counts, and so does
-    /// waiting its turn): past it, its evaluation is cancelled and it's refused `too_slow`, before
-    /// `canvas`'s 10 s wait runs out.
+    /// How long a query may take from when it's run (a wait for answers to settle counts): past it,
+    /// its evaluation is cancelled and it's refused `too_slow`, before `canvas`'s 10 s wait runs out.
     public static let deadline: Duration = .seconds(8)
     /// How long a query that reads edges waits, at most, for answers still arriving (stand-ins
     /// asked and not answered) before it takes up the file, and goes on with a `pending` warning

@@ -81,6 +81,34 @@ private func chain(_ count: Int) -> (file: CanvasFile, owners: [ShapeID]) {
         expectEqual(odd.path(to: BoardID(owner: m)), nil)
         expectEqual(odd.subtree(ownedBy: [m]), [BoardID(owner: m), BoardID(owner: n)], "a cycle's boards, once each")
     },
+    test("the shape on a board that holds a shape is itself, or the owner of the board it's on, at any depth; none from a board above or beside, or for a shape not in the file") {
+        let nest = Nest(), file = nest.file
+        // On the root: A, P and R; on P's board: B and Q; on Q's board: C.
+        expectEqual(file.shape(on: .root, holding: nest.a), nest.a, "itself, on the board")
+        expectEqual(file.shape(on: .root, holding: nest.p), nest.p, "a shape that owns a board, on the board it's on")
+        expectEqual(file.shape(on: .root, holding: nest.b), nest.p, "one board down: the pocket whose board it's on")
+        expectEqual(file.shape(on: .root, holding: nest.c), nest.p, "two boards down: the pocket on this board that the board under it is under")
+        expectEqual(file.shape(on: nest.pBoard, holding: nest.c), nest.q, "from P's board, the same shape is Q's")
+        expectEqual(file.shape(on: nest.pBoard, holding: nest.q), nest.q)
+        expectEqual(file.shape(on: nest.qBoard, holding: nest.c), nest.c)
+        expectEqual(file.shape(on: nest.pBoard, holding: nest.a), nil, "on a board above")
+        expectEqual(file.shape(on: nest.pBoard, holding: nest.p), nil, "so is the pocket that owns this very board")
+        expectEqual(file.shape(on: nest.qBoard, holding: nest.b), nil, "and one on P's board, above Q's")
+        expectEqual(file.shape(on: nest.rBoard, holding: nest.b), nil, "R's board is empty, and beside P's")
+        expectEqual(file.shape(on: .root, holding: ShapeID()), nil, "a shape that isn't in the file")
+
+        let a = ShapeID(), b = ShapeID(), x = ShapeID(), y = ShapeID()
+        let beside = CanvasFile(root: board(pocket(a), pocket(b)), children: [a: board(box(x)), b: board(box(y))])
+        expectEqual(beside.shape(on: BoardID(owner: b), holding: x), nil, "a shape on a board beside, under another owner")
+        expectEqual(beside.shape(on: BoardID(owner: a), holding: x), x)
+
+        let orphan = ShapeID(), inside = ShapeID(), m = ShapeID(), n = ShapeID()
+        let odd = CanvasFile(root: board(box()), children: [orphan: board(box(inside)), m: board(pocket(n)), n: board(pocket(m))])
+        expectEqual(odd.shape(on: .root, holding: inside), nil, "a board whose owner isn't in the file")
+        expectEqual(odd.shape(on: .root, holding: n), nil, "owners that hold each other's boards: it ends")
+        expectEqual(odd.shape(on: BoardID(owner: n), holding: n), m, "the loop's other board, one step")
+        expectEqual(odd.shape(on: BoardID(owner: m), holding: n), n, "and itself")
+    },
     test("the boards under shapes come breadth first, and only boards with shapes") {
         let nest = Nest()
         expectEqual(nest.file.subtree(ownedBy: [nest.a, nest.r, nest.p]), [nest.pBoard, nest.qBoard])

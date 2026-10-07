@@ -42,6 +42,12 @@ import Topology
         expectEqual(wired.from, "words")
         expectEqual(vocabulary.words.first { $0.word == "starred" }?.form, ":starred")
         expectEqual(vocabulary.words.first { $0.word == Word.edgeTo.rawValue }?.form, ":edge-to(S[, types])")
+        // The words that find where a connection starts and where it ends.
+        let ends = vocabulary.words.filter { [Word.startOf.rawValue, Word.endOf.rawValue].contains($0.word) }
+        expectEqual(ends.map(\.form), [":start-of(S[, types])", ":end-of(S[, types])"])
+        expectEqual(ends.map(\.takes), Array(repeating: "a shape, then edge types if any", count: 2))
+        expectEqual(ends.map(\.summary), ["the shape a connection S matches starts at", "the shape a connection S matches ends at"])
+        expectEqual(ends.map(\.example), [#":start-of(:ends-at("Auth"))"#, #":end-of(:starts-at("Warehouse"))"#])
     },
     test("its text, the <vocabulary> block") {
         let vocabulary = try QueryVocabulary(registry: Registry(plugins: queryPlugins()))

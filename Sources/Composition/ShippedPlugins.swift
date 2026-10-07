@@ -18,6 +18,7 @@ import LanguageModels
 import Locking
 import Mentions
 import Moving
+import Neighbors
 import ProseMaps
 import Publishing
 import Queries
@@ -108,6 +109,9 @@ public enum ShippedPlugins {
             QueriesPlugin(), QueryTranslationPlugin(prompt: QueryPrompt.system, referenceRule: QueryPrompt.referenceRule), TitleQueriesPlugin(), BoardQueriesPlugin(), MentionQueriesPlugin(), ValidationQueriesPlugin(),
             SelectionQueriesPlugin(),
             QueryCommandsPlugin(),
+            // Hover a shape, on the canvas or by its row in the table of contents, and what it connects to is outlined by how (NeighborLights): after the
+            // query plugins, whose engine it asks, and Selection and the table of contents, whose hovers it follows.
+            NeighborsPlugin(lights: NeighborLights.shipped),
             // `/move-to` and `/move-near`: a shape moved into a frame, onto a subboard's board or beside a shape, on any board,
             // placed as `canvas draw` places one. After every plugin whose every-shape commands a note lists before them.
             MovingPlugin(),
