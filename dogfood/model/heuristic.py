@@ -32,7 +32,7 @@ import collections, os, sys
 
 MODEL = os.environ.get('MODEL_DIR', os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, MODEL)
-import gen                                              # noqa: E402  (loads model.json and index_edges.json)
+import gen                                              # noqa: E402  (loads the project's model.json)
 from gen import PROD, ftitle, board_files, board_of    # noqa: E402
 
 # ---- the rules, over any graph -----------------------------------------------------------------------
@@ -120,7 +120,7 @@ def references_of(nodes, uses, weight, title=str):
 # ---- a module's (or folder's) board --------------------------------------------------------------------
 
 SAME, _ = gen.edges_between(set(PROD))
-NAMES = {((e['fromModule'], e['fromFile']), (e['toModule'], e['toFile'])): len(e['names']) for e in gen.model['edges']}
+NAMES = {(a, b): len(names) for a, b, names in gen.USES}
 
 def symbols(a, b):
     """How much file a uses file b: the number of b's symbols a names (the index's `names`)."""
@@ -147,17 +147,18 @@ def arrows(board):
     """The same-board uses drawn as arrows (a pair both ways appears as both of its directions)."""
     return set(decide(board)['arrows'])
 
-# ---- Canvas's own board: its eight folders -------------------------------------------------------------
+# ---- a module's own board, when its folders have boards (Canvas's) -----------------------------------------
 
-def canvas_folders():
-    """Canvas's folders as a graph: a folder uses another when one of its files uses one of the other's;
-    the weight is how many file pairs do. Style.swift, on Canvas's board itself, is left out."""
+def folder_graph(m):
+    """A module's folder boards as a graph: a folder uses another when one of its files uses one of the
+    other's; the weight is how many file pairs do. The files on the module's own board are left out."""
+    folders = set(gen.folder_boards(m))
     pairs = collections.Counter()
-    for e in gen.model['edges']:
-        if e['fromModule'] == 'Canvas' and e['toModule'] == 'Canvas':
-            a, b = board_of(('Canvas', e['fromFile'])), board_of(('Canvas', e['toFile']))
-            if a != b and a != 'Canvas' and b != 'Canvas':
-                pairs[(a, b)] += 1
+    for a, b, _ in gen.USES:
+        if a[0] == m and b[0] == m:
+            x, y = board_of(a), board_of(b)
+            if x != y and x in folders and y in folders:
+                pairs[(x, y)] += 1
     nodes = sorted(set(x for p in pairs for x in p))
     return nodes, set(pairs), lambda a, b: pairs.get((a, b), 0)
 
@@ -173,8 +174,9 @@ if __name__ == '__main__':
         if n:
             print(f"{b:<20} {k:>3} of {n:>3} arrows  h={d['h']}  hubs: {', '.join(ftitle(x) for x in d['hubs']) or '-'}")
     print(f"{kept} of {total} same-board uses stay arrows; {time.time() - t0:.2f}s")
-    nodes, uses, w = canvas_folders()
-    d = decide_graph(nodes, uses, w)
-    g = d['graph']
-    print(f"Canvas folders: {len(uses)} uses, {len(g.units(uses))} drawn; h={d['h']}; hubs {d['hubs']}; kept {d['kept']}; "
-          f"{len(g.units(d['arrows']))} arrows")
+    for m in gen.FOLDER_BOARDS:
+        nodes, uses, w = folder_graph(m)
+        d = decide_graph(nodes, uses, w)
+        g = d['graph']
+        print(f"{m}'s folders: {len(uses)} uses, {len(g.units(uses))} drawn; h={d['h']}; hubs {d['hubs']}; kept {d['kept']}; "
+              f"{len(g.units(d['arrows']))} arrows")

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Reads the index store index_build.py wrote, through libIndexStore, into exact file-to-file uses:
-for every file, the symbols it defines (USRs), and for every explicit reference, the file that
-defines the symbol. Writes index_edges.json: [{from: [module, rel], to: [module, rel], names: [...]}]."""
-import ctypes as C, json, os, re, sys, collections
+"""Swift's reader, second half: reads an index store (swift_index_build.py's, or the one Xcode or `swift build`
+writes) through libIndexStore into exact file-to-file uses: for every file, the symbols it defines (USRs), and for
+every explicit reference, the file that defines the symbol. Adds them to model.json as its uses.
+    swift_index_read.py <store> <project dir>/model.json"""
+import ctypes as C, json, os, sys, collections
 
-STORE, MODEL, OUT = sys.argv[1], sys.argv[2], sys.argv[3]
+STORE, MODEL = sys.argv[1], sys.argv[2]
 lib = C.CDLL('/Library/Developer/CommandLineTools/usr/lib/libIndexStore.dylib')
 
 class StrRef(C.Structure):
@@ -38,18 +39,9 @@ store = lib.indexstore_store_create(STORE.encode(), C.byref(err))
 assert store, 'no store'
 
 model = json.load(open(MODEL))
-by_module_base = collections.defaultdict(list)
 by_base = collections.defaultdict(list)
 for f in model['files']:
-    by_module_base[(f['module'], os.path.basename(f['rel']))].append(f['rel'])
     by_base[os.path.basename(f['rel'])].append((f['module'], f['rel']))
-modnames = set(m['name'] for m in model['modules'])
-
-def usr_module(usr):
-    m = re.match(r's:(\d+)', usr)
-    if not m: return None
-    n = int(m.group(1)); name = usr[m.end():m.end() + n]
-    return name if name in modnames else None
 
 records = []
 for dp, dn, fn in os.walk(os.path.join(STORE, 'v5', 'records')):
@@ -94,6 +86,7 @@ for key, refs in file_refs.items():
         d = defs.get(u)
         if d and d != key:
             edges[(key, d)].add(n)
-out = [dict(fromModule=a[0], fromFile=a[1], toModule=b[0], toFile=b[1], names=sorted(ns)) for (a, b), ns in edges.items()]
-json.dump(out, open(OUT, 'w'), indent=1)
+out = [{'from': list(a), 'to': list(b), 'names': sorted(ns)} for (a, b), ns in edges.items()]
+model['uses'] = out
+json.dump(model, open(MODEL, 'w'), indent=1)
 print(f"records {len(records)}, files placed {len(file_refs)}, unplaced {len(unplaced)} {unplaced[:5]}, edges {len(out)}")

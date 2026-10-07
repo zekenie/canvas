@@ -2,7 +2,7 @@
 """Layout v5. Which uses between a board's files are arrows comes from heuristic.py: a board's hubs, and
 the arrows two stronger ones already relay, are pills; so is an arrow that would cross more than ALLOW
 lets it. A frame whose files have arrows between them is a ladder: two columns, pills on the outer sides,
-the arrows between them. Canvas's board is drawn the same way, its folders' cards in place of notes.
+the arrows between them. A module with folder boards (Canvas) is drawn the same way, its folders' cards in place of notes.
 Pills are grouped by where they come from, each group in a frame titled "<where> (<note>)". Draw puts a
 start's pills 96 apart, so notes go first in a staging area, each pill moves into place in a temporary
 frame, and the notes go home. On the root, an import is an arrow only when it clears every shape but its
@@ -16,9 +16,9 @@ import hashlib, json, math, os, sys, collections
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import gen, gen2
-from gen import q, text_lit, ftitle, board_of, board_files, key_in, file_text, about_text, about_title, PROD, MODS, FILES, model, draw, cli, RUNS
-from gen2 import Box, arc_points, choose_bend, at, note_w, list_h, pill_w, measured, ABOUT_W, SUB_W, SUB_H, PILL_GAP, PILL_PITCH, PILL_H
-from spec import BANDS, GROUPS, BY_MODULE, CANVAS_FOLDERS
+from gen import (q, text_lit, ftitle, bare, board_of, board_files, folder_boards, key_in, file_text, about_text, about_title,
+                 PROD, MODS, FILES, USES, BOARDS, BANDS, GROUPS, BY_MODULE, FOLDER_BOARDS, draw, cli, RUNS)
+from gen2 import Box, arc_points, at, note_w, list_h, pill_w, measured, ABOUT_W, SUB_W, SUB_H, PILL_GAP, PILL_PITCH, PILL_H
 
 P = 64                  # inside a frame, from each edge: `in` needs 40, a group frame reaches 16 past its pills
 GX, GY = 80, 96         # between units
@@ -38,6 +38,7 @@ CAP = 6                 # arrows into one module on the root
 ROOT_SPLIT = 4          # a root card with more slots than this puts groups on both sides
 UGX, RGY, BANDGAP, HEADER = 200, 160, 200, 30
 ANCHOR, ANCHOR_W = 'zz-root', 200    # a note the root's shapes hang from while they're drawn
+LEGEND = 'How to read this board'     # the root's legend, on a board drawn before it was dropped: reset deletes it
 
 # ---- a column of grouped pills -------------------------------------------------------------------
 
@@ -93,10 +94,6 @@ class Column:
         side = ' from: left' if self.side == 'l' else ''
         return [f"edge {q(start)} -> {q(p)}{' via: reference' if via or p in self.via else ''}{side}" for p in self.pills]
 
-def bare(title):
-    """A file's title without ".swift", in its group frames' titles."""
-    return title[:-len('.swift')] if title.endswith('.swift') else title
-
 def split(owner, groups, limit, via=(), tall=None):
     """Groups on the right, or, past `limit` pills (or a column `tall`), the first ones right and the
     rest left, the two columns as near the same height as whole groups allow."""
@@ -109,11 +106,12 @@ def split(owner, groups, limit, via=(), tall=None):
 # ---- what a file's pills are --------------------------------------------------------------------
 
 def where_from(src, t):
-    """A file's pill is grouped by the module of the file it stands for; on Canvas's folders, by folder."""
-    return board_of(t) if src[0] == 'Canvas' and t[0] == 'Canvas' else t[0]
+    """A file's pill is grouped by the module of the file it stands for; within a module with folder boards,
+    by the board."""
+    return board_of(t) if src[0] == t[0] and src[0] in FOLDER_BOARDS else t[0]
 
 def rank(where):
-    m = where.split('/')[0]
+    m = BOARDS[where][0]
     return (LAYER_RANK[LAYER_OF[m]], where)
 
 def file_columns(k, other, mine=()):
@@ -139,34 +137,33 @@ def short(layer):
     return layer.replace(' layer', '')
 
 def title_of(k):
-    """A file's title, or a folder's (Canvas's board has a card for each, called by the folder's board)."""
+    """A file's title, or a folder's (a module with folder boards has a card for each, called by the folder's board)."""
     return k if isinstance(k, str) else ftitle(k)
 
-# ---- Canvas's board: its folders' cards, the uses between them, and Style.swift ---------------------
+# ---- a module with folder boards: its folders' cards, the uses between them, and its other files -------
 
-FOLDERS = ['Canvas/' + f for f in CANVAS_FOLDERS]
-STYLE = ('Canvas', 'Style.swift')
-
-def folder_uses():
-    """(a, b): how many of a's files use something one of b's files declares."""
+def folder_uses(m):
+    """(a, b): how many of a's files use something one of b's files declares, a and b folder boards of m."""
+    folders = set(folder_boards(m))
     pairs = set()
-    for e in model['edges']:
-        if e['fromModule'] == 'Canvas' and e['toModule'] == 'Canvas':
-            a, b = board_of(('Canvas', e['fromFile'])), board_of(('Canvas', e['toFile']))
-            if a != b and a in FOLDERS and b in FOLDERS:
-                pairs.add((a, b, e['fromFile'], e['toFile']))
+    for x, y, _ in USES:
+        if x[0] == m and y[0] == m:
+            a, b = board_of(x), board_of(y)
+            if a != b and a in folders and b in folders:
+                pairs.add((a, b, x[1], y[1]))
     return collections.Counter((a, b) for a, b, _, _ in pairs)
 
 def card_unit(f, pilled):
-    """A folder's card and its pills, for the folders it uses through them, in one group: Canvas's."""
+    """A folder's card and its pills, for the folders it uses through them, in one group: its module's."""
+    m, folder = BOARDS[f]
     ts = sorted(t for a, t in pilled if a == f)
-    right, left = split(f.split('/', 1)[1], [('Canvas', ts)] if ts else [], ROOT_SPLIT, via=ts)
+    right, left = split(folder, [(m, ts)] if ts else [], ROOT_SPLIT, via=ts)
     return Unit(f, None, SUB_W, SUB_H, True, right, left, key=f, kind='subboard')
 
 # ---- a board's plan -------------------------------------------------------------------------------
 
 class Unit:
-    """A note (or, on Canvas's board, a folder's card) and its columns."""
+    """A note (or, on the board of a module with folder boards, a folder's card) and its columns."""
     def __init__(self, title, text, w, h, public, right, left, key=None, kind='sticky-note'):
         self.title, self.text, self.w, self.nh, self.public, self.key, self.kind = title, text, w, h, public, key, kind
         self.right, self.left = right, left
@@ -269,11 +266,12 @@ def first_ladder(units, arrows):
     inner = sorted({tuple(sorted((a, b), key=title_of)) for a, b in arrows if a in by and b in by and a != b}, key=lambda p: (title_of(p[0]), title_of(p[1])))
     ck = (tuple(sorted(by, key=title_of)), tuple(inner))
     if ck not in _ladders:
-        _ladders[ck] = improve_ladder(l, r, inner)
+        _ladders[ck] = improve_ladder(l, r, inner) if len(seq) <= LADDER_SEARCH else ([u.key for u in l], [u.key for u in r])
     l, r = _ladders[ck]
     return [by[k] for k in l], [by[k] for k in r]
 
 _ladders = {}
+LADDER_SEARCH = 10      # a bigger ladder keeps its first split: the search takes minutes past a dozen files
 
 def ladder_cost(l, r, inner):
     """What a ladder's own arrows cross (a note 10, a pill frame 1), then how uneven its columns are."""
@@ -348,11 +346,20 @@ class Grid:
             x += self.cw[ci] + self.gx
         return out
 
+SUB_ROW = 4             # a frame's subframes sit in a row, up to this many; more wrap into rows of about a root of them
+
+def sub_rows(subs):
+    if not subs:
+        return []
+    per = len(subs) if len(subs) <= SUB_ROW else math.ceil(math.sqrt(len(subs)))
+    return [subs[i:i + per] for i in range(0, len(subs), per)]
+
 class Frame:
     def __init__(self, title, units, subs, arrows=()):
         self.title, self.grid, self.subs = title, Grid(units, arrows), subs
-        sw = sum(s.w for s in subs) + GX * (len(subs) - 1) if subs else 0
-        sh = max((s.h for s in subs), default=0)
+        rows = sub_rows(subs)
+        sw = max((sum(s.w for s in row) + GX * (len(row) - 1) for row in rows), default=0)
+        sh = sum(max(s.h for s in row) for row in rows) + GY * (len(rows) - 1) if rows else 0
         self.w = math.ceil(2 * P + max(self.grid.w, sw))
         self.h = math.ceil(2 * P + self.grid.h + (SUB if units and subs else 0) + sh)
 
@@ -365,10 +372,13 @@ def layout_frame(fr, bx, by, parent, frames, notes):
     frames.append(dict(title=fr.title, parent=parent, bx=bx, by=by, w=fr.w, h=fr.h))
     for (u, box, pills, gframes) in fr.grid.place(bx + P, by + P):
         notes.append(dict(unit=u, box=box, holder=fr.title, hx=bx, hy=by, pills=pills, gframes=gframes))
-    sx, sy = bx + P, by + P + fr.grid.h + (SUB if fr.grid.units else 0)
-    for s in fr.subs:
-        layout_frame(s, sx, sy, fr.title, frames, notes)
-        sx += s.w + GX
+    sy = by + P + fr.grid.h + (SUB if fr.grid.units else 0)
+    for row in sub_rows(fr.subs):
+        sx = bx + P
+        for s in row:
+            layout_frame(s, sx, sy, fr.title, frames, notes)
+            sx += s.w + GX
+        sy += max(s.h for s in row) + GY
 
 def shelf(blocks, start_x, target_w, first_row_h):
     out, x, y, row_h = [], start_x, 0, first_row_h
@@ -386,7 +396,7 @@ def plan_board(board, pilled=frozenset()):
     M = measured()
     def height(t):
         if t not in M:
-            raise SystemExit(f"no height measured for {t}: run gen2.py measure {board.split('/')[0]}")
+            raise SystemExit(f"no height measured for {t}: run gen2.py measure {BOARDS[board][0]}")
         return M[t]
     same, other = gen.edges_between(set(PROD))
     arrows = [(k, t) for k, t, _ in board_pairs(board) if (k, t) not in pilled]
@@ -400,8 +410,9 @@ def plan_board(board, pilled=frozenset()):
                  False, Column('', [], 'r'), Column('', [], 'l'))
     frames, notes = [], []
     spec = GROUPS.get(board)
-    if board == 'Canvas':
-        for (u, box, pills, gframes) in Grid([card_unit(f, pilled) for f in FOLDERS] + [unit(STYLE)], arrows).place(ABOUT_W + BGX, 0):
+    if board in FOLDER_BOARDS:
+        units = [card_unit(f, pilled) for f in folder_boards(board)] + [unit(k) for k in board_files(board)]
+        for (u, box, pills, gframes) in Grid(units, arrows).place(ABOUT_W + BGX, 0):
             notes.append(dict(unit=u, box=box, holder=None, hx=0, hy=0, pills=pills, gframes=gframes))
     elif spec:
         def build(g):
@@ -542,17 +553,20 @@ def allowed(c):
     return {'none': c[:2] == (0, 0), 'frames': c[0] == 0, 'note': c[0] <= 1, 'all': True}[ALLOW]
 
 def board_pairs(board):
-    """The edges between a board's files (on Canvas's, its folders), a pair a line: (a, b, both) with a's
-    title first when both."""
-    if board == 'Canvas':
-        W = folder_uses()
-        done, out = set(), []
+    """The edges between a board's files (on a module's with folder boards, its folders, then its own files), a
+    pair a line: (a, b, both) with a's title first when both."""
+    out = []
+    if board in FOLDER_BOARDS:
+        W = folder_uses(board)
+        done = set()
         for a, b in sorted(W):
             if (a, b) in done: continue
             both = (b, a) in W
             done |= {(a, b), (b, a)}
             out.append((a, b, both))
-        return out
+    return out + file_pairs(board)
+
+def file_pairs(board):
     same, _ = gen.edges_between(set(PROD))
     files = set(board_files(board))
     done, out = set(), []
@@ -579,9 +593,10 @@ import heuristic
 def chosen_references(board):
     """The uses the heuristic draws through pills (heuristic-report.md): every use of a hub,
     and every arrow two stronger ones already relay."""
-    if board == 'Canvas':
-        W = folder_uses()
-        return set(heuristic.references_of(FOLDERS, set(W), lambda a, b: W.get((a, b), 0), title=str))
+    if board in FOLDER_BOARDS:
+        W = folder_uses(board)
+        cards = set(heuristic.references_of(folder_boards(board), set(W), lambda a, b: W.get((a, b), 0), title=str))
+        return cards | set(heuristic.references(board))
     return set(heuristic.references(board))
 
 _decided = {}
@@ -620,7 +635,7 @@ def board_search(board):
     neighbouring frames, while that lowers board_cost; the result is kept in LADDER_FIX and FRAME_FIX."""
     chosen = chosen_references(board)
     spec = GROUPS.get(board)
-    if not spec or board == 'Canvas':
+    if not spec or board in FOLDER_BOARDS:
         return
     saved = saved_searches().get(board)
     if saved and saved.get('stamp') == search_stamp(board):
@@ -732,7 +747,17 @@ def note_stmt(u, place, holder):
     return ' '.join(parts)
 
 def label(board):
-    return board.replace('/', '_')
+    """A board's name in run marks, script files and temporary titles: its title with '_' for '/', made unique."""
+    if not _labels:
+        _labels[None] = 'root'      # the root's own
+        for b in [m for m in PROD if m in FOLDER_BOARDS] + gen.boards_for(PROD):
+            base, n = b.replace('/', '_'), 1
+            while (base if n == 1 else f"{base}-{n}") in _labels.values():
+                n += 1
+            _labels[b] = base if n == 1 else f"{base}-{n}"
+    return _labels[board]
+
+_labels = {}
 
 def step_boards(boards):
     for board in boards:
@@ -1046,7 +1071,7 @@ def step_reset():
     lines += [f'delete {q(t)}' for t, kind in sorted(here.items()) if kind == 'frame' and (' (' in t or t.startswith('zz-p '))]
     lines += [f'delete {q(t)}' for t in [m for _, ms in BANDS for m in ms] if here.get(t) == 'subboard']
     lines += [f'delete {q(t)}' for t, _ in BANDS if here.get(t) == 'frame']
-    lines += [f'delete {q(t)}' for t in (ANCHOR, gen.LEGEND) if here.get(t) == 'sticky-note']
+    lines += [f'delete {q(t)}' for t in (ANCHOR, LEGEND) if here.get(t) == 'sticky-note']
     if lines:
         rc, r = cli('\n'.join(lines) + '\n', dry=False)
         if 'error' in r:
@@ -1057,8 +1082,9 @@ def step_reset():
             os.remove(os.path.join(RUNS, f))
 
 def drawn_boards():
-    """Every board but the root: Canvas's, then each module's and each of Canvas's folders'."""
-    return ['Canvas'] + all_boards()
+    """Every board but the root: the boards of the modules with folder boards, then each module's (or its
+    folders')."""
+    return [m for m in PROD if m in FOLDER_BOARDS] + all_boards()
 
 def step_plan():
     bad = 0
@@ -1116,5 +1142,5 @@ if __name__ == '__main__':
     elif step == 'reset':
         step_reset()
     elif step == 'boards' or step in STEPS:
-        boards = ((['Canvas'] if 'Canvas' in args else []) + gen.boards_for(args)) if args else drawn_boards()
+        boards = ([m for m in args if m in FOLDER_BOARDS] + gen.boards_for(args)) if args else drawn_boards()
         (step_boards if step == 'boards' else STEPS[step])(boards)

@@ -1,12 +1,13 @@
-# What the generator can't read from the code: the root's layer bands, each module's purpose, and how
-# its files group into frames. A group is (title, [files], [subgroups]); a file is its path inside the
-# module (for Canvas, inside the folder). A board with no groups lays its files out flat.
+# What the code doesn't say about Infinite Canvas: the root's layer bands, each module's purpose, Canvas's folder
+# boards, and how files group into frames. A group is (title, [files], [subgroups]); a file is its path inside the
+# board's module (on a folder's board, inside the folder). A board with no groups lays its files out flat. Whatever
+# a spec leaves out is worked out from the model (defaults.py).
 
 BANDS = [
     ("Executables", ["InfiniteCanvas", "CanvasQuickLook", "CanvasCLI"]),
     ("Composition layer", ["Composition"]),
     ("UI layer", ["CanvasUI"]),
-    ("Vertical layer", ["StickyNotes", "Schemas", "Subboards", "Frames", "JumpTo", "References", "Moving", "Reordering"]),
+    ("Vertical layer", ["StickyNotes", "Schemas", "Subboards", "Frames", "JumpTo", "References", "Moving", "Neighbors", "Reordering"]),
     ("Lexicon layer", ["QueryLexicon", "DrawLexicon"]),
     ("Language layer", ["Automation", "QueryCommands"]),
     ("Concern layer", ["Validation", "Clipboard", "Titles", "Locking", "Connections", "Mentions", "Publishing", "Boards", "Snapping", "Transform"]),
@@ -58,6 +59,7 @@ PURPOSES = {
     "JumpTo": "⌘K: a palette that goes to a shape by its title and where it is.",
     "References": "A pill that stands for a public shape: its props and writers, its look in every state, what it stands for, going to the original, its row and panel.",
     "Moving": "/move-to and /move-near: a shape moved into a frame, onto a subboard's board or beside a shape, on any board, placed as canvas draw places one.",
+    "Neighbors": "Hovering a shape, on the canvas or by its row in the table of contents, outlines what's connected to it in a color for each way.",
     "Reordering": "The smallest plugin example (Examples/): restacking shapes from the context menu.",
     "Composition": "The shipped plugin list: every plugin, in order, and what joins them.",
     "InfiniteCanvas": "The app: its main and the document controller.",
@@ -66,17 +68,20 @@ PURPOSES = {
 }
 
 # Canvas's folders, as subboards of Canvas's board.
-CANVAS_FOLDERS = ["Model", "Editor", "Shapes", "Plugins", "Tools", "Rendering", "Schema", "Persistence"]
+FOLDER_BOARDS = {"Canvas": ["Model", "Editor", "Shapes", "Plugins", "Tools", "Rendering", "Schema", "Persistence"]}
 FOLDER_PURPOSES = {
-    "Model": "Shapes, boards and files as values: records, ids, stacking keys, added properties; transactions, change sets and deltas; containment and settling.",
-    "Editor": "CanvasEditor: document, camera, tools, sessions and input; services; boards shown and read; undo; the per-frame index.",
-    "Shapes": "ShapeDefinition, how a kind looks and behaves, and the capabilities a kind conforms to.",
-    "Plugins": "Plugin values, extension points, the core's own points, the property table, and the registry built from them and frozen.",
-    "Tools": "Tool and Session, the hand, placing a shape, and dragging shapes.",
-    "Rendering": "Drawing a frame: the canvas, overlays, outlines, the dot grid; zoomed out, silhouettes, greeked text and board previews.",
-    "Schema": "JSON Schemas: property lists (SchemaDefined), each kind's schema, the validator and the encoder.",
-    "Persistence": "Boards on disk: the codec, JSON values, the props of shapes kept aside, and migrations.",
+    "Canvas/Model": "Shapes, boards and files as values: records, ids, stacking keys, added properties; transactions, change sets and deltas; containment and settling.",
+    "Canvas/Editor": "CanvasEditor: document, camera, tools, sessions and input; services; boards shown and read; undo; the per-frame index.",
+    "Canvas/Shapes": "ShapeDefinition, how a kind looks and behaves, and the capabilities a kind conforms to.",
+    "Canvas/Plugins": "Plugin values, extension points, the core's own points, the property table, and the registry built from them and frozen.",
+    "Canvas/Tools": "Tool and Session, the hand, placing a shape, and dragging shapes.",
+    "Canvas/Rendering": "Drawing a frame: the canvas, overlays, outlines, the dot grid; zoomed out, silhouettes, greeked text and board previews.",
+    "Canvas/Schema": "JSON Schemas: property lists (SchemaDefined), each kind's schema, the validator and the encoder.",
+    "Canvas/Persistence": "Boards on disk: the codec, JSON values, the props of shapes kept aside, and migrations.",
 }
+
+# How Package.swift's layer tags read in an About note ("Canvas: foundation layer").
+LAYER_NAMES = {'ui': 'UI', 'appex': 'app extension', 'cli': 'command line'}
 
 GROUPS = {
     "Canvas/Model": [
@@ -95,7 +100,7 @@ GROUPS = {
         ("Popovers and text", ["Popovers.swift", "ReadsAsText.swift"], []),
     ],
     "Canvas/Rendering": [
-        ("Drawing a frame", ["CanvasEditor+Drawing.swift", "Overlay.swift", "OutlineStandoff.swift", "DotGrid.swift", "ShapeShadows.swift"], []),
+        ("Drawing a frame", ["CanvasEditor+Drawing.swift", "Overlay.swift", "OutlineStandoff.swift", "TintedRings.swift", "DotGrid.swift", "ShapeShadows.swift"], []),
         ("Zoomed out", ["Silhouettes.swift", "BoardPreviews.swift"], [
             ("Greeked text", ["SkeletonText.swift", "SkeletonTextBars.swift"], []),
         ]),
@@ -135,10 +140,6 @@ GROUPS = {
         ("Going to shapes, and feedback", ["GoingTo.swift", "RefusalShake.swift", "SelectionStyle.swift"], []),
     ],
 }
-
-# The first sample: everything below the concerns that Selection and ContextMenus stand on.
-SAMPLE = ["Geometry", "Canvas", "DrawScript", "QueryLanguage", "TextEditing", "FuzzyMatching", "CanvasRPC",
-          "CanvasUI", "Keyboard", "Selection", "ContextMenus"]
 
 GROUPS.update({
     "Automation": [
