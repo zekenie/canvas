@@ -37,7 +37,8 @@ extension CanvasEditor {
         let preview = { (owner: ShapeID, rect: CGRect, maxScale: CGFloat, cg: CGContext) in
             // Too small on screen to show anything (zoomed out, or no room): nothing asked for.
             guard min(rect.width, rect.height) * zoom >= Style.previewSmallestSide else { return false }
-            return previews.preview(of: BoardID(owner: owner), in: file)?.draw(in: cg, fitting: rect, maxScale: maxScale, color: previewColor) ?? false
+            guard let built = previews.preview(of: BoardID(owner: owner), in: file) else { return false }
+            return previews.draw(built, in: cg, fitting: rect, maxScale: maxScale, color: previewColor)
         }
         // Skeletons or not, decided once for the frame; the shape being edited is drawn in full.
         let skeletons = drawsSkeletons, editing = editingShapeID, customSkeletons = registry.customSkeletons
