@@ -243,8 +243,8 @@ import TestKit
         // A card's wire is one it only takes, with no dot to start one from, so a relay for it has none.
         let card = try refused(#"edge "Y" -> "A""#, on: editor)
         expectEqual(card["reason"], "no_channel")
-        expectEqual(card["message"], #""Y" and "A" share no channel: a card connects on wire and pipe, a tile on wire"#,
-                    "the channels a relay for a card takes, in the order it has them")
+        expectEqual(card["message"], #""Y" and "A" share no channel: a card connects on pipe and wire, a tile on wire"#,
+                    "the channels a relay for a card takes, in the order a card has them")
     },
     test("a channel written is held to what the relay takes: the start's dot, the relay's port on the channel, and its sides") {
         let editor = try Harbor().editor()
