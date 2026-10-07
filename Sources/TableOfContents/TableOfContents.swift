@@ -385,15 +385,21 @@ public struct ContentsLabel: View {
     public let color: Color?
     /// Trailing, in the secondary color: "2/5", "Sep 30". Keep it to a few characters.
     public let badge: String?
+    /// The row is a shape standing in for another, whose name, symbol and color it shows (a
+    /// reference): an arrow cut into the symbol's corner, as a Finder alias's icon has, says it's a
+    /// pointer to that shape and not the shape.
+    public let standsIn: Bool
 
     @Environment(\.contentsSymbol) private var kindSymbol
 
-    public init(_ title: String, placeholder: String? = nil, systemImage: String? = nil, color: Color? = nil, badge: String? = nil) {
+    public init(_ title: String, placeholder: String? = nil, systemImage: String? = nil, color: Color? = nil, badge: String? = nil,
+                standsIn: Bool = false) {
         self.title = title
         self.placeholder = placeholder
         self.systemImage = systemImage
         self.color = color
         self.badge = badge
+        self.standsIn = standsIn
     }
 
     /// What the row reads: the title on one line (each run of whitespace, newlines included, folds
@@ -421,13 +427,13 @@ public struct ContentsLabel: View {
 
     /// The same label, called `title` (`ContentsTitles`).
     func retitled(_ title: String) -> ContentsLabel {
-        ContentsLabel(title, placeholder: placeholder, systemImage: systemImage, color: color, badge: badge)
+        ContentsLabel(title, placeholder: placeholder, systemImage: systemImage, color: color, badge: badge, standsIn: standsIn)
     }
 
-    /// Whether `other` shows what this does: the same title, placeholder, symbol, color and badge.
+    /// Whether `other` shows what this does: the same title, placeholder, symbol, color, badge and arrow.
     func showsSame(as other: ContentsLabel) -> Bool {
         title == other.title && placeholder == other.placeholder && systemImage == other.systemImage && color == other.color
-            && badge == other.badge
+            && badge == other.badge && standsIn == other.standsIn
     }
 
     public var body: some View {
@@ -435,12 +441,14 @@ public struct ContentsLabel: View {
             Label {
                 Text(text).foregroundStyle(isPlaceholder ? .secondary : .primary)
             } icon: {
-                if let color {
-                    Image(systemName: systemImage ?? kindSymbol).foregroundStyle(color)
+                if standsIn {
+                    symbol.modifier(StandInArrow(isDimmed: isPlaceholder))
                 } else {
-                    Image(systemName: systemImage ?? kindSymbol)
+                    symbol
                 }
             }
+            // What the arrow shows, said: the row's name alone would be its shape's.
+            .accessibilityValue(standsIn ? ContentsStyle.standInSpoken : "")
             Spacer(minLength: 0)
             if let badge {
                 Text(badge).foregroundStyle(.secondary).monospacedDigit()
@@ -448,6 +456,49 @@ public struct ContentsLabel: View {
         }
         .lineLimit(1)
         .help(help ?? "")
+    }
+
+    @ViewBuilder private var symbol: some View {
+        if let color {
+            Image(systemName: systemImage ?? kindSymbol).foregroundStyle(color)
+        } else {
+            Image(systemName: systemImage ?? kindSymbol)
+        }
+    }
+}
+
+/// A stand-in's arrow at the symbol's bottom-leading corner, in the title's color (dimmed with a
+/// placeholder), in a hole cut out of the symbol so it reads on any symbol and on a selected row (no
+/// fill behind it to clash); sized with the sidebar's rows, as the symbol is.
+struct StandInArrow: ViewModifier {
+    let isDimmed: Bool
+    @Environment(\.sidebarRowSize) private var rowSize
+
+    func body(content: Content) -> some View {
+        let scale = ContentsStyle.standInScale(rowSize)
+        let hole = ContentsStyle.standInHole * scale
+        let offset = CGSize(width: ContentsStyle.standInOffset.width * scale, height: ContentsStyle.standInOffset.height * scale)
+        let margin = ContentsStyle.standInMaskMargin
+        content
+            .mask {
+                // Past the symbol's frame by the margin, so ink a symbol draws past its frame isn't cut.
+                Rectangle()
+                    .overlay(alignment: .bottomLeading) {
+                        Circle().frame(width: hole, height: hole)
+                            .offset(x: offset.width + margin, y: offset.height - margin)
+                            .blendMode(.destinationOut)
+                    }
+                    .compositingGroup()
+                    .padding(-margin)
+            }
+            .overlay(alignment: .bottomLeading) {
+                Image(systemName: ContentsStyle.standInSymbol)
+                    .font(.system(size: ContentsStyle.standInSize * scale, weight: .black))
+                    .foregroundStyle(isDimmed ? .secondary : .primary)
+                    .frame(width: hole, height: hole)
+                    .offset(offset)
+                    .accessibilityHidden(true)
+            }
     }
 }
 
@@ -491,6 +542,23 @@ enum ContentsStyle {
     static let markSize: CGFloat = 6
     static let markSymbolSize: CGFloat = 9
     static let markTarget: CGFloat = 12
+    /// A stand-in's arrow (`ContentsLabel.standsIn`): the symbol, its size and the round hole it sits
+    /// in, out past the symbol's bottom-leading corner by the offset, at the sidebar's medium rows,
+    /// scaled with them as their symbols are; how far past the symbol's frame its mask reaches; and
+    /// what VoiceOver says of the row (a Finder alias's word, as the arrow is its arrow).
+    static let standInSymbol = "arrow.turn.up.right"
+    static let standInSize: CGFloat = 6.5
+    static let standInHole: CGFloat = 10
+    static let standInOffset = CGSize(width: -1, height: 2)
+    static let standInMaskMargin: CGFloat = 4
+    static let standInSpoken = "Alias"
+    static func standInScale(_ rows: SidebarRowSize) -> CGFloat {
+        switch rows {
+        case .small: 11.0 / 13
+        case .large: 15.0 / 13
+        default: 1
+        }
+    }
     /// A hovered row's tint, in the selection highlight's place: inset from the row's sides, with
     /// its corners.
     static let hoverOpacity: CGFloat = 0.14

@@ -1,3 +1,4 @@
+import AppKit
 import Canvas
 import CanvasTesting
 import CoreGraphics
@@ -64,6 +65,53 @@ import TestKit
         expectEqual(ContentsLabel("  Buy\nmilk ", placeholder: "Empty").help, "Buy milk")
         expectEqual(ContentsLabel(" ", placeholder: "Empty").help, nil)
         expectEqual(ContentsLabel("").help, nil)
+    },
+    test("a stand-in's row has an arrow cut into its symbol's bottom-leading corner, in its title's color, and is otherwise as it was") {
+        /// The label alone in an unshown window, as the list lays out its row: symbol, then title.
+        @MainActor func render(_ label: ContentsLabel) -> NSBitmapImageRep {
+            let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 160, height: 24), styleMask: [.titled], backing: .buffered, defer: false)
+            let hosting = NSHostingView(rootView: label.padding(.leading, 8).frame(width: 160, height: 24, alignment: .leading))
+            hosting.frame = CGRect(x: 0, y: 0, width: 160, height: 24)
+            window.contentView = hosting
+            window.settle()
+            return snapshot(hosting)
+        }
+        /// The points where two renders differ.
+        @MainActor func changes(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep) -> [CGPoint] {
+            (0..<24).flatMap { y in (0..<160).compactMap { x in
+                pixel(a, at: CGPoint(x: x, y: y)) != pixel(b, at: CGPoint(x: x, y: y)) ? CGPoint(x: x, y: y) : nil
+            } }
+        }
+        /// The most any of `points` stands off the background (a corner far from the label), in gray.
+        @MainActor func contrast(_ rep: NSBitmapImageRep, at points: [CGPoint]) -> Int {
+            func gray(_ point: CGPoint) -> Int { pixel(rep, at: point).prefix(3).reduce(0, +) / 3 }
+            let background = gray(CGPoint(x: 155, y: 2))
+            return points.map { abs(gray($0) - background) }.max() ?? 0
+        }
+        expect(!ContentsLabel("Ports").standsIn, "none by default")
+        let plain = render(ContentsLabel("Ports", systemImage: "note.text", color: .yellow))
+        let standIn = render(ContentsLabel("Ports", systemImage: "note.text", color: .yellow, standsIn: true))
+        // Where the symbol's ink is, from a render without it, and where the title starts, from one
+        // with other letters (no title at all would move the symbol).
+        let symbol = changes(plain, render(ContentsLabel("Ports", systemImage: "note.text", color: .clear)))
+        let title = changes(plain, render(ContentsLabel("Mmmmm", systemImage: "note.text", color: .yellow)))
+        let symbolLeft = try require(symbol.map(\.x).min())
+        let symbolTop = try require(symbol.map(\.y).min()), symbolBottom = try require(symbol.map(\.y).max())
+        let titleLeft = try require(title.map(\.x).min())
+
+        let arrow = changes(plain, standIn)
+        expect(arrow.count > 10, "the arrow shows: \(arrow.count) points")
+        expect(arrow.allSatisfy { $0.x < titleLeft }, "only at the symbol, the title untouched")
+        expect(try require(arrow.map(\.x).min()) <= symbolLeft + 1, "at its leading side")
+        let arrowTop = try require(arrow.map(\.y).min()), arrowBottom = try require(arrow.map(\.y).max())
+        expect(arrowBottom >= symbolBottom && arrowTop > symbolTop + 2, "at its bottom: \(arrowTop)...\(arrowBottom)")
+
+        let dimmedPlain = render(ContentsLabel("", placeholder: "Ports", systemImage: "note.text", color: .yellow))
+        let dimmed = render(ContentsLabel("", placeholder: "Ports", systemImage: "note.text", color: .yellow, standsIn: true))
+        let dimmedArrow = changes(dimmedPlain, dimmed)
+        expect(dimmedArrow.allSatisfy { $0.x < titleLeft }, "a placeholder's arrow at the symbol too")
+        expect(contrast(dimmed, at: dimmedArrow) + 30 < contrast(standIn, at: arrow),
+               "dimmed with the placeholder: \(contrast(dimmed, at: dimmedArrow)) against \(contrast(standIn, at: arrow))")
     },
     test("`when` leaves shapes out of the list, and puts them back when it lets them in") {
         let editor = try contentsEditor()
