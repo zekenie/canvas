@@ -68,6 +68,51 @@ private var later: ContinuousClock.Instant { .now + .seconds(60) }
 /// Already past: a build does its one chunk.
 private var past: ContinuousClock.Instant { .now - .seconds(1) }
 
+/// A white sheet in gray, `size` points at `scale` pixels to a point, y down as a render's; what a
+/// preview is drawn into to see its pixels.
+@MainActor private final class Sheet {
+    let cg: CGContext
+    let scale: CGFloat
+
+    init(_ size: CGSize = CGSize(width: 400, height: 400), scale: CGFloat = 1) throws {
+        cg = try require(CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale), bitsPerComponent: 8,
+                                   bytesPerRow: 0, space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue))
+        self.scale = scale
+        cg.setFillColor(gray: 1, alpha: 1)
+        cg.fill(CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+        cg.translateBy(x: 0, y: CGFloat(cg.height))
+        cg.scaleBy(x: scale, y: -scale)
+    }
+
+    /// The pixel at a point, 0 painted and 255 clear.
+    func value(at point: CGPoint) -> Int {
+        let bytes = cg.data!.assumingMemoryBound(to: UInt8.self)
+        return Int(bytes[Int(point.y * scale) * cg.bytesPerRow + Int(point.x * scale)])
+    }
+
+    /// How many pixels along `points` are neither painted nor clear: the blur across an edge.
+    func blurred(_ points: [CGPoint]) -> Int { points.count { (8..<248).contains(value(at: $0)) } }
+
+    /// How many pixels along `points` are more painted than not: a line's width across it.
+    func painted(_ points: [CGPoint]) -> Int { points.count { value(at: $0) < 128 } }
+
+    /// Every pixel's middle from `start` to `end`, along a row or a column.
+    func pixels(from start: CGPoint, to end: CGPoint) -> [CGPoint] {
+        let step = 1 / scale, count = Int((max(end.x - start.x, end.y - start.y) * scale).rounded())
+        return (0..<count).map { i in
+            start.x == end.x ? CGPoint(x: start.x + step / 2, y: start.y + (CGFloat(i) + 0.5) * step)
+                             : CGPoint(x: start.x + (CGFloat(i) + 0.5) * step, y: start.y + step / 2)
+        }
+    }
+}
+
+/// The rect to fit a preview into so it's drawn `scale` points to a world unit of its board, the
+/// board's `point` at `at` on the sheet.
+private func rect(drawing preview: BoardPreviews.Preview, at scale: CGFloat, putting point: CGPoint, at spot: CGPoint) -> CGRect {
+    CGRect(x: spot.x - (point.x - preview.frame.minX) * scale, y: spot.y - (point.y - preview.frame.minY) * scale,
+           width: preview.frame.width * scale, height: preview.frame.height * scale)
+}
+
 /// Whether the mask is white (a silhouette) at a world point of its board.
 @MainActor private func isShape(_ preview: BoardPreviews.Preview, at point: CGPoint) throws -> Bool {
     let mask = try require(preview.mask)
@@ -139,6 +184,70 @@ private var past: ContinuousClock.Instant { .now - .seconds(1) }
         expect(try !isShape(preview, at: CGPoint(x: 100, y: 100)), "its inside, clear")
         expect(try isShape(preview, at: CGPoint(x: 1, y: 100)), "its edge")
         expect(try isShape(preview, at: CGPoint(x: 200, y: 199)), "all round")
+    },
+    test("drawn larger than its mask, the shapes are paths: an edge as sharp at 8× as at 1×, and a line 1.5 device pixels wide") {
+        // Two boxes and a link between their middles, along y = 50.
+        let first = ShapeRecord(Box(CGRect(x: 0, y: 0, width: 100, height: 100))), second = ShapeRecord(Box(CGRect(x: 300, y: 0, width: 100, height: 100)))
+        let link = ShapeRecord(Link(from: first.id, to: second.id))
+        let pocket = ShapeRecord(Pocket(CGRect(x: 0, y: 0, width: 240, height: 160)))
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(pocket)]),
+                              children: [pocket.id: CanvasDocument(shapes: [AnyShapeRecord(first), AnyShapeRecord(second), AnyShapeRecord(link)])])
+        let board = BoardID(owner: pocket.id)
+        let previews = BoardPreviews(registry: try Registry(plugins: [FixturesPlugin(), PocketsPlugin(), LinksPlugin()]))
+        _ = previews.preview(of: board, in: file)
+        previews.build(in: file, until: later)
+        let preview = try require(previews.preview(of: board, in: file))
+        expect(try require(preview.mask).width <= 256, "a mask of 400 world units: under a pixel each")
+        // At 8×, the first box's right edge (100, 40) in the sheet's middle: the edge down x = 200,
+        // the link along y = 280 from x = 200 on.
+        let fitted = rect(drawing: preview, at: 8, putting: CGPoint(x: 100, y: 40), at: CGPoint(x: 200, y: 200))
+        let edge = { (sheet: Sheet) in sheet.blurred(sheet.pixels(from: CGPoint(x: 180, y: 200), to: CGPoint(x: 220, y: 200))) }
+        let line = { (sheet: Sheet) in sheet.painted(sheet.pixels(from: CGPoint(x: 300, y: 260), to: CGPoint(x: 300, y: 300))) }
+        let paths = try Sheet()
+        expect(preview.draw(in: paths.cg, fitting: fitted, color: CGColor(gray: 0, alpha: 1)))
+        expect(edge(paths) <= 1, "the edge, a pixel at most between the box and the clear: \(edge(paths))")
+        expect((1...2).contains(line(paths)), "the line, 1.5 pixels: \(line(paths))")
+        expectEqual(paths.value(at: CGPoint(x: 150, y: 200)), 0, "inside the box, painted")
+        expectEqual(paths.value(at: CGPoint(x: 250, y: 200)), 255, "outside, clear")
+        // The mask at the same size, for the control: its pixels 12 points across.
+        let mask = try Sheet()
+        var none = 0
+        expect(preview.draw(in: mask.cg, fitting: fitted, color: CGColor(gray: 0, alpha: 1), pathShapes: &none))
+        expect(edge(mask) >= 4, "the mask enlarged blurs the edge: \(edge(mask))")
+        expect(line(mask) >= 8, "and thickens the line: \(line(mask))")
+        // On a 2× screen, the line is 1.5 of its pixels, not of its points.
+        let retina = try Sheet(scale: 2)
+        expect(preview.draw(in: retina.cg, fitting: fitted, color: CGColor(gray: 0, alpha: 1)))
+        expect((1...2).contains(line(retina)), "the line on a 2× screen, 1.5 device pixels: \(line(retina))")
+        expect(edge(retina) <= 1, "the edge as sharp: \(edge(retina))")
+    },
+    test("as paths, only the shapes in view count, and a frame draws so many: past them, the mask; the next frame, paths again") {
+        // A hundred boxes, 50 across and 100 apart: a grid of 2 × 2 cells of 25.
+        let many = (0..<100).map { i in CGRect(x: CGFloat(i % 10) * 100, y: CGFloat(i / 10) * 100, width: 50, height: 50) }
+        let (file, boards) = pocketFile([many])
+        let previews = BoardPreviews(registry: try previewRegistry())
+        _ = previews.preview(of: boards[0], in: file)
+        previews.build(in: file, until: later)
+        let preview = try require(previews.preview(of: boards[0], in: file))
+        previews.pathShapes = 30
+        // The first box's right edge, (50, 25), at 8× in the sheet's middle: only the top-left cell in view.
+        let corner = rect(drawing: preview, at: 8, putting: CGPoint(x: 50, y: 25), at: CGPoint(x: 200, y: 200))
+        // Its edge across the middle row: sharp drawn as paths, blurred as the mask.
+        @MainActor func sharp(_ fitted: CGRect, edgeAt x: CGFloat = 200) throws -> Bool {
+            let sheet = try Sheet()
+            expect(previews.draw(preview, in: sheet.cg, fitting: fitted, color: CGColor(gray: 0, alpha: 1)))
+            return sheet.blurred(sheet.pixels(from: CGPoint(x: x - 20, y: 200), to: CGPoint(x: x + 20, y: 200))) <= 1
+        }
+        expect(try sharp(corner), "25 shapes in view: paths")
+        expect(try !sharp(corner), "again in the same frame, 5 left: the mask")
+        previews.endFrame()
+        expect(try sharp(corner), "the next frame: paths")
+        previews.endFrame()
+        // Between the cells, (475, 25) at 4×: the box at 400 to 450 on the left, 500 to 550 on the right.
+        let between = rect(drawing: preview, at: 4, putting: CGPoint(x: 475, y: 25), at: CGPoint(x: 200, y: 200))
+        expect(try !sharp(between, edgeAt: 100), "two cells in view, 50 shapes: the mask")
+        previews.pathShapes = 60
+        expect(try sharp(between, edgeAt: 100), "with room for 60: paths")
     },
     test("an empty board has none, and asks for none") {
         let (file, boards) = pocketFile([[]])

@@ -57,6 +57,28 @@ private let canvasSize = CGSize(width: 320, height: 240)
             expectColor(pixel(built, at: point), cardFill, "the card around it, at \(point)", within: 2)
         }
     },
+    test("shown larger than its preview's mask, as zoomed in or on a sharper screen, the card draws its board sharp") {
+        let sub = ShapeRecord(Subboard(frame: cardFrame))
+        // The first test's board: its first box's right edge near x = 107, across y = 120.
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(sub)]),
+                              children: [sub.id: CanvasDocument(shapes: [record(ShapeID(), Box(CGRect(x: 0, y: 0, width: 1000, height: 1000))),
+                                                                         record(ShapeID(), Box(CGRect(x: 3000, y: 0, width: 1000, height: 1000)))])])
+        let h = try EditorHarness(plugins: subboardPlugins(), file: file)
+        h.editor.boardPreviews.frameBudget = .seconds(60)
+        _ = renderBitmap(h.editor, size: canvasSize, scale: 8)
+        h.wait(0)
+        // At 8 pixels a point, 216 points of preview are 1,728 pixels, the mask's 256 enlarged near 7 times: how many
+        // pixels across the edge are neither the box's gray nor the card.
+        @MainActor func blurred() -> Int {
+            let built = renderBitmap(h.editor, size: canvasSize, scale: 8)
+            return (0..<(14 * 8)).count { i in (160..<245).contains(pixel(built, at: CGPoint(x: 100 + (CGFloat(i) + 0.5) / 8, y: 120), scale: 8)[0]) }
+        }
+        let inside = pixel(renderBitmap(h.editor, size: canvasSize, scale: 8), at: CGPoint(x: 90, y: 120), scale: 8)
+        expect(inside[0] < 170, "the box: \(inside)")
+        expect(blurred() <= 2, "drawn as paths, the edge sharp: \(blurred())")
+        h.editor.boardPreviews.pathShapes = 0
+        expect(blurred() >= 4, "the mask, for the control, blurred: \(blurred())")
+    },
     test("after the board is edited, and after an undo, the card never shows the preview it had: the count, then the board as it is") {
         let nest = Nest()
         let h = try nestHarness(nest)

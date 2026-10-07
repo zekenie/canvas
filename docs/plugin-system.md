@@ -7749,6 +7749,12 @@ whatever its kind. It's the core's
   drew: with more owners in view than that, those past the number show their count until there's
   room, instead of each frame building one by evicting another, and asking for another frame,
   forever.
+- **Sharp up close.** A preview shown larger than its mask (zoomed in, or on a 2× screen, where
+  a card at 100% already is) is drawn as paths instead: every shape its outline, kept with the mask
+  in cells of a grid over the board, so only the cells in view are drawn, lines 1.5 device pixels
+  wide as the mask's are its pixels. Paths cost a shape each (some 1 to 2 µs), so a frame draws
+  1,000 that way at most (`pathShapes`), over every preview it shows; past that, the mask, enlarged,
+  as for a board of 10,000 shown whole, until zooming in leaves fewer of its shapes in view.
 - **Built a chunk at a time.** A board asked for waits its turn, those asked for longest ago first.
   At the start of each frame the editor builds for 2 ms (`frameBudget`), a chunk of shapes at a time
   (the shapes' geometry, from a `ShapeContext` with no index, then their silhouettes), as many as
@@ -12016,7 +12022,7 @@ Each of these adds to the design without changing what plugins are written again
   each window's editor showing one, would keep every host's `let editor`); Open in a menu for
   several shapes opening each, or only showing for one (a per-shape `when` can't see the
   selection's size, so it opens the first); a line in the Board tab saying what the board holds; a
-  preview in another color, or sharper than 256 pixels when a card is shown large; and a board
+  preview in another color, or sharp when a card shows more than 1,000 of its board's shapes large; and a board
   addressed from outside the app (the command line's, above).
 - **More of topology**: `canvas draw` matching an edge it restates by its type as well as its ends;
   showing a shape's connections of every type in the app (a Connections section of its panel,

@@ -197,7 +197,9 @@ public struct RenderContext {
     /// board of a few shapes is drawn small in the middle of the rect rather than as big as one of
     /// hundreds (a card's preview at 0.1 shows its board as the canvas does at 10%). Every shape there is a silhouette of its geometry, all in
     /// one muted gray (none of their text or colors; a shape that owns a board is its outline), as
-    /// the minimap draws. Returns false, having drawn nothing, while the picture isn't ready, for a
+    /// the minimap draws: a picture of 256 pixels at most, and shown larger than that (zoomed in, or
+    /// on a sharper screen), the shapes in view as paths, sharp at any size, up to a frame's worth
+    /// of them. Returns false, having drawn nothing, while the picture isn't ready, for a
     /// board with nothing to show (none, or empty), and for a rect too small on screen to show one
     /// (under 16 view points either way): draw something else then (a count). A picture
     /// takes a few frames to build (the core builds them within a budget each frame, and redraws

@@ -3,8 +3,9 @@ import CoreGraphics
 /// Rough pictures of boards not shown, for their owners to draw on the board that is
 /// (`RenderContext.drawBoardPreview`): each shape of the board as a silhouette of its geometry
 /// (`Silhouettes`), all in one color, fitted into a bitmap at most `Style.previewSide` pixels on a
-/// side. Nothing of what a shape draws (its text, its colors), so a preview costs the same for every
-/// kind, and a shape on it that owns a board of its own is just its outline.
+/// side, and kept as paths too, for an owner shown larger than that. Nothing of what a shape draws
+/// (its text, its colors), so a preview costs the same for every kind, and a shape on it that owns
+/// a board of its own is just its outline.
 ///
 /// A preview is of a board as one revision of the file had it (`CanvasFile.revision(of:)`): asked
 /// for once the board has changed (an edit, an undo), it's dropped, never drawn, and built again.
@@ -39,16 +40,28 @@ public final class BoardPreviews {
         /// silhouette is and 0 elsewhere. Nil when none of the board's shapes has an outline
         /// (nothing to show).
         public let mask: CGImage?
+        /// The silhouettes again as paths, every shape its outline, in cells of a grid over the
+        /// board: what's drawn where the mask would be enlarged, sharp at any size, the cells in view.
+        let cells: [PathCell]
 
         /// Draws the silhouettes in `color` into `rect` (in the context's units, y down, as a render's),
         /// fitted: the board's proportions kept, centered, at no more than `maxScale` of the context's
-        /// units to a world unit of the board. False, and nothing drawn, with nothing to show.
-        @discardableResult
-        public func draw(in cg: CGContext, fitting rect: CGRect, maxScale: CGFloat = .infinity, color: CGColor) -> Bool {
+        /// units to a world unit of the board. Where the mask would be drawn larger than its pixels,
+        /// the shapes in view are drawn as paths instead, their lines `Style.previewLineWidth` device
+        /// pixels wide as the mask's are its pixels, as long as they number no more than `pathShapes`
+        /// (which is lessened by them); else, or with more, the mask. False, and nothing drawn, with
+        /// nothing to show.
+        @discardableResult @MainActor
+        public func draw(in cg: CGContext, fitting rect: CGRect, maxScale: CGFloat = .infinity, color: CGColor, pathShapes: inout Int) -> Bool {
             guard let mask, frame.width > 0, frame.height > 0, rect.width > 0, rect.height > 0, maxScale > 0 else { return false }
             let scale = min(rect.width / frame.width, rect.height / frame.height, maxScale)
             let width = frame.width * scale, height = frame.height * scale
             let target = CGRect(x: rect.midX - width / 2, y: rect.midY - height / 2, width: width, height: height)
+            let device = cg.userSpaceToDeviceSpaceTransform, pixelsPerUnit = max(hypot(device.a, device.b), hypot(device.c, device.d))
+            if width * pixelsPerUnit > CGFloat(mask.width) || height * pixelsPerUnit > CGFloat(mask.height),
+               drawPaths(in: cg, target: target, scale: scale, lineWidth: Style.previewLineWidth / pixelsPerUnit, color: color, shapes: &pathShapes) {
+                return true
+            }
             cg.saveGState()
             defer { cg.restoreGState() }
             // The mask's rows go up; the context's go down.
@@ -60,6 +73,54 @@ public final class BoardPreviews {
             cg.draw(mask, in: target)
             return true
         }
+
+        /// Draws the silhouettes in `color` into `rect`, as `draw(in:fitting:maxScale:color:pathShapes:)`
+        /// does with no limit on the shapes drawn as paths.
+        @discardableResult @MainActor
+        public func draw(in cg: CGContext, fitting rect: CGRect, maxScale: CGFloat = .infinity, color: CGColor) -> Bool {
+            var unlimited = Int.max
+            return draw(in: cg, fitting: rect, maxScale: maxScale, color: color, pathShapes: &unlimited)
+        }
+
+        /// The cells in view (the context's clip) as paths, the board's `frame` into `target`, `scale`
+        /// context units to a world unit; `lineWidth` in context units. False, and nothing drawn, when
+        /// they hold more shapes than `shapes`.
+        private func drawPaths(in cg: CGContext, target: CGRect, scale: CGFloat, lineWidth: CGFloat, color: CGColor, shapes: inout Int) -> Bool {
+            let shown = cg.boundingBoxOfClipPath.intersection(target)
+            guard !shown.isNull, !shown.isEmpty else { return true }
+            let reach = lineWidth / scale
+            let seen = CGRect(x: frame.minX + (shown.minX - target.minX) / scale, y: frame.minY + (shown.minY - target.minY) / scale,
+                              width: shown.width / scale, height: shown.height / scale).insetBy(dx: -reach, dy: -reach)
+            let inView = cells.filter { $0.bounds.intersects(seen) }
+            let count = inView.reduce(0) { $0 + $1.count }
+            guard count <= shapes else { return false }
+            shapes -= count
+            cg.saveGState()
+            defer { cg.restoreGState() }
+            cg.translateBy(x: target.minX, y: target.minY)
+            cg.scaleBy(x: scale, y: scale)
+            cg.translateBy(x: -frame.minX, y: -frame.minY)
+            // All the cells' fills in one, then their lines: one fill and one stroke, as the mask's are.
+            for cell in inView { cg.addPath(cell.fills) }
+            cg.setFillColor(color)
+            cg.fillPath()
+            for cell in inView { cg.addPath(cell.lines) }
+            cg.setStrokeColor(color)
+            cg.setLineWidth(reach)
+            cg.setLineCap(.round)
+            cg.setLineJoin(.round)
+            cg.strokePath()
+            return true
+        }
+    }
+
+    /// The paths of the shapes whose middles are in one cell of a preview's grid, in the board's
+    /// world units: what's filled and what's stroked (`Silhouettes.paths`), and their bounds.
+    struct PathCell {
+        let bounds: CGRect
+        let fills: CGPath
+        let lines: CGPath
+        let count: Int
     }
 
     public let registry: Registry
@@ -67,6 +128,13 @@ public final class BoardPreviews {
     public let capacity: Int
     /// How long building may take in a frame (`build(in:until:)`'s deadline, from the editor).
     public var frameBudget: Duration
+    /// How many shapes a frame draws as paths (`draw(_:in:fitting:maxScale:color:)`), over all the
+    /// previews it draws larger than their masks: 1,000 (`Style.previewPathShapes`), unless set.
+    public var pathShapes = Style.previewPathShapes {
+        didSet { pathShapesLeft = pathShapes }
+    }
+    /// What's left of it in the frame being drawn.
+    private var pathShapesLeft = Style.previewPathShapes
 
     /// By board: a board is kept as one revision at most. `used` orders them by when they were last
     /// drawn; `frame` is the frame that was (-1 for none yet).
@@ -138,6 +206,14 @@ public final class BoardPreviews {
         queue = waiting
         lastFrame = frame
         frame += 1
+        pathShapesLeft = pathShapes
+    }
+
+    /// Draws a preview in the frame being drawn (`Preview.draw(in:fitting:maxScale:color:pathShapes:)`),
+    /// its shapes drawn as paths out of what's left of the frame's `pathShapes`.
+    @discardableResult
+    public func draw(_ preview: Preview, in cg: CGContext, fitting rect: CGRect, maxScale: CGFloat = .infinity, color: CGColor) -> Bool {
+        preview.draw(in: cg, fitting: rect, maxScale: maxScale, color: color, pathShapes: &pathShapesLeft)
     }
 
     /// Stops building what's waiting, as when another board is shown: what's drawn next asks again.
@@ -213,7 +289,8 @@ public final class BoardPreviews {
 }
 
 /// One preview being built, in two phases: every shape's geometry (and so the board's bounds, which
-/// size the bitmap), then the silhouettes, drawn into the bitmap a chunk at a time.
+/// size the bitmap and the grid), then the silhouettes, drawn into the bitmap and gathered into
+/// their cells' paths a chunk at a time.
 @MainActor
 private final class Build {
     let key: BoardPreviews.Key
@@ -228,6 +305,10 @@ private final class Build {
     private var frame = CGRect.null
     /// Pixels per world unit.
     private var scale: CGFloat = 1
+    /// The grid's cells a side, and each one's paths, by row and column from the bounds' top-left
+    /// (those with shapes in them), with their shapes' bounds and how many.
+    private var across = 1
+    private var cells: [Int: (paths: Silhouettes, bounds: CGRect, count: Int)] = [:]
     /// Once it's done.
     private(set) var preview: BoardPreviews.Preview?
 
@@ -248,7 +329,10 @@ private final class Build {
         if let bitmap {
             let end = min(start + count, geometries.count)
             let silhouettes = Silhouettes(pixelsPerWorldUnit: scale)
-            for i in start..<end { silhouettes.add(geometries[i], hollow: hollow[i]) }
+            for i in start..<end {
+                silhouettes.add(geometries[i], hollow: hollow[i])
+                gather(geometries[i], hollow: hollow[i])
+            }
             silhouettes.draw(into: bitmap, color: CGColor(gray: 1, alpha: 1), lineWidth: Style.previewLineWidth / scale)
             next = end
             if end == geometries.count { finish(Self.mask(of: bitmap)) }
@@ -283,7 +367,26 @@ private final class Build {
         bitmap.scaleBy(x: scale, y: -scale)
         bitmap.translateBy(x: -frame.minX, y: -frame.minY)
         self.bitmap = bitmap
+        let wanted = (Double(geometries.count) / Double(Style.previewCellShapes)).squareRoot().rounded(.up)
+        across = min(max(Int(wanted), 1), Style.previewCellsAcross)
         next = 0
+    }
+
+    /// Adds a shape to the paths of the cell its middle is in: its outline, whatever its size.
+    private func gather(_ geometry: ShapeGeometry, hollow: Bool) {
+        let bounds = geometry.bounds
+        let column = cell(bounds.midX, from: self.bounds.minX, across: self.bounds.width)
+        let row = cell(bounds.midY, from: self.bounds.minY, across: self.bounds.height)
+        let index = row * across + column
+        // Outlines at any size: with no pixel to fall under, no shape is its bounds or its pixel.
+        let paths = cells[index]?.paths ?? Silhouettes(pixelsPerWorldUnit: .infinity)
+        paths.add(geometry, hollow: hollow)
+        cells[index] = (paths, bounds.union(cells[index]?.bounds ?? .null), (cells[index]?.count ?? 0) + 1)
+    }
+
+    private func cell(_ value: CGFloat, from start: CGFloat, across length: CGFloat) -> Int {
+        guard length > 0 else { return 0 }
+        return min(max(Int(((value - start) / length * CGFloat(across)).rounded(.down)), 0), across - 1)
     }
 
     /// The bitmap's pixels as an image mask: painted where they're white.
@@ -294,9 +397,16 @@ private final class Build {
     }
 
     private func finish(_ mask: CGImage?) {
-        preview = BoardPreviews.Preview(key: key, frame: mask == nil ? .null : frame, mask: mask)
+        let cells: [BoardPreviews.PathCell] = mask == nil ? [] : self.cells.keys.sorted().compactMap { index in
+            self.cells[index].map { cell in
+                let paths = cell.paths.paths
+                return BoardPreviews.PathCell(bounds: cell.bounds, fills: paths.fills, lines: paths.lines, count: cell.count)
+            }
+        }
+        preview = BoardPreviews.Preview(key: key, frame: mask == nil ? .null : frame, mask: mask, cells: cells)
         geometries = []
         hollow = []
+        self.cells = [:]
     }
 }
 

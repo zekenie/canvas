@@ -139,12 +139,21 @@ public enum Style {
     /// A preview's silhouettes: the default skeleton's gray (`skeleton`), as the minimap's are on a
     /// light canvas, and darker in the dark, for an owner's dark body.
     static let boardPreview = skeleton
-    /// No preview is larger on either side; a board's longest side is drawn this long.
+    /// No preview's mask is larger on either side; a board's longest side is drawn this long.
     static let previewSide: CGFloat = 256
-    /// An open shape's line in a preview.
+    /// An open shape's line in a preview, in the mask's pixels, or the screen's where it's drawn as
+    /// paths.
     static let previewLineWidth: CGFloat = 1.5
-    /// How many previews are kept, the one drawn longest ago going first: 64 KB each at most.
+    /// How many previews are kept, the one drawn longest ago going first: 64 KB of mask each at
+    /// most, and their paths, some 80 bytes a shape.
     static let keptPreviews = 64
+    /// A preview's paths are in cells of a grid over its board, about this many shapes to a cell
+    /// and at most this many cells a side, so a frame draws only those in view.
+    static let previewCellShapes = 32
+    static let previewCellsAcross = 16
+    /// How many shapes a frame draws as paths, over all the previews drawn larger than their masks
+    /// (some 2 µs a shape, measured); those in view past it draw their masks.
+    static let previewPathShapes = 1_000
     /// A preview's rect narrower or shorter than this on screen, in view points, shows none: there's
     /// nothing to see, and a board zoomed out over many owners asks for no builds.
     static let previewSmallestSide: CGFloat = 16

@@ -77,6 +77,18 @@ public final class Silhouettes {
         zip(outline, outline.dropFirst() + outline.prefix(1)).reduce(0) { $0 + $1.0.x * $1.1.y - $1.1.x * $1.0.y }
     }
 
+    /// What's gathered as paths in world units, the shapes under a pixel each their pixel's square:
+    /// what `draw(into:color:lineWidth:)` fills, and what it strokes. Made with `pixelsPerWorldUnit`
+    /// infinite, every shape is its outline, sharp drawn at any size.
+    var paths: (fills: CGPath, lines: CGPath) {
+        let filled = CGMutablePath()
+        filled.addPath(fills)
+        for spot in pixels {
+            filled.addRect(CGRect(x: CGFloat(spot.x) * pixel, y: CGFloat(spot.y) * pixel, width: pixel, height: pixel))
+        }
+        return (filled, lines.copy() ?? lines)
+    }
+
     /// Into a context in world units. `lineWidth` is in world units too.
     public func draw(into context: CGContext, color: CGColor, lineWidth: CGFloat) {
         for spot in pixels {
