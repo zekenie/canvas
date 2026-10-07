@@ -154,11 +154,12 @@ public struct RenderContext {
     private let boardPreview: (ShapeID, CGRect, CGFloat, CGContext) -> Bool
     private let fileShape: (ShapeID) -> AnyShapeRecord?
     private let lend: (ObjectIdentifier) -> (any EditorService)?
+    private let shadows: ShapeShadows
     let skeleton: SkeletonInk
 
     init(cg: CGContext, shapes: ShapeContext, isEditing: Bool, shapeCount: @escaping (ShapeID) -> Int,
          preview: @escaping (ShapeID, CGRect, CGFloat, CGContext) -> Bool, fileShape: @escaping (ShapeID) -> AnyShapeRecord?,
-         lend: @escaping (ObjectIdentifier) -> (any EditorService)?, skeleton: SkeletonInk) {
+         lend: @escaping (ObjectIdentifier) -> (any EditorService)?, shadows: ShapeShadows, skeleton: SkeletonInk) {
         self.cg = cg
         self.shapes = shapes
         self.isEditing = isEditing
@@ -166,6 +167,7 @@ public struct RenderContext {
         boardPreview = preview
         self.fileShape = fileShape
         self.lend = lend
+        self.shadows = shadows
         self.skeleton = skeleton
     }
 
@@ -208,15 +210,14 @@ public struct RenderContext {
         boardPreview(owner, rect, maxScale, cg)
     }
 
-    /// The canvas's standard shape shadow. Shadows ignore the transform, so the blur is scaled by
-    /// hand; the offset is zero because shadow offsets live in device space.
+    /// Fills a path over the canvas's standard shape shadow, 6 world units of blur all round on
+    /// screen. The shadow is left out where the fill hides it all, an opaque color over everything
+    /// the context draws into (a shape zoomed in past the view's edges), so the picture is the same
+    /// and a shape bigger than the view costs a fill, not a blur of the view. Call it with the
+    /// context's alpha and blend mode as the fresh state has them: the fill is taken to paint its
+    /// color as it is.
     public func fillWithShadow(_ path: CGPath, _ color: NSColor) {
-        cg.saveGState()
-        cg.setShadow(offset: .zero, blur: 6 * zoom, color: Style.shapeShadow.cgColor)
-        cg.addPath(path)
-        cg.setFillColor(color.cgColor)
-        cg.fillPath()
-        cg.restoreGState()
+        shadows.fill(path, with: color.cgColor, zoom: zoom, in: cg)
     }
 
     // MARK: Skeletons

@@ -235,6 +235,8 @@ public final class CanvasEditor {
     @ObservationIgnored var glideFrame: ScheduledTask?
     /// The dot grid under the shapes, and the tiles it keeps from frame to frame.
     @ObservationIgnored let dotGrid = DotGrid()
+    /// The shapes' shadows (`RenderContext.fillWithShadow`), left out where their fills hide them.
+    @ObservationIgnored let shapeShadows = ShapeShadows()
     /// Below this zoom the canvas draws shapes as skeletons (`drawsSkeletons`, `CustomSkeleton`):
     /// 35% (`Style.skeletonZoom`) unless the host says otherwise. 0 draws every shape in full at
     /// every zoom (a test held to pictures drawn before skeletons were). Setting it redraws, and

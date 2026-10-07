@@ -52,7 +52,7 @@ extension CanvasEditor {
                     context.translateBy(x: offset.x / zoom, y: offset.y / zoom)
                 }
                 let render = RenderContext(cg: context, shapes: shapes, isEditing: record.id == editing, shapeCount: shapeCount,
-                                           preview: preview, fileShape: fileShape, lend: lend, skeleton: ink)
+                                           preview: preview, fileShape: fileShape, lend: lend, shadows: shapeShadows, skeleton: ink)
                 if skeletons, record.id != editing {
                     if let custom = customSkeletons[record.kind] {
                         custom.erasedRenderSkeleton(record, in: render)
@@ -100,6 +100,17 @@ extension CanvasEditor {
     @_spi(Host) public var gridClipOverride: Bool? {
         get { dotGrid.clipOverride }
         set { dotGrid.clipOverride = newValue }
+    }
+
+    /// How many shapes' shadows were left out because their fills hid them (debug builds):
+    /// `RenderContext.fillWithShadow` on a shape holding everything the context draws into.
+    @_spi(Host) public var shadowsSkipped: Int { shapeShadows.skipped }
+
+    /// Whether every shape's shadow is drawn, even one its fill hides (debug builds): the control
+    /// a test of leaving them out compares against.
+    @_spi(Host) public var shadowsAlwaysDrawn: Bool {
+        get { shapeShadows.alwaysDrawn }
+        set { shapeShadows.alwaysDrawn = newValue }
     }
     #endif
 

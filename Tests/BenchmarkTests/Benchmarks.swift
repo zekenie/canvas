@@ -106,6 +106,10 @@ enum Budget {
     static let panelAfterCommit = 1.0
     /// What a frame's previews drawn as paths add to it: at most `Style.previewPathShapes` shapes, some 2 µs each.
     static let previewPaths = 3.0
+    /// A frame zoomed in on a shape that holds all the view, on Retina at 1200 × 800: an empty
+    /// board's frame and a fill, its shadow left out, since its fill hides it (blurred by the zoom,
+    /// it took 24 to 26 ms at 800% on the CPU).
+    static let coveredShape = 3.0
     /// Going back to a board shown lately, as it was left: the switch, its first frame, the table
     /// of contents' rows and validation's read, together.
     static let warmReturn = frame
@@ -1520,8 +1524,7 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
         report(String(format: "ten subboards of 100 shapes on a 2× screen: a frame with their 1,000 as paths %.1f ms, with masks %.1f (budget %.0f)",
                       cards.paths, cards.masks, Budget.frame))
         // One card of the board's worth zoomed in to 800% on its middle: its preview drawn alone, the cells in view as
-        // paths, and the mask for the control; and the frame, against the card with nothing on its board (more than a
-        // frame there, nearly all of it its shadow).
+        // paths, and the mask for the control; and the frame, against the card with nothing on its board.
         let sub = ShapeRecord(Subboard(frame: CGRect(x: 0, y: 0, width: 2400, height: 1600)))
         let middle = camera(centering: CGRect(x: 1100, y: 700, width: 200, height: 200), at: 8, in: viewport)
         let alone = frames(CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(sub)])), camera: middle).masks
@@ -1553,6 +1556,36 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
         }
         if holdsToBudgets {
             expect(cards.paths < Budget.frame, "a frame of ten cards' previews as paths took \(cards.paths) ms")
+        }
+    },
+    test("a shape holding all the view, zoomed in to 800% on a 2× screen, costs a fill, not its shadow's blur: a subboard, a note and a schema card, each on its middle; an edge or a corner in view reported") {
+        let viewport = CGSize(width: 1200, height: 800)
+        let context = try bitmapContext(viewport, scale: 2)
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let note = StickyNote(frame: CGRect(origin: .zero, size: StickyNote.defaultSize), text: MentionText(plain: "Note: something to do"))
+        var schema = SchemaCard(frame: CGRect(x: 0, y: 0, width: 320, height: 240))
+        // A card as tall as its description: six of these lines, some 140 world units at 320 wide.
+        schema.setPrompt(SchemaPromptText(plain: Array(repeating: "Record: its name, a count, and its tags.", count: 6).joined(separator: "\n")))
+        let shapes = [("a subboard 2400 × 1600", AnyShapeRecord(ShapeRecord(Subboard(frame: CGRect(x: 0, y: 0, width: 2400, height: 1600))))),
+                      ("a note", AnyShapeRecord(ShapeRecord(note))), ("a schema card of six lines", AnyShapeRecord(ShapeRecord(schema)))]
+        for (name, shape) in shapes {
+            let h = EditorHarness { CanvasEditor(registry: registry, document: CanvasDocument(shapes: [shape]), scheduler: $0) }
+            h.editor.viewportDidResize(to: viewport)
+            let bounds = h.editor.shapeBounds
+            // The camera at 800% with `point` in the middle of the view.
+            @MainActor func frame(on point: CGPoint) -> Double {
+                h.editor.camera = camera(centering: CGRect(origin: point, size: .zero), at: 8, in: viewport)
+                draw(h.editor, into: context, size: viewport)
+                return median(runs: 11, onThread: true) { draw(h.editor, into: context, size: viewport) }
+            }
+            let middle = frame(on: CGPoint(x: bounds.midX, y: bounds.midY))
+            // Its shadow drawn, on the CPU here (on screen the GPU blurs it, some 0.7 ms of the process's CPU a frame, measured).
+            let edge = frame(on: CGPoint(x: bounds.minX, y: bounds.midY)), corner = frame(on: CGPoint(x: bounds.minX, y: bounds.minY))
+            report(String(format: "%@ (%.0f × %.0f) at 800%% on a 2× screen: a frame on its middle %.2f ms (budget %.0f); its left edge down the view's middle %.1f, its corner in the middle %.1f",
+                          name, bounds.width, bounds.height, middle, Budget.coveredShape, edge, corner))
+            if holdsToBudgets {
+                expect(middle < Budget.coveredShape, "\(name) at 800% holding the view: a frame took \(middle) ms")
+            }
         }
     },
     test("undo and redo cost what their step changed: a drag's is a frame's worth, whatever the board") {
