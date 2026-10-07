@@ -2,7 +2,7 @@
 """Checks what's drawn against a generator's plan: every titled shape where the plan puts it and as big,
 every group frame holding the pills planned for it, each where planned, no pill outside a group frame,
 and as many arrows as planned. Reads the board file through the gallery test's dump.
-    GALLERY_CLONE=<clone> check.py gen5 [board...]   the root, Canvas's board and every module's (or the ones named)
+    GALLERY_CLONE=<clone> check.py gen5 [board...]   the root and every other board (or the ones named)
 GALLERY_CLONE is a scratch clone whose CompositionTests run GalleryCapture.swift.txt (README.md)."""
 import collections, importlib, json, os, statistics, subprocess, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -10,7 +10,6 @@ sys.path.insert(0, HERE)
 from gen2 import Box, ABOUT_W
 
 GALLERY = os.path.abspath(os.path.expanduser(os.environ['GALLERY_CLONE'])) if os.environ.get('GALLERY_CLONE') else ''
-DUMP = os.path.join(HERE, 'runs', 'dump.jsonl')
 TOL = 2
 
 def board_file(G):
@@ -29,7 +28,7 @@ def dump(G):
     if not GALLERY:
         raise SystemExit("set GALLERY_CLONE to the clone that runs the gallery capture (README.md)")
     path = board_file(G)
-    os.makedirs(os.path.dirname(DUMP), exist_ok=True)
+    DUMP = os.path.join(G.gen.RUNS, 'dump.jsonl')       # the project's
     if os.path.exists(DUMP):
         os.remove(DUMP)     # a capture that runs no test exits 0 and writes nothing
     env = dict(os.environ, GALLERY_FILE=path, GALLERY_OUT=os.path.dirname(DUMP), GALLERY_BOARDS='none',

@@ -18,9 +18,10 @@ for b in gen.boards_for(PROD):
     files, uses = board_uses(b)
     if references_of(files, uses, symbols, ftitle) != R: bad.append((b, 'references_of differs'))
     digest.update(json.dumps([b, sorted(map(list, R))]).encode())
-nodes, uses, w = canvas_folders()
-cr = references_of(nodes, uses, w)
-digest.update(json.dumps(sorted(map(list, cr))).encode())
+for m in gen.FOLDER_BOARDS:
+    nodes, uses, w = folder_graph(m)
+    cr = references_of(nodes, uses, w)
+    digest.update(json.dumps(sorted(map(list, cr))).encode())
 # edge cases of the generic function
 assert references_of([], set(), lambda a, b: 1) == set()
 assert references_of(['a', 'b'], {('a', 'b'), ('a', 'a'), ('a', 'z')}, lambda a, b: 1) == set()

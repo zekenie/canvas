@@ -144,7 +144,7 @@
  "SelectTool.swift": 200,
  "Selection.swift": 204,
  "SelectionHistory.swift": 242,
- "SelectionState.swift": 200,
+ "SelectionState.swift": 204,
  "SelectionStyle.swift": 200,
  "About ContextMenus": 223,
  "ContextMenus.swift": 318,
@@ -409,7 +409,7 @@
  "ReferenceMismatch.swift": 223,
  "ReferencePanel.swift": 337,
  "ReferencePicker.swift": 223,
- "ReferenceRow.swift": 200,
+ "ReferenceRow.swift": 223,
  "ReferenceState.swift": 261,
  "ReferenceStyle.swift": 200,
  "References.swift": 318,
@@ -434,5 +434,11 @@
  "About CanvasCLI": 200,
  "Invocation.swift": 204,
  "Output.swift": 242,
- "main.swift": 200
+ "main.swift": 200,
+ "ShapeShadows.swift": 204,
+ "TintedRings.swift": 223,
+ "About Neighbors": 204,
+ "NeighborState.swift": 200,
+ "Neighbors.swift": 242,
+ "NeighborLights.swift": 204
 }
